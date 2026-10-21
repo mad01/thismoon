@@ -1,0 +1,9 @@
+{
+  "covers": "Run from a project whose local scope defines onlylocal and a second copy of shadow, list and get show those copies. agent-sync runs claude in an empty directory and sees user scope: onlylocal is added there, and the user-scope shadow, which drifted, is re-added. corp, which get shows at enterprise scope, is left uncompared and named in a note.",
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ],
+  "deviation": "The script ran claude in the caller's directory, so it compared the local copies with the desired user-scope specs. plan showed onlylocal and shadow as ~ on every run, and the drifted user-scope shadow was never compared. sync failed with exit 2 removing onlylocal at user scope, where it does not exist."
+}

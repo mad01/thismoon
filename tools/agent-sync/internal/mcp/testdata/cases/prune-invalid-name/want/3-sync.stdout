@@ -1,0 +1,2 @@
+- my.server
+  $ {CLAUDE} mcp remove --scope user my.server

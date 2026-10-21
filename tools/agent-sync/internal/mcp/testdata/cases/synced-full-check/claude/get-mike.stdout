@@ -1,0 +1,7 @@
+mike:
+  Scope: Enterprise config (managed by your organization)
+  Status: Connected
+  Type: stdio
+  Command: /opt/mike/bin/mike
+
+To remove this server, edit /Library/Application Support/ClaudeCode/managed-mcp.json

@@ -1,9 +1,8 @@
-drift: 8 MCP servers to update (run 'ralph up' to sync)
+drift: 7 MCP servers to update (run 'ralph up' to sync)
 ~ alpha
 ~ bravo
-~ charlie
 ~ delta
 ~ echo
 ~ foxtrot
 ~ golf
-~ hotel
+~ kilo

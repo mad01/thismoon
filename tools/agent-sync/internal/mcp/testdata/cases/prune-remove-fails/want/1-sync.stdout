@@ -1,0 +1,2 @@
+- claude.ai Calendar
+  $ {CLAUDE} mcp remove --scope user claude.ai Calendar

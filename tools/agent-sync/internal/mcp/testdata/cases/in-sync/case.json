@@ -1,5 +1,5 @@
 {
-  "covers": "Every server registered and matching: the first sync compares specs and writes the stamp, the next sync and check trust it ([cached]), --force compares again. Environment parsed from the single-line form; a remote server matches on url although get prints no headers.",
+  "covers": "Every server registered and matching: the first sync compares specs and writes the stamp, the next sync and check trust it ([cached]), --force compares again. Environment parsed from the single-line form; a remote server matches on url alone, though get prints its headers.",
   "steps": [
     "plan",
     "sync",

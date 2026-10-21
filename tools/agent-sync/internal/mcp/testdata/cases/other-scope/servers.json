@@ -1,0 +1,22 @@
+{
+  "servers": {
+    "alpha": {
+      "command": "/opt/alpha/bin/alpha"
+    },
+    "corp": {
+      "command": "/opt/corp/bin/corp"
+    },
+    "onlylocal": {
+      "command": "/bin/echo",
+      "args": [
+        "user"
+      ]
+    },
+    "shadow": {
+      "command": "/bin/echo",
+      "args": [
+        "user"
+      ]
+    }
+  }
+}

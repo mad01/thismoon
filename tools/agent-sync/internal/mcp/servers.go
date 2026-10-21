@@ -102,7 +102,9 @@ func loadDesired(cfg Config, m gate.Machine, warn io.Writer) (desiredSet, error)
 }
 
 // selectDesired applies the name, host and profile gates to the merged
-// entries and checks the ones that pass.
+// entries and checks the ones that pass. A name `claude mcp add` would
+// reject is an error even in an entry gated off this machine, so prune's
+// not-managed note never names a declared server.
 func selectDesired(
 	merged *pyjson.Object,
 	source map[string]string,
@@ -115,6 +117,10 @@ func selectDesired(
 		}
 		v, _ := merged.Get(name)
 		e := entry{where: fmt.Sprintf("%s: server %s", source[name], pyjson.Repr(name))}
+		if !addableName.MatchString(name) {
+			return desiredSet{}, fmt.Errorf("%s: name not valid for claude mcp add, "+
+				"which takes letters, numbers, hyphens, and underscores", e.where)
+		}
 		obj, ok := v.(*pyjson.Object)
 		if !ok {
 			return desiredSet{}, fmt.Errorf(

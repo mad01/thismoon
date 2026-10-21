@@ -187,9 +187,12 @@ a server whose registered spec differs. A remote server compares by url alone,
 so a login done by hand survives. With `prune: false`, this example's setting,
 a server dropped from the files stays registered; remove it with
 `claude mcp remove --scope user <name>` on each machine. With `prune: true` in
-`config.yaml`, the next sync removes every registered server the files don't
-name, servers added by hand included. Prune also turns the stamp shortcut off,
-so every sync and check runs the per-server spec check.
+`config.yaml`, the next sync removes every user-scope server the files don't
+name, servers added by hand included. It skips a claude.ai connector, a
+plugin's server, a server in another scope and a name `claude mcp add`
+would reject, and names them in a note.
+Prune also turns the stamp shortcut off, so every sync and check runs the
+per-server spec check.
 
 `ralph doctor` runs each section's `check` and shows its first line; drift is
 a warning that the next `ralph up` clears.

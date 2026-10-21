@@ -1,0 +1,4 @@
+Checking MCP server health…
+
+alpha: /opt/alpha/bin/alpha  - Connected
+my.server: /opt/my/bin/server  - Connected

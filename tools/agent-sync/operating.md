@@ -64,11 +64,17 @@ reads.
 ## mcp
 
 The servers file, with each drop-in merged over it by name, is the desired
-set; `hosts` and `profiles` gate entries to machines. Missing servers are
+set; `hosts` and `profiles` gate entries to machines. A server name
+`claude mcp add` would reject is a config error. Missing servers are
 added at user scope, and a server whose `claude mcp get` spec differs is
-removed and added again. Remote servers compare by url only. With `prune`,
-sync removes registered servers outside the set at user scope; a name it
-cannot remove there fails the run with exit 2. A stamp of the desired set
+removed and added again. Remote servers compare by url only. claude runs
+in an empty temporary directory, so list and get never show the local or
+project scope servers of the directory the sync started in. A server get
+still shows at another scope, such as an enterprise one, is not compared.
+With `prune`, sync removes registered servers outside the set at user
+scope. It skips a claude.ai connector, a plugin's server, a server in
+another scope and a name `claude mcp add` would reject. Each run names the
+servers it left alone in `note:` lines. A stamp of the desired set
 lets sync and check skip the per-server get calls; plan always makes them,
 and `--force` or `prune` makes sync and check make them too.
 
@@ -124,18 +130,29 @@ the new one.
 
 mcp `` `claude mcp list` failed ``, `add 'x' failed` or `remove 'x'
 failed`, exit 2 with claude's stderr: the servers before it are already
-changed and the stamp is not written. An http or sse server with
-`headers` and no `headersHelper` always fails to add: the flags go where
-claude rejects them, a script bug kept for parity. Register that one by
-hand.
+changed and the stamp is not written.
 
-mcp `remove 'claude.ai X' failed` or `remove 'plugin' failed`, exit 2,
-with `prune: true`: prune removes at user scope only, and a claude.ai
-connector or a plugin's server is not there, nor is a server added at
-another scope. The server stays registered, so every sync fails this way
-with exit 2, and check exits 1 on every run with each one as `- <name>`
-drift. Neither clears by itself. Turn prune off, or remove the server
-where it lives.
+mcp `note: prune skips servers outside user scope: ...`, with `prune:
+true`: the names listed are a claude.ai connector, a plugin's server, or
+a server whose `claude mcp get` shows another scope, such as an
+enterprise one. A user-scope remove cannot reach them, so prune leaves
+them and check does not count them. Remove one where it lives if it
+should go.
+
+mcp `note: not managed, name not valid for claude mcp add: ...`, with
+`prune: true`: list shows a name with a character other than letters,
+numbers, hyphens, and underscores, usually a user-scope entry edited in
+by hand.
+`claude mcp add` could not add it back, so prune leaves it and check does
+not count it. Remove it by hand if it should go.
+
+mcp `note: spec not compared, get shows another scope for: ...`: a
+servers.json name is also defined at a scope agent-sync does not write,
+such as an enterprise one. `claude mcp get` shows that copy, so the
+user-scope one cannot be compared, and a server with no user-scope copy
+is not added there. Both count as in sync. A local or project scope copy
+never causes this note: claude runs in an empty directory, where neither
+exists. Drop the name from servers.json if the other copy should win.
 
 `has no 'url'` or `has no 'command'`, exit 1: the entry cannot be added. On
 an update the remove has already run, so the server is gone until the
@@ -147,19 +164,28 @@ object (its keys count) or a string (each character counts), as the script
 read it. A number other than 0, `true`, or a hosts entry that is not a
 string is this error.
 
+`<file>: server 'x': name not valid for claude mcp add`, exit 1: a
+servers.json name holds a character other than letters, numbers, hyphens,
+and underscores, such as a dot. Every machine checks every name, even in
+an entry gated off it. Nothing was changed and claude did not run. Rename
+the server.
+
 `warning: could not write sync stamp`: exit 0, but every run checks every
 spec until the stamp path is writable.
 
-mcp plan shows `~ <name>` on every run for a server with env, or with an
-argument that holds a space: claude prints those differently from
-servers.json. This matches the script and is harmless; the re-add gives
-the same server.
+mcp plan shows `~ <name>` on every run: `claude mcp get <name>` prints
+that server differently from its servers.json entry, so every re-add gives
+the same server and it still drifts. An `env` value with leading or
+trailing whitespace does this, because get's lines are read stripped.
+Otherwise compare the get output with the entry; a new claude release may
+have changed the format. A copy at local or project scope in the
+directory you ran from is not the cause: claude runs in an empty
+directory, where get shows the user-scope copy.
 
-mcp check exits 1 on every run with `prune: true`, and every sync shows
-`~ <name>` for the same servers. prune makes sync and check compare every
-spec, and a server with env, or with an argument that holds a space, never
-reads as in sync. Run with prune off, and turn it on only to clear out
-stale servers.
+mcp check reports in sync after an `args` edit that only moves an argument
+boundary (`["--name two", "words"]` to `["--name", "two words"]`): get
+prints the arguments joined by spaces, so both read the same. Run
+`claude mcp remove --scope user <name>`, then sync to add it again.
 
 ## first moves
 

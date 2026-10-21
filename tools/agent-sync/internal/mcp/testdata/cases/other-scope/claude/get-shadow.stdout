@@ -1,0 +1,10 @@
+shadow:
+  Scope: User config (available in all your projects)
+  Status: ✘ Failed to connect
+  Issue: CONNECTION_CLOSED: Connection closed
+  Type: stdio
+  Command: /bin/echo
+  Args: stale
+  Environment:
+
+To remove this server, run: claude mcp remove shadow -s user

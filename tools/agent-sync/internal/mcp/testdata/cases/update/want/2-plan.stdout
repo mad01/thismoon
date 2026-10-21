@@ -22,4 +22,7 @@
 ~ hotel
   $ {CLAUDE} mcp remove --scope user hotel
   $ {CLAUDE} mcp add --scope user hotel -- /opt/hotel/bin/hotel --name two words
+~ kilo
+  $ {CLAUDE} mcp remove --scope user kilo
+  $ {CLAUDE} mcp add --scope user kilo -e KILO_MODE=fast -- /opt/kilo/bin/kilo
 (dry-run — no changes applied)

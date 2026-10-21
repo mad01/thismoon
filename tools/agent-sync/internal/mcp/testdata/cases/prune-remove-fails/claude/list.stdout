@@ -1,0 +1,5 @@
+Checking MCP server health...
+
+alpha: /opt/alpha/bin/alpha  - Connected
+zulu: /opt/zulu/bin/zulu  - Connected
+claude.ai Calendar: https://calendar.example.com/mcp - Connected

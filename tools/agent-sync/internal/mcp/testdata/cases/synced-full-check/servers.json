@@ -1,0 +1,29 @@
+{
+  "servers": {
+    "alpha": {
+      "command": "/opt/alpha/bin/alpha",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "ALPHA_PORT": "7001",
+        "ALPHA_URL": "http://localhost:7001",
+        "ALPHA_RETRIES": 3
+      }
+    },
+    "bravo": {
+      "command": "/opt/bravo/bin/bravo",
+      "args": [
+        "--name",
+        "two words"
+      ]
+    },
+    "charlie": {
+      "transport": "http",
+      "url": "https://mcp.example.com/charlie",
+      "headers": {
+        "X-Team": "blue"
+      }
+    }
+  }
+}

@@ -1,9 +1,10 @@
 {
-  "covers": "prune removes every registered name outside the desired set, including a host-gated entry and the names list parses out of connector and plugin lines; prune always compares specs.",
+  "covers": "prune removes the registered names outside the desired set that are at user scope, including a host-gated entry (kilo, whose get fails, counts as user scope), and skips a claude.ai connector, a plugin's server and an enterprise-managed server with one note; prune always compares specs.",
   "steps": [
     "check",
     "plan",
     "sync"
   ],
-  "prune": true
+  "prune": true,
+  "deviation": "agent-sync asks get for each prune candidate's scope and skips the three it cannot remove at user scope, and list keeps a plugin server's full plugin:<plugin>:<server> name. The script tried to remove all five, the plugin server as 'plugin'."
 }

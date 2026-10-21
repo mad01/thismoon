@@ -1,0 +1,6 @@
+note: prune skips servers outside user scope: 'claude.ai Calendar', 'mike', 'plugin:tools:lint'
+- kilo
+  $ {CLAUDE} mcp remove --scope user kilo
+- zulu
+  $ {CLAUDE} mcp remove --scope user zulu
+(dry-run — no changes applied)

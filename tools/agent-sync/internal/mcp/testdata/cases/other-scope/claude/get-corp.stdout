@@ -1,0 +1,9 @@
+corp:
+  Scope: Enterprise config (managed by your organization)
+  Status: Connected
+  Type: stdio
+  Command: /opt/corp/bin/corp
+  Args:
+  Environment:
+
+To remove this server, edit /Library/Application Support/ClaudeCode/managed-mcp.json

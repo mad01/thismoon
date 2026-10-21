@@ -1,0 +1,8 @@
+Checking MCP server health...
+
+alpha: /opt/alpha/bin/alpha mcp - Connected
+bravo: /opt/bravo/bin/bravo --name two words - Connected
+charlie: https://mcp.example.com/charlie (HTTP) - Connected
+mike: /opt/mike/bin/mike  - Connected
+claude.ai Calendar: https://calendar.example.com/mcp - Connected
+plugin:tools:lint: /opt/lint/bin/lint - Connected

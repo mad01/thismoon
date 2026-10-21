@@ -4,5 +4,6 @@
     "check",
     "plan"
   ],
-  "prune": true
+  "prune": true,
+  "deviation": "argv: agent-sync runs get on zulu, the prune candidate, to learn its scope."
 }

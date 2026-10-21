@@ -1,0 +1,7 @@
+claude [mcp] [list]
+claude [mcp] [get] [alpha]
+claude [mcp] [get] [corp]
+claude [mcp] [get] [shadow]
+claude [mcp] [add] [--scope] [user] [onlylocal] [--] [/bin/echo] [user]
+claude [mcp] [remove] [--scope] [user] [shadow]
+claude [mcp] [add] [--scope] [user] [shadow] [--] [/bin/echo] [user]

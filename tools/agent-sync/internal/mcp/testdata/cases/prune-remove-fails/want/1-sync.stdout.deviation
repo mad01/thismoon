@@ -1,0 +1,3 @@
+note: prune skips servers outside user scope: 'claude.ai Calendar'
+- zulu
+  $ {CLAUDE} mcp remove --scope user zulu

@@ -2,6 +2,8 @@
   $ {CLAUDE} mcp remove --scope user claude.ai Calendar
 - kilo
   $ {CLAUDE} mcp remove --scope user kilo
+- mike
+  $ {CLAUDE} mcp remove --scope user mike
 - plugin
   $ {CLAUDE} mcp remove --scope user plugin
 - zulu

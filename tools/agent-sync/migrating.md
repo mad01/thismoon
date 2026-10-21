@@ -117,11 +117,18 @@ Claude Code on every machine that syncs mods or MCP servers.
    script. Run that section's `plan` to see the difference, and fix the
    config or the data, not the machine. Some differences are expected:
 
-   - A server with `env`, or with an argument that holds a space, shows as
-     `~ <name>` in every `mcp plan`. With no stamp, or one that does not
-     match, `mcp check` compares every spec too and exits 1 on such a
-     server, with `drift: 1 MCP server to update`. This matches the original
-     sync script, so it is not a parity gap.
+   - An http or sse server with `headers` and no `headersHelper` shows as
+     `+ <name>`. The script's add for it always failed, so it was never
+     registered; the first agent-sync sync adds it.
+   - A server with `env`, or with an argument that holds a space, reads as
+     in sync, though the script's dry run showed it as `~ <name>` every
+     time. The script misread `claude mcp get` for such a server.
+   - A server also defined at local or project scope in the directory
+     you run from: agent-sync compares its user-scope copy. It shows
+     `~ <name>` when that copy drifted, or `+ <name>` when the server
+     exists only at local or project scope. The script ran claude in
+     that directory, compared the other copy and showed `~ <name>` every
+     time.
    - A `settings.local.json` beside the live settings file is merged as the
      overlay. If your script ignored it, its keys show as drift: move the
      file, or set `settings.overlay`.
@@ -331,25 +338,30 @@ To have the sync remove such servers instead:
    That includes servers you added by hand, and servers whose `hosts` or
    `profiles` gate keeps them off this machine.
 
-2. Look for names prune cannot remove. It removes at user scope only, so
-   these fail the sync with exit 2:
+2. Read the `note:` lines, if plan prints any. Prune removes at user scope
+   only, so it skips these names and lists them in
+   `note: prune skips servers outside user scope: ...`:
 
    - a claude.ai connector, listed as `claude.ai <Name>`
-   - a server a plugin provides, listed as `plugin`
-   - a local- or project-scope server visible from the directory the sync
-     runs in
+   - a server a plugin provides, listed as `plugin:<plugin>:<server>`
+   - an enterprise server your organization manages, which
+     `claude mcp get` shows at `Enterprise config` scope
 
-   The failed remove prints `error: remove '<name>' failed: ` and claude's
-   stderr. Adds and updates run first, then removes in name order, and the
-   run stops at the failure: the servers after it stay registered, and it
-   writes no stamp. On a machine that has one of these names, prune never
-   finishes. Remove those servers where they live, or keep prune off there
-   and remove stale servers by hand.
+   Prune also skips a name `claude mcp add` would reject, such as one with
+   a dot added by hand, and lists it in
+   `note: not managed, name not valid for claude mcp add: '<name>'`.
+
+   They are not drift, and check ignores them. Remove one where it lives
+   if it should go.
 
 3. Set `prune: true` in the real `config.yaml`, commit, and run `ralph up`
    on each machine. Success is an `agent-sync mcp check` with no
-   `- <name>` lines.
+   `- <name>` lines. A user-scope remove that fails prints
+   `error: remove '<name>' failed: ` and claude's stderr, and exits 2.
+   Removes run in name order after the adds and updates, and the run stops
+   at the failure without writing the stamp.
 
-4. Turn prune off again once every machine has run. With prune on, sync
-   and check compare every spec, so a server with `env` or a spaced
-   argument drifts on every run.
+4. Keep prune on, or turn it off once every machine has run. With prune
+   on, every sync and check runs `claude mcp get` for each server, which
+   is slower, and the next sync removes any server someone adds by hand
+   at user scope.

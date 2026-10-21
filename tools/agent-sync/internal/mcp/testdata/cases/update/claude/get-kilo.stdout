@@ -1,0 +1,9 @@
+kilo:
+  Scope: User config (available in all your projects)
+  Status: Connected
+  Type: stdio
+  Command: /opt/kilo/bin/kilo
+  Environment:
+    KILO_MODE=slow
+
+To remove this server, run: claude mcp remove kilo -s user

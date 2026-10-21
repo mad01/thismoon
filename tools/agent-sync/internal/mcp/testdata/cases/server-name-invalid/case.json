@@ -1,0 +1,7 @@
+{
+  "covers": "A declared server name claude mcp add would reject (my.server) is a config error, before any claude call.",
+  "steps": [
+    "plan"
+  ],
+  "deviation": "The script planned '+ my.server', an add real claude rejects, so every sync failed with exit 2. agent-sync names the file and the server and exits 1 without running claude."
+}

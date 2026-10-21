@@ -1,0 +1,8 @@
+{
+  "covers": "With prune, a failed remove of a user-scope name still exits 2; the claude.ai connector beside it is skipped with a note.",
+  "steps": [
+    "sync"
+  ],
+  "prune": true,
+  "deviation": "agent-sync skips the connector and fails on the user-scope zulu. The script tried to remove the connector first and failed there."
+}

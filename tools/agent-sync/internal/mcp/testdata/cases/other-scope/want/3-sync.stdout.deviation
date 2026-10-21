@@ -1,0 +1,6 @@
+note: spec not compared, get shows another scope for: 'corp'
++ onlylocal
+  $ {CLAUDE} mcp add --scope user onlylocal -- /bin/echo user
+~ shadow
+  $ {CLAUDE} mcp remove --scope user shadow
+  $ {CLAUDE} mcp add --scope user shadow -- /bin/echo user

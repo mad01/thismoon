@@ -1,0 +1,10 @@
+shadow:
+  Scope: Enterprise config (managed by your organization)
+  Status: ✘ Failed to connect
+  Issue: CONNECTION_CLOSED: Connection closed
+  Type: stdio
+  Command: /bin/echo
+  Args: local
+  Environment:
+
+To remove this server, edit /Library/Application Support/ClaudeCode/managed-mcp.json

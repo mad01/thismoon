@@ -58,7 +58,9 @@ that YAML would read as a number or a bool. A bool must be a bare `true` or
 - `mcp.servers` (path, required): the base servers.json,
   `{"servers": {name: spec}}`. A spec's `hosts` and `profiles` lists gate
   it to machines, as in the mods file; each `hosts` entry must be a
-  string.
+  string. A server name must be one `claude mcp add` accepts: letters,
+  numbers, hyphens, and underscores. Any other name is a config error,
+  even in an entry gated off this machine.
 - `mcp.dropins` (path, default `~/.config/claude-mcp/servers.d`): a
   directory whose `*.json` files have the same shape and are merged over
   `servers` by name, in name order. It need not exist.
@@ -70,11 +72,11 @@ that YAML would read as a number or a bool. A bool must be a bare `true` or
   the per-server spec check.
 - `mcp.prune` (bool, default `false`): remove registered servers the
   desired set does not name, including servers added by hand. It removes
-  at user scope only. Some names it can't remove there: a claude.ai
-  connector, a server a plugin provides, or a server in another scope.
-  Each fails every sync with exit 2 and keeps check at exit 1, until you
-  remove the server where it lives or turn prune off. It also makes every
-  sync and check compare each server's spec, as `--force` does.
+  at user scope only, so it skips a claude.ai connector, a server a plugin
+  provides and a server in another scope, and it skips a name `claude mcp
+  add` would reject. Each run names those in `note:` lines, and check does
+  not count them as drift. It also makes every sync and check compare
+  each server's spec, as `--force` does.
 
 ## Environment variables
 

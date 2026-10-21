@@ -2,6 +2,7 @@ Checking MCP server health...
 
 alpha: /opt/alpha/bin/alpha  - Connected
 kilo: /opt/kilo/bin/kilo  - Connected
+mike: /opt/mike/bin/mike  - Connected
 zulu: /opt/zulu/bin/zulu  - Connected
 claude.ai Calendar: https://calendar.example.com/mcp - Connected
 plugin:tools:lint: /opt/lint/bin/lint - Connected

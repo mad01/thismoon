@@ -1,0 +1,4 @@
+claude [mcp] [list]
+claude [mcp] [get] [alpha]
+claude [mcp] [get] [zulu]
+claude [mcp] [remove] [--scope] [user] [zulu]

@@ -1,0 +1,6 @@
+claude [mcp] [list]
+claude [mcp] [get] [alpha]
+claude [mcp] [get] [corp]
+claude [mcp] [get] [onlylocal]
+claude [mcp] [get] [shadow]
+claude [mcp] [remove] [--scope] [user] [onlylocal]
