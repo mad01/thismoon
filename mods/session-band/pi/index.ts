@@ -1,7 +1,7 @@
 // @ts-nocheck -- pi resolves extension types from its runtime; Claude Code never loads this file.
 /**
  * session-band, pi face. The Claude face (../hooks/register.tsx) counts belt
- * denials by reading each PreToolUse decision as it comes back up the hook
+ * denials by reading each tool call's result as it comes back up the hook
  * chain. pi has no chain to read: the permission gate (the dotfiles pi
  * recipe's permission-gate.ts) blocks the call and announces it on the
  * extension bus as `belt:deny`. This face counts those announcements, keeps

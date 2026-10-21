@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { composeStatusText, decisionSummary, isBeltDeny } from '../lib/band'
+import { composeStatusText, isBeltRefusal } from '../lib/band'
 
 const beltDenies = atom({ plugin: 'session-band', key: 'beltDenies' } as const, 0)
 
@@ -40,20 +40,19 @@ export const register: Register = on => {
     return started
   }).catch(skipOnFailure)
 
-  // belt answers PreToolUse as a settings hook beneath every mod; its deny
-  // comes back from next(e) with a `belt[<guard>]: ` reason, possibly inside
-  // the engine's own wrapping. Counted, never changed: the decision returns
-  // exactly as belt made it. Every decision is described in the debug log so
-  // its real shape can be read off `claude --debug`. The line is refreshed
-  // on every call, not only on a deny, so a /clear that zeroed the count
-  // takes the stale line down with it.
-  on('classic.PreToolUse', async ($, e, next) => {
-    const decision = await next(e)
-    if (decision !== undefined) {
-      $.ui.log(`session-band: PreToolUse ${e.tool} decision ${decisionSummary(decision)}`, { to: 'debug' })
+  // belt runs as a settings PreToolUse hook beneath every mod's tool.call
+  // hook, so a belt deny comes back from next(e) as an errored result whose
+  // text starts with the `belt[<guard>]: ` reason. Every caller counts: the
+  // main loop and each subagent. Counted, never changed: the result returns
+  // exactly as it came. The line is refreshed on every call, not only on a
+  // deny, so a /clear that zeroed the count takes the stale line down with it.
+  on('tool.call', async ($, e, next) => {
+    const ran = await next(e)
+    if (isBeltRefusal(ran)) {
+      const count = await update($, beltDenies, n => n + 1)
+      $.ui.log(`session-band: belt deny ${count} counted on ${e.tool}`, { to: 'debug' })
     }
-    if (isBeltDeny(decision)) await update($, beltDenies, n => n + 1)
     await refreshStatus($)
-    return decision
+    return ran
   }).catch(skipOnFailure)
 }

@@ -1,54 +1,28 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { composeStatusText, decisionSummary, isBeltDeny } from '../lib/band.ts'
+import { composeStatusText, isBeltRefusal } from '../lib/band.ts'
 
-describe('isBeltDeny', () => {
-  test('is true for a denial with a belt reason', () => {
-    assert.equal(isBeltDeny({ deny: 'belt[commit-guard]: main is PR-only' }), true)
+describe('isBeltRefusal', () => {
+  test('a belt reason on the first line of an errored result counts', () => {
+    assert.equal(isBeltRefusal({ isError: true, text: 'belt[git-push-main]: pushes to main are denied', result: undefined }), true)
+    assert.equal(isBeltRefusal({ isError: true, text: 'PreToolUse:Bash hook error: belt[x]: no\nmore', result: undefined }), true)
+    assert.equal(isBeltRefusal({ isError: true, text: '  belt[x]: after leading blanks', result: undefined }), true)
+    assert.equal(isBeltRefusal({ deny: 'belt[x]: no' }), true)
   })
 
-  test('is true when the engine wraps the reason in its hook-error prefix', () => {
-    assert.equal(
-      isBeltDeny({ deny: 'PreToolUse:Bash hook error: belt[git-push-main]: pushing to "main" is blocked' }),
-      true,
-    )
-  })
-
-  test('is true for a shape the types do not name, searched as JSON', () => {
-    assert.equal(isBeltDeny({ block: 'belt[git-push-main]: pushing to "main" is blocked' }), true)
-    assert.equal(
-      isBeltDeny({ hookSpecificOutput: { permissionDecision: 'deny', permissionDecisionReason: 'belt[x]: no' } }),
-      true,
-    )
-  })
-
-  test('is false for another hook, an allow, an ask, or no decision', () => {
-    assert.equal(isBeltDeny({ deny: 'policy: no' }), false)
-    assert.equal(isBeltDeny({ deny: 'hook error: belt denied it' }), false)
-    assert.equal(isBeltDeny({ allow: true }), false)
-    assert.equal(isBeltDeny({ ask: 'belt[x]: sure?' }), false)
-    assert.equal(isBeltDeny({ block: 'policy: no' }), false)
-    assert.equal(isBeltDeny({}), false)
-    assert.equal(isBeltDeny(undefined), false)
-    assert.equal(isBeltDeny('belt[x]: a bare string'), false)
-  })
-})
-
-describe('decisionSummary', () => {
-  test('names the keys and the head of the JSON', () => {
-    assert.equal(decisionSummary({ deny: 'belt[x]: no' }), 'keys [deny] {"deny":"belt[x]: no"}')
-    assert.equal(decisionSummary({ allow: true, updatedInput: { a: 1 } }), 'keys [allow,updatedInput] {"allow":true,"updatedInput":{"a":1}}')
-  })
-
-  test('caps a long JSON at 120 characters', () => {
-    const summary = decisionSummary({ deny: 'x'.repeat(300) })
-    assert.equal(summary, `keys [deny] ${JSON.stringify({ deny: 'x'.repeat(300) }).slice(0, 120)}...`)
-  })
-
-  test('describes a non-object', () => {
-    assert.equal(decisionSummary(null), 'object null')
-    assert.equal(decisionSummary('x'), 'string x')
+  test('other results do not count, belt in the output included', () => {
+    assert.equal(isBeltRefusal({ isError: true, text: 'Exit code 1\nbelt[x]: quoted from a log', result: undefined }), false)
+    assert.equal(isBeltRefusal({ isError: true, text: 'settings rule denied the call', result: undefined }), false)
+    assert.equal(isBeltRefusal({ isError: true, text: 'hook error: belt denied it', result: undefined }), false)
+    assert.equal(isBeltRefusal({ result: { stdout: 'belt[x]: no' }, text: 'belt[x]: no' }), false)
+    assert.equal(isBeltRefusal({ deny: 'loom-pane: outside your worktree' }), false)
+    assert.equal(isBeltRefusal({ isError: true, result: undefined }), false)
+    assert.equal(isBeltRefusal({}), false)
+    assert.equal(isBeltRefusal(undefined), false)
+    assert.equal(isBeltRefusal(null), false)
+    assert.equal(isBeltRefusal(['belt[x]: in an array']), false)
+    assert.equal(isBeltRefusal('belt[x]: a bare string'), false)
   })
 })
 
