@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.11.1](https://github.com/mad01/thismoon/compare/belt/v2.11.0...belt/v2.11.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **belt:** close pi gate bypasses through the MCP adapter ([#265](https://github.com/mad01/thismoon/issues/265)) ([9e177ef](https://github.com/mad01/thismoon/commit/9e177ef71c285d6c85fe91c13cc5549265031427))
+
 ## [2.11.0](https://github.com/mad01/thismoon/compare/belt/v2.10.0...belt/v2.11.0) (2026-10-21)
 
 
