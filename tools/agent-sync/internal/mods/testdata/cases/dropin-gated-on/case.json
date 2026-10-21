@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "DropInTest.test_dropin_profile_gate_on_installs_its_mod_against_its_marketplace"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

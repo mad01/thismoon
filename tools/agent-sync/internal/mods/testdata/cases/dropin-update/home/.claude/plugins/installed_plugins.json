@@ -1,0 +1,1 @@
+{"version": 2, "plugins": {"session-band@thismoon": [{"scope": "user", "version": "0.1.0"}], "lab-pane@lab": [{"scope": "user", "version": "1.0.0"}]}}

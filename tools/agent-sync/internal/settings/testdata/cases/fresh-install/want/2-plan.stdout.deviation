@@ -1,0 +1,2 @@
+merged local overlay: {HOME}/.claude/settings.local.json
+(dry-run) would write new {HOME}/.claude/settings.json from template

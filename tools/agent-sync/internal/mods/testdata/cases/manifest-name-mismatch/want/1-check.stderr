@@ -1,0 +1,1 @@
+error: {HOME}/mods.json: marketplace 'thismoon' does not match the name 'thismoon-mods' in {HOME}/sources/thismoon/.claude-plugin/marketplace.json; Claude Code registers under the manifest's name

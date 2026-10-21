@@ -1,0 +1,9 @@
+{
+  "ports": [
+    "GatingTest.test_profile_gate_needs_one_matching_tag"
+  ],
+  "steps": [
+    "check",
+    "plan"
+  ]
+}

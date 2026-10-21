@@ -1,0 +1,1 @@
+{"name": "thismoon", "plugins": [{"name": "to-install", "source": "./mods/to-install"}, {"name": "to-enable", "source": "./mods/to-enable"}, {"name": "to-update", "source": "./mods/to-update"}, {"name": "to-disable", "source": "./mods/to-disable"}, {"name": "to-retire", "source": "./mods/to-retire"}]}

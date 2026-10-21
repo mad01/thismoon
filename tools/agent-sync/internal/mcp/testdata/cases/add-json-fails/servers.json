@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "echo": {
+      "transport": "http",
+      "url": "https://mcp.example.com/echo",
+      "headersHelper": "/opt/echo/headers.sh"
+    }
+  }
+}

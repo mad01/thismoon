@@ -23,6 +23,7 @@ services/pr/pr
 services/present/present
 services/speak/speak
 services/status/status
+tools/agent-sync/agent-sync
 tools/belt/belt
 tools/clipboard/clipboard
 tools/factory-eval/factory-eval

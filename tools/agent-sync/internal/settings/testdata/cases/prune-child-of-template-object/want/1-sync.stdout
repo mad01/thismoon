@@ -1,0 +1,4 @@
+pruned (retired keys):
+  - statusLine.old: 1
+
+wrote {HOME}/.claude/settings.json

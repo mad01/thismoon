@@ -1,0 +1,9 @@
+{
+  "covers": "prune removes every registered name outside the desired set, including a host-gated entry and the names list parses out of connector and plugin lines; prune always compares specs.",
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ],
+  "prune": true
+}

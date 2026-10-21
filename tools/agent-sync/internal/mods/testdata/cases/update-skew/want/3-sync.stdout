@@ -1,0 +1,3 @@
+~ update session-band@thismoon (0.1.0 -> 0.2.0)
+  $ {HOME}/bin/claude plugin update session-band@thismoon --scope user
+applied 1 change; new sessions or /reload-plugins pick them up; updated mods load after a restart

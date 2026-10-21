@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "UpdatePlanTest.test_installed_but_disabled_mod_with_skew_is_enabled_and_updated"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

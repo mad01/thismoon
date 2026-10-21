@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "UninstallPlanTest.test_retired_mod_with_version_skew_is_not_updated"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "covers": "check's summary with adds, updates and removes together.",
+  "steps": [
+    "check",
+    "plan"
+  ],
+  "prune": true
+}

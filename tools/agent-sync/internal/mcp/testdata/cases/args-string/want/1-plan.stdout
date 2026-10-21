@@ -1,0 +1,3 @@
++ alpha
+  $ {CLAUDE} mcp add --scope user alpha -- /opt/alpha/bin/alpha m c p
+(dry-run — no changes applied)

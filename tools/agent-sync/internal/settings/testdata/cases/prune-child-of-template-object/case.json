@@ -1,0 +1,15 @@
+{
+  "ports": [
+    "PruneEndToEndTest.test_child_of_a_template_object_is_pruned_without_a_conflict"
+  ],
+  "steps": [
+    "sync",
+    "check"
+  ],
+  "prune": [
+    [
+      "statusLine",
+      "old"
+    ]
+  ]
+}

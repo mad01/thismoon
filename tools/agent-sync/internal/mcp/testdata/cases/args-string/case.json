@@ -1,0 +1,7 @@
+{
+  "covers": "args given as a string. The script split it into characters; agent-sync rejects it.",
+  "steps": [
+    "plan"
+  ],
+  "deviation": "agent-sync checks entry types up front: a string args is an error, where the script registered each character as an argument."
+}

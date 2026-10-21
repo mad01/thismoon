@@ -1,0 +1,9 @@
+{
+  "ports": [],
+  "steps": [
+    "check"
+  ],
+  "env": {
+    "CLAUDE_CONFIG_DIR": "~/alt-config"
+  }
+}

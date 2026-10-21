@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "charlie": {
+      "command": "/opt/charlie/v3/bin/charlie",
+      "profiles": [
+        "work"
+      ]
+    },
+    "_note": "overlay note"
+  }
+}

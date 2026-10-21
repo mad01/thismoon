@@ -1,0 +1,11 @@
+{
+  "ports": [
+    "DropInTest.test_dangling_dropin_symlink_is_skipped_with_a_note"
+  ],
+  "steps": [
+    "check"
+  ],
+  "symlinks": {
+    "mods.d/gone.json": "{HOME}/nowhere/gone.json"
+  }
+}

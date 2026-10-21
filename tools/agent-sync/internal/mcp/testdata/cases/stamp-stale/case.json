@@ -1,0 +1,6 @@
+{
+  "covers": "A stamp that does not match the desired set: sync compares every spec and rewrites the stamp.",
+  "steps": [
+    "sync"
+  ]
+}

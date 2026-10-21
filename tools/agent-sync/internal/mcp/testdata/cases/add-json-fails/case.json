@@ -1,0 +1,6 @@
+{
+  "covers": "add-json failing exits 2.",
+  "steps": [
+    "sync"
+  ]
+}

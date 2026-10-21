@@ -1,0 +1,7 @@
+{
+  "ports": [],
+  "steps": [
+    "check",
+    "plan"
+  ]
+}

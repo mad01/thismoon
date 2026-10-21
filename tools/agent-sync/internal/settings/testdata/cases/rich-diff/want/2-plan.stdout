@@ -1,0 +1,85 @@
+merged local overlay: {HOME}/.claude/settings.local.json
+overwritten (template wins):
+  dotted.key.inner.key
+    - false
+    + true
+  env.EDITOR
+    - "nano"
+    + "vim"
+  flags (array)
+    (order changed)
+  hooks.Stop (array)
+    - {"matcher": "", "hooks": [{"type": "command", "command": "old"}]}
+    + {"matcher": "", "hooks": [{"type": "command", "command": "belt hook stop"}]}
+  model
+    - "sonnet"
+    + "opus"
+  nested.a.b.c (array)
+    - {"d": 0}
+    + {"d": null}
+  permissions.additionalDirectories (array)
+    + "~/Workspaces"
+  permissions.allow (array)
+    - "Bash(session-added)"
+    + "Edit"
+    + "Bash(git status)"
+    + "mcp__x__*"
+  permissions.deny (array)
+    + "Bash(sudo:*)"
+  statusLine
+    - "plain"
+    + {
+  "type": "command",
+  "command": "~/.claude/statusline.sh"
+}
+  text
+    - "old"
+    + "caf\u00e9 \ud83d\ude00 \"quoted\" back\\slash tab\t <b>&amp;</b> /path"
+  typeSwap
+    - "scalar"
+    + {
+  "was": "object"
+}
+added from template:
+  + emptyList: []
+  + emptyObj: {}
+  + enabledPlugins: {
+  "one@x": true
+}
+  + env.HOST_ONLY: "yes"
+  + env.LANG: "en_US.UTF-8"
+  + hooks.PreToolUse: [
+  {
+    "matcher": "Write"
+  }
+]
+  + permissions.ask: [
+  "WebFetch"
+]
+  + über: {
+  "stra\u00dfe": "\u00e9"
+}
+pruned (retired keys):
+  - hooks.Notification: [
+  "local hook"
+]
+  - retired: {
+  "gone": [
+    1
+  ]
+}
+local-only keys preserved (not in template — add to template to persist):
+  ~ zzLocal: {
+  "keep": [
+    1,
+    2
+  ]
+}
+  ~ env.LOCAL_ONLY: "1"
+  ~ permissions.defaultMode: "acceptEdits"
+  ~ nested.a.x: 1
+  ~ dotted.key.local.key: 1
+  ~ localScalar: null
+  ~ emoji😀: "\ud83d\ude00"
+
+(dry-run — no changes written)

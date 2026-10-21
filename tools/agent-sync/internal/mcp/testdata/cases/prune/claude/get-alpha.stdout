@@ -1,0 +1,7 @@
+alpha:
+  Scope: User config (available in all your projects)
+  Status: Connected
+  Type: stdio
+  Command: /opt/alpha/bin/alpha
+
+To remove this server, run: claude mcp remove alpha -s user

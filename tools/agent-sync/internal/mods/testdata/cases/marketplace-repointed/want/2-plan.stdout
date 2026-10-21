@@ -1,0 +1,3 @@
++ marketplace thismoon -> {HOME}/sources/thismoon
+  $ {HOME}/bin/claude plugin marketplace add {HOME}/sources/thismoon --scope user
+(dry-run, no changes applied)

@@ -1,0 +1,5 @@
++ marketplace lab -> {HOME}/sources/lab
+  $ {HOME}/bin/claude plugin marketplace add {HOME}/sources/lab --scope user
++ install lab-pane@lab
+  $ {HOME}/bin/claude plugin install lab-pane@lab --scope user
+(dry-run, no changes applied)

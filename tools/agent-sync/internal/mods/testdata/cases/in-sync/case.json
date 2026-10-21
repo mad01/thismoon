@@ -1,0 +1,14 @@
+{
+  "ports": [
+    "PlanTest.test_in_sync_state_plans_nothing",
+    "PlanTest.test_disabled_mod_is_never_installed_just_to_be_disabled",
+    "UpdatePlanTest.test_equal_versions_plan_nothing",
+    "CheckModeTest.test_applied_state_is_clean",
+    "ApplyTest.test_in_sync_apply_never_calls_claude"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

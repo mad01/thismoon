@@ -1,0 +1,9 @@
+bravo:
+  Scope: User config (available in all your projects)
+  Status: Connected
+  Type: stdio
+  Command: /opt/bravo/bin/bravo
+  Args: serve --port 7001
+  Environment: BRAVO_PORT=7001, BRAVO_URL=http://localhost:7001
+
+To remove this server, run: claude mcp remove bravo -s user

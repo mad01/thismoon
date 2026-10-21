@@ -1,0 +1,1 @@
+error: {HOME}/mods.json: mod 'panel-policy' sets 'installed' false and 'enabled' true; drop 'enabled' or set it false

@@ -1,0 +1,6 @@
+warn: session-band@thismoon is not in the marketplace listing yet; skipped
++ marketplace thismoon -> {HOME}/sources/thismoon
+  $ {HOME}/bin/claude plugin marketplace add {HOME}/sources/thismoon --scope user
++ install panel-policy@thismoon
+  $ {HOME}/bin/claude plugin install panel-policy@thismoon --scope user
+(dry-run, no changes applied)

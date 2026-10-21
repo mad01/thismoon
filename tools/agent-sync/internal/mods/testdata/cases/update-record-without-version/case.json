@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "UpdatePlanTest.test_install_record_without_a_version_plans_no_update"
+  ],
+  "steps": [
+    "check"
+  ]
+}

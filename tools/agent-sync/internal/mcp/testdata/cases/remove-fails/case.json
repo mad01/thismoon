@@ -1,0 +1,7 @@
+{
+  "covers": "The remove half of an update failing exits 2 before the add.",
+  "steps": [
+    "plan",
+    "sync"
+  ]
+}

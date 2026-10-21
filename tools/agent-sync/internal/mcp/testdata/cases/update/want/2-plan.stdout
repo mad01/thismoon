@@ -1,0 +1,25 @@
+~ alpha
+  $ {CLAUDE} mcp remove --scope user alpha
+  $ {CLAUDE} mcp add --scope user alpha -- {HOME}/code/bin/alpha mcp
+~ bravo
+  $ {CLAUDE} mcp remove --scope user bravo
+  $ {CLAUDE} mcp add --scope user bravo -- /opt/bravo/bin/bravo serve --port 7002
+~ charlie
+  $ {CLAUDE} mcp remove --scope user charlie
+  $ {CLAUDE} mcp add --scope user charlie -e CHARLIE_PORT=7003 -- /opt/charlie/bin/charlie mcp
+~ delta
+  $ {CLAUDE} mcp remove --scope user delta
+  $ {CLAUDE} mcp add --scope user --transport http delta https://mcp.example.com/delta
+~ echo
+  $ {CLAUDE} mcp remove --scope user echo
+  $ {CLAUDE} mcp add --scope user --transport http echo https://mcp.example.com/echo/v2
+~ foxtrot
+  $ {CLAUDE} mcp remove --scope user foxtrot
+  $ {CLAUDE} mcp add --scope user foxtrot -- /opt/foxtrot/bin/foxtrot
+~ golf
+  $ {CLAUDE} mcp remove --scope user golf
+  $ {CLAUDE} mcp add --scope user golf -- /opt/golf/bin/golf
+~ hotel
+  $ {CLAUDE} mcp remove --scope user hotel
+  $ {CLAUDE} mcp add --scope user hotel -- /opt/hotel/bin/hotel --name two words
+(dry-run — no changes applied)

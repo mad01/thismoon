@@ -1,0 +1,13 @@
+{
+  "ports": [],
+  "steps": [
+    "check",
+    "plan",
+    "sync",
+    "check",
+    "sync",
+    "check"
+  ],
+  "prune": [],
+  "deviation": "sync_settings.py writes the template alone when no live file exists, so the overlay is missing until a second sync and check reports drift straight after a clean sync. agent-sync merges the overlay on that first write and prints the merged-overlay line, in plan too, so the next check is in sync."
+}

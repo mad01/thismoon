@@ -1,0 +1,8 @@
+{
+  "covers": "Each way a registered spec can differ (command, args, env, transport, url, get failing, get printing neither command nor url) and two that match. The multi-line Environment block the current claude CLI prints and an argument holding a space never match, as in the script.",
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

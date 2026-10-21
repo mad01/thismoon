@@ -1,0 +1,10 @@
+merged local overlay: {HOME}/.claude/settings.local.json
+overwritten (template wins):
+  permissions.deny (array)
+    + "Bash(template-0:*)"
+    + "Bash(template-1:*)"
+    + "Bash(template-2:*)"
+    + "Bash(template-3:*)"
+    + "Bash(template-4:*)"
+
+(dry-run — no changes written)

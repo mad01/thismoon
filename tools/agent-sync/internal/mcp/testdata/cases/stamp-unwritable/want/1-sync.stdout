@@ -1,0 +1,2 @@
++ alpha
+  $ {CLAUDE} mcp add --scope user alpha -- /opt/alpha/bin/alpha

@@ -1,0 +1,1 @@
+error: {HOME}/mods.d/lab.json: marketplace 'lab' does not match the name 'lab-mods' in {HOME}/sources/lab/.claude-plugin/marketplace.json; Claude Code registers under the manifest's name

@@ -1,0 +1,11 @@
+{
+  "ports": [
+    "ApplyTest.test_failed_cli_call_exits_2_and_stops"
+  ],
+  "steps": [
+    "sync"
+  ],
+  "env": {
+    "FAKE_CLAUDE_EXIT": "1"
+  }
+}

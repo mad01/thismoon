@@ -1,0 +1,16 @@
+note: {HOME}/.claude/settings.json is a symlink → ../live-target.json
+breaking symlink — file will be a regular file after merge
+overwritten (template wins):
+  model
+    - "sonnet"
+    + "opus"
+added from template:
+  + hooks: {
+  "Stop": [
+    "t"
+  ]
+}
+local-only keys preserved (not in template — add to template to persist):
+  ~ localOnly: true
+
+(dry-run — no changes written)

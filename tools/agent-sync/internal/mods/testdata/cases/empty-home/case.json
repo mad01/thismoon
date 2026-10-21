@@ -1,0 +1,14 @@
+{
+  "ports": [
+    "PlanTest.test_empty_home_registers_marketplace_and_installs_enabled_mods",
+    "CheckModeTest.test_empty_home_reports_drift",
+    "CheckModeTest.test_check_never_writes_or_calls_claude",
+    "CheckModeTest.test_dry_run_prints_commands_and_exits_zero",
+    "ApplyTest.test_apply_runs_the_planned_cli_calls_in_order"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

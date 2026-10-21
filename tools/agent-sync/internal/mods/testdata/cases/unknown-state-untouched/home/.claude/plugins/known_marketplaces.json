@@ -1,0 +1,1 @@
+{"thismoon": {"source": {"source": "directory", "path": "{HOME}/sources/thismoon"}, "installLocation": "{HOME}/sources/thismoon"}, "other": {"source": {"source": "directory", "path": "{HOME}/sources/other"}, "installLocation": "{HOME}/sources/other"}}

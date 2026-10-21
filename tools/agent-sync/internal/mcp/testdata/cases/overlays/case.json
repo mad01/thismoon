@@ -1,0 +1,8 @@
+{
+  "covers": "Overlays merge over the base in name order, a hidden *.json included and other files ignored; a redefinition warns, an underscore key too, and an overlay can gate a base server out.",
+  "steps": [
+    "plan",
+    "sync"
+  ],
+  "deviation": "stderr: agent-sync prefixes warnings with 'warning: ' (apply.Warn), the script with 'warn: '."
+}

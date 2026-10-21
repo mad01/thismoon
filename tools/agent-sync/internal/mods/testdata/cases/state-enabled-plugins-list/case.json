@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "StateShapeTest.test_enabled_plugins_as_a_list_is_fatal"
+  ],
+  "steps": [
+    "check"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "_comment": "Synthetic fixture.",
+  "servers": {
+    "_note": "Names starting with an underscore are skipped.",
+    "alpha": {
+      "transport": "stdio",
+      "command": "~/code/bin/alpha",
+      "args": [
+        "mcp",
+        "--root",
+        "~/data/./alpha//"
+      ]
+    },
+    "bravo": {
+      "_comment": "env flags follow the name",
+      "command": "/opt/bravo/bin/bravo",
+      "env": {
+        "BRAVO_PORT": "7001",
+        "BRAVO_RETRIES": 3,
+        "BRAVO_VERBOSE": true,
+        "BRAVO_RATIO": 0.5,
+        "BRAVO_UNSET": null
+      }
+    },
+    "charlie": {
+      "transport": "http",
+      "url": "https://mcp.example.com/charlie"
+    },
+    "delta": {
+      "transport": "sse",
+      "url": "https://mcp.example.com/delta/sse",
+      "headers": {
+        "X-Team": "blue",
+        "X-Retry": 2
+      }
+    },
+    "echo": {
+      "transport": "http",
+      "url": "https://mcp.example.com/echo",
+      "headersHelper": "~/bin/echo-headers.sh",
+      "headers": {
+        "X-Static": "1"
+      }
+    },
+    "foxtrot": {
+      "transport": "http",
+      "url": "https://mcp.example.com/foxtrot",
+      "headersHelper": "/opt/foxtrot/headers.sh"
+    },
+    "kilo": {
+      "_comment": "profile-gated; this case has no ralph config",
+      "profiles": [
+        "work"
+      ],
+      "command": "/opt/kilo/bin/kilo"
+    }
+  }
+}

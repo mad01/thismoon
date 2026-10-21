@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(template-0:*)",
+      "Bash(template-1:*)",
+      "Bash(template-2:*)",
+      "Bash(template-3:*)",
+      "Bash(template-4:*)",
+      "mcp__a__*",
+      "mcp__b__*",
+      "mcp__c__*"
+    ]
+  }
+}

@@ -1,0 +1,13 @@
++ marketplace thismoon -> {HOME}/sources/thismoon
+  $ {HOME}/bin/claude plugin marketplace add {HOME}/sources/thismoon --scope user
++ install to-install@thismoon
+  $ {HOME}/bin/claude plugin install to-install@thismoon --scope user
+~ enable to-enable@thismoon
+  $ {HOME}/bin/claude plugin enable to-enable@thismoon --scope user
+~ update to-update@thismoon (0.1.0 -> 0.2.0)
+  $ {HOME}/bin/claude plugin update to-update@thismoon --scope user
+- disable to-disable@thismoon
+  $ {HOME}/bin/claude plugin disable to-disable@thismoon --scope user
+- uninstall to-retire@thismoon
+  $ {HOME}/bin/claude plugin uninstall to-retire@thismoon --scope user
+applied 6 changes; new sessions or /reload-plugins pick them up; updated mods load after a restart

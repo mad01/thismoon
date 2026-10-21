@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "romeo": {
+      "transport": "http",
+      "headersHelper": "~/bin/h.sh"
+    }
+  }
+}

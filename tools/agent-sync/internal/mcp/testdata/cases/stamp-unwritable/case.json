@@ -1,0 +1,10 @@
+{
+  "covers": "~/.cache is a file, so the stamp cannot be written: a warning, exit 0.",
+  "steps": [
+    "sync"
+  ],
+  "files": {
+    ".cache": "not a directory\n"
+  },
+  "deviation": "stderr: agent-sync prefixes warnings with 'warning: ' (apply.Warn), the script with 'warn: '."
+}

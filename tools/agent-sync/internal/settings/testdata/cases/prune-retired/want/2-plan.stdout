@@ -1,0 +1,8 @@
+pruned (retired keys):
+  - hooks.Retired: [
+  "old"
+]
+local-only keys preserved (not in template — add to template to persist):
+  ~ localOnly: 1
+
+(dry-run — no changes written)

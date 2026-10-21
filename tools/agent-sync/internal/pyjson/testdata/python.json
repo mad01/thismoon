@@ -1,0 +1,336 @@
+{
+  "valid": [
+    {
+      "in": "{}",
+      "compact": "{}",
+      "indent": "{}",
+      "indent0": "{}",
+      "sorted": "{}"
+    },
+    {
+      "in": "[]",
+      "compact": "[]",
+      "indent": "[]",
+      "indent0": "[]",
+      "sorted": "[]"
+    },
+    {
+      "in": "{\"a\": 1, \"b\": [1, 2, {\"c\": null}], \"d\": {}}",
+      "compact": "{\"a\": 1, \"b\": [1, 2, {\"c\": null}], \"d\": {}}",
+      "indent": "{\n  \"a\": 1,\n  \"b\": [\n    1,\n    2,\n    {\n      \"c\": null\n    }\n  ],\n  \"d\": {}\n}",
+      "indent0": "{\n\"a\": 1,\n\"b\": [\n1,\n2,\n{\n\"c\": null\n}\n],\n\"d\": {}\n}",
+      "sorted": "{\"a\": 1, \"b\": [1, 2, {\"c\": null}], \"d\": {}}"
+    },
+    {
+      "in": "{\"b\": 1, \"a\": 2, \"b\": 3}",
+      "compact": "{\"b\": 3, \"a\": 2}",
+      "indent": "{\n  \"b\": 3,\n  \"a\": 2\n}",
+      "indent0": "{\n\"b\": 3,\n\"a\": 2\n}",
+      "sorted": "{\"a\": 2, \"b\": 3}"
+    },
+    {
+      "in": "[1.0, 1e16, 1e15, 0.0001, 0.00001, -0.0, 1.5e-7, 123456789.123, 1E400, -1e400, 5e-324, 1.7976931348623157e308, 0.1, 2e16, 100.5e-2, 1e-400, 3.14159, 1e100, 12e-1]",
+      "compact": "[1.0, 1e+16, 1000000000000000.0, 0.0001, 1e-05, -0.0, 1.5e-07, 123456789.123, Infinity, -Infinity, 5e-324, 1.7976931348623157e+308, 0.1, 2e+16, 1.005, 0.0, 3.14159, 1e+100, 1.2]",
+      "indent": "[\n  1.0,\n  1e+16,\n  1000000000000000.0,\n  0.0001,\n  1e-05,\n  -0.0,\n  1.5e-07,\n  123456789.123,\n  Infinity,\n  -Infinity,\n  5e-324,\n  1.7976931348623157e+308,\n  0.1,\n  2e+16,\n  1.005,\n  0.0,\n  3.14159,\n  1e+100,\n  1.2\n]",
+      "indent0": "[\n1.0,\n1e+16,\n1000000000000000.0,\n0.0001,\n1e-05,\n-0.0,\n1.5e-07,\n123456789.123,\nInfinity,\n-Infinity,\n5e-324,\n1.7976931348623157e+308,\n0.1,\n2e+16,\n1.005,\n0.0,\n3.14159,\n1e+100,\n1.2\n]",
+      "sorted": "[1.0, 1e+16, 1000000000000000.0, 0.0001, 1e-05, -0.0, 1.5e-07, 123456789.123, Infinity, -Infinity, 5e-324, 1.7976931348623157e+308, 0.1, 2e+16, 1.005, 0.0, 3.14159, 1e+100, 1.2]"
+    },
+    {
+      "in": "[NaN, Infinity, -Infinity]",
+      "compact": "[NaN, Infinity, -Infinity]",
+      "indent": "[\n  NaN,\n  Infinity,\n  -Infinity\n]",
+      "indent0": "[\nNaN,\nInfinity,\n-Infinity\n]",
+      "sorted": "[NaN, Infinity, -Infinity]"
+    },
+    {
+      "in": "[-0, 123456789012345678901234567890, -5, 0]",
+      "compact": "[0, 123456789012345678901234567890, -5, 0]",
+      "indent": "[\n  0,\n  123456789012345678901234567890,\n  -5,\n  0\n]",
+      "indent0": "[\n0,\n123456789012345678901234567890,\n-5,\n0\n]",
+      "sorted": "[0, 123456789012345678901234567890, -5, 0]"
+    },
+    {
+      "in": "[\"caf\u00e9\", \"\\u00e9\", \"\\ud83d\\ude00\", \"\ud83d\ude00\", \"\\ud800\", \"\\udc00x\", \"\\ud800\\ud800\", \"a/b<>&\", \"\\u007f\\u0001\\b\\f\\n\\r\\t\\\"\\\\\", \"\\/\"]",
+      "compact": "[\"caf\\u00e9\", \"\\u00e9\", \"\\ud83d\\ude00\", \"\\ud83d\\ude00\", \"\\ud800\", \"\\udc00x\", \"\\ud800\\ud800\", \"a/b<>&\", \"\\u007f\\u0001\\b\\f\\n\\r\\t\\\"\\\\\", \"/\"]",
+      "indent": "[\n  \"caf\\u00e9\",\n  \"\\u00e9\",\n  \"\\ud83d\\ude00\",\n  \"\\ud83d\\ude00\",\n  \"\\ud800\",\n  \"\\udc00x\",\n  \"\\ud800\\ud800\",\n  \"a/b<>&\",\n  \"\\u007f\\u0001\\b\\f\\n\\r\\t\\\"\\\\\",\n  \"/\"\n]",
+      "indent0": "[\n\"caf\\u00e9\",\n\"\\u00e9\",\n\"\\ud83d\\ude00\",\n\"\\ud83d\\ude00\",\n\"\\ud800\",\n\"\\udc00x\",\n\"\\ud800\\ud800\",\n\"a/b<>&\",\n\"\\u007f\\u0001\\b\\f\\n\\r\\t\\\"\\\\\",\n\"/\"\n]",
+      "sorted": "[\"caf\\u00e9\", \"\\u00e9\", \"\\ud83d\\ude00\", \"\\ud83d\\ude00\", \"\\ud800\", \"\\udc00x\", \"\\ud800\\ud800\", \"a/b<>&\", \"\\u007f\\u0001\\b\\f\\n\\r\\t\\\"\\\\\", \"/\"]"
+    },
+    {
+      "in": " \t\n {\"nested\": {\"deep\": [[], [{}], {\"x\": [true, false]}]}} \n",
+      "compact": "{\"nested\": {\"deep\": [[], [{}], {\"x\": [true, false]}]}}",
+      "indent": "{\n  \"nested\": {\n    \"deep\": [\n      [],\n      [\n        {}\n      ],\n      {\n        \"x\": [\n          true,\n          false\n        ]\n      }\n    ]\n  }\n}",
+      "indent0": "{\n\"nested\": {\n\"deep\": [\n[],\n[\n{}\n],\n{\n\"x\": [\ntrue,\nfalse\n]\n}\n]\n}\n}",
+      "sorted": "{\"nested\": {\"deep\": [[], [{}], {\"x\": [true, false]}]}}"
+    },
+    {
+      "in": "{\"\u00e9\": 1, \"\\ud800\": 2, \"\": 3}",
+      "compact": "{\"\\u00e9\": 1, \"\\ud800\": 2, \"\": 3}",
+      "indent": "{\n  \"\\u00e9\": 1,\n  \"\\ud800\": 2,\n  \"\": 3\n}",
+      "indent0": "{\n\"\\u00e9\": 1,\n\"\\ud800\": 2,\n\"\": 3\n}",
+      "sorted": "{\"\": 3, \"\\u00e9\": 1, \"\\ud800\": 2}"
+    },
+    {
+      "in": "{\"z\": {\"b\": 1, \"a\": [{\"d\": 1, \"c\": 2}]}, \"y\": null}",
+      "compact": "{\"z\": {\"b\": 1, \"a\": [{\"d\": 1, \"c\": 2}]}, \"y\": null}",
+      "indent": "{\n  \"z\": {\n    \"b\": 1,\n    \"a\": [\n      {\n        \"d\": 1,\n        \"c\": 2\n      }\n    ]\n  },\n  \"y\": null\n}",
+      "indent0": "{\n\"z\": {\n\"b\": 1,\n\"a\": [\n{\n\"d\": 1,\n\"c\": 2\n}\n]\n},\n\"y\": null\n}",
+      "sorted": "{\"y\": null, \"z\": {\"a\": [{\"c\": 2, \"d\": 1}], \"b\": 1}}"
+    }
+  ],
+  "invalid": [
+    {
+      "in": "",
+      "err": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "in": " ",
+      "err": "Expecting value: line 1 column 2 (char 1)"
+    },
+    {
+      "in": "{",
+      "err": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+    },
+    {
+      "in": "{\"a\"",
+      "err": "Expecting ':' delimiter: line 1 column 5 (char 4)"
+    },
+    {
+      "in": "{\"a\":",
+      "err": "Expecting value: line 1 column 6 (char 5)"
+    },
+    {
+      "in": "{\"a\": 1",
+      "err": "Expecting ',' delimiter: line 1 column 8 (char 7)"
+    },
+    {
+      "in": "{\"a\": 1,}",
+      "err": "Illegal trailing comma before end of object: line 1 column 8 (char 7)"
+    },
+    {
+      "in": "[1,]",
+      "err": "Illegal trailing comma before end of array: line 1 column 3 (char 2)"
+    },
+    {
+      "in": "[1 2]",
+      "err": "Expecting ',' delimiter: line 1 column 4 (char 3)"
+    },
+    {
+      "in": "{\"a\" 1}",
+      "err": "Expecting ':' delimiter: line 1 column 6 (char 5)"
+    },
+    {
+      "in": "{1: 2}",
+      "err": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+    },
+    {
+      "in": "\"abc",
+      "err": "Unterminated string starting at: line 1 column 1 (char 0)"
+    },
+    {
+      "in": "\"a\u0001b\"",
+      "err": "Invalid control character at: line 1 column 3 (char 2)"
+    },
+    {
+      "in": "\"\\x\"",
+      "err": "Invalid \\escape: line 1 column 2 (char 1)"
+    },
+    {
+      "in": "\"\\u12\"",
+      "err": "Invalid \\uXXXX escape: line 1 column 3 (char 2)"
+    },
+    {
+      "in": "\"\\u12zz\"",
+      "err": "Invalid \\uXXXX escape: line 1 column 3 (char 2)"
+    },
+    {
+      "in": "\"\\ud800\\u12zz\"",
+      "err": "Invalid \\uXXXX escape: line 1 column 9 (char 8)"
+    },
+    {
+      "in": "01",
+      "err": "Extra data: line 1 column 2 (char 1)"
+    },
+    {
+      "in": "1.",
+      "err": "Extra data: line 1 column 2 (char 1)"
+    },
+    {
+      "in": "1e",
+      "err": "Extra data: line 1 column 2 (char 1)"
+    },
+    {
+      "in": "1e+",
+      "err": "Extra data: line 1 column 2 (char 1)"
+    },
+    {
+      "in": "-",
+      "err": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "in": "-x",
+      "err": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "in": "nul",
+      "err": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "in": "tru",
+      "err": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "in": "fals",
+      "err": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "in": "Na",
+      "err": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "in": "{\"a\": 1} x",
+      "err": "Extra data: line 1 column 10 (char 9)"
+    },
+    {
+      "in": "\ufeff{}",
+      "err": "Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)"
+    },
+    {
+      "in": "[1,\n 2,\n ]",
+      "err": "Illegal trailing comma before end of array: line 2 column 3 (char 6)"
+    },
+    {
+      "in": "{\"a\":\n\n  }",
+      "err": "Expecting value: line 3 column 3 (char 9)"
+    },
+    {
+      "in": "{,}",
+      "err": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+    },
+    {
+      "in": "[,]",
+      "err": "Expecting value: line 1 column 2 (char 1)"
+    },
+    {
+      "in": "Infinit",
+      "err": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "in": "-Infinit",
+      "err": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "in": "\"\u00e9\u00e9\" x",
+      "err": "Extra data: line 1 column 6 (char 5)"
+    },
+    {
+      "in": "\"abc\\",
+      "err": "Unterminated string starting at: line 1 column 1 (char 0)"
+    },
+    {
+      "in": "[1, 2",
+      "err": "Expecting ',' delimiter: line 1 column 6 (char 5)"
+    },
+    {
+      "in": "{\"a\": [}",
+      "err": "Expecting value: line 1 column 8 (char 7)"
+    }
+  ],
+  "equal": [
+    {
+      "a": "1",
+      "b": "1.0",
+      "equal": true
+    },
+    {
+      "a": "true",
+      "b": "1",
+      "equal": true
+    },
+    {
+      "a": "false",
+      "b": "0",
+      "equal": true
+    },
+    {
+      "a": "true",
+      "b": "1.0",
+      "equal": true
+    },
+    {
+      "a": "1",
+      "b": "1.5",
+      "equal": false
+    },
+    {
+      "a": "9007199254740993",
+      "b": "9007199254740992.0",
+      "equal": false
+    },
+    {
+      "a": "[1, 2]",
+      "b": "[1.0, 2]",
+      "equal": true
+    },
+    {
+      "a": "{\"a\": 1, \"b\": 2}",
+      "b": "{\"b\": 2, \"a\": 1}",
+      "equal": true
+    },
+    {
+      "a": "{\"a\": 1}",
+      "b": "{\"a\": 1, \"b\": 2}",
+      "equal": false
+    },
+    {
+      "a": "[1, 2]",
+      "b": "[2, 1]",
+      "equal": false
+    },
+    {
+      "a": "null",
+      "b": "false",
+      "equal": false
+    },
+    {
+      "a": "\"1\"",
+      "b": "1",
+      "equal": false
+    },
+    {
+      "a": "[]",
+      "b": "{}",
+      "equal": false
+    },
+    {
+      "a": "{\"a\": [true]}",
+      "b": "{\"a\": [1]}",
+      "equal": true
+    },
+    {
+      "a": "1e400",
+      "b": "1e400",
+      "equal": true
+    },
+    {
+      "a": "-0.0",
+      "b": "0",
+      "equal": true
+    },
+    {
+      "a": "\"\\u00e9\"",
+      "b": "\"\u00e9\"",
+      "equal": true
+    },
+    {
+      "a": "[null]",
+      "b": "[null]",
+      "equal": true
+    },
+    {
+      "a": "{}",
+      "b": "{}",
+      "equal": true
+    }
+  ]
+}

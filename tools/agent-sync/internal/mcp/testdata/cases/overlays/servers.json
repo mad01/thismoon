@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "_note": "base note",
+    "alpha": {
+      "command": "/opt/alpha/bin/alpha"
+    },
+    "bravo": {
+      "command": "/opt/bravo/bin/bravo"
+    }
+  }
+}

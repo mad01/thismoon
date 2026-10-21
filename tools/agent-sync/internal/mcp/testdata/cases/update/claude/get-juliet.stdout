@@ -1,0 +1,7 @@
+juliet:
+  Scope: User config (available in all your projects)
+  Status: Connected
+  Type: stdio
+  Command: /opt/juliet/bin/juliet
+
+To remove this server, run: claude mcp remove juliet -s user

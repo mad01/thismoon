@@ -1,0 +1,11 @@
+{
+  "ports": [
+    "PlanTest.test_unlisted_enabled_mod_is_skipped_with_a_note",
+    "CheckModeTest.test_notes_follow_the_summary_on_stdout"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

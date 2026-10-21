@@ -1,0 +1,3 @@
+note: {HOME}/.claude/settings.json is a symlink → ../live-target.json
+breaking symlink — file will be a regular file after merge
+(dry-run) would write new {HOME}/.claude/settings.json from template

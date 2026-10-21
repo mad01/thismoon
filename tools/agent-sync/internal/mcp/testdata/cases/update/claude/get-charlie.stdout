@@ -1,0 +1,10 @@
+charlie:
+  Scope: User config (available in all your projects)
+  Status: Connected
+  Type: stdio
+  Command: /opt/charlie/bin/charlie
+  Args: mcp
+  Environment:
+    CHARLIE_PORT=7003
+
+To remove this server, run: claude mcp remove charlie -s user

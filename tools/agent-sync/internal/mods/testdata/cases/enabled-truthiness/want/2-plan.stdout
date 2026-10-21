@@ -1,0 +1,9 @@
++ install default-on@thismoon
+  $ {HOME}/bin/claude plugin install default-on@thismoon --scope user
++ install string-yes@thismoon
+  $ {HOME}/bin/claude plugin install string-yes@thismoon --scope user
+- disable zero@thismoon
+  $ {HOME}/bin/claude plugin disable zero@thismoon --scope user
+- uninstall retired-zero@thismoon
+  $ {HOME}/bin/claude plugin uninstall retired-zero@thismoon --scope user
+(dry-run, no changes applied)

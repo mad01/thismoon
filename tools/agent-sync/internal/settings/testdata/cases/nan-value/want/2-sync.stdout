@@ -1,0 +1,6 @@
+overwritten (template wins):
+  threshold
+    - NaN
+    + NaN
+
+wrote {HOME}/.claude/settings.json

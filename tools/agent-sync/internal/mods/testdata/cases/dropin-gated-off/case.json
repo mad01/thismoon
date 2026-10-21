@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "DropInTest.test_dropin_profile_gate_off_registers_marketplace_but_leaves_mod_alone"
+  ],
+  "steps": [
+    "check",
+    "state:registered",
+    "check"
+  ]
+}

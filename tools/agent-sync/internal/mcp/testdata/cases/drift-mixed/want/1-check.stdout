@@ -1,0 +1,5 @@
+drift: 1 MCP server to add, 2 to update, 1 to remove (run 'ralph up' to sync)
++ alpha
+~ bravo
+~ charlie
+- zulu

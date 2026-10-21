@@ -1,0 +1,7 @@
++ alpha
+  $ {CLAUDE} mcp add --scope user alpha -- /opt/alpha/bin/alpha
++ bravo
+  $ {CLAUDE} mcp add --scope user bravo -- /opt/bravo/v2/bin/bravo
++ delta
+  $ {CLAUDE} mcp add --scope user delta -- /opt/delta/bin/delta
+(dry-run — no changes applied)

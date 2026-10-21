@@ -1,0 +1,4 @@
+claude [mcp] [list]
+claude [mcp] [add] [--scope] [user] [alpha] [--] [/opt/alpha/bin/alpha]
+claude [mcp] [add] [--scope] [user] [bravo] [--] [/opt/bravo/v2/bin/bravo]
+claude [mcp] [add] [--scope] [user] [delta] [--] [/opt/delta/bin/delta]

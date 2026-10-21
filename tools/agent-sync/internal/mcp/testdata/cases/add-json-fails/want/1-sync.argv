@@ -1,0 +1,2 @@
+claude [mcp] [list]
+claude [mcp] [add-json] [--scope] [user] [echo] [{"type": "http", "url": "https://mcp.example.com/echo", "headersHelper": "/opt/echo/headers.sh"}]

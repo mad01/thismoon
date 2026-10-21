@@ -1,0 +1,18 @@
+{
+  "ports": [],
+  "steps": [
+    "check",
+    "plan",
+    "sync",
+    "check"
+  ],
+  "prune": [
+    [
+      "retired"
+    ],
+    [
+      "hooks",
+      "Notification"
+    ]
+  ]
+}

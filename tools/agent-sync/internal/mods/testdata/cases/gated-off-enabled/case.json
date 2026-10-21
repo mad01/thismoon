@@ -1,0 +1,9 @@
+{
+  "ports": [
+    "PlanTest.test_gated_off_mod_is_left_alone_even_when_enabled"
+  ],
+  "steps": [
+    "check",
+    "sync"
+  ]
+}

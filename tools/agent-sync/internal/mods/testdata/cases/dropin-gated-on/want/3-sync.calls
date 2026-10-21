@@ -1,0 +1,2 @@
+plugin marketplace add {HOME}/sources/lab --scope user
+plugin install lab-pane@lab --scope user

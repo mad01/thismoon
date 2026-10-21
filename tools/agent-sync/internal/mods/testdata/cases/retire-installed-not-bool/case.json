@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "RetireTest.test_non_boolean_installed_is_fatal"
+  ],
+  "steps": [
+    "check"
+  ]
+}

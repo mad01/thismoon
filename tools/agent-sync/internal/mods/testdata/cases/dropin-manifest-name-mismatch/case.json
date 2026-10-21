@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "DropInTest.test_manifest_name_mismatch_is_rejected"
+  ],
+  "steps": [
+    "check"
+  ]
+}

@@ -1,0 +1,2 @@
+plugin update session-band@thismoon --scope user
+plugin uninstall panel-policy@thismoon --scope user

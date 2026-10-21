@@ -1,0 +1,7 @@
+{
+  "covers": "A server entry that is not an object. The script crashed with a traceback.",
+  "steps": [
+    "plan"
+  ],
+  "deviation": "stderr: the script crashed (AttributeError); agent-sync names the file, the server and the type."
+}

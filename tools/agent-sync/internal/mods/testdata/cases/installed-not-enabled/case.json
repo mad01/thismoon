@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "PlanTest.test_installed_but_disabled_mod_is_enabled_not_reinstalled"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

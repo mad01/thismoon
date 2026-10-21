@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "RetireTest.test_conflict_is_fatal_even_when_gated_off"
+  ],
+  "steps": [
+    "check"
+  ]
+}

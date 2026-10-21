@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "StateShapeTest.test_malformed_settings_is_fatal"
+  ],
+  "steps": [
+    "check"
+  ]
+}

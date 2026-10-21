@@ -1,0 +1,10 @@
++ both-match
+  $ {CLAUDE} mcp add --scope user both-match -- /opt/e/bin/e
++ empty-gates
+  $ {CLAUDE} mcp add --scope user empty-gates -- /opt/g/bin/g
++ host-match
+  $ {CLAUDE} mcp add --scope user host-match -- /opt/a/bin/a
++ null-gates
+  $ {CLAUDE} mcp add --scope user null-gates -- /opt/h/bin/h
++ profile-match
+  $ {CLAUDE} mcp add --scope user profile-match -- /opt/c/bin/c

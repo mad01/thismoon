@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "CheckModeTest.test_profile_gated_mod_counts_as_gated_off"
+  ],
+  "steps": [
+    "check"
+  ]
+}

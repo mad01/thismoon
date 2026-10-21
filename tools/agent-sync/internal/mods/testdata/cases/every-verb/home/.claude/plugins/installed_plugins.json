@@ -1,0 +1,1 @@
+{"version": 2, "plugins": {"to-enable@thismoon": [{"scope": "user", "version": "0.1.0"}], "to-update@thismoon": [{"scope": "user", "version": "0.1.0"}], "to-disable@thismoon": [{"scope": "user", "version": "0.1.0"}], "to-retire@thismoon": [{"scope": "user", "version": "0.1.0"}]}}

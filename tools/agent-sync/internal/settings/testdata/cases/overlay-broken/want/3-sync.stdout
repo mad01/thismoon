@@ -1,0 +1,6 @@
+overwritten (template wins):
+  model
+    - "sonnet"
+    + "opus"
+
+wrote {HOME}/.claude/settings.json

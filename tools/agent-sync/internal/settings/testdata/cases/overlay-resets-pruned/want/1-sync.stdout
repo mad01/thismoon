@@ -1,0 +1,9 @@
+merged local overlay: {HOME}/.claude/settings.local.json
+overwritten (template wins):
+  hooks.Retired (array)
+    - "old"
+    + "host"
+local-only keys preserved (not in template — add to template to persist):
+  ~ localOnly: 1
+
+wrote {HOME}/.claude/settings.json

@@ -1,0 +1,6 @@
+overwritten (template wins):
+  a
+    - 2
+    + 1
+
+(dry-run — no changes written)

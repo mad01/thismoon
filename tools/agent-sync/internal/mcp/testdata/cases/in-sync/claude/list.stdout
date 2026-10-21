@@ -1,0 +1,5 @@
+Checking MCP server health...
+
+alpha: {HOME}/code/bin/alpha mcp - Connected
+bravo: /opt/bravo/bin/bravo serve --port 7001 - Connected
+charlie: https://mcp.example.com/charlie (HTTP) - Needs authentication

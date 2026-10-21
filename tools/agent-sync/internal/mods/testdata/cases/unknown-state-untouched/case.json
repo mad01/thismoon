@@ -1,0 +1,9 @@
+{
+  "ports": [
+    "PlanTest.test_unknown_plugins_in_state_are_never_touched"
+  ],
+  "steps": [
+    "check",
+    "sync"
+  ]
+}

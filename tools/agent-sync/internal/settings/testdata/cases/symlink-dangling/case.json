@@ -1,0 +1,12 @@
+{
+  "ports": [],
+  "steps": [
+    "check",
+    "plan",
+    "sync",
+    "check"
+  ],
+  "prune": [],
+  "live_link": "dangling",
+  "deviation": "sync_settings.py treats a dangling live symlink as a missing file and writes through it, creating the link's target (which may sit in another repo), and the next check reports a symlink. agent-sync reports it as a symlink, replaces it with a regular file at the link path, never creates the target, and the next check is in sync."
+}

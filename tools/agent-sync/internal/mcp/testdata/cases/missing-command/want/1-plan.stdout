@@ -1,0 +1,2 @@
+~ alpha
+  $ {CLAUDE} mcp remove --scope user alpha

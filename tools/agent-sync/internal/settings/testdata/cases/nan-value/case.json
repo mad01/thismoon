@@ -1,0 +1,10 @@
+{
+  "ports": [],
+  "steps": [
+    "check",
+    "sync",
+    "check"
+  ],
+  "prune": [],
+  "deviation": "sync_settings.py compares two values under an object key with !=, and NaN != NaN, so a NaN the template sets is drift on every run and every sync rewrites the same bytes. agent-sync counts NaN equal to NaN. Inside an array both agree: Python's list == takes an identity shortcut, and json.loads returns one shared NaN object."
+}

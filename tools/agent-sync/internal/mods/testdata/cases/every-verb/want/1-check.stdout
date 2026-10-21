@@ -1,0 +1,7 @@
+drift: 6 changes pending (run 'ralph up' to apply)
+  + marketplace thismoon -> {HOME}/sources/thismoon
+  + install to-install@thismoon
+  ~ enable to-enable@thismoon
+  ~ update to-update@thismoon (0.1.0 -> 0.2.0)
+  - disable to-disable@thismoon
+  - uninstall to-retire@thismoon

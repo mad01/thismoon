@@ -1,0 +1,5 @@
+Checking MCP server health...
+
+bravo: /opt/bravo/bin/bravo  - Connected
+charlie: /opt/charlie/bin/charlie  - Connected
+zulu: /opt/zulu/bin/zulu  - Connected
