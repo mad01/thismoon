@@ -19,6 +19,11 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# Read-only by default; release-please, image and artifacts widen it per job.
+# plan only checks out and reads releases.
+permissions:
+  contents: read
+
 jobs:
   release-please:
     name: release-please
