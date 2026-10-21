@@ -184,11 +184,11 @@ func (rw *Rewriter) transformLine(
 
 	case bytes.HasPrefix(line, []byte("mark ")):
 		if *kind == kindBlob {
-			m := string(bytes.TrimRight(line[len("mark "):], "\n"))
+			m := bytes.TrimRight(line[len("mark "):], "\n")
 			switch {
-			case rw.redactMarks[m]:
+			case rw.redactMarks[string(m)]:
 				*kind = kindRedact
-			case rw.protectedMarks[m]:
+			case rw.protectedMarks[string(m)]:
 				*kind = kindProtected
 			}
 		}

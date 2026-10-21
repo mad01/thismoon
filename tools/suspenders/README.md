@@ -706,7 +706,7 @@ To work on suspenders by hand (add or tune a detection rule, test it against a r
 
 ### Prerequisites
 
-- Go 1.26+
+- Go 1.27.3+
 - [golangci-lint](https://golangci-lint.run/usage/install/) (for linting)
 - Docker (for integration tests)
 

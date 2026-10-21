@@ -6,7 +6,7 @@ This is the hands-on companion to the [README](../README.md), which holds the re
 
 ## The hands-on loop
 
-Prerequisites: Go 1.26+, golangci-lint, and Docker (the last only for integration tests).
+Prerequisites: Go 1.27.3+, golangci-lint, and Docker (the last only for integration tests).
 
 ```sh
 make build              # compile to ./suspenders

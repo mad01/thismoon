@@ -12,7 +12,7 @@ minutes.
   `git` for pull and fingerprinting.
 - At least one local git checkout.
 - [mise](https://mise.jdx.dev) or Homebrew for the install. Building from a
-  checkout instead needs Go 1.26 or newer and the Xcode Command Line Tools
+  checkout instead needs Go 1.27.3 or newer and the Xcode Command Line Tools
   (`xcode-select --install`), because csl compiles its tree-sitter grammars
   with cgo. The prebuilt tarball has them compiled in and needs neither.
 - Optional, for semantic search only: [Ollama](https://ollama.com) (step 9).

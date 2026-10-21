@@ -83,14 +83,14 @@ func startServer(t *testing.T, idleTimeout time.Duration) (pb.SearchDaemonClient
 		_ = conn.Close()
 		// If server is still running, shut it down.
 		select {
-		case <-errCh:
+		case <-errCh: //nolint:errcheck
 		default:
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			cl := pb.NewSearchDaemonClient(conn)
 			_, _ = cl.Shutdown(ctx, &pb.ShutdownRequest{})
 			select {
-			case <-errCh:
+			case <-errCh: //nolint:errcheck
 			case <-time.After(5 * time.Second):
 			}
 		}
