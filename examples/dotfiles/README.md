@@ -15,6 +15,7 @@ your-dotfiles/
     config-overlay/      # overlay: per-machine service config (watch list, host gate)
     csl-config/          # overlay: which directories csl indexes on this machine
     claude-hooks/        # overlay: belt config + the Claude Code hooks block
+    claude-mods/         # overlay: which thismoon mods Claude Code runs, from a list
     agent-memory/        # overlay: clone the shared memory store belt injects
     secrets-env/         # overlay: secret/env wiring without committing values
 ```
@@ -43,6 +44,7 @@ Each kind of machine-private wiring has a worked example in `recipes/`:
 | Config overlay | [`recipes/config-overlay/`](recipes/config-overlay/) | per-machine service config — watch lists, host gates, local paths |
 | csl index list | [`recipes/csl-config/`](recipes/csl-config/) | which directories csl walks for git checkouts, and the remote-host allowlist if you need one |
 | Agent hooks (belt) | [`recipes/claude-hooks/`](recipes/claude-hooks/) | the belt config overlay and the `~/.claude/settings.json` hooks block that registers belt's guards and hints |
+| Claude Code mods | [`recipes/claude-mods/`](recipes/claude-mods/) | the `thismoon` mod marketplace registration, and which mods are on, off or retired on this machine |
 | Agent memory store | [`recipes/agent-memory/`](recipes/agent-memory/) | the private facts repo cloned to `~/.config/agent-memory`, with the index and fact-file format belt injects at session start |
 | Secrets / env | [`recipes/secrets-env/`](recipes/secrets-env/) | a service's secret, resolved at runtime or from a gitignored env-file — never committed |
 | Host-scoping | [`config.toml`](config.toml) | enabling a remote recipe on a subset of machines (`hosts = [...]`) |
@@ -126,6 +128,17 @@ thismoon's per-component GitHub Releases (`present/v1.2.3` tags, tarballs,
 cosign signatures — see `docs/RELEASING.md` in the repo root) serve
 `go install` and manual downloads. A fleet wired through ralph builds from
 source and never touches those artifacts.
+
+Mods ride the same pull. The `thismoon` marketplace that
+`recipes/claude-mods/` registers is the sources cache itself, a local
+directory, so Claude Code runs each installed mod from its folder there
+(`readFromFolder` in `claude plugin list --json`). The next `ralph up`
+pulls a merged mod change, and a new session or `/reload-plugins` loads it.
+The version bump in the mod's `.claude-plugin/plugin.json` marks the
+change, and the sync runs `claude plugin update` to bring the install
+record's `version` in step with it; one run settles it. `ralph doctor`
+reports drift while a mod doesn't match its on, off or retired line yet,
+or while an `on` mod's install record version differs from its folder's.
 
 ## Trying it
 

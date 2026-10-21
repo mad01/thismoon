@@ -1,0 +1,23 @@
+# Which thismoon mods Claude Code runs on this machine. Applied by
+# sync-mods.sh on every `ralph up`.
+#
+# One mod per line: <name> <state>. Names are the entries in thismoon's
+# .claude-plugin/marketplace.json; a # starts a comment. A line sync-mods.sh
+# can't use (a missing or extra word, an unknown state, an on or off mod the
+# marketplace doesn't list) is an error, and `ralph doctor` reports it.
+#
+#   on        install and enable it. The sources cache pull brings its
+#             changes, since Claude Code runs it from its folder there.
+#             While the install record's version differs from the
+#             folder's, `claude plugin update` brings the record in step
+#   off       disable it but keep it installed, with its data
+#   retired   uninstall it: drops the install record, the enabledPlugins
+#             entry and the mod's data folder
+#
+# A mod that isn't listed here is left alone, so deleting a line changes
+# nothing. Mark the mod retired, run `ralph up` on every machine, then delete
+# the line.
+session-band    on
+humanizer-gate  on
+panel-policy    off
+# loom-pane     retired

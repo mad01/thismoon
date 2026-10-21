@@ -407,6 +407,42 @@ assume their server from this section is registered. `factory` also needs its
 three worker definitions in `~/.claude/agents/` and the `factory-worker`
 custom hint in the belt config; `skills/factory/` holds the text for both.
 
+### Claude Code mods
+
+Mods are optional Claude Code plugins that run inside the session: status
+lines under the prompt, bands above it, and observers on tool calls. Each
+one lives under [`mods/`](../mods/), and the repo's plugin marketplace,
+named `thismoon`, lists them all in
+[`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json).
+They only add to what you see. No skill, hook, or service needs a mod.
+belt stays the guard: a mod hook that throws or times out is skipped, so no
+rule may rely on one
+([docs/adr/0021](adr/0021-mods-additive-claude-ui-layer.md)). Codex never
+loads a mod.
+
+Register the marketplace from a thismoon checkout, then install the mods
+you want:
+
+```sh
+claude plugin marketplace add ~/.config/ralph/sources/thismoon
+claude plugin install session-band@thismoon --scope user
+```
+
+On a fleet machine the checkout is ralph's sources cache, as above;
+elsewhere any clone works. The marketplace is a local directory, so Claude
+Code runs each installed mod from its folder in that checkout;
+`claude plugin list --json` names the folder as `readFromFolder`. A new
+session loads the folder as it stands, and `/reload-plugins` loads it into
+one that's already open. Each mod's README says what it shows and where its
+signals come from.
+
+Like the MCP set, which mods a machine runs is machine-private.
+[`recipes/claude-mods/`](../examples/dotfiles/recipes/claude-mods/) keeps
+the list in your config repo, with each mod marked on, off or retired, and
+reconciles it on every `ralph up`. To work on a mod,
+`claude --plugin-dir mods/<name>` loads it from a checkout for one session;
+the dev loop is in [mods/CLAUDE.md](../mods/CLAUDE.md).
+
 ## Updating
 
 **Fleet:** merging to main is the deploy. The next `ralph up` on each
@@ -427,3 +463,26 @@ service. The restart only helps when the agent was registered with the mise
 shim path (`$HOME/.local/share/mise/shims/<tool>`). A plist that names a
 versioned install directory keeps running the old build, and re-adding the
 agent with the shim path is the fix.
+
+**Mods:** a merged mod change reaches a machine when the marketplace
+checkout updates. On a fleet machine the next `ralph up` pulls the sources
+cache; elsewhere, pull the clone. A new session loads the change, and
+`/reload-plugins` loads it into an open one. A mod change also bumps the
+version in the mod's `.claude-plugin/plugin.json` to mark the change, but
+the bump isn't what ships it. `claude plugin list --json` shows the install
+record's `version` beside `folderVersion`, the version in the folder, and
+`claude plugin update <mod>@thismoon --scope user` brings the record in
+step.
+
+To retire a mod, run `claude plugin uninstall <mod>@thismoon --scope user`.
+It removes the install record, the `enabledPlugins` entry, and the mod's
+data folder (`--keep-data` keeps the folder). The cached copy stays on
+disk, marked as orphaned.
+
+Under managed settings or a Team or Enterprise login, Claude Code's
+built-in plugin guard skips the hooks user-installed mods register on some
+events. Version 0.2.1 of session-band and 0.1.1 of panel-policy stop
+hooking those events; on older versions, session-band's deny count never
+moves. If `claude --debug` reports a mod's hook as skipped, bring the
+checkout up to date and start a new session. belt's settings hooks aren't
+affected.
