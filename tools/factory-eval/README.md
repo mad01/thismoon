@@ -257,9 +257,9 @@ Prerequisites for a paid run, all checked before anything is spent:
 - For the factory arm: the factory and loom skills in `~/.claude/skills`,
   the three worker definitions `factory-worker-low`, `-medium` and `-high`
   in `~/.claude/agents`, and a SubagentStart hook in
-  `~/.claude/settings.json` that runs belt. MAD-398 installs the
-  definitions and the hook wiring. Without them the factory arm refuses to
-  run.
+  `~/.claude/settings.json` that runs belt. The `thismoon/factory` recipe
+  installs the definitions; the consuming repo's settings wire the hook.
+  Without them the factory arm refuses to run.
 - A signed-off cases file, as Usage describes.
 - A temp dir outside `~/code` and `~/.worktrees`, where the arms may edit
   their clone. The default system temp dir qualifies.

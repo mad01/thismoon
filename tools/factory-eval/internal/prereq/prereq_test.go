@@ -26,7 +26,7 @@ func TestFactoryRefusesAnEmptyHome(t *testing.T) {
 		t.Fatalf("failed = %+v, want all six factory checks to fail", failed)
 	}
 	msg := Explain("factory", failed)
-	for _, want := range []string{"factory arm cannot run", "factory-worker-medium", "MAD-398"} {
+	for _, want := range []string{"factory arm cannot run", "factory-worker-medium", "thismoon/factory"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("Explain() lacks %q:\n%s", want, msg)
 		}
