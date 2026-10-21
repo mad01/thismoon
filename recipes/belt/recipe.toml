@@ -4,7 +4,7 @@
 # deliberately carries internal-name exclude_paths (see docs/adr/0006).
 [recipe]
 name = "belt"
-description = "belt: Claude Code PreToolUse guard hooks (git-push-to-main block on work profile, internal-name write firewall)"
+description = "belt: Claude Code PreToolUse guard hooks (git-push-to-main block, internal-name write firewall)"
 # wave 0: builds the binary before the consuming repo's settings recipe (wave 1,
 # examples/dotfiles/recipes/agent-config) merges the settings template that
 # registers the hooks pointing at it.

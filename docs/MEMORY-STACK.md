@@ -162,11 +162,13 @@ belt:
 Every hint prints under a `belt[<name>]:` prefix, so a transcript shows which
 context was injected and which the agent produced. On Codex the reference
 setup wires only the tool-event entries: `kof-assertions` fires there, while
-the session-start injections and the deposit nudge stay Claude-only.
+the session-start injections and the deposit nudge stay Claude-only. It wires
+no `belt record` entry either, so a Codex session leaves nothing in the
+ledger; Codex can still read the ledger through the events service.
 
 To turn all of this on, register the hooks in your agent settings. The
 wiring is in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md), and a
 worked settings block is in
-[`examples/dotfiles/recipes/claude-hooks/`](../examples/dotfiles/recipes/claude-hooks/).
+[`examples/dotfiles/recipes/agent-config/settings.json`](../examples/dotfiles/recipes/agent-config/settings.json).
 Check the result with `belt doctor`, which also tells "kof down" apart from
 "kof empty"; the hints render both as silence.

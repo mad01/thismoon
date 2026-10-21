@@ -175,8 +175,10 @@ is updated. The marketplace is that cache, so a session runs each mod from its
 folder there and the pull is what delivers a change; a new session or
 `/reload-plugins` loads it. To retire a mod, set `"installed": false`: the
 next sync uninstalls it wherever it has an install record, even after the
-marketplace stops listing it. Run `ralph up` on every machine, then delete the
-entry; a mod absent from the file is never touched.
+marketplace stops listing it. The marketplace directory must still be on disk:
+without it the whole file is skipped with a note, retirements included. Run
+`ralph up` on every machine, then delete the entry; a mod absent from the file
+is never touched.
 
 ### MCP servers
 

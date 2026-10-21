@@ -55,8 +55,11 @@ marketplace and its mods. Sync runs `claude plugin ... --scope user` for
 the difference and never edits Claude Code's plugin files itself. An
 enabled mod whose install record version differs from its folder version
 is updated. `"installed": false` uninstalls a mod, even one the marketplace
-no longer lists. A mod gated off this machine by `hosts` or `profiles` is
-left alone. `$CLAUDE_CONFIG_DIR` moves the plugin state it reads.
+no longer lists, but only while the marketplace directory is on disk: a
+file whose `.claude-plugin/marketplace.json` is missing is skipped whole,
+retirements included. A mod gated off this machine by `hosts` or
+`profiles` is left alone. `$CLAUDE_CONFIG_DIR` moves the plugin state it
+reads.
 
 ## mcp
 
@@ -90,6 +93,11 @@ check names it.
 A permission a session added is gone after a settings sync: the template's
 lists replace live's. Put machine-only permissions in the overlay.
 
+A key on the `prune` list is still in the live file after a sync: the
+overlay sets it. The overlay merges after the prune and is not checked
+against the list, so it puts the key back with no error and check reports
+no drift. Drop the key from the overlay.
+
 `` `claude` CLI not found on PATH ``: mods needs claude only to sync; plan
 prints the commands anyway. mcp needs it in every mode, to list what is
 registered. Exit 1. A claude found first through a relative PATH entry,
@@ -100,7 +108,9 @@ stopped there. The calls before it are applied; run sync again after the
 fix.
 
 `marketplace '<name>' is not on disk`: ralph has not pulled that source
-yet. The file is skipped with this note, which is not an error.
+yet. The file is skipped with this note, which is not an error. Its
+`"installed": false` entries are skipped too, so a retired mod stays
+installed until the marketplace directory is back.
 
 `warn: <id> is not in the marketplace listing yet`: the mods file enables a
 mod its marketplace does not list. Merge the marketplace change first.
@@ -122,8 +132,10 @@ hand.
 mcp `remove 'claude.ai X' failed` or `remove 'plugin' failed`, exit 2,
 with `prune: true`: prune removes at user scope only, and a claude.ai
 connector or a plugin's server is not there, nor is a server added at
-another scope. check shows each one as `- <name>` drift. Turn prune off,
-or remove the server where it lives.
+another scope. The server stays registered, so every sync fails this way
+with exit 2, and check exits 1 on every run with each one as `- <name>`
+drift. Neither clears by itself. Turn prune off, or remove the server
+where it lives.
 
 `has no 'url'` or `has no 'command'`, exit 1: the entry cannot be added. On
 an update the remove has already run, so the server is gone until the

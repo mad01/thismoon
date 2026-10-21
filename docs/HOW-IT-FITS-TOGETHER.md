@@ -90,10 +90,11 @@ detail.
   `<source>/<recipe>` (so this repo's belt recipe becomes `thismoon/belt`).
   With `ref = "main"` and `update = true`, merging to main is the deploy.
 - **Item key**: the name of one item (`packages.belt`,
-  `builds.csl_register`). Keys are global across all loaded sources, which
-  is what lets your private recipe declare
-  `depends_on = ["packages.suspenders"]` on a package the public source
-  defines.
+  `builds.csl_register`). Keys are global across all loaded sources, so a
+  `depends_on` in one source can name an item another source defines.
+  ADR-0006 allows that only onto the platform foundations: your private
+  recipe may declare `depends_on = ["packages.t_man"]`, but not
+  `depends_on = ["packages.suspenders"]`.
 - **Wave**: coarse ordering. Lower waves complete before higher ones start.
   thismoon's recipes are all wave 0 so every binary exists before your
   wave-1 companion recipes wire things up to them; within a wave,
@@ -107,9 +108,11 @@ detail.
   which of them run on a machine class is decided in your config (an
   override on `thismoon/<name>`) or in a profile-gated source's
   `overrides.toml`. Profiles answer "what kind of machine is this", and not
-  only for ralph. belt reads the same file at runtime, so its
-  `git-push-main` guard steps aside on `personal` machines and blocks on
-  everything else. **Set profiles before the first `ralph up`**: a machine
+  only for ralph: agent-sync reads the same file for the `profiles` gates
+  in its mods and servers files. belt never reads it. A machine class where
+  direct pushes to main are fine gets a belt config with `git-push-main`
+  disabled, rendered by your config repo (docs/adr/0010).
+  **Set profiles before the first `ralph up`**: a machine
   with none silently skips every profile-gated recipe and source, and
   `ralph doctor` is the only thing that will tell you.
 
@@ -130,7 +133,7 @@ order is written down somewhere.
    `config.toml`) and run **`ralph up`**. Everything builds from source
    into `~/code/bin`; services register with t-man.
 5. **The one sudo step**: write your `routes.toml` and register the d-man
-   daemon ([GETTING-STARTED.md](GETTING-STARTED.md), step 5). Verify with
+   daemon ([GETTING-STARTED.md](GETTING-STARTED.md), step 6). Verify with
    `ralph doctor`, `t-man list`, and `status.this`.
 6. **Layer your companion recipes**, one pattern at a time, each with a
    worked example in `examples/dotfiles/recipes/`. They cover the agent

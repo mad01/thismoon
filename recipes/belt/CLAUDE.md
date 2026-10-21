@@ -11,12 +11,13 @@ ralph merges the recipe with the identity `thismoon/belt`. The package
 
 ## What this recipe does
 
-- `wave = 0`: builds `~/code/bin/belt` before the consuming repo's claude
-  recipe (wave 1) merges the settings template that registers the PreToolUse
-  hooks pointing at it.
-- Package only — public layer per docs/adr/0006. The guard-toggle config
-  overlay (`~/.config/belt/config.toml`, carries internal-name
-  `exclude_paths`) and the hook registration are machine-private wiring and
+- `wave = 0`: builds `~/code/bin/belt` before the consuming repo's settings
+  recipe (wave 1, `examples/dotfiles/recipes/agent-config`) has agent-sync
+  merge the settings template that registers the hooks pointing at it.
+- Package only, the public layer per docs/adr/0006. The guard-toggle config
+  overlay (`~/.config/belt/config.yaml`, carries internal-name
+  `exclude_paths`; a legacy `config.toml` beside it is read only when the
+  YAML file is absent) and the hook registration are machine-private wiring and
   live in the consuming repo's companion recipe.
 
 The item key `packages.belt` is the same one the dotfiles recipe used before
