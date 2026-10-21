@@ -74,6 +74,7 @@ jobs:
             echo "mods:"
             echo "  - 'mods/**'"
             echo "  - '.claude-plugin/marketplace.json'"
+            echo "  - '.github/scripts/mods-skipped-events.mjs'"
             for dir in services/*/ tools/*/; do
               [ -f "${dir}Makefile" ] || continue
               c="${dir%/}"
@@ -196,8 +197,8 @@ jobs:
   # Mods are Claude Code plugin modules, not components (docs/adr/0021): no
   # Go, no release line. The runner has no Claude Code binary, so `claude
   # plugin validate` stays a local gate; CI checks the manifests parse, every
-  # mod is listed in the marketplace, and the pure-function and pi-face
-  # tests pass.
+  # mod is listed in the marketplace, no mod hooks an event the built-in
+  # guard skips, and the pure-function and pi-face tests pass.
   mods:
     name: mods
     needs: changes
@@ -224,6 +225,13 @@ jobs:
             <(jq -r '.plugins[].name' .claude-plugin/marketplace.json | sort) \
             <(for dir in mods/*/; do basename "$dir"; done | sort) \
             || { echo "::error::.claude-plugin/marketplace.json plugins out of sync with mods/*"; exit 1; }
+
+      # The built-in guard mod, when seated, forwards these events past the
+      # user tier, so a mod's hook on one never runs (mods/CLAUDE.md, Rules).
+      # A node script, not a grep: it reads a call split across lines and
+      # leaves commented-out code alone.
+      - name: No mod hooks an event the built-in guard skips
+        run: node .github/scripts/mods-skipped-events.mjs
 
       - name: Test
         run: node --test mods/*/test/*.test.mjs
