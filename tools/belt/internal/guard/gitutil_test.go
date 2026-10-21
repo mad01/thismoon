@@ -1,9 +1,75 @@
 package guard
 
 import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
+
+// TestGitOutputContextDoesNotWaitOnALingeringChild pins the pipe grace: a
+// git that leaves a background child holding stdout must not hold the
+// caller until that child exits. A git that exits 0 first keeps what it
+// printed; one that outlives ctx ends in "" like any other failure. The
+// child sleeps far past the ceiling, so a missing grace fails on the
+// ceiling, not on a tight timing bound.
+func TestGitOutputContextDoesNotWaitOnALingeringChild(t *testing.T) {
+	tests := []struct {
+		name    string
+		rest    string // what the fake git runs after it forks the child
+		timeout time.Duration
+		want    string
+	}{
+		{"git exits first and keeps its output", "echo main\n", 30 * time.Second, "main"},
+		{"git outlives the deadline", "exec sleep 60\n", 200 * time.Millisecond, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bin := t.TempDir()
+			pidFile := filepath.Join(bin, "child.pid")
+			git := writeScript(t, bin, "git", "#!/bin/sh\n"+
+				"[ \"$1\" = warm ] && exit 0\n"+
+				"sleep 60 &\necho $! > '"+pidFile+"'\n"+tt.rest)
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Cleanup(func() { killRecorded(pidFile) })
+			// A fresh script's first launch can be slow under load; launch it
+			// once untimed so the deadline measures the pipe, not the launch.
+			_ = exec.Command(git, "warm").Run()
+			dir := t.TempDir()
+
+			ctx, cancel := context.WithTimeout(context.Background(), tt.timeout)
+			defer cancel()
+			done := make(chan string, 1)
+			go func() { done <- gitOutputContext(ctx, dir, "rev-parse") }()
+			select {
+			case got := <-done:
+				if got != tt.want {
+					t.Errorf("gitOutputContext = %q, want %q", got, tt.want)
+				}
+			case <-time.After(20 * time.Second):
+				t.Fatal("gitOutputContext waited on the child git left holding stdout")
+			}
+		})
+	}
+}
+
+// killRecorded ends the process whose pid a fake git wrote to pidFile, if
+// it got that far.
+func killRecorded(pidFile string) {
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		return
+	}
+	if pid, err := strconv.Atoi(strings.TrimSpace(string(raw))); err == nil {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
+}
 
 // invocationDirs lists the directory of each invocation, in order.
 func invocationDirs(cmds []gitInvocation) []string {

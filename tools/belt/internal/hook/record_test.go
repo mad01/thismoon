@@ -2,6 +2,7 @@ package hook
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,6 +60,66 @@ func TestRecordTagsDeclaredAgentTypes(t *testing.T) {
 			if ev.Tags["model"] != tt.wantModel || ev.Tags["effort"] != tt.wantEffort {
 				t.Errorf("tags = %v, want model %q and effort %q",
 					ev.Tags, tt.wantModel, tt.wantEffort)
+			}
+		})
+	}
+}
+
+// TestRecordStopFailure feeds the StopFailure payload the Claude Code
+// hooks docs show through the recorder and checks the entry that posts.
+// The event argument decides what is recorded, as for every record event:
+// a payload naming another hook, or none, still records a failed turn.
+func TestRecordStopFailure(t *testing.T) {
+	tests := []struct {
+		name        string
+		payload     map[string]string
+		wantLevel   string
+		wantTitle   string
+		wantMessage string
+		wantTags    map[string]string
+	}{
+		{
+			name: "the documented payload",
+			payload: map[string]string{
+				"session_id":             "abc123",
+				"transcript_path":        "/t/session.jsonl",
+				"hook_event_name":        "StopFailure",
+				"error":                  "rate_limit",
+				"error_details":          "429 Too Many Requests",
+				"last_assistant_message": "API Error: Rate limit reached",
+			},
+			wantLevel:   "warn",
+			wantTitle:   "turn failed (rate_limit)",
+			wantMessage: "API Error: Rate limit reached (429 Too Many Requests)",
+			wantTags: map[string]string{
+				"event":      "stop-failure",
+				"session_id": "abc123",
+				"error":      "rate_limit",
+				"transcript": "/t/session.jsonl",
+			},
+		},
+		{
+			name:        "another hook's payload is still recorded",
+			payload:     map[string]string{"hook_event_name": "Stop"},
+			wantLevel:   "error",
+			wantTitle:   "turn failed (unknown)",
+			wantMessage: "No detail reported.",
+			wantTags:    map[string]string{"event": "stop-failure", "error": "unknown"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev := recordOne(t, defaults, ledger.EventStopFailure, tt.payload)
+			if ev.Source != ledger.Source || ev.Level != tt.wantLevel {
+				t.Errorf("source, level = %q, %q, want %q, %q",
+					ev.Source, ev.Level, ledger.Source, tt.wantLevel)
+			}
+			if ev.Title != tt.wantTitle || ev.Message != tt.wantMessage {
+				t.Errorf("title, message = %q, %q, want %q, %q",
+					ev.Title, ev.Message, tt.wantTitle, tt.wantMessage)
+			}
+			if !maps.Equal(ev.Tags, tt.wantTags) {
+				t.Errorf("tags = %v, want %v", ev.Tags, tt.wantTags)
 			}
 		})
 	}

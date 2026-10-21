@@ -5,16 +5,17 @@
 belt is a tool that runs as Claude Code hooks. Claude Code invokes
 `belt hook <event>` (PreToolUse), `belt hint <event>` (PostToolUse,
 SessionStart, SubagentStart, UserPromptSubmit) or `belt record <event>` (the
-subagent, task, teammate, permission-denied, notification, compaction and
-session-end lifecycle hooks) with the event payload on stdin. belt runs the
-guards or hints registered for that event and writes its decision or advice
-as JSON on stdout, or posts a ledger entry and writes nothing. For the
-guards, it writes nothing when everything is allowed, which is the common
-case. Each invocation inspects exactly one event and exits. `belt watch` is
-the one longer-lived command: an asyncRewake hook that polls for up to its
-max wait and exits 2 to wake an idle session. belt keeps no daemon, registers
-no hooks itself, and ships no config of its own; hook registration and the
-config overlay live in the consuming repo's companion recipe (docs/adr/0006).
+subagent, task, teammate, permission-denied, notification, compaction,
+session-end and stop-failure lifecycle hooks) with the event payload on
+stdin. belt runs the guards or hints registered for that event and writes its
+decision or advice as JSON on stdout, or posts a ledger entry and writes
+nothing. For the guards, it writes nothing when everything is allowed, which
+is the common case. Each invocation inspects exactly one event and exits.
+`belt watch` is the one longer-lived command: an asyncRewake hook that polls
+for up to its max wait and exits 2 to wake an idle session. belt keeps no
+daemon, registers no hooks itself, and ships no config of its own; hook
+registration and the config overlay live in the consuming repo's companion
+recipe (docs/adr/0006).
 
 The three concepts are asymmetric by design (docs/adr/0008,
 docs/adr/0024). A guard can return `permissionDecision: deny` and stop a
@@ -33,7 +34,7 @@ internal/hook/      payload parsing + output emission per event: deny JSON,
                     additionalContext JSON, plain stdout for prompt, nothing
                     for record; the watch entrypoint
 internal/ledger/    the record events and the pure entry builder: title,
-                    500-byte message, session/agent/repo/worktree tags,
+                    level, 500-byte message, session/agent/repo/worktree tags,
                     model and effort from ledger.agent_types
 internal/watch/     the inbox poller: one GET client, the to-tag filter,
                     the per-session cursor and owner files

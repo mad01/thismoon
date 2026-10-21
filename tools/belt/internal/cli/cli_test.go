@@ -19,6 +19,7 @@ func TestRecordCmdEventValidation(t *testing.T) {
 	}{
 		{"subagent-stop", "subagent-stop", false},
 		{"session-end", "session-end", false},
+		{"stop-failure", "stop-failure", false},
 		{"mixed case", "Subagent-Stop", false},
 		{"hook event name", "SubagentStop", true},
 		{"hint event", "session-start", true},
