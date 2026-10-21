@@ -40,7 +40,7 @@ docs/RELEASING.md       release process (release-please, tags, artifacts, verifi
 
 ## Conventions
 
-- Single Go module: `github.com/mad01/thismoon`, go 1.26.2. No nested go.mod files.
+- Single Go module: `github.com/mad01/thismoon`, go 1.27.3. No nested go.mod files.
 - A component is a directory under `services/` or `tools/` with its own Makefile exposing `build`, `test`, and `install` targets. The root Makefile discovers and delegates to them.
 - Releases are per-component semver with `svc/vX.Y.Z` tags, cut by release-please manifest mode on merge to main. Artifact builds are a plain CI matrix job.
 - Build metadata is shared: a component Makefile sets `COMPONENT := <name>`, does `include ../../buildinfo.mk`, and links with `$(BUILDINFO_LDFLAGS)`. Every component then reports the same four-key object (`version`, `commit`, `tag`, `build_time`) from `GET /version` and `<binary> version -o json`, while plain `<binary> version` stays a bare token that status parses.
