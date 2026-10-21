@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/mad01/thismoon/compare/deps/v0.12.0...deps/v0.12.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **deps:** scan Go under launchd and surface discovery errors ([#245](https://github.com/mad01/thismoon/issues/245)) ([cf2c18b](https://github.com/mad01/thismoon/commit/cf2c18bb9cf2b40a328d5b8cc97966c6a42c46ad))
+
 ## [0.12.0](https://github.com/mad01/thismoon/compare/deps/v0.11.0...deps/v0.12.0) (2026-10-13)
 
 

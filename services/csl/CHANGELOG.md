@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/mad01/thismoon/compare/csl/v0.27.0...csl/v0.28.0) (2026-10-21)
+
+
+### Features
+
+* **csl:** load core search tools without tool search ([#247](https://github.com/mad01/thismoon/issues/247)) ([233206b](https://github.com/mad01/thismoon/commit/233206b1223cca891e61a0015bb12c6b8e667075))
+
 ## [0.27.0](https://github.com/mad01/thismoon/compare/csl/v0.26.0...csl/v0.27.0) (2026-10-13)
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.0](https://github.com/mad01/thismoon/compare/humanizer/v0.17.0...humanizer/v0.18.0) (2026-10-21)
+
+
+### Features
+
+* **humanizer:** report dash substitutes and em dash statistics at error ([#250](https://github.com/mad01/thismoon/issues/250)) ([f78466b](https://github.com/mad01/thismoon/commit/f78466bb149851cc44322db8337d91d616ea48d2))
+* **humanizer:** report em dashes at error severity ([#249](https://github.com/mad01/thismoon/issues/249)) ([1dd1424](https://github.com/mad01/thismoon/commit/1dd14249a73b438299cad8fc20c8f6ebaba98f12))
+
 ## [0.17.0](https://github.com/mad01/thismoon/compare/humanizer/v0.16.0...humanizer/v0.17.0) (2026-10-19)
 
 
