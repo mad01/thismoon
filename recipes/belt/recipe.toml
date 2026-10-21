@@ -2,9 +2,15 @@
 # (~/.config/belt/config.yaml; a legacy config.toml is read only when the YAML
 # file is absent) stays in the consuming repo's companion recipe, since it
 # deliberately carries internal-name exclude_paths (see docs/adr/0006).
+#
+# The pi package (tools/belt/pi) needs no item: pi loads it in place from
+# ~/.config/ralph/sources/thismoon/tools/belt/pi, the checkout ralph refreshes
+# on every `ralph up`, and it execs the belt binary this recipe installs.
+# Declaring it in pi's settings.json and rendering ~/.pi/agent/belt.json are
+# machine-private wiring in the consuming repo, like the config overlay.
 [recipe]
 name = "belt"
-description = "belt: Claude Code PreToolUse guard hooks (git-push-to-main block, internal-name write firewall)"
+description = "belt: Claude Code PreToolUse guard hooks (git-push-to-main block, internal-name write firewall), and the binary the pi package in tools/belt/pi calls"
 # wave 0: builds the binary before the consuming repo's settings recipe (wave 1,
 # examples/dotfiles/recipes/agent-config) merges the settings template that
 # registers the hooks pointing at it.

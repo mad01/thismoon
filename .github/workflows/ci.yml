@@ -149,15 +149,20 @@ jobs:
           COMPONENT: ${{ matrix.component }}
         run: go test "./${COMPONENT}/..."
 
-      # present's viz.js helpers run under node's test runner.
+      # present's viz.js helpers and belt's pi package run under node's test
+      # runner.
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        if: matrix.component == 'services/present'
+        if: matrix.component == 'services/present' || matrix.component == 'tools/belt'
         with:
           node-version: 24
 
       - name: JS tests
         if: matrix.component == 'services/present'
         run: node --test services/present/internal/server/test/*.test.mjs
+
+      - name: pi package tests
+        if: matrix.component == 'tools/belt'
+        run: make -C tools/belt test-js
 
       - name: Build
         env:

@@ -19,6 +19,12 @@ ralph merges the recipe with the identity `thismoon/belt`. The package
   `exclude_paths`; a legacy `config.toml` beside it is read only when the
   YAML file is absent) and the hook registration are machine-private wiring and
   live in the consuming repo's companion recipe.
+- The pi package `tools/belt/pi` gets no item. pi loads it in place from
+  `~/.config/ralph/sources/thismoon/tools/belt/pi`, so the sources cache ralph
+  refreshes on every `ralph up` is the install, and the package calls the
+  binary this recipe builds. The consuming repo declares the package in pi's
+  `settings.json`, renders `~/.pi/agent/belt.json` when a machine needs more
+  than the defaults, and checks that the package path exists.
 
 The item key `packages.belt` is the same one the dotfiles recipe used before
 the migration, so ralph state carries across the cutover with no

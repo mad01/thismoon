@@ -16,7 +16,7 @@ The mod does not hook `classic.PreToolUse`: when the built-in guard mod is seate
 
 ## pi face
 
-`pi/index.ts` keeps the same count in the pi coding agent. pi has no hook chain to read a decision from, so the dotfiles permission gate announces each belt denial on the extension bus as `belt:deny`; the face counts those, keeps the count in the session (`pi.appendEntry`, restored from the active branch), and pins `belt denies N` with `ctx.ui.setStatus`. Silent without a UI.
+`pi/index.ts` keeps the same count in the pi coding agent. pi has no hook chain to read a decision from, so the permission gate in the belt pi package ([tools/belt/pi](../../tools/belt/pi)) announces each belt denial on the extension bus as `belt:deny`. The face counts those, keeps the count in the session (`pi.appendEntry`, restored from the active branch), and pins `belt denies N` with `ctx.ui.setStatus`. Silent without a UI.
 
 ## Dev loop
 
