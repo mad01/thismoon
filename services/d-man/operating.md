@@ -41,6 +41,14 @@ change or SIGHUP. Two sharp edges:
 A bad edit is logged and ignored: the last good routes and /etc/hosts stay
 live, so a typo breaks nothing but also changes nothing until fixed.
 
+A machine that switches block lists generates the routes file instead of
+editing it. `d-man profile <name>` writes it from routes.base.toml in the
+same directory, with blocklist.<name>.toml above it, and records the name in
+a file called profile there. Edit those inputs, never the generated file, and
+re-apply with `d-man profile "$(d-man profile)"`. The personal profile needs
+no block list; any other name without one fails, and a result that does not
+validate is never written.
+
 ## failure modes
 
 Start with `d-man docs` for this doc, then `d-man doctor`: three read-only
@@ -69,6 +77,10 @@ port; there is no setting that widens this.
 A blocked host still loads over https: the block-page CA is not trusted yet.
 `sudo d-man ca install` fixes it once. The CA key is root-owned by design; a
 non-root process cannot read it.
+
+The wrong hosts are blocked after a profile switch: `d-man profile` names the
+recorded profile, and `d-man config` shows the blocklist the routes file holds.
+A hand edit to a generated routes file is lost at the next switch.
 
 ## version skew
 

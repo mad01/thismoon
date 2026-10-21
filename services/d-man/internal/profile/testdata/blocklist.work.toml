@@ -1,0 +1,5 @@
+# Fixture block list for the work profile.
+blocklist = [
+  "distracting.example.com", "www.distracting.example.com",
+  "timesink.example.net", "www.timesink.example.net",
+]

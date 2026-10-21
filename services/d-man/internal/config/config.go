@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"os"
 	"regexp"
 	"strings"
 
@@ -46,9 +47,20 @@ var hostLabel = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?
 
 // Load reads, parses, defaults, and validates the config at path.
 func Load(path string) (*Config, error) {
-	var c Config
-	if _, err := toml.DecodeFile(path, &c); err != nil {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
+	}
+	return Parse(data, path)
+}
+
+// Parse parses, defaults, and validates config content that is not on disk
+// yet. name labels a decode error the way Load labels it with the file path,
+// so a generated file can be checked before it replaces the live one.
+func Parse(data []byte, name string) (*Config, error) {
+	var c Config
+	if _, err := toml.Decode(string(data), &c); err != nil {
+		return nil, fmt.Errorf("read config %s: %w", name, err)
 	}
 	c.applyDefaults()
 	if err := c.Validate(); err != nil {

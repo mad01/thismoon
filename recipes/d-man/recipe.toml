@@ -24,9 +24,9 @@ install_paths = ["~/code/bin/d-man"]
 # rebuild self-applies with no sudo and no restart command here.
 
 # The routes file (~/.config/d-man/routes.toml) is machine-personal and is NOT
-# shipped here: the consuming repo's overlay recipe symlinks it into place
-# (item key dotfiles.d_man_routes). This recipe only builds and installs the
-# binary.
+# shipped here: the consuming repo's overlay recipe symlinks it into place, or
+# links its inputs and generates it with `d-man profile`. This recipe only
+# builds and installs the binary.
 
 [hooks]
 # Daemon registration is a one-time, explicit, sudo step (see SETUP.md) — it

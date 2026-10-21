@@ -32,9 +32,12 @@ no sudo.
 Machine-specific wiring is deliberately not here (see `docs/adr/0006`):
 
 - the `[[recipe_sources]]` stanza itself (each machine picks its pin)
-- **`routes.toml` + its symlink item** (`dotfiles.d_man_routes` →
-  `~/.config/d-man/routes.toml`): the route set (which `.this` names exist on
-  a machine) is personal even though the mechanism is platform
+- **the route set and block lists**: which `.this` names exist on a machine,
+  and which hosts each profile blocks, are personal even though the mechanism
+  is platform. The overlay either symlinks a `routes.toml` into
+  `~/.config/d-man/`, or links `routes.base.toml` + `blocklist.<name>.toml`
+  there and generates `routes.toml` with a hook that runs `d-man profile`
+  (`examples/dotfiles/recipes/d-man/` shows that layout)
 - the one-time `sudo t-man --daemon add` registration state (per machine)
 
 ## Working with it

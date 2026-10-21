@@ -15,9 +15,10 @@ no `.this` address of its own — every `.this` request passes through it.
 
 ```
 cmd/d-man/           entrypoint, delegates to internal/cli.Execute
-internal/cli/        cobra command tree: serve, sync, list, config, ca,
-                     doctor, docs, version
+internal/cli/        cobra command tree: serve, sync, list, config, profile,
+                     ca, doctor, docs, version
 internal/config/     pure routes.toml model: parse, validate, resolve cname chains
+internal/profile/    pure Render of a profile's routes file plus the Switch writer
 internal/hosts/      pure Validate/Render/Splice plus the fail-safe Sync writer
 internal/proxy/      one httputil.ReverseProxy: Host routing, blocklist,
                      sites.json + its cross-origin allowlist (cors.go)
@@ -63,8 +64,11 @@ need no sudo.
 - `/etc/hosts.d-man.bak`: backup written before each change.
 - `~/.config/d-man/ca/`: block-page CA (`ca.pem`, root-owned `ca-key.pem`),
   created by `d-man ca install` or the root process; override with `--ca-dir`.
-- `~/.config/d-man/routes.toml`: read, never written. The config directory
-  comes from `kit/confdir`, so `XDG_CONFIG_HOME` relocates both paths.
+- `~/.config/d-man/routes.toml`: read by every command. Only `d-man profile`
+  writes it, assembled from `routes.base.toml` and `blocklist.<name>.toml` in
+  the same directory, with the active name recorded in `profile` there. The
+  config directory comes from `kit/confdir`, so `XDG_CONFIG_HOME` relocates
+  all of these paths.
 - `/var/log/d-man/`: logs of the root LaunchDaemon registered by t-man.
 
 ## Interfaces
@@ -73,8 +77,8 @@ HTTP: `GET /__this/sites.json` (answered by d-man), everything else proxied by
 `Host` header, on both `:80` and `:443`.
 
 CLI: `d-man serve [--port] [--tls-port]`, `sudo d-man sync` (one-shot hosts
-write), `d-man list`, `sudo d-man ca install|uninstall|path`, `d-man version
-[-o json]`.
+write), `d-man list`, `d-man profile [name]`, `sudo d-man ca
+install|uninstall|path`, `d-man version [-o json]`.
 
 Config: `routes.toml` (path via `--config` or `DMAN_CONFIG`) with top-level
 `suffix`, `blocklist`, and `games_dir`, plus `[[route]]` tables that are either

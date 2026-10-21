@@ -38,6 +38,17 @@ never rejects this; it silently attaches the array to the last route instead.
 `d-man config` prints the effective config so a misplaced key is visible as a
 missing block list rather than a parse error.
 
+## Generated routes files (profiles)
+
+A machine that switches block lists can generate the routes file with
+`d-man profile <name>` instead of editing it. The inputs sit beside the routes
+file: `routes.base.toml` holds the routes, `blocklist.<name>.toml` holds one
+profile's top-level `blocklist`, and a file called `profile` records the active
+name. The command writes the block list above the base, which keeps the
+ordering constraint above, and rewrites a leading `~/` in `games_dir` to the
+invoking user's home. Edit the inputs, not the generated file. Details and
+failure behavior: [`docs/commands.md`](docs/commands.md#profile).
+
 ## Keys
 
 - `suffix` (string, default `"this"`): the label appended to every route

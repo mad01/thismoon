@@ -9,8 +9,8 @@ description = "d-man routes overlay: machine-personal routes + work-profile bloc
 wave = 0
 
 # Base routes + the work block list are the source of truth, symlinked into the
-# config dir. The ACTIVE ~/.config/d-man/routes.toml is NOT symlinked: it is
-# generated from these by d-man-profile (see the build hook), so the profile
+# config dir. The ACTIVE ~/.config/d-man/routes.toml is NOT symlinked: the
+# build hook generates it from these with `d-man profile`, so the profile
 # toggle can rewrite it without dirtying this repo.
 [dotfiles.d_man_routes_base]
 source = "routes.base.toml"
@@ -22,24 +22,22 @@ source = "blocklist.work.toml"
 target = "~/.config/d-man/blocklist.work.toml"
 action = "symlink"
 
-# The profile switcher: `d-man-profile work|personal`. Committed executable, so
-# the symlink is runnable as-is.
-[dotfiles.d_man_profile_bin]
-source = "d-man-profile"
-target = "~/code/bin/d-man-profile"
-action = "symlink"
-
 # Generate the active routes.toml, re-applying whatever profile is current
 # (default personal). Runs every `ralph up`, so edits to routes.base.toml land
 # and any leftover routes.toml symlink is replaced by a generated file. The
 # daemon's --config points here; rewriting it triggers an fsnotify reload.
-# The script also rewrites a ~ in games_dir to an absolute path: the daemon
-# runs as root, where ~ would expand to /var/root.
+# `d-man profile` also rewrites a ~ in games_dir to an absolute path: the
+# daemon runs as root, where ~ would expand to /var/root. Switch by hand (or
+# from a macOS Focus automation) with `d-man profile work|personal`.
+#
+# depends_on: the command ships in the d-man binary (thismoon/d-man, a
+# platform foundation per docs/adr/0006), so the hook waits for that build.
 #
 # Never idempotent = true here: ralph's idempotent flag hashes the command
 # string, not the files it reads, so the hook would run once per machine and
 # never pick up a routes.base.toml edit again.
 [hooks.builds.d_man_profile_apply]
-commands = ["$HOME/code/bin/d-man-profile \"$($HOME/code/bin/d-man-profile status)\""]
+commands = ["$HOME/code/bin/d-man profile \"$($HOME/code/bin/d-man profile)\""]
 working_dir = "~/.config/d-man"
 run = "always"
+depends_on = ["packages.d_man"]
