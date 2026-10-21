@@ -1,0 +1,57 @@
+# ~/.config/agent-sync/config.yaml (symlinked there by the agent-config
+# recipe). One section per kind of data. Every path is absolute or starts
+# with ~/; an unknown key or section is an error, so a typo stops the sync
+# instead of syncing nothing. `agent-sync doctor` checks this file and every
+# path it names. Full reference: tools/agent-sync/config.md in the thismoon
+# repo, or `agent-sync docs`. A commented key shows its default; set it only
+# to move it.
+
+settings:
+  # The template merged into Claude Code's settings. The template wins:
+  # objects merge key by key, arrays and scalars are replaced, keys only the
+  # live file has are kept. The overlay merges last, with the permission
+  # lists unioned. Never put enabledPlugins in the template: the mods
+  # section owns that key through the claude CLI, and a template value
+  # would put it back on the next settings sync.
+  template: ~/code/src/github.com/you/dotfiles/recipes/agent-config/settings.json
+  # live: ~/.claude/settings.json            # $CLAUDE_CONFIG_DIR/settings.json when that is set
+  # overlay: ~/.claude/settings.local.json   # settings.local.json beside live
+  # Retired keys. Dropping a key from the template leaves it in every live
+  # file, since live-only keys are kept; an entry here deletes it before the
+  # merge, so the key leaves every machine on its next ralph up. Each entry
+  # is a key path from the root as a list of keys ([hooks, Notification]),
+  # so a key holding a dot stays one key. A path the template still sets is
+  # an error. Say what retired each entry, and drop the entry once every
+  # machine has synced.
+  prune:
+    - [includeCoAuthoredBy]         # 2026-06: superseded by attribution
+    - [env, MYSERVICE_LEGACY_URL]   # 2026-09: myservice reads its config file now
+
+mods:
+  # The base mods file: one directory marketplace and the mods to enable,
+  # disable or retire from it. Every *.json in dropins (in name order) has
+  # the same shape and brings its own marketplace, so a second recipe source
+  # adds mods without editing this repo's file. Marketplace and mod names
+  # must be unique across all of them.
+  file: ~/code/src/github.com/you/dotfiles/recipes/agent-config/mods.json
+  # dropins: ~/.config/claude-mods/mods.d
+  # profiles_file: ~/.config/ralph/config.local.toml   # the profiles gate in mods.json reads it
+
+mcp:
+  # The base servers file. Every *.json in dropins merges over it by server
+  # name (a drop-in that redefines a base server wins, with a warning);
+  # recipes/mcp-sandbox/ contributes its server that way.
+  servers: ~/code/src/github.com/you/dotfiles/recipes/agent-config/servers.json
+  # dropins: ~/.config/claude-mcp/servers.d
+  # profiles_file: ~/.config/ralph/config.local.toml   # the profiles gate in servers.json reads it
+  # The per-server spec check (`claude mcp get`) is the slow part. sync
+  # records a hash of the desired set in the stamp and skips the check while
+  # it matches; plan always runs it, and --force makes sync and check run it.
+  # stamp: ~/.cache/claude-mcp/sync.hash
+  # true removes a registered server the files do not name, so a server
+  # dropped from servers.json leaves every machine on its next ralph up. It
+  # also removes servers registered by hand, and it switches the stamp
+  # shortcut off, so every sync and check runs the per-server check. With
+  # false, a dropped server stays registered until
+  # `claude mcp remove --scope user <name>` runs on each machine.
+  prune: false

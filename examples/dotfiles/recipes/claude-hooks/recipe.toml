@@ -1,29 +1,32 @@
-# Example overlay: wire belt (the Claude Code guard/hint tool) into an agent.
+# Example overlay: belt's config for this machine, and the names file it
+# shares with suspenders.
 #
-# The belt binary ships from the thismoon source (thismoon/belt, wave 0); this
-# consuming-repo recipe owns the two machine-private halves (docs/adr/0006):
+# The belt binary ships from the thismoon source (thismoon/belt, wave 0).
+# Its hooks fire only once ~/.claude/settings.json registers them. That
+# hooks block lives in the settings template the agent-config recipe syncs
+# (recipes/agent-config/settings.json, key "hooks"); tools/belt/docs/hooks.md
+# in the thismoon repo explains every entry. Codex reads the same schema
+# from ~/.codex/hooks.json, and the PreToolUse and PostToolUse entries work
+# there verbatim (hooks.md, "Other harnesses").
 #
-#   1. The belt config overlay. Internal-name workspace dirs, allowlists, and
-#      exclude_paths name machine-private things, so the config can never live
-#      in the public recipe. belt-config.yaml here is tracked in your repo and
-#      symlinked into place; editing it in the repo is the whole workflow
-#      (belt reads config fresh on every tool call — no restart).
+# This recipe owns the two machine-private halves (docs/adr/0006):
 #
-#   2. Hook registration. Claude Code only runs belt if ~/.claude/settings.json
-#      has hooks entries pointing at it; settings.hooks.json.example beside
-#      this file is the complete block. Merge it into your settings once by
-#      hand, or manage the whole settings file the way the mcp-registration
-#      pattern manages MCP servers: a versioned template plus a
-#      run = "always" sync script with a verify command for ralph doctor.
-#      Codex reads the same schema from ~/.codex/hooks.json — the tool-event
-#      entries (PreToolUse + PostToolUse) work there verbatim; see
-#      tools/belt/docs/hooks.md "Other harnesses" in the thismoon repo.
+#   1. The belt config. Internal-name workspace dirs, allowlists and
+#      exclude_paths name machine-private things, so the file can never
+#      live in the public recipe. belt-config.yaml is tracked in your repo
+#      and symlinked into place; editing it in the repo is the whole
+#      workflow (belt reads the config fresh on every tool call, no
+#      restart).
 #
-# Wave 1: the belt binary (wave 0, from the thismoon source) must exist before
-# anything points at it.
+#   2. The shared names file belt-config.yaml includes (docs/adr/0016). The
+#      same file is what the suspenders config's guard.include points at, so
+#      the two guards read one list without reading each other's config.
+#
+# Wave 1: the belt binary (wave 0, from the thismoon source) must exist
+# before anything points at it.
 [recipe]
 name = "claude-hooks"
-description = "belt config overlay + the Claude Code hooks block that registers belt's guards, hints, ledger and watcher"
+description = "belt config overlay and the shared internal-names file; the hooks block that registers belt lives in recipes/agent-config/settings.json"
 wave = 1
 
 [directories.belt_config]
@@ -34,11 +37,8 @@ source = "belt-config.yaml"
 target = "~/.config/belt/config.yaml"
 action = "symlink"
 
-# The shared names file belt-config.yaml includes (docs/adr/0016). The same
-# file is what the suspenders config's guard.include points at, so the two
-# guards read one list without reading each other's config. Install it from
-# a recipe every machine class applies; a class-specific second file goes in
-# that class's overlay recipe.
+# Install the names file from a recipe every machine class applies; a
+# class-specific second file goes in that class's overlay recipe.
 [directories.internal_names_dir]
 target = "~/.config/internal-names"
 

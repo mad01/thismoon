@@ -1,0 +1,8 @@
+{
+  "_comment": "Drop-in for agent-sync's mcp dropins dir, the same shape as the base servers.json. The server is launched through the wrapper beside this file, which cd-s to /, scrubs the environment and execs the binary under mytool.sb.",
+  "servers": {
+    "mysandboxed": {
+      "command": "~/code/src/github.com/you/dotfiles/recipes/mcp-sandbox/mytool-mcp-sandbox.sh"
+    }
+  }
+}

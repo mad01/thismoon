@@ -2,24 +2,26 @@
 
 An example `~/.claude/CLAUDE.md` (user-global instructions, applied to every
 project) tuned for someone running the `*.this` platform locally. It wires
-Claude Code to the thismoon MCP servers — csl, worklog, humanizer, events,
-deps, present, kof, speak, clipboard, opener — and sets
-sensible defaults for commits, PRs, code search, and agent discipline.
+Claude Code to the thismoon MCP servers (csl, worklog, humanizer, events,
+deps, present, kof, speak, clipboard, opener) and sets sensible defaults for
+commits, PRs, code search, and agent discipline.
 
 Copy the parts you want into your own `~/.claude/CLAUDE.md`. Everything here is
 portable: no machine-private hostnames, secrets, or private tracker IDs.
 
 Every MCP server named here is a thismoon component; each component's README
-covers what it does and how to register it.
+covers what it does. Registering them is the `agent-config` recipe's job in
+this example repo (`recipes/agent-config/servers.json`).
 
-Two more pieces this file leans on are not MCP servers: **belt**
-([`tools/belt`](../../tools/belt)) shapes every session from the hook side —
-its guards and hints fire without any instruction here (see the
-`claude-hooks` recipe in this example repo) — and the repo's **skills**
-(`skills/` at the repo root: `/golang-style`, `/handoff`, `/humanizer`,
-`/loom`, `/present`, `/worklog`) load on demand when invoked by name or when a task
-matches their description; their recipes symlink them into
-`~/.claude/skills`. Other skill references you might carry (like
+Two more pieces this file leans on are not MCP servers. **belt**
+(`tools/belt` in thismoon) shapes every session from the hook side: its guards
+and hints fire without any instruction here, once the hooks block in the
+settings template registers it (`recipes/agent-config/settings.json`, with
+the config in `recipes/claude-hooks/`). The repo's **skills** (`skills/` at
+the repo root: `/factory`, `/golang-pro`, `/golang-style`, `/handoff`,
+`/humanizer`, `/loom`, `/present`, `/worklog`) load on demand when invoked by
+name or when a task matches their description; their recipes symlink them
+into `~/.claude/skills`. Other skill references you might carry (like
 `/simplify`) are your own.
 
 ---
@@ -30,35 +32,45 @@ matches their description; their recipes symlink them into
   real path with `readlink ~/.claude/CLAUDE.md`, then edit it in the repo so
   changes are tracked.
 
+## Agent config is managed
+- `~/.claude/settings.json`, the installed mods and the MCP registrations
+  come from the dotfiles repo (`recipes/agent-config/`) through agent-sync,
+  applied on every `ralph up`. The template wins for every key it sets, so
+  a change made directly in the live settings file is undone on the next
+  sync. Edit the template (or the machine overlay, `settings.local.json`),
+  then run `ralph up`; `agent-sync settings plan` previews the merge.
+- Mods and MCP servers follow the same rule: edit `mods.json` or
+  `servers.json` in the repo rather than running `claude plugin` or
+  `claude mcp add` by hand, or the next sync reports drift.
+
 ## Web Fallback
 - If WebSearch or WebFetch fails (blocked, timeout, empty, incomplete), retry
   using agent-browser.
 
 ## Commits
 - Conventional commits format.
-- **NEVER add Claude as co-author.** Strip any
-  `Co-Authored-By: Claude ... <noreply@anthropic.com>` line from commit
-  messages and PR bodies before committing, even when a generated template
-  includes it.
+- Keep messages short: a subject line, plus a body only when the why isn't
+  obvious from the diff.
+- Attribution is settings-owned (`attribution.commit` and `attribution.pr` are
+  empty in the settings template, which hides it). No co-author trailers.
 
 ## Git & PR Workflow
-- NEVER add a testplan section to PR descriptions.
-- NEVER add a runbook section to PR descriptions.
-- PR descriptions: summary of changes + issue/ticket ID if provided, nothing else.
-- When using the `gh` CLI, use the repo's GitHub PR template if one exists
-  (check `.github/`).
+- PR descriptions: a summary of the changes, plus the ticket ID if one was
+  provided. No testplan, runbook, or checklist sections.
+- Use the repo's GitHub PR template if one exists (check `.github/`).
+- Commit and push only when asked. On a default branch, branch first.
 
 ## Agent Discipline
-**Keep the main context lean — delegate search-heavy work to subagents and
+**Keep the main context lean: delegate search-heavy work to subagents and
 receive summaries back.** Subagents protect the main context from large tool
 results (file dumps, search output, MCP responses). Direct tool use in the main
-context is fine for targeted reads and writes — avoid broad searches that dump
+context is fine for targeted reads and writes; avoid broad searches that dump
 hundreds of lines into context.
 
 - **Scale to task complexity.** Single-file or few-line changes: no plan mode,
-  no task tracking, no subagents — just do it. Multi-file changes: light task
+  no task tracking, no subagents; just do it. Multi-file changes: light task
   tracking. Architectural or cross-repo work: plan mode + agents.
-- **Batch related reads into fewer agents.** Don't spawn one agent per file —
+- **Batch related reads into fewer agents.** Don't spawn one agent per file;
   give one agent a broader mandate. 3 focused agents beat 12 narrow ones.
 - **Never run multiple write agents against the same file.** Concurrent edits to
   shared files cause merge conflicts and broken code. Serialize writes.
@@ -67,16 +79,15 @@ hundreds of lines into context.
   failed. Fresh agents repeat dead ends.
 - **Don't launch wide agent fan-outs without checking scope.** For a narrow
   question, go direct.
-- **Subagents do NOT inherit this file — propagate the conventions into their
-  prompt.** Spawned agents start without these instructions, so restate the
-  relevant rules inline: (1) use `csl_search`/`csl_read` for code search in
-  indexed repos, not bash grep/find; (2) never commit/push or push to main —
-  return a diff/summary and let the main agent handle git. Keep it to the rules
-  the agent's task actually touches.
-- **Subagents must return findings concisely** — no raw file dumps, no full
+- **Not every subagent reads this file.** General-purpose and `claude`
+  subagents load it; Explore and Plan agents don't. For those, restate the
+  rules the task touches in the prompt: (1) use `csl_search`/`csl_read` for
+  code search in indexed repos, not bash grep/find; (2) never commit or push;
+  return a diff or summary and let the main agent handle git.
+- **Subagents must return findings concisely**: no raw file dumps, no full
   search blocks. Summaries only, with file paths and key snippets.
 
-## Shared Agent Memory — portable across agents
+## Shared Agent Memory: portable across agents
 Cross-agent memory lives at `~/.config/agent-memory/`, a clone of a private
 git repo: one fact per file with frontmatter (`name`, `description`,
 `metadata.type`), plus a one-line index entry in `MEMORY.md`. Commit and push
@@ -84,21 +95,21 @@ in the clone itself; git carries it across machines. belt's `agent-memory`
 hint injects the index into every session at SessionStart, so facts recorded
 once arrive as context everywhere without any instruction prose.
 
-- Write there when asked to remember something durable and agent-agnostic —
+- Write there when asked to remember something durable and agent-agnostic:
   a preference, correction, or workflow rule that should hold in every coding
   agent, not just Claude Code.
 - Division of labor: Claude's own auto-memory keeps project-scoped and
   Claude-specific facts; the shared store holds only facts that should follow
   you into other agents. A plain "remember this" routes to auto-memory unless
   it is clearly cross-agent.
-- Setup (one-time): create the private repo and clone it into place — the
+- Setup (one-time): create the private repo and clone it into place. The
   `agent-memory` recipe in this example repo does the clone and carries the
   index and fact-file templates.
 
-## Worklog — resumable cross-session work state
+## Worklog: resumable cross-session work state
 For long tasks that span multiple sessions and multiple repos (often started
 from a tmp dir), use **worklog** (a thismoon tool) to keep "where I am" in a
-stable, searchable place keyed by **ticket id or topic** — not by working
+stable, searchable place keyed by **ticket id or topic**, not by working
 directory. This is the fix for work that auto-memory loses because it started
 in a tmp dir.
 
@@ -121,22 +132,22 @@ in a tmp dir.
 - Worklog holds resumable task state. "Remember" still routes to auto-memory
   (durable atomic facts); `/handoff` writes a one-off bridge doc.
 
-## keeper-of-facts (kof) — assertion store (evidence-pinned session knowledge)
-keeper-of-facts, short kof (a thismoon service, web at `http://kof.this/`) stores **assertions**:
-one-sentence statements about how a system behaves, each pinned to a hashed
-file line-range. `kof check` flips assertions stale when the pinned code
-changes, so unlike docs or memory they decay detectably.
+## keeper-of-facts (kof): assertion store (evidence-pinned session knowledge)
+keeper-of-facts, short kof (a thismoon service, web at `http://kof.this/`),
+stores **assertions**: one-sentence statements about how a system behaves,
+each pinned to a hashed file line-range. `kof check` flips assertions stale
+when the pinned code changes, so unlike docs or memory they decay detectably.
 
 - **belt hooks do the prompting:** session start surfaces the cwd repo's
   assertions (`belt[kof-consult]`), csl searches surface assertions about the
   code they hit (`belt[kof-assertions]`), and a once-per-session nudge reminds
   about depositing (`belt[kof-deposit]`). Act on those when they appear. The
-  hooks can't see repos that are neither the cwd nor csl-searched — when
+  hooks can't see repos that are neither the cwd nor csl-searched; when
   working in one, run `kof_query` yourself with a `subject` prefix
   (`repo:<org>/<repo>...`); `kof_get` shows the pins.
 - **Deposit after deriving:** when a session works out something non-obvious
   that took real effort (behavior, invariant, dead end), store it with
-  `kof_assert` — at least one evidence pin (`repo_path`, `file`,
+  `kof_assert`. At least one evidence pin (`repo_path`, `file`,
   `start_line`, `end_line`) is required, one sentence per assertion, subject
   namespaced like `repo:<org>/<repo>/path`.
 - **Correct, don't tolerate:** an assertion that proves wrong gets
@@ -149,14 +160,17 @@ changes, so unlike docs or memory they decay detectably.
 ## Language & Tool Preferences
 - Go for CLI tools and infrastructure tooling (install to `~/code/bin`, use
   `go env GOBIN`/`GOPATH`).
-- Python 3 for agents/bots/services — use `pip3` not `pip`.
+- Python 3 for agents/bots/services; use `pip3` not `pip`.
 - Use /golang-style (shipped by thismoon) when writing new Go or reviewing a
   Go diff for structure and idioms; skip it for mechanical few-line edits.
+  Use /golang-pro for concurrency, generics depth, pprof, and gRPC.
 - Use /humanizer (shipped by thismoon) for documentation and external-facing
   text.
 - Use /worklog (shipped by thismoon) to checkpoint and resume long
-  cross-session tasks, and /present to publish a briefing page of a work
-  summary or research result.
+  cross-session tasks, /handoff when a session ends mid-task, and /present to
+  publish a briefing page of a work summary or research result.
+- Use /loom when several sessions work one repo in parallel, each in its own
+  git worktree.
 - Use an available MCP server instead of a shell CLI or raw HTTP request when
   it supports the requested operation.
 - Use WebSearch or WebFetch for current version and release lookups, and
@@ -164,14 +178,14 @@ changes, so unlike docs or memory they decay detectably.
 - If an existing shell workflow only needs a small JSON transformation, use
   `jq` instead of an inline Python program.
 
-## Local Code Search — Global Default (csl)
-**Use `csl_*` MCP tools for repo discovery AND code search** — repo lookup,
+## Local Code Search: Global Default (csl)
+**Use `csl_*` MCP tools for repo discovery AND code search**: repo lookup,
 health checks, file reading, symbol search, and pattern matching. csl
 (`code-search-local`, a thismoon service) indexes your local checkouts with a
 zoekt index that is faster than filesystem grep and returns structured results
 that keep context lean.
 
-- Do NOT use the `csl` CLI directly — the MCP tools and CLI share the same
+- Do NOT use the `csl` CLI directly: the MCP tools and CLI share the same
   foundation, so if one is down the other is too.
 - **Prefer `csl_search`/`csl_read` over Bash grep/find/rg when the repo is
   indexed.** Check with `csl_repo_info` or `csl_repo_lookup` first. If the repo
@@ -197,14 +211,15 @@ under "Add this to your CLAUDE.md"; `csl docs --claude-md` prints it):
 - **Diagnosis:** `csl_doctor`. Call it before retrying a failed tool call.
 
 **zoekt query best practices:**
-- Use 1–2 search terms max, then narrow with `repo:`/`f:`/`lang:` filters. AND
-  requires all terms in the same file — 3+ terms almost always returns zero.
+- Use 1 to 2 search terms max, then narrow with `repo:`/`f:`/`lang:` filters.
+  AND requires all terms in the same file; 3+ terms almost always returns
+  zero.
 - OR syntax: use `|` with no spaces (`foo|bar`). Uppercase `OR` is a literal
   string. Spaces around `|` break it.
 - Filter prefixes: `repo:` (not `r:`), `f:` (not `file:`). Prefer the dedicated
   tool params over inline filter syntax.
-- If a query returns zero results, run it through `csl_query_validate` to see
-  how zoekt parsed it.
+- If a query returns zero results, read the `zero_result_hint` in the response
+  before retrying; `csl_query_validate` shows how zoekt parsed a query.
 - Verify the repo is indexed before searching: `csl_repo_lookup` first.
 
 **Grep-to-zoekt translation** (muscle memory is grep):
@@ -221,29 +236,29 @@ under "Add this to your CLAUDE.md"; `csl docs --claude-md` prints it):
 - `csl_repo_info` returns git health state (branch, dirty files, index
   staleness, suggested action). Use it before starting work to check if a repo
   needs commit/stash/pull/reindex.
-- If lookup returns empty, the repo is not checked out locally — say so, don't
+- If lookup returns empty, the repo is not checked out locally; say so, don't
   guess paths.
 - Use `csl_repo_pull` before creating branches on repos that may be out of date.
 - Use `csl_repo_reindex` after significant changes so `csl_search` stays current.
 
 ## Repo Freshness Protocol
-- **Peek mode:** exploring, orienting, browsing — just use
+- **Peek mode:** exploring, orienting, browsing; just use
   `csl_search`/`csl_read`/`csl_repo_info`. No pull needed. State results as
   "based on local checkout, may be behind upstream."
 - **Conclusion mode:** before changing a repo, or telling the user something
   about its current state they'll act on (a fix, a PR, a plan that depends on
   what's committed), run `csl_repo_info` first. Pure analysis that doesn't
   hinge on freshness stays in peek mode. Dirty: never stash, checkout, or
-  discard autonomously — if the task doesn't touch the dirty files, proceed
+  discard autonomously; if the task doesn't touch the dirty files, proceed
   and say so; ask only when it does. Non-default branch: ask before switching.
   Stale: pull if clean and note it. If the pull brought in new commits (or you
-  switched branches), re-run `csl_repo_info` — the earlier read is stale.
-- Same protocol applies to subagents — tell them which mode they're in.
+  switched branches), re-run `csl_repo_info`: the earlier read is stale.
+- Same protocol applies to subagents; tell them which mode they're in.
 
 ## Sparse Checkout Awareness
 Many repos use git sparse checkout. Before reading files in a monorepo:
 1. Check if the path exists on disk first. If a read fails, don't retry with
-   glob/find — the file likely isn't checked out.
+   glob/find; the file likely isn't checked out.
 2. Use `git show HEAD:<path>` to read files not in the sparse checkout, or
    `git sparse-checkout add <path>` to check them out.
 3. Run `git sparse-checkout list` to understand what's available before
@@ -258,30 +273,30 @@ Many repos use git sparse checkout. Before reading files in a monorepo:
   concerns (build commands, conventions, test frameworks).
 - If a repo has no CLAUDE.md, fall back to global only.
 
-## Domain Docs — CONTEXT.md & ADRs
+## Domain Docs: CONTEXT.md & ADRs
 Repos may carry two domain docs alongside CLAUDE.md. Read both before working in
 an area.
 
 - **Division of labor:** CLAUDE.md says how to work in the repo (commands,
-  conventions, invariants). `CONTEXT.md` is the domain glossary — canonical
+  conventions, invariants). `CONTEXT.md` is the domain glossary: canonical
   terms with tight definitions, `_Avoid_:` lists of banned synonyms,
   relationships between concepts. `docs/adr/NNNN-slug.md` records why
   hard-to-reverse decisions went the way they did.
 - **Use the glossary's vocabulary** in code, tests, comments, commits, and docs.
   If wording conflicts with the glossary, call it out instead of guessing.
 - **Respect ADRs.** Before changing code in an area, check `docs/adr/` for
-  decisions that touch it. Never "fix" a deliberate deviation an ADR records —
+  decisions that touch it. Never "fix" a deliberate deviation an ADR records;
   surface it and ask first.
 - **Multi-context repos** have a root `CONTEXT-MAP.md` pointing at per-context
   `CONTEXT.md` files.
 
-## Change Impact Analysis — before code changes
-Before a code change, answer: (1) what breaks — call sites, configs, tests,
-downstream code? Search, don't assume. (2) what happens to existing data —
-persisted state under the old shape? (3) what happens to existing consumers —
+## Change Impact Analysis: before code changes
+Before a code change, answer: (1) what breaks: call sites, configs, tests,
+downstream code? Search, don't assume. (2) what happens to existing data:
+persisted state under the old shape? (3) what happens to existing consumers:
 silent breaking change? (4) is it reversible?
 
-State findings before editing — e.g. "this renames a public function used in 4
+State findings before editing, e.g. "this renames a public function used in 4
 other files; I'll update them all." One-liner for trivial changes; explicit
 blast radius for public APIs, schemas, persisted data, or shared config.
 
@@ -290,31 +305,31 @@ changes), explain the action and expected outcome BEFORE executing. Wait for
 confirmation. Don't silently start destructive or external ops.
 
 ## Design Principles
-- DRY (Rule of Three), YAGNI, KISS — apply strictly.
-- Pure functions; push side effects (I/O, state, time) to the edges — functional
-  core, imperative shell.
+- DRY (Rule of Three), YAGNI, KISS: apply strictly.
+- Pure functions; push side effects (I/O, state, time) to the edges:
+  functional core, imperative shell.
 - Immutable by default. Plain data + functions over stateful objects.
 - Make illegal states unrepresentable; parse, don't validate at boundaries.
-- Single responsibility — small functions, one job. If naming needs "and", split.
+- Single responsibility: small functions, one job. If naming needs "and", split.
 - Compose small pieces; don't abstract before the third use.
-- Pass dependencies in, don't construct them inside — for testability.
-- Explicit over implicit — clear names, explicit errors, no hidden global state.
+- Pass dependencies in, don't construct them inside, for testability.
+- Explicit over implicit: clear names, explicit errors, no hidden global state.
 - Fail fast.
 - Prefer existing libraries/patterns; read before writing. Methods under 20
   lines. No swallowed exceptions.
-- Single source of truth — no duplicate configs/skills across repos.
+- Single source of truth: no duplicate configs/skills across repos.
 - Use absolute paths when referencing files across projects.
 
 ## Testing
-- TDD (red-green-refactor) — especially for refactors: pin behavior in a test
+- TDD (red-green-refactor), especially for refactors: pin behavior in a test
   before changing code.
-- Test behavior, not implementation — survives refactors.
+- Test behavior, not implementation; it survives refactors.
 - Arrange-Act-Assert; Test Pyramid (unit-heavy, few e2e); FIRST as hygiene.
 - Add unit tests for new code.
 
 ## YAGNI
-- No abstractions without 2–3 real use cases.
-- No "what if we also need" — we don't.
+- No abstractions without 2 to 3 real use cases.
+- No "what if we also need"; we don't.
 - Simple solutions first. Refactor when actual complexity arrives.
 
 ## Never Accept
@@ -322,20 +337,20 @@ confirmation. Don't silently start destructive or external ops.
 - Duplicated validation logic.
 - Magic numbers without explanation.
 - Tests that test implementation details rather than behavior.
-- "Unrelated" test failures — main is always green. If tests fail, fix them.
+- "Unrelated" test failures: main is always green. If tests fail, fix them.
 
 ## Communication
-- NEVER send messages (Slack, email, etc.) directly on the user's behalf —
+- NEVER send messages (Slack, email, etc.) directly on the user's behalf;
   always create a draft instead.
 
 ## Response Style
-- Keep responses concise and technical — no AI-sounding fluff.
+- Keep responses concise and technical; no AI-sounding fluff.
 - Don't summarize what you just did at the end of responses.
 - **Trust user runtime observations.** When the user reports a live error, don't
   argue the code looks correct. Terminal output is ground truth. Investigate
   from there.
 - **When a tool or API can't provide what's needed, say so immediately.** Don't
-  retry the same failing approach — state the limitation and suggest an
+  retry the same failing approach; state the limitation and suggest an
   alternative.
 
 ## Plan Mode Behavior
@@ -350,17 +365,19 @@ confirmation. Don't silently start destructive or external ops.
   thismoon tool). `humanizer_detect` for short-form text; the `/humanizer`
   skill for docs and multi-paragraph prose. Key MCP tools: `humanizer_detect`,
   `humanizer_voice_profile`, `humanizer_voice_diff`.
+- **No em dashes** in PR bodies, commit messages, drafted messages, or
+  committed docs. Use a colon, comma, parentheses, or a new sentence.
 - **First-use rule for abbreviations:** the first time a shortened name appears
   in a document, spell out the full name followed by the short form in
   parentheses, then use the short form everywhere after. Applies per-document.
 - Well-known acronyms (HTTP, JSON, DNS, API, CLI, URL, YAML, SQL, TLS, SSH)
   don't need expansion.
 - **Pre-draft clarification for RFCs and design docs.** Before a first draft,
-  ask 2–3 targeted questions: what must NOT appear, what framing/tone is
+  ask 2 to 3 targeted questions: what must NOT appear, what framing/tone is
   expected, who the audience is.
 
 ## Research Workflow
-- When research is needed, use /plan and agent teams — assume research tasks are
+- When research is needed, use /plan and agent teams; assume research tasks are
   complex by default. One agent per repo for multi-repo work.
 - Research before implementing: understand the problem space first, then build.
 - **Confirm the data model and core algorithm before building new components.**

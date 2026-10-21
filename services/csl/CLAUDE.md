@@ -374,7 +374,7 @@ auto-reload on a CSS/JS change.
 - **`app.js` no longer owns theme.** `webkit.js` + `<wk-header>` handle theme
   toggling and persistence entirely; `app.js` shouldn't duplicate that logic.
 - The MCP server (`csl mcp`) is registered in
-  the consuming repo's `recipes/claude-mcp/servers.json` and runs via t-man; the web UI is
+  the consuming repo's agent-sync `servers.json` (worked example: `examples/dotfiles/recipes/agent-config/`) and runs via t-man; the web UI is
   `csl web --port 7424` (the `csl-web` t-man agent). There is no `csl serve`:
   `--serve` is a flag on `csl search` that runs the search daemon in the foreground.
 - **`csl hooks install` is deprecated.** suspenders now owns post-merge git
@@ -400,7 +400,7 @@ auto-reload on a CSS/JS change.
 - Recipe: `recipes/csl/recipe.toml` (this repo)
 - Shared UI package: `webkit/` at the repo root
 - Deep-dive docs (not part of this pass): `docs/architecture.md`, `docs/mcp.md`, `docs/cli.md`, `docs/configuration.md`, `docs/getting-started.md`, `docs/semantic.md`, `docs/web.md`, `docs/hooks.md`
-- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json`
-  (entry `csl`, command `csl mcp`), machine-private wiring (docs/adr/0006)
+- MCP registration: the consuming repo's agent-sync `servers.json`
+  (entry `csl`, command `csl mcp`; worked example `examples/dotfiles/recipes/agent-config/`), machine-private wiring (docs/adr/0006)
 - Route: the consuming repo's `recipes/d-man/routes.toml` overlay
   (`csl` → `csl.this`; docs/adr/0006), machine-private wiring

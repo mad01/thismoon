@@ -191,7 +191,7 @@ confirms which embedded webkit assets the running events server serves.
 
 ## Gotchas
 
-- **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
+- **Wave 0 builder.** Builds before the consuming repo's agent-sync recipe (wave 1) registers the MCP.
 - **Runtime debugging lives in `operating.md`** (embedded in the binary,
   printed by `events docs`): serve-must-be-running, store layout, failure
   modes, version-skew checks. Keep those facts there, not here.
@@ -211,5 +211,5 @@ confirms which embedded webkit assets the running events server serves.
 
 - Recipe: `recipes/events/recipe.toml` (+ `recipes/events/CLAUDE.md`)
 - Route: the consuming repo's `recipes/d-man/routes.toml` overlay (`events` → 7430; docs/adr/0006)
-- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json` (entry `events`, command `events mcp`)
+- MCP registration: the consuming repo's agent-sync `servers.json` (entry `events`, command `events mcp`; worked example `examples/dotfiles/recipes/agent-config/`)
 - ADR: `docs/adr/0005-webkit-client-side-rendering.md` (events was already client-side)

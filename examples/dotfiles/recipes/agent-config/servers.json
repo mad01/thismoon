@@ -1,0 +1,48 @@
+{
+  "_comment": "The MCP servers Claude Code sees on this machine, applied at user scope by `agent-sync mcp sync` on every ralph up. Each entry mirrors `claude mcp add --scope user <name> -- <command> [args...]`: a stdio entry has `command` and optional `args` and `env`; a remote one has `transport` (http or sse), `url` and optional `headers`. A leading ~ in command and args is expanded. `hosts` and `profiles` gate an entry to those hostnames (lowercased) or ralph profile tags (from ~/.config/ralph/config.local.toml); both gates must pass. Names starting with _ are skipped. Drop-ins (~/.config/claude-mcp/servers.d/*.json) merge over this file by name. A server missing from `claude mcp list` is added; one whose registered spec differs is removed and added again; a remote server is compared by url alone, so an OAuth login survives. A server dropped from here stays registered unless mcp.prune is true in config.yaml.",
+  "servers": {
+    "csl": {
+      "_comment": "Code search. Pure stdio over the local index; nothing has to be running.",
+      "command": "~/code/bin/csl",
+      "args": ["mcp"]
+    },
+    "present": {
+      "command": "~/code/bin/present",
+      "args": ["mcp"]
+    },
+    "worklog": {
+      "command": "~/code/bin/worklog",
+      "args": ["mcp"]
+    },
+    "humanizer": {
+      "command": "~/code/bin/humanizer",
+      "args": ["mcp"]
+    },
+    "kof": {
+      "_comment": "A thin client of the kof service: registered everywhere, the tools answer unreachable until `kof serve` runs.",
+      "command": "~/code/bin/kof",
+      "args": ["mcp"]
+    },
+    "events": {
+      "command": "~/code/bin/events",
+      "args": ["mcp"]
+    },
+    "deps": {
+      "_comment": "Profile-gated: the deps service runs on personal machines only (the override example in config.toml), so the server registers only where the personal profile is set.",
+      "profiles": ["personal"],
+      "command": "~/code/bin/deps",
+      "args": ["mcp"]
+    },
+    "speak": {
+      "_comment": "Host-gated: speak plays audio through this machine's speakers and its TTS engine lives on one host. The name is the machine's hostname as `hostname` prints it, lowercased.",
+      "hosts": ["your-laptop"],
+      "command": "~/code/bin/speak",
+      "args": ["mcp"]
+    },
+    "present-shared": {
+      "_comment": "A remote server, compared by url alone so a login done by hand survives a sync. Secrets never go in this file: an OAuth flow or a headersHelper command mints the header at launch.",
+      "transport": "http",
+      "url": "https://present.example.com/mcp"
+    }
+  }
+}

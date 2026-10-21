@@ -37,7 +37,7 @@ source = "../../skills/present"
 target = "~/.agents/skills/present"
 action = "symlink_dir"
 
-# Keep the two launchers executable: the consuming repo's claude-mcp overlay
+# Keep the two launchers executable: the consuming repo's agent-sync servers.json
 # registers the MCP wrapper, not the bare binary (sandbox containment: it
 # execs `present mcp` under present.sb, which lives beside it in this dir),
 # and the serve hook below registers present-serve.sh. Both source

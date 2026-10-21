@@ -1,0 +1,32 @@
+# Example overlay: one MCP server run under a seatbelt sandbox, contributed
+# to the machine's server set through agent-sync's mcp drop-in dir.
+#
+# Third-party or untrusted servers get confined: mytool-mcp-sandbox.sh execs
+# the binary under the mytool.sb profile (no network, no writes, $HOME reads
+# denied by default). The registration is a drop-in, mysandboxed.json,
+# symlinked into ~/.config/claude-mcp/servers.d/, which the agent-config
+# recipe's mcp sync merges over its base servers.json. So a recipe that owns
+# a server declares it beside the server's own files, and the base file
+# never learns about it. The same shape serves a profile-gated work source
+# that brings its own servers.
+#
+# Wave 1 like agent-config. The drop-in is a dotfile, laid down before any
+# build hook runs, so the sync sees it on the same ralph up.
+[recipe]
+name = "mcp-sandbox"
+description = "A seatbelt-confined MCP server, registered through agent-sync's servers.d/ drop-in dir"
+wave = 1
+
+# The MCP client spawns the wrapper by path, so it must be executable. The
+# file is committed executable; the hook keeps it that way on a checkout
+# that lost the bit.
+[hooks.builds.mcp_sandbox_chmod]
+commands = ["chmod +x mytool-mcp-sandbox.sh"]
+working_dir = "~/code/src/github.com/you/dotfiles/recipes/mcp-sandbox"
+run = "always"
+
+# The drop-in. The agent-config recipe owns the servers.d/ directory.
+[dotfiles.mcp_sandbox_server]
+source = "mysandboxed.json"
+target = "~/.config/claude-mcp/servers.d/mysandboxed.json"
+action = "symlink"

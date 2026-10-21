@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh homelab:*)"
+    ],
+    "additionalDirectories": [
+      "~/scratch"
+    ]
+  },
+  "env": {
+    "MYSERVICE_URL": "http://127.0.0.1:7777"
+  }
+}

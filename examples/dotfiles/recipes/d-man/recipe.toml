@@ -5,11 +5,11 @@
 # private wiring, so it belongs in the consuming repo (docs/adr/0006 in thismoon).
 [recipe]
 name = "d-man"
-description = "d-man routes overlay — machine-personal routes + work-profile block list"
+description = "d-man routes overlay: machine-personal routes + work-profile block list"
 wave = 0
 
 # Base routes + the work block list are the source of truth, symlinked into the
-# config dir. The ACTIVE ~/.config/d-man/routes.toml is NOT symlinked — it is
+# config dir. The ACTIVE ~/.config/d-man/routes.toml is NOT symlinked: it is
 # generated from these by d-man-profile (see the build hook), so the profile
 # toggle can rewrite it without dirtying this repo.
 [dotfiles.d_man_routes_base]
@@ -33,8 +33,13 @@ action = "symlink"
 # (default personal). Runs every `ralph up`, so edits to routes.base.toml land
 # and any leftover routes.toml symlink is replaced by a generated file. The
 # daemon's --config points here; rewriting it triggers an fsnotify reload.
+# The script also rewrites a ~ in games_dir to an absolute path: the daemon
+# runs as root, where ~ would expand to /var/root.
+#
+# Never idempotent = true here: ralph's idempotent flag hashes the command
+# string, not the files it reads, so the hook would run once per machine and
+# never pick up a routes.base.toml edit again.
 [hooks.builds.d_man_profile_apply]
 commands = ["$HOME/code/bin/d-man-profile \"$($HOME/code/bin/d-man-profile status)\""]
 working_dir = "~/.config/d-man"
 run = "always"
-idempotent = true

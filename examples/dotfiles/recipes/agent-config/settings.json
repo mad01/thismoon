@@ -1,5 +1,31 @@
 {
-  "__comment": "The hooks block that registers belt in ~/.claude/settings.json. Merge the 'hooks' key into your settings (keep your existing entries); tools/belt/docs/hooks.md in the thismoon repo explains every entry. The PostToolUse external-text matcher below is an example - list the MCP tools on YOUR machine that publish text other people read (issue comments, PR reviews, chat messages). The PreToolUse external-text matcher is stricter: route ONLY the MCP server that talks to github.com there, because the publish-internal-names guard treats every call it sees as public. The belt record entries only post to the events ledger and never print, so they are safe everywhere. The belt watch entries (asyncRewake, timeout above watch.max_wait_s) do nothing until watch.enabled is set in the belt config. Never point a belt command at WorktreeCreate or WorktreeRemove: those hooks replace git's own worktree handling.",
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "high"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(make build)",
+      "Bash(make test)",
+      "Bash(go test:*)",
+      "mcp__csl__*",
+      "mcp__present__*",
+      "mcp__worklog__*"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Read(~/.ssh/**)"
+    ],
+    "ask": [
+      "Bash(rm:*)"
+    ],
+    "additionalDirectories": [
+      "~/code"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {

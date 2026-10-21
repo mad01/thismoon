@@ -479,12 +479,12 @@ confirms which embedded webkit assets the running present server serves.
 
 ## Gotchas
 
-- **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers it.
+- **Wave 0 builder.** Builds before the consuming repo's agent-sync recipe (`agent-config/` in `examples/dotfiles`, wave 1) registers it.
 - **Runtime debugging lives in `operating.md`** (embedded in the binary,
   printed by `present docs`): the two-process split, shared-workdir/port
   mismatch, content rules that corrupt pages, failure modes, version-skew
   checks. Keep those facts there, not here. Dev-side notes that stay: the MCP
-  is pinned via `env` in the consuming repo's `recipes/claude-mcp/servers.json`
+  is pinned via `env` in the consuming repo's agent-sync `servers.json`
   (`PRESENT_WORKDIR`/`PRESENT_PORT`), with leading `~` expanded in Go
   (`expandTilde`, `root.go`). `serve` request logs go to stderr (`t-man logs
   present --stderr`), and a reload-loop of `GET /p/<id>` means cached HTML.
@@ -528,4 +528,4 @@ confirms which embedded webkit assets the running present server serves.
 
 - Recipe: `recipes/present/recipe.toml` (+ `recipes/present/CLAUDE.md`)
 - Skill: repo-root `skills/present/SKILL.md`, the entry point for authoring (block picker, chart and engine pickers, colour rules, deck rules); `skills/present/examples/` holds four complete pages as `present_create` arguments (one of them the live terminal demo), and `skills/present/evals/` the `claude plugin eval` cases that check an agent picks the right blocks
-- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json`
+- MCP registration: the consuming repo's agent-sync `servers.json` (worked example: `examples/dotfiles/recipes/agent-config/`)
