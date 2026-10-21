@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/mad01/thismoon/compare/worklog/v0.11.1...worklog/v0.11.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* **skills:** apply prompt-audit fixes to thismoon skills ([#248](https://github.com/mad01/thismoon/issues/248)) ([b0a1dcf](https://github.com/mad01/thismoon/commit/b0a1dcf31c59be6ce225268204130559383e8b1e))
+
 ## [0.11.1](https://github.com/mad01/thismoon/compare/worklog/v0.11.0...worklog/v0.11.1) (2026-10-02)
 
 
