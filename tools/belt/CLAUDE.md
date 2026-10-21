@@ -21,6 +21,7 @@ belt/
     mcptool/          - MCP tool-name reading (server/operation split, read-only verb rule) shared by the humanizer hint and the publish guard
     hint/             - the hints (prefer-csl, commit-policy, lint-policy, kof-assertions, kof-consult, kof-deposit, agent-memory, humanizer-check, em-dash) + config-registered custom hints, csl index lookup, response parsing, session dedupe
     config/           - belt config (internal_names + its include files, claude_settings, toggles, guard rules) + gated Claude-settings deny list
+  pi/                 - the pi package: extensions/ (permission-gate, permission-broker, belt-hooks), lib/config.ts (belt.json), test/ (node --test, fake pi + fake belt)
   Makefile            - package path github.com/mad01/thismoon/tools/belt (monorepo module, no own go.mod)
 
 Event archiving goes through the shared `github.com/mad01/thismoon/kit/notify`
@@ -101,9 +102,19 @@ Two tags need care. `worktree` is the linked worktree's toplevel for the payload
 ```bash
 make build    # produces ./belt binary
 make install  # build + cp to ~/code/bin/belt + adhoc codesign
-make test     # go test ./...
+make test     # go test ./... + test-js (node --test on pi/test, skipped without node)
 make lint     # golangci-lint run ./...
 ```
+
+## pi package
+
+`pi/` is a pi package (`pi/package.json`, `pi.extensions: ./extensions/*.ts`) that pi loads in place from the ralph sources cache; the consuming repo declares it in pi's `settings.json`, the same way it declares `mods/`. The README's pi section covers what each extension does and the `belt.json` keys. Working rules:
+
+- The gate stays fail-closed: a missing belt, a failed `belt check`, and an unreadable `belt.json` (a dangling symlink included) all block (reads excepted for the last). The hints fail open. `belt:deny` (`{ kind, target, reason }`) is a contract with the session-band mod's pi face; keep the name and the three keys.
+- `belt.json` keys add to or override the defaults: the server lists only grow, and an `mcpPrefixes` entry can remap a default prefix. Unknown keys are ignored but named in the gate's config line, so a misspelt key shows up. The defaults name only this repo's servers and github.com. A machine's own server or sandbox variable belongs in the consuming repo's rendering of the file, never in `lib/config.ts`.
+- `permission-broker.ts` keeps its env var names and `Symbol.for` keys. An extension outside this package may import its own copy, and the shared state on `globalThis` keeps a second load idempotent.
+- Tests run with `make test-js` (`node --test pi/test/*.test.mjs`); `make test` runs them after the Go tests, and CI runs `make test-js` in the belt job. Each file runs in its own process because both extensions remember a missing belt for the process lifetime. For the same reason, pi picks up a belt installed mid-session only on its next start. For a load check without touching real pi state, run `pi -p --no-session --offline -e pi "hi"` with `PI_CODING_AGENT_DIR` pointed at a scratch dir. With no credentials there the run stops at "No API key found", and a load error prints before that line.
+- pi loads nothing and prints nothing for a declared package path that does not exist. The consuming repo checks the path itself (a ralph `[[tools]]` check), since pi never complains.
 
 ## Commands
 

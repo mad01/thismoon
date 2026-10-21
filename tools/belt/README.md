@@ -63,6 +63,26 @@ make build    # produces ./belt binary
 make install  # build + cp to ~/code/bin/belt + adhoc codesign
 ```
 
+## pi package
+
+`pi/` brings the same guards and hints to the pi coding agent as a pi package. pi loads it in place, so a machine declares it in pi's `settings.json` as `{ "source": "~/.config/ralph/sources/thismoon/tools/belt/pi" }` and gets every merge to main on the next `ralph up`. It has three extensions:
+
+- `permission-gate.ts` runs `belt check bash`, `belt check write` and `belt check external-text` before each tool call and blocks on a `DENY` line. It fails closed when belt is missing or errors. After belt it applies the allow, ask and deny lists from `~/.claude/settings.json`. Each belt denial is also announced on pi's extension bus as `belt:deny` with `{ kind, target, reason }`, which the session-band mod counts.
+- `permission-broker.ts` carries a headless subagent's confirmation to the root session over a private socket, so a subagent never approves its own call.
+- `belt-hooks.ts` runs `belt hint` at session start, on each prompt, and after bash, csl search and publishing calls, and appends the advice. It never blocks.
+
+Settings live in `~/.pi/agent/belt.json` (`PI_CODING_AGENT_DIR` moves the directory). Every key is optional and adds to or overrides the defaults, which name no machine-specific server. The server lists only grow, but an `mcpPrefixes` entry for a default prefix such as `csl_` remaps it. Unknown keys are ignored, and pi names them at session start and in `/permissions`:
+
+| Key | Default | Effect |
+|-----|---------|--------|
+| `mcpPrefixes` | `csl_`, `humanizer_`, `worklog_`, `kof_` | Maps a direct adapter tool name such as `csl_search` back to its MCP server. |
+| `externalTextGuardServers` | `gh_com` | MCP servers whose calls run `belt check external-text`. |
+| `externalTextHintServers` | `gh_com`, `linear` | MCP servers whose results run `belt hint external-text`. |
+| `sandboxActiveEnv` | none | Env var a sandbox extension sets to `1`. While it is set, an unknown shell command runs without a prompt. |
+| `sandboxAllowUnsandboxedEnv` | none | Env var a sandbox extension sets to `0` to switch unsandboxed retries off. Such a request is then blocked. |
+
+A missing file means the defaults. A file that is present but unreadable blocks every tool call except reads until it is fixed, for the same reason a broken belt config denies. A symlink to a missing file counts as unreadable. `make test` runs the package tests after the Go tests; `make test-js` runs only them.
+
 ## Usage
 
 Manual dry-runs, useful for checking what a guard would decide without going through a real Claude Code session:

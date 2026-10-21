@@ -1,0 +1,14 @@
+{
+  "name": "belt-pi",
+  "private": true,
+  "type": "module",
+  "description": "belt's guards and hints as a pi package: pi loads extensions/*.ts in place from this directory (the ralph sources cache on a machine). permission-gate.ts runs belt check before each tool call and fails closed, belt-hooks.ts appends belt hint advice, permission-broker.ts carries headless confirmations to the root TUI. Settings come from belt.json in pi's agent directory (lib/config.ts).",
+  "pi": {
+    "extensions": [
+      "./extensions/*.ts"
+    ],
+    "skills": [],
+    "prompts": [],
+    "themes": []
+  }
+}

@@ -2,8 +2,8 @@
 /**
  * session-band, pi face. The Claude face (../hooks/register.tsx) counts belt
  * denials by reading each tool call's result as it comes back up the hook
- * chain. pi has no chain to read: the permission gate (the dotfiles pi
- * recipe's permission-gate.ts) blocks the call and announces it on the
+ * chain. pi has no chain to read: the permission gate (permission-gate.ts in
+ * the belt pi package, tools/belt/pi) blocks the call and announces it on the
  * extension bus as `belt:deny`. This face counts those announcements, keeps
  * the count in the session so a reload or a branch switch restores it, and
  * pins the same one-line status.
