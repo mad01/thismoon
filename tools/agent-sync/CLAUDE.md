@@ -295,6 +295,8 @@ Every command takes `--config` (default `$AGENT_SYNC_CONFIG`, then
 ## See also
 
 - Recipe: `recipes/agent-sync/recipe.toml` (build and install only)
+- Migration how-to: `migrating.md` (cut over from sync scripts; retire a
+  settings key, a mod or an MCP server)
 - Running a sync is the consuming repo's job (docs/adr/0006): it ships the
   data and the config, and calls `agent-sync <section> sync` with `check`
   as the verify step.
