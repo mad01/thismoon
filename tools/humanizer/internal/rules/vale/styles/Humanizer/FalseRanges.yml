@@ -7,7 +7,7 @@
 # humanizer-after: The book covers the Big Bang, star formation, and current dark matter theories.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#False_ranges
 extends: existence
-message: "False range: stacked 'from X to Y, from A to B' — list concrete topics instead."
+message: "False range: stacked 'from X to Y, from A to B'. List concrete topics instead."
 level: warning
 ignorecase: true
 tokens:

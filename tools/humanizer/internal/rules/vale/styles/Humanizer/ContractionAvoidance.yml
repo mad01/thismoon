@@ -7,7 +7,7 @@
 # humanizer-after: It's important you don't forget; we can't proceed and they aren't ready.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Tone
 extends: existence
-message: "Expanded form '%s' — a contraction usually reads more natural in informal text."
+message: "Expanded form '%s'. A contraction usually reads more natural in informal text."
 level: suggestion
 ignorecase: true
 tokens:

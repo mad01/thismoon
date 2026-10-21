@@ -7,7 +7,7 @@
 # humanizer-after: The benchmark favors approach B for write-heavy workloads.
 # humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
 extends: existence
-message: "False both-sides hedge '%s' — commit to a position the evidence supports."
+message: "False both-sides hedge '%s'. Commit to a position the evidence supports."
 level: warning
 ignorecase: true
 tokens:

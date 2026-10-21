@@ -7,7 +7,7 @@
 # humanizer-after: She pocketed the map. Maybe the others would want to see it, maybe not.
 # humanizer-reference: https://arxiv.org/abs/2604.03136
 extends: existence
-message: "Narrator moralizing '%s' — cut the stated lesson and trust the reader to infer it."
+message: "Narrator moralizing '%s'. Cut the stated lesson and trust the reader to infer it."
 level: warning
 ignorecase: true
 tokens:

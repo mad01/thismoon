@@ -7,7 +7,7 @@
 # humanizer-after: It handles the common cases but fails on nested inputs.
 # humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
 extends: existence
-message: "False concession '%s' — keep the caveat and drop the reflexive praise."
+message: "False concession '%s'. Keep the caveat and drop the reflexive praise."
 level: warning
 ignorecase: true
 tokens:

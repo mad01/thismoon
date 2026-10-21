@@ -7,7 +7,7 @@
 # humanizer-after: The server room had that burnt-dust smell it got after a long weekend.
 # humanizer-reference: https://arxiv.org/abs/2604.03136
 extends: existence
-message: "Stock sensory pairing '%s' — swap in a specific, situated detail or drop the sense."
+message: "Stock sensory pairing '%s'. Swap in a specific, situated detail or drop the sense."
 level: suggestion
 ignorecase: true
 tokens:

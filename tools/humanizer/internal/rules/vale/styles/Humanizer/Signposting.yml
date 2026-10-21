@@ -7,7 +7,7 @@
 # humanizer-after: Next.js caches data at multiple layers, including request memoization and the data cache.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Signposting_and_announcements
 extends: existence
-message: "Signposting phrase: '%s' — just say the thing."
+message: "Signposting phrase: '%s'. Just say the thing."
 level: warning
 ignorecase: true
 tokens:

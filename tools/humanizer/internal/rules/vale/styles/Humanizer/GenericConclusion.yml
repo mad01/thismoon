@@ -7,7 +7,7 @@
 # humanizer-after: The company plans to open two more locations next year.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Generic_positive_conclusions
 extends: existence
-message: "Generic positive conclusion: '%s' — replace with concrete plans or cut."
+message: "Generic positive conclusion: '%s'. Replace with concrete plans or cut."
 level: error
 ignorecase: true
 tokens:

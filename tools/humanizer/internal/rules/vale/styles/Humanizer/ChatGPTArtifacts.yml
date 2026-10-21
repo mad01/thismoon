@@ -7,7 +7,7 @@
 # humanizer-after: The treaty was signed in 1848.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing
 extends: existence
-message: "ChatGPT paste artifact: '%s' — remove; this is copy-paste residue from a chatbot."
+message: "ChatGPT paste artifact: '%s'. Remove; this is copy-paste residue from a chatbot."
 level: error
 nonword: true
 tokens:

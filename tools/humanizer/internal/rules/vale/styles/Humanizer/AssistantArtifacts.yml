@@ -7,7 +7,7 @@
 # humanizer-after: The market grew 40% in 2024, driven by exports.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing
 extends: existence
-message: "Assistant paste artifact: '%s' — remove; this is copy-paste residue from a chatbot."
+message: "Assistant paste artifact: '%s'. Remove; this is copy-paste residue from a chatbot."
 level: error
 nonword: true
 tokens:

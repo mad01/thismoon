@@ -93,7 +93,7 @@ func Prompt() string {
 			}
 			fmt.Fprintf(
 				&b,
-				"- %s [%s-leaning] — %s Match: %s.",
+				"- %s [%s-leaning]: %s Match: %s.",
 				f.Name,
 				f.Signal,
 				f.Question,
@@ -109,7 +109,7 @@ func Prompt() string {
 		`The text to judge follows this rubric (appended below or on stdin). ` +
 		`Full stories or 1,000+ word sections give reliable verdicts; on shorter ` +
 		`excerpts treat features that simply do not appear as unknown, not as ` +
-		`evidence either way — absence on a fragment is not an AI signal. ` +
+		`evidence either way; absence on a fragment is not an AI signal. ` +
 		`End your answer with exactly one line: VERDICT|confidence|features, ` +
 		`where VERDICT is AI or HUMAN, confidence is 0-100, and features names ` +
 		`the two or three strongest matches.` + "\n")
@@ -146,7 +146,7 @@ var features = []Feature{
 		Question:  "How explicitly does the story articulate its themes or morals?",
 		Dimension: "situatedness",
 		Signal:    SignalAI,
-		Direction: "high — the narrator states the lesson outright",
+		Direction: "high: the narrator states the lesson outright",
 		Stat:      "theme stated outright in 77% of AI stories vs 52% of human",
 		Theme:     ThemeOverExplanation,
 	},
@@ -156,7 +156,7 @@ var features = []Feature{
 		Question:  "To what extent do subplots and flourishes serve a central thematic concern?",
 		Dimension: "plot",
 		Signal:    SignalAI,
-		Direction: "high — everything serves one theme",
+		Direction: "high: everything serves one theme",
 		Theme:     ThemeOverExplanation,
 	},
 	{
@@ -203,7 +203,7 @@ var features = []Feature{
 		Question:  "How continuous is the single causal chain from inciting incident to ending?",
 		Dimension: "event",
 		Signal:    SignalAI,
-		Direction: "high — one unbroken chain, no loose ends",
+		Direction: "high: one unbroken chain, no loose ends",
 		Theme:     ThemePlotTidiness,
 	},
 	{
@@ -269,7 +269,7 @@ var features = []Feature{
 		Question:  "How extensively does a revelation force reinterpretation of earlier scenes?",
 		Dimension: "revelation",
 		Signal:    SignalHuman,
-		Direction: "high — the reveal demands re-reading",
+		Direction: "high: the reveal demands re-reading",
 		Theme:     ThemePlotTidiness,
 	},
 	{
@@ -278,7 +278,7 @@ var features = []Feature{
 		Question:  "How much does the story build investment before major jeopardy?",
 		Dimension: "revelation",
 		Signal:    SignalAI,
-		Direction: "high — a long calm ramp before danger",
+		Direction: "high: a long calm ramp before danger",
 		Theme:     ThemePlotTidiness,
 	},
 	{
@@ -316,7 +316,7 @@ var features = []Feature{
 		Question:  "To what degree does the physical environment mirror characters' inner states?",
 		Dimension: "setting",
 		Signal:    SignalAI,
-		Direction: "high — weather and rooms track feelings",
+		Direction: "high: weather and rooms track feelings",
 		Theme:     ThemeEmbodiment,
 	},
 	{

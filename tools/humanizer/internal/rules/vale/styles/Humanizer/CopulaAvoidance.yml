@@ -7,7 +7,7 @@
 # humanizer-after: Gallery 825 is LAAA's exhibition space. The gallery has 3,000 square feet.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Copula_avoidance
 extends: existence
-message: "Copula avoidance: '%s' — replace with is/are/has."
+message: "Copula avoidance: '%s'. Replace with is/are/has."
 level: warning
 ignorecase: true
 tokens:

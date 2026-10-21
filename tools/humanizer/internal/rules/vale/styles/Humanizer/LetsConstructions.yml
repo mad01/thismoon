@@ -7,7 +7,7 @@
 # humanizer-after: The data shows a 3x drop in retries after the cache change.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Signposting_and_announcements
 extends: existence
-message: "Performative invitation '%s' — just present the thing."
+message: "Performative invitation '%s'. Just present the thing."
 level: warning
 ignorecase: true
 tokens:

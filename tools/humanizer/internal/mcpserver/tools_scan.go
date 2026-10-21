@@ -144,5 +144,5 @@ func scanGoPathError(err error, path string) error {
 		Hint: "run `humanizer scan --go` from a shell instead; the CLI is unsandboxed. " +
 			"Readable here: .go files under the sandbox profile's workspace roots, and /tmp paths.",
 	})
-	return fmt.Errorf("%s — run the CLI instead: %w", redirect, err)
+	return fmt.Errorf("%s; run the CLI instead: %w", redirect, err)
 }

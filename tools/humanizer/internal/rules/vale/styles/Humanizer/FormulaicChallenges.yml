@@ -7,7 +7,7 @@
 # humanizer-after: Traffic congestion increased after 2015 when three new IT parks opened.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Outline-like_sections
 extends: existence
-message: "Formulaic challenges framing: '%s' — replace with specific, sourced obstacles and outcomes."
+message: "Formulaic challenges framing: '%s'. Replace with specific, sourced obstacles and outcomes."
 level: warning
 ignorecase: true
 tokens:

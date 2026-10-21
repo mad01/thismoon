@@ -7,7 +7,7 @@
 # humanizer-after: She locked the office and left the key under the mat for whoever came next.
 # humanizer-reference: https://arxiv.org/abs/2604.03136
 extends: existence
-message: "Quiet-acceptance closer '%s' — end on an action, an image, or a loose end, not stated acceptance."
+message: "Quiet-acceptance closer '%s'. End on an action, an image, or a loose end, not stated acceptance."
 level: warning
 ignorecase: true
 nonword: true

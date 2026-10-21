@@ -7,7 +7,7 @@
 # humanizer-after: That means deploys drop from 20 minutes to 2. Next we cut the test suite.
 # humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
 extends: existence
-message: "Rhetorical transition '%s' — answer the question instead of posing it."
+message: "Rhetorical transition '%s'. Answer the question instead of posing it."
 level: warning
 ignorecase: true
 tokens:

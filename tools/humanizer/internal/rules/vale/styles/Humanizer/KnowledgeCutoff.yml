@@ -7,7 +7,7 @@
 # humanizer-after: The company was founded in 1994, according to its registration documents.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Knowledge-cutoff_disclaimers
 extends: existence
-message: "Knowledge-cutoff disclaimer: '%s' — replace with a concrete source or cut."
+message: "Knowledge-cutoff disclaimer: '%s'. Replace with a concrete source or cut."
 level: error
 ignorecase: true
 tokens:

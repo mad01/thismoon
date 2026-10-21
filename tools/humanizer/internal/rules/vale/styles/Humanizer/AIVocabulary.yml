@@ -7,7 +7,7 @@
 # humanizer-after: Pasta dishes, introduced during Italian colonization, remain common in the south.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Overused_AI_vocabulary
 extends: existence
-message: "AI vocabulary word: '%s' — prefer a concrete alternative."
+message: "AI vocabulary word: '%s'. Prefer a concrete alternative."
 level: warning
 ignorecase: true
 tokens:

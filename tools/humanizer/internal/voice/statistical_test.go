@@ -6,12 +6,18 @@ import (
 )
 
 func hasRule(fs []StatFinding, id string) bool {
+	return severityOf(fs, id) != ""
+}
+
+// severityOf returns the severity of the finding with rule id, or "" when
+// no such finding exists.
+func severityOf(fs []StatFinding, id string) string {
 	for _, f := range fs {
 		if f.RuleID == id {
-			return true
+			return f.Severity
 		}
 	}
-	return false
+	return ""
 }
 
 func findRule(fs []StatFinding, id string) (StatFinding, bool) {
@@ -36,8 +42,8 @@ func TestShortTextEmDash(t *testing.T) {
 	// ~20 words, contains an em-dash → should fire ShortTextEmDash.
 	text := "The deploy went out this morning and the dashboards look clean — no errors so far across any of the regions we watch."
 	fs := DetectStatistical(text)
-	if !hasRule(fs, "Humanizer.ShortTextEmDash") {
-		t.Fatalf("expected ShortTextEmDash to fire, got %+v", fs)
+	if got := severityOf(fs, "Humanizer.ShortTextEmDash"); got != "error" {
+		t.Fatalf("ShortTextEmDash severity = %q, want error; findings %+v", got, fs)
 	}
 }
 
@@ -63,8 +69,8 @@ func TestEmDashDensity(t *testing.T) {
 	)
 	text += "The cache layer — the part we rewrote — held up fine, and the queue — always the weak spot — stayed flat."
 	fs := DetectStatistical(text)
-	if !hasRule(fs, "Humanizer.EmDashDensity") {
-		t.Fatalf("expected EmDashDensity to fire, got %+v", fs)
+	if got := severityOf(fs, "Humanizer.EmDashDensity"); got != "error" {
+		t.Fatalf("EmDashDensity severity = %q, want error; findings %+v", got, fs)
 	}
 }
 

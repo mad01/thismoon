@@ -7,7 +7,7 @@
 # humanizer-after: The data shows a clear trend.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Filler_phrases
 extends: existence
-message: "Filler boilerplate: '%s' — cut it."
+message: "Filler boilerplate: '%s'. Cut it."
 level: suggestion
 ignorecase: true
 tokens:

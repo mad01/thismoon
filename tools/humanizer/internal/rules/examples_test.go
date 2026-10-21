@@ -43,27 +43,33 @@ func TestRulesFireOnTheirBeforeExamples(t *testing.T) {
 	}
 }
 
-// TestEmDashIsErrorLevel pins the severity the humanizer-gate mod holds on:
-// one em dash in a PR body has to surface as an error-level finding.
-func TestEmDashIsErrorLevel(t *testing.T) {
+// TestDashesAreErrorLevel pins the severity the humanizer-gate mod holds on:
+// one em dash, or a double hyphen standing in for one, in a PR body has to
+// surface as an error-level finding.
+func TestDashesAreErrorLevel(t *testing.T) {
 	if _, err := exec.LookPath("vale"); err != nil {
 		t.Skip("vale not installed")
 	}
-	opts := DetectOptions{CacheDir: t.TempDir(), MinSeverity: "error"}
-	findings, err := Detect(
-		context.Background(),
-		"The build is fast — most runs finish in seconds.\n",
-		opts,
-	)
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
+	tests := []struct{ rule, text string }{
+		{"Humanizer.EmDashOveruse", "The build is fast — most runs finish in seconds.\n"},
+		{"Humanizer.DashSubstitute", "The build is fast -- most runs finish in seconds.\n"},
 	}
-	for _, f := range findings {
-		if f.RuleID == "Humanizer.EmDashOveruse" {
-			return
-		}
+	cacheDir := t.TempDir()
+	for _, tt := range tests {
+		t.Run(tt.rule, func(t *testing.T) {
+			opts := DetectOptions{CacheDir: cacheDir, MinSeverity: "error"}
+			findings, err := Detect(context.Background(), tt.text, opts)
+			if err != nil {
+				t.Fatalf("Detect: %v", err)
+			}
+			for _, f := range findings {
+				if f.RuleID == tt.rule {
+					return
+				}
+			}
+			t.Fatalf("no error-level %s finding in %+v", tt.rule, findings)
+		})
 	}
-	t.Fatalf("no error-level Humanizer.EmDashOveruse finding in %+v", findings)
 }
 
 // dedent strips the common leading indentation that multi-line YAML block
