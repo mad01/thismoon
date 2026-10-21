@@ -13,7 +13,7 @@ ralph merges the recipe with the identity `thismoon/keeper-of-facts`. The packag
 ## What this recipe does
 
 - `wave = 0`: builds `~/code/bin/kof` like the other Go tools (before the
-  the consuming repo's `recipes/claude-mcp` at wave 1 registers the MCP server).
+  the consuming repo's agent-sync recipe at wave 1 registers the MCP server).
 - **`packages.keeper_of_facts.service`** — restarts the agent only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).
@@ -27,7 +27,7 @@ ralph merges the recipe with the identity `thismoon/keeper-of-facts`. The packag
 Machine-specific wiring is deliberately not here (docs/adr/0006):
 
 - the `[[recipe_sources]]` stanza itself (each machine picks its pin)
-- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json` (entry `kof`,
+- MCP registration: the consuming repo's agent-sync `servers.json` (entry `kof`,
   command `kof mcp` — unsandboxed first-party code, HTTP client only)
 - the `kof.this` route: `recipes/d-man/routes.toml` (`kof` → 7431)
 - `depends_on = ["packages.t_man"]` references the dotfiles t-man recipe's

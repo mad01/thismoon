@@ -15,7 +15,7 @@ recipe's directory inside the cache.
 ## What this recipe does
 
 - `wave = 0`: builds `~/code/bin/deps` like the other Go tools (before the
-  the consuming repo's `recipes/claude-mcp` at wave 1 registers the MCP server).
+  the consuming repo's agent-sync recipe at wave 1 registers the MCP server).
 - No `profiles` gate: public recipes here never carry one (docs/adr/0006,
   2026-09-08 amendment). It depends on d-man and t-man, which ship from this
   repo, and on a catalog registry the consuming repo provides per machine
@@ -45,7 +45,7 @@ recipe's directory inside the cache.
 Machine-specific wiring is deliberately not here (MAD-199 tracks the pattern):
 
 - the `[[recipe_sources]]` stanza itself (each machine picks its pin)
-- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json` (entry `deps`, command
+- MCP registration: the consuming repo's agent-sync `servers.json` (entry `deps`, command
   `deps mcp`, with whatever machine gate that repo wants — unsandboxed
   first-party code, HTTP client only)
 - the `deps.this` route: `recipes/d-man/routes.toml` (`deps` → 7429)

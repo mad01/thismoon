@@ -390,11 +390,14 @@ overlay wires it up.
 
 Every piece of that wiring has a worked example in
 [`examples/dotfiles/`](../examples/dotfiles/).
-[`recipes/mcp-registration/`](../examples/dotfiles/recipes/mcp-registration/)
-is for the MCP server set, and
+[`recipes/agent-config/`](../examples/dotfiles/recipes/agent-config/)
+is for the MCP server set and for the settings block that turns belt's
+guards and hints on (explained hook by hook in
+[tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md)). agent-sync
+([tools/agent-sync/README.md](../tools/agent-sync/README.md)) applies both
+on every `ralph up`.
 [`recipes/claude-hooks/`](../examples/dotfiles/recipes/claude-hooks/) is for
-the settings block that turns belt's guards and hints on (explained hook by
-hook in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md)). The
+belt's own config file. The
 `prefer-csl` hint is the one that matters for csl, handing a multi-file
 `grep` in an indexed repo back as the equivalent `csl_search` call.
 [`CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example) is for the
@@ -437,9 +440,9 @@ one that's already open. Each mod's README says what it shows and where its
 signals come from.
 
 Like the MCP set, which mods a machine runs is machine-private.
-[`recipes/claude-mods/`](../examples/dotfiles/recipes/claude-mods/) keeps
-the list in your config repo, with each mod marked on, off or retired, and
-reconciles it on every `ralph up`. To work on a mod,
+[`recipes/agent-config/`](../examples/dotfiles/recipes/agent-config/) keeps
+the list in your config repo (`mods.json`, each mod marked on, off or
+retired), and agent-sync reconciles it on every `ralph up`. To work on a mod,
 `claude --plugin-dir mods/<name>` loads it from a checkout for one session;
 the dev loop is in [mods/CLAUDE.md](../mods/CLAUDE.md).
 

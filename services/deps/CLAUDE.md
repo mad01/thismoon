@@ -246,7 +246,7 @@ confirms which embedded webkit assets the running deps server serves.
 
 ## Gotchas
 
-- **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
+- **Wave 0 builder.** Builds before the consuming repo's agent-sync recipe (wave 1) registers the MCP.
 - **Runtime debugging lives in `operating.md`** (embedded in the binary,
   printed by `deps docs`): serve-must-be-running, store layout, phantom
   "Not compiled in" advisories, version-scoped resolve resurfacing,
@@ -266,5 +266,5 @@ confirms which embedded webkit assets the running deps server serves.
 - Recipe: `recipes/deps/recipe.toml` (+ `recipes/deps/CLAUDE.md`)
 - Route: the consuming repo's `recipes/d-man/routes.toml` overlay (`deps` → 7429; docs/adr/0006)
 - Config: `recipes/deps/config.toml` → `~/.config/deps/config.toml`
-- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json`
+- MCP registration: the consuming repo's agent-sync `servers.json` (worked example: `examples/dotfiles/recipes/agent-config/`)
 - Repo list source of truth: `recipes/catalog/registry.yaml`

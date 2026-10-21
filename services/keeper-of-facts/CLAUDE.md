@@ -240,7 +240,7 @@ the same commit reports the same asset hash.
 
 ## Gotchas
 
-- **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
+- **Wave 0 builder.** Builds before the consuming repo's agent-sync recipe (wave 1) registers the MCP.
 - **Runtime debugging lives in `operating.md`** (embedded in the binary,
   printed by `kof docs`): serve-must-be-running, store layout, failure modes,
   version-skew checks. Keep those facts there, not here.
@@ -256,6 +256,6 @@ the same commit reports the same asset hash.
 
 - Recipe: `recipes/keeper-of-facts/recipe.toml` (+ `recipes/keeper-of-facts/CLAUDE.md`)
 - Human docs: `README.md`
-- The `kof.this` d-man route and the `claude-mcp` `servers.json` MCP
+- The `kof.this` d-man route and the agent-sync `servers.json` MCP
   registration live in the consuming repo's private overlay (docs/adr/0006),
   not here.

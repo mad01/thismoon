@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# d-man-profile — switch the active d-man block-list profile.
+# d-man-profile: switch the active d-man block-list profile.
 #
 #   d-man-profile work        # block the work-profile hosts (blocklist.work.toml)
 #   d-man-profile personal    # block nothing
@@ -7,7 +7,7 @@
 #
 # It assembles ~/.config/d-man/routes.toml from routes.base.toml (prepending
 # blocklist.work.toml for the work profile) and writes it atomically. The
-# running daemon watches that file and reloads via fsnotify — no sudo, no
+# running daemon watches that file and reloads via fsnotify: no sudo, no
 # restart. Drive it from a macOS "Work" Focus automation, or run it by hand.
 set -euo pipefail
 
@@ -23,7 +23,7 @@ profile="${1:-}"
 case "$profile" in
   work | personal) ;;
   "" | status)
-    echo "$(current)"
+    current
     exit 0
     ;;
   *)
@@ -39,7 +39,7 @@ fi
 
 mkdir -p "$config_dir"
 tmp="$(mktemp "$config_dir/.routes.XXXXXX")"
-trap 'rm -f "$tmp"' EXIT
+trap 'rm -f "$tmp" "$tmp.sed"' EXIT
 
 # blocklist first: it is a top-level key and must precede the [[route]] tables.
 if [ "$profile" = work ]; then
@@ -47,6 +47,12 @@ if [ "$profile" = work ]; then
 else
   cat "$base" > "$tmp"
 fi
+
+# The daemon runs as root under launchd, so a literal ~ in games_dir would
+# expand to /var/root. This generator runs as the user: resolve ~ here so the
+# active config carries an absolute path (the same convention as the daemon's
+# --config flag). Plain sed to a file: -i flags differ between BSD and GNU sed.
+sed "s|^games_dir = \"~/|games_dir = \"$HOME/|" "$tmp" > "$tmp.sed" && mv "$tmp.sed" "$tmp"
 
 mv -f "$tmp" "$active"
 echo "$profile" > "$state"

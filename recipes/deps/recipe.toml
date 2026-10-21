@@ -50,8 +50,8 @@ idempotent = true
 
 # Register `deps serve` as a long-running launchd user agent via t-man. This
 # process owns the scan store, runs the daily catch-up scan loop, and fires
-# notifications; the MCP server (registered in the consuming repo's
-# recipes/claude-mcp/servers.json) is a thin HTTP client to it. Idempotent;
+# notifications; the MCP server (registered through the consuming repo's
+# agent-sync servers.json) is a thin HTTP client to it. Idempotent;
 # run = "always" keeps it registered and self-heals if removed. The agent runs
 # deps-serve.sh rather than the binary: the launcher puts the mise shims on
 # PATH so Go discovery finds `go`, which the launchd PATH below lacks.

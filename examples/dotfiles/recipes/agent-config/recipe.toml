@@ -1,0 +1,82 @@
+# Example overlay: the coding-agent config agent-sync keeps in step on this
+# machine. Three kinds of data, one section each in config.yaml:
+#
+#   settings   settings.json, a template merged into ~/.claude/settings.json,
+#              with settings.local.json beside it as the machine's own overlay
+#   mods       mods.json: which thismoon mods Claude Code runs, marked on,
+#              off or retired, reconciled through the `claude plugin` CLI
+#   mcp        servers.json: which MCP servers Claude Code sees, reconciled
+#              through the `claude mcp` CLI, plus drop-ins from servers.d/
+#
+# The agent-sync binary ships from the thismoon source (thismoon/agent-sync,
+# build and install only). Which settings, mods and servers a machine gets
+# is machine-private, so the data files, the config that names them and the
+# sync hooks live here (docs/adr/0006 in thismoon). This recipe replaces the
+# hand-written sync scripts an earlier version of this example carried: the
+# data files stay, the script calls become agent-sync commands.
+#
+# Ordering across the source boundary. Every thismoon recipe is wave 0 and
+# this recipe is wave 1 (the default, written out to say so). ralph finishes
+# every wave-0 package, agent-sync among them, before a wave-1 build starts,
+# and it pulls the sources cache in its sync step before any wave. So the
+# first `ralph up` on a fresh machine builds agent-sync and then runs the
+# three syncs below, in that one run. A depends_on on packages.agent-sync
+# would say the same thing, but a cross-source dep is reserved for t-man and
+# d-man (docs/adr/0006), so the wave is the ordering here. The hooks name
+# the binary by its install path instead of relying on PATH.
+[recipe]
+name = "agent-config"
+description = "Claude Code settings, mods and MCP servers from the data files beside this recipe, applied by agent-sync on every ralph up"
+wave = 1
+
+[directories.agent_sync_config_dir]
+target = "~/.config/agent-sync"
+
+# The drop-in directories, at agent-sync's defaults (the dropins key in
+# config.yaml moves one). Owning them here makes this recipe the single
+# creator of the paths; another recipe symlinks its file in.
+# recipes/mcp-sandbox/ drops a server into servers.d/, and a profile-gated
+# work source would drop its own marketplace into mods.d/.
+[directories.claude_mcp_servers_d]
+target = "~/.config/claude-mcp/servers.d"
+
+[directories.claude_mods_d]
+target = "~/.config/claude-mods/mods.d"
+
+# agent-sync reads this path by default, so the hooks pass no --config.
+[dotfiles.agent_sync_config]
+source = "config.yaml"
+target = "~/.config/agent-sync/config.yaml"
+action = "symlink"
+
+# The sync hooks. run = "always", never idempotent: ralph's idempotent flag
+# hashes the command string and would miss every edit to the data files.
+# Each hook is cheap when nothing changed. The verify command is the
+# section's check: it writes nothing, exits 1 on drift, and its first line
+# is what `ralph doctor` shows.
+
+[hooks.builds.agent_settings_sync]
+commands = ["$HOME/code/bin/agent-sync settings sync"]
+working_dir = "~/code/src/github.com/you/dotfiles/recipes/agent-config"
+run = "always"
+verify = "$HOME/code/bin/agent-sync settings check"
+
+# mods and mcp go through the claude CLI, so both skip with a message where
+# it is missing (CI, a machine without Claude Code). Their check commands
+# still run under `ralph doctor` there: mods check reads only Claude Code's
+# state files; mcp check needs `claude mcp list` and reports the missing CLI.
+[hooks.builds.agent_mods_sync]
+commands = [
+  "if command -v claude >/dev/null; then $HOME/code/bin/agent-sync mods sync; else echo 'agent-config: skip mods sync (claude not on PATH)'; fi",
+]
+working_dir = "~/code/src/github.com/you/dotfiles/recipes/agent-config"
+run = "always"
+verify = "$HOME/code/bin/agent-sync mods check"
+
+[hooks.builds.agent_mcp_sync]
+commands = [
+  "if command -v claude >/dev/null; then $HOME/code/bin/agent-sync mcp sync; else echo 'agent-config: skip mcp sync (claude not on PATH)'; fi",
+]
+working_dir = "~/code/src/github.com/you/dotfiles/recipes/agent-config"
+run = "always"
+verify = "$HOME/code/bin/agent-sync mcp check"

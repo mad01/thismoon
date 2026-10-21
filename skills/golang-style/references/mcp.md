@@ -95,4 +95,4 @@ Returning the structured output value (not a hand-built `CallToolResult`) lets t
 
 ## Wiring
 
-The `mcp` subcommand on the CLI (see `cli.md`) constructs `handlers`, registers the tools, and serves over stdio. MCP binaries that run third-party package code are seatbelt-sandboxed; first-party ones that only HTTP-call localhost (`worklog`, `events`) run unsandboxed. Registration lives in `recipes/claude-mcp/servers.json`.
+The `mcp` subcommand on the CLI (see `cli.md`) constructs `handlers`, registers the tools, and serves over stdio. MCP binaries that run third-party package code are seatbelt-sandboxed; first-party ones that only HTTP-call localhost (`worklog`, `events`) run unsandboxed. Registration lives in the consuming repo's agent-sync `servers.json` (worked example: `examples/dotfiles/recipes/agent-config/servers.json`).

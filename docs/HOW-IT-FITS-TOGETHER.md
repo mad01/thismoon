@@ -133,10 +133,11 @@ order is written down somewhere.
    daemon ([GETTING-STARTED.md](GETTING-STARTED.md), step 5). Verify with
    `ralph doctor`, `t-man list`, and `status.this`.
 6. **Layer your companion recipes**, one pattern at a time, each with a
-   worked example in `examples/dotfiles/recipes/`. They cover MCP
-   registration (which servers your agent sees) and the belt config plus
-   the Claude Code hooks block (`claude-hooks/`, which is what turns the
-   guards and hints on). They also cover per-service config overlays and
+   worked example in `examples/dotfiles/recipes/`. They cover the agent
+   config agent-sync applies on every `ralph up`: `agent-config/` holds the
+   Claude Code settings (with the hooks block that turns belt's guards and
+   hints on), the mods, and which MCP servers your agent sees. They also
+   cover the belt config (`claude-hooks/`), per-service config overlays and
    secrets.
 7. **Give the agent its instructions**: adapt
    [`examples/dotfiles/CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example)

@@ -1,11 +1,13 @@
-# belt — public layer only: build + install. The guard-toggle config overlay
-# (~/.config/belt/config.toml) stays in the consuming repo's companion recipe —
-# it deliberately carries internal-name exclude_paths (see docs/adr/0006).
+# belt: public layer only, build + install. The guard-toggle config overlay
+# (~/.config/belt/config.yaml; a legacy config.toml is read only when the YAML
+# file is absent) stays in the consuming repo's companion recipe, since it
+# deliberately carries internal-name exclude_paths (see docs/adr/0006).
 [recipe]
 name = "belt"
 description = "belt: Claude Code PreToolUse guard hooks (git-push-to-main block on work profile, internal-name write firewall)"
-# wave 0: builds the binary before the consuming repo's claude recipe (wave 1)
-# merges the settings template that registers the hooks pointing at it.
+# wave 0: builds the binary before the consuming repo's settings recipe (wave 1,
+# examples/dotfiles/recipes/agent-config) merges the settings template that
+# registers the hooks pointing at it.
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a

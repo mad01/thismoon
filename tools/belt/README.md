@@ -54,7 +54,7 @@ Beyond the built-ins, a `custom_hints` config section registers named hints that
 
 ## Install
 
-Built and installed by ralph (`recipes/belt/recipe.toml`); hook registration lives in the consuming repo's Claude settings recipe. A worked config file and hooks block, the shape the maintainer's fleet installs, is in `examples/dotfiles/recipes/claude-hooks/` at the repo root. To build and install manually:
+Built and installed by ralph (`recipes/belt/recipe.toml`); hook registration lives in the consuming repo's Claude settings template, which agent-sync applies. A worked hooks block, the shape the maintainer's fleet installs, is in `examples/dotfiles/recipes/agent-config/settings.json` at the repo root, and a worked belt config file in `examples/dotfiles/recipes/claude-hooks/`. To build and install manually:
 
 ```bash
 make build    # produces ./belt binary

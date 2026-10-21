@@ -1,7 +1,7 @@
 # Example overlay: wire a secret/env into a thismoon-shipped service WITHOUT
 # committing the value.
 #
-# Two patterns, both shown here — pick per secret:
+# Two patterns, both shown here; pick per secret:
 #   1. Runtime resolution (preferred). A wrapper resolves the secret from an
 #      external store (keychain, `gh auth token`, `pass`, `op read`) at launch
 #      and injects it via `env -i KEY="$val"`. Nothing secret ever lands in a
@@ -11,19 +11,19 @@
 #      values) is committed. A wrapper sources it before exec.
 #
 # The recipe stays portable and gates to the machines that actually hold the
-# secret via `profiles` — this example only applies on a "personal" host.
+# secret via `profiles`: this example only applies on a "personal" host.
 [recipe]
 name = "secrets-env"
 description = "Secret/env wiring for a thismoon-shipped service without committing values (runtime-resolve + gitignored env-file)"
 wave = 1
 profiles = ["personal"]
 
-# Make the launch wrapper executable.
+# Keep the launch wrapper executable (it is committed executable; this
+# covers a checkout that lost the bit).
 [hooks.builds.secrets_chmod_wrapper]
 commands = ["chmod +x service-with-secret.sh"]
 working_dir = "~/code/src/github.com/you/dotfiles/recipes/secrets-env"
 run = "always"
-idempotent = true
 
 # Ship the template (committed) so the required keys are discoverable. The real
 # secrets.env is created by hand on each machine from the .example and is never

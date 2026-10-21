@@ -1,2 +1,0 @@
-# register.py is run in place; keep its bytecode cache out of git.
-__pycache__/

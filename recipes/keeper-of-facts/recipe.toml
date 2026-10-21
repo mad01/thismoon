@@ -28,8 +28,8 @@ restart = "if command -v t-man >/dev/null && t-man status keeper-of-facts >/dev/
 pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove keeper-of-facts 2>/dev/null; fi || true"]
 
 # Register `kof serve` as a long-running launchd user agent via t-man. This
-# process owns the assertion store; the MCP server (registered in the
-# consuming repo's recipes/claude-mcp/servers.json) is a thin HTTP client to it.
+# process owns the assertion store; the MCP server (registered through the
+# consuming repo's agent-sync servers.json) is a thin HTTP client to it.
 # serve auto-migrates a pre-rename ~/.local/share/keep store to this path on
 # start (MAD-269).
 # Idempotent; run = "always" keeps it registered and self-heals if it was removed.
