@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/mad01/thismoon/compare/d-man/v0.6.1...d-man/v0.7.0) (2026-10-21)
+
+
+### Features
+
+* **d-man:** add a profile subcommand that switches the block list ([#259](https://github.com/mad01/thismoon/issues/259)) ([03f6557](https://github.com/mad01/thismoon/commit/03f6557174bb4785ce1da644d6f7f194e4701740))
+
 ## [0.6.1](https://github.com/mad01/thismoon/compare/d-man/v0.6.0...d-man/v0.6.1) (2026-08-29)
 
 
