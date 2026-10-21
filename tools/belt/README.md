@@ -67,7 +67,7 @@ make install  # build + cp to ~/code/bin/belt + adhoc codesign
 
 `pi/` brings the same guards and hints to the pi coding agent as a pi package. pi loads it in place, so a machine declares it in pi's `settings.json` as `{ "source": "~/.config/ralph/sources/thismoon/tools/belt/pi" }` and gets every merge to main on the next `ralph up`. It has three extensions:
 
-- `permission-gate.ts` runs `belt check bash`, `belt check write` and `belt check external-text` before each tool call and blocks on a `DENY` line. It fails closed when belt is missing or errors. After belt it applies the allow, ask and deny lists from `~/.claude/settings.json`. Each belt denial is also announced on pi's extension bus as `belt:deny` with `{ kind, target, reason }`, which the session-band mod counts.
+- `permission-gate.ts` runs `belt check bash`, `belt check write` and `belt check external-text` before each tool call and blocks on a `DENY` line. It fails closed when belt is missing or errors. After belt it applies the allow, ask and deny lists from `~/.claude/settings.json`. Each belt denial is also announced on pi's extension bus as `belt:deny` with `{ kind, target, reason }`, which the session-band mod counts. pi-mcp-adapter's script mode (`mcpScript`) makes its MCP calls inside the adapter, where neither belt nor those lists see them, so every `mcpScript` call asks first. With no UI and no parent session to ask, that is a block. While it is loaded it sets `globalThis[Symbol.for("mad01.pi.belt-gate")]`. pi says nothing when a declared package path is missing, so an extension outside the package can check that marker and block tool calls when no gate loaded.
 - `permission-broker.ts` carries a headless subagent's confirmation to the root session over a private socket, so a subagent never approves its own call.
 - `belt-hooks.ts` runs `belt hint` at session start, on each prompt, and after bash, csl search and publishing calls, and appends the advice. It never blocks.
 
@@ -76,7 +76,7 @@ Settings live in `~/.pi/agent/belt.json` (`PI_CODING_AGENT_DIR` moves the direct
 | Key | Default | Effect |
 |-----|---------|--------|
 | `mcpPrefixes` | `csl_`, `humanizer_`, `worklog_`, `kof_` | Maps a direct adapter tool name such as `csl_search` back to its MCP server. |
-| `externalTextGuardServers` | `gh_com` | MCP servers whose calls run `belt check external-text`. |
+| `externalTextGuardServers` | `gh_com` | MCP servers whose calls run `belt check external-text`: `mcp__<server>__<tool>` names, the `mcp` proxy with or without `server`, and the `mcp__<server>` namespace proxy. A tool name with the adapter's display or legacy prefix for one of these servers (`gh_com_create_gist`, `gh_5f_com_create_gist`), or with an `mcpPrefixes` prefix mapped to one, counts for it. A proxy call that names no server and carries no such prefix runs the check too, since the adapter may route it to one of these. A direct tool the adapter exposes with `toolPrefix: "none"` (a bare `create_gist`) carries no server in its name. The gate can't place it without reading the adapter's config, so it skips the check. |
 | `externalTextHintServers` | `gh_com`, `linear` | MCP servers whose results run `belt hint external-text`. |
 | `sandboxActiveEnv` | none | Env var a sandbox extension sets to `1`. While it is set, an unknown shell command runs without a prompt. |
 | `sandboxAllowUnsandboxedEnv` | none | Env var a sandbox extension sets to `0` to switch unsandboxed retries off. Such a request is then blocked. |

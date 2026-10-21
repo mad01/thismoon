@@ -4,7 +4,8 @@ import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { fakePi, scratch } from './fake.mjs'
+import gate from '../extensions/permission-gate.ts'
+import { fakePi, headlessCtx, scratch } from './fake.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -26,6 +27,26 @@ test('the manifest loads every extension and nothing else', async (t) => {
   assert.deepEqual(events, {
     'belt-hooks.ts': ['before_agent_start', 'input', 'session_start', 'tool_result'],
     'permission-broker.ts': ['session_shutdown', 'session_start'],
-    'permission-gate.ts': ['session_start', 'session_tree', 'tool_call'],
+    'permission-gate.ts': ['session_shutdown', 'session_start', 'session_tree', 'tool_call'],
   })
+})
+
+// The marker is the package's contract with the consuming repo's own
+// fail-closed check, which blocks tool calls while no gate has loaded.
+test('the gate marks itself loaded until its session shuts down', async (t) => {
+  const env = scratch(t)
+  const marker = Symbol.for('mad01.pi.belt-gate')
+  delete globalThis[marker]
+  t.after(() => delete globalThis[marker])
+  const ctx = headlessCtx(env.dir)
+
+  const { pi, call } = fakePi()
+  gate(pi)
+  assert.equal(globalThis[marker], true)
+  // A reload or session switch shuts the old runtime down first; a gate
+  // that does not load again must leave no marker behind.
+  await call('session_shutdown', { reason: 'reload' }, ctx)
+  assert.equal(globalThis[marker], undefined)
+  await call('session_start', { reason: 'new' }, ctx)
+  assert.equal(globalThis[marker], true)
 })
