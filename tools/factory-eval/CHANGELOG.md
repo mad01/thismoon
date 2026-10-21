@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/mad01/thismoon/compare/factory-eval/v0.3.0...factory-eval/v0.4.0) (2026-10-21)
+
+
+### Features
+
+* **recipes:** move the factory workers, codesign recipe and sandboxing guide here ([2fe5a88](https://github.com/mad01/thismoon/commit/2fe5a88772f04db83e8576807155aecc8c01057f))
+
+
+### Bug Fixes
+
+* **factory-eval:** name the factory recipe as the worker installer ([52b1a78](https://github.com/mad01/thismoon/commit/52b1a788f5b5448ff5bd6878e6d89f1dd0cd88e0))
+
 ## [0.3.0](https://github.com/mad01/thismoon/compare/factory-eval/v0.2.0...factory-eval/v0.3.0) (2026-10-19)
 
 

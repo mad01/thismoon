@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.11.0](https://github.com/mad01/thismoon/compare/belt/v2.10.0...belt/v2.11.0) (2026-10-21)
+
+
+### Features
+
+* **belt:** record StopFailure turns in the ledger ([#260](https://github.com/mad01/thismoon/issues/260)) ([fcd2619](https://github.com/mad01/thismoon/commit/fcd2619105baccaff3c03a429c32255eafec7a5e))
+* **belt:** ship the pi permission gate and hooks as a pi package ([#262](https://github.com/mad01/thismoon/issues/262)) ([d725234](https://github.com/mad01/thismoon/commit/d725234867effa2d7f4d1d5cb6c5f9bebefacfad))
+
 ## [2.10.0](https://github.com/mad01/thismoon/compare/belt/v2.9.0...belt/v2.10.0) (2026-10-19)
 
 
