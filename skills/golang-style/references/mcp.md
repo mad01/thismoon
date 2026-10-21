@@ -15,11 +15,11 @@ type handlers struct {
 }
 ```
 
-In this codebase the MCP server holds no state of its own — it is a thin HTTP client to the running `serve` process (the single writer, see `store.md`), so `handlers` wraps a `*client.Client`. A file-touching MCP (`present`, `worklog`) wraps a `*store.Store` instead. The `checks` field feeds the `events_doctor` tool; every serve-bearing component registers one (ADR-0009).
+In this codebase the MCP server holds no state of its own; it is a thin HTTP client to the running `serve` process (the single writer, see `store.md`), so `handlers` wraps a `*client.Client`. A file-touching MCP (`present`, `worklog`) wraps a `*store.Store` instead. The `checks` field feeds the `events_doctor` tool; every serve-bearing component registers one (ADR-0009).
 
 ## Register tools with `mcp.AddTool`
 
-Register each tool with a name and a description written *for the model* — say what it does, when to use it, and what to keep. Annotations tell the client what a call can do: `ReadOnlyHint` for queries, `DestructiveHint: new(false)` for an append, `OpenWorldHint: new(false)` for anything that stays on localhost. Handlers are methods on `handlers`:
+Register each tool with a name and a description written *for the model*: say what it does, when to use it, and what to keep. Annotations tell the client what a call can do: `ReadOnlyHint` for queries, `DestructiveHint: new(false)` for an append, `OpenWorldHint: new(false)` for anything that stays on localhost. Handlers are methods on `handlers`:
 
 ```go
 func registerTools(s *mcp.Server, h *handlers) {
@@ -48,7 +48,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 ## Typed input and output structs with schema descriptions
 
-Each tool has an input struct and an output struct. Tag fields with `json` and a `jsonschema` description so the generated schema documents itself to the model — the go-sdk's schema inferrer reads only the `jsonschema` tag, so a `jsonschema_description` tag is silently dropped. Use `omitempty` for optional fields:
+Each tool has an input struct and an output struct. Tag fields with `json` and a `jsonschema` description so the generated schema documents itself to the model; the go-sdk's schema inferrer reads only the `jsonschema` tag, so a `jsonschema_description` tag is silently dropped. Use `omitempty` for optional fields:
 
 ```go
 type emitInput struct {
@@ -68,7 +68,7 @@ type emitOutput struct {
 
 ## Handler signature
 
-A handler takes the context and request (both often unused, named `_`) plus the typed input, and returns `(*mcp.CallToolResult, OutputStruct, error)`. Keep it thin — call into the client or store, return the error as-is so the SDK surfaces it:
+A handler takes the context and request (both often unused, named `_`) plus the typed input, and returns `(*mcp.CallToolResult, OutputStruct, error)`. Keep it thin. Call into the client or store, return the error as-is so the SDK surfaces it:
 
 ```go
 func (h *handlers) handleEmit(

@@ -4,8 +4,8 @@ Backed by [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comme
 
 ## Case
 
-- **MixedCaps / mixedCaps**, never `snake_case` or `ALL_CAPS` — including constants. Exported = leading capital, unexported = leading lowercase.
-- **Initialisms keep one case as a unit:** `URL`, `ID`, `HTTP`, `JSON`. So `baseURL` (unexported), `NewID`, `apiURL`, `webURL`, `cacheJSON` — not `baseUrl` or `newId`. Repo examples: `present` uses `URL` in `Reference`; `events/internal/event/event.go` has `NewID`; `proxy.go` has `cacheJSON`.
+- **MixedCaps / mixedCaps**, never `snake_case` or `ALL_CAPS`, including constants. Exported = leading capital, unexported = leading lowercase.
+- **Initialisms keep one case as a unit:** `URL`, `ID`, `HTTP`, `JSON`. So `baseURL` (unexported), `NewID`, `apiURL`, `webURL`, `cacheJSON`, not `baseUrl` or `newId`. Repo examples: `present` uses `URL` in `Reference`; `events/internal/event/event.go` has `NewID`; `proxy.go` has `cacheJSON`.
 
 ## Packages
 
@@ -15,14 +15,14 @@ Backed by [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comme
 
 ## Constructors and getters
 
-- Constructors are `New`. From `events/internal/client/client.go`: `func New(baseURL string) *Client`. When construction can fail it is `(*T, error)` — `present`'s `func New(dir string) (*Store, error)`.
+- Constructors are `New`. From `events/internal/client/client.go`: `func New(baseURL string) *Client`. When construction can fail it is `(*T, error)`: `present`'s `func New(dir string) (*Store, error)`.
 - **No `Get` prefix on getters.** Expose the field, or name the method for the noun: `store.DefaultRoot()`, `(*Store).ItemDir()`, `cfg.Hosts()`, `cfg.RouteMap()`. A setter is `SetX`; use `Fetch`/`Compute` for expensive or remote work.
 
 ## Errors
 
 - Sentinel error variables are `ErrX`: `var ErrNotFound = ...`. Unexported ones are `errX`.
 - Custom error types end in `Error`: `humanizer`'s `ValeNotInstalledError`.
-- Error strings are lowercase with no trailing punctuation (they get concatenated): `errors.New("present: page not found")`. Package-prefix the message — see `errors.md`.
+- Error strings are lowercase with no trailing punctuation (they get concatenated): `errors.New("present: page not found")`. Package-prefix the message (see `errors.md`).
 
 ## Receivers
 

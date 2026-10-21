@@ -1,12 +1,12 @@
 # Testing
 
-Stdlib `testing`, table-driven, hermetic. Backed by [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) and the [Google Go Style Guide](https://google.github.io/styleguide/go/best-practices). The codebase uses **no testify** — stdlib only.
+Stdlib `testing`, table-driven, hermetic. Backed by [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) and the [Google Go Style Guide](https://google.github.io/styleguide/go/best-practices). The codebase uses **no testify**: stdlib only.
 
 ## Hermetic by construction
 
 A test must never touch the real `$HOME`, the wall clock, or the network. Two tools make that automatic:
 
-- **`t.TempDir()`** for any filesystem work — it is created per-test and cleaned up.
+- **`t.TempDir()`** for any filesystem work; it is created per-test and cleaned up.
 - **An injected `now func() time.Time`** on stores and servers, so time is deterministic. Every store/server in the repo has a `now` field set to `time.Now` in production and overridden in tests.
 
 ## Helpers with `t.Helper()`
@@ -71,4 +71,4 @@ Test handlers with `net/http/httptest` (a recorder, or a server for an end-to-en
 
 ## Optional uplifts (not current house default)
 
-No benchmarks, fuzz tests, or `-race` in the test target today. Add them when the code warrants — a benchmark when optimizing, fuzzing for a parser, `-race` once a tool grows real concurrency. These belong to `golang-pro`'s testing reference for depth.
+No benchmarks, fuzz tests, or `-race` in the test target today. Add them when the code warrants: a benchmark when optimizing, fuzzing for a parser, `-race` once a tool grows real concurrency. These belong to `golang-pro`'s testing reference for depth.

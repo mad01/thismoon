@@ -12,9 +12,9 @@ format:
 	@golines -m 100 --base-formatter=gofumpt -w .
 ```
 
-- **`gofumpt`** — a stricter superset of `gofmt`. Tabs for indent, no manual alignment, opening brace never on its own line.
-- **`golines -m 100`** — wraps long lines at a 100-column soft limit, breaking by syntax (one argument per line when a call is too long), not by hand.
-- **`goimports`** — formats and maintains the three import groups (stdlib, third-party, internal).
+- **`gofumpt`**: a stricter superset of `gofmt`. Tabs for indent, no manual alignment, opening brace never on its own line.
+- **`golines -m 100`**: wraps long lines at a 100-column soft limit, breaking by syntax (one argument per line when a call is too long), not by hand.
+- **`goimports`**: formats and maintains the three import groups (stdlib, third-party, internal).
 
 Install them with `go install`:
 
@@ -24,7 +24,7 @@ go install github.com/segmentio/golines@latest
 go install mvdan.cc/gofumpt@latest
 ```
 
-There is no hard line-length rule in Go itself — `golines -m 100` is this repo's chosen soft limit. Break long expressions by meaning, not by column count.
+There is no hard line-length rule in Go itself; `golines -m 100` is this repo's chosen soft limit. Break long expressions by meaning, not by column count.
 
 ## Lint: golangci-lint is house standard
 
@@ -35,7 +35,7 @@ lint:
 	@golangci-lint run ./...
 ```
 
-The `app-operator` repo carries a representative `.golangci.yml` — a good starting linter set for a new Go project here:
+The `app-operator` repo carries a representative `.golangci.yml`, a good starting linter set for a new Go project here:
 
 ```yaml
 linters:
@@ -91,6 +91,6 @@ Every component Makefile has `fmt` and `lint` targets beside `test`, and the rul
 ## In-source formatting rules
 
 - **Imports in three blank-line-separated groups:** stdlib, third-party, internal (`goimports` enforces). Use `import _` only in `main`/tests; `import .` only to break a test cycle.
-- **Group related declarations** — cluster related `const`/`var`/`type`; use `var (...)` and `const (...)` blocks.
+- **Group related declarations**: cluster related `const`/`var`/`type`; use `var (...)` and `const (...)` blocks.
 - **Declare locals close to first use;** keep variable scope tight.
 - **Reduce nesting with early returns.** Invert conditions, `return`/`continue` early, and omit `else` after a terminating branch. Keep the happy path at the left margin and indent the error path. The `group` switch in `status/internal/server/monitor.go` is the pattern: handle each case and return instead of nesting an else.

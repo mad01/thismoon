@@ -1,6 +1,6 @@
 # HTTP service patterns
 
-The shape every `net/http` server in this repo shares (`events`, `keeper-of-facts`, `present`, `d-man`, `status`). Stdlib only — no chi/gin/echo. Backed by the `net/http` docs and the repo servers.
+The shape every `net/http` server in this repo shares (`events`, `keeper-of-facts`, `present`, `d-man`, `status`). Stdlib only, no chi/gin/echo. Backed by the `net/http` docs and the repo servers.
 
 ## ServeMux with Go 1.22 method routing
 
@@ -57,7 +57,7 @@ func New(st *store.Store, info buildinfo.Info) *Server {
 
 ## JSON write helpers
 
-Two small helpers keep every handler consistent — one writes JSON, one writes an error as JSON:
+Two small helpers keep every handler consistent. One writes JSON, one writes an error as JSON:
 
 ```go
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -72,7 +72,7 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 }
 ```
 
-`Cache-Control: no-store` matters for live-reloading pages — it stops a browser caching a page that an MCP update just changed.
+`Cache-Control: no-store` matters for live-reloading pages: it stops a browser caching a page that an MCP update just changed.
 
 ## Map store errors to status with a sentinel helper
 
@@ -92,7 +92,7 @@ Handlers decode, validate, call the store, and on error call `writeStoreErr(w, e
 
 ## Optional fields in request bodies as pointers
 
-A PUT/PATCH body, or an MCP update input, uses `*string` fields so an omitted field is left unchanged (mirrors the store `Patch` — see `functions.md`). From `present/internal/mcpserver/tools.go`:
+A PUT/PATCH body, or an MCP update input, uses `*string` fields so an omitted field is left unchanged (mirrors the store `Patch`; see `functions.md`). From `present/internal/mcpserver/tools.go`:
 
 ```go
 type updateInput struct {
