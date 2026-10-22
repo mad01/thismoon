@@ -41,5 +41,7 @@ The woff2 files come from Google Fonts (`fonts.googleapis.com` and
 
 Change the version in `scripts/cache-assets.sh` and the script tag in
 `internal/server/shell.html` together; a test fails when the two disagree.
-Update the entry here in the same change. The policy behind this layout is
+A pinned file also takes a new sha256: the sum of that file inside the npm
+package tarball, which jsDelivr serves byte for byte. Update the entry here
+in the same change. The policy behind this layout is
 [ADR-0022](../../docs/adr/0022-vendored-browser-assets.md).

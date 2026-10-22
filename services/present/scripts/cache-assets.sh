@@ -7,17 +7,23 @@ set -euo pipefail
 
 WORKDIR="${PRESENT_WORKDIR:-$HOME/.config/present}"
 ASSETS="$WORKDIR/assets"
+# Each sum is of the file inside the npm package tarball, which jsdelivr
+# serves byte for byte.
 CYTOSCAPE_VERSION="3.31.0"
+CYTOSCAPE_SHA256="e7d4c6c286bee0ba346c68ed1c8b8b82b4740b75be5d0c4d6602ee38df55d9c1"
 DAGRE_VERSION="0.8.5"
+DAGRE_SHA256="62eb9787ccfdbdf4148d4d99d31dbf9ee4770eafee81e637d759b52aac22cd51"
 CY_DAGRE_VERSION="2.5.0"
+CY_DAGRE_SHA256="bf70fe402991dcbff33e05a7e4a5271c78020bb75e85d1c80ab7538e4157112e"
 ELK_VERSION="0.12.0"
+ELK_SHA256="1222e44f953ce7746af23801e723708f8e6f436b8b377a6a5fc7552f34a307b3"
 CY_ELK_VERSION="2.3.0"
+CY_ELK_SHA256="25acbb9dea9b0dc6fef0e79b697547ee56e579f0e1c22ae4353131e72c7e140a"
 CHART_VERSION="4.4.6"
 SANKEY_VERSION="0.15.3"
+SANKEY_SHA256="11e725ea2f8b85e804a3b6a53997ff6320f9fe6588793a11fdb1fdfd7068a4fd"
 D3_VERSION="7.9.0"
 D3_SHA256="f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539"
-# The xterm files are the npm package's own lib and css files, served by
-# jsdelivr byte for byte, so each has a stable sum.
 XTERM_VERSION="6.0.0"
 XTERM_SHA256="14903579ff54664cd72f8e8699e6961a6272c21863ec1c3b118cdc8af5d4a972"
 XTERM_CSS_SHA256="854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6"
@@ -83,26 +89,26 @@ fetch() {
 mkdir -p "$ASSETS/js" "$ASSETS/css" "$ASSETS/fonts"
 
 echo "cytoscape@${CYTOSCAPE_VERSION}"
-fetch "https://cdn.jsdelivr.net/npm/cytoscape@${CYTOSCAPE_VERSION}/dist/cytoscape.min.js" "$cy_file"
+fetch "https://cdn.jsdelivr.net/npm/cytoscape@${CYTOSCAPE_VERSION}/dist/cytoscape.min.js" "$cy_file" "$CYTOSCAPE_SHA256"
 
 echo "dagre@${DAGRE_VERSION}"
-fetch "https://cdn.jsdelivr.net/npm/dagre@${DAGRE_VERSION}/dist/dagre.min.js" "$dagre_file"
+fetch "https://cdn.jsdelivr.net/npm/dagre@${DAGRE_VERSION}/dist/dagre.min.js" "$dagre_file" "$DAGRE_SHA256"
 
 echo "cytoscape-dagre@${CY_DAGRE_VERSION}"
-fetch "https://cdn.jsdelivr.net/npm/cytoscape-dagre@${CY_DAGRE_VERSION}/cytoscape-dagre.js" "$cy_dagre_file"
+fetch "https://cdn.jsdelivr.net/npm/cytoscape-dagre@${CY_DAGRE_VERSION}/cytoscape-dagre.js" "$cy_dagre_file" "$CY_DAGRE_SHA256"
 
 echo "elkjs@${ELK_VERSION}"
-fetch "https://cdn.jsdelivr.net/npm/elkjs@${ELK_VERSION}/lib/elk.bundled.js" "$elk_file"
+fetch "https://cdn.jsdelivr.net/npm/elkjs@${ELK_VERSION}/lib/elk.bundled.js" "$elk_file" "$ELK_SHA256"
 
 echo "cytoscape-elk@${CY_ELK_VERSION}"
-fetch "https://cdn.jsdelivr.net/npm/cytoscape-elk@${CY_ELK_VERSION}/dist/cytoscape-elk.js" "$cy_elk_file"
+fetch "https://cdn.jsdelivr.net/npm/cytoscape-elk@${CY_ELK_VERSION}/dist/cytoscape-elk.js" "$cy_elk_file" "$CY_ELK_SHA256"
 
 # jsdelivr generates chart.umd.min.js itself, so it has no stable sum to pin.
 echo "chart.js@${CHART_VERSION}"
 fetch "https://cdn.jsdelivr.net/npm/chart.js@${CHART_VERSION}/dist/chart.umd.min.js" "$chart_file"
 
 echo "chartjs-chart-sankey@${SANKEY_VERSION}"
-fetch "https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@${SANKEY_VERSION}/dist/chartjs-chart-sankey.min.js" "$sankey_file"
+fetch "https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@${SANKEY_VERSION}/dist/chartjs-chart-sankey.min.js" "$sankey_file" "$SANKEY_SHA256"
 
 echo "d3@${D3_VERSION}"
 fetch "https://cdn.jsdelivr.net/npm/d3@${D3_VERSION}/dist/d3.min.js" "$d3_file" "$D3_SHA256"
