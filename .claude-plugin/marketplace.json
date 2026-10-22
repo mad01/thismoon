@@ -23,12 +23,7 @@
     {
       "name": "loom-pane",
       "source": "./mods/loom-pane",
-      "description": "A status line naming the session's loom role and the factory members beside it, plus guards that keep an owner inside its own worktree and ask before a removal loses work."
-    },
-    {
-      "name": "factory-band",
-      "source": "./mods/factory-band",
-      "description": "Experimental. A band above the prompt for a factory run: each worker's worktree state, model and effort, the workers' belt denies, belt-inbox items for this session, and a weave now button."
+      "description": "A status line naming the session's loom role and the members beside it, plus guards that keep an owner inside its own worktree and ask before a removal loses work."
     }
   ]
 }

@@ -25,19 +25,19 @@ func TestLoadLifecycleSections(t *testing.T) {
 	cfg := mustLoad(t, Paths{BeltYAML: writeFile(t, t.TempDir(), "config.yaml", `
 ledger:
   enabled: false
-  source: factory-ledger
+  source: custom-ledger
 watch:
   enabled: true
   poll_interval_ms: 500
   max_wait_s: 120
-  source: factory-inbox
+  source: custom-inbox
 `)})
-	if cfg.Ledger.On() || cfg.Ledger.SourceName() != "factory-ledger" {
+	if cfg.Ledger.On() || cfg.Ledger.SourceName() != "custom-ledger" {
 		t.Errorf("ledger = on %v, source %q", cfg.Ledger.On(), cfg.Ledger.SourceName())
 	}
 	w := cfg.Watch
 	if !w.Enabled || w.PollInterval() != 500*time.Millisecond ||
-		w.MaxWait() != 120*time.Second || w.SourceName() != "factory-inbox" {
+		w.MaxWait() != 120*time.Second || w.SourceName() != "custom-inbox" {
 		t.Errorf("watch = %+v (%s, %s, %q)", w, w.PollInterval(), w.MaxWait(), w.SourceName())
 	}
 }

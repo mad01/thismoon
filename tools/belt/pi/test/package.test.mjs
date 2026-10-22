@@ -19,9 +19,9 @@ test('the manifest loads every extension and nothing else', async (t) => {
   assert.deepEqual(files, ['belt-hooks.ts', 'permission-broker.ts', 'permission-gate.ts'])
   const events = {}
   for (const file of files) {
-    const { default: factory } = await import(join(root, 'extensions', file))
+    const { default: extension } = await import(join(root, 'extensions', file))
     const { pi, handlers } = fakePi()
-    factory(pi)
+    extension(pi)
     events[file] = [...handlers.keys()].sort()
   }
   assert.deepEqual(events, {

@@ -203,16 +203,15 @@ store gets which fact, how each is read and written, and the hook behind each.
 
 ## Skills
 
-Eight agent skills ship in `skills/` at the repo root, one directory per
+Seven agent skills ship in `skills/` at the repo root, one directory per
 skill. Each recipe symlinks its skill into `~/.claude/skills` and
 `~/.agents/skills`, so a provisioned machine has them in every session (for
-Claude Code and Codex both). Invoke one by name (`/factory`, `/golang-pro`, `/golang-style`, `/handoff`,
+Claude Code and Codex both). Invoke one by name (`/golang-pro`, `/golang-style`, `/handoff`,
 `/humanizer`, `/loom`, `/present`, `/worklog`) or let the agent load it when
 a task matches its description.
 
 | Skill | Use it when | Needs |
 |---|---|---|
-| `factory` | a plan has several independent units to run through worker subagents, one loom worktree each (experimental) | belt's hooks, humanizer with the ste command, and the events, present and kof services; the worker definitions and the `factory-worker` belt hint installed |
 | `golang-pro` | Go concurrency, generics, profiling, or gRPC needs specialist depth | nothing |
 | `golang-style` | writing or reviewing Go in this codebase's idiom | nothing |
 | `handoff` | a session ends mid-task and the next one starts cold | nothing |

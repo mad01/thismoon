@@ -112,6 +112,8 @@ hints:
 # A hint on subagent-start runs before each subagent's first prompt, with
 # agent_id and agent_type added to the payload, and its advice lands in the
 # subagent's own context: the place for a brief to worker subagents.
+# agent_types limits a subagent-start hint to the subagent types it names;
+# an entry ending in * matches by prefix, so it also covers named spawns.
 # custom_hints:
 #   daily-journal:
 #     event: session-start
@@ -119,7 +121,8 @@ hints:
 #     timeout_ms: 400
 #   worker-brief:
 #     event: subagent-start
-#     command: [factory, brief]
+#     command: [worker-brief]
+#     agent_types: [general-purpose, reviewer-*]
 
 # The lifecycle ledger (optional, on by default): belt record posts one
 # events entry per lifecycle hook it is wired to, tagged with the session,

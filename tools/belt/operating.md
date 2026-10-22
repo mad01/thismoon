@@ -79,7 +79,7 @@ machine config names the new event. A new key fails the other way: an older
 belt ignores `custom_hints.<name>.agent_types` and runs the hint for every
 subagent, and ignores `ledger.agent_types` and records no model or effort.
 A belt that knows `agent_types` but not `*` matching reads a `*` entry
-literally, so the worker brief reaches no worker until the new belt is
+literally, so a gated brief reaches no subagent until the new belt is
 installed. The same order applies.
 
 ## failure modes
@@ -157,8 +157,8 @@ the doctor events line says which. Ledger entries live under the
 A subagent-start entry without `model` and `effort` tags means no
 `ledger.agent_types` key matches its agent type, the entry was dropped, or
 the belt predates the key. A named spawn reports its name as its agent
-type, so keys for factory workers end in `*` and the factory names workers
-`factory-worker-<tier>-<slug>`; a plain key never matches a named worker.
+type, so a key for named spawns ends in `*` (`reviewer-*` covers
+`reviewer-deep-<slug>`); a plain key never matches a named spawn.
 The doctor ledger block lists the keys in effect and the warnings name the
 drops. A watcher that never wakes the session usually means the item's `to`
 tag does not match the session id exactly, or the Stop entry lacks

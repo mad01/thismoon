@@ -684,9 +684,7 @@ export function mergeTreeArgs(ref: string, branch: string): string[] {
  * True when the tree a merge into the default branch would write is the
  * default branch's own tree: the branch's changes are already there, by a
  * fast-forward or a squash merge. False when either is unknown (git before
- * 2.38, a conflict, no default branch). factory-band's isIntegratedTree is
- * the same check; mods load as separate plugins and share no code, so it is
- * mirrored here, not imported.
+ * 2.38, a conflict, no default branch).
  */
 export function isIntegratedTree(mergeTreeOut: string | null, defaultTree: string | null): boolean {
   const merged = mergeTreeOut?.trim().split('\n')[0] ?? ''
@@ -753,10 +751,6 @@ export const LEDGER_URL = 'http://localhost:7430/api/events?source=belt-ledger&q
 
 /** The argv of the engine's session list. */
 export const AGENTS_ARGV = ['claude', 'agents', '--json', '--all'] as const
-
-// The agent definitions the factory spawns its workers from, optionally
-// under a plugin's `<plugin>:` prefix; the tier names the member's role.
-const WORKER_TYPE = /(?:^|:)factory-worker-(low|medium|high)$/
 
 // Agent statuses after which the engine keeps an agent listed only until it
 // drops the task.
@@ -841,12 +835,6 @@ export function isLive(agent: AgentLike): boolean {
   return !FINISHED.has(agent.status)
 }
 
-/** `worker-low`, `worker-medium` or `worker-high` for a factory worker definition, else null. */
-export function roleOfType(type: string): string | null {
-  const tier = WORKER_TYPE.exec(type)?.[1]
-  return tier === undefined ? null : `worker-${tier}`
-}
-
 /** The isolation worktree path the Agent tool uses for `agentId`. */
 function isolationPathOf(agentId: string, canonical: string): string {
   return `${canonical}/.claude/worktrees/agent-${agentId}`
@@ -892,12 +880,11 @@ function agentMember(agent: AgentLike, ledger: ReadonlyMap<string, LedgerFacts>,
   if (!isLive(agent)) return null
   const facts = ledger.get(agent.id)
   const worktree = agentWorktreeOf(agent.id, facts?.worktree ?? null, layout)
-  const role = roleOfType(agent.type) ?? (worktree === null ? null : 'owner')
-  if (role === null) return null
+  if (worktree === null) return null
   return {
     name: agent.name ?? agent.id,
-    role,
-    worktree: worktree === null ? UNKNOWN : baseName(worktree),
+    role: 'owner',
+    worktree: baseName(worktree),
     model: facts?.model ?? UNKNOWN,
     effort: facts?.effort ?? UNKNOWN,
     state: null,
@@ -920,10 +907,10 @@ function sessionMember(row: SessionRow, layout: Layout, selfSessionId: string | 
 }
 
 /**
- * The members beside this session: its live agents that run a factory
- * worker definition or work in a loom or isolation worktree, then the
- * sessions in such a worktree that are not done, this one left out. A plain
- * named agent is no member. Model and effort come from the ledger alone.
+ * The members beside this session: its live agents that work in a loom or
+ * isolation worktree, then the sessions in such a worktree that are not done,
+ * this one left out. A plain named agent is no member. Model and effort come
+ * from the ledger alone.
  */
 export function membersFrom(input: {
   agents: readonly AgentLike[]
@@ -944,7 +931,7 @@ export function membersFrom(input: {
   return members
 }
 
-/** `w1 (worker-high, agent-a1, -, -)`, a session's state after it: `fixer (owner, fix-band, -, -) idle`. */
+/** `w1 (owner, agent-a1, -, -)`, a session's state after it: `fixer (owner, fix-band, -, -) idle`. */
 export function memberText(member: Member): string {
   const fields = `${member.name} (${member.role}, ${member.worktree}, ${member.model}, ${member.effort})`
   return member.state === null ? fields : `${fields} ${member.state}`

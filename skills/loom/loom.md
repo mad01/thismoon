@@ -74,8 +74,8 @@ never lists the branch.
 
 ## Integrated check
 
-The same check factory-band runs for a ready worker, from the canonical
-checkout after a fetch (`main` stands for the default branch):
+Run the check from the canonical checkout after a fetch (`main` stands for
+the default branch):
 
 ```
 git -C <canonical> merge-tree --write-tree origin/main <branch>  # the tree a merge would write
@@ -121,13 +121,12 @@ the branch shares no history with the default branch.
 The weaver gathers the claims first, then checks each one against git.
 
 1. Ready messages. Owners send them over SendMessage, so they arrive in the
-   weaver's own conversation. The factory skill owns the format; the weaver
-   reads three body fields: files changed, gates run (command and last
-   line), and commit range.
+   weaver's own conversation. The weaver reads three fields from each:
+   files changed, gates run (command and last line), and commit range.
 2. The ledger. belt records each subagent's start and stop, auto-mode
    denials and notifications under the `belt-ledger` source, tagged with
    the repo, worktree and branch. A stop with no ready message, or a
-   denial, points at a worker that ended or got stuck without claiming
+   denial, points at an owner that ended or got stuck without claiming
    ready:
 
    ```

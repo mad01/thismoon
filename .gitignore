@@ -26,7 +26,6 @@ services/status/status
 tools/agent-sync/agent-sync
 tools/belt/belt
 tools/clipboard/clipboard
-tools/factory-eval/factory-eval
 tools/humanizer/humanizer
 tools/opener/opener
 tools/suspenders/suspenders
@@ -39,6 +38,3 @@ mods/*/tsconfig.json
 
 # written by `claude plugin eval` beside a skill's cases
 skills/*/evals/results/
-
-# factory-eval batches; only the schema and its fixture are committed
-tools/factory-eval/results/

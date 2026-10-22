@@ -1,5 +1,5 @@
 // Package ledger turns Claude Code lifecycle hook events into entries for
-// the local events service, so an orchestrator session and its workers
+// the local events service, so a session and the subagents it spawns
 // leave one timeline: which subagent started and stopped where, which task
 // completed, which tool call auto mode denied, when a session asked for
 // attention, compacted or ended, and which turn died on an API error after
@@ -36,8 +36,8 @@ const (
 // Source is the events-service source entries post under unless
 // ledger.source names another. It stays apart from the source belt's
 // denies and hints use because the events service caps each source's
-// in-memory history: a busy factory must not push guard denials out of
-// view.
+// in-memory history: a session running many subagents must not push guard
+// denials out of view.
 const Source = config.DefaultLedgerSource
 
 // maxMessageBytes caps an entry's message. A subagent's final message can

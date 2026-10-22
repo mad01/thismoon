@@ -434,13 +434,13 @@ func TestEventsFollowTheCatalog(t *testing.T) {
 	}
 }
 
-// factoryTypes is ledger.agent_types as the factory worker definitions
-// declare it, keyed by glob because the factory names its workers
-// factory-worker-<tier>-<slug>, plus an entry whose effort did not resolve.
-var factoryTypes = config.ResolveAgentTypes(map[string]any{
-	"factory-worker-low*":  map[string]any{"model": "sonnet", "effort": "low"},
-	"factory-worker-high*": map[string]any{"model": "opus", "effort": "high"},
-	"half-declared":        map[string]any{"model": "haiku", "effort": "extreme"},
+// reviewerTypes is ledger.agent_types as the reviewer definitions declare
+// it, keyed by glob because a named spawn reports reviewer-<tier>-<slug>,
+// plus an entry whose effort did not resolve.
+var reviewerTypes = config.ResolveAgentTypes(map[string]any{
+	"reviewer-quick*": map[string]any{"model": "sonnet", "effort": "low"},
+	"reviewer-deep*":  map[string]any{"model": "opus", "effort": "high"},
+	"half-declared":   map[string]any{"model": "haiku", "effort": "extreme"},
 })
 
 // TestTagsCarryDeclaredModelAndEffort: a subagent-start entry whose agent
@@ -455,11 +455,11 @@ func TestTagsCarryDeclaredModelAndEffort(t *testing.T) {
 		wantModel  string
 		wantEffort string
 	}{
-		{"matching type", EventSubagentStart, "factory-worker-high", "opus", "high"},
-		{"another matching type", EventSubagentStart, "factory-worker-low", "sonnet", "low"},
+		{"matching type", EventSubagentStart, "reviewer-deep", "opus", "high"},
+		{"another matching type", EventSubagentStart, "reviewer-quick", "sonnet", "low"},
 		{
 			"a named worker matches its tier's glob", EventSubagentStart,
-			"factory-worker-high-csl-prune", "opus", "high",
+			"reviewer-deep-csl-prune", "opus", "high",
 		},
 		{
 			"a plain key does not match a longer name", EventSubagentStart,
@@ -468,12 +468,12 @@ func TestTagsCarryDeclaredModelAndEffort(t *testing.T) {
 		{"unknown type", EventSubagentStart, "Explore", "", ""},
 		{"absent type", EventSubagentStart, "", "", ""},
 		{"a dropped effort leaves the model", EventSubagentStart, "half-declared", "haiku", ""},
-		{"subagent stop is never tagged", EventSubagentStop, "factory-worker-high", "", ""},
+		{"subagent stop is never tagged", EventSubagentStop, "reviewer-deep", "", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := Input{SessionID: "s1", AgentID: "a1", AgentType: tt.agentType}
-			got := tags(tt.event, in, guard.Location{}, factoryTypes)
+			got := tags(tt.event, in, guard.Location{}, reviewerTypes)
 			model, hasModel := got["model"]
 			effort, hasEffort := got["effort"]
 			if model != tt.wantModel || hasModel != (tt.wantModel != "") {
@@ -486,17 +486,17 @@ func TestTagsCarryDeclaredModelAndEffort(t *testing.T) {
 	}
 }
 
-// TestBuildTagsAFactoryWorker is the acceptance case end to end through
-// Build: a factory worker named after its unit carries the model and effort
-// its tier's glob declares beside its usual tags.
-func TestBuildTagsAFactoryWorker(t *testing.T) {
-	in := Input{SessionID: "s1", AgentID: "a1", AgentType: "factory-worker-high-csl-prune"}
-	got := Build(EventSubagentStart, in, linked, factoryTypes)
+// TestBuildTagsANamedReviewer is the acceptance case end to end through
+// Build: a reviewer spawned under a name carries the model and effort its
+// tier's glob declares beside its usual tags.
+func TestBuildTagsANamedReviewer(t *testing.T) {
+	in := Input{SessionID: "s1", AgentID: "a1", AgentType: "reviewer-deep-csl-prune"}
+	got := Build(EventSubagentStart, in, linked, reviewerTypes)
 	want := map[string]string{
 		"event":      "subagent-start",
 		"session_id": "s1",
 		"agent_id":   "a1",
-		"agent_type": "factory-worker-high-csl-prune",
+		"agent_type": "reviewer-deep-csl-prune",
 		"model":      "opus",
 		"effort":     "high",
 		"repo":       "github.com/mad01/thismoon",

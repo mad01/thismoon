@@ -229,7 +229,7 @@ custom_hints:
   brief:
     event: subagent-start
     command: [brief]
-    agent_types: [factory-worker-low, factory-worker-high]
+    agent_types: [reviewer-quick, reviewer-deep]
 hints:
   journal:
     enabled: false
@@ -265,7 +265,7 @@ hints:
 	if plain.Enabled == nil || !*plain.Enabled {
 		t.Errorf("plain enabled = %v, want the explicit default true", plain.Enabled)
 	}
-	wantTypes := []string{"factory-worker-low", "factory-worker-high"}
+	wantTypes := []string{"reviewer-quick", "reviewer-deep"}
 	if gotTypes := got.CustomHints["brief"].AgentTypes; !slices.Equal(gotTypes, wantTypes) {
 		t.Errorf("brief agent_types = %v, want %v", gotTypes, wantTypes)
 	}

@@ -405,14 +405,11 @@ belt's own config file. The
 `grep` in an indexed repo back as the equivalent `csl_search` call.
 [`CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example) is for the
 instruction file that teaches the agent when to reach for which tool. The
-eight skills under `skills/` load without registration of their own: their
+seven skills under `skills/` load without registration of their own: their
 recipes symlink them into `~/.claude/skills`, and they load when invoked by
-name (`/factory`, `/golang-pro`, `/golang-style`, `/handoff`, `/humanizer`,
-`/loom`, `/present`, `/worklog`) or when a task matches. The MCP-backed ones
-assume their server from this section is registered. `factory` also needs
-the `factory-worker` custom hint in the belt config; its recipe installs
-the three worker definitions in `~/.claude/agents/` and the hint script,
-and `skills/factory/worker-brief.md` shows the registration.
+name (`/golang-pro`, `/golang-style`, `/handoff`, `/humanizer`, `/loom`,
+`/present`, `/worklog`) or when a task matches. The MCP-backed ones
+assume their server from this section is registered.
 
 ### Claude Code mods
 

@@ -9,13 +9,13 @@ import (
 	"testing"
 )
 
-// factoryWorkers is ledger.agent_types as the three factory worker
-// definitions declare it.
-const factoryWorkers = `ledger:
+// reviewerTiers is ledger.agent_types as three reviewer definitions
+// declare it.
+const reviewerTiers = `ledger:
   agent_types:
-    factory-worker-low: {model: sonnet, effort: low}
-    factory-worker-medium: {model: sonnet, effort: medium}
-    factory-worker-high: {model: opus, effort: high}
+    reviewer-quick: {model: sonnet, effort: low}
+    reviewer-standard: {model: sonnet, effort: medium}
+    reviewer-deep: {model: opus, effort: high}
 `
 
 // TestLedgerAgentTypes pins how ledger.agent_types resolves. A valid entry
@@ -30,20 +30,20 @@ func TestLedgerAgentTypes(t *testing.T) {
 		warn    string // "" means no adjustment at all
 	}{
 		{
-			name:    "valid factory workers",
-			content: factoryWorkers,
+			name:    "valid reviewer tiers",
+			content: reviewerTiers,
 			want: map[string]AgentTypeTags{
-				"factory-worker-low":    {Model: "sonnet", Effort: "low"},
-				"factory-worker-medium": {Model: "sonnet", Effort: "medium"},
-				"factory-worker-high":   {Model: "opus", Effort: "high"},
+				"reviewer-quick":    {Model: "sonnet", Effort: "low"},
+				"reviewer-standard": {Model: "sonnet", Effort: "medium"},
+				"reviewer-deep":     {Model: "opus", Effort: "high"},
 			},
 		},
 		{
 			name: "unknown effort drops the effort tag and keeps the model",
 			content: "ledger:\n  agent_types:\n" +
-				"    factory-worker-high: {model: opus, effort: extreme}\n",
-			want: map[string]AgentTypeTags{"factory-worker-high": {Model: "opus"}},
-			warn: `ledger.agent_types.factory-worker-high.effort is "extreme", ` +
+				"    reviewer-deep: {model: opus, effort: extreme}\n",
+			want: map[string]AgentTypeTags{"reviewer-deep": {Model: "opus"}},
+			warn: `ledger.agent_types.reviewer-deep.effort is "extreme", ` +
 				"not one of low, medium, high, xhigh, max: effort tag dropped",
 		},
 		{
@@ -59,36 +59,36 @@ func TestLedgerAgentTypes(t *testing.T) {
 		{
 			name: "empty model drops the model tag and keeps the effort",
 			content: "ledger:\n  agent_types:\n" +
-				"    factory-worker-low: {model: '  ', effort: low}\n",
-			want: map[string]AgentTypeTags{"factory-worker-low": {Effort: "low"}},
-			warn: "ledger.agent_types.factory-worker-low.model is empty: model tag dropped",
+				"    reviewer-quick: {model: '  ', effort: low}\n",
+			want: map[string]AgentTypeTags{"reviewer-quick": {Effort: "low"}},
+			warn: "ledger.agent_types.reviewer-quick.model is empty: model tag dropped",
 		},
 		{
 			name:    "non-map entry is dropped",
-			content: "ledger:\n  agent_types:\n    factory-worker-high: opus\n",
+			content: "ledger:\n  agent_types:\n    reviewer-deep: opus\n",
 			want:    map[string]AgentTypeTags{},
-			warn: `ledger.agent_types.factory-worker-high is "opus", ` +
+			warn: `ledger.agent_types.reviewer-deep is "opus", ` +
 				"not a map with model and effort: no tags",
 		},
 		{
 			name:    "non-map section is ignored",
-			content: "ledger:\n  agent_types: [factory-worker-high]\n",
+			content: "ledger:\n  agent_types: [reviewer-deep]\n",
 			want:    map[string]AgentTypeTags{},
 			warn:    "ledger.agent_types is a list, not a map of agent type to model and effort",
 		},
 		{
 			name: "non-string model is dropped",
 			content: "ledger:\n  agent_types:\n" +
-				"    factory-worker-high: {model: 4.5, effort: high}\n",
-			want: map[string]AgentTypeTags{"factory-worker-high": {Effort: "high"}},
-			warn: "ledger.agent_types.factory-worker-high.model is 4.5, not a string: " +
+				"    reviewer-deep: {model: 4.5, effort: high}\n",
+			want: map[string]AgentTypeTags{"reviewer-deep": {Effort: "high"}},
+			warn: "ledger.agent_types.reviewer-deep.model is 4.5, not a string: " +
 				"model tag dropped",
 		},
 		{
 			name:    "a misspelt key is named and tags nothing",
-			content: "ledger:\n  agent_types:\n    factory-worker-high: {modle: opus}\n",
+			content: "ledger:\n  agent_types:\n    reviewer-deep: {modle: opus}\n",
 			want:    map[string]AgentTypeTags{},
-			warn: "ledger.agent_types.factory-worker-high.modle is not a known key " +
+			warn: "ledger.agent_types.reviewer-deep.modle is not a known key " +
 				"(model, effort): ignored",
 		},
 		{
@@ -105,92 +105,92 @@ func TestLedgerAgentTypes(t *testing.T) {
 		{
 			name: "a duplicate agent type keeps its first entry and the rest of the map",
 			content: "ledger:\n  agent_types:\n" +
-				"    factory-worker-low: {model: sonnet, effort: low}\n" +
-				"    factory-worker-high: {model: opus, effort: high}\n" +
-				"    factory-worker-low: {model: haiku, effort: max}\n",
+				"    reviewer-quick: {model: sonnet, effort: low}\n" +
+				"    reviewer-deep: {model: opus, effort: high}\n" +
+				"    reviewer-quick: {model: haiku, effort: max}\n",
 			want: map[string]AgentTypeTags{
-				"factory-worker-low":  {Model: "sonnet", Effort: "low"},
-				"factory-worker-high": {Model: "opus", Effort: "high"},
+				"reviewer-quick": {Model: "sonnet", Effort: "low"},
+				"reviewer-deep":  {Model: "opus", Effort: "high"},
 			},
-			warn: "ledger.agent_types.factory-worker-low is defined twice (lines 3 and 5): " +
+			warn: "ledger.agent_types.reviewer-quick is defined twice (lines 3 and 5): " +
 				"later one dropped",
 		},
 		{
 			name: "a duplicate field keeps its first value and the rest of the entry",
 			content: "ledger:\n  agent_types:\n" +
-				"    factory-worker-high:\n" +
+				"    reviewer-deep:\n" +
 				"      model: opus\n" +
 				"      model: sonnet\n" +
 				"      effort: high\n" +
-				"    factory-worker-low: {model: sonnet, effort: low}\n",
+				"    reviewer-quick: {model: sonnet, effort: low}\n",
 			want: map[string]AgentTypeTags{
-				"factory-worker-high": {Model: "opus", Effort: "high"},
-				"factory-worker-low":  {Model: "sonnet", Effort: "low"},
+				"reviewer-deep":  {Model: "opus", Effort: "high"},
+				"reviewer-quick": {Model: "sonnet", Effort: "low"},
 			},
-			warn: "ledger.agent_types.factory-worker-high.model is defined twice " +
+			warn: "ledger.agent_types.reviewer-deep.model is defined twice " +
 				"(lines 4 and 5): later one dropped",
 		},
 		{
 			name: "an entry YAML cannot read drops only itself",
 			content: "ledger:\n  agent_types:\n" +
-				"    factory-worker-high: {model: !!int opus, effort: high}\n" +
-				"    factory-worker-low: {model: sonnet, effort: low}\n",
-			want: map[string]AgentTypeTags{"factory-worker-low": {Model: "sonnet", Effort: "low"}},
-			warn: "ledger.agent_types.factory-worker-high could not be read (yaml: ",
+				"    reviewer-deep: {model: !!int opus, effort: high}\n" +
+				"    reviewer-quick: {model: sonnet, effort: low}\n",
+			want: map[string]AgentTypeTags{"reviewer-quick": {Model: "sonnet", Effort: "low"}},
+			warn: "ledger.agent_types.reviewer-deep could not be read (yaml: ",
 		},
 		{
 			name: "a blank agent type is quoted so the blanks read apart",
 			content: "ledger:\n  agent_types:\n" +
 				"    '  ': {model: opus}\n" +
-				"    factory-worker-low: {model: sonnet}\n",
-			want: map[string]AgentTypeTags{"factory-worker-low": {Model: "sonnet"}},
+				"    reviewer-quick: {model: sonnet}\n",
+			want: map[string]AgentTypeTags{"reviewer-quick": {Model: "sonnet"}},
 			warn: `ledger.agent_types has an entry with a blank agent type ("  "): dropped`,
 		},
 		{
 			name: "a merge key inside an entry works as YAML defines it",
 			content: "ledger:\n  agent_types:\n" +
-				"    factory-worker-low: &sonnet {model: sonnet, effort: low}\n" +
-				"    factory-worker-medium: {<<: *sonnet, effort: medium}\n",
+				"    reviewer-quick: &sonnet {model: sonnet, effort: low}\n" +
+				"    reviewer-standard: {<<: *sonnet, effort: medium}\n",
 			want: map[string]AgentTypeTags{
-				"factory-worker-low":    {Model: "sonnet", Effort: "low"},
-				"factory-worker-medium": {Model: "sonnet", Effort: "medium"},
+				"reviewer-quick":    {Model: "sonnet", Effort: "low"},
+				"reviewer-standard": {Model: "sonnet", Effort: "medium"},
 			},
 		},
 		{
 			name: "a merge key in place of an agent type is named and dropped",
 			content: "x-workers: &workers\n" +
-				"  factory-worker-low: {model: sonnet}\n" +
+				"  reviewer-quick: {model: sonnet}\n" +
 				"ledger:\n  agent_types:\n" +
 				"    <<: *workers\n" +
-				"    factory-worker-high: {model: opus}\n",
-			want: map[string]AgentTypeTags{"factory-worker-high": {Model: "opus"}},
+				"    reviewer-deep: {model: opus}\n",
+			want: map[string]AgentTypeTags{"reviewer-deep": {Model: "opus"}},
 			warn: "ledger.agent_types has a merge key (<<) at line 5",
 		},
 		{
 			name: "glob keys load as written",
 			content: "ledger:\n  agent_types:\n" +
-				"    factory-worker-high*: {model: opus, effort: high}\n" +
+				"    reviewer-deep*: {model: opus, effort: high}\n" +
 				"    '*': {model: sonnet}\n",
 			want: map[string]AgentTypeTags{
-				"factory-worker-high*": {Model: "opus", Effort: "high"},
-				"*":                    {Model: "sonnet"},
+				"reviewer-deep*": {Model: "opus", Effort: "high"},
+				"*":              {Model: "sonnet"},
 			},
 		},
 		{
 			name: "a * before the end warns and drops that entry",
 			content: "ledger:\n  agent_types:\n" +
-				"    factory-*-high: {model: opus, effort: high}\n" +
-				"    factory-worker-low*: {model: sonnet, effort: low}\n",
-			want: map[string]AgentTypeTags{"factory-worker-low*": {Model: "sonnet", Effort: "low"}},
-			warn: "ledger.agent_types.factory-*-high has a * before its end " +
+				"    reviewer-*-deep: {model: opus, effort: high}\n" +
+				"    reviewer-quick*: {model: sonnet, effort: low}\n",
+			want: map[string]AgentTypeTags{"reviewer-quick*": {Model: "sonnet", Effort: "low"}},
+			warn: "ledger.agent_types.reviewer-*-deep has a * before its end " +
 				"(only a trailing * is a glob): dropped",
 		},
 		{
 			name: "a key that is not a name is dropped",
 			content: "ledger:\n  agent_types:\n" +
 				"    [a, b]: {model: opus}\n" +
-				"    factory-worker-low: {model: sonnet}\n",
-			want: map[string]AgentTypeTags{"factory-worker-low": {Model: "sonnet"}},
+				"    reviewer-quick: {model: sonnet}\n",
+			want: map[string]AgentTypeTags{"reviewer-quick": {Model: "sonnet"}},
 			warn: "ledger.agent_types has a key at line 3 that is not a name: dropped",
 		},
 	}
@@ -237,15 +237,15 @@ func TestLedgerAgentTypesLegacyTOML(t *testing.T) {
 	p := Paths{
 		BeltYAML: filepath.Join(dir, "config.yaml"),
 		BeltTOML: writeFile(t, dir, "config.toml", `
-[ledger.agent_types.factory-worker-high]
+[ledger.agent_types.reviewer-deep]
 model = "opus"
 effort = "high"
 
-[ledger.agent_types.factory-worker-low]
+[ledger.agent_types.reviewer-quick]
 model = "sonnet"
 effort = 3
 
-[ledger.agent_types."factory-*-high"]
+[ledger.agent_types."reviewer-*-deep"]
 model = "opus"
 `),
 	}
@@ -254,36 +254,36 @@ model = "opus"
 		t.Fatalf("LoadFrom() error = %v, want none", err)
 	}
 	checkAgentTypes(t, cfg.Ledger, map[string]AgentTypeTags{
-		"factory-worker-high": {Model: "opus", Effort: "high"},
-		"factory-worker-low":  {Model: "sonnet"},
-	}, "ledger.agent_types.factory-worker-low.effort is 3, not a string: effort tag dropped")
-	const misplaced = "ledger.agent_types.factory-*-high has a * before its end"
+		"reviewer-deep":  {Model: "opus", Effort: "high"},
+		"reviewer-quick": {Model: "sonnet"},
+	}, "ledger.agent_types.reviewer-quick.effort is 3, not a string: effort tag dropped")
+	const misplaced = "ledger.agent_types.reviewer-*-deep has a * before its end"
 	if adj := strings.Join(cfg.Ledger.Adjustments(), "\n"); !strings.Contains(adj, misplaced) {
 		t.Errorf("adjustments = %q, want one containing %q", adj, misplaced)
 	}
 }
 
 // TestLedgerAgentTypesForGlobs: a named spawn reports its name as its agent
-// type, so a factory worker named factory-worker-high-<slug> is tagged
-// through the factory-worker-high* key. An exact key beats a glob, the
+// type, so a reviewer spawned as reviewer-deep-<slug> is tagged
+// through the reviewer-deep* key. An exact key beats a glob, the
 // longest glob wins, and a plain key does not match a slugged name.
 func TestLedgerAgentTypesForGlobs(t *testing.T) {
 	cfg := mustLoad(t, Paths{BeltYAML: writeFile(t, t.TempDir(), "config.yaml", `ledger:
   agent_types:
-    factory-worker*: {model: haiku, effort: low}
-    factory-worker-high*: {model: opus, effort: high}
-    factory-worker-high-csl-prune: {model: opus, effort: max}
-    reviewer: {model: opus, effort: xhigh}
+    reviewer*: {model: haiku, effort: low}
+    reviewer-deep*: {model: opus, effort: high}
+    reviewer-deep-csl-prune: {model: opus, effort: max}
+    docs-writer: {model: opus, effort: xhigh}
 `)})
 	tests := []struct {
 		agentType string
 		want      AgentTypeTags
 	}{
-		{"factory-worker-high-ledger-tags", AgentTypeTags{Model: "opus", Effort: "high"}},
-		{"factory-worker-high-csl-prune", AgentTypeTags{Model: "opus", Effort: "max"}},
-		{"factory-worker-low-docs", AgentTypeTags{Model: "haiku", Effort: "low"}},
-		{"reviewer", AgentTypeTags{Model: "opus", Effort: "xhigh"}},
-		{"reviewer-belt", AgentTypeTags{}},
+		{"reviewer-deep-ledger-tags", AgentTypeTags{Model: "opus", Effort: "high"}},
+		{"reviewer-deep-csl-prune", AgentTypeTags{Model: "opus", Effort: "max"}},
+		{"reviewer-quick-docs", AgentTypeTags{Model: "haiku", Effort: "low"}},
+		{"docs-writer", AgentTypeTags{Model: "opus", Effort: "xhigh"}},
+		{"docs-writer-belt", AgentTypeTags{}},
 		{"Explore", AgentTypeTags{}},
 	}
 	for _, tt := range tests {
@@ -297,8 +297,8 @@ func TestLedgerAgentTypesForGlobs(t *testing.T) {
 // not cost the ledger keys beside it.
 func TestLedgerAgentTypesLeaveTheRestOfTheSection(t *testing.T) {
 	cfg := mustLoad(t, Paths{BeltYAML: writeFile(t, t.TempDir(), "config.yaml",
-		"ledger:\n  enabled: false\n  source: factory-ledger\n  agent_types: 7\n")})
-	if cfg.Ledger.On() || cfg.Ledger.SourceName() != "factory-ledger" {
+		"ledger:\n  enabled: false\n  source: custom-ledger\n  agent_types: 7\n")})
+	if cfg.Ledger.On() || cfg.Ledger.SourceName() != "custom-ledger" {
 		t.Errorf("ledger = on %v, source %q", cfg.Ledger.On(), cfg.Ledger.SourceName())
 	}
 	if got := cfg.Ledger.Adjustments(); len(got) != 1 ||

@@ -14,7 +14,6 @@ import {
   membersFrom,
   parseLedger,
   parseSessions,
-  roleOfType,
   trailingDelay,
 } from '../lib/loom.ts'
 
@@ -46,9 +45,9 @@ const sessionsJson = JSON.stringify([
 // The events service's answer for the belt-ledger source, newest first.
 const ledgerJson = JSON.stringify([
   { id: '4', source: 'belt-ledger', title: 'subagent started (general-purpose)', tags: { event: 'subagent-start', agent_id: 'a4', worktree: OTHER } },
-  { id: '3', source: 'belt-ledger', title: 'subagent started (factory-worker-high)', tags: { event: 'subagent-start', agent_id: 'a1', worktree: OTHER, model: 'opus', effort: 'high' } },
+  { id: '3', source: 'belt-ledger', title: 'subagent started (general-purpose)', tags: { event: 'subagent-start', agent_id: 'a1', worktree: OTHER, model: 'opus', effort: 'high' } },
   { id: '2', source: 'belt-ledger', title: 'subagent stopped (Explore)', tags: { event: 'subagent-stop', agent_id: 'a2', model: 'haiku' } },
-  { id: '1', source: 'belt-ledger', title: 'subagent started (factory-worker-high)', tags: { event: 'subagent-start', agent_id: 'a1', model: 'sonnet', effort: 'low' } },
+  { id: '1', source: 'belt-ledger', title: 'subagent started (general-purpose)', tags: { event: 'subagent-start', agent_id: 'a1', model: 'sonnet', effort: 'low' } },
 ])
 
 describe('parseSessions', () => {
@@ -96,15 +95,7 @@ describe('parseLedger', () => {
   })
 })
 
-describe('roles and worktrees', () => {
-  test('a factory worker definition names its tier, with or without a plugin prefix', () => {
-    assert.equal(roleOfType('factory-worker-low'), 'worker-low')
-    assert.equal(roleOfType('factory-worker-medium'), 'worker-medium')
-    assert.equal(roleOfType('thismoon:factory-worker-high'), 'worker-high')
-    assert.equal(roleOfType('factory-worker-max'), null)
-    assert.equal(roleOfType('general-purpose'), null)
-  })
-
+describe('worktrees', () => {
   test('member worktrees are the loom layout and the isolation layout only', () => {
     assert.equal(isMemberWorktree(OWN, layout), true)
     assert.equal(isMemberWorktree(NESTED, layout), true)
@@ -142,16 +133,16 @@ describe('membersFrom', () => {
   const sessions = parseSessions(sessionsJson)
   const ledger = parseLedger(ledgerJson)
 
-  test('a factory worker takes its tier as role, model and effort from the ledger', () => {
-    const agents = [{ id: 'a1', name: 'w1', type: 'factory-worker-high', status: 'running' }]
+  test('an agent in an isolation worktree takes model and effort from the ledger', () => {
+    const agents = [{ id: 'a1', name: 'w1', type: 'general-purpose', status: 'running' }]
     const [member] = membersFrom({ agents, sessions: [], ledger, layout, selfSessionId: null })
-    assert.deepEqual(member, { name: 'w1', role: 'worker-high', worktree: 'agent-a1', model: 'opus', effort: 'high', state: null })
+    assert.deepEqual(member, { name: 'w1', role: 'owner', worktree: 'agent-a1', model: 'opus', effort: 'high', state: null })
   })
 
   test('with no ledger entry model and effort are dashes, never read off the type', () => {
-    const agents = [{ id: 'a9', name: 'w9', type: 'factory-worker-low', status: 'idle' }]
+    const agents = [{ id: 'a1', name: 'w1', type: 'general-purpose', status: 'idle' }]
     const [member] = membersFrom({ agents, sessions: [], ledger: new Map(), layout, selfSessionId: null })
-    assert.deepEqual(member, { name: 'w9', role: 'worker-low', worktree: UNKNOWN, model: UNKNOWN, effort: UNKNOWN, state: null })
+    assert.deepEqual(member, { name: 'w1', role: 'owner', worktree: 'agent-a1', model: UNKNOWN, effort: UNKNOWN, state: null })
   })
 
   test('an agent in an isolation or loom worktree is an owner', () => {
@@ -168,7 +159,7 @@ describe('membersFrom', () => {
 
   test('plain named teammates, unnamed helpers and finished agents are left out', () => {
     const agents = [
-      { id: 'a5', name: 'done', type: 'factory-worker-low', status: 'completed' },
+      { id: 'a1', name: 'done', type: 'general-purpose', status: 'completed' },
       { id: 'a6', type: 'Explore', status: 'running' },
       { id: 'a7', name: 'implementer', type: 'general-purpose', status: 'running' },
     ]
@@ -210,16 +201,16 @@ describe('the refresh throttle', () => {
 })
 
 describe('composeStatus', () => {
-  const w1 = { name: 'w1', role: 'worker-high', worktree: 'feat-x', model: 'opus', effort: 'high', state: null }
+  const w1 = { name: 'w1', role: 'owner', worktree: 'feat-x', model: 'opus', effort: 'high', state: null }
   const fixer = { name: 'fixer', role: 'owner', worktree: 'fix-band', model: UNKNOWN, effort: UNKNOWN, state: 'idle' }
 
   test('memberText lists the five fields in order, a session\'s state after them', () => {
-    assert.equal(memberText(w1), 'w1 (worker-high, feat-x, opus, high)')
+    assert.equal(memberText(w1), 'w1 (owner, feat-x, opus, high)')
     assert.equal(memberText(fixer), 'fixer (owner, fix-band, -, -) idle')
   })
 
   test('members follow the role text', () => {
-    assert.equal(composeStatus('weaver · 2 worktrees', [w1, fixer]), 'weaver · 2 worktrees · members w1 (worker-high, feat-x, opus, high), fixer (owner, fix-band, -, -) idle')
+    assert.equal(composeStatus('weaver · 2 worktrees', [w1, fixer]), 'weaver · 2 worktrees · members w1 (owner, feat-x, opus, high), fixer (owner, fix-band, -, -) idle')
   })
 
   test('the role text alone when nobody else works the loom', () => {
@@ -227,7 +218,7 @@ describe('composeStatus', () => {
   })
 
   test('the members alone for a session with no loom role, and clear with neither', () => {
-    assert.equal(composeStatus(undefined, [w1]), 'members w1 (worker-high, feat-x, opus, high)')
+    assert.equal(composeStatus(undefined, [w1]), 'members w1 (owner, feat-x, opus, high)')
     assert.equal(composeStatus(undefined, []), undefined)
   })
 })
