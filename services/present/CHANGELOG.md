@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.1](https://github.com/mad01/thismoon/compare/present/v1.19.0...present/v1.19.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **present:** pin sha256 for the remaining vendored assets ([#268](https://github.com/mad01/thismoon/issues/268)) ([412538e](https://github.com/mad01/thismoon/commit/412538e079188a5ec466a4c6a6b5466fdd8048d7))
+
 ## [1.19.0](https://github.com/mad01/thismoon/compare/present/v1.18.0...present/v1.19.0) (2026-10-19)
 
 
