@@ -6,8 +6,9 @@
   },
   "mods": {
     "session-band": {
-      "_comment": "on: a status line counting belt denials this session",
-      "enabled": true
+      "_comment": "on for personal machines only: a status line counting belt denials this session",
+      "enabled": true,
+      "profiles": ["personal"]
     },
     "humanizer-gate": {
       "_comment": "on: humanizer detection on markdown writes, PR bodies and commit messages",
@@ -16,11 +17,6 @@
     "panel-policy": {
       "_comment": "off: installed and kept with its data, disabled until the review-model routing is wanted here",
       "enabled": false
-    },
-    "factory-band": {
-      "_comment": "on for personal machines only: the factory skill runs there",
-      "enabled": true,
-      "profiles": ["personal"]
     },
     "loom-pane": {
       "_comment": "retired: uninstalled wherever it has an install record; delete this entry once every machine has synced",

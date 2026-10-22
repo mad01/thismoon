@@ -101,7 +101,6 @@ CLI tools under `tools/`, installed to your local bin.
 | [belt](tools/belt/README.md) | Claude Code guard and hint hooks: denies risky tool calls, injects context | CLI | experimental |
 | [suspenders](tools/suspenders/README.md) | Git secret scanner and pre-commit hook orchestrator | CLI | experimental |
 | [agent-sync](tools/agent-sync/README.md) | Syncs Claude Code settings, mods and MCP servers from a data repo onto the machine | CLI | experimental |
-| [factory-eval](tools/factory-eval/README.md) | **experimental**: runs the factory and one agent on the same docs-sweep cases at the same dollar cap, then applies the pass rule | CLI | experimental |
 
 The MCP column is the AI half of the toolbox. Register those components as
 stdio MCP servers. Then your agent gets the code search, the audit log, and
@@ -110,7 +109,7 @@ rather than a copy of them.
 
 ## Skills
 
-Alongside the binaries, `skills/` ships eight agent skills: instructions
+Alongside the binaries, `skills/` ships seven agent skills: instructions
 Claude Code and Codex load on demand. Invoke one by name (`/golang-style`)
 or let the agent pick it up when a task matches its description. Each
 skill's ralph recipe symlinks it into `~/.claude/skills` and
@@ -119,7 +118,6 @@ ralph, symlink the skill directory there yourself.
 
 | Skill | Use it when | Backed by |
 |-------|-------------|-----------|
-| [factory](skills/factory/SKILL.md) | **experimental**: a plan has several independent units, and one orchestrator session should hand each to a worker subagent in its own loom worktree, with every message in a fixed contract; [examples.md](skills/factory/examples.md) shows one run end to end | belt's hooks, the humanizer check for Simplified Technical English, and the events, present and kof services |
 | [golang-pro](skills/golang-pro/SKILL.md) | Go work needs specialist depth on concurrency, generics, profiling, or gRPC (vendored from [jeffallan/claude-skills](https://github.com/jeffallan/claude-skills), MIT) | nothing — guidance only |
 | [golang-style](skills/golang-style/SKILL.md) | writing or reviewing Go: naming, package layout, error handling, the HTTP/CLI/store patterns this codebase uses | nothing — guidance only |
 | [handoff](skills/handoff/SKILL.md) | a session is ending mid-task and the next one must continue from a cold start | nothing — guidance only |

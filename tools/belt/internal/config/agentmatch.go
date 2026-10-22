@@ -13,8 +13,8 @@ const agentTypeGlob = "*"
 // ledger.agent_types map and a custom hint's agent_types gate alike. A
 // pattern ending in * matches every agent type that starts with the rest of
 // it; any other pattern matches only itself, case included. A named spawn
-// reports its name as its agent type, so one glob covers every worker the
-// factory names factory-worker-<tier>-<slug>. The pattern equal to agentType
+// reports its name as its agent type, so one glob such as reviewer-* covers
+// every spawn named reviewer-<slug>. The pattern equal to agentType
 // wins, otherwise the longest matching glob, so the order of patterns does
 // not matter. ok is false when none matches, and always for an empty
 // agentType: an event without one has nothing to match.

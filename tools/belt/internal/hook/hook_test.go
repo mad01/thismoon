@@ -300,9 +300,9 @@ func TestRecordSwallowsPanics(t *testing.T) {
 		{
 			"ledger.source is honored",
 			func() (config.Config, error) {
-				return config.Config{Ledger: config.Ledger{Source: "factory-ledger"}}, nil
+				return config.Config{Ledger: config.Ledger{Source: "custom-ledger"}}, nil
 			},
-			"factory-ledger",
+			"custom-ledger",
 		},
 	}
 	for _, tt := range tests {
@@ -387,9 +387,9 @@ func TestRecorderFollowsTheLedgerConfig(t *testing.T) {
 		{
 			"ledger.source replaces the source",
 			func() (config.Config, error) {
-				return config.Config{Ledger: config.Ledger{Source: "factory-ledger"}}, nil
+				return config.Config{Ledger: config.Ledger{Source: "custom-ledger"}}, nil
 			},
-			true, "factory-ledger", "",
+			true, "custom-ledger", "",
 		},
 		{
 			"ledger.enabled false posts nothing",

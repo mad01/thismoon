@@ -68,9 +68,9 @@ func TestBadLifecycleValuesNeverDenyAToolCall(t *testing.T) {
 		"watch:\n  enabled: true\n  poll_interval_ms: -1\n  max_wait_s: -5\n  source: 'in box/1'\n",
 		"watch:\n  max_wait_s: 999999\n",
 		"ledger:\n  source: '///'\n",
-		"ledger:\n  agent_types: [factory-worker-high]\n",
-		"ledger:\n  agent_types:\n    factory-worker-high: opus\n",
-		"ledger:\n  agent_types:\n    factory-worker-high: {model: '', effort: extreme, x: 1}\n",
+		"ledger:\n  agent_types: [reviewer-deep]\n",
+		"ledger:\n  agent_types:\n    reviewer-deep: opus\n",
+		"ledger:\n  agent_types:\n    reviewer-deep: {model: '', effort: extreme, x: 1}\n",
 		"ledger:\n  agent_types: !!int many\n",
 	} {
 		t.Run(strings.ReplaceAll(cfgText, "\n", " "), func(t *testing.T) {
@@ -127,9 +127,9 @@ func TestConfigReferenceIsAValidConfig(t *testing.T) {
 			cfg.Watch,
 		)
 	}
-	high := cfg.Ledger.AgentTypes.For("factory-worker-high")
+	high := cfg.Ledger.AgentTypes.For("reviewer-deep")
 	if len(cfg.Ledger.AgentTypes.Names()) != 3 || high.Model != "opus" || high.Effort != "high" {
-		t.Errorf("reference lost its factory worker agent_types: %v", cfg.Ledger.AgentTypes.Names())
+		t.Errorf("reference lost its reviewer agent_types: %v", cfg.Ledger.AgentTypes.Names())
 	}
 	if adj := cfg.Ledger.Adjustments(); len(adj) != 0 {
 		t.Errorf("reference ledger needs adjustments: %v", adj)
@@ -142,8 +142,8 @@ func TestConfigReferenceIsAValidConfig(t *testing.T) {
 func TestConfigRendersEffectiveAgentTypes(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "config.yaml", "ledger:\n  agent_types:\n"+
-		"    factory-worker-high: {model: opus, effort: high}\n"+
-		"    factory-worker-low: {model: sonnet, effort: extreme}\n"+
+		"    reviewer-deep: {model: opus, effort: high}\n"+
+		"    reviewer-quick: {model: sonnet, effort: extreme}\n"+
 		"    broken: opus\n")
 	out := runConfigDocString(t, doctorPaths(dir))
 	_, body, _ := strings.Cut(out, "\n\n")
@@ -156,8 +156,8 @@ func TestConfigRendersEffectiveAgentTypes(t *testing.T) {
 		t.Fatalf("body is not valid YAML: %v\n%s", err, body)
 	}
 	want := map[string]map[string]string{
-		"factory-worker-high": {"model": "opus", "effort": "high"},
-		"factory-worker-low":  {"model": "sonnet"},
+		"reviewer-deep":  {"model": "opus", "effort": "high"},
+		"reviewer-quick": {"model": "sonnet"},
 	}
 	if !reflect.DeepEqual(raw.Ledger.AgentTypes, want) {
 		t.Errorf("ledger.agent_types = %v, want %v", raw.Ledger.AgentTypes, want)

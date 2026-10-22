@@ -97,7 +97,7 @@ func TestValidateRejectsUnusableCustomHints(t *testing.T) {
 		{
 			"agent_types on a session-start hint",
 			"custom_hints:\n  journal:\n    event: session-start\n    command: [journal]\n" +
-				"    agent_types: [factory-worker-low]\n",
+				"    agent_types: [reviewer-quick]\n",
 			`custom_hints.journal.agent_types only applies to event "subagent-start" ` +
 				`(event is "session-start")`,
 		},
@@ -116,14 +116,14 @@ func TestValidateRejectsUnusableCustomHints(t *testing.T) {
 		{
 			"blank agent type",
 			"custom_hints:\n  brief:\n    event: subagent-start\n    command: [brief]\n" +
-				"    agent_types: [factory-worker-low, \"\"]\n",
+				"    agent_types: [reviewer-quick, \"\"]\n",
 			"custom_hints.brief.agent_types[1] is blank",
 		},
 		{
 			"agent type with a * before its end",
 			"custom_hints:\n  brief:\n    event: subagent-start\n    command: [brief]\n" +
-				"    agent_types: [factory-*-high]\n",
-			`custom_hints.brief.agent_types[0] "factory-*-high" has a * before its end`,
+				"    agent_types: [reviewer-*-deep]\n",
+			`custom_hints.brief.agent_types[0] "reviewer-*-deep" has a * before its end`,
 		},
 	}
 	for _, tt := range tests {
@@ -145,13 +145,13 @@ func TestValidateRejectsUnusableCustomHints(t *testing.T) {
 // entry from both file formats, a glob kept as written, and the legacy TOML
 // file rejecting an empty list the way YAML does.
 func TestLoadCustomHintAgentTypes(t *testing.T) {
-	want := []string{"factory-worker-low*", "factory-worker-high"}
+	want := []string{"reviewer-quick*", "reviewer-deep"}
 	yamlCfg := mustLoad(t, Paths{BeltYAML: writeFile(t, t.TempDir(), "config.yaml", `
 custom_hints:
   worker-brief:
     event: subagent-start
     command: [brief]
-    agent_types: [factory-worker-low*, factory-worker-high]
+    agent_types: [reviewer-quick*, reviewer-deep]
 `)})
 	if got := yamlCfg.CustomHints["worker-brief"].AgentTypes; !slices.Equal(got, want) {
 		t.Errorf("yaml agent_types = %v, want %v", got, want)
@@ -164,7 +164,7 @@ custom_hints:
 [custom_hints.worker-brief]
 event = "subagent-start"
 command = ["brief"]
-agent_types = ["factory-worker-low*", "factory-worker-high"]
+agent_types = ["reviewer-quick*", "reviewer-deep"]
 `),
 	})
 	if got := tomlCfg.CustomHints["worker-brief"].AgentTypes; !slices.Equal(got, want) {

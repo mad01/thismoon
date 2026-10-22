@@ -910,13 +910,13 @@ text for that event; the brief comes from the consuming repo's config.
   names, matched against the payload's `agent_type`: exactly, or by prefix
   for an entry ending in `*`. A spawn of any other type skips the hint:
   belt starts no process and logs no warn event, because the hint declined
-  on purpose. Without the key the hint runs for every subagent. The factory
-  worker brief is the case it exists for. A named spawn reports its name as
-  its `agent_type`, so entries for factory workers end in `*` and the
-  factory names workers `factory-worker-<tier>-<slug>`. The brief's entry
-  lists `factory-worker-low*`, `factory-worker-medium*` and
-  `factory-worker-high*`, so an Explore or general-purpose spawn gets
-  nothing and leaves no warning on the events timeline. The SubagentStart hook
+  on purpose. Without the key the hint runs for every subagent. A brief
+  meant for one kind of subagent is the case it exists for. A named spawn
+  reports its name as its `agent_type`, so an entry for named spawns ends
+  in `*`: `reviewer-*` covers a spawn named `reviewer-deep-<slug>`. A brief
+  whose entry lists `reviewer-*` and `docs-writer` skips every other type,
+  so an Explore or general-purpose spawn gets nothing and leaves no warning
+  on the events timeline. The SubagentStart hook
   matcher can filter by agent type too, but it gates the whole `belt hint
   subagent-start` command and every custom hint behind it. `agent_types`
   gates one hint.
@@ -945,19 +945,19 @@ fleet) before any machine config names the new event.
 
 `agent_types` needs the same order for a different reason. A belt built
 before the key existed does not reject it. It ignores the key and runs the
-hint for every subagent, so a brief meant for factory workers reaches every
+hint for every subagent, so a brief meant for reviewers reaches every
 spawn. Run `ralph up` first and change the config second. Keep any agent
 type check the script already does until every machine runs the new belt.
 On an old binary that check makes the hint decline, which costs only the
 old warn events. A `*` entry has the opposite skew: a belt older than `*`
-matching reads it literally, so the brief reaches no worker until the
+matching reads it literally, so the brief reaches no subagent until the
 fleet runs the new belt.
 
 ## Ledger
 
 `belt record <event>` turns Claude Code lifecycle events into entries on the
-events service, so an orchestrator session and the workers it spawns leave
-one timeline. It is the third concept beside guards and hints: an entry
+events service, so a session and the subagents it spawns leave one
+timeline. It is the third concept beside guards and hints: an entry
 never reaches the model and never steers the session (`docs/adr/0024`).
 
 - **Events.** `subagent-start`, `subagent-stop`, `task-completed`,
@@ -1004,15 +1004,14 @@ never reaches the model and never steers the session (`docs/adr/0024`).
   whose `agent_type` matches a key there gets `model` and `effort` tags; any
   other type gets neither, and no other event reads the map. A key ending
   in `*` matches by prefix: the exact key wins, then the longest `*` key.
-  A named spawn reports its name as its `agent_type`, so keys for factory
-  workers end in `*` and the factory names workers
-  `factory-worker-<tier>-<slug>`. The map restates the definition, belt
-  never infers a value. The loom-pane member
-  line and the factory band read these two tags. A malformed entry or value
-  drops its own tag, with a `belt doctor` warning, and never fails the
-  config file (see `config.md`). Run `ralph up` before a machine config
-  names the key: an older belt ignores unknown ledger keys and records no
-  model or effort.
+  A named spawn reports its name as its `agent_type`, so a key for named
+  spawns ends in `*`: `reviewer-deep*` covers `reviewer-deep` and
+  `reviewer-deep-<slug>`. The map restates the definition, belt never
+  infers a value. The loom-pane member line reads these two tags. A
+  malformed entry or value drops its own tag, with a `belt doctor` warning,
+  and never fails the config file (see `config.md`). Run `ralph up` before
+  a machine config names the key: an older belt ignores unknown ledger keys
+  and records no model or effort.
 - **Never steers.** `belt record` takes no output writer at all and recovers
   from its own panics. On SubagentStop any output keeps the subagent
   running, TaskCompleted, TeammateIdle and PreCompact treat exit 2 as a

@@ -25,7 +25,7 @@ const run = (exitCode: number, stdout: string): ProcessRunResult => ({
 const porcelain = [CANONICAL, OWN, OTHER, QUIET, NESTED].map(path => `worktree ${path}\nHEAD 1111\nbranch refs/heads/x\n`).join('\n')
 
 // Sessions `claude agents --json --all` lists: one at work in another loom
-// worktree, one done, the orchestrator in the canonical checkout, and this
+// worktree, one done, a lead session in the canonical checkout, and this
 // session.
 const sessionsJson = JSON.stringify([
   { id: 'ec2f68c4', cwd: OTHER, kind: 'background', sessionId: 's-bg', name: 'band fixer', state: 'busy' },
@@ -35,10 +35,10 @@ const sessionsJson = JSON.stringify([
 ])
 
 const ledgerJson = JSON.stringify([
-  { id: '1', source: 'belt-ledger', title: 'subagent started (factory-worker-high)', tags: { event: 'subagent-start', agent_id: 'a1', worktree: OTHER, model: 'opus', effort: 'high' } },
+  { id: '1', source: 'belt-ledger', title: 'subagent started (general-purpose)', tags: { event: 'subagent-start', agent_id: 'a1', worktree: OTHER, model: 'opus', effort: 'high' } },
 ])
 
-const w1: AgentInfo = { id: 'a1', name: 'w1', type: 'factory-worker-high', status: 'running', description: 'unit 1' }
+const w1: AgentInfo = { id: 'a1', name: 'w1', type: 'general-purpose', status: 'running', description: 'unit 1' }
 
 const BAND = 'band fixer (owner, fix-band, -, -) busy'
 
@@ -151,7 +151,7 @@ const mainTurn = (turnId: string) => ({ answer: '', durationMs: 1, isAborted: fa
 test('the status line lists the members beside the role, a done session left out', async ($, on) => {
   const world = seat(on)
   await $.session.start(start())
-  expect(last(world)).toBe(`owner feat-pane · members w1 (worker-high, agent-a1, opus, high), ${BAND}`)
+  expect(last(world)).toBe(`owner feat-pane · members w1 (owner, agent-a1, opus, high), ${BAND}`)
 })
 
 test('a spawn and a main-loop turn end re-read the members; a subagent turn does not', async ($, on) => {
@@ -164,7 +164,7 @@ test('a spawn and a main-loop turn end re-read the members; a subagent turn does
     tool_use_id: 'tu1',
     prompt: 'kind: task',
     description: 'unit 1',
-    subagentType: 'factory-worker-high',
+    subagentType: 'general-purpose',
     provider: { plugin: 'engine', tier: 'core' },
     parentModel: 'claude-opus-5-5',
     background: true,
@@ -172,7 +172,7 @@ test('a spawn and a main-loop turn end re-read the members; a subagent turn does
   }
   await world.clock.advance(5_000)
   await $.agent.spawn(spawn)
-  expect(last(world)).toMatch(/members w1 \(worker-high, agent-a1, opus, high\)/)
+  expect(last(world)).toMatch(/members w1 \(owner, agent-a1, opus, high\)/)
 
   world.agents = []
   await world.clock.advance(5_000)
@@ -234,13 +234,7 @@ test('a hung claude agents costs the 400 ms probe budget and no more', async ($,
   const started = $.session.start(start())
   await world.clock.advance(400)
   await started
-  expect(last(world)).toBe('owner feat-pane · members w1 (worker-high, agent-a1, opus, high)')
-})
-
-test('with no ledger entry the fields nobody recorded are dashes', async ($, on) => {
-  const world = seat(on, { agents: [{ ...w1, id: 'a9', name: 'w9' }] })
-  await $.session.start(start())
-  expect(last(world)).toBe(`owner feat-pane · members w9 (worker-high, -, -, -), ${BAND}`)
+  expect(last(world)).toBe('owner feat-pane · members w1 (owner, agent-a1, opus, high)')
 })
 
 test('no claude, no agent list, no events service: the role line alone, no error', async ($, on) => {
@@ -253,7 +247,7 @@ test('an events service that is down leaves dashes, not a guess', async ($, on) 
   const world = seat(on, { claude: 'missing', events: 'down' })
   await $.session.start(start())
   expect(world.fetches).toBe(1)
-  expect(last(world)).toBe('owner feat-pane · members w1 (worker-high, agent-a1, -, -)')
+  expect(last(world)).toBe('owner feat-pane · members w1 (owner, agent-a1, -, -)')
 })
 
 test('a hung events service costs the 400 ms probe budget and no more', async ($, on) => {
@@ -261,11 +255,11 @@ test('a hung events service costs the 400 ms probe budget and no more', async ($
   const started = $.session.start(start())
   await world.clock.advance(400)
   await started
-  expect(last(world)).toBe('owner feat-pane · members w1 (worker-high, agent-a1, -, -)')
+  expect(last(world)).toBe('owner feat-pane · members w1 (owner, agent-a1, -, -)')
 })
 
 test('members off: no probes, and members a past refresh stored are not shown', { options: { members: false } }, async ($, on) => {
-  const stale = { name: 'w0', role: 'worker-low', worktree: 'gone', model: '-', effort: '-', state: null }
+  const stale = { name: 'w0', role: 'owner', worktree: 'gone', model: '-', effort: '-', state: null }
   seedState(on, { 'loom-pane/members': [stale] })
   const world = seat(on)
   await $.session.start(start())

@@ -18,8 +18,8 @@ Two more pieces this file leans on are not MCP servers. **belt**
 and hints fire without any instruction here, once the hooks block in the
 settings template registers it (`recipes/agent-config/settings.json`, with
 the config in `recipes/claude-hooks/`). The repo's **skills** (`skills/` at
-the repo root: `/factory`, `/golang-pro`, `/golang-style`, `/handoff`,
-`/humanizer`, `/loom`, `/present`, `/worklog`) load on demand when invoked by
+the repo root: `/golang-pro`, `/golang-style`, `/handoff`, `/humanizer`,
+`/loom`, `/present`, `/worklog`) load on demand when invoked by
 name or when a task matches their description; their recipes symlink them
 into `~/.claude/skills`. Other skill references you might carry (like
 `/simplify`) are your own.

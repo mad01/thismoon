@@ -135,8 +135,8 @@ custom_guards:
 # a subagent-start hint to the subagent types it names: any other spawn
 # skips the command, with no warn event. An entry ending in * matches by
 # prefix, any other entry exactly. A named spawn reports its name as its
-# agent type, so entries for factory workers end in * and the factory
-# names workers factory-worker-<tier>-<slug>. A name that shadows a
+# agent type, so an entry for named spawns ends in *: reviewer-* covers a
+# spawn named reviewer-deep-<slug>. A name that shadows a
 # built-in hint, a missing command, an unsupported event, and agent_types
 # that is empty, holds a * before an entry's end, or sits on another event
 # are config errors. This is where a machine-private hint (a daily
@@ -152,8 +152,8 @@ custom_hints:
       - github.com/you/scratch
   worker-brief:
     event: subagent-start
-    command: [factory, brief]
-    agent_types: [factory-worker-low*, factory-worker-medium*, factory-worker-high*]
+    command: [worker-brief]
+    agent_types: [reviewer-*, docs-writer]
 
 # The lifecycle ledger: belt record posts one events-service entry per
 # Claude Code lifecycle event it is wired to (subagent start and stop, task
@@ -169,8 +169,8 @@ custom_hints:
 # the definition, belt never infers a value, and an unlisted type gets
 # neither tag. A key ending in * matches by prefix: the exact key wins,
 # then the longest matching glob. A named spawn reports its name as its
-# agent type, so keys for factory workers end in * and the factory names
-# workers factory-worker-<tier>-<slug>. model is any non-empty string,
+# agent type, so a key for named spawns ends in *: reviewer-deep* covers
+# reviewer-deep and reviewer-deep-<slug>. model is any non-empty string,
 # effort is low, medium, high, xhigh or max (the values Claude Code agent
 # frontmatter accepts). A malformed entry, key or value, a * before a key's
 # end included, is dropped with a doctor warning, never a config error. A
@@ -179,9 +179,9 @@ ledger:
   enabled: true
   source: belt-ledger
   agent_types:
-    factory-worker-low*: {model: sonnet, effort: low}
-    factory-worker-medium*: {model: sonnet, effort: medium}
-    factory-worker-high*: {model: opus, effort: high}
+    reviewer-*: {model: sonnet, effort: medium}
+    reviewer-deep*: {model: opus, effort: high}
+    docs-writer: {model: haiku, effort: low}
 
 # The inbox watcher: belt watch, wired as an asyncRewake hook on Stop and
 # SessionStart, polls source for entries whose to tag is the session's id

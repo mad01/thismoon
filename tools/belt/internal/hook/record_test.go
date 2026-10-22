@@ -40,7 +40,7 @@ func recordOne(t *testing.T, load Load, event string, payload map[string]string)
 // type is tagged with its model and effort; an unknown type is not.
 func TestRecordTagsDeclaredAgentTypes(t *testing.T) {
 	declared := config.ResolveAgentTypes(map[string]any{
-		"factory-worker-high*": map[string]any{"model": "opus", "effort": "high"},
+		"reviewer-deep*": map[string]any{"model": "opus", "effort": "high"},
 	})
 	load := func() (config.Config, error) {
 		return config.Config{Ledger: config.Ledger{AgentTypes: declared}}, nil
@@ -48,8 +48,8 @@ func TestRecordTagsDeclaredAgentTypes(t *testing.T) {
 	tests := []struct {
 		name, agentType, wantModel, wantEffort string
 	}{
-		{"declared type", "factory-worker-high", "opus", "high"},
-		{"named worker", "factory-worker-high-csl-prune", "opus", "high"},
+		{"declared type", "reviewer-deep", "opus", "high"},
+		{"named worker", "reviewer-deep-csl-prune", "opus", "high"},
 		{"unknown type", "Explore", "", ""},
 	}
 	for _, tt := range tests {

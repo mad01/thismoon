@@ -325,13 +325,12 @@ machine's rendered config, not in belt and not in a second hook.
   subagent. The key is a config error on any other event. So is an empty
   list (`agent_types: []`, or the key with no value), a blank entry, or an
   entry with a `*` before its end. A named spawn reports its name as
-  its `agent_type`, so entries for factory workers end in `*` and the
-  factory names workers `factory-worker-<tier>-<slug>`. A factory worker
-  brief lists `factory-worker-low*`, `factory-worker-medium*` and
-  `factory-worker-high*`. A belt older than the key ignores it and runs the
-  hint for every subagent, and one older than `*` matching reads the `*`
-  literally and briefs no worker. So run `ralph up` before a config names
-  either.
+  its `agent_type`, so an entry for named spawns ends in `*`: `reviewer-*`
+  covers a spawn named `reviewer-deep-<slug>`. A brief for reviewers and
+  docs writers lists `reviewer-*` and `docs-writer`. A belt older than the
+  key ignores it and runs the hint for every subagent, and one older than
+  `*` matching reads the `*` literally and briefs no subagent. So run
+  `ralph up` before a config names either.
 
 ### ledger
 
@@ -355,8 +354,8 @@ records, with these defaults.
   event reads the map. A key ending in `*` matches every type that starts
   with the rest of it, any other key matches exactly, and case counts. The
   exact key wins, then the longest matching `*` key. A named spawn reports
-  its name as its `agent_type`, so keys for factory workers end in `*` and
-  the factory names workers `factory-worker-<tier>-<slug>`. The map
+  its name as its `agent_type`, so a key for named spawns ends in `*`:
+  `reviewer-deep*` covers `reviewer-deep` and `reviewer-deep-<slug>`. The map
   restates the definition, so keep it in step with the definition files;
   belt never infers a value. `model` is a string, trimmed, and must not be
   empty. `effort` must be `low`, `medium`, `high`, `xhigh` or `max`, the
@@ -368,15 +367,15 @@ records, with these defaults.
   YAML type or a duplicate key included. `belt doctor` prints the keys in
   effect as written and `belt config` shows them. A belt older than the key
   ignores it and records no model or effort, so run `ralph up` before a
-  machine config names it. The factory worker definitions are the first
-  entries:
+  machine config names it. Three entries, where a `reviewer-deep` spawn
+  takes the longer glob and gets opus:
 
   ```yaml
   ledger:
     agent_types:
-      factory-worker-low*: {model: sonnet, effort: low}
-      factory-worker-medium*: {model: sonnet, effort: medium}
-      factory-worker-high*: {model: opus, effort: high}
+      reviewer-*: {model: sonnet, effort: medium}
+      reviewer-deep*: {model: opus, effort: high}
+      docs-writer: {model: haiku, effort: low}
   ```
 
 ### watch
@@ -652,16 +651,16 @@ custom_hints:
       - github.com/you/scratch
   worker-brief:
     event: subagent-start
-    command: [factory, brief]
-    agent_types: [factory-worker-low*, factory-worker-medium*, factory-worker-high*]
+    command: [worker-brief]
+    agent_types: [reviewer-*, docs-writer]
 
 ledger:
   enabled: true
   source: belt-ledger
   agent_types:
-    factory-worker-low*: {model: sonnet, effort: low}
-    factory-worker-medium*: {model: sonnet, effort: medium}
-    factory-worker-high*: {model: opus, effort: high}
+    reviewer-*: {model: sonnet, effort: medium}
+    reviewer-deep*: {model: opus, effort: high}
+    docs-writer: {model: haiku, effort: low}
 
 watch:
   enabled: true

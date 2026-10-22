@@ -293,8 +293,8 @@ func TestCustomHintPayload(t *testing.T) {
 // configured outcome. A listed type runs the external as before, including
 // the empty-stdout warn for a hint that runs and says nothing.
 func TestCustomHintAgentTypesGate(t *testing.T) {
-	workers := []string{"factory-worker-low", "factory-worker-medium", "factory-worker-high"}
-	globWorkers := []string{"factory-worker-low*", "factory-worker-medium*", "factory-worker-high*"}
+	workers := []string{"reviewer-quick", "reviewer-standard", "reviewer-deep"}
+	globWorkers := []string{"reviewer-quick*", "reviewer-standard*", "reviewer-deep*"}
 	tests := []struct {
 		name       string
 		agentTypes []string
@@ -311,7 +311,7 @@ func TestCustomHintAgentTypesGate(t *testing.T) {
 		},
 		{
 			name:       "listed type runs",
-			agentTypes: workers, agentType: "factory-worker-medium",
+			agentTypes: workers, agentType: "reviewer-standard",
 			wantRan: true, wantText: "brief",
 		},
 		{
@@ -320,28 +320,28 @@ func TestCustomHintAgentTypesGate(t *testing.T) {
 		},
 		{
 			name:       "a prefix of a listed type does not match",
-			agentTypes: workers, agentType: "factory-worker",
+			agentTypes: workers, agentType: "reviewer",
 		},
 		{
 			name:       "a listed type in another case does not match",
-			agentTypes: workers, agentType: "Factory-Worker-Low",
+			agentTypes: workers, agentType: "Reviewer-Quick",
 		},
 		{
 			name:       "a glob matches a slugged worker name",
-			agentTypes: globWorkers, agentType: "factory-worker-high-csl-prune",
+			agentTypes: globWorkers, agentType: "reviewer-deep-csl-prune",
 			wantRan: true, wantText: "brief",
 		},
 		{
 			name:       "a plain type does not match a slugged worker name",
-			agentTypes: workers, agentType: "factory-worker-high-csl-prune",
+			agentTypes: workers, agentType: "reviewer-deep-csl-prune",
 		},
 		{
 			name:       "a glob of another tier skips with no exec and no warn",
-			agentTypes: []string{"factory-worker-low*"}, agentType: "factory-worker-high-csl-prune",
+			agentTypes: []string{"reviewer-quick*"}, agentType: "reviewer-deep-csl-prune",
 		},
 		{
 			name:       "listed type with empty stdout still warns",
-			agentTypes: workers, agentType: "factory-worker-low", silent: true,
+			agentTypes: workers, agentType: "reviewer-quick", silent: true,
 			wantRan: true, wantWarn: "empty stdout",
 		},
 	}
@@ -399,7 +399,7 @@ func TestCustomHintAgentTypesGateRunsBeforeExclusion(t *testing.T) {
 		wantRan      bool
 	}{
 		{"Explore", 0, false},
-		{"factory-worker-low", 1, true},
+		{"reviewer-quick", 1, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.agentType, func(t *testing.T) {
@@ -410,7 +410,7 @@ func TestCustomHintAgentTypesGateRunsBeforeExclusion(t *testing.T) {
 			h := newCustomHint(config.CustomHint{
 				Event:        EventSubagentStart,
 				Command:      []string{script},
-				AgentTypes:   []string{"factory-worker-low"},
+				AgentTypes:   []string{"reviewer-quick"},
 				ExcludeRepos: []string{"github.com/you/elsewhere"},
 			}, &warned)
 			resolves := 0

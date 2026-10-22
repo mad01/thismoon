@@ -7,6 +7,10 @@
 layer for running one orchestrator session with worker subagents and
 background sessions in git worktrees.
 
+**Amended by ADR-0026 (2026-10-22):** the factory orchestrator this was
+decided for is retired. The ledger's consumers are loom-pane's members line
+and the weaver's survey; watch stays with no writer for its inbox today.
+
 ## Context
 
 A session that hands work to subagents and parallel sessions loses sight of

@@ -1,7 +1,7 @@
 {
   "name": "loom-pane",
-  "version": "0.2.2",
-  "description": "A status line naming the session's loom role and the factory members beside it, plus guards that keep an owner inside its own worktree and ask before a removal loses work.",
+  "version": "0.2.3",
+  "description": "A status line naming the session's loom role and the members beside it, plus guards that keep an owner inside its own worktree and ask before a removal loses work.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "mad01"
@@ -16,7 +16,7 @@
     "members": {
       "type": "boolean",
       "title": "Members",
-      "description": "List the factory members (this session's agents and the sessions in the repo's worktrees) on the status line, from the engine's agent list and belt's ledger.",
+      "description": "List the members (this session's agents and the sessions in the repo's worktrees) on the status line, from the engine's agent list and belt's ledger.",
       "default": true
     }
   }

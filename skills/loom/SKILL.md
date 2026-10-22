@@ -22,15 +22,11 @@ loom without taking a role.
 2. Work entirely inside the worktree. Commit there directly, conventional
    format, staging only the files you changed.
 3. When the branch is done: run the repo's gates in the worktree, commit,
-   then send the weaver a factory ready message over SendMessage. Its
-   `reply_to` is the id of the task it answers. The factory skill owns
-   the message's header and body; the weaver reads three fields from it:
-   files changed, gates run (command and last line), and commit range.
-   That format is defined in `skills/factory`, not here; loom depends on
-   it for those three fields
-   only. When the owner is a subagent, belt's ledger also records its
-   stop. With no weaver session to address, report ready to the user
-   instead. Do not integrate the branch yourself.
+   then send the weaver a ready message over SendMessage. It names three
+   fields the weaver reads: files changed, gates run (command and last
+   line), and commit range. When the owner is a subagent, belt's ledger
+   also records its stop. With no weaver session to address, report ready
+   to the user instead. Do not integrate the branch yourself.
 4. Stop. The weaver owns the branch from here; your worktree disappears
    after the branch lands.
 
