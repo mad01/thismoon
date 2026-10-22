@@ -17,7 +17,7 @@ require (
 	github.com/ktr0731/go-fuzzyfinder v0.9.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mattn/go-runewidth v0.0.21
-	github.com/modelcontextprotocol/go-sdk v1.8.0-pre.2
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
 	github.com/sourcegraph/zoekt v0.0.0-20260413093009-c3d4afa94960
 	github.com/spf13/cobra v1.10.2
