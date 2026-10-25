@@ -49,8 +49,11 @@ copied literal.
 
 For up HTTP services, `GET /version` and `GET /webkit/version` every 10
 minutes, best-effort; services without the endpoints just show no version.
-The same refresh also runs `<binary> version` on the plist's binary to learn
-the sha installed on disk.
+The same refresh also runs `<binary> version` on the service's binary to
+learn the sha installed on disk. The binary is the plist's program, or the
+command srt-run wraps (`srt-run <settings> <binary> ...`). A shell launcher
+(`*.sh`) has none: `<launcher> version` would run the launcher, so those
+services show no installed version.
 
 `/version` returns the shared four-key build metadata object, so the same
 probe also yields the release `tag` and `build_time` of the running build.
@@ -82,6 +85,19 @@ counter drop (job re-registered via bootout/bootstrap) resets the baseline
 instead of going negative. This catches both real crash loops and the BTM
 "spawn scheduled" EX_CONFIG wedge that hits KeepAlive agents after their
 binary is replaced with a new ad-hoc signature.
+
+### Sandbox
+
+`status serve` runs under srt (anthropics/sandbox-runtime), with the access
+declared as `spec.access` in `service-info.yaml`: loopback, reads of
+`~/code/bin`, `~/Library/LaunchAgents`, d-man's routes file and the store,
+and the notification daemon plus trustd for the osascript banners.
+`launchctl print` needs nothing extra, but each exec logs three
+base-profile denials (`kern.iossupportversion`, `kern.singleuser` and
+`com.apple.diagnosticd`), all on the fleet ignore list. A cycle runs it
+once per service for the restart counter and again for each service
+without a port, so on 13 services status adds about 48 IGNORED lines a
+minute to the denial ledger, which has no rotation yet.
 
 ## Data model & storage
 

@@ -236,6 +236,14 @@ expect_alert 'deps · osascript(123) · mach-lookup · com.apple.pasteboard.10'
 expect_alert 'deps · osascript(123) · file-read-data · /Users/x/Library/Preferences/com.apple.Safari.plist'
 expect_alert 'deps · osascript(123) · file-read-data · /Users/x/Library/Keychains/login.keychain-db'
 expect_alert 'present · osascript(123) · mach-lookup · com.apple.windowserver.active'
+expect_ignored 'status · osascript(123) · mach-lookup · com.apple.windowserver.active'
+expect_ignored 'status · osascript(123) · sysctl-read · kern.safeboot'
+
+# status: launchctl's start-up sysctl, by label, process and key.
+expect_ignored 'status · launchctl(123) · sysctl-read · kern.singleuser'
+expect_alert 'status · launchctl(123) · sysctl-read · kern.singleuser2'
+expect_alert 'deps · launchctl(123) · sysctl-read · kern.singleuser'
+expect_alert 'status · status(123) · sysctl-read · kern.singleuser'
 
 # A machine-local pattern can scope by label through the summary line, and a
 # broken pattern beside it does not disable the rest of the list.

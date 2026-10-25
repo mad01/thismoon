@@ -27,14 +27,38 @@ restart = "if command -v t-man >/dev/null && t-man status status >/dev/null 2>&1
 # binary it runs is removed (ralph disable thismoon/status && ralph up --enable-cleanup).
 pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove status 2>/dev/null; fi || true"]
 
+# srt settings for the serve agent, linked to ~/.config/srt/status.json. They
+# name no host and no machine path, so they ship beside the recipe
+# (docs/adr/0006, 2026-10-25 amendment). Reads are denied under ~ except the
+# binaries in ~/code/bin (status runs `<binary> version` for drift), the
+# history store, ~/Library/LaunchAgents and d-man's routes file. Writes go to
+# the store and the temp dirs; loopback only, for the probes and the events
+# post. osascript's banners get the notification daemon and trustd.
+# Each cycle runs `launchctl print` once per service for the restart counter
+# and again for each service without a port. Every launchctl exec logs three
+# denials that the fleet ignore list marks IGNORED, so status adds about 48
+# lines a minute to the denial ledger on 13 services.
+# Rendered from spec.access in services/status/service-info.yaml by
+# `make sandbox-settings` (docs/adr/0027): edit the manifest, not the JSON.
+[dotfiles.status_srt_settings]
+source = "status.srt.json"
+target = "~/.config/srt/status.json"
+action = "symlink"
+
 # Register `status serve` as a long-running launchd user agent via t-man.
 # Registration only — restart-on-rebuild lives in [packages.status.service]
 # above. `t-man add` is idempotent (same definition -> same hash -> no-op), so
 # run = "always" keeps the agent registered and self-heals if it was removed.
+# It runs sandboxed: the program is srt-run with the settings, then the command
+# (docs/SANDBOXING.md, "Sandboxing a t-man service").
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
+# ralph links dotfiles items before any build or package in every run, so the
+# srt-run and settings links exist before this registration; depends_on could
+# not name them anyway, since ralph only accepts builds. and packages. refs.
 [hooks.builds.status_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name status -- $HOME/code/bin/status serve --port 7426; else echo 'status: skip service (t-man not on PATH; install t-man then run: t-man add --name status -- status serve --port 7426)'; fi",
+  "if command -v t-man >/dev/null; then t-man add --name status --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/status.json $HOME/code/bin/status serve --port 7426 --workdir $HOME/.local/share/status; else echo 'status: skip service (t-man not on PATH; install t-man then run: t-man add --name status -- status serve --port 7426)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/status"
 run = "always"
-depends_on = ["packages.status", "packages.t_man"]
+depends_on = ["packages.status", "packages.t_man", "builds.speak_chmod_scripts"]

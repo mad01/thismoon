@@ -16,9 +16,20 @@ ralph merges the recipe with the identity `thismoon/status`. The package
 - **`packages.status.service`** — restarts the agent only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).
-- **`hooks.builds.status_service`** — `t-man add --name status -- status serve
-  --port 7426`. Idempotent; `run = "always"` self-heals if the agent was
-  removed. Guarded on t-man being on PATH.
+- **`dotfiles.status_srt_settings`**: links `status.srt.json` to
+  `~/.config/srt/status.json`, the settings `status serve` runs under in srt
+  (anthropics/sandbox-runtime). Rendered from `spec.access` in
+  `services/status/service-info.yaml` by `make sandbox-settings`; edit the
+  manifest, not the JSON.
+- **`hooks.builds.status_service`**: `t-man add --name status -- ~/code/bin/srt-run
+  ~/.config/srt/status.json ~/code/bin/status serve --port 7426 --workdir
+  ~/.local/share/status`, with the denial ledger as an extra log
+  (`t-man logs status --source sandbox`). Idempotent; `run = "always"`
+  self-heals if the agent was removed. Guarded on t-man being on PATH.
+  `launchctl print` works inside the sandbox, but each exec logs three
+  base-profile denials (`kern.iossupportversion`, `kern.singleuser` and
+  `com.apple.diagnosticd`), all ignore-listed. That is about 48 IGNORED
+  lines a minute on 13 services, and the denial ledger has no rotation yet.
 - **`pre_uninstall`** — removes the t-man agent before cleanup deletes the
   binary.
 
