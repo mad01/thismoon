@@ -15,8 +15,9 @@ door. If the localhost port answers but the .this host does not, the router
 is the problem, not this service.
 
 Capture runs in Claude Code hooks, not in serve. Each hook pipes its payload
-into `moondb record`, which writes an envelope to the spool and exits 0
-within about 200 ms, printing nothing on stdout. At a turn's start and stop
+into `moondb record`, which writes an envelope to the spool and exits 0,
+printing nothing on stdout. It takes about 200 ms, or up to 2 s for the
+async Bash hook. At a turn's start and stop
 it also snapshots the worktrees in play, within 2 s. So capture keeps working
 while serve is down: envelopes wait in the spool and serve ingests them when
 it comes back. `moondb import` brings in past sessions from their
@@ -85,7 +86,16 @@ or a Bash command changed it. This is expected, not corruption.
 
 A Bash command's changes are missing from a turn: the Bash hook line is not
 wired, or the user setting `bashEditDiffEnabled` is off, so Claude Code sends
-no diff. The next snapshot still catches the change as a delta. A snapshot
+no diff. The diff only covers the repository of the session's working
+directory, so a session started in the main checkout never captures Bash
+edits made in a linked worktree. A file `git status` reports clean after the
+command is never recorded: a pull, checkout or reset put it back to its
+committed state. The same goes for a file the 2 s Bash budget did not
+reach. The turn
+counts both under `skipped` (the page's "Not recorded" row), and `record`
+logs the counts on stderr. A file a command edits and commits in one go is
+clean too; `git blame` names that commit. The next snapshot still catches
+an uncaptured change as a delta. A snapshot
 marked truncated ran out of its 2 s budget or its 1000-file cap; its skipped
 counts say which.
 

@@ -53,7 +53,9 @@ Machine-specific wiring is deliberately not here (docs/adr/0006):
   UserPromptSubmit (async), on PostToolUse for
   `Edit|Write|MultiEdit|NotebookEdit` (sync, timeout 3), on PostToolUse for
   `Bash` (async), and on Stop (async), plus the user setting
-  `"bashEditDiffEnabled": true` that puts Bash diffs in the payload
+  `"bashEditDiffEnabled": true` that puts Bash diffs in the payload. The
+  Bash line records only the files `git status` still reports changed after
+  the command; the ones a pull or checkout put back are counted on the turn
 - MCP registration: the consuming repo's agent-sync `servers.json` (entry
   `moondb`, command `moondb mcp`, an HTTP client only)
 - the `moondb.this` route: `recipes/d-man/routes.toml` (`moondb` → 7433)

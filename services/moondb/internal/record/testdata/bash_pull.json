@@ -1,0 +1,47 @@
+{
+  "session_id": "sess-1",
+  "prompt_id": "prompt-1",
+  "transcript_path": "$TRANSCRIPT",
+  "cwd": "$CWD",
+  "permission_mode": "default",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_use_id": "toolu_bash_pull_1",
+  "tool_input": {
+    "command": "git pull --ff-only",
+    "description": "Fast-forward main"
+  },
+  "tool_response": {
+    "stdout": "Updating 1a2b3c4..5d6e7f8\nFast-forward\n",
+    "stderr": "",
+    "interrupted": false,
+    "isImage": false,
+    "noOutputExpected": false,
+    "bashEditDiff": {
+      "files": [
+        {
+          "filePath": "$DIR/demo.go",
+          "hunks": [
+            {
+              "oldStart": 1, "oldLines": 5, "newStart": 1, "newLines": 5,
+              "lines": [" package demo", " ", " func Greet() string {", "-\treturn \"hello\"", "+\treturn \"hello, world\"", " }"]
+            }
+          ]
+        },
+        {
+          "filePath": "$DIR/fresh.txt",
+          "hunks": [{"oldStart": 0, "oldLines": 0, "newStart": 1, "newLines": 1, "lines": ["+new"]}],
+          "created": true
+        },
+        {
+          "filePath": "$DIR/gone.txt",
+          "hunks": [{"oldStart": 1, "oldLines": 1, "newStart": 0, "newLines": 0, "lines": ["-bye"]}],
+          "deleted": true
+        }
+      ],
+      "moreFiles": 2,
+      "changedFiles": ["$DIR/demo.go", "$DIR/fresh.txt", "$DIR/gone.txt", "$DIR/notes.txt", "$DIR/old/deep/x.txt"]
+    }
+  },
+  "duration_ms": 900
+}

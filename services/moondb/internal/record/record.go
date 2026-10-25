@@ -4,7 +4,8 @@
 // It copies belt's record contract (docs/adr/0024): nothing on stdout, exit
 // 0 always, and a session that never waits long. Every git call is bounded
 // by a deadline, and when the budget runs out an edit is written with what
-// was gathered so far.
+// was gathered so far. A file a Bash command changed that the budget never
+// reached is counted on the turn instead.
 //
 // Run keeps a little state per session under <workdir>/sessions, read back
 // by later events of the same session and by nothing else:
@@ -60,9 +61,15 @@ type Options struct {
 	// Budget is how long Run gathers before it writes what it has;
 	// moondb.RecordBudget when zero.
 	Budget time.Duration
+	// BashBudget is Budget for a Bash payload, whose hook is async;
+	// moondb.BashBudget when zero.
+	BashBudget time.Duration
 	// SnapshotBudget is how long the turn-edge events spend on snapshots,
 	// after their own envelope; moondb.SnapshotBudget when zero.
 	SnapshotBudget time.Duration
+	// Logf receives one line for each Bash payload whose files Run left
+	// out, with the counts; nil discards it.
+	Logf func(format string, args ...any)
 }
 
 // Run records one hook payload read from in. It returns an error only for
@@ -78,7 +85,7 @@ func Run(ctx context.Context, in io.Reader, opts Options) error {
 		return err
 	}
 	opts = opts.withDefaults()
-	budgeted, cancel := context.WithTimeout(ctx, opts.Budget)
+	budgeted, cancel := context.WithTimeout(ctx, opts.budgetFor(p))
 	defer cancel()
 	rec := &recorder{
 		base:  ctx,
@@ -118,10 +125,25 @@ func (o Options) withDefaults() Options {
 	if o.Budget <= 0 {
 		o.Budget = moondb.RecordBudget
 	}
+	if o.BashBudget <= 0 {
+		o.BashBudget = moondb.BashBudget
+	}
 	if o.SnapshotBudget <= 0 {
 		o.SnapshotBudget = moondb.SnapshotBudget
 	}
+	if o.Logf == nil {
+		o.Logf = func(string, ...any) {}
+	}
 	return o
+}
+
+// budgetFor is how long Run gathers for p: BashBudget for a Bash payload,
+// whose async hook nobody waits on, Budget for every other.
+func (o Options) budgetFor(p payload) time.Duration {
+	if p.event == eventToolUsed && p.tool == toolBash {
+		return o.BashBudget
+	}
+	return o.Budget
 }
 
 // recorder is one Run in progress. ctx ends when the budget does; base is
@@ -194,14 +216,23 @@ func (rec *recorder) gitCtx() (context.Context, context.CancelFunc) {
 // locate places dir in git; the zero Location when git cannot say in time.
 // A placed directory is asked once per Run; a failure is asked again.
 func (rec *recorder) locate(dir string) store.Location {
+	loc, _ := rec.locateAnswered(dir)
+	return loc
+}
+
+// locateAnswered is locate that also reports whether git answered: false
+// when the zero Location comes from a deadline, not from dir being outside
+// any repository.
+func (rec *recorder) locateAnswered(dir string) (store.Location, bool) {
 	if loc, ok := rec.locs[dir]; ok {
-		return loc
+		return loc, true
 	}
 	ctx, cancel := rec.gitCtx()
 	defer cancel()
 	loc := Locate(ctx, dir)
 	if loc.Worktree != "" {
 		rec.locs[dir] = loc
+		return loc, true
 	}
-	return loc
+	return loc, ctx.Err() == nil
 }

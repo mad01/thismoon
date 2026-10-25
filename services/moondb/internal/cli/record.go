@@ -15,7 +15,7 @@ import (
 // recordCeiling bounds the whole record run, budget overruns included. It
 // sits under the 3 s timeout the Edit/Write hook is registered with, so the
 // hook never reports moondb as hung, and it holds the turn-edge snapshot
-// budget with room to spare.
+// budget and the Bash budget with room to spare.
 const recordCeiling = 2500 * time.Millisecond
 
 var recordCmd = &cobra.Command{
@@ -28,7 +28,9 @@ the store and never waits for serve.
 Three hooks pipe into it. UserPromptSubmit opens a turn. PostToolUse for
 Edit, Write, MultiEdit and NotebookEdit records the file a tool changed;
 PostToolUse for Bash records the files a command changed, when the user
-setting bashEditDiffEnabled makes Claude Code report them. Stop closes the
+setting bashEditDiffEnabled makes Claude Code report them; a file git
+reports clean after the command (a pull or checkout brought it back to its
+committed state) is counted on the turn, not recorded. Stop closes the
 turn and reports commits made since. UserPromptSubmit and Stop also take a
 snapshot of each worktree in play: the content of its dirty files and of
 the files the session touched. record prints nothing on stdout and exits 0
@@ -68,7 +70,11 @@ func runRecord(cmd *cobra.Command, _ []string) error {
 		Workdir:        flagWorkdir,
 		Excludes:       cfg.Capture.excludes(),
 		Budget:         moondb.RecordBudget,
+		BashBudget:     moondb.BashBudget,
 		SnapshotBudget: moondb.SnapshotBudget,
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "moondb record: "+format+"\n", args...)
+		},
 	}
 	if err := record.Run(ctx, cmd.InOrStdin(), opts); err != nil {
 		fmt.Fprintln(os.Stderr, "moondb record:", err)

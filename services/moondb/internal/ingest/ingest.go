@@ -58,6 +58,8 @@ func (in *Ingester) Ingest(ctx context.Context, env spool.Envelope) error {
 		return in.headMoved(ctx, env)
 	case spool.KindSnapshot:
 		return in.snapshot(ctx, env, missing)
+	case spool.KindSkipped:
+		return in.skipped(ctx, env)
 	default:
 		return fmt.Errorf("ingest: envelope %s has unknown kind %q", env.ID, env.Kind)
 	}

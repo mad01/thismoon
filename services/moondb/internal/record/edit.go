@@ -22,7 +22,7 @@ func (rec *recorder) toolUsed() error {
 	case "Edit", "Write", "MultiEdit", "NotebookEdit":
 		return rec.recordEdits(rec.fileTargets())
 	case toolBash:
-		return rec.recordEdits(rec.bashTargets())
+		return rec.recordBash()
 	default:
 		return nil
 	}
@@ -32,7 +32,10 @@ func (rec *recorder) toolUsed() error {
 // about it.
 type target struct {
 	name string
-	kind store.EditKind
+	// index is the file's position in the payload's list, which its edit
+	// id carries.
+	index int
+	kind  store.EditKind
 	// payload is set when the call's tool_input and tool_response describe
 	// this file, as they do for the file tools; Bash's describe the command.
 	payload bool
@@ -43,16 +46,24 @@ type target struct {
 	pathOnly bool
 }
 
-// recordEdits writes one edit envelope per target, then notes the file in
-// the session state once its envelope is in the spool.
+// recordEdits writes one edit envelope per target.
 func (rec *recorder) recordEdits(targets []target) error {
-	for i, t := range targets {
-		env, chunks := rec.captureEdit(i, t)
-		if err := rec.spool.Write(env, chunks); err != nil {
+	for _, t := range targets {
+		if err := rec.recordEdit(t); err != nil {
 			return err
 		}
-		rec.state.noteEdit(env.Edit.Location, env.Edit.Path)
 	}
+	return nil
+}
+
+// recordEdit writes the edit envelope of one target, then notes the file
+// in the session state once its envelope is in the spool.
+func (rec *recorder) recordEdit(t target) error {
+	env, chunks := rec.captureEdit(t)
+	if err := rec.spool.Write(env, chunks); err != nil {
+		return err
+	}
+	rec.state.noteEdit(env.Edit.Location, env.Edit.Path)
 	return nil
 }
 
@@ -71,31 +82,64 @@ func (rec *recorder) fileTargets() []target {
 }
 
 // captureEdit gathers everything about one file within the budget.
-func (rec *recorder) captureEdit(index int, t target) (spool.Envelope, chunkSet) {
-	abs := Resolve(t.name, rec.p.cwd)
-	loc, rel := Placed(rec.locate(filepath.Dir(abs)), abs)
+func (rec *recorder) captureEdit(t target) (spool.Envelope, chunkSet) {
+	pl, _ := rec.place(t.name)
 	ep := &spool.EditPayload{
 		Tool:         rec.p.tool,
 		ToolUseID:    rec.p.toolUseID,
-		Index:        index,
-		AbsPath:      abs,
-		Path:         rel,
-		Location:     loc,
+		Index:        t.index,
+		AbsPath:      pl.abs,
+		Path:         pl.rel,
+		Location:     pl.loc,
 		Kind:         t.kind,
 		UserModified: t.payload && rec.p.response.flag("userModified"),
 	}
-	if t.pathOnly && gone(abs) {
+	if t.pathOnly && gone(pl.abs) {
 		ep.Kind = store.EditDelete
 	}
 	chunks := chunkSet{}
-	if Excluded(rec.opts.Excludes, abs, rel) {
+	if Excluded(rec.opts.Excludes, pl.abs, pl.rel) {
 		ep.Excluded = true
 	} else {
 		rec.gather(ep, chunks, t)
 	}
-	env := rec.envelope(spool.KindEdit, fmt.Sprintf("%s:%d", rec.p.toolUseID, index))
+	env := rec.envelope(spool.KindEdit, fmt.Sprintf("%s:%d", rec.p.toolUseID, t.index))
 	env.Edit = ep
 	return env, chunks
+}
+
+// placement is where one target sits: its absolute physical path, and the
+// location and path it is recorded under, the path absolute and the
+// location zero outside any worktree.
+type placement struct {
+	abs string
+	rel string
+	loc store.Location
+}
+
+// place resolves name and places it in git from its nearest existing
+// directory, so a file whose directory the tool call removed still lands
+// in its worktree. It reports false when git ran out of time before it
+// could say where the file sits.
+func (rec *recorder) place(name string) (placement, bool) {
+	abs := Resolve(name, rec.p.cwd)
+	found, answered := rec.locateAnswered(existingDir(filepath.Dir(abs)))
+	loc, rel := Placed(found, abs)
+	return placement{abs: abs, rel: rel, loc: loc}, answered
+}
+
+// existingDir is dir, or its nearest ancestor that is still a directory.
+func existingDir(dir string) string {
+	for {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return dir
+		}
+		dir = parent
+	}
 }
 
 // gather fills the content fields: first what the payload carries, which

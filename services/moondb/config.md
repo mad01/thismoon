@@ -116,6 +116,7 @@ These are compiled into the binary (`facts.go`) and not configurable:
 | Limit | Value | Effect |
 |---|---|---|
 | record budget | 200 ms | `record` spools what it has gathered when the budget runs out |
+| Bash budget (`BashBudget`) | 2 s | the budget of the async Bash hook; the files it does not reach are counted on the turn as timeout and not recorded |
 | snapshot budget | 2 s | the turn-edge snapshots of one hook; a snapshot cut short is marked truncated and counts the rest as timeout |
 | snapshot file cap | 1000 | paths one snapshot lists, the session's touched paths first; the rest count as over the file cap |
 | status cap | 4 MiB | `git status` output a snapshot reads; a worktree with more gets no snapshot |
@@ -157,6 +158,12 @@ later). It makes Claude Code add `bashEditDiff` to the Bash payload: up to
 five file diffs and up to 200 changed paths. Without it, the Bash hook
 records nothing. The Bash line is async: a command has already taken its
 time, and the session should not wait on `record` after it.
+
+The diff covers only the repository of the session's working directory, so
+a session started in the main checkout never captures Bash edits made in a
+linked worktree. It also lists the files a `git pull`, `git checkout` or
+`git reset` rewrote. `record` runs one `git status` over the listed files
+and records none that is clean afterwards; the turn counts them instead.
 
 ## Example
 

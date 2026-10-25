@@ -20,7 +20,9 @@ Claude Code hooks pipe their payloads into `moondb record`:
 - after every Edit, Write, MultiEdit or NotebookEdit, the change is recorded
   with the file's content
 - after a Bash command, the files it changed are recorded, when Claude Code
-  reports them (the `bashEditDiffEnabled` setting)
+  reports them (the `bashEditDiffEnabled` setting). A file git reports clean
+  after the command, because a pull or checkout put it back to its committed
+  state, is only counted on the turn
 - when the session stops, the turn closes, and any new commits in the
   worktrees the session touched are noted
 
@@ -29,8 +31,9 @@ each worktree in play: the content of its uncommitted files and of the files
 the session touched. A file that changed between two turns, with no tool call
 to explain it, shows up as an unattributed delta.
 
-`record` writes to a spool on disk and returns within 200 ms. It always exits
-0 and never prints to stdout, so a capture problem can't break your session.
+`record` writes to a spool on disk and returns within 200 ms, or 2 s for the
+async Bash hook. It always exits 0 and never prints to stdout, so a capture
+problem can't break your session.
 `moondb serve` drains the spool and stores the records.
 
 serve works out each edit's after content from what the tool was asked to
@@ -78,6 +81,16 @@ milliseconds apart, and a hook that ran later would read the wrong file.
 the files a Bash command changed into the hook payload. Without it, the Bash
 hook records nothing, and snapshots still catch those changes at the next
 turn edge.
+
+Claude Code lists every file under the session's repository that a command
+changed, including the ones `git pull`, `git checkout` or `git reset`
+rewrote. Those aren't the command's own work, so `record` runs one `git
+status` over the listed files and records only the ones still modified,
+added, deleted, untracked or ignored afterwards. The turn shows how many it
+left out. A file a command edits and commits in one go is clean afterwards
+and gets no edit either; `git blame` names that commit. The diff covers only
+the repository of the session's working directory, so a session started in
+the main checkout never sees Bash edits in a linked worktree.
 
 ## Usage
 
