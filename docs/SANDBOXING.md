@@ -259,17 +259,31 @@ Three services stay outside srt: csl-web, sandbox-watch and d-man. The ADR
 amendment in [docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.md)
 records why.
 
-### Services that run git
+### git inside the sandbox
 
-git dies on a read-denied `~/.gitconfig` (`fatal: unable to access
-'~/.gitconfig': Operation not permitted`), so a service that runs git gets
-`--env GIT_CONFIG_GLOBAL=/dev/null`. And `/usr/bin/git` is the xcrun shim,
-which loads its library from the `xcode-select` developer directory. An
-Xcode under `~`, such as a beta in `~/Downloads`, is unreadable inside the
-sandbox. So the keeper-of-facts and moondb hooks add `--env
-DEVELOPER_DIR=/Library/Developer/CommandLineTools` when that directory
-exists. A Homebrew git doesn't help here: `srt-run` puts `/usr/bin` ahead
-of the caller's `PATH`.
+A service that runs git under `denyRead: ["~"]` needs two things:
+
+- **A global config git can skip.** git dies on a read-denied
+  `~/.gitconfig` (`fatal: unable to access '~/.gitconfig': Operation not
+  permitted`). keeper-of-facts and moondb only run read-only commands
+  (`rev-parse`, `blame`), which need no identity or credential helper, so
+  they get `--env GIT_CONFIG_GLOBAL=/dev/null`. The repo's own `.git/config`
+  has to stay readable, because git reads it on every command.
+- **A readable developer directory.** `srt-run` puts `/usr/bin` ahead of the
+  caller's `PATH`, so git resolves to `/usr/bin/git`, the xcrun shim. A
+  Homebrew git earlier in t-man's `--path` doesn't change that. The shim
+  loads its library from the active developer directory (`xcode-select -p`).
+  An Xcode under `~`, such as a beta in `~/Downloads`, is unreadable inside
+  the sandbox, and every git call fails with `xcrun: error: invalid active
+  developer path`.
+
+The developer directory is a machine fix, not a recipe one. Point
+`xcode-select` at the Command Line Tools, or keep Xcode under
+`/Applications`:
+
+```sh
+sudo xcode-select -s /Library/Developer/CommandLineTools
+```
 
 ### Probing on an alternate port
 

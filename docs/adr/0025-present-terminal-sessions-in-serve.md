@@ -106,6 +106,8 @@ rights. That changed: serve now runs under srt through `srt-run`, with
 settings grant no pseudo-terminal. A terminal session fails to start,
 because openpty is denied. The switch file, the page-declared sessions, the
 origin check and the local-only routes are unchanged. Turning sessions back
-on is a new decision rather than a settings tweak. `allowPty` alone would
-start the shell inside serve's confinement, with `$HOME` reads denied and no
-egress beyond loopback, and that isn't the demo this ADR set out to enable.
+on is a future opt-in: a machine-local settings expansion that adds
+`allowPty` and the reads a shell needs. `allowPty` alone would start the
+shell inside serve's confinement, with `$HOME` reads denied and no egress
+beyond loopback, and that isn't the demo this ADR set out to enable. The
+shipped settings leave sessions off.

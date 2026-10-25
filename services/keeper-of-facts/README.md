@@ -99,6 +99,16 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 | `kof_doctor()` | Run the `kof doctor` checks and return the report |
 | `kof_retract(id, note)` | Withdraw an assertion with a counter-evidence note |
 
+Recall needs serve to start `claude -p`. On a ralph-managed machine,
+`kof serve` runs inside the recipe's srt sandbox, which can't start it, so
+`kof recall` and `kof_recall` fail with the error below. Use `kof list` or
+`kof_query` there instead. A `kof serve` started by hand or through
+`brew services` runs unsandboxed, and recall works.
+
+```
+kof: recall judge failed (fall back to kof_query): exec claude -p: fork/exec ~/.local/bin/claude: operation not permitted
+```
+
 Open `http://kof.this/` (or `http://localhost:7431/`) for a read-only web view:
 every assertion with its kind, status, and pins, filterable by subject, kind,
 and status. You write and check assertions through Claude or the CLI, not the

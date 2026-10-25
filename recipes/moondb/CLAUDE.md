@@ -19,23 +19,28 @@ and ralph merges the recipe with the identity `thismoon/moondb`. The package
 - **`packages.moondb.service`**: restarts the agent only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install, before registration.
-- **`hooks.builds.moondb_service`**: `t-man add --name moondb --env
-  GIT_CONFIG_GLOBAL=/dev/null [--env DEVELOPER_DIR=…] --extra-log sandbox=…
-  -- srt-run ~/.config/srt/moondb.json moondb serve --port 7433 --workdir
+- **`hooks.builds.moondb_service`**: `t-man add --name moondb --path
+  /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env
+  GIT_CONFIG_GLOBAL=/dev/null --extra-log sandbox=… -- srt-run
+  ~/.config/srt/moondb.json moondb serve --port 7433 --workdir
   ~/.local/state/moondb`. Idempotent; `run = "always"` self-heals if the
   agent was removed. Guarded on t-man being on PATH.
 - **`dotfiles.moondb_srt_settings`**: links `moondb.srt.json` to
   `~/.config/srt/moondb.json`.
+- **`pre_uninstall`**: removes the t-man agent before cleanup deletes the
+  binary.
 
 Sandbox note: serve runs under srt, loopback only. The store and the spool
 the capture hooks write both sit under the workdir, which is the only
-writable path besides the temp dirs. `moondb why` runs git blame in the
+writable path besides the temp dirs. `moondb why` runs `git blame` in the
 asking worktree, so reads cover the code roots (`~/code`, `~/.worktrees`,
-the ralph sources cache) minus nested secret files, and git gets the same
-`GIT_CONFIG_GLOBAL` and `DEVELOPER_DIR` treatment as keeper-of-facts. A
-worktree outside those roots answers without blame.
-- **`pre_uninstall`**: removes the t-man agent before cleanup deletes the
-  binary.
+the ralph sources cache) minus nested `.env`, `.env.*`, `*.pem` and `*.key`
+files. `.git/config` stays readable, because git reads it on every command.
+Blame is read-only and needs no identity or credential helper, so the agent
+runs with `GIT_CONFIG_GLOBAL=/dev/null`, like keeper-of-facts. The
+`/usr/bin/git` shim also needs a readable developer dir: see
+docs/SANDBOXING.md, "git inside the sandbox". A worktree outside those
+roots answers without blame.
 
 ## What stays in dotfiles (private overlay)
 

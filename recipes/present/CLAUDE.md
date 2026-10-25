@@ -128,8 +128,10 @@ Only the CLI runs bare.
 Live terminal posture. serve's sandbox grants no pseudo-terminal, so a
 terminal session doesn't start while serve runs under srt: openpty is
 denied (`docs/adr/0025-present-terminal-sessions-in-serve.md`, 2026-10-25
-amendment). Granting `allowPty` wouldn't be enough on its own, since the
-shell would inherit serve's confinement. The switch and the rules below
+amendment). Turning sessions back on is a future opt-in: a machine-local
+settings expansion that adds `allowPty` and the reads a shell needs.
+`allowPty` alone isn't enough, since the shell would inherit serve's
+confinement. The switch and the rules below
 still hold for a serve run bare by hand:
 - **Sessions exist only while the switch does.** The switch is the file
   `~/.config/present/terminal.enabled`. serve reads it on every terminal
