@@ -29,7 +29,8 @@ ralph merges the recipe with the identity `thismoon/status`. The package
   `launchctl print` works inside the sandbox, but each exec logs three
   base-profile denials (`kern.iossupportversion`, `kern.singleuser` and
   `com.apple.diagnosticd`), all ignore-listed. That is about 48 IGNORED
-  lines a minute on 13 services, and the denial ledger has no rotation yet.
+  denials a minute on 13 services, which sandbox-watch collapses to one
+  ledger line per distinct denial per window.
 - **`pre_uninstall`** — removes the t-man agent before cleanup deletes the
   binary.
 

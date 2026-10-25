@@ -36,8 +36,9 @@ pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove status 2>/de
 # post. osascript's banners get the notification daemon and trustd.
 # Each cycle runs `launchctl print` once per service for the restart counter
 # and again for each service without a port. Every launchctl exec logs three
-# denials that the fleet ignore list marks IGNORED, so status adds about 48
-# lines a minute to the denial ledger on 13 services.
+# denials that the fleet ignore list marks IGNORED, about 48 a minute on 13
+# services; the denial ledger collapses them to one line per distinct denial
+# per window.
 # Rendered from spec.access in services/status/service-info.yaml by
 # `make sandbox-settings` (docs/adr/0027): edit the manifest, not the JSON.
 [dotfiles.status_srt_settings]
