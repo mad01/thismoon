@@ -97,8 +97,14 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 | `moondb_sessions()` | Recorded sessions, newest first |
 | `moondb_doctor()` | Run the `moondb doctor` checks and return the report |
 
+### Web page
+
 Open `http://moondb.this/` (or `http://localhost:7433/`) for a read-only web
-view of sessions, turns and their edits.
+UI. It lists sessions, filtered by repo and age. A session shows its turns,
+and a turn shows its prompt, final message, agents and every edit as a diff.
+Click an added line to ask why it's there. A file view shows the file as it
+is today with the turn and agent behind each line, plus its recorded
+history.
 
 ## Configuration
 

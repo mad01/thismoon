@@ -33,11 +33,13 @@ var shellHTML []byte
 //go:embed app.js
 var appJS []byte
 
-// Querier answers the two questions the store exists for. *query.Service
-// satisfies it; tests pass a fake.
+// Querier answers the questions the store exists for: why one line looks
+// the way it does, what happened to a path, and why every line of a file
+// looks the way it does. *query.Service satisfies it; tests pass a fake.
 type Querier interface {
 	Why(ctx context.Context, req query.WhyRequest) (query.WhyResult, error)
 	History(ctx context.Context, req query.HistoryRequest) ([]store.Edit, error)
+	Annotate(ctx context.Context, req query.AnnotateRequest) (query.AnnotateResult, error)
 }
 
 // Server serves one moondb store, read-only.
@@ -70,6 +72,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/edits", s.handleEdits)
 	mux.HandleFunc("GET /api/why", s.handleWhy)
 	mux.HandleFunc("GET /api/history", s.handleHistory)
+	mux.HandleFunc("GET /api/annotate", s.handleAnnotate)
 	mux.HandleFunc("GET /api/chunks/{sha}", s.handleChunk)
 	mux.HandleFunc("GET /api/", handleNoRoute)
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
@@ -121,11 +124,14 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 	writeJSON(w, code, map[string]string{"error": err.Error()})
 }
 
-// writeBackendErr maps a store or query error to its status: a missing record
-// is 404, a question this build cannot answer is 501, anything else is 500.
+// writeBackendErr maps a store or query error to its status: a request the
+// query rejects is 400, a missing record is 404, a question this build
+// cannot answer is 501, anything else is 500.
 func writeBackendErr(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
 	switch {
+	case errors.Is(err, query.ErrInvalidRequest):
+		code = http.StatusBadRequest
 	case errors.Is(err, store.ErrNotFound):
 		code = http.StatusNotFound
 	case errors.Is(err, query.ErrNotImplemented):

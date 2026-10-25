@@ -304,16 +304,18 @@ func (c chunkMap) Has(_ context.Context, sha string) (bool, error) {
 type Querier struct {
 	store *Store
 
-	mu          sync.Mutex
-	err         error
-	lastWhy     query.WhyRequest
-	lastHistory query.HistoryRequest
+	mu           sync.Mutex
+	err          error
+	lastWhy      query.WhyRequest
+	lastHistory  query.HistoryRequest
+	lastAnnotate query.AnnotateRequest
 }
 
 // NewQuerier returns a Querier reading st.
 func NewQuerier(st *Store) *Querier { return &Querier{store: st} }
 
-// SetErr makes Why and History fail with err, or answer again when err is nil.
+// SetErr makes Why, History and Annotate fail with err, or answer again
+// when err is nil.
 func (q *Querier) SetErr(err error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -332,6 +334,13 @@ func (q *Querier) LastHistory() query.HistoryRequest {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.lastHistory
+}
+
+// LastAnnotate returns the last request Annotate received.
+func (q *Querier) LastAnnotate() query.AnnotateRequest {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.lastAnnotate
 }
 
 // Why names the newest edit of req.Path as a content match, or MethodNone.
@@ -372,4 +381,33 @@ func (q *Querier) History(ctx context.Context, req query.HistoryRequest) ([]stor
 	return q.store.Edits(ctx, store.EditQuery{
 		Worktree: req.Worktree, Repo: req.Repo, Path: req.Path, Limit: req.Limit,
 	})
+}
+
+// Annotate answers as if the file held After: its one line attributed to
+// the newest edit of req.Path in the worktree, or MethodNone.
+func (q *Querier) Annotate(
+	ctx context.Context,
+	req query.AnnotateRequest,
+) (query.AnnotateResult, error) {
+	q.mu.Lock()
+	q.lastAnnotate = req
+	err := q.err
+	q.mu.Unlock()
+	if err != nil {
+		return query.AnnotateResult{}, err
+	}
+	line := query.AnnotatedLine{Line: 1, Text: "package a", Method: query.MethodNone}
+	edits, _ := q.store.Edits(ctx, store.EditQuery{
+		Worktree: req.Worktree, Repo: req.Repo, Path: req.Path, Limit: 1,
+	})
+	if len(edits) > 0 {
+		e := edits[0]
+		line.Method, line.EditID, line.TurnID = query.MethodContent, e.ID, e.TurnID
+		line.SessionID, line.AgentType = e.SessionID, e.AgentType
+	}
+	return query.AnnotateResult{
+		Worktree: req.Worktree,
+		Path:     req.Path,
+		Lines:    []query.AnnotatedLine{line},
+	}, nil
 }

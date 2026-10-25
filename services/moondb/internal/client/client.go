@@ -29,7 +29,8 @@ import (
 const (
 	// requestTimeout bounds a store read: serve answers from its index.
 	requestTimeout = 5 * time.Second
-	// queryTimeout bounds why and history, which may run git in a worktree.
+	// queryTimeout bounds why, history and annotate, which may run git in a
+	// worktree.
 	queryTimeout = 30 * time.Second
 )
 
@@ -37,7 +38,8 @@ const (
 type Client struct {
 	baseURL string
 	http    *http.Client
-	// slow carries why and history; every other call keeps the short timeout.
+	// slow carries why, history and annotate; every other call keeps the
+	// short timeout.
 	slow *http.Client
 }
 
@@ -143,6 +145,20 @@ func (c *Client) History(ctx context.Context, req query.HistoryRequest) ([]store
 		Edits []store.Edit `json:"edits"`
 	}
 	return out.Edits, c.getJSON(ctx, c.slow, "/api/history", v, &out)
+}
+
+// Annotate explains every line of one file on disk in a worktree. It rides
+// the slow client because serve runs git blame to answer.
+func (c *Client) Annotate(
+	ctx context.Context,
+	req query.AnnotateRequest,
+) (query.AnnotateResult, error) {
+	v := url.Values{}
+	set(v, "worktree", req.Worktree)
+	set(v, "repo", req.Repo)
+	set(v, "path", req.Path)
+	var out query.AnnotateResult
+	return out, c.getJSON(ctx, c.slow, "/api/annotate", v, &out)
 }
 
 // Chunk returns the bytes stored under a chunk key. A missing key matches

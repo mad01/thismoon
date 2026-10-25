@@ -27,7 +27,7 @@ moondb/
     store/             - Store and Chunks interfaces and record types (store.go, types.go)
       local/           - the local disk backend: JSONL log, gzip chunks, in-memory index
       storetest/       - conformance suite every backend must pass
-    query/             - why and history answers over the store and git
+    query/             - why, history and annotate answers over the store and git
     server/            - HTTP API + webkit web page
     client/            - HTTP client shared by the CLI and mcpserver
     mcpserver/         - MCP tools
@@ -127,6 +127,17 @@ worktree. moondb never writes a trailer, a note or a ref into the user's repo.
 
 A per-worktree line walk through later hunks is planned for a later release.
 
+### Annotate: every line of a file at once
+
+`query.Service.Annotate` answers `why` for a whole file on disk. It runs one
+`git blame --porcelain` for the file, then one `git rev-parse <commit>:<path>`
+per blamed commit, cached, and joins each blob to the Edit whose after
+content it is. The blame and the rev-parse calls share the 2 s blame budget.
+Lines blame leaves unexplained go through the same content match as `why`,
+against one scan of the path's edits, so every line names the edit `why`
+would name. Annotate only reads a worktree that holds at least one recorded
+edit, so the route cannot read arbitrary files on the machine.
+
 ### moondb never writes into the user's `.git`
 
 No shadow commits, refs, notes or trailers. moondb reads git with
@@ -187,7 +198,7 @@ before it ships.
 
 Owned by `moondb serve`, bound to `127.0.0.1` only:
 
-- `GET  /`                      : webkit-chromed web page, read-only
+- `GET  /`                      : webkit-chromed web page, read-only (see Web page below)
 - `GET  /app.js`                : the page's client script
 - `GET  /api/sessions`          : sessions, newest first
 - `GET  /api/sessions/{id}`     : one session with its turns
@@ -195,12 +206,47 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 - `GET  /api/edits`             : edits, newest first, narrowed by repo, worktree, path, blob id, since and limit
 - `GET  /api/why`               : the answer for one line of one file
 - `GET  /api/history`           : the recorded edits of one path, newest first
+- `GET  /api/annotate`          : every line of one file on disk (`worktree`, `path`, optional `repo`), each with the edit, turn, session, agent and commit behind it
 - `GET  /api/chunks/{sha}`      : one chunk's uncompressed bytes
 - `GET  /healthz`               : 204
 - `GET  /version`               : the four-key build metadata object (`version`, `commit`, `tag`, `build_time`)
 - `GET  /webkit/`               : shared chrome (asset drift checks use `GET /webkit/version`)
 
-There is no write endpoint. The spool is the only way records get in.
+There is no write endpoint. The spool is the only way records get in. A
+request the query rejects (a relative worktree, a file outside the worktree)
+answers 400.
+
+## Web page
+
+The page is one static shell (`internal/server/shell.html`) and one script
+(`internal/server/app.js`) on the `Webkit` global, rendered in the browser
+from the JSON API (docs/adr/0005). There is no build step and no framework.
+Colours come only from webkit roles, so light and dark both follow the
+theme. The query string picks one of four views. The `?session=` form is the URL the MCP tools
+return, so keep it stable.
+
+- `/`: sessions, newest first, with the turn and edit counts and the repos
+  each one touched. A repo filter and a since filter map to the
+  `/api/sessions` query parameters and stay in the URL.
+- `/?session=<id>`: the session's worktrees and its turns in order, each
+  with the prompt's first line, status, edit count and the agents seen.
+- `/?turn=<id>`: the full prompt and final message with fixation reading,
+  the agents (main conversation or subagent type), and the edits grouped by
+  worktree, then path. Each edit shows its tool, kind, agent, time, before
+  source and observed match. Its unified diff is drawn in the browser from
+  the patch chunk, and a create without hunks shows its after content. Then the
+  unattributed deltas with their diffs, the commit links, and the raw
+  transcript lines behind a closed disclosure. Clicking an added line asks
+  `/api/why` about that line's text and shows the answer inline.
+- `/?worktree=<abs>&path=<rel>`: the file today, from `/api/annotate`, with
+  a gutter band per turn (solid for blame, dashed for a content match);
+  hovering a line names its turn's prompt and clicking opens the turn.
+  Below it, the path's recorded history as a timeline with diffs on demand.
+  A file outside any repository (`?path=<abs>`) shows the history only.
+
+Large records stay cheap. A diff draws its first 400 rows and the rest on
+request. The transcript shows its first 200 KB beside a download link to
+the chunk.
 
 ## Commands
 

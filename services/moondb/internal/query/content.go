@@ -13,8 +13,8 @@ import (
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
-// Content attribution. Why scans at most contentScanLimit edits of the
-// path and keeps maxCandidates. A candidate scores 1 when its hunks added
+// Content attribution. Why and Annotate scan at most contentScanLimit
+// edits of the path, and Why keeps maxCandidates. A candidate scores 1 when its hunks added
 // the line and createWeight when only its created file holds it, times
 // rankDecay for every candidate ranked above it.
 const (
@@ -25,20 +25,13 @@ const (
 )
 
 // whyByContent answers by the line's text: the edits of the path whose
-// added lines equal it once normalized, newest first. Repo spans every
-// checkout of the repository; without it the worktree narrows the scan.
+// added lines equal it once normalized, newest first.
 func (s *Service) whyByContent(ctx context.Context, req WhyRequest, res *WhyResult) error {
 	want := normalize(res.Text)
 	if trivial(want) {
 		return nil
 	}
-	q := store.EditQuery{Path: req.Path, Limit: contentScanLimit}
-	if req.Repo != "" {
-		q.Repo = req.Repo
-	} else {
-		q.Worktree = req.Worktree
-	}
-	edits, err := s.Store.Edits(ctx, q)
+	edits, err := s.Store.Edits(ctx, contentScan(req.Worktree, req.Repo, req.Path))
 	if err != nil {
 		return fmt.Errorf("query: edits of %s: %w", req.Path, err)
 	}
@@ -50,6 +43,18 @@ func (s *Service) whyByContent(ctx context.Context, req WhyRequest, res *WhyResu
 	return s.attach(ctx, res, cands[0].Edit, req.Path)
 }
 
+// contentScan is the edits query a content match scans: every checkout of
+// the repository when repo is named, else the one worktree.
+func contentScan(worktree, repo, path string) store.EditQuery {
+	q := store.EditQuery{Path: path, Limit: contentScanLimit}
+	if repo != "" {
+		q.Repo = repo
+	} else {
+		q.Worktree = worktree
+	}
+	return q
+}
+
 // candidates scores the edits that wrote the line, in the order given.
 func (s *Service) candidates(
 	ctx context.Context,
@@ -58,10 +63,11 @@ func (s *Service) candidates(
 ) ([]Candidate, error) {
 	var out []Candidate
 	for _, e := range edits {
-		m, err := s.match(ctx, e, want)
+		w, err := s.written(ctx, e)
 		if err != nil {
 			return nil, err
 		}
+		m := w.match(want)
 		if m.count == 0 {
 			continue
 		}
@@ -99,33 +105,48 @@ func (m lineMatch) reason() string {
 	return what
 }
 
-// match counts the lines e wrote that equal want: the lines its hunks
+// writtenLines is what one edit wrote to its path, as normalized line
+// counts: the lines its hunks added, and for a create the lines of its
+// after-content. Why builds one per scanned edit; Annotate builds them once
+// and matches every line of a file against them.
+type writtenLines struct {
+	edit    store.Edit
+	added   map[string]int
+	created map[string]int
+}
+
+// match counts the lines w wrote that equal want: the lines its hunks
 // added, or, for a create whose hunks add none of them (a Write reports
-// no hunks for a new file), the lines of its after-content. A patch that
-// does not parse counts as no hunks.
-func (s *Service) match(ctx context.Context, e store.Edit, want string) (lineMatch, error) {
+// no hunks for a new file), the lines of its after-content.
+func (w writtenLines) match(want string) lineMatch {
+	if n := w.added[want]; n > 0 {
+		return lineMatch{count: n}
+	}
+	return lineMatch{count: w.created[want], created: true}
+}
+
+// written loads the patch of e, and the after-content when e is a create,
+// into its writtenLines. A patch that does not parse counts as no hunks.
+func (s *Service) written(ctx context.Context, e store.Edit) (writtenLines, error) {
+	w := writtenLines{edit: e}
 	raw, err := s.chunk(ctx, e.PatchChunk)
 	if err != nil {
-		return lineMatch{}, err
+		return w, err
 	}
 	if raw != nil {
 		if hunks, err := patch.Parse(raw); err == nil {
-			if n := countEqual(patch.AddedLines(hunks), want); n > 0 {
-				return lineMatch{count: n}, nil
-			}
+			w.added = countNormalized(patch.AddedLines(hunks))
 		}
 	}
 	if e.Kind != store.EditCreate {
-		return lineMatch{}, nil
+		return w, nil
 	}
 	after, err := s.chunk(ctx, e.AfterChunk)
 	if err != nil || after == nil {
-		return lineMatch{}, err
+		return w, err
 	}
-	return lineMatch{
-		count:   countEqual(strings.Split(string(after), "\n"), want),
-		created: true,
-	}, nil
+	w.created = countNormalized(strings.Split(string(after), "\n"))
+	return w, nil
 }
 
 // chunk loads a chunk; nil when key is "" or the store does not have it.
@@ -143,14 +164,13 @@ func (s *Service) chunk(ctx context.Context, key string) ([]byte, error) {
 	return data, nil
 }
 
-func countEqual(lines []string, want string) int {
-	n := 0
+// countNormalized counts the lines by their normalized text.
+func countNormalized(lines []string) map[string]int {
+	counts := make(map[string]int, len(lines))
 	for _, l := range lines {
-		if normalize(l) == want {
-			n++
-		}
+		counts[normalize(l)]++
 	}
-	return n
+	return counts
 }
 
 // lineAt reads the requested line from the file in the worktree; "" when

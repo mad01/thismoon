@@ -254,6 +254,7 @@ func TestQueryErrorsMapToStatus(t *testing.T) {
 		err  error
 		code int
 	}{
+		{"invalid request", fmt.Errorf("%w: bad", query.ErrInvalidRequest), http.StatusBadRequest},
 		{"not implemented", query.ErrNotImplemented, http.StatusNotImplemented},
 		{"not found", fmt.Errorf("edit x: %w", store.ErrNotFound), http.StatusNotFound},
 		{"other", errors.New("git exploded"), http.StatusInternalServerError},
@@ -264,6 +265,7 @@ func TestQueryErrorsMapToStatus(t *testing.T) {
 			h.query.SetErr(tc.err)
 			h.wantAPIError(t, "/api/why?path=a.go&line=1", tc.code, tc.err.Error())
 			h.wantAPIError(t, "/api/history?path=a.go", tc.code, tc.err.Error())
+			h.wantAPIError(t, "/api/annotate?worktree=/w&path=a.go", tc.code, tc.err.Error())
 		})
 	}
 }
@@ -282,6 +284,37 @@ func TestHistoryParsesAndAnswers(t *testing.T) {
 		t.Errorf("querier got %+v, want %+v", req, want)
 	}
 	h.wantAPIError(t, "/api/history?repo=x", http.StatusBadRequest, "path is required")
+}
+
+func TestAnnotateParsesAndAnswers(t *testing.T) {
+	h := newHarness(t)
+	var got query.AnnotateResult
+	h.getJSON(t, "/api/annotate?worktree="+servertest.Worktree+"&repo="+servertest.Repo+
+		"&path=a.go", http.StatusOK, &got)
+	if got.Worktree != servertest.Worktree || got.Path != servertest.PathA || len(got.Lines) != 1 {
+		t.Fatalf("result = %+v", got)
+	}
+	want := query.AnnotatedLine{
+		Line: 1, Text: "package a", Method: query.MethodContent, EditID: servertest.EditA,
+		TurnID: servertest.NewTurn, SessionID: servertest.NewSession,
+	}
+	if got.Lines[0] != want {
+		t.Errorf("line = %+v, want %+v", got.Lines[0], want)
+	}
+	wantReq := query.AnnotateRequest{
+		Worktree: servertest.Worktree,
+		Repo:     servertest.Repo,
+		Path:     servertest.PathA,
+	}
+	if req := h.query.LastAnnotate(); req != wantReq {
+		t.Errorf("querier got %+v, want %+v", req, wantReq)
+	}
+}
+
+func TestAnnotateRejectsBadRequest(t *testing.T) {
+	h := newHarness(t)
+	h.wantAPIError(t, "/api/annotate?worktree=/w", http.StatusBadRequest, "path is required")
+	h.wantAPIError(t, "/api/annotate?path=a.go", http.StatusBadRequest, "worktree is required")
 }
 
 func TestChunkServesImmutableBytes(t *testing.T) {
@@ -350,7 +383,10 @@ func TestPageServesShellAndApp(t *testing.T) {
 	if !strings.HasPrefix(res.Header.Get("Content-Type"), "application/javascript") {
 		t.Errorf("app.js Content-Type = %q", res.Header.Get("Content-Type"))
 	}
-	for _, route := range []string{"/api/sessions", "/api/turns/", "/api/chunks/"} {
+	for _, route := range []string{
+		"/api/sessions", "/api/turns/", "/api/chunks/", "/api/why", "/api/history",
+		"/api/annotate", "/api/edits",
+	} {
 		if !strings.Contains(string(body), route) {
 			t.Errorf("app.js never calls %s", route)
 		}

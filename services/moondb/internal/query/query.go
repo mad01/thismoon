@@ -94,10 +94,16 @@ type HistoryRequest struct {
 // that blob, the line's text is matched against the lines recorded edits
 // of the path added, newest first (MethodContent). A line too common to
 // tell edits apart, such as a brace, a lone return or an import, and a
-// line nothing matches, get MethodNone with Text set.
+// line nothing matches, get MethodNone with Text set. A worktree moondb
+// never recorded an edit in is refused before anything is read from it.
 func (s *Service) Why(ctx context.Context, req WhyRequest) (WhyResult, error) {
 	if err := req.validate(); err != nil {
 		return WhyResult{}, err
+	}
+	if req.Worktree != "" {
+		if err := s.knownWorktree(ctx, req.Worktree); err != nil {
+			return WhyResult{}, err
+		}
 	}
 	res := WhyResult{Path: req.Path, Line: req.Line, Text: req.Text, Method: MethodNone}
 	found, err := s.whyByBlame(ctx, req, &res)

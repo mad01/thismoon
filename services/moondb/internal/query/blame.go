@@ -68,37 +68,74 @@ func blame(ctx context.Context, req WhyRequest) (blamed, string) {
 	if b.path == "" {
 		b.path = req.Path
 	}
-	blob := gitloc.Output(ctx, req.Worktree,
-		"--no-optional-locks", "rev-parse", "--verify", "--quiet", b.commit+":"+b.path)
-	if !isObjectID(blob) {
-		return b, ""
-	}
-	return b, blob
+	return b, blobAt(ctx, req.Worktree, b.commit, b.path)
 }
 
-// parseBlame reads `git blame --porcelain` output for one line: a header
-// "<sha> <orig-line> <final-line> <count>", key-value lines among which
-// "filename <path>", and the line itself after a tab. An all-zero sha is
-// a line not committed yet; output of any other shape yields the zero
-// value.
+// blobAt returns the blob commit holds at path, "" when git cannot say.
+func blobAt(ctx context.Context, worktree, commit, path string) string {
+	blob := gitloc.Output(ctx, worktree,
+		"--no-optional-locks", "rev-parse", "--verify", "--quiet", commit+":"+path)
+	if !isObjectID(blob) {
+		return ""
+	}
+	return blob
+}
+
+// parseBlame reads `git blame --porcelain` output for one line; output of
+// any other shape yields the zero value.
 func parseBlame(out string) blamed {
-	lines := strings.Split(out, "\n")
-	head := strings.Fields(lines[0])
-	if len(head) < 3 || !isObjectID(head[0]) {
+	lines := parseBlameFile(out)
+	if len(lines) == 0 {
 		return blamed{}
 	}
-	var b blamed
-	if strings.Trim(head[0], "0") != "" {
-		b.commit = head[0]
+	return lines[0]
+}
+
+// parseBlameFile reads `git blame --porcelain` output, one blamed per line
+// in file order. Each line has a header "<sha> <orig-line> <final-line>
+// [<count>]", then the commit's key-value lines the first time the commit
+// shows up (among them "filename <path>"), then the line itself after a
+// tab. An all-zero sha is a line not committed yet. Output of any other
+// shape yields nil. A last line with no text is kept: the caller's
+// whitespace trim may have cut its tab.
+func parseBlameFile(out string) []blamed {
+	if out == "" {
+		return nil
 	}
-	for _, l := range lines[1:] {
-		if p, ok := strings.CutPrefix(l, "filename "); ok {
-			b.path = p
-		} else if text, ok := strings.CutPrefix(l, "\t"); ok {
-			b.text = text
+	var (
+		res   []blamed
+		sha   string // the header being read; "" between lines
+		paths = map[string]string{}
+	)
+	finish := func(text string) {
+		b := blamed{path: paths[sha], text: text}
+		if strings.Trim(sha, "0") != "" {
+			b.commit = sha
 		}
+		res = append(res, b)
+		sha = ""
 	}
-	return b
+	for _, l := range strings.Split(out, "\n") {
+		if text, ok := strings.CutPrefix(l, "\t"); ok && sha != "" {
+			finish(text)
+			continue
+		}
+		if sha != "" {
+			if p, ok := strings.CutPrefix(l, "filename "); ok {
+				paths[sha] = p
+			}
+			continue
+		}
+		head := strings.Fields(l)
+		if len(head) < 3 || !isObjectID(head[0]) {
+			return nil
+		}
+		sha = head[0]
+	}
+	if sha != "" {
+		finish("")
+	}
+	return res
 }
 
 // isObjectID reports whether s is a full git object name, SHA-1 or
