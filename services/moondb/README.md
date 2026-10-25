@@ -69,12 +69,22 @@ milliseconds apart, and a hook that ran later would read the wrong file.
 moondb why <path>:<line>     # the edit, turn, prompt and commit behind one line
 moondb history <path>        # every recorded edit of a file, newest first
 moondb sessions              # recorded sessions, newest first
+moondb import --dry-run      # what a backfill from Claude Code transcripts would record
 moondb doctor                # is serve up, is the store readable, is the build current
 ```
 
 For example, `moondb why services/events/internal/store/dedupe.go:42` names
 the turn whose prompt led to line 42, the session and agent that made the
 edit, and the commit it landed in.
+
+To cover the time before the hooks were wired, backfill the last 30 days with
+`moondb import`. It reads the session transcripts Claude Code keeps under
+`~/.claude/projects` and spools the turns and edits the hooks would have
+recorded, so serve must be running to take them in. Sessions the store
+already holds are skipped. A transcript has less than the hooks see: it has
+no disk read after an edit and no diff for Bash commands. It has no HEAD
+either, so imported edits link to commits only once a later session moves
+HEAD. Run it with `--dry-run` first to see the counts.
 
 `why` first asks `git blame` which commit the line came from, then finds the
 edit whose content matches that commit. For a line that isn't committed yet,
@@ -139,7 +149,6 @@ This release records the file tools only. Later releases add:
 
 - a snapshot of each worktree at turn boundaries
 - capture of the file changes Bash commands make
-- an importer that backfills the last 30 days from Claude Code transcripts
 - a cloud backend: the log on a Kubernetes StatefulSet, file contents in
   object storage
 - a shared mode that a local serve replicates into

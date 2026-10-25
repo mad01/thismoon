@@ -18,7 +18,9 @@ Capture runs in Claude Code hooks, not in serve. Each hook pipes its payload
 into `moondb record`, which writes an envelope to the spool and exits 0
 within about 200 ms, printing nothing on stdout. So capture keeps working
 while serve is down: envelopes wait in the spool and serve ingests them when
-it comes back.
+it comes back. `moondb import` backfills from the Claude Code transcripts
+through the same spool, so it too needs serve running before the store
+shows anything.
 
 Everything else is a thin HTTP client over the API: the query commands
 (`why`, `history`, `sessions`) and the MCP server, a stdio shim spawned as
@@ -57,7 +59,9 @@ moondb --stderr` for the envelope it refused.
 `why` returns method `none`, or `history` is empty: usually not an error.
 Either the hooks are not wired on this machine, `capture.enabled` is false,
 the file matched a `capture.exclude` glob, or the edit predates capture. Ask
-`moondb sessions` whether anything was recorded recently. A `content` answer
+`moondb sessions` whether anything was recorded recently. An edit from before
+capture can be backfilled: `moondb import --dry-run` counts what the
+transcripts still hold, `moondb import` spools it. A `content` answer
 is a text match, not proof: check its candidates before trusting it.
 
 An edit with `before_source: unknown`: serve could not reconstruct the file

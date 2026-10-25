@@ -18,8 +18,9 @@ moondb/
   facts.go             - port, workdir, capture caps and budgets, default excludes, agentdoc.Facts
   embed.go             - embeds operating.md for `moondb docs`
   internal/
-    cli/               - cobra: root, serve, record, mcp, why, history, sessions, doctor, docs, version
+    cli/               - cobra: root, serve, record, import, mcp, why, history, sessions, doctor, docs, version
     record/            - the capture hook: payload decode, envelopes, observed read, HEAD blob, transcript tail, per-session state
+    importer/          - the transcript backfill: transcript parse, turns and edits as envelopes, file-history originals
     spool/             - envelope format, atomic writer, drain reader
     derive/            - before and after content per Edit, unattributed deltas
     patch/             - forward and reverse patch apply, hunk context checks, line endings
@@ -66,6 +67,56 @@ back only by later hooks of the same session:
 - `<sid>.touched`: one worktree per line, where the session edited
 - `<sid>.heads`: the HEAD last seen in each touched worktree
 
+### Import: backfill from transcripts
+
+`moondb import` reads the Claude Code session transcripts under
+`~/.claude/projects` written within `--since` (default 30d) and writes the
+envelopes the hooks would have written, through the same spool writer. serve
+ingests them with no import code of its own. A session the store already
+holds was captured live and is skipped unless `--force`. A session without a
+file edit is skipped. `--dry-run` reads and counts everything and writes
+nothing; with serve down it runs without the store lookups and says so.
+`--projects` and `--file-history` point at other transcript and
+file-history directories; the defaults live in `facts.go`.
+
+Ids match the hooks'. A turn is the transcript's `promptId`, the same id the
+hook calls `prompt_id`; a transcript without one keys the turn by the prompt
+entry's uuid. An edit is `<tool_use_id>:<index>`. Every import envelope is
+marked `backfill`, so importing a session again, or one partly captured live,
+only fills: a stored edit stays, and a session or turn keeps its values and
+gets its empty fields filled, an open turn closed. A
+subagent's edits come from `<session>/subagents/agent-<id>.jsonl`, carry its
+id and type, and belong to the main turn its entries name.
+
+What a transcript gives back:
+
+- recovered: the prompt, the final message, the turn's transcript lines, the
+  tool input, the structured patch, `originalFile` when Claude Code kept it,
+  a Write's content, and the subagent
+- from the file history: the transcript has no `originalFile` for a file over
+  about 10 KB. The import takes the copy under
+  `~/.claude/file-history/<session>/` taken last before the edit, when no
+  other edit of the file came between that copy and the edit
+- not recovered: the disk read after the edit, so there is no observed
+  content and no unattributed delta. HEAD at the time is not recorded
+  either, so imported edits carry none and the import writes no head-moved
+  envelope. Their commit links come from a later live turn that moves HEAD.
+  Bash changes are left out, since the transcript holds no diff for them.
+- placed by what is left: a file whose directory still exists is placed in
+  git as it is now, as the hook does. Most imported files sat in worktrees
+  deleted since. For those the import tries, in order:
+  1. the work tree of the nearest directory still there, unless the file sat
+     in a worktree nested inside it
+  2. the worktree its path names by layout: `.worktrees/<repo>/<slug>`,
+     `.worktrees/<repo>-<slug>` or `<checkout>/.claude/worktrees/<slug>`.
+     The repo is the one a known location gives that name: the store's, or
+     the session's own checkout.
+  3. the session cwd, when it is gone too and holds the file
+  4. no worktree and an absolute path, like a file outside any repo
+
+  The branch is the transcript's when the session's cwd sits in that
+  worktree. The dry run counts each outcome.
+
 ### Single-writer architecture (load-bearing)
 
 `moondb serve` is the only writer of the store. `record` writes only to the
@@ -86,24 +137,15 @@ crash between append and delete replays harmlessly.
 
 ### Derivation: after content is never trusted from disk
 
-serve derives the after content of every Edit from the tool payload: Write
-takes `tool_input.content`, Edit forward-applies the patch to the before
-content. serve keeps the bytes `record` read from disk as the observed
-content. When observed and derived differ (a formatter hook ran, a human
-typed), serve records an unattributed delta for the difference.
-
-Before content comes from the first source that verifies against the patch's
-context lines:
-
-1. `originalFile` from the tool response, when Claude Code sent it (small files)
-2. the last recorded after content for the same worktree and path
-3. the HEAD content `record` shipped on the path's first edit
-4. the observed bytes with the patch reverse-applied
-5. none: the Edit keeps its hunks and records `before_source: unknown`
-
-A Write that creates a file has an absent before, not an empty one. A file
-with carriage-return line endings (CRLF) is matched on a newline-only view of
-its text and stored as its exact bytes with an `eol` flag.
+serve derives after content from the tool input: Write's `content`, Edit's
+`old_string` swapped for `new_string`, MultiEdit's edits in order. The disk
+read is evidence; where it differs, serve records an unattributed delta.
+Before content is the first source the call fits: absent for a create,
+`originalFile`, the latest earlier after content of the path, HEAD, the disk
+read with the call undone, else `before_source: unknown`. A source fits when
+each `old_string` occurs once (at least once with `replace_all`) and the
+hunks apply with tabs read as two spaces. A CRLF file matches on its LF view
+and keeps CRLF. Hunks alone fit a user-modified edit or a missing `old_string`.
 
 ### Commit links
 
@@ -253,6 +295,7 @@ the chunk.
 ```bash
 moondb serve [--port 7433] [--workdir ~/.local/state/moondb]
 moondb record                  # one hook payload on stdin; wired by the hooks, not run by hand
+moondb import [--since 30d] [--dry-run] [--force] [--json]   # backfill from Claude Code transcripts
 moondb mcp                     # stdio MCP shim over serve
 moondb why <path>:<line>       # the Edit, turn, prompt, session and commit behind one line
 moondb history <path>          # the recorded edits of a path, newest first

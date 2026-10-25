@@ -26,14 +26,14 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mad01/thismoon/kit/gitloc"
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
-// harness names the agent runtime whose hook payloads Run reads.
-const harness = "claude-code"
+// Harness names the agent runtime whose hook payloads Run reads and whose
+// transcripts `moondb import` reads; every envelope carries it.
+const Harness = "claude-code"
 
 // Hook events Run records; every other event is ignored.
 const (
@@ -140,7 +140,7 @@ func (rec *recorder) envelope(kind spool.Kind, id string) spool.Envelope {
 		Kind:    kind,
 		ID:      id,
 		At:      rec.opts.Now(),
-		Harness: harness,
+		Harness: Harness,
 		Session: spool.SessionRef{
 			ID: p.sessionID, Cwd: p.cwd, Title: p.title, TranscriptPath: p.transcriptPath,
 		},
@@ -164,8 +164,5 @@ func (rec *recorder) gitCtx() (context.Context, context.CancelFunc) {
 func (rec *recorder) locate(dir string) store.Location {
 	ctx, cancel := rec.gitCtx()
 	defer cancel()
-	l := gitloc.LocationAt(ctx, dir)
-	return store.Location{
-		Repo: l.Repo, Worktree: l.Toplevel, Canonical: l.Canonical, Branch: l.Branch, Head: l.Head,
-	}
+	return Locate(ctx, dir)
 }

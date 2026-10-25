@@ -16,6 +16,7 @@ Claude Code hooks ──stdin JSON──▶ moondb record ──files──▶ s
   UserPromptSubmit (async)                                               ├─ store: log/ + objects/
   PostToolUse Edit|Write|MultiEdit|NotebookEdit (sync)                   ├─ HTTP API /api/*
   Stop (async)                                                           └─ web page
+moondb import ──reads ~/.claude transcripts──▶ spool/ (the same envelopes, backfilled)
 moondb mcp (stdio shim) ──HTTP──▶ serve
 moondb why | history | sessions ──HTTP──▶ serve
 ```
@@ -26,11 +27,15 @@ moondb why | history | sessions ──HTTP──▶ serve
 cmd/moondb/         entrypoint, delegates to internal/cli
 facts.go            port, workdir, caps and budgets, default excludes, agentdoc.Facts
 internal/
-  cli/              Cobra commands: serve, record, mcp, why, history,
-                    sessions, doctor, docs, version
+  cli/              Cobra commands: serve, record, import, mcp, why,
+                    history, sessions, doctor, docs, version
   record/           the hook side: payload decode, envelope builders,
                     observed read and blob id, HEAD content, transcript
                     tail, per-session state, the 200 ms budget
+  importer/         the transcript backfill: parse a session transcript
+                    and its subagent transcripts, map turns and edits to
+                    envelopes, take large files' originals from the file
+                    history
   spool/            envelope format, atomic writer, drain reader
   derive/           before and after content per Edit, unattributed deltas
   patch/            forward and reverse patch apply, hunk context checks,
@@ -60,18 +65,30 @@ new commits' (path, blob id) pairs. The writer puts each chunk file in place
 before it renames the envelope, so serve never sees an envelope without its
 chunks.
 
+Import: `moondb import` reads the session transcripts under
+`~/.claude/projects` and writes the envelopes the hooks would have written.
+It uses the hooks' ids and marks every envelope `backfill`, so a re-run or
+an overlap with live capture only fills: a stored edit stays, and a session
+or turn keeps its values and gets its empty fields filled, an open turn
+closed. A transcript has no disk read and no HEAD, so imported edits
+carry neither and the import writes no head-moved envelope. Most imported
+files sat in worktrees deleted since. The import places those by the
+nearest surviving work tree, the worktree layout of their path, or the
+session cwd. The repo comes from a known location of the same name.
+
 Ingest: serve watches the spool and polls it every second. It reads
 envelopes in name order, stores their chunks, derives each Edit, appends the
 records, and deletes the envelope. Ingest is idempotent on the envelope id.
 
-Derive: after content comes from the tool payload (Write's content, or
-Edit's patch forward-applied to the before content). Before content comes
-from the first source whose bytes verify against the patch's context lines.
-The sources, in order: the tool's original file, the last recorded after
-content for that worktree and path, the shipped HEAD content, and the
-observed bytes with the patch reverse-applied. When none verifies, the Edit keeps its hunks and marks the
-before as unknown. Observed bytes that differ from the derived after content
-produce an unattributed delta.
+Derive: after content comes from the tool input: an Edit swaps `old_string`
+for `new_string`, a MultiEdit applies its edits in order, a Write carries its
+content. Before content is the first source the call fits: nothing for a
+create, the original, the latest earlier after content of the path, HEAD, or
+the observed bytes with the call undone. A source fits when each `old_string`
+occurs once, or at least once with `replace_all`, and the hunks apply with
+tabs read as two spaces. A CRLF file is matched on its LF view. Hunks alone
+fit a user-modified edit or an `old_string` the source lacks. Else the before
+is unknown. Observed bytes that differ become an unattributed delta.
 
 Link: a head-moved envelope's blob ids are matched against recorded
 after-blob ids, and each match becomes a commit link.
@@ -107,7 +124,7 @@ HTTP: `GET /` and `/app.js` (read-only web page), `GET /api/sessions`,
 `GET /api/why`, `GET /api/history`, `GET /api/annotate`,
 `GET /api/chunks/{sha}`, `GET /healthz`, `GET /version`,
 `GET /webkit/`. There is no write endpoint. CLI: `moondb serve`, `record`,
-`mcp`, `why <path>:<line>`, `history <path>`, `sessions`, `doctor`, `docs`,
+`import`, `mcp`, `why <path>:<line>`, `history <path>`, `sessions`, `doctor`, `docs`,
 `version`. MCP tools: `moondb_why`, `moondb_history`, `moondb_turn`,
 `moondb_sessions`, `moondb_doctor`, all read-only. Config surfaces are
 `--port` (`MOONDB_PORT`), `--workdir` (`MOONDB_WORKDIR`), `--base-url`

@@ -37,6 +37,15 @@ const (
 	GitBudget = 1 * time.Second
 )
 
+// Import defaults: where `moondb import` finds the harness's transcripts and
+// its file history, and how far back it reads. The leading ~ is expanded at
+// runtime.
+const (
+	DefaultImportSince    = "30d"
+	DefaultProjectsDir    = "~/.claude/projects"
+	DefaultFileHistoryDir = "~/.claude/file-history"
+)
+
 // Store limits.
 const (
 	// SegmentBytes is the size at which the JSONL log rolls to a new
