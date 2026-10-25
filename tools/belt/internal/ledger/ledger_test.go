@@ -6,13 +6,13 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/mad01/thismoon/kit/gitloc"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
-	"github.com/mad01/thismoon/tools/belt/internal/guard"
 )
 
 // linked is a loom worktree: its own toplevel and branch, hanging off the
 // main checkout.
-var linked = guard.Location{
+var linked = gitloc.Location{
 	Toplevel:  "/home/.worktrees/thismoon/feat-x",
 	Canonical: "/src/thismoon",
 	Branch:    "feat/x",
@@ -21,7 +21,7 @@ var linked = guard.Location{
 }
 
 // mainCheckout is the canonical checkout itself.
-var mainCheckout = guard.Location{
+var mainCheckout = gitloc.Location{
 	Toplevel:  "/src/thismoon",
 	Canonical: "/src/thismoon",
 	Branch:    "main",
@@ -33,7 +33,7 @@ func TestBuild(t *testing.T) {
 		name        string
 		event       string
 		in          Input
-		loc         guard.Location
+		loc         gitloc.Location
 		wantTitle   string
 		wantMessage string
 		wantTags    map[string]string
@@ -233,7 +233,7 @@ func TestBuildStopFailure(t *testing.T) {
 	tests := []struct {
 		name        string
 		in          Input
-		loc         guard.Location
+		loc         gitloc.Location
 		wantLevel   string
 		wantTitle   string
 		wantMessage string
@@ -339,7 +339,7 @@ func TestStopFailureLevelFollowsTheErrorType(t *testing.T) {
 		got := Build(
 			EventStopFailure,
 			Input{Error: errorType},
-			guard.Location{},
+			gitloc.Location{},
 			config.AgentTypes{},
 		)
 		if got.Level != wantLevel {
@@ -366,7 +366,7 @@ func TestBuildUnreadablePayload(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Build(tt.event, tt.in, guard.Location{}, config.AgentTypes{})
+			got := Build(tt.event, tt.in, gitloc.Location{}, config.AgentTypes{})
 			if got.Level != levelWarn {
 				t.Errorf("level = %q, want %q", got.Level, levelWarn)
 			}
@@ -408,7 +408,7 @@ func TestBuildTruncatesTheMessage(t *testing.T) {
 			got := Build(
 				EventSubagentStop,
 				Input{LastAssistantMessage: tt.message},
-				guard.Location{},
+				gitloc.Location{},
 				config.AgentTypes{},
 			)
 			if got.Message != tt.want {
@@ -473,7 +473,7 @@ func TestTagsCarryDeclaredModelAndEffort(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := Input{SessionID: "s1", AgentID: "a1", AgentType: tt.agentType}
-			got := tags(tt.event, in, guard.Location{}, reviewerTypes)
+			got := tags(tt.event, in, gitloc.Location{}, reviewerTypes)
 			model, hasModel := got["model"]
 			effort, hasEffort := got["effort"]
 			if model != tt.wantModel || hasModel != (tt.wantModel != "") {

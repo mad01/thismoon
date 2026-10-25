@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"github.com/mad01/thismoon/kit/gitloc"
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
@@ -33,7 +34,7 @@ type GitIdentity struct {
 func NewGitIdentity(cfg config.Config) *GitIdentity {
 	return &GitIdentity{
 		cfg:          cfg,
-		resolveRepo:  func(dir string) string { return canonicalRepo(gitRemoteURL(dir)) },
+		resolveRepo:  func(dir string) string { return gitloc.CanonicalRepo(gitRemoteURL(dir)) },
 		resolveEmail: gitUserEmail,
 		emit:         notify.EmitEventSync,
 	}

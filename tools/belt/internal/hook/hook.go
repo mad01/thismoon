@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mad01/thismoon/kit/gitloc"
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
@@ -382,7 +383,7 @@ func buildEntry(
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), locateBudget)
 	defer cancel()
-	return ledger.Build(event, in, guard.LocationAt(ctx, p.Cwd), declared)
+	return ledger.Build(event, in, gitloc.LocationAt(ctx, p.Cwd), declared)
 }
 
 // reportPanic records a swallowed panic under source, so a broken record
