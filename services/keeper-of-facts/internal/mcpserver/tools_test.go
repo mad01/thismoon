@@ -3,9 +3,11 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +15,7 @@ import (
 	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/kit/mcptest"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/client"
+	"github.com/mad01/thismoon/services/keeper-of-facts/internal/recall"
 )
 
 // stubStore is an in-memory hand-rolled stand-in for `kof serve`. It implements
@@ -267,6 +270,87 @@ func TestCheckReturnsCounts(t *testing.T) {
 	}
 	if res.URL == "" {
 		t.Error("check output missing url")
+	}
+}
+
+func TestRecallRanksTheStoreInTheShim(t *testing.T) {
+	tests := []struct {
+		name    string
+		retract string // id retracted before recall, if any
+		reply   string
+		runErr  error
+		want    []string
+		wantErr string
+	}{
+		{name: "judge order", reply: `["a2","a1"]`, want: []string{"a2", "a1"}},
+		{name: "retracted withheld", retract: "a1", reply: `["a1","a2"]`, want: []string{"a2"}},
+		{
+			name:    "judge failure names the fallback",
+			runErr:  errors.New("boom"),
+			wantErr: "kof_query",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := testHandlers(t)
+			ctx := context.Background()
+			for _, stmt := range []string{"serve is the single writer", "flags expand tilde"} {
+				if _, _, err := h.handleAssert(ctx, nil, assertInput{
+					Kind: "code-behavior", Subject: "s", Statement: stmt,
+					Confidence: "derived", SessionID: "sess-1", Pins: validPins(),
+				}); err != nil {
+					t.Fatalf("assert: %v", err)
+				}
+			}
+			if tc.retract != "" {
+				if _, _, err := h.handleRetract(ctx, nil, retractInput{ID: tc.retract, Note: "n"}); err != nil {
+					t.Fatalf("retract: %v", err)
+				}
+			}
+			h.judge = recall.NewJudgeWithRunner(
+				func(_ context.Context, _, prompt string) (string, error) {
+					if tc.retract != "" && strings.Contains(prompt, "id="+tc.retract) {
+						t.Errorf("retracted %s reached the judge:\n%s", tc.retract, prompt)
+					}
+					return tc.reply, tc.runErr
+				},
+			)
+
+			_, res, err := h.handleRecall(ctx, nil, recallInput{Question: "why no write races"})
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("recall error = %v, want one naming %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("recall: %v", err)
+			}
+			got := make([]string, len(res.Assertions))
+			for i, a := range res.Assertions {
+				got[i] = a.ID
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("recall = %v, want %v", got, tc.want)
+			}
+			if res.URL == "" {
+				t.Error("recall output missing url")
+			}
+		})
+	}
+}
+
+func TestRecallServeUnreachableSkipsTheJudge(t *testing.T) {
+	h := &handlers{
+		client: client.New("http://127.0.0.1:0"),
+		judge: recall.NewJudgeWithRunner(func(context.Context, string, string) (string, error) {
+			t.Error("judge ran without candidates")
+			return "", nil
+		}),
+	}
+	_, _, err := h.handleRecall(context.Background(), nil, recallInput{Question: "q"})
+	if err == nil || !strings.Contains(err.Error(), "not reachable") {
+		t.Fatalf("recall error = %v, want the serve-unreachable error", err)
 	}
 }
 

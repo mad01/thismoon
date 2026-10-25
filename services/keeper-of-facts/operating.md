@@ -14,7 +14,10 @@ localhost (default {{.BaseURL}}). Everything else is a thin HTTP client over
 that API: the CLI commands (`assert`, `list`, `get`, `check`, `retract`,
 `recall`) and the MCP server, a stdio shim spawned as `kof mcp`. The shim
 being up says nothing about the service: every tool call it handles is a live
-HTTP request to serve, and it fails when serve is down. Machines usually also
+HTTP request to serve, and it fails when serve is down. Recall does more
+than one request: it fetches the whole store from serve, then ranks it with a
+one-shot `claude -p` model judge in its own process. serve never needs
+`claude`. Machines usually also
 route http://kof.this to serve via the local domain front door. If the
 localhost port answers but the .this host does not, the router is the problem,
 not this service.
@@ -52,6 +55,13 @@ range, so an edit above a pin shifts the lines and flips the assertion stale
 even when the pinned code only moved. Check the claim against the current
 code, then re-assert with fresh pins if it still holds, or retract it with a
 note if it does not.
+
+Recall fails with "recall judge failed (fall back to kof_query)": the
+`claude -p` judge couldn't run, or answered off-contract, in the process that
+asked (the CLI or the `kof mcp` shim). Check that `claude` is on that
+process's PATH or at ~/.local/bin/claude and is logged in, and use `kof_query`
+meanwhile. An error saying recall moved out of serve comes from a `kof mcp`
+process older than the installed binary: reconnect the MCP server.
 
 Assert rejected with a 400: the server refused to ground the evidence. Either
 the request had no pins, a pin names a file that does not exist under `repo_path`,

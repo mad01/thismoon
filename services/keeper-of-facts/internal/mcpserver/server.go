@@ -15,6 +15,7 @@ import (
 	"github.com/mad01/thismoon/kit/doctor"
 	kof "github.com/mad01/thismoon/services/keeper-of-facts"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/client"
+	"github.com/mad01/thismoon/services/keeper-of-facts/internal/recall"
 )
 
 // Name is the MCP server name advertised to clients.
@@ -50,6 +51,11 @@ func New(version string, cfg Config) (*mcp.Server, error) {
 		&mcp.Implementation{Name: Name, Version: version},
 		&mcp.ServerOptions{Instructions: agentdoc.Instructions(kof.Facts())},
 	)
-	registerTools(s, &handlers{client: client.New(apiURL), webURL: webURL, checks: cfg.Checks})
+	registerTools(s, &handlers{
+		client: client.New(apiURL),
+		judge:  recall.NewJudge(),
+		webURL: webURL,
+		checks: cfg.Checks,
+	})
 	return s, nil
 }

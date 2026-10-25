@@ -44,17 +44,10 @@ needs no identity or credential helper. The agent runs with
 Command Line Tools when they are installed, because an Xcode under `$HOME`
 is unreadable in the sandbox (docs/SANDBOXING.md, "git inside the sandbox").
 
-The sandbox has two visible consequences:
-
-- A pin outside those roots reads as missing on `kof check`.
-- `kof recall` and `kof_recall` are unavailable. The `claude -p` judge can't
-  start in the sandbox, so `POST /api/recall` answers 502 with an error like
-  the one below (the path is wherever `claude` is installed). Use `kof_query`
-  or `kof list` instead.
-
-```
-kof: recall judge failed (fall back to kof_query): exec claude -p: fork/exec ~/.local/bin/claude: operation not permitted
-```
+The sandbox has one visible consequence: a pin outside those roots reads as
+missing on `kof check`. Recall is unaffected. Its `claude -p` judge runs in
+the kof CLI and the MCP shim, which run unsandboxed with the user's
+environment, so serve needs no `claude` binary, credentials or API egress.
 
 ## What stays in dotfiles (private overlay)
 

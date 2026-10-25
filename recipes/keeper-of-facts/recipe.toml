@@ -58,8 +58,8 @@ action = "symlink"
 # DEVELOPER_DIR pins the shim to the Command Line Tools when they are
 # installed. Machines without them keep xcode-select's choice. --path matches
 # the deps recipe (docs/SANDBOXING.md, "git inside the sandbox").
-# recall's `claude -p` judge cannot run in the sandbox, so recall answers 502;
-# kof_query still works.
+# recall's `claude -p` judge runs in the kof CLI and MCP shim, not in serve, so
+# the sandbox needs no claude binary, credentials or API egress.
 # depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
 # ralph links dotfiles items before any build or package in every run, so the
 # srt-run and settings links exist before this registration; depends_on could

@@ -3,14 +3,31 @@ package recall
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/services/keeper-of-facts/internal/client"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/store"
 )
 
-func testAssertions() []store.Assertion {
-	return []store.Assertion{
+// fakeLister stands in for the serve list API. It records whether recall
+// fetched, and with which filters.
+type fakeLister struct {
+	as      []client.Assertion
+	err     error
+	called  bool
+	filters []string
+}
+
+func (f *fakeLister) List(subject, kind, status string) ([]client.Assertion, error) {
+	f.called = true
+	f.filters = []string{subject, kind, status}
+	return f.as, f.err
+}
+
+func testAssertions() []client.Assertion {
+	return []client.Assertion{
 		{
 			ID:        "a1",
 			Subject:   "repo:x/y/store",
@@ -36,24 +53,153 @@ func fixedRunner(reply string, err error) func(context.Context, string, string) 
 	return func(context.Context, string, string) (string, error) { return reply, err }
 }
 
-func TestRankReturnsJudgedOrder(t *testing.T) {
-	j := NewJudgeWithRunner(fixedRunner(`["a2","a1"]`, nil))
-	got, err := j.Rank(context.Background(), "q", testAssertions())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 || got[0].ID != "a2" || got[1].ID != "a1" {
-		t.Errorf("Rank = %v, want judge order a2,a1", ids(got))
+// failRunner fails the test if the judge runs at all.
+func failRunner(t *testing.T) func(context.Context, string, string) (string, error) {
+	return func(context.Context, string, string) (string, error) {
+		t.Error("judge ran, want it skipped")
+		return "", nil
 	}
 }
 
-func TestRankNeverShowsRetractedToTheJudge(t *testing.T) {
+func TestRecallRanks(t *testing.T) {
+	tests := []struct {
+		name  string
+		store []client.Assertion
+		reply string
+		want  []string
+	}{
+		{
+			name:  "judge order",
+			store: testAssertions(),
+			reply: `["a2","a1"]`,
+			want:  []string{"a2", "a1"},
+		},
+		{
+			name:  "invented and duplicate ids dropped",
+			store: testAssertions(),
+			reply: `["a1","made-up","a1","a2"]`,
+			want:  []string{"a1", "a2"},
+		},
+		{
+			name:  "retracted id named by the judge is not returned",
+			store: testAssertions(),
+			reply: `["a3","a1"]`,
+			want:  []string{"a1"},
+		},
+		{name: "empty answer", store: testAssertions(), reply: "[]", want: nil},
+		{
+			name:  "fenced reply",
+			store: testAssertions(),
+			reply: "```json\n[\"a1\"]\n```",
+			want:  []string{"a1"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			src := &fakeLister{as: tc.store}
+			got, err := NewJudgeWithRunner(fixedRunner(tc.reply, nil)).
+				Recall(context.Background(), src, "q")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(ids(got), tc.want) {
+				t.Errorf("Recall = %v, want %v", ids(got), tc.want)
+			}
+			if !slices.Equal(src.filters, []string{"", "", ""}) {
+				t.Errorf("List filters = %q, want the unfiltered store", src.filters)
+			}
+		})
+	}
+}
+
+func TestRecallSkipsTheJudgeWithNothingToRank(t *testing.T) {
+	tests := []struct {
+		name  string
+		store []client.Assertion
+	}{
+		{name: "empty store", store: nil},
+		{name: "only retracted", store: testAssertions()[2:]},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewJudgeWithRunner(failRunner(t)).
+				Recall(context.Background(), &fakeLister{as: tc.store}, "q")
+			if err != nil || got != nil {
+				t.Errorf("Recall = %v, %v; want nil, nil", got, err)
+			}
+		})
+	}
+}
+
+func TestRecallErrors(t *testing.T) {
+	listErr := errors.New("kof serve not reachable")
+	tests := []struct {
+		name      string
+		question  string
+		listErr   error
+		runner    func(context.Context, string, string) (string, error)
+		wantIs    error
+		wantText  string
+		wantFetch bool
+	}{
+		{
+			name:     "empty question",
+			question: "  ",
+			wantIs:   ErrNoQuestion,
+		},
+		{
+			name:      "serve unreachable",
+			question:  "q",
+			listErr:   listErr,
+			wantIs:    listErr,
+			wantFetch: true,
+		},
+		{
+			name:      "judge exec failure",
+			question:  "q",
+			runner:    fixedRunner("", errors.New("boom")),
+			wantText:  "kof_query",
+			wantFetch: true,
+		},
+		{
+			name:      "unparseable reply",
+			question:  "q",
+			runner:    fixedRunner("the relevant ones are a1 and a2", nil),
+			wantText:  "kof_query",
+			wantFetch: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := tc.runner
+			if runner == nil {
+				runner = failRunner(t)
+			}
+			src := &fakeLister{as: testAssertions(), err: tc.listErr}
+			_, err := NewJudgeWithRunner(runner).Recall(context.Background(), src, tc.question)
+			if err == nil {
+				t.Fatal("Recall = nil error, want a failure")
+			}
+			if tc.wantIs != nil && !errors.Is(err, tc.wantIs) {
+				t.Errorf("Recall error %q, want it to wrap %q", err, tc.wantIs)
+			}
+			if !strings.Contains(err.Error(), tc.wantText) {
+				t.Errorf("Recall error %q does not mention %q", err, tc.wantText)
+			}
+			if src.called != tc.wantFetch {
+				t.Errorf("List called = %v, want %v", src.called, tc.wantFetch)
+			}
+		})
+	}
+}
+
+func TestRecallNeverShowsRetractedToTheJudge(t *testing.T) {
 	var sawPrompt string
 	j := NewJudgeWithRunner(func(_ context.Context, _, prompt string) (string, error) {
 		sawPrompt = prompt
 		return `[]`, nil
 	})
-	if _, err := j.Rank(context.Background(), "q", testAssertions()); err != nil {
+	if _, err := j.Recall(context.Background(), &fakeLister{as: testAssertions()}, "q"); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(sawPrompt, "a3") || strings.Contains(sawPrompt, "withdrawn claim") {
@@ -61,50 +207,6 @@ func TestRankNeverShowsRetractedToTheJudge(t *testing.T) {
 	}
 	if !strings.Contains(sawPrompt, "[stale]") {
 		t.Errorf("stale assertion should reach the judge marked, prompt:\n%s", sawPrompt)
-	}
-}
-
-func TestRankDropsInventedAndDuplicateIDs(t *testing.T) {
-	j := NewJudgeWithRunner(fixedRunner(`["a1","made-up","a1","a2"]`, nil))
-	got, err := j.Rank(context.Background(), "q", testAssertions())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 || got[0].ID != "a1" || got[1].ID != "a2" {
-		t.Errorf("Rank = %v, want a1,a2 with the invented and duplicate ids dropped", ids(got))
-	}
-}
-
-func TestRankErrorsNameTheFallback(t *testing.T) {
-	tests := []struct {
-		name   string
-		runner func(context.Context, string, string) (string, error)
-	}{
-		{name: "exec failure", runner: fixedRunner("", errors.New("boom"))},
-		{name: "unparseable reply", runner: fixedRunner("the relevant ones are a1 and a2", nil)},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			j := NewJudgeWithRunner(tc.runner)
-			_, err := j.Rank(context.Background(), "q", testAssertions())
-			if err == nil {
-				t.Fatal("Rank = nil error, want a failure naming the fallback")
-			}
-			if !strings.Contains(err.Error(), "kof_query") {
-				t.Errorf("error %q does not name the kof_query fallback", err)
-			}
-		})
-	}
-}
-
-func TestRankEmptyStoreSkipsTheJudge(t *testing.T) {
-	j := NewJudgeWithRunner(func(context.Context, string, string) (string, error) {
-		t.Fatal("judge must not run on an empty store")
-		return "", nil
-	})
-	got, err := j.Rank(context.Background(), "q", nil)
-	if err != nil || got != nil {
-		t.Errorf("Rank on empty store = %v, %v; want nil, nil", got, err)
 	}
 }
 
@@ -125,24 +227,19 @@ func TestParseIDsToleratesFences(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(got) != len(tc.want) {
-				t.Fatalf("parseIDs(%q) = %v, want %v", tc.raw, got, tc.want)
-			}
-			for i := range got {
-				if got[i] != tc.want[i] {
-					t.Errorf("parseIDs(%q)[%d] = %q, want %q", tc.raw, i, got[i], tc.want[i])
-				}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("parseIDs(%q) = %v, want %v", tc.raw, got, tc.want)
 			}
 		})
 	}
 }
 
 func TestPickCapsAtMaxResults(t *testing.T) {
-	var as []store.Assertion
+	var as []client.Assertion
 	var ranked []string
 	for i := range MaxResults + 3 {
 		id := string(rune('a' + i))
-		as = append(as, store.Assertion{ID: id})
+		as = append(as, client.Assertion{ID: id})
 		ranked = append(ranked, id)
 	}
 	if got := pick(as, ranked); len(got) != MaxResults {
@@ -150,10 +247,47 @@ func TestPickCapsAtMaxResults(t *testing.T) {
 	}
 }
 
-func ids(as []store.Assertion) []string {
-	out := make([]string, len(as))
-	for i, a := range as {
-		out[i] = a.ID
+func TestJudgeEnvDropsSessionLinks(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{
+			name: "session links dropped",
+			in: []string{
+				"CLAUDECODE=1",
+				"CLAUDE_CODE_SESSION_ID=s",
+				"CLAUDE_CODE_MESSAGING_SOCKET=/tmp/x.sock",
+				"CLAUDE_CODE_MESSAGING_TOKEN=t",
+				"CLAUDE_PROJECT_DIR=/repo",
+			},
+			want: []string{},
+		},
+		{
+			name: "credentials and settings kept",
+			in:   []string{"PATH=/bin", "HOME=/h", "ANTHROPIC_API_KEY=k", "CLAUDE_CONFIG_DIR=/c"},
+			want: []string{"PATH=/bin", "HOME=/h", "ANTHROPIC_API_KEY=k", "CLAUDE_CONFIG_DIR=/c"},
+		},
+		{
+			name: "match is on the whole name",
+			in:   []string{"CLAUDECODE_EXTRA=1", "MY_CLAUDECODE=1", "CLAUDECODE=1"},
+			want: []string{"CLAUDECODE_EXTRA=1", "MY_CLAUDECODE=1"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := judgeEnv(tc.in); !slices.Equal(got, tc.want) {
+				t.Errorf("judgeEnv(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func ids(as []client.Assertion) []string {
+	var out []string
+	for _, a := range as {
+		out = append(out, a.ID)
 	}
 	return out
 }

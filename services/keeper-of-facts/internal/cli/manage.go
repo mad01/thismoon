@@ -11,6 +11,7 @@ import (
 	"github.com/mad01/thismoon/kit/confdir"
 	"github.com/mad01/thismoon/kit/progstatus"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/client"
+	"github.com/mad01/thismoon/services/keeper-of-facts/internal/recall"
 )
 
 // apiClient targets the local serve agent. The CLI, like the MCP, is a thin
@@ -195,10 +196,12 @@ var recallCmd = &cobra.Command{
 	Long: `Rank the whole store against a free-form question with a one-shot model
 judge and print the relevant assertions in rank order. Not a text search:
 "why does the store not lose writes" finds the single-writer assertion even
-though no word matches. On judge failure, fall back to: kof list.`,
+though no word matches. The judge runs here, through the claude CLI, on the
+assertions this command fetches from serve. On judge failure, fall back to:
+kof list.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		as, err := apiClient().Recall(args[0])
+		as, err := recall.NewJudge().Recall(cmd.Context(), apiClient(), args[0])
 		if err != nil {
 			return err
 		}

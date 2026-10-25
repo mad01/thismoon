@@ -16,7 +16,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/assertions/{id}", s.handleGet)
 	mux.HandleFunc("POST /api/assertions/{id}/retract", s.handleRetract)
 	mux.HandleFunc("POST /api/check", s.handleCheck)
-	mux.HandleFunc("POST /api/recall", s.handleRecall)
+	mux.HandleFunc("POST /api/recall", s.handleRecallGone)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
