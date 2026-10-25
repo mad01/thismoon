@@ -74,11 +74,24 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   ship beside its recipe in this repo: events, keeper-of-facts, moondb,
   catalog, present serve, deps, status and speak-web. The rest come from the
   consuming repo.
+  srt's own process, which stays up to run the proxies, runs under bun when
+  one is installed (mise's installs dir, then `PATH`), else node:
+  `SRT_RUN_RUNTIME=bun|node` overrides. bun holds about 48 MB where node
+  holds about 83 MB. Under bun, srt-run runs the package's `dist/cli.js`,
+  found through `mise which srt`, with `--no-env-file --config=/dev/null
+  --no-install`, so a project's `.env` or `bunfig.toml` never reaches the
+  parent. It fails closed (exit 127) when it can't find `cli.js`. Each
+  launch prints `srt-run: <label> runtime <bun|node>` to stderr. Details
+  and measurements: `docs/SANDBOXING.md`, "bun or node".
 - **`srt-run-test.sh`**: run by `make test-recipes`, it launches `srt-run`
   against a scratch `HOME` with a stand-in srt. Widening layers must merge
   into the copy srt is handed; every case under `testdata/srt-local/` named
   `refuse-*` must exit 1 before srt starts. srtspec's explain tests run the
-  same cases, so add a case there rather than in either test.
+  same cases, so add a case there rather than in either test. The layer
+  cases pin `SRT_RUN_RUNTIME=node`. The runtime cases build a stand-in mise,
+  npm layout and bun in the scratch `HOME`. They cover which bun wins, the
+  node fallback, the forced runtimes, and the exit 127 when bun or
+  `cli.js` is missing.
 - **`srt-settings-test.sh`**: run by `make test-recipes`, it checks every
   shipped `recipes/*/*.srt.json`. Each file needs the six lists srt
   requires, no host, and `denyRead` from `~`. No `allowWrite` may cover

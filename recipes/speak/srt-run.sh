@@ -55,6 +55,22 @@
 #     rule with the base64 of the command's first 100 characters, so the label
 #     lands in each denial. sandbox-watch decodes it to name the process, and
 #     to tell fleet processes apart from agent shells that use srt too.
+#   - the runtime srt itself runs on. srt is a node CLI whose process stays
+#     up beside the command for its whole life: it hosts the HTTP and SOCKS
+#     proxies that enforce allowedDomains and forwards signals to the
+#     command. bun runs the same JS in less memory: about 48 MB resident
+#     against node's 83 MB (bun 1.4.4, node 24, srt 0.0.81 on macOS).
+#     SRT_RUN_RUNTIME picks bun or node; unset, bun when one is installed
+#     (mise's installs dir first, then PATH) and node otherwise. Under bun
+#     this script runs srt's dist/cli.js itself, since the npm bin wrapper
+#     execs node. It asks mise which srt the pin selects and follows that
+#     wrapper to the package's cli.js; when that fails the launch stops
+#     (exit 127).
+#     bun gets --no-env-file and --config=/dev/null: by default it loads
+#     .env and bunfig.toml from the cwd, and a bunfig preload would run a
+#     project's code in the unsandboxed parent. --no-install keeps it from
+#     fetching a missing package. Either runtime prints one
+#     `srt-run: <label> runtime <bun|node>` line to stderr at launch.
 #
 # LABEL is the settings file's name without .json
 # (~/.config/srt/present.json -> present). Override it with SRT_RUN_LABEL.
@@ -105,6 +121,67 @@ export PATH
 if ! command -v srt >/dev/null 2>&1; then
   echo "srt-run: srt not found on PATH (expected the mise shim at $HOME/.local/share/mise/shims/srt; install npm:@anthropic-ai/sandbox-runtime with mise)" >&2
   exit 127
+fi
+
+# A bun binary: the last of mise's installs (its `latest` link when mise
+# keeps one), else the first on PATH. Prints nothing when there is none.
+find_bun() {
+  found=
+  for candidate in "$HOME"/.local/share/mise/installs/bun/*/bin/bun; do
+    if [ -x "$candidate" ]; then found=$candidate; fi
+  done
+  if [ -z "$found" ]; then found=$(command -v bun 2>/dev/null || true); fi
+  printf '%s' "$found"
+}
+
+# srt's dist/cli.js. The srt on PATH is normally a mise shim, a link to the
+# mise binary, so mise names the bin its pin selects, in this cwd as the shim
+# would. That bin is npm's: a link to dist/cli.js, or a wrapper script in
+# node_modules/.bin beside the package. Prints nothing when it isn't there.
+find_srt_cli() {
+  bin=$(command -v srt)
+  if [ -L "$bin" ]; then
+    link=$(readlink "$bin")
+    case $link in /*) ;; *) link=$(dirname "$bin")/$link ;; esac
+    if [ "${link##*/}" = mise ]; then
+      bin=$("$link" which srt 2>/dev/null) || return 0
+    fi
+  fi
+  hops=0
+  while [ -L "$bin" ] && [ "$hops" -lt 40 ]; do
+    hops=$((hops + 1))
+    link=$(readlink "$bin")
+    case $link in /*) bin=$link ;; *) bin=$(dirname "$bin")/$link ;; esac
+  done
+  case $bin in
+    */cli.js) cli=$bin ;;
+    *) cli=$(dirname "$bin")/../@anthropic-ai/sandbox-runtime/dist/cli.js ;;
+  esac
+  if [ -f "$cli" ]; then printf '%s' "$cli"; fi
+}
+
+runtime=${SRT_RUN_RUNTIME:-}
+case $runtime in
+  '' | bun) bun=$(find_bun) ;;
+  node) bun= ;;
+  *)
+    echo "srt-run: SRT_RUN_RUNTIME must be bun or node, not '$runtime'" >&2
+    exit 2
+    ;;
+esac
+if [ -z "$runtime" ]; then
+  if [ -n "$bun" ]; then runtime=bun; else runtime=node; fi
+fi
+if [ "$runtime" = bun ]; then
+  if [ -z "$bun" ]; then
+    echo "srt-run: SRT_RUN_RUNTIME=bun but no bun under $HOME/.local/share/mise/installs/bun or on PATH" >&2
+    exit 127
+  fi
+  srt_cli=$(find_srt_cli)
+  if [ -z "$srt_cli" ]; then
+    echo "srt-run: cannot find srt's dist/cli.js behind $(command -v srt) (tried mise which srt); refusing to launch $label under bun (SRT_RUN_RUNTIME=node runs the srt wrapper)" >&2
+    exit 127
+  fi
 fi
 
 # The expansion layer's refusal rules, as a jq program over the settings
@@ -237,4 +314,9 @@ CLAUDE_CODE_TMPDIR=${TMPDIR:-/private/tmp}
 export CLAUDE_CODE_TMPDIR
 mkdir -p "$CLAUDE_CODE_TMPDIR"
 
+printf 'srt-run: %s runtime %s\n' "$label" "$runtime" >&2
+if [ "$runtime" = bun ]; then
+  exec "$bun" --no-env-file --config=/dev/null --no-install "$srt_cli" \
+    --settings "$settings" -- env SRT_RUN="$label" "$@"
+fi
 exec srt --settings "$settings" -- env SRT_RUN="$label" "$@"
