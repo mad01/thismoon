@@ -16,15 +16,17 @@ state; both are thin HTTP clients to the serve API. The web page is read-only.
 ```
 cmd/kof/            entrypoint, delegates to internal/cli
 internal/
-  cli/               Cobra commands: serve, mcp, assert, list, get, check,
-                     retract, version
+  cli/               Cobra commands: serve, mcp, assert, list, recall, get,
+                     check, retract, version
   client/            HTTP client shared by the CLI and mcpserver
   store/             Assertion model and pure helpers (assertion.go), the
                      mutex-guarded JSONL store (store.go), ID minting (id.go)
   pin/               evidence pin model and working-tree hashing:
                      resolve, re-hash, compare
+  recall/            client-side `claude -p` judge that ranks the store
+                     against a free-form question
   server/            HTTP API + webkit web page (embedded shell.html + app.js)
-  mcpserver/         MCP stdio setup (server.go) and the five tools (tools.go)
+  mcpserver/         MCP stdio setup (server.go) and the seven tools (tools.go)
 ```
 
 `internal/server` mounts the shared chrome with `webkit.Mount(mux)`; the page
@@ -54,6 +56,14 @@ skipped. Query and get are `GET /api/assertions` (subject prefix, kind, and
 status filters, newest first) and `GET /api/assertions/{id}`. Retract is
 `POST /api/assertions/{id}/retract` with a counter-evidence note: terminal,
 idempotent, and never re-checked. There is no un-retract and no removal path.
+
+Recall: `kof recall` or `kof_recall` fetches every assertion through
+`GET /api/assertions`, drops the retracted ones, and asks a one-shot
+`claude -p` haiku judge for the relevant ids in rank order, capped at five.
+The judge runs in the client process, not in serve. serve runs sandboxed, and
+giving it `claude` would mean putting the user's Claude credentials inside the
+sandbox. `POST /api/recall` answers 410 Gone so a client older than this split
+learns where recall went.
 
 ## Storage
 

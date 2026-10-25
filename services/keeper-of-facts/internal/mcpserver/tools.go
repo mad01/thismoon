@@ -9,12 +9,14 @@ import (
 
 	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/client"
+	"github.com/mad01/thismoon/services/keeper-of-facts/internal/recall"
 )
 
 // handlers carries the dependencies shared by all kof tools.
 type handlers struct {
 	client *client.Client
-	webURL string // where the user views assertions in a browser
+	judge  *recall.Judge // ranks kof_recall candidates in this process
+	webURL string        // where the user views assertions in a browser
 	checks func(ctx context.Context) []doctor.Check
 }
 
@@ -57,8 +59,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Stale assertions are included and marked (treat them as needing re-verification); retracted ones never appear. " +
 			"`question` is the ONLY parameter: there is no subject/kind/status filtering here; those params belong to kof_query. " +
 			"Takes a few seconds. If the judge is unavailable the error says so; fall back to kof_query.",
-		// The store is only read, but the ranking runs through the `claude -p`
-		// judge on serve's host, so this is the one kof tool that depends on a
+		// The store is only read, but the ranking runs a `claude -p` judge in
+		// this MCP process, so this is the one kof tool that depends on a
 		// remote model and fails when the machine is offline.
 		Annotations: &mcp.ToolAnnotations{
 			OpenWorldHint: new(true),
@@ -186,12 +188,14 @@ type recallInput struct {
 	Question string `json:"question" jsonschema:"the free-form question to rank the store against, e.g. 'what do we know about JSONL write races'"`
 }
 
+// handleRecall fetches the store from serve and ranks it with the judge here,
+// in the shim: serve runs sandboxed and cannot start `claude`.
 func (h *handlers) handleRecall(
-	_ context.Context,
+	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in recallInput,
 ) (*mcp.CallToolResult, queryOutput, error) {
-	as, err := h.client.Recall(in.Question)
+	as, err := h.judge.Recall(ctx, h.client, in.Question)
 	if err != nil {
 		return nil, queryOutput{}, err
 	}

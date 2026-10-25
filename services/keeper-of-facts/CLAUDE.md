@@ -20,7 +20,7 @@ keeper-of-facts/
     store/             - Assertion model + pure helpers (assertion.go) and the
                          mutex-guarded JSONL store (store.go, id.go)
     pin/               - Pin model + working-tree hashing (pin.go): resolve, re-hash, compare
-    recall/            - one-shot `claude -p` judge that ranks the whole store against a free-form question (recall.go)
+    recall/            - client-side one-shot `claude -p` judge: the CLI and MCP shim rank the store they fetch from serve against a free-form question (recall.go)
     server/            - HTTP API + webkit web page (embedded shell.html + app.js)
     mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 7 tools)
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
@@ -46,6 +46,19 @@ writer**:
 So the MCP, the CLI, and the web page all see the same data, and there are no
 file locks. Pin resolution and hashing happen inside serve, which is the process
 with a coherent view of the working tree the pins point at.
+
+### Recall runs in the client
+
+`kof recall` and `kof_recall` rank the store with a one-shot `claude -p` haiku
+judge (`internal/recall`). The judge runs in the client process (the CLI or the
+`kof mcp` shim), never in serve. The client fetches the whole store from
+`GET /api/assertions`, drops retracted assertions, and execs `claude` with the
+user's own environment. serve runs under the recipe's srt sandbox and keeps no
+model dependency: no `claude` binary, no credentials, no API egress. Letting
+the sandboxed serve exec `claude` was rejected because it would put the user's
+Claude credentials inside the confined process. The judge also drops the
+variables Claude Code sets to tie child processes to its session, so a recall
+from the MCP shim never joins the calling session.
 
 The one sanctioned exception: serve polls the log files every 2 seconds. It
 reloads the store when another **process** changed them on disk (a git pull of
@@ -167,7 +180,7 @@ Owned by `kof serve`:
 - `GET  /api/assertions/{id}`             : one assertion, full detail
 - `POST /api/assertions/{id}/retract`     : body `{note}`; terminal withdrawal
 - `POST /api/check`                        : body `{id?}`; check one assertion or all → `{checked, fresh, stale, flipped, assertions}`
-- `POST /api/recall`                       : body `{question}`; model-judged relevance over the whole store, ranked, capped at 5 (502 naming the kof_query fallback when the judge fails; always 502 under the recipe's srt sandbox, see `kof_recall` below)
+- `POST /api/recall`                       : 410 Gone, with an error naming the kof_query fallback. Recall runs in the client now (see "Recall runs in the client"); the route stays so a `kof mcp` started before the upgrade gets a pointer instead of a 404
 - `GET  /healthz`                         : 204
 - `GET  /version`                          → the four-key build metadata object (`version`, `commit`, `tag`, `build_time`)
 - `GET  /webkit/`                         : shared chrome (asset drift checks use `GET /webkit/version`)
@@ -212,7 +225,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 
 - `kof_assert(kind, subject, statement, confidence, session_id, pins, cost_tokens?, links?)`: create; `pins` is a list of objects (`repo_path` — absolute path to the working tree, `file`, `start_line`, `end_line`), at least one
 - `kof_query(subject?, kind?, status?)`: list, newest first; `subject` is a prefix match
-- `kof_recall(question)`: ask the keeper what it knows relevant to a free-form question. A one-shot isolated `claude -p` haiku judge (`internal/recall`) ranks the whole store and returns the relevant assertions in rank order; no embeddings (MAD-265). Judge failure errors name the kof_query fallback. Needs `claude` on serve's PATH and runnable by serve, so recall is unavailable when serve runs under the recipe's srt sandbox (`recipes/keeper-of-facts/CLAUDE.md`): every call fails with `kof: recall judge failed (fall back to kof_query): exec claude -p: fork/exec ~/.local/bin/claude: operation not permitted`.
+- `kof_recall(question)`: ask the keeper what it knows relevant to a free-form question. The shim fetches the store from serve. A one-shot isolated `claude -p` haiku judge (`internal/recall`) then ranks it in the shim's own process and returns the relevant assertions in rank order; no embeddings (MAD-265). Needs the `claude` CLI where the shim runs (on PATH, else `~/.local/bin/claude`). Judge failure errors name the kof_query fallback.
 - `kof_get(id)`: one assertion, full detail
 - `kof_retract(id, note)`: terminal withdrawal with a counter-evidence note
 - `kof_check(id?)`: re-hash one assertion's pins, or all when `id` is omitted; returns the fresh/stale/flipped counts
