@@ -68,6 +68,13 @@ func (w *Writer) Write(env Envelope, chunks map[string][]byte) error {
 	return w.place(body, name)
 }
 
+// Stored reports whether the store's object directory already holds the
+// chunk key, so a writer can point an envelope at it without its bytes.
+// It is false when Objects is empty or key is not a chunk key.
+func (w *Writer) Stored(key string) bool {
+	return w.Objects != "" && validKey(key) && exists(filepath.Join(w.Objects, key[:2], key+".gz"))
+}
+
 // putChunk writes one chunk unless the spool or the store already holds
 // it. An existing spool chunk gets a fresh mtime, so a Sweep running
 // between this call and the envelope rename leaves it alone.
@@ -75,7 +82,7 @@ func (w *Writer) putChunk(key string, data []byte) error {
 	if !validKey(key) || ChunkKey(data) != key {
 		return fmt.Errorf("spool: chunk key %q does not match its bytes", key)
 	}
-	if w.Objects != "" && exists(filepath.Join(w.Objects, key[:2], key+".gz")) {
+	if w.Stored(key) {
 		return nil
 	}
 	path := filepath.Join(w.Dir, key+chunkSuffix)
@@ -123,6 +130,7 @@ func (e Envelope) validate() error {
 		KindTurnClose: e.TurnClose != nil,
 		KindEdit:      e.Edit != nil,
 		KindHeadMoved: e.HeadMoved != nil,
+		KindSnapshot:  e.Snapshot != nil,
 	}
 	if _, known := set[e.Kind]; !known {
 		return fmt.Errorf("spool: unknown envelope kind %q", e.Kind)

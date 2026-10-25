@@ -19,10 +19,10 @@ moondb/
   embed.go             - embeds operating.md for `moondb docs`
   internal/
     cli/               - cobra: root, serve, record, import, mcp, why, history, sessions, doctor, docs, version
-    record/            - the capture hook: payload decode, envelopes, observed read, HEAD blob, transcript tail, per-session state
+    record/            - the capture hook: payload decode, envelopes, observed read, HEAD blob, transcript tail, Bash diffs, turn-edge snapshots, per-session state
     importer/          - the transcript backfill: transcript parse, turns and edits as envelopes, file-history originals
     spool/             - envelope format, atomic writer, drain reader
-    derive/            - before and after content per Edit, unattributed deltas
+    derive/            - before and after content per Edit, snapshot records, unattributed deltas
     patch/             - forward and reverse patch apply, hunk context checks, line endings
     gitlink/           - git blob ids and commit links
     store/             - Store and Chunks interfaces and record types (store.go, types.go)
@@ -37,35 +37,84 @@ moondb/
 
 ## How it works
 
-### Capture: three hooks feed `moondb record`
+### Capture: four hook lines feed `moondb record`
 
-The consuming repo wires three Claude Code hooks to `moondb record`. Each one
-pipes its JSON payload on stdin:
+The consuming repo wires four Claude Code hook lines to `moondb record`. Each
+one pipes its JSON payload on stdin:
 
 | Hook | Mode | What `record` spools |
 |------|------|----------------------|
-| UserPromptSubmit | async | turn-open: `prompt_id`, the prompt text as a chunk, `session_id`, cwd, the transcript byte offset |
-| PostToolUse on `Edit\|Write\|MultiEdit\|NotebookEdit` | sync, 3 s timeout | one edit envelope per file. It holds `tool_use_id`, the tool input and patch, the location (repo, worktree, branch, HEAD), and the observed bytes with their blob id. A path's first edit also ships its HEAD content. |
-| Stop | async | turn-close: the final assistant message, the transcript tail from the turn's offset, and a head-moved report for each touched worktree whose HEAD changed |
+| UserPromptSubmit | async | turn-open: `prompt_id`, the prompt text as a chunk, `session_id`, cwd, the transcript byte offset. Then a `pre` snapshot of each worktree in play. |
+| PostToolUse on `Edit\|Write\|MultiEdit\|NotebookEdit` | sync, 3 s timeout | one edit envelope per file. It holds `tool_use_id`, the tool input and patch, the location (repo, worktree, branch, HEAD), the observed bytes with their blob id, and the path's HEAD blob id and content. |
+| PostToolUse on `Bash` | async | one edit envelope per file in the payload's `bashEditDiff.files`: its hunks as the patch, the observed bytes and blob id, and the HEAD blob id and content, with no tool input. One more per other `changedFiles` path, with no hunks. Nothing when the payload has no `bashEditDiff`. |
+| Stop | async | turn-close: the final assistant message, the transcript tail from the turn's offset, and a head-moved report for each touched worktree whose HEAD changed. Then a `post` snapshot of each worktree in play. |
 
 The Edit hook is synchronous on purpose. Edits in one assistant message land
 milliseconds apart, so an async hook would read the disk after the next edit
 had already changed it. NotebookEdit is recorded by path only. A file outside
 any git repo lands in a `norepo` bucket.
 
+Claude Code reports `bashEditDiff` only when the user setting
+`bashEditDiffEnabled` is on (v2.1.269 or later). `files` holds up to five
+diffs and `changedFiles` up to 200 paths. A Bash create seen only in
+`changedFiles` has no diff to say so and gets kind `unknown`.
+
+The Bash hook is async, so its disk read can land after a later Edit of the
+same file. Every envelope is stamped when its hook starts, before any read,
+so that Edit sorts after the Bash edit. The Bash record may then carry the
+Edit's bytes in its observed read and after content. When the two after
+blobs coincide, the newest-edit tie-break keeps the commit link and `why`
+with the Edit.
+
 `record` follows belt's record contract (docs/adr/0024): nothing on stdout,
 exit 0 always, panics recovered. It works within `RecordBudget` (200 ms, in
 `facts.go`) and spools whatever it has gathered when the budget runs out.
 Files matching a `capture.exclude` glob are recorded by path only. Files over
-`MaxChunkBytes` (1 MiB) are recorded by path and patch.
+`MaxChunkBytes` (1 MiB) are recorded by path and patch. HEAD content is read
+on every edit of a tracked file, and the spool writer leaves it out while the
+store holds it.
 
 `record` keeps a little state per session under `<workdir>/sessions/`, read
 back only by later hooks of the same session:
 
 - `<sid>.turn`: the open turn's prompt id and the transcript offset it opened at
-- `<sid>.paths`: the files the session edited; a path's first edit ships its HEAD content
+- `<sid>.paths`: the files the session edited, which its snapshots cover
 - `<sid>.touched`: one worktree per line, where the session edited
 - `<sid>.heads`: the HEAD last seen in each touched worktree
+- `<sid>.snap`: per worktree, the last snapshot's state hash, the size,
+  mtime and chunk of each file it read, and the chunk of each HEAD blob it
+  shipped
+
+### Snapshots: the worktree at each turn edge
+
+After its own envelope, UserPromptSubmit and Stop each take a snapshot of
+every worktree in play: the cwd's worktree and each one the session touched.
+The scope is the worktree's dirty files plus the paths the session touched
+there. Dirty comes from `git --no-optional-locks status --porcelain=v2 -z
+-uall`. Status does not show ignored files or files marked skip-worktree or
+assume-unchanged, so a snapshot holds those only when the session touched
+them.
+
+Each file's content is its own chunk, so an unchanged file is stored once.
+The file map (path, chunk, blob id, size, status) is one more chunk. A
+deleted file is listed as deleted. A path the snapshot cannot hold the
+content of is listed without it and with a reason: excluded, symlink,
+not-regular, unreadable or too-large. A path a whole snapshot lacks was
+therefore clean. A file whose size and mtime match the last snapshot reuses
+that chunk without a read. For a path HEAD tracks, one `git ls-tree` call
+adds the HEAD blob id, and the HEAD content ships unless the store holds it.
+
+The work fits in `SnapshotBudget` (2 s). A snapshot cut short is written with
+what it read, marked truncated, and counts the rest as timeout.
+`MaxSnapshotFiles` (1000) caps the paths, touched ones first. A snapshot
+carries when it started, and its envelope is stamped once its reads are
+done. Its id holds a digest of its state and file map, so a second Stop
+for one prompt records its own. A state hash over HEAD, the status, and
+each path's size and mtime skips the snapshot when nothing changed since
+the session's last one of the worktree. When nothing is in scope and this
+session has no snapshot of the worktree in its `<sid>.snap`, none is
+taken. If it has one, a clean worktree gets an empty snapshot: its files
+match HEAD again.
 
 ### Import: backfill from transcripts
 
@@ -102,7 +151,8 @@ What a transcript gives back:
   content and no unattributed delta. HEAD at the time is not recorded
   either, so imported edits carry none and the import writes no head-moved
   envelope. Their commit links come from a later live turn that moves HEAD.
-  Bash changes are left out, since the transcript holds no diff for them.
+  Bash changes are left out. A transcript keeps a Bash diff only when
+  `bashEditDiffEnabled` was on, and the import does not read it yet.
 - placed by what is left: a file whose directory still exists is placed in
   git as it is now, as the hook does. Most imported files sat in worktrees
   deleted since. For those the import tries, in order:
@@ -142,11 +192,30 @@ serve derives after content from the tool input: Write's `content`, Edit's
 `old_string` swapped for `new_string`, MultiEdit's edits in order. The disk
 read is evidence; where it differs, serve records an unattributed delta.
 Before content is the first source the call fits: absent for a create,
-`originalFile`, the latest earlier after content of the path, HEAD, the disk
-read with the call undone, else `before_source: unknown`. A source fits when
+`originalFile`, the latest earlier after content of the path, the path in
+the worktree's latest earlier snapshot, HEAD, the disk read with the call
+undone, else `before_source: unknown`. The chain yields to a snapshot begun
+after its edit that holds the path's content, or is whole and lacks the
+path, since the snapshot saw the file later. An entry without content
+leaves the chain in place. A source fits when
 each `old_string` occurs once (at least once with `replace_all`) and the
 hunks apply with tabs read as two spaces. A CRLF file matches on its LF view
 and keeps CRLF. Hunks alone fit a user-modified edit or a missing `old_string`.
+
+A Bash edit has no tool input. Its after content is the disk read, and its
+before is the first of `originalFile`, the chain, the snapshot and HEAD that
+exists, unvetted. A file gone from disk makes it a delete.
+
+A snapshot reveals changes no tool call explains. serve compares each file
+in it with the latest content known of the path before: the worktree's
+previous snapshot or the latest edit's disk read, whichever is newer. A path
+a whole previous snapshot lacked held HEAD's content, which counts when both
+snapshots sat on one HEAD. A difference becomes an unattributed delta with
+cause `snapshot`: a person in an editor, a formatter, or a Bash command
+without a diff wrote the file between the two. Nothing earlier known means
+no delta, and so do an edit in between that left no after content and an
+edit stamped while the snapshot read. Two overlapping snapshots of one
+worktree can record the same delta twice.
 
 ### Commit links
 
@@ -199,7 +268,10 @@ Edit{ ID, ToolUseID, SessionID, TurnID, AgentID, AgentType, Tool, At,
       PatchChunk, BeforeChunk, AfterChunk, BeforeSource, AfterBlob,
       ObservedChunk, ObservedMatches, EOL, Excluded }
 UnattributedDelta{ ID, SessionID, TurnID, At, Path, FromChunk, ToChunk,
-                   PatchChunk, Cause, Ambiguous }
+                   PatchChunk, Cause /* observed | snapshot */, Ambiguous }
+Snapshot{ ID, SessionID, TurnID, Phase /* pre | post */, At, Location,
+          Scope, MapChunk, FileCount, Truncated,
+          Skipped{ Timeout, TooMany, TooLarge, Excluded } }
 CommitLink{ ID, Repo, Worktree, Branch, Commit, Parent, Path, Blob,
             EditID, TurnID, SessionID, At }
 ```
@@ -222,8 +294,9 @@ The `local` backend keeps two things under the workdir (default
 The spool sits beside them at `spool/` and the hook state at `sessions/`.
 Files are 0600 and directories 0700.
 
-Sessions and turns upsert (the newest record per id wins). Edits, deltas and
-commit links are append-only facts, idempotent on their id.
+Sessions and turns upsert (the newest record per id wins). Edits, deltas,
+snapshots and commit links are append-only facts, idempotent on their id. A
+snapshot's `MapChunk` is a JSON array of its files sorted by path.
 
 ## Sandbox access
 
@@ -252,7 +325,7 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 - `GET  /app.js`                : the page's client script
 - `GET  /api/sessions`          : sessions, newest first
 - `GET  /api/sessions/{id}`     : one session with its turns
-- `GET  /api/turns/{id}`        : one turn with its edits and unattributed deltas
+- `GET  /api/turns/{id}`        : one turn with its edits, unattributed deltas and snapshots
 - `GET  /api/edits`             : edits, newest first, narrowed by repo, worktree, path, blob id, since and limit
 - `GET  /api/why`               : the answer for one line of one file
 - `GET  /api/history`           : the recorded edits of one path, newest first
@@ -285,8 +358,9 @@ return, so keep it stable.
   worktree, then path. Each edit shows its tool, kind, agent, time, before
   source and observed match. Its unified diff is drawn in the browser from
   the patch chunk, and a create without hunks shows its after content. Then the
-  unattributed deltas with their diffs, the commit links, and the raw
-  transcript lines behind a closed disclosure. Clicking an added line asks
+  unattributed deltas with their diffs, the snapshots with their file and
+  skipped counts, the commit links, and the raw transcript lines behind a
+  closed disclosure. Clicking an added line asks
   `/api/why` about that line's text and shows the answer inline.
 - `/?worktree=<abs>&path=<rel>`: the file today, from `/api/annotate`, with
   a gutter band per turn (solid for blame, dashed for a content match);
@@ -325,7 +399,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 
 - `moondb_why(path, line)`: the Edit behind one line, with its turn, prompt, session, agent and commit link, or ranked candidates when only the content matched
 - `moondb_history(path)`: the recorded edits of a path, newest first
-- `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas
+- `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links
 - `moondb_sessions()`: recorded sessions, newest first
 - `moondb_doctor()`: the same checks as `moondb doctor`, returned as JSON, for a client that can call a tool but has no shell
 
@@ -352,6 +426,8 @@ Confirm the shared assets with `GET /webkit/version`.
 - **The Edit hook is on the session's critical path.** It is synchronous, so
   `record` latency is felt on every edit. Keep new work in `record` inside
   `RecordBudget` and move anything slow to serve.
+- **Snapshots belong to the async hooks.** Their 2 s budget is fine at a
+  turn edge and far too slow for the Edit hook.
 - **record never fails a hook.** It exits 0 and prints nothing on stdout even
   when the spool is unwritable. A capture gap shows up in `moondb doctor` and
   in a missing Edit, never as a broken session.

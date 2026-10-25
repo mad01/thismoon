@@ -56,6 +56,7 @@ type index struct {
 	editsByRepoPath     map[string][]*rec[store.Edit]
 	editsByWorktreePath map[string][]*rec[store.Edit]
 	editsByBlob         map[string][]*rec[store.Edit]
+	snapshotsByWorktree map[string][]*rec[store.Snapshot]
 
 	sessionRepos     map[string]set
 	sessionWorktrees map[string]set
@@ -78,6 +79,7 @@ func newIndex() *index {
 		editsByRepoPath:     map[string][]*rec[store.Edit]{},
 		editsByWorktreePath: map[string][]*rec[store.Edit]{},
 		editsByBlob:         map[string][]*rec[store.Edit]{},
+		snapshotsByWorktree: map[string][]*rec[store.Snapshot]{},
 		sessionRepos:        map[string]set{},
 		sessionWorktrees:    map[string]set{},
 		turnWorktrees:       map[string]set{},
@@ -101,9 +103,7 @@ func (ix *index) apply(kind string, raw json.RawMessage) error {
 			ix.deltas.add(d.ID, d.TurnID, newRec(d, d.At, ix.n))
 		})
 	case kindSnapshot:
-		return decodeInto(raw, func(s store.Snapshot) {
-			ix.snapshots.add(s.ID, s.TurnID, newRec(s, s.At, ix.n))
-		})
+		return decodeInto(raw, ix.addSnapshot)
 	case kindCommitLink:
 		return decodeInto(raw, func(l store.CommitLink) {
 			ix.links.add(l.ID, l.TurnID, newRec(l, l.At, ix.n))
@@ -197,6 +197,15 @@ func (ix *index) addEdit(e store.Edit) {
 	addTo(ix.turnWorktrees, e.TurnID, e.Worktree)
 	if t, ok := ix.turns[e.TurnID]; ok && t.Status == store.TurnOpen {
 		addTo(ix.openByWorktree, e.Worktree, e.TurnID)
+	}
+}
+
+// addSnapshot records s under its turn and its worktree, unless a
+// snapshot with its id is already recorded.
+func (ix *index) addSnapshot(s store.Snapshot) {
+	r := newRec(s, s.At, ix.n)
+	if ix.snapshots.add(s.ID, s.TurnID, r) {
+		indexRec(ix.snapshotsByWorktree, s.Worktree, r)
 	}
 }
 

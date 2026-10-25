@@ -188,6 +188,15 @@ func TestTurnDetail(t *testing.T) {
 	if len(got.Edits) != 2 || got.Edits[0].ID != servertest.EditA {
 		t.Errorf("edits = %+v, want EditA first of 2", got.Edits)
 	}
+	if len(got.Snapshots) != 1 || got.Snapshots[0].ID != servertest.SnapshotID ||
+		got.Snapshots[0].FileCount != 2 || got.Snapshots[0].Worktree != servertest.Worktree ||
+		got.Snapshots[0].Skipped.TooLarge != 1 {
+		t.Errorf("snapshots = %+v, want the fixture's one with 2 files, 1 too large", got.Snapshots)
+	}
+	if len(got.Deltas) != 1 || got.Deltas[0].ID != servertest.SnapshotDeltaID ||
+		got.Deltas[0].Cause != store.DeltaSnapshot {
+		t.Errorf("deltas = %+v, want the snapshot's one", got.Deltas)
+	}
 	h.wantAPIError(t, "/api/turns/nope", http.StatusNotFound, "not found")
 }
 

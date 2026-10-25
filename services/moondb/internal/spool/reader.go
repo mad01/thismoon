@@ -144,6 +144,11 @@ func (e Envelope) ChunkKeys() []string {
 	if p := e.Edit; p != nil {
 		add(p.PatchChunk, p.OriginalChunk, p.ContentChunk, p.ObservedChunk, p.HeadChunk)
 	}
+	if p := e.Snapshot; p != nil {
+		for _, f := range p.Files {
+			add(f.Chunk, f.HeadChunk)
+		}
+	}
 	return keys
 }
 

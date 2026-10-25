@@ -10,7 +10,8 @@ import (
 )
 
 // openTurn records a submitted prompt and remembers where the transcript
-// stood, so the close can tail the turn's lines from there.
+// stood, so the close can tail the turn's lines from there. Then it takes
+// the turn's pre snapshots.
 func (rec *recorder) openTurn() error {
 	offset := fileSize(rec.p.transcriptPath)
 	env := rec.envelope(spool.KindTurnOpen, rec.p.promptID+":open")
@@ -24,12 +25,13 @@ func (rec *recorder) openTurn() error {
 		return err
 	}
 	rec.state.openTurn(rec.p.promptID, offset)
-	return nil
+	return rec.takeSnapshots(store.SnapshotPre)
 }
 
 // closeTurn records the end of a turn: the last assistant message, the
 // transcript lines written since the turn opened when the open was seen,
-// and a head-moved report for every touched worktree whose HEAD changed.
+// a head-moved report for every touched worktree whose HEAD changed, and
+// the turn's post snapshots.
 func (rec *recorder) closeTurn() error {
 	env := rec.envelope(spool.KindTurnClose, rec.p.promptID+":close")
 	chunks := chunkSet{}
@@ -51,7 +53,10 @@ func (rec *recorder) closeTurn() error {
 	if err := rec.spool.Write(env, chunks); err != nil {
 		return err
 	}
-	return rec.moveHeads()
+	if err := rec.moveHeads(); err != nil {
+		return err
+	}
+	return rec.takeSnapshots(store.SnapshotPost)
 }
 
 // fileSize is the size of path, 0 when it cannot be read.

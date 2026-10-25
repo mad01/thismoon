@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/mad01/thismoon/services/moondb/internal/derive"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
@@ -26,8 +25,7 @@ func (in *Ingester) edit(ctx context.Context, env spool.Envelope) error {
 	if err != nil || recorded {
 		return err
 	}
-	d := derive.Deriver{Chunks: in.Store.Chunks(), LatestAfter: in.Store.LatestAfter}
-	e, delta, err := d.Edit(ctx, env)
+	e, delta, err := in.deriver().Edit(ctx, env)
 	if err != nil {
 		return fmt.Errorf("ingest: edit %s: %w", env.ID, err)
 	}

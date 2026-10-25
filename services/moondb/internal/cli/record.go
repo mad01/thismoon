@@ -14,7 +14,8 @@ import (
 
 // recordCeiling bounds the whole record run, budget overruns included. It
 // sits under the 3 s timeout the Edit/Write hook is registered with, so the
-// hook never reports moondb as hung.
+// hook never reports moondb as hung, and it holds the turn-edge snapshot
+// budget with room to spare.
 const recordCeiling = 2500 * time.Millisecond
 
 var recordCmd = &cobra.Command{
@@ -24,11 +25,15 @@ var recordCmd = &cobra.Command{
 spool under --workdir. serve drains the spool; record itself never touches
 the store and never waits for serve.
 
-Three hooks pipe into it: UserPromptSubmit opens a turn, PostToolUse for
-Edit, Write, MultiEdit and NotebookEdit records the file a tool changed, and
-Stop closes the turn and reports commits made since. record prints nothing on
-stdout and exits 0 whatever happens, so a failure here can never block the
-session; problems go to stderr.
+Three hooks pipe into it. UserPromptSubmit opens a turn. PostToolUse for
+Edit, Write, MultiEdit and NotebookEdit records the file a tool changed;
+PostToolUse for Bash records the files a command changed, when the user
+setting bashEditDiffEnabled makes Claude Code report them. Stop closes the
+turn and reports commits made since. UserPromptSubmit and Stop also take a
+snapshot of each worktree in play: the content of its dirty files and of
+the files the session touched. record prints nothing on stdout and exits 0
+whatever happens, so a failure here can never block the session; problems go
+to stderr.
 
 Per-machine switches live in ` + configFile + ` in the moondb config directory:
   [capture]
@@ -60,9 +65,10 @@ func runRecord(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), recordCeiling)
 	defer cancel()
 	opts := record.Options{
-		Workdir:  flagWorkdir,
-		Excludes: cfg.Capture.excludes(),
-		Budget:   moondb.RecordBudget,
+		Workdir:        flagWorkdir,
+		Excludes:       cfg.Capture.excludes(),
+		Budget:         moondb.RecordBudget,
+		SnapshotBudget: moondb.SnapshotBudget,
 	}
 	if err := record.Run(ctx, cmd.InOrStdin(), opts); err != nil {
 		fmt.Fprintln(os.Stderr, "moondb record:", err)

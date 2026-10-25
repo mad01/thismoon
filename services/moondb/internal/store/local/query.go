@@ -125,6 +125,19 @@ func chainHead(q store.ChainQuery, e store.Edit) bool {
 	return e.AfterChunk != "" && e.ID != q.ExcludeID && (q.At.IsZero() || !e.At.After(q.At))
 }
 
+// latestSnapshot walks the worktree's snapshots newest first, by At and
+// then log position, past those q rules out.
+func (ix *index) latestSnapshot(q store.SnapshotQuery) (store.Snapshot, error) {
+	list := ix.snapshotsByWorktree[q.Worktree]
+	for i := len(list) - 1; i >= 0; i-- {
+		s := list[i].v
+		if s.ID != q.ExcludeID && (q.At.IsZero() || !s.At.After(q.At)) {
+			return s, nil
+		}
+	}
+	return store.Snapshot{}, fmt.Errorf("snapshot of %q: %w", q.Worktree, store.ErrNotFound)
+}
+
 func (ix *index) openTurns(worktree string) []store.Turn {
 	out := []store.Turn{}
 	for id := range ix.openByWorktree[worktree] {

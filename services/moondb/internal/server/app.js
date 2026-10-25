@@ -7,8 +7,8 @@
 //   /                              sessions, newest first; ?repo= and ?since= filter
 //   /?session=<id>                 one session: its turns and the worktrees it touched
 //   /?turn=<id>                    one turn: prompt, final message, agents, edits with
-//                                  their diffs, unattributed deltas, commit links and
-//                                  the raw transcript
+//                                  their diffs, unattributed deltas, snapshots, commit
+//                                  links and the raw transcript
 //   /?worktree=<abs>&path=<rel>    one file: the turn and agent behind every line, and
 //                                  the path's recorded history
 //
@@ -661,6 +661,7 @@
         ? [note('Changes no recorded tool call explains: a formatter hook, a human, or another process wrote the file.')]
           .concat(deltas.map(deltaPanel))
         : [el('div', { class: 'empty' }, 'None. Every change in this turn came from a recorded tool call.')]),
+      section('Snapshots', [snapshotTable(t.snapshots || [])]),
       section('Commit links', [commitTable(t.commit_links || [], edits)]),
       transcriptSection(t)
     ]);
@@ -776,6 +777,36 @@
       ]),
       body
     ]);
+  }
+
+  // snapshotTable lists the worktree snapshots taken at the turn's edges:
+  // the dirty and touched files' content, read when the prompt arrived and
+  // when the turn stopped.
+  function snapshotTable(snaps) {
+    if (!snaps.length) {
+      return el('div', { class: 'empty' }, 'No snapshot: the worktrees were clean, or unchanged since the last one.');
+    }
+    var rows = snaps.slice().sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
+    return table(['Taken', 'Phase', 'Worktree', 'Files', 'Skipped', 'Map'], rows.map(function (s) {
+      return el('tr', {}, [
+        el('td', { class: 'muted nowrap' }, fmtClock(s.at)),
+        el('td', {}, badge('outline', s.phase === 'pre' ? 'at prompt' : 'at stop')),
+        monoCell(where(s.worktree)),
+        el('td', { class: 'num' }, String(s.file_count)),
+        el('td', {}, skippedText(s)),
+        el('td', {}, rawLinks([['files', s.map_chunk]]))
+      ]);
+    }));
+  }
+
+  function skippedText(s) {
+    var k = s.skipped || {};
+    var parts = [['timeout', k.timeout], ['over the file cap', k.too_many],
+      ['too large', k.too_large], ['excluded', k.excluded]]
+      .filter(function (p) { return p[1]; })
+      .map(function (p) { return p[1] + ' ' + p[0]; });
+    var text = parts.join(', ') || '-';
+    return s.truncated ? badge('warn', text, 'The snapshot lacks paths its scope held.') : text;
   }
 
   function commitTable(links, edits) {

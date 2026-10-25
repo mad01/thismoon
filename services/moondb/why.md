@@ -63,7 +63,8 @@ replays into an in-memory index on start.
 ## Non-goals
 
 moondb does not rewind or restore files, and it never edits the working copy.
-It does not record shell commands or their file changes yet; that comes in a
-later release. It does not judge whether an edit was good, and `why` answers
-which turn wrote a line, not whether the line is right. The web page is
-read-only: the hooks are the only way records get in.
+It does not record shell commands themselves. It records the files a command
+changed, as Claude Code reports them, and what turn-edge snapshots find. It
+does not judge whether an edit was good, and `why` answers which turn wrote
+a line, not whether the line is right. The web page is read-only: the hooks
+are the only way records get in.

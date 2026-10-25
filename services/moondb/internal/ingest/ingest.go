@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mad01/thismoon/services/moondb/internal/derive"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
@@ -32,8 +33,8 @@ type Ingester struct {
 // Ingest records one envelope. It first copies the chunks the envelope
 // names from the spool into the store, then writes the records its kind
 // calls for. A chunk in neither place fails an edit, whose content would be
-// lost, and only drops the reference from a turn, which is whole without
-// it. Ingest never removes the envelope; Run does that once Ingest returns
+// lost, and only drops the reference from a turn or a snapshot, which are
+// whole without it. Ingest never removes the envelope; Run does that once Ingest returns
 // nil.
 func (in *Ingester) Ingest(ctx context.Context, env spool.Envelope) error {
 	if env.At.IsZero() {
@@ -52,6 +53,8 @@ func (in *Ingester) Ingest(ctx context.Context, env spool.Envelope) error {
 		return in.edit(ctx, env)
 	case spool.KindHeadMoved:
 		return in.headMoved(ctx, env)
+	case spool.KindSnapshot:
+		return in.snapshot(ctx, env, missing)
 	default:
 		return fmt.Errorf("ingest: envelope %s has unknown kind %q", env.ID, env.Kind)
 	}
@@ -172,6 +175,16 @@ func (in *Ingester) putTurn(ctx context.Context, t store.Turn) error {
 		return fmt.Errorf("ingest: put turn %s: %w", t.ID, err)
 	}
 	return nil
+}
+
+// deriver is the Deriver over the store's chunks and lookups.
+func (in *Ingester) deriver() *derive.Deriver {
+	return &derive.Deriver{
+		Chunks:         in.Store.Chunks(),
+		LatestAfter:    in.Store.LatestAfter,
+		LatestSnapshot: in.Store.LatestSnapshot,
+		Edits:          in.Store.Edits,
+	}
 }
 
 func (in *Ingester) now() time.Time {

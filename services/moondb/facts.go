@@ -35,6 +35,17 @@ const (
 	RecordBudget = 200 * time.Millisecond
 	// GitBudget bounds every git call a hook makes.
 	GitBudget = 1 * time.Second
+	// SnapshotBudget is how long the turn-edge hooks (UserPromptSubmit and
+	// Stop, both async) spend on snapshots of every worktree in scope. A
+	// snapshot cut short is written with what it read and marked
+	// truncated.
+	SnapshotBudget = 2 * time.Second
+	// MaxSnapshotFiles caps the paths one snapshot lists; the rest are
+	// counted as skipped. The session's touched paths come first.
+	MaxSnapshotFiles = 1000
+	// MaxStatusBytes caps the `git status` output a snapshot reads. A
+	// worktree whose status is longer gets no snapshot.
+	MaxStatusBytes = 4 << 20
 )
 
 // Import defaults: where `moondb import` finds the harness's transcripts and

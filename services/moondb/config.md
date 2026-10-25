@@ -72,9 +72,40 @@ These are compiled into the binary (`facts.go`) and not configurable:
 | Limit | Value | Effect |
 |---|---|---|
 | record budget | 200 ms | `record` spools what it has gathered when the budget runs out |
-| largest chunk | 1 MiB | a larger file is recorded by path and patch, without content |
+| snapshot budget | 2 s | the turn-edge snapshots of one hook; a snapshot cut short is marked truncated and counts the rest as timeout |
+| snapshot file cap | 1000 | paths one snapshot lists, the session's touched paths first; the rest count as over the file cap |
+| status cap | 4 MiB | `git status` output a snapshot reads; a worktree with more gets no snapshot |
+| largest chunk | 1 MiB | a larger file is recorded by path and patch, without content; a snapshot lists it by size |
 | transcript tail | 4 MiB | the most transcript a turn keeps |
 | log segment | 64 MiB | the size at which `log/` rolls to a new file |
+
+## Hook wiring
+
+The hooks live in the Claude Code settings, which the consuming repo owns.
+`record` reads the hook event from the payload, so every line runs the same
+command:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }],
+    "PostToolUse": [
+      { "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [{ "type": "command", "command": "moondb record", "timeout": 3 }] },
+      { "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }
+    ],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }]
+  },
+  "bashEditDiffEnabled": true
+}
+```
+
+`bashEditDiffEnabled` is a user or managed setting (Claude Code 2.1.269 or
+later). It makes Claude Code add `bashEditDiff` to the Bash payload: up to
+five file diffs and up to 200 changed paths. Without it, the Bash hook
+records nothing. The Bash line is async: a command has already taken its
+time, and the session should not wait on `record` after it.
 
 ## Example
 

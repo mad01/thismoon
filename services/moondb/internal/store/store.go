@@ -30,6 +30,11 @@ type Store interface {
 	// and path, At at or before q.At, ID other than q.ExcludeID. Returns
 	// ErrNotFound when the path has no such edit.
 	LatestAfter(ctx context.Context, q ChainQuery) (Edit, error)
+	// LatestSnapshot returns the newest snapshot q allows: same worktree,
+	// At at or before q.At, ID other than q.ExcludeID. Snapshots with
+	// equal times come latest-appended first. Returns ErrNotFound when
+	// the worktree has no such snapshot.
+	LatestSnapshot(ctx context.Context, q SnapshotQuery) (Snapshot, error)
 	// OpenTurns lists the turns still open in the worktree, across sessions.
 	// Two sessions with open turns in one worktree make a snapshot delta
 	// ambiguous.

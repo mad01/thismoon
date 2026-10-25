@@ -1,12 +1,14 @@
-// Package derive turns what the capture hook shipped for one file into the
-// Edit record serve appends. The hook ships evidence: the tool input, the
-// harness's hunks, the pre-edit file when the harness had it, the file at
-// HEAD, and a disk read taken right after the tool ran. The Deriver takes
-// the before-content from the first source the tool call fits, derives the
-// after-content from the tool input where it can, and records a
-// disagreement with the disk read as an UnattributedDelta, because
-// something besides the tool wrote the file. Evidence that does not fit
-// degrades the record; it never fails it.
+// Package derive turns what the capture hook shipped into the records
+// serve appends. For one file a tool changed the hook ships evidence: the
+// tool input, the harness's hunks, the pre-edit file when the harness had
+// it, the file at HEAD, and a disk read taken right after the tool ran.
+// The Deriver takes the before-content from the first source the tool call
+// fits, derives the after-content from the tool input where it can, and
+// records a disagreement with the disk read as an UnattributedDelta,
+// because something besides the tool wrote the file. Evidence that does
+// not fit degrades the record; it never fails it. For a snapshot it
+// stores the file map and records an UnattributedDelta for every file
+// whose content no recorded edit explains.
 package derive
 
 import (
@@ -24,12 +26,23 @@ import (
 // created the file.
 const toolWrite = "Write"
 
-// Deriver derives Edit records. Chunks resolves the payload's chunk keys
-// and stores derived content. LatestAfter is the store's chain lookup
-// (store.Store.LatestAfter); nil skips the chain source.
+// toolBash is the shell tool. A file its diff lists without hunks has the
+// disk read as its after-content.
+const toolBash = "Bash"
+
+// Deriver derives Edit and Snapshot records. Chunks resolves the payload's
+// chunk keys and stores derived content. The lookups are the store's
+// (store.Store); a nil one skips the source it feeds.
 type Deriver struct {
-	Chunks      store.Chunks
+	Chunks store.Chunks
+	// LatestAfter is the chain lookup.
 	LatestAfter func(ctx context.Context, q store.ChainQuery) (store.Edit, error)
+	// LatestSnapshot finds the worktree's snapshot before an edit or a
+	// newer snapshot.
+	LatestSnapshot func(ctx context.Context, q store.SnapshotQuery) (store.Snapshot, error)
+	// Edits lists a path's edits, so a snapshot delta is not claimed for a
+	// change a recorded edit without after-content made.
+	Edits func(ctx context.Context, q store.EditQuery) ([]store.Edit, error)
 }
 
 // content is file bytes that may be unknown; ok tells an empty file from
@@ -62,12 +75,14 @@ type inputs struct {
 // the tool disagrees with the derived after-content, the UnattributedDelta
 // that records the difference. The before-content is the first source the
 // tool call fits (see fit): nothing for a create, the harness's original,
-// the after-content of the latest earlier Edit of the path, the file at
-// HEAD, or the disk read with the call undone; BeforeUnknown when none
-// does. An edit the person changed in the permission dialog is fitted by
-// its hunks alone (see load). An excluded payload yields an
-// Edit without content. Errors come from the chunk store and the chain
-// lookup only.
+// the after-content of the latest earlier Edit of the path unless a
+// snapshot taken since speaks for it, the path in the latest snapshot, the
+// file at HEAD, or the disk read with the call undone; BeforeUnknown when
+// none does. An edit the person changed in the permission dialog is fitted
+// by its hunks alone (see load). A file a Bash command changed without a
+// diff takes the disk read as its after-content (see observedOnly). An
+// excluded payload yields an Edit without content. Errors come from the
+// chunk store and the store lookups only.
 func (d *Deriver) Edit(
 	ctx context.Context,
 	env spool.Envelope,
@@ -91,10 +106,14 @@ func (d *Deriver) Edit(
 	if err != nil {
 		return store.Edit{}, nil, err
 	}
-	if !checkable(in) && !in.written.ok {
+	switch {
+	case checkable(in) || in.written.ok:
+		return d.withPatch(ctx, e, p, in)
+	case p.Tool == toolBash:
+		return d.observedOnly(ctx, e, p, in)
+	default:
 		return d.withoutPatch(ctx, e, p, in)
 	}
-	return d.withPatch(ctx, e, p, in)
 }
 
 // identity fills what every Edit carries, excluded or not.
@@ -140,6 +159,56 @@ func (d *Deriver) withoutPatch(
 		return store.Edit{}, nil, err
 	}
 	e.EOL = p.EOL
+	return e, nil, nil
+}
+
+// observedOnly records a file a Bash command changed that the harness
+// named without a diff. The disk read is the after-content, and nothing
+// can check a before against the call. The before is the harness's
+// original when it shipped one, else the latest content known of the path:
+// the chain, else the snapshot, else HEAD. The chain yields to a snapshot
+// taken after it, so the newer of the two wins. A file the disk read did
+// not find was deleted.
+func (d *Deriver) observedOnly(
+	ctx context.Context,
+	e store.Edit,
+	p *spool.EditPayload,
+	in inputs,
+) (store.Edit, *store.UnattributedDelta, error) {
+	var h history
+	sources := []candidate{
+		{store.BeforeOriginal, func() (content, error) { return in.original, nil }},
+		{store.BeforeChain, func() (content, error) { return d.chain(ctx, e, &h) }},
+		{store.BeforeSnapshot, func() (content, error) { return d.snapshotted(ctx, e, &h) }},
+		{store.BeforeHead, func() (content, error) { return in.head, nil }},
+	}
+	var before content
+	for _, c := range sources {
+		got, err := c.load()
+		if err != nil {
+			return store.Edit{}, nil, err
+		}
+		if got.ok {
+			before, e.BeforeSource = got, c.source
+			break
+		}
+	}
+	after := in.observed
+	switch {
+	case deleted(p):
+		e.Kind, after = store.EditDelete, content{}
+	case before.ok:
+		e.Kind = store.EditUpdate
+	default:
+		e.Kind = store.EditUnknown
+	}
+	if err := d.keep(ctx, &e, before, after); err != nil {
+		return store.Edit{}, nil, err
+	}
+	e.EOL = p.EOL
+	if after.ok {
+		e.EOL = patch.DetectEOL(after.data)
+	}
 	return e, nil, nil
 }
 

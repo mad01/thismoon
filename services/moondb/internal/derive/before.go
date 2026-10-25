@@ -3,8 +3,6 @@ package derive
 import (
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/mad01/thismoon/services/moondb/internal/patch"
@@ -36,10 +34,12 @@ func (d *Deriver) chooseBefore(
 	p *spool.EditPayload,
 	in inputs,
 ) (derived, error) {
+	var h history
 	candidates := []candidate{
 		{store.BeforeAbsent, func() (content, error) { return absent(p, in), nil }},
 		{store.BeforeOriginal, func() (content, error) { return in.original, nil }},
-		{store.BeforeChain, func() (content, error) { return d.chain(ctx, e) }},
+		{store.BeforeChain, func() (content, error) { return d.chain(ctx, e, &h) }},
+		{store.BeforeSnapshot, func() (content, error) { return d.snapshotted(ctx, e, &h) }},
 		{store.BeforeHead, func() (content, error) { return in.head, nil }},
 		{store.BeforeObserved, func() (content, error) { return unreplaced(in), nil }},
 		{store.BeforeObserved, func() (content, error) { return reversed(in), nil }},
@@ -183,23 +183,29 @@ func absent(p *spool.EditPayload, in inputs) content {
 	return content{}
 }
 
-// chain is the after-content of the latest earlier Edit of the same path:
+// chain is the after-content of the latest earlier Edit of the same path,
 // made at or before e and not e itself, which a replayed envelope finds
-// already recorded.
-func (d *Deriver) chain(ctx context.Context, e store.Edit) (content, error) {
-	if d.LatestAfter == nil {
+// already recorded. A snapshot taken since that edit makes it stale.
+func (d *Deriver) chain(ctx context.Context, e store.Edit, h *history) (content, error) {
+	if err := d.recall(ctx, e, h); err != nil {
+		return content{}, err
+	}
+	if h.edit == nil || h.chainStale() {
 		return content{}, nil
 	}
-	prev, err := d.LatestAfter(ctx, store.ChainQuery{
-		Worktree: e.Worktree, Path: e.Path, At: e.At, ExcludeID: e.ID,
-	})
-	if errors.Is(err, store.ErrNotFound) {
+	return d.get(ctx, h.edit.AfterChunk)
+}
+
+// snapshotted is the path's content in the worktree's latest snapshot taken
+// at or before e, or unknown when that snapshot does not hold it.
+func (d *Deriver) snapshotted(ctx context.Context, e store.Edit, h *history) (content, error) {
+	if err := d.recall(ctx, e, h); err != nil {
+		return content{}, err
+	}
+	if h.file == nil || h.file.Chunk == "" {
 		return content{}, nil
 	}
-	if err != nil {
-		return content{}, fmt.Errorf("derive: latest edit of %s: %w", e.Path, err)
-	}
-	return d.get(ctx, prev.AfterChunk)
+	return d.get(ctx, h.file.Chunk)
 }
 
 // unreplaced is the disk read with the input's replacements undone (see

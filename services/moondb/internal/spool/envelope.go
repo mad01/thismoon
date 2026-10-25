@@ -43,6 +43,8 @@ const (
 	// last saw it, with the blobs of the new commits, so serve can link
 	// recorded content to commits.
 	KindHeadMoved Kind = "head-moved"
+	// KindSnapshot records one worktree's state at a turn boundary.
+	KindSnapshot Kind = "snapshot"
 )
 
 // Envelope is one record handed to serve. Exactly one payload field is set,
@@ -67,6 +69,7 @@ type Envelope struct {
 	TurnClose *TurnClose   `json:"turn_close,omitempty"`
 	Edit      *EditPayload `json:"edit,omitempty"`
 	HeadMoved *HeadMoved   `json:"head_moved,omitempty"`
+	Snapshot  *Snapshot    `json:"snapshot,omitempty"`
 }
 
 // SessionRef identifies the session a payload belongs to and carries what
@@ -173,4 +176,30 @@ type ChangedFile struct {
 	Blob string `json:"blob,omitempty"`
 	// Status is git's diff-tree status letter (A, M, D, R, ...).
 	Status string `json:"status,omitempty"`
+}
+
+// Snapshot is one worktree's state at a turn boundary: every path in Scope
+// with its content as a chunk, deduplicated like any chunk. Serve stores
+// the file list as one chunk and compares each file with the latest
+// content it knew of the path before, so a change no tool call explains
+// shows up as an unattributed delta on the turn boundary.
+type Snapshot struct {
+	Location store.Location      `json:"location"`
+	Phase    store.SnapshotPhase `json:"phase"`
+	// Started is when the hook began this snapshot; the envelope's At is
+	// when its reads were done.
+	Started time.Time `json:"started,omitzero"`
+	// Scope is the rule that chose Files (store.SnapshotScope).
+	Scope string `json:"scope"`
+	// Files lists the paths in scope, sorted by path, each with the chunk
+	// of its content when the hook read it.
+	Files []store.SnapshotFile `json:"files"`
+	// Truncated is set when Files lacks paths the scope held: the budget
+	// ran out or the file cap was reached. Skipped counts them by reason.
+	Truncated bool                  `json:"truncated,omitempty"`
+	Skipped   store.SnapshotSkipped `json:"skipped"`
+	// StateHash is what the hook compared with the last snapshot it took of
+	// the worktree in the session: HEAD, git's status output, and the size
+	// and modification time of every path in scope.
+	StateHash string `json:"state_hash"`
 }

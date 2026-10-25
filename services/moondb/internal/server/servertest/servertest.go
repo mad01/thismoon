@@ -39,6 +39,11 @@ const (
 	PathA = "a.go"
 	PathB = "b.go"
 
+	// SnapshotID is the newer turn's one snapshot, and SnapshotDeltaID the
+	// unattributed delta it found.
+	SnapshotID      = NewTurn + ":snap:pre:wt"
+	SnapshotDeltaID = SnapshotID + ":" + PathB
+
 	// Prompt is the newer turn's prompt text; PromptSHA is its chunk key.
 	Prompt = "add the server\nwith a second line"
 	// After is EditA's after-content; AfterSHA is its chunk key.
@@ -68,6 +73,8 @@ type Store struct {
 	sessions []store.Session // oldest first
 	turns    []store.Turn
 	edits    []store.Edit // oldest first
+	snaps    []store.Snapshot
+	deltas   []store.UnattributedDelta
 	chunks   chunkMap
 
 	mu      sync.Mutex
@@ -76,7 +83,7 @@ type Store struct {
 
 // NewStore returns a Store seeded with the fixture: an older session with
 // one edit in OtherRepo, and a newer session whose one turn made two edits
-// in Repo.
+// in Repo, opened with a snapshot that found one unattributed delta.
 func NewStore() *Store {
 	at := func(minutes int) time.Time { return T0.Add(time.Duration(minutes) * time.Minute) }
 	loc := store.Location{Repo: Repo, Worktree: Worktree, Canonical: Worktree, Branch: "main"}
@@ -107,6 +114,15 @@ func NewStore() *Store {
 			fixtureEdit(EditB, NewSession, NewTurn, at(62), loc, PathB),
 			withContent(fixtureEdit(EditA, NewSession, NewTurn, at(63), loc, PathA)),
 		},
+		snaps: []store.Snapshot{{
+			ID: SnapshotID, SessionID: NewSession, TurnID: NewTurn, Phase: store.SnapshotPre,
+			At: at(61), Location: loc, Scope: store.SnapshotScope, FileCount: 2,
+			Skipped: store.SnapshotSkipped{TooLarge: 1},
+		}},
+		deltas: []store.UnattributedDelta{{
+			ID: SnapshotDeltaID, SessionID: NewSession, TurnID: NewTurn, At: at(61),
+			Location: loc, Path: PathB, Cause: store.DeltaSnapshot,
+		}},
 		chunks: chunkMap{PromptSHA: []byte(Prompt), AfterSHA: []byte(After)},
 	}
 }
@@ -203,8 +219,8 @@ func (s *Store) Session(_ context.Context, id string) (store.SessionDetail, erro
 	return d, nil
 }
 
-// Turn loads one turn with its edits; the fixture records no deltas,
-// snapshots or commit links.
+// Turn loads one turn with its edits, deltas and snapshots; the fixture
+// records no commit links.
 func (s *Store) Turn(ctx context.Context, id string) (store.TurnDetail, error) {
 	i := slices.IndexFunc(s.turns, func(t store.Turn) bool { return t.ID == id })
 	if i < 0 {
@@ -212,12 +228,25 @@ func (s *Store) Turn(ctx context.Context, id string) (store.TurnDetail, error) {
 	}
 	edits, _ := s.Edits(ctx, store.EditQuery{TurnID: id})
 	return store.TurnDetail{
-		Turn:        s.turns[i],
-		Edits:       edits,
-		Deltas:      []store.UnattributedDelta{},
-		Snapshots:   []store.Snapshot{},
+		Turn:  s.turns[i],
+		Edits: edits,
+		Deltas: underTurn(s.deltas, id, func(d store.UnattributedDelta) string {
+			return d.TurnID
+		}),
+		Snapshots:   underTurn(s.snaps, id, func(v store.Snapshot) string { return v.TurnID }),
 		CommitLinks: []store.CommitLink{},
 	}, nil
+}
+
+// underTurn returns the records of turn id, newest first; never nil.
+func underTurn[T any](list []T, id string, turnOf func(T) string) []T {
+	out := []T{}
+	for _, v := range slices.Backward(list) {
+		if turnOf(v) == id {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // Edits lists edits newest first, narrowed by q.
@@ -242,6 +271,16 @@ func editMatches(q store.EditQuery, e store.Edit) bool {
 		(q.SessionID == "" || e.SessionID == q.SessionID) &&
 		(q.TurnID == "" || e.TurnID == q.TurnID) &&
 		(q.AfterBlob == "" || e.AfterBlob == q.AfterBlob)
+}
+
+// LatestSnapshot returns the newest snapshot q allows.
+func (s *Store) LatestSnapshot(_ context.Context, q store.SnapshotQuery) (store.Snapshot, error) {
+	for _, v := range slices.Backward(s.snaps) {
+		if v.Worktree == q.Worktree && v.ID != q.ExcludeID && (q.At.IsZero() || !v.At.After(q.At)) {
+			return v, nil
+		}
+	}
+	return store.Snapshot{}, fmt.Errorf("snapshot of %s: %w", q.Worktree, store.ErrNotFound)
 }
 
 // LatestAfter returns the newest edit q allows with after-content.
