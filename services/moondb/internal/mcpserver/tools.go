@@ -10,10 +10,12 @@ import (
 
 	"github.com/mad01/thismoon/kit/doctor"
 
+	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/client"
 	"github.com/mad01/thismoon/services/moondb/internal/query"
 	"github.com/mad01/thismoon/services/moondb/internal/server"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 // handlers carries the dependencies shared by all moondb tools.
@@ -63,6 +65,23 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Filter by `repo` (host/owner/repo; sessions with at least one edit there), `since` (an RFC 3339 time or a duration such as 24h or 7d), and `limit` (default 50).",
 		Annotations: readOnly(),
 	}, h.handleSessions)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "moondb_trace",
+		Description: "Show what took time in one session and what it cost: wall time split into model, tool, harness " +
+			"(hooks and request setup) and user time (waiting for input: between turns, and inside a turn " +
+			"after the model stopped until a new input such as a teammate message), tokens by kind, and the USD cost " +
+			"at list prices. " +
+			fmt.Sprintf(
+				"Also lists the %[1]d longest tool calls and the %[1]d most expensive model calls, ",
+				moondb.TraceTopSpans,
+			) +
+			"each with its turn number and prompt. " +
+			"`id` is REQUIRED: a session id from moondb_sessions. " +
+			"Cost covers the main conversation only, since subagent transcripts are separate files; " +
+			"a model with no known price shows in `totals.unpriced` and adds no cost.",
+		Annotations: readOnly(),
+	}, h.handleTrace)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "moondb_doctor",
@@ -190,10 +209,10 @@ type turnInput struct {
 }
 
 type turnOutput struct {
-	Turn    store.TurnDetail `json:"turn"`
-	Prompt  string           `json:"prompt,omitempty" jsonschema:"the prompt text, cut at 2000 bytes; absent when no prompt was recorded"`
-	Summary string           `json:"summary"`
-	URL     string           `json:"url"              jsonschema:"web page showing the turn's session"`
+	Turn    server.TurnView `json:"turn"`
+	Prompt  string          `json:"prompt,omitempty" jsonschema:"the prompt text, cut at 2000 bytes; absent when no prompt was recorded"`
+	Summary string          `json:"summary"`
+	URL     string          `json:"url"              jsonschema:"web page showing the turn's session"`
 }
 
 func (h *handlers) handleTurn(
@@ -215,6 +234,10 @@ func (h *handlers) handleTurn(
 		len(d.Deltas),
 		len(d.CommitLinks),
 	)
+	if tot := d.TraceTotals; tot != nil {
+		summary += fmt.Sprintf("; took %s, cost %s",
+			trace.FormatDuration(tot.WallMS), trace.FormatCost(tot.Cost))
+	}
 	if line, _, _ := strings.Cut(strings.TrimSpace(prompt), "\n"); line != "" {
 		summary += fmt.Sprintf("; prompt: %q", truncate(line, 120))
 	}
@@ -283,6 +306,67 @@ func (h *handlers) handleSessions(
 			len(list), list[0].StartedAt.Format("2006-01-02 15:04"))
 	}
 	return nil, sessionsOutput{Sessions: list, Summary: summary, URL: h.webURL}, nil
+}
+
+// ── trace ──
+
+type traceInput struct {
+	ID string `json:"id" jsonschema:"session id, from moondb_sessions (required)"`
+}
+
+type traceOutput struct {
+	SessionID       string         `json:"session_id"`
+	Turns           int            `json:"turns"`
+	Totals          trace.Totals   `json:"totals"`
+	LongestTools    []trace.Ranked `json:"longest_tools"    jsonschema:"the longest tool calls, longest first, each with its turn number and prompt"`
+	CostliestModels []trace.Ranked `json:"costliest_models" jsonschema:"the most expensive model calls, most expensive first; unpriced calls rank last by tokens"`
+	Summary         string         `json:"summary"`
+	URL             string         `json:"url"              jsonschema:"web page with the session's timeline"`
+}
+
+func (h *handlers) handleTrace(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in traceInput,
+) (*mcp.CallToolResult, traceOutput, error) {
+	st, err := h.client.SessionTrace(ctx, in.ID)
+	if err != nil {
+		return nil, traceOutput{}, err
+	}
+	return nil, traceOutput{
+		SessionID:       st.SessionID,
+		Turns:           len(st.Turns),
+		Totals:          st.Totals,
+		LongestTools:    trace.LongestTools(st, moondb.TraceTopSpans),
+		CostliestModels: trace.CostliestModels(st, moondb.TraceTopSpans),
+		Summary:         traceSummary(st),
+		URL:             h.sessionURL(st.SessionID),
+	}, nil
+}
+
+// traceSummary says in one line where a session's time and money went.
+func traceSummary(st trace.SessionTrace) string {
+	t := st.Totals
+	s := fmt.Sprintf(
+		"session %s: %d turns, wall %s (model %s, tool %s, harness %s, user %s), %s tokens, cost %s",
+		st.SessionID,
+		len(st.Turns),
+		trace.FormatDuration(t.WallMS),
+		trace.FormatDuration(t.ModelMS),
+		trace.FormatDuration(t.ToolMS),
+		trace.FormatDuration(t.HarnessMS),
+		trace.FormatDuration(t.UserMS),
+		trace.FormatTokens(t.Tokens.Total()),
+		trace.FormatCost(t.Cost),
+	)
+	if len(t.Unpriced) > 0 {
+		s += fmt.Sprintf(" (unpriced: %s)", strings.Join(t.Unpriced, ", "))
+	}
+	if top := trace.LongestTools(st, 1); len(top) > 0 {
+		s += fmt.Sprintf("; longest tool call %s %s in turn %d",
+			top[0].Span.Name, trace.FormatDuration(top[0].Span.DurationMS), top[0].Seq)
+	}
+	return s
 }
 
 // ── doctor ──

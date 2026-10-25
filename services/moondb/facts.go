@@ -64,6 +64,136 @@ const (
 	SegmentBytes = 64 << 20
 )
 
+// Trace limits. A trace is computed on read from a turn's transcript chunk
+// and kept in memory, so these bound what serve holds and what a summary
+// lists.
+const (
+	// TraceCacheTurns is how many turn traces serve keeps in memory, the
+	// least recently read dropped first.
+	TraceCacheTurns = 512
+	// TraceTopSpans is how many spans `moondb trace` and the moondb_trace
+	// tool list per ranking: the longest tool calls, the most expensive
+	// model calls.
+	TraceTopSpans = 10
+)
+
+// Prompt caching bills a cache write and a cache read as a multiple of the
+// model's input rate (the claude-api skill, shared/prompt-caching.md,
+// Economics). A model whose cache read rate differs names it in its row.
+const (
+	CacheWrite5mMultiplier = 1.25
+	CacheWrite1hMultiplier = 2
+	CacheReadMultiplier    = 0.1
+)
+
+// USOnlyMultiplier is what US-only inference (usage inference_geo "us")
+// costs on Claude 4.6 and later models: every token category, cache writes
+// and reads and the long-prompt rates included, at 1.1 times the price.
+// Earlier models do not take the parameter and bill the standard price.
+const USOnlyMultiplier = 1.1
+
+// Rates are USD per million tokens of each kind a model call bills.
+type Rates struct {
+	Input        float64
+	Output       float64
+	CacheWrite5m float64
+	CacheWrite1h float64
+	CacheRead    float64
+}
+
+// Price is what one model charges. Rates apply to every call unless one of
+// the modifiers below says otherwise; the two multipliers stack.
+type Price struct {
+	Rates
+	// LongPromptTokens, when set, is the prompt size (input plus cache
+	// writes and reads) above which a call bills at Long instead.
+	LongPromptTokens int64
+	Long             Rates
+	// FastMultiplier scales every rate of a call made at speed "fast"; 0
+	// when the model has no published fast-mode price, so such a call has
+	// no cost.
+	FastMultiplier float64
+	// USMultiplier scales every rate of a call whose usage reports
+	// inference_geo "us"; 0 for a model without a US-only premium, which
+	// bills such a call at its rates.
+	USMultiplier float64
+}
+
+// RatesFrom builds a model's rates from its input and output price and its
+// cache read price, the cache writes at the standard multipliers.
+func RatesFrom(input, output, cacheRead float64) Rates {
+	return Rates{
+		Input:        input,
+		Output:       output,
+		CacheWrite5m: input * CacheWrite5mMultiplier,
+		CacheWrite1h: input * CacheWrite1hMultiplier,
+		CacheRead:    cacheRead,
+	}
+}
+
+// standardRates is RatesFrom with the cache read at the standard multiple
+// of input.
+func standardRates(input, output float64) Rates {
+	return RatesFrom(input, output, input*CacheReadMultiplier)
+}
+
+// DefaultPrices is the Claude API list price per model id, USD per million
+// tokens, from the pricing page the claude-api skill names as its pricing
+// source (platform.claude.com/docs/en/about-claude/pricing, read
+// 2026-10-25). Cache reads cost 0.1x input except on Fable 5.1 and Mythos
+// 5.1 (0.025x, $0.25) and on Opus 5.5 ($0.20) and Sonnet 5.5 ($0.10), both
+// 0.05x. Haiku 5.5 bills a second tier above 100,000 prompt tokens. Fast
+// mode costs 2x on Opus 5.5 ($8 in, $40 out), Opus 5 and Opus 4.8 ($10 in,
+// $50 out), cache multipliers on top. US-only inference costs
+// USOnlyMultiplier more on the rows of Claude 4.6 and later.
+//
+// A trace matches a model id exactly first, then by family: the longest id
+// here that the model id starts with, followed by a dated snapshot
+// ("-20251101"), a provider version ("@...") or a context marker ("[1m]").
+// The config file's [prices."<model id>"] tables override or extend it.
+var DefaultPrices = map[string]Price{
+	"claude-fable-5-1": {
+		Rates: RatesFrom(10, 50, 0.25), USMultiplier: USOnlyMultiplier,
+	},
+	"claude-mythos-5-1": {
+		Rates: RatesFrom(10, 50, 0.25), USMultiplier: USOnlyMultiplier,
+	},
+	"claude-fable-5":  {Rates: standardRates(10, 50), USMultiplier: USOnlyMultiplier},
+	"claude-mythos-5": {Rates: standardRates(10, 50), USMultiplier: USOnlyMultiplier},
+	"claude-opus-5-5": {
+		Rates: RatesFrom(4, 20, 0.20), FastMultiplier: 2, USMultiplier: USOnlyMultiplier,
+	},
+	"claude-opus-5": {
+		Rates: standardRates(5, 25), FastMultiplier: 2, USMultiplier: USOnlyMultiplier,
+	},
+	"claude-opus-4-8": {
+		Rates: standardRates(5, 25), FastMultiplier: 2, USMultiplier: USOnlyMultiplier,
+	},
+	"claude-opus-4-7": {Rates: standardRates(5, 25), USMultiplier: USOnlyMultiplier},
+	"claude-opus-4-6": {Rates: standardRates(5, 25), USMultiplier: USOnlyMultiplier},
+	"claude-opus-4-5": {Rates: standardRates(5, 25)},
+	"claude-opus-4-1": {Rates: standardRates(15, 75)},
+	"claude-opus-4-0": {Rates: standardRates(15, 75)},
+	"claude-sonnet-5-5": {
+		Rates: RatesFrom(2, 10, 0.10), USMultiplier: USOnlyMultiplier,
+	},
+	"claude-sonnet-5":   {Rates: standardRates(2, 10), USMultiplier: USOnlyMultiplier},
+	"claude-sonnet-4-6": {Rates: standardRates(3, 15), USMultiplier: USOnlyMultiplier},
+	"claude-sonnet-4-5": {Rates: standardRates(3, 15)},
+	"claude-sonnet-4-0": {Rates: standardRates(3, 15)},
+	"claude-haiku-5-5": {
+		Rates:            standardRates(0.10, 0.50),
+		LongPromptTokens: 100_000,
+		Long:             standardRates(0.50, 2.50),
+		USMultiplier:     USOnlyMultiplier,
+	},
+	"claude-haiku-4-5": {Rates: standardRates(1, 5)},
+	// The dated ids of the models whose alias is not a prefix of them.
+	"claude-opus-4-20250514":    {Rates: standardRates(15, 75)},
+	"claude-sonnet-4-20250514":  {Rates: standardRates(3, 15)},
+	"claude-3-5-haiku-20241022": {Rates: standardRates(0.80, 4)},
+}
+
 // Workdir layout: the subdirectories of the state directory. record writes
 // spool and sessions; serve owns log and objects; record reads objects only
 // to skip chunks the store already has.

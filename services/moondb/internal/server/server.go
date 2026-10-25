@@ -20,6 +20,7 @@ import (
 
 	"github.com/mad01/thismoon/services/moondb/internal/query"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 // shellHTML is the static page shell (chrome only). The sessions and turns
@@ -34,12 +35,15 @@ var shellHTML []byte
 var appJS []byte
 
 // Querier answers the questions the store exists for: why one line looks
-// the way it does, what happened to a path, and why every line of a file
-// looks the way it does. *query.Service satisfies it; tests pass a fake.
+// the way it does, what happened to a path, why every line of a file looks
+// the way it does, and what took time in a turn or a session.
+// *query.Service satisfies it; tests pass a fake.
 type Querier interface {
 	Why(ctx context.Context, req query.WhyRequest) (query.WhyResult, error)
 	History(ctx context.Context, req query.HistoryRequest) ([]store.Edit, error)
 	Annotate(ctx context.Context, req query.AnnotateRequest) (query.AnnotateResult, error)
+	TurnTrace(ctx context.Context, d store.TurnDetail) (trace.TurnTrace, error)
+	SessionTrace(ctx context.Context, id string) (trace.SessionTrace, error)
 }
 
 // Server serves one moondb store, read-only.
@@ -68,6 +72,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /app.js", s.handleAppJS)
 	mux.HandleFunc("GET /api/sessions", s.handleSessions)
 	mux.HandleFunc("GET /api/sessions/{id}", s.handleSession)
+	mux.HandleFunc("GET /api/sessions/{id}/trace", s.handleSessionTrace)
 	mux.HandleFunc("GET /api/turns/{id}", s.handleTurn)
 	mux.HandleFunc("GET /api/edits", s.handleEdits)
 	mux.HandleFunc("GET /api/why", s.handleWhy)

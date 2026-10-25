@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/mad01/thismoon/services/moondb/internal/query"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 // DefaultLimit caps a listing (sessions, edits, history) when the request
@@ -29,7 +31,9 @@ var chunkKey = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // SessionSummary is a session as the listing shows it: the session record
 // plus what it touched. It costs one detail and one edit lookup per row,
-// which the default limit bounds.
+// which the default limit bounds. It carries no cost: that needs every
+// turn's transcript chunk read, which GET /api/sessions/{id}/trace does for
+// one session.
 type SessionSummary struct {
 	store.Session
 	// Repos are the repository identities the session edited, sorted.
@@ -38,6 +42,20 @@ type SessionSummary struct {
 	Worktrees []string `json:"worktrees"`
 	TurnCount int      `json:"turn_count"`
 	EditCount int      `json:"edit_count"`
+	// DurationMS runs from the first turn's recorded start to the last
+	// turn's recorded end, an open turn ending where it started. It reads
+	// the turn records only, no transcript lines, so it can fall short of
+	// the session trace's wall time, whose turn spans stretch to a line
+	// written after the recorded end.
+	DurationMS int64 `json:"duration_ms"`
+}
+
+// TurnView is a turn as GET /api/turns/{id} answers it: the turn with
+// everything recorded under it, plus its trace totals when its transcript
+// lines put anything on the timeline.
+type TurnView struct {
+	store.TurnDetail
+	TraceTotals *trace.Totals `json:"trace_totals,omitempty"`
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
@@ -89,12 +107,32 @@ func (s *Server) summarize(ctx context.Context, id string) (SessionSummary, erro
 		worktrees = []string{}
 	}
 	return SessionSummary{
-		Session:   d.Session,
-		Repos:     repos,
-		Worktrees: worktrees,
-		TurnCount: len(d.Turns),
-		EditCount: d.EditCount,
+		Session:    d.Session,
+		Repos:      repos,
+		Worktrees:  worktrees,
+		TurnCount:  len(d.Turns),
+		EditCount:  d.EditCount,
+		DurationMS: turnsSpan(d.Turns).Milliseconds(),
 	}, nil
+}
+
+// turnsSpan is the time from the first turn's start to the last turn's
+// end; an open turn ends where it started.
+func turnsSpan(turns []store.Turn) time.Duration {
+	var first, last time.Time
+	for _, t := range turns {
+		end := t.StartedAt
+		if t.EndedAt != nil && t.EndedAt.After(end) {
+			end = *t.EndedAt
+		}
+		if first.IsZero() || t.StartedAt.Before(first) {
+			first = t.StartedAt
+		}
+		if end.After(last) {
+			last = end
+		}
+	}
+	return last.Sub(first)
 }
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +150,33 @@ func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
 		writeBackendErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, d)
+	writeJSON(w, http.StatusOK, s.turnView(r.Context(), d))
+}
+
+// turnView adds a turn's trace totals. A trace that cannot be computed is
+// logged and left out: the turn itself is still the answer.
+func (s *Server) turnView(ctx context.Context, d store.TurnDetail) TurnView {
+	v := TurnView{TurnDetail: d}
+	tt, err := s.query.TurnTrace(ctx, d)
+	if err != nil {
+		log.Printf("moondb: trace of turn %s: %v", d.ID, err)
+		return v
+	}
+	if tt.Lines.Events > 0 {
+		v.TraceTotals = &tt.Totals
+	}
+	return v
+}
+
+// handleSessionTrace answers what took time in a session: every turn's
+// spans and totals, the user time between turns, and the session totals.
+func (s *Server) handleSessionTrace(w http.ResponseWriter, r *http.Request) {
+	st, err := s.query.SessionTrace(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeBackendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
 }
 
 func (s *Server) handleEdits(w http.ResponseWriter, r *http.Request) {

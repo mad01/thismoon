@@ -1,0 +1,4 @@
+{"type":"user","timestamp":"2026-10-01T10:00:00.000Z","promptId":"p-unknown","message":{"role":"user","content":"use the new model"}}
+{"type":"api-request","timestamp":"2026-10-01T10:00:00.500Z"}
+{"type":"assistant","timestamp":"2026-10-01T10:00:01.500Z","message":{"id":"msg_unknown_1","model":"claude-nova-9","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"output_tokens":20}}}
+{"type":"assistant","timestamp":"2026-10-01T10:00:02.000Z","message":{"id":"msg_synthetic_1","model":"<synthetic>","content":[{"type":"text","text":"No response requested."}],"usage":{"input_tokens":0,"output_tokens":0}}}

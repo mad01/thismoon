@@ -17,6 +17,7 @@ import (
 
 	"github.com/mad01/thismoon/services/moondb/internal/query"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 // Fixture ids and values the tests assert against.
@@ -48,12 +49,28 @@ const (
 	Prompt = "add the server\nwith a second line"
 	// After is EditA's after-content; AfterSHA is its chunk key.
 	After = "package a\n"
+
+	// Transcript is the older turn's transcript: a model call that asks for
+	// EditC's tool call, its result, and a closing model call, all on
+	// claude-opus-5-5. OldTurn runs from minute 1 to minute 3.
+	Transcript = `{"type":"api-request","timestamp":"2026-10-01T09:01:00Z"}
+{"type":"assistant","timestamp":"2026-10-01T09:01:30Z","message":{"id":"msg_old_1",` +
+		`"model":"claude-opus-5-5","content":[{"type":"tool_use","id":"toolu_c","name":"Edit"}],` +
+		`"usage":{"input_tokens":1000,"output_tokens":500}}}
+{"type":"user","timestamp":"2026-10-01T09:02:30Z",` +
+		`"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_c"}]}}
+{"type":"api-request","timestamp":"2026-10-01T09:02:31Z"}
+{"type":"assistant","timestamp":"2026-10-01T09:02:50Z","message":{"id":"msg_old_2",` +
+		`"model":"claude-opus-5-5","content":[{"type":"text","text":"done"}],` +
+		`"usage":{"input_tokens":10,"output_tokens":20}}}
+`
 )
 
 // Chunk keys of the fixture contents.
 var (
-	PromptSHA = Key([]byte(Prompt))
-	AfterSHA  = Key([]byte(After))
+	PromptSHA     = Key([]byte(Prompt))
+	AfterSHA      = Key([]byte(After))
+	TranscriptSHA = Key([]byte(Transcript))
 )
 
 // T0 anchors every fixture time.
@@ -81,9 +98,10 @@ type Store struct {
 	pingErr error
 }
 
-// NewStore returns a Store seeded with the fixture: an older session with
-// one edit in OtherRepo, and a newer session whose one turn made two edits
-// in Repo, opened with a snapshot that found one unattributed delta.
+// NewStore returns a Store seeded with the fixture: an older session whose
+// closed turn made one edit in OtherRepo and kept its Transcript, and a
+// newer session whose one open turn made two edits in Repo, opened with a
+// snapshot that found one unattributed delta.
 func NewStore() *Store {
 	at := func(minutes int) time.Time { return T0.Add(time.Duration(minutes) * time.Minute) }
 	loc := store.Location{Repo: Repo, Worktree: Worktree, Canonical: Worktree, Branch: "main"}
@@ -98,11 +116,13 @@ func NewStore() *Store {
 		},
 		turns: []store.Turn{
 			{
-				ID:        OldTurn,
-				SessionID: OldSession,
-				Seq:       1,
-				Status:    store.TurnClosed,
-				StartedAt: at(1),
+				ID:              OldTurn,
+				SessionID:       OldSession,
+				Seq:             1,
+				Status:          store.TurnClosed,
+				StartedAt:       at(1),
+				EndedAt:         new(at(3)),
+				TranscriptChunk: TranscriptSHA,
 			},
 			{
 				ID: NewTurn, SessionID: NewSession, Seq: 1, PromptChunk: PromptSHA,
@@ -123,7 +143,11 @@ func NewStore() *Store {
 			ID: SnapshotDeltaID, SessionID: NewSession, TurnID: NewTurn, At: at(61),
 			Location: loc, Path: PathB, Cause: store.DeltaSnapshot,
 		}},
-		chunks: chunkMap{PromptSHA: []byte(Prompt), AfterSHA: []byte(After)},
+		chunks: chunkMap{
+			PromptSHA:     []byte(Prompt),
+			AfterSHA:      []byte(After),
+			TranscriptSHA: []byte(Transcript),
+		},
 	}
 }
 
@@ -340,8 +364,11 @@ func (c chunkMap) Has(_ context.Context, sha string) (bool, error) {
 // Querier is a stand-in for query.Service over a Store: Why answers with the
 // newest edit of the path, History lists the path's edits. It records the
 // last request of each kind so tests can check what the server parsed.
+// Traces are pure functions of the store, so it answers those with the
+// real query.Service.
 type Querier struct {
-	store *Store
+	store  *Store
+	traces *query.Service
 
 	mu           sync.Mutex
 	err          error
@@ -351,7 +378,19 @@ type Querier struct {
 }
 
 // NewQuerier returns a Querier reading st.
-func NewQuerier(st *Store) *Querier { return &Querier{store: st} }
+func NewQuerier(st *Store) *Querier {
+	return &Querier{store: st, traces: &query.Service{Store: st}}
+}
+
+// TurnTrace computes the turn's trace with the real query service.
+func (q *Querier) TurnTrace(ctx context.Context, d store.TurnDetail) (trace.TurnTrace, error) {
+	return q.traces.TurnTrace(ctx, d)
+}
+
+// SessionTrace computes the session's trace with the real query service.
+func (q *Querier) SessionTrace(ctx context.Context, id string) (trace.SessionTrace, error) {
+	return q.traces.SessionTrace(ctx, id)
+}
 
 // SetErr makes Why, History and Annotate fail with err, or answer again
 // when err is nil.

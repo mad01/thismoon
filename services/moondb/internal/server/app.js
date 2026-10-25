@@ -5,7 +5,8 @@
 // string:
 //
 //   /                              sessions, newest first; ?repo= and ?since= filter
-//   /?session=<id>                 one session: its turns and the worktrees it touched
+//   /?session=<id>                 one session: its trace (a timeline lane per turn), the
+//                                  worktrees it touched and its turns
 //   /?turn=<id>                    one turn: prompt, final message, agents, edits with
 //                                  their diffs, unattributed deltas, snapshots, commit
 //                                  links and the raw transcript
@@ -25,6 +26,7 @@
   var SESSION_EDITS = 5000; // edits loaded to summarize one session's turns
   var HISTORY_LIMIT = 200; // edits in a file's history timeline
   var PAGE = 50; // sessions per page of the listing, the API default
+  var TRACE_LANES = 25; // turn lanes drawn in a session's trace before a "show all" button
 
   // Turn bands in the file view cycle through these webkit roles.
   var BANDS = ['--series-1', '--series-2', '--series-3', '--series-4',
@@ -533,11 +535,14 @@
 
   // ── session view ──
 
+  // renderSession loads the session, its edits and its trace together. A
+  // trace that fails to load costs the Trace section, never the page.
   function renderSession(id) {
     Promise.all([
       getJSON('/api/sessions/' + enc(id)),
-      getJSON('/api/edits?' + qs({ session: id, limit: SESSION_EDITS }))
-    ]).then(function (r) { drawSession(r[0], r[1].edits || []); }).catch(renderError);
+      getJSON('/api/edits?' + qs({ session: id, limit: SESSION_EDITS })),
+      getJSON('/api/sessions/' + enc(id) + '/trace').catch(function (err) { return { error: err }; })
+    ]).then(function (r) { drawSession(r[0], r[1].edits || [], r[2]); }).catch(renderError);
   }
 
   // summarizeEdits counts a session's edits per turn (with the agents seen)
@@ -559,7 +564,7 @@
     return { byTurn: byTurn, byWorktree: byWorktree };
   }
 
-  function drawSession(d, edits) {
+  function drawSession(d, edits, tr) {
     var label = d.title || d.cwd || d.id;
     document.title = label + ' · moondb';
     var sum = summarizeEdits(edits);
@@ -585,7 +590,8 @@
         kvRow('Repos', repos.join(', ') || '-'),
         kvRow('Edits', String(d.edit_count))
       ]),
-      el('div', { class: 'spaced' }, section('Worktrees', [worktreeTable(sum.byWorktree)])),
+      el('div', { class: 'spaced' }, section('Trace', traceNodes(tr))),
+      section('Worktrees', [worktreeTable(sum.byWorktree)]),
       section('Turns', [turnList.length
         ? table(['#', 'Prompt', 'Status', 'Edits', 'Agents', 'Started'], turnList.map(function (t) {
           return turnRow(t, sum.byTurn[t.id] || { count: 0, agents: [] });
@@ -619,6 +625,173 @@
       monoCell(s.agents.join(', ') || '-'),
       el('td', { class: 'muted nowrap' }, fmtTime(t.started_at))
     ]);
+  }
+
+  // ── session trace ──
+
+  // Trace bars take the webkit series roles. A failed tool call is red and
+  // hatched, so it reads without its hue; series-1 is left out because it
+  // sits next to red in the default theme.
+  var SPAN_COLORS = { model: '--series-2', tool: '--series-3', subagent: '--series-4' };
+  var SPAN_ROWS = ['model', 'tool', 'subagent'];
+
+  // fmtDuration renders milliseconds the way the CLI does: 850ms, 4.2s,
+  // 3m12s, 1h02m.
+  function fmtDuration(ms) {
+    if (ms < 1000) return Math.round(ms) + 'ms';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+    var m = Math.floor(ms / 60000);
+    if (m < 60) return m + 'm' + pad(Math.floor(ms / 1000) % 60) + 's';
+    return Math.floor(m / 60) + 'h' + pad(m % 60) + 'm';
+  }
+
+  function fmtTokens(n) {
+    if (n < 1000) return String(n);
+    if (n < 1e6) return (n / 1000).toFixed(1) + 'k';
+    return (n / 1e6).toFixed(1) + 'M';
+  }
+
+  // fmtCost renders USD with the precision its size needs; a cost no price
+  // covers is unknown, never zero.
+  function fmtCost(usd) {
+    if (usd === undefined || usd === null) return 'unknown';
+    if (usd === 0) return '$0';
+    if (usd < 0.01) return '$' + usd.toFixed(4);
+    if (usd < 1) return '$' + usd.toFixed(3);
+    return '$' + usd.toFixed(2);
+  }
+
+  function tokenTotal(t) {
+    if (!t) return 0;
+    return (t.input || 0) + (t.cache_write_5m || 0) + (t.cache_write_1h || 0) +
+      (t.cache_read || 0) + (t.output || 0);
+  }
+
+  // traceNodes is the Trace section: the totals strip, a legend and one
+  // timeline lane per turn.
+  function traceNodes(tr) {
+    if (!tr || tr.error) {
+      return [note('Trace unavailable' + (tr && tr.error ? ': ' + tr.error.message : '.'))];
+    }
+    var turns = (tr.turns || []).filter(function (t) { return (t.spans || []).length; });
+    if (!turns.length) {
+      return [el('div', { class: 'empty' },
+        'No transcript lines recorded for these turns, so there is nothing to trace.')];
+    }
+    var lanes = el('div', { class: 'tr-lanes' });
+    function draw(limit) {
+      lanes.replaceChildren.apply(lanes, turns.slice(0, limit).map(traceLane));
+    }
+    draw(TRACE_LANES);
+    var nodes = [traceStats(tr.totals || {}, (tr.turns || []).length), traceLegend(), lanes];
+    if (turns.length > TRACE_LANES) {
+      var more = el('button', {
+        class: 'btn btn-ghost more', type: 'button',
+        onclick: function () { draw(turns.length); more.remove(); }
+      }, 'Show all ' + turns.length + ' traced turns');
+      nodes.push(more);
+    }
+    return nodes;
+  }
+
+  function stat(value, label, sub) {
+    return el('wk-stat', {}, [
+      el('wk-stat-value', {}, value),
+      el('wk-stat-label', {}, label),
+      el('wk-stat-sub', {}, sub)
+    ]);
+  }
+
+  function traceStats(t, turnCount) {
+    var k = t.tokens || {};
+    var cost = t.unpriced && t.unpriced.length
+      ? 'unpriced: ' + t.unpriced.join(', ')
+      : 'list prices, main conversation';
+    return el('div', { class: 'tr-stats' }, [
+      stat(fmtDuration(t.wall_ms || 0), 'Wall',
+        plural(turnCount, 'turn') + ', ' + fmtDuration(t.user_ms || 0) + ' waiting for input'),
+      stat(fmtDuration(t.model_ms || 0), 'Model', plural(t.model_calls || 0, 'call')),
+      stat(fmtDuration(t.tool_ms || 0), 'Tool',
+        plural(t.tool_calls || 0, 'call') + ', ' + (t.tool_errors || 0) + ' failed'),
+      stat(fmtTokens(tokenTotal(k)), 'Tokens',
+        fmtTokens(k.cache_read || 0) + ' cache read, ' + fmtTokens(k.output || 0) + ' output'),
+      stat(fmtCost(t.cost), 'Cost', cost)
+    ]);
+  }
+
+  function traceLegend() {
+    function key(color, text, failed) {
+      return el('span', { class: 'row', style: '--bar:var(' + color + ')' },
+        [el('span', { class: 'swatch tr-swatch' + (failed ? ' tr-failed' : '') }), text]);
+    }
+    return el('div', { class: 'tr-legend' }, [
+      key(SPAN_COLORS.model, 'model call'),
+      key(SPAN_COLORS.tool, 'tool call'),
+      key('--red', 'failed tool call', true),
+      key(SPAN_COLORS.subagent, 'subagent edits'),
+      el('span', { class: 'muted' }, 'Each lane runs from its prompt to Stop. Click a bar to open the turn.')
+    ]);
+  }
+
+  // traceLane is one turn: its label, a track with a row per span kind, and
+  // its time and cost. A turn without a start time has nothing to place
+  // its bars against, so its track stays empty.
+  function traceLane(tt) {
+    var started = parseTime(tt.span.start);
+    var wall = Math.max(tt.span.duration_ms, 1);
+    var href = '?turn=' + enc(tt.turn_id);
+    var spans = started ? tt.spans || [] : [];
+    var rows = SPAN_ROWS.filter(function (kind) {
+      return kind !== 'subagent' || spans.some(function (s) { return s.kind === kind; });
+    }).map(function (kind) {
+      return el('div', { class: 'tr-row' }, spans.filter(function (s) { return s.kind === kind; })
+        .map(function (s) { return traceBar(s, started.getTime(), wall, href); }));
+    });
+    var label = '#' + tt.seq + ' ' + (tt.prompt || '(no prompt recorded)');
+    return el('div', { class: 'tr-lane' }, [
+      el('a', { class: 'tr-label', href: href, title: label }, [
+        el('span', { class: 'muted' }, '#' + tt.seq + ' '), tt.prompt || '(no prompt recorded)'
+      ]),
+      el('div', { class: 'tr-track' }, rows),
+      el('span', { class: 'tr-meta' },
+        fmtDuration(tt.totals.wall_ms) + ' · ' + fmtCost(tt.totals.cost))
+    ]);
+  }
+
+  // traceBar is one span placed on its turn's track, or null (which el
+  // skips) for a span without a start time.
+  function traceBar(s, start, wall, href) {
+    var at = parseTime(s.start);
+    if (!at) return null;
+    var left = Math.min(Math.max((at.getTime() - start) / wall, 0), 1);
+    var width = Math.min(s.duration_ms / wall, 1 - left);
+    var failed = s.kind === 'tool' && s.is_error;
+    var color = failed ? '--red' : SPAN_COLORS[s.kind];
+    return el('a', {
+      class: 'tr-bar' + (failed ? ' tr-failed' : ''), href: href, title: spanTitle(s),
+      style: 'left:' + (left * 100).toFixed(3) + '%;width:' + (width * 100).toFixed(3) +
+        '%;--bar:var(' + color + ')'
+    });
+  }
+
+  // spanTitle is a bar's hover text: what ran, for how long, and for a model
+  // call its tokens and cost.
+  function spanTitle(s) {
+    var parts = [s.name || s.kind, fmtDuration(s.duration_ms)];
+    if (s.kind === 'model') {
+      var k = s.tokens || {};
+      parts.push(fmtTokens(tokenTotal(k)) + ' tokens (input ' + fmtTokens(k.input || 0) +
+        ', cache write ' + fmtTokens((k.cache_write_5m || 0) + (k.cache_write_1h || 0)) +
+        ', cache read ' + fmtTokens(k.cache_read || 0) + ', output ' + fmtTokens(k.output || 0) + ')');
+      parts.push(fmtCost(s.cost) + (s.speed ? ' at ' + s.speed + ' speed' : ''));
+    }
+    if (s.kind === 'tool') {
+      if (s.is_error) parts.push('failed');
+      if (s.unfinished) parts.push('no result recorded');
+      if (s.edit_ids && s.edit_ids.length) parts.push(plural(s.edit_ids.length, 'edit'));
+    }
+    if (s.kind === 'subagent') parts.push(plural(s.edit_count || 0, 'edit'));
+    return parts.join(' · ');
   }
 
   // ── turn view ──

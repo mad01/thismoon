@@ -17,6 +17,7 @@ import (
 	"github.com/mad01/thismoon/services/moondb/internal/query"
 	"github.com/mad01/thismoon/services/moondb/internal/server/servertest"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 // testInfo is the build metadata the test server reports on /version.
@@ -433,5 +434,69 @@ func TestParseSince(t *testing.T) {
 				t.Errorf("ParseSince(%q) = %v, %v; want %v", tc.raw, got, err, tc.want)
 			}
 		})
+	}
+}
+
+func TestTurnCarriesTraceTotals(t *testing.T) {
+	h := newHarness(t)
+	var old TurnView
+	h.getJSON(t, "/api/turns/"+servertest.OldTurn, http.StatusOK, &old)
+	tot := old.TraceTotals
+	if tot == nil {
+		t.Fatal("the closed turn with a transcript has no trace_totals")
+	}
+	// Model 30s then 19s, tool 60s, harness 1s plus 10s to Stop.
+	if tot.WallMS != 120_000 || tot.ModelMS != 49_000 || tot.ToolMS != 60_000 ||
+		tot.HarnessMS != 11_000 || tot.ModelCalls != 2 || tot.ToolCalls != 1 {
+		t.Errorf("trace_totals = %+v", tot)
+	}
+	if tot.Cost == nil || fmt.Sprintf("%.5f", *tot.Cost) != "0.01444" {
+		t.Errorf("cost = %v, want 1010 input and 520 output tokens of claude-opus-5-5", tot.Cost)
+	}
+	var open TurnView
+	h.getJSON(t, "/api/turns/"+servertest.NewTurn, http.StatusOK, &open)
+	if open.TraceTotals != nil {
+		t.Errorf("the open turn has no transcript yet, so no totals; got %+v", open.TraceTotals)
+	}
+}
+
+func TestSessionTrace(t *testing.T) {
+	h := newHarness(t)
+	var got trace.SessionTrace
+	h.getJSON(t, "/api/sessions/"+servertest.OldSession+"/trace", http.StatusOK, &got)
+	if got.SessionID != servertest.OldSession || len(got.Turns) != 1 {
+		t.Fatalf("trace = %+v, want the old session's one turn", got)
+	}
+	var kinds []trace.Kind
+	for _, s := range got.Turns[0].Spans {
+		kinds = append(kinds, s.Kind)
+	}
+	if !slices.Equal(kinds, []trace.Kind{trace.KindModel, trace.KindTool, trace.KindModel}) {
+		t.Errorf("span kinds = %v, want model, tool, model", kinds)
+	}
+	if tool := got.Turns[0].Spans[1]; !slices.Equal(tool.EditIDs, []string{servertest.EditC}) {
+		t.Errorf("tool span edits = %v, want EditC", tool.EditIDs)
+	}
+	if got.Totals.WallMS != 120_000 || got.Gaps == nil {
+		t.Errorf("totals = %+v, gaps = %v", got.Totals, got.Gaps)
+	}
+	h.wantAPIError(t, "/api/sessions/nope/trace", http.StatusNotFound, "not found")
+}
+
+func TestSessionsCarryDuration(t *testing.T) {
+	h := newHarness(t)
+	var got struct {
+		Sessions []SessionSummary `json:"sessions"`
+	}
+	h.getJSON(t, "/api/sessions", http.StatusOK, &got)
+	durations := map[string]int64{}
+	for _, s := range got.Sessions {
+		durations[s.ID] = s.DurationMS
+	}
+	if durations[servertest.OldSession] != 120_000 || durations[servertest.NewSession] != 0 {
+		t.Errorf(
+			"durations = %v, want 2 minutes for the old session and 0 for the open one",
+			durations,
+		)
 	}
 }

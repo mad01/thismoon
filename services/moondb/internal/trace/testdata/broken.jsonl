@@ -1,0 +1,6 @@
+{"type":"user","timestamp":"2026-10-01T10:00:00.000Z","promptId":"p-broken","message":{"role":"user","content":"a long one"}}
+not json at all
+{"type":"api-request","timestamp":"2026-10-01T10:00:01.000Z"}
+{"type":"assistant","timestamp":"yesterday","message":{"id":"msg_broken_0","model":"claude-opus-5-5","content":[],"usage":{"input_tokens":1,"output_tokens":1}}}
+{"type":"assistant","timestamp":"2026-10-01T10:00:03.000Z","message":{"id":"msg_broken_1","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"toolu_broken","name":"Grep","input":{}}],"usage":{"input_tokens":1,"output_tokens":7}}}
+

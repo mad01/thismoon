@@ -19,17 +19,18 @@ Claude Code hooks ──stdin JSON──▶ moondb record ──files──▶ s
   Stop (async), then snapshots
 moondb import ──reads ~/.claude transcripts──▶ spool/ (the same envelopes, backfilled)
 moondb mcp (stdio shim) ──HTTP──▶ serve
-moondb why | history | sessions ──HTTP──▶ serve
+moondb why | history | sessions | trace ──HTTP──▶ serve
 ```
 
 ## Structure
 
 ```
 cmd/moondb/         entrypoint, delegates to internal/cli
-facts.go            port, workdir, caps and budgets, default excludes, agentdoc.Facts
+facts.go            port, workdir, caps and budgets, default excludes, trace
+                    limits, model prices, agentdoc.Facts
 internal/
   cli/              Cobra commands: serve, record, import, mcp, why,
-                    history, sessions, doctor, docs, version
+                    history, sessions, trace, doctor, docs, version
   record/           the hook side: payload decode, envelope builders,
                     observed read and blob id, HEAD content, transcript
                     tail, Bash diffs, turn-edge snapshots, per-session
@@ -47,7 +48,10 @@ internal/
   store/            Store and Chunks interfaces and record types
     local/          local disk backend: JSONL log, gzip chunks, index
     storetest/      conformance suite for every backend
-  query/            why and history over the store and git
+  query/            why and history over the store and git, and the
+                    trace cache
+  trace/            traces from transcript lines: spans, gaps, totals,
+                    prices; pure functions
   server/           HTTP API + webkit web page
   client/           HTTP client shared by the CLI and mcpserver
   mcpserver/        MCP stdio setup and the read-only tools
@@ -123,6 +127,26 @@ blamed commit, and looks up the Edit with that after-blob. When that finds
 nothing, it matches the normalized line text against lines Edits added to
 the path. `history` lists a path's Edits newest first.
 
+Trace: serve computes a turn's trace on read from the transcript lines the
+turn keeps, so capture records nothing new for it. `trace.Build` makes a
+span per assistant message, from the event before it to its last line. It
+makes one per tool call, from the `tool_use` to its `tool_result`, and one
+per subagent, from its first to its last recorded edit inside the turn. It
+splits the turn into gaps classed by the event that ends each one: model,
+tool, user (a new input after the model finished) or harness. The gaps add
+up to the wall time, and so do the totals by kind, to the millisecond. A
+turn longer than the 4 MiB transcript tail keeps only its tail; when the
+first kept line is an assistant line or a tool result, the stretch before
+it counts as harness time.
+
+Cost is tokens times the price of the call's model, from the table in
+`facts.go` or the config, times the fast-mode and US-only multipliers the
+call's usage asks for. A config row keeps the built-in row's tier and
+multipliers. A trace depends only on the turn's chunk, its edits and its
+times, so `query` caches it in memory under those, at most 512 turns. A
+session's trace puts its turns in order and adds the user time between
+them.
+
 ## Storage
 
 The `local` backend keeps everything under the workdir
@@ -146,13 +170,14 @@ backend to the same behavior.
 ## Interfaces
 
 HTTP: `GET /` and `/app.js` (read-only web page), `GET /api/sessions`,
-`GET /api/sessions/{id}`, `GET /api/turns/{id}`, `GET /api/edits`,
+`GET /api/sessions/{id}`, `GET /api/sessions/{id}/trace`, `GET /api/turns/{id}`, `GET /api/edits`,
 `GET /api/why`, `GET /api/history`, `GET /api/annotate`,
 `GET /api/chunks/{sha}`, `GET /healthz`, `GET /version`,
 `GET /webkit/`. There is no write endpoint. CLI: `moondb serve`, `record`,
-`import`, `mcp`, `why <path>:<line>`, `history <path>`, `sessions`, `doctor`, `docs`,
-`version`. MCP tools: `moondb_why`, `moondb_history`, `moondb_turn`,
-`moondb_sessions`, `moondb_doctor`, all read-only. Config surfaces are
+`import`, `mcp`, `why <path>:<line>`, `history <path>`, `sessions`,
+`trace <session-id>`, `doctor`, `docs`, `version`. MCP tools: `moondb_why`,
+`moondb_history`, `moondb_turn`, `moondb_sessions`, `moondb_trace`,
+`moondb_doctor`, all read-only. Config surfaces are
 `--port` (`MOONDB_PORT`), `--workdir` (`MOONDB_WORKDIR`), `--base-url`
 (`MOONDB_BASE_URL`, display-only), and `~/.config/moondb/config.toml` for
-the capture settings.
+the capture settings and the model prices.

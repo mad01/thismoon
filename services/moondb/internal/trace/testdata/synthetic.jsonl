@@ -1,0 +1,3 @@
+{"type":"user","timestamp":"2026-10-01T10:00:00.000Z","promptId":"p-synthetic","message":{"role":"user","content":"go on"}}
+{"type":"api-request","timestamp":"2026-10-01T10:00:00.500Z"}
+{"type":"assistant","timestamp":"2026-10-01T10:00:01.000Z","message":{"id":"msg_synthetic_only","model":"<synthetic>","content":[{"type":"text","text":"API Error"}],"usage":{"input_tokens":0,"output_tokens":0}}}

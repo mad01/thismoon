@@ -15,10 +15,10 @@ the same store.
 ```
 moondb/
   cmd/moondb/          - entrypoint (delegates to internal/cli)
-  facts.go             - port, workdir, capture caps and budgets, default excludes, agentdoc.Facts
+  facts.go             - port, workdir, capture caps and budgets, default excludes, trace limits, model prices, agentdoc.Facts
   embed.go             - embeds operating.md for `moondb docs`
   internal/
-    cli/               - cobra: root, serve, record, import, mcp, why, history, sessions, doctor, docs, version
+    cli/               - cobra: root, serve, record, import, mcp, why, history, sessions, trace, doctor, docs, version
     record/            - the capture hook: payload decode, envelopes, observed read, HEAD blob, transcript tail, Bash diffs, turn-edge snapshots, per-session state
     importer/          - the transcript backfill: transcript parse, turns and edits as envelopes, file-history originals
     spool/             - envelope format, atomic writer, drain reader
@@ -28,7 +28,8 @@ moondb/
     store/             - Store and Chunks interfaces and record types (store.go, types.go)
       local/           - the local disk backend: JSONL log, gzip chunks, in-memory index
       storetest/       - conformance suite every backend must pass
-    query/             - why, history and annotate answers over the store and git
+    query/             - why, history and annotate answers over the store and git; traces with their cache
+    trace/             - turn and session traces from transcript lines: spans, gaps, totals, prices (pure)
     server/            - HTTP API + webkit web page
     client/            - HTTP client shared by the CLI and mcpserver
     mcpserver/         - MCP tools
@@ -250,6 +251,64 @@ against one scan of the path's edits, so every line names the edit `why`
 would name. Annotate only reads a worktree that holds at least one recorded
 edit, so the route cannot read arbitrary files on the machine.
 
+### Trace: what took time and what it cost
+
+`trace.Build` reads a turn's transcript chunk and returns its Trace: the turn
+span, a span per model call, tool call and subagent, the turn's gaps and its
+totals. It is a pure function and never fails on its input. A line that
+does not parse is counted as skipped, and a turn without lines gets an empty
+trace with a reason.
+
+- A model span covers one assistant `message.id`. It starts at the event
+  before the message (usually the `api-request` line) and ends at its last
+  line. Usage counts once per message, from its last line in chunk order.
+- A tool span runs from the assistant line with the `tool_use` to the first
+  user line carrying its `tool_result`, with `is_error` and the Edit ids
+  whose `tool_use_id` matches. A call without a result runs to the turn's
+  end, marked unfinished. The span includes any wait on a permission
+  prompt.
+- A subagent span runs from the subagent's first recorded edit to its last,
+  clamped to the turn's span: the Bash hook is async, so an edit can land
+  after Stop. Its own transcript is a separate file the turn does not keep,
+  so its model calls are not priced.
+- The gaps cover the turn from start to end, each stretch classed by the
+  event that ends it. An assistant line ends model time and a tool result
+  ends tool time. A new input after the model finished (its stop reason was
+  `end_turn`, or a Stop line came) ends user time. Anything else is harness
+  time: hooks, request setup, and the Stop hooks up to the Stop line (a
+  `system` line with subtype `stop_hook_summary`). The tail after a Stop
+  line is user time.
+- The totals by kind add up to the wall time to the millisecond. Each kind
+  is cut from the running sum of the kinds, so the sub-millisecond rest of
+  one carries into the next.
+- User time inside a turn is real. The harness keeps one prompt id across a
+  Stop when a teammate message or a task notification restarts the loop, so
+  that wait lands in the same turn. The session trace adds the stretches
+  between turns.
+
+Cost comes from `moondb.DefaultPrices` (USD per million tokens), matched by
+exact model id, then by family (a dated or provider suffix). Fast mode
+multiplies a row that has a fast price. US-only inference (usage
+`inference_geo` "us") multiplies a Claude 4.6 or later row by
+`USOnlyMultiplier`, on top of fast mode. A `[prices."<model id>"]` table in
+the config file sets the rates of the row its id matches and keeps that
+row's long-prompt tier and multipliers; an id no row matches is added with
+its rates alone. An unknown model, or fast mode on a model without a fast
+price, gives tokens and a nil cost, listed as unpriced, never a zero. A
+config rate that is negative, NaN or infinite fails the config closed.
+
+serve computes traces on read. `query.Service` caches them in memory by
+transcript chunk, edit count and turn times, at most `TraceCacheTurns`, the
+least recently read dropped first.
+
+A turn's transcript chunk keeps the last `MaxTranscriptBytes` of its lines,
+cut at a line boundary, so a longer turn loses its head. A turn opens on its
+prompt, so a timeline whose first line is an assistant line or a tool result
+lost its head, and the trace's lines say `cut_head`. The stretch from the
+turn's start to the first kept line is then harness time, a model span never
+starts before its first kept line, and the calls in the cut head add no
+tokens or cost.
+
 ### moondb never writes into the user's `.git`
 
 No shadow commits, refs, notes or trailers. moondb reads git with
@@ -323,9 +382,10 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 
 - `GET  /`                      : webkit-chromed web page, read-only (see Web page below)
 - `GET  /app.js`                : the page's client script
-- `GET  /api/sessions`          : sessions, newest first
+- `GET  /api/sessions`          : sessions, newest first, each with `duration_ms` from its turn times (no cost: that needs every transcript chunk)
 - `GET  /api/sessions/{id}`     : one session with its turns
-- `GET  /api/turns/{id}`        : one turn with its edits, unattributed deltas and snapshots
+- `GET  /api/sessions/{id}/trace`: the session's trace: every turn's spans, gaps and totals, the user gaps between turns, session totals
+- `GET  /api/turns/{id}`        : one turn with its edits, unattributed deltas and snapshots, plus `trace_totals` when its transcript lines hold a timeline
 - `GET  /api/edits`             : edits, newest first, narrowed by repo, worktree, path, blob id, since and limit
 - `GET  /api/why`               : the answer for one line of one file
 - `GET  /api/history`           : the recorded edits of one path, newest first
@@ -351,8 +411,13 @@ return, so keep it stable.
 - `/`: sessions, newest first, with the turn and edit counts and the repos
   each one touched. A repo filter and a since filter map to the
   `/api/sessions` query parameters and stay in the URL.
-- `/?session=<id>`: the session's worktrees and its turns in order, each
-  with the prompt's first line, status, edit count and the agents seen.
+- `/?session=<id>`: a Trace section, then the session's worktrees and its
+  turns in order, each with the prompt's first line, status, edit count and
+  the agents seen. The Trace section has a totals strip (wall, model, tool,
+  tokens, cost) and one timeline lane per turn with a row each for model,
+  tool and subagent bars in the webkit series colours, a failed tool call in
+  red. Each lane is scaled to its own turn. A bar's hover title gives its
+  duration, tokens and cost, and clicking it opens the turn.
 - `/?turn=<id>`: the full prompt and final message with fixation reading,
   the agents (main conversation or subagent type), and the edits grouped by
   worktree, then path. Each edit shows its tool, kind, agent, time, before
@@ -369,7 +434,8 @@ return, so keep it stable.
   A file outside any repository (`?path=<abs>`) shows the history only.
 
 Large records stay cheap. A diff draws its first 400 rows and the rest on
-request. The transcript shows its first 200 KB beside a download link to
+request. A trace draws its first 25 turn lanes and the rest on request.
+The transcript shows its first 200 KB beside a download link to
 the chunk.
 
 ## Commands
@@ -381,7 +447,8 @@ moondb import [--since 30d] [--dry-run] [--force] [--json]   # backfill from Cla
 moondb mcp                     # stdio MCP shim over serve
 moondb why <path>:<line>       # the Edit, turn, prompt, session and commit behind one line
 moondb history <path>          # the recorded edits of a path, newest first
-moondb sessions                # recorded sessions, newest first
+moondb sessions                # recorded sessions, newest first, with their duration
+moondb trace <session-id> [--json]   # time and cost totals, the longest tool calls, the most expensive model calls
 moondb doctor                  # serve reachable, store readable, version skew
 moondb docs                    # print the operating doc
 moondb version [-o json]
@@ -401,6 +468,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 - `moondb_history(path)`: the recorded edits of a path, newest first
 - `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links
 - `moondb_sessions()`: recorded sessions, newest first
+- `moondb_trace(id)`: one session's time split (model, tool, harness, user), tokens by kind and cost, with the longest tool calls and the most expensive model calls
 - `moondb_doctor()`: the same checks as `moondb doctor`, returned as JSON, for a client that can call a tool but has no shell
 
 Tool responses include a `url` built from `MOONDB_BASE_URL` (for example

@@ -41,7 +41,8 @@ Subcommands:
   mcp      Run the MCP stdio server exposing moondb_* tools to Claude Code.
   why      Explain one line of one file.
   history  List the recorded edits of a path.
-  sessions List recorded sessions.`, moondb.DefaultPort),
+  sessions List recorded sessions.
+  trace    Show what took time in a session and what it cost.`, moondb.DefaultPort),
 	// A failed query is a diagnosis ("nothing recorded for that path"), not a
 	// usage mistake; main prints the error once and nothing dumps the help.
 	SilenceUsage:  true,

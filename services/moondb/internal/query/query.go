@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/mad01/thismoon/services/moondb/internal/store"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 // ErrNotImplemented marks a question this build cannot answer yet.
@@ -24,9 +26,16 @@ var ErrInvalidRequest = errors.New("query: invalid request")
 // names no limit.
 const defaultHistoryLimit = 100
 
-// Service answers queries over one store.
+// Service answers queries over one store. Use it by pointer: it holds the
+// trace cache.
 type Service struct {
 	Store store.Store
+	// Prices costs the model calls in a trace; the zero value prices with
+	// moondb.DefaultPrices.
+	Prices trace.Prices
+
+	cacheOnce sync.Once
+	cache     *traceCache
 }
 
 // Method says how a Why answer was found.

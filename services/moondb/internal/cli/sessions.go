@@ -11,6 +11,7 @@ import (
 
 	"github.com/mad01/thismoon/services/moondb/internal/client"
 	"github.com/mad01/thismoon/services/moondb/internal/server"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 var (
@@ -24,7 +25,9 @@ var sessionsCmd = &cobra.Command{
 	Use:   "sessions",
 	Short: "List recorded sessions, newest first",
 	Long: `List the sessions moondb has recorded, newest first, with how many turns
-and edits each made and which repositories it touched.
+and edits each made, how long it ran from the first prompt to the last Stop,
+and which repositories it touched. moondb trace <session-id> shows where
+that time went and what it cost.
 
 --since takes an RFC 3339 time or a span before now: 90m, 24h, 7d.`,
 	Args: cobra.NoArgs,
@@ -72,10 +75,11 @@ func printSessions(w io.Writer, sessions []server.SessionSummary) {
 		return
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "STARTED\tSESSION\tTURNS\tEDITS\tREPOS\tTITLE")
+	fmt.Fprintln(tw, "STARTED\tSESSION\tTURNS\tEDITS\tDURATION\tREPOS\tTITLE")
 	for _, s := range sessions {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			when(s.StartedAt), short(s.ID), fmtCount(s.TurnCount), fmtCount(s.EditCount),
+			trace.FormatDuration(s.DurationMS),
 			orDash(strings.Join(s.Repos, ",")), orDash(sessionLabel(s.Title, s.Cwd)))
 	}
 	_ = tw.Flush()

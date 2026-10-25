@@ -1,0 +1,7 @@
+{"type":"user","timestamp":"2026-10-01T10:00:00.000Z","promptId":"p-resumed","message":{"role":"user","content":"start the wave"}}
+{"type":"api-request","timestamp":"2026-10-01T10:00:00.500Z"}
+{"type":"assistant","timestamp":"2026-10-01T10:00:02.000Z","message":{"id":"msg_resumed_1","model":"claude-opus-5-5","stop_reason":"end_turn","content":[{"type":"text","text":"started"}],"usage":{"input_tokens":100,"output_tokens":50}}}
+{"type":"system","subtype":"stop_hook_summary","timestamp":"2026-10-01T10:00:02.100Z"}
+{"type":"user","timestamp":"2026-10-01T10:00:32.000Z","promptId":"p-resumed","message":{"role":"user","content":"Another Claude session sent a message: done"}}
+{"type":"api-request","timestamp":"2026-10-01T10:00:32.200Z"}
+{"type":"assistant","timestamp":"2026-10-01T10:00:34.000Z","message":{"id":"msg_resumed_2","model":"claude-opus-5-5","stop_reason":"end_turn","content":[{"type":"text","text":"merged"}],"usage":{"input_tokens":100,"output_tokens":50}}}

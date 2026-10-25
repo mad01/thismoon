@@ -42,6 +42,14 @@ _Avoid_: blob (git's term, used only for git blob ids), object
 A recorded after-content blob id matched to a blob in a new commit, tying an Edit to the commit it landed in. Never a commit-message trailer.
 _Avoid_: attribution trailer, tag
 
+**Trace**:
+The account of what took time in a turn or a session and what it cost, computed on read from a Turn's transcript lines. A turn's trace is its Spans plus its wall time split by what was running: model, tool, harness, or user time spent waiting for input. A session's trace adds the user time between one turn's Stop and the next prompt.
+_Avoid_: event, log entry, metric, profile
+
+**Span**:
+One timed piece of a Trace: the turn itself, one model call (an assistant message, with its tokens and cost), one tool call (from the line asking for it to its result) or one subagent's recorded edits. A model whose price moondb does not know has tokens and no cost, never a zero cost.
+_Avoid_: event, log entry, metric
+
 **Backend**:
 An implementation of the store interface: `local` today, `cloud` in a later release.
 _Avoid_: driver, provider

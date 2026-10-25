@@ -21,10 +21,20 @@ func init() {
 func doctorChecks(context.Context) []doctor.Check {
 	api := apiURL()
 	return []doctor.Check{
-		{Name: "config", Run: func(context.Context) error { return cfgErr }},
+		{Name: "config", Run: checkConfig},
 		doctor.ServiceReachable(api),
 		{Name: "store-ping", Run: client.New(api).Health},
 		doctor.StoreReadable(flagWorkdir),
 		doctor.VersionSkew(api),
 	}
+}
+
+// checkConfig fails on a config file that will not parse, and on a
+// [prices] table serve would refuse to start with.
+func checkConfig(context.Context) error {
+	if cfgErr != nil {
+		return cfgErr
+	}
+	_, err := priceOverrides(cfg.Prices)
+	return err
 }

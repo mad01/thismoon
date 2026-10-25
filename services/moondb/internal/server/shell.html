@@ -100,6 +100,29 @@
 .timeline .tl-prompt a{color:inherit}
 .timeline .tl-prompt a:hover{color:var(--primary)}
 .timeline .diff{margin-top:0.5rem}
+/* session trace: a totals strip, then a lane per turn with a row of bars per
+   span kind, each lane scaled to its own turn */
+.tr-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0.75rem;margin:0 0 1rem}
+.tr-stats wk-stat{margin:0;padding:0.8rem 1rem}
+.tr-stats wk-stat-value{font-size:1.6rem}
+.tr-legend{display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem 1.1rem;margin:0 0 0.75rem;font-size:0.8rem;color:var(--text-2)}
+.tr-legend .row{gap:0.4rem;flex-wrap:nowrap}
+.tr-swatch{background:var(--bar)}
+.tr-lanes{display:flex;flex-direction:column;gap:0.3rem}
+.tr-lane{display:grid;grid-template-columns:15rem minmax(0,1fr) 8.5rem;align-items:center;gap:0.75rem;font-size:0.8rem}
+#app a.tr-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-1);text-decoration:none}
+#app a.tr-label:hover{color:var(--primary)}
+.tr-track{display:flex;flex-direction:column;gap:2px;padding:3px 0;background:var(--chip-bg);border-radius:4px}
+.tr-row{position:relative;height:7px}
+.tr-bar{position:absolute;top:0;bottom:0;min-width:2px;border-radius:2px;background:var(--bar);box-shadow:0 0 0 0.5px var(--card-bg)}
+.tr-failed{background:repeating-linear-gradient(135deg,var(--bar) 0 2px,color-mix(in srgb,var(--bar) 35%,transparent) 2px 4px)}
+.tr-bar:hover{outline:1.5px solid var(--text-1);outline-offset:1px;z-index:1}
+.tr-meta{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--text-3)}
+@media (max-width:700px){
+  .tr-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tr-lane{grid-template-columns:minmax(0,1fr)}
+  .tr-meta{text-align:left}
+}
 .linkish{background:none;border:none;padding:0;font:inherit;font-size:0.78rem;color:var(--primary);cursor:pointer}
 .linkish:hover{text-decoration:underline}
 </style>
