@@ -2,19 +2,16 @@ package ingest
 
 import (
 	"bytes"
-	"cmp"
 	"encoding/json"
-	"regexp"
 	"strings"
-	"unicode/utf8"
 
-	"github.com/mad01/thismoon/services/moondb"
+	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 // Transcript line types that name a session.
 const (
 	// lineAgentName carries agentName, the name the person gave the
-	// session; it wins over a generated title.
+	// session; it outranks a generated title.
 	lineAgentName = "agent-name"
 	// lineAITitle carries aiTitle, the title the harness generated.
 	lineAITitle = "ai-title"
@@ -27,18 +24,24 @@ type titleEntry struct {
 	AITitle   string `json:"aiTitle"`
 }
 
-// transcriptTitle is the title a turn's transcript lines give the session:
-// the last name the person gave it, else the last title the harness
-// generated, else "". Lines that mention neither type are not decoded.
-func transcriptTitle(lines []byte) string {
-	if !bytes.Contains(lines, []byte(lineAgentName)) &&
-		!bytes.Contains(lines, []byte(lineAITitle)) {
-		return ""
+// titleOffer is a title a turn offers its session and where it came from;
+// the zero value offers none.
+type titleOffer struct {
+	title  string
+	source store.TitleSource
+}
+
+// transcriptTitle is the title a turn's transcript lines offer the session,
+// by store.OfferTitle over the lines in order: the first name the person
+// gave it, else the first title the harness generated. Lines that mention
+// neither type are not decoded.
+func transcriptTitle(lines []byte) titleOffer {
+	var o titleOffer
+	if !namesSession(lines) {
+		return o
 	}
-	var name, generated string
 	for raw := range bytes.Lines(lines) {
-		if !bytes.Contains(raw, []byte(lineAgentName)) &&
-			!bytes.Contains(raw, []byte(lineAITitle)) {
+		if !namesSession(raw) {
 			continue
 		}
 		var e titleEntry
@@ -47,32 +50,21 @@ func transcriptTitle(lines []byte) string {
 		}
 		switch e.Type {
 		case lineAgentName:
-			name = cmp.Or(strings.TrimSpace(e.AgentName), name)
+			store.OfferTitle(&o.title, &o.source, strings.TrimSpace(e.AgentName), store.TitleNamed)
 		case lineAITitle:
-			generated = cmp.Or(strings.TrimSpace(e.AITitle), generated)
+			store.OfferTitle(
+				&o.title,
+				&o.source,
+				strings.TrimSpace(e.AITitle),
+				store.TitleGenerated,
+			)
 		}
 	}
-	return cmp.Or(name, generated)
+	return o
 }
 
-// markup matches an XML-like tag: the harness wraps a teammate message, a
-// slash command or a task notification in one, and a title reads better
-// without it.
-var markup = regexp.MustCompile(`</?[A-Za-z][\w:-]*(\s[^<>]*)?/?>`)
-
-// titleLine is the first line of a prompt that holds text once its tags
-// are gone, with runs of space collapsed, cut to
-// moondb.SessionPromptLineRunes with an ellipsis.
-func titleLine(prompt string) string {
-	for line := range strings.Lines(prompt) {
-		text := strings.Join(strings.Fields(markup.ReplaceAllString(line, " ")), " ")
-		if text == "" {
-			continue
-		}
-		if utf8.RuneCountInString(text) <= moondb.SessionPromptLineRunes {
-			return text
-		}
-		return string([]rune(text)[:moondb.SessionPromptLineRunes]) + "…"
-	}
-	return ""
+// namesSession reports whether b mentions a line type that names the
+// session, so lines without one skip the decode.
+func namesSession(b []byte) bool {
+	return bytes.Contains(b, []byte(lineAgentName)) || bytes.Contains(b, []byte(lineAITitle))
 }

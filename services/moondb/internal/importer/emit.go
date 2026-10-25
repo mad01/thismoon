@@ -111,7 +111,7 @@ func (em *emitter) build(st step) (spool.Envelope, chunkSet) {
 }
 
 // envelope starts an envelope with what every one of the session carries.
-// Every envelope is a backfill, so it never overwrites what the store
+// Every envelope is marked Backfill, so it never overwrites what the store
 // already holds.
 func (em *emitter) envelope(
 	kind spool.Kind,
@@ -127,7 +127,8 @@ func (em *emitter) envelope(
 		At:      at,
 		Harness: record.Harness,
 		Session: spool.SessionRef{
-			ID: s.id, Cwd: s.cwd, Title: s.title(), Model: s.model, TranscriptPath: s.path,
+			ID: s.id, Cwd: s.cwd, Title: s.title, TitleSource: s.titleSource,
+			Model: s.model, TranscriptPath: s.path,
 		},
 		Turn:     spool.TurnRef{ID: turnID},
 		Backfill: true,

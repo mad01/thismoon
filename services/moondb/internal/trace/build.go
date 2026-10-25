@@ -345,7 +345,9 @@ func splitMS(byKind map[GapKind]time.Duration) map[GapKind]int64 {
 }
 
 // turnTotals sums a turn: its time by gap kind, and its model and tool
-// calls. The gaps cover the turn, so the kinds add up to WallMS.
+// calls. The gaps cover the turn, so the kinds add up to WallMS. A turn
+// whose calls billed no token has no cost, never a zero one, as its
+// listing row has none.
 func turnTotals(turn Span, gaps []Gap, models, tools []Span) Totals {
 	byKind := map[GapKind]time.Duration{}
 	for _, g := range gaps {
@@ -371,9 +373,6 @@ func turnTotals(turn Span, gaps []Gap, models, tools []Span) Totals {
 		if s.IsError {
 			t.ToolErrors++
 		}
-	}
-	if t.Cost == nil && len(t.Unpriced) == 0 {
-		t.Cost = new(0.0) // the lines were read and no call billed a token
 	}
 	return t
 }

@@ -78,14 +78,17 @@ const (
 )
 
 // Turn totals. serve stores each turn's trace totals when the turn closes;
-// a turn stored before that, or by an older trace build, gets them from a
-// backfill that runs while the spool is empty, a batch per tick, newest
-// turns first. A batch reads one transcript chunk per turn, so it stays
-// small to keep the next envelope waiting at most a moment.
+// a turn stored before that, or by an older trace build, gets them from the
+// totals backfill, which runs while the spool is empty, a batch per tick,
+// newest session first and a session's turns in order. A batch reads one
+// transcript chunk per turn, so it stays small to keep the next envelope
+// waiting at most a moment.
 const (
-	// TotalsBackfillTurns is how many turns one backfill batch computes.
+	// TotalsBackfillTurns is how many turns one totals backfill batch
+	// tries, computed or not, and how many sessions it fills a missing
+	// prompt line for.
 	TotalsBackfillTurns = 20
-	// TotalsBackfillEvery is how often the backfill runs a batch.
+	// TotalsBackfillEvery is how often the totals backfill runs a batch.
 	TotalsBackfillEvery = time.Second
 )
 
@@ -100,8 +103,8 @@ const (
 	// running without other activity. The harness sends no Stop for a turn
 	// the person interrupted, so such a turn stays open for good.
 	OpenTurnStaleAfter = 12 * time.Hour
-	// SessionPromptLineRunes caps the first prompt line a session keeps
-	// for its title.
+	// SessionPromptLineRunes caps a prompt line: the one a session keeps
+	// for its title and the one a trace shows per turn.
 	SessionPromptLineRunes = 100
 )
 
@@ -179,6 +182,10 @@ func standardRates(input, output float64) Rates {
 // here that the model id starts with, followed by a dated snapshot
 // ("-20251101"), a provider version ("@...") or a context marker ("[1m]").
 // The config file's [prices."<model id>"] tables override or extend it.
+//
+// A change to a LongPromptTokens threshold here needs a trace.TotalsVersion
+// bump: a stored turn's usage keeps the side of the threshold it was
+// computed on, and only the totals backfill computes it again.
 var DefaultPrices = map[string]Price{
 	"claude-fable-5-1": {
 		Rates: RatesFrom(10, 50, 0.25), USMultiplier: USOnlyMultiplier,

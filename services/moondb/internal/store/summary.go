@@ -40,6 +40,10 @@ type SessionSummary struct {
 	// trace's wall time, whose turn spans stretch to a line written after
 	// the recorded end.
 	DurationMS int64 `json:"duration_ms"`
+	// LastTurnEnd is where DurationMS ends: the latest turn end, an open
+	// turn ending where it started; zero without turns. It stays out of
+	// the JSON, where a listing row says it as ended_at.
+	LastTurnEnd time.Time `json:"-"`
 	// Usage merges the Usage of every turn with totals (MergeUsage).
 	Usage []ModelUsage `json:"usage,omitempty"`
 }
@@ -109,6 +113,7 @@ func addTurns(sum *SessionSummary, turns []Turn) {
 		}
 	}
 	sum.LastActivityAt = later(sum.LastActivityAt, last)
+	sum.LastTurnEnd = last
 	sum.DurationMS = last.Sub(first).Milliseconds()
 	sum.Usage = MergeUsage(usage...)
 }

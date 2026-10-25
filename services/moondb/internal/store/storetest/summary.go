@@ -54,6 +54,7 @@ func sessionSummary(t *testing.T, st store.Store) {
 		LastTurnOpen:   true,
 		LastActivityAt: at(31),
 		DurationMS:     (29 * time.Minute).Milliseconds(),
+		LastTurnEnd:    at(30),
 		Usage:          []store.ModelUsage{usage("model-a", 150, 15), usage("model-b", 5, 1)},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -72,27 +73,30 @@ func sessionSummary(t *testing.T, st store.Store) {
 }
 
 // turnsWithoutTotals: closed and failed turns with no totals, or totals
-// older than the version asked for, come newest first; an open turn never
-// does, and limit cuts the list.
+// older than the version asked for, come newest session first and in Seq
+// order within a session; an open turn never does, and limit cuts the
+// list.
 func turnsWithoutTotals(t *testing.T, st store.Store) {
 	ctx := context.Background()
 	older := turn("t2", "s1", store.TurnFailed, at(2))
 	older.Totals = totals(1)
 	current := turn("t3", "s1", store.TurnClosed, at(3))
 	current.Totals = totals(2)
-	seed(t, st, session("s1", at(0)),
+	seed(t, st, session("s1", at(0)), session("s2", at(10)),
 		turn("t1", "s1", store.TurnClosed, at(1)), older, current,
 		turn("t4", "s1", store.TurnOpen, at(4)),
 		turn("t5", "s1", store.TurnClosed, at(5)),
+		turn("u1", "s2", store.TurnClosed, at(11)),
+		turn("u2", "s2", store.TurnClosed, at(12)),
 	)
 	cases := []struct {
 		name           string
 		version, limit int
 		want           []string
 	}{
-		{"version 2", 2, 0, []string{"t5", "t2", "t1"}},
-		{"limit", 2, 2, []string{"t5", "t2"}},
-		{"version 1", 1, 0, []string{"t5", "t1"}},
+		{"version 2", 2, 0, []string{"u1", "u2", "t1", "t2", "t5"}},
+		{"limit", 2, 3, []string{"u1", "u2", "t1"}},
+		{"version 1", 1, 0, []string{"u1", "u2", "t1", "t5"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -16,15 +16,17 @@ type Store interface {
 	AppendSnapshot(ctx context.Context, s Snapshot) error
 	AppendCommitLink(ctx context.Context, l CommitLink) error
 
-	// Sessions lists sessions newest first by StartedAt, narrowed by f,
-	// each summarized from its records (Summarize).
+	// Sessions lists sessions newest first by StartedAt, each summarized
+	// from its records (Summarize) and kept when f keeps it
+	// (SessionFilter.Keeps), so Since selects by last activity.
 	Sessions(ctx context.Context, f SessionFilter) ([]SessionSummary, error)
 	// Session loads one session with its summary and its turns in Seq
 	// order. Returns ErrNotFound.
 	Session(ctx context.Context, id string) (SessionDetail, error)
 	// TurnsWithoutTotals lists up to limit closed or failed turns whose
-	// Totals are missing or older than version, newest first by
-	// StartedAt, then by ID. serve's backfill computes them.
+	// Totals are missing or older than version, in SortForTotals order:
+	// the newest session first, a session's turns by Seq. serve's totals
+	// backfill computes them.
 	TurnsWithoutTotals(ctx context.Context, version, limit int) ([]Turn, error)
 	// Turn loads one turn with everything recorded under it. Returns
 	// ErrNotFound.

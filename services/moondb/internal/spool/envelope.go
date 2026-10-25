@@ -75,11 +75,15 @@ type Envelope struct {
 // SessionRef identifies the session a payload belongs to and carries what
 // the hook knows about it; serve upserts the Session from it.
 type SessionRef struct {
-	ID             string `json:"id"`
-	Cwd            string `json:"cwd,omitempty"`
-	Title          string `json:"title,omitempty"`
-	Model          string `json:"model,omitempty"`
-	TranscriptPath string `json:"transcript_path,omitempty"`
+	ID    string `json:"id"`
+	Cwd   string `json:"cwd,omitempty"`
+	Title string `json:"title,omitempty"`
+	// TitleSource says where Title came from. The hook leaves it empty,
+	// which ranks its session title as generated (store.OfferTitle); an
+	// import names the transcript line its title came from.
+	TitleSource    store.TitleSource `json:"title_source,omitempty"`
+	Model          string            `json:"model,omitempty"`
+	TranscriptPath string            `json:"transcript_path,omitempty"`
 }
 
 // TurnRef identifies the turn a payload belongs to. TranscriptOffset is the

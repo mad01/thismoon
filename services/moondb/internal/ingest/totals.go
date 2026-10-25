@@ -2,7 +2,9 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"runtime/debug"
 
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 	"github.com/mad01/thismoon/services/moondb/internal/trace"
@@ -29,41 +31,58 @@ func (in *Ingester) totals(t store.Turn, lines []byte) *store.TurnTotals {
 
 // withTotals sets a closed or failed turn's totals from its transcript
 // lines and returns the lines. A transcript the store cannot read is
-// logged and leaves the turn without totals, for the backfill to try
-// again: losing the close over it would lose more.
+// logged and clears the turn's totals, which no longer match its times,
+// for the totals backfill to compute again: losing the close over it would
+// lose more.
 func (in *Ingester) withTotals(ctx context.Context, t *store.Turn) []byte {
 	if t.Status == store.TurnOpen {
 		return nil
 	}
 	lines, err := in.transcript(ctx, *t)
 	if err != nil {
-		in.logf("%v; leaving its totals to the backfill", err)
+		in.logf("%v; leaving its totals to the totals backfill", err)
+		t.Totals = nil
 		return nil
 	}
 	t.Totals = in.totals(*t, lines)
 	return lines
 }
 
-// fillSession sets the session's title and prompt line where they are
-// empty; a value the session has is never replaced.
-func (in *Ingester) fillSession(ctx context.Context, id, title, promptLine string) error {
-	if title == "" && promptLine == "" {
-		return nil
-	}
+// fillSession offers the session a turn's title and fills its prompt line
+// when it has none. The title goes through store.OfferTitle. The prompt
+// line comes from the first of the session's turns, in Seq order, that
+// has a prompt, so every path fills it from the same turn. The session is
+// written only when either changed.
+func (in *Ingester) fillSession(ctx context.Context, id string, offer titleOffer) error {
 	d, err := in.Store.Session(ctx, id)
 	if err != nil {
 		return fmt.Errorf("ingest: load session %s: %w", id, err)
 	}
 	s := d.Session
-	changed := fill(&s.Title, title)
-	changed = fill(&s.PromptLine, promptLine) || changed
+	changed := store.OfferTitle(&s.Title, &s.TitleSource, offer.title, offer.source)
+	changed = in.fillPromptLine(ctx, &s, d.Turns) || changed
 	if !changed {
 		return nil
 	}
 	return in.putSession(ctx, s)
 }
 
-// promptLine is the title line of a stored prompt; "" when the chunk is
+// fillPromptLine sets an empty s.PromptLine from the first of turns that
+// has a prompt and reports whether it changed. A first prompt without text
+// leaves it empty.
+func (in *Ingester) fillPromptLine(ctx context.Context, s *store.Session, turns []store.Turn) bool {
+	if s.PromptLine != "" {
+		return false
+	}
+	for _, t := range turns {
+		if t.PromptChunk != "" {
+			return fill(&s.PromptLine, in.promptLine(ctx, t.PromptChunk))
+		}
+	}
+	return false
+}
+
+// promptLine is a stored prompt's trace.PromptLine; "" when the chunk is
 // missing or holds no text. A label is never worth failing ingest over.
 func (in *Ingester) promptLine(ctx context.Context, chunk string) string {
 	if chunk == "" {
@@ -73,61 +92,150 @@ func (in *Ingester) promptLine(ctx context.Context, chunk string) string {
 	if err != nil {
 		return ""
 	}
-	return titleLine(string(data))
+	return trace.PromptLine(string(data))
 }
 
-// backfillTotals computes the totals of up to limit stored turns that have
-// none or older ones, newest first, and fills the session titles and
-// prompt lines those turns give. A turn it cannot compute is logged and
-// added to skip, which later calls leave out, and the batch looks further
-// for one in its place. It returns how many turns it computed.
+// backfillBatch is what one totals backfill batch did: the turns it tried
+// and, of those, the ones it computed.
+type backfillBatch struct {
+	tried, computed int
+}
+
+// backfillTotals tries up to limit stored turns that have no totals or
+// older ones, in Store.TurnsWithoutTotals order, computes their totals,
+// and offers their sessions the titles their lines give. limit caps the
+// turns tried, not the turns computed, so a batch stays short whatever
+// fails. A turn whose chunk cannot be read, or that panics, is logged and
+// added to skip, which later calls leave out. A store failure ends the
+// batch and leaves the turn for the next one.
 func (in *Ingester) backfillTotals(
 	ctx context.Context,
 	limit int,
 	skip map[string]bool,
-) (int, error) {
-	n := 0
-	for n < limit && ctx.Err() == nil {
-		turns, err := in.Store.TurnsWithoutTotals(ctx, trace.TotalsVersion, limit+len(skip))
+) (backfillBatch, error) {
+	turns, err := in.Store.TurnsWithoutTotals(ctx, trace.TotalsVersion, limit+len(skip))
+	if err != nil {
+		return backfillBatch{}, fmt.Errorf("ingest: turns without totals: %w", err)
+	}
+	var b backfillBatch
+	for _, t := range turns {
+		if b.tried == limit || ctx.Err() != nil {
+			break
+		}
+		if skip[t.ID] {
+			continue
+		}
+		b.tried++
+		done, err := in.guardedBackfill(ctx, t, skip)
 		if err != nil {
-			return n, fmt.Errorf("ingest: turns without totals: %w", err)
+			if ctx.Err() == nil {
+				in.logf("ingest: totals backfill: %v; pausing until the next batch", err)
+			}
+			break
 		}
-		failed := false
-		for _, t := range turns {
-			if n == limit || ctx.Err() != nil {
-				break
-			}
-			if skip[t.ID] {
-				continue
-			}
-			if err := in.backfillTurn(ctx, t); err != nil {
-				in.logf("ingest: totals backfill: %v; skipping the turn until serve restarts", err)
-				skip[t.ID], failed = true, true
-				continue
-			}
-			n++
-		}
-		if !failed {
-			break // every candidate was computed or skipped before: none is left
+		if done {
+			b.computed++
 		}
 	}
-	return n, nil
+	return b, nil
 }
 
-// backfillTurn computes one stored turn's totals and fills its session's
-// title from its lines and, for the first turn, its prompt line.
-func (in *Ingester) backfillTurn(ctx context.Context, t store.Turn) error {
+// guardedBackfill runs backfillTurn with a panic recovered, as the drain's
+// guarded does for an envelope, so a transcript that trips a bug cannot
+// crash serve a second after every restart. The turn sits in skip while it
+// runs, so a panic leaves it skipped until serve restarts; a run that
+// computed the turn or hit a store failure takes it out again.
+func (in *Ingester) guardedBackfill(
+	ctx context.Context,
+	t store.Turn,
+	skip map[string]bool,
+) (done bool, err error) {
+	skip[t.ID] = true
+	defer func() {
+		if p := recover(); p != nil {
+			in.logf(
+				"ingest: totals backfill: turn %s panicked: %v; skipping it until serve restarts\n%s",
+				t.ID,
+				p,
+				debug.Stack(),
+			)
+			done, err = false, nil
+		}
+	}()
+	done, err = in.backfillTurn(ctx, t)
+	if done || err != nil {
+		delete(skip, t.ID)
+	}
+	return done, err
+}
+
+// backfillTurn computes one stored turn's totals and offers its session
+// the title its lines give, and reports whether it computed them. It does
+// not for a turn whose transcript chunk the store cannot read while it
+// answers a Ping: that is logged, and the turn stays skipped. The error is
+// a store failure: a failed turn write, or a failed chunk read while Ping
+// fails too. A failed session fill after the turn's write is logged on its
+// own, and the turn counts as computed.
+func (in *Ingester) backfillTurn(ctx context.Context, t store.Turn) (bool, error) {
 	lines, err := in.transcript(ctx, t)
 	if err != nil {
-		return err
+		if down := in.storeDown(ctx, err); down != nil {
+			return false, down
+		}
+		in.logf("ingest: totals backfill: %v; skipping the turn until serve restarts", err)
+		return false, nil
 	}
 	t.Totals = in.totals(t, lines)
 	if err := in.putTurn(ctx, t); err != nil {
-		return err
+		if down := in.storeDown(ctx, err); down != nil {
+			return false, down
+		}
+		return false, err
 	}
-	prompt := ""
-	if t.Seq == 1 {
-		prompt = in.promptLine(ctx, t.PromptChunk)
+	if err := in.fillSession(ctx, t.SessionID, transcriptTitle(lines)); err != nil {
+		in.logf("ingest: totals backfill: %v; turn %s keeps its totals", err, t.ID)
 	}
-	return in.fillSession(ctx, t.SessionID, transcriptTitle(lines), prompt)
+	return true, nil
+}
+
+// storeDown is err as the store's failure when Ping fails too, else nil:
+// the drain tells a store failure from an envelope's the same way.
+func (in *Ingester) storeDown(ctx context.Context, err error) error {
+	if perr := in.Store.Ping(ctx); perr != nil {
+		return fmt.Errorf("store unavailable: %w (%v)", perr, err)
+	}
+	return nil
+}
+
+// sessionsWithoutPromptLine lists the sessions that have no prompt line,
+// for the totals backfill to fill.
+func (in *Ingester) sessionsWithoutPromptLine(ctx context.Context) ([]string, error) {
+	list, err := in.Store.Sessions(ctx, store.SessionFilter{})
+	if err != nil {
+		return nil, fmt.Errorf("ingest: list sessions: %w", err)
+	}
+	var ids []string
+	for _, s := range list {
+		if s.PromptLine == "" {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids, nil
+}
+
+// fillPromptLines fills the prompt line of each session in ids that has
+// none from its first prompt (fillSession), whether or not its turns need
+// totals. It returns how many of ids it went through: all of them, or
+// fewer with the store failure that stopped it.
+func (in *Ingester) fillPromptLines(ctx context.Context, ids []string) (int, error) {
+	for i, id := range ids {
+		if ctx.Err() != nil {
+			return i, nil
+		}
+		err := in.fillSession(ctx, id, titleOffer{})
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return i, err
+		}
+	}
+	return len(ids), nil
 }

@@ -123,28 +123,21 @@ func appendNew[T any](s *Store, list *[]T, v T, id func(T) string) error {
 	return nil
 }
 
-// Sessions lists sessions newest first by StartedAt, each summarized.
+// Sessions lists sessions newest first by StartedAt, each summarized and
+// kept when f keeps it.
 func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.SessionSummary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var list []store.Session
+	out := []store.SessionSummary{}
 	for _, v := range s.sessions {
-		if v.StartedAt.Before(f.Since) {
-			continue
+		if sum := s.summary(v); f.Keeps(sum) {
+			out = append(out, sum)
 		}
-		if f.Repo != "" && !slices.ContainsFunc(s.edits, func(e store.Edit) bool {
-			return e.SessionID == v.ID && e.Repo == f.Repo
-		}) {
-			continue
-		}
-		list = append(list, v)
 	}
-	slices.SortFunc(list, func(a, b store.Session) int { return b.StartedAt.Compare(a.StartedAt) })
-	out := make([]store.SessionSummary, 0, len(list))
-	for _, v := range limit(list, f.Limit) {
-		out = append(out, s.summary(v))
-	}
-	return out, nil
+	slices.SortFunc(out, func(a, b store.SessionSummary) int {
+		return b.StartedAt.Compare(a.StartedAt)
+	})
+	return limit(out, f.Limit), nil
 }
 
 // Session loads a session with its summary and its turns in Seq order.
@@ -159,7 +152,7 @@ func (s *Store) Session(_ context.Context, id string) (store.SessionDetail, erro
 }
 
 // TurnsWithoutTotals lists up to limit closed or failed turns whose totals
-// are missing or older than version, newest first by StartedAt, then ID.
+// are missing or older than version, in store.SortForTotals order.
 func (s *Store) TurnsWithoutTotals(_ context.Context, version, n int) ([]store.Turn, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -169,9 +162,7 @@ func (s *Store) TurnsWithoutTotals(_ context.Context, version, n int) ([]store.T
 			out = append(out, t)
 		}
 	}
-	slices.SortFunc(out, func(a, b store.Turn) int {
-		return cmp.Or(b.StartedAt.Compare(a.StartedAt), cmp.Compare(b.ID, a.ID))
-	})
+	store.SortForTotals(out, func(id string) time.Time { return s.sessions[id].StartedAt })
 	return limit(out, n), nil
 }
 

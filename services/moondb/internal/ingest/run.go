@@ -31,14 +31,14 @@ const (
 // envelope present, then each one Spool.Watch reports, in name order; each
 // ingested envelope is removed and every drained batch ends with a
 // Spool.Sweep, as does a drain at least every minute. While the spool is
-// empty, it computes the totals of stored turns that lack them, a few
-// each tick (moondb.TotalsBackfillTurns every moondb.TotalsBackfillEvery),
-// in the same goroutine, so the backfill never races an envelope for a
-// turn. An envelope that
-// fails to decode or ingest, or panics while ingesting, is logged and left
-// for a later attempt without holding up the ones behind it. After maxAttempts it is moved to
-// <spool>/failed/ with the envelope file only; its chunks go with the next
-// sweep. A failure while Store.Ping also fails is the store's, not the
+// empty, the totals backfill computes the totals of stored turns that lack
+// them and fills the prompt lines of sessions that lack one, a few each
+// tick (moondb.TotalsBackfillTurns every moondb.TotalsBackfillEvery), in
+// the same goroutine, so it never races an envelope for a record. An
+// envelope that fails to decode or ingest, or panics while ingesting, is
+// logged and left for a later attempt without holding up the ones behind
+// it. After maxAttempts it is moved to <spool>/failed/ with the envelope
+// file only; its chunks go with the next sweep. A failure while Store.Ping also fails is the store's, not the
 // envelope's: the batch stops and nothing is counted against it. Run
 // returns nil when ctx ends and an error only when the spool cannot be
 // watched.
@@ -86,31 +86,63 @@ type runner struct {
 	in       *Ingester
 	attempts map[string]int
 	retryAt  map[string]time.Time
-	// skip holds the turns whose totals the backfill could not compute;
-	// backfilled counts the turns computed since the backlog last ran out.
+	// skip holds the turns whose totals the totals backfill could not
+	// compute; backfilled counts the turns computed since the backlog last
+	// ran out.
 	skip       map[string]bool
 	backfilled int
+	// promptLines holds the sessions still to get a prompt line, listed
+	// once by the first batch (listed): a session recorded later gets its
+	// prompt line at a turn open or close.
+	promptLines []string
+	listed      bool
 }
 
-// backfill computes one batch of missing turn totals, but only while the
-// spool is empty: an envelope always goes first. When a batch finds
-// nothing left after earlier ones did work, it logs how many turns it
-// filled.
+// backfill runs one totals backfill batch, but only while the spool is
+// empty: an envelope always goes first.
 func (r *runner) backfill(ctx context.Context) {
 	pending, err := r.in.Spool.List()
 	if err != nil || len(pending) > 0 {
 		return
 	}
-	n, err := r.in.backfillTotals(ctx, moondb.TotalsBackfillTurns, r.skip)
+	r.backfillTotals(ctx)
+	r.backfillPromptLines(ctx)
+}
+
+// backfillTotals computes one batch of missing turn totals. When a batch
+// finds nothing left to try after earlier ones did work, it logs how many
+// turns they computed.
+func (r *runner) backfillTotals(ctx context.Context) {
+	b, err := r.in.backfillTotals(ctx, moondb.TotalsBackfillTurns, r.skip)
 	if err != nil {
 		r.in.logf("%v", err)
 		return
 	}
-	r.backfilled += n
-	if n == 0 && r.backfilled > 0 {
+	r.backfilled += b.computed
+	if b.tried == 0 && r.backfilled > 0 {
 		r.in.logf("ingest: totals backfill done: computed the totals of %d stored turns",
 			r.backfilled)
 		r.backfilled = 0
+	}
+}
+
+// backfillPromptLines fills the prompt lines of up to
+// moondb.TotalsBackfillTurns of the sessions that had none when Run
+// started. A store failure leaves the rest for the next batch.
+func (r *runner) backfillPromptLines(ctx context.Context) {
+	if !r.listed {
+		ids, err := r.in.sessionsWithoutPromptLine(ctx)
+		if err != nil {
+			r.in.logf("%v", err)
+			return
+		}
+		r.promptLines, r.listed = ids, true
+	}
+	batch := r.promptLines[:min(moondb.TotalsBackfillTurns, len(r.promptLines))]
+	n, err := r.in.fillPromptLines(ctx, batch)
+	r.promptLines = r.promptLines[n:]
+	if err != nil && ctx.Err() == nil {
+		r.in.logf("ingest: totals backfill: %v; pausing the prompt lines until the next batch", err)
 	}
 }
 

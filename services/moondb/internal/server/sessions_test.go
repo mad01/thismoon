@@ -61,6 +61,15 @@ func TestSessionRows(t *testing.T) {
 	if !newer.LastActivityAt.Equal(servertest.T0.Add(63 * time.Minute)) {
 		t.Errorf("last activity = %v, want the newest edit", newer.LastActivityAt)
 	}
+	if newer.EndedAt != nil || older.EndedAt == nil ||
+		!older.EndedAt.Equal(servertest.T0.Add(3*time.Minute)) {
+		t.Errorf("ended at %v, %v; want none while running and the last turn's end once ended",
+			newer.EndedAt, older.EndedAt)
+	}
+	if older.TranscriptPath != servertest.OldTranscriptPath || newer.TranscriptPath != "" {
+		t.Errorf("transcript paths %q, %q; want the session records'",
+			older.TranscriptPath, newer.TranscriptPath)
+	}
 	if newer.Cost != nil || newer.Tokens.Total() != 0 {
 		t.Errorf("newer cost %v, tokens %+v; want none while its turn is open",
 			newer.Cost, newer.Tokens)
@@ -73,7 +82,7 @@ func TestSessionRows(t *testing.T) {
 
 // TestSessionsWindow: the window adds up every session the filters keep,
 // past the limit, and the repos come from the time window whatever the
-// repo filter says.
+// repo filter says. The time window keeps the sessions active in it.
 func TestSessionsWindow(t *testing.T) {
 	h := newHarness(t)
 	cost := h.oldCost(t)
@@ -81,18 +90,25 @@ func TestSessionsWindow(t *testing.T) {
 		{Repo: servertest.OtherRepo, Name: "owner/other", Sessions: 1},
 		{Repo: servertest.Repo, Name: "owner/thismoon", Sessions: 1},
 	}
+	// The newer session started 30 minutes before now and was last active
+	// 27 minutes before it; the older one ended 87 minutes before it.
+	newerOnly := WindowTotals{Sessions: 1, Turns: 1, Edits: 2, Files: 2}
 	tests := []struct {
 		name, query string
 		rows        int
 		want        WindowTotals
+		// timed is set when the time window leaves the older session out.
+		timed bool
 	}{
-		{"all", "", 2, WindowTotals{Sessions: 2, Turns: 2, Edits: 3, Files: 3}},
-		{"limit", "?limit=1", 1, WindowTotals{Sessions: 2, Turns: 2, Edits: 3, Files: 3}},
+		{"all", "", 2, WindowTotals{Sessions: 2, Turns: 2, Edits: 3, Files: 3}, false},
+		{"limit", "?limit=1", 1, WindowTotals{Sessions: 2, Turns: 2, Edits: 3, Files: 3}, false},
 		{
 			"repo", "?repo=" + servertest.OtherRepo, 1,
 			WindowTotals{Sessions: 1, Turns: 1, Edits: 1, Files: 1},
+			false,
 		},
-		{"since", "?since=45m", 1, WindowTotals{Sessions: 1, Turns: 1, Edits: 2, Files: 2}},
+		{"since", "?since=45m", 1, newerOnly, true},
+		{"since after the newer start", "?since=29m", 1, newerOnly, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -108,13 +124,13 @@ func TestSessionsWindow(t *testing.T) {
 					tc.want,
 				)
 			}
-			if tc.name != "since" && (w.Cost == nil || !near(*w.Cost, cost)) {
+			if !tc.timed && (w.Cost == nil || !near(*w.Cost, cost)) {
 				t.Errorf("window cost = %v, want the older session's %v", w.Cost, cost)
 			}
-			if tc.name == "since" && w.Cost != nil {
+			if tc.timed && w.Cost != nil {
 				t.Errorf("window cost = %v, want none: no session in it has tokens", *w.Cost)
 			}
-			if tc.name != "since" && !slices.Equal(got.Repos, wantRepos) {
+			if !tc.timed && !slices.Equal(got.Repos, wantRepos) {
 				t.Errorf("repos = %+v, want %+v", got.Repos, wantRepos)
 			}
 		})

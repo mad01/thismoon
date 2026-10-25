@@ -4,8 +4,9 @@
 // the DOM with webkit's shared helpers. Four views, picked by the query
 // string:
 //
-//   /                              sessions grouped by day, newest first, last 7 days by
-//                                  default; ?since= and ?repo= filter, ?limit= pages
+//   /                              sessions active in the window (last 7 days by default),
+//                                  grouped by the day they started, newest first;
+//                                  ?since= and ?repo= filter, ?limit= pages
 //   /?session=<id>                 one session: its title, repos and status, its trace (a
 //                                  timeline lane per turn), its turns and the worktrees
 //                                  it touched
@@ -427,8 +428,8 @@
   // opens on. 'any' sends no bound to the API.
   var SINCE = [['24h', '24 hours'], ['7d', '7 days'], ['30d', '30 days'], ['any', 'Any time']];
   var DEFAULT_SINCE = '7d';
-  var SINCE_PHRASE = { '24h': 'in the last 24 hours', '7d': 'in the last 7 days',
-    '30d': 'in the last 30 days', 'any': 'since recording began' };
+  var SINCE_PHRASE = { '24h': 'active in the last 24 hours', '7d': 'active in the last 7 days',
+    '30d': 'active in the last 30 days', 'any': 'since recording began' };
 
   // Repo badges take a series hue picked by the repo's name, so one repo
   // keeps its colour from row to row.
@@ -481,7 +482,8 @@
     replace([
       el('wk-page-header', {}, [el('wk-title', {}, 'Sessions')]),
       el('p', { class: 'hint' },
-        'Each row is one Claude Code session: the repo it worked in, what it was about, and what it cost.'),
+        'Each row is one Claude Code session: the repo it worked in, what it was about, and what it cost. ' +
+        'The list holds the sessions active in the window, grouped by the day they started.'),
       controls,
       strip,
       list
@@ -536,7 +538,7 @@
 
   // windowStrip is one line adding up every session the filters keep.
   function windowStrip(w, state) {
-    var scope = SINCE_PHRASE[state.since] || 'since ' + state.since;
+    var scope = SINCE_PHRASE[state.since] || 'active since ' + state.since;
     if (state.repo) scope += ', in ' + repoName(state.repo);
     function figure(n, word) {
       return el('span', { class: 'ls-fig' }, [el('b', {}, fmtCount(n)), plural(n || 0, word).replace(/^\d+ /, '')]);
@@ -555,7 +557,7 @@
   // row per local day; more, when set, loads a longer page.
   function sessionDays(sessions, state, more) {
     if (!sessions.length) {
-      var scope = SINCE_PHRASE[state.since] || 'since ' + state.since;
+      var scope = SINCE_PHRASE[state.since] || 'active since ' + state.since;
       return [el('div', { class: 'empty' }, state.repo
         ? 'No sessions in ' + repoName(state.repo) + ' ' + scope + '.'
         : 'No sessions ' + scope + '. Older ones are under Any time.')];
@@ -595,14 +597,22 @@
     return days;
   }
 
+  // dayRow heads one day: its session count and their summed cost, with
+  // the plus its rows show when any of them leaves a model unpriced. It
+  // adds up the sessions on this page, so a page that cuts a day short
+  // sums only the part of the day it holds.
   function dayRow(day, now) {
     var cost = 0;
     var priced = false;
+    var unpriced = [];
     day.sessions.forEach(function (s) {
       if (s.cost != null) {
         cost += s.cost;
         priced = true;
       }
+      (s.unpriced || []).forEach(function (m) {
+        if (unpriced.indexOf(m) < 0) unpriced.push(m);
+      });
     });
     var name = dayName(day.date, now);
     var date = DAYS[day.date.getDay()] + ' ' + MONTHS[day.date.getMonth()] + ' ' + day.date.getDate();
@@ -611,7 +621,7 @@
       el('span', { class: 'ls-day-name' }, name || date),
       name ? el('span', { class: 'ls-day-date' }, date) : null,
       el('span', { class: 'ls-day-sum' },
-        plural(day.sessions.length, 'session') + (priced ? ' · ' + money(cost) : ''))
+        plural(day.sessions.length, 'session') + (priced ? ' · ' + money(cost, unpriced) : ''))
     ])));
   }
 
@@ -925,9 +935,10 @@
 
   function traceStats(t, turnCount) {
     var k = t.tokens || {};
-    var cost = t.unpriced && t.unpriced.length
-      ? 'unpriced: ' + t.unpriced.join(', ')
-      : 'list prices, main conversation';
+    var unpriced = t.unpriced && t.unpriced.length;
+    var cost = unpriced ? 'unpriced: ' + t.unpriced.join(', ') : 'list prices, main conversation';
+    // A trace that billed no token has no cost, as its listing row has none.
+    var costText = t.cost == null && !unpriced ? '-' : fmtCost(t.cost);
     return el('div', { class: 'tr-stats' }, [
       stat(fmtDuration(t.wall_ms || 0), 'Wall',
         plural(turnCount, 'turn') + ', ' + fmtDuration(t.user_ms || 0) + ' waiting for input'),
@@ -936,7 +947,7 @@
         plural(t.tool_calls || 0, 'call') + ', ' + (t.tool_errors || 0) + ' failed'),
       stat(fmtTokens(tokenTotal(k)), 'Tokens',
         fmtTokens(k.cache_read || 0) + ' cache read, ' + fmtTokens(k.output || 0) + ' output'),
-      stat(fmtCost(t.cost), 'Cost', cost)
+      stat(costText, 'Cost', cost)
     ]);
   }
 

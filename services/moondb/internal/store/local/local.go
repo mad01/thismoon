@@ -275,7 +275,7 @@ func (s *Store) appendFact(
 }
 
 // Sessions lists sessions newest first by StartedAt, each summarized from
-// the index. Since keeps sessions started at or after it; Repo keeps
+// the index. Since keeps sessions last active at or after it; Repo keeps
 // sessions with an edit in the repo.
 func (s *Store) Sessions(
 	ctx context.Context,
@@ -290,7 +290,8 @@ func (s *Store) Sessions(
 }
 
 // TurnsWithoutTotals lists up to limit closed or failed turns whose totals
-// are missing or older than version, newest first.
+// are missing or older than version, newest session first and a session's
+// turns by Seq (store.SortForTotals).
 func (s *Store) TurnsWithoutTotals(ctx context.Context, version, limit int) ([]store.Turn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

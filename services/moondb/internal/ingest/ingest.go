@@ -116,13 +116,14 @@ func (in *Ingester) kept(env spool.Envelope, missing map[string]bool, key string
 	return ""
 }
 
-// upsertSession creates the envelope's session, or refreshes the title,
-// model and transcript path of a known one. Cwd and Harness keep their
-// first value, since the session started there; StartedAt keeps the
-// earliest time seen, so a session first known from a late envelope moves
-// back when an earlier one arrives. A backfill only fills empty fields,
-// except that its turn-open moves StartedAt back too: live capture may have
-// begun after the session's first prompt.
+// upsertSession creates the envelope's session, or refreshes the model and
+// transcript path of a known one. The envelope's title is offered through
+// store.OfferTitle, so it replaces a stored one only by outranking it.
+// Cwd and Harness keep their first value, since the session started there;
+// StartedAt keeps the earliest time seen, so a session first known from a
+// late envelope moves back when an earlier one arrives. An import only
+// fills empty fields, except that its turn-open moves StartedAt back too:
+// live capture may have begun after the session's first prompt.
 func (in *Ingester) upsertSession(ctx context.Context, env spool.Envelope) error {
 	ref := env.Session
 	if ref.ID == "" {
@@ -130,10 +131,12 @@ func (in *Ingester) upsertSession(ctx context.Context, env spool.Envelope) error
 	}
 	cur, err := in.Store.Session(ctx, ref.ID)
 	if errors.Is(err, store.ErrNotFound) {
-		return in.putSession(ctx, store.Session{
-			ID: ref.ID, Harness: env.Harness, Cwd: ref.Cwd, Title: ref.Title,
-			Model: ref.Model, TranscriptPath: ref.TranscriptPath, StartedAt: env.At,
-		})
+		s := store.Session{
+			ID: ref.ID, Harness: env.Harness, Cwd: ref.Cwd, Model: ref.Model,
+			TranscriptPath: ref.TranscriptPath, StartedAt: env.At,
+		}
+		store.OfferTitle(&s.Title, &s.TitleSource, ref.Title, ref.TitleSource)
+		return in.putSession(ctx, s)
 	}
 	if err != nil {
 		return fmt.Errorf("ingest: load session %s: %w", ref.ID, err)
@@ -142,7 +145,7 @@ func (in *Ingester) upsertSession(ctx context.Context, env spool.Envelope) error
 	set := setter(env)
 	changed := fill(&s.Harness, env.Harness)
 	changed = fill(&s.Cwd, ref.Cwd) || changed
-	changed = set(&s.Title, ref.Title) || changed
+	changed = store.OfferTitle(&s.Title, &s.TitleSource, ref.Title, ref.TitleSource) || changed
 	changed = set(&s.Model, ref.Model) || changed
 	changed = set(&s.TranscriptPath, ref.TranscriptPath) || changed
 	if !env.Backfill || env.Kind == spool.KindTurnOpen { // a stored StartedAt is never empty
@@ -208,7 +211,7 @@ func errNoPayload(env spool.Envelope) error {
 }
 
 // setter is how an envelope's value meets a stored one: a live envelope
-// replaces it, a backfill only fills an empty field.
+// replaces it, an import only fills an empty field.
 func setter(env spool.Envelope) func(dst *string, v string) bool {
 	if env.Backfill {
 		return fill

@@ -149,7 +149,7 @@ func printTotals(w io.Writer, t trace.Totals) {
 	if len(t.Unpriced) > 0 {
 		unpriced = "unpriced: " + strings.Join(t.Unpriced, ", ")
 	}
-	fmt.Fprintf(tw, "cost\t%s\t%s\n", trace.FormatCost(t.Cost), unpriced)
+	fmt.Fprintf(tw, "cost\t%s\t%s\n", trace.FormatTotalsCost(t), unpriced)
 	fmt.Fprintf(tw, "calls\t%d\tmodel %d, tool %d (%d failed)\n",
 		t.ModelCalls+t.ToolCalls, t.ModelCalls, t.ToolCalls, t.ToolErrors)
 	_ = tw.Flush()

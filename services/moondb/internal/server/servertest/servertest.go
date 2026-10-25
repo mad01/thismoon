@@ -32,6 +32,8 @@ const (
 	// OldPromptLine is the older session's cached first prompt line, its
 	// title in a listing since it has no harness title.
 	OldPromptLine = "fix the other repo"
+	// OldTranscriptPath is the older session's transcript file.
+	OldTranscriptPath = "/home/.transcripts/sess-old.jsonl"
 
 	NewSession = "sess-new"
 	OldSession = "sess-old"
@@ -103,31 +105,21 @@ type Store struct {
 	pingErr error
 }
 
+// at is the fixture time minutes after T0.
+func at(minutes int) time.Time { return T0.Add(time.Duration(minutes) * time.Minute) }
+
 // NewStore returns a Store seeded with the fixture: an older session whose
 // closed turn made one edit in OtherRepo and kept its Transcript and the
 // totals it gives, and a newer session whose one open turn made two edits
 // in Repo, opened with a snapshot that found one unattributed delta.
 func NewStore() *Store {
-	at := func(minutes int) time.Time { return T0.Add(time.Duration(minutes) * time.Minute) }
-	old := store.Turn{
-		ID:              OldTurn,
-		SessionID:       OldSession,
-		Seq:             1,
-		Status:          store.TurnClosed,
-		StartedAt:       at(1),
-		EndedAt:         new(at(3)),
-		TranscriptChunk: TranscriptSHA,
-	}
-	totals := trace.Stored(trace.Build(store.TurnDetail{Turn: old}, []byte(Transcript),
-		trace.Prices{}).Totals)
-	old.Totals = &totals
 	loc := store.Location{Repo: Repo, Worktree: Worktree, Canonical: Worktree, Branch: "main"}
 	other := store.Location{Repo: OtherRepo, Worktree: "/work/other", Canonical: "/work/other"}
 	return &Store{
 		sessions: []store.Session{
 			{
 				ID: OldSession, Harness: "test-harness", Cwd: "/work/other",
-				PromptLine: OldPromptLine, StartedAt: at(0),
+				PromptLine: OldPromptLine, TranscriptPath: OldTranscriptPath, StartedAt: at(0),
 			},
 			{
 				ID: NewSession, Harness: "test-harness", Cwd: Worktree,
@@ -135,7 +127,7 @@ func NewStore() *Store {
 			},
 		},
 		turns: []store.Turn{
-			old,
+			oldTurn(),
 			{
 				ID: NewTurn, SessionID: NewSession, Seq: 1, PromptChunk: PromptSHA,
 				Status: store.TurnOpen, StartedAt: at(61),
@@ -161,6 +153,24 @@ func NewStore() *Store {
 			TranscriptSHA: []byte(Transcript),
 		},
 	}
+}
+
+// oldTurn is the older session's closed turn with the totals its
+// Transcript gives.
+func oldTurn() store.Turn {
+	old := store.Turn{
+		ID:              OldTurn,
+		SessionID:       OldSession,
+		Seq:             1,
+		Status:          store.TurnClosed,
+		StartedAt:       at(1),
+		EndedAt:         new(at(3)),
+		TranscriptChunk: TranscriptSHA,
+	}
+	totals := trace.Stored(trace.Build(store.TurnDetail{Turn: old}, []byte(Transcript),
+		trace.Prices{}).Totals)
+	old.Totals = &totals
+	return old
 }
 
 func fixtureEdit(id, session, turn string, at time.Time, l store.Location, path string) store.Edit {
@@ -210,24 +220,16 @@ func (s *Store) AppendCommitLink(context.Context, store.CommitLink) error { retu
 func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.SessionSummary, error) {
 	out := []store.SessionSummary{}
 	for _, sess := range slices.Backward(s.sessions) {
-		if sess.StartedAt.Before(f.Since) {
+		sum := s.summary(sess)
+		if !f.Keeps(sum) {
 			continue
 		}
-		if f.Repo != "" && !s.sessionTouched(sess.ID, f.Repo) {
-			continue
-		}
-		out = append(out, s.summary(sess))
+		out = append(out, sum)
 		if f.Limit > 0 && len(out) == f.Limit {
 			break
 		}
 	}
 	return out, nil
-}
-
-func (s *Store) sessionTouched(id, repo string) bool {
-	return slices.ContainsFunc(s.edits, func(e store.Edit) bool {
-		return e.SessionID == id && e.Repo == repo
-	})
 }
 
 // summary adds up one session's fixture records.
@@ -266,14 +268,21 @@ func (s *Store) Session(_ context.Context, id string) (store.SessionDetail, erro
 }
 
 // TurnsWithoutTotals lists the closed or failed fixture turns that lack
-// totals from version, newest first.
+// totals from version, in store.SortForTotals order.
 func (s *Store) TurnsWithoutTotals(_ context.Context, version, limit int) ([]store.Turn, error) {
 	out := []store.Turn{}
-	for _, t := range slices.Backward(s.turns) {
+	for _, t := range s.turns {
 		if store.NeedsTotals(t, version) {
 			out = append(out, t)
 		}
 	}
+	store.SortForTotals(out, func(id string) time.Time {
+		i := slices.IndexFunc(s.sessions, func(x store.Session) bool { return x.ID == id })
+		if i < 0 {
+			return time.Time{}
+		}
+		return s.sessions[i].StartedAt
+	})
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}

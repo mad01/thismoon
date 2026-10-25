@@ -30,15 +30,23 @@ const (
 type SessionSummary struct {
 	ID string `json:"id"`
 	// Title is the session's harness title, else the first line of its
-	// first prompt, else the last segment of its cwd.
+	// first prompt, else the last segment of its cwd, else its id: never
+	// empty.
 	Title   string `json:"title"`
 	Harness string `json:"harness"`
 	Cwd     string `json:"cwd"`
 	Model   string `json:"model,omitempty"`
+	// TranscriptPath is the harness transcript file the session record
+	// keeps.
+	TranscriptPath string `json:"transcript_path,omitempty"`
 	// Status is StatusRunning or StatusEnded.
 	Status         string    `json:"status"`
 	StartedAt      time.Time `json:"started_at"`
 	LastActivityAt time.Time `json:"last_activity_at"`
+	// EndedAt is the last turn's end once the session is ended, an open
+	// turn ending where it started; absent while it runs or before it has
+	// a turn.
+	EndedAt *time.Time `json:"ended_at,omitempty"`
 	// DurationMS runs from the first turn's start to the last turn's end,
 	// an open turn ending where it started. It reads the turn records
 	// only, so it can fall short of the session trace's wall time.
@@ -154,15 +162,22 @@ func (s *Server) row(sum store.SessionSummary, now time.Time) SessionSummary {
 	for _, r := range sum.Repos {
 		names = append(names, repoName(r))
 	}
+	status := sessionStatus(sum, now)
+	var ended *time.Time
+	if status == StatusEnded && !sum.LastTurnEnd.IsZero() {
+		ended = &sum.LastTurnEnd
+	}
 	return SessionSummary{
 		ID:             sum.ID,
 		Title:          sessionTitle(sum.Session),
 		Harness:        sum.Harness,
 		Cwd:            sum.Cwd,
 		Model:          sum.Model,
-		Status:         sessionStatus(sum, now),
+		TranscriptPath: sum.TranscriptPath,
+		Status:         status,
 		StartedAt:      sum.StartedAt,
 		LastActivityAt: sum.LastActivityAt,
+		EndedAt:        ended,
 		DurationMS:     sum.DurationMS,
 		TurnCount:      sum.TurnCount,
 		EditCount:      sum.EditCount,

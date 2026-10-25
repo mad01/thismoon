@@ -62,9 +62,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "moondb_sessions",
 		Description: "List recorded agent sessions newest first. Each has a title (the harness title, else its first prompt line), " +
-			"a status (running or ended), when it started and was last active, its duration, its turn, edit, file and agent counts, " +
-			"its tokens and cost, and the repositories and worktrees it edited. " +
-			"Filter by `repo` (host/owner/repo; sessions with at least one edit there), `since` (an RFC 3339 time or a duration such as 24h or 7d), and `limit` (default 50).",
+			"a status (running or ended), when it started, was last active and ended, its duration, its turn, edit, file and agent counts, " +
+			"its tokens and cost, its transcript path, and the repositories and worktrees it edited. " +
+			"Filter by `repo` (host/owner/repo; sessions with at least one edit there), `since` (sessions active since then, whenever they started: " +
+			"an RFC 3339 time or a duration such as 24h or 7d), and `limit` (default 50).",
 		Annotations: readOnly(),
 	}, h.handleSessions)
 
@@ -238,10 +239,10 @@ func (h *handlers) handleTurn(
 	)
 	if tot := d.TraceTotals; tot != nil {
 		summary += fmt.Sprintf("; took %s, cost %s",
-			trace.FormatDuration(tot.WallMS), trace.FormatCost(tot.Cost))
+			trace.FormatDuration(tot.WallMS), trace.FormatTotalsCost(*tot))
 	}
-	if line, _, _ := strings.Cut(strings.TrimSpace(prompt), "\n"); line != "" {
-		summary += fmt.Sprintf("; prompt: %q", truncate(line, 120))
+	if line := trace.PromptLine(prompt); line != "" {
+		summary += fmt.Sprintf("; prompt: %q", line)
 	}
 	return nil, turnOutput{
 		Turn:    d,
@@ -276,7 +277,7 @@ func truncate(s string, n int) string {
 
 type sessionsInput struct {
 	Repo  string `json:"repo,omitempty"  jsonschema:"repository identity host/owner/repo; keeps sessions with at least one edit there"`
-	Since string `json:"since,omitempty" jsonschema:"RFC 3339 time, or a duration before now such as 90m, 24h or 7d"`
+	Since string `json:"since,omitempty" jsonschema:"keeps sessions active since then: an RFC 3339 time, or a duration before now such as 90m, 24h or 7d"`
 	Limit int    `json:"limit,omitempty" jsonschema:"maximum sessions to return, newest first (default 50)"`
 }
 
@@ -359,7 +360,7 @@ func traceSummary(st trace.SessionTrace) string {
 		trace.FormatDuration(t.HarnessMS),
 		trace.FormatDuration(t.UserMS),
 		trace.FormatTokens(t.Tokens.Total()),
-		trace.FormatCost(t.Cost),
+		trace.FormatTotalsCost(t),
 	)
 	if len(t.Unpriced) > 0 {
 		s += fmt.Sprintf(" (unpriced: %s)", strings.Join(t.Unpriced, ", "))

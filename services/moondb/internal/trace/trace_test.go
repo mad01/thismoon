@@ -175,7 +175,7 @@ func TestBuild(t *testing.T) {
 			},
 		},
 		{
-			name:   "a turn whose only model line billed nothing costs zero",
+			name:   "a turn whose only model line billed nothing has no cost",
 			file:   "synthetic.jsonl",
 			status: store.TurnClosed,
 			ended:  after(2 * time.Second),
@@ -186,7 +186,6 @@ func TestBuild(t *testing.T) {
 			wantSpans: []wantSpan{
 				{kind: KindModel, id: "msg_synthetic_only", name: "<synthetic>", durationMS: 500},
 			},
-			wantCost: new(0.0),
 		},
 		{
 			name:   "broken lines are skipped and counted",

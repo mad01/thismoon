@@ -30,8 +30,11 @@ type Session struct {
 	Cwd string `json:"cwd"`
 	// Title is the harness's session title when it has one: the hook's
 	// session title, or the name or generated title a transcript line
-	// gives.
+	// gives. OfferTitle decides which one it holds.
 	Title string `json:"title,omitempty"`
+	// TitleSource says where Title came from, which ranks it against the
+	// next title offered.
+	TitleSource TitleSource `json:"title_source,omitempty"`
 	// PromptLine is the first line of the first prompt serve saw for the
 	// session, kept short, so a listing can name the session without
 	// reading a chunk. It is filled once and never replaced.
@@ -43,6 +46,47 @@ type Session struct {
 	TranscriptPath string     `json:"transcript_path,omitempty"`
 	StartedAt      time.Time  `json:"started_at"`
 	EndedAt        *time.Time `json:"ended_at,omitempty"`
+}
+
+// TitleSource is where a session title came from.
+type TitleSource string
+
+const (
+	// TitleNamed is a name the person gave the session: a transcript
+	// agent-name line.
+	TitleNamed TitleSource = "named"
+	// TitleGenerated is a title the harness generated: a transcript
+	// ai-title line, or the hook's session title, whose origin the hook
+	// does not say.
+	TitleGenerated TitleSource = "generated"
+)
+
+// known is s, or TitleGenerated for any value but TitleNamed: an empty
+// source on a title stored before sources existed, or on an envelope
+// that did not say, ranks as generated.
+func (s TitleSource) known() TitleSource {
+	if s == TitleNamed {
+		return TitleNamed
+	}
+	return TitleGenerated
+}
+
+// OfferTitle sets *title and *source to candidate from src when it
+// outranks the title they hold, and reports whether it did. A name the
+// person gave outranks a generated title, and within one rank the first
+// title seen stays; an empty candidate changes nothing. Every path that
+// names a session goes through it: the hook's title, the live turn close,
+// the totals backfill and an import.
+func OfferTitle(title *string, source *TitleSource, candidate string, src TitleSource) bool {
+	if candidate == "" {
+		return false
+	}
+	src = src.known()
+	if *title != "" && (src == TitleGenerated || source.known() == TitleNamed) {
+		return false
+	}
+	*title, *source = candidate, src
+	return true
 }
 
 // TurnStatus is where a turn is in its life.
@@ -74,7 +118,7 @@ type Turn struct {
 	EndedAt          *time.Time `json:"ended_at,omitempty"`
 	// Totals is what the turn's trace adds up to, computed by serve when
 	// the turn closes. It is nil on an open turn, and on a turn stored
-	// before totals existed until serve's backfill reaches it. Replace it
+	// before totals existed until serve's totals backfill reaches it. Replace it
 	// whole, never change it in place: a backend may share it.
 	Totals *TurnTotals `json:"totals,omitempty"`
 }
@@ -457,12 +501,36 @@ func NeedsTotals(t Turn, version int) bool {
 	return t.Status != TurnOpen && (t.Totals == nil || t.Totals.Version < version)
 }
 
+// SortForTotals puts turns in the order TurnsWithoutTotals lists them: the
+// newest session first by its start, then by session id, and a session's
+// turns by Seq, so the totals backfill reads a session's lines in the
+// order it wrote them. started gives a session's StartedAt.
+func SortForTotals(turns []Turn, started func(sessionID string) time.Time) {
+	slices.SortFunc(turns, func(a, b Turn) int {
+		return cmp.Or(
+			started(b.SessionID).Compare(started(a.SessionID)),
+			cmp.Compare(b.SessionID, a.SessionID),
+			cmp.Compare(a.Seq, b.Seq),
+			cmp.Compare(a.ID, b.ID),
+		)
+	})
+}
+
 // SessionFilter narrows a Sessions listing. Zero values mean no filter.
 type SessionFilter struct {
 	// Repo keeps sessions with at least one edit in the repo.
-	Repo  string
+	Repo string
+	// Since keeps sessions last active at or after it
+	// (SessionSummary.LastActivityAt), whenever they started.
 	Since time.Time
 	Limit int
+}
+
+// Keeps reports whether f's Repo and Since keep a summarized session.
+// Limit is the listing's to apply.
+func (f SessionFilter) Keeps(sum SessionSummary) bool {
+	return !sum.LastActivityAt.Before(f.Since) &&
+		(f.Repo == "" || slices.Contains(sum.Repos, f.Repo))
 }
 
 // EditQuery narrows an Edits listing. Zero values mean no filter; results

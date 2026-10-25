@@ -11,8 +11,9 @@ import (
 // turnOpen records a submitted prompt. A turn the store already holds (a
 // placeholder an early edit left, or the same envelope replayed) keeps its
 // fields; the open only fills what is empty and moves StartedAt back to the
-// prompt's time, never forward. A backfill moves it too: an imported prompt
-// can predate the live edit that left the placeholder.
+// prompt's time, never forward. An import moves it too: an imported prompt
+// can predate the live edit that left the placeholder. A session without
+// a prompt line takes the one its first prompt gives.
 func (in *Ingester) turnOpen(
 	ctx context.Context,
 	env spool.Envelope,
@@ -31,7 +32,7 @@ func (in *Ingester) turnOpen(
 	if err := in.openTurn(ctx, env, prompt); err != nil {
 		return err
 	}
-	return in.fillSession(ctx, env.Session.ID, "", in.promptLine(ctx, prompt))
+	return in.fillSession(ctx, env.Session.ID, titleOffer{})
 }
 
 // openTurn puts the turn a turn-open names, or fills the one the store
@@ -63,9 +64,11 @@ func (in *Ingester) openTurn(ctx context.Context, env spool.Envelope, prompt str
 // turnClose records the end of a turn: its last message, its transcript
 // lines, its final status and the totals of its trace. A close whose open
 // never arrived creates the turn, and the session with it, so the turn's
-// records do not dangle. A backfill only fills: it closes a turn still
-// open and sets fields the turn has empty. A session without a title takes
-// the one the turn's lines give.
+// records do not dangle. An import only fills: it closes a turn still open
+// and sets fields the turn has empty. The session is offered the title the
+// turn's lines give and, without a prompt line, the one its first prompt
+// gives, even when the close changes nothing on the turn: a replayed close
+// makes up a fill an earlier attempt lost to a failed write.
 func (in *Ingester) turnClose(
 	ctx context.Context,
 	env spool.Envelope,
@@ -94,18 +97,30 @@ func (in *Ingester) turnClose(
 	changed = set(&t.FinalChunk, in.kept(env, missing, p.FinalChunk)) || changed
 	changed = set(&t.TranscriptChunk, in.kept(env, missing, p.TranscriptChunk)) || changed
 	changed = closeTurn(&t, env, closedStatus(p.Status)) || changed
-	if !changed {
-		return nil
-	}
-	lines := in.withTotals(ctx, &t)
-	if err := in.putTurn(ctx, t); err != nil {
+	lines, err := in.closedLines(ctx, &t, changed)
+	if err != nil {
 		return err
 	}
-	return in.fillSession(ctx, t.SessionID, transcriptTitle(lines), "")
+	return in.fillSession(ctx, t.SessionID, transcriptTitle(lines))
+}
+
+// closedLines returns a closed turn's transcript lines. A changed turn gets
+// its totals from them and is written; an unchanged one is only read, and
+// a chunk it cannot read is logged and offers no title.
+func (in *Ingester) closedLines(ctx context.Context, t *store.Turn, changed bool) ([]byte, error) {
+	if changed {
+		lines := in.withTotals(ctx, t)
+		return lines, in.putTurn(ctx, *t)
+	}
+	lines, err := in.transcript(ctx, *t)
+	if err != nil {
+		in.logf("%v; offering its session no title from it", err)
+	}
+	return lines, nil
 }
 
 // closeTurn sets the turn's final status and end time and reports whether
-// either changed. A backfill changes the status of an open turn only and
+// either changed. An import changes the status of an open turn only and
 // sets an end time only where there is none.
 func closeTurn(t *store.Turn, env spool.Envelope, status store.TurnStatus) bool {
 	changed := false

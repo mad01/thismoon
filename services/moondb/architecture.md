@@ -36,7 +36,7 @@ internal/
                     observed read and blob id, HEAD content, transcript
                     tail, Bash diffs, turn-edge snapshots, per-session
                     state, the 200 ms and 2 s budgets
-  importer/         the transcript backfill: parse a session transcript
+  importer/         the transcript import: parse a session transcript
                     and its subagent transcripts, map turns and edits to
                     envelopes, take large files' originals from the file
                     history
@@ -154,16 +154,23 @@ Turn totals: a list of sessions cannot afford a trace per turn, so ingest
 keeps each closed turn's totals on its Turn record when the turn closes.
 They hold the time per class, the call counts, and the tokens per model
 and rate bucket, never a cost. Turns stored before that, or by an older
-trace build, get their totals from a backfill. It runs on the ingest
-goroutine while the spool is empty, a small batch a second, newest turns
-first, and logs how many turns it computed once none are left.
+trace build, get their totals from the totals backfill. It runs on the
+ingest goroutine while the spool is empty, a small batch a second, newest
+session first and a session's turns in order. It tries a fixed number of
+turns per batch, computed or not, and stops a batch at a store failure. A
+turn it cannot read or that panics is skipped until serve restarts. It
+logs how many turns it computed once none are left, and it also fills the
+prompt line of every session that had none when serve started.
 
 The session list reads records only. A row's title is the session's
-harness title, else the first line of its first prompt (kept on the
-session at turn open), else the last segment of its cwd. A row is running
-while its last activity is under 10 minutes old, or its last turn is open
-and the activity is under 12 hours old. Its cost prices the stored tokens
-on read, so a price change reprices every row. The answer also adds up the
+harness title, else the first line of its first prompt serve saw, else the
+last segment of its cwd, else its id. One rule picks the harness title on
+every path: a name the person gave outranks a generated title, and within
+one rank the first title seen stays. A row is running while its last
+activity is under 10 minutes old, or its last turn is open and the
+activity is under 12 hours old. Its cost prices the stored tokens on read,
+so a price change reprices every row. The time window keeps the sessions
+active in it, grouped by the day they started. The answer also adds up the
 whole filtered window and lists the window's repos for the page's chips.
 
 ## Storage

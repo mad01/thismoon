@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
@@ -11,17 +12,21 @@ import (
 // The read side of the index. Every method here only reads, so the store
 // serves them under a read lock, and every listing is a fresh slice.
 
+// sessionList walks every session newest first by start: Since selects by
+// last activity, which a session started long ago can still have, so no
+// start time ends the walk early.
 func (ix *index) sessionList(f store.SessionFilter) []store.SessionSummary {
 	out := []store.SessionSummary{}
 	for i := len(ix.sessionOrder) - 1; i >= 0; i-- {
 		s := ix.sessionOrder[i]
-		if s.StartedAt.Before(f.Since) {
-			break
-		}
 		if _, ok := ix.sessionRepos[s.ID][f.Repo]; f.Repo != "" && !ok {
+			continue // cheaper than a summary, and f.Keeps would drop it
+		}
+		sum := ix.summary(s)
+		if !f.Keeps(sum) {
 			continue
 		}
-		out = append(out, ix.summary(s))
+		out = append(out, sum)
 		if f.Limit > 0 && len(out) == f.Limit {
 			break
 		}
@@ -60,9 +65,9 @@ func (ix *index) sessionTurns(id string) []store.Turn {
 	return out
 }
 
-// turnsWithoutTotals scans every turn: the backfill asks once a tick, and
-// a scan of the in-memory turns costs less than an index kept in step
-// with every put.
+// turnsWithoutTotals scans every turn: the totals backfill asks once a
+// tick, and a scan of the in-memory turns costs less than an index kept in
+// step with every put.
 func (ix *index) turnsWithoutTotals(version, limit int) []store.Turn {
 	out := []store.Turn{}
 	for _, t := range ix.turns {
@@ -70,8 +75,11 @@ func (ix *index) turnsWithoutTotals(version, limit int) []store.Turn {
 			out = append(out, *t)
 		}
 	}
-	slices.SortFunc(out, func(a, b store.Turn) int {
-		return cmp.Or(b.StartedAt.Compare(a.StartedAt), cmp.Compare(b.ID, a.ID))
+	store.SortForTotals(out, func(id string) time.Time {
+		if s, ok := ix.sessions[id]; ok {
+			return s.StartedAt
+		}
+		return time.Time{}
 	})
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]

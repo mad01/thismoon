@@ -33,7 +33,7 @@ var (
 
 var importCmd = &cobra.Command{
 	Use:   "import",
-	Short: "Backfill the store from Claude Code session transcripts",
+	Short: "Import past sessions into the store from their transcripts",
 	Long: `Read the Claude Code session transcripts written within --since and spool
 what the hooks would have recorded: one turn per prompt, one edit per Edit,
 Write, MultiEdit and NotebookEdit call. serve ingests the spool as it does the

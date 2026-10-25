@@ -20,7 +20,7 @@ moondb/
   internal/
     cli/               - cobra: root, serve, record, import, mcp, why, history, sessions, trace, doctor, docs, version
     record/            - the capture hook: payload decode, envelopes, observed read, HEAD blob, transcript tail, Bash diffs, turn-edge snapshots, per-session state
-    importer/          - the transcript backfill: transcript parse, turns and edits as envelopes, file-history originals
+    importer/          - the transcript import: transcript parse, turns and edits as envelopes, file-history originals
     spool/             - envelope format, atomic writer, drain reader
     ingest/            - serve's spool drain: envelopes to records, turn totals at close, the totals backfill, session titles
     derive/            - before and after content per Edit, snapshot records, unattributed deltas
@@ -118,7 +118,7 @@ session has no snapshot of the worktree in its `<sid>.snap`, none is
 taken. If it has one, a clean worktree gets an empty snapshot: its files
 match HEAD again.
 
-### Import: backfill from transcripts
+### Import: past sessions from their transcripts
 
 `moondb import` reads the Claude Code session transcripts under
 `~/.claude/projects` written within `--since` (default 30d) and writes the
@@ -177,8 +177,8 @@ spool and its session state. It reads `objects/` only to skip shipping a
 chunk the store already has.
 
 - `moondb serve` drains the spool (a file watch plus a 1 s poll), derives
-  each Edit, appends the records, backfills turn totals while the spool is
-  empty, and serves the web page, the JSON API, `/version` and `/webkit/`.
+  each Edit, appends the records, runs the totals backfill while the spool
+  is empty, and serves the web page, the JSON API, `/version` and `/webkit/`.
 - `moondb mcp` holds no state: a thin HTTP client to the serve API on
   `localhost:<port>`. If serve is down, tools return an unreachable error
   that names `moondb doctor`.
@@ -320,21 +320,42 @@ the rate modifiers, so the read-time price equals the trace's.
 
 A turn stored before totals existed, or by an older trace build
 (`TurnTotals.Version` below `trace.TotalsVersion`), gets them from the
-backfill. serve runs it on the ingest goroutine every `TotalsBackfillEvery`,
-and only while the spool is empty. A batch computes at most
-`TotalsBackfillTurns` turns, newest first, so a waiting envelope waits a
-moment at most. A computed turn no longer qualifies, so the backfill is
-idempotent. A turn whose chunk cannot be read is logged and skipped until
-serve restarts. When a batch finds nothing left after earlier work, serve
-logs how many turns it computed. Bump `trace.TotalsVersion` when a trace
-change alters the totals, and the backfill recomputes the stored ones.
+totals backfill. serve runs it on the ingest goroutine every
+`TotalsBackfillEvery`, and only while the spool is empty. A batch tries at
+most `TotalsBackfillTurns` turns, computed or not, so a waiting envelope
+waits a moment at most. It takes the newest session first and a session's
+turns in Seq order. A computed turn no longer qualifies, so the totals
+backfill is idempotent. When a batch finds nothing left to try after
+earlier work, serve logs how many turns it computed.
 
-Sessions get their names the same way. A turn open fills
-`Session.PromptLine` with the first line of its prompt that has text once
-tags are gone, cut to `SessionPromptLineRunes`. A turn close fills
-`Session.Title` from the turn's last `agent-name` transcript line, else its
-last `ai-title` line. Both fill only an empty field and never replace a
-value. The backfill fills both for sessions stored earlier.
+A turn whose chunk cannot be read while the store answers a ping is logged
+and skipped until serve restarts. So is a turn that panics: each turn runs
+under a recover. A failed store write ends the batch and skips nothing, and
+so does a failed chunk read while the ping fails too. The next batch tries
+that turn again. Bump `trace.TotalsVersion` when a trace change alters the
+totals, and the totals backfill recomputes the stored ones. A turn-open
+that moves a closed turn's start back recomputes its totals; a transcript
+it cannot read then clears them for the totals backfill.
+
+Sessions get their names on the same paths. `Session.PromptLine` is the
+first line of a prompt that has text once tags are gone, cut to
+`SessionPromptLineRunes` (`trace.PromptLine`, which a trace's turn prompts
+use too). It comes from the session's first turn, in Seq order, that has a
+prompt, and it is filled once and never replaced. A turn open and a turn
+close fill it when it is empty, and the totals backfill fills it for every
+session that had none when serve started.
+
+`Session.Title` follows one rule on every path (`store.OfferTitle`). A
+name the person gave (a transcript `agent-name` line) outranks a generated
+title. A generated title is an `ai-title` line or the hook's session title,
+whose origin the hook does not say, and it outranks the prompt line. Within
+one rank the first title seen wins. `Session.TitleSource` (`named` or
+`generated`) keeps the rank, and a title stored before sources existed
+ranks as generated. Every envelope offers the hook's title. A turn close
+offers the title its lines give, even when it changes nothing on the turn,
+so a replayed close makes up a lost fill. The totals backfill offers the
+title of older turns, and an import offers the transcript's own pick by the
+same rule.
 
 A turn's transcript chunk keeps the last `MaxTranscriptBytes` of its lines,
 cut at a line boundary, so a longer turn loses its head. A turn opens on its
@@ -353,8 +374,8 @@ everything it records in its own store.
 ## Data model & storage
 
 ```go
-Session{ ID, Harness, Cwd, Title, PromptLine, Model, TranscriptPath,
-         StartedAt, EndedAt }
+Session{ ID, Harness, Cwd, Title, TitleSource /* named | generated */,
+         PromptLine, Model, TranscriptPath, StartedAt, EndedAt }
 Turn{ ID, SessionID, Seq, PromptChunk, FinalChunk, TranscriptChunk,
       TranscriptOffset, Status /* open | closed | failed */, StartedAt, EndedAt,
       Totals *TurnTotals }
@@ -443,12 +464,15 @@ A session row comes from the index alone, never a chunk
 (`internal/server/sessions.go`):
 
 - `title`: `Session.Title`, else `Session.PromptLine`, else the last
-  segment of the cwd.
+  segment of the cwd, else the session id. It is never empty.
 - `status`: `running` while the last turn start, turn end or edit is within
   `SessionIdleAfter`, or the last turn is open and that activity is within
   `OpenTurnStaleAfter`. Otherwise `ended`.
 - `started_at`, `last_activity_at`: the session's start, and its latest
   turn start, turn end or edit.
+- `ended_at`: once the session is `ended`, its last turn's end (an open
+  turn ends where it started). Absent while it runs.
+- `transcript_path`: the transcript file the session record keeps.
 - `duration_ms`: the first turn's start to the last turn's end. An open
   turn ends where it started.
 - `turn_count`, `edit_count`, `file_count` (distinct worktree and path) and
@@ -460,9 +484,12 @@ A session row comes from the index alone, never a chunk
 - `repos`, `repo_names` (each repo's last two path segments) and
   `worktrees`.
 
-`window` adds up every session the filters keep, past the limit: sessions,
-turns, edits, distinct files, tokens and cost. `repos` ignores the `repo`
-filter, so a page can offer every repo of the time window.
+`since` keeps the sessions active in the window: last active at or after
+it, whenever they started. Rows stay ordered and grouped by the day they
+started. `window` adds up every session the filters keep, past the limit,
+whole: sessions, turns, edits, distinct files, tokens and cost. `repos`
+ignores the `repo` filter, so a page can offer every repo of the time
+window.
 
 ## Web page
 
@@ -473,8 +500,9 @@ Colours come only from webkit roles, so light and dark both follow the
 theme. The query string picks one of four views. The `?session=` form is the URL the MCP tools
 return, so keep it stable.
 
-- `/`: sessions grouped by the day they started, newest first, from the
-  last 7 days unless `since` says otherwise (`since=any` lifts the bound).
+- `/`: the sessions active in the last 7 days unless `since` says
+  otherwise (`since=any` lifts the bound), grouped by the day they started,
+  newest first.
   A row has a repo badge, the title as the link, a running or ended dot
   with how long ago the session was last active and how long it ran, then
   its turn, edit, file and agent counts and its cost. A window switch and
@@ -515,7 +543,7 @@ the chunk.
 ```bash
 moondb serve [--port 7433] [--workdir ~/.local/state/moondb]
 moondb record                  # one hook payload on stdin; wired by the hooks, not run by hand
-moondb import [--since 30d] [--dry-run] [--force] [--json]   # backfill from Claude Code transcripts
+moondb import [--since 30d] [--dry-run] [--force] [--json]   # import past sessions from their transcripts
 moondb mcp                     # stdio MCP shim over serve
 moondb why <path>:<line>       # the Edit, turn, prompt, session and commit behind one line
 moondb history <path>          # the recorded edits of a path, newest first
