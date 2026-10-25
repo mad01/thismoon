@@ -1,5 +1,5 @@
 # humanizer — public layer: build + install + the humanizer skill. MCP
-# registration, the sandbox wrapper + seatbelt profile, and the config.yaml
+# registration, the sandbox wrapper + srt settings, and the config.yaml
 # symlink stay in the consuming repo's companion recipe — machine-private
 # wiring (see docs/adr/0006).
 [recipe]

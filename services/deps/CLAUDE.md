@@ -98,7 +98,7 @@ no file locks.
 - One API; ecosystem strings are OSV's own (`Go`, `npm`, `PyPI`, `SwiftURL`); no
   mapping. SwiftURL names are the repo URL without scheme or `.git`
   (`github.com/vapor/vapor`), derived from each Package.resolved pin location.
-- First-party code calling a public API → **no seatbelt** (like reminder/status).
+- First-party code calling a public API → **no sandbox** (like reminder/status).
 
 ### Scan loop, notifications, offline
 

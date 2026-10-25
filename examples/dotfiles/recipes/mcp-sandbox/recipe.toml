@@ -1,20 +1,28 @@
-# Example overlay: one MCP server run under a seatbelt sandbox, contributed
-# to the machine's server set through agent-sync's mcp drop-in dir.
+# Example overlay: one MCP server run under a sandbox, contributed to the
+# machine's server set through agent-sync's mcp drop-in dir.
 #
 # Third-party or untrusted servers get confined: mytool-mcp-sandbox.sh execs
-# the binary under the mytool.sb profile (no network, no writes, $HOME reads
-# denied by default). The registration is a drop-in, mysandboxed.json,
-# symlinked into ~/.config/claude-mcp/servers.d/, which the agent-config
-# recipe's mcp sync merges over its base servers.json. So a recipe that owns
-# a server declares it beside the server's own files, and the base file
-# never learns about it. The same shape serves a profile-gated work source
-# that brings its own servers.
+# the binary through thismoon's srt-run launcher (anthropics/sandbox-runtime)
+# with the settings in mytool.srt.json (no network, no writes, $HOME reads
+# denied except ~/code/bin). The settings file is symlinked to
+# ~/.config/srt/mytool.json, the path the wrapper names; ~/.config/srt sits
+# outside every sandbox's allowWrite, so no confined process can rewrite its
+# own policy. The registration is
+# a drop-in, mysandboxed.json, symlinked into ~/.config/claude-mcp/servers.d/,
+# which the agent-config recipe's mcp sync merges over its base servers.json.
+# So a recipe that owns a server declares it beside the server's own files,
+# and the base file never learns about it. The same shape serves a
+# profile-gated work source that brings its own servers.
+#
+# srt-run comes from thismoon's speak recipe (~/code/bin/srt-run), and srt
+# itself from mise (npm:@anthropic-ai/sandbox-runtime in the machine's mise
+# config).
 #
 # Wave 1 like agent-config. The drop-in is a dotfile, laid down before any
 # build hook runs, so the sync sees it on the same ralph up.
 [recipe]
 name = "mcp-sandbox"
-description = "A seatbelt-confined MCP server, registered through agent-sync's servers.d/ drop-in dir"
+description = "A sandboxed MCP server (srt settings + wrapper), registered through agent-sync's servers.d/ drop-in dir"
 wave = 1
 
 # The MCP client spawns the wrapper by path, so it must be executable. The
@@ -24,6 +32,13 @@ wave = 1
 commands = ["chmod +x mytool-mcp-sandbox.sh"]
 working_dir = "~/code/src/github.com/you/dotfiles/recipes/mcp-sandbox"
 run = "always"
+
+# The sandbox settings, where the wrapper and srt-run expect them. srt reads
+# the file at every spawn, so an edit applies on the server's next start.
+[dotfiles.mcp_sandbox_settings]
+source = "mytool.srt.json"
+target = "~/.config/srt/mytool.json"
+action = "symlink"
 
 # The drop-in. The agent-config recipe owns the servers.d/ directory.
 [dotfiles.mcp_sandbox_server]

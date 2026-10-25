@@ -39,9 +39,10 @@ action = "symlink_dir"
 
 # Keep the two launchers executable: the consuming repo's agent-sync servers.json
 # registers the MCP wrapper, not the bare binary (sandbox containment: it
-# execs `present mcp` under present.sb, which lives beside it in this dir),
-# and the serve hook below registers present-serve.sh. Both source
-# present-shared-env.sh for the sharing config, which needs no mode bit.
+# execs `present mcp` through srt-run with ~/.config/srt/present.json, a
+# settings file the consuming repo provides), and the serve hook below
+# registers present-serve.sh. Both source present-shared-env.sh for the
+# sharing config, which needs no mode bit.
 [hooks.builds.present_chmod_mcp_wrapper]
 commands = ["chmod +x present-mcp-sandbox.sh present-serve.sh"]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/present"

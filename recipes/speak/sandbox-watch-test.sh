@@ -2,14 +2,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEST_TMP="$(mktemp -d)"
+trap 'rm -r "$TEST_TMP"' EXIT
 
-SANDBOX_WATCH_PROCESSES=present,humanizer,vale
-SANDBOX_WATCH_LOG=/dev/null
+SANDBOX_WATCH_LOG="$TEST_TMP/denials.log"
 SANDBOX_WATCH_NOTIFY_LOG=/dev/null
 SANDBOX_WATCH_IGNORE_FILE="$SCRIPT_DIR/sandbox-ignore.conf"
 SANDBOX_WATCH_LOCAL_IGNORE_FILE=/dev/null
 SANDBOX_WATCH_WINDOW=60
-export SANDBOX_WATCH_PROCESSES SANDBOX_WATCH_LOG SANDBOX_WATCH_NOTIFY_LOG
+export SANDBOX_WATCH_LOG SANDBOX_WATCH_NOTIFY_LOG
 export SANDBOX_WATCH_IGNORE_FILE SANDBOX_WATCH_LOCAL_IGNORE_FILE
 export SANDBOX_WATCH_WINDOW
 
@@ -29,6 +30,96 @@ expect_alert() {
   ! is_ignored "$1" || fail "expected alert: $1"
 }
 
+expect_eq() {
+  [ "$2" = "$3" ] || fail "$1: expected '$3', got '$2'"
+}
+
+reset_batch() {
+  batch_count=0
+  batch_first=""
+  batch_unique=""
+  batch_unique_n=0
+  batch_started=0
+  : > "$SANDBOX_WATCH_LOG"
+}
+
+# base64 of a command, the way srt encodes it into the CMD64 tag.
+b64() {
+  printf '%s' "$1" | /usr/bin/base64
+}
+
+# One ndjson stream line, JSON-escaped the way `log stream` writes it: "/"
+# as "\/" and the tag after a literal "\n". $1 is the denial, $2 the command
+# srt ran.
+ndjson() {
+  local tag
+  tag="CMD64_$(b64 "$2")_END__0dkawpeh7_SBX"
+  printf '{"eventMessage":"Sandbox: %s\\n%s"}' "${1//\//\\/}" "${tag//\//\\/}"
+}
+
+FLEET_CMD='env SRT_RUN=present /Users/x/code/bin/present mcp'
+AGENT_CMD="/bin/bash -c 'cat /Users/x/.ssh/id_ed25519'"
+
+# --- CMD64 decoding -----------------------------------------------------
+
+# Padded payloads (one and two "=") decode to the command.
+[[ $(b64 'env SRT_RUN=a') == *== ]] || fail "fixture should carry == padding"
+[[ $(b64 'env SRT_RUN=ab') == *[!=]= ]] || fail "fixture should carry one = of padding"
+expect_eq "padded ==" "$(decode_cmd64 "x\\nCMD64_$(b64 'env SRT_RUN=a')_END__s_SBX")" 'env SRT_RUN=a'
+expect_eq "padded =" "$(decode_cmd64 "x\\nCMD64_$(b64 'env SRT_RUN=ab')_END__s_SBX")" 'env SRT_RUN=ab'
+
+# Missing padding is restored.
+nopad=$(b64 'env SRT_RUN=a')
+expect_eq "unpadded" "$(decode_cmd64 "CMD64_${nopad%%=*}_END__s_SBX")" 'env SRT_RUN=a'
+
+# A tag the log cut short (no _END_, payload ends mid-quantum) still yields
+# the decodable prefix, which holds the label.
+full=$(b64 "$FLEET_CMD")
+[[ $(decode_cmd64 "Sandbox: x\\nCMD64_${full:0:30}") == 'env SRT_RUN=present'* ]] ||
+  fail "truncated tag lost the label"
+[[ $(decode_cmd64 "Sandbox: x\\nCMD64_${full:0:29}") == 'env SRT_RUN=present'* ]] ||
+  fail "truncated tag with a 1-char tail lost the label"
+
+# --- attribution --------------------------------------------------------
+
+denial_label "Sandbox: present(1) deny(1) op t\\nCMD64_$(b64 "$FLEET_CMD")_END__s_SBX" ||
+  fail "fleet denial reported as untagged"
+expect_eq "fleet label" "$LABEL" present
+
+denial_label "Sandbox: bash(1) deny(1) op t\\nCMD64_$(b64 "$AGENT_CMD")_END__s_SBX" ||
+  fail "agent-shell denial reported as untagged"
+expect_eq "foreign label" "$LABEL" ""
+
+# A quoted marker (srt quotes words with shell-special characters) still counts.
+denial_label "Sandbox: x(1) deny(1) op t\\nCMD64_$(b64 "env 'SRT_RUN=github-mcp' x")_END__s_SBX"
+expect_eq "quoted label" "$LABEL" github-mcp
+
+! denial_label 'Sandbox: mds(1) deny(1) file-read-data /x' ||
+  fail "untagged system denial treated as srt"
+
+# A legacy seatbelt profile (t-man --sandbox-profile) tags its deny rules with
+# (with message "SRT_RUN=<label>"); the log appends that after "\n".
+denial_label 'Sandbox: cat(75284) deny(1) file-read-data /private/etc/hosts\nSRT_RUN=probe-legacy' ||
+  fail "legacy marker not recognised"
+expect_eq "legacy label" "$LABEL" probe-legacy
+
+# The marker the kernel appended last wins over one a denied path carries.
+denial_label 'Sandbox: python3(9) deny(1) file-read-data /x/\nSRT_RUN=evil/y\nSRT_RUN=speak-tts' ||
+  fail "legacy marker after a spoofed path not recognised"
+expect_eq "last marker wins" "$LABEL" speak-tts
+expect_eq "strip keeps the path" \
+  "$(strip_tag 'Sandbox: python3(9) deny(1) file-read-data /x/\nSRT_RUN=evil/y\nSRT_RUN=speak-tts')" \
+  'Sandbox: python3(9) deny(1) file-read-data /x/\nSRT_RUN=evil/y'
+
+expect_eq "strip tag" "$(strip_tag 'Sandbox: a(1) deny(1) op /t\nCMD64_eA==_END__s_SBX')" \
+  'Sandbox: a(1) deny(1) op /t'
+expect_eq "strip legacy marker" "$(strip_tag 'Sandbox: a(1) deny(1) op /t\nSRT_RUN=speak-tts')" \
+  'Sandbox: a(1) deny(1) op /t'
+expect_eq "summary" "$(summarize 'Sandbox: present(123) deny(1) file-read-data /p q' present)" \
+  'present · present(123) · file-read-data · /p q'
+
+# --- ignore list --------------------------------------------------------
+
 for key in \
   kern.iossupportversion \
   kern.bootargs \
@@ -45,8 +136,26 @@ for service in \
   expect_ignored "Sandbox: present(123) deny(1) mach-lookup $service"
 done
 
-# Agent sandbox markers appended after a target must not defeat the boundary.
-expect_ignored 'Sandbox: present(123) deny(1) sysctl-read kern.bootargs\nCMD64_test_END__test_SBX'
+# srt's own base profile denies this read from bash at every launch, and its
+# launch bash registers with diagnosticd.
+expect_ignored 'Sandbox: bash(123) deny(1) sysctl-read kern.iossupportversion'
+expect_ignored 'Sandbox: bash(123) deny(1) mach-lookup com.apple.diagnosticd'
+expect_alert 'Sandbox: bash(123) deny(1) mach-lookup com.apple.diagnosticd2'
+expect_alert 'Sandbox: bash(123) deny(1) mach-lookup com.apple.securityd'
+expect_ignored 'Sandbox: node(123) deny(1) mach-lookup com.apple.diagnosticd'
+expect_alert 'Sandbox: node(123) deny(1) mach-lookup com.apple.logd'
+
+# Go's resolver under srt: the three denied steps of resolving the proxy's
+# localhost are silenced for any process; a connect to a real host is not.
+expect_ignored 'Sandbox: github-mcp-server(123) deny(1) network-outbound /private/var/run/mDNSResponder'
+expect_ignored 'Sandbox: github-mcp-server(123) deny(1) network-outbound'
+expect_ignored 'Sandbox: github-mcp-server(123) deny(1) network-bind local:*:0'
+expect_alert 'Sandbox: github-mcp-server(123) deny(1) network-outbound 140.82.121.3:443'
+expect_alert 'Sandbox: github-mcp-server(123) deny(1) network-outbound /private/var/run/other.sock'
+expect_alert 'Sandbox: github-mcp-server(123) deny(1) network-bind local:*:8080'
+
+# A tag still attached after the target must not defeat the boundary.
+expect_ignored 'Sandbox: present(123) deny(1) sysctl-read kern.bootargs\nCMD64_dGVzdA_END__test_SBX'
 
 # Keep the silence list narrow by process, operation, and exact key/service.
 expect_alert 'Sandbox: github-mcp-server(123) deny(1) sysctl-read kern.bootargs'
@@ -58,9 +167,7 @@ expect_alert 'Sandbox: present(123) deny(1) mach-lookup com.apple.logd-helper'
 expect_alert 'Sandbox: present(123) deny(1) network-outbound remote:*:443'
 
 # Startup sysctl reads from shared code (libSystem, Go's CPU detection) are
-# silenced for any process. Seen from humanizer and vale inside an agent
-# Bash sandbox, so every line carries the marker suffix.
-marker='\nCMD64_dGVzdA_END__test_SBX'
+# silenced for any process.
 for key in \
   kern.iossupportversion \
   hw.optional.neon_fp16 \
@@ -71,11 +178,11 @@ for key in \
   hw.optional.arm.FEAT_SHA3 \
   hw.optional.arm.FEAT_SME_F64F64; do
   expect_ignored "Sandbox: humanizer(18966) deny(1) sysctl-read $key"
-  expect_ignored "Sandbox: vale(18968) deny(1) sysctl-read $key$marker"
+  expect_ignored "Sandbox: vale(18968) deny(1) sysctl-read $key"
 done
 
 # The any-process entries stay narrow by operation and exact key.
-expect_alert "Sandbox: humanizer(18966) deny(1) sysctl-read hw.optional.arm64$marker"
+expect_alert 'Sandbox: humanizer(18966) deny(1) sysctl-read hw.optional.arm64'
 expect_alert 'Sandbox: humanizer(18966) deny(1) sysctl-read hw.model'
 expect_alert 'Sandbox: humanizer(18966) deny(1) sysctl-read hw.optional.arm.caps'
 expect_alert 'Sandbox: humanizer(18966) deny(1) sysctl-read kern.bootargs'
@@ -84,32 +191,90 @@ expect_alert 'Sandbox: humanizer(18966) deny(1) sysctl-read hw.optional.neon_fp1
 expect_alert 'Sandbox: humanizer(18966) deny(1) sysctl-write kern.iossupportversion'
 expect_alert 'Sandbox: humanizer(18966) deny(1) file-read-data /Users/x/kern.iossupportversion'
 
-# End to end: the four denial lines from the 2026-10-22 agent run add no
-# alert, and a file write from the same process right after them does.
-batch_count=0
-batch_started=0
+# A machine-local pattern can scope by label through the summary line, and a
+# broken pattern beside it does not disable the rest of the list.
+printf '%s\n' '# comment' '' '^humanizer · .* · file-read-data · /Users/[^/]+/\.cache/' '(' \
+  > "$TEST_TMP/local.conf"
+LOCAL_IGNORE_FILE="$TEST_TMP/local.conf"
+expect_ignored 'Sandbox: vale(1) deny(1) file-read-data /Users/x/.cache/v
+humanizer · vale(1) · file-read-data · /Users/x/.cache/v'
+expect_alert 'Sandbox: vale(1) deny(1) file-read-data /Users/x/.cache/v
+present · vale(1) · file-read-data · /Users/x/.cache/v'
+expect_ignored 'Sandbox: x(1) deny(1) file-write-data /dev/dtracehelper'
+LOCAL_IGNORE_FILE=/dev/null
+
+# --- end to end through handle_line -------------------------------------
+
+# Launch noise from a fleet process adds no alert, a foreign denial and an
+# untagged system denial add none either, and a file write from the fleet
+# process right after them does.
+HUMANIZER_CMD='env SRT_RUN=humanizer /Users/x/code/bin/humanizer mcp'
+reset_batch
 for denial in \
-  'humanizer(18966) deny(1) sysctl-read kern.iossupportversion' \
+  'bash(18960) deny(1) sysctl-read kern.iossupportversion' \
   'humanizer(18966) deny(1) sysctl-read hw.optional.neon_fp16' \
   'humanizer(18966) deny(1) sysctl-read hw.optional.neon_hpfp' \
   'vale(18968) deny(1) sysctl-read kern.iossupportversion'; do
-  handle_line "{\"eventMessage\":\"Sandbox: $denial$marker\"}"
+  handle_line "$(ndjson "$denial" "$HUMANIZER_CMD")"
 done
-[ "$batch_count" -eq 0 ] || fail "startup sysctl reads raised $batch_count alert(s)"
-handle_line "{\"eventMessage\":\"Sandbox: humanizer(18966) deny(1) file-write-create \\/Users\\/x\\/.config\\/humanizer\\/state$marker\"}"
-[ "$batch_count" -eq 1 ] || fail "file-write-create after the sysctl reads did not alert"
-batch_count=0
-batch_first=""
-batch_unique=""
-batch_unique_n=0
-batch_started=0
+handle_line "$(ndjson 'bash(7) deny(1) file-read-data /Users/x/.ssh/id_ed25519' "$AGENT_CMD")"
+# A foreign line exactly as the log wrote it for an agent's bash sandbox.
+handle_line '{"eventMessage":"Sandbox: bash(65561) deny(1) file-write-create \/private\/tmp\/srt-probe\/denied.txt\nCMD64_c2ggLWMgJ2NhdCAkSE9NRS8uc3NoL2tub3duX2hvc3RzID4gL3RtcC9zcnQtcHJvYmUvb3V0L2sudHh0OyBlY2hvIHggPiAvdG1wL3NydC1wcm9iZS9kZW5pZWQudHh0Jw==_END__0dkawpeh7_SBX"}'
+handle_line '{"eventMessage":"Sandbox: mds(8) deny(1) file-read-data \/Users\/x\/.ssh\/id_ed25519"}'
+handle_line '{"eventMessage":"3 duplicate reports for Sandbox: present(9) deny(1) file-read-data \/Users\/x\/.ssh\/id\nSRT_RUN=present"}'
+[ "$batch_count" -eq 0 ] || fail "noise raised $batch_count alert(s)"
+handle_line "$(ndjson 'humanizer(18966) deny(1) file-write-create /Users/x/.config/humanizer/state' "$HUMANIZER_CMD")"
+[ "$batch_count" -eq 1 ] || fail "file-write-create after the launch noise did not alert"
+expect_eq "batch first" "$batch_first" \
+  'humanizer · humanizer(18966) · file-write-create · /Users/x/.config/humanizer/state'
+
+# The ledger: four ignore-list lines, two foreign lines, nothing for the
+# untagged system denial or the duplicate-report summary, one ALERT.
+# Columns: ts, status, summary, reason.
+ledger=$(cut -f2- "$SANDBOX_WATCH_LOG")
+expect_eq "ledger" "$ledger" "IGNORED	humanizer · bash(18960) · sysctl-read · kern.iossupportversion	ignore-list
+IGNORED	humanizer · humanizer(18966) · sysctl-read · hw.optional.neon_fp16	ignore-list
+IGNORED	humanizer · humanizer(18966) · sysctl-read · hw.optional.neon_hpfp	ignore-list
+IGNORED	humanizer · vale(18968) · sysctl-read · kern.iossupportversion	ignore-list
+IGNORED	- · bash(7) · file-read-data · /Users/x/.ssh/id_ed25519	foreign
+IGNORED	- · bash(65561) · file-write-create · /private/tmp/srt-probe/denied.txt	foreign
+ALERT	humanizer · humanizer(18966) · file-write-create · /Users/x/.config/humanizer/state"
+
+# The events payload carries the label as the `command` tag, beside the
+# fields it always had.
+payload=$(event_payload)
+for field in \
+  '"source":"sandbox-watch"' \
+  '"level":"warn"' \
+  '"title":"1 sandbox denial(s)"' \
+  '"command":"humanizer"' \
+  '"process":"humanizer"' \
+  '"op":"file-write-create"' \
+  '"unique":"1"' \
+  '"status":"alert"'; do
+  [[ $payload == *"$field"* ]] || fail "payload lacks $field: $payload"
+done
+
+# A legacy seatbelt service's denial, exactly as the log writes it, alerts
+# under its label; its launch noise is silenced like any srt process's.
+handle_line '{"eventMessage":"Sandbox: python3.14(4242) deny(1) file-read-data \/Users\/x\/.aws\/credentials\nSRT_RUN=speak-tts"}'
+handle_line '{"eventMessage":"Sandbox: python3.14(4242) deny(1) sysctl-read kern.iossupportversion\nSRT_RUN=speak-tts"}'
+[ "$batch_count" -eq 2 ] || fail "legacy denial did not alert"
+expect_eq "legacy ledger" "$(tail -2 "$SANDBOX_WATCH_LOG" | cut -f2-)" "ALERT	speak-tts · python3.14(4242) · file-read-data · /Users/x/.aws/credentials
+IGNORED	speak-tts · python3.14(4242) · sysctl-read · kern.iossupportversion	ignore-list"
+reset_batch
+handle_line "$(ndjson 'humanizer(18966) deny(1) file-write-create /Users/x/.config/humanizer/state' "$HUMANIZER_CMD")"
+
+# Repeats count toward the batch but not toward the unique list.
+handle_line "$(ndjson 'humanizer(18966) deny(1) file-write-create /Users/x/.config/humanizer/state' "$HUMANIZER_CMD")"
+[ "$batch_count" -eq 2 ] || fail "repeat not counted"
+[ "$batch_unique_n" -eq 1 ] || fail "repeat counted as unique"
+reset_batch
 
 # A first alert after a long idle period starts a fresh window instead of
 # flushing immediately. The normal flush path must leave this batch pending.
-batch_count=0
-batch_started=0
 before=$(/bin/date +%s)
-handle_line '{"eventMessage":"Sandbox: present(123) deny(1) sysctl-read hw.optional.arm64"}'
+handle_line "$(ndjson 'present(123) deny(1) sysctl-read hw.optional.arm64' "$FLEET_CMD")"
 after=$(/bin/date +%s)
 
 [ "$batch_count" -eq 1 ] || fail "expected one pending alert, got $batch_count"
@@ -118,4 +283,58 @@ after=$(/bin/date +%s)
 flush
 [ "$batch_count" -eq 1 ] || fail "fresh batch flushed immediately"
 
-printf 'PASS: sandbox-watch batching and ignore rules\n'
+# The stream loop must tell a quiet tick from the stream ending. On bash 3.2
+# (macOS /bin/bash) `read -t` exits 1 for both, which once restarted
+# `log stream` every tick. A fake producer writes a line, stays quiet past
+# one tick, writes another, and exits: expect line, timeout(s), line, EOF.
+cat > "$TEST_TMP/fake-log" <<'EOF'
+#!/bin/bash
+printf 'first\n'
+sleep 1.5
+printf 'second\n'
+EOF
+chmod +x "$TEST_TMP/fake-log"
+LOG_BIN="$TEST_TMP/fake-log"
+TICK=1
+stream_open || fail "stream_open failed"
+seq=""
+for _ in 1 2 3 4 5 6 7 8; do
+  rc=0
+  stream_read || rc=$?
+  case $rc in
+    0) seq="$seq,$line" ;;
+    1) seq="$seq,tick" ;;
+    2) seq="$seq,eof"; break ;;
+  esac
+done
+stream_close
+re='^,first(,tick)+,second(,tick)*,eof$'
+[[ $seq =~ $re ]] || fail "stream loop saw $seq (expected first, tick, second, eof)"
+
+# A tick that fires mid-line must not split the line. bash 4+ hands the
+# partial read back in the variable and stream_read keeps it; bash 3.2
+# discards it, a known gap this test does not assert on.
+if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+  cat > "$TEST_TMP/fake-log" <<'EOF'
+#!/bin/bash
+printf 'sec'
+sleep 1.5
+printf 'ond\n'
+EOF
+  stream_open || fail "stream_open failed"
+  seq=""
+  for _ in 1 2 3 4 5 6; do
+    rc=0
+    stream_read || rc=$?
+    case $rc in
+      0) seq="$seq,$line" ;;
+      1) seq="$seq,tick" ;;
+      2) seq="$seq,eof"; break ;;
+    esac
+  done
+  stream_close
+  re='^(,tick)+,second(,tick)*,eof$'
+  [[ $seq =~ $re ]] || fail "split line saw $seq (expected tick, second, eof)"
+fi
+
+printf 'PASS: sandbox-watch attribution, batching and ignore rules, stream loop\n'

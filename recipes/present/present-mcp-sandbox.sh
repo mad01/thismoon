@@ -1,19 +1,37 @@
 #!/bin/sh
-# Spawn the present MCP server inside its seatbelt profile.
+# Spawn the present MCP server inside its sandbox (anthropics/sandbox-runtime,
+# launched through srt-run).
 #
 # Exists because servers.json can't express the whole launch. agent-sync
-# expands a leading ~ in `command` and in each arg, so the profile path alone
+# expands a leading ~ in `command` and in each arg, so the settings path alone
 # would fit there. The working directory wouldn't: the MCP client spawns
 # from the session cwd, which may sit inside a read-denied subtree.
 # getcwd() there is an EPERM, so the wrapper does cd / first.
 #
-# Seatbelt can't filter env, so the environment is scrubbed with an env -i
+# The sandbox can't filter env, so the environment is scrubbed with an env -i
 # allow-list and shell secrets never enter the confined process. present
 # needs HOME plus its own PRESENT_* config (supplied by the `env` block in
 # servers.json; defaulted here so the wrapper also works standalone), and
 # for present_share the shared URL and author key, which
 # present-shared-env.sh reads from the ralph-managed secrets file. Those two
-# pass through only when set.
+# pass through only when set, as do TMPDIR (so the sandboxed process keeps
+# the per-user temp dir; srt-run falls back to /private/tmp without it) and
+# SRT_DEBUG for srt's own debug output.
+#
+# The sandbox settings are ~/.config/srt/present.json. This repo ships none:
+# the consuming repo provides the file as part of its machine-private overlay
+# (docs/adr/0006), next to the MCP registration that points here. It lives
+# outside present's page store on purpose: the sandbox may write the store,
+# and must never be able to rewrite its own policy. Without the file srt
+# exits 1 and present never starts (fail closed). docs/SANDBOXING.md has a
+# worked settings example; present needs allowLocalBinding for the events
+# POST to 127.0.0.1:7430 and writes to its page store and temp dir.
+#
+# The static file keeps network.allowedDomains empty. The shared instance's
+# host is machine-specific and comes from PRESENT_SHARED_URL, so this wrapper
+# derives host[:port] from it and hands it to srt-run as
+# SRT_RUN_ALLOW_DOMAINS, which merges it into the allow-list at launch. No
+# shared URL, no egress beyond localhost.
 set -eu
 
 # shellcheck source=present-shared-env.sh
@@ -30,10 +48,27 @@ fi
 if [ -n "${PRESENT_AUTHOR_KEY:-}" ]; then
   set -- "$@" PRESENT_AUTHOR_KEY="$PRESENT_AUTHOR_KEY"
 fi
+if [ -n "${TMPDIR:-}" ]; then
+  set -- "$@" TMPDIR="$TMPDIR"
+fi
+if [ -n "${SRT_DEBUG:-}" ]; then
+  set -- "$@" SRT_DEBUG="$SRT_DEBUG"
+fi
+if [ -n "${PRESENT_SHARED_URL:-}" ]; then
+  # https://user@share.example.com:8443/base?q -> share.example.com:8443
+  share_host=${PRESENT_SHARED_URL#*://}
+  share_host=${share_host%%/*}
+  share_host=${share_host%%\?*}
+  share_host=${share_host%%#*}
+  share_host=${share_host##*@}
+  if [ -n "$share_host" ]; then
+    SRT_RUN_ALLOW_DOMAINS=$share_host
+    export SRT_RUN_ALLOW_DOMAINS
+    set -- "$@" SRT_RUN_ALLOW_DOMAINS="$SRT_RUN_ALLOW_DOMAINS"
+  fi
+fi
 
 cd /
 exec /usr/bin/env -i "$@" \
-  /usr/bin/sandbox-exec \
-  -D "HOME=$HOME" \
-  -f "$HOME/.config/ralph/sources/thismoon/recipes/present/present.sb" \
+  "$HOME/code/bin/srt-run" "$HOME/.config/srt/present.json" \
   "$HOME/code/bin/present" mcp

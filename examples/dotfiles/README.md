@@ -16,7 +16,7 @@ your-dotfiles/
   CLAUDE.md.example          # a global ~/.claude/CLAUDE.md tuned for the fleet
   recipes/
     agent-config/    # overlay: Claude Code settings, mods and MCP servers, applied by agent-sync
-    mcp-sandbox/     # overlay: one MCP server under a seatbelt profile, via agent-sync's drop-in dir
+    mcp-sandbox/     # overlay: one MCP server under srt (sandbox settings + wrapper), via agent-sync's drop-in dir
     claude-hooks/    # overlay: belt config + the internal-names file belt and suspenders share
     d-man/           # overlay: machine-personal routes for the d-man front door
     config-overlay/  # overlay: per-machine service config (watch list, host gate)
@@ -45,7 +45,7 @@ Each kind of machine-private wiring has a worked example in `recipes/`:
 | Pattern | Example | What it owns |
 |---------|---------|--------------|
 | Agent config: settings, mods, MCP | [`recipes/agent-config/`](recipes/agent-config/) | the Claude Code settings template and its machine overlay, the mods list, the MCP server set, and the agent-sync config that names them; synced on every `ralph up` |
-| Sandboxed MCP server | [`recipes/mcp-sandbox/`](recipes/mcp-sandbox/) | a seatbelt profile and launch wrapper for an untrusted server, registered through agent-sync's drop-in dir instead of the base file |
+| Sandboxed MCP server | [`recipes/mcp-sandbox/`](recipes/mcp-sandbox/) | the srt settings file (`~/.config/srt/<tool>.json`) and launch wrapper for an untrusted server, registered through agent-sync's drop-in dir instead of the base file |
 | Agent hooks (belt) | [`recipes/claude-hooks/`](recipes/claude-hooks/) | the belt config and the internal-names file belt and suspenders share; the hooks block that registers belt sits in the settings template |
 | Routes + block list | [`recipes/d-man/`](recipes/d-man/) | which `.this` names resolve on this machine, and which hosts the work profile blocks |
 | Config overlay | [`recipes/config-overlay/`](recipes/config-overlay/) | per-machine service config: watch lists, host gates, local paths |
