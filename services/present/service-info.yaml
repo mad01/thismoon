@@ -9,3 +9,18 @@ spec:
   lifecycle: production
   owner: mad01
   system: thismoon
+  # Sandbox access for `present serve`, rendered to
+  # recipes/present/present-serve.srt.json by `make sandbox-settings`
+  # (docs/SANDBOXING.md, "Declaring access"). The MCP server is a separate
+  # process with its own settings in the consuming repo. The shared host the
+  # Share button pushes to differs per machine, so it arrives at launch.
+  access:
+    sandbox: srt
+    label: present-serve
+    workdir: ~/.config/present
+    listen: 7423
+    local: [events]
+    egress: [via SRT_RUN_ALLOW_DOMAINS]
+    reads: [~/code/bin, workdir]
+    writes: [workdir, temp]
+    tls: true

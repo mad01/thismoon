@@ -140,6 +140,14 @@ stale even when the pinned code itself only moved. A stale assertion means "the
 evidence needs another look", not "the claim is wrong". Re-asserting with fresh
 pins is the way to record the moved evidence.
 
+## Sandbox access
+
+`spec.access` in `service-info.yaml` declares what `kof serve` may reach
+under srt. `make sandbox-settings` renders it to
+`recipes/keeper-of-facts/keeper-of-facts.srt.json`, which CI diffs, so
+change the manifest and never the JSON. Authoring guide:
+`docs/SANDBOXING.md`, "Declaring access".
+
 ## Build / install / test
 
 ```bash

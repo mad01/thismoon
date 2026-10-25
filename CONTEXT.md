@@ -32,6 +32,14 @@ _Avoid_: version package, versioninfo
 What a binary reports about its own build: version, commit, component tag, and build time. Serialized as a four-key JSON object, every key always present and `""` when unknown, printed by `<binary> version -o json` and served at `GET /version`.
 _Avoid_: version info, version payload
 
+**Access manifest**:
+What one sandboxed process may reach, declared beside its code: the `spec.access` block of a component's `service-info.yaml`, or a recipe's standalone `access.yaml`. It is the source of truth; the srt settings file is rendered from it. docs/SANDBOXING.md covers the fields.
+_Avoid_: sandbox profile (the hand-written seatbelt file), policy file, settings file (the rendered JSON)
+
+**Expansion layer**:
+`~/.config/srt/<label>.local.json`, what one machine adds on top of a rendered settings file. srt-run merges it at launch and refuses one that does more than widen.
+_Avoid_: override (it can't narrow or replace), local settings
+
 **Recipe**:
 A ralph recipe under `recipes/` that installs a component on a machine. Consumed remotely through ralph's `[[recipe_sources]]`, identified as `thismoon/<recipe>`.
 _Avoid_: config, manifest

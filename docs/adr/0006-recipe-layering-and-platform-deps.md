@@ -122,7 +122,8 @@ in them differs per machine.
 
 So generic, machine-independent settings for a public-layer service may ship
 beside its recipe as `<label>.srt.json`, linked to
-`~/.config/srt/<label>.json` by that recipe. Machine-specific egress stays in
+`~/.config/srt/<label>.json` by that recipe. Since ADR-0027 that file is
+rendered from the service's `spec.access` manifest, not written by hand. Machine-specific egress stays in
 the consuming repo: a host reaches the allow-list at launch through
 `SRT_RUN_ALLOW_DOMAINS`, from inputs the consuming repo controls, the way
 present serve gets its shared host. A settings file that has to name a

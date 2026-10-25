@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: srtspec
+  description: Renders sandbox access manifests to srt settings JSON and explains the effective policy srt-run launches under
+  tags: [go, cli, sandbox]
+spec:
+  type: cli
+  lifecycle: development
+  owner: mad01
+  system: thismoon

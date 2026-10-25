@@ -67,7 +67,7 @@ Paths may use `~`; catalog expands them at load time.
 
 ## validate
 
-`catalog validate` parses every `service-info.yaml` it finds, checks the schema, then enforces global name uniqueness.
+`catalog validate` parses every `service-info.yaml` it finds, checks the schema, enforces global name uniqueness, then checks that every Component whose recipe launches a process declares `spec.access`.
 
 ```sh
 # validate the whole registry
@@ -78,7 +78,7 @@ catalog validate ./path/to/repo
 catalog validate ./path/to/service-info.yaml
 ```
 
-Output on success: `ok: N entities valid, names globally unique`.
+Output on success: `ok: N entities valid, names globally unique, M declare sandbox access`.
 
 On failure the error names every duplicate, the kind, and the source file for each occurrence — read it to find which file to fix.
 
@@ -87,7 +87,9 @@ On failure the error names every duplicate, the kind, and the source file for ea
 2. `metadata.name` present, ≤63 chars, matches `^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$`
 3. `spec.owner` present
 4. `spec.system` present for Components
-5. All names globally unique across every entity in scope
+5. `spec.access`, when present, sits on a Component and is a valid access manifest (strict: unknown fields fail)
+6. All names globally unique across every entity in scope
+7. A Component whose recipe (`recipes/<component dir name>`) runs `t-man add` or `srt-run` outside a comment declares `spec.access`; one that stays unsandboxed says `sandbox: none` with a `reason`
 
 ## Adding an entity
 

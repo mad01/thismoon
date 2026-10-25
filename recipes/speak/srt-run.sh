@@ -25,14 +25,26 @@
 #     PATH: srt starts the command through bash, refuses to run when bash is
 #     not on PATH, and should get /bin/bash rather than whatever the caller's
 #     PATH (or sh's default PATH under `env -i`) finds first.
-#   - SRT_RUN_ALLOW_DOMAINS (comma-separated host[:port]) is merged into the
-#     settings' network.allowedDomains with jq. The static file holds the
-#     policy; machine-specific hosts (a shared instance, an LLM proxy) come
-#     from the wrapper's own inputs at launch. The merged copy goes to
-#     ~/.config/srt/merged/<label>.json (mode 600, rewritten every launch)
-#     and srt reads that instead. With the variable set, a missing jq or a
-#     failed merge stops the launch; there is no fallback to the unmerged
-#     file. A bare `*` entry is refused.
+#   - two widening layers over the settings, merged with jq. The settings
+#     file is rendered from the process's access manifest and is the same on
+#     every machine (docs/adr/0027). What one machine adds comes from:
+#       - the expansion layer ~/.config/srt/<label>.local.json, if present.
+#         It may only widen: add to network.allowedDomains, allowMachLookup
+#         and allowUnixSockets and to filesystem.allowRead and allowWrite,
+#         and set network.allowLocalBinding or enableWeakerNetworkIsolation
+#         to true. Any other key, an entry that undoes a deny (an allow equal
+#         to a deny entry, or ~ itself), a write reaching ~/.config/srt or
+#         the ralph sources cache, or a `*` / `*:port` host refuses the
+#         launch (exit 1).
+#       - SRT_RUN_ALLOW_DOMAINS (comma-separated host[:port]), appended to
+#         network.allowedDomains. Machine-specific hosts (a shared instance,
+#         an LLM proxy) come from the wrapper's own inputs at launch. A bare
+#         `*` entry is refused.
+#     The merged copy goes to ~/.config/srt/merged/<label>.json (mode 600,
+#     rewritten every launch) and srt reads that instead. With either layer
+#     present, a missing jq or a failed merge stops the launch; there is no
+#     fallback to the unmerged file. `srtspec explain <label>` prints the
+#     merged policy with the layer each entry came from.
 #   - the child's TMPDIR. srt hands the child CLAUDE_CODE_TMPDIR, else
 #     /tmp/claude, which it allows writes to but never creates, so temp-file
 #     writers (Go's os.CreateTemp) fail. CLAUDE_CODE_TMPDIR is set to the
@@ -95,20 +107,103 @@ if ! command -v srt >/dev/null 2>&1; then
   exit 127
 fi
 
-if [ -n "${SRT_RUN_ALLOW_DOMAINS:-}" ]; then
-  case ",$SRT_RUN_ALLOW_DOMAINS," in
-    *',*,'* | *',*:'*)
-      echo "srt-run: SRT_RUN_ALLOW_DOMAINS may not hold a bare * entry: $SRT_RUN_ALLOW_DOMAINS" >&2
-      exit 1
-      ;;
-  esac
+# The expansion layer's refusal rules, as a jq program over the settings
+# file with the layer in $l. It prints one reason per line and nothing when
+# the layer only widens. srtspec's layers package implements the same rules;
+# recipes/speak/testdata/srt-local holds the cases both test suites run.
+# shellcheck disable=SC2016
+local_check='
+def norm: (if . == $home then "~" elif startswith($home + "/") then "~" + .[($home | length):] else . end)
+  | sub("/+$"; "");
+def lit: split("/") | (map(test("[*?\\[{]")) | index(true)) as $i
+  | (if $i == null then . else .[:$i] end) | join("/");
+def under($d): . == $d or startswith($d + "/");
+def lists: {network: ["allowedDomains", "allowMachLookup", "allowUnixSockets"],
+  filesystem: ["allowRead", "allowWrite"]};
+([.filesystem.denyRead[]?, .filesystem.denyWrite[]?] | map(norm)) as $denies
+| $l
+| if type != "object" then "the layer must be a JSON object" else
+    (keys[] | select(IN("network", "filesystem", "enableWeakerNetworkIsolation", "_comment") | not)
+      | "key \(.) is not allowed; the layer may only widen"),
+    ("network", "filesystem") as $s | select(has($s)) | .[$s]
+      | if type != "object" then "\($s) must be an object" else
+          (keys[] | select((IN(lists[$s][]) or ($s == "network" and . == "allowLocalBinding")) | not)
+            | "\($s).\(.) is not allowed; the layer may only widen"),
+          (lists[$s][] as $k | select(has($k)) | .[$k] as $v
+            | if ($v | type) != "array" or ($v | map(type == "string" and length > 0) | all | not)
+              then "\($s).\($k) must be a list of non-empty strings"
+              else $v[] as $item | ($item | norm) as $p
+                | (if $k == "allowedDomains" and ($item == "*" or ($item | startswith("*:")))
+                    then "\($s).\($k) may not hold \"\($item)\", which allows every host" else empty end),
+                  (if ($k == "allowRead" or $k == "allowWrite") and ($p == "" or $p == "~")
+                    then "\($s).\($k) \"\($item)\" would lift the ~ deny" else empty end),
+                  (if ($k == "allowRead" or $k == "allowWrite") and ($p | IN($denies[]))
+                    then "\($s).\($k) \"\($item)\" would remove the deny on \($p)" else empty end),
+                  (if $k == "allowWrite" then ($p | lit) as $w
+                    | ("~/.config/srt", "~/.config/ralph/sources") as $dir
+                    | select(($dir | under($w)) or ($w | under($dir)))
+                    | "\($s).\($k) \"\($item)\" reaches \($dir), where the policy lives"
+                    else empty end)
+              end),
+          (if $s == "network" and has("allowLocalBinding") and .allowLocalBinding != true
+            then "network.allowLocalBinding may only be set to true" else empty end)
+        end,
+    (if has("enableWeakerNetworkIsolation") and .enableWeakerNetworkIsolation != true
+      then "enableWeakerNetworkIsolation may only be set to true" else empty end)
+  end
+'
+
+# The merge, over the settings file: the checked layer in $l, then the hosts
+# in $d. Lists union (sorted, as srt reads them as sets); flags only turn on.
+# shellcheck disable=SC2016
+local_merge='
+def addlist($s; $k): if ($l[$s] | type) == "object" and ($l[$s][$k] | type) == "array"
+  then .[$s][$k] = ((.[$s][$k] // []) + $l[$s][$k] | unique) else . end;
+addlist("network"; "allowedDomains")
+| addlist("network"; "allowMachLookup")
+| addlist("network"; "allowUnixSockets")
+| addlist("filesystem"; "allowRead")
+| addlist("filesystem"; "allowWrite")
+| if ($l.network | type) == "object" and $l.network.allowLocalBinding == true
+  then .network.allowLocalBinding = true else . end
+| if $l.enableWeakerNetworkIsolation == true then .enableWeakerNetworkIsolation = true else . end
+| .network.allowedDomains += ($d | split(",") | map(select(length > 0)))
+| .network.allowedDomains |= unique
+'
+
+local_layer="$HOME/.config/srt/$label.local.json"
+if [ -e "$local_layer" ] || [ -n "${SRT_RUN_ALLOW_DOMAINS:-}" ]; then
+  if [ -n "${SRT_RUN_ALLOW_DOMAINS:-}" ]; then
+    case ",$SRT_RUN_ALLOW_DOMAINS," in
+      *',*,'* | *',*:'*)
+        echo "srt-run: SRT_RUN_ALLOW_DOMAINS may not hold a bare * entry: $SRT_RUN_ALLOW_DOMAINS" >&2
+        exit 1
+        ;;
+    esac
+  fi
   jq=$(command -v jq 2>/dev/null || true)
   if [ -z "$jq" ] && [ -x /opt/homebrew/bin/jq ]; then
     jq=/opt/homebrew/bin/jq
   fi
   if [ -z "$jq" ]; then
-    echo "srt-run: SRT_RUN_ALLOW_DOMAINS is set but jq is not on PATH or in /opt/homebrew/bin; refusing to launch $label with the unmerged settings" >&2
+    echo "srt-run: $label has a layer to merge (SRT_RUN_ALLOW_DOMAINS or $local_layer) but jq is not on PATH or in /opt/homebrew/bin; refusing to launch $label with the unmerged settings" >&2
     exit 1
+  fi
+  layer='{}'
+  if [ -e "$local_layer" ]; then
+    if ! layer=$("$jq" -c . "$local_layer" 2> /dev/null) || [ -z "$layer" ]; then
+      echo "srt-run: $local_layer is not valid JSON; refusing to launch $label" >&2
+      exit 1
+    fi
+    if ! refusals=$("$jq" -r --arg home "$HOME" --argjson l "$layer" "$local_check" "$settings"); then
+      echo "srt-run: cannot check $local_layer against $settings; refusing to launch $label" >&2
+      exit 1
+    fi
+    if [ -n "$refusals" ]; then
+      echo "srt-run: $local_layer may only widen the policy; refusing to launch $label:" >&2
+      printf '%s\n' "$refusals" | sed 's/^/  - /' >&2
+      exit 1
+    fi
   fi
   merged_dir="$HOME/.config/srt/merged"
   merged="$merged_dir/$label.json"
@@ -119,20 +214,20 @@ if [ -n "${SRT_RUN_ALLOW_DOMAINS:-}" ]; then
     echo "srt-run: cannot write the merged settings under $merged_dir" >&2
     exit 1
   fi
-  # $d is a jq variable, not a shell one.
-  # shellcheck disable=SC2016
-  if ! "$jq" --arg d "$SRT_RUN_ALLOW_DOMAINS" \
-    '.network.allowedDomains += ($d | split(",") | map(select(length > 0))) | .network.allowedDomains |= unique' \
+  if ! "$jq" --argjson l "$layer" --arg d "${SRT_RUN_ALLOW_DOMAINS:-}" "$local_merge" \
     "$settings" > "$tmp" ||
     ! chmod 600 "$tmp" ||
     ! mv -f "$tmp" "$merged"; then
     rm -f "$tmp"
-    echo "srt-run: merging SRT_RUN_ALLOW_DOMAINS into $settings failed; refusing to launch $label" >&2
+    echo "srt-run: merging the layers into $settings failed; refusing to launch $label" >&2
     exit 1
   fi
   if [ -n "${SRT_DEBUG:-}" ]; then
     printf 'srt-run: %s allowedDomains: %s\n' "$label" \
       "$("$jq" -c '.network.allowedDomains' "$merged")" >&2
+    if [ -e "$local_layer" ]; then
+      printf 'srt-run: %s merged %s\n' "$label" "$local_layer" >&2
+    fi
   fi
   settings=$merged
 fi

@@ -35,6 +35,8 @@ pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove keeper-of-fa
 # *.key files, plus the store. .git/config stays readable: git reads the repo
 # config on every command. Writes go to the store and the temp dirs; loopback
 # only. A pin outside those roots reads as missing under the sandbox.
+# Rendered from spec.access in services/keeper-of-facts/service-info.yaml by
+# `make sandbox-settings` (docs/adr/0027): edit the manifest, not the JSON.
 [dotfiles.keeper_of_facts_srt_settings]
 source = "keeper-of-facts.srt.json"
 target = "~/.config/srt/keeper-of-facts.json"

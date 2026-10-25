@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -48,5 +49,41 @@ func TestValidatePath_Invalid(t *testing.T) {
 	}
 	if _, err := validatePath(context.Background(), file); err == nil {
 		t.Error("expected validation error, got nil")
+	}
+}
+
+func TestRunValidate_RequiresAccess(t *testing.T) {
+	root := t.TempDir()
+	write := func(p, content string) {
+		t.Helper()
+		full := filepath.Join(root, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".git/HEAD", "")
+	write("service-info.yaml", "kind: System\nmetadata: {name: demo}\nspec: {owner: mad01}\n")
+	write("services/web/service-info.yaml",
+		"kind: Component\nmetadata: {name: web}\nspec: {owner: mad01, system: demo}\n")
+	write("recipes/web/recipe.toml", "commands = [\"t-man add --name web -- web serve\"]\n")
+
+	validateCmd.SetContext(context.Background())
+	err := runValidate(validateCmd, []string{root})
+	if err == nil || !strings.Contains(err.Error(), "declare no spec.access") {
+		t.Fatalf("runValidate() = %v, want the missing access", err)
+	}
+
+	write("services/web/service-info.yaml", `kind: Component
+metadata: {name: web}
+spec:
+  owner: mad01
+  system: demo
+  access: {sandbox: srt, listen: 8080}
+`)
+	if err := runValidate(validateCmd, []string{root}); err != nil {
+		t.Fatalf("runValidate() with access = %v", err)
 	}
 }

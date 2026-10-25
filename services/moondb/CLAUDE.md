@@ -182,6 +182,13 @@ Files are 0600 and directories 0700.
 Sessions and turns upsert (the newest record per id wins). Edits, deltas and
 commit links are append-only facts, idempotent on their id.
 
+## Sandbox access
+
+`spec.access` in `service-info.yaml` declares what `moondb serve` may reach
+under srt. `make sandbox-settings` renders it to
+`recipes/moondb/moondb.srt.json`, which CI diffs, so change the manifest and
+never the JSON. Authoring guide: `docs/SANDBOXING.md`, "Declaring access".
+
 ## Build / install / test
 
 ```bash

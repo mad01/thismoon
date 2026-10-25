@@ -3,7 +3,7 @@
 COMPONENTS := $(patsubst %/Makefile,%,$(wildcard services/*/Makefile tools/*/Makefile))
 RECIPE_TESTS := $(wildcard recipes/*/*-test.sh)
 
-.PHONY: build test test-recipes install-all components
+.PHONY: build test test-recipes sandbox-settings install-all components
 
 build:
 	@for c in $(COMPONENTS); do $(MAKE) -C "$$c" build || exit 1; done
@@ -18,6 +18,12 @@ test: test-recipes
 
 test-recipes:
 	@for t in $(RECIPE_TESTS); do bash "$$t" || exit 1; done
+
+# Render every access manifest (spec.access in a service-info.yaml, or a
+# recipe's access.yaml) to its recipe's <label>.srt.json. The manifest is the
+# source of truth (docs/adr/0027); CI runs this and fails on any diff.
+sandbox-settings:
+	go run ./tools/srtspec/cmd/srtspec generate .
 
 install-all:
 	@for c in $(COMPONENTS); do $(MAKE) -C "$$c" install || exit 1; done

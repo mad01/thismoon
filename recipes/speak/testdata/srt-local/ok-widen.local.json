@@ -1,0 +1,14 @@
+{
+  "_comment": "every key the expansion layer may set",
+  "enableWeakerNetworkIsolation": true,
+  "filesystem": {
+    "allowRead": ["~/notes"],
+    "allowWrite": ["~/.cache/svc"]
+  },
+  "network": {
+    "allowLocalBinding": true,
+    "allowMachLookup": ["com.apple.SystemConfiguration.configd"],
+    "allowUnixSockets": ["/private/var/run/svc.sock"],
+    "allowedDomains": ["api.example.com", "*.example.org"]
+  }
+}

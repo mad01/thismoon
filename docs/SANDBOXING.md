@@ -4,8 +4,8 @@ Some processes in the fleet run third-party package code: a PyPI engine, a
 go-installed binary, a Model Context Protocol (MCP) server. Each one runs
 under [anthropics/sandbox-runtime](https://github.com/anthropics/sandbox-runtime)
 (srt), so a poisoned dependency can't read secrets or exfiltrate data. This
-page covers why srt, the launch pattern, the settings file, how it stays
-reconciled through ralph, and how to triage denials.
+page covers why srt, the launch pattern, how a process declares its access,
+how it stays reconciled through ralph, and how to triage denials.
 
 ## Why srt
 
@@ -42,12 +42,14 @@ Three pieces, split along the recipe layering in
    `TMPDIR`, and runs `srt --settings <abs> -- env SRT_RUN=<label> <argv...>`.
    The label is the settings file's name (`~/.config/srt/present.json` gives
    `present`); `SRT_RUN_LABEL` overrides it.
-2. The settings file, `~/.config/srt/<label>.json`. A file that is the same
-   on every machine ships beside its service's recipe here. One that
-   differs per machine ships from the consuming repo as a machine-private
-   overlay ([docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.md)).
-   srt fails closed: a missing or invalid file exits 1 and the command
-   never runs.
+2. The settings file, `~/.config/srt/<label>.json`, rendered from the
+   process's access manifest (see [Declaring access](#declaring-access)).
+   A file that is the same on every machine ships beside its service's
+   recipe here. One that differs per machine ships from the consuming repo
+   as a machine-private overlay
+   ([docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.md)). srt
+   fails closed: a missing or invalid file exits 1 and the command never
+   runs.
 3. A wrapper script that the MCP registration or t-man service runs. It
    resolves secrets outside the sandbox, runs `cd /`, scrubs the environment
    with `env -i` and an allow-list, and execs `srt-run`.
@@ -87,7 +89,8 @@ target if the consuming repo symlinks it from a checkout.
 
 The settings file holds the static policy. A host that differs per machine,
 such as present's shared instance or an LLM proxy, comes from the wrapper's
-own inputs at launch instead. The wrapper exports `SRT_RUN_ALLOW_DOMAINS`
+own inputs at launch instead. Its manifest says so with the literal egress
+entry `via SRT_RUN_ALLOW_DOMAINS`, which renders nothing. The wrapper exports `SRT_RUN_ALLOW_DOMAINS`
 (comma-separated `host[:port]`), and `srt-run` merges it into
 `network.allowedDomains` with jq. The merged copy goes to
 `~/.config/srt/merged/<label>.json` (mode 600, rewritten every launch) and
@@ -95,6 +98,9 @@ srt reads that. With the variable set, a missing jq or a failed merge stops
 the launch. present's wrapper derives the host from `PRESENT_SHARED_URL`, so
 its static file keeps `allowedDomains` empty. Never use `*`: srt 0.0.81
 rejects a bare `*` or `*:443`, and `srt-run` refuses one in the variable.
+Anything else a machine adds goes in the
+[expansion layer](#the-machine-local-expansion-layer), which srt-run merges
+in the same step.
 
 ### The legacy path: a seatbelt profile under t-man
 
@@ -102,46 +108,144 @@ srt's settings have no key for some sandbox classes. speak-tts needs
 `iokit-open` to reach Metal for its MLX engine, so it keeps a hand-written
 seatbelt profile run by t-man's `--sandbox-profile` flag
 ([`tools/t-man/config.md`](../tools/t-man/config.md)). Use this path only
-when srt can't express what the service needs. Tag every deny rule in the
+when srt can't express what the service needs, and say so in the manifest
+with `sandbox: seatbelt` and the reason. Tag every deny rule in the
 profile with `(with message "SRT_RUN=<label>")`. The log then appends the
 marker to each denial, and `sandbox-watch` attributes it like an srt
 process. t-man hashes the profile's content, so editing it and re-running
 `ralph up` re-renders the plist and restarts the service.
 
-## A worked settings file
+## Declaring access
 
-The present MCP server's settings, as the consuming repo would ship them
-at `~/.config/srt/present.json`:
+Every sandboxed process declares what it may reach in an access manifest
+beside its code. The srt settings file is rendered from the manifest and
+never edited by hand: the YAML is what a reviewer reads, the JSON is what
+srt enforces
+([docs/adr/0027](adr/0027-access-manifest-source-of-truth.md)). The
+[`srtspec`](../tools/srtspec/CLAUDE.md) tool renders it, and the schema
+lives in [`kit/access`](../kit/access/access.go).
+
+### The manifest
+
+A component declares it as `spec.access` in its `service-info.yaml`. events
+serve, for example:
+
+```yaml
+spec:
+  access:
+    sandbox: srt
+    workdir: ~/.local/share/events
+    listen: 7430
+    reads: [~/code/bin, workdir]
+    writes: [workdir, temp]
+```
+
+A recipe directory with no component, such as an MCP server's settings in
+the consuming repo, holds the same block as a standalone `access.yaml`:
+
+```yaml
+# recipes/claude-mcp/access.yaml
+sandbox: srt
+label: github-mcp
+egress: [via SRT_RUN_ALLOW_DOMAINS]
+reads: [~/code/bin]
+writes: [temp]
+tls: true
+```
+
+| Field | Meaning | Renders to |
+|---|---|---|
+| `sandbox` | `srt`, `seatbelt` or `none`. Required. | Only `srt` renders a file. |
+| `reason` | Why the process isn't under srt. Required for `seatbelt` and `none`. | Nothing. |
+| `label` | The srt-run label. Defaults to the component name, or to the directory name for an `access.yaml`. | The file name, `<label>.srt.json`. |
+| `workdir` | The process's own state directory. | The `workdir` symbol's value. |
+| `listen` | The loopback port it serves on. | `network.allowLocalBinding: true` |
+| `local` | Loopback peers it calls, by name (`events`). | `network.allowLocalBinding: true` |
+| `egress` | External hosts: `host`, `*.domain` or `host:port`. A host that differs per machine is the literal `via SRT_RUN_ALLOW_DOMAINS`. | `network.allowedDomains`. The literal renders nothing. |
+| `reads` | Paths carved out of the `~` read deny. | `filesystem.allowRead` |
+| `writes` | Paths it may write. | `filesystem.allowWrite` |
+| `tls` | It checks TLS certificates in-process, as Go binaries do. | `enableWeakerNetworkIsolation: true` |
+| `deny` | Extra read denies under the `reads` roots. | `filesystem.denyRead`, after `~` |
+| `extra` | Raw srt settings for anything the fields can't say. | Merged last: objects merge, lists union, scalars override. |
+
+`reads` and `writes` take two symbols: `workdir`, and `temp` for
+`/private/tmp` and `/private/var/folders`. Paths start with `/` or `~/`;
+globs work. Write `temp` wherever the process writes temp files, even
+though the render adds both roots anyway: the manifest is documentation
+first. `extra` is the escape hatch for keys such as `allowAppleEvents`,
+`allowPty` or `network.allowMachLookup`.
+
+### The fleet default
+
+Every render starts from the same floor: `denyRead: ["~"]`, both temp roots
+in `allowWrite`, and empty `allowedDomains`, `deniedDomains` and
+`denyWrite`. `allowLocalBinding` is on only when `listen` or `local` is
+set. After `extra`, the renderer checks the result still holds three
+invariants. No `*` or `*:port` host, `~` stays read-denied, and no write
+reaches `~/.config/srt` or the ralph sources cache. A manifest that breaks
+one doesn't render. The decoder is strict, so a misspelled field fails
+instead of silently dropping a deny. A `~/` deny that sits under no `reads`
+root is refused as a likely typo, since `~` already covers it.
+
+### Render, check, generate
+
+```bash
+srtspec render services/events/service-info.yaml        # JSON to stdout
+srtspec check services/events/service-info.yaml recipes/events/events.srt.json
+make sandbox-settings                                    # every manifest in the repo
+```
+
+`make sandbox-settings` runs `srtspec generate`. It renders a component's
+manifest to `recipes/<component dir>/<label>.srt.json`, and an
+`access.yaml` into the directory it sits in. Output is deterministic:
+sorted keys, list entries in manifest order, two-space indent. CI runs the
+target and fails on any diff, so neither a hand edit to a settings file nor
+a manifest change without its render can merge. A `recipes/*/*.srt.json`
+that no manifest renders fails the target too. `check` compares by meaning,
+ignoring key and list order. It exits 1 with a diff on drift.
+
+### The machine-local expansion layer
+
+Some machines need more than the shipped policy: another code root, a
+cache, a host only that machine talks to. That goes in
+`~/.config/srt/<label>.local.json`, never in the manifest. srt-run merges it
+at launch, together with `SRT_RUN_ALLOW_DOMAINS`, into
+`~/.config/srt/merged/<label>.json`. The layer may only widen. It can:
+
+- add to `network.allowedDomains`, `network.allowMachLookup`,
+  `network.allowUnixSockets`, `filesystem.allowRead` and
+  `filesystem.allowWrite`;
+- set `network.allowLocalBinding` or `enableWeakerNetworkIsolation` to
+  `true`.
 
 ```json
 {
-  "network": {
-    "allowedDomains": [],
-    "deniedDomains": [],
-    "allowLocalBinding": true
-  },
-  "filesystem": {
-    "denyRead": ["~"],
-    "allowRead": ["~/code/bin", "~/.config/present", "~/.local/state/present"],
-    "allowWrite": [
-      "~/.config/present",
-      "~/.local/state/present",
-      "/private/tmp",
-      "/private/var/folders"
-    ],
-    "denyWrite": []
-  }
+  "_comment": "kof on this machine also checks pins in ~/notes",
+  "filesystem": { "allowRead": ["~/notes"] }
 }
 ```
 
-`allowedDomains` stays empty because the shared host arrives at launch (see
-Machine-specific hosts above). The two temp entries are there because
-`srt-run` points the child's `TMPDIR` at the caller's temp dir or
-`/private/tmp`, and srt doesn't allow that dir on its own.
+Anything else makes srt-run exit 1 before srt starts, naming each problem.
+That covers any other key, and an allow that undoes a deny: one equal to a
+deny entry, or `~` itself. It also covers a write that reaches
+`~/.config/srt` or the sources cache, and a `*` or `*:port` host. A missing
+jq, invalid JSON, or a failed merge stops the launch as well. The layer
+lives in `~/.config/srt`, which no sandbox may write.
 
-srt requires all four `filesystem` lists and both domain lists, even when
-empty. `~` expands inside the file. A `_comment` key is accepted, which is
-the only way to annotate JSON. The keys that come up most:
+### Explain
+
+`srtspec explain <label>` prints the policy a launch would get. Each row is
+one entry with the layer it came from: `base` (the settings file), `local`
+(the expansion layer) or `env` (`SRT_RUN_ALLOW_DOMAINS`, read from the
+calling shell). Where srt-run would refuse to launch, explain says why and
+exits 1. It mirrors srt-run's merge, and both run the cases in
+[`recipes/speak/testdata/srt-local`](../recipes/speak/testdata/srt-local).
+
+### srt keys
+
+What the renderer writes, for reading a render or writing `extra`. srt
+requires all four `filesystem` lists and both domain lists, even when empty.
+`~` expands inside the file. A `_comment` key is accepted.
 
 | Key | Effect |
 |---|---|
@@ -154,9 +258,14 @@ the only way to annotate JSON. The keys that come up most:
 | `allowAppleEvents` | Lets the process send Apple Events. Off by default. |
 | `allowPty` | Lets the process open a pseudo-terminal. |
 
-Settings are read at spawn time. After editing one, restart the process: a
-new agent session or `/mcp` reconnect for an MCP server, `t-man restart` for
-a service.
+The temp roots are in every render because `srt-run` points the child's
+`TMPDIR` at the caller's temp dir or `/private/tmp`, and srt doesn't allow
+that dir on its own.
+
+Settings are read at spawn time. After a manifest change, render, then
+restart the process: a new agent session or `/mcp` reconnect for an MCP
+server, `t-man restart` for a service. After editing an expansion layer,
+only the restart is needed.
 
 ## Reads policy
 
@@ -166,21 +275,20 @@ allow-list is `~/code/bin` for the binary plus the process's own state
 directory.
 
 A process that reads source (humanizer scanning docs, say) gets the code
-roots back in `allowRead`. Secret files live inside those roots too, so
-add nested denies under them:
+roots back in `reads`. Secret files live inside those roots too, so add
+nested denies under them:
 
-```json
-"denyRead": [
-  "~",
-  "~/code/**/.env",
-  "~/code/**/.env.*",
-  "~/code/**/*.pem",
-  "~/code/**/*.key"
-],
-"allowRead": ["~/code"]
+```yaml
+reads: [~/code]
+deny:
+  - ~/code/**/.env
+  - ~/code/**/.env.*
+  - ~/code/**/*.pem
+  - ~/code/**/*.key
 ```
 
-The nested denies are more specific than the `~/code` allow, so they win.
+They render after `~` in `denyRead`. The nested denies are more specific
+than the `~/code` allow, so they win.
 Anchor them under `~/`: a bare `**/.env` resolves against the working
 directory, and the wrapper's `cd /` makes that a different tree from the
 one you meant.
@@ -190,9 +298,13 @@ one you meant.
 `ralph up` reconciles every sandbox artifact; nothing is manual-only. For a
 new sandboxed process, confirm:
 
-- The settings file lives in the recipe dir that links it to
+- The process declares an access manifest, and the settings file is its
+  render, committed in the recipe dir that links it to
   `~/.config/srt/<label>.json`. That is the service's recipe here when the
   file is the same on every machine, and the consuming repo's otherwise.
+  `make sandbox-settings` leaves no diff. `catalog validate` fails a
+  component whose recipe registers a t-man service or execs `srt-run`
+  without `spec.access`.
 - Neither `~/.config/srt` nor the link's target is under any settings
   file's `allowWrite`. This prints every entry that covers the directory,
   and should print nothing:
@@ -234,7 +346,8 @@ way. What carries over to the next one:
   label, and it matches the t-man name. present serve is the exception: its
   label is `present-serve`, because the MCP server already uses `present`.
 - **Generic settings ship beside the recipe.** When nothing in them differs
-  per machine, they live in this repo as `recipes/<svc>/<label>.srt.json`,
+  per machine, the service declares `spec.access` in its `service-info.yaml`
+  and `make sandbox-settings` renders `recipes/<svc>/<label>.srt.json`,
   linked to `~/.config/srt/<label>.json` by a `[dotfiles.<svc>_srt_settings]`
   item. `recipes/speak/srt-settings-test.sh`, part of `make test-recipes`,
   checks every shipped file and its wiring.
@@ -249,15 +362,14 @@ way. What carries over to the next one:
   the registration hook. ralph's `depends_on` accepts only `builds.` and
   `packages.` keys, so the hook depends on `builds.speak_chmod_scripts`,
   which keeps `srt-run.sh` executable.
-- **Start minimal.** `allowedDomains: []`, `allowLocalBinding: true` (the
-  listening port, and loopback posts to events), `denyRead: ["~"]`,
-  `allowRead` for `~/code/bin` and the workdir, `allowWrite` for the workdir
-  plus `/private/tmp` and `/private/var/folders`. Add only what a probe
-  shows the service needs.
+- **Start minimal.** `listen` with the port (and `local: [events]` if it
+  posts to events), `reads: [~/code/bin, workdir]`, `writes: [workdir,
+  temp]`, no `egress`. Add only what a probe shows the service needs.
 
 Three services stay outside srt: csl-web, sandbox-watch and d-man. The ADR
 amendment in [docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.md)
-records why.
+records why. Their components say so with `sandbox: none` and the reason,
+as do deps, status and speak-web until they are probed under srt.
 
 ### git inside the sandbox
 
@@ -344,9 +456,10 @@ denial as `label · process(pid) · operation · target`, e.g.
 Three outcomes:
 
 1. **Real breakage.** The tool's function fails and the denied path is
-   something it legitimately needs. Add the narrowest allow to its settings
-   file (a path, not a parent directory), restart the process, and confirm
-   it works. Never add allows preemptively.
+   something it legitimately needs. Add the narrowest allow (a path, not a
+   parent directory) to its manifest and render, or to the machine's
+   expansion layer when only that machine needs it. Restart the process and
+   confirm it works. Never add allows preemptively.
 2. **Expected noise.** The tool works and the denial is discovery probing:
    dotenv loaders, AWS/GCP SDK credential chains and `~/.netrc` lookups all
    scan paths they never use. Add a tight extended-regex (ERE) line to

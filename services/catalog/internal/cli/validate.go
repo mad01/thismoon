@@ -14,12 +14,20 @@ import (
 
 var validateCmd = &cobra.Command{
 	Use:   "validate [path...]",
-	Short: "Validate service-info.yaml files and global name uniqueness",
+	Short: "Validate service-info.yaml files, name uniqueness and sandbox manifests",
 	Long: `Validate catalog entities.
 
-Each service-info.yaml is parsed and schema-checked (kind, name, owner, and a
-system link for components). Then the global-namespace rule is enforced: every
-name must be unique across all Systems and Components combined.
+Each service-info.yaml is parsed and schema-checked (kind, name, owner, a
+system link for components, and spec.access when declared). Then the
+global-namespace rule is enforced: every name must be unique across all
+Systems and Components combined.
+
+Last, every Component whose recipe launches a process must declare
+spec.access, its sandbox access manifest. The recipe is
+recipes/<component directory name> in the nearest ancestor that has one; it
+launches a process when recipe.toml or a *.sh beside it runs "t-man add" or
+srt-run outside a comment. An unsandboxed one declares sandbox: none with a
+reason.
 
 With no arguments, validation runs over the repos in the registry. With one or
 more path arguments (directories or service-info.yaml files), only those are
@@ -63,9 +71,24 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	if err := catalog.CheckUnique(entities); err != nil {
 		return err
 	}
+	if err := catalog.CheckAccess(entities, catalog.NeedsAccess); err != nil {
+		return err
+	}
 
-	fmt.Fprintf(os.Stdout, "ok: %d entities valid, names globally unique\n", len(entities))
+	fmt.Fprintf(os.Stdout,
+		"ok: %d entities valid, names globally unique, %d declare sandbox access\n",
+		len(entities), countAccess(entities))
 	return nil
+}
+
+func countAccess(entities []catalog.Entity) int {
+	n := 0
+	for _, e := range entities {
+		if e.Spec.Access != nil {
+			n++
+		}
+	}
+	return n
 }
 
 // validatePath scans a directory or parses a single service-info.yaml file.

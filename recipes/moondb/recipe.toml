@@ -35,6 +35,8 @@ pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove moondb 2>/de
 # nested .env, .env.*, *.pem and *.key files. .git/config stays readable: git
 # reads the repo config on every command. Writes go to the workdir and the temp
 # dirs; loopback only.
+# Rendered from spec.access in services/moondb/service-info.yaml by
+# `make sandbox-settings` (docs/adr/0027): edit the manifest, not the JSON.
 [dotfiles.moondb_srt_settings]
 source = "moondb.srt.json"
 target = "~/.config/srt/moondb.json"

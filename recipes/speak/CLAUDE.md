@@ -39,11 +39,24 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   `srt-run <settings-file> <argv...>`. It runs the command under srt
   (anthropics/sandbox-runtime, a mise tool the consuming repo declares) as
   `env SRT_RUN=<label> <argv...>`, where the label is the settings file's
-  name (`~/.config/srt/present.json` gives `present`). It also merges
-  `SRT_RUN_ALLOW_DOMAINS` into the allow-list at launch and sets the child's
-  `TMPDIR`. Settings that are the same on every machine ship beside their
-  service's recipe in this repo: events, keeper-of-facts, moondb, catalog
-  and present serve. The rest come from the consuming repo.
+  name (`~/.config/srt/present.json` gives `present`). It sets the child's
+  `TMPDIR` and merges two widening layers at launch: the machine-local
+  expansion layer `~/.config/srt/<label>.local.json`, if present, and
+  `SRT_RUN_ALLOW_DOMAINS`. The expansion layer may only add to
+  `allowedDomains`, `allowRead`, `allowWrite`, `allowMachLookup` and
+  `allowUnixSockets`, and set `allowLocalBinding` or
+  `enableWeakerNetworkIsolation` to true. Anything else (another key, an
+  allow that undoes a deny, a write into `~/.config/srt` or the sources
+  cache, a `*` host) makes srt-run exit 1 before srt starts. `srtspec
+  explain <label>` shows the merged result. Settings that are the same on
+  every machine are rendered from each service's `spec.access` manifest and
+  ship beside its recipe in this repo: events, keeper-of-facts, moondb,
+  catalog and present serve. The rest come from the consuming repo.
+- **`srt-run-test.sh`**: run by `make test-recipes`, it launches `srt-run`
+  against a scratch `HOME` with a stand-in srt. Widening layers must merge
+  into the copy srt is handed; every case under `testdata/srt-local/` named
+  `refuse-*` must exit 1 before srt starts. srtspec's explain tests run the
+  same cases, so add a case there rather than in either test.
 - **`srt-settings-test.sh`**: run by `make test-recipes`, it checks every
   shipped `recipes/*/*.srt.json`. Each file needs the six lists srt
   requires, no host, and `denyRead` from `~`. No `allowWrite` may cover
@@ -113,9 +126,10 @@ When `sandbox-watch` notifies (or you read `sandbox-denials.log`), the line is
 `time  status  summary  [reason]`. Decide between three actions:
 
 1. **Real breakage**: the denied access is something the process
-   legitimately needs and it is failing. Add the narrowest allow to its srt
-   settings file (`~/.config/srt/<label>.json`, kept in the consuming repo),
-   restart the process, confirm it works.
+   legitimately needs and it is failing. Add the narrowest allow to its
+   access manifest and render it (`make sandbox-settings`), or, when only
+   this machine needs it, to `~/.config/srt/<label>.local.json`. Restart the
+   process, confirm it works.
 2. **Expected/benign**: an app probing a credential/config path it never uses
    (dotenv loaders, AWS/GCP SDK credential chains, `~/.netrc` lookups all scan
    every candidate as discovery). The block is correct; the notification is

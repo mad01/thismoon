@@ -46,6 +46,8 @@ pre_uninstall = [
 # it lists must sit there. The add-component form writes service-info.yaml into
 # a registered repo, so that one file name is writable under ~/code. Loopback
 # only.
+# Rendered from spec.access in services/catalog/service-info.yaml by
+# `make sandbox-settings` (docs/adr/0027): edit the manifest, not the JSON.
 [dotfiles.catalog_web_srt_settings]
 source = "catalog-web.srt.json"
 target = "~/.config/srt/catalog-web.json"

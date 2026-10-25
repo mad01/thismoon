@@ -111,6 +111,14 @@ release workflow pushes `X.Y.Z`/`latest` (`docs/adr/0018`,
 `docs/RELEASING.md`). Machine-private overlays (hostname, gateway, author
 keys) live in the consuming repo.
 
+## Sandbox access
+
+`spec.access` in `service-info.yaml` declares what `present serve` may reach
+under srt. `make sandbox-settings` renders it to
+`recipes/present/present-serve.srt.json`, which CI diffs, so change the
+manifest and never the JSON. Authoring guide: `docs/SANDBOXING.md`,
+"Declaring access".
+
 ## Build / install / test
 
 ```bash

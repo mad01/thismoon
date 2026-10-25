@@ -9,3 +9,9 @@ spec:
   lifecycle: production
   owner: mad01
   system: thismoon
+  # d-man stays outside srt (docs/adr/0006, 2026-10-25 amendment).
+  access:
+    sandbox: none
+    reason: >-
+      Root LaunchDaemon that rewrites /etc/hosts and binds port 80, outside
+      what a per-user srt sandbox covers.

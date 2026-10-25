@@ -9,3 +9,25 @@ spec:
   lifecycle: development
   owner: mad01
   system: thismoon
+  # Sandbox access, rendered to recipes/keeper-of-facts/keeper-of-facts.srt.json
+  # by `make sandbox-settings` (docs/SANDBOXING.md, "Declaring access"). It
+  # reads the code roots to check evidence pins, minus the secret files in them.
+  access:
+    sandbox: srt
+    workdir: ~/.local/share/kof
+    listen: 7431
+    reads: [~/code, ~/.worktrees, ~/.config/ralph/sources, workdir]
+    writes: [workdir, temp]
+    deny:
+      - ~/code/**/.env
+      - ~/code/**/.env.*
+      - ~/code/**/*.pem
+      - ~/code/**/*.key
+      - ~/.worktrees/**/.env
+      - ~/.worktrees/**/.env.*
+      - ~/.worktrees/**/*.pem
+      - ~/.worktrees/**/*.key
+      - ~/.config/ralph/sources/**/.env
+      - ~/.config/ralph/sources/**/.env.*
+      - ~/.config/ralph/sources/**/*.pem
+      - ~/.config/ralph/sources/**/*.key

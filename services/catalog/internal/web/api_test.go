@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/access"
 	"github.com/mad01/thismoon/services/catalog/internal/catalog"
 )
 
@@ -25,7 +26,10 @@ var testInfo = buildinfo.Info{
 func fixtureCatalog() *catalog.Catalog {
 	return catalog.NewCatalog([]catalog.Entity{
 		{Kind: catalog.KindSystem, Metadata: catalog.Metadata{Name: "dotfiles", Description: "tooling"}, Spec: catalog.Spec{Owner: "mad01"}},
-		{Kind: catalog.KindComponent, Metadata: catalog.Metadata{Name: "present"}, Spec: catalog.Spec{Owner: "mad01", System: "dotfiles", Type: "cli"}},
+		{Kind: catalog.KindComponent, Metadata: catalog.Metadata{Name: "present"}, Spec: catalog.Spec{
+			Owner: "mad01", System: "dotfiles", Type: "cli",
+			Access: &access.Manifest{Sandbox: access.SandboxNone, Reason: "not yet probed"},
+		}},
 		{Kind: catalog.KindComponent, Metadata: catalog.Metadata{Name: "csl"}, Spec: catalog.Spec{Owner: "alice", System: "code-search-local"}},
 	})
 }
@@ -84,6 +88,36 @@ func TestHandleSystem(t *testing.T) {
 	}
 	if len(view.Components) != 1 || view.Components[0].Metadata.Name != "present" {
 		t.Errorf("components = %+v", view.Components)
+	}
+}
+
+// TestHandleComponent_SandboxPosture checks the component API carries the
+// sandbox posture: spec.access.sandbox, and the reason when it is not srt.
+func TestHandleComponent_SandboxPosture(t *testing.T) {
+	h := newServerWithCatalog(fixtureCatalog(), nil).Handler()
+	rec := doGet(t, h, "/api/components/present")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var got struct {
+		Spec struct {
+			Access *struct {
+				Sandbox string `json:"sandbox"`
+				Reason  string `json:"reason"`
+			} `json:"access"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Spec.Access == nil || got.Spec.Access.Sandbox != "none" ||
+		got.Spec.Access.Reason != "not yet probed" {
+		t.Fatalf("posture = %+v, want none with its reason", got.Spec.Access)
+	}
+
+	rec = doGet(t, h, "/api/components/csl")
+	if strings.Contains(rec.Body.String(), `"access"`) {
+		t.Errorf("undeclared access serialized: %s", rec.Body.String())
 	}
 }
 

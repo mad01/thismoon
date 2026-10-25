@@ -24,7 +24,10 @@ ralph merges the recipe with the identity `thismoon/keeper-of-facts`. The packag
   ~/.local/share/kof`. Idempotent; `run = "always"`
   self-heals if the agent was removed. Guarded on t-man being on PATH.
 - **`dotfiles.keeper_of_facts_srt_settings`**: links
-  `keeper-of-facts.srt.json` to `~/.config/srt/keeper-of-facts.json`.
+  `keeper-of-facts.srt.json` to `~/.config/srt/keeper-of-facts.json`. The
+  file is rendered from `spec.access` in
+  `services/keeper-of-facts/service-info.yaml` by `make sandbox-settings`;
+  edit the manifest, not the JSON.
 - **`pre_uninstall`**: removes the t-man agent before cleanup deletes the binary.
 
 Sandbox note: serve runs under srt, loopback only. It reads the code roots

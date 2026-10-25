@@ -1,10 +1,14 @@
 {
-  "network": {
-    "allowedDomains": [],
-    "deniedDomains": [],
-    "allowLocalBinding": true
-  },
   "filesystem": {
+    "allowRead": [
+      "~/code",
+      "~/.config/catalog"
+    ],
+    "allowWrite": [
+      "~/code/**/service-info.yaml",
+      "/private/tmp",
+      "/private/var/folders"
+    ],
     "denyRead": [
       "~",
       "~/code/**/.env",
@@ -12,12 +16,11 @@
       "~/code/**/*.pem",
       "~/code/**/*.key"
     ],
-    "allowRead": ["~/code", "~/.config/catalog"],
-    "allowWrite": [
-      "~/code/**/service-info.yaml",
-      "/private/tmp",
-      "/private/var/folders"
-    ],
     "denyWrite": []
+  },
+  "network": {
+    "allowLocalBinding": true,
+    "allowedDomains": [],
+    "deniedDomains": []
   }
 }

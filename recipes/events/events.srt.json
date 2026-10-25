@@ -1,17 +1,22 @@
 {
-  "network": {
-    "allowedDomains": [],
-    "deniedDomains": [],
-    "allowLocalBinding": true
-  },
   "filesystem": {
-    "denyRead": ["~"],
-    "allowRead": ["~/code/bin", "~/.local/share/events"],
+    "allowRead": [
+      "~/code/bin",
+      "~/.local/share/events"
+    ],
     "allowWrite": [
       "~/.local/share/events",
       "/private/tmp",
       "/private/var/folders"
     ],
+    "denyRead": [
+      "~"
+    ],
     "denyWrite": []
+  },
+  "network": {
+    "allowLocalBinding": true,
+    "allowedDomains": [],
+    "deniedDomains": []
   }
 }
