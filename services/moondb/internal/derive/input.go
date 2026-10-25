@@ -53,9 +53,12 @@ func replacements(tool string, raw json.RawMessage) []replacement {
 	}
 }
 
-// creates reports swaps that create their file: the first replaces
-// nothing, which the tool allows only where no file exists.
-func creates(reps []replacement) bool {
+// creates reports a tool input whose swaps create their file: the first
+// replaces nothing, which the tool allows only where no file exists. It
+// reads the raw input, so an edit the person changed in the permission
+// dialog, whose swaps load leaves out, still counts.
+func creates(tool string, raw json.RawMessage) bool {
+	reps := replacements(tool, raw)
 	return len(reps) > 0 && reps[0].Old == ""
 }
 

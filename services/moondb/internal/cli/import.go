@@ -42,8 +42,10 @@ hooks' envelopes, so it must be running for the import to reach the store.
 A session the store already holds was captured live and is skipped; --force
 imports it anyway. A forced import only fills: an edit the store holds stays
 as it is, a session or turn keeps every field it has and gets only its empty
-fields filled, and a turn still open is closed. Sessions without a file edit
-are skipped.
+fields filled, and a turn still open is closed. An earlier imported prompt
+still moves a start time back. Run --force only while no session is active,
+because it closes a session's in-flight turn until the live Stop arrives.
+Sessions without a file edit are skipped.
 
 A transcript records less than the hooks see: no disk read after an edit (so
 no unattributed delta), no HEAD (so no commit link until a later live turn

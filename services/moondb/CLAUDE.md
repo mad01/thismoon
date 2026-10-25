@@ -73,8 +73,9 @@ back only by later hooks of the same session:
 `~/.claude/projects` written within `--since` (default 30d) and writes the
 envelopes the hooks would have written, through the same spool writer. serve
 ingests them with no import code of its own. A session the store already
-holds was captured live and is skipped unless `--force`. A session without a
-file edit is skipped. `--dry-run` reads and counts everything and writes
+holds was captured live and is skipped unless `--force`. Run `--force` only
+while no session is active, because it closes a session's in-flight turn
+until the live Stop arrives. A session without a file edit is skipped. `--dry-run` reads and counts everything and writes
 nothing; with serve down it runs without the store lookups and says so.
 `--projects` and `--file-history` point at other transcript and
 file-history directories; the defaults live in `facts.go`.
@@ -84,8 +85,8 @@ hook calls `prompt_id`; a transcript without one keys the turn by the prompt
 entry's uuid. An edit is `<tool_use_id>:<index>`. Every import envelope is
 marked `backfill`, so importing a session again, or one partly captured live,
 only fills: a stored edit stays, and a session or turn keeps its values and
-gets its empty fields filled, an open turn closed. A
-subagent's edits come from `<session>/subagents/agent-<id>.jsonl`, carry its
+gets its empty fields filled, an open turn closed. An earlier imported
+prompt still moves a start time back. A subagent's edits come from `<session>/subagents/agent-<id>.jsonl`, carry its
 id and type, and belong to the main turn its entries name.
 
 What a transcript gives back:

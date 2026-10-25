@@ -10,8 +10,9 @@ import (
 
 // turnOpen records a submitted prompt. A turn the store already holds (a
 // placeholder an early edit left, or the same envelope replayed) keeps its
-// fields; the open only fills what is empty and, unless it is a backfill,
-// moves StartedAt back to the prompt's time.
+// fields; the open only fills what is empty and moves StartedAt back to the
+// prompt's time, never forward. A backfill moves it too: an imported prompt
+// can predate the live edit that left the placeholder.
 func (in *Ingester) turnOpen(
 	ctx context.Context,
 	env spool.Envelope,
@@ -41,9 +42,7 @@ func (in *Ingester) turnOpen(
 	if t.TranscriptOffset == 0 && env.Turn.TranscriptOffset != 0 {
 		t.TranscriptOffset, changed = env.Turn.TranscriptOffset, true
 	}
-	if !env.Backfill { // a stored StartedAt is never empty
-		changed = earliest(&t.StartedAt, env.At) || changed
-	}
+	changed = earliest(&t.StartedAt, env.At) || changed // a stored StartedAt is never empty
 	if !changed {
 		return nil
 	}

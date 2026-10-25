@@ -114,7 +114,9 @@ func (in *Ingester) kept(env spool.Envelope, missing map[string]bool, key string
 // model and transcript path of a known one. Cwd and Harness keep their
 // first value, since the session started there; StartedAt keeps the
 // earliest time seen, so a session first known from a late envelope moves
-// back when an earlier one arrives. A backfill only fills empty fields.
+// back when an earlier one arrives. A backfill only fills empty fields,
+// except that its turn-open moves StartedAt back too: live capture may have
+// begun after the session's first prompt.
 func (in *Ingester) upsertSession(ctx context.Context, env spool.Envelope) error {
 	ref := env.Session
 	if ref.ID == "" {
@@ -137,7 +139,7 @@ func (in *Ingester) upsertSession(ctx context.Context, env spool.Envelope) error
 	changed = set(&s.Title, ref.Title) || changed
 	changed = set(&s.Model, ref.Model) || changed
 	changed = set(&s.TranscriptPath, ref.TranscriptPath) || changed
-	if !env.Backfill { // a stored StartedAt is never empty
+	if !env.Backfill || env.Kind == spool.KindTurnOpen { // a stored StartedAt is never empty
 		changed = earliest(&s.StartedAt, env.At) || changed
 	}
 	if !changed {

@@ -47,7 +47,7 @@ An implementation of the store interface: `local` today, `cloud` in a later rele
 _Avoid_: driver, provider
 
 **Import**:
-A backfill from session transcripts: `moondb import` writes the envelopes the hooks would have written, with their ids, for sessions the store does not hold yet. With `--force` it backfills held sessions too, filling only what the store has empty.
+A backfill from session transcripts: `moondb import` writes the envelopes the hooks would have written, with their ids, for sessions the store does not hold yet. With `--force` it backfills held sessions too, filling only what the store has empty. An earlier prompt time still moves a start back.
 _Avoid_: migration, replay (ingest's word for an envelope read again)
 
 **Spool**:

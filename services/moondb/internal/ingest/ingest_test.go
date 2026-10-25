@@ -254,7 +254,7 @@ func TestCloseWithoutOpenCreatesTurnAndSession(t *testing.T) {
 func TestBackfillOnlyFills(t *testing.T) {
 	// Live capture holds turn p1 closed and turn p2 still open, and the
 	// session has no model. A forced import then backfills both turns with
-	// other times, messages and session fields.
+	// later times, other messages and session fields.
 	f := newFixture(t)
 	c := chunkSet{}
 	f.write(openEnv(c, "s1", "p1", 2, "fix the bug"), c)
@@ -268,7 +268,7 @@ func TestBackfillOnlyFills(t *testing.T) {
 		env.Session.TranscriptPath = "/t/s1.jsonl"
 		return env
 	}
-	f.write(backfill(openEnv(c, "s1", "p1", 1, "imported prompt")), c)
+	f.write(backfill(openEnv(c, "s1", "p1", 3, "imported prompt")), c)
 	f.write(backfill(closeEnv(c, "s1", "p1", 7, "imported final")), c)
 	f.write(backfill(closeEnv(c, "s1", "p2", 8, "imported p2 final")), c)
 	f.drain()
@@ -292,6 +292,36 @@ func TestBackfillOnlyFills(t *testing.T) {
 	if p2.Status != store.TurnClosed || p2.EndedAt == nil || !p2.EndedAt.Equal(at(8)) ||
 		p2.FinalChunk != spool.ChunkKey([]byte("imported p2 final")) {
 		t.Errorf("open live turn = %+v, want the backfill to close it and fill its final", p2)
+	}
+}
+
+func TestBackfillOpenMovesStartEarlier(t *testing.T) {
+	// Live capture began mid-session: its first record of turn p1 is an edit
+	// at minute 3, which left a placeholder turn, and turn p2 opened at
+	// minute 5. A forced import then backfills p1's prompt at minute 1 and
+	// p2's at minute 9.
+	f := newFixture(t)
+	c := chunkSet{}
+	f.write(editEnv(c, "s1", "p1", "tu1", 3, "a.go", "package a\n", "package a\n"), c)
+	f.write(openEnv(c, "s1", "p2", 5, "and the test"), c)
+	f.drain()
+
+	backfill := func(env spool.Envelope) spool.Envelope {
+		env.Backfill = true
+		return env
+	}
+	f.write(backfill(openEnv(c, "s1", "p1", 1, "fix the bug")), c)
+	f.write(backfill(openEnv(c, "s1", "p2", 9, "imported p2 prompt")), c)
+	f.drain()
+
+	if got := f.turn("p1").StartedAt; !got.Equal(at(1)) {
+		t.Errorf("placeholder turn started %v, want the imported prompt's %v", got, at(1))
+	}
+	if got := f.session("s1").StartedAt; !got.Equal(at(1)) {
+		t.Errorf("session started %v, want the imported prompt's %v", got, at(1))
+	}
+	if got := f.turn("p2").StartedAt; !got.Equal(at(5)) {
+		t.Errorf("live turn started %v, want its own %v, not the later import's", got, at(5))
 	}
 }
 

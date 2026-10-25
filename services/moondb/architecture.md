@@ -70,7 +70,8 @@ Import: `moondb import` reads the session transcripts under
 It uses the hooks' ids and marks every envelope `backfill`, so a re-run or
 an overlap with live capture only fills: a stored edit stays, and a session
 or turn keeps its values and gets its empty fields filled, an open turn
-closed. A transcript has no disk read and no HEAD, so imported edits
+closed. An earlier imported prompt still moves a start time back. A
+transcript has no disk read and no HEAD, so imported edits
 carry neither and the import writes no head-moved envelope. Most imported
 files sat in worktrees deleted since. The import places those by the
 nearest surviving work tree, the worktree layout of their path, or the
@@ -86,9 +87,9 @@ content. Before content is the first source the call fits: nothing for a
 create, the original, the latest earlier after content of the path, HEAD, or
 the observed bytes with the call undone. A source fits when each `old_string`
 occurs once, or at least once with `replace_all`, and the hunks apply with
-tabs read as two spaces. A CRLF file is matched on its LF view. Hunks alone
-fit a user-modified edit or an `old_string` the source lacks. Else the before
-is unknown. Observed bytes that differ become an unattributed delta.
+tabs read as two spaces. A CRLF file matches on its LF view. Hunks alone fit a
+user-modified edit, a missing `old_string`, or swaps they contradict. Else the
+before is unknown. Differing observed bytes become an unattributed delta.
 
 Link: a head-moved envelope's blob ids are matched against recorded
 after-blob ids, and each match becomes a commit link.

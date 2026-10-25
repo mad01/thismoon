@@ -41,6 +41,7 @@ func (d *Deriver) chooseBefore(
 		{store.BeforeOriginal, func() (content, error) { return in.original, nil }},
 		{store.BeforeChain, func() (content, error) { return d.chain(ctx, e) }},
 		{store.BeforeHead, func() (content, error) { return in.head, nil }},
+		{store.BeforeObserved, func() (content, error) { return unreplaced(in), nil }},
 		{store.BeforeObserved, func() (content, error) { return reversed(in), nil }},
 	}
 	for _, c := range candidates {
@@ -95,7 +96,7 @@ func fit(before content, in inputs) (content, bool) {
 		got, ok := applyUntabbed(before.data, in.hunks)
 		return content{}, ok && sameLines(got, untab(in.written.data))
 	default:
-		return fitHunks(before.data, in.hunks)
+		return fitHunks(before.data, in)
 	}
 }
 
@@ -103,22 +104,26 @@ func fit(before content, in inputs) (content, bool) {
 // The candidate must take the call's hunks, when it shipped any, with tabs
 // read as two spaces, and no replacement may break the occurrence rule;
 // an edit without hunks rests on the rule alone. The replacements give
-// the after-content. When a replacement's text is missing from a
-// candidate the hunks fit, a normalization the harness applies before
-// matching explains it, and the hunks stand in for the replacements.
+// the after-content when the hunks, read the same way, lead to it too.
+// When the hunks lead elsewhere, or a replacement's text is missing from
+// the candidate, a normalization the harness applies explains it, and the
+// hunks stand in for the replacements.
 func fitReplacements(before []byte, in inputs) (content, bool) {
 	hunked := len(in.hunks) > 0
+	var patched []byte
 	if hunked {
-		if _, ok := applyUntabbed(before, in.hunks); !ok {
+		got, ok := applyUntabbed(before, in.hunks)
+		if !ok {
 			return content{}, false
 		}
+		patched = got
 	}
 	after, o := replace(before, in.edits)
 	switch {
-	case o == swapped:
+	case o == swapped && (!hunked || sameLines(untab(after), patched)):
 		return known(after), true
-	case o == missing && hunked:
-		return fitHunks(before, in.hunks)
+	case hunked && (o == swapped || o == missing):
+		return fitHunks(before, in)
 	default:
 		return content{}, false
 	}
@@ -127,12 +132,19 @@ func fitReplacements(before []byte, in inputs) (content, bool) {
 // fitHunks fits a candidate to the hunks alone: a strict apply yields the
 // after-content; an apply with tabs read as two spaces confirms the
 // candidate and no more, so the after-content comes from the disk read.
-func fitHunks(before []byte, hunks []patch.Hunk) (content, bool) {
-	if applied, err := patch.Apply(before, hunks); err == nil {
-		return known(applied), true
+// A disk read that differs from the strict apply only where the hunks wrote
+// a tab as two spaces is the after-content: the hunks cannot tell the two
+// apart, and the file can.
+func fitHunks(before []byte, in inputs) (content, bool) {
+	applied, err := patch.Apply(before, in.hunks)
+	if err != nil {
+		_, ok := applyUntabbed(before, in.hunks)
+		return content{}, ok
 	}
-	_, ok := applyUntabbed(before, hunks)
-	return content{}, ok
+	if in.observed.ok && sameLines(untab(applied), untab(in.observed.data)) {
+		return in.observed, true
+	}
+	return known(applied), true
 }
 
 // The harness writes every tab in its hunks as two spaces, while the file,
@@ -162,9 +174,10 @@ func applyUntabbed(before []byte, hunks []patch.Hunk) ([]byte, bool) {
 // absent is the before of a create the harness reported without an
 // original: nothing, which the hunks and replacements apply to as the empty
 // file. A create is a payload that says so, or an Edit or MultiEdit whose
-// first replacement replaces nothing.
+// first replacement replaces nothing, also when the person changed it in
+// the permission dialog.
 func absent(p *spool.EditPayload, in inputs) content {
-	if !in.original.ok && (p.Kind == store.EditCreate || creates(in.edits)) {
+	if !in.original.ok && (p.Kind == store.EditCreate || creates(p.Tool, p.Input)) {
 		return known(nil)
 	}
 	return content{}
@@ -189,20 +202,26 @@ func (d *Deriver) chain(ctx context.Context, e store.Edit) (content, error) {
 	return d.get(ctx, prev.AfterChunk)
 }
 
-// reversed is the disk read with the tool call undone: the input's
-// replacements undone when they can be (see unreplace), else the hunks
-// reversed strictly. It is unknown when neither undoes the call. Like any
-// other candidate it must still fit the call.
-func reversed(in inputs) content {
-	if !in.observed.ok {
+// unreplaced is the disk read with the input's replacements undone (see
+// unreplace), or unknown when they cannot be. Like any other candidate it
+// must still fit the call.
+func unreplaced(in inputs) content {
+	if !in.observed.ok || in.edits == nil {
 		return content{}
 	}
-	if in.edits != nil {
-		if before, ok := unreplace(in.observed.data, in.edits); ok {
-			return known(before)
-		}
+	before, ok := unreplace(in.observed.data, in.edits)
+	if !ok {
+		return content{}
 	}
-	if len(in.hunks) == 0 {
+	return known(before)
+}
+
+// reversed is the disk read with the hunks reversed strictly, or unknown
+// when they do not reverse. It is tried when unreplaced is unknown or does
+// not fit: undoing a swap finds the first occurrence of its new text, which
+// need not be the one the call wrote.
+func reversed(in inputs) content {
+	if !in.observed.ok || len(in.hunks) == 0 {
 		return content{}
 	}
 	before, err := patch.Reverse(in.observed.data, in.hunks)

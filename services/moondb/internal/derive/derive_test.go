@@ -93,6 +93,29 @@ var expandedHunks = func() []patch.Hunk {
 	return []patch.Hunk{h}
 }()
 
+// tabbedHunks append a function to tabbedBefore. They write its
+// tab-indented line with two spaces, as the harness does, so a strict apply
+// gives the spaces and the disk read, tabbedAfter, has the tab.
+const (
+	tabbedBefore = "package x\n\nfunc a() {}\n"
+	tabbedAfter  = tabbedBefore + "func b() {\n\treturn\n}\n"
+)
+
+var tabbedHunks = []patch.Hunk{{
+	OldStart: 1, OldLines: 3, NewStart: 1, NewLines: 6,
+	Lines: []string{" package x", " ", " func a() {}", "+func b() {", "+  return", "+}"},
+}}
+
+// formattedHunks take before to formatted in one hunk, tab-expanded as the
+// harness writes them: both the return line and the Println line change.
+var formattedHunks = []patch.Hunk{{
+	OldStart: 3, OldLines: 9, NewStart: 3, NewLines: 9,
+	Lines: []string{
+		` import "fmt"`, " ", " func A() int {", "-  return 1", "+  return 2", " }", " ",
+		" func B() {", `-  fmt.Println( "b" )`, `+  fmt.Println("b")`, " }",
+	},
+}}
+
 // editInput is the Edit tool input behind editHunks.
 var editInput = inputOf(map[string]any{
 	"file_path": "/wt/a.go", "old_string": "\treturn 1", "new_string": "\treturn 2",
@@ -470,7 +493,7 @@ func TestEdit(t *testing.T) {
 					{"old_string": "\treturn 9", "new_string": "\treturn 2"},
 					{"old_string": `( "b" )`, "new_string": `("b")`},
 				}}),
-				hunks: expandedHunks, chain: ptr(before), observed: ptr(formatted),
+				hunks: formattedHunks, chain: ptr(before), observed: ptr(formatted),
 			},
 			want: want{
 				kind: store.EditUpdate, source: store.BeforeChain,
@@ -485,7 +508,7 @@ func TestEdit(t *testing.T) {
 					{"old_string": "\treturn 1", "new_string": "\treturn 2"},
 					{"old_string": `( "b" )`, "new_string": `("b")`},
 				}}),
-				hunks: expandedHunks, observed: ptr(formatted),
+				hunks: formattedHunks, observed: ptr(formatted),
 			},
 			want: want{
 				kind: store.EditUpdate, source: store.BeforeObserved,
@@ -662,6 +685,79 @@ func TestEdit(t *testing.T) {
 			},
 			want: want{
 				kind: store.EditCreate, source: store.BeforeAbsent, after: ptr("hello\n"), eol: "lf",
+			},
+		},
+		{
+			name: "user-modified edit, the disk read keeps the tab the hunks wrote as spaces",
+			ev: evidence{
+				tool: "Edit", kind: "update", userModified: true,
+				input: inputOf(map[string]any{
+					"old_string": "func a() {}", "new_string": "func a() {}\nfunc b() {\n\treturn\n}",
+				}),
+				hunks:    tabbedHunks,
+				original: ptr(tabbedBefore), observed: ptr(tabbedAfter),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeOriginal,
+				before: ptr(tabbedBefore), after: ptr(tabbedAfter), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "user-modified edit without a disk read keeps the hunks' spaces",
+			ev: evidence{
+				tool: "Edit", kind: "update", userModified: true,
+				hunks: tabbedHunks, original: ptr(tabbedBefore),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeOriginal, before: ptr(tabbedBefore),
+				after: ptr(strings.ReplaceAll(tabbedAfter, "\t", "  ")), eol: "lf",
+			},
+		},
+		{
+			name: "hunks that contradict the swapped content stand in for it",
+			ev: evidence{
+				tool: "Edit", kind: "update",
+				input: inputOf(map[string]any{"old_string": "a", "new_string": "b  "}),
+				hunks: []patch.Hunk{{
+					OldStart: 1, OldLines: 2, NewStart: 1, NewLines: 2,
+					Lines: []string{"-a", "+b", " c"},
+				}},
+				original: ptr("a\nc\n"), observed: ptr("b\nc\n"),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeOriginal,
+				before: ptr("a\nc\n"), after: ptr("b\nc\n"), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "swap undone at the wrong occurrence, the hunks reverse the disk read",
+			ev: evidence{
+				tool: "Edit", kind: "update",
+				input: inputOf(map[string]any{"old_string": "x", "new_string": "aa"}),
+				hunks: []patch.Hunk{{
+					OldStart: 1, OldLines: 1, NewStart: 1, NewLines: 1,
+					Lines: []string{"-ax", "+aaa"},
+				}},
+				observed: ptr("aaa\n"),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeObserved,
+				before: ptr("ax\n"), after: ptr("aaa\n"), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "user-modified edit with an empty old_string creates the file",
+			ev: evidence{
+				tool: "Edit", kind: "update", userModified: true,
+				input: inputOf(map[string]any{"old_string": "", "new_string": "hello\n"}),
+				hunks: []patch.Hunk{{
+					OldStart: 0, OldLines: 0, NewStart: 1, NewLines: 1, Lines: []string{"+hi"},
+				}},
+				observed: ptr("hi\n"),
+			},
+			want: want{
+				kind: store.EditCreate, source: store.BeforeAbsent,
+				after: ptr("hi\n"), observed: matched, eol: "lf",
 			},
 		},
 		{
