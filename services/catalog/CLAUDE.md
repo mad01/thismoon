@@ -124,8 +124,15 @@ of "done": its `service-info.yaml` and the registry should reflect reality.
 ## Data model & storage
 
 ```go
-Entity{ APIVersion, Kind (System | Component), Metadata{Name, Description, Tags}, Spec{Owner, Type, Lifecycle, System} }
+Entity{ APIVersion, Kind (System | Component), Metadata{Name, Description, Tags}, Spec{Owner, Type, Lifecycle, System, Access} }
 ```
+
+- `Spec.Access` is the Component's sandbox access manifest (`spec.access`),
+  typed by `kit/access` and decoded strictly: an unknown field or an invalid
+  block fails the parse like any other schema error. Its `sandbox` (srt,
+  seatbelt or none) and `reason` are the sandbox posture the API serves and
+  the Component page shows; nil means undeclared. The block's schema and
+  rendering are documented in `docs/SANDBOXING.md`, "Declaring access".
 
 - `Metadata.Name` must match `^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$` and
   be ≤63 characters (alphanumeric start/end, with `-`/`_`/`.` allowed in
@@ -216,9 +223,19 @@ catalog version [-o json]
   with `--owner`, `--system` (Components only), `--kind`; the positional
   argument substring-matches name, description, and tags.
 - `catalog validate [path...]`: schema-checks each entity (`Entity.Validate`)
-  then enforces global name uniqueness (`CheckUnique`). No arguments validates
-  the whole registry; one or more directory/file paths validates just those
-  (the mode you'd use to check specific repos before merging).
+  then enforces global name uniqueness (`CheckUnique`) and the access rule
+  (`CheckAccess`). No arguments validates the whole registry; one or more
+  directory/file paths validates just those (the mode you'd use to check
+  specific repos before merging).
+- The access rule: a Component must declare `spec.access` when the recipe that
+  installs it launches a process. Its recipe is `recipes/<name of the
+  directory holding its service-info.yaml>`, in the nearest ancestor that has
+  one, up to the repo root (`RecipeDir`). The recipe launches a process when a
+  non-comment line of its `recipe.toml`, or of a `*.sh` beside it, runs
+  `t-man add` (a t-man service) or `srt-run` (the spawn wrapper of a sandboxed
+  MCP server or service). An MCP server registered only in a consuming repo's
+  server list, with no wrapper beside its recipe, is not detected. A process
+  that stays unsandboxed declares `sandbox: none` with a `reason`.
 - `catalog config`: prints the resolved registry path and its status — `loaded,
   N sources`, `missing`, or `parse error: <err>`. Deliberately one line: the
   registry is a data file, and `catalog list` already prints what it produces.

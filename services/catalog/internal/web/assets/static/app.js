@@ -283,6 +283,7 @@ function metaTable(e) {
     rows.push(['system', Webkit.el('a', { href: '/systems/' + encodeURIComponent(e.spec.system), onclick: navigate }, e.spec.system)]);
   }
   if (e.metadata.tags && e.metadata.tags.length) rows.push(['tags', e.metadata.tags.join(', ')]);
+  if (e.kind === 'Component') rows.push(['sandbox', sandboxPosture(e.spec.access)]);
   if (e.repoURL) rows.push(['repo', repoLink(e.repoURL)]);
   add('source', e.sourcePath);
 
@@ -294,6 +295,14 @@ function metaTable(e) {
     ]));
   }
   return kv;
+}
+
+// sandboxPosture summarizes spec.access, the component's sandbox access
+// manifest: the sandbox it runs under, and why when that is not srt.
+function sandboxPosture(access) {
+  if (!access || !access.sandbox) return 'undeclared';
+  if (access.sandbox === 'srt') return access.label ? `srt (label ${access.label})` : 'srt';
+  return access.reason ? `${access.sandbox}: ${access.reason}` : access.sandbox;
 }
 
 function backLink() {

@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+
+	"github.com/mad01/thismoon/kit/access"
 )
 
 // DefaultAPIVersion is the apiVersion stamped on entities we write.
@@ -29,12 +31,18 @@ type Metadata struct {
 }
 
 // Spec holds the kind-specific fields. Owner applies to all kinds; Type,
-// Lifecycle and System apply to Components.
+// Lifecycle, System and Access apply to Components.
 type Spec struct {
 	Owner     string `yaml:"owner,omitempty" json:"owner,omitempty"`
 	Type      string `yaml:"type,omitempty" json:"type,omitempty"`
 	Lifecycle string `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
 	System    string `yaml:"system,omitempty" json:"system,omitempty"`
+
+	// Access is the component's sandbox access manifest: its posture
+	// (Access.Sandbox: srt, seatbelt or none, with Access.Reason when not
+	// srt) and what the process may reach. nil when undeclared. The block is
+	// decoded strictly, so a typo in it fails the parse.
+	Access *access.Manifest `yaml:"access,omitempty" json:"access,omitempty"`
 }
 
 // Entity is a single catalog entry (a System or a Component).
@@ -61,7 +69,9 @@ var nameRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$`)
 
 // Validate reports the first problem with an entity, or nil if it is well
 // formed. Rules: known kind, valid name (<=63 chars), an owner, and — for
-// Components — a system link.
+// Components — a system link and, when declared, a valid spec.access. Whether
+// a Component must declare spec.access is CheckAccess's question, not this
+// one's.
 func (e Entity) Validate() error {
 	switch e.Kind {
 	case KindSystem, KindComponent:
@@ -88,6 +98,15 @@ func (e Entity) Validate() error {
 
 	if e.Kind == KindComponent && e.Spec.System == "" {
 		return fmt.Errorf("component %q: missing spec.system", name)
+	}
+
+	if e.Spec.Access != nil {
+		if e.Kind != KindComponent {
+			return fmt.Errorf("%s %q: spec.access belongs on a Component", e.Kind, name)
+		}
+		if err := e.Spec.Access.Validate(); err != nil {
+			return fmt.Errorf("component %q: spec.access: %w", name, err)
+		}
 	}
 
 	return nil
