@@ -98,7 +98,7 @@ template but no `pages/` lands in the XDG state directory like any fresh
 install.
 
 Nothing changes for a supervised install: the fleet recipe passes
-`--workdir` to `present serve` explicitly, and the MCP's seatbelt wrapper
+`--workdir` to `present serve` explicitly, and the MCP's sandbox wrapper
 sets `PRESENT_WORKDIR`, so both processes agree regardless of which branch
 the default would take. To move an existing store, move the directory and
 set `PRESENT_WORKDIR` (or `--workdir`) to the new path on both processes;

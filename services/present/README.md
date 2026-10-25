@@ -233,15 +233,17 @@ in-module `webkit` package (served at `GET /webkit/`). Don't re-add those
 controls locally. A webkit change ships at the next build, and the restarted
 `present serve` re-renders all pages through the updated renderer on its own.
 
-MCP + sandbox. The MCP server runs inside a seatbelt profile
-(`recipes/present/present.sb`): outbound HTTPS and DNS only (for
-`present_share`) plus the local events port, `$HOME` reads default-denied
-except `~/code/bin` and `~/.config/present`, writes confined to
-`~/.config/present` and temp. The wrapper reads `PRESENT_SHARED_URL` and
+MCP + sandbox. The MCP server runs under anthropics/sandbox-runtime (srt),
+launched by `recipes/present/present-mcp-sandbox.sh` through `srt-run` with
+`~/.config/srt/present.json`, a settings file the consuming repo provides.
+Egress is a hostname allow-list: the local events port, plus the shared
+instance's host for `present_share`. `$HOME` reads are denied except
+`~/code/bin` and the page store, and writes are confined to the page store
+and srt's temp. The wrapper reads `PRESENT_SHARED_URL` and
 `PRESENT_AUTHOR_KEY` from the ralph-managed secrets file, so `present_share`
-works with an `https://` shared URL and fails with a connection error on a
-plain-http one. The Share button and `present share` run outside the
-sandbox and take any URL. If any other MCP tool fails, check sandbox
+works when the shared URL's host is on the allow-list and fails with a
+connection error otherwise. The Share button and `present share` run outside
+the sandbox and take any URL. If any other MCP tool fails, check sandbox
 denials:
 
 ```bash

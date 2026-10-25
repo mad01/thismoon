@@ -59,7 +59,7 @@ func TestDefaultWorkdirLandsInTheStateDirWhenFresh(t *testing.T) {
 	}
 }
 
-// The fleet's recipe and the MCP's seatbelt wrapper both set PRESENT_WORKDIR
+// The fleet's recipe and the MCP's sandbox wrapper both set PRESENT_WORKDIR
 // explicitly, so a supervised process must never take either branch above.
 func TestDefaultWorkdirHonorsTheEnvOverride(t *testing.T) {
 	home := t.TempDir()

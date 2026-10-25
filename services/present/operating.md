@@ -153,7 +153,7 @@ values mean an old process is still serving: `t-man restart present`.
    `present_patch_section` when one section is wrong; a page an edit broke
    comes back from `present_source` with an earlier `version`
 4. Failed share: retry from the Share button or `present share <id>`;
-   the MCP sandbox lets present_share reach only an https:// shared URL
+   the MCP sandbox lets present_share reach only hosts on its srt allow-list
 5. Terminal block off or stuck: `present terminal status`, then
    `present terminal list`; end a stuck session with
    `present terminal kill <page> <session>` and press Run
