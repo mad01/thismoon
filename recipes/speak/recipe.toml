@@ -14,8 +14,9 @@ wave = 0
 # landing page. Speech comes from the provider ~/.config/speak/config.yaml
 # selects: the local engine (speak-tts on 127.0.0.1:8765, machine wiring that
 # stays in the consuming repo) by default, or a remote one. The agent starts
-# through speak-env.sh, which hands speak the active provider's key from the
-# secrets file; with no config it is plain `speak serve`.
+# through speak-serve.sh, which hands speak the active provider's key from the
+# secrets file and runs `speak serve` under srt; with no config it is the
+# local engine and loopback only.
 #
 # srt-run + sandbox-watch: the launcher every sandboxed process execs through
 # (anthropics/sandbox-runtime, one settings JSON per process) and the watcher
@@ -46,18 +47,45 @@ pre_uninstall = [
 ]
 
 # Keep the scripts executable inside the sources cache: the sandbox-watch
-# agent execs sandbox-watch.sh, speak-web and the consuming repo's MCP
-# registration exec speak-env.sh, and every sandbox wrapper execs srt-run.sh
-# through the ~/code/bin/srt-run symlink, all straight from this directory.
+# agent execs sandbox-watch.sh, speak-web execs speak-serve.sh, the consuming
+# repo's MCP registration execs speak-env.sh, and every sandbox wrapper execs
+# srt-run.sh through the ~/code/bin/srt-run symlink, all straight from this
+# directory. speak-provider-env.sh is sourced by the two speak launchers and
+# needs no mode bit.
 [hooks.builds.speak_chmod_scripts]
-commands = ["chmod +x sandbox-watch.sh sandbox-audit.sh speak-env.sh srt-run.sh"]
+commands = ["chmod +x sandbox-watch.sh sandbox-audit.sh speak-env.sh speak-serve.sh srt-run.sh"]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/speak"
 run = "always"
 idempotent = true
 
+# srt settings for the speak-web agent, linked to
+# ~/.config/srt/speak-web.json. They name no host and no machine path, so they
+# ship beside the recipe (docs/adr/0006, 2026-10-25 amendment): reads are
+# denied under ~ except the binary, the state dir and the provider config,
+# writes go to the state dir and the temp dirs, loopback reaches events and
+# the local engine. The remote provider's host comes at launch from
+# speak-serve.sh. A config that is a symlink into a checkout needs its target
+# in the machine's ~/.config/srt/speak-web.local.json; without it serve starts
+# but answers every synthesis with a config error.
+# Rendered from spec.access in services/speak/service-info.yaml by
+# `make sandbox-settings` (docs/adr/0027): edit the manifest, not the JSON.
+[dotfiles.speak_web_srt_settings]
+source = "speak-web.srt.json"
+target = "~/.config/srt/speak-web.json"
+action = "symlink"
+
+# Register `speak serve` as the speak-web launchd user agent via t-man. The
+# agent runs speak-serve.sh, which resolves the provider's key and host outside
+# the sandbox and execs speak serve through srt-run (docs/SANDBOXING.md,
+# "Sandboxing a t-man service"). --state-dir pins the state dir the settings
+# allow, so serve never falls back to the legacy ~/.local/share/speak.
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run and the
+# launcher executable. ralph links dotfiles items before any build or package
+# in every run, so the srt-run and settings links exist before this
+# registration.
 [hooks.builds.speak_web_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name speak-web -- $HOME/.config/ralph/sources/thismoon/recipes/speak/speak-env.sh serve --port 7425; else echo 'speak: skip speak-web service (t-man not on PATH; install t-man then run: t-man add --name speak-web -- speak serve --port 7425)'; fi",
+  "if command -v t-man >/dev/null; then t-man add --name speak-web --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/.config/ralph/sources/thismoon/recipes/speak/speak-serve.sh --port 7425 --state-dir $HOME/.local/state/speak; else echo 'speak: skip speak-web service (t-man not on PATH; install t-man then run: t-man add --name speak-web -- speak serve --port 7425)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/speak"
 run = "always"

@@ -1,0 +1,24 @@
+{
+  "enableWeakerNetworkIsolation": true,
+  "filesystem": {
+    "allowRead": [
+      "~/code/bin",
+      "~/.local/state/speak",
+      "~/.config/speak/config.yaml"
+    ],
+    "allowWrite": [
+      "~/.local/state/speak",
+      "/private/tmp",
+      "/private/var/folders"
+    ],
+    "denyRead": [
+      "~"
+    ],
+    "denyWrite": []
+  },
+  "network": {
+    "allowLocalBinding": true,
+    "allowedDomains": [],
+    "deniedDomains": []
+  }
+}

@@ -9,11 +9,25 @@ spec:
   lifecycle: production
   owner: mad01
   system: thismoon
-  # The recipe registers two agents: speak-web and sandbox-watch.
+  # Sandbox access for `speak serve`, the speak-web agent, rendered to
+  # recipes/speak/speak-web.srt.json by `make sandbox-settings`
+  # (docs/SANDBOXING.md, "Declaring access"). The MCP server (speak-env.sh)
+  # runs unsandboxed, and so does sandbox-watch, the recipe's other agent: it
+  # streams the unified log through logd and reports every other sandbox's
+  # denials (docs/adr/0006).
   access:
-    sandbox: none
-    reason: >-
-      sandbox-watch streams the unified log through logd, posts notification
-      banners, and reports every other sandbox's denials, so it stays outside
-      srt (docs/adr/0006). speak-web is first-party and has not been probed
-      under srt yet.
+    sandbox: srt
+    label: speak-web
+    # The state dir; serve keeps its audio cache in cache/ under it.
+    workdir: ~/.local/state/speak
+    listen: 7425
+    # The events post, and the local engine (speak-tts on 8765).
+    local: [events, speak-tts]
+    # The active provider's host differs per machine; speak-serve.sh passes
+    # `speak config host` at launch. The local engine adds none.
+    egress: [via SRT_RUN_ALLOW_DOMAINS]
+    # The provider config. A machine whose config is a symlink into a
+    # checkout adds the link's target in ~/.config/srt/speak-web.local.json.
+    reads: [~/code/bin, workdir, ~/.config/speak/config.yaml]
+    writes: [workdir, temp]
+    tls: true

@@ -245,6 +245,13 @@ expect_alert 'status · launchctl(123) · sysctl-read · kern.singleuser2'
 expect_alert 'deps · launchctl(123) · sysctl-read · kern.singleuser'
 expect_alert 'status · status(123) · sysctl-read · kern.singleuser'
 
+# speak-web: the Kokoro voice listing at start, by label, binary and directory.
+expect_ignored 'speak-web · speak(123) · file-read-data · /Users/x/.cache/huggingface/hub/models--mlx-community--Kokoro-82M-bf16/snapshots'
+expect_alert 'speak-web · speak(123) · file-read-data · /Users/x/.cache/huggingface/token'
+expect_alert 'speak-web · speak(123) · file-read-data · /Users/x/.cache/huggingface/hub/models--a--b/snapshots/c/voices/af_heart.safetensors'
+expect_alert 'speak-web · speak(123) · file-read-data · /Users/x/.config/ralph/secrets.sh'
+expect_alert 'present · speak(123) · file-read-data · /Users/x/.cache/huggingface/hub/models--a--b/snapshots'
+
 # A machine-local pattern can scope by label through the summary line, and a
 # broken pattern beside it does not disable the rest of the list.
 printf '%s\n' '# comment' '' '^humanizer · .* · file-read-data · /Users/[^/]+/\.cache/' '(' \

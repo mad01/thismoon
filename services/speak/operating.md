@@ -14,8 +14,10 @@ through the provider ~/.config/speak/config.yaml selects (`speak config`
 shows which, and why a block cannot be used). Without that file it is the
 local engine at http://127.0.0.1:8765, a separate process supervised as the
 t-man agent speak-tts. Remote providers read their key from an environment
-variable; speak-web and MCP hosts start through the recipe's speak-env.sh,
-which pulls it from the secrets file. Machines
+variable. speak-web starts through the recipe's speak-serve.sh and MCP
+hosts through its speak-env.sh; both pull the key from the secrets file.
+speak-web runs in a sandbox whose only outside host is the active remote
+provider's, fixed when it starts. Machines
 usually also route http://speak.this to serve via the local domain front door.
 If the localhost port answers but the .this host does not, the router is the
 problem, not this service.
@@ -98,7 +100,13 @@ pressing Retry usually works. A 10s probe (doctor, /enginez) never retries.
 FAIL config or the active provider: speak starts anyway and fails every
 synthesis with that reason, never falling back to another provider. Fix the
 file or set the variable the problem names; for a key, the secrets file
-speak-env.sh reads. `speak config` lists every block and its problem.
+speak-serve.sh and speak-env.sh read. `speak config` lists every block and
+its problem. Two causes are speak-web's sandbox. `operation not permitted`
+on the config file, while `speak config` in a shell reads it fine, means
+the file is a symlink whose target the sandbox cannot read: add the target
+to `~/.config/srt/speak-web.local.json`. `host is not on the allow list`
+means the provider changed after speak-web started: `t-man restart
+speak-web`. `t-man logs speak-web --source sandbox` shows the denials.
 
 FAIL tts-engine-reachable: the local engine sidecar is down, and nothing can
 synthesize. `t-man status speak-tts`, then `t-man restart speak-tts`.

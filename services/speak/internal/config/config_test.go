@@ -310,3 +310,50 @@ func providerNames(cfg Config) []string {
 	}
 	return names
 }
+
+// TestHostIsTheEgressEntry pins what `speak config host` prints for the
+// sandbox launcher: the remote host with its port when the URL names one,
+// and nothing for the local engine or a block without a base URL.
+func TestHostIsTheEgressEntry(t *testing.T) {
+	cases := map[string]struct {
+		file string
+		opts Options
+		env  map[string]string
+		want string
+	}{
+		"implicit local engine":  {"", Options{}, nil, ""},
+		"openrouter default":     {"", Options{Provider: "openrouter"}, nil, "openrouter.ai"},
+		"openai default":         {"", Options{Provider: "openai"}, nil, "api.openai.com"},
+		"gemini default":         {"", Options{Provider: "gemini"}, nil, "generativelanguage.googleapis.com"},
+		"local engine elsewhere": {"", Options{Provider: "local", TTSURL: "http://localhost:9000"}, nil, ""},
+		"proxy from env with port": {
+			"", Options{Provider: "litellm"},
+			map[string]string{"LITELLM_BASE_URL": "https://llm.example.com:4000/v1"},
+			"llm.example.com:4000",
+		},
+		"proxy without a base URL": {"", Options{Provider: "litellm"}, nil, ""},
+		"base_url with user info": {
+			"provider: p\nproviders:\n  p:\n    type: openai\n    base_url: https://u:pw@tts.example.net/api\n",
+			Options{}, nil, "tts.example.net",
+		},
+		"base_url on the LAN": {
+			"provider: p\nproviders:\n  p:\n    type: openai\n    base_url: http://10.0.0.5:8000\n",
+			Options{}, nil, "10.0.0.5:8000",
+		},
+		"base_url not a URL": {
+			"provider: p\nproviders:\n  p:\n    type: openai\n    base_url: tts.example.net\n",
+			Options{}, nil, "",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := load(t, tc.file, tc.opts, tc.env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.ActiveProvider().Host(); got != tc.want {
+				t.Errorf("Host() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

@@ -73,8 +73,30 @@ in that file reaches speak. Prints nothing for the local engine.`,
 	},
 }
 
+var configHostCmd = &cobra.Command{
+	Use:   "host",
+	Short: "Print the host the active provider's requests go to",
+	Long: `Print the host the active provider sends text to, as host or host:port (the
+port only when the base URL names one). The sandbox launcher beside the speak
+recipe (speak-serve.sh) passes it to srt-run as SRT_RUN_ALLOW_DOMAINS, so
+speak serve may reach that host and no other. Prints nothing for a provider
+on this machine, such as the local engine, or one without a base URL.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		if host := cfg.ActiveProvider().Host(); host != "" {
+			fmt.Fprintln(cmd.OutOrStdout(), host)
+		}
+		return nil
+	},
+}
+
 func init() {
 	configCmd.AddCommand(configEnvCmd)
+	configCmd.AddCommand(configHostCmd)
 	configCmd.PersistentFlags().
 		StringVarP(&configOutput, "output", "o", "text", "Output format: text or json")
 	configCmd.AddCommand(configActiveCmd)
