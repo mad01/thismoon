@@ -186,6 +186,9 @@ type ChangedFile struct {
 type Snapshot struct {
 	Location store.Location      `json:"location"`
 	Phase    store.SnapshotPhase `json:"phase"`
+	// Started is when the hook began this snapshot; the envelope's At is
+	// when its reads were done.
+	Started time.Time `json:"started,omitzero"`
 	// Scope is the rule that chose Files (store.SnapshotScope).
 	Scope string `json:"scope"`
 	// Files lists the paths in scope, sorted by path, each with the chunk

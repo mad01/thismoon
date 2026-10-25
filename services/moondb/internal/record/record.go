@@ -12,14 +12,14 @@
 //	<session>.turn     "<prompt_id> <offset>": the open turn and the
 //	                   transcript size when it opened
 //	<session>.paths    "<worktree>\t<path>" per line: the files the session
-//	                   edited; a path's first edit ships its HEAD content
+//	                   edited, which every snapshot of the worktree covers
 //	<session>.touched  one worktree per line: where the session edited
 //	<session>.heads    "<worktree>\t<head>" per line, last line wins: the
 //	                   HEAD last seen in each touched worktree
 //	<session>.snap     JSON, per worktree: the state hash of the last
-//	                   snapshot taken there, and the size, time, blob and
-//	                   chunk of each file it read, so an unchanged file is
-//	                   not read again
+//	                   snapshot taken there, the size, time, blob and chunk
+//	                   of each file it read, and the chunk of each HEAD blob
+//	                   it shipped, so unchanged content is not read again
 package record
 
 import (
@@ -81,11 +81,12 @@ func Run(ctx context.Context, in io.Reader, opts Options) error {
 	budgeted, cancel := context.WithTimeout(ctx, opts.Budget)
 	defer cancel()
 	rec := &recorder{
-		base: ctx,
-		ctx:  budgeted,
-		p:    p,
-		opts: opts,
-		locs: map[string]store.Location{},
+		base:  ctx,
+		ctx:   budgeted,
+		start: opts.Now(),
+		p:     p,
+		opts:  opts,
+		locs:  map[string]store.Location{},
 		spool: &spool.Writer{
 			Dir:     filepath.Join(opts.Workdir, moondb.SpoolDirName),
 			Objects: filepath.Join(opts.Workdir, moondb.ObjectsDirName),
@@ -125,9 +126,11 @@ func (o Options) withDefaults() Options {
 
 // recorder is one Run in progress. ctx ends when the budget does; base is
 // the context Run was given, which a snapshot takes its own budget from.
+// start is when the hook began, before it read anything.
 type recorder struct {
 	base  context.Context
 	ctx   context.Context
+	start time.Time
 	p     payload
 	opts  Options
 	spool *spool.Writer
@@ -156,14 +159,18 @@ func (rec *recorder) require(handle func() error, key, id string) error {
 	return handle()
 }
 
-// envelope starts an envelope of kind with what every payload carries.
+// envelope starts an envelope of kind with what every payload carries,
+// stamped when the hook began. The Bash hook is async, so an Edit of a file
+// the command changed can land before the hook reads it; stamped before
+// the read, the Bash edit sorts before that Edit. A snapshot restamps its
+// envelope once its reads are done.
 func (rec *recorder) envelope(kind spool.Kind, id string) spool.Envelope {
 	p := rec.p
 	return spool.Envelope{
 		Version: spool.Version,
 		Kind:    kind,
 		ID:      id,
-		At:      rec.opts.Now(),
+		At:      rec.start,
 		Harness: Harness,
 		Session: spool.SessionRef{
 			ID: p.sessionID, Cwd: p.cwd, Title: p.title, TranscriptPath: p.transcriptPath,

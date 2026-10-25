@@ -22,11 +22,16 @@ type pastEdit struct {
 
 // pastSnap is the latest snapshot a fake store holds for the worktree:
 // files maps a path to its content; a missing path was clean, and nil
-// content marks a deleted file.
+// content marks a deleted file. unread lists paths it holds without
+// content. started, when set, is when its capture began; at is when its
+// reads were done.
 type pastSnap struct {
 	at        int
+	started   *int
+	head      string
 	truncated bool
 	files     map[string]*string
+	unread    map[string]store.SnapshotReason
 }
 
 // fakeStore is the part of the store a Deriver reads, over memChunks.
@@ -83,11 +88,18 @@ func (f *fakeStore) snapshot() store.Snapshot {
 		}
 		list = append(list, store.SnapshotFile{Path: p, Chunk: f.put(*content)})
 	}
+	for p, reason := range f.snap.unread {
+		list = append(list, store.SnapshotFile{Path: p, Reason: reason})
+	}
 	raw, _ := json.Marshal(list)
-	return store.Snapshot{
-		ID: "prev", At: minutes(f.snap.at), Location: store.Location{Worktree: "/wt"},
+	snap := store.Snapshot{
+		ID: "prev", At: minutes(f.snap.at), Location: store.Location{Worktree: "/wt", Head: f.snap.head},
 		MapChunk: f.put(string(raw)), Truncated: f.snap.truncated,
 	}
+	if f.snap.started != nil {
+		snap.Started = minutes(*f.snap.started)
+	}
+	return snap
 }
 
 func TestEditSnapshotBefore(t *testing.T) {
@@ -123,6 +135,22 @@ func TestEditSnapshotBefore(t *testing.T) {
 			name:   "a newer truncated snapshot without the path says nothing",
 			edit:   &pastEdit{at: -10, after: appended},
 			snap:   &pastSnap{at: -5, truncated: true},
+			source: store.BeforeChain, want: appended,
+		},
+		{
+			name: "a newer snapshot listing the path without content says nothing",
+			edit: &pastEdit{at: -10, after: appended},
+			snap: &pastSnap{
+				at: -5, unread: map[string]store.SnapshotReason{"a.go": store.ReasonExcluded},
+			},
+			source: store.BeforeChain, want: appended,
+		},
+		{
+			name: "a snapshot whose reads overlapped the chain's edit yields to it",
+			edit: &pastEdit{at: -5, after: appended},
+			snap: &pastSnap{
+				at: -4, started: new(-6), files: map[string]*string{"a.go": ptr(before)},
+			},
 			source: store.BeforeChain, want: appended,
 		},
 		{
@@ -188,13 +216,15 @@ func TestSnapshotRecord(t *testing.T) {
 	)
 	env.Snapshot.Truncated = true
 	env.Snapshot.Skipped = store.SnapshotSkipped{Timeout: 3, TooLarge: 1}
+	env.Snapshot.Started = minutes(-1)
 	snap, deltas, err := f.deriver().Snapshot(context.Background(), env)
 	if err != nil || len(deltas) != 0 {
 		t.Fatalf("Snapshot: %d deltas, err %v", len(deltas), err)
 	}
 	want := store.Snapshot{
 		ID: "turn-1:snap:post:wt", SessionID: "sess-1", TurnID: "turn-1",
-		Phase: store.SnapshotPost, At: at, Location: loc, Scope: store.SnapshotScope,
+		Phase: store.SnapshotPost, Started: minutes(-1), At: at, Location: loc,
+		Scope:    store.SnapshotScope,
 		MapChunk: snap.MapChunk, FileCount: 2, Truncated: true,
 		Skipped: store.SnapshotSkipped{Timeout: 3, TooLarge: 1},
 	}
@@ -219,9 +249,65 @@ func TestSnapshotDeltas(t *testing.T) {
 		edit        *pastEdit
 		snap        *pastSnap
 		contentless *int
+		started     *int    // when this snapshot's capture began; at when unset
+		head        *string // the HEAD content this snapshot shipped; it sits on h1
 		now         *string // the file as this snapshot found it; nil: deleted
 		from        string  // "" means no delta
 	}{
+		{
+			// The read may have come before the edit wrote: the snapshot then
+			// holds the content before it, which is no change of anyone's.
+			name:    "an edit landed while the snapshot read",
+			edit:    &pastEdit{at: -1, after: y},
+			started: new(-2),
+			now:     ptr(x),
+		},
+		{
+			name:    "an edit landed while the snapshot read, and the read saw it",
+			edit:    &pastEdit{at: -1, after: y},
+			started: new(-2),
+			now:     ptr(y),
+		},
+		{
+			name: "an edit inside the previous snapshot's reads is newer than it",
+			edit: &pastEdit{at: -5, after: x},
+			snap: &pastSnap{at: -4, started: new(-6), files: map[string]*string{"a.go": ptr(y)}},
+			now:  ptr(x),
+		},
+		{
+			name: "clean in the newer whole previous snapshot on the same HEAD",
+			snap: &pastSnap{at: -5, head: "h1", files: map[string]*string{}},
+			head: ptr(x), now: ptr(z), from: x,
+		},
+		{
+			name: "clean in the previous snapshot on the same HEAD, deleted since",
+			snap: &pastSnap{at: -5, head: "h1", files: map[string]*string{}},
+			head: ptr(x), now: deleted, from: x,
+		},
+		{
+			name: "clean in the newer whole previous snapshot on another HEAD",
+			snap: &pastSnap{at: -5, head: "h0", files: map[string]*string{}},
+			head: ptr(x), now: ptr(z),
+		},
+		{
+			name: "clean in a cut short previous snapshot on the same HEAD",
+			snap: &pastSnap{at: -5, head: "h1", truncated: true},
+			head: ptr(x), now: ptr(z),
+		},
+		{
+			name: "listed without content in the previous snapshot",
+			snap: &pastSnap{
+				at: -5, head: "h1",
+				unread: map[string]store.SnapshotReason{"a.go": store.ReasonExcluded},
+			},
+			head: ptr(x), now: ptr(z),
+		},
+		{
+			name: "an edit since the previous snapshot is newer than its HEAD",
+			edit: &pastEdit{at: -3, after: y},
+			snap: &pastSnap{at: -5, head: "h1", files: map[string]*string{}},
+			head: ptr(x), now: ptr(z), from: y,
+		},
 		{
 			name: "changed since the last edit",
 			edit: &pastEdit{at: -9, after: x},
@@ -290,7 +376,13 @@ func TestSnapshotDeltas(t *testing.T) {
 			if tt.now != nil {
 				file.Chunk = f.put(*tt.now)
 			}
-			env := snapshotEnvelope(store.Location{Worktree: "/wt"}, file)
+			if tt.head != nil {
+				file.HeadBlob, file.HeadChunk = "blob-of-head", f.put(*tt.head)
+			}
+			env := snapshotEnvelope(store.Location{Worktree: "/wt", Head: "h1"}, file)
+			if tt.started != nil {
+				env.Snapshot.Started = minutes(*tt.started)
+			}
 			_, deltas, err := f.deriver().Snapshot(context.Background(), env)
 			if err != nil {
 				t.Fatal(err)
@@ -307,7 +399,7 @@ func TestSnapshotDeltas(t *testing.T) {
 			d := deltas[0]
 			if d.ID != "turn-1:snap:post:wt:a.go" || d.Cause != store.DeltaSnapshot ||
 				d.TurnID != "turn-1" || d.SessionID != "sess-1" || !d.At.Equal(at) ||
-				d.Path != "a.go" || d.Worktree != "/wt" {
+				d.Path != "a.go" || d.Worktree != "/wt" || d.Head != "h1" {
 				t.Errorf("delta identity = %+v", d)
 			}
 			if string(f.c[d.FromChunk]) != tt.from || d.ToChunk != file.Chunk {

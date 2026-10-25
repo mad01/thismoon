@@ -21,12 +21,19 @@ type history struct {
 	file *store.SnapshotFile
 }
 
-// chainStale reports a snapshot taken after the chain's edit that speaks
-// for the path: it holds the path, or it is whole and the path was clean.
-// Either way the edit's after-content is no longer what the file held.
+// chainStale reports a snapshot begun after the chain's edit that speaks
+// for the path: it holds the path's content or its deletion, or it is
+// whole and lacks the path, which was clean then. Either way the edit's
+// after-content is no longer what the file held. An entry without content
+// says nothing, and nor does a snapshot whose reads overlapped the edit.
 func (h *history) chainStale() bool {
-	return h.snap != nil && h.edit != nil && h.snap.At.After(h.edit.At) &&
-		(h.file != nil || !h.snap.Truncated)
+	if h.snap == nil || h.edit == nil || !began(*h.snap).After(h.edit.At) {
+		return false
+	}
+	if h.file != nil {
+		return h.file.Chunk != "" || h.file.Deleted
+	}
+	return !h.snap.Truncated
 }
 
 // recall loads h for e unless it is loaded already.

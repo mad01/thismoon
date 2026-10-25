@@ -89,6 +89,8 @@ type testSession struct {
 	transcript string
 	excludes   []string
 	budget     time.Duration
+	// now is the clock Run reads; testNow throughout when nil.
+	now func() time.Time
 }
 
 func newSession(tb testing.TB, cwd string) *testSession {
@@ -117,12 +119,40 @@ func (s *testSession) run(fixture string, vars ...string) error {
 }
 
 func (s *testSession) runRaw(body string) error {
+	now := s.now
+	if now == nil {
+		now = func() time.Time { return testNow }
+	}
 	return Run(context.Background(), strings.NewReader(body), Options{
 		Workdir:  s.workdir,
-		Now:      func() time.Time { return testNow },
+		Now:      now,
 		Excludes: s.excludes,
 		Budget:   s.budget,
 	})
+}
+
+// stampingClock is a clock whose every reading also rewrites file, so a
+// test can tell which readings came before a read of it: reading n writes
+// "stamp n" and returns testNow plus n seconds.
+func stampingClock(tb testing.TB, file string) func() time.Time {
+	n := 0
+	return func() time.Time {
+		n++
+		writeFile(tb, file, "stamp "+strconv.Itoa(n)+"\n")
+		return testNow.Add(time.Duration(n) * time.Second)
+	}
+}
+
+// reading is the stampingClock reading behind t, and readingIn the one
+// whose write content holds; -1 for content no reading wrote.
+func reading(t time.Time) int { return int(t.Sub(testNow) / time.Second) }
+
+func readingIn(content string) int {
+	n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(content, "stamp "), "\n"))
+	if err != nil {
+		return -1
+	}
+	return n
 }
 
 func (s *testSession) mustRun(fixture string, vars ...string) {
@@ -265,14 +295,14 @@ func TestEditInRepo(t *testing.T) {
 		t.Errorf("Input = %s, want the tool_input verbatim", ep.Input)
 	}
 
-	// The second edit of the path ships the HEAD blob but not the content:
-	// the first edit's after-content is the better before now.
+	// The second edit of the path ships the HEAD content too: the store
+	// may not hold it, and the spool writer skips a chunk the store has.
 	writeFile(t, file, "one\ndos\n")
 	s.mustRun("edit.json", "$FILE", file, "$TOOL_USE_ID", "toolu_edit_2")
 	second := s.takeOne(spool.KindEdit).Edit
-	if second.HeadBlob != ep.HeadBlob || second.HeadChunk != "" {
-		t.Errorf("second edit HeadBlob %q HeadChunk %q, want %q and none",
-			second.HeadBlob, second.HeadChunk, ep.HeadBlob)
+	if second.HeadBlob != ep.HeadBlob || second.HeadChunk != ep.HeadChunk {
+		t.Errorf("second edit HeadBlob %q HeadChunk %q, want %q and %q",
+			second.HeadBlob, second.HeadChunk, ep.HeadBlob, ep.HeadChunk)
 	}
 	checkFields(t, []field{
 		{".paths", s.state(pathsExt), repo + "\ta.txt\n"},

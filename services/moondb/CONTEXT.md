@@ -31,7 +31,7 @@ A change between two known contents of a path that no recorded tool call explain
 _Avoid_: delta on its own, drift, diff
 
 **Snapshot**:
-The dirty files plus the session's touched paths in one worktree, read at a turn edge: when the prompt arrives (`pre`) and at Stop (`post`). Its file map (path, chunk, blob id, size) is one Chunk, and each file's content is its own Chunk. A snapshot its budget or file cap cut short is truncated and counts what it skipped. A path missing from a snapshot that is not truncated matched HEAD.
+The dirty files plus the session's touched paths in one worktree, read at a turn edge: when the prompt arrives (`pre`) and at Stop (`post`). Its file map (path, chunk, blob id, size, HEAD blob) is one Chunk, and each file's content is its own Chunk. A path it cannot read (excluded, a symlink, unreadable, too large) is listed without content and with the reason. A snapshot its budget or file cap cut short is truncated and counts what it skipped. A path missing from a snapshot that is not truncated matched HEAD. Git status does not show ignored files or files marked skip-worktree or assume-unchanged, so for those the rule does not hold.
 _Avoid_: checkpoint (another tool's term), backup
 
 **Chunk**:

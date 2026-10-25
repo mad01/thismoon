@@ -146,7 +146,7 @@ func (e Envelope) ChunkKeys() []string {
 	}
 	if p := e.Snapshot; p != nil {
 		for _, f := range p.Files {
-			add(f.Chunk)
+			add(f.Chunk, f.HeadChunk)
 		}
 	}
 	return keys

@@ -44,8 +44,7 @@ type target struct {
 }
 
 // recordEdits writes one edit envelope per target, then notes the file in
-// the session state. The state follows the envelope, so a spool write that
-// fails leaves the next edit of the path still shipping its HEAD content.
+// the session state once its envelope is in the spool.
 func (rec *recorder) recordEdits(targets []target) error {
 	for i, t := range targets {
 		env, chunks := rec.captureEdit(i, t)
@@ -146,15 +145,16 @@ func gone(path string) bool {
 }
 
 // gatherHead ships the blob id of the path at HEAD for every edit of a
-// tracked file, and its content on the session's first edit of the path.
-// After that the previous edit's after-content is the better before.
+// tracked file, and its content under the chunk cap. The spool writer
+// leaves out a chunk the store holds already, so the content travels only
+// while objects/ lacks it, and an edit after a commit finds the new HEAD.
 func (rec *recorder) gatherHead(ep *spool.EditPayload, chunks chunkSet, obs observed) {
 	ctx, cancel := rec.gitCtx()
 	defer cancel()
 	wt := ep.Location.Worktree
 	ep.HeadBlob = gitloc.Output(ctx, wt, "rev-parse", "--verify", "--quiet",
 		ep.Location.Head+":"+ep.Path)
-	if ep.HeadBlob == "" || rec.state.edited(wt, ep.Path) {
+	if ep.HeadBlob == "" {
 		return
 	}
 	if obs.read && obs.blob == ep.HeadBlob {

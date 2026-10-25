@@ -45,8 +45,8 @@ one pipes its JSON payload on stdin:
 | Hook | Mode | What `record` spools |
 |------|------|----------------------|
 | UserPromptSubmit | async | turn-open: `prompt_id`, the prompt text as a chunk, `session_id`, cwd, the transcript byte offset. Then a `pre` snapshot of each worktree in play. |
-| PostToolUse on `Edit\|Write\|MultiEdit\|NotebookEdit` | sync, 3 s timeout | one edit envelope per file. It holds `tool_use_id`, the tool input and patch, the location (repo, worktree, branch, HEAD), and the observed bytes with their blob id. A path's first edit also ships its HEAD content. |
-| PostToolUse on `Bash` | async | one edit envelope per file in the payload's `bashEditDiff.files`: its hunks as the patch, the observed bytes and blob id, and a first edit's HEAD content, with no tool input. One more per other `changedFiles` path, with the observed bytes only. Nothing when the payload has no `bashEditDiff`. |
+| PostToolUse on `Edit\|Write\|MultiEdit\|NotebookEdit` | sync, 3 s timeout | one edit envelope per file. It holds `tool_use_id`, the tool input and patch, the location (repo, worktree, branch, HEAD), the observed bytes with their blob id, and the path's HEAD blob id and content. |
+| PostToolUse on `Bash` | async | one edit envelope per file in the payload's `bashEditDiff.files`: its hunks as the patch, the observed bytes and blob id, and the HEAD blob id and content, with no tool input. One more per other `changedFiles` path, with no hunks. Nothing when the payload has no `bashEditDiff`. |
 | Stop | async | turn-close: the final assistant message, the transcript tail from the turn's offset, and a head-moved report for each touched worktree whose HEAD changed. Then a `post` snapshot of each worktree in play. |
 
 The Edit hook is synchronous on purpose. Edits in one assistant message land
@@ -56,25 +56,34 @@ any git repo lands in a `norepo` bucket.
 
 Claude Code reports `bashEditDiff` only when the user setting
 `bashEditDiffEnabled` is on (v2.1.269 or later). `files` holds up to five
-diffs and `changedFiles` up to 200 paths. The Bash hook is async, so its disk
-read can land after a later edit of the same file. That Bash edit's after
-content then holds the later change too.
+diffs and `changedFiles` up to 200 paths. A Bash create seen only in
+`changedFiles` has no diff to say so and gets kind `unknown`.
+
+The Bash hook is async, so its disk read can land after a later Edit of the
+same file. Every envelope is stamped when its hook starts, before any read,
+so that Edit sorts after the Bash edit. The Bash record may then carry the
+Edit's bytes in its observed read and after content. When the two after
+blobs coincide, the newest-edit tie-break keeps the commit link and `why`
+with the Edit.
 
 `record` follows belt's record contract (docs/adr/0024): nothing on stdout,
 exit 0 always, panics recovered. It works within `RecordBudget` (200 ms, in
 `facts.go`) and spools whatever it has gathered when the budget runs out.
 Files matching a `capture.exclude` glob are recorded by path only. Files over
-`MaxChunkBytes` (1 MiB) are recorded by path and patch.
+`MaxChunkBytes` (1 MiB) are recorded by path and patch. HEAD content is read
+on every edit of a tracked file, and the spool writer leaves it out while the
+store holds it.
 
 `record` keeps a little state per session under `<workdir>/sessions/`, read
 back only by later hooks of the same session:
 
 - `<sid>.turn`: the open turn's prompt id and the transcript offset it opened at
-- `<sid>.paths`: the files the session edited; a path's first edit ships its HEAD content
+- `<sid>.paths`: the files the session edited, which its snapshots cover
 - `<sid>.touched`: one worktree per line, where the session edited
 - `<sid>.heads`: the HEAD last seen in each touched worktree
-- `<sid>.snap`: per worktree, the last snapshot's state hash and the size,
-  mtime and chunk of each file it read
+- `<sid>.snap`: per worktree, the last snapshot's state hash, the size,
+  mtime and chunk of each file it read, and the chunk of each HEAD blob it
+  shipped
 
 ### Snapshots: the worktree at each turn edge
 
@@ -82,21 +91,31 @@ After its own envelope, UserPromptSubmit and Stop each take a snapshot of
 every worktree in play: the cwd's worktree and each one the session touched.
 The scope is the worktree's dirty files plus the paths the session touched
 there. Dirty comes from `git --no-optional-locks status --porcelain=v2 -z
--uall`. Excluded paths are counted and left out.
+-uall`. Status does not show ignored files or files marked skip-worktree or
+assume-unchanged, so a snapshot holds those only when the session touched
+them.
 
 Each file's content is its own chunk, so an unchanged file is stored once.
 The file map (path, chunk, blob id, size, status) is one more chunk. A
-deleted file is listed as deleted, a file over `MaxChunkBytes` by size only.
-A symlink or another non-regular file is left out. A file whose size and
-mtime match the last snapshot reuses that chunk without a read.
+deleted file is listed as deleted. A path the snapshot cannot hold the
+content of is listed without it and with a reason: excluded, symlink,
+not-regular, unreadable or too-large. A path a whole snapshot lacks was
+therefore clean. A file whose size and mtime match the last snapshot reuses
+that chunk without a read. For a path HEAD tracks, one `git ls-tree` call
+adds the HEAD blob id, and the HEAD content ships unless the store holds it.
 
 The work fits in `SnapshotBudget` (2 s). A snapshot cut short is written with
 what it read, marked truncated, and counts the rest as timeout.
-`MaxSnapshotFiles` (1000) caps the paths, touched ones first. A state hash
-over HEAD, the status, and each path's size and mtime skips the snapshot when
-nothing changed since the worktree's last one. A worktree never snapshotted
-with nothing in scope gets none. One that had a snapshot and is clean now
-gets an empty one: its files match HEAD again.
+`MaxSnapshotFiles` (1000) caps the paths, touched ones first. A snapshot
+carries when it started, and its envelope is stamped once its reads are
+done. Its id holds a digest of its state and file map, so a second Stop
+for one prompt records its own. A state hash over HEAD, the status, and
+each path's size and mtime skips the snapshot when nothing changed since
+the session's last one of the worktree. When nothing is in scope and this
+session has no snapshot of the worktree in its `<sid>.snap`, none is
+taken. If it has one, a clean worktree gets an empty snapshot: its files
+match HEAD again.
+
 ### Import: backfill from transcripts
 
 `moondb import` reads the Claude Code session transcripts under
@@ -175,8 +194,10 @@ read is evidence; where it differs, serve records an unattributed delta.
 Before content is the first source the call fits: absent for a create,
 `originalFile`, the latest earlier after content of the path, the path in
 the worktree's latest earlier snapshot, HEAD, the disk read with the call
-undone, else `before_source: unknown`. The chain yields to a snapshot taken
-after its edit, since the snapshot saw the file later. A source fits when
+undone, else `before_source: unknown`. The chain yields to a snapshot begun
+after its edit that holds the path's content, or is whole and lacks the
+path, since the snapshot saw the file later. An entry without content
+leaves the chain in place. A source fits when
 each `old_string` occurs once (at least once with `replace_all`) and the
 hunks apply with tabs read as two spaces. A CRLF file matches on its LF view
 and keeps CRLF. Hunks alone fit a user-modified edit or a missing `old_string`.
@@ -187,11 +208,14 @@ exists, unvetted. A file gone from disk makes it a delete.
 
 A snapshot reveals changes no tool call explains. serve compares each file
 in it with the latest content known of the path before: the worktree's
-previous snapshot or the latest edit's disk read, whichever is newer. A
-difference becomes an unattributed delta with cause `snapshot`: a person in
-an editor, a formatter, or a Bash command without a diff wrote the file
-between the two. Nothing earlier known means no delta, and so does an edit
-in between that left no after content.
+previous snapshot or the latest edit's disk read, whichever is newer. A path
+a whole previous snapshot lacked held HEAD's content, which counts when both
+snapshots sat on one HEAD. A difference becomes an unattributed delta with
+cause `snapshot`: a person in an editor, a formatter, or a Bash command
+without a diff wrote the file between the two. Nothing earlier known means
+no delta, and so do an edit in between that left no after content and an
+edit stamped while the snapshot read. Two overlapping snapshots of one
+worktree can record the same delta twice.
 
 ### Commit links
 

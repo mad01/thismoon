@@ -60,11 +60,11 @@ UserPromptSubmit it spools a turn-open envelope with the prompt text and the
 transcript offset. On PostToolUse for a file tool it spools one edit
 envelope per file. The envelope holds the tool input and structured patch,
 the file's repo, worktree, branch and HEAD, and the observed bytes with
-their blob id. On a path's first edit in the session it also holds the HEAD
-content of that path. On PostToolUse for Bash it reads the payload's
+their blob id, and the path's HEAD blob id and content. Every envelope is
+stamped when its hook starts. On PostToolUse for Bash it reads the payload's
 `bashEditDiff`: one edit envelope per diffed file, with the hunks as the
-patch and no tool input, and one per other changed path with the observed
-bytes only. On Stop it spools a turn-close envelope with the
+patch and no tool input, and one per other changed path without hunks. On
+Stop it spools a turn-close envelope with the
 final message and the transcript tail. For each touched worktree whose HEAD
 moved since the hook last looked, it adds a head-moved envelope listing the
 new commits' (path, blob id) pairs.
@@ -72,10 +72,11 @@ new commits' (path, blob id) pairs.
 Snapshots: after its own envelope, UserPromptSubmit and Stop each spool a
 snapshot envelope per worktree in play, the cwd's and every touched one.
 It lists the worktree's dirty files and the session's touched paths, each
-with its content chunk, blob id and size, plus counts of what it skipped:
-timeout, over the file cap, too large, excluded. A state hash over HEAD,
-the status and each file's size and mtime skips a snapshot when nothing
-changed. All snapshots of one hook share a 2 s budget.
+with its content chunk, blob id, size and HEAD blob. A path it cannot read
+is listed with the reason, and skipped paths are counted. The envelope
+carries when the capture started and is stamped when its reads are done.
+A state hash over HEAD, the status and each file's size and mtime skips a
+snapshot when nothing changed. All snapshots of one hook share a 2 s budget.
 
 The writer puts each chunk file in place
 before it renames the envelope, so serve never sees an envelope without its
@@ -97,23 +98,22 @@ Ingest: serve watches the spool and polls it every second. It reads
 envelopes in name order, stores their chunks, derives each Edit and
 Snapshot, appends the records, and deletes the envelope. Ingest is idempotent on the envelope id.
 
-Derive: after content comes from the tool input: an Edit swaps `old_string`
-for `new_string`, a MultiEdit applies its edits in order, a Write carries its
-content. Before content is the first source the call fits: nothing for a
-create, the original, the latest earlier after content of the path, the
-path in the worktree's latest earlier snapshot, HEAD, or the observed bytes
-with the call undone. The chain yields to a snapshot taken after its edit. A source fits when each `old_string`
-occurs once, or at least once with `replace_all`, and the hunks apply with
-tabs read as two spaces. A CRLF file matches on its LF view. Hunks alone fit a
-user-modified edit, a missing `old_string`, or swaps they contradict. Else the
-before is unknown. Differing observed bytes become an unattributed delta.
-A Bash edit's after content is its observed bytes, and its before is the
-first source that exists, unvetted.
+Derive: after content comes from the tool input: Edit and MultiEdit swaps,
+or a Write's content. Before content is the first source the call fits:
+nothing for a create, the original, the latest earlier after content of the
+path, the worktree's latest earlier snapshot, HEAD, or the observed bytes
+with the call undone. The chain yields to a snapshot begun after its edit
+that holds the path's content or, whole, lacks the path. A source fits when
+each `old_string` occurs once and the hunks apply, tabs read as two spaces.
+A Bash edit's after is its observed bytes, its before the first source that
+exists. Differing observed bytes become an unattributed delta.
 
 A snapshot's file map becomes one chunk. Each file in it is compared with
 the latest content known of the path before: the worktree's previous
-snapshot or the latest edit's observed bytes, whichever is newer. A
-difference becomes an unattributed delta with cause `snapshot`.
+snapshot or the latest edit's observed bytes, whichever is newer. A path a
+whole previous snapshot lacked held HEAD's content, which counts when both
+snapshots sat on one HEAD. A difference becomes an unattributed delta with
+cause `snapshot`, unless an edit of the path landed while the snapshot read.
 
 Link: a head-moved envelope's blob ids are matched against recorded
 after-blob ids, and each match becomes a commit link.

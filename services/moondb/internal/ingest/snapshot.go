@@ -61,7 +61,7 @@ func (in *Ingester) snapshot(
 	return nil
 }
 
-// withoutLost returns env with the chunk of every file whose chunk is in
+// withoutLost returns env with every file chunk and HEAD chunk that is in
 // neither spool nor store cleared, so no record points at content the
 // store does not have.
 func (in *Ingester) withoutLost(env spool.Envelope, missing map[string]bool) spool.Envelope {
@@ -72,6 +72,7 @@ func (in *Ingester) withoutLost(env spool.Envelope, missing map[string]bool) spo
 	p.Files = slices.Clone(p.Files)
 	for i, f := range p.Files {
 		p.Files[i].Chunk = in.kept(env, missing, f.Chunk)
+		p.Files[i].HeadChunk = in.kept(env, missing, f.HeadChunk)
 	}
 	env.Snapshot = &p
 	return env

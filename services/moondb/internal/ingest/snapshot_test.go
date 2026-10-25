@@ -132,9 +132,12 @@ func TestSnapshotChunkMissingKeepsTheEntry(t *testing.T) {
 	f := newFixture(t)
 	c := chunkSet{}
 	env := snapEnv(c, "s1", "p1", store.SnapshotPre, 1, map[string]string{"a.go": "lost\n"})
+	env.Snapshot.Files[0].HeadBlob, env.Snapshot.Files[0].HeadChunk = "b0", c.add("head lost\n")
 	f.write(env, c)
-	if err := os.Remove(filepath.Join(f.w.Dir, env.Snapshot.Files[0].Chunk+".chunk")); err != nil {
-		t.Fatal(err)
+	for _, key := range []string{env.Snapshot.Files[0].Chunk, env.Snapshot.Files[0].HeadChunk} {
+		if err := os.Remove(filepath.Join(f.w.Dir, key+".chunk")); err != nil {
+			t.Fatal(err)
+		}
 	}
 	f.drain()
 
@@ -147,8 +150,9 @@ func TestSnapshotChunkMissingKeepsTheEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	var files []store.SnapshotFile
-	if err := json.Unmarshal(raw, &files); err != nil || len(files) != 1 || files[0].Chunk != "" {
-		t.Errorf("file map = %s (%v), want a.go without a chunk", raw, err)
+	if err := json.Unmarshal(raw, &files); err != nil || len(files) != 1 || files[0].Chunk != "" ||
+		files[0].HeadChunk != "" || files[0].HeadBlob != "b0" {
+		t.Errorf("file map = %s (%v), want a.go with its HEAD blob and neither chunk", raw, err)
 	}
 	if !f.logged("in neither spool nor store") {
 		t.Errorf("logs = %q, want a warning about the lost chunk", f.logs)

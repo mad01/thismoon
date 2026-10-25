@@ -1,9 +1,11 @@
 package record
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/mad01/thismoon/services/moondb"
+	"github.com/mad01/thismoon/services/moondb/internal/ingest"
+	"github.com/mad01/thismoon/services/moondb/internal/ingest/faketest"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
@@ -98,6 +102,55 @@ func TestBashEditDiff(t *testing.T) {
 	checkFields(t, []field{{".paths", s.state(pathsExt), wantPaths}})
 }
 
+func TestBashEditStampedAtHookStart(t *testing.T) {
+	// The Bash hook is async, so an Edit of the same file can land between
+	// the command and the hook's read. Stamped at its start, before any
+	// read, the Bash edit sorts before such an Edit.
+	repo := bashRepo(t)
+	s := newSession(t, repo)
+	s.now = stampingClock(t, filepath.Join(repo, "demo.go"))
+	s.mustRun("bash_diff.json", "$DIR", repo)
+
+	envs := s.take()
+	if len(envs) != 4 {
+		t.Fatalf("spool holds %v, want four edits", kinds(envs))
+	}
+	for _, env := range envs {
+		if reading(env.At) != 1 {
+			t.Errorf("%s stamped at reading %d, want 1, the hook's start", env.ID, reading(env.At))
+		}
+	}
+	if read := readingIn(s.chunk(envs[0].Edit.ObservedChunk)); read < reading(envs[0].At) {
+		t.Errorf("demo.go read holds reading %d, want one at or after its stamp %d",
+			read, reading(envs[0].At))
+	}
+}
+
+func TestHeadContentAfterCommit(t *testing.T) {
+	// The session edited a.txt, then committed it. A Bash change after the
+	// commit ships the new HEAD content, or its before has nothing to go on.
+	repo := newRepo(t)
+	s := newSession(t, repo)
+	file := filepath.Join(repo, "a.txt")
+	writeFile(t, file, "one\ndeux\n")
+	s.mustRun("edit.json", "$FILE", file, "$TOOL_USE_ID", "toolu_edit_1")
+	s.take()
+	git(t, repo, "commit", "-q", "-am", "deux")
+	writeFile(t, file, "one\ndeux\ntrois\n")
+	body := `{"session_id":"sess-1","prompt_id":"prompt-1","cwd":"$DIR",` +
+		`"hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"toolu_b",` +
+		`"tool_input":{"command":"echo trois >> a.txt"},` +
+		`"tool_response":{"bashEditDiff":{"changedFiles":["$DIR/a.txt"]}}}`
+	if err := s.runRaw(strings.ReplaceAll(body, "$DIR", repo)); err != nil {
+		t.Fatal(err)
+	}
+	ep := s.takeOne(spool.KindEdit).Edit
+	checkFields(t, []field{
+		{"HeadBlob", ep.HeadBlob, git(t, repo, "rev-parse", "HEAD:a.txt")},
+		{"head", s.chunk(ep.HeadChunk), "one\ndeux\n"},
+	})
+}
+
 func TestBashEditDiffExcludesAndShapes(t *testing.T) {
 	repo := bashRepo(t)
 
@@ -178,10 +231,11 @@ func TestSnapshots(t *testing.T) {
 	}
 	env := envs[1]
 	snap := env.Snapshot
-	if env.ID != snapshotID("prompt-2", store.SnapshotPre, repo) || env.Turn.ID != "prompt-2" ||
+	if env.ID != snapshotID("prompt-2", store.SnapshotPre, snap) || env.Turn.ID != "prompt-2" ||
 		snap.Phase != store.SnapshotPre || snap.Location.Worktree != repo ||
 		snap.Location.Head != head || snap.Scope != store.SnapshotScope ||
-		snap.StateHash == "" || snap.Truncated || !env.At.Equal(testNow) {
+		snap.StateHash == "" || snap.Truncated || !env.At.Equal(testNow) ||
+		!snap.Started.Equal(testNow) {
 		t.Errorf("snapshot %s = %+v", env.ID, snap)
 	}
 	wantSkipped := store.SnapshotSkipped{Excluded: 1, TooLarge: 1}
@@ -189,9 +243,10 @@ func TestSnapshots(t *testing.T) {
 		t.Errorf("Skipped = %+v, want %+v", snap.Skipped, wantSkipped)
 	}
 	checkSnapshotFiles(t, s, snap.Files, []snapFile{
-		{path: "a.txt", status: ".M", content: "one\nzwei\n"},
-		{path: "b.txt", status: ".D", deleted: true},
-		{path: "big.bin", status: "??", noContent: true},
+		{path: ".env", status: "??", reason: store.ReasonExcluded},
+		{path: "a.txt", status: ".M", content: "one\nzwei\n", head: "one\ntwo\n"},
+		{path: "b.txt", status: ".D", deleted: true, head: "bee\n"},
+		{path: "big.bin", status: "??", reason: store.ReasonTooLarge},
 		{path: "u.txt", status: "??", content: "untracked\n"},
 	})
 
@@ -203,7 +258,7 @@ func TestSnapshots(t *testing.T) {
 	// u.txt changes again but stays untracked, which the status alone would
 	// not show. a.txt is unchanged and its chunk is in the store, so it is
 	// not read again: making it unreadable shows that.
-	aChunk := snap.Files[0].Chunk
+	aChunk := snap.Files[1].Chunk
 	storeChunk(t, s.workdir, aChunk)
 	if err := os.Chmod(filepath.Join(repo, "a.txt"), 0); err != nil {
 		t.Fatal(err)
@@ -219,10 +274,117 @@ func TestSnapshots(t *testing.T) {
 		t.Errorf("phase = %q, want post", envs[1].Snapshot.Phase)
 	}
 	files := envs[1].Snapshot.Files
-	if len(files) != 4 || files[0].Chunk != aChunk ||
-		s.chunk(files[3].Chunk) != "untracked, again\n" {
+	if len(files) != 5 || files[1].Chunk != aChunk ||
+		files[1].HeadChunk != snap.Files[1].HeadChunk ||
+		s.chunk(files[4].Chunk) != "untracked, again\n" {
 		t.Errorf("files = %+v, want a.txt from its stamp and u.txt read again", files)
 	}
+}
+
+func TestSnapshotStampedAfterItsReads(t *testing.T) {
+	// An Edit stamped before a snapshot's At is one the snapshot may have
+	// seen, so At must come after the reads.
+	repo := newRepo(t)
+	s := newSession(t, repo)
+	s.now = stampingClock(t, filepath.Join(repo, "u.txt"))
+	s.mustRun("prompt.json")
+	envs := s.take()
+	if !slices.Equal(kinds(envs), []spool.Kind{spool.KindTurnOpen, spool.KindSnapshot}) {
+		t.Fatalf("prompt wrote %v, want turn-open then snapshot", kinds(envs))
+	}
+	env := envs[1]
+	files := env.Snapshot.Files
+	if len(files) != 1 || files[0].Path != "u.txt" {
+		t.Fatalf("files = %+v, want u.txt alone", files)
+	}
+	started, read, at := reading(env.Snapshot.Started), readingIn(s.chunk(files[0].Chunk)),
+		reading(env.At)
+	if started > read || read >= at {
+		t.Errorf("started at reading %d, read reading %d, stamped at reading %d; "+
+			"want the read between the start and the stamp", started, read, at)
+	}
+}
+
+func TestSecondStopKeepsBothSnapshots(t *testing.T) {
+	// A Stop hook that blocks lets the turn go on, and its next Stop comes
+	// with the same prompt id: both post snapshots must be stored.
+	repo := newRepo(t)
+	s := newSession(t, repo)
+	file := filepath.Join(repo, "a.txt")
+	writeFile(t, file, "one\nzwei\n")
+	s.mustRun("prompt.json")
+	writeFile(t, file, "one\ndrei\n")
+	s.mustRun("stop.json")
+	writeFile(t, file, "one\nvier\n")
+	s.mustRun("stop.json")
+	envs := s.take()
+
+	st := faketest.New()
+	in := &ingest.Ingester{Store: st, Spool: s.reader()}
+	ctx := context.Background()
+	for _, env := range envs {
+		if err := in.Ingest(ctx, env); err != nil {
+			t.Fatalf("ingest %s: %v", env.ID, err)
+		}
+	}
+	td, err := st.Turn(ctx, "prompt-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var phases []store.SnapshotPhase
+	for _, snap := range td.Snapshots {
+		phases = append(phases, snap.Phase)
+	}
+	slices.Sort(phases)
+	want := []store.SnapshotPhase{store.SnapshotPost, store.SnapshotPost, store.SnapshotPre}
+	if !slices.Equal(phases, want) {
+		t.Errorf("stored snapshots %v, want %v", phases, want)
+	}
+
+	writes := st.Writes()
+	if err := in.Ingest(ctx, envs[len(envs)-1]); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Writes(); got != writes {
+		t.Errorf("replaying the last snapshot wrote %d records, want none", got-writes)
+	}
+}
+
+func TestSnapshotListsWhatItCannotRead(t *testing.T) {
+	// A path the snapshot leaves out was clean, so one it cannot read must
+	// still be listed, without content and with the reason.
+	repo := newRepo(t)
+	s := newSession(t, repo)
+	if err := os.Symlink("a.txt", filepath.Join(repo, "link")); err != nil {
+		t.Fatal(err)
+	}
+	locked := filepath.Join(repo, "locked.txt")
+	writeFile(t, locked, "secret\n")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o600) })
+	// A touched path that is a directory now: git status shows no empty
+	// directory, so only the session's own list puts it in scope.
+	if err := os.Mkdir(filepath.Join(repo, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(s.workdir, "sessions", "sess-1"+pathsExt), repo+"\tsub\n")
+
+	s.mustRun("prompt.json")
+	envs := s.take()
+	if !slices.Equal(kinds(envs), []spool.Kind{spool.KindTurnOpen, spool.KindSnapshot}) {
+		t.Fatalf("prompt wrote %v, want turn-open then snapshot", kinds(envs))
+	}
+	snap := envs[1].Snapshot
+	if snap.Truncated {
+		t.Errorf("snapshot truncated, want whole: %+v", snap)
+	}
+	checkSnapshotFiles(t, s, snap.Files, []snapFile{
+		{path: "link", status: "??", reason: store.ReasonSymlink},
+		{path: "locked.txt", status: "??", reason: store.ReasonUnreadable},
+		{path: "sub", reason: store.ReasonNotRegular},
+	})
 }
 
 func TestSnapshotOfCleanedWorktree(t *testing.T) {
@@ -261,10 +423,10 @@ func TestSnapshotFileCapAndBudget(t *testing.T) {
 	for i := range moondb.MaxSnapshotFiles + 2 {
 		entries = append(entries, statusEntry{path: fmt.Sprintf("f%04d", i), xy: "??"})
 	}
-	scope, skipped := rec.scope(repo, entries)
-	if len(scope) != moondb.MaxSnapshotFiles || skipped.TooMany != 2 {
+	scope, tooMany := rec.scope(repo, entries)
+	if len(scope) != moondb.MaxSnapshotFiles || tooMany != 2 {
 		t.Errorf("scope of %d paths, %d past the cap; want %d and 2",
-			len(scope), skipped.TooMany, moondb.MaxSnapshotFiles)
+			len(scope), tooMany, moondb.MaxSnapshotFiles)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -300,10 +462,51 @@ func TestParseStatus(t *testing.T) {
 	}
 }
 
-// snapFile is one expected entry of a snapshot's file list.
+func TestParseLsTree(t *testing.T) {
+	oid := strings.Repeat("b", 40)
+	out := strings.Join([]string{
+		"100644 blob " + oid + "      12\tdir/a file.txt",
+		"100755 blob " + oid + "       0\tst*r.sh",
+		"160000 commit " + oid + "       -\tvendor/sub",
+		"040000 tree " + oid + "       -\tdir",
+		"junk",
+		"",
+	}, "\x00")
+	got := parseLsTree([]byte(out))
+	want := map[string]treeBlob{
+		"dir/a file.txt": {blob: oid, size: 12},
+		"st*r.sh":        {blob: oid, size: 0},
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("parseLsTree = %+v\nwant %+v", got, want)
+	}
+}
+
+func TestReadBatch(t *testing.T) {
+	one, two := "one\n", ""
+	idOne, idTwo := blobID([]byte(one)), blobID([]byte(two))
+	out := idOne + " blob 4\n" + one + "\n" +
+		strings.Repeat("c", 40) + " missing\n" +
+		idOne + " blob 4\nbad!\n" + // content that does not match its id
+		idTwo + " blob 0\n\n"
+	got := readBatch(bufio.NewReader(strings.NewReader(out)), 4)
+	if len(got) != 2 || string(got[idOne]) != one || string(got[idTwo]) != two {
+		t.Errorf("readBatch = %q, want both verified blobs", got)
+	}
+	cut := idOne + " blob 4\non"
+	if got := readBatch(bufio.NewReader(strings.NewReader(cut)), 1); len(got) != 0 {
+		t.Errorf("readBatch of a cut answer = %q, want none", got)
+	}
+}
+
+// snapFile is one expected entry of a snapshot's file list. An entry with
+// a reason or deleted holds no content; head is the HEAD content it ships,
+// "" for a path HEAD does not track.
 type snapFile struct {
 	path, status, content string
-	deleted, noContent    bool
+	deleted               bool
+	reason                store.SnapshotReason
+	head                  string
 }
 
 func checkSnapshotFiles(t *testing.T, s *testSession, got []store.SnapshotFile, want []snapFile) {
@@ -313,18 +516,27 @@ func checkSnapshotFiles(t *testing.T, s *testSession, got []store.SnapshotFile, 
 	}
 	for i, w := range want {
 		f := got[i]
-		if f.Path != w.path || f.Status != w.status || f.Deleted != w.deleted {
+		if f.Path != w.path || f.Status != w.status || f.Deleted != w.deleted ||
+			f.Reason != w.reason {
 			t.Errorf("file %d = %+v, want %+v", i, f, w)
 			continue
 		}
 		switch {
-		case w.deleted || w.noContent:
+		case w.deleted || w.reason != "":
 			if f.Chunk != "" || f.Blob != "" {
 				t.Errorf("%s: chunk %q blob %q, want neither", f.Path, f.Chunk, f.Blob)
 			}
 		case s.chunk(f.Chunk) != w.content || f.Blob != blobID([]byte(w.content)) ||
 			f.Size != int64(len(w.content)):
 			t.Errorf("%s = %+v holding %q, want %q", f.Path, f, s.chunk(f.Chunk), w.content)
+		}
+		wantBlob := ""
+		if w.head != "" {
+			wantBlob = blobID([]byte(w.head))
+		}
+		if f.HeadBlob != wantBlob || s.chunk(f.HeadChunk) != w.head {
+			t.Errorf("%s: head blob %q holding %q, want %q", f.Path, f.HeadBlob,
+				s.chunk(f.HeadChunk), w.head)
 		}
 	}
 }

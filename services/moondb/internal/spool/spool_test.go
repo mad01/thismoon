@@ -395,19 +395,19 @@ func TestPollDeliversWithoutWatcher(t *testing.T) {
 func TestSnapshotRoundTrip(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "spool")
 	w, r := &Writer{Dir: dir}, &Reader{Dir: dir}
-	same := ChunkKey([]byte("same"))
-	chunks := map[string][]byte{same: []byte("same")}
+	same, head := ChunkKey([]byte("same")), ChunkKey([]byte("head"))
+	chunks := map[string][]byte{same: []byte("same"), head: []byte("head")}
 	env := Envelope{
 		Version: Version, Kind: KindSnapshot, ID: "p1:snap:pre:abc", At: at,
 		Harness: "claude-code", Session: SessionRef{ID: "s1"}, Turn: TurnRef{ID: "p1"},
 		Snapshot: &Snapshot{
 			Location: store.Location{Worktree: "/wt"}, Phase: store.SnapshotPre,
-			Scope: store.SnapshotScope, StateHash: "h",
+			Started: at.Add(-time.Second), Scope: store.SnapshotScope, StateHash: "h",
 			Files: []store.SnapshotFile{
-				{Path: "a.go", Chunk: same, Size: 4},
+				{Path: "a.go", Chunk: same, Size: 4, HeadBlob: "b1", HeadChunk: head},
 				{Path: "b.go", Chunk: same, Size: 4},
-				{Path: "big.bin", Size: 2 << 20},
-				{Path: "gone.go", Deleted: true},
+				{Path: "big.bin", Size: 2 << 20, Reason: store.ReasonTooLarge},
+				{Path: "gone.go", Deleted: true, HeadBlob: "b2", HeadChunk: same},
 			},
 			Skipped: store.SnapshotSkipped{TooLarge: 1},
 		},
@@ -425,8 +425,8 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(got.Snapshot, env.Snapshot) {
 		t.Errorf("Read().Snapshot = %+v, want %+v", got.Snapshot, env.Snapshot)
 	}
-	if keys := got.ChunkKeys(); !reflect.DeepEqual(keys, []string{same}) {
-		t.Errorf("ChunkKeys() = %v, want the one shared chunk", keys)
+	if keys := got.ChunkKeys(); !reflect.DeepEqual(keys, []string{same, head}) {
+		t.Errorf("ChunkKeys() = %v, want the shared chunk and the HEAD content", keys)
 	}
 
 	env.Snapshot = nil

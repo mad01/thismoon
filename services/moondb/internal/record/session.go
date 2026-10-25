@@ -71,14 +71,15 @@ func (s sessionState) editedIn(worktree string) []string {
 }
 
 // snapState is what the session's last snapshot of one worktree left for
-// the next: its state hash, empty when the snapshot was cut short, and a
-// stamp per file it read.
+// the next: its state hash, empty when the snapshot was cut short, a stamp
+// per file it read, and the chunk of each HEAD blob it shipped, by blob id.
 type snapState struct {
 	Hash string `json:"hash,omitempty"`
 	// Taken is when that snapshot started, in Unix nanoseconds. A file
 	// modified at or after it may have changed under the read.
 	Taken int64                `json:"taken"`
 	Files map[string]fileStamp `json:"files,omitempty"`
+	Heads map[string]string    `json:"heads,omitempty"`
 }
 
 // fileStamp ties a file's size and modification time to the content a
