@@ -28,6 +28,7 @@ tools/belt/belt
 tools/clipboard/clipboard
 tools/humanizer/humanizer
 tools/opener/opener
+tools/srtspec/srtspec
 tools/suspenders/suspenders
 tools/t-man/t-man
 tools/worklog/worklog

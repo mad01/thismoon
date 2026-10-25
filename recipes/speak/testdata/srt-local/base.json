@@ -1,0 +1,12 @@
+{
+  "filesystem": {
+    "allowRead": ["~/code"],
+    "allowWrite": ["~/.local/share/svc", "/private/tmp", "/private/var/folders"],
+    "denyRead": ["~", "~/code/**/.env"],
+    "denyWrite": []
+  },
+  "network": {
+    "allowedDomains": [],
+    "deniedDomains": []
+  }
+}
