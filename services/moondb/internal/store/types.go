@@ -1,0 +1,282 @@
+// Package store defines what moondb remembers and the Store a backend has
+// to implement. The records are append-only facts about what a session did
+// between commits; nothing here merges or rewrites history.
+//
+// Vocabulary (CONTEXT.md): a Session is one agent session; a Turn is one
+// prompt until the session stops; an Edit is one recorded change to one
+// file by one tool call; an UnattributedDelta is a change between two known
+// contents that no tool call explains; a Snapshot is a worktree's dirty set
+// at a turn boundary; a CommitLink ties recorded content to a commit by its
+// git blob id; a Chunk is content-addressed bytes.
+package store
+
+import (
+	"errors"
+	"time"
+)
+
+// ErrNotFound is returned when no record has the given id.
+var ErrNotFound = errors.New("store: not found")
+
+// Session is one agent session, created lazily from its first turn.
+type Session struct {
+	// ID is the harness's session id (Claude Code session_id).
+	ID string `json:"id"`
+	// Harness names the agent runtime, "claude-code" today.
+	Harness string `json:"harness"`
+	// Cwd is the working directory the session started in.
+	Cwd string `json:"cwd"`
+	// Title is the harness's session title when it has one.
+	Title string `json:"title,omitempty"`
+	// Model is the model the session ran on when the harness said.
+	Model string `json:"model,omitempty"`
+	// TranscriptPath is the harness transcript file, kept so a turn's raw
+	// lines can be shown while the file still exists.
+	TranscriptPath string     `json:"transcript_path,omitempty"`
+	StartedAt      time.Time  `json:"started_at"`
+	EndedAt        *time.Time `json:"ended_at,omitempty"`
+}
+
+// TurnStatus is where a turn is in its life.
+type TurnStatus string
+
+const (
+	TurnOpen   TurnStatus = "open"
+	TurnClosed TurnStatus = "closed"
+	TurnFailed TurnStatus = "failed"
+)
+
+// Turn is one user prompt and everything until the session stopped.
+type Turn struct {
+	// ID is the harness's prompt id (Claude Code prompt_id).
+	ID        string `json:"id"`
+	SessionID string `json:"session_id"`
+	// Seq orders turns within a session in arrival order, from 1.
+	Seq int `json:"seq"`
+	// PromptChunk holds the prompt text.
+	PromptChunk string `json:"prompt_chunk,omitempty"`
+	// FinalChunk holds the last assistant message of the turn.
+	FinalChunk string `json:"final_chunk,omitempty"`
+	// TranscriptChunk holds the raw transcript lines written during the
+	// turn, from TranscriptOffset to the offset seen at close.
+	TranscriptChunk  string     `json:"transcript_chunk,omitempty"`
+	TranscriptOffset int64      `json:"transcript_offset"`
+	Status           TurnStatus `json:"status"`
+	StartedAt        time.Time  `json:"started_at"`
+	EndedAt          *time.Time `json:"ended_at,omitempty"`
+}
+
+// Location is where an edited file sits in git, resolved from the file's
+// own directory at capture time (kit/gitloc). Repo is "" for a file outside
+// any repository; such edits are grouped under Worktree "" and keep an
+// absolute Path.
+type Location struct {
+	// Repo is the canonical host/owner/repo identity from the origin remote.
+	Repo string `json:"repo,omitempty"`
+	// Worktree is the root of the working tree the file belongs to.
+	Worktree string `json:"worktree,omitempty"`
+	// Canonical is the root of the main checkout; equals Worktree outside a
+	// linked worktree.
+	Canonical string `json:"canonical,omitempty"`
+	// Branch is the branch checked out in the worktree at the time.
+	Branch string `json:"branch,omitempty"`
+	// Head is the commit checked out in the worktree at the time.
+	Head string `json:"head,omitempty"`
+}
+
+// EditKind says what the tool call did to the file.
+type EditKind string
+
+const (
+	EditCreate EditKind = "create"
+	EditUpdate EditKind = "update"
+	EditDelete EditKind = "delete"
+	// EditUnknown covers tools that report a path and nothing else.
+	EditUnknown EditKind = "unknown"
+)
+
+// BeforeSource says where an Edit's before-content came from, in the order
+// the deriver tries them (internal/derive).
+type BeforeSource string
+
+const (
+	// BeforeAbsent: the file did not exist before the call; a create.
+	BeforeAbsent BeforeSource = "absent"
+	// BeforeOriginal: the harness shipped the whole pre-edit file.
+	BeforeOriginal BeforeSource = "original"
+	// BeforeChain: the previous Edit's after-content for the same path.
+	BeforeChain BeforeSource = "chain"
+	// BeforeSnapshot: the pre-turn snapshot of the file.
+	BeforeSnapshot BeforeSource = "snapshot"
+	// BeforeHead: the file at HEAD, shipped by the hook when it was clean.
+	BeforeHead BeforeSource = "head"
+	// BeforeObserved: the post-edit disk read with the patch reversed.
+	BeforeObserved BeforeSource = "observed"
+	// BeforeUnknown: hunks only; no full before-content could be derived.
+	BeforeUnknown BeforeSource = "unknown"
+)
+
+// Edit is one recorded change to one file by one tool call. It is an
+// immutable fact: identity is the tool call plus the path, and a replayed
+// spool envelope must not produce a second one.
+type Edit struct {
+	// ID is ToolUseID plus the path index within the call ("<tool_use_id>:0").
+	ID        string `json:"id"`
+	ToolUseID string `json:"tool_use_id"`
+	SessionID string `json:"session_id"`
+	TurnID    string `json:"turn_id"`
+	// AgentID and AgentType name the subagent that made the edit; both are
+	// "" for the main conversation.
+	AgentID   string `json:"agent_id,omitempty"`
+	AgentType string `json:"agent_type,omitempty"`
+	// Tool is the harness tool name: Edit, Write, MultiEdit, NotebookEdit, Bash.
+	Tool string    `json:"tool"`
+	At   time.Time `json:"at"`
+	Location
+	// Path is relative to Worktree with forward slashes, or absolute when
+	// the file is outside any repository.
+	Path string   `json:"path"`
+	Kind EditKind `json:"kind"`
+	// PatchChunk holds the harness's hunks for this file as JSON
+	// (structuredPatch), "" when the tool reported none.
+	PatchChunk string `json:"patch_chunk,omitempty"`
+	// BeforeChunk and AfterChunk hold the whole file before and after; ""
+	// when unknown or withheld.
+	BeforeChunk  string       `json:"before_chunk,omitempty"`
+	AfterChunk   string       `json:"after_chunk,omitempty"`
+	BeforeSource BeforeSource `json:"before_source"`
+	// AfterBlob is the git blob id of the after-content, the join key to a
+	// later commit.
+	AfterBlob string `json:"after_blob,omitempty"`
+	// ObservedChunk is what the hook read from disk right after the tool
+	// ran. Evidence, not truth: ObservedMatches reports whether it equals
+	// the derived after-content; nil when either side is unknown.
+	ObservedChunk   string `json:"observed_chunk,omitempty"`
+	ObservedMatches *bool  `json:"observed_matches,omitempty"`
+	// EOL records the line ending convention of the content: lf, crlf,
+	// mixed, or "" when unknown.
+	EOL string `json:"eol,omitempty"`
+	// Excluded is set when a capture.exclude glob matched: the edit is
+	// recorded by path and kind, with no content and no patch.
+	Excluded bool `json:"excluded,omitempty"`
+}
+
+// DeltaCause says why an UnattributedDelta exists.
+type DeltaCause string
+
+const (
+	// DeltaObservedMismatch: the disk read after a tool call differed from
+	// the content the patch derives, so something else wrote the file too.
+	DeltaObservedMismatch DeltaCause = "observed-mismatch"
+	// DeltaSnapshot: a turn boundary snapshot saw a change no Edit made.
+	DeltaSnapshot DeltaCause = "snapshot"
+)
+
+// UnattributedDelta is a change between two known contents of a path that no
+// tool call explains: a formatter hook, a Bash command without a diff, a
+// human editing between turns.
+type UnattributedDelta struct {
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id"`
+	TurnID    string    `json:"turn_id"`
+	At        time.Time `json:"at"`
+	Location
+	Path       string     `json:"path"`
+	FromChunk  string     `json:"from_chunk,omitempty"`
+	ToChunk    string     `json:"to_chunk,omitempty"`
+	PatchChunk string     `json:"patch_chunk,omitempty"`
+	Cause      DeltaCause `json:"cause"`
+	// Ambiguous is set when another session had an open turn in the same
+	// worktree, so the change may be theirs.
+	Ambiguous bool `json:"ambiguous,omitempty"`
+}
+
+// SnapshotPhase is which turn boundary a snapshot was taken at.
+type SnapshotPhase string
+
+const (
+	SnapshotPre  SnapshotPhase = "pre"
+	SnapshotPost SnapshotPhase = "post"
+)
+
+// Snapshot is a worktree's dirty set at a turn boundary. The file map lives
+// in a chunk (JSON object path -> SnapshotFile) so the index stays small.
+type Snapshot struct {
+	ID        string        `json:"id"`
+	SessionID string        `json:"session_id"`
+	TurnID    string        `json:"turn_id"`
+	Phase     SnapshotPhase `json:"phase"`
+	At        time.Time     `json:"at"`
+	Location
+	MapChunk  string `json:"map_chunk,omitempty"`
+	FileCount int    `json:"file_count"`
+	// Skipped names why the snapshot is partial or empty: "timeout",
+	// "too-many-files", or "".
+	Skipped string `json:"skipped,omitempty"`
+}
+
+// SnapshotFile is one entry of a snapshot's file map.
+type SnapshotFile struct {
+	Chunk string `json:"chunk,omitempty"`
+	Blob  string `json:"blob,omitempty"`
+	Size  int64  `json:"size"`
+	// Status is git's two-letter porcelain status for the path.
+	Status string `json:"status,omitempty"`
+}
+
+// CommitLink records that content moondb saw became a committed blob: the
+// Edit whose after-content has Blob, found in Commit at Path. Found by
+// matching blob ids when a worktree's HEAD moves; never by a commit trailer.
+type CommitLink struct {
+	ID        string    `json:"id"`
+	Repo      string    `json:"repo"`
+	Worktree  string    `json:"worktree,omitempty"`
+	Branch    string    `json:"branch,omitempty"`
+	Commit    string    `json:"commit"`
+	Parent    string    `json:"parent,omitempty"`
+	Path      string    `json:"path"`
+	Blob      string    `json:"blob"`
+	EditID    string    `json:"edit_id"`
+	TurnID    string    `json:"turn_id"`
+	SessionID string    `json:"session_id"`
+	At        time.Time `json:"at"`
+}
+
+// SessionDetail is a session with what it did.
+type SessionDetail struct {
+	Session
+	Turns     []Turn   `json:"turns"`
+	Worktrees []string `json:"worktrees"`
+	EditCount int      `json:"edit_count"`
+}
+
+// TurnDetail is a turn with everything recorded under it.
+type TurnDetail struct {
+	Turn
+	Edits       []Edit              `json:"edits"`
+	Deltas      []UnattributedDelta `json:"deltas"`
+	Snapshots   []Snapshot          `json:"snapshots"`
+	CommitLinks []CommitLink        `json:"commit_links"`
+}
+
+// SessionFilter narrows a Sessions listing. Zero values mean no filter.
+type SessionFilter struct {
+	// Repo keeps sessions with at least one edit in the repo.
+	Repo  string
+	Since time.Time
+	Limit int
+}
+
+// EditQuery narrows an Edits listing. Zero values mean no filter; results
+// come newest first.
+type EditQuery struct {
+	Repo      string
+	Path      string
+	Worktree  string
+	SessionID string
+	TurnID    string
+	// AfterBlob matches edits whose after-content has this git blob id.
+	AfterBlob string
+	Since     time.Time
+	Limit     int
+}

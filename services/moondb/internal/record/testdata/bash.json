@@ -1,0 +1,11 @@
+{
+  "session_id": "sess-1",
+  "prompt_id": "prompt-1",
+  "transcript_path": "$TRANSCRIPT",
+  "cwd": "$CWD",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_use_id": "toolu_bash_1",
+  "tool_input": {"command": "ls"},
+  "tool_response": {"stdout": "", "stderr": "", "interrupted": false}
+}

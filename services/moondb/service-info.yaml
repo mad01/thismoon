@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: moondb
+  description: Edit history between commits, linked to the agent turn that made it; CLI + MCP + webkit web page on port 7433
+  tags: [go, cli, mcp]
+spec:
+  type: cli
+  lifecycle: development
+  owner: mad01
+  system: thismoon

@@ -1,0 +1,26 @@
+{
+  "session_id": "sess-1",
+  "prompt_id": "prompt-1",
+  "transcript_path": "$TRANSCRIPT",
+  "cwd": "$CWD",
+  "hook_event_name": "PostToolUse",
+  "agent_id": "agent-7",
+  "agent_type": "worker",
+  "tool_name": "MultiEdit",
+  "tool_use_id": "toolu_multi_1",
+  "tool_input": {
+    "file_path": "$FILE",
+    "edits": [
+      {"old_string": "one", "new_string": "uno", "replace_all": false},
+      {"old_string": "two", "new_string": "dos", "replace_all": false}
+    ]
+  },
+  "tool_response": {
+    "filePath": "$FILE",
+    "originalFile": "one\ntwo\n",
+    "structuredPatch": [
+      {"oldStart": 1, "oldLines": 2, "newStart": 1, "newLines": 2, "lines": ["-one", "-two", "+uno", "+dos"]}
+    ],
+    "userModified": true
+  }
+}

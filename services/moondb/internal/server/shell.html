@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>moondb</title>
+<script src="/webkit/boot.js"></script>
+<link href="/webkit/webkit.css" rel="stylesheet">
+<style>
+/* Palette, header chrome, page header, table, card and badge visuals all
+   come from /webkit/webkit.css. Only moondb-specific layout lives here. The
+   sessions list and the session view are rendered client-side by /app.js
+   into <div id="app">. */
+.wrap{padding-top:1.5rem}
+.hint{color:var(--text-3);font-size:0.85rem;margin:0 0 1.25rem}
+.hint code{background:var(--chip-bg);padding:0.05rem 0.35rem;border-radius:3px}
+.empty{color:var(--text-3);font-size:0.9375rem;padding:2rem 0}
+.back{display:inline-block;margin:0 0 1rem;font-size:0.85rem;color:var(--accent)}
+.muted{color:var(--text-3)}
+.mono{font-family:var(--mono);font-size:0.8rem}
+.num{font-variant-numeric:tabular-nums;text-align:right}
+.turns{display:flex;flex-direction:column;gap:0.75rem;margin-top:1.5rem}
+.t-head{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem}
+.t-prompt{font-size:0.9375rem;font-weight:600;color:var(--text-1);margin-bottom:0.5rem}
+.t-edits{margin-top:0.5rem}
+.chunk{margin-top:0.6rem;max-height:24rem;overflow:auto;font-family:var(--mono);font-size:0.78rem;background:var(--chip-bg);padding:0.6rem;border-radius:6px;white-space:pre}
+</style>
+</head>
+<body>
+<wk-header brand="moondb" title="Sessions"><a data-nav href="/">Sessions</a><a data-nav href="/webkit/themes">Themes</a></wk-header>
+<main class="wrap"><div id="app"></div></main>
+<wk-toast-host id="toast-host"></wk-toast-host>
+<script src="/webkit/webkit.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
