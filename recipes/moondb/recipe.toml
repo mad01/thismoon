@@ -47,18 +47,20 @@ action = "symlink"
 # Idempotent; run = "always" keeps it registered and self-heals if it was removed.
 # It runs sandboxed (docs/SANDBOXING.md, "Sandboxing a t-man service").
 # `moondb why` runs git blame, which is read-only and needs no user identity,
-# credential helper or other global config.
-# GIT_CONFIG_GLOBAL=/dev/null keeps git from dying on the unreadable
-# ~/.gitconfig. --path matches the deps recipe, but srt-run puts /usr/bin ahead
-# of it, so git is the /usr/bin shim, which needs a readable developer dir
-# (docs/SANDBOXING.md, "git inside the sandbox").
+# credential helper or other global config. GIT_CONFIG_GLOBAL=/dev/null keeps
+# git from dying on the unreadable ~/.gitconfig. /usr/bin/git is an xcrun shim
+# that loads libxcrun from the active developer directory. An Xcode under $HOME
+# is unreadable inside the sandbox, while the Command Line Tools under /Library
+# always are, so DEVELOPER_DIR pins the shim to the Command Line Tools when
+# they are installed. Machines without them keep xcode-select's choice. --path
+# matches the deps recipe (docs/SANDBOXING.md, "git inside the sandbox").
 # depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
 # ralph links dotfiles items before any build or package in every run, so the
 # srt-run and settings links exist before this registration; depends_on could
 # not name them anyway, since ralph only accepts builds. and packages. refs.
 [hooks.builds.moondb_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name moondb --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env GIT_CONFIG_GLOBAL=/dev/null --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/moondb.json $HOME/code/bin/moondb serve --port 7433 --workdir $HOME/.local/state/moondb; else echo 'moondb: skip service (t-man not on PATH; install t-man then run: t-man add --name moondb -- moondb serve --port 7433)'; fi",
+  "if command -v t-man >/dev/null; then set --; if [ -d /Library/Developer/CommandLineTools ]; then set -- --env DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi; t-man add --name moondb --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env GIT_CONFIG_GLOBAL=/dev/null \"$@\" --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/moondb.json $HOME/code/bin/moondb serve --port 7433 --workdir $HOME/.local/state/moondb; else echo 'moondb: skip service (t-man not on PATH; install t-man then run: t-man add --name moondb -- moondb serve --port 7433)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/moondb"
 run = "always"

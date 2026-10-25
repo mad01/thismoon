@@ -50,9 +50,12 @@ action = "symlink"
 # Pin resolution runs read-only git commands (rev-parse, remote get-url), which
 # need no user identity, credential helper or other global config.
 # GIT_CONFIG_GLOBAL=/dev/null keeps git from dying on the unreadable
-# ~/.gitconfig. --path matches the deps recipe, but srt-run puts /usr/bin ahead
-# of it, so git is the /usr/bin shim, which needs a readable developer dir
-# (docs/SANDBOXING.md, "git inside the sandbox").
+# ~/.gitconfig. /usr/bin/git is an xcrun shim that loads libxcrun from the
+# active developer directory. An Xcode under $HOME is unreadable inside the
+# sandbox, while the Command Line Tools under /Library always are, so
+# DEVELOPER_DIR pins the shim to the Command Line Tools when they are
+# installed. Machines without them keep xcode-select's choice. --path matches
+# the deps recipe (docs/SANDBOXING.md, "git inside the sandbox").
 # recall's `claude -p` judge cannot run in the sandbox, so recall answers 502;
 # kof_query still works.
 # depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
@@ -61,7 +64,7 @@ action = "symlink"
 # not name them anyway, since ralph only accepts builds. and packages. refs.
 [hooks.builds.keeper_of_facts_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name keeper-of-facts --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env GIT_CONFIG_GLOBAL=/dev/null --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/keeper-of-facts.json $HOME/code/bin/kof serve --port 7431 --workdir $HOME/.local/share/kof; else echo 'kof: skip service (t-man not on PATH; install t-man then run: t-man add --name keeper-of-facts -- kof serve --port 7431)'; fi",
+  "if command -v t-man >/dev/null; then set --; if [ -d /Library/Developer/CommandLineTools ]; then set -- --env DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi; t-man add --name keeper-of-facts --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env GIT_CONFIG_GLOBAL=/dev/null \"$@\" --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/keeper-of-facts.json $HOME/code/bin/kof serve --port 7431 --workdir $HOME/.local/share/kof; else echo 'kof: skip service (t-man not on PATH; install t-man then run: t-man add --name keeper-of-facts -- kof serve --port 7431)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/keeper-of-facts"
 run = "always"

@@ -270,20 +270,19 @@ A service that runs git under `denyRead: ["~"]` needs two things:
   they get `--env GIT_CONFIG_GLOBAL=/dev/null`. The repo's own `.git/config`
   has to stay readable, because git reads it on every command.
 - **A readable developer directory.** `srt-run` puts `/usr/bin` ahead of the
-  caller's `PATH`, so git resolves to `/usr/bin/git`, the xcrun shim. A
-  Homebrew git earlier in t-man's `--path` doesn't change that. The shim
-  loads its library from the active developer directory (`xcode-select -p`).
-  An Xcode under `~`, such as a beta in `~/Downloads`, is unreadable inside
-  the sandbox, and every git call fails with `xcrun: error: invalid active
-  developer path`.
+  caller's `PATH`, so git resolves to `/usr/bin/git`, an xcrun shim that
+  loads libxcrun from the active developer directory. A Homebrew git earlier
+  in t-man's `--path` doesn't change that. An Xcode under `$HOME`, such as a
+  beta in `~/Downloads`, is unreadable inside the sandbox, and every git call
+  fails with `xcrun: error: invalid active developer path`. The Command Line
+  Tools under `/Library` are always readable, so the keeper-of-facts and
+  moondb hooks add `--env DEVELOPER_DIR=/Library/Developer/CommandLineTools`
+  when that directory exists. Machines without them keep `xcode-select`'s
+  choice.
 
-The developer directory is a machine fix, not a recipe one. Point
-`xcode-select` at the Command Line Tools, or keep Xcode under
-`/Applications`:
-
-```sh
-sudo xcode-select -s /Library/Developer/CommandLineTools
-```
+Note: the machine can fix the developer directory for every process instead,
+with `sudo xcode-select -s /Library/Developer/CommandLineTools` or by keeping
+Xcode under `/Applications`. The hooks don't depend on it.
 
 ### Probing on an alternate port
 

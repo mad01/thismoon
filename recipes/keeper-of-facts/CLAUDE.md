@@ -19,8 +19,8 @@ ralph merges the recipe with the identity `thismoon/keeper-of-facts`. The packag
   guard skips the restart on first install (before registration).
 - **`hooks.builds.keeper_of_facts_service`**: `t-man add --name keeper-of-facts
   --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env
-  GIT_CONFIG_GLOBAL=/dev/null --extra-log sandbox=… -- srt-run
-  ~/.config/srt/keeper-of-facts.json kof serve --port 7431 --workdir
+  GIT_CONFIG_GLOBAL=/dev/null [--env DEVELOPER_DIR=…] --extra-log sandbox=…
+  -- srt-run ~/.config/srt/keeper-of-facts.json kof serve --port 7431 --workdir
   ~/.local/share/kof`. Idempotent; `run = "always"`
   self-heals if the agent was removed. Guarded on t-man being on PATH.
 - **`dotfiles.keeper_of_facts_srt_settings`**: links
@@ -37,8 +37,9 @@ config on every command.
 Pin resolution runs read-only git (`rev-parse`, `remote get-url`), which
 needs no identity or credential helper. The agent runs with
 `GIT_CONFIG_GLOBAL=/dev/null` so git doesn't die on the unreadable
-`~/.gitconfig`. The `/usr/bin/git` shim also needs a readable developer dir:
-see docs/SANDBOXING.md, "git inside the sandbox".
+`~/.gitconfig`. `DEVELOPER_DIR` points the `/usr/bin/git` shim at the
+Command Line Tools when they are installed, because an Xcode under `$HOME`
+is unreadable in the sandbox (docs/SANDBOXING.md, "git inside the sandbox").
 
 The sandbox has two visible consequences:
 

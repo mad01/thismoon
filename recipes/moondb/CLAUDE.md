@@ -21,8 +21,8 @@ and ralph merges the recipe with the identity `thismoon/moondb`. The package
   guard skips the restart on first install, before registration.
 - **`hooks.builds.moondb_service`**: `t-man add --name moondb --path
   /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env
-  GIT_CONFIG_GLOBAL=/dev/null --extra-log sandbox=… -- srt-run
-  ~/.config/srt/moondb.json moondb serve --port 7433 --workdir
+  GIT_CONFIG_GLOBAL=/dev/null [--env DEVELOPER_DIR=…] --extra-log sandbox=…
+  -- srt-run ~/.config/srt/moondb.json moondb serve --port 7433 --workdir
   ~/.local/state/moondb`. Idempotent; `run = "always"` self-heals if the
   agent was removed. Guarded on t-man being on PATH.
 - **`dotfiles.moondb_srt_settings`**: links `moondb.srt.json` to
@@ -37,9 +37,9 @@ asking worktree, so reads cover the code roots (`~/code`, `~/.worktrees`,
 the ralph sources cache) minus nested `.env`, `.env.*`, `*.pem` and `*.key`
 files. `.git/config` stays readable, because git reads it on every command.
 Blame is read-only and needs no identity or credential helper, so the agent
-runs with `GIT_CONFIG_GLOBAL=/dev/null`, like keeper-of-facts. The
-`/usr/bin/git` shim also needs a readable developer dir: see
-docs/SANDBOXING.md, "git inside the sandbox". A worktree outside those
+runs with `GIT_CONFIG_GLOBAL=/dev/null`, like keeper-of-facts. On a machine
+with the Command Line Tools it also gets `DEVELOPER_DIR` pointing at them
+(docs/SANDBOXING.md, "git inside the sandbox"). A worktree outside those
 roots answers without blame.
 
 ## What stays in dotfiles (private overlay)
