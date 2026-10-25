@@ -12,6 +12,7 @@
     "services/deps": { "component": "deps" },
     "services/events": { "component": "events" },
     "services/keeper-of-facts": { "component": "keeper-of-facts" },
+    "services/moondb": { "component": "moondb" },
     "services/present": { "component": "present" },
     "services/speak": { "component": "speak" },
     "services/status": { "component": "status" },

@@ -1,0 +1,20 @@
+{
+  "session_id": "sess-1",
+  "prompt_id": "prompt-1",
+  "transcript_path": "$TRANSCRIPT",
+  "cwd": "$CWD",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Write",
+  "tool_use_id": "toolu_write_1",
+  "tool_input": {
+    "file_path": "$FILE",
+    "content": "fresh\r\nfile\r\n"
+  },
+  "tool_response": {
+    "type": "create",
+    "filePath": "$FILE",
+    "content": "fresh\r\nfile\r\n",
+    "originalFile": null,
+    "structuredPatch": []
+  }
+}

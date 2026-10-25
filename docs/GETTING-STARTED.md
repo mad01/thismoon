@@ -316,6 +316,7 @@ you want them):
 | `deps.this` | deps | 7429 |
 | `events.this` | events | 7430 |
 | `kof.this` | keeper-of-facts | 7431 |
+| `moondb.this` | moondb | 7433 |
 | `present.this` | present | 7423 |
 | `speak.this` | speak | 7425 |
 | `status.this` | status | 7426 |

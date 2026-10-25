@@ -41,6 +41,7 @@ jobs:
         run: |
           required='
             services/keeper-of-facts
+            services/moondb
             services/events
             services/deps
             services/present

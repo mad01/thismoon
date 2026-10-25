@@ -1,9 +1,9 @@
 # The memory stack
 
 Every agent session starts with an empty context window. On a machine running
-the fleet, six stores carry what one session learned into the next. Five of
-them ship here or are set up from the examples here. The sixth, auto memory,
-is built into Claude Code. Each store answers one question. The two that
+the fleet, seven stores carry what one session learned into the next. Six of
+them ship here or are set up from the examples here. The seventh, auto
+memory, is built into Claude Code. Each store answers one question. The two that
 matter at a predictable moment, agent-memory and kof, don't wait for the
 agent to remember them: belt's hooks put them in front of the agent at
 session start and after a search.
@@ -23,6 +23,7 @@ every hook in depth is in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md
 | worklog | where a task stands | `~/code/worklog/` | `worklog` CLI, MCP | the `/worklog` skill |
 | handoff | what the next session needs to pick this one up | `~/.handoff/` | the `/handoff` skill | the next session reads the file |
 | events | what actually happened | `~/.local/share/events/` | `events` CLI, MCP, web | you query it; nothing is injected |
+| moondb | which turn and prompt wrote a line, and what else that turn changed | `~/.local/state/moondb/` | `moondb` CLI, MCP, web | the agent asks with `moondb_why`; nothing is injected |
 
 ## Claude Code auto memory
 
@@ -75,7 +76,7 @@ machines and across agents.
 Codex gets no SessionStart hook in the reference setup, so its instruction
 file (`AGENTS.md`) has to tell it to read the index.
 
-## keeper-of-facts, worklog, handoff and events
+## keeper-of-facts, worklog, handoff, events and moondb
 
 - kof holds claims about code, not about you. Each assertion is one
   sentence pinned to a hashed file line range. `kof check` flips it stale
@@ -98,11 +99,18 @@ file (`AGENTS.md`) has to tell it to read the index.
   audit trails, on one queryable timeline. Nothing from it is injected; you
   query it with `events_query` or browse `events.this`. See
   [services/events/README.md](../services/events/README.md).
+- moondb holds the edits between commits. Claude Code hooks run
+  `moondb record` on every prompt, every file edit and every stop, so each
+  edit is stored with its before and after content, the turn and prompt
+  behind it, and later the commit it landed in. Nobody writes to it by
+  hand. The agent reads it on demand: `moondb_why` names the turn that
+  wrote a line, and `moondb_turn` shows what else that turn changed. See
+  [services/moondb/README.md](../services/moondb/README.md).
 
 ## Keeping the stores private
 
-None of these stores needs a git host. kof and events never leave the
-machine. The other three can stay local too, or sync through a Google Drive
+None of these stores needs a git host. kof, events and moondb never leave
+the machine. The other three can stay local too, or sync through a Google Drive
 folder that only your account can see. A git remote is one option among
 these, not a requirement.
 

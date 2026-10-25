@@ -1,0 +1,84 @@
+# operating moondb
+
+moondb records every file edit a Claude Code session makes between commits.
+Each edit keeps its before and after content and the turn and prompt that
+produced it. It also keeps the session, the agent, and the commit it later
+landed in. `moondb why <path>:<line>` answers which turn wrote a line.
+
+## how it runs
+
+A single `moondb serve` process is the only writer. It owns the store, drains
+the spool, derives each edit, links edits to commits, and serves the JSON API
+plus a read-only web page on localhost (default {{.BaseURL}}). Machines
+usually also route http://moondb.this to serve via the local domain front
+door. If the localhost port answers but the .this host does not, the router
+is the problem, not this service.
+
+Capture runs in Claude Code hooks, not in serve. Each hook pipes its payload
+into `moondb record`, which writes an envelope to the spool and exits 0
+within about 200 ms, printing nothing on stdout. So capture keeps working
+while serve is down: envelopes wait in the spool and serve ingests them when
+it comes back.
+
+Everything else is a thin HTTP client over the API: the query commands
+(`why`, `history`, `sessions`) and the MCP server, a stdio shim spawned as
+`moondb mcp`. The shim being up says nothing about the service: every tool
+call is a live HTTP request to serve, and it fails when serve is down.
+
+## where state lives
+
+The workdir, default {{.StorePath}} (override with MOONDB_WORKDIR), holds:
+
+- `log/NNNNNN.jsonl`: the append-only record log, one record per line
+- `objects/<ab>/<sha>.gz`: file contents, prompts and patches, gzipped and
+  named by the SHA-256 of their bytes
+- `spool/`: envelopes the hooks wrote that serve has not ingested yet
+- `sessions/`: small per-session state files the hooks read back
+
+Files are 0600. Nothing is rewritten in place, so the log is safe to read
+directly. moondb never writes into a repository's `.git`. Config lives at
+`~/.config/moondb/config.toml`; `capture.enabled = false` there turns
+capture off on this machine.
+
+## failure modes
+
+Start with `moondb doctor`: one command runs the reachability, store, and
+version-skew checks below and prints one line per check, FAIL lines naming
+the cause. The paragraphs here cover what each failure means.
+
+Connection refused, or "moondb serve not reachable": serve is not running.
+t-man typically supervises it. Run `t-man list` to see whether the moondb
+agent exists, then `t-man restart moondb`. For a quick test without t-man,
+`moondb serve` in a spare terminal also works. Capture is not lost meanwhile.
+
+`spool/` keeps growing: serve is down or cannot ingest. Check `t-man logs
+moondb --stderr` for the envelope it refused.
+
+`why` returns method `none`, or `history` is empty: usually not an error.
+Either the hooks are not wired on this machine, `capture.enabled` is false,
+the file matched a `capture.exclude` glob, or the edit predates capture. Ask
+`moondb sessions` whether anything was recorded recently. A `content` answer
+is a text match, not proof: check its candidates before trusting it.
+
+An edit with `before_source: unknown`: serve could not reconstruct the file
+as it was before the edit. The patch hunks are still recorded.
+
+An unattributed delta: the file on disk differed from what the tool call
+should have produced. A formatter hook, a human edit, or a Bash command
+changed it. This is expected, not corruption.
+
+## version skew
+
+`moondb version -o json` reports the build of the binary on PATH. `GET
+{{.BaseURL}}/version` reports the build the running serve process came from.
+When the `commit` values differ, an old process is still serving after an
+upgrade: restart it (`t-man restart moondb`) and compare again. `moondb
+doctor` runs this comparison as its version-skew check.
+
+## first moves
+
+1. `moondb doctor`: serve reachable, store readable, and version skew in one pass
+2. If serve is unreachable: `t-man list`, then `t-man restart moondb`
+3. On version skew: `t-man restart moondb`, then `moondb doctor` again
+4. `moondb sessions`, to confirm capture is recording on this machine
+5. List the workdir's `spool/`: files piling up there mean serve is not draining
