@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/mad01/thismoon/compare/moondb/v0.1.0...moondb/v0.2.0) (2026-10-25)
+
+
+### Features
+
+* **moondb:** session list as a landing page with stored turn totals ([#286](https://github.com/mad01/thismoon/issues/286)) ([c118ee0](https://github.com/mad01/thismoon/commit/c118ee0f6c5755e4cd0b903c4091cf6bd0c8df95))
+
+
+### Bug Fixes
+
+* **moondb:** cache only complete locations, keep symlink walks for existing paths ([#289](https://github.com/mad01/thismoon/issues/289)) ([b483a17](https://github.com/mad01/thismoon/commit/b483a174a1b29ebe011d54a425b0d562d332ce9d))
+* **moondb:** skip Bash-changed files a command left clean ([#288](https://github.com/mad01/thismoon/issues/288)) ([4e96a3f](https://github.com/mad01/thismoon/commit/4e96a3fc994566369543d647cbd0db9ce3593e09))
+
 ## 0.1.0 (2026-10-25)
 
 
