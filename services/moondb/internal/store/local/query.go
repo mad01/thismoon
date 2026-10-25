@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
@@ -11,17 +12,21 @@ import (
 // The read side of the index. Every method here only reads, so the store
 // serves them under a read lock, and every listing is a fresh slice.
 
-func (ix *index) sessionList(f store.SessionFilter) []store.Session {
-	out := []store.Session{}
+// sessionList walks every session newest first by start: Since selects by
+// last activity, which a session started long ago can still have, so no
+// start time ends the walk early.
+func (ix *index) sessionList(f store.SessionFilter) []store.SessionSummary {
+	out := []store.SessionSummary{}
 	for i := len(ix.sessionOrder) - 1; i >= 0; i-- {
 		s := ix.sessionOrder[i]
-		if s.StartedAt.Before(f.Since) {
-			break
-		}
 		if _, ok := ix.sessionRepos[s.ID][f.Repo]; f.Repo != "" && !ok {
+			continue // cheaper than a summary, and f.Keeps would drop it
+		}
+		sum := ix.summary(s)
+		if !f.Keeps(sum) {
 			continue
 		}
-		out = append(out, *s)
+		out = append(out, sum)
 		if f.Limit > 0 && len(out) == f.Limit {
 			break
 		}
@@ -34,17 +39,52 @@ func (ix *index) sessionDetail(id string) (store.SessionDetail, error) {
 	if !ok {
 		return store.SessionDetail{}, fmt.Errorf("session %s: %w", id, store.ErrNotFound)
 	}
+	sum := ix.summary(s)
+	return store.SessionDetail{SessionSummary: sum, Turns: ix.sessionTurns(id)}, nil
+}
+
+// summary adds up a session's records in the index; it reads no chunk.
+func (ix *index) summary(s *store.Session) store.SessionSummary {
+	edits := ix.editsBySession[s.ID]
+	return store.Summarize(*s, ix.sessionTurns(s.ID), func(yield func(*store.Edit) bool) {
+		for _, r := range edits {
+			if !yield(&r.v) {
+				return
+			}
+		}
+	})
+}
+
+// sessionTurns copies a session's turns out in Seq order.
+func (ix *index) sessionTurns(id string) []store.Turn {
 	turns := ix.turnsBySession[id]
-	d := store.SessionDetail{
-		Session:   *s,
-		Turns:     make([]store.Turn, 0, len(turns)),
-		Worktrees: ix.sessionWorktrees[id].sorted(),
-		EditCount: len(ix.editsBySession[id]),
-	}
+	out := make([]store.Turn, 0, len(turns))
 	for _, t := range turns {
-		d.Turns = append(d.Turns, *t)
+		out = append(out, *t)
 	}
-	return d, nil
+	return out
+}
+
+// turnsWithoutTotals scans every turn: the totals backfill asks once a
+// tick, and a scan of the in-memory turns costs less than an index kept in
+// step with every put.
+func (ix *index) turnsWithoutTotals(version, limit int) []store.Turn {
+	out := []store.Turn{}
+	for _, t := range ix.turns {
+		if store.NeedsTotals(*t, version) {
+			out = append(out, *t)
+		}
+	}
+	store.SortForTotals(out, func(id string) time.Time {
+		if s, ok := ix.sessions[id]; ok {
+			return s.StartedAt
+		}
+		return time.Time{}
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
 }
 
 func (ix *index) turnDetail(id string) (store.TurnDetail, error) {

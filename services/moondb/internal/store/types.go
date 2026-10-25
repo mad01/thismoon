@@ -11,7 +11,9 @@
 package store
 
 import (
+	"cmp"
 	"errors"
+	"slices"
 	"time"
 )
 
@@ -26,8 +28,17 @@ type Session struct {
 	Harness string `json:"harness"`
 	// Cwd is the working directory the session started in.
 	Cwd string `json:"cwd"`
-	// Title is the harness's session title when it has one.
+	// Title is the harness's session title when it has one: the hook's
+	// session title, or the name or generated title a transcript line
+	// gives. OfferTitle decides which one it holds.
 	Title string `json:"title,omitempty"`
+	// TitleSource says where Title came from, which ranks it against the
+	// next title offered.
+	TitleSource TitleSource `json:"title_source,omitempty"`
+	// PromptLine is the first line of the first prompt serve saw for the
+	// session, kept short, so a listing can name the session without
+	// reading a chunk. It is filled once and never replaced.
+	PromptLine string `json:"prompt_line,omitempty"`
 	// Model is the model the session ran on when the harness said.
 	Model string `json:"model,omitempty"`
 	// TranscriptPath is the harness transcript file, kept so a turn's raw
@@ -35,6 +46,47 @@ type Session struct {
 	TranscriptPath string     `json:"transcript_path,omitempty"`
 	StartedAt      time.Time  `json:"started_at"`
 	EndedAt        *time.Time `json:"ended_at,omitempty"`
+}
+
+// TitleSource is where a session title came from.
+type TitleSource string
+
+const (
+	// TitleNamed is a name the person gave the session: a transcript
+	// agent-name line.
+	TitleNamed TitleSource = "named"
+	// TitleGenerated is a title the harness generated: a transcript
+	// ai-title line, or the hook's session title, whose origin the hook
+	// does not say.
+	TitleGenerated TitleSource = "generated"
+)
+
+// known is s, or TitleGenerated for any value but TitleNamed: an empty
+// source on a title stored before sources existed, or on an envelope
+// that did not say, ranks as generated.
+func (s TitleSource) known() TitleSource {
+	if s == TitleNamed {
+		return TitleNamed
+	}
+	return TitleGenerated
+}
+
+// OfferTitle sets *title and *source to candidate from src when it
+// outranks the title they hold, and reports whether it did. A name the
+// person gave outranks a generated title, and within one rank the first
+// title seen stays; an empty candidate changes nothing. Every path that
+// names a session goes through it: the hook's title, the live turn close,
+// the totals backfill and an import.
+func OfferTitle(title *string, source *TitleSource, candidate string, src TitleSource) bool {
+	if candidate == "" {
+		return false
+	}
+	src = src.known()
+	if *title != "" && (src == TitleGenerated || source.known() == TitleNamed) {
+		return false
+	}
+	*title, *source = candidate, src
+	return true
 }
 
 // TurnStatus is where a turn is in its life.
@@ -64,6 +116,123 @@ type Turn struct {
 	Status           TurnStatus `json:"status"`
 	StartedAt        time.Time  `json:"started_at"`
 	EndedAt          *time.Time `json:"ended_at,omitempty"`
+	// Totals is what the turn's trace adds up to, computed by serve when
+	// the turn closes. It is nil on an open turn, and on a turn stored
+	// before totals existed until serve's totals backfill reaches it. Replace it
+	// whole, never change it in place: a backend may share it.
+	Totals *TurnTotals `json:"totals,omitempty"`
+}
+
+// TurnTotals is what a turn's trace adds up to, kept on the Turn so a
+// listing reads it without the transcript chunk. The *MS fields split
+// WallMS by what was running. It holds no cost: a reader prices Usage with
+// the table it has, so a price change reprices every stored turn.
+type TurnTotals struct {
+	// Version is the trace build that computed the totals. serve computes
+	// them again when its own version is newer.
+	Version   int   `json:"version"`
+	WallMS    int64 `json:"wall_ms"`
+	ModelMS   int64 `json:"model_ms"`
+	ToolMS    int64 `json:"tool_ms"`
+	HarnessMS int64 `json:"harness_ms"`
+	UserMS    int64 `json:"user_ms"`
+	// Usage is the tokens the turn's model calls billed, one entry per
+	// model and rate, sorted (MergeUsage).
+	Usage      []ModelUsage `json:"usage,omitempty"`
+	ModelCalls int          `json:"model_calls"`
+	ToolCalls  int          `json:"tool_calls"`
+	ToolErrors int          `json:"tool_errors"`
+}
+
+// Tokens counts what model calls billed, by kind. Thinking is part of
+// Output and is not billed again.
+type Tokens struct {
+	Input        int64 `json:"input"`
+	CacheWrite5m int64 `json:"cache_write_5m"`
+	CacheWrite1h int64 `json:"cache_write_1h"`
+	CacheRead    int64 `json:"cache_read"`
+	Output       int64 `json:"output"`
+	Thinking     int64 `json:"thinking,omitempty"`
+}
+
+// Add returns the sum of t and o.
+func (t Tokens) Add(o Tokens) Tokens {
+	return Tokens{
+		Input:        t.Input + o.Input,
+		CacheWrite5m: t.CacheWrite5m + o.CacheWrite5m,
+		CacheWrite1h: t.CacheWrite1h + o.CacheWrite1h,
+		CacheRead:    t.CacheRead + o.CacheRead,
+		Output:       t.Output + o.Output,
+		Thinking:     t.Thinking + o.Thinking,
+	}
+}
+
+// Prompt is a call's whole prompt: input plus cache writes and reads.
+func (t Tokens) Prompt() int64 {
+	return t.Input + t.CacheWrite5m + t.CacheWrite1h + t.CacheRead
+}
+
+// Total is every billed token: the prompt plus the output.
+func (t Tokens) Total() int64 { return t.Prompt() + t.Output }
+
+// ModelUsage is the tokens of the model calls that bill at one rate: one
+// model, at one speed, in one inference region, on one side of the
+// model's long-prompt threshold. Those are what set a call's price
+// besides its tokens, so a reader can price the entry with any table.
+type ModelUsage struct {
+	Model string `json:"model"`
+	// Speed is "fast" for fast mode, "" for standard speed.
+	Speed string `json:"speed,omitempty"`
+	// Geo is the usage's inference_geo: "us" for US-only inference.
+	Geo string `json:"geo,omitempty"`
+	// Long is set for calls whose prompt was over the model's long-prompt
+	// threshold in the price table that computed the entry.
+	Long   bool   `json:"long,omitempty"`
+	Tokens Tokens `json:"tokens"`
+}
+
+// sameRate reports whether u and o bill at one rate.
+func (u ModelUsage) sameRate(o ModelUsage) bool {
+	return u.Model == o.Model && u.Speed == o.Speed && u.Geo == o.Geo && u.Long == o.Long
+}
+
+// cmpRate orders usage entries by model, then speed, region and tier.
+func cmpRate(a, b ModelUsage) int {
+	return cmp.Or(
+		cmp.Compare(a.Model, b.Model),
+		cmp.Compare(a.Speed, b.Speed),
+		cmp.Compare(a.Geo, b.Geo),
+		compareBool(a.Long, b.Long),
+	)
+}
+
+func compareBool(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case a:
+		return 1
+	}
+	return -1
+}
+
+// MergeUsage sums usage lists into a new one with one entry per rate,
+// sorted by model, then speed, region and tier. It never changes its
+// arguments, so it is safe on a stored turn's Usage.
+func MergeUsage(lists ...[]ModelUsage) []ModelUsage {
+	var out []ModelUsage
+	for _, list := range lists {
+		for _, u := range list {
+			i := slices.IndexFunc(out, u.sameRate)
+			if i < 0 {
+				out = append(out, u)
+				continue
+			}
+			out[i].Tokens = out[i].Tokens.Add(u.Tokens)
+		}
+	}
+	slices.SortFunc(out, cmpRate)
+	return out
 }
 
 // Location is where an edited file sits in git, resolved from the file's
@@ -310,12 +479,10 @@ type CommitLink struct {
 	At        time.Time `json:"at"`
 }
 
-// SessionDetail is a session with what it did.
+// SessionDetail is a session with what it did: its summary and its turns.
 type SessionDetail struct {
-	Session
-	Turns     []Turn   `json:"turns"`
-	Worktrees []string `json:"worktrees"`
-	EditCount int      `json:"edit_count"`
+	SessionSummary
+	Turns []Turn `json:"turns"`
 }
 
 // TurnDetail is a turn with everything recorded under it.
@@ -327,12 +494,43 @@ type TurnDetail struct {
 	CommitLinks []CommitLink        `json:"commit_links"`
 }
 
+// NeedsTotals reports whether a turn lacks totals from trace version
+// version: it is closed or failed, and has none or older ones. An open
+// turn gets its totals when it closes.
+func NeedsTotals(t Turn, version int) bool {
+	return t.Status != TurnOpen && (t.Totals == nil || t.Totals.Version < version)
+}
+
+// SortForTotals puts turns in the order TurnsWithoutTotals lists them: the
+// newest session first by its start, then by session id, and a session's
+// turns by Seq, so the totals backfill reads a session's lines in the
+// order it wrote them. started gives a session's StartedAt.
+func SortForTotals(turns []Turn, started func(sessionID string) time.Time) {
+	slices.SortFunc(turns, func(a, b Turn) int {
+		return cmp.Or(
+			started(b.SessionID).Compare(started(a.SessionID)),
+			cmp.Compare(b.SessionID, a.SessionID),
+			cmp.Compare(a.Seq, b.Seq),
+			cmp.Compare(a.ID, b.ID),
+		)
+	})
+}
+
 // SessionFilter narrows a Sessions listing. Zero values mean no filter.
 type SessionFilter struct {
 	// Repo keeps sessions with at least one edit in the repo.
-	Repo  string
+	Repo string
+	// Since keeps sessions last active at or after it
+	// (SessionSummary.LastActivityAt), whenever they started.
 	Since time.Time
 	Limit int
+}
+
+// Keeps reports whether f's Repo and Since keep a summarized session.
+// Limit is the listing's to apply.
+func (f SessionFilter) Keeps(sum SessionSummary) bool {
+	return !sum.LastActivityAt.Before(f.Since) &&
+		(f.Repo == "" || slices.Contains(sum.Repos, f.Repo))
 }
 
 // EditQuery narrows an Edits listing. Zero values mean no filter; results

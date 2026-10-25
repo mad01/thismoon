@@ -77,6 +77,37 @@ const (
 	TraceTopSpans = 10
 )
 
+// Turn totals. serve stores each turn's trace totals when the turn closes;
+// a turn stored before that, or by an older trace build, gets them from the
+// totals backfill, which runs while the spool is empty, a batch per tick,
+// newest session first and a session's turns in order. A batch reads one
+// transcript chunk per turn, so it stays small to keep the next envelope
+// waiting at most a moment.
+const (
+	// TotalsBackfillTurns is how many turns one totals backfill batch
+	// tries, computed or not, and how many sessions it fills a missing
+	// prompt line for.
+	TotalsBackfillTurns = 20
+	// TotalsBackfillEvery is how often the totals backfill runs a batch.
+	TotalsBackfillEvery = time.Second
+)
+
+// Session listing. The listing reads records only, never a chunk, so the
+// fields a row shows are kept on the records or counted from them.
+const (
+	// SessionIdleAfter is how long a session goes without a recorded turn
+	// start, turn end or edit before the listing calls it ended rather
+	// than running.
+	SessionIdleAfter = 10 * time.Minute
+	// OpenTurnStaleAfter is how long an open last turn keeps a session
+	// running without other activity. The harness sends no Stop for a turn
+	// the person interrupted, so such a turn stays open for good.
+	OpenTurnStaleAfter = 12 * time.Hour
+	// SessionPromptLineRunes caps a prompt line: the one a session keeps
+	// for its title and the one a trace shows per turn.
+	SessionPromptLineRunes = 100
+)
+
 // Prompt caching bills a cache write and a cache read as a multiple of the
 // model's input rate (the claude-api skill, shared/prompt-caching.md,
 // Economics). A model whose cache read rate differs names it in its row.
@@ -151,6 +182,10 @@ func standardRates(input, output float64) Rates {
 // here that the model id starts with, followed by a dated snapshot
 // ("-20251101"), a provider version ("@...") or a context marker ("[1m]").
 // The config file's [prices."<model id>"] tables override or extend it.
+//
+// A change to a LongPromptTokens threshold here needs a trace.TotalsVersion
+// bump: a stored turn's usage keeps the side of the threshold it was
+// computed on, and only the totals backfill computes it again.
 var DefaultPrices = map[string]Price{
 	"claude-fable-5-1": {
 		Rates: RatesFrom(10, 50, 0.25), USMultiplier: USOnlyMultiplier,

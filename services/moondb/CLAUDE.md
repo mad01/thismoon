@@ -15,13 +15,14 @@ the same store.
 ```
 moondb/
   cmd/moondb/          - entrypoint (delegates to internal/cli)
-  facts.go             - port, workdir, capture caps and budgets, default excludes, trace limits, model prices, agentdoc.Facts
+  facts.go             - port, workdir, capture caps and budgets, default excludes, trace limits, totals backfill pace, listing status rule, model prices, agentdoc.Facts
   embed.go             - embeds operating.md for `moondb docs`
   internal/
     cli/               - cobra: root, serve, record, import, mcp, why, history, sessions, trace, doctor, docs, version
     record/            - the capture hook: payload decode, envelopes, observed read, HEAD blob, transcript tail, Bash diffs, turn-edge snapshots, per-session state
-    importer/          - the transcript backfill: transcript parse, turns and edits as envelopes, file-history originals
+    importer/          - the transcript import: transcript parse, turns and edits as envelopes, file-history originals
     spool/             - envelope format, atomic writer, drain reader
+    ingest/            - serve's spool drain: envelopes to records, turn totals at close, the totals backfill, session titles
     derive/            - before and after content per Edit, snapshot records, unattributed deltas
     patch/             - forward and reverse patch apply, hunk context checks, line endings
     gitlink/           - git blob ids and commit links
@@ -117,7 +118,7 @@ session has no snapshot of the worktree in its `<sid>.snap`, none is
 taken. If it has one, a clean worktree gets an empty snapshot: its files
 match HEAD again.
 
-### Import: backfill from transcripts
+### Import: past sessions from their transcripts
 
 `moondb import` reads the Claude Code session transcripts under
 `~/.claude/projects` written within `--since` (default 30d) and writes the
@@ -176,8 +177,8 @@ spool and its session state. It reads `objects/` only to skip shipping a
 chunk the store already has.
 
 - `moondb serve` drains the spool (a file watch plus a 1 s poll), derives
-  each Edit, appends the records, and serves the web page, the JSON API,
-  `/version` and `/webkit/`.
+  each Edit, appends the records, runs the totals backfill while the spool
+  is empty, and serves the web page, the JSON API, `/version` and `/webkit/`.
 - `moondb mcp` holds no state: a thin HTTP client to the serve API on
   `localhost:<port>`. If serve is down, tools return an unreachable error
   that names `moondb doctor`.
@@ -301,6 +302,61 @@ serve computes traces on read. `query.Service` caches them in memory by
 transcript chunk, edit count and turn times, at most `TraceCacheTurns`, the
 least recently read dropped first.
 
+### Turn totals: what the session listing reads
+
+A listing that computed traces would read every transcript chunk. So ingest
+stores each closed or failed turn's trace totals on its Turn record when the
+turn closes, live and imported alike (`Turn.Totals`, `internal/ingest/totals.go`).
+A `TurnTotals` holds:
+
+- the milliseconds per class: wall, model, tool, harness and user
+- the model calls, tool calls and failed tool calls
+- the tokens by kind per rate bucket: model, speed, US-only geo and the
+  long-prompt tier
+
+It never holds a cost. The listing prices the stored tokens on read, so a
+price change or a `[prices]` table reprices every row. The buckets keep
+the rate modifiers, so the read-time price equals the trace's.
+
+A turn stored before totals existed, or by an older trace build
+(`TurnTotals.Version` below `trace.TotalsVersion`), gets them from the
+totals backfill. serve runs it on the ingest goroutine every
+`TotalsBackfillEvery`, and only while the spool is empty. A batch tries at
+most `TotalsBackfillTurns` turns, computed or not, so a waiting envelope
+waits a moment at most. It takes the newest session first and a session's
+turns in Seq order. A computed turn no longer qualifies, so the totals
+backfill is idempotent. When a batch finds nothing left to try after
+earlier work, serve logs how many turns it computed.
+
+A turn whose chunk cannot be read while the store answers a ping is logged
+and skipped until serve restarts. So is a turn that panics: each turn runs
+under a recover. A failed store write ends the batch and skips nothing, and
+so does a failed chunk read while the ping fails too. The next batch tries
+that turn again. Bump `trace.TotalsVersion` when a trace change alters the
+totals, and the totals backfill recomputes the stored ones. A turn-open
+that moves a closed turn's start back recomputes its totals; a transcript
+it cannot read then clears them for the totals backfill.
+
+Sessions get their names on the same paths. `Session.PromptLine` is the
+first line of a prompt that has text once tags are gone, cut to
+`SessionPromptLineRunes` (`trace.PromptLine`, which a trace's turn prompts
+use too). It comes from the session's first turn, in Seq order, that has a
+prompt, and it is filled once and never replaced. A turn open and a turn
+close fill it when it is empty, and the totals backfill fills it for every
+session that had none when serve started.
+
+`Session.Title` follows one rule on every path (`store.OfferTitle`). A
+name the person gave (a transcript `agent-name` line) outranks a generated
+title. A generated title is an `ai-title` line or the hook's session title,
+whose origin the hook does not say, and it outranks the prompt line. Within
+one rank the first title seen wins. `Session.TitleSource` (`named` or
+`generated`) keeps the rank, and a title stored before sources existed
+ranks as generated. Every envelope offers the hook's title. A turn close
+offers the title its lines give, even when it changes nothing on the turn,
+so a replayed close makes up a lost fill. The totals backfill offers the
+title of older turns, and an import offers the transcript's own pick by the
+same rule.
+
 A turn's transcript chunk keeps the last `MaxTranscriptBytes` of its lines,
 cut at a line boundary, so a longer turn loses its head. A turn opens on its
 prompt, so a timeline whose first line is an assistant line or a tool result
@@ -318,9 +374,14 @@ everything it records in its own store.
 ## Data model & storage
 
 ```go
-Session{ ID, Harness, Cwd, Title, Model, TranscriptPath, StartedAt, EndedAt }
+Session{ ID, Harness, Cwd, Title, TitleSource /* named | generated */,
+         PromptLine, Model, TranscriptPath, StartedAt, EndedAt }
 Turn{ ID, SessionID, Seq, PromptChunk, FinalChunk, TranscriptChunk,
-      TranscriptOffset, Status /* open | closed | failed */, StartedAt, EndedAt }
+      TranscriptOffset, Status /* open | closed | failed */, StartedAt, EndedAt,
+      Totals *TurnTotals }
+TurnTotals{ Version, WallMS, ModelMS, ToolMS, HarnessMS, UserMS,
+            Usage []ModelUsage{ Model, Speed, Geo, Long, Tokens },
+            ModelCalls, ToolCalls, ToolErrors }
 Edit{ ID, ToolUseID, SessionID, TurnID, AgentID, AgentType, Tool, At,
       Location{ Repo, Worktree, Canonical, Branch, Head }, Path,
       Kind /* create | update | delete | unknown */,
@@ -382,8 +443,8 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 
 - `GET  /`                      : webkit-chromed web page, read-only (see Web page below)
 - `GET  /app.js`                : the page's client script
-- `GET  /api/sessions`          : sessions, newest first, each with `duration_ms` from its turn times (no cost: that needs every transcript chunk)
-- `GET  /api/sessions/{id}`     : one session with its turns
+- `GET  /api/sessions`          : one page of session rows, newest first (`sessions`), the totals of every session the filters keep (`window`), and the repositories the time window's sessions edited with their session counts (`repos`); `since`, `repo` and `limit` filter
+- `GET  /api/sessions/{id}`     : one session with its turns and counts, plus `summary`, its listing row
 - `GET  /api/sessions/{id}/trace`: the session's trace: every turn's spans, gaps and totals, the user gaps between turns, session totals
 - `GET  /api/turns/{id}`        : one turn with its edits, unattributed deltas and snapshots, plus `trace_totals` when its transcript lines hold a timeline
 - `GET  /api/edits`             : edits, newest first, narrowed by repo, worktree, path, blob id, since and limit
@@ -399,6 +460,37 @@ There is no write endpoint. The spool is the only way records get in. A
 request the query rejects (a relative worktree, a file outside the worktree)
 answers 400.
 
+A session row comes from the index alone, never a chunk
+(`internal/server/sessions.go`):
+
+- `title`: `Session.Title`, else `Session.PromptLine`, else the last
+  segment of the cwd, else the session id. It is never empty.
+- `status`: `running` while the last turn start, turn end or edit is within
+  `SessionIdleAfter`, or the last turn is open and that activity is within
+  `OpenTurnStaleAfter`. Otherwise `ended`.
+- `started_at`, `last_activity_at`: the session's start, and its latest
+  turn start, turn end or edit.
+- `ended_at`: once the session is `ended`, its last turn's end (an open
+  turn ends where it started). Absent while it runs.
+- `transcript_path`: the transcript file the session record keeps.
+- `duration_ms`: the first turn's start to the last turn's end. An open
+  turn ends where it started.
+- `turn_count`, `edit_count`, `file_count` (distinct worktree and path) and
+  `agent_count` (distinct agents that edited, the main conversation among
+  them).
+- `tokens`: the sum of the stored turn totals, main conversation only.
+- `cost`, `unpriced`: the stored tokens priced on read. `cost` is absent
+  when no model is priced, never a guessed zero.
+- `repos`, `repo_names` (each repo's last two path segments) and
+  `worktrees`.
+
+`since` keeps the sessions active in the window: last active at or after
+it, whenever they started. Rows stay ordered and grouped by the day they
+started. `window` adds up every session the filters keep, past the limit,
+whole: sessions, turns, edits, distinct files, tokens and cost. `repos`
+ignores the `repo` filter, so a page can offer every repo of the time
+window.
+
 ## Web page
 
 The page is one static shell (`internal/server/shell.html`) and one script
@@ -408,16 +500,24 @@ Colours come only from webkit roles, so light and dark both follow the
 theme. The query string picks one of four views. The `?session=` form is the URL the MCP tools
 return, so keep it stable.
 
-- `/`: sessions, newest first, with the turn and edit counts and the repos
-  each one touched. A repo filter and a since filter map to the
-  `/api/sessions` query parameters and stay in the URL.
-- `/?session=<id>`: a Trace section, then the session's worktrees and its
-  turns in order, each with the prompt's first line, status, edit count and
-  the agents seen. The Trace section has a totals strip (wall, model, tool,
-  tokens, cost) and one timeline lane per turn with a row each for model,
-  tool and subagent bars in the webkit series colours, a failed tool call in
-  red. Each lane is scaled to its own turn. A bar's hover title gives its
-  duration, tokens and cost, and clicking it opens the turn.
+- `/`: the sessions active in the last 7 days unless `since` says
+  otherwise (`since=any` lifts the bound), grouped by the day they started,
+  newest first.
+  A row has a repo badge, the title as the link, a running or ended dot
+  with how long ago the session was last active and how long it ran, then
+  its turn, edit, file and agent counts and its cost. A window switch and
+  repo chips (`repo`) sit above a strip that adds the window up. `Show
+  more` grows `limit`. The filters stay in the URL.
+- `/?session=<id>`: the title, repo badges, status, run time and start
+  time, then a Trace section, the turns in order and the worktrees. Each
+  turn has the prompt's first line, status, edit count and the agents
+  seen. The session id, cwd, harness, model and transcript path sit last,
+  in a closed "Session details" disclosure. The Trace section has a totals
+  strip (wall, model, tool, tokens, cost) and one timeline lane per turn
+  with a row each for model, tool and subagent bars in the webkit series
+  colours, a failed tool call in red. Each lane is scaled to its own turn.
+  A bar's hover title gives its duration, tokens and cost, and clicking it
+  opens the turn.
 - `/?turn=<id>`: the full prompt and final message with fixation reading,
   the agents (main conversation or subagent type), and the edits grouped by
   worktree, then path. Each edit shows its tool, kind, agent, time, before
@@ -443,11 +543,11 @@ the chunk.
 ```bash
 moondb serve [--port 7433] [--workdir ~/.local/state/moondb]
 moondb record                  # one hook payload on stdin; wired by the hooks, not run by hand
-moondb import [--since 30d] [--dry-run] [--force] [--json]   # backfill from Claude Code transcripts
+moondb import [--since 30d] [--dry-run] [--force] [--json]   # import past sessions from their transcripts
 moondb mcp                     # stdio MCP shim over serve
 moondb why <path>:<line>       # the Edit, turn, prompt, session and commit behind one line
 moondb history <path>          # the recorded edits of a path, newest first
-moondb sessions                # recorded sessions, newest first, with their duration
+moondb sessions                # recorded sessions, newest first, with their title and duration
 moondb trace <session-id> [--json]   # time and cost totals, the longest tool calls, the most expensive model calls
 moondb doctor                  # serve reachable, store readable, version skew
 moondb docs                    # print the operating doc
@@ -467,7 +567,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 - `moondb_why(path, line)`: the Edit behind one line, with its turn, prompt, session, agent and commit link, or ranked candidates when only the content matched
 - `moondb_history(path)`: the recorded edits of a path, newest first
 - `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links
-- `moondb_sessions()`: recorded sessions, newest first
+- `moondb_sessions()`: recorded sessions, newest first, each with its title, status, times, counts, tokens and cost
 - `moondb_trace(id)`: one session's time split (model, tool, harness, user), tokens by kind and cost, with the longest tool calls and the most expensive model calls
 - `moondb_doctor()`: the same checks as `moondb doctor`, returned as JSON, for a client that can call a tool but has no shell
 

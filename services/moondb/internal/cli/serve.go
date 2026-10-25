@@ -67,11 +67,13 @@ func runServe(_ *cobra.Command, _ []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	table := trace.NewPrices(prices)
 	ing := &ingest.Ingester{
-		Store: st,
-		Spool: &spool.Reader{Dir: filepath.Join(flagWorkdir, moondb.SpoolDirName)},
-		Now:   time.Now,
-		Logf:  log.Printf,
+		Store:  st,
+		Spool:  &spool.Reader{Dir: filepath.Join(flagWorkdir, moondb.SpoolDirName)},
+		Now:    time.Now,
+		Logf:   log.Printf,
+		Prices: table,
 	}
 	go func() {
 		if err := ing.Run(ctx); err != nil && ctx.Err() == nil {
@@ -79,10 +81,15 @@ func runServe(_ *cobra.Command, _ []string) error {
 		}
 	}()
 
-	svc := &query.Service{Store: st, Prices: trace.NewPrices(prices)}
+	return listen(ctx, server.New(st, &query.Service{Store: st, Prices: table}, buildinfo.Get()))
+}
+
+// listen serves s on the loopback port until ctx ends, then gives
+// in-flight requests shutdownTimeout to finish.
+func listen(ctx context.Context, s *server.Server) error {
 	srv := &http.Server{
 		Addr:              listenAddr(flagPort),
-		Handler:           server.New(st, svc, buildinfo.Get()).Handler(),
+		Handler:           s.Handler(),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 	go func() {

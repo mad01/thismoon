@@ -298,8 +298,8 @@ func TestImportTurns(t *testing.T) {
 	}
 	s := got["p1:open"].Session
 	want := spool.SessionRef{
-		ID: "sess-1", Cwd: w.cwd, Title: "fixture session", Model: "model-a",
-		TranscriptPath: w.transcript("sess-1"),
+		ID: "sess-1", Cwd: w.cwd, Title: "fixture session", TitleSource: store.TitleNamed,
+		Model: "model-a", TranscriptPath: w.transcript("sess-1"),
 	}
 	if s != want || got["p1:open"].Harness != "claude-code" {
 		t.Errorf("session ref %+v harness %q, want %+v", s, got["p1:open"].Harness, want)

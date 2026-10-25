@@ -19,9 +19,9 @@ into `moondb record`, which writes an envelope to the spool and exits 0
 within about 200 ms, printing nothing on stdout. At a turn's start and stop
 it also snapshots the worktrees in play, within 2 s. So capture keeps working
 while serve is down: envelopes wait in the spool and serve ingests them when
-it comes back. `moondb import` backfills from the Claude Code transcripts
-through the same spool, so it too needs serve running before the store
-shows anything.
+it comes back. `moondb import` brings in past sessions from their
+transcripts through the same spool, so it too needs serve running before
+the store shows anything.
 
 Everything else is a thin HTTP client over the API: the query commands
 (`why`, `history`, `sessions`, `trace`) and the MCP server, a stdio shim spawned as

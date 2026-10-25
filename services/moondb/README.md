@@ -84,9 +84,9 @@ turn edge.
 ```bash
 moondb why <path>:<line>     # the edit, turn, prompt and commit behind one line
 moondb history <path>        # every recorded edit of a file, newest first
-moondb sessions              # recorded sessions, newest first, with how long each ran
+moondb sessions              # recorded sessions, newest first, with their titles and how long each ran
 moondb trace <session-id>    # where a session's time went and what it cost
-moondb import --dry-run      # what a backfill from Claude Code transcripts would record
+moondb import --dry-run      # what an import of past session transcripts would record
 moondb doctor                # is serve up, is the store readable, is the build current
 ```
 
@@ -94,7 +94,7 @@ For example, `moondb why services/events/internal/store/dedupe.go:42` names
 the turn whose prompt led to line 42, the session and agent that made the
 edit, and the commit it landed in.
 
-To cover the time before the hooks were wired, backfill the last 30 days with
+To cover the time before the hooks were wired, import the last 30 days with
 `moondb import`. It reads the session transcripts Claude Code keeps under
 `~/.claude/projects` and spools the turns and edits the hooks would have
 recorded, so serve must be running to take them in. Sessions the store
@@ -131,21 +131,32 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 | `moondb_why(path, line)` | The edit, turn, prompt, session and commit behind one line |
 | `moondb_history(path)` | Every recorded edit of a file, newest first |
 | `moondb_turn(id)` | One turn: prompt, final message, edits, unattributed deltas, snapshots |
-| `moondb_sessions()` | Recorded sessions, newest first |
+| `moondb_sessions()` | Recorded sessions, newest first, with title, status, counts and cost |
 | `moondb_trace(id)` | One session's time and cost: totals, the longest tool calls, the most expensive model calls |
 | `moondb_doctor()` | Run the `moondb doctor` checks and return the report |
 
 ### Web page
 
 Open `http://moondb.this/` (or `http://localhost:7433/`) for a read-only web
-UI. It lists sessions, filtered by repo and age. A session shows its trace
-above its turns: a strip of totals, then a timeline lane per turn with a bar
-for each model call, tool call and subagent. Hover a bar for its duration,
-tokens and cost, and click it to open the turn. A turn shows its prompt, final message, agents, every edit as a diff,
-and the snapshots taken at its start and end.
-Click an added line to ask why it's there. A file view shows the file as it
-is today with the turn and agent behind each line, plus its recorded
-history.
+UI. The front page lists the sessions active in the last 7 days, grouped
+by the day they started, newest first. Each row names the session and its
+repo, and says whether it still runs and when it was last active. Its
+turn, edit, file and agent counts sit beside its cost. Switch the window
+to 24 hours, 30 days or any time, and pick a repo chip to see one repo. A
+strip above the list adds up the sessions, turns, edits, files and cost in
+view.
+
+A session opens on its title, repos, status and run time. Its trace comes
+next: a strip of totals, then a timeline lane per turn with a bar for each
+model call, tool call and subagent. Hover a bar for its duration, tokens
+and cost, and click it to open the turn. The turns and worktrees follow,
+and the session id and paths sit in a closed "Session details" block at
+the end.
+
+A turn shows its prompt, final message, agents, every edit as a diff, and
+the snapshots taken at its start and end. Click an added line to ask why
+it's there. A file view shows the file as it is today with the turn and
+agent behind each line, plus its recorded history.
 
 ## Configuration
 

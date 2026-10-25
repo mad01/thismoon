@@ -120,7 +120,7 @@ func TestSessionsListsSummariesNewestFirst(t *testing.T) {
 		t.Errorf("repos %v worktrees %v", newest.Repos, newest.Worktrees)
 	}
 	if newest.Title != "build the server" {
-		t.Errorf("title = %q, want the session record embedded", newest.Title)
+		t.Errorf("title = %q, want the session's harness title", newest.Title)
 	}
 }
 

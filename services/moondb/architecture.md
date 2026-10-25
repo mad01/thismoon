@@ -27,7 +27,8 @@ moondb why | history | sessions | trace ──HTTP──▶ serve
 ```
 cmd/moondb/         entrypoint, delegates to internal/cli
 facts.go            port, workdir, caps and budgets, default excludes, trace
-                    limits, model prices, agentdoc.Facts
+                    limits, totals backfill pace, listing status rule,
+                    model prices, agentdoc.Facts
 internal/
   cli/              Cobra commands: serve, record, import, mcp, why,
                     history, sessions, trace, doctor, docs, version
@@ -35,11 +36,13 @@ internal/
                     observed read and blob id, HEAD content, transcript
                     tail, Bash diffs, turn-edge snapshots, per-session
                     state, the 200 ms and 2 s budgets
-  importer/         the transcript backfill: parse a session transcript
+  importer/         the transcript import: parse a session transcript
                     and its subagent transcripts, map turns and edits to
                     envelopes, take large files' originals from the file
                     history
   spool/            envelope format, atomic writer, drain reader
+  ingest/           serve's spool drain: envelopes to records, turn totals
+                    at close, the totals backfill, session titles
   derive/           before and after content per Edit, snapshot records,
                     unattributed deltas
   patch/            forward and reverse patch apply, hunk context checks,
@@ -146,6 +149,29 @@ multipliers. A trace depends only on the turn's chunk, its edits and its
 times, so `query` caches it in memory under those, at most 512 turns. A
 session's trace puts its turns in order and adds the user time between
 them.
+
+Turn totals: a list of sessions cannot afford a trace per turn, so ingest
+keeps each closed turn's totals on its Turn record when the turn closes.
+They hold the time per class, the call counts, and the tokens per model
+and rate bucket, never a cost. Turns stored before that, or by an older
+trace build, get their totals from the totals backfill. It runs on the
+ingest goroutine while the spool is empty, a small batch a second, newest
+session first and a session's turns in order. It tries a fixed number of
+turns per batch, computed or not, and stops a batch at a store failure. A
+turn it cannot read or that panics is skipped until serve restarts. It
+logs how many turns it computed once none are left, and it also fills the
+prompt line of every session that had none when serve started.
+
+The session list reads records only. A row's title is the session's
+harness title, else the first line of its first prompt serve saw, else the
+last segment of its cwd, else its id. One rule picks the harness title on
+every path: a name the person gave outranks a generated title, and within
+one rank the first title seen stays. A row is running while its last
+activity is under 10 minutes old, or its last turn is open and the
+activity is under 12 hours old. Its cost prices the stored tokens on read,
+so a price change reprices every row. The time window keeps the sessions
+active in it, grouped by the day they started. The answer also adds up the
+whole filtered window and lists the window's repos for the page's chips.
 
 ## Storage
 

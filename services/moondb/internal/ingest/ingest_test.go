@@ -16,6 +16,7 @@ import (
 	"github.com/mad01/thismoon/services/moondb/internal/ingest/faketest"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 const (
@@ -212,10 +213,18 @@ func TestTurnOpenThenClose(t *testing.T) {
 		t.Errorf("%d envelopes left in the spool, want 0", n)
 	}
 	s := f.session("s1")
-	if s.Harness != "claude-code" || s.Cwd != worktree || !s.StartedAt.Equal(at(1)) {
+	if s.Harness != "claude-code" || s.Cwd != worktree || !s.StartedAt.Equal(at(1)) ||
+		s.PromptLine != "fix the bug" {
 		t.Errorf("session = %+v", s)
 	}
 	tr := f.turn("p1").Turn
+	// The transcript line is no timeline event, so the totals are the wall
+	// time alone.
+	if tr.Totals == nil || tr.Totals.WallMS != (4*time.Minute).Milliseconds() ||
+		tr.Totals.Version != trace.TotalsVersion || tr.Totals.ModelCalls != 0 {
+		t.Errorf("turn totals = %+v, want the 4 minute wall time at the current version", tr.Totals)
+	}
+	tr.Totals = nil
 	want := store.Turn{
 		ID: "p1", SessionID: "s1", Seq: 1, Status: store.TurnClosed, TranscriptOffset: 10,
 		PromptChunk:     spool.ChunkKey([]byte("fix the bug")),

@@ -6,13 +6,18 @@ import (
 	"strings"
 
 	"github.com/mad01/thismoon/services/moondb"
+	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 // tokensPerMillion is the unit prices are quoted in.
 const tokensPerMillion = 1_000_000
 
-// speedFast is the usage speed of a call made in fast mode.
-const speedFast = "fast"
+// speedFast is the usage speed of a call made in fast mode, speedStandard
+// the speed of every other call.
+const (
+	speedFast     = "fast"
+	speedStandard = "standard"
+)
 
 // geoUS is the usage inference_geo of a call made with US-only inference.
 const geoUS = "us"
@@ -99,6 +104,54 @@ func familyOf(model, id string) bool {
 // never reported as zero. A call that billed no tokens costs zero whatever
 // its model.
 func (p Prices) Cost(c Call) *float64 {
+	return p.cost(c, p.longPrompt(c))
+}
+
+// longPrompt reports whether c's prompt is over its model's long-prompt
+// threshold, so it bills at the model's long rates.
+func (p Prices) longPrompt(c Call) bool {
+	price, ok := p.Lookup(c.Model)
+	return ok && price.LongPromptTokens > 0 && c.Tokens.Prompt() > price.LongPromptTokens
+}
+
+// Usage groups calls by the rate they bill at, the shape a Turn stores: one
+// entry per model, speed, region and long-prompt tier, sorted. A call that
+// billed no tokens adds nothing, and a standard speed is left out.
+func (p Prices) Usage(calls []Call) []store.ModelUsage {
+	entries := make([]store.ModelUsage, 0, len(calls))
+	for _, c := range calls {
+		if c.Tokens.Total() == 0 {
+			continue
+		}
+		speed := c.Speed
+		if speed == speedStandard {
+			speed = ""
+		}
+		entries = append(entries, store.ModelUsage{
+			Model: c.Model, Speed: speed, Geo: c.Geo, Long: p.longPrompt(c), Tokens: c.Tokens,
+		})
+	}
+	return store.MergeUsage(entries)
+}
+
+// UsageCost prices stored usage with this table: the USD of the entries
+// with a price, nil when none has one, and the models of the entries
+// without one, sorted. An entry that billed no tokens counts for neither.
+func (p Prices) UsageCost(usage []store.ModelUsage) (cost *float64, unpriced []string) {
+	var t Totals
+	for _, u := range usage {
+		if u.Tokens.Total() == 0 {
+			continue
+		}
+		c := Call{Model: u.Model, Tokens: u.Tokens, Speed: u.Speed, Geo: u.Geo}
+		t.addCost(p.cost(c, u.Long), u.Model)
+	}
+	return t.Cost, t.Unpriced
+}
+
+// cost prices c at the model's long rates when long is set and the model
+// has a long-prompt tier, at its standard rates otherwise.
+func (p Prices) cost(c Call, long bool) *float64 {
 	t := c.Tokens
 	if t.Total() == 0 {
 		return new(0.0)
@@ -112,7 +165,7 @@ func (p Prices) Cost(c Call) *float64 {
 		return nil
 	}
 	rates := price.Rates
-	if price.LongPromptTokens > 0 && t.Prompt() > price.LongPromptTokens {
+	if long && price.LongPromptTokens > 0 {
 		rates = price.Long
 	}
 	usd := (float64(t.Input)*rates.Input +

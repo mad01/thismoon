@@ -10,15 +10,18 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
+	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 // session is one transcript parsed: its turns, its file-tool calls, and the
 // file-history versions it lists.
 type session struct {
 	id, cwd, model string
-	// name is the title the person gave the session, aiTitle the one the
-	// harness generated; the person's wins.
-	name, aiTitle string
+	// title is the session's title by store.OfferTitle over its agent-name
+	// and ai-title lines in transcript order, and titleSource the kind of
+	// line it came from.
+	title       string
+	titleSource store.TitleSource
 	// path is the main transcript; subagents counts the subagent
 	// transcripts read beside it.
 	path      string
@@ -29,13 +32,6 @@ type session struct {
 	order     []*call
 	history   history
 	stats     parseStats
-}
-
-func (s *session) title() string {
-	if s.name != "" {
-		return s.name
-	}
-	return s.aiTitle
 }
 
 // turn is one prompt and what followed it in the main transcript, up to the
@@ -186,9 +182,11 @@ func (r *reader) line(raw []byte, end int64) bool {
 	case typeAssistant:
 		r.assistant(e)
 	case typeAgentName:
-		r.s.name = e.AgentName
+		name := strings.TrimSpace(e.AgentName)
+		store.OfferTitle(&r.s.title, &r.s.titleSource, name, store.TitleNamed)
 	case typeAITitle:
-		r.s.aiTitle = e.AITitle
+		generated := strings.TrimSpace(e.AITitle)
+		store.OfferTitle(&r.s.title, &r.s.titleSource, generated, store.TitleGenerated)
 	case typeSnapshot, typeDelta:
 		r.s.history.add(e, r.s.cwd)
 	default:

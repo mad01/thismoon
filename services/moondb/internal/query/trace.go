@@ -3,17 +3,12 @@ package query
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
-
-// promptLineRunes caps the prompt line a session trace carries per turn.
-const promptLineRunes = 120
 
 // TurnTrace computes one turn's trace from its transcript chunk. The result
 // is cached by the chunk's key together with the turn's times and edit
@@ -60,9 +55,14 @@ func (s *Service) SessionTrace(ctx context.Context, id string) (trace.SessionTra
 	return trace.BuildSession(id, turns), nil
 }
 
-// promptLine is the first non-blank line of a prompt, cut to
-// promptLineRunes; "" when the chunk is missing. A label is never worth
-// failing the trace over.
+// UsageCost prices stored usage with the Service's table: the USD of the
+// priced part, nil when no part has a price, and the unpriced models.
+func (s *Service) UsageCost(usage []store.ModelUsage) (cost *float64, unpriced []string) {
+	return s.Prices.UsageCost(usage)
+}
+
+// promptLine is a stored prompt's trace.PromptLine; "" when the chunk is
+// missing. A label is never worth failing the trace over.
 func (s *Service) promptLine(ctx context.Context, chunk string) string {
 	if chunk == "" {
 		return ""
@@ -71,20 +71,7 @@ func (s *Service) promptLine(ctx context.Context, chunk string) string {
 	if err != nil {
 		return ""
 	}
-	for line := range strings.Lines(string(data)) {
-		if line = strings.TrimSpace(line); line != "" {
-			return cutRunes(line, promptLineRunes)
-		}
-	}
-	return ""
-}
-
-// cutRunes cuts s to n runes, marking a cut with an ellipsis.
-func cutRunes(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	return string([]rune(s)[:n]) + "…"
+	return trace.PromptLine(string(data))
 }
 
 // traceKey names everything a turn's trace is built from but the price

@@ -123,28 +123,24 @@ func appendNew[T any](s *Store, list *[]T, v T, id func(T) string) error {
 	return nil
 }
 
-// Sessions lists sessions newest first by StartedAt.
-func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.Session, error) {
+// Sessions lists sessions newest first by StartedAt, each summarized and
+// kept when f keeps it.
+func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.SessionSummary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []store.Session
+	out := []store.SessionSummary{}
 	for _, v := range s.sessions {
-		if v.StartedAt.Before(f.Since) {
-			continue
+		if sum := s.summary(v); f.Keeps(sum) {
+			out = append(out, sum)
 		}
-		if f.Repo != "" && !slices.ContainsFunc(s.edits, func(e store.Edit) bool {
-			return e.SessionID == v.ID && e.Repo == f.Repo
-		}) {
-			continue
-		}
-		out = append(out, v)
 	}
-	slices.SortFunc(out, func(a, b store.Session) int { return b.StartedAt.Compare(a.StartedAt) })
+	slices.SortFunc(out, func(a, b store.SessionSummary) int {
+		return b.StartedAt.Compare(a.StartedAt)
+	})
 	return limit(out, f.Limit), nil
 }
 
-// Session loads a session with its turns in Seq order, the worktrees it
-// edited in, and its edit count.
+// Session loads a session with its summary and its turns in Seq order.
 func (s *Store) Session(_ context.Context, id string) (store.SessionDetail, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -152,24 +148,45 @@ func (s *Store) Session(_ context.Context, id string) (store.SessionDetail, erro
 	if !ok {
 		return store.SessionDetail{}, fmt.Errorf("faketest: session %s: %w", id, store.ErrNotFound)
 	}
-	d := store.SessionDetail{Session: v}
+	return store.SessionDetail{SessionSummary: s.summary(v), Turns: s.sessionTurns(id)}, nil
+}
+
+// TurnsWithoutTotals lists up to limit closed or failed turns whose totals
+// are missing or older than version, in store.SortForTotals order.
+func (s *Store) TurnsWithoutTotals(_ context.Context, version, n int) ([]store.Turn, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []store.Turn
+	for _, t := range s.turns {
+		if store.NeedsTotals(t, version) {
+			out = append(out, t)
+		}
+	}
+	store.SortForTotals(out, func(id string) time.Time { return s.sessions[id].StartedAt })
+	return limit(out, n), nil
+}
+
+// summary adds up one session's records; the caller holds mu.
+func (s *Store) summary(v store.Session) store.SessionSummary {
+	return store.Summarize(v, s.sessionTurns(v.ID), func(yield func(*store.Edit) bool) {
+		for i := range s.edits {
+			if s.edits[i].SessionID == v.ID && !yield(&s.edits[i]) {
+				return
+			}
+		}
+	})
+}
+
+// sessionTurns lists one session's turns in Seq order; the caller holds mu.
+func (s *Store) sessionTurns(id string) []store.Turn {
+	var out []store.Turn
 	for _, t := range s.turns {
 		if t.SessionID == id {
-			d.Turns = append(d.Turns, t)
+			out = append(out, t)
 		}
 	}
-	slices.SortFunc(d.Turns, func(a, b store.Turn) int { return cmp.Compare(a.Seq, b.Seq) })
-	for _, e := range s.edits {
-		if e.SessionID != id {
-			continue
-		}
-		d.EditCount++
-		if e.Worktree != "" && !slices.Contains(d.Worktrees, e.Worktree) {
-			d.Worktrees = append(d.Worktrees, e.Worktree)
-		}
-	}
-	slices.Sort(d.Worktrees)
-	return d, nil
+	slices.SortFunc(out, func(a, b store.Turn) int { return cmp.Compare(a.Seq, b.Seq) })
+	return out
 }
 
 // Turn loads a turn with what was recorded under it, each newest first.

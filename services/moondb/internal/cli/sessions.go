@@ -29,7 +29,8 @@ and edits each made, how long it ran from the first prompt to the last Stop,
 and which repositories it touched. moondb trace <session-id> shows where
 that time went and what it cost.
 
---since takes an RFC 3339 time or a span before now: 90m, 24h, 7d.`,
+--since keeps the sessions active since then, whenever they started, and
+takes an RFC 3339 time or a span before now: 90m, 24h, 7d.`,
 	Args: cobra.NoArgs,
 	RunE: runSessions,
 }
@@ -38,7 +39,7 @@ func init() {
 	sessionsCmd.Flags().
 		StringVar(&sessionsRepo, "repo", "", "keep sessions that edited this repository")
 	sessionsCmd.Flags().
-		StringVar(&sessionsSince, "since", "", "keep sessions started after this time or span")
+		StringVar(&sessionsSince, "since", "", "keep sessions active since this time or span")
 	sessionsCmd.Flags().
 		IntVar(&sessionsLimit, "limit", 0, "most sessions to list (default: the server's)")
 	sessionsCmd.Flags().BoolVar(&sessionsJSON, "json", false, "print the API answer as JSON")
@@ -80,7 +81,7 @@ func printSessions(w io.Writer, sessions []server.SessionSummary) {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			when(s.StartedAt), short(s.ID), fmtCount(s.TurnCount), fmtCount(s.EditCount),
 			trace.FormatDuration(s.DurationMS),
-			orDash(strings.Join(s.Repos, ",")), orDash(sessionLabel(s.Title, s.Cwd)))
+			orDash(strings.Join(s.Repos, ",")), orDash(s.Title))
 	}
 	_ = tw.Flush()
 }

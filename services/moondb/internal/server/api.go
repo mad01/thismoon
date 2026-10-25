@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -29,119 +28,12 @@ const chunkCacheControl = "max-age=31536000, immutable"
 // chunkKey is the shape of a chunk key: lowercase hex SHA-256.
 var chunkKey = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// SessionSummary is a session as the listing shows it: the session record
-// plus what it touched. It costs one detail and one edit lookup per row,
-// which the default limit bounds. It carries no cost: that needs every
-// turn's transcript chunk read, which GET /api/sessions/{id}/trace does for
-// one session.
-type SessionSummary struct {
-	store.Session
-	// Repos are the repository identities the session edited, sorted.
-	Repos []string `json:"repos"`
-	// Worktrees are the checkout roots the session edited, sorted.
-	Worktrees []string `json:"worktrees"`
-	TurnCount int      `json:"turn_count"`
-	EditCount int      `json:"edit_count"`
-	// DurationMS runs from the first turn's recorded start to the last
-	// turn's recorded end, an open turn ending where it started. It reads
-	// the turn records only, no transcript lines, so it can fall short of
-	// the session trace's wall time, whose turn spans stretch to a line
-	// written after the recorded end.
-	DurationMS int64 `json:"duration_ms"`
-}
-
 // TurnView is a turn as GET /api/turns/{id} answers it: the turn with
 // everything recorded under it, plus its trace totals when its transcript
 // lines put anything on the timeline.
 type TurnView struct {
 	store.TurnDetail
 	TraceTotals *trace.Totals `json:"trace_totals,omitempty"`
-}
-
-func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	since, limit, err := s.parseWindow(q)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, err)
-		return
-	}
-	ctx := r.Context()
-	list, err := s.store.Sessions(ctx, store.SessionFilter{
-		Repo: q.Get("repo"), Since: since, Limit: limit,
-	})
-	if err != nil {
-		writeBackendErr(w, err)
-		return
-	}
-	sums := make([]SessionSummary, 0, len(list))
-	for _, sess := range list {
-		sum, err := s.summarize(ctx, sess.ID)
-		if err != nil {
-			writeBackendErr(w, err)
-			return
-		}
-		sums = append(sums, sum)
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"sessions": sums})
-}
-
-// summarize loads one session's detail and edits into its listing row.
-func (s *Server) summarize(ctx context.Context, id string) (SessionSummary, error) {
-	d, err := s.store.Session(ctx, id)
-	if err != nil {
-		return SessionSummary{}, err
-	}
-	edits, err := s.store.Edits(ctx, store.EditQuery{SessionID: id})
-	if err != nil {
-		return SessionSummary{}, err
-	}
-	repos := []string{}
-	for _, e := range edits {
-		if e.Repo != "" && !slices.Contains(repos, e.Repo) {
-			repos = append(repos, e.Repo)
-		}
-	}
-	slices.Sort(repos)
-	worktrees := d.Worktrees
-	if worktrees == nil {
-		worktrees = []string{}
-	}
-	return SessionSummary{
-		Session:    d.Session,
-		Repos:      repos,
-		Worktrees:  worktrees,
-		TurnCount:  len(d.Turns),
-		EditCount:  d.EditCount,
-		DurationMS: turnsSpan(d.Turns).Milliseconds(),
-	}, nil
-}
-
-// turnsSpan is the time from the first turn's start to the last turn's
-// end; an open turn ends where it started.
-func turnsSpan(turns []store.Turn) time.Duration {
-	var first, last time.Time
-	for _, t := range turns {
-		end := t.StartedAt
-		if t.EndedAt != nil && t.EndedAt.After(end) {
-			end = *t.EndedAt
-		}
-		if first.IsZero() || t.StartedAt.Before(first) {
-			first = t.StartedAt
-		}
-		if end.After(last) {
-			last = end
-		}
-	}
-	return last.Sub(first)
-}
-
-func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
-	d, err := s.store.Session(r.Context(), r.PathValue("id"))
-	if err != nil {
-		writeBackendErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, d)
 }
 
 func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {

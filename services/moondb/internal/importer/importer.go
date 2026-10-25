@@ -1,4 +1,4 @@
-// Package importer backfills moondb from Claude Code session transcripts:
+// Package importer brings past sessions into moondb from their transcripts:
 // the logic behind `moondb import`. It reads each transcript under the
 // projects directory and writes the envelopes `moondb record` would have
 // written had the hooks been wired, so serve ingests them with no import
