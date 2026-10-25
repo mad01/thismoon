@@ -19,6 +19,7 @@ spec:
     label: present-serve
     workdir: ~/.config/present
     listen: 7423
+    local: [events]
     egress: [via SRT_RUN_ALLOW_DOMAINS]
     reads: [~/code/bin, workdir]
     writes: [workdir, temp]

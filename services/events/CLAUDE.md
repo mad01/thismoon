@@ -75,6 +75,13 @@ Event{ ID, Time, Source, Component, Level, Title, Message, Tags, Data }
 - `Source` and `Title` are required. `Level` is `info` (default), `warn`, or
   `error`. `Component`, `Message`, `Tags`, `Data` (opaque JSON) are optional.
 
+## Sandbox access
+
+`spec.access` in `service-info.yaml` declares what `events serve` may reach
+under srt. `make sandbox-settings` renders it to
+`recipes/events/events.srt.json`, which CI diffs, so change the manifest and
+never the JSON. Authoring guide: `docs/SANDBOXING.md`, "Declaring access".
+
 ## Build / install / test
 
 ```bash

@@ -5,10 +5,10 @@
 Every sandboxed process in the fleet runs under a hand-written srt settings
 file. The JSON says what the kernel enforces, but not why: which entry is the
 listening port, which read is the binary, which host is a machine's own.
-Reviewers had to reverse-engineer intent from six lists, and the same rules
-(no bare `*` host, `~` read-denied, no write into the policy directory) were
-re-checked by a shell test after the fact instead of being impossible to
-write.
+Reviewers had to reverse-engineer intent from six lists. The same rules (no
+bare `*` host, `~` read-denied, no write into the policy directory) were
+re-checked by a shell test after the fact, when they could have been
+impossible to write in the first place.
 
 On a machine, the question flips: what does this process actually get once
 srt-run adds the hosts from `SRT_RUN_ALLOW_DOMAINS` and any local widening?

@@ -175,6 +175,14 @@ It refuses to overwrite an existing `service-info.yaml` so an accidental add
 can't clobber hand-written metadata, and is restricted to directories inside
 a registered source root.
 
+## Sandbox access
+
+`spec.access` in `service-info.yaml` declares what the catalog-web agent
+(`catalog web`) may reach under srt. `make sandbox-settings` renders it to
+`recipes/catalog/catalog-web.srt.json`, which CI diffs, so change the
+manifest and never the JSON. Authoring guide: `docs/SANDBOXING.md`,
+"Declaring access".
+
 ## Build / install / test
 
 ```sh

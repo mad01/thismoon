@@ -22,7 +22,9 @@ ralph merges the recipe with the identity `thismoon/events`. The package
   --workdir ~/.local/share/events`. Idempotent; `run = "always"` self-heals
   if the agent was removed. Guarded on t-man being on PATH.
 - **`dotfiles.events_srt_settings`**: links `events.srt.json` to
-  `~/.config/srt/events.json`. Sandbox note: serve runs under srt with
+  `~/.config/srt/events.json`. The file is rendered from `spec.access` in
+  `services/events/service-info.yaml` by `make sandbox-settings`; edit the
+  manifest, not the JSON. Sandbox note: serve runs under srt with
   loopback only, `$HOME` reads denied except `~/code/bin` and the store, and
   writes to the store and the temp dirs. `t-man logs events --source
   sandbox` shows the denial ledger; `docs/SANDBOXING.md` covers triage.

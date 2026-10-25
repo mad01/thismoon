@@ -26,7 +26,9 @@ and ralph merges the recipe with the identity `thismoon/moondb`. The package
   ~/.local/state/moondb`. Idempotent; `run = "always"` self-heals if the
   agent was removed. Guarded on t-man being on PATH.
 - **`dotfiles.moondb_srt_settings`**: links `moondb.srt.json` to
-  `~/.config/srt/moondb.json`.
+  `~/.config/srt/moondb.json`. The file is rendered from `spec.access` in
+  `services/moondb/service-info.yaml` by `make sandbox-settings`; edit the
+  manifest, not the JSON.
 - **`pre_uninstall`**: removes the t-man agent before cleanup deletes the
   binary.
 

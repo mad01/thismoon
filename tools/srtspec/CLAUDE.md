@@ -1,8 +1,8 @@
 # srtspec, access manifests to srt settings (CLI)
 
 Go CLI that renders sandbox access manifests to the srt
-(anthropics/sandbox-runtime) settings JSON the kernel enforces, checks a
-committed settings file for drift, and explains the effective policy srt-run
+(anthropics/sandbox-runtime) settings JSON the kernel enforces. It also checks
+a committed settings file for drift and explains the effective policy srt-run
 launches a label under. The manifest schema lives in `kit/access` so the
 catalog validates the same block. Why it exists: `why.md`. Flow and
 invariants: `architecture.md`. The full authoring guide is the "Declaring

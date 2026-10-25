@@ -31,7 +31,10 @@ MCP server).
   plist holds no secret. Idempotent; `run = "always"` self-heals if the
   agent was removed. Guarded on t-man being on PATH.
 - **`dotfiles.present_serve_srt_settings`**: links `present-serve.srt.json`
-  to `~/.config/srt/present-serve.json`, the serve agent's srt settings.
+  to `~/.config/srt/present-serve.json`, the serve agent's srt settings,
+  rendered from `spec.access` (label `present-serve`) in
+  `services/present/service-info.yaml` by `make sandbox-settings`. Edit the
+  manifest, not the JSON.
 - **`hooks.builds.present_chmod_mcp_wrapper`** — keeps `present-mcp-sandbox.sh`
   and `present-serve.sh` executable inside the sources cache (the overlay
   registers the wrapper, not the bare binary).
@@ -113,7 +116,8 @@ The `present serve` t-man agent runs under srt as well, with the label
 `present-serve.sh` sources `present-shared-env.sh` outside the sandbox, `cd`-s
 to `/`, and execs `~/code/bin/srt-run ~/.config/srt/present-serve.json
 ~/code/bin/present serve`. Its settings ship here as `present-serve.srt.json`,
-since nothing in them differs per machine:
+rendered from the component's `spec.access`, since nothing in them differs
+per machine:
 - **Loopback plus the shared host.** serve binds 7423 and posts to events
   (`allowLocalBinding: true`). The Share button pushes to the shared
   instance, whose host arrives through `SRT_RUN_ALLOW_DOMAINS` like the MCP

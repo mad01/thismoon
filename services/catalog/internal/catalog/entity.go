@@ -68,10 +68,9 @@ type Entity struct {
 var nameRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$`)
 
 // Validate reports the first problem with an entity, or nil if it is well
-// formed. Rules: known kind, valid name (<=63 chars), an owner, and — for
-// Components — a system link and, when declared, a valid spec.access. Whether
-// a Component must declare spec.access is CheckAccess's question, not this
-// one's.
+// formed. Rules: known kind, valid name (<=63 chars) and an owner. A Component
+// also needs a system link and, when declared, a valid spec.access. Whether a
+// Component must declare spec.access is CheckAccess's question, not this one's.
 func (e Entity) Validate() error {
 	switch e.Kind {
 	case KindSystem, KindComponent:

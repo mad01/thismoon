@@ -18,7 +18,9 @@ in its `overrides.toml`.
 
 Sandbox note: `catalog-web` runs under srt (`catalog-web.srt.json`, linked
 to `~/.config/srt/catalog-web.json` by `dotfiles.catalog_web_srt_settings`),
-loopback only. It reads `~/code` minus nested secret files plus
+loopback only. The file is rendered from `spec.access` (label `catalog-web`)
+in `services/catalog/service-info.yaml` by `make sandbox-settings`; edit the
+manifest, not the JSON. It reads `~/code` minus nested secret files plus
 `~/.config/catalog`, so the registry and every repo it lists must sit under
 those, link targets included. The add-component form can write only files
 named `service-info.yaml` under `~/code`. `t-man logs catalog-web --source
