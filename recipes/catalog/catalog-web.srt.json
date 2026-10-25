@@ -1,0 +1,23 @@
+{
+  "network": {
+    "allowedDomains": [],
+    "deniedDomains": [],
+    "allowLocalBinding": true
+  },
+  "filesystem": {
+    "denyRead": [
+      "~",
+      "~/code/**/.env",
+      "~/code/**/.env.*",
+      "~/code/**/*.pem",
+      "~/code/**/*.key"
+    ],
+    "allowRead": ["~/code", "~/.config/catalog"],
+    "allowWrite": [
+      "~/code/**/service-info.yaml",
+      "/private/tmp",
+      "/private/var/folders"
+    ],
+    "denyWrite": []
+  }
+}

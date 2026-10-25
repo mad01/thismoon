@@ -1,0 +1,18 @@
+{
+  "network": {
+    "allowedDomains": [],
+    "deniedDomains": [],
+    "allowLocalBinding": true
+  },
+  "enableWeakerNetworkIsolation": true,
+  "filesystem": {
+    "denyRead": ["~"],
+    "allowRead": ["~/code/bin", "~/.config/present"],
+    "allowWrite": [
+      "~/.config/present",
+      "/private/tmp",
+      "/private/var/folders"
+    ],
+    "denyWrite": []
+  }
+}

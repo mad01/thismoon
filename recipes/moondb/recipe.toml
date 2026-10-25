@@ -27,15 +27,31 @@ restart = "if command -v t-man >/dev/null && t-man status moondb >/dev/null 2>&1
 # binary it runs is removed (ralph disable thismoon/moondb && ralph up --enable-cleanup).
 pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove moondb 2>/dev/null; fi || true"]
 
+# srt settings for the serve agent, linked to ~/.config/srt/moondb.json. They
+# name no host and no machine path, so they ship beside the recipe
+# (docs/adr/0006, 2026-10-25 amendment). The store and its spool are both under
+# the workdir; `moondb why` runs git blame in the asking worktree, so reads also
+# cover the code roots (~/code, ~/.worktrees, the ralph sources cache) minus
+# nested secret files. Writes go to the workdir and the temp dirs; loopback only.
+[dotfiles.moondb_srt_settings]
+source = "moondb.srt.json"
+target = "~/.config/srt/moondb.json"
+action = "symlink"
+
 # Register `moondb serve` as a long-running launchd user agent via t-man. This
 # process is the single writer of the store and drains the spool the capture
 # hooks write. The hooks and the MCP server are wired by the consuming repo
 # (docs/adr/0006); both only reach serve over the spool or HTTP.
 # Idempotent; run = "always" keeps it registered and self-heals if it was removed.
+# It runs sandboxed (docs/SANDBOXING.md, "Sandboxing a t-man service"). Blame
+# shells out to git, which dies on an unreadable ~/.gitconfig, hence
+# GIT_CONFIG_GLOBAL=/dev/null. DEVELOPER_DIR points the /usr/bin/git shim at
+# the Command Line Tools when they are installed, because xcode-select may name
+# an Xcode under ~. builds.speak_chmod_scripts keeps srt-run executable.
 [hooks.builds.moondb_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name moondb -- $HOME/code/bin/moondb serve --port 7433 --workdir $HOME/.local/state/moondb; else echo 'moondb: skip service (t-man not on PATH; install t-man then run: t-man add --name moondb -- moondb serve --port 7433)'; fi",
+  "if command -v t-man >/dev/null; then set --; if [ -d /Library/Developer/CommandLineTools ]; then set -- --env DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi; t-man add --name moondb --env GIT_CONFIG_GLOBAL=/dev/null \"$@\" --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/moondb.json $HOME/code/bin/moondb serve --port 7433 --workdir $HOME/.local/state/moondb; else echo 'moondb: skip service (t-man not on PATH; install t-man then run: t-man add --name moondb -- moondb serve --port 7433)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/moondb"
 run = "always"
-depends_on = ["packages.moondb", "packages.t_man"]
+depends_on = ["packages.moondb", "packages.t_man", "builds.speak_chmod_scripts"]

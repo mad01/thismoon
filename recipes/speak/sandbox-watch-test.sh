@@ -191,6 +191,20 @@ expect_alert 'Sandbox: humanizer(18966) deny(1) sysctl-read hw.optional.neon_fp1
 expect_alert 'Sandbox: humanizer(18966) deny(1) sysctl-write kern.iossupportversion'
 expect_alert 'Sandbox: humanizer(18966) deny(1) file-read-data /Users/x/kern.iossupportversion'
 
+# Go's listen-backlog sysctl is silenced for any process, by exact key.
+expect_ignored 'Sandbox: moondb(123) deny(1) sysctl-read kern.ipc.somaxconn'
+expect_alert 'Sandbox: moondb(123) deny(1) sysctl-read kern.ipc.somaxconn2'
+expect_alert 'Sandbox: moondb(123) deny(1) sysctl-read kern.ipc.maxsockbuf'
+
+# The launch bash stats a t-man service's own std logs; nothing wider.
+expect_ignored 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/Library/Logs/events/stdout.log'
+expect_ignored 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/Library/Logs/keeper-of-facts/stderr.log'
+expect_alert 'Sandbox: bash(123) deny(1) file-read-data /Users/x/Library/Logs/events/stdout.log'
+expect_alert 'Sandbox: events(123) deny(1) file-read-metadata /Users/x/Library/Logs/events/stdout.log'
+expect_alert 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/Library/Logs/events/other.log'
+expect_alert 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/Library/Logs/a/b/stdout.log'
+expect_alert 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/.ssh/stdout.log'
+
 # A machine-local pattern can scope by label through the summary line, and a
 # broken pattern beside it does not disable the rest of the list.
 printf '%s\n' '# comment' '' '^humanizer · .* · file-read-data · /Users/[^/]+/\.cache/' '(' \

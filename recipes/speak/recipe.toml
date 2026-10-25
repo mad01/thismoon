@@ -66,8 +66,9 @@ depends_on = ["packages.speak", "packages.t_man", "builds.speak_chmod_scripts"]
 # ── srt-run: the sandbox launcher ──
 # `srt-run <settings-file> <argv...>` execs the command under srt with an
 # SRT_RUN=<label> marker that sandbox-watch attributes denials by. MCP
-# wrappers and t-man services exec it by this path; the per-process settings
-# (~/.config/srt/<tool>.json) come from the consuming repo. srt itself is a
+# wrappers and t-man services exec it by this path. The per-process settings
+# (~/.config/srt/<tool>.json) ship beside a service's recipe when they are
+# generic, from the consuming repo otherwise (docs/adr/0006). srt itself is a
 # mise tool the consuming repo declares (npm:@anthropic-ai/sandbox-runtime);
 # srt-run finds it through the mise shims dir.
 [dotfiles.srt_run]

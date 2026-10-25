@@ -27,16 +27,34 @@ restart = "if command -v t-man >/dev/null && t-man status keeper-of-facts >/dev/
 # binary it runs is removed (ralph disable thismoon/keeper-of-facts && ralph up --enable-cleanup).
 pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove keeper-of-facts 2>/dev/null; fi || true"]
 
+# srt settings for the serve agent, linked to
+# ~/.config/srt/keeper-of-facts.json. They name no host and no machine path, so
+# they ship beside the recipe (docs/adr/0006, 2026-10-25 amendment). Pins hash
+# lines in repos, so reads cover the code roots the fleet works in (~/code,
+# ~/.worktrees, the ralph sources cache) minus nested secret files, plus the
+# store. Writes go to the store and the temp dirs; loopback only. A pin outside
+# those roots reads as missing under the sandbox.
+[dotfiles.keeper_of_facts_srt_settings]
+source = "keeper-of-facts.srt.json"
+target = "~/.config/srt/keeper-of-facts.json"
+action = "symlink"
+
 # Register `kof serve` as a long-running launchd user agent via t-man. This
 # process owns the assertion store; the MCP server (registered through the
 # consuming repo's agent-sync servers.json) is a thin HTTP client to it.
 # serve auto-migrates a pre-rename ~/.local/share/keep store to this path on
 # start (MAD-269).
 # Idempotent; run = "always" keeps it registered and self-heals if it was removed.
+# It runs sandboxed (docs/SANDBOXING.md, "Sandboxing a t-man service"). Pins
+# shell out to git, which dies on an unreadable ~/.gitconfig, hence
+# GIT_CONFIG_GLOBAL=/dev/null. DEVELOPER_DIR points the /usr/bin/git shim at
+# the Command Line Tools when they are installed, because xcode-select may name
+# an Xcode under ~. recall's `claude -p` judge cannot run in the sandbox;
+# kof_query still works. builds.speak_chmod_scripts keeps srt-run executable.
 [hooks.builds.keeper_of_facts_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name keeper-of-facts -- $HOME/code/bin/kof serve --port 7431 --workdir $HOME/.local/share/kof; else echo 'kof: skip service (t-man not on PATH; install t-man then run: t-man add --name keeper-of-facts -- kof serve --port 7431)'; fi",
+  "if command -v t-man >/dev/null; then set --; if [ -d /Library/Developer/CommandLineTools ]; then set -- --env DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi; t-man add --name keeper-of-facts --env GIT_CONFIG_GLOBAL=/dev/null \"$@\" --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/keeper-of-facts.json $HOME/code/bin/kof serve --port 7431 --workdir $HOME/.local/share/kof; else echo 'kof: skip service (t-man not on PATH; install t-man then run: t-man add --name keeper-of-facts -- kof serve --port 7431)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/keeper-of-facts"
 run = "always"
-depends_on = ["packages.keeper_of_facts", "packages.t_man"]
+depends_on = ["packages.keeper_of_facts", "packages.t_man", "builds.speak_chmod_scripts"]

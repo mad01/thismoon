@@ -27,14 +27,26 @@ restart = "if command -v t-man >/dev/null && t-man status events >/dev/null 2>&1
 # binary it runs is removed (ralph disable thismoon/events && ralph up --enable-cleanup).
 pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove events 2>/dev/null; fi || true"]
 
+# srt settings for the serve agent, linked to ~/.config/srt/events.json. They
+# name no host and no machine path, so they ship beside the recipe
+# (docs/adr/0006, 2026-10-25 amendment): loopback only, reads denied under ~
+# except the binary and the store, writes to the store and the temp dirs.
+[dotfiles.events_srt_settings]
+source = "events.srt.json"
+target = "~/.config/srt/events.json"
+action = "symlink"
+
 # Register `events serve` as a long-running launchd user agent via t-man. This
 # process owns the per-source JSONL store; the MCP server (registered through
 # the consuming repo's agent-sync servers.json) and the CLI are thin HTTP clients
 # to it. Idempotent; run = "always" keeps it registered and self-heals if removed.
+# It runs sandboxed: the program is srt-run with the settings, then the command
+# (docs/SANDBOXING.md, "Sandboxing a t-man service"). builds.speak_chmod_scripts
+# keeps srt-run executable; ralph links dotfiles items before any build runs.
 [hooks.builds.events_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name events -- $HOME/code/bin/events serve --port 7430 --workdir $HOME/.local/share/events; else echo 'events: skip service (t-man not on PATH; install t-man then run: t-man add --name events -- events serve --port 7430)'; fi",
+  "if command -v t-man >/dev/null; then t-man add --name events --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/events.json $HOME/code/bin/events serve --port 7430 --workdir $HOME/.local/share/events; else echo 'events: skip service (t-man not on PATH; install t-man then run: t-man add --name events -- events serve --port 7430)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/events"
 run = "always"
-depends_on = ["packages.events", "packages.t_man"]
+depends_on = ["packages.events", "packages.t_man", "builds.speak_chmod_scripts"]
