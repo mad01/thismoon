@@ -19,9 +19,21 @@ and ralph merges the recipe with the identity `thismoon/moondb`. The package
 - **`packages.moondb.service`**: restarts the agent only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install, before registration.
-- **`hooks.builds.moondb_service`**: `t-man add --name moondb -- moondb serve
-  --port 7433 --workdir ~/.local/state/moondb`. Idempotent; `run = "always"`
-  self-heals if the agent was removed. Guarded on t-man being on PATH.
+- **`hooks.builds.moondb_service`**: `t-man add --name moondb --env
+  GIT_CONFIG_GLOBAL=/dev/null [--env DEVELOPER_DIR=…] --extra-log sandbox=…
+  -- srt-run ~/.config/srt/moondb.json moondb serve --port 7433 --workdir
+  ~/.local/state/moondb`. Idempotent; `run = "always"` self-heals if the
+  agent was removed. Guarded on t-man being on PATH.
+- **`dotfiles.moondb_srt_settings`**: links `moondb.srt.json` to
+  `~/.config/srt/moondb.json`.
+
+Sandbox note: serve runs under srt, loopback only. The store and the spool
+the capture hooks write both sit under the workdir, which is the only
+writable path besides the temp dirs. `moondb why` runs git blame in the
+asking worktree, so reads cover the code roots (`~/code`, `~/.worktrees`,
+the ralph sources cache) minus nested secret files, and git gets the same
+`GIT_CONFIG_GLOBAL` and `DEVELOPER_DIR` treatment as keeper-of-facts. A
+worktree outside those roots answers without blame.
 - **`pre_uninstall`**: removes the t-man agent before cleanup deletes the
   binary.
 

@@ -16,6 +16,14 @@ the consuming layers, keyed on the namespaced recipe name
 profile-gated role source withholds it for its machines with the same table
 in its `overrides.toml`.
 
+Sandbox note: `catalog-web` runs under srt (`catalog-web.srt.json`, linked
+to `~/.config/srt/catalog-web.json` by `dotfiles.catalog_web_srt_settings`),
+loopback only. It reads `~/code` minus nested secret files plus
+`~/.config/catalog`, so the registry and every repo it lists must sit under
+those, link targets included. The add-component form can write only files
+named `service-info.yaml` under `~/code`. `t-man logs catalog-web --source
+sandbox` shows the denial ledger.
+
 What stays in the consuming repo (machine wiring, per ADR-0006):
 
 - `~/.config/catalog/registry.yaml` symlink — which repos a machine catalogs

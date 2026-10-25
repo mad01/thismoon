@@ -17,9 +17,24 @@ ralph merges the recipe with the identity `thismoon/keeper-of-facts`. The packag
 - **`packages.keeper_of_facts.service`** — restarts the agent only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).
-- **`hooks.builds.keeper_of_facts_service`** — `t-man add --name keeper-of-facts -- kof serve
-  --port 7431 --workdir ~/.local/share/kof`. Idempotent; `run = "always"`
+- **`hooks.builds.keeper_of_facts_service`**: `t-man add --name keeper-of-facts
+  --env GIT_CONFIG_GLOBAL=/dev/null [--env DEVELOPER_DIR=…] --extra-log
+  sandbox=… -- srt-run ~/.config/srt/keeper-of-facts.json kof serve --port
+  7431 --workdir ~/.local/share/kof`. Idempotent; `run = "always"`
   self-heals if the agent was removed. Guarded on t-man being on PATH.
+- **`dotfiles.keeper_of_facts_srt_settings`**: links
+  `keeper-of-facts.srt.json` to `~/.config/srt/keeper-of-facts.json`.
+
+Sandbox note: serve runs under srt, loopback only. It reads the code roots
+the fleet works in (`~/code`, `~/.worktrees`, the ralph sources cache) minus
+nested `.env`, `*.pem` and `*.key` files, plus its store; it writes the store
+and the temp dirs. Pin resolution shells out to git, which dies on an
+unreadable `~/.gitconfig`, so the agent runs with `GIT_CONFIG_GLOBAL=/dev/null`.
+`DEVELOPER_DIR` points `/usr/bin/git` at the Command Line Tools when they
+are installed, since `xcode-select` may name an Xcode under `~`. Two
+consequences: a pin outside those roots reads as missing on `kof check`, and
+`kof_recall` fails (502, "fall back to kof_query") because its `claude -p`
+judge can't run in the sandbox.
 - **`pre_uninstall`** — removes the t-man agent before cleanup deletes the binary.
 
 ## What stays in dotfiles (private overlay)

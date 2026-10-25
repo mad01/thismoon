@@ -42,9 +42,12 @@ Three pieces, split along the recipe layering in
    `TMPDIR`, and runs `srt --settings <abs> -- env SRT_RUN=<label> <argv...>`.
    The label is the settings file's name (`~/.config/srt/present.json` gives
    `present`); `SRT_RUN_LABEL` overrides it.
-2. The settings file, `~/.config/srt/<label>.json`. The consuming repo
-   ships it as machine-private overlay. This repo ships none. srt fails
-   closed: a missing or invalid file exits 1 and the command never runs.
+2. The settings file, `~/.config/srt/<label>.json`. A file that is the same
+   on every machine ships beside its service's recipe here. One that
+   differs per machine ships from the consuming repo as a machine-private
+   overlay ([docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.md)).
+   srt fails closed: a missing or invalid file exits 1 and the command
+   never runs.
 3. A wrapper script that the MCP registration or t-man service runs. It
    resolves secrets outside the sandbox, runs `cd /`, scrubs the environment
    with `env -i` and an allow-list, and execs `srt-run`.
@@ -67,8 +70,8 @@ is the full version, with config and sharing secrets passed through.
 is the minimal one, with the settings file, the wrapper, and the agent-sync
 drop-in that registers it.
 
-t-man services use the same wrapper as their program: `t-man add --name
-<svc> -- <wrapper> <args>`.
+t-man services run `srt-run` as their program, with or without a wrapper
+in front of it. See [Sandboxing a t-man service](#sandboxing-a-t-man-service).
 
 ### Settings live outside every allowWrite
 
@@ -187,8 +190,9 @@ one you meant.
 `ralph up` reconciles every sandbox artifact; nothing is manual-only. For a
 new sandboxed process, confirm:
 
-- The settings file lives in the consuming repo's recipe dir and is
-  symlinked to `~/.config/srt/<label>.json` by that recipe.
+- The settings file lives in the recipe dir that links it to
+  `~/.config/srt/<label>.json`. That is the service's recipe here when the
+  file is the same on every machine, and the consuming repo's otherwise.
 - Neither `~/.config/srt` nor the link's target is under any settings
   file's `allowWrite`. This prints every entry that covers the directory,
   and should print nothing:
@@ -199,8 +203,9 @@ new sandboxed process, confirm:
 - MCP registration flows from the consuming repo's agent-sync server set
   (the base `servers.json` or a `servers.d/` drop-in) through
   `agent-sync mcp sync`, never a hand-run `claude mcp add`.
-- A `run = "always"` recipe hook registers each t-man service with the
-  wrapper as its program, never a one-off `t-man add`. The service also gets
+- A `run = "always"` recipe hook registers each t-man service with
+  `srt-run`, or a wrapper that execs it, as its program, never a one-off
+  `t-man add`. The service also gets
   `--extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log`,
   so `t-man logs <name> --source sandbox` finds the denial ledger.
 - Nothing to add to `sandbox-watch`. It attributes denials by the
@@ -208,6 +213,99 @@ new sandboxed process, confirm:
   through `srt-run`. A legacy seatbelt profile is covered once every deny
   rule carries the marker.
 - Acid test: a fresh `ralph up` on a clean machine reproduces the posture.
+
+## Sandboxing a t-man service
+
+A first-party service under t-man runs through the same launcher. The
+registration names `srt-run` as the program, then the settings path, then
+the original command:
+
+```bash
+t-man add --name events \
+  --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log \
+  -- $HOME/code/bin/srt-run $HOME/.config/srt/events.json \
+  $HOME/code/bin/events serve --port 7430 --workdir $HOME/.local/share/events
+```
+
+events, keeper-of-facts, moondb, catalog-web and present serve run this
+way. What carries over to the next one:
+
+- **The label is the service name.** The settings file's name gives the
+  label, and it matches the t-man name. present serve is the exception: its
+  label is `present-serve`, because the MCP server already uses `present`.
+- **Generic settings ship beside the recipe.** When nothing in them differs
+  per machine, they live in this repo as `recipes/<svc>/<label>.srt.json`,
+  linked to `~/.config/srt/<label>.json` by a `[dotfiles.<svc>_srt_settings]`
+  item. `recipes/speak/srt-settings-test.sh`, part of `make test-recipes`,
+  checks every shipped file and its wiring.
+- **A wrapper only when there is something to resolve.** launchd starts an
+  agent in `/` with a small environment, so the cwd and env reasons for an
+  MCP wrapper don't apply. A service that needs a secret or a
+  machine-specific host keeps a launcher that resolves them outside the
+  sandbox and then execs `srt-run`. `recipes/present/present-serve.sh` reads
+  the sharing config and hands the shared host to `srt-run` that way.
+- **Ordering.** ralph links every dotfiles item before any build or
+  package runs, so the settings link and `~/code/bin/srt-run` exist before
+  the registration hook. ralph's `depends_on` accepts only `builds.` and
+  `packages.` keys, so the hook depends on `builds.speak_chmod_scripts`,
+  which keeps `srt-run.sh` executable.
+- **Start minimal.** `allowedDomains: []`, `allowLocalBinding: true` (the
+  listening port, and loopback posts to events), `denyRead: ["~"]`,
+  `allowRead` for `~/code/bin` and the workdir, `allowWrite` for the workdir
+  plus `/private/tmp` and `/private/var/folders`. Add only what a probe
+  shows the service needs.
+
+Three services stay outside srt: csl-web, sandbox-watch and d-man. The ADR
+amendment in [docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.md)
+records why.
+
+### Services that run git
+
+git dies on a read-denied `~/.gitconfig` (`fatal: unable to access
+'~/.gitconfig': Operation not permitted`), so a service that runs git gets
+`--env GIT_CONFIG_GLOBAL=/dev/null`. And `/usr/bin/git` is the xcrun shim,
+which loads its library from the `xcode-select` developer directory. An
+Xcode under `~`, such as a beta in `~/Downloads`, is unreadable inside the
+sandbox. So the keeper-of-facts and moondb hooks add `--env
+DEVELOPER_DIR=/Library/Developer/CommandLineTools` when that directory
+exists. A Homebrew git doesn't help here: `srt-run` puts `/usr/bin` ahead
+of the caller's `PATH`.
+
+### Probing on an alternate port
+
+Probe a settings change without touching the live service: no `ralph up`,
+no restart, no re-registration. Copy the store to a scratch directory under
+`~`, and write a copy of the settings with the workdir swapped for it. Then
+run the installed binary on another port, with the environment launchd
+gives an agent. Keep the copy named `<label>.json`, so ledger lines carry the
+service's label, and keep it outside every `allowWrite`:
+
+```bash
+mkdir -p ~/srt-probe ~/.local/state/srt-probe
+cp -R ~/.local/share/events ~/.local/state/srt-probe/events
+jq '.filesystem[] |= map(if . == "~/.local/share/events"
+      then "~/.local/state/srt-probe/events" else . end)' \
+  recipes/events/events.srt.json > ~/srt-probe/events.json
+cd / && env -i HOME="$HOME" USER="$USER" TMPDIR="$TMPDIR" \
+  PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  ~/code/bin/srt-run ~/srt-probe/events.json \
+  ~/code/bin/events serve --port 17430 \
+  --workdir ~/.local/state/srt-probe/events > /private/tmp/events-probe.log 2>&1 &
+```
+
+Hit `/version` and the main read endpoints, exercise one write, then read
+the ledger lines for the label:
+
+```bash
+grep -F "$(printf '\tevents · ')" ~/.local/share/speak/logs/sandbox-denials.log | tail
+```
+
+A scratch directory under `~` exercises the same carve-out as the real
+workdir. Send the probe's output outside `~`: srt's launch bash reads the
+metadata of its own stdout and stderr, and a log file under `~` turns that
+into an alert. The fleet ignore list covers only t-man's own
+`~/Library/Logs/<name>/stdout.log` and `stderr.log`. Kill the probe when
+done.
 
 ## Triaging a denial
 

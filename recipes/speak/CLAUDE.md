@@ -41,7 +41,16 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   `env SRT_RUN=<label> <argv...>`, where the label is the settings file's
   name (`~/.config/srt/present.json` gives `present`). It also merges
   `SRT_RUN_ALLOW_DOMAINS` into the allow-list at launch and sets the child's
-  `TMPDIR`. The settings files themselves come from the consuming repo.
+  `TMPDIR`. Settings that are the same on every machine ship beside their
+  service's recipe in this repo: events, keeper-of-facts, moondb, catalog
+  and present serve. The rest come from the consuming repo.
+- **`srt-settings-test.sh`**: run by `make test-recipes`, it checks every
+  shipped `recipes/*/*.srt.json`. Each file needs the six lists srt
+  requires, no host, and `denyRead` from `~`. No `allowWrite` may cover
+  `~/.config/srt` or the sources cache. Its recipe must link it to
+  `~/.config/srt/<label>.json` and launch through `srt-run`. Each t-man
+  registration there needs the ledger `--extra-log` and the
+  `builds.speak_chmod_scripts` edge.
 - **`hooks.builds.sandbox_watch_service`** — registers `sandbox-watch`, which
   execs `sandbox-watch.sh` straight from this directory in the sources cache.
   Turns sandbox denials into Notification Center banners (batched per 60s)
