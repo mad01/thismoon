@@ -103,7 +103,7 @@ decode, and a field no guard reads must not decide a call.
 
 The record path: `belt record <event>` decodes the lifecycle payload. Its
 lifecycle-only fields sit in a separate struct, out of the guard decode's
-reach. It places the working directory in git with `guard.LocationAt` under
+reach. It places the working directory in git with `gitloc.LocationAt` under
 a 1 s budget, builds the entry with `ledger.Build`, and posts it with a
 300 ms budget. A deferred recover keeps a panic from exiting 2. The config decides
 only `ledger.enabled`, `ledger.source`, and the model and effort tags

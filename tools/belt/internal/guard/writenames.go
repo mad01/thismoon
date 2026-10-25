@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mad01/thismoon/kit/gitloc"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
@@ -42,7 +43,7 @@ func (g *WriteInternalNames) Check(in Input) *Denial {
 		return nil
 	}
 	remote := g.remoteURL(nearestExistingDir(in.FilePath))
-	repo := canonicalRepo(remote)
+	repo := gitloc.CanonicalRepo(remote)
 	if !g.cfg.PublicBound(repo) {
 		return nil
 	}

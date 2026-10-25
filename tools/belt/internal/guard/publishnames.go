@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/mad01/thismoon/kit/gitloc"
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/mcptool"
@@ -291,7 +292,7 @@ func (g *PublishInternalNames) publicRepoAt(dir string) string {
 
 // publicRemote is publicRepoAt for a named remote: the push target.
 func (g *PublishInternalNames) publicRemote(dir, remote string) string {
-	repo := canonicalRepo(g.git(dir, "remote", "get-url", remote))
+	repo := gitloc.CanonicalRepo(g.git(dir, "remote", "get-url", remote))
 	if !g.guarded(repo) {
 		return ""
 	}
@@ -693,7 +694,7 @@ func (g *PublishInternalNames) ghTarget(c ghInvocation, cwd string) (repo string
 	if c.publicByNature() {
 		return "", true
 	}
-	if repo = canonicalRepo(g.git(cwd, "remote", "get-url", "origin")); repo != "" {
+	if repo = gitloc.CanonicalRepo(g.git(cwd, "remote", "get-url", "origin")); repo != "" {
 		return repo, g.guarded(repo)
 	}
 	switch c.group {
@@ -758,7 +759,7 @@ func apiPath(arg string) []string {
 // HOST/OWNER/REPO, or a full URL.
 func ghRepoArg(v string) string {
 	if strings.Contains(v, "://") {
-		return canonicalRepo(v)
+		return gitloc.CanonicalRepo(v)
 	}
 	v = strings.TrimSuffix(v, ".git")
 	switch strings.Count(v, "/") {

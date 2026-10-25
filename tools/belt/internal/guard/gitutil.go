@@ -2,17 +2,12 @@ package guard
 
 import (
 	"context"
-	"errors"
 	"os"
-	"os/exec"
 	"path"
 	"strings"
-	"time"
-)
 
-// gitPipeGrace bounds how long a git call waits for its stdout pipe to
-// close after git itself has exited or been killed.
-const gitPipeGrace = 100 * time.Millisecond
+	"github.com/mad01/thismoon/kit/gitloc"
+)
 
 // gitInvocation is one parsed git invocation from a shell command: the
 // directory it runs in, the subcommand, and the tokens after it. dir is ""
@@ -261,40 +256,6 @@ func expandHomeVar(target string) string {
 	return target
 }
 
-// canonicalRepo normalizes a git remote URL to "host/owner/repo"
-// (github.com/mad01/dotfiles for both the SSH and HTTPS forms). It returns ""
-// for anything it cannot resolve — an empty remote, a bare local path — so an
-// unresolved repo fails closed against the allowlist.
-func canonicalRepo(remote string) string {
-	remote = strings.TrimSpace(remote)
-	remote = strings.TrimSuffix(remote, ".git")
-	switch {
-	case strings.Contains(remote, "://"):
-		// scheme://[user@]host[:port]/owner/repo
-		remote = remote[strings.Index(remote, "://")+3:]
-		if i := strings.LastIndex(remote, "@"); i >= 0 {
-			remote = remote[i+1:]
-		}
-	case strings.Contains(remote, "@") && strings.Contains(remote, ":"):
-		// scp-like: [user@]host:owner/repo
-		remote = remote[strings.Index(remote, "@")+1:]
-		remote = strings.Replace(remote, ":", "/", 1)
-	default:
-		return ""
-	}
-	// Drop a :port from the host segment.
-	if i := strings.Index(remote, "/"); i >= 0 {
-		if j := strings.Index(remote[:i], ":"); j >= 0 {
-			remote = remote[:j] + remote[i:]
-		}
-	}
-	// Need at least host/owner/repo.
-	if strings.Count(remote, "/") < 2 {
-		return ""
-	}
-	return remote
-}
-
 // gitCurrentBranch shells out to git; "" when dir is not a repo or git fails.
 func gitCurrentBranch(dir string) string {
 	return gitOutput(dir, "rev-parse", "--abbrev-ref", "HEAD")
@@ -321,30 +282,7 @@ func gitUserEmail(dir string) string {
 // a target only a shell can resolve once let a push into a non-exempt repo
 // ride an exempt session cwd.
 func gitOutput(dir string, args ...string) string {
-	return gitOutputContext(context.Background(), dir, args...)
-}
-
-// gitOutputContext is gitOutput bounded by ctx: git is killed when ctx is
-// done, and that ends in "" like any other failure. For a caller with a
-// deadline of its own, where a stalled filesystem must not hold the hook.
-// A child git leaves behind (a wrapper's background job, say) inherits the
-// stdout pipe, so killing git alone does not end the read. WaitDelay closes
-// the pipe gitPipeGrace after git exits or is killed, which keeps ctx's
-// deadline the real bound.
-func gitOutputContext(ctx context.Context, dir string, args ...string) string {
-	if dir == "" {
-		return ""
-	}
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	cmd.WaitDelay = gitPipeGrace
-	out, err := cmd.Output()
-	if err != nil && !errors.Is(err, exec.ErrWaitDelay) {
-		// ErrWaitDelay means git exited 0 and only the child held the pipe
-		// past the grace: what git printed before exiting is its answer.
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+	return gitloc.Output(context.Background(), dir, args...)
 }
 
 // GitCommitDirs returns the directory every `git commit` in a shell command
@@ -364,5 +302,5 @@ func GitCommitDirs(command, cwd string) []string {
 // identity allow_repos patterns match, or "" when there is no resolvable
 // origin remote.
 func CanonicalRepoAt(dir string) string {
-	return canonicalRepo(gitRemoteURL(dir))
+	return gitloc.CanonicalRepo(gitRemoteURL(dir))
 }

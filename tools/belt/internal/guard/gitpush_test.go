@@ -655,22 +655,3 @@ func TestGitPushMainDirectMainRepos(t *testing.T) {
 		})
 	}
 }
-
-func TestCanonicalRepo(t *testing.T) {
-	tests := []struct {
-		in, want string
-	}{
-		{"git@github.com:mad01/dotfiles.git", "github.com/mad01/dotfiles"},
-		{"https://github.com/mad01/dotfiles.git", "github.com/mad01/dotfiles"},
-		{"https://github.com/mad01/dotfiles", "github.com/mad01/dotfiles"},
-		{"ssh://git@github.com/mad01/dotfiles.git", "github.com/mad01/dotfiles"},
-		{"ssh://git@github.com:22/mad01/dotfiles.git", "github.com/mad01/dotfiles"},
-		{"/local/path/repo", ""},
-		{"", ""},
-	}
-	for _, tt := range tests {
-		if got := canonicalRepo(tt.in); got != tt.want {
-			t.Errorf("canonicalRepo(%q) = %q, want %q", tt.in, got, tt.want)
-		}
-	}
-}

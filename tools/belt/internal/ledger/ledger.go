@@ -13,9 +13,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/mad01/thismoon/kit/gitloc"
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
-	"github.com/mad01/thismoon/tools/belt/internal/guard"
 )
 
 // Event names match `belt record <event>`; each comment names the Claude
@@ -207,7 +207,7 @@ func Events() []string {
 // leaves the repo, worktree, canonical and branch tags off. declared is
 // ledger.agent_types: a subagent-start entry whose agent type has an entry
 // there is tagged with its model and effort.
-func Build(event string, in Input, loc guard.Location, declared config.AgentTypes) notify.Event {
+func Build(event string, in Input, loc gitloc.Location, declared config.AgentTypes) notify.Event {
 	s := lookup(event)
 	ev := notify.Event{
 		Source:  Source,
@@ -267,7 +267,7 @@ func text(s spec, in Input) string {
 // model and effort come from declared, on subagent-start only; error is
 // set on stop-failure only, and always there.
 func tags(
-	event string, in Input, loc guard.Location, declared config.AgentTypes,
+	event string, in Input, loc gitloc.Location, declared config.AgentTypes,
 ) map[string]string {
 	d := declaredTags(event, in, declared)
 	pairs := [][2]string{
@@ -327,7 +327,7 @@ func errorTag(event string, in Input) string {
 // a cwd in a subdirectory still names the worktree. That cwd belongs to
 // the session that fired the hook: for a spawn it can be the parent's, so
 // the tag names where the event fired, not where the subagent will work.
-func linkedWorktree(loc guard.Location) string {
+func linkedWorktree(loc gitloc.Location) string {
 	if !loc.Linked {
 		return ""
 	}
