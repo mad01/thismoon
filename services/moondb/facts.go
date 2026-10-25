@@ -33,6 +33,14 @@ const (
 	// it has and returns. The Edit/Write hook is synchronous, so this is
 	// latency the session feels on every edit.
 	RecordBudget = 200 * time.Millisecond
+	// BashBudget is how long `moondb record` works on a Bash payload. The
+	// Bash hook is async, so no session waits on it, and one command can
+	// change hundreds of files: a status check, a placement and a disk
+	// read each need more time than RecordBudget gives the Edit hook. It
+	// stays under the ceiling the CLI puts on every record run. The files
+	// the budget does not reach are skipped: counted on the turn as
+	// timeout, with no edit.
+	BashBudget = 2 * time.Second
 	// GitBudget bounds every git call a hook makes.
 	GitBudget = 1 * time.Second
 	// SnapshotBudget is how long the turn-edge hooks (UserPromptSubmit and

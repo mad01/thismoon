@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
@@ -49,6 +51,9 @@ func recordsOutliveClose(t *testing.T, open func(t *testing.T, dir string) store
 	if len(d.Turns) == 0 || d.Turns[0].Totals == nil || len(d.Turns[0].Totals.Usage) != 2 {
 		t.Errorf("t1 after reopen = %+v, want its totals with two usage entries", d.Turns)
 	}
+	if len(d.Turns) == 0 || !sameSkipped(d.Turns[0].Skipped, historySkipped()) {
+		t.Errorf("t1 after reopen = %+v, want its skipped counts %+v", d.Turns, historySkipped())
+	}
 
 	seed(t, second, turn("t9", "s1", store.TurnOpen, at(80)),
 		store.Edit{ID: "e1", SessionID: "s1", TurnID: "t9", At: at(81), Path: "replayed.go"})
@@ -74,6 +79,7 @@ func history() []any {
 	closed := turn("t1", "s1", store.TurnClosed, at(1))
 	closed.EndedAt = &ended
 	closed.Totals = totals(1, usage("model-a", 10, 20), usage("model-b", 1, 2))
+	closed.Skipped = historySkipped()
 	return []any{
 		session("s1", at(0)), session("s2", at(30)),
 		closed,
@@ -101,6 +107,25 @@ func history() []any {
 		},
 		renamed,
 	}
+}
+
+// historySkipped is the skipped counts of history's closed turn: two Bash
+// calls, every reason set on one of them.
+func historySkipped() []store.SkippedFiles {
+	return []store.SkippedFiles{
+		{Tool: "Bash", ToolUseID: "tu7", At: at(3), Clean: 40, Timeout: 2, Failed: 1},
+		{Tool: "Bash", ToolUseID: "tu8", At: at(4), Clean: 3},
+	}
+}
+
+// sameSkipped reports whether two skipped lists hold the same counts in the
+// same order, times compared as instants.
+func sameSkipped(got, want []store.SkippedFiles) bool {
+	return slices.EqualFunc(got, want, func(g, w store.SkippedFiles) bool {
+		gAt, wAt := g.At, w.At
+		g.At, w.At = time.Time{}, time.Time{}
+		return g == w && gAt.Equal(wAt)
+	})
 }
 
 // view renders everything the store answers about its records as one JSON

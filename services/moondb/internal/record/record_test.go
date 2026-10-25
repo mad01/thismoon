@@ -3,6 +3,7 @@ package record
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -91,6 +92,8 @@ type testSession struct {
 	budget     time.Duration
 	// now is the clock Run reads; testNow throughout when nil.
 	now func() time.Time
+	// logs holds the lines Run logged, in order.
+	logs []string
 }
 
 func newSession(tb testing.TB, cwd string) *testSession {
@@ -124,10 +127,14 @@ func (s *testSession) runRaw(body string) error {
 		now = func() time.Time { return testNow }
 	}
 	return Run(context.Background(), strings.NewReader(body), Options{
-		Workdir:  s.workdir,
-		Now:      now,
-		Excludes: s.excludes,
-		Budget:   s.budget,
+		Workdir:    s.workdir,
+		Now:        now,
+		Excludes:   s.excludes,
+		Budget:     s.budget,
+		BashBudget: s.budget,
+		Logf: func(format string, args ...any) {
+			s.logs = append(s.logs, fmt.Sprintf(format, args...))
+		},
 	})
 }
 

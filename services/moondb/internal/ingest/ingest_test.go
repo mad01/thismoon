@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -235,7 +236,7 @@ func TestTurnOpenThenClose(t *testing.T) {
 		t.Errorf("turn times = %v .. %v, want %v .. %v", tr.StartedAt, tr.EndedAt, at(1), at(5))
 	}
 	tr.StartedAt, tr.EndedAt = time.Time{}, nil
-	if tr != want {
+	if !reflect.DeepEqual(tr, want) {
 		t.Errorf("turn = %+v\nwant %+v", tr, want)
 	}
 	for _, key := range []string{want.PromptChunk, want.FinalChunk, want.TranscriptChunk} {

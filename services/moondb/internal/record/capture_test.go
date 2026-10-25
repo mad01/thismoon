@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/ingest"
@@ -201,6 +203,387 @@ func TestBashEditDiffExcludesAndShapes(t *testing.T) {
 				t.Errorf("edits of %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// pulledRepo is a repo whose main took a fast-forward merge of a branch
+// that changed demo.go and notes.txt, added fresh.txt, and removed gone.txt
+// and the whole old/ directory: what a pull leaves behind, every file clean.
+func pulledRepo(t *testing.T) string {
+	t.Helper()
+	repo := newRepo(t)
+	writeFile(t, filepath.Join(repo, "demo.go"), demoGo)
+	writeFile(t, filepath.Join(repo, "notes.txt"), "one\ntwo\nthree\n")
+	writeFile(t, filepath.Join(repo, "gone.txt"), "bye\n")
+	writeFile(t, filepath.Join(repo, "old", "deep", "x.txt"), "x\n")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-q", "-m", "files")
+	git(t, repo, "checkout", "-q", "-b", "upstream")
+	writeFile(t, filepath.Join(repo, "demo.go"), demoGoSed)
+	writeFile(t, filepath.Join(repo, "notes.txt"), "one\ntwo\nthree\nfour\n")
+	writeFile(t, filepath.Join(repo, "fresh.txt"), "new\n")
+	git(t, repo, "rm", "-q", "-r", "gone.txt", "old")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-q", "-m", "upstream")
+	git(t, repo, "checkout", "-q", "main")
+	git(t, repo, "merge", "-q", "--ff-only", "upstream")
+	return repo
+}
+
+func TestBashPullRecordsNoEdits(t *testing.T) {
+	// A pull rewrites files to their committed state. The harness lists
+	// them all, but the command authored none of them, so the hook writes
+	// no edit and only counts them, the file in the removed directory too.
+	// Reached through a symlink, the removed directory's file still
+	// resolves into the worktree (/tmp and /var are symlinks on macOS).
+	for _, viaLink := range []bool{false, true} {
+		t.Run(fmt.Sprintf("via symlink %v", viaLink), func(t *testing.T) {
+			repo := pulledRepo(t)
+			if _, err := os.Stat(filepath.Join(repo, "old")); err == nil {
+				t.Fatal("the merge left old/ in place; the test needs it gone")
+			}
+			dir := repo
+			if viaLink {
+				dir = symlinkTo(t, repo)
+			}
+			s := newSession(t, dir)
+			s.mustRun("bash_pull.json", "$DIR", dir)
+			checkPullSkipped(t, s)
+		})
+	}
+}
+
+// symlinkTo returns a new symlink to target.
+func symlinkTo(t *testing.T, target string) string {
+	t.Helper()
+	link := filepath.Join(physicalTempDir(t), "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	return link
+}
+
+// checkPullSkipped checks that the bash_pull.json call wrote only its
+// skipped count, five clean files, and logged it.
+func checkPullSkipped(t *testing.T, s *testSession) {
+	t.Helper()
+	env := s.takeOne(spool.KindSkipped)
+	want := store.SkippedFiles{Tool: "Bash", ToolUseID: "toolu_bash_pull_1", Clean: 5}
+	if env.ID != "toolu_bash_pull_1:skipped" || env.Turn.ID != "prompt-1" || *env.Skipped != want {
+		t.Errorf("skipped envelope %s of turn %s = %+v, want %+v",
+			env.ID, env.Turn.ID, *env.Skipped, want)
+	}
+	if paths := s.state(pathsExt); paths != "" {
+		t.Errorf(".paths = %q, want nothing noted", paths)
+	}
+	wantLogs := []string{
+		"Bash toolu_bash_pull_1: skipped 5 changed files: " +
+			"5 clean after the command, 0 past the budget, 0 status failed",
+	}
+	if !slices.Equal(s.logs, wantLogs) {
+		t.Errorf("logged %q, want %q", s.logs, wantLogs)
+	}
+}
+
+// bashPayload is a Bash PostToolUse payload run in cwd whose diff lists
+// changed by path alone.
+func bashPayload(cwd, toolUseID string, changed ...string) string {
+	dir, _ := json.Marshal(cwd)
+	names, _ := json.Marshal(changed)
+	return `{"session_id":"sess-1","prompt_id":"prompt-1","cwd":` + string(dir) + `,` +
+		`"hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"` + toolUseID + `",` +
+		`"tool_input":{"command":"true"},` +
+		`"tool_response":{"bashEditDiff":{"changedFiles":` + string(names) + `}}}`
+}
+
+// bashEdit is what a test expects of one edit envelope a Bash call wrote.
+type bashEdit struct {
+	id, path string
+	kind     store.EditKind
+	placed   bool
+}
+
+// checkBashEdits compares the edit envelopes in envs with want, in order,
+// and returns the envelopes left after them.
+func checkBashEdits(t *testing.T, envs []spool.Envelope, want []bashEdit) []spool.Envelope {
+	t.Helper()
+	if len(envs) < len(want) {
+		t.Fatalf("spool holds %v, want %d edits first", kinds(envs), len(want))
+	}
+	for i, w := range want {
+		env, ep := envs[i], envs[i].Edit
+		if env.Kind != spool.KindEdit || env.ID != w.id || ep.Path != w.path || ep.Kind != w.kind ||
+			(ep.Location.Worktree != "") != w.placed {
+			t.Errorf("envelope %d = %s %s %+v, want edit %s of %s, a %s, placed %v",
+				i, env.Kind, env.ID, ep, w.id, w.path, w.kind, w.placed)
+		}
+	}
+	return envs[len(want):]
+}
+
+func TestBashKeepsOnlyWhatStaysChanged(t *testing.T) {
+	repo := newRepo(t)
+	for _, name := range []string{"clean.txt", "dirty.txt", "gone.txt"} {
+		writeFile(t, filepath.Join(repo, name), name+"\n")
+	}
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-q", "-m", "files")
+	writeFile(t, filepath.Join(repo, "dirty.txt"), "dirty, then edited\n")
+	writeFile(t, filepath.Join(repo, "new.txt"), "untracked\n")
+	if err := os.Remove(filepath.Join(repo, "gone.txt")); err != nil {
+		t.Fatal(err)
+	}
+	s := newSession(t, repo)
+	var paths []string
+	for _, name := range []string{"clean.txt", "dirty.txt", "new.txt", "gone.txt"} {
+		paths = append(paths, filepath.Join(repo, name))
+	}
+	if err := s.runRaw(bashPayload(repo, "toolu_mixed", paths...)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Each edit keeps the file's position in the payload's list.
+	rest := checkBashEdits(t, s.take(), []bashEdit{
+		{"toolu_mixed:1", "dirty.txt", store.EditUpdate, true},
+		{"toolu_mixed:2", "new.txt", store.EditUpdate, true},
+		{"toolu_mixed:3", "gone.txt", store.EditDelete, true},
+	})
+	want := store.SkippedFiles{Tool: "Bash", ToolUseID: "toolu_mixed", Clean: 1}
+	if len(rest) != 1 || rest[0].Kind != spool.KindSkipped || *rest[0].Skipped != want {
+		t.Fatalf("after the edits the spool holds %v, want one skipped %+v", kinds(rest), want)
+	}
+}
+
+func TestBashKeepsIgnoredRenamedAndOutsideFiles(t *testing.T) {
+	// git status leaves out none of these: an ignored build output, both
+	// sides of a staged rename, and a file outside any repository, which
+	// git cannot check at all.
+	repo := newRepo(t)
+	writeFile(t, filepath.Join(repo, ".gitignore"), "build/\n")
+	writeFile(t, filepath.Join(repo, "old.txt"), "moved\n")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-q", "-m", "files")
+	git(t, repo, "mv", "old.txt", "renamed.txt")
+	writeFile(t, filepath.Join(repo, "build", "out.bin"), "built\n")
+	outside := filepath.Join(physicalTempDir(t), "free.txt")
+	writeFile(t, outside, "free\n")
+	s := newSession(t, repo)
+	paths := []string{
+		filepath.Join(repo, "old.txt"), filepath.Join(repo, "renamed.txt"),
+		filepath.Join(repo, "build", "out.bin"), outside,
+	}
+	if err := s.runRaw(bashPayload(repo, "toolu_edges", paths...)); err != nil {
+		t.Fatal(err)
+	}
+
+	rest := checkBashEdits(t, s.take(), []bashEdit{
+		{"toolu_edges:0", "old.txt", store.EditDelete, true},
+		{"toolu_edges:1", "renamed.txt", store.EditUpdate, true},
+		{"toolu_edges:2", "build/out.bin", store.EditUpdate, true},
+		{"toolu_edges:3", outside, store.EditUpdate, false},
+	})
+	if len(rest) != 0 || len(s.logs) != 0 {
+		t.Errorf(
+			"after the edits the spool holds %v and the log %q, want neither",
+			kinds(rest),
+			s.logs,
+		)
+	}
+}
+
+func TestBashGoneFileThroughSymlinkStaysPlaced(t *testing.T) {
+	// The command removed a whole directory and the session reaches the
+	// repo through a symlink: the file still lands in its worktree, as a
+	// delete, not under an absolute path in none.
+	repo := newRepo(t)
+	writeFile(t, filepath.Join(repo, "old", "deep", "x.txt"), "x\n")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-q", "-m", "files")
+	if err := os.RemoveAll(filepath.Join(repo, "old")); err != nil {
+		t.Fatal(err)
+	}
+	link := symlinkTo(t, repo)
+	s := newSession(t, link)
+	body := bashPayload(link, "toolu_rm", filepath.Join(link, "old", "deep", "x.txt"))
+	if err := s.runRaw(body); err != nil {
+		t.Fatal(err)
+	}
+
+	rest := checkBashEdits(t, s.take(), []bashEdit{
+		{"toolu_rm:0", "old/deep/x.txt", store.EditDelete, true},
+	})
+	if len(rest) != 0 {
+		t.Errorf("after the edit the spool holds %v, want nothing", kinds(rest))
+	}
+}
+
+func TestBashGoneFileInNoWorktreeIsFailed(t *testing.T) {
+	// A removed linked worktree whose parent is no repository, the
+	// .worktrees layout, and a loose file the command deleted: git can
+	// check neither, and all that is left of them is an absolute path, so
+	// the hook counts them and writes no edit.
+	repo := newRepo(t)
+	wt := filepath.Join(physicalTempDir(t), ".worktrees", "demo", "feat")
+	git(t, repo, "worktree", "add", "-q", "-b", "feat", wt)
+	writeFile(t, filepath.Join(wt, "sub", "new.txt"), "new\n")
+	git(t, repo, "worktree", "remove", "--force", wt)
+	loose := filepath.Join(physicalTempDir(t), "loose.txt")
+	s := newSession(t, repo)
+	paths := []string{
+		filepath.Join(wt, "a.txt"), filepath.Join(wt, "sub", "new.txt"), loose,
+	}
+	if err := s.runRaw(bashPayload(wt, "toolu_wt_rm", paths...)); err != nil {
+		t.Fatal(err)
+	}
+
+	env := s.takeOne(spool.KindSkipped)
+	want := store.SkippedFiles{Tool: "Bash", ToolUseID: "toolu_wt_rm", Failed: 3}
+	if *env.Skipped != want {
+		t.Errorf("skipped = %+v, want %+v", *env.Skipped, want)
+	}
+	if paths := s.state(pathsExt); paths != "" {
+		t.Errorf(".paths = %q, want nothing noted", paths)
+	}
+}
+
+// gitCounter puts a git on PATH that logs the first two arguments of every
+// call to the returned file before it runs the real git.
+func gitCounter(t *testing.T) string {
+	t.Helper()
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not installed")
+	}
+	bin := physicalTempDir(t)
+	log := filepath.Join(bin, "calls.log")
+	script := fmt.Sprintf("#!/bin/sh\necho \"$1 $2\" >> %q\nexec %q \"$@\"\n", log, gitPath)
+	writeFile(t, filepath.Join(bin, "git"), script)
+	if err := os.Chmod(filepath.Join(bin, "git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A new executable's first launch can wait on the system's check of
+	// it; take that wait here, not under the budget.
+	if err := exec.Command(filepath.Join(bin, "git"), "version").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(log); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return log
+}
+
+// locateCalls counts the location lookups in a gitCounter log: each runs
+// one rev-parse with --path-format.
+func locateCalls(t *testing.T, log string) int {
+	t.Helper()
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Count(string(data), "rev-parse --path-format=absolute\n")
+}
+
+func TestBashLocatesEachWorktreeOnce(t *testing.T) {
+	// A command that changes files across many directories costs one git
+	// location lookup per worktree, not one per directory: once a
+	// worktree is located, its files are placed by path. A nested
+	// repository is located on its own. A directory outside any
+	// repository is located once for all its files, and placement and
+	// capture share that answer.
+	repo := newRepo(t)
+	var paths []string
+	for i := range 12 {
+		name := filepath.Join(repo, fmt.Sprintf("dir%d", i), "sub", "f.txt")
+		writeFile(t, name, "changed\n")
+		paths = append(paths, name)
+	}
+	inner := filepath.Join(repo, "vendor", "inner")
+	git(t, repo, "init", "-q", "-b", "main", inner)
+	git(t, inner, "commit", "-q", "--allow-empty", "-m", "init")
+	writeFile(t, filepath.Join(inner, "deep", "g.txt"), "nested\n")
+	paths = append(paths, filepath.Join(inner, "deep", "g.txt"))
+	free := physicalTempDir(t)
+	for _, name := range []string{"one.txt", "two.txt"} {
+		writeFile(t, filepath.Join(free, name), "free\n")
+		paths = append(paths, filepath.Join(free, name))
+	}
+	log := gitCounter(t)
+	s := newSession(t, repo)
+	if err := s.runRaw(bashPayload(repo, "toolu_wide", paths...)); err != nil {
+		t.Fatal(err)
+	}
+
+	envs := s.take()
+	if len(envs) != len(paths) || slices.Contains(kinds(envs), spool.KindSkipped) {
+		t.Fatalf("spool holds %v, want %d edits", kinds(envs), len(paths))
+	}
+	nestedID := fmt.Sprintf("toolu_wide:%d", len(paths)-3)
+	i := slices.IndexFunc(envs, func(e spool.Envelope) bool { return e.ID == nestedID })
+	if i < 0 || envs[i].Edit.Location.Worktree != inner || envs[i].Edit.Path != "deep/g.txt" {
+		t.Errorf("edit %s = %+v, want deep/g.txt in %q", nestedID, envs[max(i, 0)].Edit, inner)
+	}
+	if n := locateCalls(t, log); n != 3 {
+		t.Errorf("%d location lookups, want 3: the repo, the nested repo, the outside dir", n)
+	}
+}
+
+func TestCaptureReportsCutBeforeRead(t *testing.T) {
+	// A budget spent before the disk read is reported, so the Bash hook
+	// can count the file instead of writing an edit without its read.
+	dir := physicalTempDir(t)
+	file := filepath.Join(dir, "f.txt")
+	writeFile(t, file, "body\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rec := &recorder{
+		ctx:  ctx,
+		p:    payload{tool: toolBash, toolUseID: "toolu_cut"},
+		opts: Options{}.withDefaults(),
+		locs: map[string]store.Location{},
+	}
+	where := placement{abs: file, rel: file}
+	env, _, cut := rec.captureEdit(target{name: file, where: &where})
+	if !cut || env.Edit.ObservedChunk != "" {
+		t.Errorf("cut = %v, observed %q; want a cut before any read", cut, env.Edit.ObservedChunk)
+	}
+}
+
+func TestBashBudgetSpentWritesNoUnplacedEdit(t *testing.T) {
+	// With the budget gone before git places anything, an edit would land
+	// under an absolute path in no worktree. The hook counts the files
+	// instead.
+	repo := bashRepo(t)
+	s := newSession(t, repo)
+	s.budget = time.Nanosecond
+	s.mustRun("bash_diff.json", "$DIR", repo)
+
+	env := s.takeOne(spool.KindSkipped)
+	want := store.SkippedFiles{Tool: "Bash", ToolUseID: "toolu_bash_diff_1", Timeout: 4}
+	if *env.Skipped != want {
+		t.Errorf("skipped = %+v, want %+v", *env.Skipped, want)
+	}
+	if paths := s.state(pathsExt); paths != "" {
+		t.Errorf(".paths = %q, want nothing noted", paths)
+	}
+}
+
+func TestBashBudgetIsItsOwn(t *testing.T) {
+	// The Bash hook nobody waits on gets BashBudget even when the Edit
+	// hook's budget is gone.
+	repo := bashRepo(t)
+	s := newSession(t, repo)
+	body := readFile(t, filepath.Join("testdata", "bash_diff.json"))
+	body = strings.NewReplacer("$DIR", repo, "$CWD", repo, "$TRANSCRIPT", s.transcript).
+		Replace(body)
+	err := Run(context.Background(), strings.NewReader(body), Options{
+		Workdir: s.workdir, Budget: time.Nanosecond, BashBudget: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kinds(s.take()); len(got) != 4 || slices.Contains(got, spool.KindSkipped) {
+		t.Errorf("spool holds %v, want four edits and no skipped count", got)
 	}
 }
 
@@ -442,17 +825,21 @@ func TestParseStatus(t *testing.T) {
 	hex := strings.Repeat("a", 40)
 	ord := "1 .M N... 100644 100644 100644 " + hex + " " + hex + " dir/a file.txt"
 	renamed := "2 R. N... 100644 100644 100644 " + hex + " " + hex + " R100 new.txt"
+	copied := "2 C. N... 100644 100644 100644 " + hex + " " + hex + " C75 copy.txt"
 	unmerged := "u UU N... 100644 100644 100644 100644 " + hex + " " + hex + " " + hex + " both.txt"
 	sub := "1 .M S.M. 160000 160000 160000 " + hex + " " + hex + " vendor/sub"
 	out := strings.Join([]string{
-		ord, renamed, "old.txt", unmerged, "? untracked.txt", sub, "! ignored", "x junk", "",
+		ord, renamed, "old.txt", copied, "src.txt", unmerged, "? untracked.txt", sub,
+		"! ignored", "x junk", "",
 	}, "\x00")
 	got := parseStatus([]byte(out))
 	want := []statusEntry{
 		{path: "dir/a file.txt", xy: ".M"},
-		{path: "new.txt", xy: "R."},
+		{path: "new.txt", xy: "R.", orig: "old.txt"},
+		{path: "copy.txt", xy: "C."},
 		{path: "both.txt", xy: "UU"},
 		{path: "untracked.txt", xy: "??"},
+		{path: "ignored", xy: "!!"},
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("parseStatus = %+v\nwant %+v", got, want)

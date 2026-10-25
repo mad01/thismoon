@@ -22,6 +22,10 @@ _Avoid_: subagent as a separate concept, worker
 One recorded change to one file by one tool call. It carries the tool, repo, worktree, branch and path, the patch hunks, the before and after chunk ids, the after content's git blob id, and HEAD at the time. Append-only; its identity is the `tool_use_id` plus the path.
 _Avoid_: change, operation, op-log entry
 
+**Skipped**:
+The files of one Bash call that `record` counted instead of recording as Edits. Each count names its reason. `clean`: git status reports the file clean after the command, as a pull, checkout, reset or stash leaves it. `timeout`: the hook's budget or a git deadline ran out first. `failed`: git could not give the file's status, or the file is gone and no worktree holds it. serve keeps the counts on the Turn, one entry per call. A Snapshot's skipped counts are a different thing: paths the snapshot left out or listed without content.
+_Avoid_: dropped, not recorded
+
 **Observed**:
 The file bytes `moondb record` read from disk right after the tool ran. Evidence, not truth: serve derives the after content from the tool payload and compares it with the observed bytes.
 _Avoid_: actual, disk state

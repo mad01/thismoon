@@ -45,6 +45,9 @@ const (
 	KindHeadMoved Kind = "head-moved"
 	// KindSnapshot records one worktree's state at a turn boundary.
 	KindSnapshot Kind = "snapshot"
+	// KindSkipped counts the files one tool call changed that the hook
+	// skipped, so serve can show the count on the call's turn.
+	KindSkipped Kind = "skipped"
 )
 
 // Envelope is one record handed to serve. Exactly one payload field is set,
@@ -70,6 +73,9 @@ type Envelope struct {
 	Edit      *EditPayload `json:"edit,omitempty"`
 	HeadMoved *HeadMoved   `json:"head_moved,omitempty"`
 	Snapshot  *Snapshot    `json:"snapshot,omitempty"`
+	// Skipped is the payload of a skipped envelope. Its At stays zero:
+	// the envelope's own At says when the hook began.
+	Skipped *store.SkippedFiles `json:"skipped,omitempty"`
 }
 
 // SessionRef identifies the session a payload belongs to and carries what

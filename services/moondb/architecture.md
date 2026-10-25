@@ -34,8 +34,9 @@ internal/
                     history, sessions, trace, doctor, docs, version
   record/           the hook side: payload decode, envelope builders,
                     observed read and blob id, HEAD content, transcript
-                    tail, Bash diffs, turn-edge snapshots, per-session
-                    state, the 200 ms and 2 s budgets
+                    tail, Bash diffs and their clean check, turn-edge
+                    snapshots, per-session state, the 200 ms and 2 s
+                    budgets
   importer/         the transcript import: parse a session transcript
                     and its subagent transcripts, map turns and edits to
                     envelopes, take large files' originals from the file
@@ -70,7 +71,12 @@ the file's repo, worktree, branch and HEAD, and the observed bytes with
 their blob id, and the path's HEAD blob id and content. Every envelope is
 stamped when its hook starts. On PostToolUse for Bash it reads the payload's
 `bashEditDiff`: one edit envelope per diffed file, with the hunks as the
-patch and no tool input, and one per other changed path without hunks. On
+patch and no tool input, and one per other changed path without hunks. One
+`git status` per worktree over the listed paths comes first, and a file it
+reports clean gets no envelope: a pull or checkout put it back to its
+committed state. A skipped envelope counts those, the files the 2 s Bash
+budget did not reach, and the ones whose status git could not give, for
+the turn. On
 Stop it spools a turn-close envelope with the
 final message and the transcript tail. For each touched worktree whose HEAD
 moved since the hook last looked, it adds a head-moved envelope listing the
