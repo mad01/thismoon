@@ -9,8 +9,52 @@ spec:
   lifecycle: production
   owner: mad01
   system: thismoon
+  # Sandbox access, rendered to recipes/deps/deps.srt.json by
+  # `make sandbox-settings` (docs/SANDBOXING.md, "Declaring access").
+  # Discovery runs `go list` in every registered repo, so the repos, the Go
+  # toolchain and the module cache are readable, minus the secret files in
+  # the repos. A repo registered outside ~/code/src needs the machine's
+  # expansion layer (~/.config/srt/deps.local.json).
   access:
-    sandbox: none
-    reason: >-
-      First-party code calling the OSV.dev API; the fleet puts third-party
-      code under srt first, and deps has not been probed under srt yet.
+    sandbox: srt
+    workdir: ~/.local/share/deps
+    listen: 7429
+    local: [events]
+    # api.osv.dev for the advisory checks. proxy.golang.org because go list
+    # downloads a module the cache lacks (a fresh dependency bump), as it
+    # does unsandboxed; repos commit go.sum, so the checksum database is not
+    # consulted.
+    egress: [api.osv.dev, proxy.golang.org]
+    reads:
+      - ~/code/bin
+      - workdir
+      # The discovery config and the catalog registry. Both are symlinks, and
+      # the sandbox checks the resolved path: the config resolves into the
+      # ralph sources cache, the registry into a checkout under ~/code/src.
+      - ~/.config/deps/config.toml
+      - ~/.config/ralph/sources/thismoon/recipes/deps/config.toml
+      - ~/.config/catalog/registry.yaml
+      # The repos the registry lists.
+      - ~/code/src
+      # GOMODCACHE (GOPATH is ~/code), the mise Go toolchain the launcher
+      # resolves, and the go env file (GOPRIVATE and friends).
+      - ~/code/pkg/mod
+      - ~/.local/share/mise/installs/go
+      - ~/Library/Application Support/go/env
+    # The module cache takes downloads, as above. The build cache go list
+    # needs is a private one in the workdir (GOCACHE, set by the recipe), so
+    # the sandbox never writes the build cache other go builds trust.
+    writes: [workdir, ~/code/pkg/mod, temp]
+    tls: true
+    deny:
+      - ~/code/src/**/.env
+      - ~/code/src/**/.env.*
+      - ~/code/src/**/*.pem
+      - ~/code/src/**/*.key
+      - ~/code/src/**/.git/config
+    # osascript posts the flagged-advisory banner through the notification
+    # daemon. Its other start-up lookups stay denied and are on the fleet
+    # ignore list (recipes/speak/sandbox-ignore.conf).
+    extra:
+      network:
+        allowMachLookup: [com.apple.usernoted.daemon_client]

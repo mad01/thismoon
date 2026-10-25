@@ -73,10 +73,11 @@ no file locks.
   `discovery-clean` check reads them from the store, and the page shows a red
   callout in place of the all-clear text. A failed `go list` appends its first stderr line to the error.
 - **serve needs `go` on its PATH.** The t-man agent runs
-  `recipes/deps/deps-serve.sh`, which prepends the mise shims
-  (`${MISE_DATA_DIR:-~/.local/share/mise}/shims`) before exec'ing `deps serve`;
-  the launchd PATH alone has no `go`. Doctor deliberately reads the saved
-  errors instead of probing for `go` itself: the CLI runs with the login
+  `recipes/deps/deps-serve.sh`, which resolves the real mise `go` with
+  `mise which go` outside the sandbox and execs `deps serve` through srt-run
+  with that directory first on PATH. The launchd PATH alone has no `go`, and
+  the mise shim cannot run inside the sandbox. Doctor deliberately reads the
+  saved errors instead of probing for `go` itself: the CLI runs with the login
   shell's PATH, so its own lookup would pass while serve fails.
 - **Import-graph reachability (Go).** `go list -m -json all` is the full *module
   graph*, including modules no binary imports, so OSV flags advisories on
@@ -98,7 +99,13 @@ no file locks.
 - One API; ecosystem strings are OSV's own (`Go`, `npm`, `PyPI`, `SwiftURL`); no
   mapping. SwiftURL names are the repo URL without scheme or `.git`
   (`github.com/vapor/vapor`), derived from each Package.resolved pin location.
-- First-party code calling a public API → **no sandbox** (like reminder/status).
+- **serve runs under srt** (anthropics/sandbox-runtime), with the access
+  declared as `spec.access` in `service-info.yaml`: the repos under
+  `~/code/src` minus secret-shaped files, the Go toolchain and module cache,
+  egress to `api.osv.dev` and `proxy.golang.org`. `go list` gets a private
+  build cache in the workdir (`GOCACHE`, set by the recipe) and
+  `GOFLAGS=-buildvcs=false`, so it never writes the shared build cache or runs
+  git.
 
 ### Scan loop, notifications, offline
 

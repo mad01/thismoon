@@ -339,8 +339,8 @@ t-man add --name events \
   $HOME/code/bin/events serve --port 7430 --workdir $HOME/.local/share/events
 ```
 
-events, keeper-of-facts, moondb, catalog-web and present serve run this
-way. What carries over to the next one:
+events, keeper-of-facts, moondb, catalog-web, present serve and deps run
+this way. What carries over to the next one:
 
 - **The label is the service name.** The settings file's name gives the
   label, and it matches the t-man name. present serve is the exception: its
@@ -369,7 +369,7 @@ way. What carries over to the next one:
 Three services stay outside srt: csl-web, sandbox-watch and d-man. The ADR
 amendment in [docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.md)
 records why. Their components say so with `sandbox: none` and the reason,
-as do deps, status and speak-web until they are probed under srt.
+as do status and speak-web until they are probed under srt.
 
 ### git inside the sandbox
 

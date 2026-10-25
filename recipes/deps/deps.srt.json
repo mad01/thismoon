@@ -1,0 +1,42 @@
+{
+  "enableWeakerNetworkIsolation": true,
+  "filesystem": {
+    "allowRead": [
+      "~/code/bin",
+      "~/.local/share/deps",
+      "~/.config/deps/config.toml",
+      "~/.config/ralph/sources/thismoon/recipes/deps/config.toml",
+      "~/.config/catalog/registry.yaml",
+      "~/code/src",
+      "~/code/pkg/mod",
+      "~/.local/share/mise/installs/go",
+      "~/Library/Application Support/go/env"
+    ],
+    "allowWrite": [
+      "~/.local/share/deps",
+      "~/code/pkg/mod",
+      "/private/tmp",
+      "/private/var/folders"
+    ],
+    "denyRead": [
+      "~",
+      "~/code/src/**/.env",
+      "~/code/src/**/.env.*",
+      "~/code/src/**/*.pem",
+      "~/code/src/**/*.key",
+      "~/code/src/**/.git/config"
+    ],
+    "denyWrite": []
+  },
+  "network": {
+    "allowLocalBinding": true,
+    "allowMachLookup": [
+      "com.apple.usernoted.daemon_client"
+    ],
+    "allowedDomains": [
+      "api.osv.dev",
+      "proxy.golang.org"
+    ],
+    "deniedDomains": []
+  }
+}

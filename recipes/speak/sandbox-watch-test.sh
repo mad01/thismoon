@@ -205,6 +205,38 @@ expect_alert 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/Library/Log
 expect_alert 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/Library/Logs/a/b/stdout.log'
 expect_alert 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/.ssh/stdout.log'
 
+# clang++ (go list's C++ compiler check under deps) is a process name too.
+expect_ignored 'Sandbox: clang++(123) deny(1) sysctl-read kern.iossupportversion'
+expect_ignored 'Sandbox: clang++(123) deny(1) mach-lookup com.apple.diagnosticd'
+expect_alert 'Sandbox: clang++(123) deny(1) file-read-metadata /Users/x/Downloads/Xcode.app/Contents/Developer/usr/lib/libxcrun.dylib'
+
+# deps: the Go toolchain's telemetry counters, by label, tool and directory.
+for proc in go compile asm link cgo; do
+  expect_ignored "deps · $proc(123) · file-write-data · /Users/x/Library/Application Support/go/telemetry/local/weekends"
+done
+expect_ignored 'deps · go(123) · file-read-metadata · /Users/x/Library/Application Support/go/telemetry/local/upload.token'
+expect_alert 'status · go(123) · file-write-data · /Users/x/Library/Application Support/go/telemetry/local/weekends'
+expect_alert 'deps · deps(123) · file-write-data · /Users/x/Library/Application Support/go/telemetry/local/weekends'
+expect_alert 'deps · go(123) · file-write-data · /Users/x/Library/Application Support/go/telemetry/mode'
+expect_alert 'deps · go(123) · file-read-data · /Users/x/Library/Caches/go-build/00/00ab-d'
+
+# deps: osascript's AppKit start-up around the advisory banner, by exact
+# service, key and file.
+for service in windowserver.active tccd.system pasteboard.1 dock.server \
+  CoreServices.coreservicesd analyticsd; do
+  expect_ignored "deps · osascript(123) · mach-lookup · com.apple.$service"
+done
+expect_ignored 'deps · osascript(123) · mach-lookup · com.apple.hiservices-xpcservice (xpc)'
+expect_ignored 'deps · osascript(123) · mach-register · com.apple.axserver (per-pid)'
+expect_ignored 'deps · osascript(123) · sysctl-read · kern.safeboot'
+expect_ignored 'deps · osascript(123) · file-read-data · /Users/x/Library/Preferences/.GlobalPreferences.plist'
+expect_ignored 'deps · osascript(123) · file-read-data · /Users/x/Library/Preferences/ByHost/.GlobalPreferences.21972D70-0261-5271-9BC0-F369D8992BFB.plist'
+expect_alert 'deps · osascript(123) · mach-lookup · com.apple.securityd'
+expect_alert 'deps · osascript(123) · mach-lookup · com.apple.pasteboard.10'
+expect_alert 'deps · osascript(123) · file-read-data · /Users/x/Library/Preferences/com.apple.Safari.plist'
+expect_alert 'deps · osascript(123) · file-read-data · /Users/x/Library/Keychains/login.keychain-db'
+expect_alert 'present · osascript(123) · mach-lookup · com.apple.windowserver.active'
+
 # A machine-local pattern can scope by label through the summary line, and a
 # broken pattern beside it does not disable the rest of the list.
 printf '%s\n' '# comment' '' '^humanizer · .* · file-read-data · /Users/[^/]+/\.cache/' '(' \

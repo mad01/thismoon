@@ -56,8 +56,13 @@ check tools (`discovery_errors`), the scan-complete event (warn level), and a
 red callout on the web page all show it. Doctor reads what serve saved, never
 its own shell: serve runs under launchd with a narrower PATH. The usual cause
 is `exec: "go": executable file not found`, meaning the agent was registered
-without the launcher that puts the mise shims on PATH. Re-run `ralph up` to
-re-register it, then `deps check`.
+without the launcher that resolves the mise go. Re-run `ralph up` to
+re-register it, then `deps check`. serve runs sandboxed, so two more causes
+are the sandbox's: `operation not permitted` for a repo outside `~/code/src`
+(add it to `~/.config/srt/deps.local.json`), and `host is not on the allow
+list` for a module go would fetch from somewhere other than proxy.golang.org,
+such as a GOPRIVATE module. `t-man logs deps --source sandbox` shows the
+denials.
 
 A flagged advisory on a package nothing compiles in: Go scans cover the module
 graph (`go list -m -json all`), which includes modules no binary imports. So

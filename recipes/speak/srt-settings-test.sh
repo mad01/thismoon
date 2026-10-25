@@ -35,10 +35,12 @@ for f in "${files[@]}"; do
       .filesystem.allowWrite, .filesystem.denyWrite] | all(type == "array"))
   ' "$f" > /dev/null || fail "$rel: needs both domain lists and all four filesystem lists"
 
-  # Shipped settings name no host. A machine-specific host reaches the
-  # allow-list at launch through SRT_RUN_ALLOW_DOMAINS.
-  jq -e '.network.allowedDomains == []' "$f" > /dev/null ||
-    fail "$rel: allowedDomains must stay empty; pass hosts at launch"
+  # Shipped settings name only hosts that are the same on every machine, as
+  # the manifest declares them (deps names api.osv.dev). A machine-specific
+  # host reaches the allow-list at launch through SRT_RUN_ALLOW_DOMAINS, and
+  # no file may allow every host: srt rejects a bare * or *:port anyway.
+  jq -e '.network.allowedDomains | all(test("^\\*(:[0-9]+)?$") | not)' "$f" > /dev/null ||
+    fail "$rel: allowedDomains must not allow every host"
 
   jq -e '.filesystem.denyRead | index("~")' "$f" > /dev/null ||
     fail "$rel: denyRead must start from ~"
