@@ -39,9 +39,11 @@ Three pieces, split along the recipe layering in
    ([`recipes/speak/srt-run.sh`](../recipes/speak/srt-run.sh)). Usage:
    `srt-run <settings-file> <argv...>`. It expands a leading `~` in the
    settings path, finds srt through the mise shims dir, sets the child's
-   `TMPDIR`, and runs `srt --settings <abs> -- env SRT_RUN=<label> <argv...>`.
-   The label is the settings file's name (`~/.config/srt/present.json` gives
-   `present`); `SRT_RUN_LABEL` overrides it.
+   `TMPDIR`, and runs `srt --settings <abs> -- env SRT_RUN=<label> <argv...>`,
+   with srt itself under bun when one is installed
+   ([bun or node](#bun-or-node)). The label is the settings file's name
+   (`~/.config/srt/present.json` gives `present`); `SRT_RUN_LABEL`
+   overrides it.
 2. The settings file, `~/.config/srt/<label>.json`, rendered from the
    process's access manifest (see [Declaring access](#declaring-access)).
    A file that is the same on every machine ships beside its service's
@@ -74,6 +76,41 @@ drop-in that registers it.
 
 t-man services run `srt-run` as their program, with or without a wrapper
 in front of it. See [Sandboxing a t-man service](#sandboxing-a-t-man-service).
+
+### bun or node
+
+srt is a node CLI, and its process stays up beside the command for the
+command's whole life. It hosts the HTTP and SOCKS proxies that enforce
+`allowedDomains` and forwards signals, so each sandboxed process costs one
+extra runtime process. bun runs the same JS in less memory. Resident size
+of the srt parent, with srt 0.0.81 on macOS, for one sandboxed `sleep`
+after five proxied requests:
+
+| Runtime | Parent RSS |
+|---------|------------|
+| node 24 | about 83 MB |
+| bun 1.4.4 | about 48 MB |
+
+`SRT_RUN_RUNTIME` picks `bun` or `node`. Unset, `srt-run` uses bun when it
+finds one, in mise's installs dir first and then on `PATH`, and node
+otherwise. bun, like srt, is a mise tool the consuming repo declares. Each
+launch prints `srt-run: <label> runtime <bun|node>` to stderr, so a
+service's stderr log names the runtime it started under.
+
+Under bun, `srt-run` runs srt's `dist/cli.js` itself, because the npm bin
+wrapper execs node. It asks `mise which srt` for the bin the pin selects
+and follows it to the package. When it can't find `cli.js`, the launch
+stops with exit 127, and `SRT_RUN_RUNTIME=node` goes back to the wrapper.
+bun runs with `--no-env-file` and `--config=/dev/null`. By default it loads
+`.env` and `bunfig.toml` from the cwd, and a `bunfig.toml` preload would run
+a project's code in the unsandboxed parent. `--no-install` keeps it from
+fetching a package that is missing.
+
+The policy and the denial tag don't depend on the runtime, since srt's own
+JS builds both. Under bun, an allowed host answers 200 through the proxy and
+any other host gets nothing. Denials keep their `SRT_RUN` label in the
+ledger, a SIGTERM to the parent ends the command, and exit codes and stdio
+pass through.
 
 ### Settings live outside every allowWrite
 
@@ -545,9 +582,9 @@ with one of these open and explain anything new.
 - srt records nothing itself. The CLI prints no violations (upstream
   issue #582), so `sandbox-watch` is the only tap.
 - Apple Events are off unless the settings set `allowAppleEvents`.
-- One Node parent per process. srt stays running beside each sandboxed
-  process to run its proxies, so every MCP server costs one extra Node
-  process.
+- One srt parent per process. srt stays running beside each sandboxed
+  process to run its proxies, so every MCP server costs one extra bun
+  process, or node without bun ([bun or node](#bun-or-node)).
 - Launch noise. srt starts commands through bash, and its base profile
   denies `sysctl-read kern.iossupportversion` for each process in the exec
   chain. The fleet ignore list silences it.
@@ -574,6 +611,6 @@ with one of these open and explain anything new.
   manifest when every machine links the same target, and in the
   machine-local expansion layer when the target is machine-specific. The
   same holds for `allowWrite`.
-- Keep the launch machinery outside every `allowWrite`: srt's install, the
-  mise shims, `srt-run`, and the settings. Under `SRT_DEBUG`, srt warns when
+- Keep the launch machinery outside every `allowWrite`: srt's install,
+  bun's install, the mise shims, `srt-run`, and the settings. Under `SRT_DEBUG`, srt warns when
   its own install sits in a writable path.
