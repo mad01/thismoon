@@ -196,7 +196,7 @@ confirms which embedded webkit assets the running events server serves.
   printed by `events docs`): serve-must-be-running, store layout, failure
   modes, version-skew checks. Keep those facts there, not here.
 - **MCP is unsandboxed**: it's first-party code that only makes HTTP calls to
-  localhost, so it runs without a seatbelt wrapper, same as `reminder` and
+  localhost, so it runs without a sandbox wrapper, same as `reminder` and
   `worklog`.
 - **Codesign for the binary.** `make install` strips xattrs and re-signs (macOS
   kills adhoc-signed binaries with drifted provenance).

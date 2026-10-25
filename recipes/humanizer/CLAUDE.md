@@ -17,7 +17,7 @@ ralph merges the recipe with the identity `thismoon/humanizer`. The package
   the repo-root `skills/humanizer/` dir into `~/.claude/skills/` and
   `~/.agents/skills/` so the skill ships with the tool on every machine.
 - Public layer per docs/adr/0006. MCP registration, the sandbox wrapper +
-  seatbelt profile, and the `config.yaml` symlink are machine-private wiring
+  srt settings, and the `config.yaml` symlink are machine-private wiring
   and live in the consuming repo's companion recipe.
 
 The item key `packages.humanizer` is the same one the dotfiles recipe used

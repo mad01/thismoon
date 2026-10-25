@@ -53,7 +53,7 @@ func registerScanTools(s *mcp.Server) {
 			"detect (default true) runs the vale span rules over each file's extracted prose and reports findings against the Go source line they came from, in the same shape as humanizer_detect. " +
 			"recursive (default true) walks a directory into subdirectories; set false to scan only its direct children. " +
 			"Directories named vendor, node_modules, and testdata, dot-directories, and generated files are skipped; test files are included. " +
-			"Under the MCP sandbox only .go files (plus .md/.markdown/.txt) beneath the sandbox profile's workspace roots, plus /tmp paths, are readable. " +
+			"Under the MCP sandbox only .go files (plus .md/.markdown/.txt) beneath the allowRead roots in the sandbox settings (~/.config/srt/humanizer.json), plus /tmp paths, are readable. " +
 			"A denied path returns an error pointing at the CLI, which runs unsandboxed.",
 		Annotations: &mcp.ToolAnnotations{
 			OpenWorldHint: new(false),
@@ -142,7 +142,7 @@ func scanGoPathError(err error, path string) error {
 	}{
 		Error: path + " is not readable under the MCP sandbox",
 		Hint: "run `humanizer scan --go` from a shell instead; the CLI is unsandboxed. " +
-			"Readable here: .go files under the sandbox profile's workspace roots, and /tmp paths.",
+			"Readable here: .go files under the allowRead roots in ~/.config/srt/humanizer.json, and /tmp paths.",
 	})
 	return fmt.Errorf("%s; run the CLI instead: %w", redirect, err)
 }

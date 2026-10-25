@@ -86,3 +86,14 @@ and reconnects with backoff after a drop.
   checked by hand in a browser. Kill is held per tab in `sessionStorage`,
   so another tab, or a new one, starts the session again on its next
   attach.
+
+## Amendment (2026-10-25)
+
+The Context and Consequences name a seatbelt profile as the mechanism that
+confines `present mcp`. That profile (`recipes/present/present.sb`) is gone:
+`present mcp` now runs under anthropics/sandbox-runtime (srt) through
+`srt-run`, with `~/.config/srt/present.json` from the consuming repo. The
+posture this decision relies on is unchanged: most of `$HOME` is denied, the
+workdir is writable, and the process exits with its client. So the switch
+file is still within `present mcp`'s reach, and the CLI is still its only
+writer.

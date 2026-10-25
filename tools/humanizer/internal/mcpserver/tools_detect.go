@@ -68,7 +68,7 @@ func registerDetectTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "humanizer_detect_file",
 		Description: "Scan a file on disk for AI-writing patterns. Use instead of humanizer_detect when the text is already in a file: saves a read and lets vale use the real extension for format detection. " +
-			"Takes an absolute path. Under the MCP sandbox only prose files (.md/.markdown/.txt) and Go sources (.go) beneath the sandbox profile's workspace roots, plus /tmp paths, are readable; this tool still only makes sense on prose, so use humanizer_scan_go for Go source. " +
+			"Takes an absolute path. Under the MCP sandbox only prose files (.md/.markdown/.txt) and Go sources (.go) beneath the allowRead roots in the sandbox settings (~/.config/srt/humanizer.json), plus /tmp paths, are readable; this tool still only makes sense on prose, so use humanizer_scan_go for Go source. " +
 			"For anything else pass the text via humanizer_detect. Returns the same findings shape as humanizer_detect.",
 		Annotations: &mcp.ToolAnnotations{
 			OpenWorldHint: new(false),
@@ -171,11 +171,11 @@ func handleDetectFile(
 }
 
 // detectFileError translates a sandbox permission denial into a structured
-// error with a machine-readable use_instead field. The seatbelt profile
-// (recipes/humanizer/humanizer.sb, ADR-0016) only exposes prose files under
-// the code roots; everything else under $HOME is denied — including every
-// sibling of a denied path, so the hint says to switch tools, not retry
-// with the next file from the same directory.
+// error with a machine-readable use_instead field. The sandbox settings
+// (~/.config/srt/humanizer.json, the consuming repo's overlay) only expose
+// prose files under the code roots; everything else under $HOME is denied,
+// including every sibling of a denied path, so the hint says to switch
+// tools, not retry with the next file from the same directory.
 func detectFileError(err error, path string) error {
 	if !errors.Is(err, fs.ErrPermission) {
 		return err
@@ -189,7 +189,7 @@ func detectFileError(err error, path string) error {
 		UseInstead: "humanizer_detect",
 		Hint: "read the file yourself and pass its content as the text param to humanizer_detect. " +
 			"Do not retry humanizer_detect_file on other paths in the same directory; the whole directory is outside the sandbox. " +
-			"Readable here: .md/.markdown/.txt under the sandbox profile's workspace roots, and /tmp paths.",
+			"Readable here: .md/.markdown/.txt under the allowRead roots in ~/.config/srt/humanizer.json, and /tmp paths.",
 	})
 	return fmt.Errorf("%s; use humanizer_detect instead: %w", redirect, err)
 }

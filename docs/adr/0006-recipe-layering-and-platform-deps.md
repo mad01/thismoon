@@ -93,3 +93,19 @@ sources, then the machine-local overlay.
 Consequence for recipes here: never add `profiles` to a public recipe. A
 recipe that should not run on some machine class is withheld from the
 consuming side, not gated from this one.
+
+## Amendment (2026-10-25)
+
+Sandbox settings moved from the public layer to the private one. The
+Decision lists "sandbox profiles" among the public layer's contents, and
+for a first-party service that meant a seatbelt `.sb` file beside its
+recipe (present's `present.sb`). The fleet now sandboxes through
+anthropics/sandbox-runtime (srt), and a process's posture is a JSON
+settings file at `~/.config/srt/<tool>.json`. What a process may reach is a
+per-machine choice: the shared host present pushes to, the code roots
+humanizer may read. So the consuming repo ships every settings file as a
+config overlay, in a directory no sandbox may write. Hosts that differ per
+machine are merged in at launch from the wrapper's own inputs rather than
+written into the file. The public layer keeps what is portable: the shared
+`srt-run` launcher (speak recipe) and each tool's spawn wrapper, which
+names the settings path and fails closed when the file is absent.

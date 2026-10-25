@@ -16,7 +16,7 @@ const DefaultWorkdir = "~/.local/state/present"
 // state directory. An install that has published pages there keeps using
 // it — pages are not migrated, so a machine that has them must not be
 // pointed somewhere else. Every other machine lands in DefaultWorkdir. The
-// fleet recipe and the MCP's seatbelt profile both name this path
+// fleet recipe and the MCP's srt settings both name this path
 // explicitly, so a supervised process never depends on which branch the
 // resolution takes.
 const LegacyWorkdir = "~/.config/present"

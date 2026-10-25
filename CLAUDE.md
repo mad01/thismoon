@@ -36,8 +36,9 @@ docs/HOW-IT-FITS-TOGETHER.md fleet pitch, ralph vocabulary, rollout order
 docs/MEMORY-STACK.md    memory stores (auto memory, agent-memory, kof, worklog,
              handoff, events) and the belt hooks that surface them
 docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
-docs/SANDBOXING.md      seatbelt profiles, spawn wrappers, and denial triage for
-             sandboxed services and MCP servers
+docs/SANDBOXING.md      srt sandboxing (srt-run launcher, per-process settings
+             files, spawn wrappers) and denial triage for sandboxed services
+             and MCP servers
 ```
 
 ## Conventions

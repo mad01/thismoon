@@ -223,6 +223,15 @@ unchanged. Both the profile path and its content feed the idempotency hash:
 editing the `.sb` file makes the next `t-man add` re-render the plist and
 bounce the service; an unchanged re-add stays a no-op.
 
+New sandboxed services skip `--sandbox-profile` and register their srt
+wrapper script as the program instead (`t-man add --name <svc> --
+<wrapper>`), which execs `srt-run` with the service's settings file; see
+`docs/SANDBOXING.md` at the repo root. `--sandbox-profile` stays as the
+legacy path for a service that needs what srt's settings can't express,
+such as `iokit-open` for Metal. Tag every deny rule in such a profile with
+`(with message "SRT_RUN=<label>")` so the fleet's denial watcher attributes
+it.
+
 Idempotency in action:
 
 ```bash

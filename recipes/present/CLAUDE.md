@@ -53,31 +53,44 @@ Machine-specific wiring is deliberately not here (MAD-199 tracks the pattern):
   command pointing at `present-mcp-sandbox.sh` **in the sources cache**
   (`~/.config/ralph/sources/thismoon/recipes/present/present-mcp-sandbox.sh`)
 - the `present.this` route: `recipes/d-man/routes.toml` (`present` → 7423)
-- sandbox-denial monitoring (the dotfiles speak recipe's `sandbox-watch` agent
-  lists `present` in its watched processes)
+- the sandbox settings, `~/.config/srt/present.json` (see Sandbox
+  containment below)
 - `depends_on = ["packages.t_man"]` references the dotfiles t-man recipe's
   package key — the merged config must include the dotfiles recipes for
   validation to pass.
 
 ## Sandbox containment
 
-The MCP server runs inside a seatbelt profile. The dotfiles overlay registers
-`present-mcp-sandbox.sh` (not the bare binary). The wrapper `cd`-s to `/`
-(getcwd in a read-denied cwd is an EPERM). It scrubs the environment with
-`env -i` (only `HOME`, the three `PRESENT_*` config vars, and, when set, the
-two sharing vars pass through). Then it execs `~/code/bin/present mcp` under
-`sandbox-exec -f present.sb` (the profile lives beside the wrapper in this
-directory).
+The MCP server runs under anthropics/sandbox-runtime (srt). The dotfiles
+overlay registers `present-mcp-sandbox.sh` (not the bare binary). The wrapper
+`cd`-s to `/` (getcwd in a read-denied cwd is an EPERM). It scrubs the
+environment with `env -i` (only `HOME`, the three `PRESENT_*` config vars,
+and, when set, the two sharing vars and `SRT_DEBUG` pass through). Then it
+execs `~/code/bin/srt-run ~/.config/srt/present.json ~/code/bin/present mcp`.
+`srt-run` ships with the speak recipe; it tags the process with the label
+`present`, which is how `sandbox-watch` attributes its denials.
 
-`present.sb` posture:
-- **Egress shaped, not zero** — `present mcp` never serves; it dials the local
-  events port (`localhost:7430`) and, for `present_share`, outbound `:443` plus
-  DNS. Seatbelt can't filter by hostname, so a plain-http shared URL (a kind
-  port-forward, say) fails inside the sandbox on purpose. The Share button and
-  `present share` run outside it and take any URL.
-- **$HOME reads default-denied**; allow-list is `~/code/bin` (the binary) and
-  `~/.config/present` (page store).
-- **Writes** confined to `~/.config/present` + temp.
+The settings file is not in this repo. The consuming repo provides
+`~/.config/srt/present.json` beside the MCP registration (docs/adr/0006).
+It sits outside the page store on purpose: the sandbox may write the store
+and must never reach its own policy. Without the file srt exits 1 and the
+server never starts. The posture it should carry:
+- **Egress is a hostname allow-list.** `present mcp` never serves. It dials
+  the local events port (`allowLocalBinding: true` covers `127.0.0.1:7430`)
+  and, for `present_share`, the shared instance. The static file keeps
+  `network.allowedDomains` empty: the wrapper derives `host[:port]` from
+  `PRESENT_SHARED_URL` and passes it as `SRT_RUN_ALLOW_DOMAINS`, which
+  `srt-run` merges in at launch. Any other host is refused at srt's proxy.
+  The Share button and `present share` run outside the sandbox and reach any
+  URL.
+- **$HOME reads denied** (`denyRead: ["~"]`); `allowRead` carves out
+  `~/code/bin` (the binary) and the page store (`~/.config/present`,
+  `~/.local/state/present`).
+- **Writes** confined to the page store plus the temp dirs
+  (`/private/tmp`, `/private/var/folders`): `srt-run` points the child's
+  `TMPDIR` there, and srt does not allow it on its own.
+- Nothing present reads under its store is a symlink, so `allowRead` needs
+  no link targets (seatbelt checks the resolved path).
 
 ## Sharing config
 
@@ -104,8 +117,8 @@ off by default (`docs/adr/0025-present-terminal-sessions-in-serve.md`):
   which kills every session within one check. A switch serve cannot read
   counts as off.
 - **The CLI flips it, from the login shell.** No MCP tool touches it.
-  `present.sb` allows writes under `~/.config/present`, so the profile
-  alone would not stop a process inside the sandbox from creating the file.
+  The sandbox settings allow writes under `~/.config/present`, so the
+  sandbox alone would not stop a process inside it from creating the file.
 - **A session runs what the stored page names.** serve takes the command,
   directory, and prefill from the page's own terminal block, never from the
   socket, so script injected into a page cannot pick what runs.
@@ -148,5 +161,6 @@ picks up the new code:
 
 - Source + module notes: `services/present/CLAUDE.md`
 - Skill: repo-root `skills/present/SKILL.md` (linked into `~/.claude/skills/`)
-- Seatbelt profile + launchers: `present.sb`, `present-mcp-sandbox.sh`,
-  `present-serve.sh`, `present-shared-env.sh` (this dir)
+- Launchers: `present-mcp-sandbox.sh`, `present-serve.sh`,
+  `present-shared-env.sh` (this dir); the sandbox pattern and a worked
+  settings file: `docs/SANDBOXING.md`

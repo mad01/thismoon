@@ -1,6 +1,6 @@
 [recipe]
 name = "speak"
-description = "speak: the Go text-to-speech service at http://speak.this (document audio for present, CORS speech proxy) + the sandbox-watch seatbelt-denial notifier. The Kokoro TTS engine lives in the consuming repo's speak-tts recipe."
+description = "speak: the Go text-to-speech service at http://speak.this (document audio for present, CORS speech proxy) + the fleet's sandbox tooling: the srt-run launcher and the sandbox-watch denial notifier. The Kokoro TTS engine lives in the consuming repo's speak-tts recipe."
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a
@@ -17,9 +17,11 @@ wave = 0
 # through speak-env.sh, which hands speak the active provider's key from the
 # secrets file; with no config it is plain `speak serve`.
 #
-# sandbox-watch — streams seatbelt denials for all sandboxed t-man services,
-# so it lives here rather than with the engine: it is wanted on every machine
-# that runs a sandboxed service, not just the ones with the TTS engine.
+# srt-run + sandbox-watch: the launcher every sandboxed process execs through
+# (anthropics/sandbox-runtime, one settings JSON per process) and the watcher
+# that streams their denials. They live here rather than with the engine: they
+# are wanted on every machine that runs a sandboxed process, not just the ones
+# with the TTS engine. docs/SANDBOXING.md has the pattern.
 
 [packages.speak]
 source = "local"
@@ -44,10 +46,11 @@ pre_uninstall = [
 ]
 
 # Keep the scripts executable inside the sources cache: the sandbox-watch
-# agent execs sandbox-watch.sh, and speak-web and the consuming repo's MCP
-# registration exec speak-env.sh, straight from this directory.
+# agent execs sandbox-watch.sh, speak-web and the consuming repo's MCP
+# registration exec speak-env.sh, and every sandbox wrapper execs srt-run.sh
+# through the ~/code/bin/srt-run symlink, all straight from this directory.
 [hooks.builds.speak_chmod_scripts]
-commands = ["chmod +x sandbox-watch.sh sandbox-audit.sh speak-env.sh"]
+commands = ["chmod +x sandbox-watch.sh sandbox-audit.sh speak-env.sh srt-run.sh"]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/speak"
 run = "always"
 idempotent = true
@@ -60,20 +63,35 @@ working_dir = "~/.config/ralph/sources/thismoon/recipes/speak"
 run = "always"
 depends_on = ["packages.speak", "packages.t_man", "builds.speak_chmod_scripts"]
 
-# ── sandbox-watch: seatbelt denial notifications ──
-# Streams unified-log Sandbox denials for watched process names, batches per
-# 60s window, notifies via Notification Center, and appends to
+# ── srt-run: the sandbox launcher ──
+# `srt-run <settings-file> <argv...>` execs the command under srt with an
+# SRT_RUN=<label> marker that sandbox-watch attributes denials by. MCP
+# wrappers and t-man services exec it by this path; the per-process settings
+# (~/.config/srt/<tool>.json) come from the consuming repo. srt itself is a
+# mise tool the consuming repo declares (npm:@anthropic-ai/sandbox-runtime);
+# srt-run finds it through the mise shims dir.
+[dotfiles.srt_run]
+source = "srt-run.sh"
+target = "~/code/bin/srt-run"
+action = "symlink"
+
+# ── sandbox-watch: sandbox denial notifications ──
+# Streams unified-log Sandbox denials, keeps the ones srt-run tagged (decoding
+# the SRT_RUN label from srt's CMD64 tag), batches per 60s window, notifies
+# via Notification Center, and appends to
 # ~/.local/share/speak/logs/sandbox-denials.log (sandbox-audit.sh digs in).
+# Denials from agents' own srt shells land there as IGNORED (foreign).
 # Each banner is also mirrored to sandbox-notifications.log (same dir) with
 # the batch's unique denials — read that to see what a banner was about.
 # Both files are registered as t-man extra logs under the sandbox naming
 # convention (sandbox, sandbox-*), so `t-man logs sandbox` shows them.
-# One watcher covers all sandboxed t-man services — extend
-# SANDBOX_WATCH_PROCESSES when another service gets a --sandbox-profile and
-# give it an --extra-log sandbox=... pointing at the denials log.
+# One watcher covers every process launched through srt-run, plus legacy
+# seatbelt profiles whose deny rules carry (with message "SRT_RUN=<label>");
+# there is no process list. Give a sandboxed t-man service an --extra-log sandbox=...
+# pointing at the denials log so `t-man logs <name> --source sandbox` works.
 [hooks.builds.sandbox_watch_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name sandbox-watch --env SANDBOX_WATCH_PROCESSES=python,Python,humanizer,vale,github-mcp-server,present --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log --extra-log sandbox-notifications=$HOME/.local/share/speak/logs/sandbox-notifications.log -- $HOME/.config/ralph/sources/thismoon/recipes/speak/sandbox-watch.sh; else echo 'speak: skip sandbox-watch service (t-man not on PATH)'; fi",
+  "if command -v t-man >/dev/null; then t-man add --name sandbox-watch --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log --extra-log sandbox-notifications=$HOME/.local/share/speak/logs/sandbox-notifications.log -- $HOME/.config/ralph/sources/thismoon/recipes/speak/sandbox-watch.sh; else echo 'speak: skip sandbox-watch service (t-man not on PATH)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/speak"
 run = "always"
