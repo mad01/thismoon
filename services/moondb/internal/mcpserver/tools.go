@@ -241,6 +241,13 @@ func (h *handlers) handleTurn(
 		summary += fmt.Sprintf("; took %s, cost %s",
 			trace.FormatDuration(tot.WallMS), trace.FormatTotalsCost(*tot))
 	}
+	skipped := 0
+	for _, s := range d.Skipped {
+		skipped += s.Total()
+	}
+	if skipped > 0 {
+		summary += fmt.Sprintf("; %d files skipped", skipped)
+	}
 	if line := trace.PromptLine(prompt); line != "" {
 		summary += fmt.Sprintf("; prompt: %q", line)
 	}

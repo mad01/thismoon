@@ -41,7 +41,25 @@ func recordsOutliveClose(t *testing.T, open func(t *testing.T, dir string) store
 	if got, err := second.Chunks().Get(ctx, sha); err != nil || string(got) != "kept" {
 		t.Errorf("Get(%s) after reopen = %q, %v; want %q", sha, got, err, "kept")
 	}
+	sessionOutlivesClose(t, second)
+
+	seed(t, second, turn("t9", "s1", store.TurnOpen, at(80)),
+		store.Edit{ID: "e1", SessionID: "s1", TurnID: "t9", At: at(81), Path: "replayed.go"})
 	d, err := second.Session(ctx, "s1")
+	must(t, err)
+	if n := len(d.Turns); n == 0 || d.Turns[n-1].ID != "t9" || d.Turns[n-1].Seq != 3 {
+		t.Errorf("s1 turns after reopen = %+v, want t9 last with Seq 3", d.Turns)
+	}
+	edits, err := second.Edits(ctx, store.EditQuery{TurnID: "t9"})
+	must(t, err)
+	wantIDs(t, "edits under t9 after replaying e1", ids(edits, editID))
+}
+
+// sessionOutlivesClose checks that s1's last put session fields, its first
+// turn's totals and its skipped counts all read back from a reopened store.
+func sessionOutlivesClose(t *testing.T, s store.Store) {
+	t.Helper()
+	d, err := s.Session(context.Background(), "s1")
 	must(t, err)
 	if d.Title != "renamed" || d.TitleSource != store.TitleNamed ||
 		d.PromptLine != "fix the bug" || d.EndedAt == nil {
@@ -54,17 +72,6 @@ func recordsOutliveClose(t *testing.T, open func(t *testing.T, dir string) store
 	if len(d.Turns) == 0 || !sameSkipped(d.Turns[0].Skipped, historySkipped()) {
 		t.Errorf("t1 after reopen = %+v, want its skipped counts %+v", d.Turns, historySkipped())
 	}
-
-	seed(t, second, turn("t9", "s1", store.TurnOpen, at(80)),
-		store.Edit{ID: "e1", SessionID: "s1", TurnID: "t9", At: at(81), Path: "replayed.go"})
-	d, err = second.Session(ctx, "s1")
-	must(t, err)
-	if n := len(d.Turns); n == 0 || d.Turns[n-1].ID != "t9" || d.Turns[n-1].Seq != 3 {
-		t.Errorf("s1 turns after reopen = %+v, want t9 last with Seq 3", d.Turns)
-	}
-	edits, err := second.Edits(ctx, store.EditQuery{TurnID: "t9"})
-	must(t, err)
-	wantIDs(t, "edits under t9 after replaying e1", ids(edits, editID))
 }
 
 // history is a small but complete record set: two sessions, open and

@@ -523,6 +523,24 @@ func TestBashLocatesEachWorktreeOnce(t *testing.T) {
 	if i < 0 || envs[i].Edit.Location.Worktree != inner || envs[i].Edit.Path != "deep/g.txt" {
 		t.Errorf("edit %s = %+v, want deep/g.txt in %q", nestedID, envs[max(i, 0)].Edit, inner)
 	}
+	for _, env := range envs {
+		ep := env.Edit
+		switch {
+		case env.ID == nestedID:
+		case strings.HasPrefix(ep.AbsPath, free):
+			if ep.Location.Worktree != "" || ep.Path != ep.AbsPath {
+				t.Errorf(
+					"outside edit %s = %+v, want no location and its absolute path",
+					env.ID,
+					ep,
+				)
+			}
+		case ep.Location.Worktree != repo || ep.Location.Repo == "" ||
+			!strings.HasPrefix(ep.Path, "dir") || !strings.HasSuffix(ep.Path, "/sub/f.txt"):
+			t.Errorf("prefix-placed edit %s = %+v, want dirN/sub/f.txt in %q with its repo",
+				env.ID, ep, repo)
+		}
+	}
 	if n := locateCalls(t, log); n != 3 {
 		t.Errorf("%d location lookups, want 3: the repo, the nested repo, the outside dir", n)
 	}
