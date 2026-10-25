@@ -16,18 +16,21 @@ import (
 	"github.com/mad01/thismoon/services/moondb/internal/derive"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 // Ingester moves envelopes from a spool into a store. Serve runs one, and
 // it is the store's only writer. Now stamps an envelope that carries no
 // time and paces retries; nil means time.Now. Logf receives one line per
 // envelope that fails, is moved aside, or loses a turn chunk; nil discards
-// them.
+// them. Prices only decides which side of a model's long-prompt threshold
+// a call in a turn's totals falls on; its zero value is the default table.
 type Ingester struct {
-	Store store.Store
-	Spool *spool.Reader
-	Now   func() time.Time
-	Logf  func(format string, args ...any)
+	Store  store.Store
+	Spool  *spool.Reader
+	Now    func() time.Time
+	Logf   func(format string, args ...any)
+	Prices trace.Prices
 }
 
 // Ingest records one envelope. It first copies the chunks the envelope

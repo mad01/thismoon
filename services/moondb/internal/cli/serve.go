@@ -67,11 +67,13 @@ func runServe(_ *cobra.Command, _ []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	table := trace.NewPrices(prices)
 	ing := &ingest.Ingester{
-		Store: st,
-		Spool: &spool.Reader{Dir: filepath.Join(flagWorkdir, moondb.SpoolDirName)},
-		Now:   time.Now,
-		Logf:  log.Printf,
+		Store:  st,
+		Spool:  &spool.Reader{Dir: filepath.Join(flagWorkdir, moondb.SpoolDirName)},
+		Now:    time.Now,
+		Logf:   log.Printf,
+		Prices: table,
 	}
 	go func() {
 		if err := ing.Run(ctx); err != nil && ctx.Err() == nil {
@@ -79,7 +81,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 		}
 	}()
 
-	svc := &query.Service{Store: st, Prices: trace.NewPrices(prices)}
+	svc := &query.Service{Store: st, Prices: table}
 	srv := &http.Server{
 		Addr:              listenAddr(flagPort),
 		Handler:           server.New(st, svc, buildinfo.Get()).Handler(),

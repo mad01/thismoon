@@ -60,6 +60,12 @@ func (s *Service) SessionTrace(ctx context.Context, id string) (trace.SessionTra
 	return trace.BuildSession(id, turns), nil
 }
 
+// UsageCost prices stored usage with the Service's table: the USD of the
+// priced part, nil when no part has a price, and the unpriced models.
+func (s *Service) UsageCost(usage []store.ModelUsage) (cost *float64, unpriced []string) {
+	return s.Prices.UsageCost(usage)
+}
+
 // promptLine is the first non-blank line of a prompt, cut to
 // promptLineRunes; "" when the chunk is missing. A label is never worth
 // failing the trace over.

@@ -80,7 +80,7 @@ func printSessions(w io.Writer, sessions []server.SessionSummary) {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			when(s.StartedAt), short(s.ID), fmtCount(s.TurnCount), fmtCount(s.EditCount),
 			trace.FormatDuration(s.DurationMS),
-			orDash(strings.Join(s.Repos, ",")), orDash(sessionLabel(s.Title, s.Cwd)))
+			orDash(strings.Join(s.Repos, ",")), orDash(s.Title))
 	}
 	_ = tw.Flush()
 }

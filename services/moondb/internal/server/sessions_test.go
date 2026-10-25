@@ -1,0 +1,193 @@
+package server
+
+import (
+	"math"
+	"net/http"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/mad01/thismoon/services/moondb"
+	"github.com/mad01/thismoon/services/moondb/internal/server/servertest"
+	"github.com/mad01/thismoon/services/moondb/internal/store"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
+)
+
+// sessionList fetches GET /api/sessions with query.
+func (h harness) sessionList(t *testing.T, query string) SessionList {
+	t.Helper()
+	var got SessionList
+	h.getJSON(t, "/api/sessions"+query, http.StatusOK, &got)
+	return got
+}
+
+// oldCost is what the older session's trace says it cost.
+func (h harness) oldCost(t *testing.T) float64 {
+	t.Helper()
+	var tr trace.SessionTrace
+	h.getJSON(t, "/api/sessions/"+servertest.OldSession+"/trace", http.StatusOK, &tr)
+	if tr.Totals.Cost == nil {
+		t.Fatal("the older session's trace has no cost")
+	}
+	return *tr.Totals.Cost
+}
+
+func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
+
+// TestSessionRows: a row names the session by the title rule, says
+// whether it runs, counts what it touched, and prices the tokens its
+// turns keep to what its trace computes from the transcript.
+func TestSessionRows(t *testing.T) {
+	h := newHarness(t)
+	got := h.sessionList(t, "").Sessions
+	if len(got) != 2 {
+		t.Fatalf("sessions = %d, want 2", len(got))
+	}
+	newer, older := got[0], got[1]
+	if newer.Status != StatusRunning || older.Status != StatusEnded {
+		t.Errorf("status = %s, %s; want the open turn running and the closed one ended",
+			newer.Status, older.Status)
+	}
+	if older.Title != servertest.OldPromptLine {
+		t.Errorf("untitled session's title = %q, want its prompt line", older.Title)
+	}
+	if !slices.Equal(newer.RepoNames, []string{"owner/thismoon"}) {
+		t.Errorf("repo names = %v, want the last two segments", newer.RepoNames)
+	}
+	if newer.FileCount != 2 || newer.AgentCount != 1 || older.FileCount != 1 {
+		t.Errorf("files %d, agents %d, older files %d; want 2, 1, 1",
+			newer.FileCount, newer.AgentCount, older.FileCount)
+	}
+	if !newer.LastActivityAt.Equal(servertest.T0.Add(63 * time.Minute)) {
+		t.Errorf("last activity = %v, want the newest edit", newer.LastActivityAt)
+	}
+	if newer.Cost != nil || newer.Tokens.Total() != 0 {
+		t.Errorf("newer cost %v, tokens %+v; want none while its turn is open",
+			newer.Cost, newer.Tokens)
+	}
+	if older.Cost == nil || !near(*older.Cost, h.oldCost(t)) || older.Tokens.Total() != 1530 {
+		t.Errorf("older cost %v, tokens %d; want the trace's cost and 1530 tokens",
+			older.Cost, older.Tokens.Total())
+	}
+}
+
+// TestSessionsWindow: the window adds up every session the filters keep,
+// past the limit, and the repos come from the time window whatever the
+// repo filter says.
+func TestSessionsWindow(t *testing.T) {
+	h := newHarness(t)
+	cost := h.oldCost(t)
+	wantRepos := []RepoCount{
+		{Repo: servertest.OtherRepo, Name: "owner/other", Sessions: 1},
+		{Repo: servertest.Repo, Name: "owner/thismoon", Sessions: 1},
+	}
+	tests := []struct {
+		name, query string
+		rows        int
+		want        WindowTotals
+	}{
+		{"all", "", 2, WindowTotals{Sessions: 2, Turns: 2, Edits: 3, Files: 3}},
+		{"limit", "?limit=1", 1, WindowTotals{Sessions: 2, Turns: 2, Edits: 3, Files: 3}},
+		{
+			"repo", "?repo=" + servertest.OtherRepo, 1,
+			WindowTotals{Sessions: 1, Turns: 1, Edits: 1, Files: 1},
+		},
+		{"since", "?since=45m", 1, WindowTotals{Sessions: 1, Turns: 1, Edits: 2, Files: 2}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := h.sessionList(t, tc.query)
+			w := got.Window
+			if len(got.Sessions) != tc.rows || w.Sessions != tc.want.Sessions ||
+				w.Turns != tc.want.Turns || w.Edits != tc.want.Edits || w.Files != tc.want.Files {
+				t.Errorf(
+					"%d rows, window %+v; want %d rows, %+v",
+					len(got.Sessions),
+					w,
+					tc.rows,
+					tc.want,
+				)
+			}
+			if tc.name != "since" && (w.Cost == nil || !near(*w.Cost, cost)) {
+				t.Errorf("window cost = %v, want the older session's %v", w.Cost, cost)
+			}
+			if tc.name == "since" && w.Cost != nil {
+				t.Errorf("window cost = %v, want none: no session in it has tokens", *w.Cost)
+			}
+			if tc.name != "since" && !slices.Equal(got.Repos, wantRepos) {
+				t.Errorf("repos = %+v, want %+v", got.Repos, wantRepos)
+			}
+		})
+	}
+}
+
+// TestSessionViewCarriesRow: one session answers with its turns and the
+// listing row, title and status included.
+func TestSessionViewCarriesRow(t *testing.T) {
+	h := newHarness(t)
+	var got SessionView
+	h.getJSON(t, "/api/sessions/"+servertest.OldSession, http.StatusOK, &got)
+	if got.Summary.Title != servertest.OldPromptLine || got.Summary.Status != StatusEnded ||
+		len(got.Turns) != 1 || got.Summary.TurnCount != 1 {
+		t.Errorf("view = summary %+v, %d turns", got.Summary, len(got.Turns))
+	}
+}
+
+func TestSessionStatus(t *testing.T) {
+	now := servertest.T0
+	tests := []struct {
+		name     string
+		idle     time.Duration
+		lastOpen bool
+		want     string
+	}{
+		{"recent activity", moondb.SessionIdleAfter - time.Second, false, StatusRunning},
+		{"idle", moondb.SessionIdleAfter, false, StatusEnded},
+		{"open last turn", moondb.OpenTurnStaleAfter - time.Second, true, StatusRunning},
+		{"stale open turn", moondb.OpenTurnStaleAfter, true, StatusEnded},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sum := store.SessionSummary{
+				LastActivityAt: now.Add(-tc.idle),
+				LastTurnOpen:   tc.lastOpen,
+			}
+			if got := sessionStatus(sum, now); got != tc.want {
+				t.Errorf("status = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSessionTitle(t *testing.T) {
+	tests := []struct {
+		name string
+		s    store.Session
+		want string
+	}{
+		{"harness title", store.Session{Title: "t", PromptLine: "p", Cwd: "/a/b"}, "t"},
+		{"prompt line", store.Session{PromptLine: "p", Cwd: "/a/b"}, "p"},
+		{"cwd segment", store.Session{Cwd: "/a/b/"}, "b"},
+		{"id", store.Session{ID: "sess", Cwd: "/"}, "sess"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sessionTitle(tc.s); got != tc.want {
+				t.Errorf("sessionTitle = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRepoName(t *testing.T) {
+	for repo, want := range map[string]string{
+		"github.com/mad01/thismoon": "mad01/thismoon",
+		"git.example.com/a/b/c":     "b/c",
+		"owner/repo":                "owner/repo",
+		"local":                     "local",
+	} {
+		if got := repoName(repo); got != want {
+			t.Errorf("repoName(%q) = %q, want %q", repo, got, want)
+		}
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 )
 
@@ -29,7 +30,11 @@ const (
 // Run drains the spool into the store until ctx ends. It ingests every
 // envelope present, then each one Spool.Watch reports, in name order; each
 // ingested envelope is removed and every drained batch ends with a
-// Spool.Sweep, as does a drain at least every minute. An envelope that
+// Spool.Sweep, as does a drain at least every minute. While the spool is
+// empty, it computes the totals of stored turns that lack them, a few
+// each tick (moondb.TotalsBackfillTurns every moondb.TotalsBackfillEvery),
+// in the same goroutine, so the backfill never races an envelope for a
+// turn. An envelope that
 // fails to decode or ingest, or panics while ingesting, is logged and left
 // for a later attempt without holding up the ones behind it. After maxAttempts it is moved to
 // <spool>/failed/ with the envelope file only; its chunks go with the next
@@ -38,7 +43,12 @@ const (
 // returns nil when ctx ends and an error only when the spool cannot be
 // watched.
 func (in *Ingester) Run(ctx context.Context) error {
-	r := &runner{in: in, attempts: map[string]int{}, retryAt: map[string]time.Time{}}
+	r := &runner{
+		in:       in,
+		attempts: map[string]int{},
+		retryAt:  map[string]time.Time{},
+		skip:     map[string]bool{},
+	}
 	r.drain(ctx)
 	ring := make(chan struct{}, 1)
 	watched := make(chan error, 1)
@@ -52,6 +62,8 @@ func (in *Ingester) Run(ctx context.Context) error {
 	}()
 	tick := time.NewTicker(sweepEvery)
 	defer tick.Stop()
+	backfill := time.NewTicker(moondb.TotalsBackfillEvery)
+	defer backfill.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -62,15 +74,44 @@ func (in *Ingester) Run(ctx context.Context) error {
 			r.drain(ctx)
 		case <-tick.C:
 			r.drain(ctx)
+		case <-backfill.C:
+			r.backfill(ctx)
 		}
 	}
 }
 
-// runner is the state one Run keeps about failed envelopes, keyed by path.
+// runner is the state one Run keeps: failed envelopes keyed by path, and
+// the totals backfill's progress.
 type runner struct {
 	in       *Ingester
 	attempts map[string]int
 	retryAt  map[string]time.Time
+	// skip holds the turns whose totals the backfill could not compute;
+	// backfilled counts the turns computed since the backlog last ran out.
+	skip       map[string]bool
+	backfilled int
+}
+
+// backfill computes one batch of missing turn totals, but only while the
+// spool is empty: an envelope always goes first. When a batch finds
+// nothing left after earlier ones did work, it logs how many turns it
+// filled.
+func (r *runner) backfill(ctx context.Context) {
+	pending, err := r.in.Spool.List()
+	if err != nil || len(pending) > 0 {
+		return
+	}
+	n, err := r.in.backfillTotals(ctx, moondb.TotalsBackfillTurns, r.skip)
+	if err != nil {
+		r.in.logf("%v", err)
+		return
+	}
+	r.backfilled += n
+	if n == 0 && r.backfilled > 0 {
+		r.in.logf("ingest: totals backfill done: computed the totals of %d stored turns",
+			r.backfilled)
+		r.backfilled = 0
+	}
 }
 
 // drain ingests every pending envelope not waiting out a retry delay, in

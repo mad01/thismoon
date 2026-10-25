@@ -77,6 +77,34 @@ const (
 	TraceTopSpans = 10
 )
 
+// Turn totals. serve stores each turn's trace totals when the turn closes;
+// a turn stored before that, or by an older trace build, gets them from a
+// backfill that runs while the spool is empty, a batch per tick, newest
+// turns first. A batch reads one transcript chunk per turn, so it stays
+// small to keep the next envelope waiting at most a moment.
+const (
+	// TotalsBackfillTurns is how many turns one backfill batch computes.
+	TotalsBackfillTurns = 20
+	// TotalsBackfillEvery is how often the backfill runs a batch.
+	TotalsBackfillEvery = time.Second
+)
+
+// Session listing. The listing reads records only, never a chunk, so the
+// fields a row shows are kept on the records or counted from them.
+const (
+	// SessionIdleAfter is how long a session goes without a recorded turn
+	// start, turn end or edit before the listing calls it ended rather
+	// than running.
+	SessionIdleAfter = 10 * time.Minute
+	// OpenTurnStaleAfter is how long an open last turn keeps a session
+	// running without other activity. The harness sends no Stop for a turn
+	// the person interrupted, so such a turn stays open for good.
+	OpenTurnStaleAfter = 12 * time.Hour
+	// SessionPromptLineRunes caps the first prompt line a session keeps
+	// for its title.
+	SessionPromptLineRunes = 100
+)
+
 // Prompt caching bills a cache write and a cache read as a multiple of the
 // model's input rate (the claude-api skill, shared/prompt-caching.md,
 // Economics). A model whose cache read rate differs names it in its row.

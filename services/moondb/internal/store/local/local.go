@@ -274,9 +274,13 @@ func (s *Store) appendFact(
 	return s.commit(kind, v)
 }
 
-// Sessions lists sessions newest first by StartedAt. Since keeps sessions
-// started at or after it; Repo keeps sessions with an edit in the repo.
-func (s *Store) Sessions(ctx context.Context, f store.SessionFilter) ([]store.Session, error) {
+// Sessions lists sessions newest first by StartedAt, each summarized from
+// the index. Since keeps sessions started at or after it; Repo keeps
+// sessions with an edit in the repo.
+func (s *Store) Sessions(
+	ctx context.Context,
+	f store.SessionFilter,
+) ([]store.SessionSummary, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -285,9 +289,19 @@ func (s *Store) Sessions(ctx context.Context, f store.SessionFilter) ([]store.Se
 	return s.ix.sessionList(f), nil
 }
 
-// Session loads a session with its turns in Seq order, the worktrees it
-// edited in (sorted; edits outside any repository add none), and its edit
-// count. Returns store.ErrNotFound.
+// TurnsWithoutTotals lists up to limit closed or failed turns whose totals
+// are missing or older than version, newest first.
+func (s *Store) TurnsWithoutTotals(ctx context.Context, version, limit int) ([]store.Turn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.ix.turnsWithoutTotals(version, limit), nil
+}
+
+// Session loads a session with its summary and its turns in Seq order.
+// Returns store.ErrNotFound.
 func (s *Store) Session(ctx context.Context, id string) (store.SessionDetail, error) {
 	if err := ctx.Err(); err != nil {
 		return store.SessionDetail{}, err

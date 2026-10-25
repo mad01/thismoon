@@ -25,13 +25,54 @@
 .spaced{margin-top:1.5rem}
 #app a{color:var(--primary);text-underline-offset:2px}
 
-/* filters on the sessions list */
-.filters{display:flex;flex-wrap:wrap;align-items:center;gap:0.6rem;margin:0 0 1.25rem}
-.filters label{font-size:0.8rem;color:var(--text-3);display:flex;align-items:center;gap:0.4rem}
-.filters input,.filters select{appearance:none;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:0.4rem 0.7rem;font-family:inherit;font-size:0.85rem;color:var(--text-1)}
-.filters input{min-width:18rem}
-.filters input:focus,.filters select:focus{outline:none;border-color:var(--primary)}
+/* sessions list: a window switch and repo chips, a strip that adds the
+   window up, then one table with a heading row per day */
+.ls-controls{display:flex;flex-wrap:wrap;align-items:center;gap:0.75rem 1.25rem;margin:0 0 1.1rem}
+.ls-chips{display:flex;flex-wrap:wrap;gap:0.4rem}
+.ls-chips wk-badge{font-size:0.75rem;gap:0.4rem}
+.ls-n{font-variant-numeric:tabular-nums;opacity:0.6}
+.ls-strip{display:flex;flex-wrap:wrap;align-items:baseline;gap:0.3rem 1.6rem;padding:0.75rem 0.1rem;border-top:1px solid var(--border);border-bottom:1px solid var(--border);font-size:0.82rem;color:var(--text-2)}
+.ls-fig b{font-size:1.2rem;font-weight:650;color:var(--text-1);font-variant-numeric:tabular-nums;margin-right:0.35rem;letter-spacing:-0.01em}
+.ls-scope{margin-left:auto;color:var(--text-3);font-size:0.8rem}
+.ls-table table{table-layout:fixed;margin-top:0.25rem}
+.ls-table th.c-repo{width:13rem}
+.ls-table th.c-when{width:13rem}
+.ls-table th.c-n{width:4.4rem}
+.ls-table th.c-cost{width:5.6rem}
+.ls-table th.num{text-align:right}
+.ls-table td{vertical-align:middle}
+.ls-table td.num{color:var(--text-2)}
+.ls-table td.zero{color:var(--text-3);opacity:0.55}
+.ls-table tr.ls-day td,.ls-table tr.ls-day:hover td{background:none;padding:1.4rem 0.75rem 0.4rem;border-bottom:1px solid var(--border-hover)}
+.ls-table tbody:first-of-type tr.ls-day td{padding-top:0.8rem}
+.ls-day-in{display:flex;align-items:baseline;gap:0.6rem}
+.ls-day-name{font-size:0.9rem;font-weight:650;color:var(--text-1)}
+.ls-day-date{font-size:0.78rem;color:var(--text-3)}
+.ls-day-sum{margin-left:auto;font-size:0.78rem;color:var(--text-3);font-variant-numeric:tabular-nums}
+#app .ls-title a{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-1);font-weight:500;text-decoration:none}
+#app .ls-title a:hover{color:var(--primary);text-decoration:underline}
+.ls-repos{flex-wrap:nowrap;gap:0.3rem;min-width:0}
+#app a.ls-badge{display:inline-flex;align-items:center;gap:0.4rem;min-width:0;max-width:100%;padding:0.18rem 0.5rem 0.18rem 0.4rem;border-radius:4px;background:color-mix(in srgb,var(--hue) 13%,transparent);color:var(--text-1);font-family:var(--mono);font-size:0.72rem;text-decoration:none;border:1px solid transparent}
+#app a.ls-badge:hover{border-color:color-mix(in srgb,var(--hue) 55%,transparent)}
+.ls-swatch{flex:none;width:0.5rem;height:0.5rem;border-radius:2px;background:var(--hue)}
+.ls-badge-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ls-more,.ls-norepo{font-size:0.72rem;color:var(--text-3);white-space:nowrap}
+.ls-when{color:var(--text-2);font-variant-numeric:tabular-nums}
+.ls-dot{display:inline-block;width:0.5rem;height:0.5rem;border-radius:50%;border:1.5px solid var(--text-3);margin-right:0.5rem;vertical-align:0.05em;box-sizing:border-box}
+.ls-dot.is-on{background:var(--green);border-color:var(--green);animation:ls-pulse 2.4s ease-out infinite}
+@keyframes ls-pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--green) 55%,transparent)}70%,100%{box-shadow:0 0 0 6px transparent}}
+@media (prefers-reduced-motion:reduce){.ls-dot.is-on{animation:none}}
+.ls-ago.is-on{color:var(--green);font-weight:600}
+.ls-span{color:var(--text-3)}
+.ls-span::before{content:"\00B7";margin:0 0.45rem}
+.ls-cost{font-weight:600}
+.ls-table td.ls-cost{color:var(--text-1)}
+@media (max-width:900px){.ls-table .c-sm{display:none}.ls-table th.c-repo{width:9.5rem}}
+@media (max-width:640px){.ls-table th.c-repo,.ls-table td.ls-repo{display:none}.ls-scope{margin-left:0}}
 .more{margin-top:1rem}
+/* session page: the line under the title */
+.ss-line{display:flex;flex-wrap:wrap;align-items:center;gap:0.45rem 1.1rem;margin-top:0.5rem;font-size:0.875rem;color:var(--text-2);font-variant-numeric:tabular-nums}
+.ss-status.is-on{color:var(--green);font-weight:600}
 
 /* prose blocks: prompts and final messages keep their line breaks */
 .prose{white-space:pre-wrap;word-break:break-word;font-size:0.9375rem;line-height:1.7;color:var(--text-1)}

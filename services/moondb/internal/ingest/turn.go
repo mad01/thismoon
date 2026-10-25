@@ -28,6 +28,16 @@ func (in *Ingester) turnOpen(
 		return err
 	}
 	prompt := in.kept(env, missing, env.TurnOpen.PromptChunk)
+	if err := in.openTurn(ctx, env, prompt); err != nil {
+		return err
+	}
+	return in.fillSession(ctx, env.Session.ID, "", in.promptLine(ctx, prompt))
+}
+
+// openTurn puts the turn a turn-open names, or fills the one the store
+// holds. A closed turn whose start moved back gets its totals again, since
+// its wall time grew.
+func (in *Ingester) openTurn(ctx context.Context, env spool.Envelope, prompt string) error {
 	td, found, err := in.loadTurn(ctx, env.Turn.ID)
 	if err != nil {
 		return err
@@ -46,14 +56,16 @@ func (in *Ingester) turnOpen(
 	if !changed {
 		return nil
 	}
+	in.withTotals(ctx, &t)
 	return in.putTurn(ctx, t)
 }
 
 // turnClose records the end of a turn: its last message, its transcript
-// lines and its final status. A close whose open never arrived creates the
-// turn, and the session with it, so the turn's records do not dangle. A
-// backfill only fills: it closes a turn still open and sets fields the
-// turn has empty.
+// lines, its final status and the totals of its trace. A close whose open
+// never arrived creates the turn, and the session with it, so the turn's
+// records do not dangle. A backfill only fills: it closes a turn still
+// open and sets fields the turn has empty. A session without a title takes
+// the one the turn's lines give.
 func (in *Ingester) turnClose(
 	ctx context.Context,
 	env spool.Envelope,
@@ -85,7 +97,11 @@ func (in *Ingester) turnClose(
 	if !changed {
 		return nil
 	}
-	return in.putTurn(ctx, t)
+	lines := in.withTotals(ctx, &t)
+	if err := in.putTurn(ctx, t); err != nil {
+		return err
+	}
+	return in.fillSession(ctx, t.SessionID, transcriptTitle(lines), "")
 }
 
 // closeTurn sets the turn's final status and end time and reports whether

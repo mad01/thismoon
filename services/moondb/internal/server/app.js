@@ -4,9 +4,11 @@
 // the DOM with webkit's shared helpers. Four views, picked by the query
 // string:
 //
-//   /                              sessions, newest first; ?repo= and ?since= filter
-//   /?session=<id>                 one session: its trace (a timeline lane per turn), the
-//                                  worktrees it touched and its turns
+//   /                              sessions grouped by day, newest first, last 7 days by
+//                                  default; ?since= and ?repo= filter, ?limit= pages
+//   /?session=<id>                 one session: its title, repos and status, its trace (a
+//                                  timeline lane per turn), its turns and the worktrees
+//                                  it touched
 //   /?turn=<id>                    one turn: prompt, final message, agents, edits with
 //                                  their diffs, unattributed deltas, snapshots, commit
 //                                  links and the raw transcript
@@ -421,28 +423,41 @@
 
   // ── sessions list ──
 
-  var SINCE = [['', 'any time'], ['24h', 'last 24 hours'], ['7d', 'last 7 days'], ['30d', 'last 30 days']];
+  // SINCE are the time windows the list offers, DEFAULT_SINCE the one it
+  // opens on. 'any' sends no bound to the API.
+  var SINCE = [['24h', '24 hours'], ['7d', '7 days'], ['30d', '30 days'], ['any', 'Any time']];
+  var DEFAULT_SINCE = '7d';
+  var SINCE_PHRASE = { '24h': 'in the last 24 hours', '7d': 'in the last 7 days',
+    '30d': 'in the last 30 days', 'any': 'since recording began' };
+
+  // Repo badges take a series hue picked by the repo's name, so one repo
+  // keeps its colour from row to row.
+  var REPO_HUES = ['--series-1', '--series-2', '--series-3', '--series-4'];
 
   function renderSessions() {
     document.title = 'Sessions · moondb';
     var state = {
       repo: params.get('repo') || '',
-      since: params.get('since') || '',
+      since: params.get('since') || DEFAULT_SINCE,
       limit: parseInt(params.get('limit'), 10) || PAGE
     };
+    var controls = el('div', { class: 'ls-controls' });
+    var strip = el('div', { class: 'ls-strip' });
     var list = el('div', {}, el('div', { class: 'empty' }, 'Loading…'));
-    var sub = el('wk-subtitle', {}, '');
-    var filters = sessionFilters(state, function (repo, since) {
-      state.repo = repo;
-      state.since = since;
+
+    function sync() {
+      var q = qs({
+        repo: state.repo,
+        since: state.since === DEFAULT_SINCE ? '' : state.since,
+        limit: state.limit === PAGE ? '' : state.limit
+      });
+      history.replaceState(null, '', q ? '?' + q : '/');
+    }
+    function set(change) {
+      Object.keys(change).forEach(function (k) { state[k] = change[k]; });
       state.limit = PAGE;
       sync();
       load();
-    });
-
-    function sync() {
-      var q = qs({ repo: state.repo, since: state.since, limit: state.limit === PAGE ? '' : state.limit });
-      history.replaceState(null, '', q ? '?' + q : '/');
     }
     function more() {
       state.limit += PAGE;
@@ -450,71 +465,115 @@
       load();
     }
     function load() {
-      getJSON('/api/sessions?' + qs({ repo: state.repo, since: state.since, limit: state.limit }))
+      var since = state.since === 'any' ? '' : state.since;
+      getJSON('/api/sessions?' + qs({ repo: state.repo, since: since, limit: state.limit }))
         .then(function (data) {
           var sessions = data.sessions || [];
-          sessions.forEach(function (s) { filters.offer(s.repos || []); });
-          sub.textContent = plural(sessions.length, 'session') + ', newest first';
-          list.replaceChildren.apply(list, sessionList(sessions, Boolean(state.repo || state.since),
-            sessions.length === state.limit ? more : null));
+          var win = data.window || {};
+          controls.replaceChildren(sinceControl(state, set), repoChips(data.repos || [], state, set));
+          strip.replaceChildren.apply(strip, windowStrip(win, state));
+          list.replaceChildren.apply(list, sessionDays(sessions, state,
+            (win.sessions || 0) > sessions.length ? more : null));
         })
         .catch(function (err) { list.replaceChildren(el('div', { class: 'empty' }, 'Failed to load: ' + err.message)); });
     }
 
     replace([
-      el('wk-page-header', {}, [el('wk-title', {}, 'Sessions'), sub]),
-      el('p', { class: 'hint' }, [
-        'Edits between commits, each linked to the agent turn that made it. Ask about one line with ',
-        el('code', {}, 'moondb why'), ' or the ', el('code', {}, 'moondb_why'), ' MCP tool.'
-      ]),
-      filters.node,
+      el('wk-page-header', {}, [el('wk-title', {}, 'Sessions')]),
+      el('p', { class: 'hint' },
+        'Each row is one Claude Code session: the repo it worked in, what it was about, and what it cost.'),
+      controls,
+      strip,
       list
     ]);
     load();
     setInterval(load, 60000);
   }
 
-  // sessionFilters builds the repo and since controls from state and calls
-  // onChange with both values when either one changes. offer adds repos to
-  // the repo input's suggestions.
-  function sessionFilters(state, onChange) {
-    var repoInput = el('input', {
-      type: 'search', placeholder: 'any repository', value: state.repo,
-      list: 'repo-options', 'aria-label': 'Repository'
-    });
-    var options = el('datalist', { id: 'repo-options' });
-    var since = el('select', { 'aria-label': 'Since' }, SINCE.map(function (o) {
-      return el('option', { value: o[0] }, o[1]);
-    }));
+  // sinceControl is the time window switch. A window the URL names that
+  // the switch lacks, such as since=12h, gets a button of its own.
+  function sinceControl(state, set) {
+    var options = SINCE.slice();
     if (!SINCE.some(function (o) { return o[0] === state.since; })) {
-      since.appendChild(el('option', { value: state.since }, 'since ' + state.since));
+      options.push([state.since, 'since ' + state.since]);
     }
-    since.value = state.since;
-    function changed() { onChange(repoInput.value.trim(), since.value); }
-    repoInput.addEventListener('change', changed);
-    since.addEventListener('change', changed);
-    var seen = {};
-    return {
-      node: el('div', { class: 'filters' }, [
-        el('label', {}, ['Repo', repoInput]), options, el('label', {}, ['Since', since])
-      ]),
-      offer: function (repos) {
-        repos.forEach(function (r) {
-          if (seen[r]) return;
-          seen[r] = true;
-          options.appendChild(el('option', { value: r }));
-        });
-      }
-    };
+    return el('wk-seg', { 'aria-label': 'Time window' }, options.map(function (o) {
+      return el('button', {
+        type: 'button', class: o[0] === state.since ? 'active' : '',
+        'aria-pressed': String(o[0] === state.since),
+        onclick: function () { set({ since: o[0] }); }
+      }, o[1]);
+    }));
   }
 
-  // sessionList is one page of the listing; more, when set, loads a longer one.
-  function sessionList(sessions, filtered, more) {
-    if (!sessions.length) {
-      return [el('div', { class: 'empty' },
-        filtered ? 'No sessions match the filters.' : 'No sessions recorded yet.')];
+  // repoChips offers every repo the window's sessions edited, most used
+  // first, and one to clear the filter.
+  function repoChips(repos, state, set) {
+    var chips = [chip('All repos', null, !state.repo, function () { set({ repo: '' }); })];
+    var listed = repos.some(function (r) { return r.repo === state.repo; });
+    if (state.repo && !listed) repos = [{ repo: state.repo, name: repoName(state.repo), sessions: 0 }].concat(repos);
+    repos.forEach(function (r) {
+      chips.push(chip(r.name, r.sessions, r.repo === state.repo, function () { set({ repo: r.repo }); }, r.repo));
+    });
+    return el('div', { class: 'ls-chips', role: 'group', 'aria-label': 'Repository' }, chips);
+  }
+
+  function chip(label, n, active, onPick, title) {
+    var node = el('wk-badge', {
+      variant: 'filter', role: 'button', tabindex: '0', title: title || '',
+      'aria-pressed': String(active)
+    }, [label, n == null ? null : el('span', { class: 'ls-n' }, String(n))]);
+    if (active) node.setAttribute('active', '');
+    node.addEventListener('click', onPick);
+    node.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        onPick();
+      }
+    });
+    return node;
+  }
+
+  // windowStrip is one line adding up every session the filters keep.
+  function windowStrip(w, state) {
+    var scope = SINCE_PHRASE[state.since] || 'since ' + state.since;
+    if (state.repo) scope += ', in ' + repoName(state.repo);
+    function figure(n, word) {
+      return el('span', { class: 'ls-fig' }, [el('b', {}, fmtCount(n)), plural(n || 0, word).replace(/^\d+ /, '')]);
     }
-    var nodes = [table(['Started', 'Session', 'Repos', 'Turns', 'Edits'], sessions.map(sessionRow))];
+    return [
+      figure(w.sessions, 'session'),
+      figure(w.turns, 'turn'),
+      figure(w.edits, 'edit'),
+      figure(w.files, 'file'),
+      el('span', { class: 'ls-fig', title: costTitle(w) }, [el('b', {}, money(w.cost, w.unpriced)), 'cost']),
+      el('span', { class: 'ls-scope' }, scope)
+    ];
+  }
+
+  // sessionDays lays one page of sessions out as a table with a heading
+  // row per local day; more, when set, loads a longer page.
+  function sessionDays(sessions, state, more) {
+    if (!sessions.length) {
+      var scope = SINCE_PHRASE[state.since] || 'since ' + state.since;
+      return [el('div', { class: 'empty' }, state.repo
+        ? 'No sessions in ' + repoName(state.repo) + ' ' + scope + '.'
+        : 'No sessions ' + scope + '. Older ones are under Any time.')];
+    }
+    var now = new Date();
+    var head = el('thead', {}, el('tr', {}, [
+      el('th', { class: 'c-repo' }, 'Repo'), el('th', {}, 'Session'),
+      el('th', { class: 'c-when' }, 'Last active'),
+      el('th', { class: 'num c-n c-sm' }, 'Turns'), el('th', { class: 'num c-n' }, 'Edits'),
+      el('th', { class: 'num c-n c-sm' }, 'Files'), el('th', { class: 'num c-n c-sm' }, 'Agents'),
+      el('th', { class: 'num c-cost' }, 'Cost')
+    ]));
+    var bodies = byDay(sessions).map(function (day) {
+      return el('tbody', {}, [dayRow(day, now)].concat(day.sessions.map(function (s) {
+        return sessionRow(s, now, state);
+      })));
+    });
+    var nodes = [el('wk-table', { class: 'ls-table' }, el('table', {}, [head].concat(bodies)))];
     if (more) {
       nodes.push(el('button', { class: 'btn btn-ghost more', type: 'button', onclick: more },
         'Show ' + PAGE + ' more'));
@@ -522,15 +581,159 @@
     return nodes;
   }
 
-  function sessionRow(s) {
-    return el('tr', {}, [
-      el('td', { class: 'muted nowrap' }, fmtTime(s.started_at)),
-      el('td', { class: 'prompt-cell', 'data-fixation': '' },
-        el('a', { href: '?session=' + enc(s.id), title: s.cwd || '' }, s.title || s.cwd || s.id)),
-      monoCell((s.repos || []).join(', ') || '-'),
-      el('td', { class: 'num' }, String(s.turn_count)),
-      el('td', { class: 'num' }, String(s.edit_count))
+  // byDay groups sessions, newest first already, by the local day each
+  // one started.
+  function byDay(sessions) {
+    var days = [];
+    sessions.forEach(function (s) {
+      var d = parseTime(s.started_at) || new Date(0);
+      var key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+      var last = days[days.length - 1];
+      if (!last || last.key !== key) days.push(last = { key: key, date: d, sessions: [] });
+      last.sessions.push(s);
+    });
+    return days;
+  }
+
+  function dayRow(day, now) {
+    var cost = 0;
+    var priced = false;
+    day.sessions.forEach(function (s) {
+      if (s.cost != null) {
+        cost += s.cost;
+        priced = true;
+      }
+    });
+    var name = dayName(day.date, now);
+    var date = DAYS[day.date.getDay()] + ' ' + MONTHS[day.date.getMonth()] + ' ' + day.date.getDate();
+    if (day.date.getFullYear() !== now.getFullYear()) date += ', ' + day.date.getFullYear();
+    return el('tr', { class: 'ls-day' }, el('td', { colspan: '8' }, el('div', { class: 'ls-day-in' }, [
+      el('span', { class: 'ls-day-name' }, name || date),
+      name ? el('span', { class: 'ls-day-date' }, date) : null,
+      el('span', { class: 'ls-day-sum' },
+        plural(day.sessions.length, 'session') + (priced ? ' · ' + money(cost) : ''))
+    ])));
+  }
+
+  // dayName is Today or Yesterday, '' for an older day.
+  function dayName(d, now) {
+    var start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var diff = Math.round((start - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
+    return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : '';
+  }
+
+  function sessionRow(s, now, state) {
+    return el('tr', { class: 'ls-row' }, [
+      el('td', { class: 'ls-repo' }, repoBadges(s, state)),
+      el('td', { class: 'ls-title', 'data-fixation': '' }, el('a', {
+        href: '?session=' + enc(s.id), title: s.title + (s.cwd ? '\n' + s.cwd : '')
+      }, s.title || s.id)),
+      el('td', { class: 'ls-when nowrap' }, whenCell(s, now)),
+      count(s.turn_count, 'c-sm'), count(s.edit_count), count(s.file_count, 'c-sm'),
+      count(s.agent_count, 'c-sm'),
+      el('td', { class: 'num ls-cost', title: costTitle(s) }, money(s.cost, s.unpriced))
     ]);
+  }
+
+  function count(n, cls) {
+    return el('td', { class: 'num ' + (cls || '') + (n ? '' : ' zero') }, fmtCount(n));
+  }
+
+  // fmtCount is a count with thousands separators: 2,099.
+  function fmtCount(n) { return (n || 0).toLocaleString('en-US'); }
+
+  // repoBadges is the session's first repo as a badge that filters the
+  // list to it, with a count of the others.
+  function repoBadges(s, state) {
+    var repos = s.repos || [];
+    if (!repos.length) return el('span', { class: 'ls-norepo' }, 'no repo');
+    var names = s.repo_names || repos;
+    var badge = repoBadge(repos[0], names[0], '?' + qs({
+      repo: repos[0], since: state.since === DEFAULT_SINCE ? '' : state.since
+    }));
+    badge.title = 'Show only ' + repos[0] + (repos.length > 1 ? '\nAlso edited: ' + repos.slice(1).join(', ') : '');
+    return el('span', { class: 'row ls-repos' }, [badge,
+      repos.length > 1 ? el('span', { class: 'ls-more' }, '+' + (repos.length - 1)) : null]);
+  }
+
+  // repoBadge is a repo's short name on its hue; with href it is a link.
+  function repoBadge(repo, name, href) {
+    return el(href ? 'a' : 'span', {
+      class: 'ls-badge', href: href, style: '--hue:var(' + repoHue(repo) + ')'
+    }, [el('span', { class: 'ls-swatch' }), el('span', { class: 'ls-badge-name' }, name || repoName(repo))]);
+  }
+
+  function repoHue(repo) {
+    var h = 0;
+    for (var i = 0; i < repo.length; i++) h = (h * 31 + repo.charCodeAt(i)) >>> 0;
+    return REPO_HUES[h % REPO_HUES.length];
+  }
+
+  // repoName is a repo identity's last two path segments, as the API's
+  // repo_names are.
+  function repoName(repo) {
+    var parts = repo.replace(/^\/+|\/+$/g, '').split('/');
+    return parts.length <= 2 ? repo : parts.slice(-2).join('/');
+  }
+
+  // whenCell is the status dot, how long ago the session was last active,
+  // and how long it ran.
+  function whenCell(s, now) {
+    var running = s.status === 'running';
+    var at = parseTime(s.last_activity_at);
+    return [
+      statusDot(running),
+      el('span', {
+        class: running ? 'ls-ago is-on' : 'ls-ago',
+        title: (running ? 'Running, last active ' : 'Ended, last active ') + fmtTime(s.last_activity_at)
+      }, at ? ago(at, now) : '-'),
+      s.duration_ms >= 60000 ? el('span', { class: 'ls-span', title: 'First prompt to the last turn\'s end' },
+        fmtSpan(s.duration_ms)) : null
+    ];
+  }
+
+  function statusDot(running) {
+    return el('span', {
+      class: 'ls-dot' + (running ? ' is-on' : ''), role: 'img',
+      'aria-label': running ? 'running' : 'ended', title: running ? 'running' : 'ended'
+    });
+  }
+
+  // ago is how long before now t was: just now, 12 min ago, 3 h ago, 4 d ago.
+  function ago(t, now) {
+    var min = Math.floor((now - t) / 60000);
+    if (min < 1) return 'just now';
+    if (min < 60) return min + ' min ago';
+    if (min < 48 * 60) return Math.floor(min / 60) + ' h ago';
+    return Math.floor(min / 1440) + ' d ago';
+  }
+
+  // fmtSpan is a duration for a list: <1m, 12m, 1h 05m, 2d 3h.
+  function fmtSpan(ms) {
+    var m = Math.floor(ms / 60000);
+    if (m < 1) return '<1m';
+    if (m < 60) return m + 'm';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ' + pad(m % 60) + 'm';
+    return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+  }
+
+  // money is USD for a list: two decimals, a dash when no price covers the
+  // tokens, and a plus when some models are left out.
+  function money(usd, unpriced) {
+    if (usd === undefined || usd === null) return '-';
+    var text = usd > 0 && usd < 0.01 ? '<$0.01' : '$' + (usd < 1000 ? usd.toFixed(2) : Math.round(usd));
+    return text + ((unpriced || []).length ? '+' : '');
+  }
+
+  // costTitle says what a cost covers: list prices for the main
+  // conversation, and the models it leaves out.
+  function costTitle(x) {
+    var tokens = tokenTotal(x.tokens);
+    var parts = [fmtTokens(tokens) + ' tokens at list prices, main conversation only'];
+    if ((x.unpriced || []).length) parts.push('No price for ' + x.unpriced.join(', '));
+    if (x.cost == null && !tokens) parts = ['No token counts recorded yet'];
+    return parts.join('. ');
   }
 
   // ── session view ──
@@ -564,40 +767,58 @@
     return { byTurn: byTurn, byWorktree: byWorktree };
   }
 
+  // drawSession leads with what the listing row says about the session,
+  // then its trace, turns and worktrees; the ids and paths fold away last.
   function drawSession(d, edits, tr) {
-    var label = d.title || d.cwd || d.id;
+    var s = d.summary || {};
+    var label = s.title || d.title || d.cwd || d.id;
     document.title = label + ' · moondb';
     var sum = summarizeEdits(edits);
     var turnList = (d.turns || []).slice().sort(function (a, b) { return a.seq - b.seq; });
-    var repos = [];
-    Object.keys(sum.byWorktree).forEach(function (k) {
-      var r = sum.byWorktree[k].repo;
-      if (r && repos.indexOf(r) < 0) repos.push(r);
-    });
-    var span = fmtTime(d.started_at) + (d.ended_at ? ' to ' + fmtTime(d.ended_at) : '');
     replace([
       backLinks([['← All sessions', '/']]),
-      el('wk-page-header', {}, [
-        el('wk-title', {}, label),
-        el('wk-subtitle', {}, [span, d.harness, d.model].filter(Boolean).join(' · '))
-      ]),
-      el('wk-kv', { variant: 'card' }, [
-        kvRow('Session', code(d.id)),
-        kvRow('Cwd', code(d.cwd || '-')),
-        kvRow('Harness', d.harness || '-'),
-        kvRow('Started', fmtTime(d.started_at) || '-'),
-        kvRow('Ended', fmtTime(d.ended_at) || 'not ended'),
-        kvRow('Repos', repos.join(', ') || '-'),
-        kvRow('Edits', String(d.edit_count))
-      ]),
-      el('div', { class: 'spaced' }, section('Trace', traceNodes(tr))),
-      section('Worktrees', [worktreeTable(sum.byWorktree)]),
+      el('wk-page-header', {}, [el('wk-title', {}, label), sessionLine(s)]),
+      section('Trace', traceNodes(tr)),
       section('Turns', [turnList.length
         ? table(['#', 'Prompt', 'Status', 'Edits', 'Agents', 'Started'], turnList.map(function (t) {
           return turnRow(t, sum.byTurn[t.id] || { count: 0, agents: [] });
         }))
-        : el('div', { class: 'empty' }, 'No turns recorded.')])
+        : el('div', { class: 'empty' }, 'No turns recorded.')]),
+      section('Worktrees', [worktreeTable(sum.byWorktree)]),
+      el('wk-section', {}, el('details', {}, [
+        el('summary', {}, 'Session details'),
+        el('wk-kv', {}, [
+          kvRow('Session', code(d.id)),
+          kvRow('Cwd', code(d.cwd || '-')),
+          kvRow('Harness', d.harness || '-'),
+          kvRow('Model', d.model || '-'),
+          kvRow('Transcript', d.transcript_path ? code(d.transcript_path) : '-'),
+          kvRow('Started', fmtTime(d.started_at) || '-'),
+          kvRow('Ended', fmtTime(d.ended_at) || 'no session end recorded')
+        ])
+      ]))
     ]);
+  }
+
+  // sessionLine sits under a session's title: the repos it edited, whether
+  // it is running and when it was last active, how long it ran, and when it
+  // started.
+  function sessionLine(s) {
+    var running = s.status === 'running';
+    var at = parseTime(s.last_activity_at);
+    var names = s.repo_names || [];
+    var badges = (s.repos || []).map(function (r, i) {
+      var b = repoBadge(r, names[i], '/?' + qs({ repo: r }));
+      b.title = 'Sessions in ' + r;
+      return b;
+    });
+    return el('div', { class: 'ss-line' }, badges.concat([
+      el('span', { class: running ? 'ss-status is-on' : 'ss-status' }, [statusDot(running),
+        (running ? 'Running' : 'Ended') + (at ? ', last active ' + ago(at, new Date()) : '')]),
+      s.duration_ms ? el('span', { title: 'First prompt to the last turn\'s end' },
+        'ran ' + fmtSpan(s.duration_ms)) : null,
+      s.started_at ? el('span', {}, 'started ' + fmtTime(s.started_at)) : null
+    ]));
   }
 
   function worktreeTable(byWorktree) {

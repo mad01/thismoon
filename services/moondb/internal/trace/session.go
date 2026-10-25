@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"slices"
 	"time"
+
+	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 // BuildSession puts a session's turn traces in order and adds what lies
@@ -40,6 +42,7 @@ func sessionTotals(turns []TurnTrace) Totals {
 		return t
 	}
 	first, last := turns[0].Span.Start, turns[0].Span.End
+	usage := make([][]store.ModelUsage, 0, len(turns))
 	for _, tt := range turns {
 		if tt.Span.Start.Before(first) {
 			first = tt.Span.Start
@@ -56,6 +59,7 @@ func sessionTotals(turns []TurnTrace) Totals {
 		t.ModelCalls += x.ModelCalls
 		t.ToolCalls += x.ToolCalls
 		t.ToolErrors += x.ToolErrors
+		usage = append(usage, x.Usage)
 		if x.Cost != nil {
 			t.addCost(x.Cost, "")
 		}
@@ -64,6 +68,7 @@ func sessionTotals(turns []TurnTrace) Totals {
 		}
 	}
 	t.WallMS = last.Sub(first).Milliseconds()
+	t.Usage = store.MergeUsage(usage...)
 	return t
 }
 

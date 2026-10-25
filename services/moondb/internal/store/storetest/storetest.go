@@ -30,6 +30,8 @@ func Run(t *testing.T, open func(t *testing.T, dir string) store.Store) {
 		{"AppendsAreIdempotent", appendsAreIdempotent},
 		{"SessionsFilter", sessionsFilter},
 		{"SessionDetail", sessionDetail},
+		{"SessionSummary", sessionSummary},
+		{"TurnsWithoutTotals", turnsWithoutTotals},
 		{"TurnDetail", turnDetail},
 		{"EditsQuery", editsQuery},
 		{"LatestAfter", latestAfter},
@@ -80,6 +82,22 @@ func edit(id, sessionID, turnID string, minute int, l store.Location, path strin
 	}
 }
 
+// totals is fixture turn totals from trace version version with usage.
+func totals(version int, usage ...store.ModelUsage) *store.TurnTotals {
+	return &store.TurnTotals{
+		Version: version,
+		WallMS:  1000,
+		ModelMS: 600,
+		ToolMS:  400,
+		Usage:   usage,
+	}
+}
+
+// usage is one model's fixture usage of input and output tokens.
+func usage(model string, input, output int64) store.ModelUsage {
+	return store.ModelUsage{Model: model, Tokens: store.Tokens{Input: input, Output: output}}
+}
+
 // withBlob sets the edit's after-blob; withAfter its after-chunk.
 func withBlob(e store.Edit, blob string) store.Edit   { e.AfterBlob = blob; return e }
 func withAfter(e store.Edit, chunk string) store.Edit { e.AfterChunk = chunk; return e }
@@ -127,7 +145,7 @@ func ids[T any](xs []T, id func(T) string) []string {
 	return out
 }
 
-func sessionID(s store.Session) string         { return s.ID }
+func sessionID(s store.SessionSummary) string  { return s.ID }
 func turnID(t store.Turn) string               { return t.ID }
 func editID(e store.Edit) string               { return e.ID }
 func deltaID(d store.UnattributedDelta) string { return d.ID }

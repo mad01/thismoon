@@ -7,7 +7,7 @@ CONTEXT.md.
 ## Language
 
 **Session**:
-One Claude Code session, identified by the hook payload's `session_id`. moondb creates it lazily from the first turn it sees.
+One Claude Code session, identified by the hook payload's `session_id`. moondb creates it lazily from the first turn it sees. Its title is the name the harness gives it (the hook's session title, or a transcript `agent-name` or `ai-title` line), else the first line of its first prompt, else the last segment of its cwd. A title or prompt line, once set, is never replaced.
 _Avoid_: conversation, chat
 
 **Turn**:
@@ -45,6 +45,10 @@ _Avoid_: attribution trailer, tag
 **Trace**:
 The account of what took time in a turn or a session and what it cost, computed on read from a Turn's transcript lines. A turn's trace is its Spans plus its wall time split by what was running: model, tool, harness, or user time spent waiting for input. A session's trace adds the user time between one turn's Stop and the next prompt.
 _Avoid_: event, log entry, metric, profile
+
+**Turn totals**:
+A closed Turn's Trace totals, kept on the Turn record so a listing never reads a transcript. They hold the time per class, the call counts and the tokens per model and rate. Never a cost: the tokens are priced when read. A turn stored before totals existed, or under an older trace version, gets them from a backfill.
+_Avoid_: stats, metrics, summary (the listing row's word)
 
 **Span**:
 One timed piece of a Trace: the turn itself, one model call (an assistant message, with its tokens and cost), one tool call (from the line asking for it to its result) or one subagent's recorded edits. A model whose price moondb does not know has tokens and no cost, never a zero cost.

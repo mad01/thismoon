@@ -58,8 +58,7 @@ type index struct {
 	editsByBlob         map[string][]*rec[store.Edit]
 	snapshotsByWorktree map[string][]*rec[store.Snapshot]
 
-	sessionRepos     map[string]set
-	sessionWorktrees map[string]set
+	sessionRepos map[string]set
 	// turnWorktrees holds the worktrees each turn has an edit in, and
 	// openByWorktree the open turns among them, keyed by worktree.
 	turnWorktrees  map[string]set
@@ -81,7 +80,6 @@ func newIndex() *index {
 		editsByBlob:         map[string][]*rec[store.Edit]{},
 		snapshotsByWorktree: map[string][]*rec[store.Snapshot]{},
 		sessionRepos:        map[string]set{},
-		sessionWorktrees:    map[string]set{},
 		turnWorktrees:       map[string]set{},
 		openByWorktree:      map[string]set{},
 	}
@@ -190,9 +188,6 @@ func (ix *index) addEdit(e store.Edit) {
 	}
 	if e.Repo != "" {
 		addTo(ix.sessionRepos, e.SessionID, e.Repo)
-	}
-	if e.Worktree != "" {
-		addTo(ix.sessionWorktrees, e.SessionID, e.Worktree)
 	}
 	addTo(ix.turnWorktrees, e.TurnID, e.Worktree)
 	if t, ok := ix.turns[e.TurnID]; ok && t.Status == store.TurnOpen {
@@ -319,14 +314,4 @@ func removeFrom(m map[string]set, key, v string) {
 	if len(m[key]) == 0 {
 		delete(m, key)
 	}
-}
-
-// sorted returns the members in order; never nil.
-func (s set) sorted() []string {
-	out := make([]string, 0, len(s))
-	for v := range s {
-		out = append(out, v)
-	}
-	slices.Sort(out)
-	return out
 }

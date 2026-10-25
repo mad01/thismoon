@@ -6,6 +6,7 @@
 package servertest
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -27,6 +28,10 @@ const (
 	Worktree = "/work/thismoon"
 	// OtherRepo is the only repo the older session edited.
 	OtherRepo = "example.com/owner/other"
+
+	// OldPromptLine is the older session's cached first prompt line, its
+	// title in a listing since it has no harness title.
+	OldPromptLine = "fix the other repo"
 
 	NewSession = "sess-new"
 	OldSession = "sess-old"
@@ -99,31 +104,38 @@ type Store struct {
 }
 
 // NewStore returns a Store seeded with the fixture: an older session whose
-// closed turn made one edit in OtherRepo and kept its Transcript, and a
-// newer session whose one open turn made two edits in Repo, opened with a
-// snapshot that found one unattributed delta.
+// closed turn made one edit in OtherRepo and kept its Transcript and the
+// totals it gives, and a newer session whose one open turn made two edits
+// in Repo, opened with a snapshot that found one unattributed delta.
 func NewStore() *Store {
 	at := func(minutes int) time.Time { return T0.Add(time.Duration(minutes) * time.Minute) }
+	old := store.Turn{
+		ID:              OldTurn,
+		SessionID:       OldSession,
+		Seq:             1,
+		Status:          store.TurnClosed,
+		StartedAt:       at(1),
+		EndedAt:         new(at(3)),
+		TranscriptChunk: TranscriptSHA,
+	}
+	totals := trace.Stored(trace.Build(store.TurnDetail{Turn: old}, []byte(Transcript),
+		trace.Prices{}).Totals)
+	old.Totals = &totals
 	loc := store.Location{Repo: Repo, Worktree: Worktree, Canonical: Worktree, Branch: "main"}
 	other := store.Location{Repo: OtherRepo, Worktree: "/work/other", Canonical: "/work/other"}
 	return &Store{
 		sessions: []store.Session{
-			{ID: OldSession, Harness: "test-harness", Cwd: "/work/other", StartedAt: at(0)},
+			{
+				ID: OldSession, Harness: "test-harness", Cwd: "/work/other",
+				PromptLine: OldPromptLine, StartedAt: at(0),
+			},
 			{
 				ID: NewSession, Harness: "test-harness", Cwd: Worktree,
 				Title: "build the server", StartedAt: at(60),
 			},
 		},
 		turns: []store.Turn{
-			{
-				ID:              OldTurn,
-				SessionID:       OldSession,
-				Seq:             1,
-				Status:          store.TurnClosed,
-				StartedAt:       at(1),
-				EndedAt:         new(at(3)),
-				TranscriptChunk: TranscriptSHA,
-			},
+			old,
 			{
 				ID: NewTurn, SessionID: NewSession, Seq: 1, PromptChunk: PromptSHA,
 				Status: store.TurnOpen, StartedAt: at(61),
@@ -194,9 +206,9 @@ func (s *Store) AppendSnapshot(context.Context, store.Snapshot) error { return e
 // AppendCommitLink fails: the fixture is read-only.
 func (s *Store) AppendCommitLink(context.Context, store.CommitLink) error { return errReadOnly }
 
-// Sessions lists sessions newest first, narrowed by f.
-func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.Session, error) {
-	out := []store.Session{}
+// Sessions lists sessions newest first, narrowed by f, each summarized.
+func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.SessionSummary, error) {
+	out := []store.SessionSummary{}
 	for _, sess := range slices.Backward(s.sessions) {
 		if sess.StartedAt.Before(f.Since) {
 			continue
@@ -204,7 +216,7 @@ func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.Sess
 		if f.Repo != "" && !s.sessionTouched(sess.ID, f.Repo) {
 			continue
 		}
-		out = append(out, sess)
+		out = append(out, s.summary(sess))
 		if f.Limit > 0 && len(out) == f.Limit {
 			break
 		}
@@ -218,29 +230,54 @@ func (s *Store) sessionTouched(id, repo string) bool {
 	})
 }
 
-// Session loads one session with its turns, worktrees and edit count.
+// summary adds up one session's fixture records.
+func (s *Store) summary(sess store.Session) store.SessionSummary {
+	return store.Summarize(sess, s.sessionTurns(sess.ID), func(yield func(*store.Edit) bool) {
+		for i := range s.edits {
+			if s.edits[i].SessionID == sess.ID && !yield(&s.edits[i]) {
+				return
+			}
+		}
+	})
+}
+
+// sessionTurns lists one session's turns in Seq order.
+func (s *Store) sessionTurns(id string) []store.Turn {
+	out := []store.Turn{}
+	for _, t := range s.turns {
+		if t.SessionID == id {
+			out = append(out, t)
+		}
+	}
+	slices.SortFunc(out, func(a, b store.Turn) int { return cmp.Compare(a.Seq, b.Seq) })
+	return out
+}
+
+// Session loads one session with its summary and turns.
 func (s *Store) Session(_ context.Context, id string) (store.SessionDetail, error) {
 	i := slices.IndexFunc(s.sessions, func(x store.Session) bool { return x.ID == id })
 	if i < 0 {
 		return store.SessionDetail{}, fmt.Errorf("session %s: %w", id, store.ErrNotFound)
 	}
-	d := store.SessionDetail{Session: s.sessions[i], Turns: []store.Turn{}, Worktrees: []string{}}
-	for _, t := range s.turns {
-		if t.SessionID == id {
-			d.Turns = append(d.Turns, t)
+	return store.SessionDetail{
+		SessionSummary: s.summary(s.sessions[i]),
+		Turns:          s.sessionTurns(id),
+	}, nil
+}
+
+// TurnsWithoutTotals lists the closed or failed fixture turns that lack
+// totals from version, newest first.
+func (s *Store) TurnsWithoutTotals(_ context.Context, version, limit int) ([]store.Turn, error) {
+	out := []store.Turn{}
+	for _, t := range slices.Backward(s.turns) {
+		if store.NeedsTotals(t, version) {
+			out = append(out, t)
 		}
 	}
-	for _, e := range s.edits {
-		if e.SessionID != id {
-			continue
-		}
-		d.EditCount++
-		if !slices.Contains(d.Worktrees, e.Worktree) {
-			d.Worktrees = append(d.Worktrees, e.Worktree)
-		}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
 	}
-	slices.Sort(d.Worktrees)
-	return d, nil
+	return out, nil
 }
 
 // Turn loads one turn with its edits, deltas and snapshots; the fixture
@@ -390,6 +427,11 @@ func (q *Querier) TurnTrace(ctx context.Context, d store.TurnDetail) (trace.Turn
 // SessionTrace computes the session's trace with the real query service.
 func (q *Querier) SessionTrace(ctx context.Context, id string) (trace.SessionTrace, error) {
 	return q.traces.SessionTrace(ctx, id)
+}
+
+// UsageCost prices usage with the real query service's default table.
+func (q *Querier) UsageCost(usage []store.ModelUsage) (*float64, []string) {
+	return q.traces.UsageCost(usage)
 }
 
 // SetErr makes Why, History and Annotate fail with err, or answer again

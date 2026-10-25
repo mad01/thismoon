@@ -36,14 +36,15 @@ var appJS []byte
 
 // Querier answers the questions the store exists for: why one line looks
 // the way it does, what happened to a path, why every line of a file looks
-// the way it does, and what took time in a turn or a session.
-// *query.Service satisfies it; tests pass a fake.
+// the way it does, what took time in a turn or a session, and what stored
+// usage costs. *query.Service satisfies it; tests pass a fake.
 type Querier interface {
 	Why(ctx context.Context, req query.WhyRequest) (query.WhyResult, error)
 	History(ctx context.Context, req query.HistoryRequest) ([]store.Edit, error)
 	Annotate(ctx context.Context, req query.AnnotateRequest) (query.AnnotateResult, error)
 	TurnTrace(ctx context.Context, d store.TurnDetail) (trace.TurnTrace, error)
 	SessionTrace(ctx context.Context, id string) (trace.SessionTrace, error)
+	UsageCost(usage []store.ModelUsage) (cost *float64, unpriced []string)
 }
 
 // Server serves one moondb store, read-only.

@@ -13,7 +13,11 @@
 // session; a Span is one timed piece of it.
 package trace
 
-import "time"
+import (
+	"time"
+
+	"github.com/mad01/thismoon/services/moondb/internal/store"
+)
 
 // Kind says what a span timed.
 type Kind string
@@ -61,36 +65,10 @@ type Span struct {
 	EditCount int `json:"edit_count,omitempty"`
 }
 
-// Tokens counts what a model call billed, by kind. Thinking is part of
-// Output and is not billed again.
-type Tokens struct {
-	Input        int64 `json:"input"`
-	CacheWrite5m int64 `json:"cache_write_5m"`
-	CacheWrite1h int64 `json:"cache_write_1h"`
-	CacheRead    int64 `json:"cache_read"`
-	Output       int64 `json:"output"`
-	Thinking     int64 `json:"thinking,omitempty"`
-}
-
-// Add returns the sum of t and o.
-func (t Tokens) Add(o Tokens) Tokens {
-	return Tokens{
-		Input:        t.Input + o.Input,
-		CacheWrite5m: t.CacheWrite5m + o.CacheWrite5m,
-		CacheWrite1h: t.CacheWrite1h + o.CacheWrite1h,
-		CacheRead:    t.CacheRead + o.CacheRead,
-		Output:       t.Output + o.Output,
-		Thinking:     t.Thinking + o.Thinking,
-	}
-}
-
-// Prompt is the call's whole prompt: input plus cache writes and reads.
-func (t Tokens) Prompt() int64 {
-	return t.Input + t.CacheWrite5m + t.CacheWrite1h + t.CacheRead
-}
-
-// Total is every billed token: the prompt plus the output.
-func (t Tokens) Total() int64 { return t.Prompt() + t.Output }
+// Tokens counts what a model call billed, by kind. It is the store's type,
+// since a Turn keeps its totals; the name stays here for the trace's
+// readers.
+type Tokens = store.Tokens
 
 // GapKind says what a stretch of a turn's time was spent on.
 type GapKind string
@@ -129,6 +107,9 @@ type Totals struct {
 	HarnessMS int64  `json:"harness_ms"`
 	UserMS    int64  `json:"user_ms"`
 	Tokens    Tokens `json:"tokens"`
+	// Usage splits Tokens by model and rate, the shape a Turn stores so
+	// its cost can be priced again later.
+	Usage []store.ModelUsage `json:"usage,omitempty"`
 	// Cost is the USD sum of the priced model calls, nil when none is
 	// priced. Unpriced names the models whose calls it leaves out.
 	Cost       *float64 `json:"cost,omitempty"`

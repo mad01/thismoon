@@ -45,12 +45,13 @@ func Build(d store.TurnDetail, lines []byte, prices Prices) TurnTrace {
 		tt.Totals = Totals{WallMS: tt.Span.DurationMS}
 		return tt
 	}
-	models := modelSpans(events, start, end, prices)
+	models, calls := modelSpans(events, start, end, prices)
 	tools := toolSpans(events, start, end, d.Edits)
 	tt.Spans = slices.Concat(models, tools, subagentSpans(d.Edits, start, end))
 	slices.SortStableFunc(tt.Spans, func(a, b Span) int { return a.Start.Compare(b.Start) })
 	tt.Gaps = partition(events, start, end, counts.CutHead)
 	tt.Totals = turnTotals(tt.Span, tt.Gaps, models, tools)
+	tt.Totals.Usage = prices.Usage(calls)
 	return tt
 }
 
@@ -101,11 +102,12 @@ type message struct {
 	first, last, final int
 }
 
-// modelSpans makes one span per assistant message. Lines of a streamed
-// message share its id; a line without one is a message of its own. A
-// message whose first line opens the timeline lost the event before it to
-// a cut head, so its span starts at that line, never before it.
-func modelSpans(events []event, start, end time.Time, prices Prices) []Span {
+// modelSpans makes one span per assistant message, and returns the call
+// each one billed beside it. Lines of a streamed message share its id; a
+// line without one is a message of its own. A message whose first line
+// opens the timeline lost the event before it to a cut head, so its span
+// starts at that line, never before it.
+func modelSpans(events []event, start, end time.Time, prices Prices) ([]Span, []Call) {
 	var order []string
 	byID := map[string]*message{}
 	for i, ev := range events {
@@ -128,6 +130,7 @@ func modelSpans(events []event, start, end time.Time, prices Prices) []Span {
 		}
 	}
 	spans := make([]Span, 0, len(order))
+	calls := make([]Call, 0, len(order))
 	for _, key := range order {
 		m := byID[key]
 		from := events[m.first].at
@@ -139,12 +142,13 @@ func modelSpans(events []event, start, end time.Time, prices Prices) []Span {
 			clamp(from, start, end), clamp(events[m.last].at, start, end))
 		s.Tokens = &final.call.Tokens
 		s.Cost = prices.Cost(final.call)
-		if speed := final.call.Speed; speed != "" && speed != "standard" {
+		if speed := final.call.Speed; speed != "" && speed != speedStandard {
 			s.Speed = speed
 		}
 		spans = append(spans, s)
+		calls = append(calls, final.call)
 	}
-	return spans
+	return spans, calls
 }
 
 // toolSpans makes one span per tool call, ended by its result or, without

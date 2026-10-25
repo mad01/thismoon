@@ -61,7 +61,9 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "moondb_sessions",
-		Description: "List recorded agent sessions newest first, each with its turn and edit counts and the repositories and worktrees it edited. " +
+		Description: "List recorded agent sessions newest first. Each has a title (the harness title, else its first prompt line), " +
+			"a status (running or ended), when it started and was last active, its duration, its turn, edit, file and agent counts, " +
+			"its tokens and cost, and the repositories and worktrees it edited. " +
 			"Filter by `repo` (host/owner/repo; sessions with at least one edit there), `since` (an RFC 3339 time or a duration such as 24h or 7d), and `limit` (default 50).",
 		Annotations: readOnly(),
 	}, h.handleSessions)
