@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.17.0...keeper-of-facts/v0.18.0) (2026-10-25)
+
+
+### Features
+
+* **keeper-of-facts:** run the recall judge in the client ([#283](https://github.com/mad01/thismoon/issues/283)) ([2d74f20](https://github.com/mad01/thismoon/commit/2d74f2068c3930bb26eb8e9855ce967ef18f33ec))
+* **sandbox:** render srt settings from access manifests beside the code ([#278](https://github.com/mad01/thismoon/issues/278)) ([04f6c54](https://github.com/mad01/thismoon/commit/04f6c54bc5cc3ff7cb534e1bbbe2f7474190f050))
+* **sandbox:** run five t-man services under srt ([#277](https://github.com/mad01/thismoon/issues/277)) ([774565d](https://github.com/mad01/thismoon/commit/774565d47476b003ca6973ea81cead25c72e65f9))
+
 ## [0.17.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.16.0...keeper-of-facts/v0.17.0) (2026-10-19)
 
 

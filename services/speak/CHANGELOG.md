@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/mad01/thismoon/compare/speak/v0.14.0...speak/v0.15.0) (2026-10-25)
+
+
+### Features
+
+* **sandbox:** render srt settings from access manifests beside the code ([#278](https://github.com/mad01/thismoon/issues/278)) ([04f6c54](https://github.com/mad01/thismoon/commit/04f6c54bc5cc3ff7cb534e1bbbe2f7474190f050))
+* **sandbox:** run deps, status and speak-web under srt ([#280](https://github.com/mad01/thismoon/issues/280)) ([e6185e9](https://github.com/mad01/thismoon/commit/e6185e907a4271f6e370e93f320dd784d1e36c37))
+
 ## [0.14.0](https://github.com/mad01/thismoon/compare/speak/v0.13.0...speak/v0.14.0) (2026-10-02)
 
 
