@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/mad01/thismoon/compare/humanizer/v0.18.0...humanizer/v0.19.0) (2026-10-25)
+
+
+### Features
+
+* **sandbox:** run fleet processes under sandbox-runtime ([#274](https://github.com/mad01/thismoon/issues/274)) ([5bf57e9](https://github.com/mad01/thismoon/commit/5bf57e91707a8554b90d0ad9549661bceb12fd71))
+
 ## [0.18.0](https://github.com/mad01/thismoon/compare/humanizer/v0.17.0...humanizer/v0.18.0) (2026-10-21)
 
 

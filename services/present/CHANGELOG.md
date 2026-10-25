@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.20.0](https://github.com/mad01/thismoon/compare/present/v1.19.1...present/v1.20.0) (2026-10-25)
+
+
+### Features
+
+* **sandbox:** render srt settings from access manifests beside the code ([#278](https://github.com/mad01/thismoon/issues/278)) ([04f6c54](https://github.com/mad01/thismoon/commit/04f6c54bc5cc3ff7cb534e1bbbe2f7474190f050))
+* **sandbox:** run fleet processes under sandbox-runtime ([#274](https://github.com/mad01/thismoon/issues/274)) ([5bf57e9](https://github.com/mad01/thismoon/commit/5bf57e91707a8554b90d0ad9549661bceb12fd71))
+
 ## [1.19.1](https://github.com/mad01/thismoon/compare/present/v1.19.0...present/v1.19.1) (2026-10-22)
 
 
