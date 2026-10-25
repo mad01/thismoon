@@ -96,8 +96,9 @@ and the notification daemon plus trustd for the osascript banners.
 base-profile denials (`kern.iossupportversion`, `kern.singleuser` and
 `com.apple.diagnosticd`), all on the fleet ignore list. A cycle runs it
 once per service for the restart counter and again for each service
-without a port, so on 13 services status adds about 48 IGNORED lines a
-minute to the denial ledger, which has no rotation yet.
+without a port, so on 13 services status raises about 48 IGNORED denials
+a minute. sandbox-watch writes them to the denial ledger as one line per
+distinct denial per 60s window, with a `×N` count.
 
 ## Data model & storage
 

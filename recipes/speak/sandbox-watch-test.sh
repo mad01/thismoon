@@ -40,6 +40,10 @@ reset_batch() {
   batch_unique=""
   batch_unique_n=0
   batch_started=0
+  ign_keys=()
+  ign_lines=()
+  ign_counts=()
+  ign_started=0
   : > "$SANDBOX_WATCH_LOG"
 }
 
@@ -321,6 +325,7 @@ done
 handle_line '{"eventMessage":"Sandbox: python3.14(4242) deny(1) file-read-data \/Users\/x\/.aws\/credentials\nSRT_RUN=speak-tts"}'
 handle_line '{"eventMessage":"Sandbox: python3.14(4242) deny(1) sysctl-read kern.iossupportversion\nSRT_RUN=speak-tts"}'
 [ "$batch_count" -eq 2 ] || fail "legacy denial did not alert"
+flush_ignored
 expect_eq "legacy ledger" "$(tail -2 "$SANDBOX_WATCH_LOG" | cut -f2-)" "ALERT	speak-tts · python3.14(4242) · file-read-data · /Users/x/.aws/credentials
 IGNORED	speak-tts · python3.14(4242) · sysctl-read · kern.iossupportversion	ignore-list"
 reset_batch
@@ -343,6 +348,55 @@ after=$(/bin/date +%s)
 [ "$batch_started" -le "$after" ] || fail "batch started after the alert"
 flush
 [ "$batch_count" -eq 1 ] || fail "fresh batch flushed immediately"
+
+# --- collapsing repeated IGNORED lines -----------------------------------
+
+# status runs launchctl over and over, and each exec logs the same
+# base-profile denials under a new pid. IGNORED lines are held for the
+# window, then written once per distinct denial with the first sighting's
+# pid and a ×N count. Foreign denials collapse the same way.
+STATUS_CMD='env SRT_RUN=status /Users/x/code/bin/status serve'
+reset_batch
+for pid in 101 102 103; do
+  handle_line "$(ndjson "launchctl($pid) deny(1) sysctl-read kern.singleuser" "$STATUS_CMD")"
+  handle_line "$(ndjson "launchctl($pid) deny(1) mach-lookup com.apple.diagnosticd" "$STATUS_CMD")"
+done
+handle_line "$(ndjson 'bash(105) deny(1) sysctl-read kern.iossupportversion' "$STATUS_CMD")"
+for pid in 7 8; do
+  handle_line "$(ndjson "bash($pid) deny(1) file-read-data /Users/x/.ssh/id_ed25519" "$AGENT_CMD")"
+done
+[ ! -s "$SANDBOX_WATCH_LOG" ] || fail "IGNORED lines written before their window closed"
+flush
+[ ! -s "$SANDBOX_WATCH_LOG" ] || fail "an open window was flushed"
+ign_started=1   # the window opened long ago
+flush
+expect_eq "collapsed ledger" "$(cut -f2- "$SANDBOX_WATCH_LOG")" "IGNORED	status · launchctl(101) · sysctl-read · kern.singleuser	ignore-list	×3
+IGNORED	status · launchctl(101) · mach-lookup · com.apple.diagnosticd	ignore-list	×3
+IGNORED	status · bash(105) · sysctl-read · kern.iossupportversion	ignore-list
+IGNORED	- · bash(7) · file-read-data · /Users/x/.ssh/id_ed25519	foreign	×2"
+[ "${#ign_keys[@]}" -eq 0 ] || fail "a written window still holds entries"
+
+# An ALERT writes the held IGNORED lines first, so the ledger stays in time
+# order, and ALERT lines are never collapsed.
+reset_batch
+handle_line "$(ndjson 'launchctl(201) deny(1) sysctl-read kern.singleuser' "$STATUS_CMD")"
+handle_line "$(ndjson 'present(9) deny(1) file-read-data /Users/x/.aws/credentials' "$FLEET_CMD")"
+handle_line "$(ndjson 'present(9) deny(1) file-read-data /Users/x/.aws/credentials' "$FLEET_CMD")"
+handle_line "$(ndjson 'launchctl(202) deny(1) sysctl-read kern.singleuser' "$STATUS_CMD")"
+flush_ignored
+expect_eq "alert ordering" "$(cut -f2- "$SANDBOX_WATCH_LOG")" "IGNORED	status · launchctl(201) · sysctl-read · kern.singleuser	ignore-list
+ALERT	present · present(9) · file-read-data · /Users/x/.aws/credentials
+ALERT	present · present(9) · file-read-data · /Users/x/.aws/credentials
+IGNORED	status · launchctl(202) · sysctl-read · kern.singleuser	ignore-list"
+
+# The held set is capped, and reaching the cap writes it at once.
+reset_batch
+IGNORED_CAP=2
+handle_line "$(ndjson 'launchctl(301) deny(1) sysctl-read kern.singleuser' "$STATUS_CMD")"
+handle_line "$(ndjson 'launchctl(301) deny(1) mach-lookup com.apple.diagnosticd' "$STATUS_CMD")"
+expect_eq "cap writes early" "$(( $(wc -l < "$SANDBOX_WATCH_LOG") ))" 2
+IGNORED_CAP=200
+reset_batch
 
 # The stream loop must tell a quiet tick from the stream ending. On bash 3.2
 # (macOS /bin/bash) `read -t` exits 1 for both, which once restarted
@@ -398,4 +452,65 @@ EOF
   [[ $seq =~ $re ]] || fail "split line saw $seq (expected tick, second, eof)"
 fi
 
-printf 'PASS: sandbox-watch attribution, batching and ignore rules, stream loop\n'
+# --- ledger rotation ------------------------------------------------------
+
+# A tiny threshold and generation count, through the environment.
+mkdir "$TEST_TMP/rot"
+SANDBOX_WATCH_LOG="$TEST_TMP/rot/denials.log"
+SANDBOX_WATCH_NOTIFY_LOG="$TEST_TMP/rot/notifications.log"
+SANDBOX_WATCH_LOG_MAX_BYTES=200
+SANDBOX_WATCH_LOG_KEEP=3
+export SANDBOX_WATCH_LOG_MAX_BYTES SANDBOX_WATCH_LOG_KEEP
+# shellcheck source=recipes/speak/sandbox-watch.sh
+source "$SCRIPT_DIR/sandbox-watch.sh"
+expect_eq "max bytes from env" "$LOG_MAX_BYTES" 200
+LOG=$SANDBOX_WATCH_LOG
+
+# Close one IGNORED window holding a single launchctl denial under pid $1.
+close_window() {
+  handle_line "$(ndjson "launchctl($1) deny(1) sysctl-read kern.singleuser" "$STATUS_CMD")"
+  ign_started=1
+  flush
+}
+
+# Under the threshold nothing rotates.
+printf 'short\n' > "$LOG"
+close_window 1
+[ ! -e "$LOG.1" ] || fail "a log under the threshold was rotated"
+expect_eq "unrotated lines" "$(( $(wc -l < "$LOG") ))" 2
+
+# Over it, the window's close rotates first and the batch starts the fresh
+# file. Five passes keep three generations and drop the oldest two.
+for gen in 2 3 4 5 6; do
+  for _ in 1 2 3 4 5; do
+    printf 'gen%d filler, one of five lines that fill the log\n' "$gen" >> "$LOG"
+  done
+  close_window "$gen"
+done
+expect_eq "live log after rotation" "$(cut -f2- "$LOG")" \
+  "IGNORED	status · launchctl(6) · sysctl-read · kern.singleuser	ignore-list"
+[ ! -e "$LOG.4" ] || fail "kept more than three generations"
+for n in 1 2 3; do
+  [ -f "$LOG.$n" ] || fail "generation $n missing"
+done
+grep -q 'launchctl(3)' "$LOG.3" || fail ".3 lacks the oldest kept batch"
+grep -q 'gen4 filler' "$LOG.3" || fail ".3 lacks the oldest kept filler"
+! grep -qE 'gen2 filler|gen3 filler' "$LOG.1" "$LOG.2" "$LOG.3" || fail "a dropped generation survived"
+
+# The notifications log rotates at the same boundary and starts again empty.
+for _ in 1 2 3 4 5; do
+  printf 'NOTIFIED filler, one of five lines that fill the log\n' >> "$SANDBOX_WATCH_NOTIFY_LOG"
+done
+close_window 7
+[ -f "$SANDBOX_WATCH_NOTIFY_LOG.1" ] || fail "notifications log not rotated"
+[ -f "$SANDBOX_WATCH_NOTIFY_LOG" ] && [ ! -s "$SANDBOX_WATCH_NOTIFY_LOG" ] ||
+  fail "rotated notifications log not restarted empty"
+
+# sandbox-audit.sh reads every generation, oldest first, optionally by label.
+expect_eq "ledger across generations" "$("$BASH" "$SCRIPT_DIR/sandbox-audit.sh" ledger)" \
+  "$(cat "$LOG.3" "$LOG.2" "$LOG.1" "$LOG")"
+expect_eq "ledger by label" \
+  "$("$BASH" "$SCRIPT_DIR/sandbox-audit.sh" ledger status | grep -o 'launchctl([0-9]*)' | tr '\n' ' ')" \
+  'launchctl(3) launchctl(4) launchctl(5) launchctl(6) launchctl(7) '
+
+printf 'PASS: sandbox-watch attribution, batching and ignore rules, collapsing, rotation, stream loop\n'

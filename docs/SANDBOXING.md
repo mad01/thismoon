@@ -469,6 +469,20 @@ denial as `label · process(pid) · operation · target`, e.g.
   sandbox carry srt's tag but no marker; they land there as
   `IGNORED ... foreign` and never notify. Each banner is mirrored to
   `sandbox-notifications.log` beside it. `t-man logs sandbox` shows both.
+- Ledger format. A line is tab-separated
+  `time  status  summary  [reason  [×N]]`. Each `ALERT` is written as it
+  arrives. `IGNORED` lines are held for the 60s window, or until the next
+  `ALERT`, and written once per distinct denial. Repeats with the same
+  label, process name, operation, target and reason, under any pid, become
+  a trailing `×N` on the first sighting's line, which keeps that
+  sighting's time and pid. A process that execs the same helper every few
+  seconds then costs a few lines a minute, not one per denial.
+- Rotation. The watcher rotates both files itself at a window boundary. A
+  file past 5 MiB moves to `.1`, older ones shift up, three generations
+  are kept, and the live file starts again empty under the same path.
+  `sandbox-audit.sh ledger [label]` reads every generation, oldest first.
+  Follow the live file with `tail -F` or `t-man logs -f`, which both
+  reopen it by path.
 - Events. Each banner is also posted to events.this with source
   `sandbox-watch` and tags `command` (the label), `process`, `op`,
   `unique`, and `status`.
@@ -502,7 +516,7 @@ read you didn't expect is exactly what an attacker wants ignored.
 Run the binary under `srt-run` from a shell and watch the ledger:
 
 ```bash
-tail -f ~/.local/share/speak/logs/sandbox-denials.log &
+tail -F ~/.local/share/speak/logs/sandbox-denials.log &
 srt-run ~/.config/srt/present.json ~/code/bin/present mcp
 ```
 

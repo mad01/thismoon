@@ -94,7 +94,12 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   batch's unique denials — banners can't be copied, so read that file to see
   what a notification was about. Both files are registered as t-man extra
   logs (`sandbox`, `sandbox-notifications`): `t-man logs sandbox` shows them
-  fleet-wide, `t-man logs sandbox speak-tts` scopes to one service.
+  fleet-wide, `t-man logs sandbox speak-tts` scopes to one service. The
+  watcher rotates both itself, with no launchd or newsyslog wiring: at a
+  window boundary, a file past 5 MiB (`SANDBOX_WATCH_LOG_MAX_BYTES`) moves to
+  `.1` and starts again empty, keeping three generations
+  (`SANDBOX_WATCH_LOG_KEEP`). `sandbox-audit.sh ledger [label]` reads them
+  all, oldest first.
 - **`hooks.builds.speak_chmod_scripts`** — keeps `sandbox-watch.sh`,
   `sandbox-audit.sh`, `speak-env.sh`, `speak-serve.sh` and `srt-run.sh`
   executable inside the sources cache.
@@ -152,7 +157,12 @@ events.this (source `sandbox-watch`, tags `command` = the label, `process`,
 
 When `sandbox-watch` notifies (or you read `sandbox-denials.log`), the line is
 `label · process(pid) · operation · target`; ledger lines are tab-separated
-`time  status  summary  [reason]`. Decide between three actions:
+`time  status  summary  [reason  [×N]]`. The watcher writes each `ALERT` as
+it arrives. `IGNORED` lines wait for the 60s window to close, or for the next
+`ALERT`, and then each distinct denial gets one line. Repeats with the same
+label, process name, operation, target and reason, whatever their pid, add a
+trailing `×N` field to that line. It keeps the first sighting's time and pid.
+Decide between three actions:
 
 1. **Real breakage**: the denied access is something the process
    legitimately needs and it is failing. Add the narrowest allow to its
@@ -168,10 +178,10 @@ When `sandbox-watch` notifies (or you read `sandbox-denials.log`), the line is
    (never edit the sources-cache copy in place, local edits dirty the clone
    and die on the next sync). Patterns match the denial message with the srt
    tag stripped and the summary line, so `^present · ` scopes one to a
-   label. The next denial logs matches `IGNORED` and stops notifying. Keep
-   the list tight and comment every entry with *why it's benign*; a silenced
-   credential read you didn't expect is exactly what an attacker wants
-   ignored.
+   label. The next matching denial stops notifying and reaches the ledger
+   as `IGNORED` when its window closes. Keep the list tight and comment
+   every entry with *why it's benign*; a silenced credential read you
+   didn't expect is exactly what an attacker wants ignored.
 3. **Real issue**: an unexpected read of a secret (`~/.ssh`, keychains) or a
    network attempt from a process that should be offline. Do NOT add an allow
    or silence it. Investigate: check the pin bump / dependency change that
@@ -181,8 +191,9 @@ Rule of thumb: **never silence or allow a denial you can't explain.** The safe
 default is to leave it alerting until you understand it.
 
 To reproduce a denial, run the process under `srt-run` from a shell with
-`SRT_DEBUG=1` and `tail -f` the ledger, or run `sandbox-audit.sh stream`,
-which prints each srt-tagged denial with its decoded label.
+`SRT_DEBUG=1` and `tail -F` the ledger (`-F`: rotation renames the file),
+or run `sandbox-audit.sh stream`, which prints each srt-tagged denial with
+its decoded label.
 
 **Notification banner setup:** notifications from the launchd agent are
 attributed to "Script Editor" — allow once in System Settings → Notifications

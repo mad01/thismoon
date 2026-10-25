@@ -1,10 +1,13 @@
 #!/bin/bash
-# Audit sandbox denials from the unified log.
+# Audit sandbox denials from the unified log, or read sandbox-watch's ledger.
 #
 #   sandbox-audit.sh stream         # live denials, all sandboxed processes
 #   sandbox-audit.sh show [1h]      # retroactive denials (default last 1h);
 #                                   # best-effort: `log show` drops many of
 #                                   # them, so prefer `stream` while probing
+#   sandbox-audit.sh ledger [label] # sandbox-watch's ledger, oldest first,
+#                                   # across its rotated generations; with a
+#                                   # label, only that label's lines
 #
 # Output is the log's compact style. A denial raised under srt carries a
 # CMD64 tag, which the log prints on the line after it; this script replaces
@@ -53,6 +56,16 @@ annotate() {
   done
 }
 
+# sandbox-watch's ledger, oldest generation first (<log>.N .. <log>.1, then
+# the live file). LOGFILE and LOG_KEEP come from sandbox-watch.sh.
+ledger() {
+  local i
+  for ((i = LOG_KEEP; i >= 1; i--)); do
+    if [ -f "$LOGFILE.$i" ]; then cat "$LOGFILE.$i"; fi
+  done
+  if [ -f "$LOGFILE" ]; then cat "$LOGFILE"; fi
+}
+
 case "${1:-stream}" in
   stream)
     /usr/bin/log stream --style compact \
@@ -62,8 +75,15 @@ case "${1:-stream}" in
     /usr/bin/log show --last "${2:-1h}" --style compact \
       --predicate 'eventMessage CONTAINS "deny(1)"' | annotate
     ;;
+  ledger)
+    if [ -n "${2:-}" ]; then
+      ledger | grep -F -- "$(printf '\t%s · ' "$2")"
+    else
+      ledger
+    fi
+    ;;
   *)
-    echo "usage: $(basename "$0") stream | show [1h|24h|7d]" >&2
+    echo "usage: $(basename "$0") stream | show [1h|24h|7d] | ledger [label]" >&2
     exit 2
     ;;
 esac

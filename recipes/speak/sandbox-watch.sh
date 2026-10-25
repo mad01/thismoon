@@ -12,6 +12,16 @@
 # be copied from Notification Center, so this is the record to read back when
 # one fires. Each banner is archived to events.this as well.
 #
+# Ledger size. ALERT lines are written as they arrive, one per denial.
+# IGNORED lines are held for the window and written when it closes (or just
+# before the next ALERT line, so the ledger stays in time order), one line per
+# distinct denial: a repeat with the same label, process name, operation,
+# target and reason, whatever its pid, only adds to a trailing "×N" field.
+# At each window boundary, before the batch is written, a log past
+# SANDBOX_WATCH_LOG_MAX_BYTES is rotated to <log>.1, shifting older
+# generations up to SANDBOX_WATCH_LOG_KEEP; `sandbox-audit.sh ledger` reads
+# them all. Rotation renames, so follow the path (`tail -F`, t-man logs -f).
+#
 # Attribution. Fleet processes run under anthropics/sandbox-runtime (srt)
 # through srt-run, which execs the command as `env SRT_RUN=<label> <argv...>`.
 # srt tags every deny rule with "CMD64_<base64 of the command's first 100
@@ -85,6 +95,10 @@ TICK="${SANDBOX_WATCH_TICK:-5}"        # stream read timeout / flush check (seco
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IGNORE_FILE="${SANDBOX_WATCH_IGNORE_FILE:-$SCRIPT_DIR/sandbox-ignore.conf}"
 LOCAL_IGNORE_FILE="${SANDBOX_WATCH_LOCAL_IGNORE_FILE:-$HOME/.config/sandbox-watch/ignore.conf}"
+LOG_MAX_BYTES="${SANDBOX_WATCH_LOG_MAX_BYTES:-5242880}"   # rotate LOGFILE/NOTIFYLOG past 5 MiB
+LOG_KEEP="${SANDBOX_WATCH_LOG_KEEP:-3}"                   # rotated generations kept: .1 .. .N
+case $LOG_MAX_BYTES in ''|*[!0-9]*) LOG_MAX_BYTES=5242880 ;; esac
+case $LOG_KEEP in ''|*[!0-9]*|0) LOG_KEEP=3 ;; esac
 
 # Regexes live in variables: bash 3.2 (/bin/bash on macOS) only treats the
 # right side of =~ as a regex reliably when it is unquoted and expanded.
@@ -96,6 +110,7 @@ RE_LABEL="SRT_RUN=['\"]?([A-Za-z0-9._-]+)"
 # denied path that happens to contain the text can't override the marker the
 # kernel appended after it.
 RE_RAW_MARKER='.*SRT_RUN=([A-Za-z0-9._-]+)'
+RE_PID_SUFFIX='^(.*)\([0-9]+\)$'   # "launchctl(123)" -> "launchctl"
 
 # The CMD64 tag's base64 payload, decoded. Robust to missing "=" padding and to
 # a tag the log cut short (no _END_): the payload stops at the first character
@@ -221,6 +236,14 @@ batch_unique_n=0
 UNIQUE_CAP=10          # cap per notification record; the full stream is in LOGFILE
 batch_started=0        # epoch when the first ALERT entered the current batch
 
+# The window's IGNORED denials, collapsed: one entry per distinct denial, in
+# the order first seen. Parallel arrays, as bash 3.2 has no associative ones.
+ign_keys=()            # collapse key: summary without the pid, tab, reason
+ign_lines=()           # the first sighting's ledger line
+ign_counts=()          # sightings this window
+ign_started=0          # epoch when the first IGNORED entered the window
+IGNORED_CAP=200        # distinct entries held before an early write (bounds the scan)
+
 # The events.this payload for the pending ALERT batch. Pulls the label,
 # process and operation out of the first summary ("label · proc(pid) ·
 # operation · target") so the event is filterable by srt label (the `command`
@@ -239,35 +262,116 @@ event_payload() {
     "$(json_escape "$ev_label")" "$(json_escape "$ev_proc")" "$(json_escape "$ev_op")"
 }
 
+# Raise the banner for the pending ALERT batch, archive it to events.this,
+# mirror it to NOTIFYLOG, and start a new batch.
+notify_batch() {
+  local ts
+  /usr/bin/osascript -e "display notification \"${batch_first:0:160}\" with title \"sandbox: ${batch_count} new denial(s)\" subtitle \"tail ${LOGFILE/#$HOME/~}\" sound name \"Funk\"" >/dev/null 2>&1 || true
+  # Also archive the banner as an event (events.this). Best-effort and
+  # fire-and-forget — never block or fail the watcher if events is down.
+  # POST via /usr/bin/curl, NOT the `events` CLI: launchd agents get the bare
+  # default PATH, which lacks the local bin dir, so a `command -v events`
+  # guard silently skips the emit on every flush (the original CLI version
+  # archived nothing, ever).
+  /usr/bin/curl -m 2 -s -o /dev/null -X POST \
+    -H 'Content-Type: application/json' \
+    --data "$(event_payload)" \
+    "${EVENTS_BASE_URL:-http://127.0.0.1:7430}/api/events" >/dev/null 2>&1 &
+  # Mirror what the banner covered to NOTIFYLOG — banners can't be copied,
+  # this record can. One header line + the batch's unique denials, indented.
+  ts=$(/bin/date '+%Y-%m-%d %H:%M:%S')
+  {
+    printf '%s\tNOTIFIED\t%d denial(s), %d unique\n' "$ts" "$batch_count" "$batch_unique_n"
+    printf '%s\n' "$batch_unique" | /usr/bin/sed 's/^/\t/'
+    [ "$batch_unique_n" -ge "$UNIQUE_CAP" ] && printf '\t… unique cap (%d) hit; full stream in %s\n' "$UNIQUE_CAP" "$LOGFILE"
+  } >> "$NOTIFYLOG"
+  batch_count=0
+  batch_first=""
+  batch_unique=""
+  batch_unique_n=0
+  batch_started=0
+}
+
+# Rotate one log once it reaches LOG_MAX_BYTES: <log>.<LOG_KEEP> drops off,
+# each older generation moves up one, and the log becomes <log>.1 and starts
+# again empty, so a reader of the path (t-man logs) never finds it missing.
+# Anything but a regular file (the tests' /dev/null) is left alone. `wc -c`
+# instead of stat, whose flags differ between BSD and GNU.
+rotate_log() {
+  local log=$1 size i
+  [ -f "$log" ] || return 0
+  size=$(wc -c < "$log") || return 0
+  size=${size//[!0-9]/}               # BSD wc pads the count with spaces
+  [ "${size:-0}" -ge "$LOG_MAX_BYTES" ] || return 0
+  for ((i = LOG_KEEP - 1; i >= 1; i--)); do
+    [ ! -f "$log.$i" ] || mv -f "$log.$i" "$log.$((i + 1))"
+  done
+  mv -f "$log" "$log.1" && : > "$log"
+}
+
+rotate_logs() {
+  rotate_log "$LOGFILE"
+  rotate_log "$NOTIFYLOG"
+}
+
+# The collapse key of an IGNORED denial: its summary with the pid dropped
+# from the process field, a tab, and the reason. Sets KEY; no fork.
+ignored_key() {
+  local label=${1%% · *} rest=${1#* · } proc
+  proc=${rest%% · *}
+  rest=${rest#"$proc"}
+  [[ $proc =~ $RE_PID_SUFFIX ]] && proc=${BASH_REMATCH[1]}
+  KEY="$label · $proc$rest	$2"
+}
+
+# Hold an IGNORED denial for the window. A repeat of one already held (same
+# key, any pid) only counts; a new one keeps its first sighting's line.
+note_ignored() {
+  local ts=$1 summary=$2 reason=$3 i
+  ignored_key "$summary" "$reason"
+  for ((i = 0; i < ${#ign_keys[@]}; i++)); do
+    if [ "${ign_keys[$i]}" = "$KEY" ]; then
+      ign_counts[i]=$((ign_counts[i] + 1))
+      return 0
+    fi
+  done
+  [ "${#ign_keys[@]}" -gt 0 ] || ign_started=$(/bin/date +%s)
+  ign_keys+=("$KEY")
+  ign_lines+=("$ts	IGNORED	$summary	$reason")
+  ign_counts+=(1)
+  [ "${#ign_keys[@]}" -lt "$IGNORED_CAP" ] || flush_ignored
+}
+
+# Write the held IGNORED denials to LOGFILE in the order first seen, each as
+# its first sighting's line ("ts IGNORED summary reason", the pid that of the
+# first sighting) plus a "×N" field when it was seen N > 1 times.
+flush_ignored() {
+  local i n=${#ign_keys[@]}
+  [ "$n" -gt 0 ] || return 0
+  for ((i = 0; i < n; i++)); do
+    if [ "${ign_counts[$i]}" -gt 1 ]; then
+      printf '%s\t×%d\n' "${ign_lines[$i]}" "${ign_counts[$i]}"
+    else
+      printf '%s\n' "${ign_lines[$i]}"
+    fi
+  done >> "$LOGFILE"
+  ign_keys=()
+  ign_lines=()
+  ign_counts=()
+  ign_started=0
+}
+
+# Close whichever window is due. Rotation runs first, so the batch about to
+# be written starts the fresh file and the live log is never left empty.
 flush() {
-  local now ts
+  local now ign_due=0 alert_due=0
   now=$(/bin/date +%s)
-  if [ "$batch_count" -gt 0 ] && [ $((now - batch_started)) -ge "$WINDOW" ]; then
-    /usr/bin/osascript -e "display notification \"${batch_first:0:160}\" with title \"sandbox: ${batch_count} new denial(s)\" subtitle \"tail ${LOGFILE/#$HOME/~}\" sound name \"Funk\"" >/dev/null 2>&1 || true
-    # Also archive the banner as an event (events.this). Best-effort and
-    # fire-and-forget — never block or fail the watcher if events is down.
-    # POST via /usr/bin/curl, NOT the `events` CLI: launchd agents get the bare
-    # default PATH, which lacks the local bin dir, so a `command -v events`
-    # guard silently skips the emit on every flush (the original CLI version
-    # archived nothing, ever).
-    /usr/bin/curl -m 2 -s -o /dev/null -X POST \
-      -H 'Content-Type: application/json' \
-      --data "$(event_payload)" \
-      "${EVENTS_BASE_URL:-http://127.0.0.1:7430}/api/events" >/dev/null 2>&1 &
-    # Mirror what the banner covered to NOTIFYLOG — banners can't be copied,
-    # this record can. One header line + the batch's unique denials, indented.
-    ts=$(/bin/date '+%Y-%m-%d %H:%M:%S')
-    {
-      printf '%s\tNOTIFIED\t%d denial(s), %d unique\n' "$ts" "$batch_count" "$batch_unique_n"
-      printf '%s\n' "$batch_unique" | /usr/bin/sed 's/^/\t/'
-      [ "$batch_unique_n" -ge "$UNIQUE_CAP" ] && printf '\t… unique cap (%d) hit; full stream in %s\n' "$UNIQUE_CAP" "$LOGFILE"
-    } >> "$NOTIFYLOG"
-    batch_count=0
-    batch_first=""
-    batch_unique=""
-    batch_unique_n=0
-    batch_started=0
-  fi
+  [ "${#ign_keys[@]}" -gt 0 ] && [ $((now - ign_started)) -ge "$WINDOW" ] && ign_due=1
+  [ "$batch_count" -gt 0 ] && [ $((now - batch_started)) -ge "$WINDOW" ] && alert_due=1
+  [ $((ign_due + alert_due)) -gt 0 ] || return 0
+  rotate_logs
+  [ "$ign_due" -eq 0 ] || flush_ignored
+  [ "$alert_due" -eq 0 ] || notify_batch
 }
 
 # Parse one ndjson stream line and route it: dropped (no srt tag), IGNORED
@@ -282,14 +386,15 @@ handle_line() {
   ts=$(/bin/date '+%Y-%m-%d %H:%M:%S')
   if [ -z "$LABEL" ]; then
     # srt-tagged but no SRT_RUN marker: an agent's own bash sandbox.
-    printf '%s\tIGNORED\t%s\tforeign\n' "$ts" "$(summarize "$msg" -)" >> "$LOGFILE"
+    note_ignored "$ts" "$(summarize "$msg" -)" foreign
     return
   fi
   summary=$(summarize "$msg" "$LABEL")
   if is_ignored "$msg
 $summary"; then
-    printf '%s\tIGNORED\t%s\tignore-list\n' "$ts" "$summary" >> "$LOGFILE"
+    note_ignored "$ts" "$summary" ignore-list
   else
+    flush_ignored   # held IGNORED lines are older: keep the ledger in time order
     printf '%s\tALERT\t%s\n' "$ts" "$summary" >> "$LOGFILE"
     [ "$batch_count" -eq 0 ] && batch_started=$(/bin/date +%s)
     batch_count=$((batch_count + 1))
@@ -354,7 +459,7 @@ stream_read() {
 # there's no KeepAlive-restart gap.
 main() {
   mkdir -p "$(dirname "$LOGFILE")"
-  trap 'stream_close; exit 0' TERM INT
+  trap 'stream_close; flush_ignored; exit 0' TERM INT
   while :; do
     if ! stream_open; then
       sleep 5

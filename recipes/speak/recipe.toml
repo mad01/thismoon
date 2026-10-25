@@ -108,7 +108,8 @@ action = "symlink"
 # Streams unified-log Sandbox denials, keeps the ones srt-run tagged (decoding
 # the SRT_RUN label from srt's CMD64 tag), batches per 60s window, notifies
 # via Notification Center, and appends to
-# ~/.local/share/speak/logs/sandbox-denials.log (sandbox-audit.sh digs in).
+# ~/.local/share/speak/logs/sandbox-denials.log (sandbox-audit.sh digs in),
+# collapsing repeated IGNORED lines per window and rotating both logs itself.
 # Denials from agents' own srt shells land there as IGNORED (foreign).
 # Each banner is also mirrored to sandbox-notifications.log (same dir) with
 # the batch's unique denials — read that to see what a banner was about.
