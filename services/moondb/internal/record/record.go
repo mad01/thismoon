@@ -214,17 +214,20 @@ func (rec *recorder) gitCtx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(rec.ctx, moondb.GitBudget)
 }
 
-// locate places dir in git; the zero Location when git cannot say in time.
-// A directory git answered for is asked once per Run, outside any
-// repository or not; one a deadline cut off is asked again.
+// locate places dir in git; whatever git said before the deadline, which
+// is the zero Location when it said nothing. A directory git answered for
+// in time is asked once per Run, outside any repository or not; one a
+// deadline cut off is asked again.
 func (rec *recorder) locate(dir string) store.Location {
 	loc, _ := rec.locateAnswered(dir)
 	return loc
 }
 
-// locateAnswered is locate that also reports whether git answered: false
-// when the zero Location comes from a deadline, not from dir being outside
-// any repository.
+// locateAnswered is locate that also reports whether git answered in time.
+// A deadline can cut the lookup partway, after the worktree and before the
+// repo, so a cut answer is neither cached nor counted as answered: cached,
+// it would place every later file of that worktree without a repo, and
+// why and history filter on the repo.
 func (rec *recorder) locateAnswered(dir string) (store.Location, bool) {
 	if loc, ok := rec.locs[dir]; ok {
 		return loc, true
@@ -232,7 +235,7 @@ func (rec *recorder) locateAnswered(dir string) (store.Location, bool) {
 	ctx, cancel := rec.gitCtx()
 	defer cancel()
 	loc := Locate(ctx, dir)
-	if loc.Worktree == "" && ctx.Err() != nil {
+	if ctx.Err() != nil {
 		return loc, false
 	}
 	rec.locs[dir] = loc

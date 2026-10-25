@@ -13,14 +13,19 @@ import (
 // same file lands under the same repo, worktree and path whichever path
 // recorded it.
 
-// Resolve makes the tool's path absolute and physical. A file that is gone
-// resolves through its nearest existing ancestor, with the missing part
-// joined back on, so it still lines up with the physical paths git reports
-// when its directory is gone too and the ancestor is a symlink (/tmp and
-// /var are on macOS). A path with no ancestor that resolves is cleaned.
+// Resolve makes the tool's path absolute and physical. A file that exists
+// resolves as the kernel opens it, with a ".." after a symlink walking out
+// of the link's target. A file that is gone resolves through its nearest
+// existing ancestor, with the missing part joined back on, so it still
+// lines up with the physical paths git reports when its directory is gone
+// too and the ancestor is a symlink (/tmp and /var are on macOS). A path
+// with no ancestor that resolves is cleaned.
 func Resolve(name, cwd string) string {
 	if !filepath.IsAbs(name) {
 		name = filepath.Join(cwd, name)
+	}
+	if p, err := filepath.EvalSymlinks(name); err == nil {
+		return p
 	}
 	name = filepath.Clean(name)
 	missing := ""
