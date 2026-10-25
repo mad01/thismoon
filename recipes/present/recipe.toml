@@ -62,6 +62,20 @@ post_apply = ["make -C ~/.config/ralph/sources/thismoon/services/present cache |
 # binary it runs is removed (ralph disable thismoon/present && ralph up --enable-cleanup).
 pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove present 2>/dev/null; fi || true"]
 
+# srt settings for the serve agent, linked to ~/.config/srt/present-serve.json.
+# They name no host and no machine path, so they ship beside the recipe
+# (docs/adr/0006, 2026-10-25 amendment). The MCP server's settings
+# (~/.config/srt/present.json) stay in the consuming repo; the two labels
+# differ so sandbox-watch tells the processes apart. Reads are denied under ~
+# except the binary and the page store, writes go to the store and the temp
+# dirs. No egress beyond loopback unless PRESENT_SHARED_URL is set: the
+# launcher then adds the shared host at launch, and the share push is Go TLS,
+# which needs trustd, hence enableWeakerNetworkIsolation.
+[dotfiles.present_serve_srt_settings]
+source = "present-serve.srt.json"
+target = "~/.config/srt/present-serve.json"
+action = "symlink"
+
 # Register `present serve` as a long-running launchd user agent via t-man so the
 # pages are always reachable on http://localhost:7423. Registration only —
 # restart-on-rebuild lives in [packages.present.service] above. `t-man add` is
@@ -69,11 +83,16 @@ pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove present 2>/d
 # the agent registered and self-heals if it was manually removed. The agent
 # runs present-serve.sh rather than the binary: the launcher reads the sharing
 # config (PRESENT_SHARED_URL, PRESENT_AUTHOR_KEY) from the secrets file at
-# start, so the Share button works and no secret lands in the plist.
+# start, outside the sandbox, then execs present serve through srt-run (docs/
+# SANDBOXING.md, "Sandboxing a t-man service").
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
+# ralph links dotfiles items before any build or package in every run, so the
+# srt-run and settings links exist before this registration; depends_on could
+# not name them anyway, since ralph only accepts builds. and packages. refs.
 [hooks.builds.present_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name present -- $HOME/.config/ralph/sources/thismoon/recipes/present/present-serve.sh --port 7423 --workdir $HOME/.config/present; else echo 'present: skip service (t-man not on PATH; install t-man then run: t-man add --name present -- present serve --port 7423 --workdir ~/.config/present)'; fi",
+  "if command -v t-man >/dev/null; then t-man add --name present --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/.config/ralph/sources/thismoon/recipes/present/present-serve.sh --port 7423 --workdir $HOME/.config/present; else echo 'present: skip service (t-man not on PATH; install t-man then run: t-man add --name present -- present serve --port 7423 --workdir ~/.config/present)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/present"
 run = "always"
-depends_on = ["packages.present", "packages.t_man"]
+depends_on = ["packages.present", "packages.t_man", "builds.speak_chmod_scripts"]

@@ -27,15 +27,41 @@ restart = "if command -v t-man >/dev/null && t-man status moondb >/dev/null 2>&1
 # binary it runs is removed (ralph disable thismoon/moondb && ralph up --enable-cleanup).
 pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove moondb 2>/dev/null; fi || true"]
 
+# srt settings for the serve agent, linked to ~/.config/srt/moondb.json. They
+# name no host and no machine path, so they ship beside the recipe
+# (docs/adr/0006, 2026-10-25 amendment). The store and its spool are both under
+# the workdir; `moondb why` runs git blame in the asking worktree, so reads also
+# cover the code roots (~/code, ~/.worktrees, the ralph sources cache) minus
+# nested .env, .env.*, *.pem and *.key files. .git/config stays readable: git
+# reads the repo config on every command. Writes go to the workdir and the temp
+# dirs; loopback only.
+[dotfiles.moondb_srt_settings]
+source = "moondb.srt.json"
+target = "~/.config/srt/moondb.json"
+action = "symlink"
+
 # Register `moondb serve` as a long-running launchd user agent via t-man. This
 # process is the single writer of the store and drains the spool the capture
 # hooks write. The hooks and the MCP server are wired by the consuming repo
 # (docs/adr/0006); both only reach serve over the spool or HTTP.
 # Idempotent; run = "always" keeps it registered and self-heals if it was removed.
+# It runs sandboxed (docs/SANDBOXING.md, "Sandboxing a t-man service").
+# `moondb why` runs git blame, which is read-only and needs no user identity,
+# credential helper or other global config. GIT_CONFIG_GLOBAL=/dev/null keeps
+# git from dying on the unreadable ~/.gitconfig. /usr/bin/git is an xcrun shim
+# that loads libxcrun from the active developer directory. An Xcode under $HOME
+# is unreadable inside the sandbox, while the Command Line Tools under /Library
+# always are, so DEVELOPER_DIR pins the shim to the Command Line Tools when
+# they are installed. Machines without them keep xcode-select's choice. --path
+# matches the deps recipe (docs/SANDBOXING.md, "git inside the sandbox").
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
+# ralph links dotfiles items before any build or package in every run, so the
+# srt-run and settings links exist before this registration; depends_on could
+# not name them anyway, since ralph only accepts builds. and packages. refs.
 [hooks.builds.moondb_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name moondb -- $HOME/code/bin/moondb serve --port 7433 --workdir $HOME/.local/state/moondb; else echo 'moondb: skip service (t-man not on PATH; install t-man then run: t-man add --name moondb -- moondb serve --port 7433)'; fi",
+  "if command -v t-man >/dev/null; then set --; if [ -d /Library/Developer/CommandLineTools ]; then set -- --env DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi; t-man add --name moondb --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env GIT_CONFIG_GLOBAL=/dev/null \"$@\" --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/moondb.json $HOME/code/bin/moondb serve --port 7433 --workdir $HOME/.local/state/moondb; else echo 'moondb: skip service (t-man not on PATH; install t-man then run: t-man add --name moondb -- moondb serve --port 7433)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/moondb"
 run = "always"
-depends_on = ["packages.moondb", "packages.t_man"]
+depends_on = ["packages.moondb", "packages.t_man", "builds.speak_chmod_scripts"]

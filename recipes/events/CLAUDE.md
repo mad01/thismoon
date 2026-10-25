@@ -17,9 +17,15 @@ ralph merges the recipe with the identity `thismoon/events`. The package
 - **`packages.events.service`** — restarts the agent only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).
-- **`hooks.builds.events_service`** — `t-man add --name events -- events serve
-  --port 7430 --workdir ~/.local/share/events`. Idempotent; `run = "always"`
-  self-heals if the agent was removed. Guarded on t-man being on PATH.
+- **`hooks.builds.events_service`**: `t-man add --name events --extra-log
+  sandbox=… -- srt-run ~/.config/srt/events.json events serve --port 7430
+  --workdir ~/.local/share/events`. Idempotent; `run = "always"` self-heals
+  if the agent was removed. Guarded on t-man being on PATH.
+- **`dotfiles.events_srt_settings`**: links `events.srt.json` to
+  `~/.config/srt/events.json`. Sandbox note: serve runs under srt with
+  loopback only, `$HOME` reads denied except `~/code/bin` and the store, and
+  writes to the store and the temp dirs. `t-man logs events --source
+  sandbox` shows the denial ledger; `docs/SANDBOXING.md` covers triage.
 - **`pre_uninstall`** — removes the t-man agent before cleanup deletes the binary.
 
 ## What stays in dotfiles (private overlay)

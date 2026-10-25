@@ -17,10 +17,41 @@ ralph merges the recipe with the identity `thismoon/keeper-of-facts`. The packag
 - **`packages.keeper_of_facts.service`** — restarts the agent only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).
-- **`hooks.builds.keeper_of_facts_service`** — `t-man add --name keeper-of-facts -- kof serve
-  --port 7431 --workdir ~/.local/share/kof`. Idempotent; `run = "always"`
+- **`hooks.builds.keeper_of_facts_service`**: `t-man add --name keeper-of-facts
+  --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env
+  GIT_CONFIG_GLOBAL=/dev/null [--env DEVELOPER_DIR=…] --extra-log sandbox=…
+  -- srt-run ~/.config/srt/keeper-of-facts.json kof serve --port 7431 --workdir
+  ~/.local/share/kof`. Idempotent; `run = "always"`
   self-heals if the agent was removed. Guarded on t-man being on PATH.
-- **`pre_uninstall`** — removes the t-man agent before cleanup deletes the binary.
+- **`dotfiles.keeper_of_facts_srt_settings`**: links
+  `keeper-of-facts.srt.json` to `~/.config/srt/keeper-of-facts.json`.
+- **`pre_uninstall`**: removes the t-man agent before cleanup deletes the binary.
+
+Sandbox note: serve runs under srt, loopback only. It reads the code roots
+the fleet works in (`~/code`, `~/.worktrees`, the ralph sources cache) plus
+its store, and writes the store and the temp dirs. Inside the code roots it
+denies nested `.env`, `.env.*`, `*.pem` and `*.key` files. It can't deny
+`.git/config` as read-only code sandboxes do, because git reads the repo
+config on every command.
+
+Pin resolution runs read-only git (`rev-parse`, `remote get-url`), which
+needs no identity or credential helper. The agent runs with
+`GIT_CONFIG_GLOBAL=/dev/null` so git doesn't die on the unreadable
+`~/.gitconfig`. `DEVELOPER_DIR` points the `/usr/bin/git` shim at the
+Command Line Tools when they are installed, because an Xcode under `$HOME`
+is unreadable in the sandbox (docs/SANDBOXING.md, "git inside the sandbox").
+
+The sandbox has two visible consequences:
+
+- A pin outside those roots reads as missing on `kof check`.
+- `kof recall` and `kof_recall` are unavailable. The `claude -p` judge can't
+  start in the sandbox, so `POST /api/recall` answers 502 with an error like
+  the one below (the path is wherever `claude` is installed). Use `kof_query`
+  or `kof list` instead.
+
+```
+kof: recall judge failed (fall back to kof_query): exec claude -p: fork/exec ~/.local/bin/claude: operation not permitted
+```
 
 ## What stays in dotfiles (private overlay)
 

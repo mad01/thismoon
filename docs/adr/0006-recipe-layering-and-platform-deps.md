@@ -109,3 +109,29 @@ machine are merged in at launch from the wrapper's own inputs rather than
 written into the file. The public layer keeps what is portable: the shared
 `srt-run` launcher (speak recipe) and each tool's spawn wrapper, which
 names the settings path and fails closed when the file is absent.
+
+## Amendment (2026-10-25, t-man services)
+
+The amendment above put every srt settings file in the consuming repo. That
+fits the MCP servers and install steps it covered, whose reach differs per
+machine. It doesn't fit the first-party t-man services now run under srt:
+events, keeper-of-facts, moondb, catalog-web and present serve. Their
+settings name the binary, the service's own workdir and the code roots the
+fleet works in (`~/code`, `~/.worktrees`, the ralph sources cache). Nothing
+in them differs per machine.
+
+So generic, machine-independent settings for a public-layer service may ship
+beside its recipe as `<label>.srt.json`, linked to
+`~/.config/srt/<label>.json` by that recipe. Machine-specific egress stays in
+the consuming repo: a host reaches the allow-list at launch through
+`SRT_RUN_ALLOW_DOMAINS`, from inputs the consuming repo controls, the way
+present serve gets its shared host. A settings file that has to name a
+machine-specific path ships from the consuming repo as before.
+
+Three t-man services stay outside srt. csl-web pulls repos over ssh, which
+srt can't proxy. ssh ignores the proxy settings srt hands its child, and it
+needs the user's keys or SSH agent, which the sandbox exists to keep out.
+sandbox-watch needs logd to stream the unified log and the notification
+services to post banners, and it is the monitor that reports every other
+sandbox's denials. d-man is a root LaunchDaemon that rewrites `/etc/hosts`
+and binds port 80, outside what a per-user srt sandbox covers.

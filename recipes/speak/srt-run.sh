@@ -8,12 +8,13 @@
 # path and one marker the sandbox-watch agent can attribute denials by.
 #
 # The settings file is the per-process srt JSON, by convention
-# ~/.config/srt/<label>.json. The consuming repo ships it (machine-private
-# overlay, docs/adr/0006); this repo ships none. It must sit outside every
-# sandbox's allowWrite, or a confined process could rewrite its own policy
-# for the next launch; no fleet sandbox may write ~/.config/srt. srt fails
-# closed: a missing or invalid settings file exits 1 and the command never
-# runs.
+# ~/.config/srt/<label>.json. A settings file that is the same on every
+# machine ships beside its service's recipe here; one that differs per
+# machine ships from the consuming repo as an overlay (docs/adr/0006). It
+# must sit outside every sandbox's allowWrite, or a confined process could
+# rewrite its own policy for the next launch; no fleet sandbox may write
+# ~/.config/srt. srt fails closed: a missing or invalid settings file exits
+# 1 and the command never runs.
 #
 # What this adds over a bare `srt --settings`:
 #   - a leading ~ in the settings path is expanded and the path made absolute

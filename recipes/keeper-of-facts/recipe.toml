@@ -27,16 +27,45 @@ restart = "if command -v t-man >/dev/null && t-man status keeper-of-facts >/dev/
 # binary it runs is removed (ralph disable thismoon/keeper-of-facts && ralph up --enable-cleanup).
 pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove keeper-of-facts 2>/dev/null; fi || true"]
 
+# srt settings for the serve agent, linked to
+# ~/.config/srt/keeper-of-facts.json. They name no host and no machine path, so
+# they ship beside the recipe (docs/adr/0006, 2026-10-25 amendment). Pins hash
+# lines in repos, so reads cover the code roots the fleet works in (~/code,
+# ~/.worktrees, the ralph sources cache) minus nested .env, .env.*, *.pem and
+# *.key files, plus the store. .git/config stays readable: git reads the repo
+# config on every command. Writes go to the store and the temp dirs; loopback
+# only. A pin outside those roots reads as missing under the sandbox.
+[dotfiles.keeper_of_facts_srt_settings]
+source = "keeper-of-facts.srt.json"
+target = "~/.config/srt/keeper-of-facts.json"
+action = "symlink"
+
 # Register `kof serve` as a long-running launchd user agent via t-man. This
 # process owns the assertion store; the MCP server (registered through the
 # consuming repo's agent-sync servers.json) is a thin HTTP client to it.
 # serve auto-migrates a pre-rename ~/.local/share/keep store to this path on
 # start (MAD-269).
 # Idempotent; run = "always" keeps it registered and self-heals if it was removed.
+# It runs sandboxed (docs/SANDBOXING.md, "Sandboxing a t-man service").
+# Pin resolution runs read-only git commands (rev-parse, remote get-url), which
+# need no user identity, credential helper or other global config.
+# GIT_CONFIG_GLOBAL=/dev/null keeps git from dying on the unreadable
+# ~/.gitconfig. /usr/bin/git is an xcrun shim that loads libxcrun from the
+# active developer directory. An Xcode under $HOME is unreadable inside the
+# sandbox, while the Command Line Tools under /Library always are, so
+# DEVELOPER_DIR pins the shim to the Command Line Tools when they are
+# installed. Machines without them keep xcode-select's choice. --path matches
+# the deps recipe (docs/SANDBOXING.md, "git inside the sandbox").
+# recall's `claude -p` judge cannot run in the sandbox, so recall answers 502;
+# kof_query still works.
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
+# ralph links dotfiles items before any build or package in every run, so the
+# srt-run and settings links exist before this registration; depends_on could
+# not name them anyway, since ralph only accepts builds. and packages. refs.
 [hooks.builds.keeper_of_facts_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name keeper-of-facts -- $HOME/code/bin/kof serve --port 7431 --workdir $HOME/.local/share/kof; else echo 'kof: skip service (t-man not on PATH; install t-man then run: t-man add --name keeper-of-facts -- kof serve --port 7431)'; fi",
+  "if command -v t-man >/dev/null; then set --; if [ -d /Library/Developer/CommandLineTools ]; then set -- --env DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi; t-man add --name keeper-of-facts --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env GIT_CONFIG_GLOBAL=/dev/null \"$@\" --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/keeper-of-facts.json $HOME/code/bin/kof serve --port 7431 --workdir $HOME/.local/share/kof; else echo 'kof: skip service (t-man not on PATH; install t-man then run: t-man add --name keeper-of-facts -- kof serve --port 7431)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/keeper-of-facts"
 run = "always"
-depends_on = ["packages.keeper_of_facts", "packages.t_man"]
+depends_on = ["packages.keeper_of_facts", "packages.t_man", "builds.speak_chmod_scripts"]

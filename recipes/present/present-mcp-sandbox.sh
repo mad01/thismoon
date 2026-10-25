@@ -18,8 +18,8 @@
 # the per-user temp dir; srt-run falls back to /private/tmp without it) and
 # SRT_DEBUG for srt's own debug output.
 #
-# The sandbox settings are ~/.config/srt/present.json. This repo ships none:
-# the consuming repo provides the file as part of its machine-private overlay
+# The sandbox settings are ~/.config/srt/present.json. This repo does not ship
+# them: the consuming repo provides the file as part of its machine-private overlay
 # (docs/adr/0006), next to the MCP registration that points here. It lives
 # outside present's page store on purpose: the sandbox may write the store,
 # and must never be able to rewrite its own policy. Without the file srt
@@ -28,10 +28,10 @@
 # POST to 127.0.0.1:7430 and writes to its page store and temp dir.
 #
 # The static file keeps network.allowedDomains empty. The shared instance's
-# host is machine-specific and comes from PRESENT_SHARED_URL, so this wrapper
-# derives host[:port] from it and hands it to srt-run as
-# SRT_RUN_ALLOW_DOMAINS, which merges it into the allow-list at launch. No
-# shared URL, no egress beyond localhost.
+# host is machine-specific and comes from PRESENT_SHARED_URL:
+# present-shared-env.sh derives host[:port] from it as SRT_RUN_ALLOW_DOMAINS,
+# and this wrapper passes that through to srt-run, which merges it into the
+# allow-list at launch. No shared URL, no egress beyond localhost.
 set -eu
 
 # shellcheck source=present-shared-env.sh
@@ -54,18 +54,8 @@ fi
 if [ -n "${SRT_DEBUG:-}" ]; then
   set -- "$@" SRT_DEBUG="$SRT_DEBUG"
 fi
-if [ -n "${PRESENT_SHARED_URL:-}" ]; then
-  # https://user@share.example.com:8443/base?q -> share.example.com:8443
-  share_host=${PRESENT_SHARED_URL#*://}
-  share_host=${share_host%%/*}
-  share_host=${share_host%%\?*}
-  share_host=${share_host%%#*}
-  share_host=${share_host##*@}
-  if [ -n "$share_host" ]; then
-    SRT_RUN_ALLOW_DOMAINS=$share_host
-    export SRT_RUN_ALLOW_DOMAINS
-    set -- "$@" SRT_RUN_ALLOW_DOMAINS="$SRT_RUN_ALLOW_DOMAINS"
-  fi
+if [ -n "${SRT_RUN_ALLOW_DOMAINS:-}" ]; then
+  set -- "$@" SRT_RUN_ALLOW_DOMAINS="$SRT_RUN_ALLOW_DOMAINS"
 fi
 
 cd /

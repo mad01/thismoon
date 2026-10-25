@@ -97,3 +97,17 @@ posture this decision relies on is unchanged: most of `$HOME` is denied, the
 workdir is writable, and the process exits with its client. So the switch
 file is still within `present mcp`'s reach, and the CLI is still its only
 writer.
+
+## Amendment (2026-10-25, sandboxed serve)
+
+The Context says `present serve` runs unsandboxed, with the user's own
+rights. That changed: serve now runs under srt through `srt-run`, with
+`~/.config/srt/present-serve.json` from the present recipe, and those
+settings grant no pseudo-terminal. A terminal session fails to start,
+because openpty is denied. The switch file, the page-declared sessions, the
+origin check and the local-only routes are unchanged. Turning sessions back
+on is a future opt-in: a machine-local settings expansion that adds
+`allowPty` and the reads a shell needs. `allowPty` alone would start the
+shell inside serve's confinement, with `$HOME` reads denied and no egress
+beyond loopback, and that isn't the demo this ADR set out to enable. The
+shipped settings leave sessions off.

@@ -10,6 +10,12 @@
 # a subshell; never source the whole file into the caller. A var already in
 # the environment wins. present enables sharing only when both are set and
 # warns at startup about a lone one, so an unset pair is simply "no sharing".
+#
+# Both launchers run present under srt, whose static settings name no host.
+# So the shared instance's host[:port] is exported as SRT_RUN_ALLOW_DOMAINS,
+# which srt-run merges into network.allowedDomains at launch:
+# https://user@share.example.com:8443/base?q gives share.example.com:8443.
+# No shared URL, no egress beyond localhost.
 for _sf in "$HOME/.config/ralph/secrets.sh" "$HOME/.secrets.sh"; do
   [ -f "$_sf" ] || continue
   for _v in PRESENT_SHARED_URL PRESENT_AUTHOR_KEY; do
@@ -21,4 +27,15 @@ for _sf in "$HOME/.config/ralph/secrets.sh" "$HOME/.secrets.sh"; do
     [ -n "$_val" ] && eval "export $_v=\"\$_val\""
   done
 done
-unset _sf _v _cur _val 2>/dev/null || true
+if [ -n "${PRESENT_SHARED_URL:-}" ]; then
+  _host=${PRESENT_SHARED_URL#*://}
+  _host=${_host%%/*}
+  _host=${_host%%\?*}
+  _host=${_host%%#*}
+  _host=${_host##*@}
+  if [ -n "$_host" ]; then
+    SRT_RUN_ALLOW_DOMAINS=$_host
+    export SRT_RUN_ALLOW_DOMAINS
+  fi
+fi
+unset _sf _v _cur _val _host 2>/dev/null || true

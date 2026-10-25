@@ -1,0 +1,36 @@
+{
+  "network": {
+    "allowedDomains": [],
+    "deniedDomains": [],
+    "allowLocalBinding": true
+  },
+  "filesystem": {
+    "denyRead": [
+      "~",
+      "~/code/**/.env",
+      "~/code/**/.env.*",
+      "~/code/**/*.pem",
+      "~/code/**/*.key",
+      "~/.worktrees/**/.env",
+      "~/.worktrees/**/.env.*",
+      "~/.worktrees/**/*.pem",
+      "~/.worktrees/**/*.key",
+      "~/.config/ralph/sources/**/.env",
+      "~/.config/ralph/sources/**/.env.*",
+      "~/.config/ralph/sources/**/*.pem",
+      "~/.config/ralph/sources/**/*.key"
+    ],
+    "allowRead": [
+      "~/code",
+      "~/.worktrees",
+      "~/.config/ralph/sources",
+      "~/.local/state/moondb"
+    ],
+    "allowWrite": [
+      "~/.local/state/moondb",
+      "/private/tmp",
+      "/private/var/folders"
+    ],
+    "denyWrite": []
+  }
+}

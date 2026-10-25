@@ -23,12 +23,15 @@ MCP server).
   guard skips the restart on first install (before registration). The
   restart ends every live terminal session serve holds, so an apply that
   rebuilds present mid-talk kills the demo.
-- **`hooks.builds.present_service`** — registration only: `t-man add …
-  present-serve.sh --port 7423 --workdir ~/.config/present`. The launcher
-  reads the sharing config from the secrets file and execs `present serve`,
-  so the Share button works and the plist holds no secret. Idempotent;
-  `run = "always"` self-heals if the agent was removed. Guarded on t-man
-  being on PATH.
+- **`hooks.builds.present_service`**: registration only: `t-man add …
+  --extra-log sandbox=… present-serve.sh --port 7423 --workdir
+  ~/.config/present`. The launcher reads the sharing config from the
+  secrets file, outside the sandbox, and execs `present serve` through
+  `srt-run` (see Sandbox containment), so the Share button works and the
+  plist holds no secret. Idempotent; `run = "always"` self-heals if the
+  agent was removed. Guarded on t-man being on PATH.
+- **`dotfiles.present_serve_srt_settings`**: links `present-serve.srt.json`
+  to `~/.config/srt/present-serve.json`, the serve agent's srt settings.
 - **`hooks.builds.present_chmod_mcp_wrapper`** — keeps `present-mcp-sandbox.sh`
   and `present-serve.sh` executable inside the sources cache (the overlay
   registers the wrapper, not the bare binary).
@@ -53,8 +56,8 @@ Machine-specific wiring is deliberately not here (MAD-199 tracks the pattern):
   command pointing at `present-mcp-sandbox.sh` **in the sources cache**
   (`~/.config/ralph/sources/thismoon/recipes/present/present-mcp-sandbox.sh`)
 - the `present.this` route: `recipes/d-man/routes.toml` (`present` → 7423)
-- the sandbox settings, `~/.config/srt/present.json` (see Sandbox
-  containment below)
+- the MCP server's sandbox settings, `~/.config/srt/present.json` (see
+  Sandbox containment below); the serve agent's ship here
 - `depends_on = ["packages.t_man"]` references the dotfiles t-man recipe's
   package key — the merged config must include the dotfiles recipes for
   validation to pass.
@@ -78,11 +81,11 @@ server never starts. The posture it should carry:
 - **Egress is a hostname allow-list.** `present mcp` never serves. It dials
   the local events port (`allowLocalBinding: true` covers `127.0.0.1:7430`)
   and, for `present_share`, the shared instance. The static file keeps
-  `network.allowedDomains` empty: the wrapper derives `host[:port]` from
-  `PRESENT_SHARED_URL` and passes it as `SRT_RUN_ALLOW_DOMAINS`, which
-  `srt-run` merges in at launch. Any other host is refused at srt's proxy.
-  The Share button and `present share` run outside the sandbox and reach any
-  URL.
+  `network.allowedDomains` empty: `present-shared-env.sh` derives
+  `host[:port]` from `PRESENT_SHARED_URL` as `SRT_RUN_ALLOW_DOMAINS`, the
+  wrapper passes it through, and `srt-run` merges it in at launch. Any
+  other host is refused at srt's proxy. `present share` runs outside the
+  sandbox and reaches any URL.
 - **$HOME reads denied** (`denyRead: ["~"]`); `allowRead` carves out
   `~/code/bin` (the binary) and the page store (`~/.config/present`,
   `~/.local/state/present`).
@@ -105,12 +108,31 @@ subshell (a var already in the environment wins) so neither the plist nor
 `present_open` execs `/usr/bin/open`, which inherits the sandbox — the browser
 is launched by launchd *outside* the sandbox, so it runs unconfined.
 
-Only the MCP server is sandboxed; the CLI and the `present serve` t-man agent
-run bare (serve binds the port and is first-party long-running code).
+The `present serve` t-man agent runs under srt as well, with the label
+`present-serve` so its denials stay apart from the MCP server's.
+`present-serve.sh` sources `present-shared-env.sh` outside the sandbox, `cd`-s
+to `/`, and execs `~/code/bin/srt-run ~/.config/srt/present-serve.json
+~/code/bin/present serve`. Its settings ship here as `present-serve.srt.json`,
+since nothing in them differs per machine:
+- **Loopback plus the shared host.** serve binds 7423 and posts to events
+  (`allowLocalBinding: true`). The Share button pushes to the shared
+  instance, whose host arrives through `SRT_RUN_ALLOW_DOMAINS` like the MCP
+  server's. That push is Go TLS, which needs trustd for certificate checks,
+  so the settings set `enableWeakerNetworkIsolation`.
+- **$HOME reads denied** except `~/code/bin` and the page store
+  (`~/.config/present`, the workdir the recipe passes).
+- **Writes** to the page store and the temp dirs.
 
-Live terminal posture. serve runs bare, so a terminal session it spawns has
-the user's full rights. That is why the live terminal stays behind a switch,
-off by default (`docs/adr/0025-present-terminal-sessions-in-serve.md`):
+Only the CLI runs bare.
+
+Live terminal posture. serve's sandbox grants no pseudo-terminal, so a
+terminal session doesn't start while serve runs under srt: openpty is
+denied (`docs/adr/0025-present-terminal-sessions-in-serve.md`, 2026-10-25
+amendment). Turning sessions back on is a future opt-in: a machine-local
+settings expansion that adds `allowPty` and the reads a shell needs.
+`allowPty` alone isn't enough, since the shell would inherit serve's
+confinement. The switch and the rules below
+still hold for a serve run bare by hand:
 - **Sessions exist only while the switch does.** The switch is the file
   `~/.config/present/terminal.enabled`. serve reads it on every terminal
   request and checks it every 2 s, and `present terminal off` removes it,
