@@ -71,6 +71,8 @@ pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove present 2>/d
 # dirs. No egress beyond loopback unless PRESENT_SHARED_URL is set: the
 # launcher then adds the shared host at launch, and the share push is Go TLS,
 # which needs trustd, hence enableWeakerNetworkIsolation.
+# Rendered from spec.access in services/present/service-info.yaml by
+# `make sandbox-settings` (docs/adr/0027): edit the manifest, not the JSON.
 [dotfiles.present_serve_srt_settings]
 source = "present-serve.srt.json"
 target = "~/.config/srt/present-serve.json"

@@ -9,3 +9,8 @@ spec:
   lifecycle: production
   owner: mad01
   system: thismoon
+  access:
+    sandbox: none
+    reason: >-
+      First-party dashboard that polls t-man and the services' /version over
+      loopback; it has not been probed under srt yet.

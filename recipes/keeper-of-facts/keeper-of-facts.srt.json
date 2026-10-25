@@ -1,10 +1,16 @@
 {
-  "network": {
-    "allowedDomains": [],
-    "deniedDomains": [],
-    "allowLocalBinding": true
-  },
   "filesystem": {
+    "allowRead": [
+      "~/code",
+      "~/.worktrees",
+      "~/.config/ralph/sources",
+      "~/.local/share/kof"
+    ],
+    "allowWrite": [
+      "~/.local/share/kof",
+      "/private/tmp",
+      "/private/var/folders"
+    ],
     "denyRead": [
       "~",
       "~/code/**/.env",
@@ -20,17 +26,11 @@
       "~/.config/ralph/sources/**/*.pem",
       "~/.config/ralph/sources/**/*.key"
     ],
-    "allowRead": [
-      "~/code",
-      "~/.worktrees",
-      "~/.config/ralph/sources",
-      "~/.local/share/kof"
-    ],
-    "allowWrite": [
-      "~/.local/share/kof",
-      "/private/tmp",
-      "/private/var/folders"
-    ],
     "denyWrite": []
+  },
+  "network": {
+    "allowLocalBinding": true,
+    "allowedDomains": [],
+    "deniedDomains": []
   }
 }

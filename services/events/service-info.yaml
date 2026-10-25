@@ -9,3 +9,11 @@ spec:
   lifecycle: production
   owner: mad01
   system: thismoon
+  # Sandbox access, rendered to recipes/events/events.srt.json by
+  # `make sandbox-settings` (docs/SANDBOXING.md, "Declaring access").
+  access:
+    sandbox: srt
+    workdir: ~/.local/share/events
+    listen: 7430
+    reads: [~/code/bin, workdir]
+    writes: [workdir, temp]

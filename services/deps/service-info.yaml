@@ -9,3 +9,8 @@ spec:
   lifecycle: production
   owner: mad01
   system: thismoon
+  access:
+    sandbox: none
+    reason: >-
+      First-party code calling the OSV.dev API; the fleet puts third-party
+      code under srt first, and deps has not been probed under srt yet.

@@ -341,6 +341,20 @@ jobs:
       - name: Test recipes
         run: make test-recipes
 
+      # The srt settings files are rendered from the access manifests
+      # (docs/adr/0027). A hand edit, a stale render, or a render nobody
+      # committed fails here.
+      - name: Sandbox settings match their manifests
+        run: |
+          make sandbox-settings
+          git diff --exit-code -- recipes
+          untracked=$(git status --porcelain --untracked-files=all -- recipes)
+          if [ -n "$untracked" ]; then
+            echo "::error::make sandbox-settings left files git does not track:"
+            echo "$untracked"
+            exit 1
+          fi
+
       # go list exits non-zero both when the module has no packages AND when a
       # package is broken — only the first may skip; the second must fail loud
       # (a broken go:embed once turned this job into a silent false green).

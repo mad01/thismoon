@@ -9,3 +9,11 @@ spec:
   lifecycle: production
   owner: mad01
   system: thismoon
+  # The recipe registers two agents: speak-web and sandbox-watch.
+  access:
+    sandbox: none
+    reason: >-
+      sandbox-watch streams the unified log through logd, posts notification
+      banners, and reports every other sandbox's denials, so it stays outside
+      srt (docs/adr/0006). speak-web is first-party and has not been probed
+      under srt yet.

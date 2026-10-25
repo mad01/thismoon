@@ -31,6 +31,8 @@ pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove events 2>/de
 # name no host and no machine path, so they ship beside the recipe
 # (docs/adr/0006, 2026-10-25 amendment): loopback only, reads denied under ~
 # except the binary and the store, writes to the store and the temp dirs.
+# Rendered from spec.access in services/events/service-info.yaml by
+# `make sandbox-settings` (docs/adr/0027): edit the manifest, not the JSON.
 [dotfiles.events_srt_settings]
 source = "events.srt.json"
 target = "~/.config/srt/events.json"
