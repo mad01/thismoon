@@ -114,7 +114,9 @@ func (in *Ingester) kept(env spool.Envelope, missing map[string]bool, key string
 // model and transcript path of a known one. Cwd and Harness keep their
 // first value, since the session started there; StartedAt keeps the
 // earliest time seen, so a session first known from a late envelope moves
-// back when an earlier one arrives.
+// back when an earlier one arrives. A backfill only fills empty fields,
+// except that its turn-open moves StartedAt back too: live capture may have
+// begun after the session's first prompt.
 func (in *Ingester) upsertSession(ctx context.Context, env spool.Envelope) error {
 	ref := env.Session
 	if ref.ID == "" {
@@ -131,12 +133,15 @@ func (in *Ingester) upsertSession(ctx context.Context, env spool.Envelope) error
 		return fmt.Errorf("ingest: load session %s: %w", ref.ID, err)
 	}
 	s := cur.Session
+	set := setter(env)
 	changed := fill(&s.Harness, env.Harness)
 	changed = fill(&s.Cwd, ref.Cwd) || changed
-	changed = replace(&s.Title, ref.Title) || changed
-	changed = replace(&s.Model, ref.Model) || changed
-	changed = replace(&s.TranscriptPath, ref.TranscriptPath) || changed
-	changed = earliest(&s.StartedAt, env.At) || changed
+	changed = set(&s.Title, ref.Title) || changed
+	changed = set(&s.Model, ref.Model) || changed
+	changed = set(&s.TranscriptPath, ref.TranscriptPath) || changed
+	if !env.Backfill || env.Kind == spool.KindTurnOpen { // a stored StartedAt is never empty
+		changed = earliest(&s.StartedAt, env.At) || changed
+	}
 	if !changed {
 		return nil
 	}
@@ -184,6 +189,15 @@ func (in *Ingester) logf(format string, args ...any) {
 
 func errNoPayload(env spool.Envelope) error {
 	return fmt.Errorf("ingest: %s envelope %s has no payload", env.Kind, env.ID)
+}
+
+// setter is how an envelope's value meets a stored one: a live envelope
+// replaces it, a backfill only fills an empty field.
+func setter(env spool.Envelope) func(dst *string, v string) bool {
+	if env.Backfill {
+		return fill
+	}
+	return replace
 }
 
 // fill sets an empty *dst to v and reports whether it changed.

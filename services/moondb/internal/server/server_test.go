@@ -413,15 +413,15 @@ func TestParseSince(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.raw, func(t *testing.T) {
-			got, err := parseSince(tc.raw, now)
+			got, err := ParseSince(tc.raw, now)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("parseSince(%q) = %v, want an error", tc.raw, got)
+					t.Fatalf("ParseSince(%q) = %v, want an error", tc.raw, got)
 				}
 				return
 			}
 			if err != nil || !got.Equal(tc.want) {
-				t.Errorf("parseSince(%q) = %v, %v; want %v", tc.raw, got, err, tc.want)
+				t.Errorf("ParseSince(%q) = %v, %v; want %v", tc.raw, got, err, tc.want)
 			}
 		})
 	}

@@ -246,6 +246,35 @@ func TestApplyMismatch(t *testing.T) {
 			want:   MismatchError{Hunk: 0, Line: 5, Expected: "", Got: "extra\n"},
 		},
 		{
+			// a candidate shorter than the hunk's start once crashed serve
+			name:   "hunk starts past the end of the content",
+			before: "a\nb\n",
+			hunks: []Hunk{{
+				OldStart: 5, OldLines: 1, NewStart: 5, NewLines: 1, Lines: []string{"-e", "+E"},
+			}},
+			want: MismatchError{Hunk: 0, Line: 5, Expected: "e\n", Got: ""},
+		},
+		{
+			// an empty last line without a newline once matched the end of
+			// the content and indexed past it
+			name:   "empty context line without newline after the end",
+			before: "a\n",
+			hunks: []Hunk{{
+				OldStart: 1, OldLines: 2, NewStart: 1, NewLines: 2,
+				Lines: []string{" a", " ", "\\ No newline at end of file"},
+			}},
+			want: MismatchError{Hunk: 0, Line: 2, Expected: "", Got: ""},
+		},
+		{
+			name:   "empty removed line without newline after the end",
+			before: "a\n",
+			hunks: []Hunk{{
+				OldStart: 1, OldLines: 2, NewStart: 1, NewLines: 1,
+				Lines: []string{" a", "-", "\\ No newline at end of file"},
+			}},
+			want: MismatchError{Hunk: 0, Line: 2, Expected: "", Got: ""},
+		},
+		{
 			name:   "content lacks the newline the hunk expects",
 			before: "a\nb\nc\nd",
 			hunks:  hunksOf(t, "hunk ends at end of file"),

@@ -36,8 +36,9 @@ out.
   the API has no authentication.
 - `--workdir` (string, default `~/.local/state/moondb`, env
   `MOONDB_WORKDIR`, config `workdir`): the state directory. It holds `log/`,
-  `objects/`, `spool/` and `sessions/`. `record` and `serve` must resolve the
-  same workdir, or the spool `record` writes is not the one serve drains.
+  `objects/`, `spool/` and `sessions/`. `record`, `import` and `serve` must
+  resolve the same workdir, or the spool they write is not the one serve
+  drains.
 - `--base-url` (string, default `http://localhost:<port>`, env
   `MOONDB_BASE_URL`, config `base_url`): the human-facing URL the MCP server
   returns in tool responses, for example `http://moondb.this`. It is
@@ -53,11 +54,11 @@ source.
 - `capture.enabled` (bool, default `true`): set it to `false` to turn capture
   off on this machine while leaving the hooks wired. `record` then exits 0
   without writing anything.
-- `capture.exclude` (list of globs): paths whose contents are never stored.
-  An excluded file's edit is recorded by path only, with no content, patch or
-  observed bytes. A glob matches the file's base name or its path relative to
-  the worktree. Setting the key replaces the default list, so start from the
-  defaults and add to them:
+- `capture.exclude` (list of globs): paths whose contents are never stored,
+  by `record` or by `import`. An excluded file's edit is recorded by path
+  only, with no content, patch or observed bytes. A glob matches the file's
+  base name or its path relative to the worktree. Setting the key replaces
+  the default list, so start from the defaults and add to them:
 
   ```
   .env  .env.*  *.pem  *.key  id_*  *.p12  *.tfvars  *.tfstate

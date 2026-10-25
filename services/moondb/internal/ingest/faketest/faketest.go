@@ -217,16 +217,16 @@ func matches(e store.Edit, q store.EditQuery) bool {
 
 func field(want, got string) bool { return want == "" || want == got }
 
-// LatestAfter returns the newest edit of (worktree, path) with an
-// AfterChunk.
-func (s *Store) LatestAfter(_ context.Context, worktree, path string) (store.Edit, error) {
+// LatestAfter returns the newest edit q allows with an AfterChunk.
+func (s *Store) LatestAfter(_ context.Context, q store.ChainQuery) (store.Edit, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := newest(s.edits, func(e store.Edit) (bool, time.Time) {
-		return e.Worktree == worktree && e.Path == path && e.AfterChunk != "", e.At
+		return e.Worktree == q.Worktree && e.Path == q.Path && e.AfterChunk != "" &&
+			e.ID != q.ExcludeID && (q.At.IsZero() || !e.At.After(q.At)), e.At
 	})
 	if len(out) == 0 {
-		return store.Edit{}, fmt.Errorf("faketest: latest after %s: %w", path, store.ErrNotFound)
+		return store.Edit{}, fmt.Errorf("faketest: latest after %s: %w", q.Path, store.ErrNotFound)
 	}
 	return out[0], nil
 }

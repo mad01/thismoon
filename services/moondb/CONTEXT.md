@@ -11,7 +11,7 @@ One Claude Code session, identified by the hook payload's `session_id`. moondb c
 _Avoid_: conversation, chat
 
 **Turn**:
-One user prompt and everything up to the Stop that ends it, identified by the hook's `prompt_id`. It carries the prompt text, the final assistant message, and the turn's raw transcript lines.
+One user prompt and everything up to the Stop that ends it, identified by the hook's `prompt_id` (the transcript's `promptId`; an import of a transcript without one uses the prompt entry's uuid). It carries the prompt text, the final assistant message, and the turn's raw transcript lines.
 _Avoid_: exchange, step
 
 **Agent**:
@@ -45,6 +45,10 @@ _Avoid_: attribution trailer, tag
 **Backend**:
 An implementation of the store interface: `local` today, `cloud` in a later release.
 _Avoid_: driver, provider
+
+**Import**:
+A backfill from session transcripts: `moondb import` writes the envelopes the hooks would have written, with their ids, for sessions the store does not hold yet. With `--force` it backfills held sessions too, filling only what the store has empty. An earlier prompt time still moves a start back.
+_Avoid_: migration, replay (ingest's word for an envelope read again)
 
 **Spool**:
 The on-disk inbox `moondb record` writes and `moondb serve` drains. Not the store: an envelope lives in the spool only until serve ingests it.

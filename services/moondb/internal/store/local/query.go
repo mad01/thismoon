@@ -106,15 +106,23 @@ func editMatches(q store.EditQuery, e *store.Edit) bool {
 		(q.AfterBlob == "" || e.AfterBlob == q.AfterBlob)
 }
 
-func (ix *index) latestAfter(worktree, path string) (store.Edit, error) {
-	list := ix.editsByWorktreePath[pairKey(worktree, path)]
+// latestAfter walks the path's edits newest first, by At and then log
+// position, past those q rules out.
+func (ix *index) latestAfter(q store.ChainQuery) (store.Edit, error) {
+	list := ix.editsByWorktreePath[pairKey(q.Worktree, q.Path)]
 	for i := len(list) - 1; i >= 0; i-- {
-		if list[i].v.AfterChunk != "" {
-			return list[i].v, nil
+		if e := list[i].v; chainHead(q, e) {
+			return e, nil
 		}
 	}
 	return store.Edit{}, fmt.Errorf(
-		"after-content of %s in %q: %w", path, worktree, store.ErrNotFound)
+		"after-content of %s in %q: %w", q.Path, q.Worktree, store.ErrNotFound)
+}
+
+// chainHead reports whether e, an edit of q's worktree and path, can head
+// the chain q asks for.
+func chainHead(q store.ChainQuery, e store.Edit) bool {
+	return e.AfterChunk != "" && e.ID != q.ExcludeID && (q.At.IsZero() || !e.At.After(q.At))
 }
 
 func (ix *index) openTurns(worktree string) []store.Turn {

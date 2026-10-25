@@ -7,7 +7,6 @@ import (
 	"github.com/mad01/thismoon/kit/gitloc"
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
-	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 // toolUsed records a PostToolUse payload. The switch is the seam per tool:
@@ -52,8 +51,8 @@ func (rec *recorder) targets() []string {
 
 // captureEdit gathers everything about one file within the budget.
 func (rec *recorder) captureEdit(index int, name string) (spool.Envelope, chunkSet) {
-	abs := resolve(name, rec.p.cwd)
-	loc, rel := placed(rec.locate(filepath.Dir(abs)), abs)
+	abs := Resolve(name, rec.p.cwd)
+	loc, rel := Placed(rec.locate(filepath.Dir(abs)), abs)
 	ep := &spool.EditPayload{
 		Tool:         rec.p.tool,
 		ToolUseID:    rec.p.toolUseID,
@@ -61,11 +60,11 @@ func (rec *recorder) captureEdit(index int, name string) (spool.Envelope, chunkS
 		AbsPath:      abs,
 		Path:         rel,
 		Location:     loc,
-		Kind:         editKind(rec.p.tool, rec.p.response),
+		Kind:         EditKind(rec.p.tool, rec.p.response.str("type")),
 		UserModified: rec.p.response.flag("userModified"),
 	}
 	chunks := chunkSet{}
-	if excluded(rec.opts.Excludes, abs, rel) {
+	if Excluded(rec.opts.Excludes, abs, rel) {
 		ep.Excluded = true
 	} else {
 		rec.gather(ep, chunks)
@@ -124,61 +123,4 @@ func (rec *recorder) gatherHead(ep *spool.EditPayload, chunks chunkSet, obs obse
 	if ok && blobID(data) == ep.HeadBlob {
 		ep.HeadChunk = chunks.add(data)
 	}
-}
-
-// resolve makes the tool's path absolute and physical. A file that is gone
-// resolves through its directory, so it still lines up with the physical
-// paths git reports.
-func resolve(name, cwd string) string {
-	if !filepath.IsAbs(name) {
-		name = filepath.Join(cwd, name)
-	}
-	if p, err := filepath.EvalSymlinks(name); err == nil {
-		return p
-	}
-	if dir, err := filepath.EvalSymlinks(filepath.Dir(name)); err == nil {
-		return filepath.Join(dir, filepath.Base(name))
-	}
-	return filepath.Clean(name)
-}
-
-// placed returns the location and the path to record for abs: relative to
-// the worktree with forward slashes, or absolute with no location when abs
-// is outside any worktree.
-func placed(loc store.Location, abs string) (store.Location, string) {
-	if loc.Worktree == "" {
-		return store.Location{}, abs
-	}
-	rel, err := filepath.Rel(loc.Worktree, abs)
-	if err != nil || !filepath.IsLocal(rel) {
-		return store.Location{}, abs
-	}
-	return loc, filepath.ToSlash(rel)
-}
-
-// editKind says what the call did to the file, as far as the payload tells.
-func editKind(tool string, response fields) store.EditKind {
-	switch {
-	case tool == "NotebookEdit":
-		return store.EditUnknown
-	case tool == "Write" && response.str("type") == "create":
-		return store.EditCreate
-	default:
-		return store.EditUpdate
-	}
-}
-
-// excluded reports whether a glob matches the file's base name or its
-// recorded path.
-func excluded(globs []string, abs, rel string) bool {
-	base := filepath.Base(abs)
-	for _, g := range globs {
-		if ok, _ := filepath.Match(g, base); ok {
-			return true
-		}
-		if ok, _ := filepath.Match(g, rel); ok {
-			return true
-		}
-	}
-	return false
 }

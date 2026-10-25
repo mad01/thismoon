@@ -123,9 +123,12 @@ func apply(src []line, hunks []Hunk, eol string) ([]line, error) {
 				i-1,
 			)
 		}
+		hunkOps := ops(h)
+		if start > len(src) {
+			return nil, pastEnd(i, start, hunkOps)
+		}
 		out = append(out, src[pos:start]...)
 		pos = start
-		hunkOps := ops(h)
 		for _, o := range hunkOps {
 			if o.kind == '+' {
 				out = append(out, added(o, eol))
@@ -147,6 +150,24 @@ func apply(src []line, hunks []Hunk, eol string) ([]line, error) {
 	return append(out, src[pos:]...), nil
 }
 
+// pastEnd is the mismatch of hunk i when it starts after src has ended:
+// src is too short to be the side the hunk was cut from. The hunk's first
+// old-side line is expected where src has nothing.
+func pastEnd(i, start int, hunkOps []op) *MismatchError {
+	err := &MismatchError{Hunk: i, Line: start + 1}
+	for _, o := range hunkOps {
+		if o.kind == '+' {
+			continue
+		}
+		err.Expected = o.text
+		if !o.noEOL {
+			err.Expected += "\n"
+		}
+		break
+	}
+	return err
+}
+
 // endsFile reports a hunk whose trailing context is shorter than its
 // leading context. Diff tools cut context short only at the ends of the
 // file, so such a hunk ends at the end of the file; without this check an
@@ -166,16 +187,17 @@ func endsFile(hunkOps []op) bool {
 	return trail < lead
 }
 
-// match checks that src has the op's line at pos, ending included.
+// match checks that src has the op's line at pos, ending included. Past the
+// end of src nothing matches, not even an empty line without a newline.
 func match(src []line, pos int, o op) *MismatchError {
 	want := o.text
 	if !o.noEOL {
 		want += "\n"
 	}
-	got := ""
-	if pos < len(src) {
-		got = src[pos].shown()
+	if pos >= len(src) {
+		return &MismatchError{Line: pos + 1, Expected: want}
 	}
+	got := src[pos].shown()
 	if got == want {
 		return nil
 	}

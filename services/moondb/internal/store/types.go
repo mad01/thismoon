@@ -280,3 +280,15 @@ type EditQuery struct {
 	Since     time.Time
 	Limit     int
 }
+
+// ChainQuery asks for the head of one edit's before-derivation chain: the
+// newest other edit of Worktree and Path, made at or before At, that has
+// after-content. A zero At sets no bound.
+type ChainQuery struct {
+	Worktree string
+	Path     string
+	At       time.Time
+	// ExcludeID is the edit being derived, which is never its own chain:
+	// a replayed envelope finds its own Edit already recorded.
+	ExcludeID string
+}

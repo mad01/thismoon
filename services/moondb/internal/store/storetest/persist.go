@@ -122,11 +122,12 @@ func view(t *testing.T, st store.Store) string {
 	must(t, err)
 	v["edits"] = edits
 	for _, e := range edits {
-		latest, err := st.LatestAfter(ctx, e.Worktree, e.Path)
+		q := store.ChainQuery{Worktree: e.Worktree, Path: e.Path, At: e.At, ExcludeID: e.ID}
+		latest, err := st.LatestAfter(ctx, q)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("LatestAfter(%s, %s): %v", e.Worktree, e.Path, err)
 		}
-		v["latest "+e.Worktree+" "+e.Path] = latest.ID
+		v["chain of "+e.ID] = latest.ID
 	}
 	raw, err := json.Marshal(v)
 	must(t, err)

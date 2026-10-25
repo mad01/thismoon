@@ -253,7 +253,7 @@ func (s *Server) handleChunk(w http.ResponseWriter, r *http.Request) {
 
 // parseWindow reads the since and limit parameters every listing takes.
 func (s *Server) parseWindow(q url.Values) (since time.Time, limit int, err error) {
-	since, err = parseSince(q.Get("since"), s.now())
+	since, err = ParseSince(q.Get("since"), s.now())
 	if err != nil {
 		return time.Time{}, 0, err
 	}
@@ -276,10 +276,10 @@ func parseLimit(raw string) (int, error) {
 	return n, nil
 }
 
-// parseSince reads a lower time bound: an RFC 3339 time, or a positive
+// ParseSince reads a lower time bound: an RFC 3339 time, or a positive
 // duration before now ("90m", "24h", or whole days as "7d"). Empty means no
 // bound.
-func parseSince(raw string, now time.Time) (time.Time, error) {
+func ParseSince(raw string, now time.Time) (time.Time, error) {
 	if raw == "" {
 		return time.Time{}, nil
 	}

@@ -37,6 +37,7 @@ the query commands are thin HTTP clients of serve.
 Subcommands:
   serve    Run the HTTP server (web UI + JSON API) that owns the store.
   record   Read one hook payload on stdin and spool it (wired by the hooks).
+  import   Backfill the spool from Claude Code session transcripts.
   mcp      Run the MCP stdio server exposing moondb_* tools to Claude Code.
   why      Explain one line of one file.
   history  List the recorded edits of a path.
