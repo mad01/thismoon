@@ -1042,7 +1042,7 @@
     var sessionLabel = s ? (s.title || s.cwd || s.id) : t.session_id;
     document.title = 'Turn #' + t.seq + ' · ' + sessionLabel + ' · moondb';
     var span = fmtTime(t.started_at) + (t.ended_at ? ' to ' + fmtClock(t.ended_at) : '');
-    var skipped = skippedText(t.skipped || []);
+    var skipped = skippedFilesText(t.skipped || []);
     replace([
       backLinks([['← Session', '?session=' + enc(t.session_id)], ['All sessions', '/']]),
       el('wk-page-header', {}, [
@@ -1057,7 +1057,7 @@
         kvRow('Ended', fmtTime(t.ended_at) || (t.status === 'open' ? 'still open' : '-')),
         kvRow('Edits', plural(edits.length, 'edit') + (deltas.length
           ? ', ' + plural(deltas.length, 'unattributed delta') : '')),
-        skipped ? kvRow('Not recorded', skipped) : null
+        skipped ? kvRow('Skipped', skipped) : null
       ].filter(Boolean)),
       el('div', { class: 'spaced' }, section('Prompt', [prose(t.prompt_chunk, '(no prompt recorded)')])),
       section('Final message', [prose(t.final_chunk,
@@ -1074,17 +1074,26 @@
     ]);
   }
 
-  // skippedText sums the files the turn's Bash commands changed that
-  // capture left out: clean after the command (a pull, checkout or reset
-  // brought them back to their committed state) or past the hook's budget.
-  // '' when none were left out.
-  function skippedText(list) {
+  // skippedFilesText sums the turn's skipped files, the ones its Bash
+  // commands changed that capture counted instead of recording as edits:
+  // clean after the command (a pull, checkout or reset brought them back
+  // to their committed state), past the hook's budget, or with a status
+  // git could not give. '' when none were skipped. Named apart from the
+  // snapshot table's skippedText, which a second declaration would
+  // replace in this scope.
+  function skippedFilesText(list) {
     var clean = 0;
     var timeout = 0;
-    list.forEach(function (s) { clean += s.clean || 0; timeout += s.timeout || 0; });
+    var failed = 0;
+    list.forEach(function (s) {
+      clean += s.clean || 0;
+      timeout += s.timeout || 0;
+      failed += s.failed || 0;
+    });
     var parts = [];
     if (clean) parts.push(plural(clean, 'file') + ' clean after the command');
     if (timeout) parts.push(plural(timeout, 'file') + ' past the budget');
+    if (failed) parts.push(plural(failed, 'file') + ' whose status failed');
     return parts.join(', ');
   }
 

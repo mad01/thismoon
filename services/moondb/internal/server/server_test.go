@@ -460,6 +460,30 @@ func TestTurnCarriesTraceTotals(t *testing.T) {
 	}
 }
 
+func TestTurnCarriesSkipped(t *testing.T) {
+	// The turn page reads the skipped counts from the turn's own JSON, one
+	// entry per Bash call with a count per reason.
+	h := newHarness(t)
+	var body map[string]json.RawMessage
+	h.getJSON(t, "/api/turns/"+servertest.NewTurn, http.StatusOK, &body)
+	var got []map[string]any
+	if err := json.Unmarshal(body["skipped"], &got); err != nil {
+		t.Fatalf("skipped = %s: %v", body["skipped"], err)
+	}
+	want := map[string]any{
+		"tool": "Bash", "tool_use_id": "toolu_pull", "at": "2026-10-01T10:02:00Z",
+		"clean": 40.0, "timeout": 2.0, "failed": 1.0,
+	}
+	if len(got) != 1 || fmt.Sprint(got[0]) != fmt.Sprint(want) {
+		t.Errorf("skipped = %v, want [%v]", got, want)
+	}
+	var old map[string]json.RawMessage
+	h.getJSON(t, "/api/turns/"+servertest.OldTurn, http.StatusOK, &old)
+	if raw, ok := old["skipped"]; ok {
+		t.Errorf("a turn with nothing skipped has skipped = %s, want the key left out", raw)
+	}
+}
+
 func TestSessionTrace(t *testing.T) {
 	h := newHarness(t)
 	var got trace.SessionTrace

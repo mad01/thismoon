@@ -87,8 +87,9 @@ changed, including the ones `git pull`, `git checkout` or `git reset`
 rewrote. Those aren't the command's own work, so `record` runs one `git
 status` over the listed files and records only the ones still modified,
 added, deleted, untracked or ignored afterwards. The turn shows how many it
-left out. A file a command edits and commits in one go is clean afterwards
-and gets no edit either; `git blame` names that commit. The diff covers only
+skipped and why: clean after the command, past the budget, or with a status
+git could not give. A file a command edits and commits in one go is clean
+afterwards and gets no edit either; `git blame` names that commit. The diff covers only
 the repository of the session's working directory, so a session started in
 the main checkout never sees Bash edits in a linked worktree.
 

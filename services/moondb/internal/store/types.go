@@ -122,30 +122,34 @@ type Turn struct {
 	// whole, never change it in place: a backend may share it.
 	Totals *TurnTotals `json:"totals,omitempty"`
 	// Skipped lists, per tool call, the files the call changed that
-	// capture left unrecorded, so a turn whose Bash command pulled or
-	// checked out files says so. Replace it whole, never change it in
-	// place, like Totals.
+	// capture counted instead of recording as Edits, so a turn whose Bash
+	// command pulled or checked out files says so. Replace it whole, never
+	// change it in place, like Totals.
 	Skipped []SkippedFiles `json:"skipped,omitempty"`
 }
 
-// SkippedFiles counts the files one tool call changed that capture left
-// unrecorded, by reason. Only the Bash hook leaves files out today.
+// SkippedFiles counts the skipped files of one tool call, the ones capture
+// counted instead of recording as Edits, by reason. Only the Bash hook
+// skips files today.
 type SkippedFiles struct {
 	Tool      string    `json:"tool"`
 	ToolUseID string    `json:"tool_use_id"`
 	At        time.Time `json:"at,omitzero"`
 	// Clean counts the files git status reported clean after the call: a
 	// pull, checkout, reset or stash brought them to their committed
-	// state, which is not a change the call made.
+	// state, and the call authored no Edit of them.
 	Clean int `json:"clean,omitempty"`
-	// Timeout counts the files the hook's budget ran out on before it
-	// could check or read them, and those of a worktree whose status git
-	// could not give.
+	// Timeout counts the files the hook's budget, or a git call's, ran out
+	// on before the hook could place, check or read them.
 	Timeout int `json:"timeout,omitempty"`
+	// Failed counts the files whose status the hook could not read: git
+	// failed or gave more than moondb.MaxStatusBytes of status, or the file
+	// is gone and no worktree holds it.
+	Failed int `json:"failed,omitempty"`
 }
 
-// Total is every file the call left unrecorded.
-func (s SkippedFiles) Total() int { return s.Clean + s.Timeout }
+// Total is every file of the call the hook skipped.
+func (s SkippedFiles) Total() int { return s.Clean + s.Timeout + s.Failed }
 
 // TurnTotals is what a turn's trace adds up to, kept on the Turn so a
 // listing reads it without the transcript chunk. The *MS fields split

@@ -157,7 +157,8 @@ type recorder struct {
 	opts  Options
 	spool *spool.Writer
 	state sessionState
-	// locs caches the git location of each directory placed in this Run.
+	// locs caches the git location of each directory git placed in this
+	// Run, the zero Location for one outside any repository.
 	locs map[string]store.Location
 }
 
@@ -214,7 +215,8 @@ func (rec *recorder) gitCtx() (context.Context, context.CancelFunc) {
 }
 
 // locate places dir in git; the zero Location when git cannot say in time.
-// A placed directory is asked once per Run; a failure is asked again.
+// A directory git answered for is asked once per Run, outside any
+// repository or not; one a deadline cut off is asked again.
 func (rec *recorder) locate(dir string) store.Location {
 	loc, _ := rec.locateAnswered(dir)
 	return loc
@@ -230,9 +232,9 @@ func (rec *recorder) locateAnswered(dir string) (store.Location, bool) {
 	ctx, cancel := rec.gitCtx()
 	defer cancel()
 	loc := Locate(ctx, dir)
-	if loc.Worktree != "" {
-		rec.locs[dir] = loc
-		return loc, true
+	if loc.Worktree == "" && ctx.Err() != nil {
+		return loc, false
 	}
-	return loc, ctx.Err() == nil
+	rec.locs[dir] = loc
+	return loc, true
 }

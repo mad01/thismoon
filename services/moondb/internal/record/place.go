@@ -14,19 +14,27 @@ import (
 // recorded it.
 
 // Resolve makes the tool's path absolute and physical. A file that is gone
-// resolves through its directory, so it still lines up with the physical
-// paths git reports; when the directory is gone too, the path is cleaned.
+// resolves through its nearest existing ancestor, with the missing part
+// joined back on, so it still lines up with the physical paths git reports
+// when its directory is gone too and the ancestor is a symlink (/tmp and
+// /var are on macOS). A path with no ancestor that resolves is cleaned.
 func Resolve(name, cwd string) string {
 	if !filepath.IsAbs(name) {
 		name = filepath.Join(cwd, name)
 	}
-	if p, err := filepath.EvalSymlinks(name); err == nil {
-		return p
+	name = filepath.Clean(name)
+	missing := ""
+	for dir := name; ; {
+		if p, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(p, missing)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return name
+		}
+		missing = filepath.Join(filepath.Base(dir), missing)
+		dir = parent
 	}
-	if dir, err := filepath.EvalSymlinks(filepath.Dir(name)); err == nil {
-		return filepath.Join(dir, filepath.Base(name))
-	}
-	return filepath.Clean(name)
 }
 
 // Locate places dir in git as the store records it; the zero Location when

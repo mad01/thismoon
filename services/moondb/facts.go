@@ -38,7 +38,8 @@ const (
 	// change hundreds of files: a status check, a placement and a disk
 	// read each need more time than RecordBudget gives the Edit hook. It
 	// stays under the ceiling the CLI puts on every record run. The files
-	// the budget does not reach are counted on the turn, not recorded.
+	// the budget does not reach are skipped: counted on the turn as
+	// timeout, with no edit.
 	BashBudget = 2 * time.Second
 	// GitBudget bounds every git call a hook makes.
 	GitBudget = 1 * time.Second

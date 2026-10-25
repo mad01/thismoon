@@ -46,7 +46,7 @@ const (
 	// KindSnapshot records one worktree's state at a turn boundary.
 	KindSnapshot Kind = "snapshot"
 	// KindSkipped counts the files one tool call changed that the hook
-	// left unrecorded, so serve can show the count on the call's turn.
+	// skipped, so serve can show the count on the call's turn.
 	KindSkipped Kind = "skipped"
 )
 

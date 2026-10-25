@@ -30,7 +30,7 @@ Edit, Write, MultiEdit and NotebookEdit records the file a tool changed;
 PostToolUse for Bash records the files a command changed, when the user
 setting bashEditDiffEnabled makes Claude Code report them; a file git
 reports clean after the command (a pull or checkout brought it back to its
-committed state) is counted on the turn, not recorded. Stop closes the
+committed state) is skipped: counted on the turn, with no edit. Stop closes the
 turn and reports commits made since. UserPromptSubmit and Stop also take a
 snapshot of each worktree in play: the content of its dirty files and of
 the files the session touched. record prints nothing on stdout and exits 0

@@ -8,8 +8,8 @@ import (
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
-// skipped puts the count of files a tool call changed and the hook left
-// unrecorded on the call's turn, so a turn whose Bash command pulled or
+// skipped puts the count of files a tool call changed and the hook skipped
+// on the call's turn, so a turn whose Bash command pulled or
 // checked out files says so instead of looking like it changed nothing. A
 // turn the store does not hold yet gets an open placeholder, as for an
 // edit. A call the turn already lists is a replay and changes nothing. An

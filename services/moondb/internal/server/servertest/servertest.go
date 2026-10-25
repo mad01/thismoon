@@ -108,6 +108,14 @@ type Store struct {
 // at is the fixture time minutes after T0.
 func at(minutes int) time.Time { return T0.Add(time.Duration(minutes) * time.Minute) }
 
+// NewTurnSkipped is the newer turn's skipped files: one Bash call with a
+// count for every reason.
+func NewTurnSkipped() []store.SkippedFiles {
+	return []store.SkippedFiles{
+		{Tool: "Bash", ToolUseID: "toolu_pull", At: at(62), Clean: 40, Timeout: 2, Failed: 1},
+	}
+}
+
 // NewStore returns a Store seeded with the fixture: an older session whose
 // closed turn made one edit in OtherRepo and kept its Transcript and the
 // totals it gives, and a newer session whose one open turn made two edits
@@ -130,7 +138,7 @@ func NewStore() *Store {
 			oldTurn(),
 			{
 				ID: NewTurn, SessionID: NewSession, Seq: 1, PromptChunk: PromptSHA,
-				Status: store.TurnOpen, StartedAt: at(61),
+				Status: store.TurnOpen, StartedAt: at(61), Skipped: NewTurnSkipped(),
 			},
 		},
 		edits: []store.Edit{

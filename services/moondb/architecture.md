@@ -74,8 +74,9 @@ stamped when its hook starts. On PostToolUse for Bash it reads the payload's
 patch and no tool input, and one per other changed path without hunks. One
 `git status` per worktree over the listed paths comes first, and a file it
 reports clean gets no envelope: a pull or checkout put it back to its
-committed state. A skipped envelope counts those, and the files the 2 s
-Bash budget did not reach, for the turn. On
+committed state. A skipped envelope counts those, the files the 2 s Bash
+budget did not reach, and the ones whose status git could not give, for
+the turn. On
 Stop it spools a turn-close envelope with the
 final message and the transcript tail. For each touched worktree whose HEAD
 moved since the hook last looked, it adds a head-moved envelope listing the

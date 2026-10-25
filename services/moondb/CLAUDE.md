@@ -48,7 +48,7 @@ one pipes its JSON payload on stdin:
 |------|------|----------------------|
 | UserPromptSubmit | async | turn-open: `prompt_id`, the prompt text as a chunk, `session_id`, cwd, the transcript byte offset. Then a `pre` snapshot of each worktree in play. |
 | PostToolUse on `Edit\|Write\|MultiEdit\|NotebookEdit` | sync, 3 s timeout | one edit envelope per file. It holds `tool_use_id`, the tool input and patch, the location (repo, worktree, branch, HEAD), the observed bytes with their blob id, and the path's HEAD blob id and content. |
-| PostToolUse on `Bash` | async | one edit envelope per file in the payload's `bashEditDiff.files`: its hunks as the patch, the observed bytes and blob id, and the HEAD blob id and content, with no tool input. One more per other `changedFiles` path, with no hunks. A file `git status` reports clean after the command gets none, and neither does one the budget does not reach; a `skipped` envelope counts them. Nothing when the payload has no `bashEditDiff`. |
+| PostToolUse on `Bash` | async | one edit envelope per file in the payload's `bashEditDiff.files`: its hunks as the patch, the observed bytes and blob id, and the HEAD blob id and content, with no tool input. One more per other `changedFiles` path, with no hunks. A file `git status` reports clean after the command gets none, and neither does one whose status git cannot give or one the budget does not reach; a `skipped` envelope counts them. Nothing when the payload has no `bashEditDiff`. |
 | Stop | async | turn-close: the final assistant message, the transcript tail from the turn's offset, and a head-moved report for each touched worktree whose HEAD changed. Then a `post` snapshot of each worktree in play. |
 
 The Edit hook is synchronous on purpose. Edits in one assistant message land
@@ -65,28 +65,39 @@ The diff covers only the repository of the session's cwd, so a session
 started in the main checkout never captures Bash edits made in a linked
 worktree. Within that repository it lists every file the command changed,
 the ones a `git pull`, `ralph up`, `git checkout`, `git reset` or `git
-stash` rewrote included. Those are back at their committed state, not
-changes the command made, and recording them would make `why` name the
+stash` rewrote included. Those are back at their committed state and the
+command authored no Edit of them. Recording them would make `why` name the
 turn that ran the pull instead of the commit.
 
-So before any per-file work `record` places every listed file from its
-nearest existing directory. Then it runs one `git --no-optional-locks
-status --porcelain=v2 -z` per worktree, limited to those paths, untracked
-and ignored files included. A file it reports (modified, added, deleted,
-renamed, untracked or ignored) is recorded. One it does not report is clean
-and gets no edit. A file outside any repository is recorded unchecked, as
-before. The trade-off: a file a command edits and commits in one go (`sed
-... && git commit`) is clean afterwards and gets no edit either. `git
-blame` names that commit, and the head-moved report at Stop still ties it
-to the turn.
+So before any per-file work `record` places every listed file once, from
+its nearest existing directory, with symlinks resolved on that directory.
+Only the first file of each worktree costs a git lookup. `record` places
+every later file under a located worktree by its path alone. A directory
+on the way that holds a `.git` of its own (a nested repository, submodule
+or linked worktree) sends the file back to git. A directory outside any
+repository is looked up once per run too.
 
-What the Bash hook leaves out it counts, in one `skipped` envelope per
+Then `record` runs one `git --no-optional-locks status --porcelain=v2 -z`
+per worktree, limited to those paths, untracked and ignored files
+included. A file it
+reports (modified, added, deleted, renamed, untracked or ignored) is
+recorded. One it does not report is clean and gets no edit. A file outside
+any repository is recorded unchecked, as before, unless it is gone: then
+only an absolute path would be left to record, so it is skipped. The
+trade-off: a file a command edits and commits in one go (`sed ... && git
+commit`) is clean afterwards and gets no edit either. `git blame` names
+that commit. The head-moved report at Stop ties it to the turn only when
+the session had already recorded an edit in that worktree, since Stop
+reports touched worktrees only.
+
+The files the Bash hook skips it counts, in one `skipped` envelope per
 call. `clean` counts the files status reported clean. `timeout` counts the
-ones the budget ran out on before their placement, status or disk read,
-and those of a worktree whose status git could not give. serve adds the
-count to the turn's `Skipped` list, and `record` logs it on stderr. A file
-the budget does not reach is dropped, never spooled without its worktree or
-its disk read.
+ones the budget, or a git call's deadline, ran out on before their
+placement, status or disk read. `failed` counts the ones whose status git
+could not give: git failed, its status passed `MaxStatusBytes`, or the file
+is gone and no worktree holds it. serve adds the count to the turn's
+`Skipped` list, and `record` logs it on stderr. A file the budget does not
+reach is skipped, never spooled without its worktree or its disk read.
 
 The Bash hook is async, so its disk read can land after a later Edit of the
 same file. Every envelope is stamped when its hook starts, before any read,
@@ -408,7 +419,7 @@ Session{ ID, Harness, Cwd, Title, TitleSource /* named | generated */,
 Turn{ ID, SessionID, Seq, PromptChunk, FinalChunk, TranscriptChunk,
       TranscriptOffset, Status /* open | closed | failed */, StartedAt, EndedAt,
       Totals *TurnTotals, Skipped []SkippedFiles }
-SkippedFiles{ Tool, ToolUseID, At, Clean, Timeout }
+SkippedFiles{ Tool, ToolUseID, At, Clean, Timeout, Failed }
 TurnTotals{ Version, WallMS, ModelMS, ToolMS, HarnessMS, UserMS,
             Usage []ModelUsage{ Model, Speed, Geo, Long, Tokens },
             ModelCalls, ToolCalls, ToolErrors }
@@ -476,7 +487,7 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 - `GET  /api/sessions`          : one page of session rows, newest first (`sessions`), the totals of every session the filters keep (`window`), and the repositories the time window's sessions edited with their session counts (`repos`); `since`, `repo` and `limit` filter
 - `GET  /api/sessions/{id}`     : one session with its turns and counts, plus `summary`, its listing row
 - `GET  /api/sessions/{id}/trace`: the session's trace: every turn's spans, gaps and totals, the user gaps between turns, session totals
-- `GET  /api/turns/{id}`        : one turn with its edits, unattributed deltas and snapshots, plus `trace_totals` when its transcript lines hold a timeline and `skipped` when a Bash command left files unrecorded
+- `GET  /api/turns/{id}`        : one turn with its edits, unattributed deltas and snapshots, plus `trace_totals` when its transcript lines hold a timeline and `skipped` when the Bash hook skipped files of a command
 - `GET  /api/edits`             : edits, newest first, narrowed by repo, worktree, path, blob id, since and limit
 - `GET  /api/why`               : the answer for one line of one file
 - `GET  /api/history`           : the recorded edits of one path, newest first
@@ -549,8 +560,8 @@ return, so keep it stable.
   A bar's hover title gives its duration, tokens and cost, and clicking it
   opens the turn.
 - `/?turn=<id>`: the full prompt and final message with fixation reading,
-  a "Not recorded" row when a Bash command left files unrecorded (clean
-  after it, or past the budget),
+  a "Skipped" row when the Bash hook skipped files of a command (clean
+  after it, past the budget, or with a status git could not give),
   the agents (main conversation or subagent type), and the edits grouped by
   worktree, then path. Each edit shows its tool, kind, agent, time, before
   source and observed match. Its unified diff is drawn in the browser from

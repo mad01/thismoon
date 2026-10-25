@@ -91,11 +91,12 @@ directory, so a session started in the main checkout never captures Bash
 edits made in a linked worktree. A file `git status` reports clean after the
 command is never recorded: a pull, checkout or reset put it back to its
 committed state. The same goes for a file the 2 s Bash budget did not
-reach. The turn
-counts both under `skipped` (the page's "Not recorded" row), and `record`
-logs the counts on stderr. A file a command edits and commits in one go is
-clean too; `git blame` names that commit. The next snapshot still catches
-an uncaptured change as a delta. A snapshot
+reach, and for one whose status git could not give, a gone file outside
+any worktree included. The turn counts all three under `skipped` (`clean`,
+`timeout`, `failed`; the page's "Skipped" row), and `record` logs the counts
+on stderr. A file a command edits and commits in one go is clean too; `git
+blame` names that commit. The next snapshot still catches a skipped file
+that stays dirty as an unattributed delta. A snapshot
 marked truncated ran out of its 2 s budget or its 1000-file cap; its skipped
 counts say which.
 

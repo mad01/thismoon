@@ -116,10 +116,10 @@ These are compiled into the binary (`facts.go`) and not configurable:
 | Limit | Value | Effect |
 |---|---|---|
 | record budget | 200 ms | `record` spools what it has gathered when the budget runs out |
-| Bash budget (`BashBudget`) | 2 s | the budget of the async Bash hook; the files it does not reach are counted on the turn as timeout and not recorded |
+| Bash budget (`BashBudget`) | 2 s | the budget of the async Bash hook; the files it does not reach are skipped, counted on the turn as `timeout` with no edit |
 | snapshot budget | 2 s | the turn-edge snapshots of one hook; a snapshot cut short is marked truncated and counts the rest as timeout |
 | snapshot file cap | 1000 | paths one snapshot lists, the session's touched paths first; the rest count as over the file cap |
-| status cap | 4 MiB | `git status` output a snapshot reads; a worktree with more gets no snapshot |
+| status cap | 4 MiB | `git status` output a snapshot or the Bash clean check reads; a worktree with more gets no snapshot, and its Bash files are skipped as `failed` |
 | largest chunk | 1 MiB | a larger file is recorded by path and patch, without content; a snapshot lists it by size |
 | transcript tail | 4 MiB | the most transcript a turn keeps; a trace of a longer turn sees only its tail |
 | log segment | 64 MiB | the size at which `log/` rolls to a new file |
@@ -163,7 +163,9 @@ The diff covers only the repository of the session's working directory, so
 a session started in the main checkout never captures Bash edits made in a
 linked worktree. It also lists the files a `git pull`, `git checkout` or
 `git reset` rewrote. `record` runs one `git status` over the listed files
-and records none that is clean afterwards; the turn counts them instead.
+and records none that is clean afterwards. The turn counts those as
+skipped, beside the files past the Bash budget and the ones whose status
+git could not give.
 
 ## Example
 

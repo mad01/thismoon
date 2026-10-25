@@ -44,6 +44,9 @@ type target struct {
 	// pathOnly is set when the payload names the file and nothing else: a
 	// file gone from disk was then deleted.
 	pathOnly bool
+	// where is the file's placement once a caller has placed it, so the
+	// capture does not place it again; nil until then.
+	where *placement
 }
 
 // recordEdits writes one edit envelope per target.
@@ -56,10 +59,16 @@ func (rec *recorder) recordEdits(targets []target) error {
 	return nil
 }
 
-// recordEdit writes the edit envelope of one target, then notes the file
-// in the session state once its envelope is in the spool.
+// recordEdit writes the edit envelope of one target with whatever the
+// budget let it gather.
 func (rec *recorder) recordEdit(t target) error {
-	env, chunks := rec.captureEdit(t)
+	env, chunks, _ := rec.captureEdit(t)
+	return rec.writeEdit(env, chunks)
+}
+
+// writeEdit spools an edit envelope, then notes its file in the session
+// state once the envelope is in the spool.
+func (rec *recorder) writeEdit(env spool.Envelope, chunks chunkSet) error {
 	if err := rec.spool.Write(env, chunks); err != nil {
 		return err
 	}
@@ -81,9 +90,15 @@ func (rec *recorder) fileTargets() []target {
 	return nil
 }
 
-// captureEdit gathers everything about one file within the budget.
-func (rec *recorder) captureEdit(t target) (spool.Envelope, chunkSet) {
-	pl, _ := rec.place(t.name)
+// captureEdit gathers everything about one file within the budget, at the
+// placement the target carries or, without one, at its own. It reports
+// whether the budget ran out before the file's disk read.
+func (rec *recorder) captureEdit(t target) (spool.Envelope, chunkSet, bool) {
+	pl := t.where
+	if pl == nil {
+		placed, _ := rec.place(t.name)
+		pl = &placed
+	}
 	ep := &spool.EditPayload{
 		Tool:         rec.p.tool,
 		ToolUseID:    rec.p.toolUseID,
@@ -98,14 +113,15 @@ func (rec *recorder) captureEdit(t target) (spool.Envelope, chunkSet) {
 		ep.Kind = store.EditDelete
 	}
 	chunks := chunkSet{}
+	cut := false
 	if Excluded(rec.opts.Excludes, pl.abs, pl.rel) {
 		ep.Excluded = true
 	} else {
-		rec.gather(ep, chunks, t)
+		cut = !rec.gather(ep, chunks, t)
 	}
 	env := rec.envelope(spool.KindEdit, fmt.Sprintf("%s:%d", rec.p.toolUseID, t.index))
 	env.Edit = ep
-	return env, chunks
+	return env, chunks, cut
 }
 
 // placement is where one target sits: its absolute physical path, and the
@@ -122,7 +138,11 @@ type placement struct {
 // in its worktree. It reports false when git ran out of time before it
 // could say where the file sits.
 func (rec *recorder) place(name string) (placement, bool) {
-	abs := Resolve(name, rec.p.cwd)
+	return rec.placeAbs(Resolve(name, rec.p.cwd))
+}
+
+// placeAbs is place for a path Resolve has made absolute and physical.
+func (rec *recorder) placeAbs(abs string) (placement, bool) {
 	found, answered := rec.locateAnswered(existingDir(filepath.Dir(abs)))
 	loc, rel := Placed(found, abs)
 	return placement{abs: abs, rel: rel, loc: loc}, answered
@@ -144,8 +164,8 @@ func existingDir(dir string) string {
 
 // gather fills the content fields: first what the payload carries, which
 // costs nothing, then the disk read and the HEAD lookup while the budget
-// lasts.
-func (rec *recorder) gather(ep *spool.EditPayload, chunks chunkSet, t target) {
+// lasts. It reports false when the budget ran out before the disk read.
+func (rec *recorder) gather(ep *spool.EditPayload, chunks chunkSet, t target) bool {
 	if t.payload {
 		rec.gatherPayload(ep, chunks)
 	}
@@ -153,7 +173,7 @@ func (rec *recorder) gather(ep *spool.EditPayload, chunks chunkSet, t target) {
 		ep.PatchChunk = chunks.add(t.hunks)
 	}
 	if rec.spent() {
-		return
+		return false
 	}
 	obs := observe(rec.ctx, ep.AbsPath)
 	ep.ObservedBlob, ep.ObservedSize = obs.blob, obs.size
@@ -161,10 +181,10 @@ func (rec *recorder) gather(ep *spool.EditPayload, chunks chunkSet, t target) {
 		ep.ObservedChunk = chunks.add(obs.data)
 		ep.EOL = detectEOL(obs.data)
 	}
-	if rec.spent() || ep.Location.Head == "" {
-		return
+	if !rec.spent() && ep.Location.Head != "" {
+		rec.gatherHead(ep, chunks, obs)
 	}
-	rec.gatherHead(ep, chunks, obs)
+	return true
 }
 
 // gatherPayload takes what a file tool's payload says about its file: the
