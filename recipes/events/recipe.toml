@@ -41,8 +41,11 @@ action = "symlink"
 # the consuming repo's agent-sync servers.json) and the CLI are thin HTTP clients
 # to it. Idempotent; run = "always" keeps it registered and self-heals if removed.
 # It runs sandboxed: the program is srt-run with the settings, then the command
-# (docs/SANDBOXING.md, "Sandboxing a t-man service"). builds.speak_chmod_scripts
-# keeps srt-run executable; ralph links dotfiles items before any build runs.
+# (docs/SANDBOXING.md, "Sandboxing a t-man service").
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
+# ralph links dotfiles items before any build or package in every run, so the
+# srt-run and settings links exist before this registration; depends_on could
+# not name them anyway, since ralph only accepts builds. and packages. refs.
 [hooks.builds.events_service]
 commands = [
   "if command -v t-man >/dev/null; then t-man add --name events --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/events.json $HOME/code/bin/events serve --port 7430 --workdir $HOME/.local/share/events; else echo 'events: skip service (t-man not on PATH; install t-man then run: t-man add --name events -- events serve --port 7430)'; fi",

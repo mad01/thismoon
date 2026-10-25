@@ -56,7 +56,11 @@ action = "symlink"
 # d-man). run = "always" keeps the agent registered and self-heals if it was
 # removed; t-man add is idempotent. It runs sandboxed: the program is srt-run
 # with the settings, then the command (docs/SANDBOXING.md, "Sandboxing a t-man
-# service"). builds.speak_chmod_scripts keeps srt-run executable.
+# service").
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
+# ralph links dotfiles items before any build or package in every run, so the
+# srt-run and settings links exist before this registration; depends_on could
+# not name them anyway, since ralph only accepts builds. and packages. refs.
 [hooks.builds.catalog_web_service]
 commands = [
   "if command -v t-man >/dev/null; then t-man add --name catalog-web --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/catalog-web.json $HOME/code/bin/catalog web --port 7575; else echo 'catalog: skip service (t-man not on PATH; install t-man then run: t-man add --name catalog-web -- catalog web --port 7575)'; fi",

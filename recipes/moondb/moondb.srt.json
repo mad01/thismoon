@@ -14,7 +14,11 @@
       "~/.worktrees/**/.env",
       "~/.worktrees/**/.env.*",
       "~/.worktrees/**/*.pem",
-      "~/.worktrees/**/*.key"
+      "~/.worktrees/**/*.key",
+      "~/.config/ralph/sources/**/.env",
+      "~/.config/ralph/sources/**/.env.*",
+      "~/.config/ralph/sources/**/*.pem",
+      "~/.config/ralph/sources/**/*.key"
     ],
     "allowRead": [
       "~/code",

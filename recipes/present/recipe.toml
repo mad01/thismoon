@@ -84,8 +84,11 @@ action = "symlink"
 # runs present-serve.sh rather than the binary: the launcher reads the sharing
 # config (PRESENT_SHARED_URL, PRESENT_AUTHOR_KEY) from the secrets file at
 # start, outside the sandbox, then execs present serve through srt-run (docs/
-# SANDBOXING.md, "Sandboxing a t-man service"). builds.speak_chmod_scripts
-# keeps srt-run executable.
+# SANDBOXING.md, "Sandboxing a t-man service").
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
+# ralph links dotfiles items before any build or package in every run, so the
+# srt-run and settings links exist before this registration; depends_on could
+# not name them anyway, since ralph only accepts builds. and packages. refs.
 [hooks.builds.present_service]
 commands = [
   "if command -v t-man >/dev/null; then t-man add --name present --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/.config/ralph/sources/thismoon/recipes/present/present-serve.sh --port 7423 --workdir $HOME/.config/present; else echo 'present: skip service (t-man not on PATH; install t-man then run: t-man add --name present -- present serve --port 7423 --workdir ~/.config/present)'; fi",
