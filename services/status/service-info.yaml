@@ -9,8 +9,29 @@ spec:
   lifecycle: production
   owner: mad01
   system: thismoon
+  # Sandbox access, rendered to recipes/status/status.srt.json by
+  # `make sandbox-settings` (docs/SANDBOXING.md, "Declaring access").
   access:
-    sandbox: none
-    reason: >-
-      First-party dashboard that polls t-man and the services' /version over
-      loopback; it has not been probed under srt yet.
+    sandbox: srt
+    workdir: ~/.local/share/status
+    listen: 7426
+    # The events post. The probes of every t-man service's port are loopback
+    # too, which listen already allows.
+    local: [events]
+    reads:
+      # The binaries status asks for their installed version.
+      - ~/code/bin
+      - workdir
+      # The t-man plists it discovers services from (/Library/LaunchDaemons
+      # sits outside ~ and stays readable), and d-man's generated routes file
+      # for the .this links. launchctl print needs no extra access.
+      - ~/Library/LaunchAgents
+      - ~/.config/d-man/routes.toml
+    writes: [workdir, temp]
+    # osascript posts the crash-loop and stale-binary banners through the
+    # notification daemon, and needs trustd to load Standard Additions
+    # (`display notification`). Its other start-up lookups stay denied and
+    # are on the fleet ignore list (recipes/speak/sandbox-ignore.conf).
+    extra:
+      network:
+        allowMachLookup: [com.apple.usernoted.daemon_client, com.apple.trustd.agent]

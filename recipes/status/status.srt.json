@@ -1,0 +1,28 @@
+{
+  "filesystem": {
+    "allowRead": [
+      "~/code/bin",
+      "~/.local/share/status",
+      "~/Library/LaunchAgents",
+      "~/.config/d-man/routes.toml"
+    ],
+    "allowWrite": [
+      "~/.local/share/status",
+      "/private/tmp",
+      "/private/var/folders"
+    ],
+    "denyRead": [
+      "~"
+    ],
+    "denyWrite": []
+  },
+  "network": {
+    "allowLocalBinding": true,
+    "allowMachLookup": [
+      "com.apple.usernoted.daemon_client",
+      "com.apple.trustd.agent"
+    ],
+    "allowedDomains": [],
+    "deniedDomains": []
+  }
+}

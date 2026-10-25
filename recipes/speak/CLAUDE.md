@@ -19,21 +19,42 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
 - **`packages.speak.service`** — restarts `speak-web` only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).
-- **`hooks.builds.speak_web_service`** — registration only: `t-man add …
-  speak-env.sh serve --port 7425`. The document audio routes present pages
-  register with and play from, the CORS-guarded `/v1/audio/speech`, and a
-  static landing page, all through the provider `~/.config/speak/config.yaml`
-  selects. On the default local provider, a down `speak-tts` engine agent
-  leaves the landing page serving but the speech endpoints failing with that
-  reason.
-- **`speak-env.sh`** — the spawn wrapper for speak-web and for a consuming
-  repo's speak MCP registration. It runs `speak config env` (the names of the
-  variables the active provider reads; nothing for the local engine), pulls
-  exactly those from `~/.config/ralph/secrets.sh` (legacy `~/.secrets.sh`) in
-  a subshell, and execs `~/code/bin/speak` with its arguments. This is the same
+- **`hooks.builds.speak_web_service`**: registration only: `t-man add …
+  speak-serve.sh --port 7425 --state-dir ~/.local/state/speak`, with the
+  sandbox ledger as an extra log. speak-web serves the document audio routes
+  present pages register with and play from, the CORS-guarded
+  `/v1/audio/speech`, and a static landing page, all through the provider
+  `~/.config/speak/config.yaml` selects. On the default local provider, a
+  down `speak-tts` engine agent leaves the landing page serving but the
+  speech endpoints failing with that reason.
+- **`dotfiles.speak_web_srt_settings`**: links `speak-web.srt.json`, rendered
+  from the access manifest in `services/speak/service-info.yaml`, to
+  `~/.config/srt/speak-web.json`.
+- **`speak-serve.sh`**: speak-web's launcher. It sources
+  `speak-provider-env.sh` for the provider key, appends the host `speak
+  config host` prints to `SRT_RUN_ALLOW_DOMAINS`, and execs `speak serve`
+  under srt (anthropics/sandbox-runtime) through `srt-run`. The secrets file
+  is read outside the sandbox and only the exported variable crosses. A
+  local provider adds no host, so speak-web then reaches nothing beyond
+  loopback. The host is fixed at start: after a provider change, `t-man
+  restart speak-web`.
+- **`speak-env.sh`**: the spawn wrapper for a consuming repo's speak MCP
+  registration. It sources `speak-provider-env.sh` and execs
+  `~/code/bin/speak` with its arguments, unsandboxed.
+- **`speak-provider-env.sh`**: sourced by both launchers, never run. It runs
+  `speak config env` (the names of the variables the active provider reads;
+  nothing for the local engine), pulls exactly those from
+  `~/.config/ralph/secrets.sh` (legacy `~/.secrets.sh`) in a subshell, and
+  exports them; a variable already set wins. This is the same
   one-variable-at-a-time pattern as present's `present-shared-env.sh`. Select
   the provider with the config file or `SPEAK_PROVIDER`: a `--provider` flag
-  after the subcommand is invisible to the wrapper's query.
+  after the subcommand is invisible to the query.
+- **`speak-serve-test.sh`**: run by `make test-recipes`, it runs both
+  launchers against a scratch `HOME` with stand-ins for speak and `srt-run`.
+  A remote provider's host must reach `SRT_RUN_ALLOW_DOMAINS` (appended to a
+  caller's own entry), a local provider adds none, only the provider's
+  variable may cross from the secrets file, and `speak-env.sh` must exec
+  speak directly.
 - **`dotfiles.srt_run`**: symlinks `srt-run.sh` to `~/code/bin/srt-run`, the
   launcher every sandboxed MCP server and t-man service execs through:
   `srt-run <settings-file> <argv...>`. It runs the command under srt
@@ -51,7 +72,8 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   explain <label>` shows the merged result. Settings that are the same on
   every machine are rendered from each service's `spec.access` manifest and
   ship beside its recipe in this repo: events, keeper-of-facts, moondb,
-  catalog and present serve. The rest come from the consuming repo.
+  catalog, present serve, deps, status and speak-web. The rest come from the
+  consuming repo.
 - **`srt-run-test.sh`**: run by `make test-recipes`, it launches `srt-run`
   against a scratch `HOME` with a stand-in srt. Widening layers must merge
   into the copy srt is handed; every case under `testdata/srt-local/` named
@@ -74,8 +96,8 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   logs (`sandbox`, `sandbox-notifications`): `t-man logs sandbox` shows them
   fleet-wide, `t-man logs sandbox speak-tts` scopes to one service.
 - **`hooks.builds.speak_chmod_scripts`** — keeps `sandbox-watch.sh`,
-  `sandbox-audit.sh`, `speak-env.sh` and `srt-run.sh` executable inside the
-  sources cache.
+  `sandbox-audit.sh`, `speak-env.sh`, `speak-serve.sh` and `srt-run.sh`
+  executable inside the sources cache.
 - **`pre_uninstall`** — removes both agents before cleanup deletes the binary.
 
 ## What stays in the consuming repo (private overlay)
@@ -90,6 +112,13 @@ Machine-specific wiring is deliberately not here (see `docs/adr/0006`):
 - the `speak.this` route (`speak` → 7425 in the consumer's d-man routes overlay)
 - the provider config (`~/.config/speak/config.yaml`) for machines that use a
   remote provider, and the key it names in the secrets file
+- `~/.config/srt/speak-web.local.json` when that config is a symlink into a
+  checkout. srt matches resolved paths, so a config reached through a
+  machine-specific symlink needs the link target in that machine's
+  expansion layer. The manifest reads `~/.config/speak/config.yaml` only,
+  and the consuming repo adds the target as an `allowRead`. Without it
+  every synthesis fails with `config: open ... operation not permitted`,
+  and speak's startup log line names the file to add.
 
 ## sandbox-watch
 

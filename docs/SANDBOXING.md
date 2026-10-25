@@ -232,6 +232,24 @@ deny entry, or `~` itself. It also covers a write that reaches
 jq, invalid JSON, or a failed merge stops the launch as well. The layer
 lives in `~/.config/srt`, which no sandbox may write.
 
+A config file reached through a machine-specific symlink is the common
+case. srt matches resolved paths, so the manifest's path alone does not
+cover a link whose target only one machine has. That target goes in the
+machine's layer. speak-web is the worked example: its manifest reads
+`~/.config/speak/config.yaml`, and a consuming repo that links that file
+from its own checkout also ships `speak-web.local.json` with the target:
+
+```json
+{
+  "_comment": "~/.config/speak/config.yaml links into the dotfiles checkout",
+  "filesystem": { "allowRead": ["~/code/dotfiles/speak/config.yaml"] }
+}
+```
+
+Without it speak-web starts, but every read of the config fails with
+`operation not permitted`. speak logs that error at startup together with
+the layer file to add.
+
 ### Explain
 
 `srtspec explain <label>` prints the policy a launch would get. Each row is
@@ -339,8 +357,8 @@ t-man add --name events \
   $HOME/code/bin/events serve --port 7430 --workdir $HOME/.local/share/events
 ```
 
-events, keeper-of-facts, moondb, catalog-web and present serve run this
-way. What carries over to the next one:
+events, keeper-of-facts, moondb, catalog-web, present serve, deps, status
+and speak-web run this way. What carries over to the next one:
 
 - **The label is the service name.** The settings file's name gives the
   label, and it matches the t-man name. present serve is the exception: its
@@ -357,6 +375,9 @@ way. What carries over to the next one:
   machine-specific host keeps a launcher that resolves them outside the
   sandbox and then execs `srt-run`. `recipes/present/present-serve.sh` reads
   the sharing config and hands the shared host to `srt-run` that way.
+  `recipes/speak/speak-serve.sh` exports only the provider's key from the
+  secrets file and hands over the provider's host, and
+  `recipes/deps/deps-serve.sh` puts mise's go on the child's `PATH`.
 - **Ordering.** ralph links every dotfiles item before any build or
   package runs, so the settings link and `~/code/bin/srt-run` exist before
   the registration hook. ralph's `depends_on` accepts only `builds.` and
@@ -368,8 +389,7 @@ way. What carries over to the next one:
 
 Three services stay outside srt: csl-web, sandbox-watch and d-man. The ADR
 amendment in [docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.md)
-records why. Their components say so with `sandbox: none` and the reason,
-as do deps, status and speak-web until they are probed under srt.
+records why. Their components say so with `sandbox: none` and the reason.
 
 ### git inside the sandbox
 
@@ -536,7 +556,9 @@ with one of these open and explain anything new.
 - Symlinks resolve before the check. Seatbelt matches the resolved path, so
   a ralph-managed symlink under an `allowRead` path (a config file linked
   from a repo checkout or from `~/.config/ralph/sources/thismoon`) reads
-  only if its target is allowed too. Name the target in `allowRead`. The
+  only if its target is allowed too. Name the target in `allowRead`: in the
+  manifest when every machine links the same target, and in the
+  machine-local expansion layer when the target is machine-specific. The
   same holds for `allowWrite`.
 - Keep the launch machinery outside every `allowWrite`: srt's install, the
   mise shims, `srt-run`, and the settings. Under `SRT_DEBUG`, srt warns when

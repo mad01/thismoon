@@ -29,15 +29,26 @@ recipe's directory inside the cache.
   on first install.
 - **`hooks.builds.deps_chmod_serve_launcher`**: keeps `deps-serve.sh`
   executable.
+- **`dotfiles.deps_srt_settings`**: links `deps.srt.json` to
+  `~/.config/srt/deps.json`, the settings `deps serve` runs under in srt
+  (anthropics/sandbox-runtime).
+  Rendered from `spec.access` in `services/deps/service-info.yaml` by
+  `make sandbox-settings`; edit the manifest, not the JSON. A machine whose
+  registry lists repos outside `~/code/src` adds them in
+  `~/.config/srt/deps.local.json`.
 - **`hooks.builds.deps_service`**: `t-man add --name deps -- <sources
-  cache>/recipes/deps/deps-serve.sh --port 7429 --workdir ~/.local/share/deps`
-  (with PATH + GOPATH/GOMODCACHE env for the `go list` discovery). The
-  launcher prepends the mise shims dir
-  (`${MISE_DATA_DIR:-~/.local/share/mise}/shims`, when it exists) to PATH and
-  execs `~/code/bin/deps serve`, since `go` comes from mise and the launchd
-  PATH has no mise. Without it every Go scan fails; serve now saves those
-  failures and `deps doctor` reports them as `discovery-clean`. Idempotent;
-  `run = "always"` self-heals.
+  cache>/recipes/deps/deps-serve.sh --port 7429 --workdir ~/.local/share/deps`,
+  with the Go environment `go list` needs inside the sandbox: GOPATH and
+  GOMODCACHE for the shared module cache, a private GOCACHE in the store,
+  `GOFLAGS=-buildvcs=false` (no git), and DEVELOPER_DIR pinned to the Command
+  Line Tools when they exist. The launcher resolves the real `go` with
+  `mise which go` outside the sandbox, since the mise shim cannot read its
+  config inside it, and execs `deps serve` through `~/code/bin/srt-run` with
+  that directory first on PATH. Without a `go` every Go scan fails; serve
+  saves those failures and `deps doctor` reports them as `discovery-clean`.
+  The registration adds the denial ledger as an extra log, so
+  `t-man logs deps --source sandbox` finds it. Idempotent; `run = "always"`
+  self-heals.
 - **`pre_uninstall`** — removes the t-man agent before cleanup deletes the binary.
 
 ## What stays in dotfiles (private overlay)

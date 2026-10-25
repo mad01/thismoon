@@ -313,6 +313,21 @@ func checkBaseURL(raw string) (base string, remote bool, problem string) {
 	return base, !isLoopback(u.Hostname()), ""
 }
 
+// Host returns where the provider's requests go, as host or host:port (the
+// port only when the base URL names one): the entry a sandbox's egress
+// allow-list needs. It is empty for a provider on this machine, which
+// loopback covers, and for a block without a usable base URL.
+func (p Provider) Host() string {
+	if !p.Remote {
+		return ""
+	}
+	u, err := url.Parse(p.BaseURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
+
 // isLoopback reports whether host names this machine.
 func isLoopback(host string) bool {
 	if host == "localhost" {

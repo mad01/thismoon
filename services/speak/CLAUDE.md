@@ -78,11 +78,23 @@ services/speak/
   {base}/v1/audio/speech` and go through `ttsclient`; `gemini` goes through
   `internal/gemini`. `provider.Provider` holds either behind a one-method
   `synthesizer` interface. Keys come only from env vars the block names;
-  `speak config env` lists them and `recipes/speak/speak-env.sh` pulls
-  exactly those from the secrets file for speak-web and MCP hosts. No
+  `speak config env` lists them and the recipe's `speak-provider-env.sh`
+  pulls exactly those from the secrets file, outside any sandbox, for
+  speak-web (`speak-serve.sh`) and MCP hosts (`speak-env.sh`). No
   automatic fallback: a broken config or unusable active block becomes a
   provider that fails every synthesis with a `config` reason, so every
   surface shows it.
+- **speak-web runs under srt** (anthropics/sandbox-runtime). The access
+  manifest in `service-info.yaml` allows the port, events and speak-tts on
+  loopback, the config file and the state directory, and no fixed host.
+  `speak config host` prints the active remote block's host (nothing for a
+  local one), and `speak-serve.sh` hands it to `srt-run` in
+  `SRT_RUN_ALLOW_DOMAINS`, so a remote provider reaches its one API host and
+  nothing else. A provider change needs `t-man restart speak-web` for the
+  new host to apply. A config file that is a symlink into a checkout needs
+  its target in `~/.config/srt/speak-web.local.json`, or every synthesis
+  fails with `config: open ... operation not permitted`. `speak mcp` and
+  the CLI run unsandboxed.
 - `POST /read` registers a page's text for the audio routes: `Content-Type:
   application/json` with `{"name", "sections": [{"blocks": ["text", ...]},
   ...]}`, the page's text already split into the sections it plays by and

@@ -48,17 +48,49 @@ working_dir = "~/.config/ralph/sources/thismoon/recipes/deps"
 run = "always"
 idempotent = true
 
+# srt settings for the serve agent, linked to ~/.config/srt/deps.json. They
+# name no machine-specific host or path, so they ship beside the recipe
+# (docs/adr/0006, 2026-10-25 amendment). Reads cover the repos under
+# ~/code/src minus nested .env, .env.*, *.pem, *.key and .git/config files,
+# the Go toolchain and module cache, the discovery config and the catalog
+# registry (and the targets their symlinks resolve to), plus the store.
+# Writes go to the store, the module cache and the temp dirs. Egress is
+# api.osv.dev and proxy.golang.org; loopback for the events post. A machine
+# whose registry lists repos outside ~/code/src adds them in
+# ~/.config/srt/deps.local.json (docs/SANDBOXING.md, "The machine-local
+# expansion layer").
+# Rendered from spec.access in services/deps/service-info.yaml by
+# `make sandbox-settings` (docs/adr/0027): edit the manifest, not the JSON.
+[dotfiles.deps_srt_settings]
+source = "deps.srt.json"
+target = "~/.config/srt/deps.json"
+action = "symlink"
+
 # Register `deps serve` as a long-running launchd user agent via t-man. This
 # process owns the scan store, runs the daily catch-up scan loop, and fires
 # notifications; the MCP server (registered through the consuming repo's
 # agent-sync servers.json) is a thin HTTP client to it. Idempotent;
-# run = "always" keeps it registered and self-heals if removed. The agent runs
-# deps-serve.sh rather than the binary: the launcher puts the mise shims on
-# PATH so Go discovery finds `go`, which the launchd PATH below lacks.
+# run = "always" keeps it registered and self-heals if removed.
+# It runs sandboxed (docs/SANDBOXING.md, "Sandboxing a t-man service"). The
+# agent runs deps-serve.sh, which resolves the mise go outside the sandbox
+# and execs deps serve through srt-run. The Go environment for go list:
+# - GOPATH and GOMODCACHE name the shared module cache.
+# - GOCACHE is a private build cache in the store, so the sandbox never
+#   writes ~/Library/Caches/go-build, which every other go build trusts.
+# - GOFLAGS=-buildvcs=false stops go list from running git for VCS stamps,
+#   which deps never reads; git would need ~/.gitconfig and .git/config.
+# - DEVELOPER_DIR pins the /usr/bin/clang shim go list runs (to identify the
+#   C compiler for cgo packages) to the Command Line Tools when they are
+#   installed: an Xcode under $HOME is unreadable inside the sandbox
+#   (docs/SANDBOXING.md, "git inside the sandbox"; the same shim problem).
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
+# ralph links dotfiles items before any build or package in every run, so the
+# srt-run and settings links exist before this registration; depends_on could
+# not name them anyway, since ralph only accepts builds. and packages. refs.
 [hooks.builds.deps_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name deps --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env GOPATH=$HOME/code --env GOMODCACHE=$HOME/code/pkg/mod -- $HOME/.config/ralph/sources/thismoon/recipes/deps/deps-serve.sh --port 7429 --workdir $HOME/.local/share/deps; else echo 'deps: skip service (t-man not on PATH; install t-man then run: t-man add --name deps -- deps serve --port 7429)'; fi",
+  "if command -v t-man >/dev/null; then set --; if [ -d /Library/Developer/CommandLineTools ]; then set -- --env DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi; t-man add --name deps --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env GOPATH=$HOME/code --env GOMODCACHE=$HOME/code/pkg/mod --env GOCACHE=$HOME/.local/share/deps/go-build --env GOFLAGS=-buildvcs=false \"$@\" --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/.config/ralph/sources/thismoon/recipes/deps/deps-serve.sh --port 7429 --workdir $HOME/.local/share/deps; else echo 'deps: skip service (t-man not on PATH; install t-man then run: t-man add --name deps -- deps serve --port 7429)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/deps"
 run = "always"
-depends_on = ["packages.deps", "packages.t_man"]
+depends_on = ["packages.deps", "packages.t_man", "builds.speak_chmod_scripts"]

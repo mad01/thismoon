@@ -100,6 +100,31 @@ func TestScanMissingDirsAndRoutes(t *testing.T) {
 	}
 }
 
+func TestBinaryFromArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"bare binary", []string{"/u/code/bin/status", "serve", "--port", "7426"}, "/u/code/bin/status"},
+		{"wrapped by srt-run", []string{
+			"/u/code/bin/srt-run", "/u/.config/srt/events.json",
+			"/u/code/bin/events", "serve", "--port", "7430",
+		}, "/u/code/bin/events"},
+		{"srt-run without a command", []string{"/u/code/bin/srt-run", "/u/.config/srt/x.json"}, ""},
+		{"shell launcher", []string{"/u/recipes/deps/deps-serve.sh", "--port", "7429"}, ""},
+		{"srt-run wrapping a launcher", []string{"/u/code/bin/srt-run", "/s.json", "/u/x-serve.sh"}, ""},
+		{"no arguments", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := binaryFromArgs(tt.args); got != tt.want {
+				t.Errorf("binaryFromArgs(%v) = %q, want %q", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPortFromArgs(t *testing.T) {
 	tests := []struct {
 		name string

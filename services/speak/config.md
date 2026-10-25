@@ -19,8 +19,10 @@ Both long-running processes log the resolved provider to stderr at startup.
 
 `speak config` prints what was resolved: the file read, the active provider,
 and every configured block with the problem that keeps it from being used.
-`speak config active -o json` prints the active block alone. API keys are
-never printed.
+`speak config active -o json` prints the active block alone. `speak config
+env` prints the names of the variables the active block reads, and `speak
+config host` the host of its base URL (nothing for a local block). API keys
+are never printed.
 
 ## The config file
 
@@ -197,14 +199,20 @@ an error, never a path relative to the working directory.
 ## Keys for agents and MCP hosts
 
 Neither the speak-web launchd agent nor an MCP host carries a login shell's
-environment. The speak recipe's `speak-env.sh` wrapper bridges that: it runs
+environment. The speak recipe bridges that with two launchers. Both run
 `speak config env` (the names of the variables the active provider reads,
-nothing for the local engine). It pulls exactly those from the ralph-managed
-secrets file (`~/.config/ralph/secrets.sh`, legacy `~/.secrets.sh`), and
-execs speak with its arguments. speak-web starts through it; point an MCP
-registration at it as well. Pick the provider with the file or
-`SPEAK_PROVIDER`, not a `--provider` flag after the subcommand, which the
-wrapper's query would not see.
+nothing for the local engine) and pull exactly those from the ralph-managed
+secrets file (`~/.config/ralph/secrets.sh`, legacy `~/.secrets.sh`). Only
+those variables are exported, so speak never sees the rest of the file.
+
+- `speak-serve.sh` starts speak-web. It also passes the host `speak config
+  host` prints to the sandbox launcher as the one host speak-web may reach,
+  so after a provider change, restart speak-web.
+- `speak-env.sh` execs speak with its arguments, unsandboxed. Point an MCP
+  registration at it.
+
+Pick the provider with the file or `SPEAK_PROVIDER`, not a `--provider` flag
+after the subcommand, which the launchers' queries would not see.
 
 ## Cross-origin access
 

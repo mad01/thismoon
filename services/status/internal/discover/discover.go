@@ -89,11 +89,35 @@ func parsePlist(path string) (Service, bool) {
 	if p.TManMetadata.ManagedBy != "t-man" || p.Label == "" {
 		return Service{}, false
 	}
-	svc := Service{Label: p.Label, Port: portFromArgs(p.ProgramArguments)}
-	if len(p.ProgramArguments) > 0 {
-		svc.Binary = p.ProgramArguments[0]
+	svc := Service{
+		Label:  p.Label,
+		Binary: binaryFromArgs(p.ProgramArguments),
+		Port:   portFromArgs(p.ProgramArguments),
 	}
 	return svc, true
+}
+
+// binaryFromArgs returns the service's own executable, the one status asks
+// for its installed version with `<binary> version`. That is the program
+// itself, or the command srt-run wraps (srt-run <settings> <binary> ...). A
+// shell launcher (*.sh) yields "": `<launcher> version` would run the
+// launcher, which starts the service or resolves its secrets, instead of
+// printing a version.
+func binaryFromArgs(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	program := args[0]
+	if filepath.Base(program) == "srt-run" {
+		if len(args) < 3 {
+			return ""
+		}
+		program = args[2]
+	}
+	if strings.HasSuffix(program, ".sh") {
+		return ""
+	}
+	return program
 }
 
 // portFromArgs extracts the port from "--port N" or "--port=N".
