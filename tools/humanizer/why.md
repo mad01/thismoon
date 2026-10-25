@@ -52,6 +52,6 @@ humanizer does not rewrite text; it flags patterns and stops. It does not
 claim to prove authorship — a finding means a known tell is present, not
 that a machine wrote the sentence. It never touches the network. And its
 file access from MCP is deliberately narrow: `humanizer_detect_file` and
-`humanizer_scan_go` read only prose and Go files under the sandbox
-profile's workspace roots. Inline text via `humanizer_detect` is the path
+`humanizer_scan_go` read only prose and Go files under the `allowRead`
+roots of the sandbox's srt settings. Inline text via `humanizer_detect` is the path
 for everything else `humanizer_detect_file` can't reach.

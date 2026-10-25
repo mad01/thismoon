@@ -50,7 +50,7 @@ classifies each rune against fixed carrier tables — one classifier drives both
 is fully deterministic and offline. `rewrite` targets statistical marks the
 scrub can't reach: its default backend only builds the prompt (offline), while
 the `ollama`/`openai-compatible` backends make network calls and are therefore
-CLI-only under the MCP seatbelt.
+CLI-only under the MCP sandbox.
 
 ## Data flow
 
@@ -118,9 +118,10 @@ tools: `humanizer_status`, `humanizer_detect`, `humanizer_detect_file`,
 `humanizer_rules_explain`, `humanizer_narrative_rubric`,
 `humanizer_voice_profile`, `humanizer_voice_diff`, `humanizer_lint`,
 `humanizer_fix`, `humanizer_rewrite`. Handlers call the same internal
-functions as the CLI. When the consuming repo registers the server it runs under a
-seatbelt sandbox: no network, and `humanizer_detect_file`/`humanizer_scan_go`
-read only prose and Go files under the profile's workspace roots. The
+functions as the CLI. When the consuming repo registers the server it
+runs under an srt sandbox (`~/.config/srt/humanizer.json`, launched through
+`srt-run`): no network, and `humanizer_detect_file`/`humanizer_scan_go`
+read only prose and Go files under the settings' `allowRead` roots. The
 sandbox is the consuming repo's wiring (docs/adr/0006), not this code.
 
 Runtime dependency: `vale` must be on `$PATH` for span detection;

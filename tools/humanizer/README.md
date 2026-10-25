@@ -319,7 +319,7 @@ The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
 |---|---|
 | `humanizer_status` | Health check: vale installed, version, cache dir, rule count |
 | `humanizer_detect` | Scan text for AI-writing patterns; `profile` runs the STE rules, `repo` adds the glossary, `path` scopes it (all experimental) |
-| `humanizer_detect_file` | Scan a file on disk (sandbox: prose and Go files under the profile's workspace roots only) |
+| `humanizer_detect_file` | Scan a file on disk (sandbox: prose and Go files under the srt settings' `allowRead` roots only) |
 | `humanizer_scan_go` | Extract prose from Go source and scan it; findings map back to Go source lines |
 | `humanizer_detect_statistical` | Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, anaphora) |
 | `humanizer_rules_list` | List all detection rules |
@@ -332,23 +332,23 @@ The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
 | `humanizer_fix` | Scrub those carriers; returns cleaned text + stats (offline) |
 | `humanizer_rewrite` | Build a rewrite prompt for statistical watermarks (offline; network backends are CLI-only) |
 
-The consuming repo registers the server with the MCP host; in that setup it runs under a seatbelt sandbox (see Sandbox below).
+The consuming repo registers the server with the MCP host; in that setup it runs under an srt sandbox (see Sandbox below).
 
 ### Sandbox
 
-The consuming repo's registration wrapper runs the MCP server under macOS `sandbox-exec` with a seatbelt profile. The sandbox applies only when the MCP host launches the server; the CLI commands (`detect`, `profile`, `rules`) run without any sandbox.
+The consuming repo's registration wrapper runs the MCP server under anthropics/sandbox-runtime (srt), launched through `srt-run` with the settings file `~/.config/srt/humanizer.json`. The sandbox applies only when the MCP host launches the server; the CLI commands (`detect`, `profile`, `rules`) run without any sandbox.
 
 What the sandbox denies:
 
-- Network, except outbound TLS for `humanizer_judge`'s backend call. Detection itself runs fully offline; the profile allows no listener and no plain HTTP.
-- All `$HOME` reads, denied by default except specific paths: the install dir (the binaries), `~/.cache/humanizer` (the extracted style pack), and `.md`/`.markdown`/`.txt`/`.go` files under the profile's workspace roots (for `humanizer_detect_file` and `humanizer_scan_go`).
-- All `$HOME` writes, restricted to `~/.cache/humanizer` and system temp.
+- Network, except the backend host for `humanizer_judge`'s call, which is on srt's hostname allow-list. Detection itself runs fully offline; the settings allow no listener.
+- All `$HOME` reads, denied by default except specific paths: the install dir (the binaries), `~/.cache/humanizer` (the extracted style pack), and `.md`/`.markdown`/`.txt`/`.go` files under the settings' `allowRead` roots (for `humanizer_detect_file` and `humanizer_scan_go`).
+- All `$HOME` writes, restricted by the settings' `allowWrite` to `~/.cache/humanizer` and system temp.
 
-`humanizer_detect` with `repo` walks the repo for CONTEXT.md files, so it works only under the roots the profile grants. Elsewhere it returns an error whose `use_instead` field names the `humanizer ste` command, which runs unsandboxed.
+`humanizer_detect` with `repo` walks the repo for CONTEXT.md files, so it works only under the roots the settings grant. Elsewhere it returns an error whose `use_instead` field names the `humanizer ste` command, which runs unsandboxed.
 
-This means `humanizer_detect_file` and `humanizer_scan_go` work only on files under the workspace roots the profile grants. For anything else (e.g., a file under `~/Desktop`), pass the content as text via `humanizer_detect` instead; `humanizer_scan_go` has no such fallback, so use the CLI's `scan --go`, which runs unsandboxed.
+This means `humanizer_detect_file` and `humanizer_scan_go` work only on files under the `allowRead` roots the settings grant. For anything else (e.g., a file under `~/Desktop`), pass the content as text via `humanizer_detect` instead; `humanizer_scan_go` has no such fallback, so use the CLI's `scan --go`, which runs unsandboxed.
 
-If you add a runtime file or network need, update the consuming repo's seatbelt profile; a code change alone isn't enough.
+If you add a runtime file or network need, update the consuming repo's srt settings (`~/.config/srt/humanizer.json`); a code change alone isn't enough.
 
 ## Configuration
 
@@ -371,7 +371,7 @@ The style pack extracts to `~/.cache/humanizer/vale` on first use. To override t
 | `internal/voice/diff.go` | Metric-by-metric diff between two profiles. |
 | `internal/scrub/scrub.go` | Invisible-Unicode/homoglyph carrier tables, `Inspect` (lint) and `Clean` (fix). |
 | `internal/rewrite/` | Rewrite prompt builder, candidate selection, and the hardened HTTP backends. |
-| consuming repo's seatbelt profile | Sandbox for the MCP server (machine-private wiring, kept beside the MCP registration). |
+| consuming repo's `~/.config/srt/humanizer.json` | srt settings for the MCP server's sandbox (machine-private wiring, kept beside the MCP registration). |
 
 Package path: `github.com/mad01/thismoon/tools/humanizer`, part of the monorepo module; it has no go.mod of its own.
 

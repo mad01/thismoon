@@ -70,20 +70,22 @@ provider is set in the environment: `LITELLM_BASE_URL` (plus
 `OPENROUTER_API_KEY` selects OpenRouter. An HTTP 401 or 404 from a proxy
 means the key or the model alias is wrong: list the proxy's `/v1/models`
 and pass the Haiku 5.5 alias it shows through `HUMANIZER_MODEL`. Under the
-MCP sandbox a connection error means the seatbelt does not allow egress to
-that host; run the CLI from a shell, which is unsandboxed.
+MCP sandbox a connection error means that host is not on the sandbox's
+allow-list (`network.allowedDomains` in `~/.config/srt/humanizer.json`);
+run the CLI from a shell, which is unsandboxed.
 
 `humanizer_detect_file` or `humanizer_scan_go` refuses a path: the MCP
 server runs sandboxed and reads only .md/.markdown/.txt/.go files under the
-sandbox profile's workspace roots, plus /tmp paths. For `humanizer_detect_file`
-pass the text inline via `humanizer_detect` instead; `humanizer_scan_go` has
-no inline fallback, so run `humanizer scan --go` from a shell, which is
-unsandboxed.
+`allowRead` roots in `~/.config/srt/humanizer.json`, plus /tmp paths. For
+`humanizer_detect_file` pass the text inline via `humanizer_detect` instead;
+`humanizer_scan_go` has no inline fallback, so run `humanizer scan --go`
+from a shell, which is unsandboxed.
 
 `humanizer_detect` with `repo` fails with a `use_instead` field: the sandbox
 denied the walk for CONTEXT.md files. The roots the sandbox allows are the
-consuming repo's choice, set in its seatbelt profile, not in this binary.
-Run the `humanizer ste --repo` command the error names from a shell, or call
+consuming repo's choice, set in its srt settings
+(`~/.config/srt/humanizer.json`), not in this binary. Run the
+`humanizer ste --repo` command the error names from a shell, or call
 `humanizer_detect` again without `repo`.
 
 ## version skew
