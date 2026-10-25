@@ -27,11 +27,11 @@ The file bytes `moondb record` read from disk right after the tool ran. Evidence
 _Avoid_: actual, disk state
 
 **Unattributed delta**:
-A change between two known contents of a path that no recorded tool call explains. A formatter hook, a human edit, or a Bash command without a diff leaves one. serve synthesizes it when the observed bytes differ from the derived after content.
+A change between two known contents of a path that no recorded tool call explains. A formatter hook, a human edit, or a Bash command without a diff leaves one. serve synthesizes it when the observed bytes differ from the derived after content (cause `observed`), or when a Snapshot holds content for a path that differs from the latest content known of it before (cause `snapshot`).
 _Avoid_: delta on its own, drift, diff
 
 **Snapshot**:
-Reserved for a later release: the dirty files plus the session's touched paths in one worktree at a turn boundary, stored as a chunk map.
+The dirty files plus the session's touched paths in one worktree, read at a turn edge: when the prompt arrives (`pre`) and at Stop (`post`). Its file map (path, chunk, blob id, size) is one Chunk, and each file's content is its own Chunk. A snapshot its budget or file cap cut short is truncated and counts what it skipped. A path missing from a snapshot that is not truncated matched HEAD.
 _Avoid_: checkpoint (another tool's term), backup
 
 **Chunk**:

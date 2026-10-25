@@ -503,8 +503,15 @@ func TestStopAfterCommitReportsHeadMoved(t *testing.T) {
 
 	s.mustRun("stop.json")
 	envs := s.take()
-	if !slices.Equal(kinds(envs), []spool.Kind{spool.KindTurnClose, spool.KindHeadMoved}) {
-		t.Fatalf("stop wrote %v, want turn-close then head-moved", kinds(envs))
+	wantKinds := []spool.Kind{spool.KindTurnClose, spool.KindHeadMoved, spool.KindSnapshot}
+	if !slices.Equal(kinds(envs), wantKinds) {
+		t.Fatalf("stop wrote %v, want turn-close, head-moved, snapshot", kinds(envs))
+	}
+	// The worktree is clean after the commit, so the snapshot holds the
+	// one path the session edited, as committed.
+	if files := envs[2].Snapshot.Files; len(files) != 1 || files[0].Path != "a.txt" ||
+		files[0].Status != "" || s.chunk(files[0].Chunk) != "one\ndeux\n" {
+		t.Errorf("snapshot files = %+v, want a.txt clean with its committed content", files)
 	}
 	hm := envs[1].HeadMoved
 	want := []spool.ChangedFile{
@@ -524,7 +531,7 @@ func TestStopAfterCommitReportsHeadMoved(t *testing.T) {
 
 	s.mustRun("stop.json")
 	if got := kinds(s.take()); !slices.Equal(got, []spool.Kind{spool.KindTurnClose}) {
-		t.Errorf("a second stop with no commit wrote %v, want only turn-close", got)
+		t.Errorf("a second stop with nothing changed wrote %v, want only turn-close", got)
 	}
 }
 

@@ -1,6 +1,7 @@
 package record
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -18,6 +19,7 @@ const (
 	pathsExt      = ".paths"
 	touchedExt    = ".touched"
 	headsExt      = ".heads"
+	snapExt       = ".snap"
 	stateDirPerm  = 0o700
 	stateFilePerm = 0o600
 )
@@ -55,6 +57,57 @@ func (s sessionState) turnOffset(promptID string) (int64, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// editedIn lists the paths the session edited in worktree, each once.
+func (s sessionState) editedIn(worktree string) []string {
+	var out []string
+	for _, line := range s.lines(pathsExt) {
+		if p, ok := strings.CutPrefix(line, worktree+"\t"); ok && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// snapState is what the session's last snapshot of one worktree left for
+// the next: its state hash, empty when the snapshot was cut short, and a
+// stamp per file it read.
+type snapState struct {
+	Hash string `json:"hash,omitempty"`
+	// Taken is when that snapshot started, in Unix nanoseconds. A file
+	// modified at or after it may have changed under the read.
+	Taken int64                `json:"taken"`
+	Files map[string]fileStamp `json:"files,omitempty"`
+}
+
+// fileStamp ties a file's size and modification time to the content a
+// snapshot read, so a file with the same stamp need not be read again.
+type fileStamp struct {
+	Size  int64  `json:"size"`
+	MTime int64  `json:"mtime"`
+	Blob  string `json:"blob"`
+	Chunk string `json:"chunk"`
+}
+
+// snaps returns the last snapshot state of each worktree; empty when none
+// was recorded or the file cannot be read.
+func (s sessionState) snaps() map[string]snapState {
+	var out map[string]snapState
+	data, err := os.ReadFile(s.file(snapExt))
+	if err != nil || json.Unmarshal(data, &out) != nil || out == nil {
+		return map[string]snapState{}
+	}
+	return out
+}
+
+// saveSnaps replaces the snapshot states with snaps.
+func (s sessionState) saveSnaps(snaps map[string]snapState) {
+	body, err := json.Marshal(snaps)
+	if err != nil {
+		return
+	}
+	s.replace(snapExt, string(body))
 }
 
 // edited reports whether the session has edited path in worktree before.

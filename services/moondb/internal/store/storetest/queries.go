@@ -233,3 +233,53 @@ func openTurns(t *testing.T, st store.Store) {
 	seed(t, st, turn("a1", "sA", store.TurnOpen, at(1)))
 	check("after reopening a1", "/wt/x", "f1", "a1")
 }
+
+// latestSnapshot: the newest snapshot of a worktree at or before a time,
+// whatever its turn or session, and never the one being ingested.
+func latestSnapshot(t *testing.T, st store.Store) {
+	a, b := loc(repoA, "/wt/a"), loc(repoA, "/wt/b")
+	snap := func(id, session, turn string, minute int, l store.Location) store.Snapshot {
+		return store.Snapshot{
+			ID: id, SessionID: session, TurnID: turn, At: at(minute), Location: l,
+			Phase: store.SnapshotPre, FileCount: 1,
+		}
+	}
+	seed(t, st,
+		snap("p1", "s1", "t1", 1, a),
+		snap("p2", "s1", "t2", 3, a),
+		snap("p3", "s2", "u1", 2, a),
+		snap("p4", "s1", "t1", 3, b),
+		snap("p5", "s2", "u2", 3, a),
+	)
+	query := func(worktree string, minute int, exclude string) store.SnapshotQuery {
+		return store.SnapshotQuery{Worktree: worktree, At: at(minute), ExcludeID: exclude}
+	}
+	cases := []struct {
+		name string
+		q    store.SnapshotQuery
+		want string // "" means ErrNotFound
+	}{
+		{"no bound, equal times: latest appended", store.SnapshotQuery{Worktree: "/wt/a"}, "p5"},
+		{"other worktree", store.SnapshotQuery{Worktree: "/wt/b"}, "p4"},
+		{"another session's snapshot counts", query("/wt/a", 2, ""), "p3"},
+		{"bound is inclusive", query("/wt/a", 1, ""), "p1"},
+		{"excluded snapshot is skipped", query("/wt/a", 3, "p5"), "p2"},
+		{"bound before every snapshot", query("/wt/a", 0, ""), ""},
+		{"unknown worktree", query("/wt/c", 9, ""), ""},
+	}
+	for _, c := range cases {
+		got, err := st.LatestSnapshot(context.Background(), c.q)
+		switch {
+		case c.want == "" && !errors.Is(err, store.ErrNotFound):
+			t.Errorf("%s: LatestSnapshot = %q, %v; want ErrNotFound", c.name, got.ID, err)
+		case c.want != "" && (err != nil || got.ID != c.want):
+			t.Errorf("%s: LatestSnapshot = %q, %v; want %q", c.name, got.ID, err, c.want)
+		}
+	}
+	// A replayed append changes nothing, so the answer stays the first record.
+	seed(t, st, snap("p5", "s9", "x9", 0, b))
+	got, err := st.LatestSnapshot(context.Background(), store.SnapshotQuery{Worktree: "/wt/a"})
+	if err != nil || got.ID != "p5" || got.SessionID != "s2" {
+		t.Errorf("after a replay: LatestSnapshot = %+v, %v; want p5 of s2", got, err)
+	}
+}

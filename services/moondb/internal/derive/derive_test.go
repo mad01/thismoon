@@ -772,6 +772,73 @@ func TestEdit(t *testing.T) {
 			ev:   evidence{tool: "Bash", kind: "delete", original: ptr(before)},
 			want: want{kind: store.EditDelete, source: store.BeforeOriginal, before: ptr(before)},
 		},
+		{
+			// Bash's hunks keep the tab, so they apply strictly.
+			name: "Bash diff of a sed on a tab-indented file",
+			ev: evidence{
+				tool: "Bash", kind: "update", hunks: editHunks,
+				observed: ptr(after), head: ptr(before),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeHead,
+				before: ptr(before), after: ptr(after), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "Bash diff of a file the command created",
+			ev: evidence{
+				tool: "Bash", kind: "create", observed: ptr("new\n"),
+				hunks: []patch.Hunk{{NewStart: 1, NewLines: 1, Lines: []string{"+new"}}},
+			},
+			want: want{
+				kind: store.EditCreate, source: store.BeforeAbsent,
+				after: ptr("new\n"), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "Bash diff of a file the command deleted",
+			ev: evidence{
+				tool: "Bash", kind: "delete", head: ptr("bye\n"),
+				hunks: []patch.Hunk{{OldStart: 1, OldLines: 1, Lines: []string{"-bye"}}},
+			},
+			want: want{kind: store.EditDelete, source: store.BeforeHead, before: ptr("bye\n")},
+		},
+		{
+			// No hunks: nothing checks the before, so the latest content
+			// known of the path is taken, and the disk read is the after.
+			name: "Bash changed path without a diff, chain before",
+			ev: evidence{
+				tool: "Bash", kind: "update", observed: ptr(after), chain: ptr(before),
+				head: ptr(stale),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeChain,
+				before: ptr(before), after: ptr(after), eol: "lf",
+			},
+		},
+		{
+			name: "Bash changed path without a diff, HEAD before",
+			ev:   evidence{tool: "Bash", kind: "update", observed: ptr(after), head: ptr(before)},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeHead,
+				before: ptr(before), after: ptr(after), eol: "lf",
+			},
+		},
+		{
+			name: "Bash changed path without a diff, nothing known before",
+			ev:   evidence{tool: "Bash", kind: "update", observed: ptr(after)},
+			want: want{
+				kind:   store.EditUnknown,
+				source: store.BeforeUnknown,
+				after:  ptr(after),
+				eol:    "lf",
+			},
+		},
+		{
+			name: "Bash changed path without a diff, gone from disk",
+			ev:   evidence{tool: "Bash", kind: "delete", chain: ptr(before)},
+			want: want{kind: store.EditDelete, source: store.BeforeChain, before: ptr(before)},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

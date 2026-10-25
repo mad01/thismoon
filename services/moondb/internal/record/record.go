@@ -16,6 +16,10 @@
 //	<session>.touched  one worktree per line: where the session edited
 //	<session>.heads    "<worktree>\t<head>" per line, last line wins: the
 //	                   HEAD last seen in each touched worktree
+//	<session>.snap     JSON, per worktree: the state hash of the last
+//	                   snapshot taken there, and the size, time, blob and
+//	                   chunk of each file it read, so an unchanged file is
+//	                   not read again
 package record
 
 import (
@@ -56,6 +60,9 @@ type Options struct {
 	// Budget is how long Run gathers before it writes what it has;
 	// moondb.RecordBudget when zero.
 	Budget time.Duration
+	// SnapshotBudget is how long the turn-edge events spend on snapshots,
+	// after their own envelope; moondb.SnapshotBudget when zero.
+	SnapshotBudget time.Duration
 }
 
 // Run records one hook payload read from in. It returns an error only for
@@ -71,12 +78,14 @@ func Run(ctx context.Context, in io.Reader, opts Options) error {
 		return err
 	}
 	opts = opts.withDefaults()
-	ctx, cancel := context.WithTimeout(ctx, opts.Budget)
+	budgeted, cancel := context.WithTimeout(ctx, opts.Budget)
 	defer cancel()
 	rec := &recorder{
-		ctx:  ctx,
+		base: ctx,
+		ctx:  budgeted,
 		p:    p,
 		opts: opts,
+		locs: map[string]store.Location{},
 		spool: &spool.Writer{
 			Dir:     filepath.Join(opts.Workdir, moondb.SpoolDirName),
 			Objects: filepath.Join(opts.Workdir, moondb.ObjectsDirName),
@@ -108,16 +117,31 @@ func (o Options) withDefaults() Options {
 	if o.Budget <= 0 {
 		o.Budget = moondb.RecordBudget
 	}
+	if o.SnapshotBudget <= 0 {
+		o.SnapshotBudget = moondb.SnapshotBudget
+	}
 	return o
 }
 
-// recorder is one Run in progress. ctx ends when the budget does.
+// recorder is one Run in progress. ctx ends when the budget does; base is
+// the context Run was given, which a snapshot takes its own budget from.
 type recorder struct {
+	base  context.Context
 	ctx   context.Context
 	p     payload
 	opts  Options
 	spool *spool.Writer
 	state sessionState
+	// locs caches the git location of each directory placed in this Run.
+	locs map[string]store.Location
+}
+
+// within returns a copy of rec that works under ctx instead of the budget
+// Run set, sharing everything else.
+func (rec *recorder) within(ctx context.Context) *recorder {
+	c := *rec
+	c.ctx = ctx
+	return &c
 }
 
 // require runs handle once the session id and the event's own id are set:
@@ -161,8 +185,16 @@ func (rec *recorder) gitCtx() (context.Context, context.CancelFunc) {
 }
 
 // locate places dir in git; the zero Location when git cannot say in time.
+// A placed directory is asked once per Run; a failure is asked again.
 func (rec *recorder) locate(dir string) store.Location {
+	if loc, ok := rec.locs[dir]; ok {
+		return loc
+	}
 	ctx, cancel := rec.gitCtx()
 	defer cancel()
-	return Locate(ctx, dir)
+	loc := Locate(ctx, dir)
+	if loc.Worktree != "" {
+		rec.locs[dir] = loc
+	}
+	return loc
 }

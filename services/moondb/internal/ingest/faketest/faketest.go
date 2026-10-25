@@ -231,6 +231,21 @@ func (s *Store) LatestAfter(_ context.Context, q store.ChainQuery) (store.Edit, 
 	return out[0], nil
 }
 
+// LatestSnapshot returns the newest snapshot q allows.
+func (s *Store) LatestSnapshot(_ context.Context, q store.SnapshotQuery) (store.Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := newest(s.snapshots, func(v store.Snapshot) (bool, time.Time) {
+		return v.Worktree == q.Worktree && v.ID != q.ExcludeID &&
+			(q.At.IsZero() || !v.At.After(q.At)), v.At
+	})
+	if len(out) == 0 {
+		return store.Snapshot{}, fmt.Errorf(
+			"faketest: snapshot of %s: %w", q.Worktree, store.ErrNotFound)
+	}
+	return out[0], nil
+}
+
 // OpenTurns lists the open turns with an edit in worktree, newest first by
 // StartedAt.
 func (s *Store) OpenTurns(_ context.Context, worktree string) ([]store.Turn, error) {

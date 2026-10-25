@@ -14,13 +14,20 @@ commit it landed in.
 
 ## How it works
 
-Three Claude Code hooks pipe their payloads into `moondb record`:
+Claude Code hooks pipe their payloads into `moondb record`:
 
 - when you submit a prompt, a turn opens
 - after every Edit, Write, MultiEdit or NotebookEdit, the change is recorded
   with the file's content
+- after a Bash command, the files it changed are recorded, when Claude Code
+  reports them (the `bashEditDiffEnabled` setting)
 - when the session stops, the turn closes, and any new commits in the
   worktrees the session touched are noted
+
+At the start and the end of each turn, `record` also takes a **snapshot** of
+each worktree in play: the content of its uncommitted files and of the files
+the session touched. A file that changed between two turns, with no tool call
+to explain it, shows up as an unattributed delta.
 
 `record` writes to a spool on disk and returns within 200 ms. It always exits
 0 and never prints to stdout, so a capture problem can't break your session.
@@ -53,15 +60,24 @@ Then add the hooks to your Claude Code settings:
 {
   "hooks": {
     "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }],
-    "PostToolUse": [{ "matcher": "Edit|Write|MultiEdit|NotebookEdit",
-                      "hooks": [{ "type": "command", "command": "moondb record", "timeout": 3 }] }],
+    "PostToolUse": [
+      { "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [{ "type": "command", "command": "moondb record", "timeout": 3 }] },
+      { "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }
+    ],
     "Stop": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }]
-  }
+  },
+  "bashEditDiffEnabled": true
 }
 ```
 
 The Edit hook is synchronous on purpose: edits in one message land
 milliseconds apart, and a hook that ran later would read the wrong file.
+`bashEditDiffEnabled` (Claude Code 2.1.269 or later) makes Claude Code put
+the files a Bash command changed into the hook payload. Without it, the Bash
+hook records nothing, and snapshots still catch those changes at the next
+turn edge.
 
 ## Usage
 
@@ -82,9 +98,9 @@ To cover the time before the hooks were wired, backfill the last 30 days with
 `~/.claude/projects` and spools the turns and edits the hooks would have
 recorded, so serve must be running to take them in. Sessions the store
 already holds are skipped. A transcript has less than the hooks see: it has
-no disk read after an edit and no diff for Bash commands. It has no HEAD
-either, so imported edits link to commits only once a later session moves
-HEAD. Run it with `--dry-run` first to see the counts.
+no disk read after an edit and no snapshots, and the import skips Bash
+commands. It has no HEAD either, so imported edits link to commits only once
+a later session moves HEAD. Run it with `--dry-run` first to see the counts.
 
 `why` first asks `git blame` which commit the line came from, then finds the
 edit whose content matches that commit. For a line that isn't committed yet,
@@ -103,7 +119,7 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 |------|---------|
 | `moondb_why(path, line)` | The edit, turn, prompt, session and commit behind one line |
 | `moondb_history(path)` | Every recorded edit of a file, newest first |
-| `moondb_turn(id)` | One turn: prompt, final message, edits, unattributed deltas |
+| `moondb_turn(id)` | One turn: prompt, final message, edits, unattributed deltas, snapshots |
 | `moondb_sessions()` | Recorded sessions, newest first |
 | `moondb_doctor()` | Run the `moondb doctor` checks and return the report |
 
@@ -111,7 +127,8 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 
 Open `http://moondb.this/` (or `http://localhost:7433/`) for a read-only web
 UI. It lists sessions, filtered by repo and age. A session shows its turns,
-and a turn shows its prompt, final message, agents and every edit as a diff.
+and a turn shows its prompt, final message, agents, every edit as a diff,
+and the snapshots taken at its start and end.
 Click an added line to ask why it's there. A file view shows the file as it
 is today with the turn and agent behind each line, plus its recorded
 history.
@@ -145,10 +162,9 @@ doesn't delete the store.
 
 ## What comes next
 
-This release records the file tools only. Later releases add:
+Later releases add:
 
-- a snapshot of each worktree at turn boundaries
-- capture of the file changes Bash commands make
+- the Bash diffs a transcript keeps, read by `moondb import`
 - a cloud backend: the log on a Kubernetes StatefulSet, file contents in
   object storage
 - a shared mode that a local serve replicates into

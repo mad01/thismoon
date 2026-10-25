@@ -195,12 +195,22 @@ type UnattributedDelta struct {
 type SnapshotPhase string
 
 const (
-	SnapshotPre  SnapshotPhase = "pre"
+	// SnapshotPre is taken when a prompt opens the turn.
+	SnapshotPre SnapshotPhase = "pre"
+	// SnapshotPost is taken when the session stops at the turn's end.
 	SnapshotPost SnapshotPhase = "post"
 )
 
-// Snapshot is a worktree's dirty set at a turn boundary. The file map lives
-// in a chunk (JSON object path -> SnapshotFile) so the index stays small.
+// SnapshotScope names the rule that chose a snapshot's files: the
+// worktree's dirty paths, tracked and untracked, plus the paths the session
+// recorded edits of, less the excluded ones.
+const SnapshotScope = "dirty+touched"
+
+// Snapshot is the state of one worktree at a turn boundary: its dirty
+// paths plus the session's touched paths, each with its content as a
+// chunk. The file map lives in a chunk (a JSON array of SnapshotFile,
+// sorted by path) so the index stays small. A path missing from a snapshot
+// that is not Truncated was clean then: its content was the index's.
 type Snapshot struct {
 	ID        string        `json:"id"`
 	SessionID string        `json:"session_id"`
@@ -208,20 +218,44 @@ type Snapshot struct {
 	Phase     SnapshotPhase `json:"phase"`
 	At        time.Time     `json:"at"`
 	Location
+	// Scope is the rule that chose the files, SnapshotScope today.
+	Scope     string `json:"scope,omitempty"`
 	MapChunk  string `json:"map_chunk,omitempty"`
 	FileCount int    `json:"file_count"`
-	// Skipped names why the snapshot is partial or empty: "timeout",
-	// "too-many-files", or "".
-	Skipped string `json:"skipped,omitempty"`
+	// Truncated is set when the map lacks paths the scope held, because
+	// the budget ran out or the file cap was reached.
+	Truncated bool            `json:"truncated,omitempty"`
+	Skipped   SnapshotSkipped `json:"skipped"`
+}
+
+// SnapshotSkipped counts the paths in a snapshot's scope whose content it
+// does not hold, by reason.
+type SnapshotSkipped struct {
+	// Timeout counts paths left out when the budget ran out.
+	Timeout int `json:"timeout,omitempty"`
+	// TooMany counts paths left out past the file cap.
+	TooMany int `json:"too_many,omitempty"`
+	// TooLarge counts files listed without content: over the chunk cap.
+	TooLarge int `json:"too_large,omitempty"`
+	// Excluded counts paths a capture.exclude glob kept out of the map.
+	Excluded int `json:"excluded,omitempty"`
 }
 
 // SnapshotFile is one entry of a snapshot's file map.
 type SnapshotFile struct {
+	// Path is relative to the worktree with forward slashes.
+	Path string `json:"path"`
+	// Chunk holds the file's content; "" when it was not read: deleted,
+	// or over the chunk cap.
 	Chunk string `json:"chunk,omitempty"`
-	Blob  string `json:"blob,omitempty"`
-	Size  int64  `json:"size"`
-	// Status is git's two-letter porcelain status for the path.
+	// Blob is the content's git blob id.
+	Blob string `json:"blob,omitempty"`
+	Size int64  `json:"size"`
+	// Status is git's two-letter porcelain status for the path; "" for a
+	// touched path git reports clean.
 	Status string `json:"status,omitempty"`
+	// Deleted is set when the file did not exist at the snapshot.
+	Deleted bool `json:"deleted,omitempty"`
 }
 
 // CommitLink records that content moondb saw became a committed blob: the
@@ -290,5 +324,18 @@ type ChainQuery struct {
 	At       time.Time
 	// ExcludeID is the edit being derived, which is never its own chain:
 	// a replayed envelope finds its own Edit already recorded.
+	ExcludeID string
+}
+
+// SnapshotQuery asks for the newest snapshot of Worktree taken at or
+// before At, other than ExcludeID. A zero At sets no bound. It names no
+// path: the newest snapshot speaks for every path in the worktree, since a
+// path it lacks was clean then, and an older snapshot's copy of it is
+// stale.
+type SnapshotQuery struct {
+	Worktree string
+	At       time.Time
+	// ExcludeID is the snapshot being ingested, which a replayed envelope
+	// finds already recorded.
 	ExcludeID string
 }

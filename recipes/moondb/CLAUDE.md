@@ -51,7 +51,9 @@ Machine-specific wiring is deliberately not here (docs/adr/0006):
 - the `[[recipe_sources]]` stanza itself (each machine picks its pin)
 - the capture hooks in the Claude Code settings: `moondb record` on
   UserPromptSubmit (async), on PostToolUse for
-  `Edit|Write|MultiEdit|NotebookEdit` (sync, timeout 3), and on Stop (async)
+  `Edit|Write|MultiEdit|NotebookEdit` (sync, timeout 3), on PostToolUse for
+  `Bash` (async), and on Stop (async), plus the user setting
+  `"bashEditDiffEnabled": true` that puts Bash diffs in the payload
 - MCP registration: the consuming repo's agent-sync `servers.json` (entry
   `moondb`, command `moondb mcp`, an HTTP client only)
 - the `moondb.this` route: `recipes/d-man/routes.toml` (`moondb` → 7433)

@@ -42,19 +42,9 @@ func (d *Deriver) delta(
 	e store.Edit,
 	after, observed content,
 ) (*store.UnattributedDelta, error) {
-	diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
-		A:        diffLines(after.data),
-		B:        diffLines(observed.data),
-		FromFile: path.Join("a", e.Path),
-		ToFile:   path.Join("b", e.Path),
-		Context:  diffContext,
-	})
+	key, err := d.putDiff(ctx, e.Path, after.data, observed.data)
 	if err != nil {
-		return nil, fmt.Errorf("derive: diff observed content of %s: %w", e.Path, err)
-	}
-	key, err := d.Chunks.Put(ctx, []byte(diff))
-	if err != nil {
-		return nil, fmt.Errorf("derive: store observed diff of %s: %w", e.Path, err)
+		return nil, err
 	}
 	return &store.UnattributedDelta{
 		ID:         e.ID + ":observed",
@@ -68,6 +58,26 @@ func (d *Deriver) delta(
 		PatchChunk: key,
 		Cause:      store.DeltaObservedMismatch,
 	}, nil
+}
+
+// putDiff stores the unified diff from a to b, two contents of path, and
+// returns its chunk key.
+func (d *Deriver) putDiff(ctx context.Context, name string, a, b []byte) (string, error) {
+	diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
+		A:        diffLines(a),
+		B:        diffLines(b),
+		FromFile: path.Join("a", name),
+		ToFile:   path.Join("b", name),
+		Context:  diffContext,
+	})
+	if err != nil {
+		return "", fmt.Errorf("derive: diff contents of %s: %w", name, err)
+	}
+	key, err := d.Chunks.Put(ctx, []byte(diff))
+	if err != nil {
+		return "", fmt.Errorf("derive: store diff of %s: %w", name, err)
+	}
+	return key, nil
 }
 
 // diffLines splits content for difflib, which writes each line as given

@@ -16,7 +16,8 @@ is the problem, not this service.
 
 Capture runs in Claude Code hooks, not in serve. Each hook pipes its payload
 into `moondb record`, which writes an envelope to the spool and exits 0
-within about 200 ms, printing nothing on stdout. So capture keeps working
+within about 200 ms, printing nothing on stdout. At a turn's start and stop
+it also snapshots the worktrees in play, within 2 s. So capture keeps working
 while serve is down: envelopes wait in the spool and serve ingests them when
 it comes back. `moondb import` backfills from the Claude Code transcripts
 through the same spool, so it too needs serve running before the store
@@ -68,8 +69,15 @@ An edit with `before_source: unknown`: serve could not reconstruct the file
 as it was before the edit. The patch hunks are still recorded.
 
 An unattributed delta: the file on disk differed from what the tool call
-should have produced. A formatter hook, a human edit, or a Bash command
-changed it. This is expected, not corruption.
+should have produced (cause `observed`), or a turn-edge snapshot found content
+no recorded edit explains (cause `snapshot`). A formatter hook, a human edit,
+or a Bash command changed it. This is expected, not corruption.
+
+A Bash command's changes are missing from a turn: the Bash hook line is not
+wired, or the user setting `bashEditDiffEnabled` is off, so Claude Code sends
+no diff. The next snapshot still catches the change as a delta. A snapshot
+marked truncated ran out of its 2 s budget or its 1000-file cap; its skipped
+counts say which.
 
 ## version skew
 

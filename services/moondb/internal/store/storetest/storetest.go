@@ -33,6 +33,7 @@ func Run(t *testing.T, open func(t *testing.T, dir string) store.Store) {
 		{"TurnDetail", turnDetail},
 		{"EditsQuery", editsQuery},
 		{"LatestAfter", latestAfter},
+		{"LatestSnapshot", latestSnapshot},
 		{"OpenTurns", openTurns},
 		{"ChunksRoundTrip", chunksRoundTrip},
 		{"Ping", ping},

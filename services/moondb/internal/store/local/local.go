@@ -329,6 +329,20 @@ func (s *Store) LatestAfter(ctx context.Context, q store.ChainQuery) (store.Edit
 	return s.ix.latestAfter(q)
 }
 
+// LatestSnapshot returns the newest snapshot q allows. Returns
+// store.ErrNotFound.
+func (s *Store) LatestSnapshot(
+	ctx context.Context,
+	q store.SnapshotQuery,
+) (store.Snapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return store.Snapshot{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.ix.latestSnapshot(q)
+}
+
 // OpenTurns lists the open turns, across sessions, that have an edit in
 // worktree, newest first by StartedAt.
 func (s *Store) OpenTurns(ctx context.Context, worktree string) ([]store.Turn, error) {
