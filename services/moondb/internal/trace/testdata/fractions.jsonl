@@ -1,0 +1,3 @@
+{"type":"user","timestamp":"2026-10-01T10:00:00.000Z","promptId":"p-frac","message":{"role":"user","content":"time it"}}
+{"type":"api-request","timestamp":"2026-10-01T10:00:01.0004Z"}
+{"type":"assistant","timestamp":"2026-10-01T10:00:02.0011Z","message":{"id":"msg_frac_1","model":"claude-opus-5-5","stop_reason":"end_turn","content":[{"type":"text","text":"timed"}],"usage":{"input_tokens":1,"output_tokens":1}}}

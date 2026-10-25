@@ -24,13 +24,15 @@ import (
 	"github.com/mad01/thismoon/services/moondb/internal/query"
 	"github.com/mad01/thismoon/services/moondb/internal/server"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 const (
 	// requestTimeout bounds a store read: serve answers from its index.
 	requestTimeout = 5 * time.Second
 	// queryTimeout bounds why, history and annotate, which may run git in a
-	// worktree.
+	// worktree, and a session trace, which may read every turn's
+	// transcript.
 	queryTimeout = 30 * time.Second
 )
 
@@ -38,8 +40,8 @@ const (
 type Client struct {
 	baseURL string
 	http    *http.Client
-	// slow carries why, history and annotate; every other call keeps the
-	// short timeout.
+	// slow carries why, history, annotate and session traces; every other
+	// call keeps the short timeout.
 	slow *http.Client
 }
 
@@ -97,11 +99,21 @@ func (c *Client) Session(ctx context.Context, id string) (store.SessionDetail, e
 	return out, c.getJSON(ctx, c.http, "/api/sessions/"+url.PathEscape(id), nil, &out)
 }
 
-// Turn loads one turn with everything recorded under it. A missing id
-// matches store.ErrNotFound.
-func (c *Client) Turn(ctx context.Context, id string) (store.TurnDetail, error) {
-	var out store.TurnDetail
+// Turn loads one turn with everything recorded under it and its trace
+// totals. A missing id matches store.ErrNotFound.
+func (c *Client) Turn(ctx context.Context, id string) (server.TurnView, error) {
+	var out server.TurnView
 	return out, c.getJSON(ctx, c.http, "/api/turns/"+url.PathEscape(id), nil, &out)
+}
+
+// SessionTrace loads what took time in a session: every turn's spans and
+// totals, and the user time between turns. It rides the slow client: serve
+// reads every turn's transcript chunk that is not cached. A missing id
+// matches store.ErrNotFound.
+func (c *Client) SessionTrace(ctx context.Context, id string) (trace.SessionTrace, error) {
+	var out trace.SessionTrace
+	path := "/api/sessions/" + url.PathEscape(id) + "/trace"
+	return out, c.getJSON(ctx, c.slow, path, nil, &out)
 }
 
 // Edits lists recorded edits newest first.

@@ -84,7 +84,8 @@ turn edge.
 ```bash
 moondb why <path>:<line>     # the edit, turn, prompt and commit behind one line
 moondb history <path>        # every recorded edit of a file, newest first
-moondb sessions              # recorded sessions, newest first
+moondb sessions              # recorded sessions, newest first, with how long each ran
+moondb trace <session-id>    # where a session's time went and what it cost
 moondb import --dry-run      # what a backfill from Claude Code transcripts would record
 moondb doctor                # is serve up, is the store readable, is the build current
 ```
@@ -101,6 +102,16 @@ already holds are skipped. A transcript has less than the hooks see: it has
 no disk read after an edit and no snapshots, and the import skips Bash
 commands. It has no HEAD either, so imported edits link to commits only once
 a later session moves HEAD. Run it with `--dry-run` first to see the counts.
+
+`moondb trace` splits a session's wall time into model time, tool time,
+harness time (hooks and request setup) and user time (waiting for input). It
+adds up the tokens by kind and the cost at list prices, then lists the ten
+longest tool calls and the ten most expensive model calls with their turns.
+It reads the transcript lines each turn keeps, so it needs nothing new from
+the hooks. The cost covers the main conversation: a subagent's model calls
+are in its own transcript, which moondb does not keep. A model moondb has no
+price for shows its tokens and is named as unpriced, so the cost is never a
+silent zero.
 
 `why` first asks `git blame` which commit the line came from, then finds the
 edit whose content matches that commit. For a line that isn't committed yet,
@@ -121,13 +132,16 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 | `moondb_history(path)` | Every recorded edit of a file, newest first |
 | `moondb_turn(id)` | One turn: prompt, final message, edits, unattributed deltas, snapshots |
 | `moondb_sessions()` | Recorded sessions, newest first |
+| `moondb_trace(id)` | One session's time and cost: totals, the longest tool calls, the most expensive model calls |
 | `moondb_doctor()` | Run the `moondb doctor` checks and return the report |
 
 ### Web page
 
 Open `http://moondb.this/` (or `http://localhost:7433/`) for a read-only web
-UI. It lists sessions, filtered by repo and age. A session shows its turns,
-and a turn shows its prompt, final message, agents, every edit as a diff,
+UI. It lists sessions, filtered by repo and age. A session shows its trace
+above its turns: a strip of totals, then a timeline lane per turn with a bar
+for each model call, tool call and subagent. Hover a bar for its duration,
+tokens and cost, and click it to open the turn. A turn shows its prompt, final message, agents, every edit as a diff,
 and the snapshots taken at its start and end.
 Click an added line to ask why it's there. A file view shows the file as it
 is today with the turn and agent behind each line, plus its recorded
@@ -146,6 +160,8 @@ keys you're most likely to touch:
   covers `.env` files, keys, certificates, Terraform state and variable files,
   credential JSON, kubeconfig and `.npmrc`. An excluded file is recorded by
   path only.
+- `[prices."<model id>"]`, to price a model the built-in table lacks or to
+  change a price
 
 Every key, with its default, is in [config.md](config.md).
 

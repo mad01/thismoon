@@ -1,0 +1,7 @@
+{"type":"user","timestamp":"2026-10-01T11:00:00.000Z","promptId":"p-trunc","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_lost","content":"ok"}]}}
+{"type":"api-request","timestamp":"2026-10-01T11:00:00.300Z"}
+{"type":"assistant","timestamp":"2026-10-01T11:00:02.000Z","message":{"id":"msg_trunc_1","model":"claude-opus-5-5","stop_reason":"tool_use","content":[{"type":"tool_use","id":"toolu_trunc","name":"Grep","input":{}}],"usage":{"input_tokens":1,"output_tokens":7}}}
+{"type":"user","timestamp":"2026-10-01T11:00:02.500Z","promptId":"p-trunc","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_trunc","content":"a.go:1"}]}}
+{"type":"api-request","timestamp":"2026-10-01T11:00:02.600Z"}
+{"type":"assistant","timestamp":"2026-10-01T11:00:03.000Z","message":{"id":"msg_trunc_2","model":"claude-opus-5-5","stop_reason":"end_turn","content":[{"type":"text","text":"found it"}],"usage":{"input_tokens":1,"output_tokens":3}}}
+{"type":"system","subtype":"stop_hook_summary","timestamp":"2026-10-01T11:00:03.100Z"}

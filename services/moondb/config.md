@@ -64,6 +64,49 @@ source.
   .env  .env.*  *.pem  *.key  id_*  *.p12  *.tfvars  *.tfstate
   credentials*.json  kubeconfig  .npmrc
   ```
+- `prices."<model id>"` (table): the price of one model in USD per million
+  tokens, used by `moondb trace`, the `moondb_trace` tool and the session
+  page. A table sets the rates of its model id. When the id matches a
+  built-in row (exactly or by family, as below), it keeps that row's
+  long-prompt tier and its fast-mode and US-only multipliers, so new rates
+  for Opus 5.5 still price fast mode. An id no built-in row matches is added
+  with its rates alone. Only `serve` reads it, because serve computes the
+  traces.
+
+  | Key | Required | Default |
+  |---|---|---|
+  | `input` | yes | |
+  | `output` | yes | |
+  | `cache_write_5m` | no | 1.25 times `input` |
+  | `cache_write_1h` | no | 2 times `input` |
+  | `cache_read` | no | 0.1 times `input` |
+
+  A table without `input` or `output`, or with a rate that is negative,
+  `nan` or `inf`, fails closed: `serve` refuses to start and names the table
+  and the key, and `moondb doctor` reports it. `record` is not affected.
+
+## Prices
+
+The built-in table (`DefaultPrices` in `facts.go`) holds the list prices of
+the Claude models, from the Anthropic pricing page
+(`platform.claude.com/docs/en/about-claude/pricing`), read on 2026-10-25. A
+transcript's model id matches its row exactly first, then by family: a
+dated snapshot (`claude-opus-4-5-20251101`), a provider version (`@...`) or
+a context marker (`[1m]`) after a row's id finds that row. A provider prefix
+such as `us.anthropic.` is dropped first. A new version is not in an older
+row's family: `claude-opus-5-6` gets no price from `claude-opus-5`.
+
+Some rows carry more than one rate. Haiku 5.5 bills a call whose prompt
+passes 100,000 tokens at its long-prompt rates. Opus 5.5, Opus 5 and Opus
+4.8 bill a call made in fast mode at twice their rates. Fast mode on any
+other model has no price. A call whose usage reports `inference_geo` "us"
+(US-only inference) bills 1.1 times every rate on Claude 4.6 and later
+models, on top of fast mode and the long-prompt rates. Earlier models have
+no US-only price and bill such a call at their standard rates.
+
+A model with no price, from the table or the config, keeps its tokens and
+gets no cost. The trace names it as unpriced, and the cost covers the priced
+calls only. It is never reported as zero.
 
 ## Fixed limits
 
@@ -76,8 +119,10 @@ These are compiled into the binary (`facts.go`) and not configurable:
 | snapshot file cap | 1000 | paths one snapshot lists, the session's touched paths first; the rest count as over the file cap |
 | status cap | 4 MiB | `git status` output a snapshot reads; a worktree with more gets no snapshot |
 | largest chunk | 1 MiB | a larger file is recorded by path and patch, without content; a snapshot lists it by size |
-| transcript tail | 4 MiB | the most transcript a turn keeps |
+| transcript tail | 4 MiB | the most transcript a turn keeps; a trace of a longer turn sees only its tail |
 | log segment | 64 MiB | the size at which `log/` rolls to a new file |
+| trace cache | 512 turns | turn traces serve keeps in memory, the least recently read dropped first |
+| trace rankings | 10 | spans `moondb trace` and `moondb_trace` list as the longest tool calls and the most expensive model calls |
 
 ## Hook wiring
 
@@ -121,6 +166,11 @@ exclude = [
   "*.tfvars", "*.tfstate", "credentials*.json", "kubeconfig", ".npmrc",
   "secrets/*",
 ]
+
+# A model the built-in table lacks; the cache rates derive from input.
+[prices."claude-nova-9"]
+input = 3
+output = 15
 ```
 
 To see what a given environment resolved to, run `moondb doctor`; an agent

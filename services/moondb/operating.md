@@ -24,7 +24,7 @@ through the same spool, so it too needs serve running before the store
 shows anything.
 
 Everything else is a thin HTTP client over the API: the query commands
-(`why`, `history`, `sessions`) and the MCP server, a stdio shim spawned as
+(`why`, `history`, `sessions`, `trace`) and the MCP server, a stdio shim spawned as
 `moondb mcp`. The shim being up says nothing about the service: every tool
 call is a live HTTP request to serve, and it fails when serve is down.
 
@@ -64,6 +64,16 @@ the file matched a `capture.exclude` glob, or the edit predates capture. Ask
 capture can be backfilled: `moondb import --dry-run` counts what the
 transcripts still hold, `moondb import` spools it. A `content` answer
 is a text match, not proof: check its candidates before trusting it.
+
+`moondb trace`, or the `moondb_trace` tool, shows cost `unknown` or names a
+model as unpriced: the built-in price table has no row for that model id.
+Add a `[prices."<model id>"]` table to the config and restart serve. A turn
+with no spans has no transcript lines: it is still open, or its lines were
+never recorded. User time is waiting for input, between turns and also
+inside a turn: from the model stopping to a new input such as a teammate
+message. Harness time far above a few minutes usually means a turn longer
+than the 4 MiB transcript tail, whose cut head counts as harness; its
+trace's lines then say `cut_head`.
 
 An edit with `before_source: unknown`: serve could not reconstruct the file
 as it was before the edit. The patch hunks are still recorded.

@@ -74,6 +74,29 @@ func TestSessionAndTurn(t *testing.T) {
 	if len(turn.Edits) != 2 || turn.Edits[0].AfterChunk != servertest.AfterSHA {
 		t.Errorf("turn edits = %+v", turn.Edits)
 	}
+	old, err := h.client.Turn(ctx, servertest.OldTurn)
+	if err != nil {
+		t.Fatalf("Turn: %v", err)
+	}
+	if old.TraceTotals == nil || old.TraceTotals.WallMS != 120_000 {
+		t.Errorf("old turn trace totals = %+v, want a 2 minute wall", old.TraceTotals)
+	}
+}
+
+func TestSessionTrace(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	got, err := h.client.SessionTrace(ctx, servertest.OldSession)
+	if err != nil {
+		t.Fatalf("SessionTrace: %v", err)
+	}
+	if len(got.Turns) != 1 || got.Turns[0].TurnID != servertest.OldTurn ||
+		len(got.Turns[0].Spans) != 3 {
+		t.Errorf("trace = %+v, want the old turn with three spans", got)
+	}
+	if _, err := h.client.SessionTrace(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("unknown session: err = %v, want store.ErrNotFound", err)
+	}
 }
 
 func TestMissingRecordsMatchErrNotFound(t *testing.T) {

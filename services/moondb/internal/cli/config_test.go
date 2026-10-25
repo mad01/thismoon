@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -121,6 +122,82 @@ func TestApplyConfigPrecedence(t *testing.T) {
 			applyConfig(flags, config{Port: 9000})
 			if flagPort != tt.wantPort {
 				t.Errorf("flagPort = %d, want %d", flagPort, tt.wantPort)
+			}
+		})
+	}
+}
+
+func TestPriceOverrides(t *testing.T) {
+	tests := []struct {
+		name    string
+		file    string
+		want    map[string]moondb.Rates
+		wantErr string
+	}{
+		{name: "no tables", want: map[string]moondb.Rates{}},
+		{
+			name: "cache rates derive from input",
+			file: "[prices.\"claude-nova-9\"]\ninput = 4\noutput = 20\n",
+			want: map[string]moondb.Rates{"claude-nova-9": moondb.RatesFrom(4, 20, 0.4)},
+		},
+		{
+			name: "named cache rates win",
+			file: "[prices.\"claude-nova-9\"]\ninput = 4\noutput = 20\n" +
+				"cache_read = 0.2\ncache_write_5m = 6\ncache_write_1h = 9\n",
+			want: map[string]moondb.Rates{"claude-nova-9": {
+				Input: 4, Output: 20, CacheWrite5m: 6, CacheWrite1h: 9, CacheRead: 0.2,
+			}},
+		},
+		{
+			name:    "output is required",
+			file:    "[prices.\"claude-nova-9\"]\ninput = 4\n",
+			wantErr: `[prices."claude-nova-9"]: input and output are required`,
+		},
+		{
+			name:    "negative rate",
+			file:    "[prices.\"claude-nova-9\"]\ninput = 4\noutput = 20\ncache_read = -1\n",
+			wantErr: `[prices."claude-nova-9"]: cache_read = -1: a rate cannot be negative`,
+		},
+		{
+			// TOML reads nan and inf as floats; either would make every cost
+			// NaN or Inf, which JSON cannot encode.
+			name:    "nan rate",
+			file:    "[prices.\"claude-nova-9\"]\ninput = nan\noutput = 20\n",
+			wantErr: `[prices."claude-nova-9"]: input = NaN: a rate must be a finite number`,
+		},
+		{
+			name:    "infinite rate",
+			file:    "[prices.\"claude-nova-9\"]\ninput = 4\noutput = 20\ncache_write_1h = inf\n",
+			wantErr: `[prices."claude-nova-9"]: cache_write_1h = +Inf: a rate must be a finite number`,
+		},
+		{
+			name:    "negative infinity is not finite",
+			file:    "[prices.\"claude-nova-9\"]\ninput = 4\noutput = -inf\n",
+			wantErr: `[prices."claude-nova-9"]: output = -Inf: a rate must be a finite number`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), configFile)
+			if err := os.WriteFile(path, []byte(tt.file), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			c, err := loadConfig(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := priceOverrides(c.Prices)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("priceOverrides() error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("priceOverrides() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/mad01/thismoon/services/moondb/internal/server"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store/local"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 // Server timeouts. Shutdown is how long in-flight requests get once the
@@ -50,6 +51,10 @@ func runServe(_ *cobra.Command, _ []string) error {
 	if err := requireConfig(); err != nil {
 		return err
 	}
+	prices, err := priceOverrides(cfg.Prices)
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
 	st, err := local.Open(flagWorkdir)
 	if err != nil {
 		return err
@@ -74,9 +79,10 @@ func runServe(_ *cobra.Command, _ []string) error {
 		}
 	}()
 
+	svc := &query.Service{Store: st, Prices: trace.NewPrices(prices)}
 	srv := &http.Server{
 		Addr:              listenAddr(flagPort),
-		Handler:           server.New(st, &query.Service{Store: st}, buildinfo.Get()).Handler(),
+		Handler:           server.New(st, svc, buildinfo.Get()).Handler(),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 	go func() {

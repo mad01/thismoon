@@ -176,6 +176,52 @@ func TestTurnRoundTripCarriesPrompt(t *testing.T) {
 	}
 }
 
+func TestTurnSummaryCarriesTraceTotals(t *testing.T) {
+	cs := session(t, noChecks)
+	var out turnOutput
+	call(t, cs, "moondb_turn", map[string]any{"id": servertest.OldTurn}, &out)
+	if out.Turn.TraceTotals == nil || !strings.Contains(out.Summary, "took 2m00s, cost $0.014") {
+		t.Errorf("summary = %q, totals = %+v", out.Summary, out.Turn.TraceTotals)
+	}
+}
+
+func TestTraceRoundTrip(t *testing.T) {
+	cs := session(t, noChecks)
+	var out traceOutput
+	call(t, cs, "moondb_trace", map[string]any{"id": servertest.OldSession}, &out)
+	if out.SessionID != servertest.OldSession || out.Turns != 1 || out.Totals.WallMS != 120_000 {
+		t.Fatalf("out = %+v", out)
+	}
+	if len(out.LongestTools) != 1 || out.LongestTools[0].Span.ID != "toolu_c" ||
+		out.LongestTools[0].Seq != 1 {
+		t.Errorf("longest tools = %+v, want toolu_c in turn 1", out.LongestTools)
+	}
+	if len(out.CostliestModels) != 2 || out.CostliestModels[0].Span.ID != "msg_old_1" {
+		t.Errorf("costliest models = %+v, want msg_old_1 first", out.CostliestModels)
+	}
+	for _, want := range []string{"1 turns", "wall 2m00s", "tool 1m00s", "longest tool call Edit 1m00s in turn 1"} {
+		if !strings.Contains(out.Summary, want) {
+			t.Errorf("summary = %q, want it to contain %q", out.Summary, want)
+		}
+	}
+	if out.URL != "http://moondb.test/?session="+servertest.OldSession {
+		t.Errorf("url = %q", out.URL)
+	}
+}
+
+func TestTraceNotFoundIsToolError(t *testing.T) {
+	cs := session(t, noChecks)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "moondb_trace", Arguments: map[string]any{"id": "nope"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError || !strings.Contains(toolText(res), "not found") {
+		t.Errorf("result = %+v, want a not-found tool error", res)
+	}
+}
+
 func TestTurnNotFoundIsToolError(t *testing.T) {
 	cs := session(t, noChecks)
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{

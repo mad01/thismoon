@@ -1,0 +1,5 @@
+{"type":"user","timestamp":"2026-10-01T10:00:00.000Z","promptId":"p-plain","message":{"role":"user","content":"say hello"}}
+{"type":"attachment","timestamp":"2026-10-01T10:00:00.100Z","attachment":{"type":"date"}}
+{"type":"api-request","timestamp":"2026-10-01T10:00:00.500Z","querySource":"repl_main_thread"}
+{"type":"assistant","timestamp":"2026-10-01T10:00:03.500Z","message":{"id":"msg_plain_1","model":"claude-opus-5-5","role":"assistant","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":10,"cache_creation_input_tokens":1000,"cache_read_input_tokens":20000,"output_tokens":100,"output_tokens_details":{"thinking_tokens":40},"cache_creation":{"ephemeral_5m_input_tokens":1000,"ephemeral_1h_input_tokens":0},"service_tier":"standard","speed":"standard"}}}
+{"type":"system","subtype":"stop_hook_summary","timestamp":"2026-10-01T10:00:03.600Z"}
