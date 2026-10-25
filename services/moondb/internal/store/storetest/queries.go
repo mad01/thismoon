@@ -154,7 +154,8 @@ func editsQuery(t *testing.T, st store.Store) {
 }
 
 // latestAfter: the newest edit by At of (worktree, path) that has an
-// AfterChunk; edits without one, and other worktrees, do not count.
+// AfterChunk, made at or before the bound and other than the excluded id;
+// edits without after-content, later edits and other worktrees do not count.
 func latestAfter(t *testing.T, st store.Store) {
 	a, b := loc(repoA, "/wt/a"), loc(repoA, "/wt/b")
 	seed(t, st,
@@ -165,25 +166,33 @@ func latestAfter(t *testing.T, st store.Store) {
 		edit("e5", "s1", "t1", 5, a, "y.go"),
 		withAfter(edit("e6", "s1", "t1", 0, a, "x.go"), "c6"),
 	)
+	chain := func(worktree, path string, minute int, exclude string) store.ChainQuery {
+		return store.ChainQuery{Worktree: worktree, Path: path, At: at(minute), ExcludeID: exclude}
+	}
 	cases := []struct {
-		worktree, path string
-		want           string // "" means ErrNotFound
+		name string
+		q    store.ChainQuery
+		want string // "" means ErrNotFound
 	}{
-		{"/wt/a", "x.go", "e2"},
-		{"/wt/b", "x.go", "e4"},
-		{"/wt/a", "y.go", ""},
-		{"/wt/a", "z.go", ""},
-		{"/wt/c", "x.go", ""},
+		{"no bound", store.ChainQuery{Worktree: "/wt/a", Path: "x.go"}, "e2"},
+		{"other worktree", store.ChainQuery{Worktree: "/wt/b", Path: "x.go"}, "e4"},
+		{"bound between edits", chain("/wt/a", "x.go", 1, ""), "e1"},
+		{"bound is inclusive", chain("/wt/a", "x.go", 2, ""), "e2"},
+		{"excluded edit is skipped", chain("/wt/a", "x.go", 2, "e2"), "e1"},
+		{"edit without after skipped", chain("/wt/a", "x.go", 9, "e2"), "e1"},
+		{"oldest edit", chain("/wt/a", "x.go", 0, ""), "e6"},
+		{"bound before every edit", chain("/wt/a", "x.go", -1, ""), ""},
+		{"no after-content", chain("/wt/a", "y.go", 9, ""), ""},
+		{"unknown path", chain("/wt/a", "z.go", 9, ""), ""},
+		{"unknown worktree", chain("/wt/c", "x.go", 9, ""), ""},
 	}
 	for _, c := range cases {
-		got, err := st.LatestAfter(context.Background(), c.worktree, c.path)
+		got, err := st.LatestAfter(context.Background(), c.q)
 		switch {
 		case c.want == "" && !errors.Is(err, store.ErrNotFound):
-			t.Errorf("LatestAfter(%s, %s) = %q, %v; want ErrNotFound",
-				c.worktree, c.path, got.ID, err)
+			t.Errorf("%s: LatestAfter = %q, %v; want ErrNotFound", c.name, got.ID, err)
 		case c.want != "" && (err != nil || got.ID != c.want):
-			t.Errorf("LatestAfter(%s, %s) = %q, %v; want %q",
-				c.worktree, c.path, got.ID, err, c.want)
+			t.Errorf("%s: LatestAfter = %q, %v; want %q", c.name, got.ID, err, c.want)
 		}
 	}
 }

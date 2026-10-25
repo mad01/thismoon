@@ -10,8 +10,8 @@ import (
 
 // turnOpen records a submitted prompt. A turn the store already holds (a
 // placeholder an early edit left, or the same envelope replayed) keeps its
-// fields; the open only fills what is empty and moves StartedAt back to the
-// prompt's time.
+// fields; the open only fills what is empty and, unless it is a backfill,
+// moves StartedAt back to the prompt's time.
 func (in *Ingester) turnOpen(
 	ctx context.Context,
 	env spool.Envelope,
@@ -41,7 +41,9 @@ func (in *Ingester) turnOpen(
 	if t.TranscriptOffset == 0 && env.Turn.TranscriptOffset != 0 {
 		t.TranscriptOffset, changed = env.Turn.TranscriptOffset, true
 	}
-	changed = earliest(&t.StartedAt, env.At) || changed
+	if !env.Backfill { // a stored StartedAt is never empty
+		changed = earliest(&t.StartedAt, env.At) || changed
+	}
 	if !changed {
 		return nil
 	}
@@ -50,7 +52,9 @@ func (in *Ingester) turnOpen(
 
 // turnClose records the end of a turn: its last message, its transcript
 // lines and its final status. A close whose open never arrived creates the
-// turn, and the session with it, so the turn's records do not dangle.
+// turn, and the session with it, so the turn's records do not dangle. A
+// backfill only fills: it closes a turn still open and sets fields the
+// turn has empty.
 func (in *Ingester) turnClose(
 	ctx context.Context,
 	env spool.Envelope,
@@ -74,20 +78,30 @@ func (in *Ingester) turnClose(
 	if !found {
 		t = newTurn(env, store.TurnClosed)
 	}
+	set := setter(env)
 	changed := !found
-	changed = replace(&t.FinalChunk, in.kept(env, missing, p.FinalChunk)) || changed
-	changed = replace(&t.TranscriptChunk, in.kept(env, missing, p.TranscriptChunk)) || changed
-	if status := closedStatus(p.Status); t.Status != status {
-		t.Status, changed = status, true
-	}
-	if t.EndedAt == nil || !t.EndedAt.Equal(env.At) {
-		at := env.At
-		t.EndedAt, changed = &at, true
-	}
+	changed = set(&t.FinalChunk, in.kept(env, missing, p.FinalChunk)) || changed
+	changed = set(&t.TranscriptChunk, in.kept(env, missing, p.TranscriptChunk)) || changed
+	changed = closeTurn(&t, env, closedStatus(p.Status)) || changed
 	if !changed {
 		return nil
 	}
 	return in.putTurn(ctx, t)
+}
+
+// closeTurn sets the turn's final status and end time and reports whether
+// either changed. A backfill changes the status of an open turn only and
+// sets an end time only where there is none.
+func closeTurn(t *store.Turn, env spool.Envelope, status store.TurnStatus) bool {
+	changed := false
+	if t.Status != status && (!env.Backfill || t.Status == store.TurnOpen) {
+		t.Status, changed = status, true
+	}
+	if t.EndedAt == nil || (!env.Backfill && !t.EndedAt.Equal(env.At)) {
+		at := env.At
+		t.EndedAt, changed = &at, true
+	}
+	return changed
 }
 
 // closedStatus is the status a close leaves: failed when the payload says

@@ -58,6 +58,10 @@ type Envelope struct {
 	Session SessionRef `json:"session"`
 	Turn    TurnRef    `json:"turn"`
 	Agent   AgentRef   `json:"agent,omitempty"`
+	// Backfill marks an envelope `moondb import` wrote from a transcript.
+	// Its session and turn fields only fill what the stored record has
+	// empty; every value a record already holds stays.
+	Backfill bool `json:"backfill,omitempty"`
 
 	TurnOpen  *TurnOpen    `json:"turn_open,omitempty"`
 	TurnClose *TurnClose   `json:"turn_close,omitempty"`

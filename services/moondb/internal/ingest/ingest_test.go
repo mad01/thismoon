@@ -251,6 +251,50 @@ func TestCloseWithoutOpenCreatesTurnAndSession(t *testing.T) {
 	}
 }
 
+func TestBackfillOnlyFills(t *testing.T) {
+	// Live capture holds turn p1 closed and turn p2 still open, and the
+	// session has no model. A forced import then backfills both turns with
+	// other times, messages and session fields.
+	f := newFixture(t)
+	c := chunkSet{}
+	f.write(openEnv(c, "s1", "p1", 2, "fix the bug"), c)
+	f.write(closeEnv(c, "s1", "p1", 5, "fixed"), c)
+	f.write(openEnv(c, "s1", "p2", 6, "and the test"), c)
+	f.drain()
+
+	backfill := func(env spool.Envelope) spool.Envelope {
+		env.Backfill = true
+		env.Session.Title, env.Session.Model = "imported title", "model-x"
+		env.Session.TranscriptPath = "/t/s1.jsonl"
+		return env
+	}
+	f.write(backfill(openEnv(c, "s1", "p1", 1, "imported prompt")), c)
+	f.write(backfill(closeEnv(c, "s1", "p1", 7, "imported final")), c)
+	f.write(backfill(closeEnv(c, "s1", "p2", 8, "imported p2 final")), c)
+	f.drain()
+
+	s := f.session("s1")
+	if s.Title != "title s1" || !s.StartedAt.Equal(at(2)) {
+		t.Errorf("session title %q started %v, want the live %q and %v",
+			s.Title, s.StartedAt, "title s1", at(2))
+	}
+	if s.Model != "model-x" || s.TranscriptPath != "/t/s1.jsonl" {
+		t.Errorf("session model %q transcript %q, want the empty fields filled",
+			s.Model, s.TranscriptPath)
+	}
+	p1 := f.turn("p1").Turn
+	if p1.PromptChunk != spool.ChunkKey([]byte("fix the bug")) ||
+		p1.FinalChunk != spool.ChunkKey([]byte("fixed")) ||
+		!p1.StartedAt.Equal(at(2)) || p1.EndedAt == nil || !p1.EndedAt.Equal(at(5)) {
+		t.Errorf("closed live turn = %+v, want it unchanged by the backfill", p1)
+	}
+	p2 := f.turn("p2").Turn
+	if p2.Status != store.TurnClosed || p2.EndedAt == nil || !p2.EndedAt.Equal(at(8)) ||
+		p2.FinalChunk != spool.ChunkKey([]byte("imported p2 final")) {
+		t.Errorf("open live turn = %+v, want the backfill to close it and fill its final", p2)
+	}
+}
+
 func TestEditBeforeOpen(t *testing.T) {
 	f := newFixture(t)
 	c := chunkSet{}
@@ -435,6 +479,37 @@ func TestPoisonEnvelopeMovesAside(t *testing.T) {
 	}
 	if f.pending() != 0 || len(r.attempts) != 0 {
 		t.Errorf("pending %d, attempts %v; want both empty", f.pending(), r.attempts)
+	}
+}
+
+// panicStore panics on the session named boom, as a derive bug would on
+// one bad edit, and stores every other session.
+type panicStore struct{ *faketest.Store }
+
+func (s panicStore) PutSession(ctx context.Context, v store.Session) error {
+	if v.ID == "boom" {
+		panic("index out of range")
+	}
+	return s.Store.PutSession(ctx, v)
+}
+
+func TestPanickingEnvelopeMovesAside(t *testing.T) {
+	f := newFixture(t)
+	f.in.Store = panicStore{f.fake}
+	c := chunkSet{}
+	bad := f.write(openEnv(c, "boom", "p0", 1, "bad"), c)
+	f.write(openEnv(c, "s1", "p1", 2, "good"), c)
+	r := &runner{in: f.in, attempts: map[string]int{}, retryAt: map[string]time.Time{}}
+	for range maxAttempts {
+		r.drain(context.Background())
+		f.now = f.now.Add(retryDelay)
+	}
+	f.turn("p1") // the envelope behind the panicking one went in
+	if _, err := os.Stat(filepath.Join(f.w.Dir, failedDir, filepath.Base(bad))); err != nil {
+		t.Errorf("panicking envelope not in failed/: %v", err)
+	}
+	if !f.logged("panicked: index out of range") {
+		t.Errorf("logs = %q, want the panic logged as a failure", f.logs)
 	}
 }
 

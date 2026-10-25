@@ -244,15 +244,15 @@ func editMatches(q store.EditQuery, e store.Edit) bool {
 		(q.AfterBlob == "" || e.AfterBlob == q.AfterBlob)
 }
 
-// LatestAfter returns the newest edit of (worktree, path) with after-content.
-func (s *Store) LatestAfter(ctx context.Context, worktree, path string) (store.Edit, error) {
-	edits, _ := s.Edits(ctx, store.EditQuery{Worktree: worktree, Path: path})
+// LatestAfter returns the newest edit q allows with after-content.
+func (s *Store) LatestAfter(ctx context.Context, q store.ChainQuery) (store.Edit, error) {
+	edits, _ := s.Edits(ctx, store.EditQuery{Worktree: q.Worktree, Path: q.Path})
 	for _, e := range edits {
-		if e.AfterChunk != "" {
+		if e.AfterChunk != "" && e.ID != q.ExcludeID && (q.At.IsZero() || !e.At.After(q.At)) {
 			return e, nil
 		}
 	}
-	return store.Edit{}, fmt.Errorf("after-content of %s: %w", path, store.ErrNotFound)
+	return store.Edit{}, fmt.Errorf("after-content of %s: %w", q.Path, store.ErrNotFound)
 }
 
 // OpenTurns lists the open turns with an edit in worktree.

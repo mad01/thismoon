@@ -318,15 +318,15 @@ func (s *Store) Edits(ctx context.Context, q store.EditQuery) ([]store.Edit, err
 	return s.ix.editList(q), nil
 }
 
-// LatestAfter returns the newest edit of path in worktree that has an
-// AfterChunk. Returns store.ErrNotFound.
-func (s *Store) LatestAfter(ctx context.Context, worktree, path string) (store.Edit, error) {
+// LatestAfter returns the newest edit q allows that has an AfterChunk.
+// Returns store.ErrNotFound.
+func (s *Store) LatestAfter(ctx context.Context, q store.ChainQuery) (store.Edit, error) {
 	if err := ctx.Err(); err != nil {
 		return store.Edit{}, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.ix.latestAfter(worktree, path)
+	return s.ix.latestAfter(q)
 }
 
 // OpenTurns lists the open turns, across sessions, that have an edit in

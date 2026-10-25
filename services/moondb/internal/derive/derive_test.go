@@ -72,6 +72,40 @@ var editHunks = []patch.Hunk{{
 
 func crlf(s string) string { return strings.ReplaceAll(s, "\n", "\r\n") }
 
+// grown is before with line 6 replaced by two lines, as grownHunks say.
+var (
+	grown      = strings.Replace(before, "\treturn 1\n", "\tx := 2\n\treturn x\n", 1)
+	grownHunks = []patch.Hunk{{
+		OldStart: 5, OldLines: 3, NewStart: 5, NewLines: 4,
+		Lines: []string{" func A() int {", "-\treturn 1", "+\tx := 2", "+\treturn x", " }"},
+	}}
+)
+
+// expandedHunks are editHunks as the harness writes them: every tab as two
+// spaces, while the file and the tool input keep the tab.
+var expandedHunks = func() []patch.Hunk {
+	h := editHunks[0]
+	lines := make([]string, len(h.Lines))
+	for i, l := range h.Lines {
+		lines[i] = strings.ReplaceAll(l, "\t", "  ")
+	}
+	h.Lines = lines
+	return []patch.Hunk{h}
+}()
+
+// editInput is the Edit tool input behind editHunks.
+var editInput = inputOf(map[string]any{
+	"file_path": "/wt/a.go", "old_string": "\treturn 1", "new_string": "\treturn 2",
+})
+
+func inputOf(v any) string {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return string(raw)
+}
+
 // padding pushes a file past the size at which the harness stops
 // shipping originalFile.
 var padding = strings.Repeat("// padding line to grow the file past ten kilobytes\n", 250)
@@ -79,12 +113,12 @@ var padding = strings.Repeat("// padding line to grow the file past ten kilobyte
 // evidence is what one test hook gathered. A nil field was not shipped;
 // a nil hunks means no patch chunk, an empty one an empty patch.
 type evidence struct {
-	tool, kind                        string
+	tool, kind, input                 string
 	hunks                             []patch.Hunk
 	original, written, observed, head *string
 	observedBlob                      string
 	chain                             *string
-	excluded                          bool
+	excluded, userModified            bool
 }
 
 func ptr(s string) *string { return &s }
@@ -107,7 +141,10 @@ func run(t *testing.T, ev evidence) (store.Edit, *store.UnattributedDelta, memCh
 		Kind:          store.EditKind(ev.kind),
 		OriginalChunk: put(ev.original), ContentChunk: put(ev.written),
 		ObservedChunk: put(ev.observed), ObservedBlob: ev.observedBlob, HeadChunk: put(ev.head),
-		Excluded: ev.excluded,
+		Excluded: ev.excluded, UserModified: ev.userModified,
+	}
+	if ev.input != "" {
+		p.Input = json.RawMessage(ev.input)
 	}
 	if ev.observed != nil {
 		p.ObservedBlob = gitlink.BlobID([]byte(*ev.observed))
@@ -129,13 +166,16 @@ func run(t *testing.T, ev evidence) (store.Edit, *store.UnattributedDelta, memCh
 
 // chainOf fakes the store's chain lookup: the previous edit's after-content
 // is prev, or there is no previous edit when prev is nil.
-func chainOf(c memChunks, prev *string) func(context.Context, string, string) (store.Edit, error) {
-	return func(_ context.Context, worktree, path string) (store.Edit, error) {
+func chainOf(
+	c memChunks,
+	prev *string,
+) func(context.Context, store.ChainQuery) (store.Edit, error) {
+	return func(_ context.Context, q store.ChainQuery) (store.Edit, error) {
 		if prev == nil {
 			return store.Edit{}, store.ErrNotFound
 		}
-		if worktree != "/wt" || path != "a.go" {
-			return store.Edit{}, fmt.Errorf("chain asked for %s %s", worktree, path)
+		if q.Worktree != "/wt" || q.Path != "a.go" {
+			return store.Edit{}, fmt.Errorf("chain asked for %s %s", q.Worktree, q.Path)
 		}
 		k, _ := c.Put(context.Background(), []byte(*prev))
 		return store.Edit{ID: "toolu_0:0", AfterChunk: k}, nil
@@ -332,6 +372,299 @@ func TestEdit(t *testing.T) {
 			},
 		},
 		{
+			name: "tab-expanded hunks, original shipped",
+			ev: evidence{
+				tool: "Edit", kind: "update", input: editInput, hunks: expandedHunks,
+				original: ptr(before), observed: ptr(after), chain: ptr(stale),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeOriginal,
+				before: ptr(before), after: ptr(after), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "tab-expanded hunks, previous edit's after",
+			ev: evidence{
+				tool: "Edit", kind: "update", input: editInput, hunks: expandedHunks,
+				observed: ptr(bigAfter), chain: ptr(bigBefore),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeChain,
+				before: ptr(bigBefore), after: ptr(bigAfter), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "occurrence rule rejects a stale chain",
+			ev: evidence{
+				tool: "Edit", kind: "update", input: editInput, hunks: expandedHunks,
+				observed: ptr(after), chain: ptr(stale), head: ptr(before),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeHead,
+				before: ptr(before), after: ptr(after), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "occurrence rule rejects a chain with the old text twice",
+			ev: evidence{
+				tool: "Edit", kind: "update", input: editInput, hunks: expandedHunks,
+				observed: ptr(after), chain: ptr(before + "\treturn 1\n"),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeObserved,
+				before: ptr(before), after: ptr(after), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "disk read with the new text twice cannot be undone",
+			ev: evidence{
+				tool: "Edit", kind: "update", input: editInput, hunks: expandedHunks,
+				observed: ptr(after + "\treturn 2\n"),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeUnknown,
+				after: ptr(after + "\treturn 2\n"), eol: "lf",
+			},
+		},
+		{
+			name: "replace_all swaps every occurrence",
+			ev: evidence{
+				tool: "Edit", kind: "update",
+				input: inputOf(map[string]any{
+					"old_string": "\tx", "new_string": "\ty", "replace_all": true,
+				}),
+				hunks: []patch.Hunk{{
+					OldStart: 1, OldLines: 2, NewStart: 1, NewLines: 2,
+					Lines: []string{"-a  x", "-b  x", "+a  y", "+b  y"},
+				}},
+				original: ptr("a\tx\nb\tx\n"), observed: ptr("a\ty\nb\ty\n"),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeOriginal,
+				before: ptr("a\tx\nb\tx\n"), after: ptr("a\ty\nb\ty\n"),
+				observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "without replace_all two occurrences reject the original",
+			ev: evidence{
+				tool: "Edit", kind: "update",
+				input: inputOf(map[string]any{"old_string": "\tx", "new_string": "\ty"}),
+				hunks: []patch.Hunk{{
+					OldStart: 1, OldLines: 1, NewStart: 1, NewLines: 1,
+					Lines: []string{"-a  x", "+a  y"},
+				}},
+				original: ptr("a\tx\nb\tx\n"), observed: ptr("a\ty\nb\tx\n"),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeUnknown,
+				after: ptr("a\ty\nb\tx\n"), eol: "lf",
+			},
+		},
+		{
+			name: "multi-edit applies its edits in order",
+			ev: evidence{
+				tool: "MultiEdit", kind: "update",
+				input: inputOf(map[string]any{"edits": []map[string]any{
+					{"old_string": "\treturn 1", "new_string": "\treturn 9"},
+					{"old_string": "\treturn 9", "new_string": "\treturn 2"},
+					{"old_string": `( "b" )`, "new_string": `("b")`},
+				}}),
+				hunks: expandedHunks, chain: ptr(before), observed: ptr(formatted),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeChain,
+				before: ptr(before), after: ptr(formatted), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "multi-edit undone from the disk read",
+			ev: evidence{
+				tool: "MultiEdit", kind: "update",
+				input: inputOf(map[string]any{"edits": []map[string]any{
+					{"old_string": "\treturn 1", "new_string": "\treturn 2"},
+					{"old_string": `( "b" )`, "new_string": `("b")`},
+				}}),
+				hunks: expandedHunks, observed: ptr(formatted),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeObserved,
+				before: ptr(before), after: ptr(formatted), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "write over a tab-indented file, tab-expanded hunks",
+			ev: evidence{
+				tool: "Write", kind: "update", input: inputOf(map[string]any{"content": after}),
+				hunks: expandedHunks, written: ptr(after), observed: ptr(after),
+				chain: ptr(before),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeChain,
+				before: ptr(before), after: ptr(after), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "tab-expanded hunks without an input confirm the before only",
+			ev: evidence{
+				tool: "Edit", kind: "update", hunks: expandedHunks,
+				original: ptr(before), observed: ptr(after),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeOriginal,
+				before: ptr(before), after: ptr(after), eol: "lf",
+			},
+		},
+		{
+			name: "crlf file, multi-line old_string matched on the LF view",
+			ev: evidence{
+				tool: "Edit", kind: "update", hunks: editHunks,
+				input: inputOf(map[string]any{
+					"old_string": "func A() int {\n\treturn 1", "new_string": "func A() int {\n\treturn 2",
+				}),
+				original: ptr(crlf(before)), observed: ptr(crlf(after)),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeOriginal,
+				before: ptr(crlf(before)), after: ptr(crlf(after)), observed: matched, eol: "crlf",
+			},
+		},
+		{
+			name: "crlf file, new_string's added line gets CRLF",
+			ev: evidence{
+				tool: "Edit", kind: "update", hunks: grownHunks,
+				input: inputOf(map[string]any{
+					"old_string": "\treturn 1", "new_string": "\tx := 2\n\treturn x",
+				}),
+				original: ptr(crlf(before)), observed: ptr(crlf(grown)),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeOriginal,
+				before: ptr(crlf(before)), after: ptr(crlf(grown)), observed: matched, eol: "crlf",
+			},
+		},
+		{
+			name: "crlf disk read undone on its LF view",
+			ev: evidence{
+				tool: "Edit", kind: "update", hunks: expandedHunks,
+				input: inputOf(map[string]any{
+					"old_string": "func A() int {\n\treturn 1", "new_string": "func A() int {\n\treturn 2",
+				}),
+				observed: ptr(crlf(after)),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeObserved,
+				before: ptr(crlf(before)), after: ptr(crlf(after)), observed: matched, eol: "crlf",
+			},
+		},
+		{
+			name: "text missing from the candidate, the hunks stand in",
+			ev: evidence{
+				tool: "Edit", kind: "update",
+				input: inputOf(map[string]any{
+					"old_string": `say("hi")`, "new_string": `say("bye")`,
+				}),
+				hunks: []patch.Hunk{{
+					OldStart: 1, OldLines: 1, NewStart: 1, NewLines: 1,
+					Lines: []string{"-say(“hi”)", "+say(“bye”)"},
+				}},
+				original: ptr("say(“hi”)\n"), observed: ptr("say(“bye”)\n"),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeOriginal,
+				before: ptr("say(“hi”)\n"), after: ptr("say(“bye”)\n"),
+				observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "hunks reject a chain that holds old_string elsewhere",
+			ev: evidence{
+				tool: "Edit", kind: "update",
+				input: inputOf(map[string]any{"old_string": "a := 1", "new_string": "a := 2"}),
+				hunks: []patch.Hunk{{
+					OldStart: 1, OldLines: 1, NewStart: 1, NewLines: 1,
+					Lines: []string{"-a := 1", "+a := 2"},
+				}},
+				chain: ptr("zzz\nqqq\na := 1\n"),
+			},
+			want: want{kind: store.EditUpdate, source: store.BeforeUnknown},
+		},
+		{
+			name: "replace_all is undone from the disk read by the hunks",
+			ev: evidence{
+				tool: "Edit", kind: "update",
+				input: inputOf(map[string]any{
+					"old_string": "x", "new_string": "y", "replace_all": true,
+				}),
+				hunks: []patch.Hunk{{
+					OldStart: 1, OldLines: 1, NewStart: 1, NewLines: 1,
+					Lines: []string{"-x := y", "+y := y"},
+				}},
+				observed: ptr("y := y\n"),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeObserved,
+				before: ptr("x := y\n"), after: ptr("y := y\n"), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "a deletion is undone from the disk read by the hunks",
+			ev: evidence{
+				tool: "Edit", kind: "update",
+				input: inputOf(map[string]any{"old_string": "b\n", "new_string": ""}),
+				hunks: []patch.Hunk{{
+					OldStart: 1, OldLines: 3, NewStart: 1, NewLines: 2,
+					Lines: []string{" a", "-b", " c"},
+				}},
+				observed: ptr("a\nc\n"),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeObserved,
+				before: ptr("a\nb\nc\n"), after: ptr("a\nc\n"), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "user-modified edit takes the hunks, not the input",
+			ev: evidence{
+				tool: "Edit", kind: "update", userModified: true,
+				input: inputOf(map[string]any{"old_string": "a := 1", "new_string": "a := 2"}),
+				hunks: []patch.Hunk{{
+					OldStart: 1, OldLines: 1, NewStart: 1, NewLines: 1,
+					Lines: []string{"-a := 1", "+c := 3"},
+				}},
+				original: ptr("a := 1\n"), observed: ptr("c := 3\n"),
+			},
+			want: want{
+				kind: store.EditUpdate, source: store.BeforeOriginal,
+				before: ptr("a := 1\n"), after: ptr("c := 3\n"), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "edit with an empty old_string creates the file",
+			ev: evidence{
+				tool: "Edit", kind: "update",
+				input:    inputOf(map[string]any{"old_string": "", "new_string": "hello\n"}),
+				observed: ptr("hello\n"),
+			},
+			want: want{
+				kind: store.EditCreate, source: store.BeforeAbsent,
+				after: ptr("hello\n"), observed: matched, eol: "lf",
+			},
+		},
+		{
+			name: "imported edit create, hunks without a disk read",
+			ev: evidence{
+				tool: "Edit", kind: "update",
+				input: inputOf(map[string]any{"old_string": "", "new_string": "hello\n"}),
+				hunks: []patch.Hunk{{
+					OldStart: 0, OldLines: 0, NewStart: 1, NewLines: 1, Lines: []string{"+hello"},
+				}},
+			},
+			want: want{
+				kind: store.EditCreate, source: store.BeforeAbsent, after: ptr("hello\n"), eol: "lf",
+			},
+		},
+		{
 			name: "notebook edit has the disk read only",
 			ev: evidence{
 				tool: "NotebookEdit", kind: "update", observed: ptr("{\"cells\": []}\n"),
@@ -462,7 +795,7 @@ func TestEditErrors(t *testing.T) {
 
 	d := &Deriver{
 		Chunks: c,
-		LatestAfter: func(context.Context, string, string) (store.Edit, error) {
+		LatestAfter: func(context.Context, store.ChainQuery) (store.Edit, error) {
 			return store.Edit{}, boom
 		},
 	}
@@ -485,33 +818,29 @@ func TestEditErrors(t *testing.T) {
 	}
 }
 
-func TestEditChainSkipsItself(t *testing.T) {
-	// A replayed envelope finds its own Edit at the head of the chain. A line
-	// inserted above identical lines fits its own after-content too.
-	insertHunks := []patch.Hunk{{
-		OldStart: 1, OldLines: 3, NewStart: 1, NewLines: 4, Lines: []string{"+a", " a", " a", " a"},
-	}}
+func TestEditChainQuery(t *testing.T) {
+	// The chain is the latest edit of the path made no later than this one,
+	// and never this one: a replayed envelope finds its own Edit recorded.
 	c := memChunks{}
-	raw, _ := json.Marshal(insertHunks)
-	self, _ := c.Put(context.Background(), []byte("a\na\na\na\n"))
+	raw, _ := json.Marshal(editHunks)
 	p := &spool.EditPayload{
-		Tool:      "Edit",
-		ToolUseID: "toolu_1",
-		Path:      "a.go",
-		Kind:      store.EditUpdate,
+		Tool: "Edit", ToolUseID: "toolu_1", Path: "a.go", Kind: store.EditUpdate,
+		Location: store.Location{Worktree: "/wt"},
 	}
 	p.PatchChunk, _ = c.Put(context.Background(), raw)
+	var asked []store.ChainQuery
 	d := &Deriver{
 		Chunks: c,
-		LatestAfter: func(context.Context, string, string) (store.Edit, error) {
-			return store.Edit{ID: "toolu_1:0", AfterChunk: self}, nil
+		LatestAfter: func(_ context.Context, q store.ChainQuery) (store.Edit, error) {
+			asked = append(asked, q)
+			return store.Edit{}, store.ErrNotFound
 		},
 	}
-	e, _, err := d.Edit(context.Background(), envelope(p))
-	if err != nil {
+	if _, _, err := d.Edit(context.Background(), envelope(p)); err != nil {
 		t.Fatal(err)
 	}
-	if e.BeforeSource != store.BeforeUnknown {
-		t.Errorf("BeforeSource = %s, want %s", e.BeforeSource, store.BeforeUnknown)
+	want := store.ChainQuery{Worktree: "/wt", Path: "a.go", At: at, ExcludeID: "toolu_1:0"}
+	if len(asked) != 1 || asked[0] != want {
+		t.Errorf("chain lookups = %+v, want one %+v", asked, want)
 	}
 }

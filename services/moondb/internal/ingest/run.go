@@ -7,7 +7,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"time"
+
+	"github.com/mad01/thismoon/services/moondb/internal/spool"
 )
 
 // Run pacing. A failed envelope waits retryDelay before its next attempt
@@ -27,8 +30,8 @@ const (
 // envelope present, then each one Spool.Watch reports, in name order; each
 // ingested envelope is removed and every drained batch ends with a
 // Spool.Sweep, as does a drain at least every minute. An envelope that
-// fails to decode or ingest is logged and left for a later attempt without
-// holding up the ones behind it. After maxAttempts it is moved to
+// fails to decode or ingest, or panics while ingesting, is logged and left
+// for a later attempt without holding up the ones behind it. After maxAttempts it is moved to
 // <spool>/failed/ with the envelope file only; its chunks go with the next
 // sweep. A failure while Store.Ping also fails is the store's, not the
 // envelope's: the batch stops and nothing is counted against it. Run
@@ -104,7 +107,7 @@ func (r *runner) ingest(ctx context.Context, path string) bool {
 		return true // removed since the listing
 	}
 	if err == nil {
-		err = r.in.Ingest(ctx, env)
+		err = r.guarded(ctx, env)
 	}
 	if err == nil {
 		r.clear(path)
@@ -123,6 +126,18 @@ func (r *runner) ingest(ctx context.Context, path string) bool {
 	}
 	r.fail(path, err)
 	return true
+}
+
+// guarded runs Ingest with a panic turned into an error, so an envelope
+// that trips a bug uses up its attempts and moves aside like any other
+// failure instead of crashing serve on every restart.
+func (r *runner) guarded(ctx context.Context, env spool.Envelope) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("ingest: %s panicked: %v\n%s", env.ID, p, debug.Stack())
+		}
+	}()
+	return r.in.Ingest(ctx, env)
 }
 
 // fail counts a failed attempt and moves the envelope aside once it has

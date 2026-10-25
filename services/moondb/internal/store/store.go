@@ -25,10 +25,11 @@ type Store interface {
 	Turn(ctx context.Context, id string) (TurnDetail, error)
 	// Edits lists edits newest first, narrowed by q.
 	Edits(ctx context.Context, q EditQuery) ([]Edit, error)
-	// LatestAfter returns the most recent Edit for (worktree, path) that has
-	// an AfterChunk, the head of the before-derivation chain. Returns
+	// LatestAfter returns the most recent Edit q allows that has an
+	// AfterChunk, the head of the before-derivation chain: same worktree
+	// and path, At at or before q.At, ID other than q.ExcludeID. Returns
 	// ErrNotFound when the path has no such edit.
-	LatestAfter(ctx context.Context, worktree, path string) (Edit, error)
+	LatestAfter(ctx context.Context, q ChainQuery) (Edit, error)
 	// OpenTurns lists the turns still open in the worktree, across sessions.
 	// Two sessions with open turns in one worktree make a snapshot delta
 	// ambiguous.

@@ -1,11 +1,12 @@
 // Package derive turns what the capture hook shipped for one file into the
-// Edit record serve appends. The hook ships evidence: the harness's hunks,
-// the pre-edit file when the harness had it, the content a Write carried,
-// the file at HEAD, and a disk read taken right after the tool ran. The
-// Deriver takes the before-content from the first source the hunks fit,
-// derives the after-content, and records a disagreement with the disk read
-// as an UnattributedDelta, because something besides the tool wrote the
-// file. Evidence that does not fit degrades the record; it never fails it.
+// Edit record serve appends. The hook ships evidence: the tool input, the
+// harness's hunks, the pre-edit file when the harness had it, the file at
+// HEAD, and a disk read taken right after the tool ran. The Deriver takes
+// the before-content from the first source the tool call fits, derives the
+// after-content from the tool input where it can, and records a
+// disagreement with the disk read as an UnattributedDelta, because
+// something besides the tool wrote the file. Evidence that does not fit
+// degrades the record; it never fails it.
 package derive
 
 import (
@@ -28,7 +29,7 @@ const toolWrite = "Write"
 // (store.Store.LatestAfter); nil skips the chain source.
 type Deriver struct {
 	Chunks      store.Chunks
-	LatestAfter func(ctx context.Context, worktree, path string) (store.Edit, error)
+	LatestAfter func(ctx context.Context, q store.ChainQuery) (store.Edit, error)
 }
 
 // content is file bytes that may be unknown; ok tells an empty file from
@@ -45,8 +46,10 @@ func known(b []byte) content {
 	return content{data: b, ok: true}
 }
 
-// inputs is an edit payload with its chunks loaded.
+// inputs is an edit payload with its chunks loaded and its tool input read.
 type inputs struct {
+	// edits are the replacements an Edit or MultiEdit input asks for.
+	edits    []replacement
 	hunks    []patch.Hunk
 	original content
 	// written is the after-content the tool input carried (Write).
@@ -58,10 +61,13 @@ type inputs struct {
 // Edit derives the Edit for an edit envelope and, when the disk read after
 // the tool disagrees with the derived after-content, the UnattributedDelta
 // that records the difference. The before-content is the first source the
-// hunks fit: the harness's original, the previous Edit's after-content for
-// the path, the file at HEAD, or the disk read with the hunks reversed;
-// BeforeUnknown when none does. An excluded payload yields an Edit without
-// content. Errors come from the chunk store and the chain lookup only.
+// tool call fits (see fit): nothing for a create, the harness's original,
+// the after-content of the latest earlier Edit of the path, the file at
+// HEAD, or the disk read with the call undone; BeforeUnknown when none
+// does. An edit the person changed in the permission dialog is fitted by
+// its hunks alone (see load). An excluded payload yields an
+// Edit without content. Errors come from the chunk store and the chain
+// lookup only.
 func (d *Deriver) Edit(
 	ctx context.Context,
 	env spool.Envelope,
@@ -85,7 +91,7 @@ func (d *Deriver) Edit(
 	if err != nil {
 		return store.Edit{}, nil, err
 	}
-	if len(in.hunks) == 0 && !in.written.ok {
+	if !checkable(in) && !in.written.ok {
 		return d.withoutPatch(ctx, e, p, in)
 	}
 	return d.withPatch(ctx, e, p, in)
@@ -113,9 +119,10 @@ func identity(env spool.Envelope, p *spool.EditPayload) store.Edit {
 	}
 }
 
-// withoutPatch records a tool that reported neither hunks nor content, such
-// as a notebook edit: the disk read is all there is, so the after-content
-// stays unknown and only the harness's original can stand as the before.
+// withoutPatch records a tool that reported neither hunks, replacements nor
+// content, such as a notebook edit: the disk read is all there is, so the
+// after-content stays unknown and only the harness's original can stand as
+// the before.
 func (d *Deriver) withoutPatch(
 	ctx context.Context,
 	e store.Edit,
@@ -136,14 +143,15 @@ func (d *Deriver) withoutPatch(
 	return e, nil, nil
 }
 
-// withPatch records a tool that reported hunks or its whole after-content.
+// withPatch records a tool that reported hunks, replacements or its whole
+// after-content.
 func (d *Deriver) withPatch(
 	ctx context.Context,
 	e store.Edit,
 	p *spool.EditPayload,
 	in inputs,
 ) (store.Edit, *store.UnattributedDelta, error) {
-	got, err := d.chooseBefore(ctx, e.ID, p, in)
+	got, err := d.chooseBefore(ctx, e, p, in)
 	if err != nil {
 		return store.Edit{}, nil, err
 	}
@@ -179,13 +187,16 @@ func (d *Deriver) withPatch(
 
 // kind decides what the tool call did: the payload's word for a create, a
 // delete the payload reports and the missing disk read confirms, a create
-// for a Write with no kind and no explainable before, an update otherwise.
+// when nothing existed before, a create for a Write with no kind and no
+// explainable before, an update otherwise.
 func kind(p *spool.EditPayload, got derived) store.EditKind {
 	switch {
 	case p.Kind == store.EditCreate:
 		return store.EditCreate
 	case deleted(p):
 		return store.EditDelete
+	case got.source == store.BeforeAbsent:
+		return store.EditCreate
 	case p.Kind == "" && p.Tool == toolWrite && got.source == store.BeforeUnknown:
 		return store.EditCreate
 	default:
@@ -199,16 +210,16 @@ func deleted(p *spool.EditPayload) bool {
 	return p.Kind == store.EditDelete && p.ObservedChunk == "" && p.ObservedBlob == ""
 }
 
-// pickAfter chooses the after-content: what a Write carried, else the hunks
-// applied to the before, else, as a last resort, the disk read. A delete
-// has none.
+// pickAfter chooses the after-content: what a Write carried, else what fit
+// derived from the chosen before, else, as a last resort, the disk read. A
+// delete has none.
 func pickAfter(k store.EditKind, in inputs, got derived) (after content, fromObserved bool) {
 	switch {
 	case k == store.EditDelete:
 		return content{}, false
 	case in.written.ok:
 		return in.written, false
-	case got.before.ok:
+	case got.applied.ok:
 		return got.applied, false
 	case in.observed.ok:
 		return in.observed, true
@@ -219,9 +230,14 @@ func pickAfter(k store.EditKind, in inputs, got derived) (after content, fromObs
 
 // load resolves the payload's chunk keys. A patch that does not parse
 // counts as absent: the Edit keeps PatchChunk, so the raw hunks survive
-// for a later derivation.
+// for a later derivation. The replacements of an edit the person changed
+// in the permission dialog are left out: the tool input is the model's
+// proposal, and only the hunks describe what was written.
 func (d *Deriver) load(ctx context.Context, p *spool.EditPayload) (inputs, error) {
 	var in inputs
+	if !p.UserModified {
+		in.edits = replacements(p.Tool, p.Input)
+	}
 	raw, err := d.get(ctx, p.PatchChunk)
 	if err != nil {
 		return inputs{}, err
