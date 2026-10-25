@@ -202,6 +202,33 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"edits": edits})
 }
 
+// handleAnnotate answers every line of one file on disk. worktree and path
+// are required; repo is optional and narrows the content match. The query
+// checks the rest: an absolute worktree with recorded edits and a regular
+// file inside it.
+func (s *Server) handleAnnotate(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	req := query.AnnotateRequest{
+		Worktree: q.Get("worktree"),
+		Repo:     q.Get("repo"),
+		Path:     q.Get("path"),
+	}
+	switch {
+	case req.Path == "":
+		writeErr(w, http.StatusBadRequest, errors.New("moondb: path is required"))
+		return
+	case req.Worktree == "":
+		writeErr(w, http.StatusBadRequest, errors.New("moondb: worktree is required"))
+		return
+	}
+	res, err := s.query.Annotate(r.Context(), req)
+	if err != nil {
+		writeBackendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 // handleChunk serves a chunk's raw bytes. The key is validated before the
 // store sees it, so a malformed key is a 400 and never a path lookup.
 func (s *Server) handleChunk(w http.ResponseWriter, r *http.Request) {

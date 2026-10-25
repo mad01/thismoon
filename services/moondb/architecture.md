@@ -104,7 +104,8 @@ backend to the same behavior.
 
 HTTP: `GET /` and `/app.js` (read-only web page), `GET /api/sessions`,
 `GET /api/sessions/{id}`, `GET /api/turns/{id}`, `GET /api/edits`,
-`GET /api/why`, `GET /api/chunks/{sha}`, `GET /healthz`, `GET /version`,
+`GET /api/why`, `GET /api/history`, `GET /api/annotate`,
+`GET /api/chunks/{sha}`, `GET /healthz`, `GET /version`,
 `GET /webkit/`. There is no write endpoint. CLI: `moondb serve`, `record`,
 `mcp`, `why <path>:<line>`, `history <path>`, `sessions`, `doctor`, `docs`,
 `version`. MCP tools: `moondb_why`, `moondb_history`, `moondb_turn`,

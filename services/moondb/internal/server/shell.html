@@ -7,27 +7,105 @@
 <script src="/webkit/boot.js"></script>
 <link href="/webkit/webkit.css" rel="stylesheet">
 <style>
-/* Palette, header chrome, page header, table, card and badge visuals all
-   come from /webkit/webkit.css. Only moondb-specific layout lives here. The
-   sessions list and the session view are rendered client-side by /app.js
-   into <div id="app">. */
+/* Palette, header chrome, page header, table, card, panel, section and badge
+   visuals all come from /webkit/webkit.css. Only moondb-specific layout
+   lives here, and every colour reads a webkit role, so the page follows the
+   theme in light and dark. The four views (sessions, session, turn, file)
+   are rendered client-side by /app.js into <div id="app">. */
 .wrap{padding-top:1.5rem}
 .hint{color:var(--text-3);font-size:0.85rem;margin:0 0 1.25rem}
-.hint code{background:var(--chip-bg);padding:0.05rem 0.35rem;border-radius:3px}
-.empty{color:var(--text-3);font-size:0.9375rem;padding:2rem 0}
-.back{display:inline-block;margin:0 0 1rem;font-size:0.85rem;color:var(--accent)}
+.hint code,.inline-code{font-family:var(--mono);background:var(--chip-bg);padding:0.05rem 0.35rem;border-radius:3px;font-size:0.85em}
+.empty{color:var(--text-3);font-size:0.9375rem;padding:1.25rem 0}
+.back{display:inline-block;margin:0 0.75rem 1rem 0;font-size:0.85rem;color:var(--primary)}
 .muted{color:var(--text-3)}
 .mono{font-family:var(--mono);font-size:0.8rem}
 .num{font-variant-numeric:tabular-nums;text-align:right}
-.turns{display:flex;flex-direction:column;gap:0.75rem;margin-top:1.5rem}
-.t-head{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem}
-.t-prompt{font-size:0.9375rem;font-weight:600;color:var(--text-1);margin-bottom:0.5rem}
-.t-edits{margin-top:0.5rem}
-.chunk{margin-top:0.6rem;max-height:24rem;overflow:auto;font-family:var(--mono);font-size:0.78rem;background:var(--chip-bg);padding:0.6rem;border-radius:6px;white-space:pre}
+.nowrap{white-space:nowrap}
+.row{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap}
+.spaced{margin-top:1.5rem}
+#app a{color:var(--primary);text-underline-offset:2px}
+
+/* filters on the sessions list */
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:0.6rem;margin:0 0 1.25rem}
+.filters label{font-size:0.8rem;color:var(--text-3);display:flex;align-items:center;gap:0.4rem}
+.filters input,.filters select{appearance:none;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:0.4rem 0.7rem;font-family:inherit;font-size:0.85rem;color:var(--text-1)}
+.filters input{min-width:18rem}
+.filters input:focus,.filters select:focus{outline:none;border-color:var(--primary)}
+.more{margin-top:1rem}
+
+/* prose blocks: prompts and final messages keep their line breaks */
+.prose{white-space:pre-wrap;word-break:break-word;font-size:0.9375rem;line-height:1.7;color:var(--text-1)}
+.prompt-cell{font-weight:500;color:var(--text-1)}
+.prompt-cell a{color:inherit;text-decoration:none}
+.prompt-cell a:hover{color:var(--primary)}
+
+/* edits grouped by worktree, then path */
+.wt-head{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin:1.5rem 0 0.75rem;padding-bottom:0.4rem;border-bottom:1px solid var(--border)}
+.wt-head code{font-family:var(--mono);font-size:0.85rem;color:var(--text-1)}
+.path-head{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin:1rem 0 0.5rem}
+.path-head a{font-family:var(--mono);font-size:0.85rem;font-weight:600}
+.e-head{display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;margin-bottom:0.6rem;font-size:0.8rem}
+.e-note{font-size:0.8rem;color:var(--text-3);margin:0.25rem 0}
+.e-links{margin-left:auto;font-size:0.75rem}
+.e-links a{color:var(--text-3);margin-left:0.6rem}
+.e-links a:hover{color:var(--primary)}
+
+/* unified diff, rendered from structuredPatch hunks or a unified diff text */
+.diff{overflow-x:auto;border:1px solid var(--code-border);border-radius:8px;background:var(--code-bg);font-family:var(--mono);font-size:0.76rem;line-height:1.5}
+.diff table{border-collapse:collapse;width:100%}
+.diff td{padding:0 0.6rem;vertical-align:top;border:none}
+.diff code{font-family:inherit;font-size:inherit;background:none;padding:0;white-space:pre;tab-size:4;color:var(--text-1)}
+.diff .d-ln{width:1%;text-align:right;user-select:none;white-space:nowrap;padding:0 0.45rem}
+.diff .d-ln code{color:var(--text-3)}
+.diff .d-sign{width:1%;user-select:none;padding:0 0.2rem 0 0.4rem}
+.diff tr.d-hunk td{background:var(--code-header-bg);padding:0.15rem 0.6rem}
+.diff tr.d-hunk code{color:var(--text-3)}
+.diff tr.d-add td{background:color-mix(in srgb,var(--green) 14%,transparent)}
+.diff tr.d-add .d-sign code{color:var(--green)}
+.diff tr.d-del td{background:color-mix(in srgb,var(--red) 14%,transparent)}
+.diff tr.d-del .d-sign code{color:var(--red)}
+.diff tr.d-mark code{color:var(--text-3);font-style:italic}
+.diff tr.d-why{cursor:pointer}
+.diff tr.d-why:hover td{background:color-mix(in srgb,var(--green) 26%,transparent)}
+.diff tr.d-whyrow td{padding:0.5rem 0.6rem;background:var(--card-bg);white-space:normal}
+.diff-more{margin-top:0.5rem}
+
+/* the inline answer to "why is this line here?" */
+.why-card{border:1px solid var(--border);border-left:3px solid var(--primary);border-radius:8px;padding:0.6rem 0.8rem;font-size:0.82rem;line-height:1.55;color:var(--text-1);background:var(--card-bg)}
+.why-card .row{margin-bottom:0.25rem}
+.why-card ol{margin:0.35rem 0 0 1.2rem;padding:0}
+.why-card li{margin:0.15rem 0}
+
+/* raw transcript */
+.raw{max-height:32rem;overflow:auto;font-family:var(--mono);font-size:0.74rem;background:var(--code-bg);border:1px solid var(--code-border);border-radius:6px;padding:0.6rem;white-space:pre-wrap;word-break:break-all;margin:0 0 0.75rem}
+.raw code{font-family:inherit;background:none;padding:0}
+
+/* file view: annotation with a turn band per line, and the history timeline */
+.legend{display:flex;flex-direction:column;gap:0.3rem;margin:0 0 1rem;font-size:0.82rem}
+.legend .row{flex-wrap:nowrap}
+.swatch{display:inline-block;flex:none;width:0.8rem;height:0.8rem;border-radius:3px;background:var(--band)}
+.swatch.content{background:repeating-linear-gradient(135deg,var(--band) 0 3px,transparent 3px 5px);border:1px solid var(--band)}
+.annot .a-gut{width:1%;white-space:nowrap;padding:0 0.5rem 0 0.6rem;border-left:4px solid transparent}
+.annot .a-gut a{color:var(--text-3);text-decoration:none}
+.annot .a-gut a:hover{color:var(--primary)}
+.annot tr[data-turn]{cursor:pointer}
+.annot tr[data-turn] .a-gut{border-left-color:var(--band)}
+.annot tr[data-method="content"] .a-gut{border-left-style:dashed}
+.annot tr[data-turn]:hover td{background:color-mix(in srgb,var(--band) 14%,transparent)}
+.timeline{list-style:none;margin:0;padding:0 0 0 1rem;border-left:2px solid var(--border)}
+.timeline li{position:relative;margin:0 0 1rem;padding-left:0.9rem}
+.timeline li::before{content:"";position:absolute;left:-1.42rem;top:0.35rem;width:0.7rem;height:0.7rem;border-radius:50%;background:var(--band, var(--border-hover));border:2px solid var(--bg)}
+.timeline .row{font-size:0.8rem}
+.timeline .tl-prompt{font-size:0.88rem;color:var(--text-1);margin:0.15rem 0}
+.timeline .tl-prompt a{color:inherit}
+.timeline .tl-prompt a:hover{color:var(--primary)}
+.timeline .diff{margin-top:0.5rem}
+.linkish{background:none;border:none;padding:0;font:inherit;font-size:0.78rem;color:var(--primary);cursor:pointer}
+.linkish:hover{text-decoration:underline}
 </style>
 </head>
 <body>
-<wk-header brand="moondb" title="Sessions"><a data-nav href="/">Sessions</a><a data-nav href="/webkit/themes">Themes</a></wk-header>
+<wk-header brand="moondb" page-width="1240"><a data-nav href="/">Sessions</a><a data-nav href="/webkit/themes">Themes</a></wk-header>
 <main class="wrap"><div id="app"></div></main>
 <wk-toast-host id="toast-host"></wk-toast-host>
 <script src="/webkit/webkit.js"></script>

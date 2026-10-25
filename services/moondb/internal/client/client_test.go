@@ -227,3 +227,28 @@ func TestNonJSONErrorFallsBackToStatus(t *testing.T) {
 		t.Errorf("err = %v, want the status fallback", err)
 	}
 }
+
+func TestAnnotate(t *testing.T) {
+	h := newHarness(t)
+	req := query.AnnotateRequest{
+		Worktree: servertest.Worktree,
+		Repo:     servertest.Repo,
+		Path:     servertest.PathA,
+	}
+	got, err := h.client.Annotate(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Annotate: %v", err)
+	}
+	if len(got.Lines) != 1 || got.Lines[0].EditID != servertest.EditA ||
+		got.Lines[0].Method != query.MethodContent {
+		t.Errorf("annotate = %+v", got)
+	}
+	if last := h.query.LastAnnotate(); last != req {
+		t.Errorf("server parsed %+v, want %+v", last, req)
+	}
+	_, err = h.client.Annotate(context.Background(), query.AnnotateRequest{Path: "a.go"})
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusBadRequest {
+		t.Errorf("Annotate without a worktree = %v, want a 400 APIError", err)
+	}
+}
