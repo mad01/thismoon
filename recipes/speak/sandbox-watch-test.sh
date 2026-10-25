@@ -45,7 +45,7 @@ reset_batch() {
 
 # base64 of a command, the way srt encodes it into the CMD64 tag.
 b64() {
-  printf '%s' "$1" | /usr/bin/base64
+  printf '%s' "$1" | /usr/bin/base64 | tr -d '\n'   # GNU base64 wraps at 76
 }
 
 # One ndjson stream line, JSON-escaped the way `log stream` writes it: "/"

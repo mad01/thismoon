@@ -100,7 +100,7 @@ RE_RAW_MARKER='.*SRT_RUN=([A-Za-z0-9._-]+)'
 # The CMD64 tag's base64 payload, decoded. Robust to missing "=" padding and to
 # a tag the log cut short (no _END_): the payload stops at the first character
 # outside the base64 alphabet and is re-padded. A cut payload can end in a
-# partial quantum with stray low bits, which base64 -D rejects outright, so
+# partial quantum with stray low bits, which base64 -d rejects outright, so
 # that case falls back to decoding only the complete 4-character quanta. The
 # label sits at the start of the command, so the lost tail never matters.
 decode_cmd64() {
@@ -109,13 +109,13 @@ decode_cmd64() {
   b64=${b64%%[!A-Za-z0-9+/=]*}
   b64=${b64%%=*}
   case $(( ${#b64} % 4 )) in
-    2) out=$(/usr/bin/base64 -D <<< "$b64==" 2>/dev/null) ;;
-    3) out=$(/usr/bin/base64 -D <<< "$b64=" 2>/dev/null) ;;
+    2) out=$(/usr/bin/base64 -d <<< "$b64==" 2>/dev/null) ;;
+    3) out=$(/usr/bin/base64 -d <<< "$b64=" 2>/dev/null) ;;
   esac
   if [ -z "$out" ]; then
     b64=${b64:0:$(( ${#b64} / 4 * 4 ))}
     [ -n "$b64" ] || return 1
-    out=$(/usr/bin/base64 -D <<< "$b64" 2>/dev/null)
+    out=$(/usr/bin/base64 -d <<< "$b64" 2>/dev/null)
   fi
   [ -n "$out" ] || return 1
   printf '%s' "$out"
