@@ -82,6 +82,19 @@ func (s *Server) handleSessionTrace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
+// handleSessionScorecard answers how a session spent its context: its
+// totals, tools, csl searches, reads, belt hints and agents, and the flags
+// they raise. A peer that does not answer leaves its part null, never a
+// failed request.
+func (s *Server) handleSessionScorecard(w http.ResponseWriter, r *http.Request) {
+	sc, err := s.query.SessionScorecard(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeBackendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sc)
+}
+
 func (s *Server) handleEdits(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	since, limit, err := s.parseWindow(q)

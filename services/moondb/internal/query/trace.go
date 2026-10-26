@@ -119,20 +119,30 @@ func AgentEdits(edits []store.Edit, agentID string) []store.Edit {
 // run of every agent with a record, added to the turns it ran under.
 // Returns store.ErrNotFound for an unknown session.
 func (s *Service) SessionTrace(ctx context.Context, id string) (trace.SessionTrace, error) {
+	_, st, _, err := s.sessionTraces(ctx, id)
+	return st, err
+}
+
+// sessionTraces loads a session and computes its trace, with the trace of
+// each of its agents, in the session's agent order.
+func (s *Service) sessionTraces(
+	ctx context.Context,
+	id string,
+) (store.SessionDetail, trace.SessionTrace, []trace.AgentTrace, error) {
 	sess, err := s.Store.Session(ctx, id)
 	if err != nil {
-		return trace.SessionTrace{}, err
+		return store.SessionDetail{}, trace.SessionTrace{}, nil, err
 	}
 	turns := make([]trace.TurnTrace, 0, len(sess.Turns))
 	var edits []store.Edit
 	for _, t := range sess.Turns {
 		d, err := s.Store.Turn(ctx, t.ID)
 		if err != nil {
-			return trace.SessionTrace{}, err
+			return sess, trace.SessionTrace{}, nil, err
 		}
 		tt, err := s.TurnTrace(ctx, d)
 		if err != nil {
-			return trace.SessionTrace{}, err
+			return sess, trace.SessionTrace{}, nil, err
 		}
 		tt.Prompt = s.promptLabel(ctx, d.PromptChunk)
 		turns = append(turns, tt)
@@ -142,11 +152,11 @@ func (s *Service) SessionTrace(ctx context.Context, id string) (trace.SessionTra
 	for _, a := range sess.Agents {
 		at, err := s.AgentTrace(ctx, a, AgentEdits(edits, a.ID))
 		if err != nil {
-			return trace.SessionTrace{}, err
+			return sess, trace.SessionTrace{}, nil, err
 		}
 		agents = append(agents, at)
 	}
-	return trace.BuildSession(id, turns, agents), nil
+	return sess, trace.BuildSession(id, turns, agents), agents, nil
 }
 
 // UsageCost prices stored usage with the Service's table: the USD of the

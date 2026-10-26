@@ -1092,7 +1092,10 @@
           kvRow('Model', d.model || '-'),
           kvRow('Transcript', d.transcript_path ? code(d.transcript_path) : '-'),
           kvRow('Started', fmtTime(d.started_at) || '-'),
-          kvRow('Ended', fmtTime(d.ended_at) || 'no session end recorded')
+          kvRow('Ended', fmtTime(d.ended_at) || 'no session end recorded'),
+          kvRow('Scorecard', el('a', {
+            href: '/api/sessions/' + enc(d.id) + '/scorecard', target: '_blank'
+          }, 'JSON'))
         ])
       ]))
     ]);

@@ -49,6 +49,14 @@ out.
 An unparseable `MOONDB_PORT` warns once on stderr and falls back to the next
 source.
 
+The scorecard reads two loopback services, set by environment only and read
+by `serve`:
+
+- `EVENTS_BASE_URL` (default `http://127.0.0.1:7430`): the events service,
+  for the belt hints and the belt ledger.
+- `KOF_PORT` (default `7431`): keeper-of-facts on `127.0.0.1`, for the pins
+  of the kof hints' assertions.
+
 ## Config file keys
 
 - `capture.enabled` (bool, default `true`): set it to `false` to turn capture
@@ -136,6 +144,10 @@ These are compiled into the binary (`facts.go`) and not configurable:
 | session idle (`SessionIdleAfter`) | 10 min | how long a session goes without a turn start, turn end, edit or agent stop before the listing calls it ended |
 | open turn stale (`OpenTurnStaleAfter`) | 12 h | how long an open last turn keeps an otherwise idle session running |
 | prompt line (`SessionPromptLineRunes`) | 100 runes | the cut of the prompt line a session keeps for its title and a trace shows per turn |
+| scorecard peer timeout (`PeerTimeout`) | 2 s | how long the scorecard waits for one answer from the events service or keeper-of-facts; past it, that part is `unavailable`. keeper-of-facts gets one request, the list of every assertion |
+| large read (`LargeReadLines`) | 300 lines | a Read of a whole file that returned at least this many lines counts as large |
+| scorecard flags (`Flag*`) | see `facts.go` | the count at which a pattern becomes a flag: 1 large read, 3 zero-result searches, 3 searches cut at the limit, 2 failed searches, 5 failed tool calls, 1 compaction, 1 stop failure, 1 permission denial, and at least 2 files the shown assertions are pinned to with under half of them used |
+| scorecard tables (`ScorecardTopTools`) | 10 | tools and agents `moondb scorecard` lists; `--json` has them all |
 
 ## Hook wiring
 

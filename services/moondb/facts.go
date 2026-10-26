@@ -126,6 +126,64 @@ const (
 // operating.md.
 const IdleGapAfter = 30 * time.Minute
 
+// Scorecard peers. A session's scorecard joins two loopback services: the
+// events log, for the belt hints a session was shown and its belt ledger
+// entries, and keeper-of-facts, for the files an assertion a hint showed is
+// pinned to. EVENTS_BASE_URL and KOF_PORT override the defaults, as they do
+// for belt and the kof MCP. Neither is required: a peer that does not answer
+// leaves its part of the scorecard null and says so in its sources.
+const (
+	// DefaultEventsURL is where the events service listens.
+	DefaultEventsURL = "http://127.0.0.1:7430"
+	// DefaultKofPort is the port keeper-of-facts listens on, on loopback.
+	DefaultKofPort = 7431
+	// PeerTimeout bounds one request to a peer. A scorecard sends
+	// keeper-of-facts one request, for the list of every assertion, so this
+	// is its whole budget there.
+	PeerTimeout = 2 * time.Second
+	// EventsPerSource is how many entries the events service keeps per
+	// source, and how many a scorecard asks for. An older entry is gone.
+	EventsPerSource = 500
+)
+
+// Scorecard thresholds. A scorecard flags a pattern when its count reaches
+// the threshold; the flags name the costliest patterns a session showed.
+const (
+	// LargeReadLines is the line count from which a Read of a whole file
+	// counts as large: at least this many lines.
+	LargeReadLines = 300
+	// FlagLargeReads flags the large reads of a whole file.
+	FlagLargeReads = 1
+	// FlagZeroSearches flags the csl searches that found nothing.
+	FlagZeroSearches = 3
+	// FlagTruncatedSearches flags the csl searches that hit their limit.
+	FlagTruncatedSearches = 3
+	// FlagFailedSearches flags the csl searches that failed, a bad query
+	// among them.
+	FlagFailedSearches = 2
+	// FlagToolErrors flags the tool calls that failed, every agent's
+	// included.
+	FlagToolErrors = 5
+	// FlagUnusedPins flags the files the shown kof assertions are pinned to
+	// that no later Read or Edit touched, once at least this many are
+	// known.
+	FlagUnusedPins = 2
+	// FlagPinHitRate is the hit rate under which unused pins are flagged.
+	FlagPinHitRate = 0.5
+	// FlagCompactions flags the context compactions (belt ledger
+	// pre-compact entries).
+	FlagCompactions = 1
+	// FlagStopFailures flags the turns that ended on an API error (belt
+	// ledger stop-failure entries).
+	FlagStopFailures = 1
+	// FlagPermissionDenials flags the tool calls a permission check denied
+	// (belt ledger permission-denied entries).
+	FlagPermissionDenials = 1
+	// ScorecardTopTools is how many tools and agents the text rendering of
+	// `moondb scorecard` lists; the JSON lists every one.
+	ScorecardTopTools = 10
+)
+
 // Turn totals. serve stores each turn's trace totals when the turn closes;
 // a turn stored before that, or by an older trace build, gets them from the
 // totals backfill, which runs while the spool is empty, a batch per tick,

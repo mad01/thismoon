@@ -118,6 +118,21 @@ that only read there is enough. The chip's count and cost then match the
 filtered list. An agent waiting for the totals backfill adds nothing
 until it has totals.
 
+`moondb scorecard` says hints `unavailable`, or its sources line says
+events `unavailable`: the events service did not answer within 2 s. Check
+it is running and that `EVENTS_BASE_URL` points at it. Events `partial`
+means the service has no entry older than the session's first turn: it
+keeps 500 entries per source, so an older session's early hints may be
+gone. Kof `skipped` with events `unavailable` is expected: without hints
+there is no assertion to look up. Kof `unavailable` leaves each shown
+assertion's `pins` and `used` null; `partial` means keeper-of-facts no
+longer holds some of the assertions. `used` is per assertion: it is true
+when any agent of the session read or edited one of its files after the
+hint, since a hint serves the whole session. A csl_read counts only when it
+names the pin's repository as its full owner/name. A subagent's reads show
+as `unsized` and its searches as `unread` because its transcript keeps only
+the head of each result.
+
 An edit with `before_source: unknown`: serve could not reconstruct the file
 as it was before the edit. The patch hunks are still recorded.
 

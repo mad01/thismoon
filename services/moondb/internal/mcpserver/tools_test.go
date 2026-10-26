@@ -17,6 +17,7 @@ import (
 	"github.com/mad01/thismoon/kit/mcptest"
 
 	"github.com/mad01/thismoon/services/moondb/internal/client"
+	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
 	"github.com/mad01/thismoon/services/moondb/internal/server"
 	"github.com/mad01/thismoon/services/moondb/internal/server/servertest"
 )
@@ -303,5 +304,42 @@ func TestTruncateKeepsUTF8(t *testing.T) {
 	}
 	if truncate("short", 10) != "short" {
 		t.Error("truncate must leave a short string alone")
+	}
+}
+
+// TestScorecardRoundTrip: the tool returns the scorecard the API computes,
+// its summary and the session's page. The fixture server has no events
+// service, so the hints are null and the source says why.
+func TestScorecardRoundTrip(t *testing.T) {
+	cs := session(t, noChecks)
+	var out scorecardOutput
+	call(t, cs, "moondb_scorecard", map[string]any{"id": servertest.OldSession}, &out)
+	if out.SessionID != servertest.OldSession || out.Version != scorecard.Version ||
+		out.Totals.Turns != 1 || out.Agents.Count != 1 {
+		t.Fatalf("out = %+v", out)
+	}
+	if out.Hints != nil || out.Sources.Events.Status != scorecard.StatusUnavailable {
+		t.Errorf("hints = %+v, events = %+v; want null and unavailable", out.Hints,
+			out.Sources.Events)
+	}
+	if !strings.Contains(out.Summary, "session sess-old: 1 turns") ||
+		!strings.Contains(out.Summary, "0 csl searches") {
+		t.Errorf("summary = %q", out.Summary)
+	}
+	if out.URL != "http://moondb.test/?session="+servertest.OldSession {
+		t.Errorf("url = %q", out.URL)
+	}
+}
+
+func TestScorecardNotFoundIsToolError(t *testing.T) {
+	cs := session(t, noChecks)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "moondb_scorecard", Arguments: map[string]any{"id": "nope"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError || !strings.Contains(toolText(res), "not found") {
+		t.Errorf("result = %+v, want a not-found tool error", res)
 	}
 }

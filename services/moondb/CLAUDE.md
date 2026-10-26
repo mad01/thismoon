@@ -15,10 +15,10 @@ the same store.
 ```
 moondb/
   cmd/moondb/          - entrypoint (delegates to internal/cli)
-  facts.go             - port, workdir, capture caps and budgets, agent transcript head and cap, default excludes, trace limits, idle gap, totals backfill pace, listing status rule, model prices, agentdoc.Facts
+  facts.go             - port, workdir, capture caps and budgets, agent transcript head and cap, default excludes, trace limits, idle gap, totals backfill pace, listing status rule, scorecard peers and thresholds, model prices, agentdoc.Facts
   embed.go             - embeds operating.md for `moondb docs`
   internal/
-    cli/               - cobra: root, serve, record, import, mcp, why, history, inflight, sessions, trace, doctor, docs, version
+    cli/               - cobra: root, serve, record, import, mcp, why, history, inflight, sessions, trace, scorecard, doctor, docs, version
     record/            - the capture hook: payload decode, envelopes, observed read, HEAD blob, transcript tail, Bash diffs, turn-edge snapshots, subagent stops, per-session state
     agentfile/         - one subagent's transcript file read and cut to its agent transcript, its meta file, the type and name rule
     importer/          - the transcript import: transcript parse, turns, edits and agents as envelopes, file-history originals
@@ -30,8 +30,9 @@ moondb/
     store/             - Store and Chunks interfaces and record types (store.go, types.go), session summaries and the cost attribution rule (summary.go, attribution.go), the in-flight rule (inflight.go)
       local/           - the local disk backend: JSONL log, gzip chunks, in-memory index
       storetest/       - conformance suite every backend must pass
-    query/             - why, history and annotate answers over the store and git; traces with their cache
+    query/             - why, history and annotate answers over the store and git; traces with their cache; session scorecards
     trace/             - turn, agent and session traces from transcript lines: spans, gaps, segments, totals, prices (pure)
+    scorecard/         - a session's scorecard: tool calls parsed from transcript lines, search and read stats, hint and ledger events, kof pins, flags
     server/            - HTTP API + webkit web page
     client/            - HTTP client shared by the CLI and mcpserver
     mcpserver/         - MCP tools
@@ -456,6 +457,48 @@ by transcript chunk, edit count and turn times, and agent traces by
 transcript chunk, edit count, times, label and cut lines, at most
 `TraceCacheTurns` each, the least recently read dropped first.
 
+### Scorecard: how a session spent its context
+
+`query.Service.SessionScorecard` joins a session's trace with three more
+inputs and `scorecard.Build` turns them into one JSON object, versioned by
+`scorecard.Version`. The eval suite scores against it, so add fields and
+never rename one.
+
+- **Tool calls** come from the turns' and agents' transcript chunks
+  (`scorecard.ParseCalls`): each `tool_use` paired with its `tool_result`,
+  plus `toolUseResult.file` `numLines`, `totalLines` and `startLine` for a
+  Read. A read took the whole file when the tool says it started at line 1
+  and returned every line. Without that result, it did when it gave no
+  offset, limit or page range. A turn's chunk keeps the raw lines, so its
+  reads are sized and its csl searches classified from the result text.
+  `search.go` follows each csl search tool's text and JSON forms, and reads
+  only the trailer for a cap. An agent transcript keeps only a 240-byte head
+  of each input and result and no `toolUseResult`, so most agent reads count
+  as `unsized` and most agent searches as `unread`. A cut input is still
+  read for the file it names.
+- **Hints and ledger** come from the events service, kept to the session's
+  `tags.session_id`. Source `belt` holds the hints shown to the session.
+  `belt-ledger` holds subagent starts and stops, permission denials,
+  compactions and stop failures. A kof hint's assertion ids come from its
+  `assertions` tag (comma-separated, with `pins` as `<id>=<path>` entries)
+  or else from the `kof_get id=` lines of its message. events keeps 500
+  entries per source, so a listing with no entry older than the session's
+  first turn is `partial`.
+- **Pins** come from keeper-of-facts: one `GET /api/assertions` listing,
+  filtered by id, so a scorecard costs it one request. A file an assertion
+  is pinned to is `used` when any agent of the session touched it later with
+  Read, Edit, MultiEdit, Write, NotebookEdit or csl_read. A hint serves the
+  whole session. A csl_read must name the pin's repository as its full
+  owner/name.
+
+Each input reports its status under `sources` (`ok`, `partial`,
+`unavailable`, `skipped`). A peer that does not answer within `PeerTimeout`
+leaves its part null, and the scorecard still returns 200. For the events
+service that is `hints` and `agents.ledger`; for keeper-of-facts, each shown
+assertion's `pins` and `used`. Without hints there is no assertion to look
+up, so keeper-of-facts is `skipped` and its detail says why. `flags` name
+the costliest patterns once a count reaches its threshold in `facts.go`.
+
 ### Turn totals: what the session listing reads
 
 A listing that computed traces would read every transcript chunk. So ingest
@@ -587,6 +630,8 @@ snapshot's `MapChunk` is a JSON array of its files sorted by path.
 under srt. `make sandbox-settings` renders it to
 `recipes/moondb/moondb.srt.json`, which CI diffs, so change the manifest and
 never the JSON. Authoring guide: `docs/SANDBOXING.md`, "Declaring access".
+`local: [events, keeper-of-facts]` names the loopback peers the scorecard
+reads (`EVENTS_BASE_URL`, `KOF_PORT`).
 
 ## Build / install / test
 
@@ -609,6 +654,7 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 - `GET  /api/sessions`          : one page of session rows, newest first (`sessions`), the totals of every session the filters keep (`window`), and the repositories the time window's sessions edited or sent attributed cost, with their session counts and attributed cost (`repos`); `since`, `repo` and `limit` filter
 - `GET  /api/sessions/{id}`     : one session with its turns and counts, plus `summary`, its listing row, and `agents`, its agent rows (below)
 - `GET  /api/sessions/{id}/trace`: the session's trace: every turn's spans, gaps and totals, the user gaps between turns, the agents' runs, session totals
+- `GET  /api/sessions/{id}/scorecard`: the session's scorecard (Scorecard above): totals, tools, csl searches, reads, hints, agents, flags and the status of each source
 - `GET  /api/turns/{id}`        : one turn with its edits, unattributed deltas and snapshots, `agents` (the agents that worked in it), plus `trace_totals` when its transcript lines hold a timeline or an agent ran under it, and `skipped` when the Bash hook skipped files of a command
 - `GET  /api/agents/{id}`       : one Agent record with `row`, its session row, and `trace`, its agent trace
 - `GET  /api/edits`             : edits, newest first, narrowed by repo, worktree, path, blob id, since and limit
@@ -800,6 +846,7 @@ moondb history <path>          # the recorded edits of a path across every check
 moondb inflight [--worktree <root>] [--exclude-session <id>]   # files in the checkout other sessions edited that no commit has taken yet
 moondb sessions [--repo <repo>]  # recorded sessions, newest first, with their title, active time and wall time; --repo adds COST and ATTRIBUTED
 moondb trace <session-id> [--json]   # time and cost totals, the agents, the longest tool calls, the most expensive model calls
+moondb scorecard <session-id> [--json]   # how a session spent its context: searches, reads, hints, agents, flags
 moondb doctor                  # config, hooks wired, serve reachable, store readable, version skew
 moondb docs                    # print the operating doc
 moondb version [-o json]
@@ -821,6 +868,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 - `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links, and the agents that worked in it; the summary names its subagents
 - `moondb_sessions()`: recorded sessions, newest first, each with its title, status, times, active and wall time, counts, subagent names, tokens and cost split between the main conversation and the subagents, and its attributed cost per repository (`repo_costs`); with `repo`, also `repo_cost` beside the whole `cost`
 - `moondb_trace(id)`: one session's time split (model, tool, harness, user, idle), tokens by kind and cost with its main and agent parts, the subagents costliest first, and the longest tool calls and most expensive model calls of every agent
+- `moondb_scorecard(id)`: the session's scorecard, the same JSON as `GET /api/sessions/{id}/scorecard`, with a one-line summary
 - `moondb_doctor()`: the same checks as `moondb doctor`, returned as JSON, for a client that can call a tool but has no shell
 
 Tool responses include a `url` built from `MOONDB_BASE_URL` (for example
