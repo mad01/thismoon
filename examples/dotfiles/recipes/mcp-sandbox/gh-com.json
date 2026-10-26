@@ -1,0 +1,9 @@
+{
+  "_comment": "Drop-in for agent-sync's mcp dropins dir, the same shape as the base servers.json. The server is launched through the wrapper beside this file, which resolves the token outside the sandbox, cd-s to /, scrubs the environment and execs github-mcp-server through srt-run with ~/.config/srt/github-mcp.json. A second instance for a GitHub Enterprise host is the same wrapper with that host as its argument, in a drop-in a profile-gated source ships.",
+  "servers": {
+    "gh_com": {
+      "command": "~/code/src/github.com/you/dotfiles/recipes/mcp-sandbox/github-mcp-wrapper.sh",
+      "args": ["github.com"]
+    }
+  }
+}

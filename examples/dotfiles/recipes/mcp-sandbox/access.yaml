@@ -1,0 +1,18 @@
+# Sandbox access for github-mcp-server, the third-party MCP server this
+# recipe registers. github-mcp-wrapper.sh launches it through srt-run.
+# srtspec renders this file to github-mcp.srt.json; edit it here and
+# re-render, never the JSON (thismoon docs/adr/0027 and docs/SANDBOXING.md,
+# "Declaring access").
+sandbox: srt
+# The recipe directory is mcp-sandbox, so the srt-run label is set by hand.
+label: github-mcp
+# The GitHub host differs per machine (github.com, or an Enterprise host):
+# the wrapper passes the host it serves, its subdomains, and
+# *.githubusercontent.com for github.com.
+egress: [via SRT_RUN_ALLOW_DOMAINS]
+# The wrapper resolves the token outside the sandbox and passes it in the
+# environment, so the server needs no keychain or ~/.config/gh access.
+reads: [~/code/bin]       # the server binary
+writes: [temp]
+# Go verifies TLS through trustd.
+tls: true

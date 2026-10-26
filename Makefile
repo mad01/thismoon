@@ -24,6 +24,7 @@ test-recipes:
 # source of truth (docs/adr/0027); CI runs this and fails on any diff.
 sandbox-settings:
 	go run ./tools/srtspec/cmd/srtspec generate .
+	go run ./tools/srtspec/cmd/srtspec generate examples/dotfiles
 
 install-all:
 	@for c in $(COMPONENTS); do $(MAKE) -C "$$c" install || exit 1; done

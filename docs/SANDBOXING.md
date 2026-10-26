@@ -7,6 +7,73 @@ under [anthropics/sandbox-runtime](https://github.com/anthropics/sandbox-runtime
 page covers why srt, the launch pattern, how a process declares its access,
 how it stays reconciled through ralph, and how to triage denials.
 
+## Sandbox a new process
+
+The whole job, in the order it happens. Each step links to the section
+that explains it.
+
+1. **Declare what it may reach.** A component adds `spec.access` to its
+   `service-info.yaml`. A recipe directory with no component, such as an
+   MCP server a consuming repo registers, adds a standalone `access.yaml`.
+   Start minimal: `sandbox: srt`, `listen` with the port for a service,
+   `reads: [~/code/bin, workdir]`, `writes: [workdir, temp]`, no `egress`.
+   Add `local: [events]` if it posts to events, `tls: true` for a Go
+   binary that makes TLS calls, `egress` only for hosts every machine
+   uses, and the literal `via SRT_RUN_ALLOW_DOMAINS` for a host that
+   differs per machine. Comment each root with why the process needs it.
+   ([Declaring access](#declaring-access))
+2. **Render the settings.** `make sandbox-settings` here, or
+   `srtspec render <manifest> -o recipes/<dir>/<label>.srt.json` in a
+   consuming repo. The renderer refuses a `*` host, a lifted `~` deny and
+   a write into `~/.config/srt`. Never edit the JSON; CI fails on drift.
+   ([Render, check, generate](#render-check-generate))
+3. **Link it into place.** A `[dotfiles.<name>_srt_settings]` item
+   symlinks `<label>.srt.json` to `~/.config/srt/<label>.json`, with no
+   profile gate: one file serves every machine. The file name is the label
+   sandbox-watch attributes denials by.
+   ([Everything through ralph](#everything-through-ralph))
+4. **Launch through srt-run.** A t-man service names
+   `~/code/bin/srt-run <settings> <command...>` as its program in a
+   `run = "always"` hook, with `--extra-log sandbox=...` so `t-man logs`
+   finds the denial ledger. An MCP server gets a wrapper: resolve secrets
+   outside the sandbox, derive the per-machine host into
+   `SRT_RUN_ALLOW_DOMAINS`, `cd /`, `env -i` with an allow-list, exec
+   `srt-run`. Register the wrapper and keep it executable with a chmod
+   hook. ([The pattern](#the-pattern),
+   [Sandboxing a t-man service](#sandboxing-a-t-man-service))
+5. **Probe, then widen only what a denial shows.** Start it, exercise every
+   path (a request, a write, the egress call), and read the ledger with
+   `sandbox-audit.sh ledger <label>` or `t-man logs <name> --source
+   sandbox`. Each ALERT line names the operation and the target. A read
+   through a symlink fails until its target is in `reads` too.
+   `srtspec explain <label>` prints the effective policy with the layer
+   each entry came from. ([Triaging a denial](#triaging-a-denial))
+
+Rules every manifest and wrapper follow, each explained further down:
+
+- Hosts that differ per machine come from the wrapper, never the manifest
+  ([Machine-specific hosts](#machine-specific-hosts)).
+- Name hosts. `*` and `*:port` are refused everywhere.
+- No sandbox may write `~/.config/srt`, and no settings file sits under
+  any sandbox's `allowWrite`
+  ([Settings live outside every allowWrite](#settings-live-outside-every-allowwrite)).
+- Secrets never enter the sandbox: the wrapper resolves them and passes
+  only what the process needs ([The pattern](#the-pattern)).
+- A symlink reads only when its target is allowed too. A target only one
+  machine has goes in that machine's expansion layer
+  ([The machine-local expansion layer](#the-machine-local-expansion-layer)).
+- List `temp` in `writes` for anything that writes temp files
+  ([Gotchas](#gotchas)).
+- A process srt can't confine is left out, never forced, and says so with
+  `sandbox: none` or `sandbox: seatbelt` plus a reason
+  ([The legacy path](#the-legacy-path-a-seatbelt-profile-under-t-man)).
+
+[`examples/dotfiles/recipes/mcp-sandbox/`](../examples/dotfiles/recipes/mcp-sandbox/)
+is a complete worked example for a consuming repo: the manifest, its
+render, the wrapper, and the agent-sync drop-in that registers the server.
+The mise pins for srt and bun sit beside it in
+[`examples/dotfiles/recipes/mise/`](../examples/dotfiles/recipes/mise/).
+
 ## Why srt
 
 srt replaced hand-written seatbelt profiles (`*.sb` files run with
@@ -71,8 +138,9 @@ can express the whole launch:
 [`recipes/present/present-mcp-sandbox.sh`](../recipes/present/present-mcp-sandbox.sh)
 is the full version, with config and sharing secrets passed through.
 [`examples/dotfiles/recipes/mcp-sandbox/`](../examples/dotfiles/recipes/mcp-sandbox/)
-is the minimal one, with the settings file, the wrapper, and the agent-sync
-drop-in that registers it.
+is the consuming-repo version for a third-party server: the manifest, its
+render, the wrapper that hands the GitHub host to `srt-run`, and the
+agent-sync drop-in that registers it.
 
 t-man services run `srt-run` as their program, with or without a wrapper
 in front of it. See [Sandboxing a t-man service](#sandboxing-a-t-man-service).

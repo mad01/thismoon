@@ -16,7 +16,8 @@ your-dotfiles/
   CLAUDE.md.example          # a global ~/.claude/CLAUDE.md tuned for the fleet
   recipes/
     agent-config/    # overlay: Claude Code settings, mods and MCP servers, applied by agent-sync
-    mcp-sandbox/     # overlay: one MCP server under srt (sandbox settings + wrapper), via agent-sync's drop-in dir
+    mcp-sandbox/     # overlay: a third-party MCP server under srt (manifest, rendered settings, wrapper), via agent-sync's drop-in dir
+    mise/            # overlay: the toolchain mise installs per user, the srt and bun pins included
     claude-hooks/    # overlay: belt config + the internal-names file belt and suspenders share
     d-man/           # overlay: machine-personal routes for the d-man front door
     config-overlay/  # overlay: per-machine service config (watch list, host gate)
@@ -45,7 +46,8 @@ Each kind of machine-private wiring has a worked example in `recipes/`:
 | Pattern | Example | What it owns |
 |---------|---------|--------------|
 | Agent config: settings, mods, MCP | [`recipes/agent-config/`](recipes/agent-config/) | the Claude Code settings template and its machine overlay, the mods list, the MCP server set, and the agent-sync config that names them; synced on every `ralph up` |
-| Sandboxed MCP server | [`recipes/mcp-sandbox/`](recipes/mcp-sandbox/) | the srt settings file (`~/.config/srt/<tool>.json`) and launch wrapper for an untrusted server, registered through agent-sync's drop-in dir instead of the base file |
+| Sandboxed MCP server | [`recipes/mcp-sandbox/`](recipes/mcp-sandbox/) | the access manifest, the srt settings srtspec renders from it (linked to `~/.config/srt/<label>.json`) and the launch wrapper for a third-party server, registered through agent-sync's drop-in dir instead of the base file |
+| Toolchain (mise) | [`recipes/mise/`](recipes/mise/) | the runtimes and CLIs mise installs per user, with srt pinned exactly and bun for the srt launcher |
 | Agent hooks (belt) | [`recipes/claude-hooks/`](recipes/claude-hooks/) | the belt config and the internal-names file belt and suspenders share; the hooks block that registers belt sits in the settings template |
 | Routes + block list | [`recipes/d-man/`](recipes/d-man/) | which `.this` names resolve on this machine, and which hosts the work profile blocks |
 | Config overlay | [`recipes/config-overlay/`](recipes/config-overlay/) | per-machine service config: watch lists, host gates, local paths |
@@ -108,7 +110,7 @@ permission lists union with the template's instead of replacing them.
 
 Drop-in directories let another recipe or a second recipe source contribute
 without editing this repo's files. `recipes/mcp-sandbox/` symlinks its
-`mysandboxed.json` into `~/.config/claude-mcp/servers.d/`, and the mcp sync
+`gh-com.json` into `~/.config/claude-mcp/servers.d/`, and the mcp sync
 merges it over `servers.json` by server name. `~/.config/claude-mods/mods.d/`
 works the same way for a second marketplace. Both paths are agent-sync's
 defaults; the `dropins` key in each section of `config.yaml` moves one.

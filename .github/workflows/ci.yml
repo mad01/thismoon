@@ -347,8 +347,8 @@ jobs:
       - name: Sandbox settings match their manifests
         run: |
           make sandbox-settings
-          git diff --exit-code -- recipes
-          untracked=$(git status --porcelain --untracked-files=all -- recipes)
+          git diff --exit-code -- recipes examples/dotfiles
+          untracked=$(git status --porcelain --untracked-files=all -- recipes examples/dotfiles)
           if [ -n "$untracked" ]; then
             echo "::error::make sandbox-settings left files git does not track:"
             echo "$untracked"

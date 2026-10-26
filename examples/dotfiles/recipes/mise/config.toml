@@ -1,0 +1,19 @@
+# The toolchain layer: runtimes and prebuilt CLIs mise installs per user,
+# symlinked to ~/.config/mise/config.toml by recipe.toml. Homebrew keeps
+# only what mise cannot install per user (casks, libraries, services).
+# Pin what is a security boundary; let the rest float.
+[tools]
+go = "1.27"
+node = "24"
+# bun: srt-run runs the sandbox-runtime CLI under bun when one is
+# installed, which halves each srt parent's memory (thismoon
+# docs/SANDBOXING.md, "bun or node"). Optional: without it srt-run uses
+# node.
+bun = "1"
+# ripgrep: srt needs it on PATH.
+ripgrep = "latest"
+# srt: the sandbox every confined MCP server and service runs under
+# (thismoon docs/adr/0028). Exact pin, not "latest": it is a security
+# boundary, so a bump is a deliberate edit with every settings file
+# re-checked.
+"npm:@anthropic-ai/sandbox-runtime" = "0.0.81"

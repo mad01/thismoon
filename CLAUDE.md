@@ -37,10 +37,11 @@ docs/HOW-IT-FITS-TOGETHER.md fleet pitch, ralph vocabulary, rollout order
 docs/MEMORY-STACK.md    memory stores (auto memory, agent-memory, kof, worklog,
              handoff, events) and the belt hooks that surface them
 docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
-docs/SANDBOXING.md      srt sandboxing (srt-run launcher, access manifests and
-             the settings files rendered from them, the machine-local
-             expansion layer, spawn wrappers) and denial triage for
-             sandboxed services and MCP servers
+docs/SANDBOXING.md      srt sandboxing: a walkthrough for sandboxing a new process,
+             then the srt-run launcher, access manifests and the settings
+             files rendered from them, the machine-local expansion layer,
+             spawn wrappers, and denial triage for sandboxed services and
+             MCP servers
 ```
 
 ## Conventions
