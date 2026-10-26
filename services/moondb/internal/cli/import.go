@@ -47,7 +47,8 @@ as it is, a session or turn keeps every field it has and gets only its empty
 fields filled, and a turn still open is closed. An earlier imported prompt
 still moves a start time back. Run --force only while no session is active,
 because it closes a session's in-flight turn until the live Stop arrives.
-Sessions without a file edit are skipped.
+A session with neither a file edit nor a subagent transcript is skipped,
+with or without --force.
 
 A transcript records less than the hooks see: no disk read after an edit (so
 no unattributed delta), no HEAD (so no commit link until a later live turn
@@ -188,8 +189,10 @@ func printImport(w io.Writer, c importer.Counts, dryRun bool) {
 	rows := [][2]string{
 		{"transcripts", fmt.Sprintf("%d (%d subagent, %d unreadable)",
 			c.Transcripts, c.SubagentTranscripts, c.UnreadableTranscripts)},
-		{"sessions imported", fmtCount(c.SessionsImported)},
-		{"sessions skipped", fmt.Sprintf("%d in store, %d outside --since, %d without edits",
+		{"sessions imported", fmt.Sprintf("%d (%d for their subagents only)",
+			c.SessionsImported, c.SessionsAgentsOnly)},
+		{"sessions skipped", fmt.Sprintf(
+			"%d in store, %d outside --since, %d without edits or subagents",
 			c.Skipped.InStore, c.Skipped.OutsideSince, c.Skipped.NoEdits)},
 		{"turns", fmtCount(c.Turns)},
 		{"agents", fmt.Sprintf("%d (%d files skipped)", c.Agents, c.AgentFilesSkipped)},

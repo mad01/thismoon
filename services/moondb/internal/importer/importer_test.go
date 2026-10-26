@@ -650,3 +650,67 @@ func TestImportAgents(t *testing.T) {
 		t.Errorf("agent transcript = %q, want the tool result's ids", lines)
 	}
 }
+
+// readerAgent is a subagent of sess-2 that edits nothing, in a session
+// whose main conversation edits nothing either.
+const readerAgent = `{"type":"user","uuid":"r-1","parentUuid":null,"sessionId":"sess-2",` +
+	`"timestamp":"2026-10-02T09:00:03.000Z","cwd":"{CWD}","isSidechain":true,` +
+	`"agentId":"areader-1","promptId":"q1","message":{"role":"user","content":"find main"}}
+{"type":"assistant","uuid":"r-2","parentUuid":"r-1","sessionId":"sess-2",` +
+	`"timestamp":"2026-10-02T09:00:04.000Z","cwd":"{CWD}","isSidechain":true,` +
+	`"agentId":"areader-1","message":{"id":"rm1","role":"assistant","model":"model-b",` +
+	`"content":[{"type":"text","text":"greet.go has it."}]}}
+`
+
+// TestImportAgentOnlySessions imports a session without a file edit when
+// it has a subagent transcript, turns and agent, and skips one with
+// neither, forced or not.
+func TestImportAgentOnlySessions(t *testing.T) {
+	for name, withAgent := range map[string]bool{"reader subagent": true, "neither": false} {
+		t.Run(name, func(t *testing.T) {
+			w := newWorld(t)
+			if withAgent {
+				dir := filepath.Join(
+					strings.TrimSuffix(w.transcript("sess-2"), ".jsonl"),
+					"subagents",
+				)
+				writeAgent(t, dir, "areader-1", strings.ReplaceAll(readerAgent, "{CWD}", w.cwd))
+			}
+			opts := w.options()
+			opts.Known = func(context.Context, string) (bool, error) { return true, nil }
+			opts.Force = true
+			got, envs := w.run(t, opts)
+			agent, hasAgent := byID(envs)["areader-1:close:2"]
+			_, hasTurn := byID(envs)["q1:close"]
+			skipped, agentsOnly := 1, 0
+			if withAgent {
+				skipped, agentsOnly = 0, 1
+			}
+			if hasAgent != withAgent || hasTurn != withAgent ||
+				got.Skipped.NoEdits != skipped || got.SessionsAgentsOnly != agentsOnly {
+				t.Errorf("agent %v turn %v, skipped %+v, agents only %d",
+					hasAgent, hasTurn, got.Skipped, got.SessionsAgentsOnly)
+			}
+			if withAgent && (agent.Session.ID != "sess-2" ||
+				!slices.Equal(agent.AgentClose.TurnIDs, []string{"q1"})) {
+				t.Errorf("agent envelope = %+v", agent)
+			}
+		})
+	}
+}
+
+// writeAgent writes one subagent transcript, and its meta file, into dir.
+func writeAgent(t *testing.T, dir, id, lines string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Join(dir, "agent-"+id)
+	if err := os.WriteFile(base+".jsonl", []byte(lines), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	meta := []byte(`{"agentType":"Explore","description":"find main"}`)
+	if err := os.WriteFile(base+".meta.json", meta, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}

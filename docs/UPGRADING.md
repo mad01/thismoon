@@ -8,7 +8,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 Change: thismoon #298. moondb records each subagent when it stops, from its own transcript. The turn and the session then add the subagent's cost to their own.
 
-Run: in the consuming repo's Claude settings template, add a `SubagentStop` hook group with no matcher, running `~/code/bin/moondb record` asynchronously. Without a matcher, Claude Code's internal agents count too. Merge this service first and `ralph up`, then the hook entry. Then run `moondb import --since 30d --force` so the last month's sessions get their subagent cost. Without `--force` the import skips every session the store already holds. Run it while no other session is working: it closes an open turn until that turn's Stop arrives.
+Run: in the consuming repo's Claude settings template, add a `SubagentStop` hook group with no matcher, running `~/code/bin/moondb record` asynchronously. Without a matcher, Claude Code's internal agents count too. Merge this service first and `ralph up`, then the hook entry. Then run `moondb import --since 30d --force` so the last month's sessions get their subagent cost. Without `--force` the import skips every session the store already holds. A session where no file was edited is imported too when it ran a subagent, so review and research sessions get their agents; one with neither stays skipped. Run it while no other session is working: it closes an open turn until that turn's Stop arrives.
 
 Verify: `moondb doctor` reports `hooks-wired` ok. A new session that spawns one subagent shows it in the Agents section on `http://moondb.this/`, with a cost.
 

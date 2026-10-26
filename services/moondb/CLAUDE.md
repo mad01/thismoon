@@ -197,8 +197,12 @@ envelopes the hooks would have written, through the same spool writer. serve
 ingests them with no import code of its own. A session the store already
 holds was captured live and is skipped unless `--force`. Run `--force` only
 while no session is active, because it closes a session's in-flight turn
-until the live Stop arrives. A session without a file edit is skipped. `--dry-run` reads and counts everything and writes
-nothing; with serve down it runs without the store lookups and says so.
+until the live Stop arrives. A session with neither a file edit nor a
+subagent transcript is skipped, with or without `--force`. One with a
+subagent transcript and no edit is imported for its turns and agents, and
+counted under `sessions_agents_only`. `--dry-run` reads and counts
+everything and writes nothing; with serve down it runs without the store
+lookups and says so.
 `--projects` and `--file-history` point at other transcript and
 file-history directories; the defaults live in `facts.go`.
 
