@@ -168,6 +168,10 @@ type TurnTotals struct {
 	ToolMS    int64 `json:"tool_ms"`
 	HarnessMS int64 `json:"harness_ms"`
 	UserMS    int64 `json:"user_ms"`
+	// IdleMS is the turn's idle time: the part of each model, tool or
+	// harness stretch past moondb.IdleGapAfter with no line written.
+	// Totals of version 1 have none; they counted it in the stretch's class.
+	IdleMS int64 `json:"idle_ms"`
 	// Usage is the tokens the turn's model calls billed, one entry per
 	// model and rate, sorted (MergeUsage).
 	Usage      []ModelUsage `json:"usage,omitempty"`

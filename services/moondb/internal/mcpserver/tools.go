@@ -93,9 +93,16 @@ func registerSessionTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "moondb_trace",
 		Description: "Show what took time in one session and what it cost: wall time split into model, tool, harness " +
-			"(hooks and request setup) and user time (waiting for input: between turns, and inside a turn " +
-			"after the model stopped until a new input such as a teammate message), tokens by kind, and the USD cost " +
-			"at list prices. " +
+			"(hooks and request setup), user time (waiting for input: between turns, and inside a turn " +
+			"after the model stopped until a new input such as a teammate message) and idle time, " +
+			"tokens by kind, and the USD cost at list prices. " +
+			fmt.Sprintf(
+				"Idle time is a stretch inside a turn with no transcript line for over %d minutes, "+
+					"past its first %[1]d minutes, which stay model, tool or harness time: "+
+					"a laptop asleep, a session resumed later, or a request that hung. "+
+					"Active time leaves it out. ",
+				int(moondb.IdleGapAfter.Minutes()),
+			) +
 			fmt.Sprintf(
 				"Also lists the %[1]d longest tool calls and the %[1]d most expensive model calls, ",
 				moondb.TraceTopSpans,
@@ -436,7 +443,8 @@ func traceAgents(st trace.SessionTrace) []traceAgent {
 func traceSummary(st trace.SessionTrace) string {
 	t := st.Totals
 	s := fmt.Sprintf(
-		"session %s: %d turns, wall %s (model %s, tool %s, harness %s, user %s), %s tokens, cost %s",
+		"session %s: %d turns, wall %s (model %s, tool %s, harness %s, user %s, idle %s), "+
+			"%s tokens, cost %s",
 		st.SessionID,
 		len(st.Turns),
 		trace.FormatDuration(t.WallMS),
@@ -444,6 +452,7 @@ func traceSummary(st trace.SessionTrace) string {
 		trace.FormatDuration(t.ToolMS),
 		trace.FormatDuration(t.HarnessMS),
 		trace.FormatDuration(t.UserMS),
+		trace.FormatDuration(t.IdleMS),
 		trace.FormatTokens(t.Tokens.Total()),
 		trace.FormatTotalsCost(t),
 	)

@@ -122,8 +122,9 @@ commands. It has no HEAD either, so imported edits link to commits only once
 a later session moves HEAD. Run it with `--dry-run` first to see the counts.
 
 `moondb trace` splits a session's wall time into model time, tool time,
-harness time (hooks and request setup) and user time (waiting for input). It
-adds up the tokens by kind and the cost at list prices, then lists the ten
+harness time (hooks and request setup), user time (waiting for input) and
+idle time. Idle time is what a turn spends past 30 minutes without a
+transcript line. The command also adds up the tokens by kind and the cost at list prices, then lists the ten
 longest tool calls and the ten most expensive model calls with their turns.
 It reads the transcript lines each turn keeps and each subagent's own
 transcript, so the cost covers the main conversation and every subagent
@@ -162,8 +163,9 @@ UI. The front page lists the sessions active in the last 7 days, grouped
 by the day they started, newest first. Each row names the session and its
 repo, and says whether it still runs and when it was last active. It
 shows the session's active time: the time inside its turns, less the
-time it waited for you. A night the session sat open between turns adds
-nothing. "over 2 days" says its wall time crossed midnight, and the hover
+time it waited for you or sat idle. A night the session sat open between
+turns adds nothing. A turn that wrote no transcript line for hours adds
+only the first 30 minutes of that stretch. "over 2 days" says its wall time crossed midnight, and the hover
 title gives that wall time. Its
 turn, edit, file and agent counts sit beside its cost, which covers the
 session and its subagents. Switch the window to 24 hours, 30 days or any

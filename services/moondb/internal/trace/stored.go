@@ -8,7 +8,10 @@ import "github.com/mad01/thismoon/services/moondb/internal/store"
 // too when a LongPromptTokens threshold in moondb.DefaultPrices changes: a
 // usage entry's Long flag is fixed when the totals are computed, so stored
 // totals keep the old side of the threshold until they are computed again.
-const TotalsVersion = 1
+//
+// Version 2 adds idle time (GapIdle): a stretch past moondb.IdleGapAfter
+// that version 1 gave to model, tool or harness time.
+const TotalsVersion = 2
 
 // Stored is a turn's totals as the Turn keeps them: the time split, the
 // usage and the call counts, without the cost, which a reader prices from
@@ -21,6 +24,7 @@ func Stored(t Totals) store.TurnTotals {
 		ToolMS:     t.ToolMS,
 		HarnessMS:  t.HarnessMS,
 		UserMS:     t.UserMS,
+		IdleMS:     t.IdleMS,
 		Usage:      t.Usage,
 		ModelCalls: t.ModelCalls,
 		ToolCalls:  t.ToolCalls,

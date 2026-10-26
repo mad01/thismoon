@@ -115,6 +115,15 @@ const (
 	TraceTopSpans = 10
 )
 
+// IdleGapAfter is the longest stretch inside a turn that a trace gives to
+// model, tool or harness time. A trace classes a stretch by the line that
+// ends it, but no line is written while a laptop sleeps, a session waits
+// days to be resumed, or a request hangs. So a longer stretch keeps its
+// first IdleGapAfter in its own class and the rest is idle time, which a
+// session's active time leaves out. Waiting for input is user time and is
+// never idle.
+const IdleGapAfter = 30 * time.Minute
+
 // Turn totals. serve stores each turn's trace totals when the turn closes;
 // a turn stored before that, or by an older trace build, gets them from the
 // totals backfill, which runs while the spool is empty, a batch per tick,

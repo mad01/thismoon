@@ -27,6 +27,14 @@ func withTotals(t Turn, wall, user int) Turn {
 	return t
 }
 
+// withIdle gives a turn with totals idle minutes.
+func withIdle(t Turn, idle int) Turn {
+	tot := *t.Totals
+	tot.IdleMS = ms(idle)
+	t.Totals = &tot
+	return t
+}
+
 func openAt(id string, seq, start int) Turn {
 	return Turn{ID: id, SessionID: "s", Seq: seq, Status: TurnOpen, StartedAt: minutes(start)}
 }
@@ -43,11 +51,12 @@ func editsAt(at ...int) iter.Seq[*Edit] {
 }
 
 // TestSummarizeActiveMS: active time adds up the time inside the turns,
-// less the time a turn waited for input, and never the gaps between
-// turns. A turn with totals gives wall less user time, clamped at zero;
-// one without gives its recorded span. An open turn ends at the latest
-// edit or agent stop before the next turn starts, for the wall span as
-// for the active time, and the active time never exceeds the wall span.
+// less the time a turn waited for input or sat idle, and never the gaps
+// between turns. A turn with totals gives wall less user and idle time,
+// clamped at zero; one without gives its recorded span. An open turn ends
+// at the latest edit or agent stop before the next turn starts, for the
+// wall span as for the active time, and the active time never exceeds the
+// wall span.
 func TestSummarizeActiveMS(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -68,6 +77,16 @@ func TestSummarizeActiveMS(t *testing.T) {
 			turns:      []Turn{withTotals(closedTurn("t1", 1, 0, 12), 12, 5)},
 			wantActive: ms(7),
 			wantWall:   ms(12),
+		},
+		{
+			// A laptop asleep inside a turn: 5 hours with no transcript line,
+			// past the first 30 minutes, is idle time and never active.
+			name: "turn with idle time: wall less user and idle time",
+			turns: []Turn{withIdle(
+				withTotals(closedTurn("t1", 1, 0, 330), 330, 2), 270,
+			)},
+			wantActive: ms(330 - 2 - 270),
+			wantWall:   ms(330),
 		},
 		{
 			name:       "turn without totals: its recorded span",

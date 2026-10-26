@@ -671,7 +671,7 @@
       figure(w.turns, 'turn'),
       figure(w.edits, 'edit'),
       figure(w.files, 'file'),
-      el('span', { class: 'ls-fig', title: 'Time inside the sessions\' turns, less waiting for input' },
+      el('span', { class: 'ls-fig', title: 'Time inside the sessions\' turns, less waiting for input and idle time' },
         [el('b', {}, fmtSpan(w.active_ms || 0)), 'active']),
       el('span', { class: 'ls-fig', title: costTitle(w) }, [el('b', {}, money(w.cost, w.unpriced)), 'cost']),
       w.cost_agents != null ? el('span', { class: 'ls-fig ls-sub', title: costTitle(w) },
@@ -938,7 +938,7 @@
   // timeTitle explains a session's two times: active inside its turns,
   // wall from its first prompt to its last turn's end.
   function timeTitle(s) {
-    return 'Active ' + fmtSpan(s.active_ms || 0) + ': time inside turns, less waiting for input\n' +
+    return 'Active ' + fmtSpan(s.active_ms || 0) + ': time inside turns, less waiting for input and idle time\n' +
       'Wall ' + fmtSpan(s.duration_ms || 0) + ': first prompt to the last turn\'s end, pauses included';
   }
 
@@ -1272,6 +1272,15 @@
   var SPAN_ROWS = ['model', 'tool', 'subagent'];
   var SUBAGENT_ROWS = 4; // rows a lane gives its subagents before bars share one
 
+  // An idle stretch is a part of a turn with no transcript line for longer
+  // than moondb.IdleGapAfter (facts.go). A lane draws each one as a hatched
+  // break no wider than IDLE_BREAK of the track, and scales the rest of the
+  // track to the turn's other time, so a turn with days of idle time still
+  // shows its calls.
+  var IDLE_TITLE = 'idle, no activity for over 30 min';
+  var IDLE_BREAK = 0.04; // the widest share of a lane one idle break takes
+  var IDLE_BREAKS = 0.3; // the widest share of a lane its idle breaks take together
+
   // fmtDuration renders milliseconds the way the CLI does: 850ms, 4.2s,
   // 3m12s, 1h02m.
   function fmtDuration(ms) {
@@ -1320,7 +1329,8 @@
       lanes.replaceChildren.apply(lanes, turns.slice(0, limit).map(traceLane));
     }
     draw(TRACE_LANES);
-    var nodes = [traceStats(tr.totals || {}, (tr.turns || []).length), traceLegend(), lanes];
+    var totals = tr.totals || {};
+    var nodes = [traceStats(totals, (tr.turns || []).length), traceLegend(totals.idle_ms > 0), lanes];
     if (turns.length > TRACE_LANES) {
       var more = el('button', {
         class: 'btn btn-ghost more', type: 'button',
@@ -1331,8 +1341,8 @@
     return nodes;
   }
 
-  function stat(value, label, sub) {
-    return el('wk-stat', {}, [
+  function stat(value, label, sub, title) {
+    return el('wk-stat', { title: title }, [
       el('wk-stat-value', {}, value),
       el('wk-stat-label', {}, label),
       el('wk-stat-sub', {}, sub)
@@ -1341,15 +1351,19 @@
 
   // traceStats is the totals strip. Time and calls are the main
   // conversation's, a subagent's running beside it; tokens and cost add
-  // the subagents', and the cost's sub-label splits it.
+  // the subagents', and the cost's sub-label splits it. The wall's
+  // sub-label names the time that was not active: waiting for input, and
+  // idle time when a turn had some.
   function traceStats(t, turnCount) {
     var k = t.tokens || {};
     var unpriced = t.unpriced && t.unpriced.length;
     // A trace that billed no token has no cost, as its listing row has none.
     var costText = t.cost == null && !unpriced ? '-' : fmtCost(t.cost);
+    var wallSub = plural(turnCount, 'turn') + ', ' + fmtDuration(t.user_ms || 0) + ' waiting for input';
+    if (t.idle_ms > 0) wallSub += ', ' + fmtDuration(t.idle_ms) + ' idle';
     return el('div', { class: 'tr-stats' }, [
-      stat(fmtDuration(t.wall_ms || 0), 'Wall',
-        plural(turnCount, 'turn') + ', ' + fmtDuration(t.user_ms || 0) + ' waiting for input'),
+      stat(fmtDuration(t.wall_ms || 0), 'Wall', wallSub,
+        t.idle_ms > 0 ? 'Idle: ' + IDLE_TITLE + ' inside a turn' : null),
       stat(fmtDuration(t.model_ms || 0), 'Model', plural(t.model_calls || 0, 'main call') +
         (t.agent_model_calls ? ', ' + fmtCount(t.agent_model_calls) + ' by subagents' : '')),
       stat(fmtDuration(t.tool_ms || 0), 'Tool', plural(t.tool_calls || 0, 'main call') +
@@ -1371,7 +1385,9 @@
     return text;
   }
 
-  function traceLegend() {
+  // traceLegend keys the bar colours, and the idle break when a turn of the
+  // trace has idle time.
+  function traceLegend(idle) {
     function key(color, text, failed) {
       return el('span', { class: 'row', style: '--bar:var(' + color + ')' },
         [el('span', { class: 'swatch tr-swatch' + (failed ? ' tr-failed' : '') }), text]);
@@ -1381,35 +1397,92 @@
       key(SPAN_COLORS.tool, 'tool call'),
       key('--red', 'failed tool call', true),
       key(SPAN_COLORS.subagent, 'subagent run'),
+      idle ? el('span', { class: 'row' }, [el('span', { class: 'swatch tr-idle-swatch' }), IDLE_TITLE]) : null,
       el('span', { class: 'muted' }, 'Each lane runs from its prompt to Stop; a subagent bar from its spawn ' +
-        'to its stop, cut at the lane\'s end. Click a bar to open the turn.')
+        'to its stop, cut at the lane\'s end.' +
+        (idle ? ' An idle stretch is a narrow break, whatever its length.' : '') +
+        ' Click a bar to open the turn.')
     ]);
   }
 
-  // traceLane is one turn: its label, a track with a row per span kind, and
-  // its time and cost. A turn without a start time has nothing to place
-  // its bars against, so its track stays empty.
+  // traceLane is one turn: its label, a track with a row per span kind and
+  // its idle breaks, and its time and cost. A turn without a start time has
+  // nothing to place its bars against, so its track stays empty.
   function traceLane(tt) {
     var started = parseTime(tt.span.start);
-    var wall = Math.max(tt.span.duration_ms, 1);
     var href = '?turn=' + enc(tt.turn_id);
     var spans = started ? tt.spans || [] : [];
+    var scale = started ? laneScale(tt, started.getTime()) : null;
     function ofKind(kind) { return spans.filter(function (s) { return s.kind === kind; }); }
     var rows = [ofKind('model'), ofKind('tool')].concat(packRows(ofKind('subagent'), SUBAGENT_ROWS))
       .map(function (row) {
         return el('div', { class: 'tr-row' }, row.map(function (s) {
-          return traceBar(s, started.getTime(), wall, href);
+          return traceBar(s, started.getTime(), scale, href);
         }));
       });
+    var breaks = scale ? scale.breaks.map(idleBreak) : [];
+    var idle = tt.totals.idle_ms > 0
+      ? '\nIdle: ' + fmtDuration(tt.totals.idle_ms) + ', ' + IDLE_TITLE : '';
     var label = '#' + tt.seq + ' ' + (tt.prompt || '(no prompt recorded)');
     return el('div', { class: 'tr-lane' }, [
       el('a', { class: 'tr-label', href: href, title: label }, [
         el('span', { class: 'muted' }, '#' + tt.seq + ' '), tt.prompt || '(no prompt recorded)'
       ]),
-      el('div', { class: 'tr-track' }, rows),
-      el('span', { class: 'tr-meta', title: 'Cost: ' + costSplit(tt.totals) },
+      el('div', { class: 'tr-track' }, rows.concat(breaks)),
+      el('span', { class: 'tr-meta', title: 'Cost: ' + costSplit(tt.totals) + idle },
         fmtDuration(tt.totals.wall_ms) + ' · ' + fmtCost(tt.totals.cost))
     ]);
+  }
+
+  // laneScale places a turn's times on its track. at gives the share of
+  // the track a time falls at, in milliseconds since the turn's start, and
+  // breaks are the idle stretches to draw. Each idle stretch is drawn no
+  // wider than IDLE_BREAK (less when several share IDLE_BREAKS), and the
+  // rest of the track scales to the turn's other time. A turn without idle
+  // time, or with less than a break's width, is scaled linearly.
+  function laneScale(tt, start) {
+    var wall = Math.max(tt.span.duration_ms, 1);
+    var idle = (tt.gaps || []).filter(function (g) { return g.kind === 'idle'; })
+      .map(function (g) {
+        var from = parseTime(g.start);
+        return from ? { from: from.getTime() - start, ms: g.duration_ms } : null;
+      })
+      .filter(Boolean);
+    var widest = Math.min(IDLE_BREAK, IDLE_BREAKS / Math.max(idle.length, 1));
+    var idleMS = 0;
+    var breaksShare = 0;
+    idle.forEach(function (g) {
+      g.share = Math.min(g.ms / wall, widest);
+      idleMS += g.ms;
+      breaksShare += g.share;
+    });
+    var perMS = (1 - breaksShare) / Math.max(wall - idleMS, 1);
+    function at(ms) {
+      var x = 0;
+      var prev = 0;
+      for (var i = 0; i < idle.length && ms > idle[i].from; i++) {
+        var g = idle[i];
+        x += (g.from - prev) * perMS;
+        if (ms < g.from + g.ms) return x + (ms - g.from) / g.ms * g.share;
+        x += g.share;
+        prev = g.from + g.ms;
+      }
+      return Math.min(Math.max(x + (ms - prev) * perMS, 0), 1);
+    }
+    return {
+      at: at,
+      wall: wall,
+      breaks: idle.map(function (g) { return { left: at(g.from), width: g.share, ms: g.ms }; })
+    };
+  }
+
+  // idleBreak draws one idle stretch across a lane's rows, over the bars
+  // that run through it.
+  function idleBreak(b) {
+    return el('span', {
+      class: 'tr-idle', title: IDLE_TITLE + ' · ' + fmtDuration(b.ms),
+      style: 'left:' + (b.left * 100).toFixed(3) + '%;width:' + (b.width * 100).toFixed(3) + '%'
+    });
   }
 
   // packRows lays spans out in rows, each span in the first row whose last
@@ -1437,17 +1510,18 @@
     return at ? at.getTime() : 0;
   }
 
-  // traceBar is one span placed on its turn's track, or null (which el
-  // skips) for a span without a start time.
-  function traceBar(s, start, wall, href) {
+  // traceBar is one span placed on its turn's track by the lane's scale
+  // (laneScale), or null (which el skips) for a span without a start time.
+  function traceBar(s, start, scale, href) {
     var at = parseTime(s.start);
     if (!at) return null;
-    var left = Math.min(Math.max((at.getTime() - start) / wall, 0), 1);
-    var width = Math.min(s.duration_ms / wall, 1 - left);
+    var from = at.getTime() - start;
+    var left = scale.at(from);
+    var width = Math.max(scale.at(from + s.duration_ms) - left, 0);
     var failed = s.kind === 'tool' && s.is_error;
     var color = failed ? '--red' : SPAN_COLORS[s.kind];
     var title = spanTitle(s);
-    if (s.kind === 'subagent' && (at.getTime() - start + s.duration_ms) > wall) {
+    if (s.kind === 'subagent' && from + s.duration_ms > scale.wall) {
       title += ' · ran on past the turn\'s Stop';
     }
     return el('a', {
@@ -1515,6 +1589,10 @@
         kvRow('Edits', plural(edits.length, 'edit') + (deltas.length
           ? ', ' + plural(deltas.length, 'unattributed delta') : '')),
         t.trace_totals ? kvRow('Cost', fmtCost(t.trace_totals.cost) + ' · ' + costSplit(t.trace_totals)) : null,
+        t.trace_totals && t.trace_totals.idle_ms > 0
+          ? kvRow('Idle', fmtDuration(t.trace_totals.idle_ms) + ' of ' +
+            fmtDuration(t.trace_totals.wall_ms) + ' · ' + IDLE_TITLE)
+          : null,
         skipped ? kvRow('Skipped', skipped) : null,
         originRow(t)
       ].filter(Boolean)),

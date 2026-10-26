@@ -342,7 +342,8 @@ func checkTotals(t *testing.T, got, want Totals, wantCost *float64) {
 
 func totalsEqual(a, b Totals) bool {
 	return a.WallMS == b.WallMS && a.ModelMS == b.ModelMS && a.ToolMS == b.ToolMS &&
-		a.HarnessMS == b.HarnessMS && a.UserMS == b.UserMS && a.Tokens == b.Tokens &&
+		a.HarnessMS == b.HarnessMS && a.UserMS == b.UserMS && a.IdleMS == b.IdleMS &&
+		a.Tokens == b.Tokens &&
 		slices.Equal(a.Unpriced, b.Unpriced) && a.ModelCalls == b.ModelCalls &&
 		a.ToolCalls == b.ToolCalls && a.ToolErrors == b.ToolErrors
 }
@@ -379,15 +380,16 @@ func checkSpans(t *testing.T, got []Span, want []wantSpan) {
 
 // checkGaps holds every trace to the partition contract: the gaps run
 // back to back from the turn's start to its end, neighbours differ in kind,
-// and they sum to the wall time, as do the totals by kind.
+// and they sum to the wall time, as do the totals by kind, idle included.
 func checkGaps(t *testing.T, got TurnTrace) {
 	t.Helper()
 	if len(got.Gaps) == 0 {
 		return
 	}
 	tot := got.Totals
-	if sum := tot.ModelMS + tot.ToolMS + tot.HarnessMS + tot.UserMS; sum != tot.WallMS {
-		t.Errorf("model, tool, harness and user time sum to %dms; wall is %dms", sum, tot.WallMS)
+	if sum := tot.ModelMS + tot.ToolMS + tot.HarnessMS + tot.UserMS + tot.IdleMS; sum != tot.WallMS {
+		t.Errorf("model, tool, harness, user and idle time sum to %dms; wall is %dms",
+			sum, tot.WallMS)
 	}
 	prev := got.Span.Start
 	var sum time.Duration
@@ -713,7 +715,7 @@ func TestBuildSessionTimeOrder(t *testing.T) {
 			Span: Span{Kind: KindTurn, Start: start, End: end},
 			Totals: Totals{
 				WallMS: wall, ModelMS: wall / 2, ToolMS: wall / 4, HarnessMS: wall / 8,
-				UserMS: wall - wall/2 - wall/4 - wall/8,
+				IdleMS: wall / 16, UserMS: wall - wall/2 - wall/4 - wall/8 - wall/16,
 			},
 		}
 	}
@@ -791,8 +793,9 @@ func TestBuildSessionTimeOrder(t *testing.T) {
 				t.Errorf("user = %dms, want the turns' %dms plus the gaps' %dms",
 					tot.UserMS, turnsUser, gapsMS)
 			}
-			if sum := tot.ModelMS + tot.ToolMS + tot.HarnessMS + tot.UserMS; sum != tot.WallMS {
-				t.Errorf("model, tool, harness and user time sum to %dms; wall is %dms",
+			if sum := tot.ModelMS + tot.ToolMS + tot.HarnessMS + tot.UserMS + tot.IdleMS; sum !=
+				tot.WallMS {
+				t.Errorf("model, tool, harness, user and idle time sum to %dms; wall is %dms",
 					sum, tot.WallMS)
 			}
 		})

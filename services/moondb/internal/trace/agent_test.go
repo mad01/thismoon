@@ -9,8 +9,8 @@ import (
 )
 
 // fixtureAgent is the teammate of testdata/agent.jsonl: messaged in turn
-// p1, idle, then messaged again in turn p2, stopped two seconds after its
-// last line.
+// p1, waiting for input, then messaged again in turn p2, stopped two
+// seconds after its last line.
 func fixtureAgent() store.Agent {
 	return store.Agent{
 		ID: "agent-w", SessionID: "s", Type: "general-purpose", Name: "worker",
