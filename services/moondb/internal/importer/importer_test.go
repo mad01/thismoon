@@ -603,6 +603,21 @@ func TestFixtureIsJSONLines(t *testing.T) {
 	}
 }
 
+// TestImportCountsSkippedAgentFiles: a subagent file with no timeline line
+// gives no Agent record and is counted as skipped.
+func TestImportCountsSkippedAgentFiles(t *testing.T) {
+	w := newWorld(t)
+	empty := filepath.Join(strings.TrimSuffix(w.transcript("sess-1"), ".jsonl"),
+		"subagents", "agent-aempty-1.jsonl")
+	if err := os.WriteFile(empty, []byte(`{"type":"attachment"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := w.run(t, w.options())
+	if got.Agents != 1 || got.AgentFilesSkipped != 1 {
+		t.Errorf("agents %d, skipped %d; want 1 and 1", got.Agents, got.AgentFilesSkipped)
+	}
+}
+
 // TestImportAgents writes each subagent transcript of an imported session
 // as the SubagentStop hook would: the agent transcript, who the meta file
 // says the agent was, the turns it ran under and where it worked.

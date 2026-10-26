@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/mad01/thismoon/services/moondb"
@@ -42,6 +44,29 @@ func TestReadAgent(t *testing.T) {
 	}
 	if n := bytes.Count(c.Transcript, []byte("\n")); n != 11 {
 		t.Errorf("transcript has %d lines, want 11", n)
+	}
+}
+
+// TestReadKeepsLinesBeforeAReadError: a read that fails after a timeline
+// line keeps the lines before it and marks the capture partial; one that
+// fails before any line is an error.
+func TestReadKeepsLinesBeforeAReadError(t *testing.T) {
+	data, err := os.ReadFile(workerFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := data[:bytes.IndexByte(data, '\n')+1]
+	broken := errors.New("disk gone")
+	c, err := readLines(context.Background(),
+		io.MultiReader(bytes.NewReader(first), iotest.ErrReader(broken)))
+	if err != nil || !c.Lines.Partial || c.Lines.Kept != 1 {
+		t.Errorf("readLines = lines %+v, %v; want one kept and partial", c.Lines, err)
+	}
+	if _, err := readLines(context.Background(), iotest.ErrReader(broken)); !errors.Is(
+		err,
+		broken,
+	) {
+		t.Errorf("readLines of a failing reader = %v, want %v", err, broken)
 	}
 }
 

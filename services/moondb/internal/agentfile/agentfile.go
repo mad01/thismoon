@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -62,18 +63,32 @@ var ErrNoLines = errors.New("agentfile: no transcript lines")
 
 // Read reads the transcript at path and the meta file beside it. hookType
 // is the agent_type a hook payload named, "" when there is none. When ctx
-// ends before the file does, Read keeps what it read and marks the capture
-// partial; only a file it cannot open, or one without a timeline line, is
-// an error.
+// ends before the file does, or a read fails after a timeline line, Read
+// keeps what it read and marks the capture partial; only a file it cannot
+// open or read a timeline line from is an error.
 func Read(ctx context.Context, path, hookType string) (Capture, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return Capture{}, err
 	}
 	defer f.Close()
+	c, err := readLines(ctx, f)
+	if err != nil {
+		return Capture{}, err
+	}
+	c.ID = cmp.Or(c.ID, IDFromPath(path))
+	m := ReadMeta(MetaPath(path))
+	c.Type, c.Name = Kind(m, hookType)
+	c.Description = m.Description
+	c.Model = cmp.Or(c.Model, m.Model)
+	return c, nil
+}
+
+// readLines reads r's timeline lines into a capture, slimmed and capped.
+func readLines(ctx context.Context, r io.Reader) (Capture, error) {
 	var c Capture
 	var kept [][]byte
-	_, err = jsonl.Scan(f, maxLineBytes, func(line []byte, _ int64) bool {
+	_, err := jsonl.Scan(r, maxLineBytes, func(line []byte, _ int64) bool {
 		if ctx.Err() != nil {
 			c.Lines.Partial = true
 			return false
@@ -84,17 +99,14 @@ func Read(ctx context.Context, path, hookType string) (Capture, error) {
 		}
 		return true
 	})
-	if err != nil && len(kept) == 0 {
+	switch {
+	case err != nil && len(kept) == 0:
 		return Capture{}, err
-	}
-	if len(kept) == 0 {
+	case err != nil:
+		c.Lines.Partial = true
+	case len(kept) == 0:
 		return Capture{}, ErrNoLines
 	}
-	c.ID = cmp.Or(c.ID, IDFromPath(path))
-	m := ReadMeta(MetaPath(path))
-	c.Type, c.Name = Kind(m, hookType)
-	c.Description = m.Description
-	c.Model = cmp.Or(c.Model, m.Model)
 	c.Transcript, c.Lines.Cut = capHead(kept, moondb.MaxAgentTranscriptBytes)
 	c.Lines.Kept = len(kept) - c.Lines.Cut
 	return c, nil

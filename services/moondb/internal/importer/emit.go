@@ -103,11 +103,12 @@ func (em *emitter) write(env spool.Envelope, chunks chunkSet) error {
 // agent builds the agent-close envelope of one subagent transcript, as the
 // SubagentStop hook builds it: the agent transcript cut to heads, who the
 // meta file says the agent was, and where its cwd sits in git. The stop
-// time is the last line's, which is all the file tells; false for a file
-// with no timeline line.
+// time is the last line's, which is all the file tells; false, counted
+// as skipped, for a file it cannot read or with no timeline line.
 func (em *emitter) agent(path string) (spool.Envelope, chunkSet, bool) {
 	c, err := agentfile.Read(em.places.ctx, path, "")
 	if err != nil {
+		em.counts.AgentFilesSkipped++
 		return spool.Envelope{}, nil, false
 	}
 	env := em.envelope(spool.KindAgentClose, fmt.Sprintf("%s:close:%d", c.ID, c.Lines.Read),

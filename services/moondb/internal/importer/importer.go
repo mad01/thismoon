@@ -104,11 +104,13 @@ type Counts struct {
 	// imported: the transcript records no diff for them.
 	BashCalls int `json:"bash_calls_not_imported"`
 	// Agents counts the subagents of imported sessions written as Agent
-	// records, one agent-close envelope each.
-	Agents           int            `json:"agents"`
-	Envelopes        int            `json:"envelopes"`
-	UndecodableLines int            `json:"undecodable_lines"`
-	UnknownTypes     map[string]int `json:"unknown_types"`
+	// records, one agent-close envelope each. AgentFilesSkipped counts
+	// their files that gave none: unreadable, or without a timeline line.
+	Agents            int            `json:"agents"`
+	AgentFilesSkipped int            `json:"agent_files_skipped"`
+	Envelopes         int            `json:"envelopes"`
+	UndecodableLines  int            `json:"undecodable_lines"`
+	UnknownTypes      map[string]int `json:"unknown_types"`
 	// ElapsedMS is set by the caller, which owns the clock.
 	ElapsedMS int64 `json:"elapsed_ms"`
 }

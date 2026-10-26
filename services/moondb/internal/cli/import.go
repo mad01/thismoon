@@ -192,7 +192,7 @@ func printImport(w io.Writer, c importer.Counts, dryRun bool) {
 		{"sessions skipped", fmt.Sprintf("%d in store, %d outside --since, %d without edits",
 			c.Skipped.InStore, c.Skipped.OutsideSince, c.Skipped.NoEdits)},
 		{"turns", fmtCount(c.Turns)},
-		{"agents", fmtCount(c.Agents)},
+		{"agents", fmt.Sprintf("%d (%d files skipped)", c.Agents, c.AgentFilesSkipped)},
 		{"edits", tally(c.Edits)},
 		{"edits without a patch", fmtCount(c.EditsWithoutPatch)},
 		{"originals from file history", fmtCount(c.OriginalsFromHistory)},

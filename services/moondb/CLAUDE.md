@@ -131,8 +131,8 @@ and times survive, so the cut transcript prices the same as the file: an
 11 MB transcript keeps about 0.5 MB. Past `MaxAgentTranscriptBytes`
 (8 MiB) whole lines go from the head and are counted on the record. Their
 calls add no tokens or cost. The work fits in `AgentBudget` (2 s); a file
-the budget does not reach the end of is recorded up to there and marked
-partial.
+the budget does not reach the end of, or whose read fails partway, is
+recorded up to there and marked partial.
 
 The agent's type is the meta file's `spawnedAgentType`, else its
 `agentType` when that differs from the name, else the hook's `agent_type`
@@ -212,7 +212,9 @@ prompt still moves a start time back. A subagent's edits come from
 `<session>/subagents/agent-<id>.jsonl`, carry its id and type, and belong
 to the main turn its entries name. Each subagent file also gives one
 agent-close envelope, written after the session's turns and cut as the
-SubagentStop hook cuts it. Its stop is the time of its last line.
+SubagentStop hook cuts it. Its stop is the time of its last line. A file
+that cannot be read, or holds no timeline line, gives none and counts as
+skipped.
 
 What a transcript gives back:
 
