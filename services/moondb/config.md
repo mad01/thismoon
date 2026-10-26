@@ -147,7 +147,8 @@ command:
       { "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }
     ],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }]
+    "Stop": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }]
   },
   "bashEditDiffEnabled": true
 }

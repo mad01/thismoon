@@ -25,6 +25,9 @@ Claude Code hooks pipe their payloads into `moondb record`:
   state, is only counted on the turn
 - when the session stops, the turn closes, and any new commits in the
   worktrees the session touched are noted
+- when a subagent stops, it is recorded with the turns it ran under and
+  its own transcript, each message cut to a short head, so its time and
+  cost can be traced
 
 At the start and the end of each turn, `record` also takes a **snapshot** of
 each worktree in play: the content of its uncommitted files and of the files
@@ -69,7 +72,8 @@ Then add the hooks to your Claude Code settings:
       { "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }
     ],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }]
+    "Stop": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }]
   },
   "bashEditDiffEnabled": true
 }
@@ -110,8 +114,8 @@ edit, and the commit it landed in.
 
 To cover the time before the hooks were wired, import the last 30 days with
 `moondb import`. It reads the session transcripts Claude Code keeps under
-`~/.claude/projects` and spools the turns and edits the hooks would have
-recorded, so serve must be running to take them in. Sessions the store
+`~/.claude/projects` and spools the turns, edits and subagents the hooks
+would have recorded, so serve must be running to take them in. Sessions the store
 already holds are skipped. A transcript has less than the hooks see: it has
 no disk read after an edit and no snapshots, and the import skips Bash
 commands. It has no HEAD either, so imported edits link to commits only once
@@ -121,9 +125,11 @@ a later session moves HEAD. Run it with `--dry-run` first to see the counts.
 harness time (hooks and request setup) and user time (waiting for input). It
 adds up the tokens by kind and the cost at list prices, then lists the ten
 longest tool calls and the ten most expensive model calls with their turns.
-It reads the transcript lines each turn keeps, so it needs nothing new from
-the hooks. The cost covers the main conversation: a subagent's model calls
-are in its own transcript, which moondb does not keep. A model moondb has no
+It reads the transcript lines each turn keeps and each subagent's own
+transcript, so the cost covers the main conversation and every subagent
+that stopped while moondb recorded or was imported. The cost line splits
+the two, an agents table lists each subagent with its turns, calls and
+cost, and the rankings include the subagents' calls. A model moondb has no
 price for shows its tokens and is named as unpriced, so the cost is never a
 silent zero.
 
@@ -144,9 +150,9 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 |------|---------|
 | `moondb_why(path, line)` | The edit, turn, prompt, session and commit behind one line |
 | `moondb_history(path)` | Every recorded edit of a file, newest first |
-| `moondb_turn(id)` | One turn: prompt, final message, edits, unattributed deltas, snapshots |
-| `moondb_sessions()` | Recorded sessions, newest first, with title, status, counts and cost |
-| `moondb_trace(id)` | One session's time and cost: totals, the longest tool calls, the most expensive model calls |
+| `moondb_turn(id)` | One turn: prompt, final message, edits, unattributed deltas, snapshots, the agents that worked in it |
+| `moondb_sessions()` | Recorded sessions, newest first, with title, status, counts, subagents and cost |
+| `moondb_trace(id)` | One session's time and cost: totals, the subagents, the longest tool calls, the most expensive model calls |
 | `moondb_doctor()` | Run the `moondb doctor` checks and return the report |
 
 ### Web page
@@ -155,19 +161,25 @@ Open `http://moondb.this/` (or `http://localhost:7433/`) for a read-only web
 UI. The front page lists the sessions active in the last 7 days, grouped
 by the day they started, newest first. Each row names the session and its
 repo, and says whether it still runs and when it was last active. Its
-turn, edit, file and agent counts sit beside its cost. Switch the window
-to 24 hours, 30 days or any time, and pick a repo chip to see one repo. A
-strip above the list adds up the sessions, turns, edits, files and cost in
-view.
+turn, edit, file and agent counts sit beside its cost, which covers the
+session and its subagents. Switch the window to 24 hours, 30 days or any
+time, and pick a repo chip to see one repo. A strip above the list adds up
+the sessions, turns, edits, files and cost in view, and the subagents'
+part of it.
 
 A session opens on its title, repos, status and run time. Its trace comes
 next: a strip of totals, then a timeline lane per turn with a bar for each
-model call, tool call and subagent. Hover a bar for its duration, tokens
-and cost, and click it to open the turn. The turns and worktrees follow,
-and the session id and paths sit in a closed "Session details" block at
-the end.
+model call, tool call and subagent, the subagent's from its spawn to its
+stop. Hover a bar for its duration, calls, tokens and cost, and click it
+to open the turn. An agents table follows, the main conversation first and
+then each subagent with its turns, calls and cost. Then the turns, each
+with the agents that ran in it and a badge when a background task, a
+teammate or another agent started it rather than you. The worktrees come
+last, and the session id and paths sit in a closed "Session details" block
+at the end.
 
-A turn shows its prompt, final message, agents, every edit as a diff, and
+A turn shows its prompt, final message, the agents that worked in it with
+their calls and cost, every edit as a diff, and
 the snapshots taken at its start and end. Click an added line to ask why
 it's there. A file view shows the file as it is today with the turn and
 agent behind each line, plus its recorded history.

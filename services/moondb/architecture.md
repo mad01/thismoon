@@ -17,6 +17,7 @@ Claude Code hooks ──stdin JSON──▶ moondb record ──files──▶ s
   PostToolUse Edit|Write|MultiEdit|NotebookEdit (sync)                   ├─ HTTP API /api/*
   PostToolUse Bash (async, needs bashEditDiffEnabled)                    └─ web page
   Stop (async), then snapshots
+  SubagentStop (async), the agent transcript cut to heads
 moondb import ──reads ~/.claude transcripts──▶ spool/ (the same envelopes, backfilled)
 moondb mcp (stdio shim) ──HTTP──▶ serve
 moondb why | history | sessions | trace ──HTTP──▶ serve
@@ -26,24 +27,27 @@ moondb why | history | sessions | trace ──HTTP──▶ serve
 
 ```
 cmd/moondb/         entrypoint, delegates to internal/cli
-facts.go            port, workdir, caps and budgets, default excludes, trace
-                    limits, totals backfill pace, listing status rule,
-                    model prices, agentdoc.Facts
+facts.go            port, workdir, caps and budgets, agent transcript head
+                    and cap, default excludes, trace limits, totals
+                    backfill pace, listing status rule, model prices,
+                    agentdoc.Facts
 internal/
   cli/              Cobra commands: serve, record, import, mcp, why,
                     history, sessions, trace, doctor, docs, version
   record/           the hook side: payload decode, envelope builders,
                     observed read and blob id, HEAD content, transcript
                     tail, Bash diffs and their clean check, turn-edge
-                    snapshots, per-session state, the 200 ms and 2 s
-                    budgets
+                    snapshots, subagent stops, per-session state, the
+                    200 ms and 2 s budgets
+  agentfile/        one subagent's transcript file: read it, cut it to an
+                    agent transcript, read its meta file, name its type
   importer/         the transcript import: parse a session transcript
-                    and its subagent transcripts, map turns and edits to
-                    envelopes, take large files' originals from the file
-                    history
+                    and its subagent transcripts, map turns, edits and
+                    agents to envelopes, take large files' originals from
+                    the file history
   spool/            envelope format, atomic writer, drain reader
-  ingest/           serve's spool drain: envelopes to records, turn totals
-                    at close, the totals backfill, session titles
+  ingest/           serve's spool drain: envelopes to records, turn and
+                    agent totals, the totals backfill, session titles
   derive/           before and after content per Edit, snapshot records,
                     unattributed deltas
   patch/            forward and reverse patch apply, hunk context checks,
@@ -54,8 +58,8 @@ internal/
     storetest/      conformance suite for every backend
   query/            why and history over the store and git, and the
                     trace cache
-  trace/            traces from transcript lines: spans, gaps, totals,
-                    prices; pure functions
+  trace/            turn, agent and session traces from transcript lines:
+                    spans, gaps, segments, totals, prices; pure functions
   server/           HTTP API + webkit web page
   client/           HTTP client shared by the CLI and mcpserver
   mcpserver/        MCP stdio setup and the read-only tools
@@ -80,7 +84,12 @@ the turn. On
 Stop it spools a turn-close envelope with the
 final message and the transcript tail. For each touched worktree whose HEAD
 moved since the hook last looked, it adds a head-moved envelope listing the
-new commits' (path, blob id) pairs.
+new commits' (path, blob id) pairs. On SubagentStop it reads the agent's
+own transcript file and spools an agent-close envelope: the agent's type,
+name and model, the turns it ran under, its start and stop, and its agent
+transcript. That keeps the timeline lines with each text and tool result
+cut to a 240-byte head, so an 11 MB file keeps about half a megabyte and
+prices the same. The async hook has 2 s for it.
 
 Snapshots: after its own envelope, UserPromptSubmit and Stop each spool a
 snapshot envelope per worktree in play, the cwd's and every touched one.
@@ -105,7 +114,9 @@ transcript has no disk read and no HEAD, so imported edits
 carry neither and the import writes no head-moved envelope. Most imported
 files sat in worktrees deleted since. The import places those by the
 nearest surviving work tree, the worktree layout of their path, or the
-session cwd. The repo comes from a known location of the same name.
+session cwd. The repo comes from a known location of the same name. Each
+subagent transcript file also gives one agent-close envelope, cut as the
+hook cuts it.
 
 Ingest: serve watches the spool and polls it every second. It reads
 envelopes in name order, stores their chunks, derives each Edit and
@@ -140,7 +151,8 @@ Trace: serve computes a turn's trace on read from the transcript lines the
 turn keeps, so capture records nothing new for it. `trace.Build` makes a
 span per assistant message, from the event before it to its last line. It
 makes one per tool call, from the `tool_use` to its `tool_result`, and one
-per subagent, from its first to its last recorded edit inside the turn. It
+per subagent without a record, from its first to its last recorded edit
+inside the turn. It
 splits the turn into gaps classed by the event that ends each one: model,
 tool, user (a new input after the model finished) or harness. The gaps add
 up to the wall time, and so do the totals by kind, to the millisecond. A
@@ -156,6 +168,16 @@ times, so `query` caches it in memory under those, at most 512 turns. A
 session's trace puts its turns in order and adds the user time between
 them.
 
+Agents: `trace.BuildAgent` traces an Agent from its agent transcript with
+the same parser. Its run goes from its spawn to its stop, and its segments
+split the run by the turn each stretch of its lines came in under, so a
+teammate messaged in three turns has three. A turn's trace gets one span
+per agent that ran under it, from that agent's segments there, with the
+calls, tokens and cost, and its cost adds theirs beside its own. A
+session's cost adds every agent's whole run, and its rankings take the
+agents' calls. Time stays the main conversation's: an agent runs beside
+it. Agent traces are cached the same way as turn traces.
+
 Turn totals: a list of sessions cannot afford a trace per turn, so ingest
 keeps each closed turn's totals on its Turn record when the turn closes.
 They hold the time per class, the call counts, and the tokens per model
@@ -166,7 +188,9 @@ session first and a session's turns in order. It tries a fixed number of
 turns per batch, computed or not, and stops a batch at a store failure. A
 turn it cannot read or that panics is skipped until serve restarts. It
 logs how many turns it computed once none are left, and it also fills the
-prompt line of every session that had none when serve started.
+prompt line of every session that had none when serve started. An Agent
+gets totals of the same shape when its agent-close is ingested, and the
+totals backfill computes the missing ones after the turns.
 
 The session list reads records only. A row's title is the session's
 harness title, else the first line of its first prompt serve saw, else the
@@ -174,8 +198,9 @@ last segment of its cwd, else its id. One rule picks the harness title on
 every path: a name the person gave outranks a generated title, and within
 one rank the first title seen stays. A row is running while its last
 activity is under 10 minutes old, or its last turn is open and the
-activity is under 12 hours old. Its cost prices the stored tokens on read,
-so a price change reprices every row. The time window keeps the sessions
+activity is under 12 hours old. Its cost prices the stored tokens of its
+turns and its agents on read, split into the main conversation's part and
+the agents', so a price change reprices every row. The time window keeps the sessions
 active in it, grouped by the day they started. The answer also adds up the
 whole filtered window and lists the window's repos for the page's chips.
 
@@ -186,8 +211,8 @@ The `local` backend keeps everything under the workdir
 
 - `log/NNNNNN.jsonl`: append-only records, one per line. A segment rolls at
   64 MiB. serve replays every segment on start into an in-memory index of
-  sessions, turns, edits by path and by blob id, snapshots by worktree,
-  and commits.
+  sessions, turns, agents, edits by path and by blob id, snapshots by
+  worktree, and commits.
 - `objects/<ab>/<sha>.gz`: gzipped chunks named by the SHA-256 of their
   uncompressed bytes.
 - `spool/`: envelopes and their chunk files, waiting for serve.
