@@ -68,14 +68,6 @@ func TestSessionAndTurn(t *testing.T) {
 		len(sess.Agents) != 1 || sess.Agents[0].Type != server.MainAgentType {
 		t.Errorf("session = %+v, want its turn and the main conversation's row", sess)
 	}
-	agent, err := h.client.Agent(ctx, servertest.AgentID)
-	if err != nil || agent.Name != servertest.AgentName || agent.Row.ModelCalls != 2 ||
-		len(agent.Trace.Spans) != 3 {
-		t.Errorf("Agent = %+v, %v; want the reviewer with its row and trace", agent, err)
-	}
-	if _, err := h.client.Agent(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("Agent(nope) = %v, want store.ErrNotFound", err)
-	}
 	turn, err := h.client.Turn(ctx, servertest.NewTurn)
 	if err != nil {
 		t.Fatalf("Turn: %v", err)

@@ -119,9 +119,10 @@ type RepoCount struct {
 // session with its turns, plus its listing row, whose title and status
 // follow the listing's rules, and its agents: the main conversation first,
 // then every subagent. The rows take the place of the store's Agent
-// records in the JSON.
+// records (store.SessionDetail), so Agents is the one agents field.
 type SessionView struct {
-	store.SessionDetail
+	store.SessionSummary
+	Turns   []store.Turn   `json:"turns"`
 	Summary SessionSummary `json:"summary"`
 	Agents  []AgentRow     `json:"agents"`
 }
@@ -168,9 +169,10 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, SessionView{
-		SessionDetail: d,
-		Summary:       s.row(d.SessionSummary, s.now()),
-		Agents:        agents,
+		SessionSummary: d.SessionSummary,
+		Turns:          d.Turns,
+		Summary:        s.row(d.SessionSummary, s.now()),
+		Agents:         agents,
 	})
 }
 

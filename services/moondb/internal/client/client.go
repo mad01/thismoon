@@ -99,14 +99,6 @@ func (c *Client) Session(ctx context.Context, id string) (server.SessionView, er
 	return out, c.getJSON(ctx, c.http, "/api/sessions/"+url.PathEscape(id), nil, &out)
 }
 
-// Agent loads one subagent with its row and its trace. It rides the slow
-// client: serve reads the agent transcript when its trace is not cached.
-// A missing id matches store.ErrNotFound.
-func (c *Client) Agent(ctx context.Context, id string) (server.AgentView, error) {
-	var out server.AgentView
-	return out, c.getJSON(ctx, c.slow, "/api/agents/"+url.PathEscape(id), nil, &out)
-}
-
 // Turn loads one turn with everything recorded under it and its trace
 // totals. A missing id matches store.ErrNotFound.
 func (c *Client) Turn(ctx context.Context, id string) (server.TurnView, error) {
