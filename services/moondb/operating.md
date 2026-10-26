@@ -101,6 +101,18 @@ while the spool is empty. An agent with `lines_cut` had a transcript over
 8 MiB after the cut to heads; the calls in its cut head add no cost. One
 marked `partial` ran out of the hook's 2 s budget before the file's end.
 
+A repo's cost looks wrong: the page, `moondb sessions --repo` and the
+`moondb_sessions` tool split a session's cost by agent, since model calls
+carry no repo. A subagent's cost goes to the repo most of its edits
+touched, else to the repo of its cwd, else to `no_repo` ("no repo (cwd)"
+on the page). The main conversation's goes to the repo most of its own
+edits touched, else to "orchestration". So a session that edited a repo
+can give it nothing (`repo_cost` 0). A repo chip and the repo filter take
+a session that edited the repo or sends it a part of its cost. A subagent
+that only read there is enough. The chip's count and cost then match the
+filtered list. An agent waiting for the totals backfill adds nothing
+until it has totals.
+
 An edit with `before_source: unknown`: serve could not reconstruct the file
 as it was before the edit. The patch hunks are still recorded.
 

@@ -5,11 +5,12 @@
 // string:
 //
 //   /                              sessions active in the window (last 7 days by default),
-//                                  grouped by the day they started, newest first;
+//                                  grouped by the day they started, newest first, under
+//                                  a strip whose bar splits the cost by repo;
 //                                  ?since= and ?repo= filter, ?limit= pages
-//   /?session=<id>                 one session: its title, repos and status, its trace (a
-//                                  timeline lane per turn), its agents with their cost,
-//                                  its turns and the worktrees it touched
+//   /?session=<id>                 one session: its title, repos, status and cost by repo,
+//                                  its trace (a timeline lane per turn), its agents with
+//                                  their cost, its turns and the worktrees it touched
 //   /?turn=<id>                    one turn: prompt, final message, agents, edits with
 //                                  their diffs, unattributed deltas, snapshots, commit
 //                                  links and the raw transcript
@@ -534,6 +535,16 @@
   // keeps its colour from row to row.
   var REPO_HUES = ['--series-1', '--series-2', '--series-3', '--series-4'];
 
+  // The labels attributed cost takes when no repo does, as the API names
+  // them, and the rule that sends a cost to a repo or a label. Model calls
+  // carry no repo, so a session's cost is split by who spent it.
+  var ORCHESTRATION = 'orchestration';
+  var NO_REPO = 'no_repo';
+  var ATTRIBUTION = 'Attributed by agent: each subagent\'s cost goes to the repo most of its edits ' +
+    'touched, else the repo it worked in, else "no repo (cwd)". The main conversation\'s cost goes to ' +
+    'the repo most of its own edits touched, else "orchestration". A tie goes to the repo edited ' +
+    'first. An agent without a price adds nothing.';
+
   function renderSessions() {
     document.title = 'Sessions · moondb';
     var state = {
@@ -607,23 +618,36 @@
     }));
   }
 
-  // repoChips offers every repo the window's sessions edited, most used
-  // first, and one to clear the filter.
+  // repoChips offers every repo the window's sessions edited or sent
+  // attributed cost, most used first, each with the cost attributed to it,
+  // and one to clear the filter.
   function repoChips(repos, state, set) {
     var chips = [chip('All repos', null, !state.repo, function () { set({ repo: '' }); })];
     var listed = repos.some(function (r) { return r.repo === state.repo; });
     if (state.repo && !listed) repos = [{ repo: state.repo, name: repoName(state.repo), sessions: 0 }].concat(repos);
     repos.forEach(function (r) {
-      chips.push(chip(r.name, r.sessions, r.repo === state.repo, function () { set({ repo: r.repo }); }, r.repo));
+      chips.push(chip(r.name, r.sessions, r.repo === state.repo, function () { set({ repo: r.repo }); },
+        chipTitle(r), r.cost != null ? money(r.cost, r.unpriced) : null));
     });
     return el('div', { class: 'ls-chips', role: 'group', 'aria-label': 'Repository' }, chips);
   }
 
-  function chip(label, n, active, onPick, title) {
+  // chipTitle names a repo chip's repo, its sessions (the ones that edited
+  // it or sent it attributed cost, as the repo filter keeps them) and the
+  // cost they attribute to it, with the rule behind that cost.
+  function chipTitle(r) {
+    var cost = r.cost != null ? 'Attributed cost ' + fmtCost(r.cost)
+      : (r.unpriced || []).length ? 'Attributed cost not priced' : 'No priced cost attributed here';
+    return [r.repo, plural(r.sessions || 0, 'session') + ' edited it or sent it cost. ' + cost + '.',
+      unpricedText(r), ATTRIBUTION].filter(Boolean).join('\n');
+  }
+
+  function chip(label, n, active, onPick, title, cost) {
     var node = el('wk-badge', {
       variant: 'filter', role: 'button', tabindex: '0', title: title || '',
       'aria-pressed': String(active)
-    }, [label, n == null ? null : el('span', { class: 'ls-n' }, String(n))]);
+    }, [label, n == null ? null : el('span', { class: 'ls-n' }, String(n)),
+      cost == null ? null : el('span', { class: 'ls-chip-cost' }, cost)]);
     if (active) node.setAttribute('active', '');
     node.addEventListener('click', onPick);
     node.addEventListener('keydown', function (ev) {
@@ -652,8 +676,70 @@
       el('span', { class: 'ls-fig', title: costTitle(w) }, [el('b', {}, money(w.cost, w.unpriced)), 'cost']),
       w.cost_agents != null ? el('span', { class: 'ls-fig ls-sub', title: costTitle(w) },
         [el('b', {}, money(w.cost_agents)), 'of it by subagents']) : null,
-      el('span', { class: 'ls-scope' }, scope)
+      el('span', { class: 'ls-scope' }, scope),
+      repoCostBar(w.repo_costs || [])
     ];
+  }
+
+  // repoCostBar is the window's cost as one bar stacked by repo, then
+  // orchestration and no repo (cwd), with each part's name and amount
+  // below it. A segment grows by its share in percent, so the parts fill
+  // the bar whatever the window cost. A part no price covers gets a label
+  // that says so and no segment.
+  function repoCostBar(costs) {
+    if (!costs.length) return null;
+    var total = costs.reduce(function (sum, c) { return sum + (c.cost > 0 ? c.cost : 0); }, 0);
+    var bar = el('div', { class: 'ls-bar', role: 'img', 'aria-label': 'Cost by repo' });
+    costs.forEach(function (c) {
+      if (!(c.cost > 0)) return;
+      bar.appendChild(el('span', {
+        class: 'ls-seg' + (c.repo === NO_REPO ? ' is-hatched' : ''), title: costPartTitle(c, total),
+        style: costHueStyle(c.repo) + ';flex-grow:' + (c.cost / total * 100)
+      }));
+    });
+    return el('div', { class: 'ls-split' }, [
+      total > 0 ? bar : null,
+      el('div', { class: 'ls-split-labels' }, costs.map(function (c) { return costLabel(c, total); }))
+    ]);
+  }
+
+  // costLabel is one attributed part: its swatch, name and amount, its
+  // share and the rule on hover.
+  function costLabel(c, total) {
+    return el('span', { class: 'ls-split-label', title: costPartTitle(c, total) }, [
+      el('span', { class: 'ls-swatch' + (c.repo === NO_REPO ? ' is-hatched' : ''), style: costHueStyle(c.repo) }),
+      el('span', {}, c.name || costName(c.repo)),
+      el('b', {}, c.cost == null ? 'not priced' : money(c.cost, c.unpriced))
+    ]);
+  }
+
+  // costPartTitle says what one attributed part cost, its share of total,
+  // the models it leaves out and the rule that sent it there.
+  function costPartTitle(c, total) {
+    var share = c.cost > 0 && total > 0 ? ' (' + Math.round(c.cost / total * 100) + '%)' : '';
+    var amount = c.cost == null ? 'not priced' : fmtCost(c.cost) + share;
+    return [(c.name || costName(c.repo)) + ': ' + amount, unpricedText(c), ATTRIBUTION]
+      .filter(Boolean).join('\n');
+  }
+
+  // costHueStyle colours an attributed part: a repo by its series hue,
+  // orchestration and no repo (cwd) in a neutral.
+  function costHueStyle(repo) {
+    var hue = repo === ORCHESTRATION || repo === NO_REPO ? '--text-3' : repoHue(repo);
+    return '--hue:var(' + hue + ')';
+  }
+
+  // costName is how a person reads an attributed part's repo or label.
+  // The no_repo label reads "no repo (cwd)", apart from a row's "no repo"
+  // badge, which says the session edited no repo.
+  function costName(repo) {
+    if (repo === ORCHESTRATION) return 'orchestration';
+    if (repo === NO_REPO) return 'no repo (cwd)';
+    return repoName(repo);
+  }
+
+  function unpricedText(x) {
+    return (x.unpriced || []).length ? 'No price for ' + x.unpriced.join(', ') : '';
   }
 
   // sessionDays lays one page of sessions out as a table with a heading
@@ -671,10 +757,13 @@
       el('th', { class: 'c-when' }, 'Last active'),
       el('th', { class: 'num c-n c-sm' }, 'Turns'), el('th', { class: 'num c-n' }, 'Edits'),
       el('th', { class: 'num c-n c-sm' }, 'Files'), el('th', { class: 'num c-n c-sm' }, 'Agents'),
-      el('th', { class: 'num c-cost' }, 'Cost')
+      state.repo
+        ? el('th', { class: 'num c-cost', title: 'Cost attributed to ' + repoName(state.repo) +
+          '; hover a row for the session total\n' + ATTRIBUTION }, 'Attributed')
+        : el('th', { class: 'num c-cost' }, 'Cost')
     ]));
     var bodies = byDay(sessions).map(function (day) {
-      return el('tbody', {}, [dayRow(day, now)].concat(day.sessions.map(function (s) {
+      return el('tbody', {}, [dayRow(day, now, state)].concat(day.sessions.map(function (s) {
         return sessionRow(s, now, state);
       })));
     });
@@ -700,20 +789,23 @@
     return days;
   }
 
-  // dayRow heads one day: its session count and their summed cost, with
-  // the plus its rows show when any of them leaves a model unpriced. It
+  // dayRow heads one day: its session count and the sum of the cost its
+  // rows show, with the plus they show when any of them leaves a model
+  // unpriced. Filtered to a repo, that is the cost attributed to it and
+  // the models its attributed parts leave unpriced. It
   // adds up the sessions on this page, so a page that cuts a day short
   // sums only the part of the day it holds.
-  function dayRow(day, now) {
+  function dayRow(day, now, state) {
     var cost = 0;
     var priced = false;
     var unpriced = [];
     day.sessions.forEach(function (s) {
-      if (s.cost != null) {
-        cost += s.cost;
+      var shown = state.repo ? s.repo_cost : s.cost;
+      if (shown != null) {
+        cost += shown;
         priced = true;
       }
-      (s.unpriced || []).forEach(function (m) {
+      ((state.repo ? repoPart(s, state.repo) : s).unpriced || []).forEach(function (m) {
         if (unpriced.indexOf(m) < 0) unpriced.push(m);
       });
     });
@@ -744,8 +836,26 @@
       el('td', { class: 'ls-when' }, whenCell(s, now)),
       count(s.turn_count, 'c-sm'), count(s.edit_count), count(s.file_count, 'c-sm'),
       agentCount(s),
-      el('td', { class: 'num ls-cost', title: costTitle(s) }, money(s.cost, s.unpriced))
+      state.repo
+        ? el('td', { class: 'num ls-cost', title: attributedTitle(s, state.repo) },
+          money(s.repo_cost, repoPart(s, state.repo).unpriced))
+        : el('td', { class: 'num ls-cost', title: costTitle(s) }, money(s.cost, s.unpriced))
     ]);
+  }
+
+  // repoPart is a row's attributed part for repo, or an empty one when the
+  // rule sends nothing there.
+  function repoPart(s, repo) {
+    return (s.repo_costs || []).filter(function (c) { return c.repo === repo; })[0] || { repo: repo };
+  }
+
+  // attributedTitle explains a filtered row's cost: the part attributed
+  // to repo, the session's whole cost, and the rule.
+  function attributedTitle(s, repo) {
+    var part = s.repo_cost != null ? fmtCost(s.repo_cost) : 'not priced';
+    var whole = s.cost != null ? fmtCost(s.cost) : 'not priced';
+    return ['Attributed to ' + repoName(repo) + ': ' + part + ' of the session\'s ' + whole,
+      unpricedText(repoPart(s, repo)), costTitle(s), ATTRIBUTION].filter(Boolean).join('\n');
   }
 
   // agentCount is the session's agent count, naming its subagents on hover.
@@ -955,7 +1065,7 @@
     turnList.forEach(function (t) { seqs[t.id] = t.seq; });
     replace([
       backLinks([['← All sessions', '/']]),
-      el('wk-page-header', {}, [el('wk-title', {}, label), sessionLine(s)]),
+      el('wk-page-header', {}, [el('wk-title', {}, label), sessionLine(s), sessionCosts(s)]),
       section('Trace', traceNodes(tr)),
       section('Agents', agentsSection(agents, seqs)),
       section('Turns', [turnList.length
@@ -997,6 +1107,18 @@
       shownTime(s) ? el('span', { title: timeTitle(s) }, activeLine(s)) : null,
       s.started_at ? el('span', {}, 'started ' + fmtTime(s.started_at)) : null
     ]));
+  }
+
+  // sessionCosts sits under the session line: the session's attributed
+  // cost by repo, orchestration and no repo (cwd), as the Agents section's
+  // rows name where each agent's cost goes.
+  function sessionCosts(s) {
+    var costs = s.repo_costs || [];
+    if (!costs.length) return null;
+    var total = costs.reduce(function (sum, c) { return sum + (c.cost > 0 ? c.cost : 0); }, 0);
+    return el('div', { class: 'ss-line ss-costs', title: ATTRIBUTION }, [
+      el('span', { class: 'muted' }, 'Cost by repo')
+    ].concat(costs.map(function (c) { return costLabel(c, total); })));
   }
 
   // activeLine is a session's active time over its wall span, with the
@@ -1072,7 +1194,8 @@
         class: 'linkish th-sort', type: 'button', title: byCost ? 'Sort by start' : 'Sort by cost, costliest first',
         onclick: function () { byCost = !byCost; draw(); }
       }, byCost ? 'Cost ▾' : 'Cost');
-      box.replaceChildren(table(['Agent', 'Model', 'Turns', 'Time', 'Model calls', 'Tool calls',
+      var agent = el('span', { title: 'Under each agent: the repo its cost is attributed to\n' + ATTRIBUTION }, 'Agent');
+      box.replaceChildren(table([agent, 'Model', 'Turns', 'Time', 'Model calls', 'Tool calls',
         'Edits', 'Tokens', sort], [rows[0]].concat(subs).map(function (r) {
         return agentRow(r, seqs);
       })));
@@ -1093,7 +1216,8 @@
     if (r.id && !r.recorded) who.push(badge('stat', 'edits only', 'No agent transcript was recorded for this agent, only its edits'));
     if (r.lines_cut) who.push(badge('warn', 'cut', plural(r.lines_cut, 'line') + ' cut by the size cap; their calls add no cost'));
     return el('tr', {}, [
-      el('td', { title: [r.description, r.id].filter(Boolean).join('\n') }, el('div', { class: 'row ag-who' }, who)),
+      el('td', { title: [r.description, r.id].filter(Boolean).join('\n') },
+        [el('div', { class: 'row ag-who' }, who), agentRepoLine(r)]),
       monoCell(r.model || '-'),
       el('td', { class: 'ag-turns' }, r.id ? turnLinks(r.turn_ids || [], seqs) : 'every turn'),
       el('td', { class: 'num nowrap' }, r.duration_ms ? fmtDuration(r.duration_ms) : '-'),
@@ -1103,6 +1227,18 @@
       el('td', { class: 'num' }, r.recorded ? fmtTokens(tokenTotal(r.tokens)) : '-'),
       el('td', { class: 'num ag-cost', title: (r.unpriced || []).length ? 'No price for ' + r.unpriced.join(', ') : '' },
         r.recorded ? money(r.cost, r.unpriced) : '-')
+    ]);
+  }
+
+  // agentRepoLine sits under an agent's name: the repo the attribution
+  // rule sends its cost to, which the session's cost line adds up, and the
+  // repos its edits went to on hover. An agent without tokens has none.
+  function agentRepoLine(r) {
+    if (!r.cost_repo) return null;
+    var edited = (r.repos || []).length ? 'Edited: ' + r.repos.join(', ') : 'No edit in a repo';
+    return el('div', { class: 'row ag-repo', title: 'Its cost goes to ' + costName(r.cost_repo) + '\n' + edited }, [
+      el('span', { class: 'ls-swatch' + (r.cost_repo === NO_REPO ? ' is-hatched' : ''), style: costHueStyle(r.cost_repo) }),
+      el('span', {}, costName(r.cost_repo))
     ]);
   }
 

@@ -16,7 +16,8 @@ import (
 // agent stop, the last turn's status shows, the wall span and the active
 // time come from the turn records, an open turn ending both at its last
 // activity, and the usage of every turn and agent with totals merges by
-// model, apart for the main conversation and the agents.
+// model, apart for the main conversation and the agents. The attribution
+// rule splits the same usage by repository.
 func sessionSummary(t *testing.T, st store.Store) {
 	ctx := context.Background()
 	seedSummary(t, st)
@@ -51,6 +52,17 @@ func sessionSummary(t *testing.T, st store.Store) {
 		MainUsage:   []store.ModelUsage{usage("model-a", 150, 15), usage("model-b", 5, 1)},
 		AgentUsage:  []store.ModelUsage{usage("model-a", 1000, 100), usage("model-c", 9, 1)},
 		AgentLabels: []string{"builder", "Explore"},
+		// The main conversation edited only repoA. agent-1's one edit in a
+		// repository is in repoB, its other outside any. agent-2 edited
+		// nothing and its cwd sits in no repository.
+		RepoUsage: []store.RepoUsage{
+			{
+				Repo:  repoA,
+				Usage: []store.ModelUsage{usage("model-a", 150, 15), usage("model-b", 5, 1)},
+			},
+			{Repo: repoB, Usage: []store.ModelUsage{usage("model-a", 1000, 100)}},
+			{Repo: store.CostNoRepo, Usage: []store.ModelUsage{usage("model-c", 9, 1)}},
+		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("s1 summary =\n%+v\nwant\n%+v", got, want)

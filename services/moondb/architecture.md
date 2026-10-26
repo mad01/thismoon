@@ -209,6 +209,19 @@ active time is capped at the wall time. The time window keeps the sessions
 active in it, grouped by the day they started. The answer also adds up the
 whole filtered window and lists the window's repos for the page's chips.
 
+Cost by repo is a view too. Model calls carry no repo, so the listing
+splits a session's cost by who spent it. A subagent's cost goes to the
+repo most of its edits touched, a tie to the one it edited first. A
+subagent without an edit in a repo goes to the repo of its working
+directory, else to "no repo (cwd)". The main conversation's cost goes
+to the repo most of its own edits touched, else to "orchestration". The
+summary keeps each part as tokens and the server prices it on read, like
+the rest of the cost. Each row lists its parts; the window adds them up
+across sessions, as does each repo chip. A repo chip and the repo filter
+take the same sessions: the ones that edited the repo or send it a part.
+The store keeps none of it, so a change to the rule reprices every past
+session with no migration.
+
 ## Storage
 
 The `local` backend keeps everything under the workdir

@@ -72,10 +72,17 @@ type SessionSummary struct {
 	// Unpriced names the models it leaves out. CostMain and CostAgents
 	// split it between the main conversation and the subagents; CostAgents
 	// is absent when no subagent with a record has totals.
-	Cost       *float64 `json:"cost,omitempty"`
+	Cost       *float64 `json:"cost,omitempty"            jsonschema:"USD of the whole session at list prices: the main conversation and every subagent with totals; absent when no model is priced"`
 	CostMain   *float64 `json:"cost_main,omitempty"`
 	CostAgents *float64 `json:"cost_agents,omitempty"`
 	Unpriced   []string `json:"unpriced,omitempty"`
+	// RepoCosts splits Cost by the attribution rule (store.MainCostRepo,
+	// store.AgentCostRepo): one entry per repository that took a part,
+	// then orchestration and no_repo when they took one.
+	RepoCosts []RepoCost `json:"repo_costs"                jsonschema:"the session's attributed cost: each subagent's cost goes to the repository most of its edits touched, else its cwd's repository, else no_repo; the main conversation's to the repository most of its own edits touched, else orchestration"`
+	// RepoCost is set only when the listing filters by repository: the
+	// part of Cost attributed to that repository (attributedCost).
+	RepoCost *float64 `json:"repo_cost,omitempty"       jsonschema:"only with the repo filter: the part of cost attributed to that repository; absent when no price covers that part (its repo_costs entry names the unpriced models) or the session has no priced cost, else 0 when the attribution rule sends it nothing"`
 	// Repos are the repository identities the session edited, sorted, and
 	// RepoNames their short names (the last two path segments) in the same
 	// order.
@@ -92,13 +99,15 @@ type SessionList struct {
 	Sessions []SessionSummary `json:"sessions"`
 	// Window adds up every session the filters keep, past the limit.
 	Window WindowTotals `json:"window"`
-	// Repos are the repositories the sessions in the time window edited,
-	// the repo filter left out, so a page can offer each one.
+	// Repos are the repositories the sessions in the time window edited or
+	// sent attributed cost to, the repo filter left out, so a page can
+	// offer each one.
 	Repos []RepoCount `json:"repos"`
 }
 
 // WindowTotals adds up a set of sessions. A file edited in two of them
-// counts once.
+// counts once. RepoCosts splits Cost by the attribution rule, as a row's
+// repo_costs does.
 type WindowTotals struct {
 	Sessions int `json:"sessions"`
 	// ActiveMS sums the sessions' active time.
@@ -109,17 +118,34 @@ type WindowTotals struct {
 	Tokens   store.Tokens `json:"tokens"`
 	// Cost covers the main conversations and their subagents, as a row's
 	// does; CostMain and CostAgents split it.
-	Cost       *float64 `json:"cost,omitempty"`
-	CostMain   *float64 `json:"cost_main,omitempty"`
-	CostAgents *float64 `json:"cost_agents,omitempty"`
-	Unpriced   []string `json:"unpriced,omitempty"`
+	Cost       *float64   `json:"cost,omitempty"`
+	CostMain   *float64   `json:"cost_main,omitempty"`
+	CostAgents *float64   `json:"cost_agents,omitempty"`
+	Unpriced   []string   `json:"unpriced,omitempty"`
+	RepoCosts  []RepoCost `json:"repo_costs"`
 }
 
-// RepoCount is one repository with how many sessions edited it.
+// RepoCount is one repository with how many sessions edited it or sent it
+// attributed cost (chipRepos), and the cost the attribution rule gives it
+// across the time window: absent when no priced part goes there.
 type RepoCount struct {
-	Repo     string `json:"repo"`
-	Name     string `json:"name"`
-	Sessions int    `json:"sessions"`
+	Repo     string   `json:"repo"`
+	Name     string   `json:"name"`
+	Sessions int      `json:"sessions"`
+	Cost     *float64 `json:"cost,omitempty"`
+	Unpriced []string `json:"unpriced,omitempty"`
+}
+
+// RepoCost is the attributed cost of one repository, or of the
+// orchestration or no_repo label (store.CostOrchestration,
+// store.CostNoRepo). Name is the repository's short name, or the label as
+// a person reads it. Cost is nil when none of the part's models is
+// priced, and Unpriced names the models it leaves out.
+type RepoCost struct {
+	Repo     string   `json:"repo"               jsonschema:"repository identity host/owner/repo, or orchestration or no_repo"`
+	Name     string   `json:"name"`
+	Cost     *float64 `json:"cost,omitempty"`
+	Unpriced []string `json:"unpriced,omitempty"`
 }
 
 // SessionView is a session as GET /api/sessions/{id} answers it: the
@@ -146,21 +172,25 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		writeBackendErr(w, err)
 		return
 	}
-	kept := all
-	if repo := q.Get("repo"); repo != "" {
+	kept, repo := all, q.Get("repo")
+	if repo != "" {
 		kept = slices.DeleteFunc(slices.Clone(all), func(sum store.SessionSummary) bool {
-			return !slices.Contains(sum.Repos, repo)
+			return !slices.Contains(chipRepos(sum), repo)
 		})
 	}
 	now := s.now()
 	rows := make([]SessionSummary, 0, min(limit, len(kept)))
 	for _, sum := range kept[:min(limit, len(kept))] {
-		rows = append(rows, s.row(sum, now))
+		row := s.row(sum, now)
+		if repo != "" {
+			row.RepoCost = attributedCost(row, repo)
+		}
+		rows = append(rows, row)
 	}
 	writeJSON(w, http.StatusOK, SessionList{
 		Sessions: rows,
 		Window:   s.window(kept),
-		Repos:    repoCounts(all),
+		Repos:    s.repoCounts(all),
 	})
 }
 
@@ -223,6 +253,7 @@ func (s *Server) row(sum store.SessionSummary, now time.Time) SessionSummary {
 		CostMain:       costMain,
 		CostAgents:     costAgents,
 		Unpriced:       unpriced,
+		RepoCosts:      s.repoCosts(sum.RepoUsage),
 		Repos:          sum.Repos,
 		RepoNames:      names,
 		Worktrees:      sum.Worktrees,
@@ -235,6 +266,7 @@ func (s *Server) window(sessions []store.SessionSummary) WindowTotals {
 	t := WindowTotals{Sessions: len(sessions)}
 	files := map[store.FileKey]bool{}
 	var main, agents [][]store.ModelUsage
+	var parts [][]store.RepoUsage
 	for _, sum := range sessions {
 		t.ActiveMS += sum.ActiveMS
 		t.Turns += sum.TurnCount
@@ -244,6 +276,7 @@ func (s *Server) window(sessions []store.SessionSummary) WindowTotals {
 		}
 		main = append(main, sum.MainUsage)
 		agents = append(agents, sum.AgentUsage)
+		parts = append(parts, sum.RepoUsage)
 	}
 	t.Files = len(files)
 	mainUsage, agentUsage := store.MergeUsage(main...), store.MergeUsage(agents...)
@@ -254,27 +287,122 @@ func (s *Server) window(sessions []store.SessionSummary) WindowTotals {
 	if len(agentUsage) > 0 {
 		t.CostAgents, _ = s.query.UsageCost(agentUsage)
 	}
+	t.RepoCosts = s.repoCosts(store.MergeRepoUsage(parts...))
 	return t
 }
 
-// repoCounts lists the repositories the sessions edited, most sessions
-// first, then by name.
-func repoCounts(sessions []store.SessionSummary) []RepoCount {
+// repoCounts lists the repositories of the sessions' chipRepos, most
+// sessions first, then by name, each with the cost the sessions attribute
+// to it. A chip and the repo filter go by the same rule, so a chip's
+// sessions and cost are what its filtered listing holds.
+func (s *Server) repoCounts(sessions []store.SessionSummary) []RepoCount {
 	counts := map[string]int{}
+	parts := make([][]store.RepoUsage, 0, len(sessions))
 	for _, sum := range sessions {
-		for _, r := range sum.Repos {
+		for _, r := range chipRepos(sum) {
 			counts[r]++
 		}
+		parts = append(parts, sum.RepoUsage)
+	}
+	usage := map[string][]store.ModelUsage{}
+	for _, p := range store.MergeRepoUsage(parts...) {
+		usage[p.Repo] = p.Usage
 	}
 	out := make([]RepoCount, 0, len(counts))
 	for r, n := range counts {
-		out = append(out, RepoCount{Repo: r, Name: repoName(r), Sessions: n})
+		c := RepoCount{Repo: r, Name: repoName(r), Sessions: n}
+		c.Cost, c.Unpriced = s.query.UsageCost(usage[r])
+		out = append(out, c)
 	}
 	slices.SortFunc(out, func(a, b RepoCount) int {
 		return cmp.Or(cmp.Compare(b.Sessions, a.Sessions), cmp.Compare(a.Name, b.Name),
 			cmp.Compare(a.Repo, b.Repo))
 	})
 	return out
+}
+
+// chipRepos lists the repositories a session counts toward: the ones it
+// edited, then the ones the attribution rule sends a part of its cost to
+// without an edit there, such as a subagent's cwd repository. The repo
+// filter keeps a session by them and a repo chip counts it by them.
+func chipRepos(sum store.SessionSummary) []string {
+	repos := slices.Clone(sum.Repos)
+	for _, p := range sum.RepoUsage {
+		if !isCostLabel(p.Repo) && !slices.Contains(repos, p.Repo) {
+			repos = append(repos, p.Repo)
+		}
+	}
+	return repos
+}
+
+// repoCosts prices attributed usage: the repositories costliest first,
+// those without a priced part last, then orchestration and no_repo.
+func (s *Server) repoCosts(parts []store.RepoUsage) []RepoCost {
+	out := make([]RepoCost, 0, len(parts))
+	for _, p := range parts {
+		c := RepoCost{Repo: p.Repo, Name: costName(p.Repo)}
+		c.Cost, c.Unpriced = s.query.UsageCost(p.Usage)
+		out = append(out, c)
+	}
+	slices.SortFunc(out, func(a, b RepoCost) int {
+		return cmp.Or(
+			cmp.Compare(labelRank(a.Repo), labelRank(b.Repo)),
+			cmp.Compare(costRank(b.Cost), costRank(a.Cost)),
+			cmp.Compare(a.Name, b.Name),
+			cmp.Compare(a.Repo, b.Repo),
+		)
+	})
+	return out
+}
+
+// attributedCost is the part of row's cost attributed to repo. With an
+// entry for repo it is that entry's cost, nil when none of its models is
+// priced. Without one it is a real zero when the row is priced, nil when
+// the row has no priced cost.
+func attributedCost(row SessionSummary, repo string) *float64 {
+	if i := slices.IndexFunc(row.RepoCosts, func(c RepoCost) bool { return c.Repo == repo }); i >= 0 {
+		return row.RepoCosts[i].Cost
+	}
+	if row.Cost == nil {
+		return nil
+	}
+	return new(0.0)
+}
+
+// costName is how a person reads an attributed cost's repository or label.
+// The no_repo label reads "no repo (cwd)", apart from a row's "no repo"
+// badge, which says the session edited no repository.
+func costName(repo string) string {
+	switch repo {
+	case store.CostOrchestration:
+		return "orchestration"
+	case store.CostNoRepo:
+		return "no repo (cwd)"
+	}
+	return repoName(repo)
+}
+
+// isCostLabel reports whether repo is a label that takes attributed cost
+// no repository takes, not a repository.
+func isCostLabel(repo string) bool { return labelRank(repo) > 0 }
+
+// labelRank puts the repositories first, then orchestration, then no_repo.
+func labelRank(repo string) int {
+	switch repo {
+	case store.CostOrchestration:
+		return 1
+	case store.CostNoRepo:
+		return 2
+	}
+	return 0
+}
+
+// costRank orders costs, an unpriced one below every priced one.
+func costRank(c *float64) float64 {
+	if c == nil {
+		return -1
+	}
+	return *c
 }
 
 // sessionTitle names a session: its harness title, else its first prompt's

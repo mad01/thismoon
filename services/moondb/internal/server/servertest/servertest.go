@@ -187,13 +187,24 @@ func NewStore() *Store {
 	}
 }
 
-// fixtureAgent is AgentID with the totals its AgentTranscript gives.
+// fixtureAgent is AgentID with the totals its AgentTranscript gives. Its
+// cwd sits in no repository the fixture knows.
 func fixtureAgent() store.Agent {
+	a := PricedAgent(AgentID, OldSession, OldTurn, store.Location{})
+	a.Name, a.Cwd = AgentName, "/work/other"
+	return a
+}
+
+// PricedAgent is a subagent of session that ran under turn from minute 2
+// to minute 4 with AgentTranscript and the totals it gives, its cwd at
+// loc. It made no edit; give it some with Add.
+func PricedAgent(id, session, turn string, loc store.Location) store.Agent {
 	a := store.Agent{
-		ID: AgentID, SessionID: OldSession, Type: "general-purpose", Name: AgentName,
+		ID: id, SessionID: session, Type: "general-purpose",
 		Description: "review the change", Model: "claude-opus-5-5",
-		TurnIDs: []string{OldTurn}, Cwd: "/work/other", StartedAt: at(2), EndedAt: at(4),
-		TranscriptChunk: AgentTranscriptSHA, Lines: store.AgentLines{Read: 4, Kept: 4},
+		TurnIDs: []string{turn}, Cwd: loc.Worktree, Location: loc, StartedAt: at(2),
+		EndedAt: at(4), TranscriptChunk: AgentTranscriptSHA,
+		Lines: store.AgentLines{Read: 4, Kept: 4},
 	}
 	totals := trace.Stored(trace.BuildAgent(a, []byte(AgentTranscript), nil,
 		trace.Prices{}).Totals)
@@ -203,20 +214,55 @@ func fixtureAgent() store.Agent {
 
 // oldTurn is the older session's closed turn with the totals its
 // Transcript gives.
-func oldTurn() store.Turn {
-	old := store.Turn{
-		ID:              OldTurn,
-		SessionID:       OldSession,
+func oldTurn() store.Turn { return PricedTurn(OldTurn, OldSession) }
+
+// PricedTurn is the first turn of session, closed, from minute 1 to
+// minute 3 with Transcript and the totals it gives.
+func PricedTurn(id, session string) store.Turn {
+	t := store.Turn{
+		ID:              id,
+		SessionID:       session,
 		Seq:             1,
 		Status:          store.TurnClosed,
 		StartedAt:       at(1),
 		EndedAt:         new(at(3)),
 		TranscriptChunk: TranscriptSHA,
 	}
-	totals := trace.Stored(trace.Build(store.TurnDetail{Turn: old}, []byte(Transcript),
+	totals := trace.Stored(trace.Build(store.TurnDetail{Turn: t}, []byte(Transcript),
 		trace.Prices{}).Totals)
-	old.Totals = &totals
-	return old
+	t.Totals = &totals
+	return t
+}
+
+// Add puts one more session into the fixture with its turns, agents and
+// edits, for a case the base fixture lacks. Call it before the first
+// request: reads do not lock.
+func (s *Store) Add(
+	sess store.Session,
+	turns []store.Turn,
+	agents []store.Agent,
+	edits []store.Edit,
+) {
+	s.sessions = append(s.sessions, sess)
+	slices.SortStableFunc(s.sessions, func(a, b store.Session) int {
+		return a.StartedAt.Compare(b.StartedAt)
+	})
+	s.turns = append(s.turns, turns...)
+	s.agents = append(s.agents, agents...)
+	store.SortAgents(s.agents)
+	s.edits = append(s.edits, edits...)
+	slices.SortStableFunc(s.edits, func(a, b store.Edit) int { return a.At.Compare(b.At) })
+}
+
+// Edit is an edit of path in session and turn at minute m, made by agent
+// ("" for the main conversation) in loc.
+func Edit(id, session, turn, agent string, m int, loc store.Location, path string) store.Edit {
+	e := fixtureEdit(id, session, turn, at(m), loc, path)
+	e.AgentID = agent
+	if agent != "" {
+		e.AgentType = "general-purpose"
+	}
+	return e
 }
 
 func fixtureEdit(id, session, turn string, at time.Time, l store.Location, path string) store.Edit {

@@ -68,6 +68,12 @@ type SessionSummary struct {
 	// Agent records in SortAgents order (Agent.Label), then the agent
 	// type of each agent known only from its edits.
 	AgentLabels []string `json:"-"`
+	// RepoUsage splits Usage by where the attribution rule sends each
+	// part (MainCostRepo, AgentCostRepo): one entry per repository, or
+	// CostOrchestration or CostNoRepo, sorted by Repo. An agent without
+	// totals has no part. It stays out of the JSON, where a listing row
+	// prices it as repo_costs.
+	RepoUsage []RepoUsage `json:"-"`
 }
 
 // FileKey names one edited file: its worktree and its path there, or ""
@@ -80,7 +86,8 @@ type FileKey struct {
 // Summarize adds up a session's turns, agents and edits. agents come in
 // SortAgents order; edits may come in any order. Summarize only reads
 // them. AgentCount counts every agent an Agent record or an edit names,
-// the main conversation among them when it edited.
+// the main conversation among them when it edited. RepoUsage applies the
+// attribution rule to the same records.
 func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) SessionSummary {
 	sum := SessionSummary{
 		Session:        s,
@@ -97,9 +104,11 @@ func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) S
 		times.see(a.EndedAt)
 	}
 	files := map[FileKey]bool{}
+	tallies := agentTallies{}
 	for e := range edits {
 		times.see(e.At)
 		sum.EditCount++
+		tallies.add(e)
 		if !seen[e.AgentID] && e.AgentID != "" {
 			sum.AgentLabels = appendNew(sum.AgentLabels, cmp.Or(e.AgentType, "subagent"))
 		}
@@ -121,6 +130,7 @@ func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) S
 	sum.AgentCount = len(seen)
 	times.apply(&sum)
 	sum.Usage = MergeUsage(sum.MainUsage, sum.AgentUsage)
+	sum.RepoUsage = attribute(sum.MainUsage, agents, tallies)
 	return sum
 }
 
