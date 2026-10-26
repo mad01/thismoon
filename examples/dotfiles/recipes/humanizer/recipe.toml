@@ -1,0 +1,34 @@
+# Example overlay: the srt settings for thismoon's humanizer MCP server.
+#
+# The binary and the spawn wrapper ship from the thismoon humanizer recipe
+# (wave 0). agent-config's servers.json registers the wrapper,
+# ~/.config/ralph/sources/thismoon/recipes/humanizer/humanizer-mcp-sandbox.sh,
+# which pulls the judge backend vars from the secrets file outside the
+# sandbox, scrubs the environment and execs `humanizer mcp` through srt-run
+# with ~/.config/srt/humanizer.json. This overlay provides that file. The
+# code roots the server may read are a per-machine choice (thismoon
+# docs/adr/0006), so the manifest lives here and srtspec renders it:
+#   srtspec render recipes/humanizer/access.yaml -o recipes/humanizer/humanizer.srt.json
+# `srtspec verify .` in CI fails on drift.
+#
+# No egress host is committed: the wrapper derives the judge host from
+# LITELLM_BASE_URL, else openrouter.ai when OPENROUTER_API_KEY is set, and
+# passes it as SRT_RUN_ALLOW_DOMAINS. A config.yaml symlinked to
+# ~/.config/humanizer/config.yaml tunes the detectors; add it here when you
+# need one, and list its target directory under reads in the manifest.
+#
+# Wave 1 like agent-config. The settings link is a dotfiles item, laid down
+# before any build hook runs, so the first MCP spawn finds it.
+[recipe]
+name = "humanizer"
+description = "srt settings for the humanizer MCP server (binary and wrapper ship from the thismoon source)"
+wave = 1
+
+# Where the wrapper and srt-run expect the settings. No profile gate: the
+# file names no host, so one copy serves every machine of yours that works in
+# the same code roots. ~/.config/srt sits outside every sandbox's allowWrite,
+# so no confined process can rewrite its own policy through the link.
+[dotfiles.humanizer_srt_settings]
+source = "humanizer.srt.json"
+target = "~/.config/srt/humanizer.json"
+action = "symlink"

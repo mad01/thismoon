@@ -15,8 +15,9 @@
       "args": ["mcp"]
     },
     "humanizer": {
-      "command": "~/code/bin/humanizer",
-      "args": ["mcp"]
+      "_comment": "Sandboxed: the wrapper ships with the thismoon humanizer recipe in the ralph sources cache. It pulls only the judge backend vars from the secrets file, scrubs env with env -i, cd-s to / and execs humanizer mcp through srt-run with ~/.config/srt/humanizer.json, which recipes/humanizer here provides.",
+      "command": "~/.config/ralph/sources/thismoon/recipes/humanizer/humanizer-mcp-sandbox.sh",
+      "args": []
     },
     "kof": {
       "_comment": "A thin client of the kof service: registered everywhere, the tools answer unreachable until `kof serve` runs.",

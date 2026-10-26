@@ -1,0 +1,34 @@
+{
+  "enableWeakerNetworkIsolation": true,
+  "filesystem": {
+    "allowRead": [
+      "~/code/bin",
+      "~/.cache/humanizer",
+      "~/code/src",
+      "~/.worktrees"
+    ],
+    "allowWrite": [
+      "~/.cache/humanizer",
+      "/private/tmp",
+      "/private/var/folders"
+    ],
+    "denyRead": [
+      "~",
+      "~/code/src/**/.env",
+      "~/code/src/**/.env.*",
+      "~/code/src/**/*.pem",
+      "~/code/src/**/*.key",
+      "~/code/src/**/.git/config",
+      "~/.worktrees/**/.env",
+      "~/.worktrees/**/.env.*",
+      "~/.worktrees/**/*.pem",
+      "~/.worktrees/**/*.key",
+      "~/.worktrees/**/.git/config"
+    ],
+    "denyWrite": []
+  },
+  "network": {
+    "allowedDomains": [],
+    "deniedDomains": []
+  }
+}

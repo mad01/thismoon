@@ -1,0 +1,30 @@
+# Sandbox access for the humanizer MCP server (`humanizer mcp`, with vale as
+# its subprocess), launched by thismoon's humanizer-mcp-sandbox.sh through
+# srt-run. srtspec renders this file to humanizer.srt.json; edit it here and
+# re-render, never the JSON (thismoon docs/adr/0027 and docs/SANDBOXING.md,
+# "Declaring access").
+sandbox: srt
+# The judge backend host differs per machine: the wrapper derives it from
+# LITELLM_BASE_URL or OPENROUTER_API_KEY. Detection itself never leaves the box.
+egress: [via SRT_RUN_ALLOW_DOMAINS]
+reads:
+  - ~/code/bin            # the humanizer and vale binaries
+  - ~/.cache/humanizer    # the extracted vale style pack
+  - ~/code/src            # the code roots, so humanizer_detect_file and
+  - ~/.worktrees          #   humanizer_scan_go work on repo files: list yours
+writes: [~/.cache/humanizer, temp]
+# Go verifies TLS through trustd, which the judge call needs.
+tls: true
+# Secret-shaped files inside the code roots stay denied; the most specific
+# rule wins in srt. Repeat the block for every root above.
+deny:
+  - ~/code/src/**/.env
+  - ~/code/src/**/.env.*
+  - ~/code/src/**/*.pem
+  - ~/code/src/**/*.key
+  - ~/code/src/**/.git/config
+  - ~/.worktrees/**/.env
+  - ~/.worktrees/**/.env.*
+  - ~/.worktrees/**/*.pem
+  - ~/.worktrees/**/*.key
+  - ~/.worktrees/**/.git/config
