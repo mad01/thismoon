@@ -128,7 +128,17 @@ func discards(c gitInvocation) bool {
 // stashKeeps are the stash subcommands that leave the working tree alone
 // or only add to it. drop and clear remove stash entries, not worktree
 // changes, and are out of this guard's scope.
-var stashKeeps = []string{"list", "show", "apply", "pop", "branch", "drop", "clear", "create", "store"}
+var stashKeeps = []string{
+	"list",
+	"show",
+	"apply",
+	"pop",
+	"branch",
+	"drop",
+	"clear",
+	"create",
+	"store",
+}
 
 // stashDiscards: a bare `git stash`, a flag-led one (`git stash -u`), and
 // the push/save subcommands all move worktree changes off the tree.

@@ -17,10 +17,15 @@ func TestEmDashExternalText(t *testing.T) {
 		want  int // em dashes reported; 0 means silence
 	}{
 		{
-			name:  "pull request body",
-			tool:  "mcp__gh_com__create_pull_request",
-			input: map[string]any{"owner": "o", "repo": "r", "title": "t", "body": "a " + dash + " b"},
-			want:  1,
+			name: "pull request body",
+			tool: "mcp__gh_com__create_pull_request",
+			input: map[string]any{
+				"owner": "o",
+				"repo":  "r",
+				"title": "t",
+				"body":  "a " + dash + " b",
+			},
+			want: 1,
 		},
 		{
 			name: "every string counts, nested ones too",
@@ -75,7 +80,11 @@ func TestEmDashBash(t *testing.T) {
 		want    int
 	}{
 		{"pr create body flag", `gh pr create --title t --body "a ` + dash + ` b"`, 1},
-		{"pr edit heredoc spans segments", "gh pr edit 1 --body \"$(cat <<'EOF'\nline " + dash + " one\nEOF\n)\"", 1},
+		{
+			"pr edit heredoc spans segments",
+			"gh pr edit 1 --body \"$(cat <<'EOF'\nline " + dash + " one\nEOF\n)\"",
+			1,
+		},
 		{"pr comment", `gh pr comment 3 -b "x` + dash + `"`, 1},
 		{"issue create", `gh issue create -t "t` + dash + `" -b b`, 1},
 		{"issue edit", `gh issue edit 4 --body "` + dash + dash + `"`, 2},
