@@ -47,9 +47,15 @@ capture off on this machine.
 
 ## failure modes
 
-Start with `moondb doctor`: one command runs the reachability, store, and
-version-skew checks below and prints one line per check, FAIL lines naming
-the cause. The paragraphs here cover what each failure means.
+Start with `moondb doctor`: one command runs the config, hook wiring,
+reachability, store, and version-skew checks below and prints one line per
+check, FAIL lines naming the cause. The paragraphs here cover what each
+failure means.
+
+`hooks-wired` fails: the Claude Code settings file (`~/.claude/settings.json`,
+or the config's `claude_settings`) lacks a `moondb record` hook entry for
+the events it names. Capture misses those events until the entry is added.
+With `capture.enabled = false` the check passes with a note.
 
 Connection refused, or "moondb serve not reachable": serve is not running.
 t-man typically supervises it. Run `t-man list` to see whether the moondb
@@ -119,7 +125,7 @@ doctor` runs this comparison as its version-skew check.
 
 ## first moves
 
-1. `moondb doctor`: serve reachable, store readable, and version skew in one pass
+1. `moondb doctor`: hooks wired, serve reachable, store readable, and version skew in one pass
 2. If serve is unreachable: `t-man list`, then `t-man restart moondb`
 3. On version skew: `t-man restart moondb`, then `moondb doctor` again
 4. `moondb sessions`, to confirm capture is recording on this machine

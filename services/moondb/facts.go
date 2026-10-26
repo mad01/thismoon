@@ -90,6 +90,11 @@ const (
 	DefaultFileHistoryDir = "~/.claude/file-history"
 )
 
+// DefaultClaudeSettings is the Claude Code settings file `moondb doctor`
+// reads the hook wiring from, unless the config's claude_settings names
+// another. The leading ~ is expanded at runtime.
+const DefaultClaudeSettings = "~/.claude/settings.json"
+
 // Store limits.
 const (
 	// SegmentBytes is the size at which the JSONL log rolls to a new

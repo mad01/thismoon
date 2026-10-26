@@ -105,7 +105,7 @@ moondb history <path>        # every recorded edit of a file, newest first
 moondb sessions              # recorded sessions, newest first, with their titles and how long each ran
 moondb trace <session-id>    # where a session's time went and what it cost
 moondb import --dry-run      # what an import of past session transcripts would record
-moondb doctor                # is serve up, is the store readable, is the build current
+moondb doctor                # are the hooks wired, is serve up, is the store readable, is the build current
 ```
 
 For example, `moondb why services/events/internal/store/dedupe.go:42` names

@@ -53,7 +53,12 @@ source.
 
 - `capture.enabled` (bool, default `true`): set it to `false` to turn capture
   off on this machine while leaving the hooks wired. `record` then exits 0
-  without writing anything.
+  without writing anything, and the doctor's `hooks-wired` check passes
+  with a note.
+- `claude_settings` (string, default `~/.claude/settings.json`): the Claude
+  Code settings file the doctor's `hooks-wired` check reads. It reports
+  each hook entry from "Hook wiring" below that does not run `moondb
+  record`, and fails when the file is missing.
 - `capture.exclude` (list of globs): paths whose contents are never stored,
   by `record` or by `import`. An excluded file's edit is recorded by path
   only, with no content, patch or observed bytes. A glob matches the file's

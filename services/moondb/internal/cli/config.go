@@ -21,10 +21,13 @@ const configFile = "config.toml"
 
 // config is the file's shape. Flags and env override every key here.
 type config struct {
-	Port    int           `toml:"port"`
-	Workdir string        `toml:"workdir"`
-	BaseURL string        `toml:"base_url"`
-	Capture captureConfig `toml:"capture"`
+	Port    int    `toml:"port"`
+	Workdir string `toml:"workdir"`
+	BaseURL string `toml:"base_url"`
+	// ClaudeSettings is the Claude Code settings file the doctor reads
+	// the hook wiring from; moondb.DefaultClaudeSettings when empty.
+	ClaudeSettings string        `toml:"claude_settings"`
+	Capture        captureConfig `toml:"capture"`
 	// Prices are the [prices."<model id>"] tables, keyed by model id.
 	Prices map[string]priceConfig `toml:"prices"`
 }

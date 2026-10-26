@@ -686,7 +686,7 @@ moondb why <path>:<line>       # the Edit, turn, prompt, session and commit behi
 moondb history <path>          # the recorded edits of a path, newest first
 moondb sessions                # recorded sessions, newest first, with their title and duration
 moondb trace <session-id> [--json]   # time and cost totals, the agents, the longest tool calls, the most expensive model calls
-moondb doctor                  # serve reachable, store readable, version skew
+moondb doctor                  # config, hooks wired, serve reachable, store readable, version skew
 moondb docs                    # print the operating doc
 moondb version [-o json]
 ```
