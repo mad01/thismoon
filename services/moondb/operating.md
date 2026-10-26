@@ -77,10 +77,11 @@ message. Harness time far above a few minutes usually means a turn longer
 than the 4 MiB transcript tail, whose cut head counts as harness; its
 trace's lines then say `cut_head`.
 
-A cost the page says covers the main conversation only, or a session that
-ran subagents with none listed: the SubagentStop hook is not wired, or
-the subagents ran before it was. `moondb import --force` brings their
-transcripts in. An agent with `lines_cut` had a transcript over 8 MiB
+A cost with no subagent cost recorded, or a session that ran subagents
+with none listed: the SubagentStop hook is not wired, or the subagents ran
+before it was. `moondb import --force` brings their transcripts in.
+Subagents "not priced yet" have no priced model, or their totals wait for
+the totals backfill, which runs while the spool is empty. An agent with `lines_cut` had a transcript over 8 MiB
 after the cut to heads; the calls in its cut head add no cost. One marked
 `partial` ran out of the hook's 2 s budget before the file's end.
 

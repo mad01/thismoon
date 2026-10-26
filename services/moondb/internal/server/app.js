@@ -850,12 +850,20 @@
   function costTitle(x) {
     var tokens = tokenTotal(x.tokens);
     if (x.cost == null && !tokens) return 'No token counts recorded yet';
-    var parts = [fmtTokens(tokens) + ' tokens at list prices'];
-    parts.push(x.cost_agents != null
-      ? 'Main conversation ' + fmtCost(x.cost_main) + ', subagents ' + fmtCost(x.cost_agents)
-      : 'Main conversation only: no subagent stopped while recording');
+    var parts = [fmtTokens(tokens) + ' tokens at list prices', agentCostText(x)];
     if ((x.unpriced || []).length) parts.push('No price for ' + x.unpriced.join(', '));
     return parts.join('. ');
+  }
+
+  // agentCostText splits a listing cost between the main conversation and
+  // its subagents. A row that names subagents without their cost (no
+  // priced model, or totals the backfill has not computed yet) says so,
+  // rather than that none ran.
+  function agentCostText(x) {
+    var main = 'Main conversation ' + fmtCost(x.cost_main);
+    if (x.cost_agents != null) return main + ', subagents ' + fmtCost(x.cost_agents);
+    if ((x.agents || []).length) return main + ', subagents not priced yet';
+    return main + '; no subagent cost recorded';
   }
 
   // ── session view ──
@@ -1165,7 +1173,7 @@
   function costSplit(t) {
     var text = t.cost_agents != null || t.tokens_agents
       ? 'main ' + fmtCost(t.cost_main) + ', subagents ' + fmtCost(t.cost_agents)
-      : 'list prices, main conversation; no subagent recorded';
+      : 'list prices, main conversation; no subagent cost recorded';
     if (t.unpriced && t.unpriced.length) text += '; unpriced: ' + t.unpriced.join(', ');
     return text;
   }
@@ -1217,10 +1225,9 @@
   function packRows(spans, max) {
     var rows = [];
     var ends = [];
-    spans.slice().sort(function (a, b) { return a.start < b.start ? -1 : a.start > b.start ? 1 : 0; })
+    spans.slice().sort(function (a, b) { return startMS(a) - startMS(b); })
       .forEach(function (s) {
-        var at = parseTime(s.start);
-        var start = at ? at.getTime() : 0;
+        var start = startMS(s);
         var i = 0;
         while (i < rows.length && ends[i] > start) i++;
         if (i === rows.length && rows.length >= max) i = ends.indexOf(Math.min.apply(null, ends));
@@ -1229,6 +1236,12 @@
         ends[i] = Math.max(ends[i] || 0, start + s.duration_ms);
       });
     return rows;
+  }
+
+  // startMS is a span's start in milliseconds, 0 for one without a start.
+  function startMS(s) {
+    var at = parseTime(s.start);
+    return at ? at.getTime() : 0;
   }
 
   // traceBar is one span placed on its turn's track, or null (which el
