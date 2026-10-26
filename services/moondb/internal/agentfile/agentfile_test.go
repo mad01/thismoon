@@ -239,7 +239,8 @@ func TestTranscriptTracesAsTheFile(t *testing.T) {
 	if slim.Totals.ModelCalls != 3 || slim.Totals.ToolCalls != 2 || slim.Totals.ToolErrors != 1 {
 		t.Errorf("slim totals = %+v, want 3 model calls, 2 tool calls, 1 failed", slim.Totals)
 	}
-	if !reflect.DeepEqual(slim.Totals, full.Totals) || !reflect.DeepEqual(slim.Segments, full.Segments) ||
+	if !reflect.DeepEqual(slim.Totals, full.Totals) ||
+		!reflect.DeepEqual(slim.Segments, full.Segments) ||
 		!reflect.DeepEqual(slim.Spans, full.Spans) ||
 		!reflect.DeepEqual(slim.Gaps, full.Gaps) {
 		t.Errorf(

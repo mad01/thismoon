@@ -456,8 +456,10 @@ func TestTurnCarriesTraceTotals(t *testing.T) {
 		deref(tot.CostAgents)); got != "0.02584 0.01444 0.01140" {
 		t.Errorf("cost, main, agents = %s; want the turn's calls and the reviewer's", got)
 	}
-	if len(old.Agents) != 2 || old.Agents[0].Type != MainAgentType || old.Agents[0].EditCount != 1 ||
-		old.Agents[1].ID != servertest.AgentID || old.Agents[1].ModelCalls != 2 ||
+	if len(old.Agents) != 2 || old.Agents[0].Type != MainAgentType ||
+		old.Agents[0].EditCount != 1 ||
+		old.Agents[1].ID != servertest.AgentID ||
+		old.Agents[1].ModelCalls != 2 ||
 		!old.Agents[1].Recorded ||
 		old.Agents[1].DurationMS != 120_000 {
 		t.Errorf("agents = %+v, want main with its edit, then the reviewer's 2 calls", old.Agents)
