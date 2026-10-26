@@ -102,7 +102,7 @@ the main checkout never sees Bash edits in a linked worktree.
 ```bash
 moondb why <path>:<line>     # the edit, turn, prompt and commit behind one line
 moondb history <path>        # every recorded edit of a file, newest first
-moondb sessions              # recorded sessions, newest first, with their titles and how long each ran
+moondb sessions              # recorded sessions, newest first, with their titles, active time and wall time
 moondb trace <session-id>    # where a session's time went and what it cost
 moondb import --dry-run      # what an import of past session transcripts would record
 moondb doctor                # are the hooks wired, is serve up, is the store readable, is the build current
@@ -160,14 +160,19 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 Open `http://moondb.this/` (or `http://localhost:7433/`) for a read-only web
 UI. The front page lists the sessions active in the last 7 days, grouped
 by the day they started, newest first. Each row names the session and its
-repo, and says whether it still runs and when it was last active. Its
+repo, and says whether it still runs and when it was last active. It
+shows the session's active time: the time inside its turns, less the
+time it waited for you. A night the session sat open between turns adds
+nothing. "over 2 days" says its wall time crossed midnight, and the hover
+title gives that wall time. Its
 turn, edit, file and agent counts sit beside its cost, which covers the
 session and its subagents. Switch the window to 24 hours, 30 days or any
 time, and pick a repo chip to see one repo. A strip above the list adds up
-the sessions, turns, edits, files and cost in view, and the subagents'
+the sessions, turns, edits, files, active time and cost in view, and the subagents'
 part of it.
 
-A session opens on its title, repos, status and run time. Its trace comes
+A session opens on its title, repos and status, then its active time over
+its wall time, such as "active 1h 51m over 23h 05m (2 days)". Its trace comes
 next: a strip of totals, then a timeline lane per turn with a bar for each
 model call, tool call and subagent, the subagent's from its spawn to its
 stop. Hover a bar for its duration, calls, tokens and cost, and click it

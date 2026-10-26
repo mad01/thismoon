@@ -647,6 +647,8 @@
       figure(w.turns, 'turn'),
       figure(w.edits, 'edit'),
       figure(w.files, 'file'),
+      el('span', { class: 'ls-fig', title: 'Time inside the sessions\' turns, less waiting for input' },
+        [el('b', {}, fmtSpan(w.active_ms || 0)), 'active']),
       el('span', { class: 'ls-fig', title: costTitle(w) }, [el('b', {}, money(w.cost, w.unpriced)), 'cost']),
       w.cost_agents != null ? el('span', { class: 'ls-fig ls-sub', title: costTitle(w) },
         [el('b', {}, money(w.cost_agents)), 'of it by subagents']) : null,
@@ -795,7 +797,8 @@
   }
 
   // whenCell is the status dot, how long ago the session was last active,
-  // and how long it ran.
+  // and its active time, with the days its wall span touched when that is
+  // more than one.
   function whenCell(s, now) {
     var running = s.status === 'running';
     var at = parseTime(s.last_activity_at);
@@ -805,9 +808,27 @@
         class: running ? 'ls-ago is-on' : 'ls-ago',
         title: (running ? 'Running, last active ' : 'Ended, last active ') + fmtTime(s.last_activity_at)
       }, at ? ago(at, now) : '-'),
-      s.duration_ms >= 60000 ? el('span', { class: 'ls-span', title: 'First prompt to the last turn\'s end' },
-        fmtSpan(s.duration_ms)) : null
+      s.duration_ms >= 60000 ? el('span', { class: 'ls-span', title: timeTitle(s) },
+        fmtSpan(s.active_ms || 0) + (wallDays(s) > 1 ? ' over ' + wallDays(s) + ' days' : '')) : null
     ];
+  }
+
+  // timeTitle explains a session's two times: active inside its turns,
+  // wall from its first prompt to its last turn's end.
+  function timeTitle(s) {
+    return 'Active ' + fmtSpan(s.active_ms || 0) + ': time inside turns, less waiting for input\n' +
+      'Wall ' + fmtSpan(s.duration_ms || 0) + ': first prompt to the last turn\'s end, pauses included';
+  }
+
+  // wallDays is how many local calendar days a session's wall span
+  // touches: from its start to its end, or its last activity while it runs.
+  function wallDays(s) {
+    var start = parseTime(s.started_at);
+    var end = parseTime(s.ended_at) || parseTime(s.last_activity_at);
+    if (!start || !end || end < start) return 1;
+    var a = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    var b = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    return Math.round((b - a) / 864e5) + 1;
   }
 
   function statusDot(running) {
@@ -946,8 +967,8 @@
   }
 
   // sessionLine sits under a session's title: the repos it edited, whether
-  // it is running and when it was last active, how long it ran, and when it
-  // started.
+  // it is running and when it was last active, its active time over its
+  // wall span, and when it started.
   function sessionLine(s) {
     var running = s.status === 'running';
     var at = parseTime(s.last_activity_at);
@@ -960,10 +981,21 @@
     return el('div', { class: 'ss-line' }, badges.concat([
       el('span', { class: running ? 'ss-status is-on' : 'ss-status' }, [statusDot(running),
         (running ? 'Running' : 'Ended') + (at ? ', last active ' + ago(at, new Date()) : '')]),
-      s.duration_ms ? el('span', { title: 'First prompt to the last turn\'s end' },
-        'ran ' + fmtSpan(s.duration_ms)) : null,
+      s.duration_ms ? el('span', { title: timeTitle(s) }, activeLine(s)) : null,
       s.started_at ? el('span', {}, 'started ' + fmtTime(s.started_at)) : null
     ]));
+  }
+
+  // activeLine is a session's active time over its wall span, with the
+  // days the span touched when that is more than one: active 1h 51m over
+  // 23h 05m (2 days). A wall span that reads the same as the active time
+  // is left out.
+  function activeLine(s) {
+    var active = fmtSpan(s.active_ms || 0);
+    var wall = fmtSpan(s.duration_ms || 0);
+    var days = wallDays(s);
+    if (wall === active && days < 2) return 'active ' + active;
+    return 'active ' + active + ' over ' + wall + (days > 1 ? ' (' + days + ' days)' : '');
   }
 
   function worktreeTable(byWorktree) {

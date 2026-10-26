@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"math"
 	"net/http"
 	"slices"
@@ -142,6 +143,58 @@ func TestSessionsWindow(t *testing.T) {
 				t.Errorf("repos = %+v, want %+v", got.Repos, wantRepos)
 			}
 		})
+	}
+}
+
+// TestSessionsCarryActiveTime: every row and the window answer both
+// times, active_ms and duration_ms. The older session's closed turn gives
+// its totals' wall less user time, the newer one's open turn runs from its
+// start to its last edit, and the window sums the rows' active time.
+func TestSessionsCarryActiveTime(t *testing.T) {
+	h := newHarness(t)
+	var raw struct {
+		Sessions []map[string]json.RawMessage `json:"sessions"`
+		Window   map[string]json.RawMessage   `json:"window"`
+	}
+	h.getJSON(t, "/api/sessions", http.StatusOK, &raw)
+	for i, row := range raw.Sessions {
+		for _, key := range []string{"active_ms", "duration_ms"} {
+			if _, ok := row[key]; !ok {
+				t.Errorf("row %d has no %s", i, key)
+			}
+		}
+	}
+	if _, ok := raw.Window["active_ms"]; !ok {
+		t.Error("window has no active_ms")
+	}
+
+	var view SessionView
+	h.getJSON(t, "/api/sessions/"+servertest.OldSession, http.StatusOK, &view)
+	if len(view.Turns) != 1 || view.Turns[0].Totals == nil {
+		t.Fatalf("older session turns = %+v, want one with totals", view.Turns)
+	}
+	tot := view.Turns[0].Totals
+	wantOld := tot.WallMS - tot.UserMS
+	wantNew := (2 * time.Minute).Milliseconds()
+	list := h.sessionList(t, "")
+	if len(list.Sessions) != 2 {
+		t.Fatalf("sessions = %d, want 2", len(list.Sessions))
+	}
+	newer, older := list.Sessions[0], list.Sessions[1]
+	if older.ActiveMS != wantOld || older.DurationMS != 120_000 {
+		t.Errorf("older active %d, wall %d; want %d and 120000", older.ActiveMS, older.DurationMS,
+			wantOld)
+	}
+	if newer.ActiveMS != wantNew || newer.DurationMS != 0 {
+		t.Errorf("newer active %d, wall %d; want %d to its last edit and 0 while open",
+			newer.ActiveMS, newer.DurationMS, wantNew)
+	}
+	if list.Window.ActiveMS != wantOld+wantNew {
+		t.Errorf("window active = %d, want the rows' sum %d", list.Window.ActiveMS, wantOld+wantNew)
+	}
+	if view.Summary.ActiveMS != wantOld || view.ActiveMS != wantOld {
+		t.Errorf("session view active %d, row %d; want %d", view.ActiveMS, view.Summary.ActiveMS,
+			wantOld)
 	}
 }
 

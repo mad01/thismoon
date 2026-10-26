@@ -83,6 +83,15 @@ message. Harness time far above a few minutes usually means a turn longer
 than the 4 MiB transcript tail, whose cut head counts as harness; its
 trace's lines then say `cut_head`.
 
+A session shows two times in `moondb sessions`, on the web page and in
+the `moondb_sessions` tool. Active time (`active_ms`) is the time
+inside its turns, less the time a turn waited for input. Wall time
+(`duration_ms`) runs from the first prompt to the last turn's end,
+the nights between turns included. When the active time is far above the
+work done, one turn's trace counted a long idle stretch as model, tool or
+harness time. The trace lanes on the session page show each turn's time,
+so the long one stands out.
+
 A cost with no subagent cost recorded, or a session that ran subagents
 with none listed: the SubagentStop hook is not wired, or the subagents ran
 before it was. `moondb import --force` brings their transcripts in, also

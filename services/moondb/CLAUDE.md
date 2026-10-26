@@ -589,8 +589,14 @@ A session row comes from the index alone, never a chunk
 - `ended_at`: once the session is `ended`, its last turn's end (an open
   turn ends where it started). Absent while it runs.
 - `transcript_path`: the transcript file the session record keeps.
-- `duration_ms`: the first turn's start to the last turn's end. An open
-  turn ends where it started.
+- `duration_ms`: the wall time, from the first turn's start to the last
+  turn's end, the pauses between turns included. An open turn ends where
+  it started.
+- `active_ms`: the active time (`store.Summarize`). Each turn adds its
+  totals' wall time less their user time, or without totals its recorded
+  span. An open turn ends at the latest edit or agent stop before the next
+  turn starts, and a turn never adds less than zero. The gaps between turns
+  never count, so a session left open overnight adds nothing for the night.
 - `turn_count`, `edit_count`, `file_count` (distinct worktree and path) and
   `agent_count`: the agents with a record, the ones known only from an
   edit, and the main conversation when it edited. `agents` names the
@@ -606,7 +612,7 @@ A session row comes from the index alone, never a chunk
 `since` keeps the sessions active in the window: last active at or after
 it, whenever they started. Rows stay ordered and grouped by the day they
 started. `window` adds up every session the filters keep, past the limit,
-whole: sessions, turns, edits, distinct files, tokens and cost, with
+whole: sessions, active time, turns, edits, distinct files, tokens and cost, with
 `cost_main` and `cost_agents`. `repos` ignores the `repo` filter, so a
 page can offer every repo of the time window.
 
@@ -633,14 +639,18 @@ return, so keep it stable.
   otherwise (`since=any` lifts the bound), grouped by the day they started,
   newest first.
   A row has a repo badge, the title as the link, a running or ended dot
-  with how long ago the session was last active and how long it ran, then
+  with how long ago the session was last active and its active time. When
+  the wall time crosses a local midnight, "over N days" follows, and the
+  hover title gives the wall time. Then come
   its turn, edit, file and agent counts and its cost, the main
   conversation's and its subagents'. A window switch and repo chips
-  (`repo`) sit above a strip that adds the window up, with the subagents'
+  (`repo`) sit above a strip that adds the window up, active time
+  included, with the subagents'
   part of the cost beside the total. A cost's hover title splits it.
   `Show more` grows `limit`. The filters stay in the URL.
-- `/?session=<id>`: the title, repo badges, status, run time and start
-  time, then a Trace section, an Agents section, the turns in order and the
+- `/?session=<id>`: the title, repo badges, status, the active time over
+  the wall time ("active 1h 51m over 23h 05m (2 days)") and start time,
+  then a Trace section, an Agents section, the turns in order and the
   worktrees. The Agents section lists the main conversation first, then
   each subagent with its type, model, the turns it ran under, time, calls,
   edits, tokens and cost; clicking the Cost heading sorts the subagents
@@ -690,7 +700,7 @@ moondb import [--since 30d] [--dry-run] [--force] [--json]   # import past sessi
 moondb mcp                     # stdio MCP shim over serve
 moondb why <path>:<line>       # the Edit, turn, prompt, session and commit behind one line
 moondb history <path>          # the recorded edits of a path, newest first
-moondb sessions                # recorded sessions, newest first, with their title and duration
+moondb sessions                # recorded sessions, newest first, with their title, active time and wall time
 moondb trace <session-id> [--json]   # time and cost totals, the agents, the longest tool calls, the most expensive model calls
 moondb doctor                  # config, hooks wired, serve reachable, store readable, version skew
 moondb docs                    # print the operating doc
@@ -710,7 +720,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 - `moondb_why(path, line)`: the Edit behind one line, with its turn, prompt, session, agent and commit link, or ranked candidates when only the content matched
 - `moondb_history(path)`: the recorded edits of a path, newest first
 - `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links, and the agents that worked in it; the summary names its subagents
-- `moondb_sessions()`: recorded sessions, newest first, each with its title, status, times, counts, subagent names, tokens and cost split between the main conversation and the subagents
+- `moondb_sessions()`: recorded sessions, newest first, each with its title, status, times, active and wall time, counts, subagent names, tokens and cost split between the main conversation and the subagents
 - `moondb_trace(id)`: one session's time split (model, tool, harness, user), tokens by kind and cost with its main and agent parts, the subagents costliest first, and the longest tool calls and most expensive model calls of every agent
 - `moondb_doctor()`: the same checks as `moondb doctor`, returned as JSON, for a client that can call a tool but has no shell
 
