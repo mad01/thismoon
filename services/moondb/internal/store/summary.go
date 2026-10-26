@@ -44,8 +44,19 @@ type SessionSummary struct {
 	// turn ending where it started; zero without turns. It stays out of
 	// the JSON, where a listing row says it as ended_at.
 	LastTurnEnd time.Time `json:"-"`
-	// Usage merges the Usage of every turn with totals (MergeUsage).
+	// Usage merges the usage of every turn and every agent with totals
+	// (MergeUsage): MainUsage and AgentUsage together.
 	Usage []ModelUsage `json:"usage,omitempty"`
+	// MainUsage merges the usage of the turns, the main conversation's
+	// model calls, and AgentUsage that of the Agent records. They stay out
+	// of the JSON, where a listing row prices them as cost_main and
+	// cost_agents.
+	MainUsage  []ModelUsage `json:"-"`
+	AgentUsage []ModelUsage `json:"-"`
+	// AgentLabels names the subagents that ran, each label once: the
+	// Agent records in SortAgents order (Agent.Label), then the agent
+	// type of each agent known only from its edits.
+	AgentLabels []string `json:"-"`
 }
 
 // FileKey names one edited file: its worktree and its path there, or ""
@@ -55,9 +66,11 @@ type FileKey struct {
 	Path     string
 }
 
-// Summarize adds up a session's turns and edits. edits may come in any
-// order; Summarize only reads them.
-func Summarize(s Session, turns []Turn, edits iter.Seq[*Edit]) SessionSummary {
+// Summarize adds up a session's turns, agents and edits. agents come in
+// SortAgents order; edits may come in any order. Summarize only reads
+// them. AgentCount counts every agent an Agent record or an edit names,
+// the main conversation among them when it edited.
+func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) SessionSummary {
 	sum := SessionSummary{
 		Session:        s,
 		Repos:          []string{},
@@ -67,11 +80,14 @@ func Summarize(s Session, turns []Turn, edits iter.Seq[*Edit]) SessionSummary {
 		LastActivityAt: s.StartedAt,
 	}
 	addTurns(&sum, turns)
-	agents := map[string]bool{}
+	seen := addAgents(&sum, agents)
 	files := map[FileKey]bool{}
 	for e := range edits {
 		sum.EditCount++
-		agents[e.AgentID] = true
+		if !seen[e.AgentID] && e.AgentID != "" {
+			sum.AgentLabels = appendNew(sum.AgentLabels, cmp.Or(e.AgentType, "subagent"))
+		}
+		seen[e.AgentID] = true
 		files[FileKey{Worktree: e.Worktree, Path: e.Path}] = true
 		sum.Repos = appendNew(sum.Repos, e.Repo)
 		sum.Worktrees = appendNew(sum.Worktrees, e.Worktree)
@@ -86,12 +102,30 @@ func Summarize(s Session, turns []Turn, edits iter.Seq[*Edit]) SessionSummary {
 		return cmp.Or(cmp.Compare(a.Worktree, b.Worktree), cmp.Compare(a.Path, b.Path))
 	})
 	sum.FileCount = len(sum.Files)
-	sum.AgentCount = len(agents)
+	sum.AgentCount = len(seen)
+	sum.Usage = MergeUsage(sum.MainUsage, sum.AgentUsage)
 	return sum
 }
 
+// addAgents folds the Agent records into sum: their labels, their merged
+// usage and their stop times as activity. It returns the ids it saw.
+func addAgents(sum *SessionSummary, agents []Agent) map[string]bool {
+	seen := map[string]bool{}
+	usage := make([][]ModelUsage, 0, len(agents))
+	for _, a := range agents {
+		seen[a.ID] = true
+		sum.AgentLabels = appendNew(sum.AgentLabels, a.Label())
+		sum.LastActivityAt = later(sum.LastActivityAt, a.EndedAt)
+		if a.Totals != nil {
+			usage = append(usage, a.Totals.Usage)
+		}
+	}
+	sum.AgentUsage = MergeUsage(usage...)
+	return seen
+}
+
 // addTurns folds the turns into sum: the duration, the last activity, the
-// last turn's status and the merged usage.
+// last turn's status and the main conversation's merged usage.
 func addTurns(sum *SessionSummary, turns []Turn) {
 	var first, last time.Time
 	lastSeq := 0
@@ -115,7 +149,7 @@ func addTurns(sum *SessionSummary, turns []Turn) {
 	sum.LastActivityAt = later(sum.LastActivityAt, last)
 	sum.LastTurnEnd = last
 	sum.DurationMS = last.Sub(first).Milliseconds()
-	sum.Usage = MergeUsage(usage...)
+	sum.MainUsage = MergeUsage(usage...)
 }
 
 // appendNew appends v to list unless it is empty or already there.

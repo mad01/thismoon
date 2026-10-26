@@ -126,6 +126,10 @@ type Turn struct {
 	// command pulled or checked out files says so. Replace it whole, never
 	// change it in place, like Totals.
 	Skipped []SkippedFiles `json:"skipped,omitempty"`
+	// Origin is what opened the turn, read from the prompt's head when the
+	// turn opened (PromptOrigin). It is "" on a turn stored before origins
+	// existed; a reader classifies its prompt then.
+	Origin TurnOrigin `json:"origin,omitempty"`
 }
 
 // SkippedFiles counts the skipped files of one tool call, the ones capture
@@ -507,10 +511,14 @@ type CommitLink struct {
 	At        time.Time `json:"at"`
 }
 
-// SessionDetail is a session with what it did: its summary and its turns.
+// SessionDetail is a session with what it did: its summary, its turns and
+// its recorded agents.
 type SessionDetail struct {
 	SessionSummary
 	Turns []Turn `json:"turns"`
+	// Agents are the session's Agent records in SortAgents order. An
+	// agent known only from its edits has none.
+	Agents []Agent `json:"agents"`
 }
 
 // TurnDetail is a turn with everything recorded under it.

@@ -96,7 +96,8 @@ var errReadOnly = errors.New("servertest: the fixture store is read-only")
 type Store struct {
 	sessions []store.Session // oldest first
 	turns    []store.Turn
-	edits    []store.Edit // oldest first
+	agents   []store.Agent // in store.SortAgents order
+	edits    []store.Edit  // oldest first
 	snaps    []store.Snapshot
 	deltas   []store.UnattributedDelta
 	chunks   chunkMap
@@ -210,6 +211,46 @@ func (s *Store) PutSession(context.Context, store.Session) error { return errRea
 // PutTurn fails: the fixture is read-only.
 func (s *Store) PutTurn(context.Context, store.Turn) error { return errReadOnly }
 
+// PutAgent fails: the fixture is read-only.
+func (s *Store) PutAgent(context.Context, store.Agent) error { return errReadOnly }
+
+// Agents lists a session's fixture agents.
+func (s *Store) Agents(_ context.Context, sessionID string) ([]store.Agent, error) {
+	return s.sessionAgents(sessionID), nil
+}
+
+// Agent loads one fixture agent.
+func (s *Store) Agent(_ context.Context, id string) (store.Agent, error) {
+	i := slices.IndexFunc(s.agents, func(a store.Agent) bool { return a.ID == id })
+	if i < 0 {
+		return store.Agent{}, fmt.Errorf("agent %s: %w", id, store.ErrNotFound)
+	}
+	return s.agents[i], nil
+}
+
+// AgentsWithoutTotals lists the fixture agents that lack totals from
+// version.
+func (s *Store) AgentsWithoutTotals(_ context.Context, version, limit int) ([]store.Agent, error) {
+	out := []store.Agent{}
+	for _, a := range s.agents {
+		if store.NeedsAgentTotals(a, version) && (limit <= 0 || len(out) < limit) {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// sessionAgents lists one session's fixture agents.
+func (s *Store) sessionAgents(id string) []store.Agent {
+	out := []store.Agent{}
+	for _, a := range s.agents {
+		if a.SessionID == id {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 // AppendEdit fails: the fixture is read-only.
 func (s *Store) AppendEdit(context.Context, store.Edit) error { return errReadOnly }
 
@@ -242,7 +283,8 @@ func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.Sess
 
 // summary adds up one session's fixture records.
 func (s *Store) summary(sess store.Session) store.SessionSummary {
-	return store.Summarize(sess, s.sessionTurns(sess.ID), func(yield func(*store.Edit) bool) {
+	turns, agents := s.sessionTurns(sess.ID), s.sessionAgents(sess.ID)
+	return store.Summarize(sess, turns, agents, func(yield func(*store.Edit) bool) {
 		for i := range s.edits {
 			if s.edits[i].SessionID == sess.ID && !yield(&s.edits[i]) {
 				return
@@ -272,6 +314,7 @@ func (s *Store) Session(_ context.Context, id string) (store.SessionDetail, erro
 	return store.SessionDetail{
 		SessionSummary: s.summary(s.sessions[i]),
 		Turns:          s.sessionTurns(id),
+		Agents:         s.sessionAgents(id),
 	}, nil
 }
 

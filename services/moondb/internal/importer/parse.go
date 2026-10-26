@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mad01/thismoon/services/moondb/internal/jsonl"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
@@ -120,7 +121,7 @@ func (s *session) read(path string, r *reader) error {
 		return fmt.Errorf("importer: open transcript: %w", err)
 	}
 	defer f.Close()
-	oversized, err := scanLines(f, maxLineBytes, r.line)
+	oversized, err := jsonl.Scan(f, maxLineBytes, r.line)
 	s.stats.undecodable += oversized
 	if err != nil {
 		return fmt.Errorf("importer: read %s: %w", filepath.Base(path), err)

@@ -233,6 +233,24 @@ func (s *Store) PutTurn(ctx context.Context, t store.Turn) error {
 	return s.commit(kindTurn, s.ix.settledTurn(t))
 }
 
+// PutAgent upserts an agent: the newest record for an id wins whole. An
+// agent cannot move to another session.
+func (s *Store) PutAgent(ctx context.Context, a store.Agent) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if a.ID == "" {
+		return errors.New("local: agent has no id")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cur, ok := s.ix.agents[a.ID]; ok && cur.SessionID != a.SessionID {
+		return fmt.Errorf("local: agent %s belongs to session %s, not %s",
+			a.ID, cur.SessionID, a.SessionID)
+	}
+	return s.commit(kindAgent, a)
+}
+
 // AppendEdit records an edit; an id already recorded is a no-op.
 func (s *Store) AppendEdit(ctx context.Context, e store.Edit) error {
 	return s.appendFact(ctx, kindEdit, e.ID, s.ix.edits.has, e)
@@ -321,6 +339,43 @@ func (s *Store) Turn(ctx context.Context, id string) (store.TurnDetail, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.ix.turnDetail(id)
+}
+
+// Agents lists a session's agents by start, then id.
+func (s *Store) Agents(ctx context.Context, sessionID string) ([]store.Agent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.ix.sessionAgents(sessionID), nil
+}
+
+// Agent loads one agent. Returns store.ErrNotFound.
+func (s *Store) Agent(ctx context.Context, id string) (store.Agent, error) {
+	if err := ctx.Err(); err != nil {
+		return store.Agent{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	a, ok := s.ix.agents[id]
+	if !ok {
+		return store.Agent{}, fmt.Errorf("agent %s: %w", id, store.ErrNotFound)
+	}
+	return *a, nil
+}
+
+// AgentsWithoutTotals lists up to limit agents whose totals are missing
+// or older than version, newest session first.
+func (s *Store) AgentsWithoutTotals(
+	ctx context.Context, version, limit int,
+) ([]store.Agent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.ix.agentsWithoutTotals(version, limit), nil
 }
 
 // Edits lists the edits matching every set field of q, newest first.

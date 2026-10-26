@@ -24,6 +24,7 @@ type Store struct {
 	mu        sync.Mutex
 	sessions  map[string]store.Session
 	turns     map[string]store.Turn
+	agents    map[string]store.Agent
 	edits     []store.Edit
 	deltas    []store.UnattributedDelta
 	snapshots []store.Snapshot
@@ -37,6 +38,7 @@ func New() *Store {
 	return &Store{
 		sessions: map[string]store.Session{},
 		turns:    map[string]store.Turn{},
+		agents:   map[string]store.Agent{},
 		chunks:   &Chunks{data: map[string][]byte{}},
 	}
 }
@@ -86,6 +88,75 @@ func (s *Store) PutTurn(_ context.Context, t store.Turn) error {
 	s.turns[t.ID] = t
 	s.writes++
 	return nil
+}
+
+// PutAgent upserts an agent; a known agent cannot move to another
+// session.
+func (s *Store) PutAgent(_ context.Context, a store.Agent) error {
+	if a.ID == "" {
+		return errors.New("faketest: agent has no id")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cur, ok := s.agents[a.ID]; ok && cur.SessionID != a.SessionID {
+		return fmt.Errorf("faketest: agent %s belongs to session %s, not %s",
+			a.ID, cur.SessionID, a.SessionID)
+	}
+	s.agents[a.ID] = a
+	s.writes++
+	return nil
+}
+
+// Agents lists a session's agents in store.SortAgents order.
+func (s *Store) Agents(_ context.Context, sessionID string) ([]store.Agent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sessionAgents(sessionID), nil
+}
+
+// Agent loads one agent.
+func (s *Store) Agent(_ context.Context, id string) (store.Agent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.agents[id]
+	if !ok {
+		return store.Agent{}, fmt.Errorf("faketest: agent %s: %w", id, store.ErrNotFound)
+	}
+	return a, nil
+}
+
+// AgentsWithoutTotals lists up to n agents whose totals are missing or
+// older than version, newest session first.
+func (s *Store) AgentsWithoutTotals(_ context.Context, version, n int) ([]store.Agent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []store.Agent
+	for _, a := range s.agents {
+		if store.NeedsAgentTotals(a, version) {
+			out = append(out, a)
+		}
+	}
+	slices.SortFunc(out, func(a, b store.Agent) int {
+		return cmp.Or(
+			s.sessions[b.SessionID].StartedAt.Compare(s.sessions[a.SessionID].StartedAt),
+			cmp.Compare(b.SessionID, a.SessionID),
+			a.StartedAt.Compare(b.StartedAt),
+			cmp.Compare(a.ID, b.ID),
+		)
+	})
+	return limit(out, n), nil
+}
+
+// sessionAgents lists one session's agents; the caller holds mu.
+func (s *Store) sessionAgents(id string) []store.Agent {
+	out := []store.Agent{}
+	for _, a := range s.agents {
+		if a.SessionID == id {
+			out = append(out, a)
+		}
+	}
+	store.SortAgents(out)
+	return out
 }
 
 // AppendEdit records an edit unless its id is known.
@@ -148,7 +219,11 @@ func (s *Store) Session(_ context.Context, id string) (store.SessionDetail, erro
 	if !ok {
 		return store.SessionDetail{}, fmt.Errorf("faketest: session %s: %w", id, store.ErrNotFound)
 	}
-	return store.SessionDetail{SessionSummary: s.summary(v), Turns: s.sessionTurns(id)}, nil
+	return store.SessionDetail{
+		SessionSummary: s.summary(v),
+		Turns:          s.sessionTurns(id),
+		Agents:         s.sessionAgents(id),
+	}, nil
 }
 
 // TurnsWithoutTotals lists up to limit closed or failed turns whose totals
@@ -168,7 +243,8 @@ func (s *Store) TurnsWithoutTotals(_ context.Context, version, n int) ([]store.T
 
 // summary adds up one session's records; the caller holds mu.
 func (s *Store) summary(v store.Session) store.SessionSummary {
-	return store.Summarize(v, s.sessionTurns(v.ID), func(yield func(*store.Edit) bool) {
+	turns, agents := s.sessionTurns(v.ID), s.sessionAgents(v.ID)
+	return store.Summarize(v, turns, agents, func(yield func(*store.Edit) bool) {
 		for i := range s.edits {
 			if s.edits[i].SessionID == v.ID && !yield(&s.edits[i]) {
 				return

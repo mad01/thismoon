@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/services/moondb"
+	"github.com/mad01/thismoon/services/moondb/internal/jsonl"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
@@ -191,7 +192,7 @@ func firstTime(path string, fallback time.Time) time.Time {
 	defer f.Close()
 	var first time.Time
 	n := 0
-	_, _ = scanLines(f, maxLineBytes, func(line []byte, _ int64) bool {
+	_, _ = jsonl.Scan(f, maxLineBytes, func(line []byte, _ int64) bool {
 		n++
 		var e struct {
 			Timestamp string `json:"timestamp"`

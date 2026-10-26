@@ -40,13 +40,18 @@ func (ix *index) sessionDetail(id string) (store.SessionDetail, error) {
 		return store.SessionDetail{}, fmt.Errorf("session %s: %w", id, store.ErrNotFound)
 	}
 	sum := ix.summary(s)
-	return store.SessionDetail{SessionSummary: sum, Turns: ix.sessionTurns(id)}, nil
+	return store.SessionDetail{
+		SessionSummary: sum,
+		Turns:          ix.sessionTurns(id),
+		Agents:         ix.sessionAgents(id),
+	}, nil
 }
 
 // summary adds up a session's records in the index; it reads no chunk.
 func (ix *index) summary(s *store.Session) store.SessionSummary {
 	edits := ix.editsBySession[s.ID]
-	return store.Summarize(*s, ix.sessionTurns(s.ID), func(yield func(*store.Edit) bool) {
+	turns, agents := ix.sessionTurns(s.ID), ix.sessionAgents(s.ID)
+	return store.Summarize(*s, turns, agents, func(yield func(*store.Edit) bool) {
 		for _, r := range edits {
 			if !yield(&r.v) {
 				return
@@ -61,6 +66,34 @@ func (ix *index) sessionTurns(id string) []store.Turn {
 	out := make([]store.Turn, 0, len(turns))
 	for _, t := range turns {
 		out = append(out, *t)
+	}
+	return out
+}
+
+// sessionAgents copies a session's agents out by start, then id.
+func (ix *index) sessionAgents(id string) []store.Agent {
+	agents := ix.agentsBySession[id]
+	out := make([]store.Agent, 0, len(agents))
+	for _, a := range agents {
+		out = append(out, *a)
+	}
+	return out
+}
+
+// agentsWithoutTotals scans every agent, as turnsWithoutTotals scans every
+// turn, newest session first.
+func (ix *index) agentsWithoutTotals(version, limit int) []store.Agent {
+	out := []store.Agent{}
+	for i := len(ix.sessionOrder) - 1; i >= 0; i-- {
+		for _, a := range ix.agentsBySession[ix.sessionOrder[i].ID] {
+			if !store.NeedsAgentTotals(*a, version) {
+				continue
+			}
+			out = append(out, *a)
+			if limit > 0 && len(out) == limit {
+				return out
+			}
+		}
 	}
 	return out
 }

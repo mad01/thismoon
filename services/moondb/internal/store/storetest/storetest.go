@@ -27,11 +27,13 @@ func Run(t *testing.T, open func(t *testing.T, dir string) store.Store) {
 	}{
 		{"PutSessionUpserts", putSessionUpserts},
 		{"PutTurnAssignsSeq", putTurnAssignsSeq},
+		{"PutAgentUpserts", putAgentUpserts},
 		{"AppendsAreIdempotent", appendsAreIdempotent},
 		{"SessionsFilter", sessionsFilter},
 		{"SessionDetail", sessionDetail},
 		{"SessionSummary", sessionSummary},
 		{"TurnsWithoutTotals", turnsWithoutTotals},
+		{"AgentsWithoutTotals", agentsWithoutTotals},
 		{"TurnDetail", turnDetail},
 		{"EditsQuery", editsQuery},
 		{"LatestAfter", latestAfter},
@@ -113,6 +115,8 @@ func seed(t *testing.T, st store.Store, recs ...any) {
 			err = st.PutSession(ctx, v)
 		case store.Turn:
 			err = st.PutTurn(ctx, v)
+		case store.Agent:
+			err = st.PutAgent(ctx, v)
 		case store.Edit:
 			err = st.AppendEdit(ctx, v)
 		case store.UnattributedDelta:

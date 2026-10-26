@@ -11,9 +11,11 @@ import (
 
 // sessionSummary: a listing row and a session's detail add up the same
 // records. A file edited twice counts once, the main conversation is one
-// agent, the last activity is the newest turn edge or edit, the last
-// turn's status shows, the duration comes from the turn records, and the
-// usage of every turn with totals merges by model.
+// agent, an agent with a record and edits counts once and one without
+// edits counts too, the last activity is the newest turn edge, edit or
+// agent stop, the last turn's status shows, the duration comes from the
+// turn records, and the usage of every turn and agent with totals merges
+// by model, apart for the main conversation and the agents.
 func sessionSummary(t *testing.T, st store.Store) {
 	ctx := context.Background()
 	a, b := loc(repoA, "/wt/a"), loc(repoB, "/wt/b")
@@ -27,12 +29,18 @@ func sessionSummary(t *testing.T, st store.Store) {
 	sub.AgentID, sub.AgentType = "agent-1", "Explore"
 	outside := edit("e4", "s1", "t3", 31, store.Location{}, "/abs/z.txt")
 	outside.AgentID = "agent-1"
+	recorded := agent("agent-1", "s1", 11, 32, "t2", "t3")
+	recorded.Type, recorded.Name = "general-purpose", "builder"
+	recorded.Totals = totals(1, usage("model-a", 1000, 100))
+	reviewer := agent("agent-2", "s1", 12, 35, "t2")
+	reviewer.Type = "Explore"
+	reviewer.Totals = totals(1, usage("model-c", 9, 1))
 	seed(t, st,
 		session("s1", at(0)), session("s2", at(40)),
 		first, second, turn("t3", "s1", store.TurnOpen, at(30)),
 		edit("e1", "s1", "t1", 2, a, "x.go"),
 		edit("e2", "s1", "t1", 3, a, "x.go"),
-		sub, outside,
+		sub, outside, recorded, reviewer,
 	)
 	list, err := st.Sessions(ctx, store.SessionFilter{})
 	must(t, err)
@@ -45,17 +53,22 @@ func sessionSummary(t *testing.T, st store.Store) {
 		Session:   got.Session,
 		Repos:     []string{repoA, repoB},
 		Worktrees: []string{"/wt/a", "/wt/b"},
-		TurnCount: 3, EditCount: 4, FileCount: 3, AgentCount: 2,
+		TurnCount: 3, EditCount: 4, FileCount: 3, AgentCount: 3,
 		Files: []store.FileKey{
 			{
 				Path: "/abs/z.txt",
 			}, {Worktree: "/wt/a", Path: "x.go"}, {Worktree: "/wt/b", Path: "y.go"},
 		},
 		LastTurnOpen:   true,
-		LastActivityAt: at(31),
+		LastActivityAt: at(35),
 		DurationMS:     (29 * time.Minute).Milliseconds(),
 		LastTurnEnd:    at(30),
-		Usage:          []store.ModelUsage{usage("model-a", 150, 15), usage("model-b", 5, 1)},
+		Usage: []store.ModelUsage{
+			usage("model-a", 1150, 115), usage("model-b", 5, 1), usage("model-c", 9, 1),
+		},
+		MainUsage:   []store.ModelUsage{usage("model-a", 150, 15), usage("model-b", 5, 1)},
+		AgentUsage:  []store.ModelUsage{usage("model-a", 1000, 100), usage("model-c", 9, 1)},
+		AgentLabels: []string{"builder", "Explore"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("s1 summary =\n%+v\nwant\n%+v", got, want)

@@ -126,12 +126,13 @@ func (e Envelope) validate() error {
 		return errors.New("spool: envelope has no id")
 	}
 	set := map[Kind]bool{
-		KindTurnOpen:  e.TurnOpen != nil,
-		KindTurnClose: e.TurnClose != nil,
-		KindEdit:      e.Edit != nil,
-		KindHeadMoved: e.HeadMoved != nil,
-		KindSnapshot:  e.Snapshot != nil,
-		KindSkipped:   e.Skipped != nil,
+		KindTurnOpen:   e.TurnOpen != nil,
+		KindTurnClose:  e.TurnClose != nil,
+		KindEdit:       e.Edit != nil,
+		KindHeadMoved:  e.HeadMoved != nil,
+		KindSnapshot:   e.Snapshot != nil,
+		KindSkipped:    e.Skipped != nil,
+		KindAgentClose: e.AgentClose != nil,
 	}
 	if _, known := set[e.Kind]; !known {
 		return fmt.Errorf("spool: unknown envelope kind %q", e.Kind)

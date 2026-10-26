@@ -72,6 +72,12 @@ func sessionOutlivesClose(t *testing.T, s store.Store) {
 	if len(d.Turns) == 0 || !sameSkipped(d.Turns[0].Skipped, historySkipped()) {
 		t.Errorf("t1 after reopen = %+v, want its skipped counts %+v", d.Turns, historySkipped())
 	}
+	if len(d.Turns) == 0 || d.Turns[0].Origin != store.OriginTeammate {
+		t.Errorf("t1 after reopen = %+v, want origin %q", d.Turns, store.OriginTeammate)
+	}
+	if len(d.Agents) != 1 || d.Agents[0].Totals == nil || d.Agents[0].Location.Repo != repoA {
+		t.Errorf("s1 agents after reopen = %+v, want ag1 with its totals and location", d.Agents)
+	}
 }
 
 // history is a small but complete record set: two sessions, open and
@@ -87,6 +93,11 @@ func history() []any {
 	closed.EndedAt = &ended
 	closed.Totals = totals(1, usage("model-a", 10, 20), usage("model-b", 1, 2))
 	closed.Skipped = historySkipped()
+	closed.Origin = store.OriginTeammate
+	worker := agent("ag1", "s1", 3, 9, "t1", "t2")
+	worker.Name, worker.Model, worker.Cwd = "builder", "model-a", "/wt/a"
+	worker.Location, worker.TranscriptChunk = a, "tc1"
+	worker.Totals = totals(1, usage("model-a", 40, 4))
 	return []any{
 		session("s1", at(0)), session("s2", at(30)),
 		closed,
@@ -112,7 +123,7 @@ func history() []any {
 			ID: "l1", Repo: repoA, Worktree: "/wt/a", Commit: "c0ffee", Path: "x.go", Blob: "b1",
 			EditID: "e1", TurnID: "t1", SessionID: "s1", At: at(20),
 		},
-		renamed,
+		renamed, worker,
 	}
 }
 
@@ -152,6 +163,11 @@ func view(t *testing.T, st store.Store) string {
 			td, err := st.Turn(ctx, tn.ID)
 			must(t, err)
 			v["turn "+tn.ID] = td
+		}
+		for _, ag := range d.Agents {
+			a, err := st.Agent(ctx, ag.ID)
+			must(t, err)
+			v["agent "+ag.ID] = a
 		}
 		for _, wt := range d.Worktrees {
 			open, err := st.OpenTurns(ctx, wt)
