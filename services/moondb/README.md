@@ -101,7 +101,7 @@ the main checkout never sees Bash edits in a linked worktree.
 
 ```bash
 moondb why <path>:<line>     # the edit, turn, prompt and commit behind one line
-moondb history <path>        # every recorded edit of a file, newest first
+moondb history <path>        # every recorded edit of a file, in any checkout, newest first
 moondb sessions              # recorded sessions, newest first, with their titles, active time and wall time
 moondb trace <session-id>    # where a session's time went and what it cost
 moondb import --dry-run      # what an import of past session transcripts would record
