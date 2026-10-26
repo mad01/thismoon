@@ -558,7 +558,7 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 
 - `GET  /`                      : webkit-chromed web page, read-only (see Web page below)
 - `GET  /app.js`                : the page's client script
-- `GET  /api/sessions`          : one page of session rows, newest first (`sessions`), the totals of every session the filters keep (`window`), and the repositories the time window's sessions edited with their session counts and attributed cost (`repos`); `since`, `repo` and `limit` filter
+- `GET  /api/sessions`          : one page of session rows, newest first (`sessions`), the totals of every session the filters keep (`window`), and the repositories the time window's sessions edited or sent attributed cost, with their session counts and attributed cost (`repos`); `since`, `repo` and `limit` filter
 - `GET  /api/sessions/{id}`     : one session with its turns and counts, plus `summary`, its listing row, and `agents`, its agent rows (below)
 - `GET  /api/sessions/{id}/trace`: the session's trace: every turn's spans, gaps and totals, the user gaps between turns, the agents' runs, session totals
 - `GET  /api/turns/{id}`        : one turn with its edits, unattributed deltas and snapshots, `agents` (the agents that worked in it), plus `trace_totals` when its transcript lines hold a timeline or an agent ran under it, and `skipped` when the Bash hook skipped files of a command
@@ -614,8 +614,9 @@ A session row comes from the index alone, never a chunk
   entry has `repo`, `name`, `cost` and `unpriced`, its cost absent when
   none of its models is priced.
 - `repo_cost`: only when the listing filters by `repo`, the part of
-  `cost` attributed to that repository. It is 0 when the rule sends
-  nothing there, and absent when the session has no priced cost.
+  `cost` attributed to that repository. It is absent when no price covers
+  that part (its `repo_costs` entry names the models) or the session has
+  no priced cost, and otherwise 0 when the rule sends nothing there.
 - `repos`, `repo_names` (each repo's last two path segments) and
   `worktrees`.
 
@@ -634,10 +635,12 @@ it, whenever they started. Rows stay ordered and grouped by the day they
 started. `window` adds up every session the filters keep, past the limit,
 whole: sessions, active time, turns, edits, distinct files, tokens and cost, with
 `cost_main`, `cost_agents` and `repo_costs`. `repos` ignores the `repo`
-filter, so a page can offer every repo of the time window. Its `cost` is
-what every session of the time window attributes to the repository. That
-counts a session whose subagent only worked in the repository's checkout
-too, so it can exceed the sum of the filtered rows' `repo_cost`.
+filter, so a page can offer every repo of the time window. A repository
+there counts each session that edited it or sends it a part of its cost,
+such as through a subagent whose cwd sits in it. The `repo` filter keeps
+sessions by the same rule. So a chip's `sessions` is the filtered
+`window`'s, and its `cost` equals the filtered window's part for it and
+the sum of the filtered rows' `repo_cost`.
 
 An agent row (`internal/server/agents.go`) is the main conversation
 (`type` `main`, id empty) or one subagent. It carries `id`, `type`, `name`,
@@ -673,8 +676,11 @@ return, so keep it stable.
   (`repo`) sit above a strip that adds the window up, active time
   included, with the subagents'
   part of the cost beside the total. A cost's hover title splits it.
-  Each chip shows its repo's attributed cost. Under the strip's figures a
-  bar stacks the window's cost by repo, then orchestration and no repo.
+  Each chip counts the sessions its filter lists, the ones that edited
+  its repo or sent it cost, and shows the cost they attribute to it.
+  Under the strip's figures a bar stacks the window's cost by repo, then
+  orchestration and "no repo (cwd)", the page's name for `no_repo`. A
+  row's "no repo" badge stays apart: that session edited no repo.
   A label under it gives each part's amount, and a hover title its share
   and the attribution rule. Filtered to a repo, the cost column turns into
   "Attributed": the part each session gives that repo, with the session

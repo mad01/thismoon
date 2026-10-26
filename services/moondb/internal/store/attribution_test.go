@@ -170,19 +170,46 @@ func TestAttribution(t *testing.T) {
 // TestCostRepoMatchesSummarize: the per-agent answers a listing gives an
 // agent row name the entry Summarize put the agent's usage in.
 func TestCostRepoMatchesSummarize(t *testing.T) {
-	agent := agentWith("x", repoB, 10)
-	edits := []Edit{editIn("1", "x", repoA, 1), editIn("2", "", repoB, 2)}
-	if got := AgentCostRepo(agent, edits[:1]); got != repoA {
-		t.Errorf("AgentCostRepo = %q, want %q", got, repoA)
+	x, y := agentWith("x", repoB, 10), agentWith("y", "", 1)
+	tests := []struct {
+		name                 string
+		edits                []Edit
+		main, agentX, agentY string
+	}{
+		{
+			name:   "edits",
+			edits:  []Edit{editIn("1", "x", repoA, 1), editIn("2", "", repoB, 2)},
+			main:   repoB,
+			agentX: repoA,
+			agentY: CostNoRepo,
+		},
+		{name: "no edits", main: CostOrchestration, agentX: repoB, agentY: CostNoRepo},
 	}
-	if got := AgentCostRepo(agentWith("y", "", 1), nil); got != CostNoRepo {
-		t.Errorf("AgentCostRepo without edits or cwd = %q, want %q", got, CostNoRepo)
-	}
-	if got := MainCostRepo(edits[1:]); got != repoB {
-		t.Errorf("MainCostRepo = %q, want %q", got, repoB)
-	}
-	if got := MainCostRepo(nil); got != CostOrchestration {
-		t.Errorf("MainCostRepo without edits = %q, want %q", got, CostOrchestration)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			byAgent := map[string][]Edit{}
+			for _, e := range tc.edits {
+				byAgent[e.AgentID] = append(byAgent[e.AgentID], e)
+			}
+			got := map[string]string{
+				"main": MainCostRepo(byAgent[""]),
+				"x":    AgentCostRepo(x, byAgent["x"]),
+				"y":    AgentCostRepo(y, byAgent["y"]),
+			}
+			want := map[string]string{"main": tc.main, "x": tc.agentX, "y": tc.agentY}
+			if !maps.Equal(got, want) {
+				t.Fatalf("cost repos = %v, want %v", got, want)
+			}
+			sum := Summarize(Session{ID: "s", StartedAt: minutes(0)}, []Turn{mainTurn(100)},
+				[]Agent{x, y}, editSeq(tc.edits))
+			tokens := map[string]int64{}
+			tokens[got["main"]] += 100
+			tokens[got["x"]] += 10
+			tokens[got["y"]] += 1
+			if parts := inputByRepo(sum.RepoUsage); !maps.Equal(parts, tokens) {
+				t.Errorf("Summarize attributed %v, the per-agent answers give %v", parts, tokens)
+			}
+		})
 	}
 }
 

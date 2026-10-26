@@ -34,19 +34,20 @@ where that time went and what it cost.
 --since keeps the sessions active since then, whenever they started, and
 takes an RFC 3339 time or a span before now: 90m, 24h, 7d.
 
---repo keeps the sessions that edited the repository and adds two
-columns. COST is the whole session's cost. ATTRIBUTED is the part the
-attribution rule gives the repository: each subagent's cost goes to the
-repository most of its edits touched, else its cwd's repository; the main
-conversation's goes to the repository most of its own edits touched, else
-to orchestration.`,
+--repo keeps the sessions that edited the repository or attribute a part
+of their cost to it, and adds two columns. COST is the whole session's
+cost. ATTRIBUTED is the part the attribution rule gives the repository,
+"unknown" when no price covers that part. Each subagent's cost goes to
+the repository most of its edits touched, else its cwd's repository,
+else no_repo. The main conversation's goes to the repository most of its
+own edits touched, else to orchestration.`,
 	Args: cobra.NoArgs,
 	RunE: runSessions,
 }
 
 func init() {
 	sessionsCmd.Flags().
-		StringVar(&sessionsRepo, "repo", "", "keep sessions that edited this repository")
+		StringVar(&sessionsRepo, "repo", "", "keep sessions that edited this repository or attribute cost to it")
 	sessionsCmd.Flags().
 		StringVar(&sessionsSince, "since", "", "keep sessions active since this time or span")
 	sessionsCmd.Flags().
@@ -71,13 +72,13 @@ func runSessions(cmd *cobra.Command, _ []string) error {
 	if sessionsJSON {
 		return printJSON(cmd.OutOrStdout(), sessions)
 	}
-	printSessions(cmd.OutOrStdout(), sessions, sessionsRepo != "")
+	printSessions(cmd.OutOrStdout(), sessions, sessionsRepo)
 	return nil
 }
 
-// printSessions renders session summaries as a table. byRepo adds the
-// whole cost and the part attributed to the listing's repository.
-func printSessions(w io.Writer, sessions []server.SessionSummary, byRepo bool) {
+// printSessions renders session summaries as a table. A repo, the one the
+// listing filters by, adds the whole cost and the part attributed to it.
+func printSessions(w io.Writer, sessions []server.SessionSummary, repo string) {
 	if len(sessions) == 0 {
 		fmt.Fprintln(
 			w,
@@ -87,13 +88,14 @@ func printSessions(w io.Writer, sessions []server.SessionSummary, byRepo bool) {
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	costs := ""
-	if byRepo {
+	if repo != "" {
 		costs = "COST\tATTRIBUTED\t"
 	}
 	fmt.Fprintln(tw, "STARTED\tSESSION\tTURNS\tEDITS\tACTIVE\tWALL\t"+costs+"REPOS\tTITLE")
 	for _, s := range sessions {
-		if byRepo {
-			costs = rowCost(s.Cost, s.Unpriced) + "\t" + rowCost(s.RepoCost, nil) + "\t"
+		if repo != "" {
+			costs = rowCost(s.Cost, s.Unpriced) + "\t" +
+				rowCost(s.RepoCost, partUnpriced(s, repo)) + "\t"
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s%s\t%s\n",
 			when(s.StartedAt), short(s.ID), fmtCount(s.TurnCount), fmtCount(s.EditCount),
@@ -111,4 +113,15 @@ func rowCost(usd *float64, unpriced []string) string {
 		return "-"
 	}
 	return trace.FormatCost(usd)
+}
+
+// partUnpriced names the models of s's attributed part for repo that no
+// price covers, nil when the rule sends repo nothing.
+func partUnpriced(s server.SessionSummary, repo string) []string {
+	for _, c := range s.RepoCosts {
+		if c.Repo == repo {
+			return c.Unpriced
+		}
+	}
+	return nil
 }

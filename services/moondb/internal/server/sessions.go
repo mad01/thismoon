@@ -82,7 +82,7 @@ type SessionSummary struct {
 	RepoCosts []RepoCost `json:"repo_costs"                jsonschema:"the session's attributed cost: each subagent's cost goes to the repository most of its edits touched, else its cwd's repository, else no_repo; the main conversation's to the repository most of its own edits touched, else orchestration"`
 	// RepoCost is set only when the listing filters by repository: the
 	// part of Cost attributed to that repository (attributedCost).
-	RepoCost *float64 `json:"repo_cost,omitempty"       jsonschema:"only with the repo filter: the part of cost attributed to that repository, 0 when the attribution rule sends it nothing; absent when the session has no priced cost"`
+	RepoCost *float64 `json:"repo_cost,omitempty"       jsonschema:"only with the repo filter: the part of cost attributed to that repository; absent when no price covers that part (its repo_costs entry names the unpriced models) or the session has no priced cost, else 0 when the attribution rule sends it nothing"`
 	// Repos are the repository identities the session edited, sorted, and
 	// RepoNames their short names (the last two path segments) in the same
 	// order.
@@ -99,8 +99,9 @@ type SessionList struct {
 	Sessions []SessionSummary `json:"sessions"`
 	// Window adds up every session the filters keep, past the limit.
 	Window WindowTotals `json:"window"`
-	// Repos are the repositories the sessions in the time window edited,
-	// the repo filter left out, so a page can offer each one.
+	// Repos are the repositories the sessions in the time window edited or
+	// sent attributed cost to, the repo filter left out, so a page can
+	// offer each one.
 	Repos []RepoCount `json:"repos"`
 }
 
@@ -124,9 +125,9 @@ type WindowTotals struct {
 	RepoCosts  []RepoCost `json:"repo_costs"`
 }
 
-// RepoCount is one repository with how many sessions edited it, and the
-// cost the attribution rule gives it across the time window: absent when
-// no priced part goes there.
+// RepoCount is one repository with how many sessions edited it or sent it
+// attributed cost (chipRepos), and the cost the attribution rule gives it
+// across the time window: absent when no priced part goes there.
 type RepoCount struct {
 	Repo     string   `json:"repo"`
 	Name     string   `json:"name"`
@@ -174,7 +175,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	kept, repo := all, q.Get("repo")
 	if repo != "" {
 		kept = slices.DeleteFunc(slices.Clone(all), func(sum store.SessionSummary) bool {
-			return !slices.Contains(sum.Repos, repo)
+			return !slices.Contains(chipRepos(sum), repo)
 		})
 	}
 	now := s.now()
@@ -290,15 +291,15 @@ func (s *Server) window(sessions []store.SessionSummary) WindowTotals {
 	return t
 }
 
-// repoCounts lists the repositories the sessions edited, most sessions
-// first, then by name, each with the cost the sessions attribute to it.
-// That cost counts every session that sends a part there, one whose
-// subagent only worked in the repository's cwd included.
+// repoCounts lists the repositories of the sessions' chipRepos, most
+// sessions first, then by name, each with the cost the sessions attribute
+// to it. A chip and the repo filter go by the same rule, so a chip's
+// sessions and cost are what its filtered listing holds.
 func (s *Server) repoCounts(sessions []store.SessionSummary) []RepoCount {
 	counts := map[string]int{}
 	parts := make([][]store.RepoUsage, 0, len(sessions))
 	for _, sum := range sessions {
-		for _, r := range sum.Repos {
+		for _, r := range chipRepos(sum) {
 			counts[r]++
 		}
 		parts = append(parts, sum.RepoUsage)
@@ -318,6 +319,20 @@ func (s *Server) repoCounts(sessions []store.SessionSummary) []RepoCount {
 			cmp.Compare(a.Repo, b.Repo))
 	})
 	return out
+}
+
+// chipRepos lists the repositories a session counts toward: the ones it
+// edited, then the ones the attribution rule sends a part of its cost to
+// without an edit there, such as a subagent's cwd repository. The repo
+// filter keeps a session by them and a repo chip counts it by them.
+func chipRepos(sum store.SessionSummary) []string {
+	repos := slices.Clone(sum.Repos)
+	for _, p := range sum.RepoUsage {
+		if !isCostLabel(p.Repo) && !slices.Contains(repos, p.Repo) {
+			repos = append(repos, p.Repo)
+		}
+	}
+	return repos
 }
 
 // repoCosts prices attributed usage: the repositories costliest first,
@@ -340,9 +355,10 @@ func (s *Server) repoCosts(parts []store.RepoUsage) []RepoCost {
 	return out
 }
 
-// attributedCost is the part of row's cost attributed to repo: its entry's
-// cost, a real zero when the row is priced and the rule sends nothing
-// there, nil when the row has no priced cost.
+// attributedCost is the part of row's cost attributed to repo. With an
+// entry for repo it is that entry's cost, nil when none of its models is
+// priced. Without one it is a real zero when the row is priced, nil when
+// the row has no priced cost.
 func attributedCost(row SessionSummary, repo string) *float64 {
 	if i := slices.IndexFunc(row.RepoCosts, func(c RepoCost) bool { return c.Repo == repo }); i >= 0 {
 		return row.RepoCosts[i].Cost
@@ -354,15 +370,21 @@ func attributedCost(row SessionSummary, repo string) *float64 {
 }
 
 // costName is how a person reads an attributed cost's repository or label.
+// The no_repo label reads "no repo (cwd)", apart from a row's "no repo"
+// badge, which says the session edited no repository.
 func costName(repo string) string {
 	switch repo {
 	case store.CostOrchestration:
 		return "orchestration"
 	case store.CostNoRepo:
-		return "no repo"
+		return "no repo (cwd)"
 	}
 	return repoName(repo)
 }
+
+// isCostLabel reports whether repo is a label that takes attributed cost
+// no repository takes, not a repository.
+func isCostLabel(repo string) bool { return labelRank(repo) > 0 }
 
 // labelRank puts the repositories first, then orchestration, then no_repo.
 func labelRank(repo string) int {

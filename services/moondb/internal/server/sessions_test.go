@@ -333,10 +333,10 @@ func wantCosts(t *testing.T, what string, got []RepoCost, want []string, cost ma
 // rule through the HTTP API. A main conversation's cost goes to the
 // repository of its edits or to orchestration, a subagent's to its edits'
 // repository, else its cwd's, else no_repo. The window adds the parts up
-// across sessions, a repo chip's cost counts every session that sends a
-// part there, and a repo-filtered row says what it attributes to that
-// repository: a real zero when the rule sends nothing there, none when the
-// session has no priced cost.
+// across sessions. A repo chip and the repo filter count every session
+// that edited the repository or sends it a part, and a repo-filtered row
+// says what it attributes to that repository: a real zero when the rule
+// sends nothing there, none when the session has no priced cost.
 func TestSessionsAttributeCost(t *testing.T) {
 	h := newHarness(t)
 	addOrchestration(h)
@@ -381,9 +381,9 @@ func TestSessionsAttributeCost(t *testing.T) {
 	for _, r := range list.Repos {
 		chips[r.Repo] = r
 	}
-	if c := chips[servertest.OtherRepo]; c.Sessions != 1 || c.Cost == nil ||
+	if c := chips[servertest.OtherRepo]; c.Sessions != 2 || c.Cost == nil ||
 		!near(*c.Cost, turnCost+agentCost) {
-		t.Errorf("other repo chip = %+v, want 1 session and both sessions' parts", c)
+		t.Errorf("other repo chip = %+v, want 2 sessions and both sessions' parts", c)
 	}
 	if c := chips[servertest.Repo]; c.Sessions != 2 || c.Cost != nil {
 		t.Errorf("thismoon chip = %+v, want 2 sessions and no cost: no priced part goes there", c)
@@ -400,8 +400,14 @@ func TestSessionsAttributeCost(t *testing.T) {
 			"the one that sends nothing there", got)
 	}
 	filtered = h.sessionList(t, "?repo="+servertest.OtherRepo).Sessions
-	if len(filtered) != 1 || filtered[0].RepoCost == nil || !near(*filtered[0].RepoCost, turnCost) {
-		t.Errorf("other repo row = %+v, want the main conversation's part", filtered)
+	clear(got)
+	for _, row := range filtered {
+		got[row.ID] = row.RepoCost
+	}
+	if len(filtered) != 2 || got[orchSession] == nil || !near(*got[orchSession], agentCost) ||
+		got[servertest.OldSession] == nil || !near(*got[servertest.OldSession], turnCost) {
+		t.Errorf("other repo rows' repo_cost = %v, want the subagent's part of the cwd-only "+
+			"session and the main conversation's part of the older one", got)
 	}
 	if older.RepoCost != nil {
 		t.Errorf("unfiltered row repo_cost = %v, want none", *older.RepoCost)
@@ -436,6 +442,68 @@ func TestSessionAgentsCarryCostRepo(t *testing.T) {
 	for repo, sum := range sums {
 		if got[repo] == nil || !near(*got[repo], sum) {
 			t.Errorf("repo_costs[%s] = %v, want the agent rows' %v", repo, got[repo], sum)
+		}
+	}
+}
+
+// TestRepoFilterFollowsAttribution: a session whose only link to a
+// repository is a subagent's cwd there appears under that repo filter and
+// gets a chip. For every repository, the chip's sessions are the filtered
+// rows, and its cost equals both the filtered window's part and the sum
+// of the filtered rows' repo_cost.
+func TestRepoFilterFollowsAttribution(t *testing.T) {
+	h := newHarness(t)
+	addOrchestration(h)
+	const (
+		cwdRepo    = "example.com/owner/cwd-only"
+		cwdSession = "sess-cwd"
+		cwdTurn    = "turn-cwd"
+	)
+	cwd := store.Location{Repo: cwdRepo, Worktree: "/work/cwd-only"}
+	h.store.Add(
+		store.Session{
+			ID:        cwdSession,
+			Harness:   "test-harness",
+			Cwd:       "/work",
+			StartedAt: servertest.T0,
+		},
+		[]store.Turn{servertest.PricedTurn(cwdTurn, cwdSession)},
+		[]store.Agent{servertest.PricedAgent("agent-cwd-only", cwdSession, cwdTurn, cwd)},
+		nil,
+	)
+	chips := map[string]RepoCount{}
+	for _, r := range h.sessionList(t, "").Repos {
+		chips[r.Repo] = r
+	}
+	if c, ok := chips[cwdRepo]; !ok || c.Sessions != 1 || c.Cost == nil {
+		t.Fatalf("cwd-only chip = %+v (listed %v), want 1 session with a priced cost", c, ok)
+	}
+	for _, repo := range []string{cwdRepo, servertest.OtherRepo, servertest.Repo} {
+		chip := chips[repo]
+		list := h.sessionList(t, "?repo="+repo)
+		ids, sum := make([]string, 0, len(list.Sessions)), 0.0
+		for _, row := range list.Sessions {
+			ids = append(ids, row.ID)
+			if row.RepoCost != nil {
+				sum += *row.RepoCost
+			}
+		}
+		if len(ids) != chip.Sessions {
+			t.Errorf("%s: chip counts %d sessions, filtered rows %v", repo, chip.Sessions, ids)
+		}
+		if repo == cwdRepo && !slices.Contains(ids, cwdSession) {
+			t.Errorf("%s: filtered rows %v, want %s", repo, ids, cwdSession)
+		}
+		part := costsByRepo(list.Window.RepoCosts)[repo]
+		if chip.Cost == nil {
+			if sum != 0 || part != nil {
+				t.Errorf("%s: unpriced chip, rows add %v and window part %v", repo, sum, part)
+			}
+			continue
+		}
+		if !near(sum, *chip.Cost) || part == nil || !near(*part, *chip.Cost) {
+			t.Errorf("%s: chip cost %v, filtered rows add %v, window part %v; want one number",
+				repo, *chip.Cost, sum, part)
 		}
 	}
 }

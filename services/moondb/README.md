@@ -173,11 +173,12 @@ part of it.
 
 A bar under the strip splits that cost by repo. Model calls carry no repo,
 so each agent's cost goes to one. A subagent's goes to the repo most of
-its edits touched, else the repo it worked in, else "no repo". The main
-conversation's goes to the repo most of its own edits touched, else to
-"orchestration". Hover a part for its share and the rule. Each repo chip
-shows the cost its repo got. With a repo picked, the cost column shows
-each session's part for that repo, and the hover title gives the
+its edits touched, else the repo it worked in, else "no repo (cwd)". The
+main conversation's goes to the repo most of its own edits touched, else
+to "orchestration". Hover a part for its share and the rule. Each repo
+chip counts the sessions that edited its repo or sent it cost, and shows
+that cost. Picking it lists those sessions, and the cost column then
+shows each session's part for that repo. The hover title gives the
 session's whole cost.
 
 A session opens on its title, repos and status, then its active time over
