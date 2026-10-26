@@ -46,7 +46,7 @@ internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     publish-internal-names), and the Custom guard that execs
                     config-registered external commands
 internal/hint/      the Hint interface and the hints (prefer-csl,
-                    commit-policy, lint-policy, kof-assertions, kof-consult,
+                    read-size, commit-policy, lint-policy, kof-assertions, kof-consult,
                     kof-deposit, agent-memory, humanizer-check, em-dash), the Custom
                     hint that execs config-registered external commands,
                     plus csl shard lookup, search-response parsing, and the
@@ -84,8 +84,8 @@ always exits 0 (the deny is data, not an exit code), and an allow produces
 no output at all. Across belt the only non-zero exit on
 purpose is `belt watch`'s exit 2 (see the watch path below).
 
-The hint path mirrors it: `belt hint search|bash|external-text|session-start|
-prompt` maps the payload onto a `hint.Input` (tool name, request, response,
+The hint path mirrors it: `belt hint search|bash|read|external-text|
+session-start|prompt` maps the payload onto a `hint.Input` (tool name, request, response,
 session id, transcript path, cwd) and runs every enabled hint for the event.
 Hints do not short-circuit, each speaks or stays silent independently. Advice
 is emitted as `hookSpecificOutput.additionalContext` with the invoking
@@ -148,7 +148,7 @@ machine-profile concept (docs/adr/0010). The provisioning layer renders one
 belt config per machine class.
 
 The hints also read the world they advise about: the csl shard listing in
-`~/.config/csl/search-index/` (prefer-csl, no csl process launched) and the
+`~/.config/csl/search-index/` (prefer-csl and read-size, no csl process launched) and the
 agent-memory index files in `~/.config/agent-memory[-work]/` (agent-memory).
 They read the session transcript file named in the payload (kof-deposit,
 humanizer-check) and the git repo a commit ran in. From that repo they read

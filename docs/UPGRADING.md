@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-26 belt: read-size hint needs a Read hook entry
+
+Change: thismoon, belt `read-size` hint (#308, MAD-494). The hint fires when a Read with no offset or limit pulls in 300 lines or more from a csl-indexed repo, for a file type `csl_outline` has symbols for. It points at `csl_outline` or a ranged read, once per file per agent per session.
+
+Run: merge this change and `ralph up` first, so the installed belt knows the `read` event. Then, in the consuming repo's Claude settings template, add a PostToolUse group with matcher `Read` running `~/code/bin/belt hint read`. Order matters: an older belt fails `belt hint read` at argument parsing, and Claude Code reports that hook error on every Read. The hint is on by default; `hints.read-size.enabled: false` in the belt config switches it off.
+
+Verify: `belt doctor` lists `read-size` on the `read` event. In a new session, Read a file of 300 lines or more from an indexed repo with no range; the result carries a `belt[read-size]` note naming `csl_outline`.
+
 ## 2026-10-26 moondb: subagent cost needs a SubagentStop hook entry
 
 Change: thismoon #298. moondb records each subagent when it stops, from its own transcript. The turn and the session then add the subagent's cost to their own.

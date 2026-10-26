@@ -74,6 +74,10 @@ complete hooks block looks like this:
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint bash" }]
       },
       {
+        "matcher": "Read",
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint read" }]
+      },
+      {
         "matcher": "^mcp__(github|linear)__.*|^mcp__slack__slack_send_.*",
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint external-text" }]
       }
@@ -154,6 +158,7 @@ The event-to-subcommand mapping is fixed:
 | `belt hook external-text` | PreToolUse | the github.com MCP server's tools, and only that server (see below) |
 | `belt hint search` | PostToolUse | the csl search MCP tools |
 | `belt hint bash` | PostToolUse | `Bash` |
+| `belt hint read` | PostToolUse | `Read` |
 | `belt hint external-text` | PostToolUse | your publishing MCP tools (see below) |
 | `belt hint session-start` | SessionStart | none (fires on every session) |
 | `belt hint subagent-start` | SubagentStart | none, or an agent type to brief only some subagents |
@@ -757,6 +762,39 @@ hands back the equivalent `csl_search` call.
   repos. Habit, not ignorance — so the fix is a well-timed reminder with the
   exact replacement, not a deny.
 
+### read-size (read)
+
+After a Read pulls in a large file without a range, points at the cheaper
+ways in.
+
+- **Fires when** a Read with no `offset` and no `limit` returns a file of
+  300 lines or more inside a repo csl indexes. The index check is the same
+  shard listing prefer-csl reads. The file must be a type `csl_outline`
+  has symbols for: Go, TypeScript, Python, Java, protobuf, shell, or
+  markdown.
+- **The advice** names the file and its line count, hands over the
+  `csl_outline` call with repo and path filled in, and names `csl_read` or
+  a ranged Read for a known region. The call always sets
+  `include_tests: true`, because csl leaves test files out of an outline by
+  default. For markdown it adds `kinds: ["section"]`, since headings are
+  left out otherwise.
+- **Once per file per agent per session**, through the seen file. A
+  subagent shares its parent's session id, so it gets its own nudge, and
+  its read doesn't use up the main thread's. A ranged read of the file
+  doesn't use one up either.
+- **Silent** without a session id, on a relative path, and outside an
+  indexed repo. It's silent on every file type `csl_outline` returns no
+  symbols for: JSON, YAML, TOML, plain text, CSV, lock files, JavaScript,
+  Dockerfiles and the rest. It's also silent on a response it can't read:
+  an image, notebook or PDF read, or a line count that is missing or of
+  another JSON type. A loom worktree
+  has no shard of its own, so reads there stay silent too. That is on
+  purpose, since `csl_outline` would describe the indexed checkout, not the
+  worktree's files.
+- **Why**: a whole-file read of a large file puts every line in context
+  when the task usually needs one region. An outline or a ranged read gets
+  there for a fraction of the tokens.
+
 ### commit-policy (bash)
 
 After a `git commit` lands on main or master of a repo that is not opted
@@ -1118,10 +1156,11 @@ missing key:
 | memory facts per store | 30 | agent-memory |
 | assertions per fire | 3 / 5 | kof-assertions / kof-consult |
 | substantial-work threshold | 30 tool calls | kof-deposit |
+| large-read threshold | 300 lines | read-size |
 | published-text excerpt | 200 bytes | humanizer-check |
 | session dedupe store | `~/.cache/belt/seen-<session>` | all once-per-session hints |
 | agent-memory store paths | `~/.config/agent-memory[-work]/MEMORY.md` | agent-memory |
-| csl shard listing | `~/.config/csl/search-index/` | prefer-csl |
+| csl shard listing | `~/.config/csl/search-index/` | prefer-csl, read-size |
 | ledger message cap | 500 bytes | belt record |
 | record budgets | 1 s to locate in git, 300 ms to post | belt record |
 | watcher request timeout | 2 s per poll | belt watch |

@@ -51,6 +51,10 @@
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint bash" }]
       },
       {
+        "matcher": "Read",
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint read" }]
+      },
+      {
         "matcher": "^mcp__(github|linear)__.*|^mcp__slack__slack_send_.*",
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint external-text" }]
       }

@@ -14,7 +14,7 @@ import (
 )
 
 // Event names match `belt hint <event>` and the hook matcher they are
-// registered under. Search, bash, and external-text run on PostToolUse;
+// registered under. Search, bash, read, and external-text run on PostToolUse;
 // session-start runs on SessionStart, where there is no tool call — the input
 // carries only the session's cwd and id. subagent-start runs on
 // SubagentStart, before a subagent's first prompt; its input adds the
@@ -25,6 +25,7 @@ import (
 const (
 	EventSearch        = "search"                      // matcher: the csl search MCP tools
 	EventBash          = "bash"                        // matcher: Bash
+	EventRead          = "read"                        // matcher: Read
 	EventSessionStart  = config.HintEventSessionStart  // hook: SessionStart
 	EventSubagentStart = config.HintEventSubagentStart // hook: SubagentStart
 	EventPrompt        = "prompt"                      // hook: UserPromptSubmit
@@ -39,7 +40,8 @@ const (
 // silently rejected at the command line.
 func Events() []string {
 	return []string{
-		EventSearch, EventBash, EventSessionStart, EventSubagentStart, EventPrompt, EventExternalText,
+		EventSearch, EventBash, EventRead, EventSessionStart, EventSubagentStart, EventPrompt,
+		EventExternalText,
 	}
 }
 
@@ -56,9 +58,16 @@ type Input struct {
 	// ToolInput carries the external-text tool call's input fields, so the
 	// nudge can name the exact text that was published.
 	ToolInput map[string]any
+	// FilePath, Ranged and TotalLines describe a Read: the file asked for,
+	// whether the call named an offset or a limit, and the whole file's line
+	// count from the response (0 when the response did not carry one in a
+	// known shape).
+	FilePath   string
+	Ranged     bool
+	TotalLines int
 	// AgentID and AgentType name the subagent the hook fired in, and are
-	// empty in the main session. No built-in hint reads them: they reach
-	// custom hints.
+	// empty in the main session. read-size keys its dedupe on AgentID;
+	// otherwise they reach custom hints.
 	AgentID   string
 	AgentType string
 }
@@ -96,6 +105,7 @@ func All(cfg config.Config) []Hint {
 		NewEmDash(cfg, EventExternalText),
 		NewEmDash(cfg, EventBash),
 		NewPreferCSL(cfg),
+		NewReadSize(),
 	}
 	for _, name := range slices.Sorted(maps.Keys(cfg.CustomHints)) {
 		hints = append(hints, NewCustom(name, cfg))
