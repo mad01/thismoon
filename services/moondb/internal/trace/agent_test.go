@@ -171,7 +171,8 @@ func TestBuildSessionWithAgents(t *testing.T) {
 	st := BuildSession("s", []TurnTrace{p2, p1}, []AgentTrace{at})
 
 	agents := costA1 + costA2 + costA3 + costA4
-	if !near(deref1(st.Totals.Cost), 0.01104+agents) || !near(deref1(st.Totals.CostAgents), agents) ||
+	if !near(deref1(st.Totals.Cost), 0.01104+agents) ||
+		!near(deref1(st.Totals.CostAgents), agents) ||
 		!near(deref1(st.Totals.CostMain), 0.01104) ||
 		st.Totals.AgentToolCalls != 2 {
 		t.Errorf("Totals = %+v, want the turns' and the agent's cost", st.Totals)
@@ -190,5 +191,37 @@ func TestBuildSessionWithAgents(t *testing.T) {
 	tools := LongestTools(st, 1)
 	if len(tools) != 1 || tools[0].Span.ID != "toolu_a1" || tools[0].Prompt != "build it" {
 		t.Errorf("LongestTools = %+v, want the agent's Bash call in turn 1", tools)
+	}
+}
+
+// TestAgentHelpers: a ranked call names its agent, runs sort costliest
+// first, and turn ids map to their numbers.
+func TestAgentHelpers(t *testing.T) {
+	if got := (Ranked{}).Who(); got != MainAgent {
+		t.Errorf("main call Who = %q", got)
+	}
+	if got := (Ranked{AgentID: "a", Agent: "worker"}).Who(); got != "worker" {
+		t.Errorf("agent call Who = %q", got)
+	}
+	cheap := AgentRun{AgentID: "cheap", Span: Span{Cost: new(1.0)}}
+	dear := AgentRun{AgentID: "dear", Span: Span{Cost: new(2.0)}}
+	none := AgentRun{AgentID: "none"}
+	runs := []AgentRun{none, cheap, dear}
+	got := AgentsByCost(runs)
+	if got[0].AgentID != "dear" || got[1].AgentID != "cheap" || got[2].AgentID != "none" ||
+		runs[0].AgentID != "none" {
+		t.Errorf("AgentsByCost = %v, want dear, cheap, none and the input kept", got)
+	}
+	st := SessionTrace{Turns: []TurnTrace{{TurnID: "p1", Seq: 1}, {TurnID: "p2", Seq: 2}}}
+	if seqs := st.TurnSeqs([]string{"p2", "gone", "p1"}); len(seqs) != 2 || seqs[0] != 2 ||
+		seqs[1] != 1 {
+		t.Errorf("TurnSeqs = %v, want [2 1]", seqs)
+	}
+	st.Turns[0].Spans = []Span{
+		{Kind: KindTool, EditIDs: []string{"e1", "e2"}},
+		{Kind: KindSubagent, EditCount: 3},
+	}
+	if n := st.MainEdits(); n != 2 {
+		t.Errorf("MainEdits = %d, want the tool call's 2 and none of the subagent's", n)
 	}
 }

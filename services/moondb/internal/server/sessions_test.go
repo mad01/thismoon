@@ -74,9 +74,15 @@ func TestSessionRows(t *testing.T) {
 		t.Errorf("newer cost %v, tokens %+v; want none while its turn is open",
 			newer.Cost, newer.Tokens)
 	}
-	if older.Cost == nil || !near(*older.Cost, h.oldCost(t)) || older.Tokens.Total() != 1530 {
-		t.Errorf("older cost %v, tokens %d; want the trace's cost and 1530 tokens",
+	if older.Cost == nil || !near(*older.Cost, h.oldCost(t)) || older.Tokens.Total() != 3780 {
+		t.Errorf("older cost %v, tokens %d; want the trace's cost and 3780 tokens",
 			older.Cost, older.Tokens.Total())
+	}
+	if older.CostMain == nil || older.CostAgents == nil ||
+		!near(*older.CostMain+*older.CostAgents, *older.Cost) ||
+		!slices.Equal(older.Agents, []string{servertest.AgentName}) || older.AgentCount != 2 {
+		t.Errorf("older main %v, agents %v named %v, count %d; want the cost split and the "+
+			"reviewer beside main", older.CostMain, older.CostAgents, older.Agents, older.AgentCount)
 	}
 }
 
@@ -124,8 +130,10 @@ func TestSessionsWindow(t *testing.T) {
 					tc.want,
 				)
 			}
-			if !tc.timed && (w.Cost == nil || !near(*w.Cost, cost)) {
-				t.Errorf("window cost = %v, want the older session's %v", w.Cost, cost)
+			if !tc.timed && (w.Cost == nil || !near(*w.Cost, cost) || w.CostMain == nil ||
+				w.CostAgents == nil || !near(*w.CostMain+*w.CostAgents, cost)) {
+				t.Errorf("window cost = %v (main %v, agents %v), want the older session's %v split",
+					w.Cost, w.CostMain, w.CostAgents, cost)
 			}
 			if tc.timed && w.Cost != nil {
 				t.Errorf("window cost = %v, want none: no session in it has tokens", *w.Cost)

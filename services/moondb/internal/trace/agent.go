@@ -324,3 +324,50 @@ func later(a, b time.Time) time.Time {
 	}
 	return a
 }
+
+// MainAgent names the main conversation where agents are listed beside
+// it.
+const MainAgent = "main"
+
+// Who names the agent that made a ranked call: the subagent's label, or
+// MainAgent for the main conversation.
+func (r Ranked) Who() string {
+	if r.AgentID == "" {
+		return MainAgent
+	}
+	return r.Agent
+}
+
+// AgentsByCost returns a copy of runs, the costliest first; a run with no
+// priced call ranks last by tokens.
+func AgentsByCost(runs []AgentRun) []AgentRun {
+	out := slices.Clone(runs)
+	slices.SortStableFunc(out, func(a, b AgentRun) int { return costlier(a.Span, b.Span) })
+	return out
+}
+
+// TurnSeqs are the numbers of the turns ids name, in the order given; an
+// id the trace has no turn for is left out.
+func (st SessionTrace) TurnSeqs(ids []string) []int {
+	seqs := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if i := slices.IndexFunc(st.Turns, func(t TurnTrace) bool { return t.TurnID == id }); i >= 0 {
+			seqs = append(seqs, st.Turns[i].Seq)
+		}
+	}
+	return seqs
+}
+
+// MainEdits counts the edits the main conversation's tool calls made in
+// the session's turns.
+func (st SessionTrace) MainEdits() int {
+	n := 0
+	for _, tt := range st.Turns {
+		for _, s := range tt.Spans {
+			if s.Kind == KindTool {
+				n += len(s.EditIDs)
+			}
+		}
+	}
+	return n
+}

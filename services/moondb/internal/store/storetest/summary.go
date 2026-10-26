@@ -18,30 +18,7 @@ import (
 // by model, apart for the main conversation and the agents.
 func sessionSummary(t *testing.T, st store.Store) {
 	ctx := context.Background()
-	a, b := loc(repoA, "/wt/a"), loc(repoB, "/wt/b")
-	first := turn("t1", "s1", store.TurnClosed, at(1))
-	first.EndedAt = new(at(5))
-	first.Totals = totals(1, usage("model-a", 100, 10), usage("model-b", 5, 1))
-	second := turn("t2", "s1", store.TurnClosed, at(10))
-	second.EndedAt = new(at(20))
-	second.Totals = totals(1, usage("model-a", 50, 5))
-	sub := edit("e3", "s1", "t2", 12, b, "y.go")
-	sub.AgentID, sub.AgentType = "agent-1", "Explore"
-	outside := edit("e4", "s1", "t3", 31, store.Location{}, "/abs/z.txt")
-	outside.AgentID = "agent-1"
-	recorded := agent("agent-1", "s1", 11, 32, "t2", "t3")
-	recorded.Type, recorded.Name = "general-purpose", "builder"
-	recorded.Totals = totals(1, usage("model-a", 1000, 100))
-	reviewer := agent("agent-2", "s1", 12, 35, "t2")
-	reviewer.Type = "Explore"
-	reviewer.Totals = totals(1, usage("model-c", 9, 1))
-	seed(t, st,
-		session("s1", at(0)), session("s2", at(40)),
-		first, second, turn("t3", "s1", store.TurnOpen, at(30)),
-		edit("e1", "s1", "t1", 2, a, "x.go"),
-		edit("e2", "s1", "t1", 3, a, "x.go"),
-		sub, outside, recorded, reviewer,
-	)
+	seedSummary(t, st)
 	list, err := st.Sessions(ctx, store.SessionFilter{})
 	must(t, err)
 	wantIDs(t, "Sessions", ids(list, sessionID), "s2", "s1")
@@ -83,6 +60,36 @@ func sessionSummary(t *testing.T, st store.Store) {
 		empty.Repos == nil || empty.Worktrees == nil || !empty.LastActivityAt.Equal(at(40)) {
 		t.Errorf("s2 summary = %+v, want zero counts, empty lists and its start as activity", empty)
 	}
+}
+
+// seedSummary stores what sessionSummary adds up: session s1 with three
+// turns, edits by the main conversation and by agent-1, and two agents
+// with records, and an empty session s2.
+func seedSummary(t *testing.T, st store.Store) {
+	a, b := loc(repoA, "/wt/a"), loc(repoB, "/wt/b")
+	first := turn("t1", "s1", store.TurnClosed, at(1))
+	first.EndedAt = new(at(5))
+	first.Totals = totals(1, usage("model-a", 100, 10), usage("model-b", 5, 1))
+	second := turn("t2", "s1", store.TurnClosed, at(10))
+	second.EndedAt = new(at(20))
+	second.Totals = totals(1, usage("model-a", 50, 5))
+	sub := edit("e3", "s1", "t2", 12, b, "y.go")
+	sub.AgentID, sub.AgentType = "agent-1", "Explore"
+	outside := edit("e4", "s1", "t3", 31, store.Location{}, "/abs/z.txt")
+	outside.AgentID = "agent-1"
+	recorded := agent("agent-1", "s1", 11, 32, "t2", "t3")
+	recorded.Type, recorded.Name = "general-purpose", "builder"
+	recorded.Totals = totals(1, usage("model-a", 1000, 100))
+	reviewer := agent("agent-2", "s1", 12, 35, "t2")
+	reviewer.Type = "Explore"
+	reviewer.Totals = totals(1, usage("model-c", 9, 1))
+	seed(t, st,
+		session("s1", at(0)), session("s2", at(40)),
+		first, second, turn("t3", "s1", store.TurnOpen, at(30)),
+		edit("e1", "s1", "t1", 2, a, "x.go"),
+		edit("e2", "s1", "t1", 3, a, "x.go"),
+		sub, outside, recorded, reviewer,
+	)
 }
 
 // turnsWithoutTotals: closed and failed turns with no totals, or totals

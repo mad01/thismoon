@@ -30,10 +30,13 @@ var chunkKey = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // TurnView is a turn as GET /api/turns/{id} answers it: the turn with
 // everything recorded under it, plus its trace totals when its transcript
-// lines put anything on the timeline.
+// lines put anything on the timeline, and the agents that worked in it.
+// The totals add the work of the subagents with a record under the turn
+// (trace.WithAgents) beside the main conversation's.
 type TurnView struct {
 	store.TurnDetail
 	TraceTotals *trace.Totals `json:"trace_totals,omitempty"`
+	Agents      []AgentRow    `json:"agents"`
 }
 
 func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
@@ -45,18 +48,26 @@ func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.turnView(r.Context(), d))
 }
 
-// turnView adds a turn's trace totals. A trace that cannot be computed is
-// logged and left out: the turn itself is still the answer.
+// turnView adds a turn's trace totals and its agents. A trace that cannot
+// be computed is logged and left out, and the agents come from the edits
+// alone: the turn itself is still the answer.
 func (s *Server) turnView(ctx context.Context, d store.TurnDetail) TurnView {
 	v := TurnView{TurnDetail: d}
 	tt, err := s.query.TurnTrace(ctx, d)
 	if err != nil {
 		log.Printf("moondb: trace of turn %s: %v", d.ID, err)
+		v.Agents = s.turnAgents(d, trace.TurnTrace{TurnID: d.ID}, nil)
 		return v
 	}
-	if tt.Lines.Events > 0 {
+	runs, err := s.query.TurnAgents(ctx, d)
+	if err != nil {
+		log.Printf("moondb: agents of turn %s: %v", d.ID, err)
+	}
+	tt = trace.WithAgents(tt, runs)
+	if tt.Lines.Events > 0 || len(runs) > 0 {
 		v.TraceTotals = &tt.Totals
 	}
+	v.Agents = s.turnAgents(d, tt, runs)
 	return v
 }
 

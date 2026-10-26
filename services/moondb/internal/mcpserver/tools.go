@@ -32,6 +32,13 @@ func readOnly() *mcp.ToolAnnotations {
 }
 
 func registerTools(s *mcp.Server, h *handlers) {
+	registerEditTools(s, h)
+	registerSessionTools(s, h)
+}
+
+// registerEditTools adds the tools that start from a file or a turn:
+// why, history and turn.
+func registerEditTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "moondb_why",
 		Description: "Find the agent turn that wrote one line of a file, including changes not committed yet. " +
@@ -55,15 +62,23 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name: "moondb_turn",
 		Description: "Get one turn by id: the prompt it answered, its status, and everything recorded under it: " +
 			"edits, unattributed deltas (changes no tool call explains, such as a formatter or a human between turns), " +
-			"turn-boundary snapshots, and commit links. Turn ids come from moondb_why and moondb_history (`turn_id`).",
+			"turn-boundary snapshots, and commit links. `turn.agents` lists the agents that worked in the turn: " +
+			"the main conversation first, then each subagent with its model calls, time, edits and cost there. " +
+			"`turn.trace_totals.cost` covers them all; `cost_main` and `cost_agents` split it. " +
+			"Turn ids come from moondb_why and moondb_history (`turn_id`).",
 		Annotations: readOnly(),
 	}, h.handleTurn)
+}
 
+// registerSessionTools adds the tools that start from sessions or from
+// moondb itself: sessions, trace and doctor.
+func registerSessionTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "moondb_sessions",
 		Description: "List recorded agent sessions newest first. Each has a title (the harness title, else its first prompt line), " +
 			"a status (running or ended), when it started, was last active and ended, its duration, its turn, edit, file and agent counts, " +
-			"its tokens and cost, its transcript path, and the repositories and worktrees it edited. " +
+			"the names of the subagents that ran (`agents`), its tokens and cost, its transcript path, and the repositories and worktrees it edited. " +
+			"The cost covers the main conversation and its subagents; `cost_main` and `cost_agents` split it. " +
 			"Filter by `repo` (host/owner/repo; sessions with at least one edit there), `since` (sessions active since then, whenever they started: " +
 			"an RFC 3339 time or a duration such as 24h or 7d), and `limit` (default 50).",
 		Annotations: readOnly(),
@@ -79,10 +94,13 @@ func registerTools(s *mcp.Server, h *handlers) {
 				"Also lists the %[1]d longest tool calls and the %[1]d most expensive model calls, ",
 				moondb.TraceTopSpans,
 			) +
-			"each with its turn number and prompt. " +
+			"each with its turn number, prompt and, for a subagent's call, `agent_id` and `agent`. " +
+			"`agents` lists the subagents costliest first: type, name, model, the turns they ran under, " +
+			"duration, calls, edits, tokens and cost. " +
 			"`id` is REQUIRED: a session id from moondb_sessions. " +
-			"Cost covers the main conversation only, since subagent transcripts are separate files; " +
-			"a model with no known price shows in `totals.unpriced` and adds no cost.",
+			"Cost covers the main conversation and every subagent with a recorded agent transcript; " +
+			"`totals.cost_main` and `totals.cost_agents` split it. " +
+			"A model with no known price shows in `totals.unpriced` and adds no cost.",
 		Annotations: readOnly(),
 	}, h.handleTrace)
 
@@ -248,6 +266,9 @@ func (h *handlers) handleTurn(
 	if skipped > 0 {
 		summary += fmt.Sprintf("; %d files skipped", skipped)
 	}
+	if names := subagentNames(d.Agents); names != "" {
+		summary += "; subagents: " + names
+	}
 	if line := trace.PromptLine(prompt); line != "" {
 		summary += fmt.Sprintf("; prompt: %q", line)
 	}
@@ -257,6 +278,22 @@ func (h *handlers) handleTurn(
 		Summary: summary,
 		URL:     h.sessionURL(d.SessionID),
 	}, nil
+}
+
+// subagentNames lists the subagents of an agent listing by name, with the
+// type when it differs; "" when only the main conversation ran.
+func subagentNames(rows []server.AgentRow) string {
+	var names []string
+	for _, r := range rows {
+		switch {
+		case r.Type == server.MainAgentType && r.ID == "":
+		case r.Name != "" && r.Name != r.Type:
+			names = append(names, fmt.Sprintf("%s (%s)", r.Name, r.Type))
+		default:
+			names = append(names, r.Type)
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 // prompt fetches a turn's prompt text. Best-effort: a missing or unreadable
@@ -330,6 +367,7 @@ type traceOutput struct {
 	Totals          trace.Totals   `json:"totals"`
 	LongestTools    []trace.Ranked `json:"longest_tools"    jsonschema:"the longest tool calls, longest first, each with its turn number and prompt"`
 	CostliestModels []trace.Ranked `json:"costliest_models" jsonschema:"the most expensive model calls, most expensive first; unpriced calls rank last by tokens"`
+	Agents          []traceAgent   `json:"agents"           jsonschema:"the subagents that ran, costliest first"`
 	Summary         string         `json:"summary"`
 	URL             string         `json:"url"              jsonschema:"web page with the session's timeline"`
 }
@@ -349,9 +387,43 @@ func (h *handlers) handleTrace(
 		Totals:          st.Totals,
 		LongestTools:    trace.LongestTools(st, moondb.TraceTopSpans),
 		CostliestModels: trace.CostliestModels(st, moondb.TraceTopSpans),
+		Agents:          traceAgents(st),
 		Summary:         traceSummary(st),
 		URL:             h.sessionURL(st.SessionID),
 	}, nil
+}
+
+// traceAgent is one subagent as moondb_trace lists it.
+type traceAgent struct {
+	ID         string       `json:"id"`
+	Type       string       `json:"type"`
+	Name       string       `json:"name,omitempty"`
+	Model      string       `json:"model,omitempty"`
+	Turns      []int        `json:"turns"               jsonschema:"the numbers of the turns it ran under"`
+	DurationMS int64        `json:"duration_ms"         jsonschema:"from its spawn to its stop"`
+	ModelCalls int          `json:"model_calls"`
+	ToolCalls  int          `json:"tool_calls"`
+	EditCount  int          `json:"edit_count"`
+	Tokens     trace.Tokens `json:"tokens"`
+	Cost       *float64     `json:"cost,omitempty"      jsonschema:"USD at list prices; absent when no call is priced"`
+	Unpriced   []string     `json:"unpriced,omitempty"`
+	LinesCut   int          `json:"lines_cut,omitempty" jsonschema:"lines the agent transcript's size cap cut; their calls add no tokens or cost"`
+}
+
+// traceAgents lists a session's subagents for moondb_trace, costliest
+// first.
+func traceAgents(st trace.SessionTrace) []traceAgent {
+	out := []traceAgent{}
+	for _, a := range trace.AgentsByCost(st.Agents) {
+		out = append(out, traceAgent{
+			ID: a.AgentID, Type: a.Type, Name: a.Name, Model: a.Model,
+			Turns: st.TurnSeqs(a.TurnIDs), DurationMS: a.Span.DurationMS,
+			ModelCalls: a.Totals.ModelCalls, ToolCalls: a.Totals.ToolCalls,
+			EditCount: a.Span.EditCount, Tokens: a.Totals.Tokens, Cost: a.Totals.Cost,
+			Unpriced: a.Totals.Unpriced, LinesCut: a.LinesCut,
+		})
+	}
+	return out
 }
 
 // traceSummary says in one line where a session's time and money went.
@@ -369,12 +441,21 @@ func traceSummary(st trace.SessionTrace) string {
 		trace.FormatTokens(t.Tokens.Total()),
 		trace.FormatTotalsCost(t),
 	)
+	if t.TokensAgents != nil {
+		s += fmt.Sprintf(" (main %s, %d subagents %s)",
+			trace.FormatCost(t.CostMain), len(st.Agents), trace.FormatCost(t.CostAgents))
+	}
 	if len(t.Unpriced) > 0 {
 		s += fmt.Sprintf(" (unpriced: %s)", strings.Join(t.Unpriced, ", "))
 	}
 	if top := trace.LongestTools(st, 1); len(top) > 0 {
-		s += fmt.Sprintf("; longest tool call %s %s in turn %d",
-			top[0].Span.Name, trace.FormatDuration(top[0].Span.DurationMS), top[0].Seq)
+		s += fmt.Sprintf(
+			"; longest tool call %s %s in turn %d by %s",
+			top[0].Span.Name,
+			trace.FormatDuration(top[0].Span.DurationMS),
+			top[0].Seq,
+			top[0].Who(),
+		)
 	}
 	return s
 }

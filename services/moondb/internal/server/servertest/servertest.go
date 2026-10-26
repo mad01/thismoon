@@ -73,11 +73,32 @@ const (
 `
 )
 
+// AgentID is the older session's one subagent with a record: a reviewer
+// that ran under OldTurn from minute 2 to minute 4, past the turn's end,
+// and made no edit. AgentTranscript is its agent transcript: a model call
+// asking for a Read, its result, and a closing call, on claude-opus-5-5.
+const (
+	AgentID         = "agent-rev"
+	AgentName       = "reviewer"
+	AgentTranscript = `{"type":"user","isSidechain":true,"promptId":"turn-old",` +
+		`"timestamp":"2026-10-01T09:02:00Z","message":{"content":"review it"}}
+{"type":"assistant","isSidechain":true,"timestamp":"2026-10-01T09:02:40Z","message":` +
+		`{"id":"msg_rev_1","model":"claude-opus-5-5","content":[{"type":"tool_use",` +
+		`"id":"toolu_rev","name":"Read"}],"usage":{"input_tokens":2000,"output_tokens":100}}}
+{"type":"user","isSidechain":true,"promptId":"turn-old","timestamp":"2026-10-01T09:03:10Z",` +
+		`"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_rev"}]}}
+{"type":"assistant","isSidechain":true,"timestamp":"2026-10-01T09:03:50Z","message":` +
+		`{"id":"msg_rev_2","model":"claude-opus-5-5","content":[{"type":"text","text":"ok"}],` +
+		`"usage":{"input_tokens":100,"output_tokens":50}}}
+`
+)
+
 // Chunk keys of the fixture contents.
 var (
-	PromptSHA     = Key([]byte(Prompt))
-	AfterSHA      = Key([]byte(After))
-	TranscriptSHA = Key([]byte(Transcript))
+	PromptSHA          = Key([]byte(Prompt))
+	AfterSHA           = Key([]byte(After))
+	TranscriptSHA      = Key([]byte(Transcript))
+	AgentTranscriptSHA = Key([]byte(AgentTranscript))
 )
 
 // T0 anchors every fixture time.
@@ -135,6 +156,7 @@ func NewStore() *Store {
 				Title: "build the server", StartedAt: at(60),
 			},
 		},
+		agents: []store.Agent{fixtureAgent()},
 		turns: []store.Turn{
 			oldTurn(),
 			{
@@ -157,11 +179,26 @@ func NewStore() *Store {
 			Location: loc, Path: PathB, Cause: store.DeltaSnapshot,
 		}},
 		chunks: chunkMap{
-			PromptSHA:     []byte(Prompt),
-			AfterSHA:      []byte(After),
-			TranscriptSHA: []byte(Transcript),
+			PromptSHA:          []byte(Prompt),
+			AfterSHA:           []byte(After),
+			TranscriptSHA:      []byte(Transcript),
+			AgentTranscriptSHA: []byte(AgentTranscript),
 		},
 	}
+}
+
+// fixtureAgent is AgentID with the totals its AgentTranscript gives.
+func fixtureAgent() store.Agent {
+	a := store.Agent{
+		ID: AgentID, SessionID: OldSession, Type: "general-purpose", Name: AgentName,
+		Description: "review the change", Model: "claude-opus-5-5",
+		TurnIDs: []string{OldTurn}, Cwd: "/work/other", StartedAt: at(2), EndedAt: at(4),
+		TranscriptChunk: AgentTranscriptSHA, Lines: store.AgentLines{Read: 4, Kept: 4},
+	}
+	totals := trace.Stored(trace.BuildAgent(a, []byte(AgentTranscript), nil,
+		trace.Prices{}).Totals)
+	a.Totals = &totals
+	return a
 }
 
 // oldTurn is the older session's closed turn with the totals its
@@ -487,6 +524,19 @@ func (q *Querier) TurnTrace(ctx context.Context, d store.TurnDetail) (trace.Turn
 // SessionTrace computes the session's trace with the real query service.
 func (q *Querier) SessionTrace(ctx context.Context, id string) (trace.SessionTrace, error) {
 	return q.traces.SessionTrace(ctx, id)
+}
+
+// TurnAgents computes the turn's agent runs with the real query service.
+func (q *Querier) TurnAgents(ctx context.Context, d store.TurnDetail) ([]trace.AgentRun, error) {
+	return q.traces.TurnAgents(ctx, d)
+}
+
+// AgentTraceByID computes one agent's trace with the real query service.
+func (q *Querier) AgentTraceByID(
+	ctx context.Context,
+	id string,
+) (store.Agent, trace.AgentTrace, error) {
+	return q.traces.AgentTraceByID(ctx, id)
 }
 
 // UsageCost prices usage with the real query service's default table.

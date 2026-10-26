@@ -64,8 +64,17 @@ func TestSessionAndTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Session: %v", err)
 	}
-	if len(sess.Turns) != 1 || sess.Turns[0].ID != servertest.NewTurn {
-		t.Errorf("session turns = %+v", sess.Turns)
+	if len(sess.Turns) != 1 || sess.Turns[0].ID != servertest.NewTurn ||
+		len(sess.Agents) != 1 || sess.Agents[0].Type != server.MainAgentType {
+		t.Errorf("session = %+v, want its turn and the main conversation's row", sess)
+	}
+	agent, err := h.client.Agent(ctx, servertest.AgentID)
+	if err != nil || agent.Name != servertest.AgentName || agent.Row.ModelCalls != 2 ||
+		len(agent.Trace.Spans) != 3 {
+		t.Errorf("Agent = %+v, %v; want the reviewer with its row and trace", agent, err)
+	}
+	if _, err := h.client.Agent(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("Agent(nope) = %v, want store.ErrNotFound", err)
 	}
 	turn, err := h.client.Turn(ctx, servertest.NewTurn)
 	if err != nil {
@@ -91,8 +100,8 @@ func TestSessionTrace(t *testing.T) {
 		t.Fatalf("SessionTrace: %v", err)
 	}
 	if len(got.Turns) != 1 || got.Turns[0].TurnID != servertest.OldTurn ||
-		len(got.Turns[0].Spans) != 3 {
-		t.Errorf("trace = %+v, want the old turn with three spans", got)
+		len(got.Turns[0].Spans) != 4 || len(got.Agents) != 1 {
+		t.Errorf("trace = %+v, want the old turn with four spans and the reviewer", got)
 	}
 	if _, err := h.client.SessionTrace(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("unknown session: err = %v, want store.ErrNotFound", err)
