@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-26 belt: kof-consult runs on the prompt, not at session start
+
+Change: thismoon #309 (MAD-492). belt's `kof-consult` hint now runs on UserPromptSubmit and shows the repo's assertions that the prompt is about, in place of the whole repo's list at session start. The kof hints' events now carry `assertions` and `pins` tags.
+
+Run: nothing in the settings template. Its UserPromptSubmit entry already runs `belt hint prompt`, so `ralph up` is enough. Global instruction files that call `belt[kof-consult]` a session-start injection are now out of date. Reword them when convenient, for example to "each prompt surfaces the cwd repo's assertions that it is about".
+
+Verify: `belt doctor` lists `kof-consult` on the `prompt` event. In a new session inside a repo with assertions, a prompt that names one of them gets a `belt[kof-consult]:` block, and the session start gets none.
+
 ## 2026-10-26 belt and moondb: in-flight files at session start need moondb first
 
 Change: thismoon #311 (MAD-493). A new belt session-start hint, `moondb-inflight`, asks moondb's new `GET /api/inflight` route which files of the checkout other sessions edited and no commit has taken yet.

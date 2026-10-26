@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -57,11 +58,15 @@ type assertion struct {
 	Subject   string `json:"subject"`
 	Statement string `json:"statement"`
 	Status    string `json:"status"`
-	Pins      []struct {
-		File      string `json:"file"`
-		StartLine int    `json:"start_line"`
-		EndLine   int    `json:"end_line"`
-	} `json:"pins"`
+	Pins      []pin  `json:"pins"`
+}
+
+// pin is the subset of an evidence pin this hint renders and tags.
+type pin struct {
+	Repo      string `json:"repo"` // canonical host/owner/name; "" when the repo had no origin
+	File      string `json:"file"` // repo-relative
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
 }
 
 func (h *KofAssertions) Check(in Input) *Advice {
@@ -73,15 +78,11 @@ func (h *KofAssertions) Check(in Input) *Advice {
 		return nil
 	}
 	found := queryKof(h.base, repoPrefix(subject))
-	relevant := rank(subject, found)
-	if len(relevant) == 0 {
+	shown := seen.take(in.SessionID, rank(subject, found), maxAssertions)
+	if len(shown) == 0 {
 		return nil
 	}
-	fresh := seen.filter(in.SessionID, relevant)
-	if len(fresh) == 0 {
-		return nil
-	}
-	return &Advice{Hint: h.ID(), Text: render(subject, fresh)}
+	return &Advice{Hint: h.ID(), Text: render(subject, shown), Tags: kofTags(shown)}
 }
 
 // subjectFor derives the subject of what the search actually looked at. It
@@ -118,8 +119,9 @@ func repoPrefix(subject string) string {
 }
 
 // rank keeps assertions that overlap the searched location and orders them by
-// how closely. Overlap is counted in path segments below the repo: an
-// assertion on `services/csl` scores 2 against a hit in
+// how closely. It does not cap: the caller dedupes against the session first
+// and cuts after (seen.take). Overlap is counted in path segments below the
+// repo: an assertion on `services/csl` scores 2 against a hit in
 // `services/csl/internal/semantic`, while one on `services/keeper-of-facts` scores 1 and
 // is dropped for sharing only the generic `services` segment.
 func rank(hitSubject string, as []assertion) []assertion {
@@ -143,9 +145,6 @@ func rank(hitSubject string, as []assertion) []assertion {
 		out = append(out, scored{a: a, n: n})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].n > out[j].n })
-	if len(out) > maxAssertions {
-		out = out[:maxAssertions]
-	}
 	res := make([]assertion, 0, len(out))
 	for _, s := range out {
 		res = append(res, s.a)
@@ -262,6 +261,32 @@ func render(subject string, as []assertion) string {
 	}
 	b.WriteString("  Correct one that proves wrong with kof_retract rather than working around it.")
 	return b.String()
+}
+
+// kofTags labels a kof hint's events entry with what it showed: the
+// assertion ids, and the first evidence pin of each as `<repo>/<file>`
+// (the file alone when the pin has no repo), deduplicated. A scorecard joins
+// a later read of a pinned file back to the fire through these
+// (docs/hooks.md, "Tags on hint events").
+func kofTags(as []assertion) map[string]string {
+	var pins []string
+	for _, a := range as {
+		if len(a.Pins) == 0 {
+			continue
+		}
+		pin := a.Pins[0].File
+		if repo := a.Pins[0].Repo; repo != "" {
+			pin = repo + "/" + pin
+		}
+		if !slices.Contains(pins, pin) {
+			pins = append(pins, pin)
+		}
+	}
+	tags := map[string]string{"assertions": strings.Join(assertionIDs(as), ",")}
+	if len(pins) > 0 {
+		tags["pins"] = strings.Join(pins, ",")
+	}
+	return tags
 }
 
 func urlEscape(s string) string {

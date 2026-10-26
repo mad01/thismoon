@@ -5,8 +5,8 @@ the fleet, seven stores carry what one session learned into the next. Six of
 them ship here or are set up from the examples here. The seventh, auto
 memory, is built into Claude Code. Each store answers one question. The two that
 matter at a predictable moment, agent-memory and kof, don't wait for the
-agent to remember them: belt's hooks put them in front of the agent at
-session start and after a search.
+agent to remember them: belt's hooks put agent-memory in front of the agent
+at session start, and kof on each prompt and after a search.
 
 This page says which store holds what, how a fact gets in and back out,
 whether a command line tool exists for it, and which hook does the prompting.
@@ -163,9 +163,9 @@ belt:
 | belt entrypoint | Claude Code event | Hint | What the agent gets |
 |---|---|---|---|
 | `belt hint session-start` | SessionStart | `agent-memory` | the agent-memory indexes |
-| `belt hint session-start` | SessionStart | `kof-consult` | up to five assertions about the repo the session opened in |
 | `belt hint session-start` | SessionStart | `moondb-inflight` | up to ten files of the checkout that other sessions edited and no commit has taken, when git status shows them dirty |
 | `belt hint search` | PostToolUse on the csl search tools | `kof-assertions` | up to three assertions about the code the search hit, stale ones marked |
+| `belt hint prompt` | UserPromptSubmit | `kof-consult` | the assertions about the session's repo that the prompt is about: up to five in the first block, three after, none repeated |
 | `belt hint prompt` | UserPromptSubmit | `kof-deposit` | once per session, after 30 tool calls with no `kof_assert`: a prefilled nudge to deposit what it derived |
 | `belt hint session-start`, `belt hint subagent-start` | SessionStart, SubagentStart | custom hints | machine-private context from a command you configure, such as a daily journal or a worker brief |
 | `belt record <event>` | nine lifecycle events | the ledger | nothing; it writes to events and never to the session |
@@ -173,7 +173,7 @@ belt:
 Every hint prints under a `belt[<name>]:` prefix, so a transcript shows which
 context was injected and which the agent produced. On Codex the reference
 setup wires only the tool-event entries: `kof-assertions` fires there, while
-the session-start injections and the deposit nudge stay Claude-only. It wires
+the session-start injections and the prompt hints stay Claude-only. It wires
 no `belt record` entry either, so a Codex session leaves nothing in the
 ledger; Codex can still read the ledger through the events service.
 

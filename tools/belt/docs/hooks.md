@@ -248,10 +248,9 @@ event and reads its stdout can run it. What to expect per harness:
   entries above work verbatim with the paths adjusted. The reference setup
   wires the six tool-event entries (`hook bash`, `hook write`,
   `hook external-text`, `hint search`, `hint bash`, `hint external-text`);
-  the session-boundary
-  events are not wired there, so the agent-memory, kof-consult and
-  moondb-inflight injections
-  and the kof-deposit nudge stay Claude-only. Custom hints ride the same
+  the session-boundary and prompt events are not wired there, so the
+  agent-memory and moondb-inflight injections and the kof-consult and
+  kof-deposit prompt hints stay Claude-only. Custom hints ride the same
   `belt hint session-start` entrypoint, so a Codex setup that adds the
   SessionStart entry to its hooks file gets them with no further wiring.
   The reference setup wires no `belt record` entry either, so a Codex
@@ -699,6 +698,20 @@ hints below).
 A payload belt cannot read runs no hint at all: nothing reaches the model,
 and a `warn` event tagged `decode_error` records why (see Wiring above).
 
+### Tags on hint events
+
+Every hint fire posts an `info` event tagged `hint` (the hint id), `event`
+(the hint event), and the session identity (`session_id`, plus `agent_id`
+and `agent_type` inside a subagent). A hint can add tags of its own, but
+never under those five names: the hook sets them and drops a hint's
+attempt to. The kof hints add two, so a scorecard can join what a session
+did next back to what it was shown:
+
+| tag | value | hints |
+|---|---|---|
+| `assertions` | the shown assertion ids, comma-joined, in the order shown | kof-consult, kof-assertions |
+| `pins` | the first evidence pin of each shown assertion as `<repo>/<file>`, comma-joined and deduplicated: the pin's canonical `host/owner/name` and its repo-relative file, or the file alone when the pin has no repo. Absent when no shown assertion has a pin | kof-consult, kof-assertions |
+
 ### agent-memory (session-start)
 
 Injects the shared agent-memory index when a session opens.
@@ -717,19 +730,50 @@ Injects the shared agent-memory index when a session opens.
   it. A worked recipe — clone item, index format, and a fact-file template —
   is in `examples/dotfiles/recipes/agent-memory/` at the repo root.
 
-### kof-consult (session-start)
+### kof-consult (prompt)
 
-Surfaces the current repo's stored assertions before any searching happens.
+On each prompt, surfaces the stored assertions about the current repo that
+the prompt is about, before any searching happens.
 
-- **Resolves** the session's working directory to a repo via its origin
-  remote, queries the local keeper-of-facts (kof) service for assertions
-  about that repo, and injects up to five. They are matched on the
-  repo-name boundary, so `thismoon` does not drag in `thismoon-arcade`.
-- **Why**: prior sessions' conclusions about a repo should arrive before the
-  session re-derives them.
-- **Silent when** outside a repo, when kof is down (400 ms budget), and for
-  assertions already shown this session. `belt doctor` tells "kof down" and
-  "store empty" apart; the hint renders both as silence.
+- **Resolves** the session's working directory to a repo with one
+  `git remote get-url origin` (300 ms budget) and queries the local
+  keeper-of-facts (kof) service for that repo's assertions. They are
+  matched on the repo-name boundary, so `thismoon` does not drag in
+  `thismoon-arcade`. The `exclude_repos` identity comes from the same URL.
+- **Reads** the prompt up to its first 200 distinct words, so a pasted file
+  is ranked by its opening. Both the prompt and the assertions are
+  lowercased and split on anything that is not a letter or digit. Tokens
+  shorter than three characters and a short stopword list are dropped, and
+  so are the path segments most Go repos share (`cmd`, `internal`, `pkg`,
+  `src`). The repo's own org and name go too, with the host words a link
+  brings in (`github`, `com`, `https`, `http`, `www`).
+- **Ranks** each assertion by its statement, its subject below the repo, and
+  its pins' file paths. A prompt word written as code (holding `_`, `/` or
+  `.`, or camelCase like `toHintInput`) counts twice; a link's path does
+  not count as code. Each shared word scores by how few of the repo's
+  assertions carry it.
+- **Gates** an assertion in only when it shares at least two plain words or
+  one code-shaped word. At least one shared word must also sit in no more
+  than a fifth of the repo's assertions. Two common words such as `commit` and
+  `message` therefore admit nothing on their own. Candidates that score
+  under 60% of the best one are dropped as the prompt's tail. Equal scores
+  put fresh assertions before stale ones.
+- **Caps** the first block in a session at five and later blocks at three.
+  Assertions already shown this session are dropped before the cap, so a
+  later prompt on the same topic gets the next ones in rank order rather
+  than nothing.
+- **Tags** its event with the shown assertion ids and their pins (see Tags
+  on hint events above).
+- **Why**: prior sessions' conclusions should arrive when the task is
+  stated, before the session re-derives them. A block chosen by the prompt
+  is about the task; the whole repo's list at session start was mostly
+  about something else.
+- **Silent when** the prompt is empty or shorter than 12 characters, outside
+  a repo, or when git or kof misses its budget. It is also silent when no
+  assertion passes the gate, and once the session has seen every assertion
+  that does.
+  `belt doctor` tells "kof down" and "store empty" apart; the hint renders
+  both as silence.
 
 ### moondb-inflight (session-start)
 
@@ -769,7 +813,11 @@ After a csl search, surfaces stored assertions about the code the search hit.
   nothing.
 - **Caps** at three, drops retracted assertions, includes stale ones but
   marks them (stale means the pinned code changed; that is a signal, not
-  noise), and repeats nothing within a session.
+  noise), and repeats nothing within a session. Assertions already shown
+  are dropped before the cap, so a second search in the same area surfaces
+  the next ones in rank order.
+- **Tags** its event with the shown assertion ids and their pins (see Tags
+  on hint events above).
 - **Why**: assertions only pay off if a later session reads them, and nothing
   else prompts that read at the moment the related code surfaces.
 
@@ -1185,7 +1233,12 @@ missing key:
 | custom hint default budget | 400 ms | custom hints (`timeout_ms` overrides it per hint) |
 | script size cap | 1 MiB | script-deny-list |
 | memory facts per store | 30 | agent-memory |
-| assertions per fire | 3 / 5 | kof-assertions / kof-consult |
+| assertions per fire | 3 / 5, then 3 | kof-assertions / kof-consult (first block in a session, then later ones) |
+| shortest prompt ranked | 12 characters | kof-consult |
+| prompt words read | 200 distinct | kof-consult |
+| distinctive word ceiling | a fifth of the repo's assertions | kof-consult |
+| tail cutoff | 60% of the best score | kof-consult |
+| origin lookup budget | 300 ms | kof-consult |
 | in-flight files asked of moondb | 200 | moondb-inflight |
 | in-flight paths per fire | 10 | moondb-inflight |
 | substantial-work threshold | 30 tool calls | kof-deposit |
@@ -1222,11 +1275,13 @@ In symptom order:
 3. **A guard allows something you expected it to block.** Check the events
    timeline: soft-mode rules and broken custom guards allow with a `warn`
    event rather than denying silently.
-4. **A kof or moondb hint is silent.** `belt doctor` reports whether kof is reachable
-   and how many assertions it stores — the hint renders "service down" and
-   "store empty" identically.
-   For moondb-inflight it reports whether moondb answers and whether it is
-   new enough to have the in-flight route.
+4. **A kof or moondb hint is silent.** `belt doctor` reports whether kof is
+   reachable and how many assertions it stores; the hint renders "service
+   down" and "store empty" identically. kof-consult also stays silent on a
+   prompt that names nothing its repo's assertions mention. It needs two
+   shared words, or one shared name written as code, and one of them must be
+   rare in the repo. For moondb-inflight, `belt doctor` reports whether
+   moondb answers and whether it is new enough to have the in-flight route.
 5. **A hint fired once and never again.** That is the once-per-session
    contract (kof-deposit, humanizer-check, lint-policy) or the per-session
    dedupe (kof-assertions, kof-consult). A new session resets both.

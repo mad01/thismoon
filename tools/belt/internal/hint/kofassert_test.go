@@ -2,6 +2,7 @@ package hint
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -122,14 +123,64 @@ func TestRankPrefersCloserSubjects(t *testing.T) {
 	}
 }
 
-func TestRankCapsOutput(t *testing.T) {
-	hit := "repo:x/y/a/b"
+// TestKofAssertionsDedupesBeforeTheCap pins the order of the cut: the
+// session's seen set is applied to the ranked list first and the cap after,
+// so a second search in the same area surfaces the next assertions in rank
+// order instead of going quiet while they sit below the cut.
+func TestKofAssertionsDedupesBeforeTheCap(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	var as []assertion
 	for i := range 6 {
-		as = append(as, assertion{ID: string(rune('a' + i)), Subject: "repo:x/y/a/b"})
+		as = append(as, assertion{
+			ID:        string(rune('a' + i)),
+			Subject:   "repo:mad01/thismoon/services/csl",
+			Statement: "claim " + string(rune('a'+i)),
+			Status:    "fresh",
+			Pins:      []pin{{Repo: "github.com/mad01/thismoon", File: "services/csl/x.go"}},
+		})
 	}
-	if got := rank(hit, as); len(got) != maxAssertions {
-		t.Errorf("rank returned %d, want the cap of %d", len(got), maxAssertions)
+	h := &KofAssertions{cfg: testConfig(), base: consultServer(t, as).URL}
+	in := Input{
+		Event:     EventSearch,
+		Repo:      "mad01/thismoon",
+		Paths:     []string{"services/csl/internal/semantic/a.go"},
+		SessionID: "dedupe-session",
+	}
+	for _, want := range []string{"a,b,c", "d,e,f"} {
+		got := h.Check(in)
+		if got == nil {
+			t.Fatalf("Check = nil, want assertions %s", want)
+		}
+		if ids := got.Tags["assertions"]; ids != want {
+			t.Errorf("assertions tag = %q, want %q", ids, want)
+		}
+	}
+	if got := h.Check(in); got != nil {
+		t.Errorf("Check after every assertion was shown = %+v, want nil", got)
+	}
+}
+
+func TestKofTags(t *testing.T) {
+	as := []assertion{
+		{ID: "1", Pins: []pin{
+			{Repo: "github.com/mad01/thismoon", File: "tools/belt/a.go"},
+			{Repo: "github.com/mad01/thismoon", File: "tools/belt/b.go"},
+		}},
+		{ID: "2", Pins: []pin{{Repo: "github.com/mad01/thismoon", File: "tools/belt/a.go"}}},
+		{ID: "3"},
+		{ID: "4", Pins: []pin{{File: "scratch/c.go"}}},
+	}
+	got := kofTags(as)
+	want := map[string]string{
+		"assertions": "1,2,3,4",
+		"pins":       "github.com/mad01/thismoon/tools/belt/a.go,scratch/c.go",
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("kofTags = %v, want %v (first pin only, deduplicated, repo-less pin bare)",
+			got, want)
+	}
+	if _, ok := kofTags([]assertion{{ID: "1"}})["pins"]; ok {
+		t.Error("kofTags set a pins tag for assertions with no pins")
 	}
 }
 
@@ -141,11 +192,12 @@ func TestQuerySilentWhenKeepIsDown(t *testing.T) {
 
 func TestRenderMarksStale(t *testing.T) {
 	out := render("repo:x/y", []assertion{
-		{ID: "1", Statement: "fresh claim", Status: "fresh", Pins: []struct {
-			File      string `json:"file"`
-			StartLine int    `json:"start_line"`
-			EndLine   int    `json:"end_line"`
-		}{{File: "a.go", StartLine: 1, EndLine: 5}}},
+		{
+			ID:        "1",
+			Statement: "fresh claim",
+			Status:    "fresh",
+			Pins:      []pin{{File: "a.go", StartLine: 1, EndLine: 5}},
+		},
 		{ID: "2", Statement: "moved claim", Status: "stale"},
 	})
 	if !strings.Contains(out, "[stale] moved claim") {
@@ -156,26 +208,42 @@ func TestRenderMarksStale(t *testing.T) {
 	}
 }
 
-func TestSeenFilterSuppressesRepeats(t *testing.T) {
+func TestSeenTakeSuppressesRepeats(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	as := []assertion{{ID: "a"}, {ID: "b"}}
 
-	first := seen.filter("session-1", as)
+	first := seen.take("session-1", as, 5)
 	if len(first) != 2 {
 		t.Fatalf("first call returned %d, want 2", len(first))
 	}
-	if second := seen.filter("session-1", as); len(second) != 0 {
+	if second := seen.take("session-1", as, 5); len(second) != 0 {
 		t.Errorf("second call returned %d, want 0 (already surfaced)", len(second))
 	}
-	if other := seen.filter("session-2", as); len(other) != 2 {
+	if other := seen.take("session-2", as, 5); len(other) != 2 {
 		t.Errorf("a different session returned %d, want 2", len(other))
 	}
 }
 
-func TestSeenFilterWithoutSessionID(t *testing.T) {
-	as := []assertion{{ID: "a"}}
-	if got := seen.filter("", as); len(got) != 1 {
+// TestSeenTakeRecordsOnlyWhatItKept: an assertion cut by the limit was
+// never shown, so it must stay unseen for the next fire.
+func TestSeenTakeRecordsOnlyWhatItKept(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	as := []assertion{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+	if got := seen.take("s", as, 2); len(got) != 2 || got[0].ID != "a" || got[1].ID != "b" {
+		t.Fatalf("first take = %+v, want a and b", got)
+	}
+	if got := seen.take("s", as, 2); len(got) != 1 || got[0].ID != "c" {
+		t.Errorf("second take = %+v, want only c", got)
+	}
+}
+
+func TestSeenTakeWithoutSessionID(t *testing.T) {
+	as := []assertion{{ID: "a"}, {ID: "b"}}
+	if got := seen.take("", as, 5); len(got) != 2 {
 		t.Error("with no session id, dedupe is impossible and advice should still flow")
+	}
+	if got := seen.take("", as, 1); len(got) != 1 {
+		t.Error("with no session id the cap still applies")
 	}
 }
 

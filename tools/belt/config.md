@@ -554,8 +554,9 @@ pattern tail (host dropped, case-insensitive).
   (search), surfaces kof assertions about code a search just hit.
   `exclude_repos` silences it for the listed repos (pattern tail matched —
   the search results carry no path to resolve a host from).
-- `hints.kof-consult.enabled` (bool, default `true`): SessionStart, surfaces
-  the cwd repo's kof assertions before any searching happens.
+- `hints.kof-consult.enabled` (bool, default `true`): UserPromptSubmit
+  (prompt), surfaces the cwd repo's kof assertions that the prompt is
+  about, before any searching happens.
   `exclude_repos` silences it for the listed repos, matched against the cwd
   repo's origin remote.
 - `hints.moondb-inflight.enabled` (bool, default `true`): SessionStart,
