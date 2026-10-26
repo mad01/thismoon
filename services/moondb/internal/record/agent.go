@@ -18,8 +18,9 @@ import (
 // read, so a replayed payload, or a second stop with nothing new in the
 // file, writes the same envelope again. A transcript that cannot be read
 // still records the agent, without lines, as the meta file and the
-// payload describe it. A path outside the session's subagents directory
-// records nothing and is logged.
+// payload describe it. A path outside the session's subagents directory,
+// or a session_id that is not one path element, records nothing and is
+// logged.
 func (rec *recorder) closeAgent() error {
 	p := rec.p
 	path, err := agentTranscriptFile(p)
@@ -57,7 +58,9 @@ func (rec *recorder) closeAgent() error {
 // a leading ~ expanded, or, when the payload names none (a harness from
 // before the field), the path the harness keeps it at:
 // <dir of transcript_path>/<session_id>/subagents/agent-<agent_id>.jsonl.
-// A path outside that subagents directory, symlinks resolved, is an error.
+// A path outside that subagents directory, symlinks resolved, is an error,
+// and so is a session_id that is not one path element: it would move the
+// directory itself.
 func agentTranscriptFile(p payload) (string, error) {
 	main, err := confdir.Expand(p.transcriptPath)
 	if err != nil {
@@ -65,6 +68,9 @@ func agentTranscriptFile(p payload) (string, error) {
 	}
 	if !filepath.IsAbs(main) {
 		return "", errors.New("no absolute transcript_path to find the agent transcript by")
+	}
+	if !pathElement(p.sessionID) {
+		return "", fmt.Errorf("session_id %q is not a single path element", p.sessionID)
 	}
 	dir := filepath.Join(filepath.Dir(main), p.sessionID, "subagents")
 	path := filepath.Join(dir, "agent-"+p.agentID+".jsonl")
@@ -93,4 +99,11 @@ func within(dir, path string) bool {
 	rel, err := filepath.Rel(dir, path)
 	return err == nil && rel != "." && rel != ".." &&
 		!strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// pathElement reports whether name is one path element: not empty, not
+// "." or "..", and without a separator.
+func pathElement(name string) bool {
+	return name != "" && name != "." && name != ".." &&
+		!strings.ContainsRune(name, filepath.Separator)
 }
