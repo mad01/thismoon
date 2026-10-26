@@ -1051,6 +1051,15 @@
     return byTurn;
   }
 
+  // byTurnStart orders turns as they ran: by start, then by number. The
+  // number is not time order: an import numbers the turns it adds after
+  // the live ones, though they may have run before them. The trace's
+  // lanes come in the same order from the API.
+  function byTurnStart(a, b) {
+    var x = parseTime(a.started_at), y = parseTime(b.started_at);
+    return ((x ? x.getTime() : 0) - (y ? y.getTime() : 0)) || a.seq - b.seq;
+  }
+
   // drawSession leads with what the listing row says about the session,
   // then its trace, turns and worktrees; the ids and paths fold away last.
   function drawSession(d, edits, tr) {
@@ -1060,7 +1069,7 @@
     var sum = summarizeEdits(edits);
     var agents = d.agents || [];
     var ran = agentsByTurn(agents);
-    var turnList = (d.turns || []).slice().sort(function (a, b) { return a.seq - b.seq; });
+    var turnList = (d.turns || []).slice().sort(byTurnStart);
     var seqs = {};
     turnList.forEach(function (t) { seqs[t.id] = t.seq; });
     replace([

@@ -29,7 +29,9 @@ type SessionSummary struct {
 	// AgentCount counts the agents that made an edit, the main
 	// conversation among them.
 	AgentCount int `json:"agent_count"`
-	// LastTurnOpen is set when the session's last turn by Seq is open.
+	// LastTurnOpen is set when the session's last turn is open: the one
+	// that started last, the higher Seq on a tie. Seq alone is not time
+	// order, since an import numbers the turns it adds after the live ones.
 	LastTurnOpen bool `json:"last_turn_open,omitempty"`
 	// LastActivityAt is the latest turn start, turn end, edit or agent
 	// stop, or the session's start when it has none of them.
@@ -235,11 +237,12 @@ func addAgents(sum *SessionSummary, agents []Agent) map[string]bool {
 // addTurns folds the turns into sum: the last turn's status and the main
 // conversation's merged usage. turnTimes adds up their times.
 func addTurns(sum *SessionSummary, turns []Turn) {
-	lastSeq := 0
+	var last *Turn
 	var usage [][]ModelUsage
-	for _, t := range turns {
-		if t.Seq >= lastSeq {
-			lastSeq, sum.LastTurnOpen = t.Seq, t.Status == TurnOpen
+	for i, t := range turns {
+		if last == nil ||
+			cmp.Or(t.StartedAt.Compare(last.StartedAt), cmp.Compare(t.Seq, last.Seq)) >= 0 {
+			last, sum.LastTurnOpen = &turns[i], t.Status == TurnOpen
 		}
 		if t.Totals != nil {
 			usage = append(usage, t.Totals.Usage)

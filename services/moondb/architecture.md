@@ -165,8 +165,11 @@ Cost is tokens times the price of the call's model, from the table in
 call's usage asks for. A config row keeps the built-in row's tier and
 multipliers. A trace depends only on the turn's chunk, its edits and its
 times, so `query` caches it in memory under those, at most 512 turns. A
-session's trace puts its turns in order and adds the user time between
-them.
+session's trace puts its turns in the order they started, not by Seq: an
+import numbers the turns it adds after the live ones even when they ran
+first. It adds the user time between them, from the latest end so far to
+the next start. Its wall time is the turns' wall times plus those gaps,
+so its time split adds up the way a turn's does.
 
 Agents: `trace.BuildAgent` traces an Agent from its agent transcript with
 the same parser. Its run goes from its spawn to its stop, and its segments

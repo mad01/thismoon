@@ -178,19 +178,24 @@ type TurnTrace struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// SessionTrace is the trace of every turn of a session, in order, with the
-// user time between them, and the run of every subagent with a record.
+// SessionTrace is the trace of every turn of a session, in the order the
+// turns started, with the user time between them, and the run of every
+// subagent with a record.
 type SessionTrace struct {
 	SessionID string `json:"session_id"`
 	// Turns hold each turn's own trace with its agents' work under it
-	// (WithAgents).
+	// (WithAgents), by start and then Seq: an imported turn sits where it
+	// ran, whatever its Seq.
 	Turns []TurnTrace `json:"turns"`
-	// Gaps are the user gaps between one turn's end and the next one's
-	// start.
+	// Gaps are the user gaps between the turns: from the latest turn end
+	// so far to the next turn's start.
 	Gaps []Gap `json:"gaps"`
-	// Totals sum the turns and the agents. WallMS runs from the first
-	// turn's start to the last one's end and UserMS adds the gaps between
-	// turns: the time split is the main conversation's.
+	// Totals sum the turns and the agents. WallMS adds the turns' wall
+	// times and the gaps, which without overlapping turns is the stretch
+	// from the first turn's start to the last one's end. UserMS adds the
+	// gaps to the turns' user time, so the split adds up to WallMS
+	// whenever each turn's does. The time split is the main
+	// conversation's.
 	Totals Totals     `json:"totals"`
 	Agents []AgentRun `json:"agents"`
 	// AgentLongestTools and AgentCostliestModels rank the agents' tool and

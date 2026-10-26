@@ -180,3 +180,45 @@ func TestSummarizeActiveMS(t *testing.T) {
 		})
 	}
 }
+
+// TestSummarizeLastTurnOpen: the last turn is the one that started last,
+// the higher Seq on a tie, so an imported turn numbered after the live
+// ones does not hide an open live turn.
+func TestSummarizeLastTurnOpen(t *testing.T) {
+	tests := []struct {
+		name  string
+		turns []Turn
+		want  bool
+	}{
+		{name: "no turns"},
+		{
+			name:  "the latest turn is open",
+			turns: []Turn{closedTurn("t1", 1, 0, 5), openAt("t2", 2, 10)},
+			want:  true,
+		},
+		{
+			name:  "an earlier turn is open",
+			turns: []Turn{openAt("t1", 1, 0), closedTurn("t2", 2, 10, 15)},
+		},
+		{
+			name: "an imported turn with a higher Seq ran first",
+			turns: []Turn{
+				closedTurn("t1", 1, 30, 35), openAt("t2", 2, 40), closedTurn("t3", 3, 0, 10),
+			},
+			want: true,
+		},
+		{
+			name:  "a tie on start goes to the higher Seq",
+			turns: []Turn{openAt("t2", 2, 10), closedTurn("t1", 1, 10, 12)},
+			want:  true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sum := Summarize(Session{ID: "s", StartedAt: minutes(0)}, tc.turns, nil, editsAt())
+			if sum.LastTurnOpen != tc.want {
+				t.Errorf("LastTurnOpen = %v, want %v", sum.LastTurnOpen, tc.want)
+			}
+		})
+	}
+}
