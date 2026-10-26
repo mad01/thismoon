@@ -272,6 +272,10 @@ hints:
     enabled: true
   kof-deposit:
     enabled: true
+  moondb-inflight:
+    enabled: true
+    # Session start: lists the files of the checkout that other sessions
+    # edited and no commit has taken yet, when git status shows them dirty.
   humanizer-check:
     enabled: true
   em-dash:

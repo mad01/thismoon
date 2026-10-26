@@ -24,13 +24,16 @@ import (
 var errDoctorWarnings = errors.New("belt doctor: warnings present")
 
 func doctorCmd(paths pathsFunc) *cobra.Command {
-	return doctorCmdWith(paths, doctorProbes{kof: liveKofProbe, events: liveEventsProbe})
+	return doctorCmdWith(paths, doctorProbes{
+		kof: liveKofProbe, moondb: liveMoondbProbe, events: liveEventsProbe,
+	})
 }
 
 // doctorProbes are the network checks doctor makes, injected so tests never
 // dial a real port.
 type doctorProbes struct {
 	kof    kofProbe
+	moondb moondbProbe
 	events eventsProbe
 }
 
@@ -42,7 +45,8 @@ func doctorCmdWith(paths pathsFunc, probes doctorProbes) *cobra.Command {
 		Short: "Show the build and resolved config: surfaces loaded, guard/hint state, kof reachability, blocked names",
 		Long: `Show what belt is actually running with: which build is installed, which
 config surface loaded (or didn't), which guards and hints are enabled,
-whether the kof serve instance the kof-* hints query is reachable, the
+whether the kof serve instance the kof-* hints query and the moondb serve
+instance the moondb-inflight hint queries are reachable, the
 ledger and watch settings with the events service they depend on, and
 the resolved blocked-name set the write-internal-names guard matches
 against. Use it to answer "why did that check fire": a deny names the
@@ -79,6 +83,37 @@ func liveKofProbe() (string, int, error) {
 	base := hint.KofBaseURL()
 	count, err := hint.KofProbe(base)
 	return base, count, err
+}
+
+// moondbProbe reports moondb serve reachability for the doctor report: the
+// base URL the moondb-inflight hint queries and the probe error. Injected so
+// tests never dial the real port.
+type moondbProbe func() (base string, err error)
+
+// liveMoondbProbe probes the same moondb serve instance the hint queries.
+func liveMoondbProbe() (string, error) {
+	base := hint.MoondbBaseURL()
+	return base, hint.MoondbProbe(base)
+}
+
+// printMoondb renders the moondb section. Like kof, an unreachable moondb
+// is no warning: the hint it backs is advisory and stays silent.
+func printMoondb(w io.Writer, probe moondbProbe) {
+	base, err := probe()
+	fmt.Fprintln(w, "\nmoondb serve, backs the moondb-inflight hint:")
+	fmt.Fprintf(w, "  %s  %s\n", base, moondbNote(err))
+}
+
+func moondbNote(err error) string {
+	switch {
+	case errors.Is(err, hint.ErrMoondbNoInflight):
+		return "reachable, but older than this belt (no /api/inflight): " +
+			"moondb-inflight stays silent until moondb is upgraded"
+	case err != nil:
+		return fmt.Sprintf("UNREACHABLE (%v): moondb-inflight stays silent", err)
+	default:
+		return "reachable"
+	}
 }
 
 // doctorReport is everything one doctor run resolved, read once and shared
@@ -161,6 +196,7 @@ func runDoctor(w io.Writer, p config.Paths, probes doctorProbes) []string {
 	base, count, probeErr := probes.kof()
 	fmt.Fprintln(w, "\nkof serve — backs the kof-* hints:")
 	fmt.Fprintf(w, "  %s  %s\n", base, kofNote(count, probeErr))
+	printMoondb(w, probes.moondb)
 	// A broken config leaves watch at its disabled default, so this section
 	// cannot add a warning describing defaults on top of the BROKEN one.
 	warns = append(warns, printLifecycle(w, cfg, probes.events)...)

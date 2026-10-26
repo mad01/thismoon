@@ -142,7 +142,8 @@ stops counting once a commit takes it or a later edit of the same file. A
 session sees its own commits land. A commit a person makes after the
 session ended never gets a link, so that file stays listed until the 72 hour
 window passes. So does a deleted, excluded or oversized file, whose edit
-leaves no content to match a commit by.
+leaves no content to match a commit by. The belt `moondb-inflight` hint
+asks this at session start and checks `git status` before it says anything.
 
 `why` first asks `git blame` which commit the line came from, then finds the
 edit whose content matches that commit. For a line that isn't committed yet,

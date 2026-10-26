@@ -9,6 +9,7 @@ import (
 
 	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
+	"github.com/mad01/thismoon/tools/belt/internal/hint"
 )
 
 func writeFile(t *testing.T, dir, name, content string) string {
@@ -61,13 +62,20 @@ func stubKofProbe(count int, err error) kofProbe {
 	}
 }
 
-// stubProbes pairs a kof probe with an events probe that answers eventsErr,
-// so no doctor test dials the events port either.
+// stubProbes pairs a kof probe with an events probe that answers eventsErr
+// and a reachable moondb, so no doctor test dials the events or moondb port
+// either.
 func stubProbes(kof kofProbe, eventsErr error) doctorProbes {
 	return doctorProbes{
 		kof:    kof,
+		moondb: stubMoondbProbe(nil),
 		events: func() (string, error) { return "http://127.0.0.1:7430", eventsErr },
 	}
+}
+
+// stubMoondbProbe answers the moondb probe with err.
+func stubMoondbProbe(err error) moondbProbe {
+	return func() (string, error) { return "http://127.0.0.1:7433", err }
 }
 
 // TestDoctorReportsLifecycle covers the ledger, watch and events-service
@@ -332,6 +340,48 @@ func TestDoctorReportsKofReachability(t *testing.T) {
 			}
 			if !strings.Contains(out, tt.want) {
 				t.Errorf("output missing %q:\n%s", tt.want, out)
+			}
+		})
+	}
+}
+
+// TestDoctorReportsMoondbReachability tells a reachable moondb from a down
+// one and from one older than the in-flight route, and none of the three
+// warns: the hint it backs is advisory, as with kof.
+func TestDoctorReportsMoondbReachability(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"reachable", nil, "http://127.0.0.1:7433  reachable\n"},
+		{
+			"older moondb",
+			hint.ErrMoondbNoInflight,
+			"reachable, but older than this belt (no /api/inflight): " +
+				"moondb-inflight stays silent until moondb is upgraded",
+		},
+		{
+			"unreachable",
+			errors.New("dial tcp 127.0.0.1:7433: connection refused"),
+			"UNREACHABLE (dial tcp 127.0.0.1:7433: connection refused): moondb-inflight stays silent",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			probes := stubProbes(stubKofProbe(3, nil), nil)
+			probes.moondb = stubMoondbProbe(tt.err)
+			var b strings.Builder
+			warns := runDoctor(&b, armedConfig(t, t.TempDir()), probes)
+			out := b.String()
+			if !strings.Contains(out, "moondb serve, backs the moondb-inflight hint:") {
+				t.Errorf("moondb section header missing:\n%s", out)
+			}
+			if !strings.Contains(out, tt.want) {
+				t.Errorf("output missing %q:\n%s", tt.want, out)
+			}
+			if len(warns) > 0 {
+				t.Errorf("warnings = %v, want none for a moondb probe result", warns)
 			}
 		})
 	}

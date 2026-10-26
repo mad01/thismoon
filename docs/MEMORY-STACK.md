@@ -23,7 +23,7 @@ every hook in depth is in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md
 | worklog | where a task stands | `~/code/worklog/` | `worklog` CLI, MCP | the `/worklog` skill |
 | handoff | what the next session needs to pick this one up | `~/.handoff/` | the `/handoff` skill | the next session reads the file |
 | events | what actually happened | `~/.local/share/events/` | `events` CLI, MCP, web | you query it; nothing is injected |
-| moondb | which turn and prompt wrote a line, and what else that turn changed | `~/.local/state/moondb/` | `moondb` CLI, MCP, web | the agent asks with `moondb_why`; nothing is injected |
+| moondb | which turn and prompt wrote a line, and what else that turn changed | `~/.local/state/moondb/` | `moondb` CLI, MCP, web | the agent asks with `moondb_why`; belt's `moondb-inflight` hint names the files other sessions left uncommitted |
 
 ## Claude Code auto memory
 
@@ -104,7 +104,9 @@ file (`AGENTS.md`) has to tell it to read the index.
   edit is stored with its before and after content, the turn and prompt
   behind it, and later the commit it landed in. Nobody writes to it by
   hand. The agent reads it on demand: `moondb_why` names the turn that
-  wrote a line, and `moondb_turn` shows what else that turn changed. See
+  wrote a line, and `moondb_turn` shows what else that turn changed. When
+  a session opens, belt's `moondb-inflight` hint names the files of its
+  checkout that other sessions edited and no commit has taken yet. See
   [services/moondb/README.md](../services/moondb/README.md).
 
 ## Keeping the stores private
@@ -162,6 +164,7 @@ belt:
 |---|---|---|---|
 | `belt hint session-start` | SessionStart | `agent-memory` | the agent-memory indexes |
 | `belt hint session-start` | SessionStart | `kof-consult` | up to five assertions about the repo the session opened in |
+| `belt hint session-start` | SessionStart | `moondb-inflight` | up to ten files of the checkout that other sessions edited and no commit has taken, when git status shows them dirty |
 | `belt hint search` | PostToolUse on the csl search tools | `kof-assertions` | up to three assertions about the code the search hit, stale ones marked |
 | `belt hint prompt` | UserPromptSubmit | `kof-deposit` | once per session, after 30 tool calls with no `kof_assert`: a prefilled nudge to deposit what it derived |
 | `belt hint session-start`, `belt hint subagent-start` | SessionStart, SubagentStart | custom hints | machine-private context from a command you configure, such as a daily journal or a worker brief |

@@ -332,7 +332,9 @@ a moved HEAD. A file a person committed or reverted after the session
 ended stays listed until the window passes. So does a file whose last edit
 left no after-content to match a commit by: a delete, an excluded path, a
 NotebookEdit, a file over `MaxChunkBytes`, or a link under a turn with no
-record.
+record. The belt `moondb-inflight`
+hint asks at session start and keeps only the paths `git status` reports
+dirty for that reason.
 
 ### `why <path>:<line>`
 

@@ -97,6 +97,7 @@ func All(cfg config.Config) []Hint {
 		NewLintPolicy(cfg),
 		NewKofAssertions(cfg),
 		NewKofConsult(cfg),
+		NewMoondbInflight(cfg),
 		NewKofDeposit(cfg),
 		NewHumanizer(cfg),
 		// One hint id on two events, like the publish-internal-names guard:

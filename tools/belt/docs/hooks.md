@@ -249,7 +249,8 @@ event and reads its stdout can run it. What to expect per harness:
   wires the six tool-event entries (`hook bash`, `hook write`,
   `hook external-text`, `hint search`, `hint bash`, `hint external-text`);
   the session-boundary
-  events are not wired there, so the agent-memory and kof-consult injections
+  events are not wired there, so the agent-memory, kof-consult and
+  moondb-inflight injections
   and the kof-deposit nudge stay Claude-only. Custom hints ride the same
   `belt hint session-start` entrypoint, so a Codex setup that adds the
   SessionStart entry to its hooks file gets them with no further wiring.
@@ -682,7 +683,8 @@ skimmed.
 
 Configuration-wise almost every hint is one switch: `hints.<id>.enabled` in
 the belt config, default on. The repo-aware hints (commit-policy,
-lint-policy, prefer-csl, kof-assertions, kof-consult) also read an
+lint-policy, prefer-csl, kof-assertions, kof-consult, moondb-inflight) also
+read an
 `exclude_repos` list. Hints opt repos out with `exclude_repos`;
 `allow_repos` belongs to guards, and each key on the wrong kind is a
 validation error. commit-policy additionally honors the shared
@@ -728,6 +730,33 @@ Surfaces the current repo's stored assertions before any searching happens.
 - **Silent when** outside a repo, when kof is down (400 ms budget), and for
   assertions already shown this session. `belt doctor` tells "kof down" and
   "store empty" apart; the hint renders both as silence.
+
+### moondb-inflight (session-start)
+
+Lists the files of the session's checkout that other sessions edited and no
+commit has taken yet.
+
+- **Resolves** the checkout root from the session's working directory with
+  `git rev-parse --show-toplevel`. It asks the local moondb service for up
+  to 200 files there that hold edits no commit has taken, leaving out the
+  session's own. moondb only links a commit a session saw land, so the hint
+  then runs one `git status` over the named paths and keeps the ones git
+  reports dirty. It lists up to ten of those, each with the sessions behind
+  it and the age of its last edit. Each git call gets 1 s.
+- **Why**: a session that commits with `git add -A`, stashes or resets can
+  sweep up or throw away another session's work in the same checkout.
+  Nothing told it that work existed.
+- **Silent when** the payload has no session id or the session is outside
+  a repo. It is silent when moondb is down (400 ms budget) or older than
+  its `/api/inflight` route, and when the answer is empty or doesn't
+  decode. It is also silent when a git call fails or runs out of time, or
+  every named file is clean.
+  `belt doctor` tells "moondb down" and "moondb too old" apart; the hint
+  renders both as silence.
+- **No per-session dedupe**: a resumed or compacted session gets the
+  current state.
+- **`/clear` starts a new session id.** The edits made before the clear
+  belong to the old id, so the hint lists them as another session's.
 
 ### kof-assertions (search)
 
@@ -1149,12 +1178,16 @@ missing key:
 | Constant | Value | Where it applies |
 |---|---|---|
 | kof query budget | 400 ms | kof-consult, kof-assertions |
+| moondb query budget | 400 ms | moondb-inflight |
+| git budget per call | 1 s | moondb-inflight |
 | events POST budget | 1 s | every deny and hint event |
 | custom guard timeout | 5 s | custom guards |
 | custom hint default budget | 400 ms | custom hints (`timeout_ms` overrides it per hint) |
 | script size cap | 1 MiB | script-deny-list |
 | memory facts per store | 30 | agent-memory |
 | assertions per fire | 3 / 5 | kof-assertions / kof-consult |
+| in-flight files asked of moondb | 200 | moondb-inflight |
+| in-flight paths per fire | 10 | moondb-inflight |
 | substantial-work threshold | 30 tool calls | kof-deposit |
 | large-read threshold | 300 lines | read-size |
 | published-text excerpt | 200 bytes | humanizer-check |
@@ -1189,9 +1222,11 @@ In symptom order:
 3. **A guard allows something you expected it to block.** Check the events
    timeline: soft-mode rules and broken custom guards allow with a `warn`
    event rather than denying silently.
-4. **A kof hint is silent.** `belt doctor` reports whether kof is reachable
+4. **A kof or moondb hint is silent.** `belt doctor` reports whether kof is reachable
    and how many assertions it stores — the hint renders "service down" and
    "store empty" identically.
+   For moondb-inflight it reports whether moondb answers and whether it is
+   new enough to have the in-flight route.
 5. **A hint fired once and never again.** That is the once-per-session
    contract (kof-deposit, humanizer-check, lint-policy) or the per-session
    dedupe (kof-assertions, kof-consult). A new session resets both.
