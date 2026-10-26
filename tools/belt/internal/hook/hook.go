@@ -470,7 +470,9 @@ func hintAdviceFor(event string) hintAdvice {
 
 // toHintInput maps a PostToolUse payload onto the shared hint input. A search
 // carries its repo and hit paths in the response; a bash command carries only
-// what it ran; an external-text call is identified by the tool that made it.
+// what it ran; a read carries the file, whether it asked for a range, and the
+// file's line count from the response; an external-text call is identified
+// by the tool that made it.
 func toHintInput(event string, p payload) hint.Input {
 	in := hint.Input{
 		Event:          event,
@@ -485,6 +487,14 @@ func toHintInput(event string, p payload) hint.Input {
 		if s, ok := p.ToolInput["command"].(string); ok {
 			in.Command = s
 		}
+	case hint.EventRead:
+		if s, ok := p.ToolInput["file_path"].(string); ok {
+			in.FilePath = s
+		}
+		// Any non-null offset or limit counts as a range, a mistyped one
+		// included: reading it as ranged keeps the hint quiet, not wrong.
+		in.Ranged = p.ToolInput["offset"] != nil || p.ToolInput["limit"] != nil
+		in.TotalLines = hint.ReadTotalLines(p.ToolResponse)
 	case hint.EventExternalText:
 		in.ToolName = p.ToolName
 		in.ToolInput = p.ToolInput

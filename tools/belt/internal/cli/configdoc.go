@@ -248,6 +248,11 @@ hints:
     enabled: true
   prefer-csl:
     enabled: true
+  read-size:
+    enabled: true
+    # Speaks once per file per agent per session, after a Read with no
+    # offset or limit pulls in a file of 300 lines or more in a csl-indexed
+    # repo, for file types csl_outline has symbols for.
   commit-policy:
     enabled: true
     # Opt-outs for this hint only; a repo whose main is committed to

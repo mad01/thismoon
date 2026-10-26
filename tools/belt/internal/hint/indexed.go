@@ -55,11 +55,21 @@ func indexedRepos() map[string]bool {
 	return repos
 }
 
-// repoForPath walks up from p looking for a git working tree and names it
-// `<parent-dir>/<repo-dir>`, matching how csl names its shards. It returns ""
-// when p is not inside a repo, which is the correct answer for paths like
-// ~/.claude or /tmp where a filesystem grep is the right tool.
+// repoForPath names the git working tree p sits in as `<parent-dir>/<repo-dir>`,
+// matching how csl names its shards. It returns "" when p is not inside a
+// repo, which is the correct answer for paths like ~/.claude or /tmp where a
+// filesystem grep is the right tool.
 func repoForPath(p string) string {
+	root := repoRoot(p)
+	if root == "" {
+		return ""
+	}
+	return repoName(root)
+}
+
+// repoRoot walks up from p to the nearest directory holding a .git entry
+// and returns it, "" when p is not inside a git working tree.
+func repoRoot(p string) string {
 	if p == "" {
 		return ""
 	}
@@ -73,8 +83,7 @@ func repoForPath(p string) string {
 	}
 	for dir := abs; ; {
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			org := filepath.Base(filepath.Dir(dir))
-			return org + "/" + filepath.Base(dir)
+			return dir
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -82,6 +91,11 @@ func repoForPath(p string) string {
 		}
 		dir = parent
 	}
+}
+
+// repoName names a working tree root the way csl names its shard.
+func repoName(root string) string {
+	return filepath.Base(filepath.Dir(root)) + "/" + filepath.Base(root)
 }
 
 // isIndexed reports whether the repo containing p has a csl shard.

@@ -495,7 +495,7 @@ entries match the same way as `git_identity[].repos` and
 
 ### hints
 
-A map keyed by built-in hint id or a `custom_hints` name. All eight
+A map keyed by built-in hint id or a `custom_hints` name. All ten
 built-in hints default to enabled when the file or their entry is missing. The repo-aware hints (`commit-policy`,
 `lint-policy`, `prefer-csl`, `kof-assertions`, `kof-consult`) also read
 `exclude_repos`. The rest take only `enabled`. Any other key on a known id
@@ -513,6 +513,10 @@ pattern tail (host dropped, case-insensitive).
   repo. `exclude_repos` silences it for the listed repos, matched against
   the swept repo's origin remote — not its checkout path, so a worktree
   under a different parent directory is still covered.
+- `hints.read-size.enabled` (bool, default `true`): PostToolUse (read),
+  fires when a Read with no offset or limit pulls in 300 lines or more from
+  an indexed repo, for a file type `csl_outline` has symbols for. It points
+  at `csl_outline` or a ranged read, once per file per agent per session.
 - **commit-policy**
   - `hints.commit-policy.enabled` (bool, default `true`): PostToolUse
     (bash), states the branch + PR commit policy after a `git commit` lands
@@ -706,6 +710,8 @@ hints:
   lint-policy:
     enabled: true
   prefer-csl:
+    enabled: true
+  read-size:
     enabled: true
   kof-assertions:
     enabled: true

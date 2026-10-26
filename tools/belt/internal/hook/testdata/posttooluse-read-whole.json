@@ -1,0 +1,27 @@
+{
+  "session_id": "99344608-b8fe-4f5a-a4ea-6f355a2e388a",
+  "transcript_path": "/Users/user/.claude/projects/-private-tmp-mad494/99344608-b8fe-4f5a-a4ea-6f355a2e388a.jsonl",
+  "cwd": "/private/tmp/mad494",
+  "prompt_id": "728c033f-8672-49b8-94b7-7666a92fa9d4",
+  "permission_mode": "default",
+  "effort": {
+    "level": "xhigh"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Read",
+  "tool_input": {
+    "file_path": "/tmp/mad494/big.txt"
+  },
+  "tool_response": {
+    "type": "text",
+    "file": {
+      "filePath": "/tmp/mad494/big.txt",
+      "content": "line 1\nline 2\nline 3",
+      "numLines": 401,
+      "startLine": 1,
+      "totalLines": 401
+    }
+  },
+  "tool_use_id": "toolu_01J9dHbKfY68JsRfLhC27ezp",
+  "duration_ms": 4
+}

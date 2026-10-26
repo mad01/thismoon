@@ -1003,6 +1003,7 @@ var (
 		"kof-deposit":     {},
 		"lint-policy":     {"exclude_repos"},
 		"prefer-csl":      {"exclude_repos"},
+		"read-size":       {},
 		"humanizer-check": {},
 		"em-dash":         {},
 	}

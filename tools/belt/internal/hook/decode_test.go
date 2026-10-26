@@ -304,6 +304,11 @@ func TestRunHintStaysSilentOnAnUnreadablePayload(t *testing.T) {
 			`{"tool_name":"mcp__csl__csl_search","tool_input":{"repo":7}}`,
 			"field tool_input.repo is a JSON number, want a string",
 		},
+		{
+			"numeric read file_path", "read",
+			`{"tool_name":"Read","tool_input":{"file_path":7}}`,
+			"field tool_input.file_path is a JSON number, want a string",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
