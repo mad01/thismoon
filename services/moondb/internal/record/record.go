@@ -72,7 +72,8 @@ type Options struct {
 	// async; moondb.AgentBudget when zero.
 	AgentBudget time.Duration
 	// Logf receives one line for each Bash payload whose files Run left
-	// out, with the counts; nil discards it.
+	// out, with the counts, and for each subagent Run did not record or
+	// recorded without lines; nil discards it.
 	Logf func(format string, args ...any)
 }
 

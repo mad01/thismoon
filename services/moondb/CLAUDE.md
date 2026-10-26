@@ -121,7 +121,10 @@ store holds it.
 SubagentStop reads the agent's own transcript file
 (`<session>/subagents/agent-<id>.jsonl`, named by the payload's
 `agent_transcript_path`) and its `agent-<id>.meta.json`
-(`internal/agentfile`). It keeps the timeline lines (user, assistant, API
+(`internal/agentfile`). A payload without the field gets the path beside
+its `transcript_path`, and a leading `~` is expanded. A path outside the
+session's `subagents/` directory, symlinks resolved, records nothing and
+is logged on stderr. It keeps the timeline lines (user, assistant, API
 request, system) with the fields a trace reads and cuts each text, thinking
 block, tool input and tool result to `AgentHeadBytes` (240). The usage, ids
 and times survive, so the cut transcript prices the same as the file: an
