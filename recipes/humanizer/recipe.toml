@@ -1,6 +1,6 @@
-# humanizer — public layer: build + install + the humanizer skill. MCP
-# registration, the sandbox wrapper + srt settings, and the config.yaml
-# symlink stay in the consuming repo's companion recipe — machine-private
+# humanizer: public layer. Build + install, the humanizer skill, and the MCP
+# sandbox wrapper. MCP registration, the srt settings and the config.yaml
+# symlink stay in the consuming repo's companion recipe, as machine-private
 # wiring (see docs/adr/0006).
 [recipe]
 name = "humanizer"
@@ -35,3 +35,14 @@ action = "symlink_dir"
 source = "../../skills/humanizer"
 target = "~/.agents/skills/humanizer"
 action = "symlink_dir"
+
+# Keep the MCP wrapper executable: the consuming repo's MCP registration names
+# humanizer-mcp-sandbox.sh, not the bare binary (sandbox containment: it
+# resolves the judge backend vars outside the sandbox, scrubs the environment
+# and execs `humanizer mcp` through srt-run with ~/.config/srt/humanizer.json,
+# a settings file the consuming repo provides, docs/adr/0006).
+[hooks.builds.humanizer_chmod_mcp_wrapper]
+commands = ["chmod +x humanizer-mcp-sandbox.sh"]
+working_dir = "~/.config/ralph/sources/thismoon/recipes/humanizer"
+run = "always"
+idempotent = true
