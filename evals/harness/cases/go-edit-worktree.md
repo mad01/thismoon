@@ -1,6 +1,7 @@
 ---
 id: go-edit-worktree
 title: Small Go edit with a table test in a throwaway worktree
+notes: Budgets are estimates; no run of this case has been measured yet.
 workspace: worktree:thismoon
 timeout: 600
 max_turns: 25

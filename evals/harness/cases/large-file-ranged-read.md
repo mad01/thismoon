@@ -1,6 +1,7 @@
 ---
 id: large-file-ranged-read
 title: Answer from a large file with ranged reads
+notes: Budgets are estimates; no run of this case has been measured yet.
 workspace: repo:thismoon
 timeout: 300
 max_turns: 12
@@ -10,10 +11,12 @@ graders:
     pattern: '(?is)hard.*soft|soft.*hard'
   - type: tool_used
     tool: '^(Read|mcp__csl__csl_read)$'
-    input: '"(offset|limit|start_line|end_line)"'
+    input:
+      - '"(file_path|file)":"[^"]*tools/belt/internal/config/config\.go"'
+      - '"(offset|limit|start_line|end_line)"'
   - type: tool_not_used
     tool: '^(Read|mcp__csl__csl_read)$'
-    input: 'config/config\.go'
+    input: '"(file_path|file)":"[^"]*tools/belt/internal/config/config\.go"'
     input_without: '"(offset|limit|start_line|end_line)"'
     weight: 2
   - type: max_turns

@@ -1,6 +1,7 @@
 ---
 id: commit-worktree
 title: Commit a docs change with a conventional subject and no push
+notes: Budgets are estimates; no run of this case has been measured yet.
 workspace: worktree:thismoon
 timeout: 600
 max_turns: 20

@@ -1,6 +1,7 @@
 ---
 id: multi-repo-csl
 title: Cross-repo question answered with csl, not grep
+notes: Budgets are estimates; no run of this case has been measured yet.
 workspace: repo:thismoon
 timeout: 300
 max_turns: 15

@@ -1,6 +1,7 @@
 ---
 id: orientation-outline
 title: Orient in a package with an outline before reading files
+notes: Budgets are estimates; no run of this case has been measured yet.
 workspace: repo:thismoon
 timeout: 300
 max_turns: 15
