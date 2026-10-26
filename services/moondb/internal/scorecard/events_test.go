@@ -249,6 +249,7 @@ func TestReadPins(t *testing.T) {
 	}
 	held := []Assertion{
 		{ID: "id1", Pins: []Pin{pin}}, {ID: "id2"}, {ID: "id3"}, {ID: "unshown"},
+		{ID: "tagged", Pins: []Pin{pin, {Repo: pin.Repo, File: "services/x/b.go"}}},
 	}
 	tests := []struct {
 		name         string
@@ -260,15 +261,17 @@ func TestReadPins(t *testing.T) {
 		wantListings int
 	}{
 		{
+			// The tagged one too: its tag holds the fire's first pins, not
+			// its own.
 			name:  "every assertion found in one listing",
 			peers: &fakePeers{assertions: held}, hints: hints,
-			status: StatusOK, wantPins: []string{"id1", "id2", "id3"}, wantListings: 1,
+			status: StatusOK, wantPins: []string{"id1", "id2", "id3", "tagged"}, wantListings: 1,
 		},
 		{
 			name:  "one assertion gone",
-			peers: &fakePeers{assertions: []Assertion{held[0], held[2]}}, hints: hints,
+			peers: &fakePeers{assertions: []Assertion{held[0], held[2], held[4]}}, hints: hints,
 			status: StatusPartial, detail: "no assertion id2",
-			wantPins: []string{"id1", "id3"}, wantListings: 1,
+			wantPins: []string{"id1", "id3", "tagged"}, wantListings: 1,
 		},
 		{
 			name:  "kof down",
@@ -278,7 +281,7 @@ func TestReadPins(t *testing.T) {
 		{
 			name:   "no kof hint",
 			peers:  &fakePeers{assertions: held},
-			hints:  []HintEvent{{Hint: "prefer-csl"}, hints[2]},
+			hints:  []HintEvent{{Hint: "prefer-csl"}},
 			status: StatusSkipped, detail: "no assertion to look up",
 		},
 		{

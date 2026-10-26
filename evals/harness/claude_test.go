@@ -16,7 +16,7 @@ func TestInvocationArgs(t *testing.T) {
 		Prompt: "-starts with a dash",
 	}
 	got := strings.Join(inv.args(), " ")
-	want := "-p --output-format stream-json --verbose --session-id sid --no-session-persistence " +
+	want := "-p --output-format stream-json --verbose --session-id sid " +
 		"--max-turns 8 --model haiku --effort low --permission-mode acceptEdits --max-budget-usd 1.5 " +
 		"--disallowedTools Edit Bash(git push:*) -- -starts with a dash"
 	if got != want {

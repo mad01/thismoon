@@ -107,14 +107,16 @@ type invocation struct {
 
 // args renders the command line. Settings, hooks, and MCP servers load the
 // way an interactive session loads them; nothing here narrows them. The
-// prompt goes after "--" because --disallowedTools takes a list.
+// session is kept, not discarded: moondb reads the transcript Claude Code
+// writes for it, and the scorecard's tokens, cost, searches and reads come
+// from there. The prompt goes after "--" because --disallowedTools takes a
+// list.
 func (inv invocation) args() []string {
 	args := []string{
 		"-p",
 		"--output-format", "stream-json",
 		"--verbose",
 		"--session-id", inv.SessionID,
-		"--no-session-persistence",
 		"--max-turns", strconv.Itoa(inv.MaxTurns),
 	}
 	if inv.Model != "" {
