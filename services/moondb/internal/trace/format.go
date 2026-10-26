@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mad01/thismoon/services/moondb"
+	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 // FormatDuration renders milliseconds for a person: 850ms, 4.2s, 3m12s,
@@ -77,10 +78,77 @@ func PromptLine(prompt string) string {
 		if text == "" {
 			continue
 		}
-		if utf8.RuneCountInString(text) <= moondb.SessionPromptLineRunes {
-			return text
-		}
-		return string([]rune(text)[:moondb.SessionPromptLineRunes]) + "…"
+		return cutLine(text)
 	}
 	return ""
+}
+
+// cutLine cuts text to moondb.SessionPromptLineRunes with an ellipsis.
+func cutLine(text string) string {
+	if utf8.RuneCountInString(text) <= moondb.SessionPromptLineRunes {
+		return text
+	}
+	return string([]rune(text)[:moondb.SessionPromptLineRunes]) + "…"
+}
+
+// The parts of a harness-written prompt a label names.
+var (
+	taskSummary = regexp.MustCompile(`<summary>([^<]*)</summary>`)
+	teammateTag = regexp.MustCompile(`<teammate-message\b[^>]*>`)
+	messageFrom = regexp.MustCompile(`<(?:agent|cross-session)-message\b[^>]*\bfrom="([^"]*)"`)
+	attribute   = regexp.MustCompile(`([\w-]+)="([^"]*)"`)
+)
+
+// PromptLabel names a turn by its prompt for a lane or a list: a prompt
+// the harness wrote by what started the turn (store.PromptOrigin), such
+// as "background task finished: <summary>", "teammate message from
+// <id>: <summary>" or "continued after compaction", and a person's prompt
+// by its PromptLine. It is cut as PromptLine is.
+func PromptLabel(prompt string) string {
+	switch store.PromptOrigin(prompt) {
+	case store.OriginTask:
+		return labelWith("background task finished", firstMatch(taskSummary, prompt))
+	case store.OriginTeammate:
+		attrs := attributes(teammateTag.FindString(prompt))
+		return labelWith("teammate message"+from(attrs["teammate_id"]), attrs["summary"])
+	case store.OriginAgent:
+		return cutLine("agent message" + from(firstMatch(messageFrom, prompt)))
+	case store.OriginContinuation:
+		return "continued after compaction"
+	}
+	return PromptLine(prompt)
+}
+
+// labelWith joins a label and its detail with a colon, the label alone
+// when the detail is empty.
+func labelWith(label, detail string) string {
+	detail = strings.Join(strings.Fields(detail), " ")
+	if detail == "" {
+		return cutLine(label)
+	}
+	return cutLine(label + ": " + detail)
+}
+
+// from is " from <who>", "" when who is empty.
+func from(who string) string {
+	if who == "" {
+		return ""
+	}
+	return " from " + who
+}
+
+func firstMatch(re *regexp.Regexp, s string) string {
+	if m := re.FindStringSubmatch(s); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// attributes reads the name="value" pairs of one tag.
+func attributes(tag string) map[string]string {
+	out := map[string]string{}
+	for _, m := range attribute.FindAllStringSubmatch(tag, -1) {
+		out[m[1]] = m[2]
+	}
+	return out
 }

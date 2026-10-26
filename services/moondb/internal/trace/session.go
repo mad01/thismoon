@@ -11,8 +11,11 @@ import (
 // BuildSession puts a session's turn traces in order and adds what lies
 // between them: the time from one turn's end to the next one's start is
 // user time, the session's and not either turn's. The session's user time
-// is those gaps plus the user time inside its turns.
-func BuildSession(sessionID string, turns []TurnTrace) SessionTrace {
+// is those gaps plus the user time inside its turns. turns are the turns'
+// own traces (Build); agents are the traces of the session's subagents
+// with a record (BuildAgent), whose work BuildSession adds to each turn it
+// ran under and whose whole runs it adds to the session's tokens and cost.
+func BuildSession(sessionID string, turns []TurnTrace, agents []AgentTrace) SessionTrace {
 	turns = slices.Clone(turns)
 	slices.SortStableFunc(turns, func(a, b TurnTrace) int { return cmp.Compare(a.Seq, b.Seq) })
 	st := SessionTrace{SessionID: sessionID, Turns: turns, Gaps: []Gap{}}
@@ -31,6 +34,7 @@ func BuildSession(sessionID string, turns []TurnTrace) SessionTrace {
 	}
 	st.Totals = sessionTotals(turns)
 	st.Totals.UserMS += user.Milliseconds()
+	st.addAgents(agents)
 	return st
 }
 
@@ -72,23 +76,27 @@ func sessionTotals(turns []TurnTrace) Totals {
 	return t
 }
 
-// LongestTools returns a session's n longest tool spans, longest first.
+// LongestTools returns a session's n longest tool spans, longest first,
+// the agents' among them (SessionTrace.AgentLongestTools).
 func LongestTools(st SessionTrace, n int) []Ranked {
-	return top(st, KindTool, n, func(a, b Span) int {
-		return cmp.Compare(b.DurationMS, a.DurationMS)
-	})
+	return top(turnSpans(st, KindTool), st.AgentLongestTools, n, longer)
 }
 
 // CostliestModels returns a session's n most expensive model spans, most
-// expensive first. A span with no price ranks below every priced one, by
-// its token count.
+// expensive first, the agents' among them
+// (SessionTrace.AgentCostliestModels). A span with no price ranks below
+// every priced one, by its token count.
 func CostliestModels(st SessionTrace, n int) []Ranked {
-	return top(st, KindModel, n, func(a, b Span) int {
-		if c := cmp.Compare(costOf(b), costOf(a)); c != 0 {
-			return c
-		}
-		return cmp.Compare(tokensOf(b), tokensOf(a))
-	})
+	return top(turnSpans(st, KindModel), st.AgentCostliestModels, n, costlier)
+}
+
+func longer(a, b Span) int { return cmp.Compare(b.DurationMS, a.DurationMS) }
+
+func costlier(a, b Span) int {
+	if c := cmp.Compare(costOf(b), costOf(a)); c != 0 {
+		return c
+	}
+	return cmp.Compare(tokensOf(b), tokensOf(a))
 }
 
 // costOf is a span's cost for ranking, -1 when it has none.
@@ -106,9 +114,9 @@ func tokensOf(s Span) int64 {
 	return s.Tokens.Total()
 }
 
-// top ranks the session's spans of kind by order and keeps the first n,
-// ties in timeline order.
-func top(st SessionTrace, kind Kind, n int, order func(a, b Span) int) []Ranked {
+// turnSpans lists the spans of kind in the session's turns, in timeline
+// order.
+func turnSpans(st SessionTrace, kind Kind) []Ranked {
 	out := []Ranked{}
 	for _, tt := range st.Turns {
 		for _, s := range tt.Spans {
@@ -120,6 +128,13 @@ func top(st SessionTrace, kind Kind, n int, order func(a, b Span) int) []Ranked 
 			}
 		}
 	}
+	return out
+}
+
+// top ranks the lists together by order and keeps the first n, ties in
+// the order given: the main conversation's first.
+func top(main, agents []Ranked, n int, order func(a, b Span) int) []Ranked {
+	out := slices.Concat(main, agents)
 	slices.SortStableFunc(out, func(a, b Ranked) int { return order(a.Span, b.Span) })
 	return out[:min(n, len(out))]
 }

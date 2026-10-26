@@ -30,8 +30,12 @@ const (
 // Lines whose head the size cap cut (Lines.CutHead) give the stretch
 // before the first kept line to harness time.
 func Build(d store.TurnDetail, lines []byte, prices Prices) TurnTrace {
-	events, counts := parseLines(lines)
-	start, end := bounds(d.Turn, events)
+	events, counts := parseLines(lines, false)
+	var ended time.Time
+	if d.EndedAt != nil {
+		ended = *d.EndedAt
+	}
+	start, end := bounds(d.StartedAt, ended, events)
 	tt := TurnTrace{
 		TurnID: d.ID,
 		Seq:    d.Seq,
@@ -47,24 +51,24 @@ func Build(d store.TurnDetail, lines []byte, prices Prices) TurnTrace {
 	}
 	models, calls := modelSpans(events, start, end, prices)
 	tools := toolSpans(events, start, end, d.Edits)
-	tt.Spans = slices.Concat(models, tools, subagentSpans(d.Edits, start, end))
-	slices.SortStableFunc(tt.Spans, func(a, b Span) int { return a.Start.Compare(b.Start) })
+	tt.Spans = byStart(slices.Concat(models, tools, subagentSpans(d.Edits, start, end)))
 	tt.Gaps = partition(events, start, end, counts.CutHead)
 	tt.Totals = turnTotals(tt.Span, tt.Gaps, models, tools)
 	tt.Totals.Usage = prices.Usage(calls)
 	return tt
 }
 
-// bounds is the turn's start and end. A turn with no start time starts at
-// its first event; one with no end ends at its last event.
-func bounds(t store.Turn, events []event) (start, end time.Time) {
-	start = t.StartedAt
+// bounds is a span's start and end from the recorded times, a zero one
+// unknown, and its events. With no start time it starts at its first
+// event; with no end, or one before the last event, it ends at that event.
+func bounds(started, ended time.Time, events []event) (start, end time.Time) {
+	start = started
 	if start.IsZero() && len(events) > 0 {
 		start = events[0].at
 	}
 	end = start
-	if t.EndedAt != nil && t.EndedAt.After(start) {
-		end = *t.EndedAt
+	if ended.After(start) {
+		end = ended
 	}
 	if n := len(events); n > 0 && events[n-1].at.After(end) {
 		end = events[n-1].at
@@ -379,16 +383,23 @@ func turnTotals(turn Span, gaps []Gap, models, tools []Span) Totals {
 
 // addCost adds one priced amount, or records model as unpriced.
 func (t *Totals) addCost(cost *float64, model string) {
+	t.Cost, t.Unpriced = addCost(t.Cost, t.Unpriced, cost, model)
+}
+
+// addCost adds one priced amount to sum, or model to unpriced, kept
+// sorted. It never writes to the arrays it is given, which can belong to
+// a cached trace.
+func addCost(sum *float64, unpriced []string, cost *float64, model string) (*float64, []string) {
 	if cost == nil {
-		if !slices.Contains(t.Unpriced, model) {
-			t.Unpriced = append(t.Unpriced, model)
-			slices.Sort(t.Unpriced)
+		if !slices.Contains(unpriced, model) {
+			unpriced = append(slices.Clone(unpriced), model)
+			slices.Sort(unpriced)
 		}
-		return
+		return sum, unpriced
 	}
-	sum := *cost
-	if t.Cost != nil {
-		sum += *t.Cost
+	total := *cost
+	if sum != nil {
+		total += *sum
 	}
-	t.Cost = &sum
+	return &total, unpriced
 }

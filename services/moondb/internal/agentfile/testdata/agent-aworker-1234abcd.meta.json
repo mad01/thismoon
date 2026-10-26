@@ -1,0 +1,1 @@
+{"agentType": "worker", "description": "Build the thing", "name": "worker", "model": "opus", "taskKind": "in_process_teammate", "spawnedAgentType": "general-purpose"}

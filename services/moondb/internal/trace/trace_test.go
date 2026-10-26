@@ -672,7 +672,7 @@ func TestBuildSession(t *testing.T) {
 	second.Totals.UserMS = 60_000 // a wait inside the turn adds to the gaps between turns
 	first := turn(1, 0, 5*time.Minute, tool("fast", 100), model("dear", new(2.0), 1))
 
-	got := BuildSession("sess", []TurnTrace{second, first})
+	got := BuildSession("sess", []TurnTrace{second, first}, nil)
 	if got.Turns[0].Seq != 1 || got.Turns[1].Seq != 2 {
 		t.Fatalf("turns out of order: #%d, #%d", got.Turns[0].Seq, got.Turns[1].Seq)
 	}
@@ -698,7 +698,7 @@ func TestBuildSession(t *testing.T) {
 }
 
 func TestBuildSessionEmpty(t *testing.T) {
-	got := BuildSession("sess", nil)
+	got := BuildSession("sess", nil, nil)
 	if got.Turns == nil || got.Gaps == nil || got.Totals.WallMS != 0 || got.Totals.Cost != nil {
 		t.Errorf("empty session trace = %+v", got)
 	}

@@ -31,8 +31,11 @@ const (
 	// KindTool is one tool call: from the assistant line that asked for it
 	// to the user line that carried its result.
 	KindTool Kind = "tool"
-	// KindSubagent is a subagent's recorded work in the turn, from its
-	// first recorded edit to its last.
+	// KindSubagent is a subagent's work. In an agent trace it is the whole
+	// run, from the spawn to the stop. In a turn's trace it is the part of
+	// the run under that turn (Segment), with its model and tool calls; a
+	// subagent known only from its edits gets a span from its first
+	// recorded edit to its last.
 	KindSubagent Kind = "subagent"
 )
 
@@ -48,8 +51,8 @@ type Span struct {
 	End        time.Time `json:"end"`
 	DurationMS int64     `json:"duration_ms"`
 
-	// Tokens and Cost belong to model spans. Cost is in USD and nil when
-	// the model has no price; it is never a guessed zero.
+	// Tokens and Cost belong to model and subagent spans. Cost is in USD
+	// and nil when the model has no price; it is never a guessed zero.
 	Tokens *Tokens  `json:"tokens,omitempty"`
 	Cost   *float64 `json:"cost,omitempty"`
 	Speed  string   `json:"speed,omitempty"`
@@ -61,8 +64,10 @@ type Span struct {
 	Unfinished bool     `json:"unfinished,omitempty"`
 	EditIDs    []string `json:"edit_ids,omitempty"`
 
-	// EditCount belongs to subagent spans.
-	EditCount int `json:"edit_count,omitempty"`
+	// EditCount, ModelCalls and ToolCalls belong to subagent spans.
+	EditCount  int `json:"edit_count,omitempty"`
+	ModelCalls int `json:"model_calls,omitempty"`
+	ToolCalls  int `json:"tool_calls,omitempty"`
 }
 
 // Tokens counts what a model call billed, by kind. It is the store's type,
@@ -117,6 +122,21 @@ type Totals struct {
 	ModelCalls int      `json:"model_calls"`
 	ToolCalls  int      `json:"tool_calls"`
 	ToolErrors int      `json:"tool_errors"`
+
+	// The fields below split the Tokens and Cost of a turn or a session
+	// between the main conversation and its subagents; they are absent
+	// when no subagent with a record ran. A turn counts the agents' work
+	// under it (Segment), a session every agent's whole run. Tokens and
+	// Cost cover both, and a session's Usage too; a turn's Usage stays the
+	// main conversation's, as the Turn stores it. The time split and the
+	// call counts above stay the main conversation's, and the agents'
+	// calls are counted apart.
+	TokensMain      *Tokens  `json:"tokens_main,omitempty"`
+	TokensAgents    *Tokens  `json:"tokens_agents,omitempty"`
+	CostMain        *float64 `json:"cost_main,omitempty"`
+	CostAgents      *float64 `json:"cost_agents,omitempty"`
+	AgentModelCalls int      `json:"agent_model_calls,omitempty"`
+	AgentToolCalls  int      `json:"agent_tool_calls,omitempty"`
 }
 
 // Lines counts the transcript lines a trace read.
@@ -156,24 +176,38 @@ type TurnTrace struct {
 }
 
 // SessionTrace is the trace of every turn of a session, in order, with the
-// user time between them.
+// user time between them, and the run of every subagent with a record.
 type SessionTrace struct {
-	SessionID string      `json:"session_id"`
-	Turns     []TurnTrace `json:"turns"`
+	SessionID string `json:"session_id"`
+	// Turns hold each turn's own trace with its agents' work under it
+	// (WithAgents).
+	Turns []TurnTrace `json:"turns"`
 	// Gaps are the user gaps between one turn's end and the next one's
 	// start.
 	Gaps []Gap `json:"gaps"`
-	// Totals sum the turns, with WallMS from the first turn's start to the
-	// last one's end and UserMS the gaps between turns.
-	Totals Totals `json:"totals"`
+	// Totals sum the turns and the agents. WallMS runs from the first
+	// turn's start to the last one's end and UserMS adds the gaps between
+	// turns: the time split is the main conversation's.
+	Totals Totals     `json:"totals"`
+	Agents []AgentRun `json:"agents"`
+	// AgentLongestTools and AgentCostliestModels rank the agents' tool and
+	// model spans, each with the turn it ran under, as LongestTools and
+	// CostliestModels rank the turns'. They keep moondb.TraceTopSpans
+	// each, so a reader of the JSON merges them into the session's
+	// rankings without every agent's spans.
+	AgentLongestTools    []Ranked `json:"agent_longest_tools"`
+	AgentCostliestModels []Ranked `json:"agent_costliest_models"`
 }
 
-// Ranked is one span of a session trace with the turn it ran in.
+// Ranked is one span of a session trace with the turn it ran in. A span
+// of a subagent's names the agent: its id and its label (Agent.Label).
 type Ranked struct {
-	Seq    int    `json:"seq"`
-	TurnID string `json:"turn_id"`
-	Prompt string `json:"prompt,omitempty"`
-	Span   Span   `json:"span"`
+	Seq     int    `json:"seq"`
+	TurnID  string `json:"turn_id"`
+	Prompt  string `json:"prompt,omitempty"`
+	AgentID string `json:"agent_id,omitempty"`
+	Agent   string `json:"agent,omitempty"`
+	Span    Span   `json:"span"`
 }
 
 // span returns a span of kind from start to end with its duration set.
