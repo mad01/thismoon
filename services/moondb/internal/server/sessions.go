@@ -44,17 +44,18 @@ type SessionSummary struct {
 	StartedAt      time.Time `json:"started_at"`
 	LastActivityAt time.Time `json:"last_activity_at"`
 	// EndedAt is the last turn's end once the session is ended, an open
-	// turn ending where it started; absent while it runs or before it has
-	// a turn.
+	// turn ending at its last edit or agent stop; absent while it runs or
+	// before it has a turn.
 	EndedAt *time.Time `json:"ended_at,omitempty"`
 	// DurationMS is the wall span: from the first turn's start to the last
-	// turn's end, an open turn ending where it started, the pauses between
-	// turns included. It reads the turn records only, so it can fall short
-	// of the session trace's wall time.
+	// turn's end, an open turn ending at its last edit or agent stop, the
+	// pauses between turns included. It reads the turn records only, so it
+	// can fall short of the session trace's wall time.
 	DurationMS int64 `json:"duration_ms"               jsonschema:"wall time in milliseconds: from the first prompt to the last turn's end, pauses between turns included"`
 	// ActiveMS is the active time: the time inside the turns, less the
-	// time a turn waited for input (store.SessionSummary.ActiveMS).
-	ActiveMS  int64 `json:"active_ms"                 jsonschema:"active time in milliseconds: the time inside the turns, less time waiting for input; pauses between turns never count"`
+	// time a turn waited for input, never above DurationMS
+	// (store.SessionSummary.ActiveMS).
+	ActiveMS  int64 `json:"active_ms"                 jsonschema:"active time in milliseconds: the time inside the turns, less time waiting for input, never above duration_ms; pauses between turns never count"`
 	TurnCount int   `json:"turn_count"`
 	EditCount int   `json:"edit_count"`
 	// FileCount counts the distinct files the session edited.

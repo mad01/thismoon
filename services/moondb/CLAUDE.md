@@ -586,17 +586,20 @@ A session row comes from the index alone, never a chunk
   activity is within `OpenTurnStaleAfter`. Otherwise `ended`.
 - `started_at`, `last_activity_at`: the session's start, and its latest
   turn start, turn end, edit or agent stop.
-- `ended_at`: once the session is `ended`, its last turn's end (an open
-  turn ends where it started). Absent while it runs.
+- `ended_at`: once the session is `ended`, its last turn's end, where
+  `duration_ms` ends. Absent while it runs.
 - `transcript_path`: the transcript file the session record keeps.
 - `duration_ms`: the wall time, from the first turn's start to the last
-  turn's end, the pauses between turns included. An open turn ends where
-  it started.
+  turn's end, the pauses between turns included. An open turn ends at its
+  last activity: the latest edit or agent stop at or after its start and
+  before the next turn starts.
 - `active_ms`: the active time (`store.Summarize`). Each turn adds its
   totals' wall time less their user time, or without totals its recorded
-  span. An open turn ends at the latest edit or agent stop before the next
-  turn starts, and a turn never adds less than zero. The gaps between turns
-  never count, so a session left open overnight adds nothing for the night.
+  span, and never less than zero. An open turn ends at its last activity,
+  as in `duration_ms`. The gaps between turns never count, so a session
+  left open overnight adds nothing for the night. It never exceeds
+  `duration_ms`: overlapping turns, or totals that outlast the recorded
+  span, are capped at the wall time.
 - `turn_count`, `edit_count`, `file_count` (distinct worktree and path) and
   `agent_count`: the agents with a record, the ones known only from an
   edit, and the main conversation when it edited. `agents` names the
@@ -638,10 +641,11 @@ return, so keep it stable.
 - `/`: the sessions active in the last 7 days unless `since` says
   otherwise (`since=any` lifts the bound), grouped by the day they started,
   newest first.
-  A row has a repo badge, the title as the link, a running or ended dot
-  with how long ago the session was last active and its active time. When
-  the wall time crosses a local midnight, "over N days" follows, and the
-  hover title gives the wall time. Then come
+  A row has a repo badge, the title as the link, and a running or ended
+  dot with how long ago the session was last active. Its active time
+  follows, or its wall time when it has none. When the wall time crosses a
+  local midnight, "over N days" follows, on a second line when the column
+  is too narrow, and the hover title gives the wall time. Then come
   its turn, edit, file and agent counts and its cost, the main
   conversation's and its subagents'. A window switch and repo chips
   (`repo`) sit above a strip that adds the window up, active time

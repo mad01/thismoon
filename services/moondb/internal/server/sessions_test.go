@@ -149,7 +149,8 @@ func TestSessionsWindow(t *testing.T) {
 // TestSessionsCarryActiveTime: every row and the window answer both
 // times, active_ms and duration_ms. The older session's closed turn gives
 // its totals' wall less user time, the newer one's open turn runs from its
-// start to its last edit, and the window sums the rows' active time.
+// start to its last edit for both times, and the window sums the rows'
+// active time.
 func TestSessionsCarryActiveTime(t *testing.T) {
 	h := newHarness(t)
 	var raw struct {
@@ -185,8 +186,8 @@ func TestSessionsCarryActiveTime(t *testing.T) {
 		t.Errorf("older active %d, wall %d; want %d and 120000", older.ActiveMS, older.DurationMS,
 			wantOld)
 	}
-	if newer.ActiveMS != wantNew || newer.DurationMS != 0 {
-		t.Errorf("newer active %d, wall %d; want %d to its last edit and 0 while open",
+	if newer.ActiveMS != wantNew || newer.DurationMS != wantNew {
+		t.Errorf("newer active %d, wall %d; want both %d, to its last edit",
 			newer.ActiveMS, newer.DurationMS, wantNew)
 	}
 	if list.Window.ActiveMS != wantOld+wantNew {

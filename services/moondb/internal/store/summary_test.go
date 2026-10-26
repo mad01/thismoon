@@ -45,8 +45,9 @@ func editsAt(at ...int) iter.Seq[*Edit] {
 // TestSummarizeActiveMS: active time adds up the time inside the turns,
 // less the time a turn waited for input, and never the gaps between
 // turns. A turn with totals gives wall less user time, clamped at zero;
-// one without gives its recorded span; an open turn ends at the latest
-// edit or agent stop before the next turn starts.
+// one without gives its recorded span. An open turn ends at the latest
+// edit or agent stop before the next turn starts, for the wall span as
+// for the active time, and the active time never exceeds the wall span.
 func TestSummarizeActiveMS(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -80,7 +81,24 @@ func TestSummarizeActiveMS(t *testing.T) {
 			agents:     []Agent{{ID: "a1", SessionID: "s", EndedAt: minutes(6)}},
 			edits:      []int{2, 4},
 			wantActive: ms(6),
-			wantWall:   0,
+			wantWall:   ms(6),
+		},
+		{
+			name:       "a running first turn ends both times at its last edit",
+			turns:      []Turn{openAt("t1", 1, 0)},
+			edits:      []int{10, 45},
+			wantActive: ms(45),
+			wantWall:   ms(45),
+		},
+		{
+			name: "an open last turn ends the wall span at its last edit",
+			turns: []Turn{
+				closedTurn("t1", 1, 0, 1),
+				openAt("t2", 2, 2),
+			},
+			edits:      []int{60},
+			wantActive: ms(1 + 58),
+			wantWall:   ms(60),
 		},
 		{
 			name: "a 10-hour gap between turns adds nothing",
@@ -120,6 +138,31 @@ func TestSummarizeActiveMS(t *testing.T) {
 			wantActive: ms(4 + 5),
 			wantWall:   ms(605),
 		},
+		{
+			name: "two open turns sharing a start count their overlap once",
+			turns: []Turn{
+				openAt("t1", 1, 0),
+				openAt("t2", 2, 0),
+			},
+			edits:      []int{10},
+			wantActive: ms(10),
+			wantWall:   ms(10),
+		},
+		{
+			name: "overlapping closed turns cap at the wall span",
+			turns: []Turn{
+				closedTurn("t1", 1, 0, 30),
+				closedTurn("t2", 2, 10, 40),
+			},
+			wantActive: ms(40),
+			wantWall:   ms(40),
+		},
+		{
+			name:       "totals outlasting the recorded span cap at the wall span",
+			turns:      []Turn{withTotals(closedTurn("t1", 1, 0, 5), 8, 0)},
+			wantActive: ms(5),
+			wantWall:   ms(5),
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -130,6 +173,9 @@ func TestSummarizeActiveMS(t *testing.T) {
 			}
 			if sum.DurationMS != tc.wantWall {
 				t.Errorf("DurationMS = %d, want %d", sum.DurationMS, tc.wantWall)
+			}
+			if sum.ActiveMS > sum.DurationMS {
+				t.Errorf("ActiveMS %d exceeds DurationMS %d", sum.ActiveMS, sum.DurationMS)
 			}
 		})
 	}

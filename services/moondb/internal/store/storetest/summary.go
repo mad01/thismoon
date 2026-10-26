@@ -13,10 +13,10 @@ import (
 // records. A file edited twice counts once, the main conversation is one
 // agent, an agent with a record and edits counts once and one without
 // edits counts too, the last activity is the newest turn edge, edit or
-// agent stop, the last turn's status shows, the duration and the active
-// time come from the turn records, and the usage of every turn and agent
-// with totals merges by model, apart for the main conversation and the
-// agents.
+// agent stop, the last turn's status shows, the wall span and the active
+// time come from the turn records, an open turn ending both at its last
+// activity, and the usage of every turn and agent with totals merges by
+// model, apart for the main conversation and the agents.
 func sessionSummary(t *testing.T, st store.Store) {
 	ctx := context.Background()
 	seedSummary(t, st)
@@ -39,11 +39,12 @@ func sessionSummary(t *testing.T, st store.Store) {
 		},
 		LastTurnOpen:   true,
 		LastActivityAt: at(35),
-		DurationMS:     (29 * time.Minute).Milliseconds(),
-		// t1 and t2 give their totals' 1 s each; the open t3 runs from
-		// minute 30 to agent-2's stop at minute 35.
+		// t1 starts at minute 1, and the open t3 runs from minute 30 to
+		// agent-2's stop at minute 35, which ends the wall span too.
+		DurationMS: (34 * time.Minute).Milliseconds(),
+		// t1 and t2 give their totals' 1 s each.
 		ActiveMS:    2000 + (5 * time.Minute).Milliseconds(),
-		LastTurnEnd: at(30),
+		LastTurnEnd: at(35),
 		Usage: []store.ModelUsage{
 			usage("model-a", 1150, 115), usage("model-b", 5, 1), usage("model-c", 9, 1),
 		},
