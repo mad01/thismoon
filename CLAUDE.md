@@ -38,6 +38,8 @@ docs/HOW-IT-FITS-TOGETHER.md fleet pitch, ralph vocabulary, rollout order
 docs/MEMORY-STACK.md    memory stores (auto memory, agent-memory, kof, worklog,
              handoff, events) and the belt hooks that surface them
 docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
+docs/UPGRADING.md       actions a change needs on consuming machines (newest
+             first), added in the same PR as the change
 docs/SANDBOXING.md      srt sandboxing: a walkthrough for sandboxing a new process,
              then the srt-run launcher, access manifests and the settings
              files rendered from them, the machine-local expansion layer,
@@ -93,6 +95,7 @@ Two delivery paths, independent of each other:
 
 - **Fleet (ralph):** consuming machines point a `[[recipe_sources]]` stanza at this repo (`ref = "main"`, `update = true`), so recipes merge as `thismoon/<recipe>` and every `ralph up` pulls main, rebuilds from source, and restarts services via t-man. Merging to main IS the deploy; no release tag needed. After merging recipe changes, verify with the service's `/version` — ralph can report ok while an old binary keeps running.
 - **Artifacts (releases):** the per-component tags/tarballs above serve `go install` and manual downloads; the fleet does not consume them.
+- **Changes that need an action on consuming machines** (a migration, a re-import, a new hook entry in the consuming repo's settings template, an ordered `ralph up`) ship with three things in the same PR. An entry in `docs/UPGRADING.md`, newest first: component, PR, what to run, how to verify. The same steps in the PR body. A doctor check when the missing action is detectable. The fleet pulls main without reading release notes, so a CHANGELOG line alone reaches nobody.
 
 Machine-private wiring (which `.this` hosts exist, MCP registration, env/secrets, config overlays) lives in the consuming repo as companion recipes layered over these — never add it here (docs/adr/0006).
 
