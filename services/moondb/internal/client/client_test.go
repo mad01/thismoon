@@ -135,6 +135,34 @@ func TestEdits(t *testing.T) {
 	}
 }
 
+// TestInflight reads the newer session's two uncommitted edits as another
+// session would see them. The fixture is weeks old, so since reaches it.
+func TestInflight(t *testing.T) {
+	h := newHarness(t)
+	got, err := h.client.Inflight(context.Background(), InflightQuery{
+		Worktree: servertest.Worktree, ExcludeSession: servertest.OldSession,
+		Since: "2026-10-01T09:00:00Z", Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("Inflight: %v", err)
+	}
+	if got.Worktree != servertest.Worktree || len(got.Files) != 2 ||
+		got.Files[0].Path != servertest.PathA || got.Files[1].Path != servertest.PathB {
+		t.Fatalf("inflight = %+v, want %s then %s", got, servertest.PathA, servertest.PathB)
+	}
+	if s := got.Files[0].Sessions; len(s) != 1 || s[0].ID != servertest.NewSession ||
+		s[0].Title != "build the server" {
+		t.Errorf("sessions = %+v, want the newer session by its title", s)
+	}
+	mine, err := h.client.Inflight(context.Background(), InflightQuery{
+		Worktree: servertest.Worktree, ExcludeSession: servertest.NewSession,
+		Since: "2026-10-01T09:00:00Z",
+	})
+	if err != nil || len(mine.Files) != 0 {
+		t.Errorf("inflight excluding the editing session = %+v, %v; want none", mine, err)
+	}
+}
+
 func TestWhyAndHistory(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()

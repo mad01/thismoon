@@ -54,6 +54,10 @@ _Avoid_: blob (git's term, used only for git blob ids), object
 A recorded after-content blob id matched to a blob in a new commit, tying an Edit to the commit it landed in. Never a commit-message trailer.
 _Avoid_: attribution trailer, tag
 
+**In-flight edit**:
+An Edit no Commit link covers: neither it nor a later Edit of the same path in that worktree has a Commit link. In-flight edits are the work between commits that a commit, reset or rebase in the checkout would sweep up or lose.
+_Avoid_: uncommitted edit (git's state, which moondb cannot see for a commit no session watched), pending, dirty
+
 **Trace**:
 The account of what took time in a turn, an Agent or a session and what it cost, computed on read from a Turn's transcript lines and its Agents' transcripts. A turn's trace is its Spans plus its wall time split by what was running: model, tool, harness, or user time spent waiting for input. Past a point, a stretch with no line is Idle time. Its cost adds the work its Agents did under it. A session's trace adds the user time between one turn's Stop and the next prompt, and every Agent's whole run to its cost.
 _Avoid_: event, log entry, metric, profile

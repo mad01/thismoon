@@ -253,12 +253,12 @@ backend to the same behavior.
 
 HTTP: `GET /` and `/app.js` (read-only web page), `GET /api/sessions`,
 `GET /api/sessions/{id}`, `GET /api/sessions/{id}/trace`, `GET /api/turns/{id}`, `GET /api/edits`,
-`GET /api/why`, `GET /api/history`, `GET /api/annotate`,
+`GET /api/why`, `GET /api/history`, `GET /api/annotate`, `GET /api/inflight`,
 `GET /api/chunks/{sha}`, `GET /healthz`, `GET /version`,
 `GET /webkit/`. There is no write endpoint. CLI: `moondb serve`, `record`,
-`import`, `mcp`, `why <path>:<line>`, `history <path>`, `sessions`,
+`import`, `mcp`, `why <path>:<line>`, `history <path>`, `inflight`, `sessions`,
 `trace <session-id>`, `doctor`, `docs`, `version`. MCP tools: `moondb_why`,
-`moondb_history`, `moondb_turn`, `moondb_sessions`, `moondb_trace`,
+`moondb_history`, `moondb_inflight`, `moondb_turn`, `moondb_sessions`, `moondb_trace`,
 `moondb_doctor`, all read-only. Config surfaces are
 `--port` (`MOONDB_PORT`), `--workdir` (`MOONDB_WORKDIR`), `--base-url`
 (`MOONDB_BASE_URL`, display-only), and `~/.config/moondb/config.toml` for

@@ -133,6 +133,31 @@ func (c *Client) Edits(ctx context.Context, q EditQuery) ([]store.Edit, error) {
 	return out.Edits, c.getJSON(ctx, c.http, "/api/edits", v, &out)
 }
 
+// InflightQuery asks for one checkout's in-flight files. A zero Since or
+// Limit takes the server's default, moondb.InflightWindow or
+// moondb.InflightLimit.
+type InflightQuery struct {
+	// Worktree is the absolute checkout root; required.
+	Worktree string
+	// ExcludeSession is the asking session, whose own edits never count.
+	ExcludeSession string
+	// Since is an RFC 3339 time or a duration before now: 90m, 24h, 7d.
+	Since string
+	Limit int
+}
+
+// Inflight lists the files of one checkout with edits no commit has taken
+// yet, made by sessions other than q.ExcludeSession, newest edit first.
+func (c *Client) Inflight(ctx context.Context, q InflightQuery) (server.InflightView, error) {
+	v := url.Values{}
+	set(v, "worktree", q.Worktree)
+	set(v, "exclude_session", q.ExcludeSession)
+	set(v, "since", q.Since)
+	setInt(v, "limit", q.Limit)
+	var out server.InflightView
+	return out, c.getJSON(ctx, c.http, "/api/inflight", v, &out)
+}
+
 // Why asks which recorded edit produced one line. It rides the slow client
 // because serve may run git blame to answer.
 func (c *Client) Why(ctx context.Context, req query.WhyRequest) (query.WhyResult, error) {

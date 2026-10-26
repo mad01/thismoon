@@ -33,6 +33,7 @@ func readOnly() *mcp.ToolAnnotations {
 
 func registerTools(s *mcp.Server, h *handlers) {
 	registerEditTools(s, h)
+	registerInflightTool(s, h)
 	registerSessionTools(s, h)
 }
 

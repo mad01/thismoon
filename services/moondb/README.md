@@ -104,6 +104,7 @@ moondb why <path>:<line>     # the edit, turn, prompt and commit behind one line
 moondb history <path>        # every recorded edit of a file, in any checkout, newest first
 moondb sessions              # recorded sessions, newest first, with their titles, active time and wall time
 moondb trace <session-id>    # where a session's time went and what it cost
+moondb inflight              # files in this checkout other sessions edited that no commit has taken yet
 moondb import --dry-run      # what an import of past session transcripts would record
 moondb doctor                # are the hooks wired, is serve up, is the store readable, is the build current
 ```
@@ -134,6 +135,15 @@ with its turns, calls and cost, and the rankings include the subagents'
 calls. A model moondb has no price for shows its tokens and is named as
 unpriced, so the cost is never a silent zero.
 
+`moondb inflight` lists the files of the current checkout that sessions
+edited and no commit has taken yet, newest first, with the sessions behind
+them. `--exclude-session <id>` leaves one session's own edits out. An edit
+stops counting once a commit takes it or a later edit of the same file. A
+session sees its own commits land. A commit a person makes after the
+session ended never gets a link, so that file stays listed until the 72 hour
+window passes. So does a deleted, excluded or oversized file, whose edit
+leaves no content to match a commit by.
+
 `why` first asks `git blame` which commit the line came from, then finds the
 edit whose content matches that commit. For a line that isn't committed yet,
 it matches the line's text against the lines recent edits added and ranks
@@ -151,6 +161,7 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 |------|---------|
 | `moondb_why(path, line)` | The edit, turn, prompt, session and commit behind one line |
 | `moondb_history(path)` | Every recorded edit of a file, newest first |
+| `moondb_inflight(worktree)` | The files of a checkout that other sessions edited and no commit has taken yet, with the sessions behind them |
 | `moondb_turn(id)` | One turn: prompt, final message, edits, unattributed deltas, snapshots, the agents that worked in it |
 | `moondb_sessions()` | Recorded sessions, newest first, with title, status, counts, subagents and cost |
 | `moondb_trace(id)` | One session's time and cost: totals, the subagents, the longest tool calls, the most expensive model calls |

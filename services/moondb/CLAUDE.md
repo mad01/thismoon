@@ -18,7 +18,7 @@ moondb/
   facts.go             - port, workdir, capture caps and budgets, agent transcript head and cap, default excludes, trace limits, idle gap, totals backfill pace, listing status rule, model prices, agentdoc.Facts
   embed.go             - embeds operating.md for `moondb docs`
   internal/
-    cli/               - cobra: root, serve, record, import, mcp, why, history, sessions, trace, doctor, docs, version
+    cli/               - cobra: root, serve, record, import, mcp, why, history, inflight, sessions, trace, doctor, docs, version
     record/            - the capture hook: payload decode, envelopes, observed read, HEAD blob, transcript tail, Bash diffs, turn-edge snapshots, subagent stops, per-session state
     agentfile/         - one subagent's transcript file read and cut to its agent transcript, its meta file, the type and name rule
     importer/          - the transcript import: transcript parse, turns, edits and agents as envelopes, file-history originals
@@ -27,7 +27,7 @@ moondb/
     derive/            - before and after content per Edit, snapshot records, unattributed deltas
     patch/             - forward and reverse patch apply, hunk context checks, line endings
     gitlink/           - git blob ids and commit links
-    store/             - Store and Chunks interfaces and record types (store.go, types.go), session summaries and the cost attribution rule (summary.go, attribution.go)
+    store/             - Store and Chunks interfaces and record types (store.go, types.go), session summaries and the cost attribution rule (summary.go, attribution.go), the in-flight rule (inflight.go)
       local/           - the local disk backend: JSONL log, gzip chunks, in-memory index
       storetest/       - conformance suite every backend must pass
     query/             - why, history and annotate answers over the store and git; traces with their cache
@@ -311,6 +311,29 @@ When HEAD moved, it lists the (path, blob id) pairs of the new commits with
 commit. The link is by content, so it survives a squash merge and a deleted
 worktree. moondb never writes a trailer, a note or a ref into the user's repo.
 
+### In-flight files
+
+`GET /api/inflight` answers which files of one checkout hold edits no
+commit has taken yet, and which sessions made them. An edit is in flight
+while neither it nor a later edit of the same path has a commit link. A
+commit takes the file's whole content, and gitlink links only the newest
+edit whose blob matches. So a linked edit covers every edit of the path
+before it. Only a link from a commit made in the queried worktree counts:
+a commit in another checkout can link an identical blob edited here.
+`store.InFlight` is the pure rule.
+
+The handler reads the checkout's edits in the window with `Edits`. It
+reads the commit links with one `Turn` read per turn, since a link is filed
+under its edit's turn, and each session's title with `Session`. A path is
+listed when an in-flight edit came from a session other than
+`exclude_session`. Its `linked_commit` is the commit that took its newest
+committed edit. Only a commit a session saw land gets a link: Stop reports
+a moved HEAD. A file a person committed or reverted after the session
+ended stays listed until the window passes. So does a file whose last edit
+left no after-content to match a commit by: a delete, an excluded path, a
+NotebookEdit, a file over `MaxChunkBytes`, or a link under a turn with no
+record.
+
 ### `why <path>:<line>`
 
 1. A committed line: `git blame` names the commit. The path's blob id at that
@@ -589,6 +612,7 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 - `GET  /api/edits`             : edits, newest first, narrowed by repo, worktree, path, blob id, since and limit
 - `GET  /api/why`               : the answer for one line of one file
 - `GET  /api/history`           : the recorded edits of one path, newest first
+- `GET  /api/inflight`          : the files of one checkout (`worktree`, required) with edits no commit has taken yet, newest edit first, each with `path`, `last_edit_at`, `linked_commit` (or null) and `sessions` (`id`, `title`, `last_edit_at`, `edits`); `exclude_session` leaves one session's edits out, `since` (default `InflightWindow`, 72h) and `limit` (default `InflightLimit`, 20) bound it
 - `GET  /api/annotate`          : every line of one file on disk (`worktree`, `path`, optional `repo`), each with the edit, turn, session, agent and commit behind it
 - `GET  /api/chunks/{sha}`      : one chunk's uncompressed bytes
 - `GET  /healthz`               : 204
@@ -771,6 +795,7 @@ moondb import [--since 30d] [--dry-run] [--force] [--json]   # import past sessi
 moondb mcp                     # stdio MCP shim over serve
 moondb why <path>:<line>       # the Edit, turn, prompt, session and commit behind one line
 moondb history <path>          # the recorded edits of a path across every checkout, newest first; --worktree narrows to one
+moondb inflight [--worktree <root>] [--exclude-session <id>]   # files in the checkout other sessions edited that no commit has taken yet
 moondb sessions [--repo <repo>]  # recorded sessions, newest first, with their title, active time and wall time; --repo adds COST and ATTRIBUTED
 moondb trace <session-id> [--json]   # time and cost totals, the agents, the longest tool calls, the most expensive model calls
 moondb doctor                  # config, hooks wired, serve reachable, store readable, version skew
@@ -790,6 +815,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 
 - `moondb_why(path, line)`: the Edit behind one line, with its turn, prompt, session, agent and commit link, or ranked candidates when only the content matched
 - `moondb_history(path)`: the recorded edits of a path, newest first
+- `moondb_inflight(worktree)`: the files of a checkout with edits no commit has taken yet, with the sessions behind them; `exclude_session` leaves the caller's own out
 - `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links, and the agents that worked in it; the summary names its subagents
 - `moondb_sessions()`: recorded sessions, newest first, each with its title, status, times, active and wall time, counts, subagent names, tokens and cost split between the main conversation and the subagents, and its attributed cost per repository (`repo_costs`); with `repo`, also `repo_cost` beside the whole `cost`
 - `moondb_trace(id)`: one session's time split (model, tool, harness, user, idle), tokens by kind and cost with its main and agent parts, the subagents costliest first, and the longest tool calls and most expensive model calls of every agent

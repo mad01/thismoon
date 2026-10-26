@@ -26,7 +26,7 @@ transcripts through the same spool, so it too needs serve running before
 the store shows anything.
 
 Everything else is a thin HTTP client over the API: the query commands
-(`why`, `history`, `sessions`, `trace`) and the MCP server, a stdio shim spawned as
+(`why`, `history`, `inflight`, `sessions`, `trace`) and the MCP server, a stdio shim spawned as
 `moondb mcp`. The shim being up says nothing about the service: every tool
 call is a live HTTP request to serve, and it fails when serve is down.
 
