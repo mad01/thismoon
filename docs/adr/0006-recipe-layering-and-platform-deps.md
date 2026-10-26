@@ -136,3 +136,12 @@ sandbox-watch needs logd to stream the unified log and the notification
 services to post banners, and it is the monitor that reports every other
 sandbox's denials. d-man is a root LaunchDaemon that rewrites `/etc/hosts`
 and binds port 80, outside what a per-user srt sandbox covers.
+
+## Amendment (2026-10-26)
+
+srtspec joins t-man and d-man as a platform foundation. `~/code/bin/srt-run`
+is a shim over `srtspec run`, so no sandboxed service or MCP server starts
+without the binary. The srtspec recipe sits in wave 0, every service
+registration here names `packages.srtspec` in `depends_on`, and a consuming
+repo's hook that registers a sandboxed process may name it across sources,
+as it already names `packages.t_man`.

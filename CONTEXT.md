@@ -49,7 +49,7 @@ _Avoid_: profile, policy file, overlay
 _Avoid_: override (it can't narrow or replace), local settings
 
 **srt-run**:
-The fleet launcher (`recipes/speak/srt-run.sh`, linked to `~/code/bin/srt-run`) that starts a process under srt with its srt settings. It merges the wrapper's `SRT_RUN_ALLOW_DOMAINS` hosts and the expansion layer into them, and adds the `SRT_RUN=<label>` marker sandbox-watch attributes denials by.
+The fleet launcher path, `~/code/bin/srt-run`: a shim (`recipes/speak/srt-run.sh`) over `srtspec run`. The launcher starts a process under srt with its srt settings. It merges the wrapper's `SRT_RUN_ALLOW_DOMAINS` hosts and the expansion layer into them, and adds the `SRT_RUN=<label>` marker sandbox-watch attributes denials by.
 _Avoid_: wrapper (the per-process script that calls srt-run is the wrapper)
 
 **Seatbelt sandbox**:

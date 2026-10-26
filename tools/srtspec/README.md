@@ -2,8 +2,9 @@
 
 Render sandbox access manifests to srt (anthropics/sandbox-runtime) settings
 JSON and check committed settings for drift. Verify a whole repo's renders
-and expansion layers the way CI does, and explain the effective policy a
-process launches under.
+and expansion layers the way CI does, launch a process under srt with the
+machine's layers merged in (the work behind `~/code/bin/srt-run`), and
+explain the effective policy such a launch gets.
 
 ## Install
 
@@ -21,6 +22,7 @@ srtspec render recipes/claude-mcp/access.yaml -o out.json
 srtspec check services/events/service-info.yaml recipes/events/events.srt.json
 srtspec generate .                                      # every manifest in the repo
 srtspec verify .                                        # CI gate: renders current, no orphans, layers only widen
+srtspec run ~/.config/srt/events.json -- events serve   # what srt-run execs: merge the layers, exec srt
 srtspec explain events                                  # base + local + env, with layers
 srtspec docs                                            # the operating doc
 ```

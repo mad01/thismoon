@@ -1,7 +1,8 @@
 // Package cli wires the srtspec commands: render, check and generate turn
 // access manifests into srt settings files, verify checks a repo's rendered
-// files and expansion layers without writing, and explain shows the policy
-// a launch would get once srt-run merges the machine-local layers.
+// files and expansion layers without writing, run launches a process under
+// srt with the machine-local layers merged in, and explain shows the policy
+// such a launch gets.
 package cli
 
 import (
@@ -10,7 +11,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 
 	"github.com/spf13/cobra"
 
@@ -41,6 +41,7 @@ func root() *cobra.Command {
 		checkCmd(),
 		generateCmd(),
 		verifyCmd(),
+		runCmd(),
 		explainCmd(),
 	)
 	return c
@@ -167,9 +168,6 @@ func generate(cmd *cobra.Command, root string) error {
 	return nil
 }
 
-// labelRe is srt-run's label rule.
-var labelRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-
 func explainCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "explain <label>",
@@ -177,12 +175,12 @@ func explainCmd() *cobra.Command {
 		Long: `Show the effective srt policy for a label, the way srt-run merges it at
 launch: ~/.config/srt/<label>.json, then ~/.config/srt/<label>.local.json if
 present, then SRT_RUN_ALLOW_DOMAINS if set. Each row names the layer it came
-from. Where srt-run would refuse to launch (a missing settings file, a local
+from. Where run would refuse to launch (a missing settings file, a local
 layer that does more than widen, a bare * host), explain says why and exits 1.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			label := args[0]
-			if !labelRe.MatchString(label) {
+			if !access.ValidLabel(label) {
 				return fmt.Errorf("label %q must match [A-Za-z0-9._-]+", label)
 			}
 			home, err := os.UserHomeDir()

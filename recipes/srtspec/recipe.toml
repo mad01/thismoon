@@ -1,9 +1,16 @@
 # srtspec: public layer, build + install only. The settings files it renders
-# are committed beside each recipe, so nothing here runs at apply time; the
-# binary is installed for `srtspec explain` on the machine.
+# are committed beside each recipe, so nothing here runs at apply time. On the
+# machine the binary is the launcher: `srtspec run` is what ~/code/bin/srt-run
+# (speak recipe) execs for every sandboxed service and MCP server, and
+# `srtspec explain` shows the policy a label launches under.
 [recipe]
 name = "srtspec"
-description = "srtspec: render sandbox access manifests to srt settings, check drift, explain the effective policy"
+description = "srtspec: the sandbox launcher behind srt-run; renders access manifests to srt settings, verifies them, explains the effective policy"
+# wave 0 with the service recipes: their t-man registrations start agents
+# that exec srt-run, so the binary must exist in the same ralph run. Each of
+# those hooks also names packages.srtspec in depends_on, which is what orders
+# them after this build within the wave.
+wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a
 # [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout

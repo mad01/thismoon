@@ -83,7 +83,8 @@ action = "symlink"
 #   C compiler for cgo packages) to the Command Line Tools when they are
 #   installed: an Xcode under $HOME is unreadable inside the sandbox
 #   (docs/SANDBOXING.md, "git inside the sandbox"; the same shim problem).
-# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable,
+# and packages.srtspec, the launcher the shim execs.
 # ralph links dotfiles items before any build or package in every run, so the
 # srt-run and settings links exist before this registration; depends_on could
 # not name them anyway, since ralph only accepts builds. and packages. refs.
@@ -93,4 +94,4 @@ commands = [
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/deps"
 run = "always"
-depends_on = ["packages.deps", "packages.t_man", "builds.speak_chmod_scripts"]
+depends_on = ["packages.deps", "packages.t_man", "builds.speak_chmod_scripts", "packages.srtspec"]

@@ -2,14 +2,16 @@ package layers
 
 import (
 	"bytes"
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// fixtures is shared with recipes/speak/srt-run-test.sh, so srt-run and
-// explain agree on what the expansion layer may do.
+// fixtures is shared with the launch package's tests, so run and explain
+// agree on what the expansion layer may do.
 const fixtures = "../../../../recipes/speak/testdata/srt-local"
 
 // install lays base.json and an optional layer into a scratch home as label
@@ -213,5 +215,67 @@ func TestWrite(t *testing.T) {
 	}
 	if !strings.Contains(out, "share.example.net") || !strings.Contains(out, "env\n") {
 		t.Errorf("env host not attributed:\n%s", out)
+	}
+}
+
+func TestMergeWidens(t *testing.T) {
+	base, err := ReadObject(filepath.Join(fixtures, "base.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := ReadObject(filepath.Join(fixtures, "ok-widen.local.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := fmt.Sprint(base)
+	got := Merge(base, local, []string{"share.example.net", "api.example.com"})
+	if fmt.Sprint(base) != before {
+		t.Fatal("Merge modified base")
+	}
+	want := map[string]any{
+		"network.allowedDomains":       `["*.example.org","api.example.com","share.example.net"]`,
+		"network.allowMachLookup":      `["com.apple.SystemConfiguration.configd"]`,
+		"network.allowUnixSockets":     `["/private/var/run/svc.sock"]`,
+		"network.allowLocalBinding":    "true",
+		"enableWeakerNetworkIsolation": "true",
+		"filesystem.allowRead":         `["~/code","~/notes"]`,
+		"filesystem.allowWrite":        `["/private/tmp","/private/var/folders","~/.cache/svc","~/.local/share/svc"]`,
+		"filesystem.denyRead":          `["~","~/code/**/.env"]`,
+		"filesystem.denyWrite":         `[]`,
+	}
+	for key, w := range want {
+		v, ok := lookup(got, strings.Split(key, ".")...)
+		if !ok {
+			t.Errorf("%s missing from the merge", key)
+			continue
+		}
+		if display(v) != w {
+			t.Errorf("%s = %s, want %s", key, display(v), w)
+		}
+	}
+}
+
+// Merge and Resolve are two views of one policy: every effective entry
+// explain shows is in the merged settings, and nothing else is.
+func TestMergeMatchesResolve(t *testing.T) {
+	home := install(t, "ok-widen.local.json")
+	hosts := "share.example.net,api.example.com"
+	p, err := Resolve(Input{Home: home, Label: "svc", AllowDomains: hosts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, _ := ReadObject(filepath.Join(home, ".config/srt/svc.json"))
+	local, _ := ReadObject(filepath.Join(home, ".config/srt/svc.local.json"))
+	split, _ := Hosts(hosts)
+	merged := flatten("", Merge(base, local, split), Base)
+	set := func(entries []Entry) map[string]bool {
+		m := map[string]bool{}
+		for _, e := range entries {
+			m[e.Key+"="+e.Value] = true
+		}
+		return m
+	}
+	if want, got := set(p.Entries), set(merged); !maps.Equal(want, got) {
+		t.Fatalf("merged settings %v\nexplain entries %v", got, want)
 	}
 }

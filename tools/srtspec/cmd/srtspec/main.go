@@ -10,6 +10,6 @@ import (
 func main() {
 	if err := cli.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "srtspec:", err)
-		os.Exit(1)
+		os.Exit(cli.ExitCode(err))
 	}
 }

@@ -56,42 +56,29 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   variable may cross from the secrets file, and `speak-env.sh` must exec
   speak directly.
 - **`dotfiles.srt_run`**: symlinks `srt-run.sh` to `~/code/bin/srt-run`, the
-  launcher every sandboxed MCP server and t-man service execs through:
-  `srt-run <settings-file> <argv...>`. It runs the command under srt
-  (anthropics/sandbox-runtime, a mise tool the consuming repo declares) as
-  `env SRT_RUN=<label> <argv...>`, where the label is the settings file's
-  name (`~/.config/srt/present.json` gives `present`). It sets the child's
-  `TMPDIR` and merges two widening layers at launch: the machine-local
-  expansion layer `~/.config/srt/<label>.local.json`, if present, and
-  `SRT_RUN_ALLOW_DOMAINS`. The expansion layer may only add to
-  `allowedDomains`, `allowRead`, `allowWrite`, `allowMachLookup` and
-  `allowUnixSockets`, and set `allowLocalBinding` or
-  `enableWeakerNetworkIsolation` to true. Anything else (another key, an
-  allow that undoes a deny, a write into `~/.config/srt` or the sources
-  cache, a `*` host) makes srt-run exit 1 before srt starts. `srtspec
-  explain <label>` shows the merged result. Settings that are the same on
-  every machine are rendered from each service's `spec.access` manifest and
-  ship beside its recipe in this repo: events, keeper-of-facts, moondb,
-  catalog, present serve, deps, status and speak-web. The rest come from the
-  consuming repo.
-  srt's own process, which stays up to run the proxies, runs under bun when
-  one is installed (mise's installs dir, then `PATH`), else node:
-  `SRT_RUN_RUNTIME=bun|node` overrides. bun holds about 48 MB where node
-  holds about 83 MB. Under bun, srt-run runs the package's `dist/cli.js`,
-  found through `mise which srt`, with `--no-env-file --config=/dev/null
-  --no-install`, so a project's `.env` or `bunfig.toml` never reaches the
-  parent. It fails closed (exit 127) when it can't find `cli.js`. Each
-  launch prints `srt-run: <label> runtime <bun|node>` to stderr. Details
-  and measurements: `docs/SANDBOXING.md`, "bun or node".
-- **`srt-run-test.sh`**: run by `make test-recipes`, it launches `srt-run`
-  against a scratch `HOME` with a stand-in srt. Widening layers must merge
-  into the copy srt is handed; every case under `testdata/srt-local/` named
-  `refuse-*` must exit 1 before srt starts. srtspec's explain tests run the
-  same cases, so add a case there rather than in either test. The layer
-  cases pin `SRT_RUN_RUNTIME=node`. The runtime cases build a stand-in mise,
-  npm layout and bun in the scratch `HOME`. They cover which bun wins, the
-  node fallback, the forced runtimes, and the exit 127 when bun or
-  `cli.js` is missing.
+  launcher path every sandboxed MCP server and t-man service execs through:
+  `srt-run <settings-file> <argv...>`. The script is a shim over
+  `srtspec run` (`tools/srtspec`, built by the srtspec recipe in wave 0),
+  which runs the command under srt (anthropics/sandbox-runtime, a mise tool
+  the consuming repo declares) as `env SRT_RUN=<label> <argv...>`, where the
+  label is the settings file's name (`~/.config/srt/present.json` gives
+  `present`). It sets the child's `TMPDIR` and merges the machine-local
+  expansion layer `~/.config/srt/<label>.local.json` and
+  `SRT_RUN_ALLOW_DOMAINS` into the copy srt reads. A layer that does more
+  than widen is refused (exit 1). srt itself runs under bun when mise has
+  one, else node; `SRT_RUN_RUNTIME` overrides, and a missing runtime exits
+  127. Each launch prints `srt-run: <label> runtime
+  <bun|node>` to stderr. `srtspec explain <label>` shows the merged result.
+  Settings that are the same on every machine are rendered from each
+  service's `spec.access` manifest and ship beside its recipe in this repo:
+  events, keeper-of-facts, moondb, catalog, present serve, deps, status and
+  speak-web. The rest come from the consuming repo. The launcher's rules
+  and the bun measurements: `tools/srtspec/CLAUDE.md` and
+  `docs/SANDBOXING.md`, "bun or node".
+- **`testdata/srt-local/`**: the expansion-layer cases (`ok-*` must launch,
+  `refuse-*` must exit 1 before srt starts) that srtspec's launch and layers
+  tests both run (`go test ./tools/srtspec/...`). Add a case there, not in
+  a test.
 - **`srt-settings-test.sh`**: run by `make test-recipes`, it checks every
   shipped `recipes/*/*.srt.json`. Each file needs the six lists srt
   requires, no host, and `denyRead` from `~`. No `allowWrite` may cover

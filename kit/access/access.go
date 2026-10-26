@@ -163,7 +163,7 @@ func (m Manifest) Validate() error {
 	default:
 		p.addf("unknown sandbox %q (srt, seatbelt or none)", m.Sandbox)
 	}
-	if m.Label != "" && !labelRe.MatchString(m.Label) {
+	if m.Label != "" && !ValidLabel(m.Label) {
 		p.addf("label %q must match [A-Za-z0-9._-]+", m.Label)
 	}
 	if m.Workdir != "" {
@@ -453,7 +453,7 @@ func Load(path string) (Manifest, error) {
 		}
 		m.Label = filepath.Base(filepath.Dir(abs))
 	}
-	if !labelRe.MatchString(m.Label) {
+	if !ValidLabel(m.Label) {
 		return Manifest{}, fmt.Errorf(
 			"%s: access: label %q must match [A-Za-z0-9._-]+; set label",
 			path,
@@ -462,3 +462,8 @@ func Load(path string) (Manifest, error) {
 	}
 	return m, nil
 }
+
+// ValidLabel reports whether label is a bare word srt-run can carry through
+// srt's command tag: [A-Za-z0-9._-]+. sandbox-watch reads it back out of
+// the decoded command, and srt quotes anything with shell-special characters.
+func ValidLabel(label string) bool { return labelRe.MatchString(label) }
