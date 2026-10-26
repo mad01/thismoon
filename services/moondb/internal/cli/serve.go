@@ -15,9 +15,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/envdefault"
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/ingest"
 	"github.com/mad01/thismoon/services/moondb/internal/query"
+	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
 	"github.com/mad01/thismoon/services/moondb/internal/server"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store/local"
@@ -81,7 +83,17 @@ func runServe(_ *cobra.Command, _ []string) error {
 		}
 	}()
 
-	return listen(ctx, server.New(st, &query.Service{Store: st, Prices: table}, buildinfo.Get()))
+	q := &query.Service{Store: st, Prices: table, Peers: scorecardPeers()}
+	return listen(ctx, server.New(st, q, buildinfo.Get()))
+}
+
+// scorecardPeers points a scorecard at the events service and
+// keeper-of-facts on loopback, where EVENTS_BASE_URL and KOF_PORT say, as
+// they do for belt and the kof MCP.
+func scorecardPeers() *scorecard.HTTPPeers {
+	events := envdefault.String("EVENTS_BASE_URL", moondb.DefaultEventsURL)
+	kof := fmt.Sprintf("http://127.0.0.1:%d", envdefault.Int("KOF_PORT", moondb.DefaultKofPort))
+	return scorecard.NewHTTPPeers(events, kof)
 }
 
 // listen serves s on the loopback port until ctx ends, then gives

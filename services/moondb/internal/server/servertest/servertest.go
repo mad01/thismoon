@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/services/moondb/internal/query"
+	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
@@ -570,6 +571,18 @@ func (q *Querier) TurnTrace(ctx context.Context, d store.TurnDetail) (trace.Turn
 // SessionTrace computes the session's trace with the real query service.
 func (q *Querier) SessionTrace(ctx context.Context, id string) (trace.SessionTrace, error) {
 	return q.traces.SessionTrace(ctx, id)
+}
+
+// SessionScorecard computes the session's scorecard with the real query
+// service. Without SetPeers its events and kof parts are unavailable.
+func (q *Querier) SessionScorecard(ctx context.Context, id string) (scorecard.Scorecard, error) {
+	return q.traces.SessionScorecard(ctx, id)
+}
+
+// SetPeers points the scorecard at p, such as scorecard.HTTPPeers over
+// httptest servers. Call it before the first request: reads do not lock.
+func (q *Querier) SetPeers(p scorecard.Peers) {
+	q.traces.Peers = p
 }
 
 // TurnAgents computes the turn's agent runs with the real query service.

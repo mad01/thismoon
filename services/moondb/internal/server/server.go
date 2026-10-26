@@ -19,6 +19,7 @@ import (
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/services/moondb/internal/query"
+	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
@@ -36,14 +37,16 @@ var appJS []byte
 
 // Querier answers the questions the store exists for: why one line looks
 // the way it does, what happened to a path, why every line of a file looks
-// the way it does, what took time in a turn, a session or an agent, and
-// what stored usage costs. *query.Service satisfies it; tests pass a fake.
+// the way it does, what took time in a turn, a session or an agent, how a
+// session spent its context, and what stored usage costs. *query.Service
+// satisfies it; tests pass a fake.
 type Querier interface {
 	Why(ctx context.Context, req query.WhyRequest) (query.WhyResult, error)
 	History(ctx context.Context, req query.HistoryRequest) ([]store.Edit, error)
 	Annotate(ctx context.Context, req query.AnnotateRequest) (query.AnnotateResult, error)
 	TurnTrace(ctx context.Context, d store.TurnDetail) (trace.TurnTrace, error)
 	SessionTrace(ctx context.Context, id string) (trace.SessionTrace, error)
+	SessionScorecard(ctx context.Context, id string) (scorecard.Scorecard, error)
 	TurnAgents(ctx context.Context, d store.TurnDetail) ([]trace.AgentRun, error)
 	AgentTraceByID(ctx context.Context, id string) (store.Agent, trace.AgentTrace, error)
 	UsageCost(usage []store.ModelUsage) (cost *float64, unpriced []string)
@@ -76,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions", s.handleSessions)
 	mux.HandleFunc("GET /api/sessions/{id}", s.handleSession)
 	mux.HandleFunc("GET /api/sessions/{id}/trace", s.handleSessionTrace)
+	mux.HandleFunc("GET /api/sessions/{id}/scorecard", s.handleSessionScorecard)
 	mux.HandleFunc("GET /api/turns/{id}", s.handleTurn)
 	mux.HandleFunc("GET /api/agents/{id}", s.handleAgent)
 	mux.HandleFunc("GET /api/edits", s.handleEdits)

@@ -22,6 +22,7 @@ import (
 
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/query"
+	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
 	"github.com/mad01/thismoon/services/moondb/internal/server"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 	"github.com/mad01/thismoon/services/moondb/internal/trace"
@@ -31,8 +32,8 @@ const (
 	// requestTimeout bounds a store read: serve answers from its index.
 	requestTimeout = 5 * time.Second
 	// queryTimeout bounds why, history and annotate, which may run git in a
-	// worktree, and a session trace, which may read every turn's
-	// transcript.
+	// worktree, and a session trace or scorecard, which may read every
+	// turn's transcript.
 	queryTimeout = 30 * time.Second
 )
 
@@ -40,8 +41,8 @@ const (
 type Client struct {
 	baseURL string
 	http    *http.Client
-	// slow carries why, history, annotate and session traces; every other
-	// call keeps the short timeout.
+	// slow carries why, history, annotate, session traces and scorecards;
+	// every other call keeps the short timeout.
 	slow *http.Client
 }
 
@@ -113,6 +114,16 @@ func (c *Client) Turn(ctx context.Context, id string) (server.TurnView, error) {
 func (c *Client) SessionTrace(ctx context.Context, id string) (trace.SessionTrace, error) {
 	var out trace.SessionTrace
 	path := "/api/sessions/" + url.PathEscape(id) + "/trace"
+	return out, c.getJSON(ctx, c.slow, path, nil, &out)
+}
+
+// SessionScorecard loads how a session spent its context. It rides the
+// slow client: serve reads every turn's and agent's transcript chunk and
+// asks the events service and keeper-of-facts. A missing id matches
+// store.ErrNotFound.
+func (c *Client) SessionScorecard(ctx context.Context, id string) (scorecard.Scorecard, error) {
+	var out scorecard.Scorecard
+	path := "/api/sessions/" + url.PathEscape(id) + "/scorecard"
 	return out, c.getJSON(ctx, c.slow, path, nil, &out)
 }
 

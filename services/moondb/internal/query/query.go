@@ -1,6 +1,8 @@
 // Package query answers the questions the store exists for: why a line
-// looks the way it does, and what happened to a path. It reads the store
-// and git; it never writes either.
+// looks the way it does, what happened to a path, what took time in a
+// session and how it spent its context. It reads the store and git, and
+// for a scorecard the events service and keeper-of-facts; it never writes
+// any of them.
 package query
 
 import (
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
@@ -33,6 +36,9 @@ type Service struct {
 	// Prices costs the model calls in a trace; the zero value prices with
 	// moondb.DefaultPrices.
 	Prices trace.Prices
+	// Peers reads the events service and keeper-of-facts for a session's
+	// scorecard; nil leaves both unavailable.
+	Peers scorecard.Peers
 
 	cacheOnce   sync.Once
 	cache       *traceCache[trace.TurnTrace]

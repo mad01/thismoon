@@ -105,6 +105,7 @@ moondb history <path>        # every recorded edit of a file, in any checkout, n
 moondb sessions              # recorded sessions, newest first, with their titles, active time and wall time
 moondb trace <session-id>    # where a session's time went and what it cost
 moondb inflight              # files in this checkout other sessions edited that no commit has taken yet
+moondb scorecard <session-id>  # how a session spent its context: searches, reads, hints, flags
 moondb import --dry-run      # what an import of past session transcripts would record
 moondb doctor                # are the hooks wired, is serve up, is the store readable, is the build current
 ```
@@ -145,6 +146,19 @@ window passes. So does a deleted, excluded or oversized file, whose edit
 leaves no content to match a commit by. The belt `moondb-inflight` hint
 asks this at session start and checks `git status` before it says anything.
 
+`moondb scorecard` scores how a session spent its context. It counts the csl
+searches that came back empty, cut at the limit or failed, and the Read
+calls that took a whole file of 300 lines or more. It counts the belt hints
+shown to the session, and whether any of its agents read or edited the files
+the shown assertions are pinned to later. It also adds the belt ledger's
+compactions and permission denials. Flags at the top name the costliest
+patterns. The hints come from the events service and the pins from
+keeper-of-facts. When one of them does not answer, the scorecard leaves that
+part out and says so. `--json` prints the same object as
+`GET /api/sessions/{id}/scorecard`. The session page links to it under
+Session details. Subagent transcripts keep only the head of each result, so
+a subagent's reads are mostly unsized and its searches unread.
+
 `why` first asks `git blame` which commit the line came from, then finds the
 edit whose content matches that commit. For a line that isn't committed yet,
 it matches the line's text against the lines recent edits added and ranks
@@ -166,6 +180,7 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 | `moondb_turn(id)` | One turn: prompt, final message, edits, unattributed deltas, snapshots, the agents that worked in it |
 | `moondb_sessions()` | Recorded sessions, newest first, with title, status, counts, subagents and cost |
 | `moondb_trace(id)` | One session's time and cost: totals, the subagents, the longest tool calls, the most expensive model calls |
+| `moondb_scorecard(id)` | How one session spent its context: searches, reads, hints, agents and flags |
 | `moondb_doctor()` | Run the `moondb doctor` checks and return the report |
 
 ### Web page

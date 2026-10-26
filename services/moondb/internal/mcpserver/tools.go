@@ -13,6 +13,7 @@ import (
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/client"
 	"github.com/mad01/thismoon/services/moondb/internal/query"
+	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
 	"github.com/mad01/thismoon/services/moondb/internal/server"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 	"github.com/mad01/thismoon/services/moondb/internal/trace"
@@ -74,7 +75,7 @@ func registerEditTools(s *mcp.Server, h *handlers) {
 }
 
 // registerSessionTools adds the tools that start from sessions or from
-// moondb itself: sessions, trace and doctor.
+// moondb itself: sessions, trace, scorecard and doctor.
 func registerSessionTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "moondb_sessions",
@@ -119,6 +120,25 @@ func registerSessionTools(s *mcp.Server, h *handlers) {
 			"A model with no known price shows in `totals.unpriced` and adds no cost.",
 		Annotations: readOnly(),
 	}, h.handleTrace)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "moondb_scorecard",
+		Description: "Score how one session spent its context, as one stable JSON object (`version` says its shape). " +
+			"`totals`: time split, tokens by kind, cost and model and tool calls, with `main` and `agents` parts. " +
+			"`tools`: calls, failures and time per tool name. " +
+			"`search`: the csl searches that found nothing (with or without a zero_result_hint), hit their limit, were relaxed, or failed. " +
+			fmt.Sprintf(
+				"`reads`: Read calls, the ones of a whole file, and the large ones among those (%d lines or more), with the largest. ",
+				moondb.LargeReadLines,
+			) +
+			"`hints`: the belt hints shown, by id, and whether any agent read or edited the files the shown kof assertions are pinned to later (`kof.hit_rate`). " +
+			"`agents`: each subagent's run, costliest first, and the belt ledger's subagent, permission-denied, compaction and stop-failure counts. " +
+			"`flags` name the costliest patterns found. " +
+			"The hints and the ledger come from the events service, which keeps only its newest entries, and the pins from keeper-of-facts: " +
+			"`sources` says which inputs answered, and a part whose input did not is null. " +
+			"`id` is REQUIRED: a session id from moondb_sessions.",
+		Annotations: readOnly(),
+	}, h.handleScorecard)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "moondb_doctor",
@@ -474,6 +494,53 @@ func traceSummary(st trace.SessionTrace) string {
 			top[0].Seq,
 			top[0].Who(),
 		)
+	}
+	return s
+}
+
+// ── scorecard ──
+
+type scorecardInput struct {
+	ID string `json:"id" jsonschema:"session id, from moondb_sessions (required)"`
+}
+
+// scorecardOutput is the scorecard GET /api/sessions/{id}/scorecard
+// returns, with a one-line summary and the session's web page.
+type scorecardOutput struct {
+	scorecard.Scorecard
+	Summary string `json:"summary"`
+	URL     string `json:"url"     jsonschema:"web page with the session's timeline"`
+}
+
+func (h *handlers) handleScorecard(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in scorecardInput,
+) (*mcp.CallToolResult, scorecardOutput, error) {
+	sc, err := h.client.SessionScorecard(ctx, in.ID)
+	if err != nil {
+		return nil, scorecardOutput{}, err
+	}
+	return nil, scorecardOutput{
+		Scorecard: sc,
+		Summary:   scorecardSummary(sc),
+		URL:       h.sessionURL(sc.SessionID),
+	}, nil
+}
+
+// scorecardSummary says in one line what a session's context went to and
+// what it flags.
+func scorecardSummary(sc scorecard.Scorecard) string {
+	t := sc.Totals
+	s := fmt.Sprintf(
+		"session %s: %d turns, %s tokens, cost %s (agents %s); "+
+			"%d csl searches (%d zero, %d cut at the limit); %d reads (%d large of a whole file)",
+		sc.SessionID, t.Turns, trace.FormatTokens(t.Tokens.Total()), trace.FormatCost(t.Cost),
+		trace.FormatCost(t.Agents.Cost), sc.Search.Calls, sc.Search.Zero, sc.Search.Truncated,
+		sc.Reads.Calls, sc.Reads.Large,
+	)
+	if len(sc.Flags) > 0 {
+		s += "; flags: " + strings.Join(sc.Flags, "; ")
 	}
 	return s
 }
