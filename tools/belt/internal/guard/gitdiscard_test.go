@@ -45,7 +45,10 @@ func newDiscardGuard(cfg config.Config, f discardFixture, warned *[]string) *Git
 }
 
 func TestGitDiscardCommands(t *testing.T) {
-	dirty := discardFixture{repo: "github.com/mad01/thismoon", dirty: map[string]bool{"/repo": true}}
+	dirty := discardFixture{
+		repo:  "github.com/mad01/thismoon",
+		dirty: map[string]bool{"/repo": true},
+	}
 	tests := []struct {
 		command  string
 		wantDeny bool
@@ -97,7 +100,8 @@ func TestGitDiscardCommands(t *testing.T) {
 			if (d != nil) != tt.wantDeny {
 				t.Fatalf("Check(%q) denial = %v, wantDeny %v", tt.command, d, tt.wantDeny)
 			}
-			if d != nil && !strings.HasPrefix(d.Reason, "belt[git-discard]: this discards uncommitted work.") {
+			if d != nil &&
+				!strings.HasPrefix(d.Reason, "belt[git-discard]: this discards uncommitted work.") {
 				t.Errorf("reason = %q, want the git-discard prefix and message", d.Reason)
 			}
 		})

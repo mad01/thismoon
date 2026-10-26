@@ -1,66 +1,91 @@
 package hint
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+	"unicode/utf8"
 
+	"github.com/mad01/thismoon/kit/gitloc"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
-	"github.com/mad01/thismoon/tools/belt/internal/guard"
 )
 
-// maxConsultAssertions caps the session-start block. It is looser than the
-// per-search cap because it fires once per session, but past a handful the
+// kof-consult's caps. The first block a session gets carries more because
+// the session has no kof context yet; later prompts are follow-ups inside a
+// task, so they get the tighter cap kof-assertions uses. Past a handful a
 // block stops being read (docs/adr/0008).
-const maxConsultAssertions = 5
+const (
+	maxConsultFirst = 5
+	maxConsultLater = 3
+)
 
-// KofConsult surfaces a repo's stored assertions when a session starts in
-// that repo. The search hint (kof-assertions) covers code a session already
-// went looking at; this one covers the consult that should happen before any
-// searching — prior sessions' conclusions about the repo the session opened
-// in.
+// minConsultPrompt is the shortest prompt, in characters, worth ranking
+// against. Shorter ones ("yes", "continue", "go ahead") carry no topic.
+const minConsultPrompt = 12
+
+// consultGitBudget bounds kof-consult's one git exec. The hint runs on every
+// prompt, so a stalled git must cost no more than the kof query's budget.
+const consultGitBudget = 300 * time.Millisecond
+
+// consultShownMarker records in the seen file that kof-consult has spoken
+// this session, which moves it from the first cap to the later one.
+const consultShownMarker = "kof-consult-shown"
+
+// KofConsult surfaces the stored assertions about the repo a session works
+// in that the prompt just submitted is about. The search hint
+// (kof-assertions) covers code a session already went looking at; this one
+// covers the consult that should happen as a task is stated, before any
+// searching: prior sessions' conclusions about what the prompt names.
 type KofConsult struct {
 	cfg  config.Config
 	base string // kof serve base URL; overridable for tests
-	// originURL resolves a directory to its git origin remote URL;
-	// overridable for tests.
+	// originURL resolves a directory to its git origin remote URL, the one
+	// git exec a check makes: the kof org/name and the canonical identity
+	// exclude_repos matches are both read from it. Overridable for tests.
 	originURL func(dir string) string
-	// resolveRepo resolves a directory to its canonical host/owner/repo
-	// identity for exclude_repos matching; overridable for tests.
-	resolveRepo func(dir string) string
 }
 
 func NewKofConsult(cfg config.Config) *KofConsult {
-	return &KofConsult{
-		cfg:         cfg,
-		base:        kofBaseURL(),
-		originURL:   gitOriginURL,
-		resolveRepo: guard.CanonicalRepoAt,
-	}
+	return &KofConsult{cfg: cfg, base: kofBaseURL(), originURL: boundedOriginURL}
 }
 
 func (h *KofConsult) ID() string    { return "kof-consult" }
-func (h *KofConsult) Event() string { return EventSessionStart }
+func (h *KofConsult) Event() string { return EventPrompt }
 
 func (h *KofConsult) Check(in Input) *Advice {
-	dir := nearestDir(in.Cwd)
-	repo := repoFromOrigin(h.originURL(dir))
+	prompt := strings.TrimSpace(in.Prompt)
+	if utf8.RuneCountInString(prompt) < minConsultPrompt {
+		return nil
+	}
+	origin := h.originURL(nearestDir(in.Cwd))
+	repo := repoFromOrigin(origin)
 	if repo == "" {
 		return nil
 	}
-	if h.cfg.HintRepoExcluded(h.ID(), h.resolveRepo(dir)) {
+	if h.cfg.HintRepoExcluded(h.ID(), gitloc.CanonicalRepo(origin)) {
 		return nil
 	}
-	found := matchRepo(repo, queryKof(h.base, "repo:"+repo))
-	if len(found) > maxConsultAssertions {
-		found = found[:maxConsultAssertions]
-	}
-	fresh := seen.filter(in.SessionID, found)
-	if len(fresh) == 0 {
+	ranked := rankByPrompt(prompt, repo, matchRepo(repo, queryKof(h.base, "repo:"+repo)))
+	if len(ranked) == 0 {
 		return nil
 	}
-	return &Advice{Hint: h.ID(), Text: render("repo:"+repo, fresh)}
+	path := seen.path(in.SessionID)
+	spoken := path != "" && seen.load(path)[consultShownMarker]
+	limit := maxConsultFirst
+	if spoken {
+		limit = maxConsultLater
+	}
+	shown := seen.take(in.SessionID, ranked, limit)
+	if len(shown) == 0 {
+		return nil
+	}
+	if path != "" && !spoken {
+		seen.record(path, []string{consultShownMarker})
+	}
+	return &Advice{Hint: h.ID(), Text: render("repo:"+repo, shown), Tags: kofTags(shown)}
 }
 
 // matchRepo keeps assertions whose subject is the repo itself or sits under
@@ -120,6 +145,14 @@ func nearestDir(path string) string {
 // has no origin remote.
 func gitOriginURL(dir string) string {
 	return gitLine(dir, "remote", "get-url", "origin")
+}
+
+// boundedOriginURL is gitOriginURL under consultGitBudget: "" when git does
+// not answer in time, which the hint reads as "not in a repo".
+func boundedOriginURL(dir string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), consultGitBudget)
+	defer cancel()
+	return gitloc.Output(ctx, dir, "remote", "get-url", "origin")
 }
 
 // gitTopLevel shells out to git; "" when dir is outside a repo working tree.

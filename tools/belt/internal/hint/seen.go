@@ -25,26 +25,38 @@ func (sessionSeen) path(sessionID string) string {
 	return cache.SessionFile(cache.Dir(), "seen-", sessionID)
 }
 
-// filter drops assertions already surfaced this session and records the rest.
-func (s sessionSeen) filter(sessionID string, as []assertion) []assertion {
+// take drops the assertions already surfaced this session, keeps the first
+// limit of the rest, and records only those as surfaced. Dedupe runs before
+// the cap: once the top-ranked assertions have been shown, the next ones in
+// rank order surface on a later fire instead of the hint going quiet while
+// relevant assertions sit unshown below the cut.
+func (s sessionSeen) take(sessionID string, as []assertion, limit int) []assertion {
 	path := s.path(sessionID)
-	if path == "" {
-		return as // no session id: dedupe is not possible, advise anyway
+	already := map[string]bool{} // no session id: dedupe is not possible, advise anyway
+	if path != "" {
+		already = s.load(path)
 	}
-	already := s.load(path)
 	var out []assertion
-	var added []string
 	for _, a := range as {
-		if already[a.ID] {
-			continue
+		if len(out) == limit {
+			break
 		}
-		out = append(out, a)
-		added = append(added, a.ID)
+		if !already[a.ID] {
+			out = append(out, a)
+		}
 	}
-	if len(added) > 0 {
-		s.record(path, added)
+	if path != "" && len(out) > 0 {
+		s.record(path, assertionIDs(out))
 	}
 	return out
+}
+
+func assertionIDs(as []assertion) []string {
+	ids := make([]string, 0, len(as))
+	for _, a := range as {
+		ids = append(ids, a.ID)
+	}
+	return ids
 }
 
 func (sessionSeen) load(path string) map[string]bool {

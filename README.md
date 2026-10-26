@@ -142,7 +142,7 @@ inject the memory and kof stores without the agent having to ask:
 | Store | Holds | Reaches the session through |
 |-------|-------|-----------------------------|
 | agent-memory | facts about you, for every agent on every machine (a directory of one-fact files, usually a private git clone, set up from [`examples/dotfiles/recipes/agent-memory/`](examples/dotfiles/recipes/agent-memory/)) | belt's `agent-memory` hint at session start |
-| [keeper-of-facts](services/keeper-of-facts/README.md) | claims about code, pinned to the lines that prove them | belt's `kof-consult` hint at session start and `kof-assertions` after csl searches; `kof-deposit` nudges for new ones |
+| [keeper-of-facts](services/keeper-of-facts/README.md) | claims about code, pinned to the lines that prove them | belt's `kof-consult` hint on each prompt and `kof-assertions` after csl searches; `kof-deposit` nudges for new ones |
 | [worklog](tools/worklog/README.md) | where a task stands, keyed by ticket or topic | the `/worklog` skill |
 | [handoff](skills/handoff/SKILL.md) | a bridge document for the next session | the `/handoff` skill |
 | [events](services/events/README.md) | what the guards, hints and services did | belt's ledger writes it; you query it |
