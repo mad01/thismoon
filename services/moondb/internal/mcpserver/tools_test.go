@@ -266,7 +266,15 @@ func TestSessionsRoundTrip(t *testing.T) {
 	if len(out.Sessions) != 1 ||
 		!slices.Equal(out.Sessions[0].Agents, []string{servertest.AgentName}) ||
 		out.Sessions[0].CostAgents == nil {
-		t.Errorf("older session = %+v, want the reviewer named and its cost apart", out.Sessions)
+		t.Fatalf("older session = %+v, want the reviewer named and its cost apart", out.Sessions)
+	}
+	// The main conversation edited the repository; the reviewer worked in
+	// no repository, so its part is no_repo's, not the repository's.
+	old := out.Sessions[0]
+	if old.RepoCost == nil || old.CostMain == nil || *old.RepoCost != *old.CostMain ||
+		old.Cost == nil || *old.Cost <= *old.RepoCost {
+		t.Errorf("repo_cost %v, cost %v; want the main conversation's part beside the total",
+			old.RepoCost, old.Cost)
 	}
 }
 

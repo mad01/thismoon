@@ -27,7 +27,7 @@ moondb/
     derive/            - before and after content per Edit, snapshot records, unattributed deltas
     patch/             - forward and reverse patch apply, hunk context checks, line endings
     gitlink/           - git blob ids and commit links
-    store/             - Store and Chunks interfaces and record types (store.go, types.go)
+    store/             - Store and Chunks interfaces and record types (store.go, types.go), session summaries and the cost attribution rule (summary.go, attribution.go)
       local/           - the local disk backend: JSONL log, gzip chunks, in-memory index
       storetest/       - conformance suite every backend must pass
     query/             - why, history and annotate answers over the store and git; traces with their cache
@@ -558,7 +558,7 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 
 - `GET  /`                      : webkit-chromed web page, read-only (see Web page below)
 - `GET  /app.js`                : the page's client script
-- `GET  /api/sessions`          : one page of session rows, newest first (`sessions`), the totals of every session the filters keep (`window`), and the repositories the time window's sessions edited with their session counts (`repos`); `since`, `repo` and `limit` filter
+- `GET  /api/sessions`          : one page of session rows, newest first (`sessions`), the totals of every session the filters keep (`window`), and the repositories the time window's sessions edited with their session counts and attributed cost (`repos`); `since`, `repo` and `limit` filter
 - `GET  /api/sessions/{id}`     : one session with its turns and counts, plus `summary`, its listing row, and `agents`, its agent rows (below)
 - `GET  /api/sessions/{id}/trace`: the session's trace: every turn's spans, gaps and totals, the user gaps between turns, the agents' runs, session totals
 - `GET  /api/turns/{id}`        : one turn with its edits, unattributed deltas and snapshots, `agents` (the agents that worked in it), plus `trace_totals` when its transcript lines hold a timeline or an agent ran under it, and `skipped` when the Bash hook skipped files of a command
@@ -609,21 +609,43 @@ A session row comes from the index alone, never a chunk
   conversation and its subagents together; `cost_main` and `cost_agents`
   split it. `cost` is absent when no model is priced, never a guessed
   zero, and `cost_agents` when no agent has totals.
+- `repo_costs`: the attributed cost, one entry per repository with a
+  part, then `orchestration` and `no_repo` when they have one. Each
+  entry has `repo`, `name`, `cost` and `unpriced`, its cost absent when
+  none of its models is priced.
+- `repo_cost`: only when the listing filters by `repo`, the part of
+  `cost` attributed to that repository. It is 0 when the rule sends
+  nothing there, and absent when the session has no priced cost.
 - `repos`, `repo_names` (each repo's last two path segments) and
   `worktrees`.
+
+The attributed cost (`store/attribution.go`) is a view over the records,
+never stored. A subagent's cost goes to the repository most of its edits
+touched, a tie to the one it edited first. Without an edit in a
+repository it goes to its cwd's repository (`Agent.Location`), else to
+`no_repo`. The main conversation's cost goes to the repository most of
+its own edits touched, else to `orchestration`. An edit outside any
+repository counts toward none. An agent without totals, or with no tokens
+in them, adds nothing. `store.Summarize` keeps the parts as unpriced
+usage (`RepoUsage`), and the server prices each one on read.
 
 `since` keeps the sessions active in the window: last active at or after
 it, whenever they started. Rows stay ordered and grouped by the day they
 started. `window` adds up every session the filters keep, past the limit,
 whole: sessions, active time, turns, edits, distinct files, tokens and cost, with
-`cost_main` and `cost_agents`. `repos` ignores the `repo` filter, so a
-page can offer every repo of the time window.
+`cost_main`, `cost_agents` and `repo_costs`. `repos` ignores the `repo`
+filter, so a page can offer every repo of the time window. Its `cost` is
+what every session of the time window attributes to the repository. That
+counts a session whose subagent only worked in the repository's checkout
+too, so it can exceed the sum of the filtered rows' `repo_cost`.
 
 An agent row (`internal/server/agents.go`) is the main conversation
 (`type` `main`, id empty) or one subagent. It carries `id`, `type`, `name`,
 `model`, `turn_ids`, `started_at`, `ended_at`, `duration_ms`,
 `model_calls`, `tool_calls`, `tool_errors`, `edit_count`, `repos`,
-`tokens`, `cost` and `recorded`. A session lists the main conversation first, its time and
+`cost_repo`, `tokens`, `cost` and `recorded`. `cost_repo` names where the
+attribution rule sends a session row's cost; a row without tokens, and
+every turn row, leaves it out. A session lists the main conversation first, its time and
 calls from the turn totals, then each Agent record by start, then each
 subagent known only from its edits (`recorded` false, no calls or cost). A
 turn lists the same rows for its own work: the main row from the turn's
@@ -651,14 +673,22 @@ return, so keep it stable.
   (`repo`) sit above a strip that adds the window up, active time
   included, with the subagents'
   part of the cost beside the total. A cost's hover title splits it.
+  Each chip shows its repo's attributed cost. Under the strip's figures a
+  bar stacks the window's cost by repo, then orchestration and no repo.
+  A label under it gives each part's amount, and a hover title its share
+  and the attribution rule. Filtered to a repo, the cost column turns into
+  "Attributed": the part each session gives that repo, with the session
+  total in the hover title. The day rows then add those parts.
   `Show more` grows `limit`. The filters stay in the URL.
 - `/?session=<id>`: the title, repo badges, status, the active time over
   the wall time ("active 1h 51m over 23h 05m (2 days)") and start time,
-  then a Trace section, an Agents section, the turns in order and the
+  and a "Cost by repo" line with the session's `repo_costs`. Then a Trace
+  section, an Agents section, the turns in order and the
   worktrees. The Agents section lists the main conversation first, then
   each subagent with its type, model, the turns it ran under, time, calls,
   edits, tokens and cost; clicking the Cost heading sorts the subagents
-  costliest first. Each turn has its prompt label, a badge when a person
+  costliest first. Under each agent's name sits its `cost_repo`, so the
+  rows add up to the cost line. Each turn has its prompt label, a badge when a person
   did not start it (`task`, `teammate`, `subagent`, `continued`),
   status, edit count and every agent that ran under it. The page labels and
   classifies a turn recorded before origins existed from its prompt, as
@@ -704,7 +734,7 @@ moondb import [--since 30d] [--dry-run] [--force] [--json]   # import past sessi
 moondb mcp                     # stdio MCP shim over serve
 moondb why <path>:<line>       # the Edit, turn, prompt, session and commit behind one line
 moondb history <path>          # the recorded edits of a path, newest first
-moondb sessions                # recorded sessions, newest first, with their title, active time and wall time
+moondb sessions [--repo <repo>]  # recorded sessions, newest first, with their title, active time and wall time; --repo adds COST and ATTRIBUTED
 moondb trace <session-id> [--json]   # time and cost totals, the agents, the longest tool calls, the most expensive model calls
 moondb doctor                  # config, hooks wired, serve reachable, store readable, version skew
 moondb docs                    # print the operating doc
@@ -724,7 +754,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 - `moondb_why(path, line)`: the Edit behind one line, with its turn, prompt, session, agent and commit link, or ranked candidates when only the content matched
 - `moondb_history(path)`: the recorded edits of a path, newest first
 - `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links, and the agents that worked in it; the summary names its subagents
-- `moondb_sessions()`: recorded sessions, newest first, each with its title, status, times, active and wall time, counts, subagent names, tokens and cost split between the main conversation and the subagents
+- `moondb_sessions()`: recorded sessions, newest first, each with its title, status, times, active and wall time, counts, subagent names, tokens and cost split between the main conversation and the subagents, and its attributed cost per repository (`repo_costs`); with `repo`, also `repo_cost` beside the whole `cost`
 - `moondb_trace(id)`: one session's time split (model, tool, harness, user), tokens by kind and cost with its main and agent parts, the subagents costliest first, and the longest tool calls and most expensive model calls of every agent
 - `moondb_doctor()`: the same checks as `moondb doctor`, returned as JSON, for a client that can call a tool but has no shell
 

@@ -35,6 +35,12 @@ func (h harness) oldCost(t *testing.T) float64 {
 
 func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 
+// sameRepoCount compares two repo counts by repository and sessions,
+// leaving their cost to the tests that check it.
+func sameRepoCount(a, b RepoCount) bool {
+	return a.Repo == b.Repo && a.Name == b.Name && a.Sessions == b.Sessions
+}
+
 // TestSessionRows: a row names the session by the title rule, says
 // whether it runs, counts what it touched, and prices the tokens its
 // turns keep to what its trace computes from the transcript.
@@ -139,7 +145,7 @@ func TestSessionsWindow(t *testing.T) {
 			if tc.timed && w.Cost != nil {
 				t.Errorf("window cost = %v, want none: no session in it has tokens", *w.Cost)
 			}
-			if !tc.timed && !slices.Equal(got.Repos, wantRepos) {
+			if !tc.timed && !slices.EqualFunc(got.Repos, wantRepos, sameRepoCount) {
 				t.Errorf("repos = %+v, want %+v", got.Repos, wantRepos)
 			}
 		})
@@ -266,6 +272,170 @@ func TestRepoName(t *testing.T) {
 	} {
 		if got := repoName(repo); got != want {
 			t.Errorf("repoName(%q) = %q, want %q", repo, got, want)
+		}
+	}
+}
+
+// Fixture records of the session addOrchestration adds.
+const (
+	orchSession = "sess-orch"
+	orchTurn    = "turn-orch"
+	orchAgent   = "agent-cwd"
+)
+
+// addOrchestration adds a priced session whose main conversation edited
+// nothing, whose one subagent with a record edited nothing either and
+// worked in OtherRepo's checkout, and whose one edit came from a subagent
+// known only from that edit, in Repo.
+func addOrchestration(h harness) {
+	other := store.Location{Repo: servertest.OtherRepo, Worktree: "/work/other"}
+	here := store.Location{Repo: servertest.Repo, Worktree: servertest.Worktree}
+	h.store.Add(
+		store.Session{
+			ID:        orchSession,
+			Harness:   "test-harness",
+			Cwd:       "/work",
+			StartedAt: servertest.T0,
+		},
+		[]store.Turn{servertest.PricedTurn(orchTurn, orchSession)},
+		[]store.Agent{servertest.PricedAgent(orchAgent, orchSession, orchTurn, other)},
+		[]store.Edit{servertest.Edit("toolu_ghost:0", orchSession, orchTurn, "agent-ghost", 2, here,
+			servertest.PathA)},
+	)
+}
+
+// costsByRepo maps each attributed entry to its cost, nil when unpriced.
+func costsByRepo(costs []RepoCost) map[string]*float64 {
+	out := map[string]*float64{}
+	for _, c := range costs {
+		out[c.Repo] = c.Cost
+	}
+	return out
+}
+
+// wantCosts checks that got holds exactly the entries of want, in order,
+// with the costs want gives.
+func wantCosts(t *testing.T, what string, got []RepoCost, want []string, cost map[string]float64) {
+	t.Helper()
+	repos := make([]string, 0, len(got))
+	for _, c := range got {
+		repos = append(repos, c.Repo)
+		if c.Cost == nil || !near(*c.Cost, cost[c.Repo]) {
+			t.Errorf("%s %s cost = %v, want %v", what, c.Repo, c.Cost, cost[c.Repo])
+		}
+	}
+	if !slices.Equal(repos, want) {
+		t.Errorf("%s entries = %v, want %v", what, repos, want)
+	}
+}
+
+// TestSessionsAttributeCost: the listing splits cost by the attribution
+// rule through the HTTP API. A main conversation's cost goes to the
+// repository of its edits or to orchestration, a subagent's to its edits'
+// repository, else its cwd's, else no_repo. The window adds the parts up
+// across sessions, a repo chip's cost counts every session that sends a
+// part there, and a repo-filtered row says what it attributes to that
+// repository: a real zero when the rule sends nothing there, none when the
+// session has no priced cost.
+func TestSessionsAttributeCost(t *testing.T) {
+	h := newHarness(t)
+	addOrchestration(h)
+	list := h.sessionList(t, "")
+	if len(list.Sessions) != 3 {
+		t.Fatalf("sessions = %d, want 3", len(list.Sessions))
+	}
+	newer, orch, older := list.Sessions[0], list.Sessions[1], list.Sessions[2]
+	if orch.ID != orchSession || older.CostMain == nil || older.CostAgents == nil {
+		t.Fatalf("rows %s, %s, %s; want the older session priced", newer.ID, orch.ID, older.ID)
+	}
+	turnCost, agentCost := *older.CostMain, *older.CostAgents
+
+	wantCosts(t, "older row", older.RepoCosts,
+		[]string{servertest.OtherRepo, store.CostNoRepo},
+		map[string]float64{servertest.OtherRepo: turnCost, store.CostNoRepo: agentCost})
+	wantCosts(t, "orchestration row", orch.RepoCosts,
+		[]string{servertest.OtherRepo, store.CostOrchestration},
+		map[string]float64{servertest.OtherRepo: agentCost, store.CostOrchestration: turnCost})
+	if len(newer.RepoCosts) != 0 {
+		t.Errorf("newer row repo_costs = %+v, want none: nothing in it is priced", newer.RepoCosts)
+	}
+	wantCosts(t, "window", list.Window.RepoCosts,
+		[]string{servertest.OtherRepo, store.CostOrchestration, store.CostNoRepo},
+		map[string]float64{
+			servertest.OtherRepo:    turnCost + agentCost,
+			store.CostOrchestration: turnCost,
+			store.CostNoRepo:        agentCost,
+		})
+
+	parts := 0.0
+	for _, c := range list.Window.RepoCosts {
+		if c.Cost != nil {
+			parts += *c.Cost
+		}
+	}
+	if list.Window.Cost == nil || !near(parts, *list.Window.Cost) {
+		t.Errorf("window parts add up to %v, want the window cost %v", parts, list.Window.Cost)
+	}
+
+	chips := map[string]RepoCount{}
+	for _, r := range list.Repos {
+		chips[r.Repo] = r
+	}
+	if c := chips[servertest.OtherRepo]; c.Sessions != 1 || c.Cost == nil ||
+		!near(*c.Cost, turnCost+agentCost) {
+		t.Errorf("other repo chip = %+v, want 1 session and both sessions' parts", c)
+	}
+	if c := chips[servertest.Repo]; c.Sessions != 2 || c.Cost != nil {
+		t.Errorf("thismoon chip = %+v, want 2 sessions and no cost: no priced part goes there", c)
+	}
+
+	filtered := h.sessionList(t, "?repo="+servertest.Repo).Sessions
+	got := map[string]*float64{}
+	for _, row := range filtered {
+		got[row.ID] = row.RepoCost
+	}
+	if len(filtered) != 2 || got[servertest.NewSession] != nil || got[orchSession] == nil ||
+		*got[orchSession] != 0 {
+		t.Errorf("thismoon rows' repo_cost = %v, want none for the unpriced one and 0 for "+
+			"the one that sends nothing there", got)
+	}
+	filtered = h.sessionList(t, "?repo="+servertest.OtherRepo).Sessions
+	if len(filtered) != 1 || filtered[0].RepoCost == nil || !near(*filtered[0].RepoCost, turnCost) {
+		t.Errorf("other repo row = %+v, want the main conversation's part", filtered)
+	}
+	if older.RepoCost != nil {
+		t.Errorf("unfiltered row repo_cost = %v, want none", *older.RepoCost)
+	}
+}
+
+// TestSessionAgentsCarryCostRepo: a session's agent rows name where the
+// attribution rule sends their cost, and the row's repo_costs add up the
+// priced rows by that name.
+func TestSessionAgentsCarryCostRepo(t *testing.T) {
+	h := newHarness(t)
+	addOrchestration(h)
+	var view SessionView
+	h.getJSON(t, "/api/sessions/"+orchSession, http.StatusOK, &view)
+	want := map[string]string{
+		"": store.CostOrchestration, orchAgent: servertest.OtherRepo,
+		"agent-ghost": "",
+	}
+	sums := map[string]float64{}
+	for _, r := range view.Agents {
+		if r.CostRepo != want[r.ID] {
+			t.Errorf("agent %q cost_repo = %q, want %q", r.ID, r.CostRepo, want[r.ID])
+		}
+		if r.Cost != nil {
+			sums[r.CostRepo] += *r.Cost
+		}
+	}
+	got := costsByRepo(view.Summary.RepoCosts)
+	if len(got) != len(sums) {
+		t.Errorf("repo_costs %v, agent sums %v; want one entry per priced cost_repo", got, sums)
+	}
+	for repo, sum := range sums {
+		if got[repo] == nil || !near(*got[repo], sum) {
+			t.Errorf("repo_costs[%s] = %v, want the agent rows' %v", repo, got[repo], sum)
 		}
 	}
 }

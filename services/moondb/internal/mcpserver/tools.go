@@ -82,6 +82,9 @@ func registerSessionTools(s *mcp.Server, h *handlers) {
 			"`duration_ms` is the wall time from the first prompt to the last turn's end, pauses included, and never below `active_ms`. " +
 			"An open turn ends at its last edit or agent stop for both. " +
 			"The cost covers the main conversation and its subagents; `cost_main` and `cost_agents` split it. " +
+			"`repo_costs` splits it by repository: each subagent's cost goes to the repository most of its edits touched, else its cwd's repository, else `no_repo`; " +
+			"the main conversation's goes to the repository most of its own edits touched, else `orchestration`. " +
+			"With `repo`, each session also has `repo_cost`: the part of `cost` attributed to that repository, while `cost` stays the whole session's. " +
 			"Filter by `repo` (host/owner/repo; sessions with at least one edit there), `since` (sessions active since then, whenever they started: " +
 			"an RFC 3339 time or a duration such as 24h or 7d), and `limit` (default 50).",
 		Annotations: readOnly(),

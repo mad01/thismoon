@@ -32,7 +32,14 @@ prompt to the last Stop, pauses included. moondb trace <session-id> shows
 where that time went and what it cost.
 
 --since keeps the sessions active since then, whenever they started, and
-takes an RFC 3339 time or a span before now: 90m, 24h, 7d.`,
+takes an RFC 3339 time or a span before now: 90m, 24h, 7d.
+
+--repo keeps the sessions that edited the repository and adds two
+columns. COST is the whole session's cost. ATTRIBUTED is the part the
+attribution rule gives the repository: each subagent's cost goes to the
+repository most of its edits touched, else its cwd's repository; the main
+conversation's goes to the repository most of its own edits touched, else
+to orchestration.`,
 	Args: cobra.NoArgs,
 	RunE: runSessions,
 }
@@ -64,12 +71,13 @@ func runSessions(cmd *cobra.Command, _ []string) error {
 	if sessionsJSON {
 		return printJSON(cmd.OutOrStdout(), sessions)
 	}
-	printSessions(cmd.OutOrStdout(), sessions)
+	printSessions(cmd.OutOrStdout(), sessions, sessionsRepo != "")
 	return nil
 }
 
-// printSessions renders session summaries as a table.
-func printSessions(w io.Writer, sessions []server.SessionSummary) {
+// printSessions renders session summaries as a table. byRepo adds the
+// whole cost and the part attributed to the listing's repository.
+func printSessions(w io.Writer, sessions []server.SessionSummary, byRepo bool) {
 	if len(sessions) == 0 {
 		fmt.Fprintln(
 			w,
@@ -78,12 +86,29 @@ func printSessions(w io.Writer, sessions []server.SessionSummary) {
 		return
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "STARTED\tSESSION\tTURNS\tEDITS\tACTIVE\tWALL\tREPOS\tTITLE")
+	costs := ""
+	if byRepo {
+		costs = "COST\tATTRIBUTED\t"
+	}
+	fmt.Fprintln(tw, "STARTED\tSESSION\tTURNS\tEDITS\tACTIVE\tWALL\t"+costs+"REPOS\tTITLE")
 	for _, s := range sessions {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		if byRepo {
+			costs = rowCost(s.Cost, s.Unpriced) + "\t" + rowCost(s.RepoCost, nil) + "\t"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s%s\t%s\n",
 			when(s.StartedAt), short(s.ID), fmtCount(s.TurnCount), fmtCount(s.EditCount),
-			trace.FormatDuration(s.ActiveMS), trace.FormatDuration(s.DurationMS),
+			trace.FormatDuration(s.ActiveMS), trace.FormatDuration(s.DurationMS), costs,
 			orDash(strings.Join(s.Repos, ",")), orDash(s.Title))
 	}
 	_ = tw.Flush()
+}
+
+// rowCost renders a listing cost: "-" when there is none and no unpriced
+// model to name, else trace.FormatCost, "unknown" for a cost no price
+// covers.
+func rowCost(usd *float64, unpriced []string) string {
+	if usd == nil && len(unpriced) == 0 {
+		return "-"
+	}
+	return trace.FormatCost(usd)
 }

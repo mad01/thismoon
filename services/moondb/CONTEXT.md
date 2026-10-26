@@ -66,6 +66,10 @@ _Avoid_: stats, metrics, summary (the listing row's word)
 The time a Session spent inside its Turns, less the time a turn waited for input. A turn with Turn totals gives its wall time less its user time. The pauses between turns never count, so a session left open overnight adds nothing for the night. Its counterpart is the wall time, from the first prompt to the last turn's end with every pause included, and the active time never exceeds it. A session row carries both, as `active_ms` and `duration_ms`.
 _Avoid_: duration (say active time or wall time), run time, uptime
 
+**Attributed cost**:
+The part of a Session's cost the attribution rule gives one repository. It is computed on read from the Agent and Edit records and the cost of the Turn totals and Agent totals. Model calls carry no repository, so the rule goes by who spent the money. A subagent's cost goes to the repository most of its Edits touched, a tie to the one it edited first. Without an Edit in a repository it goes to the repository of its cwd, else to `no_repo`. The main conversation's cost goes to the repository most of its own Edits touched, else to `orchestration`. An Edit outside any repository counts toward none. An agent or main conversation without priced tokens adds nothing. Never stored: a change to the rule changes every past session.
+_Avoid_: repo cost, cost split, allocation, charge-back
+
 **Span**:
 One timed piece of a Trace: the turn itself, one model call (an assistant message, with its tokens and cost), one tool call (from the line asking for it to its result) or one Agent's work under the turn. An Agent's span runs from its first line under the turn (its spawn, in the turn that spawned it) to its last there (its stop, in its last turn), with its calls, tokens and cost. An agent without a record gets a span from its first recorded edit to its last. A model whose price moondb does not know has tokens and no cost, never a zero cost.
 _Avoid_: event, log entry, metric

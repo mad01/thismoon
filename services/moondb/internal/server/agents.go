@@ -35,8 +35,13 @@ type AgentRow struct {
 	ToolErrors  int       `json:"tool_errors"`
 	EditCount   int       `json:"edit_count"`
 	// Repos are the repository identities the agent's edits went to.
-	Repos  []string     `json:"repos"`
-	Tokens store.Tokens `json:"tokens"`
+	Repos []string `json:"repos"`
+	// CostRepo is where the attribution rule sends a session row's cost:
+	// a repository, orchestration or no_repo (store.MainCostRepo,
+	// store.AgentCostRepo). A row without tokens adds nothing there and
+	// leaves it empty, as do a turn's rows.
+	CostRepo string       `json:"cost_repo,omitempty"`
+	Tokens   store.Tokens `json:"tokens"`
 	// Cost is the USD of the priced tokens, nil when none is priced.
 	Cost     *float64 `json:"cost,omitempty"`
 	Unpriced []string `json:"unpriced,omitempty"`
@@ -106,6 +111,9 @@ func (s *Server) mainRow(d store.SessionDetail, edits []store.Edit) AgentRow {
 	}
 	row.Tokens = tokensOf(d.MainUsage)
 	row.Cost, row.Unpriced = s.query.UsageCost(d.MainUsage)
+	if row.Tokens.Total() > 0 {
+		row.CostRepo = store.MainCostRepo(edits)
+	}
 	return row
 }
 
@@ -121,6 +129,9 @@ func (s *Server) recordedRow(a store.Agent, edits []store.Edit) AgentRow {
 		row.ModelCalls, row.ToolCalls, row.ToolErrors = t.ModelCalls, t.ToolCalls, t.ToolErrors
 		row.Tokens = tokensOf(t.Usage)
 		row.Cost, row.Unpriced = s.query.UsageCost(t.Usage)
+	}
+	if row.Tokens.Total() > 0 {
+		row.CostRepo = store.AgentCostRepo(a, edits)
 	}
 	return row
 }
