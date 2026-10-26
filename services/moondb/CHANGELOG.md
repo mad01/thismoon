@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/moondb/v0.2.0...moondb/v0.3.0) (2026-10-26)
+
+
+### Features
+
+* **moondb:** attribute session cost to repos ([#303](https://github.com/mad01/thismoon/issues/303)) ([3770891](https://github.com/mad01/thismoon/commit/3770891eeba913342c655179af10b2eb22e3a37e))
+* **moondb:** show active time beside the wall span for sessions ([#302](https://github.com/mad01/thismoon/issues/302)) ([96ad51b](https://github.com/mad01/thismoon/commit/96ad51ba8540adbf6ce705a27a8874efae9c4c2d))
+* **moondb:** trace subagents from their own transcripts and price them ([#298](https://github.com/mad01/thismoon/issues/298)) ([a1f654f](https://github.com/mad01/thismoon/commit/a1f654fbf6fc8f278ab711bfc9edbb060deceb48))
+
+
+### Bug Fixes
+
+* **moondb:** classify a long gap inside a turn as idle ([#305](https://github.com/mad01/thismoon/issues/305)) ([358d680](https://github.com/mad01/thismoon/commit/358d680cb057d9374101ac5e5fa7d59038b6d10b))
+* **moondb:** walk the session trace in time order ([#304](https://github.com/mad01/thismoon/issues/304)) ([ef26ac3](https://github.com/mad01/thismoon/commit/ef26ac3ecfbf86b6b2287959fd7fbfcd160dee23))
+
 ## [0.2.0](https://github.com/mad01/thismoon/compare/moondb/v0.1.0...moondb/v0.2.0) (2026-10-25)
 
 
