@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mad01/thismoon/services/moondb/internal/jsonl"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
@@ -23,15 +24,16 @@ type session struct {
 	title       string
 	titleSource store.TitleSource
 	// path is the main transcript; subagents counts the subagent
-	// transcripts read beside it.
-	path      string
-	subagents int
-	turns     []*turn
-	turnByID  map[string]*turn
-	calls     map[string]*call
-	order     []*call
-	history   history
-	stats     parseStats
+	// transcripts read beside it, and agentFiles names them.
+	path       string
+	subagents  int
+	agentFiles []string
+	turns      []*turn
+	turnByID   map[string]*turn
+	calls      map[string]*call
+	order      []*call
+	history    history
+	stats      parseStats
 }
 
 // turn is one prompt and what followed it in the main transcript, up to the
@@ -108,6 +110,7 @@ func parseSession(path string) (*session, error) {
 	for _, sub := range subs {
 		if err := s.read(sub, &reader{s: s, agent: subagentRef(sub)}); err == nil {
 			s.subagents++
+			s.agentFiles = append(s.agentFiles, sub)
 		}
 	}
 	return s, nil
@@ -120,7 +123,7 @@ func (s *session) read(path string, r *reader) error {
 		return fmt.Errorf("importer: open transcript: %w", err)
 	}
 	defer f.Close()
-	oversized, err := scanLines(f, maxLineBytes, r.line)
+	oversized, err := jsonl.Scan(f, maxLineBytes, r.line)
 	s.stats.undecodable += oversized
 	if err != nil {
 		return fmt.Errorf("importer: read %s: %w", filepath.Base(path), err)

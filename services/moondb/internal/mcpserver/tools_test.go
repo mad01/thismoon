@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -180,7 +181,11 @@ func TestTurnSummaryCarriesTraceTotals(t *testing.T) {
 	cs := session(t, noChecks)
 	var out turnOutput
 	call(t, cs, "moondb_turn", map[string]any{"id": servertest.OldTurn}, &out)
-	if out.Turn.TraceTotals == nil || !strings.Contains(out.Summary, "took 2m00s, cost $0.014") {
+	if out.Turn.TraceTotals == nil ||
+		!strings.Contains(
+			out.Summary,
+			"took 2m00s, cost $0.026; subagents: reviewer (general-purpose)",
+		) {
 		t.Errorf("summary = %q, totals = %+v", out.Summary, out.Turn.TraceTotals)
 	}
 }
@@ -192,14 +197,26 @@ func TestTraceRoundTrip(t *testing.T) {
 	if out.SessionID != servertest.OldSession || out.Turns != 1 || out.Totals.WallMS != 120_000 {
 		t.Fatalf("out = %+v", out)
 	}
-	if len(out.LongestTools) != 1 || out.LongestTools[0].Span.ID != "toolu_c" ||
-		out.LongestTools[0].Seq != 1 {
-		t.Errorf("longest tools = %+v, want toolu_c in turn 1", out.LongestTools)
+	if len(out.LongestTools) != 2 || out.LongestTools[0].Span.ID != "toolu_c" ||
+		out.LongestTools[0].Seq != 1 || out.LongestTools[1].AgentID != servertest.AgentID {
+		t.Errorf(
+			"longest tools = %+v, want toolu_c in turn 1, then the reviewer's",
+			out.LongestTools,
+		)
 	}
-	if len(out.CostliestModels) != 2 || out.CostliestModels[0].Span.ID != "msg_old_1" {
-		t.Errorf("costliest models = %+v, want msg_old_1 first", out.CostliestModels)
+	if len(out.CostliestModels) != 4 || out.CostliestModels[0].Span.ID != "msg_old_1" ||
+		out.CostliestModels[1].Agent != servertest.AgentName {
+		t.Errorf("costliest models = %+v, want msg_old_1, then the reviewer's", out.CostliestModels)
 	}
-	for _, want := range []string{"1 turns", "wall 2m00s", "tool 1m00s", "longest tool call Edit 1m00s in turn 1"} {
+	if len(out.Agents) != 1 || out.Agents[0].ID != servertest.AgentID ||
+		out.Agents[0].ModelCalls != 2 || !slices.Equal(out.Agents[0].Turns, []int{1}) ||
+		out.Agents[0].Cost == nil {
+		t.Errorf("agents = %+v, want the reviewer in turn 1 with its cost", out.Agents)
+	}
+	for _, want := range []string{
+		"1 turns", "wall 2m00s", "tool 1m00s", "cost $0.026 (main $0.014, 1 subagents $0.011)",
+		"longest tool call Edit 1m00s in turn 1 by main",
+	} {
 		if !strings.Contains(out.Summary, want) {
 			t.Errorf("summary = %q, want it to contain %q", out.Summary, want)
 		}
@@ -244,6 +261,12 @@ func TestSessionsRoundTrip(t *testing.T) {
 	}
 	if out.Sessions[0].EditCount != 2 || !strings.HasPrefix(out.Summary, "1 sessions") {
 		t.Errorf("out = %+v", out)
+	}
+	call(t, cs, "moondb_sessions", map[string]any{"repo": servertest.OtherRepo}, &out)
+	if len(out.Sessions) != 1 ||
+		!slices.Equal(out.Sessions[0].Agents, []string{servertest.AgentName}) ||
+		out.Sessions[0].CostAgents == nil {
+		t.Errorf("older session = %+v, want the reviewer named and its cost apart", out.Sessions)
 	}
 }
 

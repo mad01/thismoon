@@ -64,15 +64,21 @@ func TestPrintTrace(t *testing.T) {
 	var out bytes.Buffer
 	printTrace(&out, st)
 	// The fixture turn runs two minutes: the Edit call took one, and the
-	// two model calls on claude-opus-5-5 cost $0.01444 between them.
+	// two model calls on claude-opus-5-5 cost $0.01444 between them. The
+	// reviewer's two calls under it cost $0.0114.
 	for _, want := range []string{
 		"session sess-old, 1 turn:",
 		"wall    2m00s",
-		"cost    $0.014",
+		"cost    $0.026  main $0.014, agents $0.011",
+		"calls   6       main: model 2, tool 1 (0 failed); agents: model 2, tool 1",
+		"AGENTS",
+		"main      -                1      2m00s     3      1      1.5k    $0.014",
+		"reviewer  general-purpose  1      2m00s     3      0      2.2k    $0.011",
 		"LONGEST TOOL CALLS",
-		"1     Edit  1m00s     ok",
+		"1     main      Edit  1m00s     ok",
+		"1     reviewer  Read  30.0s     ok",
 		"MOST EXPENSIVE MODEL CALLS",
-		"1     claude-opus-5-5  $0.014",
+		"1     main      claude-opus-5-5  $0.014",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())

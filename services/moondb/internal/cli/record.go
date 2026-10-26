@@ -15,7 +15,7 @@ import (
 // recordCeiling bounds the whole record run, budget overruns included. It
 // sits under the 3 s timeout the Edit/Write hook is registered with, so the
 // hook never reports moondb as hung, and it holds the turn-edge snapshot
-// budget and the Bash budget with room to spare.
+// budget, the Bash budget and the agent budget with room to spare.
 const recordCeiling = 2500 * time.Millisecond
 
 var recordCmd = &cobra.Command{
@@ -25,17 +25,19 @@ var recordCmd = &cobra.Command{
 spool under --workdir. serve drains the spool; record itself never touches
 the store and never waits for serve.
 
-Three hooks pipe into it. UserPromptSubmit opens a turn. PostToolUse for
+Four hooks pipe into it. UserPromptSubmit opens a turn. PostToolUse for
 Edit, Write, MultiEdit and NotebookEdit records the file a tool changed;
 PostToolUse for Bash records the files a command changed, when the user
 setting bashEditDiffEnabled makes Claude Code report them; a file git
 reports clean after the command (a pull or checkout brought it back to its
 committed state) is skipped: counted on the turn, with no edit. Stop closes the
-turn and reports commits made since. UserPromptSubmit and Stop also take a
-snapshot of each worktree in play: the content of its dirty files and of
-the files the session touched. record prints nothing on stdout and exits 0
-whatever happens, so a failure here can never block the session; problems go
-to stderr.
+turn and reports commits made since. SubagentStop records the subagent that
+stopped: its kind and name, the turns it ran under, and its transcript with
+each text and tool result cut to a short head. UserPromptSubmit and Stop
+also take a snapshot of each worktree in play: the content of its dirty
+files and of the files the session touched. record prints nothing on
+stdout and exits 0 whatever happens, so a failure here can never block the
+session; problems go to stderr.
 
 Per-machine switches live in ` + configFile + ` in the moondb config directory:
   [capture]
@@ -72,6 +74,7 @@ func runRecord(cmd *cobra.Command, _ []string) error {
 		Budget:         moondb.RecordBudget,
 		BashBudget:     moondb.BashBudget,
 		SnapshotBudget: moondb.SnapshotBudget,
+		AgentBudget:    moondb.AgentBudget,
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(os.Stderr, "moondb record: "+format+"\n", args...)
 		},

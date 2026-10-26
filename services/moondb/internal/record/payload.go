@@ -77,6 +77,8 @@ type payload struct {
 	response    fields
 	// Stop.
 	lastMessage string
+	// SubagentStop: the agent's own transcript file.
+	agentTranscriptPath string
 }
 
 // decodePayload reads one hook payload. Only a payload that is not a JSON
@@ -87,20 +89,21 @@ func decodePayload(in io.Reader) (payload, error) {
 		return payload{}, fmt.Errorf("record: decode payload: %w", err)
 	}
 	p := payload{
-		event:          f.str("hook_event_name"),
-		sessionID:      f.str("session_id"),
-		promptID:       f.str("prompt_id"),
-		transcriptPath: f.str("transcript_path"),
-		cwd:            f.str("cwd"),
-		agentID:        f.str("agent_id"),
-		agentType:      f.str("agent_type"),
-		prompt:         f.str("prompt"),
-		title:          f.str("session_title"),
-		tool:           f.str("tool_name"),
-		toolUseID:      f.str("tool_use_id"),
-		inputFields:    f.obj("tool_input"),
-		response:       f.obj("tool_response"),
-		lastMessage:    f.str("last_assistant_message"),
+		event:               f.str("hook_event_name"),
+		sessionID:           f.str("session_id"),
+		promptID:            f.str("prompt_id"),
+		transcriptPath:      f.str("transcript_path"),
+		cwd:                 f.str("cwd"),
+		agentID:             f.str("agent_id"),
+		agentType:           f.str("agent_type"),
+		prompt:              f.str("prompt"),
+		title:               f.str("session_title"),
+		tool:                f.str("tool_name"),
+		toolUseID:           f.str("tool_use_id"),
+		inputFields:         f.obj("tool_input"),
+		response:            f.obj("tool_response"),
+		lastMessage:         f.str("last_assistant_message"),
+		agentTranscriptPath: f.str("agent_transcript_path"),
 	}
 	if p.inputFields != nil {
 		p.input = f["tool_input"]

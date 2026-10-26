@@ -11,12 +11,20 @@ One Claude Code session, identified by the hook payload's `session_id`. moondb c
 _Avoid_: conversation, chat
 
 **Turn**:
-One user prompt and everything up to the Stop that ends it, identified by the hook's `prompt_id` (the transcript's `promptId`; an import of a transcript without one uses the prompt entry's uuid). It carries the prompt text, the final assistant message, and the turn's raw transcript lines.
+One user prompt and everything up to the Stop that ends it, identified by the hook's `prompt_id` (the transcript's `promptId`; an import of a transcript without one uses the prompt entry's uuid). It carries the prompt text, the final assistant message, the turn's raw transcript lines and its Turn origin.
 _Avoid_: exchange, step
 
+**Turn origin**:
+What opened a Turn: `person` (a typed prompt or a slash command), `task` (a background task's notification that it finished), `teammate` (a teammate's message), `subagent` (a message from a subagent or another session), `continuation` (the summary that resumes a session after compaction), or `none` (no prompt text). record and import read it from the head the harness gives a prompt it wrote itself. A message relayed from another session counts by the wrapper inside it. The web page reads a turn recorded before origins existed the same way.
+_Avoid_: source, trigger, kind
+
 **Agent**:
-The `agent_id` and `agent_type` a hook payload carries. A payload without them belongs to the main conversation.
-_Avoid_: subagent as a separate concept, worker
+A subagent of a session, identified by the `agent_id` its hook payloads carry; a payload without one belongs to the main conversation. When it stops, or an import reads its transcript file, serve keeps its record: type, name, model, the Turns it ran under, its start and stop, its Agent transcript and its totals. A teammate runs under every Turn that sent it a message. An agent known only from its edits has no record. Listings show the main conversation beside the agents as `main`.
+_Avoid_: worker, subagent as a concept apart from Agent
+
+**Agent transcript**:
+An Agent's transcript file as moondb keeps it: the timeline lines only (user, assistant, API request, system), with the fields a Trace reads, and each text, thinking block, tool input and tool result cut to a head of `AgentHeadBytes`. Usage, ids and times survive the cut, so its Trace prices the same as the whole file's. Past `MaxAgentTranscriptBytes` whole lines go from its head; the Agent counts them, and their calls add no tokens or cost.
+_Avoid_: subagent log, sidechain (the transcript field, not a moondb term)
 
 **Edit**:
 One recorded change to one file by one tool call. It carries the tool, repo, worktree, branch and path, the patch hunks, the before and after chunk ids, the after content's git blob id, and HEAD at the time. Append-only; its identity is the `tool_use_id` plus the path.
@@ -47,15 +55,15 @@ A recorded after-content blob id matched to a blob in a new commit, tying an Edi
 _Avoid_: attribution trailer, tag
 
 **Trace**:
-The account of what took time in a turn or a session and what it cost, computed on read from a Turn's transcript lines. A turn's trace is its Spans plus its wall time split by what was running: model, tool, harness, or user time spent waiting for input. A session's trace adds the user time between one turn's Stop and the next prompt.
+The account of what took time in a turn, an Agent or a session and what it cost, computed on read from a Turn's transcript lines and its Agents' transcripts. A turn's trace is its Spans plus its wall time split by what was running: model, tool, harness, or user time spent waiting for input. Its cost adds the work its Agents did under it. A session's trace adds the user time between one turn's Stop and the next prompt, and every Agent's whole run to its cost.
 _Avoid_: event, log entry, metric, profile
 
 **Turn totals**:
-A closed Turn's Trace totals, kept on the Turn record so a listing never reads a transcript. They hold the time per class, the call counts and the tokens per model and rate. Never a cost: the tokens are priced when read. A turn stored before totals existed, or under an older trace version, gets them from the totals backfill.
+A closed Turn's Trace totals, kept on the Turn record so a listing never reads a transcript. They hold the time per class, the call counts and the tokens per model and rate. Never a cost: the tokens are priced when read. An Agent keeps totals of the same shape for its run. A turn or Agent stored before totals existed, or under an older trace version, gets them from the totals backfill.
 _Avoid_: stats, metrics, summary (the listing row's word)
 
 **Span**:
-One timed piece of a Trace: the turn itself, one model call (an assistant message, with its tokens and cost), one tool call (from the line asking for it to its result) or one subagent's recorded edits. A model whose price moondb does not know has tokens and no cost, never a zero cost.
+One timed piece of a Trace: the turn itself, one model call (an assistant message, with its tokens and cost), one tool call (from the line asking for it to its result) or one Agent's work under the turn. An Agent's span runs from its first line under the turn (its spawn, in the turn that spawned it) to its last there (its stop, in its last turn), with its calls, tokens and cost. An agent without a record gets a span from its first recorded edit to its last. A model whose price moondb does not know has tokens and no cost, never a zero cost.
 _Avoid_: event, log entry, metric
 
 **Backend**:

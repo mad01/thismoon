@@ -53,7 +53,12 @@ source.
 
 - `capture.enabled` (bool, default `true`): set it to `false` to turn capture
   off on this machine while leaving the hooks wired. `record` then exits 0
-  without writing anything.
+  without writing anything, and the doctor's `hooks-wired` check passes
+  with a note.
+- `claude_settings` (string, default `~/.claude/settings.json`): the Claude
+  Code settings file the doctor's `hooks-wired` check reads. It reports
+  each hook entry from "Hook wiring" below that does not run `moondb
+  record`, and fails when the file is missing.
 - `capture.exclude` (list of globs): paths whose contents are never stored,
   by `record` or by `import`. An excluded file's edit is recorded by path
   only, with no content, patch or observed bytes. A glob matches the file's
@@ -127,7 +132,7 @@ These are compiled into the binary (`facts.go`) and not configurable:
 | trace rankings | 10 | spans `moondb trace` and `moondb_trace` list as the longest tool calls and the most expensive model calls |
 | totals backfill batch (`TotalsBackfillTurns`) | 20 | turns one totals backfill batch tries, computed or not, and sessions it fills a missing prompt line for |
 | totals backfill pace (`TotalsBackfillEvery`) | 1 s | how often the totals backfill runs a batch while the spool is empty |
-| session idle (`SessionIdleAfter`) | 10 min | how long a session goes without a turn start, turn end or edit before the listing calls it ended |
+| session idle (`SessionIdleAfter`) | 10 min | how long a session goes without a turn start, turn end, edit or agent stop before the listing calls it ended |
 | open turn stale (`OpenTurnStaleAfter`) | 12 h | how long an open last turn keeps an otherwise idle session running |
 | prompt line (`SessionPromptLineRunes`) | 100 runes | the cut of the prompt line a session keeps for its title and a trace shows per turn |
 
@@ -147,7 +152,8 @@ command:
       { "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }
     ],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }]
+    "Stop": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "moondb record", "async": true }] }]
   },
   "bashEditDiffEnabled": true
 }

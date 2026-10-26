@@ -182,7 +182,8 @@ func wantCounts() Counts {
 		FailedCalls:          1,
 		UnansweredCalls:      1,
 		BashCalls:            1,
-		Envelopes:            17,
+		Agents:               1,
+		Envelopes:            18,
 		UndecodableLines:     1,
 		UnknownTypes:         map[string]int{"mystery-entry": 1},
 	}
@@ -209,6 +210,8 @@ func TestImportOrder(t *testing.T) {
 		"w-1:open", "toolu_r1:0", "w-1:close", "w-5:open", "w-5:close",
 		"p1:open", "toolu_e1:0", "toolu_w1:0", "toolu_env:0", "toolu_m1:0", "p1:close",
 		"p2:open", "toolu_big1:0", "toolu_big2:0", "toolu_sub:0", "toolu_nb:0", "p2:close",
+		// a session's agents follow its turns
+		"aworker-1:close:4",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("envelope order:\n got %q\nwant %q", got, want)
@@ -576,67 +579,6 @@ func TestImportIngests(t *testing.T) {
 	}
 }
 
-func TestScanLines(t *testing.T) {
-	tests := []struct {
-		name    string
-		in      string
-		max     int
-		stop    int // stop after this many lines; 0 reads them all
-		lines   []string
-		ends    []int64
-		skipped int
-	}{
-		{
-			name:  "lines",
-			in:    "a\nbb\n",
-			max:   10,
-			lines: []string{"a\n", "bb\n"},
-			ends:  []int64{2, 5},
-		},
-		{
-			name:  "no final newline",
-			in:    "a\nbb",
-			max:   10,
-			lines: []string{"a\n", "bb"},
-			ends:  []int64{2, 4},
-		},
-		{
-			name: "long line skipped", in: "a\n0123456789\nb\n", max: 5,
-			lines: []string{"a\n", "b\n"}, ends: []int64{2, 15}, skipped: 1,
-		},
-		{name: "empty", in: "", max: 10},
-		{
-			name:  "stops when told",
-			in:    "a\nb\nc\n",
-			max:   10,
-			stop:  1,
-			lines: []string{"a\n"},
-			ends:  []int64{2},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			var lines []string
-			var ends []int64
-			skipped, err := scanLines(
-				strings.NewReader(tc.in),
-				tc.max,
-				func(l []byte, end int64) bool {
-					lines = append(lines, string(l))
-					ends = append(ends, end)
-					return tc.stop == 0 || len(lines) < tc.stop
-				},
-			)
-			if err != nil || skipped != tc.skipped {
-				t.Fatalf("skipped %d err %v, want %d", skipped, err, tc.skipped)
-			}
-			if !slices.Equal(lines, tc.lines) || !slices.Equal(ends, tc.ends) {
-				t.Errorf("lines %q ends %v, want %q %v", lines, ends, tc.lines, tc.ends)
-			}
-		})
-	}
-}
-
 // TestFixtureIsJSONLines keeps the fixtures honest: every line but the
 // one malformed on purpose decodes.
 func TestFixtureIsJSONLines(t *testing.T) {
@@ -658,5 +600,117 @@ func TestFixtureIsJSONLines(t *testing.T) {
 	}
 	if bad != 1 {
 		t.Errorf("%d malformed fixture lines, want the 1 planted", bad)
+	}
+}
+
+// TestImportCountsSkippedAgentFiles: a subagent file with no timeline line
+// gives no Agent record and is counted as skipped.
+func TestImportCountsSkippedAgentFiles(t *testing.T) {
+	w := newWorld(t)
+	empty := filepath.Join(strings.TrimSuffix(w.transcript("sess-1"), ".jsonl"),
+		"subagents", "agent-aempty-1.jsonl")
+	if err := os.WriteFile(empty, []byte(`{"type":"attachment"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := w.run(t, w.options())
+	if got.Agents != 1 || got.AgentFilesSkipped != 1 {
+		t.Errorf("agents %d, skipped %d; want 1 and 1", got.Agents, got.AgentFilesSkipped)
+	}
+}
+
+// TestImportAgents writes each subagent transcript of an imported session
+// as the SubagentStop hook would: the agent transcript, who the meta file
+// says the agent was, the turns it ran under and where it worked.
+func TestImportAgents(t *testing.T) {
+	w := newWorld(t)
+	_, envs := w.run(t, w.options())
+	env, ok := byID(envs)["aworker-1:close:4"]
+	if !ok {
+		t.Fatal("aworker-1 not written")
+	}
+	ac := env.AgentClose
+	if env.Kind != spool.KindAgentClose || env.Agent.ID != "aworker-1" ||
+		env.Session.ID != "sess-1" {
+		t.Errorf("envelope = %+v", env)
+	}
+	if ac.Type != "worker" || ac.Name != "" || ac.Description != "edit sub.go" ||
+		ac.Model != "model-b" || !slices.Equal(ac.TurnIDs, []string{"p2"}) ||
+		ac.Cwd != w.cwd || ac.Location.Worktree != w.real || ac.Location.Repo == "" {
+		t.Errorf("AgentClose = %+v", ac)
+	}
+	start := time.Date(2026, 10, 1, 10, 5, 6, 0, time.UTC)
+	if !ac.StartedAt.Equal(start) || !ac.EndedAt.Equal(start.Add(2500*time.Millisecond)) ||
+		ac.Lines != (store.AgentLines{Read: 4, Kept: 4}) {
+		t.Errorf("times %v to %v, lines %+v", ac.StartedAt, ac.EndedAt, ac.Lines)
+	}
+	if lines := w.chunk(t, ac.TranscriptChunk); !strings.Contains(
+		lines,
+		`"tool_use_id":"toolu_sub"`,
+	) {
+		t.Errorf("agent transcript = %q, want the tool result's ids", lines)
+	}
+}
+
+// readerAgent is a subagent of sess-2 that edits nothing, in a session
+// whose main conversation edits nothing either.
+const readerAgent = `{"type":"user","uuid":"r-1","parentUuid":null,"sessionId":"sess-2",` +
+	`"timestamp":"2026-10-02T09:00:03.000Z","cwd":"{CWD}","isSidechain":true,` +
+	`"agentId":"areader-1","promptId":"q1","message":{"role":"user","content":"find main"}}
+{"type":"assistant","uuid":"r-2","parentUuid":"r-1","sessionId":"sess-2",` +
+	`"timestamp":"2026-10-02T09:00:04.000Z","cwd":"{CWD}","isSidechain":true,` +
+	`"agentId":"areader-1","message":{"id":"rm1","role":"assistant","model":"model-b",` +
+	`"content":[{"type":"text","text":"greet.go has it."}]}}
+`
+
+// TestImportAgentOnlySessions imports a session without a file edit when
+// it has a subagent transcript, turns and agent, and skips one with
+// neither, forced or not.
+func TestImportAgentOnlySessions(t *testing.T) {
+	for name, withAgent := range map[string]bool{"reader subagent": true, "neither": false} {
+		t.Run(name, func(t *testing.T) {
+			w := newWorld(t)
+			if withAgent {
+				dir := filepath.Join(
+					strings.TrimSuffix(w.transcript("sess-2"), ".jsonl"),
+					"subagents",
+				)
+				writeAgent(t, dir, "areader-1", strings.ReplaceAll(readerAgent, "{CWD}", w.cwd))
+			}
+			opts := w.options()
+			opts.Known = func(context.Context, string) (bool, error) { return true, nil }
+			opts.Force = true
+			got, envs := w.run(t, opts)
+			agent, hasAgent := byID(envs)["areader-1:close:2"]
+			_, hasTurn := byID(envs)["q1:close"]
+			skipped, agentsOnly := 1, 0
+			if withAgent {
+				skipped, agentsOnly = 0, 1
+			}
+			if hasAgent != withAgent || hasTurn != withAgent ||
+				got.Skipped.NoEdits != skipped || got.SessionsAgentsOnly != agentsOnly {
+				t.Errorf("agent %v turn %v, skipped %+v, agents only %d",
+					hasAgent, hasTurn, got.Skipped, got.SessionsAgentsOnly)
+			}
+			if withAgent && (agent.Session.ID != "sess-2" ||
+				!slices.Equal(agent.AgentClose.TurnIDs, []string{"q1"})) {
+				t.Errorf("agent envelope = %+v", agent)
+			}
+		})
+	}
+}
+
+// writeAgent writes one subagent transcript, and its meta file, into dir.
+func writeAgent(t *testing.T, dir, id, lines string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Join(dir, "agent-"+id)
+	if err := os.WriteFile(base+".jsonl", []byte(lines), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	meta := []byte(`{"agentType":"Explore","description":"find main"}`)
+	if err := os.WriteFile(base+".meta.json", meta, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -103,11 +103,13 @@ type backfillBatch struct {
 
 // backfillTotals tries up to limit stored turns that have no totals or
 // older ones, in Store.TurnsWithoutTotals order, computes their totals,
-// and offers their sessions the titles their lines give. limit caps the
-// turns tried, not the turns computed, so a batch stays short whatever
-// fails. A turn whose chunk cannot be read, or that panics, is logged and
-// added to skip, which later calls leave out. A store failure ends the
-// batch and leaves the turn for the next one.
+// and offers their sessions the titles their lines give. When the turns
+// leave room under limit, it tries stored agents the same way, in
+// Store.AgentsWithoutTotals order. limit caps the records tried, not the
+// ones computed, so a batch stays short whatever fails. A record whose
+// chunk cannot be read, or that panics, is logged and added to skip, which
+// later calls leave out: a turn by its id, an agent by agentSkipKey. A
+// store failure ends the batch and leaves the record for the next one.
 func (in *Ingester) backfillTotals(
 	ctx context.Context,
 	limit int,
@@ -117,54 +119,108 @@ func (in *Ingester) backfillTotals(
 	if err != nil {
 		return backfillBatch{}, fmt.Errorf("ingest: turns without totals: %w", err)
 	}
-	var b backfillBatch
-	for _, t := range turns {
+	b, stopped := backfillEach(ctx, in, turns, limit, skip, turnBackfill(in))
+	if stopped || b.tried == limit || ctx.Err() != nil {
+		return b, nil
+	}
+	agents, err := in.Store.AgentsWithoutTotals(ctx, trace.TotalsVersion, limit-b.tried+len(skip))
+	if err != nil {
+		return b, fmt.Errorf("ingest: agents without totals: %w", err)
+	}
+	a, _ := backfillEach(ctx, in, agents, limit-b.tried, skip, agentBackfill(in))
+	return backfillBatch{tried: b.tried + a.tried, computed: b.computed + a.computed}, nil
+}
+
+// backfiller is how backfillEach works on one kind of record: the key it
+// is skipped by, its name in a log line, and the work.
+type backfiller[T any] struct {
+	key  func(T) string
+	name func(T) string
+	run  func(context.Context, T) (bool, error)
+}
+
+func turnBackfill(in *Ingester) backfiller[store.Turn] {
+	return backfiller[store.Turn]{
+		key:  func(t store.Turn) string { return t.ID },
+		name: func(t store.Turn) string { return "turn " + t.ID },
+		run:  in.backfillTurn,
+	}
+}
+
+func agentBackfill(in *Ingester) backfiller[store.Agent] {
+	return backfiller[store.Agent]{
+		key:  func(a store.Agent) string { return agentSkipKey(a.ID) },
+		name: func(a store.Agent) string { return "agent " + a.ID },
+		run:  in.backfillAgent,
+	}
+}
+
+// agentSkipKey is an agent's key in the backfill's skip set, apart from
+// every turn id.
+func agentSkipKey(id string) string { return "agent:" + id }
+
+// backfillEach tries up to limit of items that skip leaves in, in order,
+// and counts what it tried and computed. stopped is set when a store
+// failure ended it.
+func backfillEach[T any](
+	ctx context.Context,
+	in *Ingester,
+	items []T,
+	limit int,
+	skip map[string]bool,
+	bf backfiller[T],
+) (b backfillBatch, stopped bool) {
+	for _, item := range items {
 		if b.tried == limit || ctx.Err() != nil {
 			break
 		}
-		if skip[t.ID] {
+		key := bf.key(item)
+		if skip[key] {
 			continue
 		}
 		b.tried++
-		done, err := in.guardedBackfill(ctx, t, skip)
+		done, err := in.guardedBackfill(key, bf.name(item), skip, func() (bool, error) {
+			return bf.run(ctx, item)
+		})
 		if err != nil {
 			if ctx.Err() == nil {
 				in.logf("ingest: totals backfill: %v; pausing until the next batch", err)
 			}
-			break
+			return b, true
 		}
 		if done {
 			b.computed++
 		}
 	}
-	return b, nil
+	return b, false
 }
 
-// guardedBackfill runs backfillTurn with a panic recovered, as the drain's
-// guarded does for an envelope, so a transcript that trips a bug cannot
-// crash serve a second after every restart. The turn sits in skip while it
-// runs, so a panic leaves it skipped until serve restarts; a run that
-// computed the turn or hit a store failure takes it out again.
+// guardedBackfill runs one record's backfill with a panic recovered, as
+// the drain's guarded does for an envelope, so a transcript that trips a
+// bug cannot crash serve a second after every restart. The record sits in
+// skip by key while it runs, so a panic leaves it skipped until serve
+// restarts; a run that computed the record or hit a store failure takes it
+// out again. name says which record a log line is about.
 func (in *Ingester) guardedBackfill(
-	ctx context.Context,
-	t store.Turn,
+	key, name string,
 	skip map[string]bool,
+	run func() (bool, error),
 ) (done bool, err error) {
-	skip[t.ID] = true
+	skip[key] = true
 	defer func() {
 		if p := recover(); p != nil {
 			in.logf(
-				"ingest: totals backfill: turn %s panicked: %v; skipping it until serve restarts\n%s",
-				t.ID,
+				"ingest: totals backfill: %s panicked: %v; skipping it until serve restarts\n%s",
+				name,
 				p,
 				debug.Stack(),
 			)
 			done, err = false, nil
 		}
 	}()
-	done, err = in.backfillTurn(ctx, t)
+	done, err = run()
 	if done || err != nil {
-		delete(skip, t.ID)
+		delete(skip, key)
 	}
 	return done, err
 }

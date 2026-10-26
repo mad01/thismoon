@@ -289,3 +289,12 @@ func isDir(dir string) bool {
 	info, err := os.Stat(dir)
 	return err == nil && info.IsDir()
 }
+
+// placeDir is the location of a directory, as place keys a file in it,
+// symlinks resolved as the hook resolves a file's. Its outcome counts
+// nowhere: Placement counts the edits' files.
+func (p *placer) placeDir(dir, branch string) store.Location {
+	var unused Placement
+	loc, _ := p.place(filepath.Join(record.Resolve(dir, ""), "x"), dir, branch, &unused)
+	return loc
+}

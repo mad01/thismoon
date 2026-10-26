@@ -17,7 +17,7 @@ func (rec *recorder) openTurn() error {
 	env := rec.envelope(spool.KindTurnOpen, rec.p.promptID+":open")
 	env.Turn.TranscriptOffset = offset
 	chunks := chunkSet{}
-	env.TurnOpen = &spool.TurnOpen{}
+	env.TurnOpen = &spool.TurnOpen{Origin: store.PromptOrigin(rec.p.prompt)}
 	if rec.p.prompt != "" {
 		env.TurnOpen.PromptChunk = chunks.add([]byte(rec.p.prompt))
 	}

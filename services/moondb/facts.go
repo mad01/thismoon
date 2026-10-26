@@ -56,6 +56,31 @@ const (
 	MaxStatusBytes = 4 << 20
 )
 
+// Agent transcripts. The SubagentStop hook and `moondb import` read one
+// subagent's transcript file and keep its timeline lines (user, assistant,
+// API request and system lines) with the fields a trace reads. Each text,
+// thinking, tool input and tool result is cut to a short head, so a
+// transcript of many megabytes keeps its usage, ids and times in a chunk a
+// fraction of its size.
+const (
+	// AgentHeadBytes is how much of each text, thinking block, tool input
+	// and tool result an agent transcript keeps. The rest is replaced by a
+	// count of the bytes cut.
+	AgentHeadBytes = 240
+	// MaxAgentTranscriptBytes caps an agent transcript after the cut to
+	// heads. A longer one loses whole lines from its head, counted on the
+	// Agent record, and the model calls in them add no tokens or cost, as
+	// for a turn's transcript (MaxTranscriptBytes).
+	MaxAgentTranscriptBytes = 8 << 20
+	// AgentBudget is how long `moondb record` works on a SubagentStop
+	// payload. The hook is async, so no session waits on it, and reading
+	// and cutting a large transcript takes longer than RecordBudget. It
+	// stays under the ceiling the CLI puts on every record run. A file the
+	// budget does not reach the end of is recorded up to where it got and
+	// marked partial.
+	AgentBudget = 2 * time.Second
+)
+
 // Import defaults: where `moondb import` finds the harness's transcripts and
 // its file history, and how far back it reads. The leading ~ is expanded at
 // runtime.
@@ -64,6 +89,11 @@ const (
 	DefaultProjectsDir    = "~/.claude/projects"
 	DefaultFileHistoryDir = "~/.claude/file-history"
 )
+
+// DefaultClaudeSettings is the Claude Code settings file `moondb doctor`
+// reads the hook wiring from, unless the config's claude_settings names
+// another. The leading ~ is expanded at runtime.
+const DefaultClaudeSettings = "~/.claude/settings.json"
 
 // Store limits.
 const (
@@ -104,8 +134,8 @@ const (
 // fields a row shows are kept on the records or counted from them.
 const (
 	// SessionIdleAfter is how long a session goes without a recorded turn
-	// start, turn end or edit before the listing calls it ended rather
-	// than running.
+	// start, turn end, edit or agent stop before the listing calls it
+	// ended rather than running.
 	SessionIdleAfter = 10 * time.Minute
 	// OpenTurnStaleAfter is how long an open last turn keeps a session
 	// running without other activity. The harness sends no Stop for a turn

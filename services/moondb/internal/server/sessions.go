@@ -55,16 +55,22 @@ type SessionSummary struct {
 	EditCount  int   `json:"edit_count"`
 	// FileCount counts the distinct files the session edited.
 	FileCount int `json:"file_count"`
-	// AgentCount counts the agents that made an edit, the main
-	// conversation among them.
-	AgentCount int `json:"agent_count"`
-	// Tokens sums the tokens of the turns that have totals, main
-	// conversation only: a subagent's calls live in its own transcript.
+	// AgentCount counts the agents that ran: the subagents with a record,
+	// the ones known only from an edit, and the main conversation when it
+	// edited. Agents names the subagents, each label once.
+	AgentCount int      `json:"agent_count"`
+	Agents     []string `json:"agents"`
+	// Tokens sums the tokens of the turns and the subagents that have
+	// totals: the main conversation and every agent run.
 	Tokens store.Tokens `json:"tokens"`
 	// Cost is the USD of the priced tokens, nil when none is priced.
-	// Unpriced names the models it leaves out.
-	Cost     *float64 `json:"cost,omitempty"`
-	Unpriced []string `json:"unpriced,omitempty"`
+	// Unpriced names the models it leaves out. CostMain and CostAgents
+	// split it between the main conversation and the subagents; CostAgents
+	// is absent when no subagent with a record has totals.
+	Cost       *float64 `json:"cost,omitempty"`
+	CostMain   *float64 `json:"cost_main,omitempty"`
+	CostAgents *float64 `json:"cost_agents,omitempty"`
+	Unpriced   []string `json:"unpriced,omitempty"`
 	// Repos are the repository identities the session edited, sorted, and
 	// RepoNames their short names (the last two path segments) in the same
 	// order.
@@ -94,8 +100,12 @@ type WindowTotals struct {
 	Edits    int          `json:"edits"`
 	Files    int          `json:"files"`
 	Tokens   store.Tokens `json:"tokens"`
-	Cost     *float64     `json:"cost,omitempty"`
-	Unpriced []string     `json:"unpriced,omitempty"`
+	// Cost covers the main conversations and their subagents, as a row's
+	// does; CostMain and CostAgents split it.
+	Cost       *float64 `json:"cost,omitempty"`
+	CostMain   *float64 `json:"cost_main,omitempty"`
+	CostAgents *float64 `json:"cost_agents,omitempty"`
+	Unpriced   []string `json:"unpriced,omitempty"`
 }
 
 // RepoCount is one repository with how many sessions edited it.
@@ -107,10 +117,14 @@ type RepoCount struct {
 
 // SessionView is a session as GET /api/sessions/{id} answers it: the
 // session with its turns, plus its listing row, whose title and status
-// follow the listing's rules.
+// follow the listing's rules, and its agents: the main conversation first,
+// then every subagent. The rows take the place of the store's Agent
+// records (store.SessionDetail), so Agents is the one agents field.
 type SessionView struct {
-	store.SessionDetail
+	store.SessionSummary
+	Turns   []store.Turn   `json:"turns"`
 	Summary SessionSummary `json:"summary"`
+	Agents  []AgentRow     `json:"agents"`
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
@@ -149,15 +163,27 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		writeBackendErr(w, err)
 		return
 	}
+	agents, err := s.sessionAgents(r.Context(), d)
+	if err != nil {
+		writeBackendErr(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, SessionView{
-		SessionDetail: d,
-		Summary:       s.row(d.SessionSummary, s.now()),
+		SessionSummary: d.SessionSummary,
+		Turns:          d.Turns,
+		Summary:        s.row(d.SessionSummary, s.now()),
+		Agents:         agents,
 	})
 }
 
 // row turns a store summary into a listing row at time now.
 func (s *Server) row(sum store.SessionSummary, now time.Time) SessionSummary {
 	cost, unpriced := s.query.UsageCost(sum.Usage)
+	costMain, _ := s.query.UsageCost(sum.MainUsage)
+	var costAgents *float64
+	if len(sum.AgentUsage) > 0 {
+		costAgents, _ = s.query.UsageCost(sum.AgentUsage)
+	}
 	names := make([]string, 0, len(sum.Repos))
 	for _, r := range sum.Repos {
 		names = append(names, repoName(r))
@@ -183,8 +209,11 @@ func (s *Server) row(sum store.SessionSummary, now time.Time) SessionSummary {
 		EditCount:      sum.EditCount,
 		FileCount:      sum.FileCount,
 		AgentCount:     sum.AgentCount,
+		Agents:         orEmpty(sum.AgentLabels),
 		Tokens:         tokensOf(sum.Usage),
 		Cost:           cost,
+		CostMain:       costMain,
+		CostAgents:     costAgents,
 		Unpriced:       unpriced,
 		Repos:          sum.Repos,
 		RepoNames:      names,
@@ -197,19 +226,25 @@ func (s *Server) row(sum store.SessionSummary, now time.Time) SessionSummary {
 func (s *Server) window(sessions []store.SessionSummary) WindowTotals {
 	t := WindowTotals{Sessions: len(sessions)}
 	files := map[store.FileKey]bool{}
-	usage := make([][]store.ModelUsage, 0, len(sessions))
+	var main, agents [][]store.ModelUsage
 	for _, sum := range sessions {
 		t.Turns += sum.TurnCount
 		t.Edits += sum.EditCount
 		for _, f := range sum.Files {
 			files[f] = true
 		}
-		usage = append(usage, sum.Usage)
+		main = append(main, sum.MainUsage)
+		agents = append(agents, sum.AgentUsage)
 	}
 	t.Files = len(files)
-	merged := store.MergeUsage(usage...)
+	mainUsage, agentUsage := store.MergeUsage(main...), store.MergeUsage(agents...)
+	merged := store.MergeUsage(mainUsage, agentUsage)
 	t.Tokens = tokensOf(merged)
 	t.Cost, t.Unpriced = s.query.UsageCost(merged)
+	t.CostMain, _ = s.query.UsageCost(mainUsage)
+	if len(agentUsage) > 0 {
+		t.CostAgents, _ = s.query.UsageCost(agentUsage)
+	}
 	return t
 }
 

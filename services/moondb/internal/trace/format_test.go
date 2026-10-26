@@ -55,3 +55,58 @@ func TestFormatTotalsCost(t *testing.T) {
 		})
 	}
 }
+
+// TestPromptLabel names the prompts the harness writes by what started the
+// turn, from their real shapes, and a person's prompt by its first line.
+func TestPromptLabel(t *testing.T) {
+	cases := []struct{ name, prompt, want string }{
+		{"person", "fix the flaky test\nin ingest", "fix the flaky test"},
+		{
+			"task", "<task-notification>\n<task-id>bjgyw2ry2</task-id>\n" +
+				"<tool-use-id>toolu_01A</tool-use-id>\n<status>completed</status>\n" +
+				"<summary>Background command \"Wait for CI\" completed (exit code 0)</summary>\n" +
+				"</task-notification>",
+			"background task finished: Background command \"Wait for CI\" completed (exit code 0)",
+		},
+		{
+			"task without summary", "<task-notification>\n<task-id>b1</task-id>\n</task-notification>",
+			"background task finished",
+		},
+		{
+			"teammate via another session", "Another Claude session sent a message:\n" +
+				"<teammate-message teammate_id=\"capture-builder\" color=\"green\" " +
+				"summary=\"Capture PR ready\">\nBuilt it.\n</teammate-message>",
+			"teammate message from capture-builder: Capture PR ready",
+		},
+		{"teammate without summary", "<teammate-message teammate_id=\"team-lead\">\nGo.\n" +
+			"</teammate-message>", "teammate message from team-lead"},
+		{
+			"subagent message", "<agent-message from=\"worker [3fa9c1]\">\nready\n</agent-message>",
+			"message from subagent worker [3fa9c1]",
+		},
+		{
+			"subagent via another session", "Another Claude session sent a message:\n" +
+				"<agent-message from=\"worker\">\nDone.\n</agent-message>",
+			"message from subagent worker",
+		},
+		{
+			"subagent without sender", "<agent-message>\nready\n</agent-message>",
+			"message from subagent",
+		},
+		{
+			"command",
+			"<command-name>/compact</command-name>\n<command-args></command-args>",
+			"/compact",
+		},
+		{"continuation", "This session is being continued from a previous conversation that ran " +
+			"out of context.", "continued after compaction"},
+		{"empty", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := PromptLabel(c.prompt); got != c.want {
+				t.Errorf("PromptLabel = %q, want %q", got, c.want)
+			}
+		})
+	}
+}

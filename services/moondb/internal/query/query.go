@@ -27,15 +27,16 @@ var ErrInvalidRequest = errors.New("query: invalid request")
 const defaultHistoryLimit = 100
 
 // Service answers queries over one store. Use it by pointer: it holds the
-// trace cache.
+// trace caches.
 type Service struct {
 	Store store.Store
 	// Prices costs the model calls in a trace; the zero value prices with
 	// moondb.DefaultPrices.
 	Prices trace.Prices
 
-	cacheOnce sync.Once
-	cache     *traceCache
+	cacheOnce   sync.Once
+	cache       *traceCache[trace.TurnTrace]
+	agentTraces *traceCache[trace.AgentTrace]
 }
 
 // Method says how a Why answer was found.

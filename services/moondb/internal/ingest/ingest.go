@@ -1,7 +1,7 @@
 // Package ingest drains the spool into the store. It is the serve side of
 // capture: the Ingester reads each envelope `moondb record` left, turns it
-// into session, turn, edit and commit-link records, and deletes it once the
-// store holds them. Ingest is idempotent on the envelope id, so an envelope
+// into session, turn, agent, edit and commit-link records, and deletes it
+// once the store holds them. Ingest is idempotent on the envelope id, so an envelope
 // replayed after a crash between append and delete changes nothing, and
 // envelopes that arrive out of order (an edit before its turn opened, a
 // close without an open) still leave whole records behind.
@@ -60,6 +60,8 @@ func (in *Ingester) Ingest(ctx context.Context, env spool.Envelope) error {
 		return in.snapshot(ctx, env, missing)
 	case spool.KindSkipped:
 		return in.skipped(ctx, env)
+	case spool.KindAgentClose:
+		return in.agentClose(ctx, env, missing)
 	default:
 		return fmt.Errorf("ingest: envelope %s has unknown kind %q", env.ID, env.Kind)
 	}

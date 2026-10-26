@@ -58,6 +58,8 @@ func (f *fixture) seed(recs ...any) {
 			err = f.st.AppendEdit(ctx, v)
 		case store.CommitLink:
 			err = f.st.AppendCommitLink(ctx, v)
+		case store.Agent:
+			err = f.st.PutAgent(ctx, v)
 		default:
 			err = fmt.Errorf("cannot seed %T", r)
 		}

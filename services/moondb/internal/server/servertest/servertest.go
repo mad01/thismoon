@@ -73,11 +73,32 @@ const (
 `
 )
 
+// AgentID is the older session's one subagent with a record: a reviewer
+// that ran under OldTurn from minute 2 to minute 4, past the turn's end,
+// and made no edit. AgentTranscript is its agent transcript: a model call
+// asking for a Read, its result, and a closing call, on claude-opus-5-5.
+const (
+	AgentID         = "agent-rev"
+	AgentName       = "reviewer"
+	AgentTranscript = `{"type":"user","isSidechain":true,"promptId":"turn-old",` +
+		`"timestamp":"2026-10-01T09:02:00Z","message":{"content":"review it"}}
+{"type":"assistant","isSidechain":true,"timestamp":"2026-10-01T09:02:40Z","message":` +
+		`{"id":"msg_rev_1","model":"claude-opus-5-5","content":[{"type":"tool_use",` +
+		`"id":"toolu_rev","name":"Read"}],"usage":{"input_tokens":2000,"output_tokens":100}}}
+{"type":"user","isSidechain":true,"promptId":"turn-old","timestamp":"2026-10-01T09:03:10Z",` +
+		`"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_rev"}]}}
+{"type":"assistant","isSidechain":true,"timestamp":"2026-10-01T09:03:50Z","message":` +
+		`{"id":"msg_rev_2","model":"claude-opus-5-5","content":[{"type":"text","text":"ok"}],` +
+		`"usage":{"input_tokens":100,"output_tokens":50}}}
+`
+)
+
 // Chunk keys of the fixture contents.
 var (
-	PromptSHA     = Key([]byte(Prompt))
-	AfterSHA      = Key([]byte(After))
-	TranscriptSHA = Key([]byte(Transcript))
+	PromptSHA          = Key([]byte(Prompt))
+	AfterSHA           = Key([]byte(After))
+	TranscriptSHA      = Key([]byte(Transcript))
+	AgentTranscriptSHA = Key([]byte(AgentTranscript))
 )
 
 // T0 anchors every fixture time.
@@ -96,7 +117,8 @@ var errReadOnly = errors.New("servertest: the fixture store is read-only")
 type Store struct {
 	sessions []store.Session // oldest first
 	turns    []store.Turn
-	edits    []store.Edit // oldest first
+	agents   []store.Agent // in store.SortAgents order
+	edits    []store.Edit  // oldest first
 	snaps    []store.Snapshot
 	deltas   []store.UnattributedDelta
 	chunks   chunkMap
@@ -134,6 +156,7 @@ func NewStore() *Store {
 				Title: "build the server", StartedAt: at(60),
 			},
 		},
+		agents: []store.Agent{fixtureAgent()},
 		turns: []store.Turn{
 			oldTurn(),
 			{
@@ -156,11 +179,26 @@ func NewStore() *Store {
 			Location: loc, Path: PathB, Cause: store.DeltaSnapshot,
 		}},
 		chunks: chunkMap{
-			PromptSHA:     []byte(Prompt),
-			AfterSHA:      []byte(After),
-			TranscriptSHA: []byte(Transcript),
+			PromptSHA:          []byte(Prompt),
+			AfterSHA:           []byte(After),
+			TranscriptSHA:      []byte(Transcript),
+			AgentTranscriptSHA: []byte(AgentTranscript),
 		},
 	}
+}
+
+// fixtureAgent is AgentID with the totals its AgentTranscript gives.
+func fixtureAgent() store.Agent {
+	a := store.Agent{
+		ID: AgentID, SessionID: OldSession, Type: "general-purpose", Name: AgentName,
+		Description: "review the change", Model: "claude-opus-5-5",
+		TurnIDs: []string{OldTurn}, Cwd: "/work/other", StartedAt: at(2), EndedAt: at(4),
+		TranscriptChunk: AgentTranscriptSHA, Lines: store.AgentLines{Read: 4, Kept: 4},
+	}
+	totals := trace.Stored(trace.BuildAgent(a, []byte(AgentTranscript), nil,
+		trace.Prices{}).Totals)
+	a.Totals = &totals
+	return a
 }
 
 // oldTurn is the older session's closed turn with the totals its
@@ -210,6 +248,46 @@ func (s *Store) PutSession(context.Context, store.Session) error { return errRea
 // PutTurn fails: the fixture is read-only.
 func (s *Store) PutTurn(context.Context, store.Turn) error { return errReadOnly }
 
+// PutAgent fails: the fixture is read-only.
+func (s *Store) PutAgent(context.Context, store.Agent) error { return errReadOnly }
+
+// Agents lists a session's fixture agents.
+func (s *Store) Agents(_ context.Context, sessionID string) ([]store.Agent, error) {
+	return s.sessionAgents(sessionID), nil
+}
+
+// Agent loads one fixture agent.
+func (s *Store) Agent(_ context.Context, id string) (store.Agent, error) {
+	i := slices.IndexFunc(s.agents, func(a store.Agent) bool { return a.ID == id })
+	if i < 0 {
+		return store.Agent{}, fmt.Errorf("agent %s: %w", id, store.ErrNotFound)
+	}
+	return s.agents[i], nil
+}
+
+// AgentsWithoutTotals lists the fixture agents that lack totals from
+// version.
+func (s *Store) AgentsWithoutTotals(_ context.Context, version, limit int) ([]store.Agent, error) {
+	out := []store.Agent{}
+	for _, a := range s.agents {
+		if store.NeedsAgentTotals(a, version) && (limit <= 0 || len(out) < limit) {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// sessionAgents lists one session's fixture agents.
+func (s *Store) sessionAgents(id string) []store.Agent {
+	out := []store.Agent{}
+	for _, a := range s.agents {
+		if a.SessionID == id {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 // AppendEdit fails: the fixture is read-only.
 func (s *Store) AppendEdit(context.Context, store.Edit) error { return errReadOnly }
 
@@ -242,7 +320,8 @@ func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.Sess
 
 // summary adds up one session's fixture records.
 func (s *Store) summary(sess store.Session) store.SessionSummary {
-	return store.Summarize(sess, s.sessionTurns(sess.ID), func(yield func(*store.Edit) bool) {
+	turns, agents := s.sessionTurns(sess.ID), s.sessionAgents(sess.ID)
+	return store.Summarize(sess, turns, agents, func(yield func(*store.Edit) bool) {
 		for i := range s.edits {
 			if s.edits[i].SessionID == sess.ID && !yield(&s.edits[i]) {
 				return
@@ -272,6 +351,7 @@ func (s *Store) Session(_ context.Context, id string) (store.SessionDetail, erro
 	return store.SessionDetail{
 		SessionSummary: s.summary(s.sessions[i]),
 		Turns:          s.sessionTurns(id),
+		Agents:         s.sessionAgents(id),
 	}, nil
 }
 
@@ -444,6 +524,19 @@ func (q *Querier) TurnTrace(ctx context.Context, d store.TurnDetail) (trace.Turn
 // SessionTrace computes the session's trace with the real query service.
 func (q *Querier) SessionTrace(ctx context.Context, id string) (trace.SessionTrace, error) {
 	return q.traces.SessionTrace(ctx, id)
+}
+
+// TurnAgents computes the turn's agent runs with the real query service.
+func (q *Querier) TurnAgents(ctx context.Context, d store.TurnDetail) ([]trace.AgentRun, error) {
+	return q.traces.TurnAgents(ctx, d)
+}
+
+// AgentTraceByID computes one agent's trace with the real query service.
+func (q *Querier) AgentTraceByID(
+	ctx context.Context,
+	id string,
+) (store.Agent, trace.AgentTrace, error) {
+	return q.traces.AgentTraceByID(ctx, id)
 }
 
 // UsageCost prices usage with the real query service's default table.

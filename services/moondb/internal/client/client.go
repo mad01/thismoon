@@ -92,10 +92,10 @@ func (c *Client) Sessions(ctx context.Context, q SessionQuery) ([]server.Session
 	return out.Sessions, c.getJSON(ctx, c.http, "/api/sessions", v, &out)
 }
 
-// Session loads one session with its turns. A missing id matches
-// store.ErrNotFound.
-func (c *Client) Session(ctx context.Context, id string) (store.SessionDetail, error) {
-	var out store.SessionDetail
+// Session loads one session with its turns, its listing row and its
+// agents. A missing id matches store.ErrNotFound.
+func (c *Client) Session(ctx context.Context, id string) (server.SessionView, error) {
+	var out server.SessionView
 	return out, c.getJSON(ctx, c.http, "/api/sessions/"+url.PathEscape(id), nil, &out)
 }
 

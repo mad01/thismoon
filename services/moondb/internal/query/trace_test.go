@@ -125,7 +125,7 @@ func TestTurnTraceMissingChunk(t *testing.T) {
 }
 
 func TestTraceCacheEvictsLeastRecentlyRead(t *testing.T) {
-	c := newTraceCache(2)
+	c := newTraceCache[trace.TurnTrace](2)
 	c.put("a", trace.TurnTrace{TurnID: "a"})
 	c.put("b", trace.TurnTrace{TurnID: "b"})
 	if _, ok := c.get("a"); !ok {
@@ -142,5 +142,107 @@ func TestTraceCacheEvictsLeastRecentlyRead(t *testing.T) {
 	}
 	if c.count() != 2 {
 		t.Errorf("count = %d, want 2", c.count())
+	}
+}
+
+// agentLines is agent a1's transcript: a teammate messaged under p1 whose
+// one model call reads half a million input tokens, $2 on
+// claude-opus-5-5, and makes the edit tu9.
+var agentLines = strings.Join([]string{
+	`{"type":"user","isSidechain":true,"promptId":"p1","timestamp":"2026-10-25T12:00:05Z",` +
+		`"message":{"content":"go"}}`,
+	`{"type":"assistant","isSidechain":true,"timestamp":"2026-10-25T12:00:20Z","message":` +
+		`{"id":"am1","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"tu9",` +
+		`"name":"Write"}],"usage":{"input_tokens":500000,"output_tokens":0}}}`,
+	`{"type":"user","isSidechain":true,"promptId":"p1","timestamp":"2026-10-25T12:00:30Z",` +
+		`"message":{"content":[{"type":"tool_result","tool_use_id":"tu9"}]}}`,
+}, "\n")
+
+// agentFixture is traceFixture with agent a1, which ran under p1 past its
+// end and made one edit.
+func agentFixture(t *testing.T) *fixture {
+	t.Helper()
+	f := traceFixture(t)
+	f.seed(
+		store.Agent{
+			ID: "a1", SessionID: "s1", Type: "general-purpose", Name: "builder",
+			TurnIDs: []string{"p1"}, StartedAt: at(0), EndedAt: at(4),
+			TranscriptChunk: f.chunk(agentLines),
+		},
+		store.Edit{
+			ID: "tu9:0", ToolUseID: "tu9", SessionID: "s1", TurnID: "p1", AgentID: "a1",
+			AgentType: "builder", At: at(0),
+		},
+	)
+	return f
+}
+
+// TestSessionTraceWithAgents: the session's cost adds the agent's run to
+// the turns', the agent's work shows under the turn it ran in, and its
+// trace is cached like a turn's.
+func TestSessionTraceWithAgents(t *testing.T) {
+	f := agentFixture(t)
+	got, err := f.svc.SessionTrace(context.Background(), "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := got.Totals.Cost; c == nil || math.Abs(*c-6) > 1e-9 {
+		t.Errorf("session cost = %v, want 4 for the turns and 2 for the agent", c)
+	}
+	if len(got.Agents) != 1 || got.Agents[0].Span.EditCount != 1 {
+		t.Errorf("agents = %+v, want a1 with its edit", got.Agents)
+	}
+	i := slices.IndexFunc(got.Turns[0].Spans, func(s trace.Span) bool {
+		return s.Kind == trace.KindSubagent
+	})
+	if i < 0 || got.Turns[0].Spans[i].ModelCalls != 1 || got.Turns[0].Spans[i].Name != "builder" {
+		t.Errorf("p1 spans = %+v, want the builder's work with its call", got.Turns[0].Spans)
+	}
+	if _, err := f.svc.SessionTrace(context.Background(), "s1"); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.svc.agentTraces.count(); n != 1 {
+		t.Errorf("agent cache holds %d traces after two reads, want 1", n)
+	}
+}
+
+// TestAgentTraceByID loads one agent with the edits it made; an unknown id
+// is ErrNotFound.
+func TestAgentTraceByID(t *testing.T) {
+	f := agentFixture(t)
+	a, at, err := f.svc.AgentTraceByID(context.Background(), "a1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Name != "builder" || at.Totals.ModelCalls != 1 ||
+		!slices.Equal(at.Spans[1].EditIDs, []string{"tu9:0"}) {
+		t.Errorf("AgentTraceByID = %+v, %+v", a, at.AgentRun)
+	}
+	if _, _, err := f.svc.AgentTraceByID(context.Background(), "nope"); !errors.Is(
+		err, store.ErrNotFound) {
+		t.Errorf("err = %v, want store.ErrNotFound", err)
+	}
+}
+
+// TestTurnAgents lists the agents that ran under a turn, and none for a
+// turn no agent ran under.
+func TestTurnAgents(t *testing.T) {
+	f := agentFixture(t)
+	ctx := context.Background()
+	for _, c := range []struct {
+		turn string
+		want int
+	}{{"p1", 1}, {"p2", 0}} {
+		d, err := f.st.Turn(ctx, c.turn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runs, err := f.svc.TurnAgents(ctx, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(runs) != c.want {
+			t.Errorf("TurnAgents(%s) = %d runs, want %d", c.turn, len(runs), c.want)
+		}
 	}
 }

@@ -22,6 +22,7 @@ func doctorChecks(context.Context) []doctor.Check {
 	api := apiURL()
 	return []doctor.Check{
 		{Name: "config", Run: checkConfig},
+		{Name: "hooks-wired", Run: hooksWired},
 		doctor.ServiceReachable(api),
 		{Name: "store-ping", Run: client.New(api).Health},
 		doctor.StoreReadable(flagWorkdir),

@@ -19,6 +19,7 @@ const (
 	kindDelta      = "delta"
 	kindSnapshot   = "snapshot"
 	kindCommitLink = "commitlink"
+	kindAgent      = "agent"
 )
 
 // errUnknownKind marks a log line of a kind this build does not know, left
@@ -45,6 +46,9 @@ type index struct {
 	turns        map[string]*store.Turn
 	// turnsBySession holds each session's turns by Seq.
 	turnsBySession map[string][]*store.Turn
+	agents         map[string]*store.Agent
+	// agentsBySession holds each session's agents by start, then id.
+	agentsBySession map[string][]*store.Agent
 
 	edits     facts[store.Edit]
 	deltas    facts[store.UnattributedDelta]
@@ -70,6 +74,8 @@ func newIndex() *index {
 		sessions:            map[string]*store.Session{},
 		turns:               map[string]*store.Turn{},
 		turnsBySession:      map[string][]*store.Turn{},
+		agents:              map[string]*store.Agent{},
+		agentsBySession:     map[string][]*store.Agent{},
 		edits:               newFacts[store.Edit](),
 		deltas:              newFacts[store.UnattributedDelta](),
 		snapshots:           newFacts[store.Snapshot](),
@@ -106,6 +112,8 @@ func (ix *index) apply(kind string, raw json.RawMessage) error {
 		return decodeInto(raw, func(l store.CommitLink) {
 			ix.links.add(l.ID, l.TurnID, newRec(l, l.At, ix.n))
 		})
+	case kindAgent:
+		return decodeInto(raw, ix.putAgent)
 	}
 	return fmt.Errorf("%w %q", errUnknownKind, kind)
 }
@@ -130,6 +138,23 @@ func (ix *index) putSession(s store.Session) {
 		ix.sessions[s.ID] = cur
 	}
 	ix.sessionOrder = insertSorted(ix.sessionOrder, cur, cmpSession)
+}
+
+// putAgent replaces the agent with the same id, or adds it. A known agent
+// keeps the session it was first recorded under.
+func (ix *index) putAgent(a store.Agent) {
+	cur, ok := ix.agents[a.ID]
+	if !ok {
+		cur = &a
+		ix.agents[a.ID] = cur
+		ix.agentsBySession[a.SessionID] = insertSorted(
+			ix.agentsBySession[a.SessionID], cur, cmpAgent)
+		return
+	}
+	list := removeSorted(ix.agentsBySession[cur.SessionID], cur, cmpAgent)
+	a.SessionID = cur.SessionID
+	*cur = a
+	ix.agentsBySession[cur.SessionID] = insertSorted(list, cur, cmpAgent)
 }
 
 // settledTurn applies the Seq rule to an incoming turn: a known turn keeps
@@ -205,6 +230,13 @@ func (ix *index) addSnapshot(s store.Snapshot) {
 }
 
 func cmpSession(a, b *store.Session) int {
+	if c := a.StartedAt.Compare(b.StartedAt); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.ID, b.ID)
+}
+
+func cmpAgent(a, b *store.Agent) int {
 	if c := a.StartedAt.Compare(b.StartedAt); c != 0 {
 		return c
 	}

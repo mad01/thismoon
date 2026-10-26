@@ -8,8 +8,8 @@
 //                                  grouped by the day they started, newest first;
 //                                  ?since= and ?repo= filter, ?limit= pages
 //   /?session=<id>                 one session: its title, repos and status, its trace (a
-//                                  timeline lane per turn), its turns and the worktrees
-//                                  it touched
+//                                  timeline lane per turn), its agents with their cost,
+//                                  its turns and the worktrees it touched
 //   /?turn=<id>                    one turn: prompt, final message, agents, edits with
 //                                  their diffs, unattributed deltas, snapshots, commit
 //                                  links and the raw transcript
@@ -79,15 +79,22 @@
     return turns[id];
   }
 
-  // promptLine resolves to the first line of a turn's prompt, '' without one.
-  function promptLine(t, max) {
-    if (!t.prompt_chunk) return Promise.resolve('');
+  // turnPrompt resolves to a turn's prompt label and origin: the label
+  // promptLabel gives its text, '' without one, and the origin the turn
+  // records, else the one its text shows.
+  function turnPrompt(t, max) {
+    if (!t.prompt_chunk) return Promise.resolve({ label: '', origin: t.origin || 'none' });
     return chunk(t.prompt_chunk).then(
-      function (text) { return firstLine(text, max); },
-      function () { return ''; });
+      function (text) { return { label: promptLabel(text, max), origin: t.origin || promptOrigin(text) }; },
+      function () { return { label: '', origin: t.origin || '' }; });
   }
 
-  // turnLabel resolves to "#<seq> <prompt first line>" for a turn id.
+  // promptLine resolves to a turn's prompt label, '' without one.
+  function promptLine(t, max) {
+    return turnPrompt(t, max).then(function (p) { return p.label; });
+  }
+
+  // turnLabel resolves to "#<seq> <prompt label>" for a turn id.
   function turnLabel(id, max) {
     return loadTurn(id).then(function (t) {
       return promptLine(t, max).then(function (p) {
@@ -129,12 +136,108 @@
     return d ? pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) : '';
   }
 
-  // firstLine is the first non-blank line of text, cut to max characters.
-  function firstLine(text, max) {
+  // MARKUP mirrors trace.markup: an XML-like tag, which a prompt line
+  // reads better without.
+  var MARKUP = /<\/?[A-Za-z][\w:-]*(\s[^<>]*)?\/?>/g;
+
+  // promptText mirrors trace.PromptLine: the first line of text that holds
+  // words once its tags are gone, runs of space collapsed, cut to max.
+  function promptText(text, max) {
     var lines = (text || '').split('\n');
-    var line = '';
-    for (var i = 0; i < lines.length && !line; i++) line = lines[i].trim();
-    return line.length > max ? line.slice(0, max - 1) + '…' : line;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].replace(MARKUP, ' ').split(/\s+/).filter(Boolean).join(' ');
+      if (line) return cut(line, max);
+    }
+    return '';
+  }
+
+  // cut mirrors trace.cutLine: text past max characters keeps max of them
+  // and gains an ellipsis.
+  function cut(text, max) {
+    var chars = Array.from(text);
+    return chars.length > max ? chars.slice(0, max).join('') + '…' : text;
+  }
+
+  // ── turn origins ──
+
+  // RELAY_HEAD mirrors store.relayHead: the line before a message the
+  // harness relays from another session, whose wrapper says who sent it.
+  var RELAY_HEAD = 'Another Claude session sent a message:';
+
+  // ORIGIN_HEADS mirrors store.PromptOrigin: the head the harness gives a
+  // prompt it wrote itself, and the origin that head marks. A turn recorded
+  // before moondb kept origins is classified here from its prompt.
+  var ORIGIN_HEADS = [
+    ['<task-notification>', 'task'],
+    ['<teammate-message', 'teammate'],
+    ['<agent-message', 'subagent'],
+    ['<cross-session-message', 'subagent'],
+    ['This session is being continued from a previous conversation', 'continuation']
+  ];
+
+  // ORIGIN_BADGES mark the turns a person did not start.
+  var ORIGIN_BADGES = {
+    task: ['b', 'task', 'A background task finished, and its notification started this turn'],
+    teammate: ['c', 'teammate', 'A teammate\'s message started this turn'],
+    subagent: ['c', 'subagent', 'A message from a subagent or another session started this turn'],
+    continuation: ['stat', 'continued', 'The session continued after compaction with this turn']
+  };
+
+  // promptOrigin mirrors store.PromptOrigin: a relayed message is
+  // classified by the wrapper after RELAY_HEAD, a teammate's when none
+  // follows.
+  function promptOrigin(text) {
+    var head = (text || '').trim();
+    if (!head) return 'none';
+    if (head.indexOf(RELAY_HEAD) === 0) {
+      var relayed = headOrigin(head.slice(RELAY_HEAD.length).trim());
+      return relayed === 'person' ? 'teammate' : relayed;
+    }
+    return headOrigin(head);
+  }
+
+  function headOrigin(head) {
+    for (var i = 0; i < ORIGIN_HEADS.length; i++) {
+      if (head.indexOf(ORIGIN_HEADS[i][0]) === 0) return ORIGIN_HEADS[i][1];
+    }
+    return 'person';
+  }
+
+  // promptLabel mirrors trace.PromptLabel: a prompt the harness wrote is
+  // named by what started the turn, a person's by its first line.
+  function promptLabel(text, max) {
+    var origin = promptOrigin(text);
+    if (origin === 'task') {
+      var sum = /<summary>([^<]*)<\/summary>/.exec(text);
+      return cut(labelWith('background task finished', sum && sum[1]), max);
+    }
+    if (origin === 'teammate') {
+      var tag = (/<teammate-message\b[^>]*>/.exec(text) || [''])[0];
+      return cut(labelWith('teammate message' + fromWho(attr(tag, 'teammate_id')), attr(tag, 'summary')), max);
+    }
+    if (origin === 'subagent') {
+      var who = /<(?:agent|cross-session)-message\b[^>]*\bfrom="([^"]*)"/.exec(text);
+      return cut(('message from subagent ' + (who ? who[1] : '')).trim(), max);
+    }
+    if (origin === 'continuation') return 'continued after compaction';
+    return promptText(text, max);
+  }
+
+  function labelWith(label, detail) {
+    var d = (detail || '').split(/\s+/).filter(Boolean).join(' ');
+    return d ? label + ': ' + d : label;
+  }
+
+  function fromWho(who) { return who ? ' from ' + who : ''; }
+
+  function attr(tag, name) {
+    var m = new RegExp('\\b' + name + '="([^"]*)"').exec(tag);
+    return m ? m[1] : '';
+  }
+
+  function originBadge(origin) {
+    var b = ORIGIN_BADGES[origin];
+    return b ? badge(b[0], b[1], b[2]) : null;
   }
 
   function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
@@ -147,13 +250,9 @@
   // main conversation.
   function agentName(type, id) { return type || (id ? 'subagent' : 'main'); }
 
-  // mainFirst orders agent names with the main conversation first.
-  function mainFirst(a, b) {
-    if (a === b) return 0;
-    if (a === 'main') return -1;
-    if (b === 'main') return 1;
-    return a < b ? -1 : 1;
-  }
+  // agentLabel labels one of the API's agent rows: main for the main
+  // conversation, else the subagent's name or type.
+  function agentLabel(r) { return r.id ? r.name || r.type || 'subagent' : 'main'; }
 
   function where(worktree) { return worktree || 'outside any repository'; }
 
@@ -549,6 +648,8 @@
       figure(w.edits, 'edit'),
       figure(w.files, 'file'),
       el('span', { class: 'ls-fig', title: costTitle(w) }, [el('b', {}, money(w.cost, w.unpriced)), 'cost']),
+      w.cost_agents != null ? el('span', { class: 'ls-fig ls-sub', title: costTitle(w) },
+        [el('b', {}, money(w.cost_agents)), 'of it by subagents']) : null,
       el('span', { class: 'ls-scope' }, scope)
     ];
   }
@@ -640,9 +741,16 @@
       }, s.title || s.id)),
       el('td', { class: 'ls-when nowrap' }, whenCell(s, now)),
       count(s.turn_count, 'c-sm'), count(s.edit_count), count(s.file_count, 'c-sm'),
-      count(s.agent_count, 'c-sm'),
+      agentCount(s),
       el('td', { class: 'num ls-cost', title: costTitle(s) }, money(s.cost, s.unpriced))
     ]);
+  }
+
+  // agentCount is the session's agent count, naming its subagents on hover.
+  function agentCount(s) {
+    var cell = count(s.agent_count, 'c-sm');
+    if ((s.agents || []).length) cell.title = 'Subagents: ' + s.agents.join(', ');
+    return cell;
   }
 
   function count(n, cls) {
@@ -737,13 +845,25 @@
   }
 
   // costTitle says what a cost covers: list prices for the main
-  // conversation, and the models it leaves out.
+  // conversation and its subagents, each one's part, and the models it
+  // leaves out.
   function costTitle(x) {
     var tokens = tokenTotal(x.tokens);
-    var parts = [fmtTokens(tokens) + ' tokens at list prices, main conversation only'];
+    if (x.cost == null && !tokens) return 'No token counts recorded yet';
+    var parts = [fmtTokens(tokens) + ' tokens at list prices', agentCostText(x)];
     if ((x.unpriced || []).length) parts.push('No price for ' + x.unpriced.join(', '));
-    if (x.cost == null && !tokens) parts = ['No token counts recorded yet'];
     return parts.join('. ');
+  }
+
+  // agentCostText splits a listing cost between the main conversation and
+  // its subagents. A row that names subagents without their cost (no
+  // priced model, or totals the backfill has not computed yet) says so,
+  // rather than that none ran.
+  function agentCostText(x) {
+    var main = 'Main conversation ' + fmtCost(x.cost_main);
+    if (x.cost_agents != null) return main + ', subagents ' + fmtCost(x.cost_agents);
+    if ((x.agents || []).length) return main + ', subagents not priced yet';
+    return main + '; no subagent cost recorded';
   }
 
   // ── session view ──
@@ -758,23 +878,33 @@
     ]).then(function (r) { drawSession(r[0], r[1].edits || [], r[2]); }).catch(renderError);
   }
 
-  // summarizeEdits counts a session's edits per turn (with the agents seen)
-  // and per worktree (with its repo and branches).
+  // summarizeEdits counts a session's edits per turn and per worktree (with
+  // its repo and branches).
   function summarizeEdits(edits) {
     var byTurn = {};
     var byWorktree = {};
     edits.forEach(function (e) {
-      var t = byTurn[e.turn_id] || (byTurn[e.turn_id] = { count: 0, agents: [] });
-      var agent = agentName(e.agent_type, e.agent_id);
-      t.count++;
-      if (t.agents.indexOf(agent) < 0) t.agents.push(agent);
+      byTurn[e.turn_id] = (byTurn[e.turn_id] || 0) + 1;
       var key = e.worktree || '';
       var w = byWorktree[key] || (byWorktree[key] = { repo: e.repo || '', branches: [], count: 0 });
       w.count++;
       if (e.branch && w.branches.indexOf(e.branch) < 0) w.branches.push(e.branch);
     });
-    Object.keys(byTurn).forEach(function (id) { byTurn[id].agents.sort(mainFirst); });
     return { byTurn: byTurn, byWorktree: byWorktree };
+  }
+
+  // agentsByTurn maps each turn id to the labels of the subagents that ran
+  // under it, from the session's agent rows.
+  function agentsByTurn(rows) {
+    var byTurn = {};
+    rows.forEach(function (r) {
+      if (!r.id) return;
+      (r.turn_ids || []).forEach(function (id) {
+        var list = byTurn[id] || (byTurn[id] = []);
+        if (list.indexOf(agentLabel(r)) < 0) list.push(agentLabel(r));
+      });
+    });
+    return byTurn;
   }
 
   // drawSession leads with what the listing row says about the session,
@@ -784,14 +914,19 @@
     var label = s.title || d.title || d.cwd || d.id;
     document.title = label + ' · moondb';
     var sum = summarizeEdits(edits);
+    var agents = d.agents || [];
+    var ran = agentsByTurn(agents);
     var turnList = (d.turns || []).slice().sort(function (a, b) { return a.seq - b.seq; });
+    var seqs = {};
+    turnList.forEach(function (t) { seqs[t.id] = t.seq; });
     replace([
       backLinks([['← All sessions', '/']]),
       el('wk-page-header', {}, [el('wk-title', {}, label), sessionLine(s)]),
       section('Trace', traceNodes(tr)),
+      section('Agents', agentsSection(agents, seqs)),
       section('Turns', [turnList.length
         ? table(['#', 'Prompt', 'Status', 'Edits', 'Agents', 'Started'], turnList.map(function (t) {
-          return turnRow(t, sum.byTurn[t.id] || { count: 0, agents: [] });
+          return turnRow(t, sum.byTurn[t.id] || 0, ['main'].concat(ran[t.id] || []));
         }))
         : el('div', { class: 'empty' }, 'No turns recorded.')]),
       section('Worktrees', [worktreeTable(sum.byWorktree)]),
@@ -845,17 +980,94 @@
     }));
   }
 
-  function turnRow(t, s) {
+  // turnRow is one turn of the session: its prompt label behind a badge
+  // when a person did not start it, its edits, and the agents that ran.
+  function turnRow(t, editCount, agents) {
     var link = el('a', { href: '?turn=' + enc(t.id) }, t.prompt_chunk ? '…' : '(no prompt recorded)');
-    if (t.prompt_chunk) fill(link, promptLine(t, 160), '(prompt unavailable)');
+    var cell = el('td', { class: 'prompt-cell', 'data-fixation': '' }, link);
+    if (t.prompt_chunk) {
+      turnPrompt(t, 160).then(function (p) {
+        link.textContent = p.label || '(prompt unavailable)';
+        var b = originBadge(p.origin);
+        if (b) cell.prepend(b, ' ');
+      });
+    }
     return el('tr', {}, [
       el('td', { class: 'num' }, String(t.seq)),
-      el('td', { class: 'prompt-cell', 'data-fixation': '' }, link),
+      cell,
       el('td', {}, statusBadge(t.status)),
-      el('td', { class: 'num' }, String(s.count)),
-      monoCell(s.agents.join(', ') || '-'),
+      el('td', { class: 'num' }, String(editCount)),
+      el('td', { class: 'mono', title: agents.join(', ') }, el('code', {}, shortList(agents, 3))),
       el('td', { class: 'muted nowrap' }, fmtTime(t.started_at))
     ]);
+  }
+
+  // shortList joins the first n items and counts the rest: "a, b, c +4".
+  function shortList(items, n) {
+    var more = items.length - n;
+    return items.slice(0, n).join(', ') + (more > 0 ? ' +' + more : '');
+  }
+
+  // ── session agents ──
+
+  // agentsSection lists the session's agents, the main conversation first
+  // (the API sends it first), then the subagents in the order they
+  // started, or costliest first once the Cost heading is clicked.
+  function agentsSection(rows, seqs) {
+    if (!rows.length) return [el('div', { class: 'empty' }, 'No agents recorded.')];
+    var byCost = false;
+    var box = el('div');
+    function draw() {
+      var subs = rows.slice(1);
+      if (byCost) subs.sort(function (a, b) { return costRank(b) - costRank(a); });
+      var sort = el('button', {
+        class: 'linkish th-sort', type: 'button', title: byCost ? 'Sort by start' : 'Sort by cost, costliest first',
+        onclick: function () { byCost = !byCost; draw(); }
+      }, byCost ? 'Cost ▾' : 'Cost');
+      box.replaceChildren(table(['Agent', 'Model', 'Turns', 'Time', 'Model calls', 'Tool calls',
+        'Edits', 'Tokens', sort], [rows[0]].concat(subs).map(function (r) {
+        return agentRow(r, seqs);
+      })));
+    }
+    draw();
+    var nodes = [box];
+    if (rows.length === 1) nodes.unshift(note('No subagent ran in this session, or none stopped while recording.'));
+    return nodes;
+  }
+
+  // costRank orders rows by cost, the ones without a priced call last.
+  function costRank(r) { return r.cost == null ? -1 : r.cost; }
+
+  function agentRow(r, seqs) {
+    var who = [el('span', { class: 'ag-name' }, agentLabel(r))];
+    if (!r.id) who.push(badge('outline', 'main conversation'));
+    else if (r.name && r.type && r.name !== r.type) who.push(el('span', { class: 'muted' }, r.type));
+    if (r.id && !r.recorded) who.push(badge('stat', 'edits only', 'No agent transcript was recorded for this agent, only its edits'));
+    if (r.lines_cut) who.push(badge('warn', 'cut', plural(r.lines_cut, 'line') + ' cut by the size cap; their calls add no cost'));
+    return el('tr', {}, [
+      el('td', { title: [r.description, r.id].filter(Boolean).join('\n') }, el('div', { class: 'row ag-who' }, who)),
+      monoCell(r.model || '-'),
+      el('td', { class: 'ag-turns' }, r.id ? turnLinks(r.turn_ids || [], seqs) : 'every turn'),
+      el('td', { class: 'num nowrap' }, r.duration_ms ? fmtDuration(r.duration_ms) : '-'),
+      el('td', { class: 'num' }, r.recorded ? fmtCount(r.model_calls) : '-'),
+      el('td', { class: 'num' }, r.recorded ? fmtCount(r.tool_calls) : '-'),
+      el('td', { class: 'num' }, fmtCount(r.edit_count)),
+      el('td', { class: 'num' }, r.recorded ? fmtTokens(tokenTotal(r.tokens)) : '-'),
+      el('td', { class: 'num ag-cost', title: (r.unpriced || []).length ? 'No price for ' + r.unpriced.join(', ') : '' },
+        r.recorded ? money(r.cost, r.unpriced) : '-')
+    ]);
+  }
+
+  // turnLinks links the turns an agent ran under by number, the first few
+  // and a count of the rest.
+  function turnLinks(ids, seqs) {
+    var shown = ids.slice(0, 4).map(function (id) {
+      return el('a', { href: '?turn=' + enc(id) }, '#' + (seqs[id] || '?'));
+    });
+    var nodes = [];
+    shown.forEach(function (a, i) { nodes.push(i ? ', ' : '', a); });
+    if (ids.length > 4) nodes.push(el('span', { class: 'muted' }, ' +' + (ids.length - 4)));
+    return nodes.length ? nodes : '-';
   }
 
   // ── session trace ──
@@ -865,6 +1077,7 @@
   // sits next to red in the default theme.
   var SPAN_COLORS = { model: '--series-2', tool: '--series-3', subagent: '--series-4' };
   var SPAN_ROWS = ['model', 'tool', 'subagent'];
+  var SUBAGENT_ROWS = 4; // rows a lane gives its subagents before bars share one
 
   // fmtDuration renders milliseconds the way the CLI does: 850ms, 4.2s,
   // 3m12s, 1h02m.
@@ -933,22 +1146,36 @@
     ]);
   }
 
+  // traceStats is the totals strip. Time and calls are the main
+  // conversation's, a subagent's running beside it; tokens and cost add
+  // the subagents', and the cost's sub-label splits it.
   function traceStats(t, turnCount) {
     var k = t.tokens || {};
     var unpriced = t.unpriced && t.unpriced.length;
-    var cost = unpriced ? 'unpriced: ' + t.unpriced.join(', ') : 'list prices, main conversation';
     // A trace that billed no token has no cost, as its listing row has none.
     var costText = t.cost == null && !unpriced ? '-' : fmtCost(t.cost);
     return el('div', { class: 'tr-stats' }, [
       stat(fmtDuration(t.wall_ms || 0), 'Wall',
         plural(turnCount, 'turn') + ', ' + fmtDuration(t.user_ms || 0) + ' waiting for input'),
-      stat(fmtDuration(t.model_ms || 0), 'Model', plural(t.model_calls || 0, 'call')),
-      stat(fmtDuration(t.tool_ms || 0), 'Tool',
-        plural(t.tool_calls || 0, 'call') + ', ' + (t.tool_errors || 0) + ' failed'),
+      stat(fmtDuration(t.model_ms || 0), 'Model', plural(t.model_calls || 0, 'main call') +
+        (t.agent_model_calls ? ', ' + fmtCount(t.agent_model_calls) + ' by subagents' : '')),
+      stat(fmtDuration(t.tool_ms || 0), 'Tool', plural(t.tool_calls || 0, 'main call') +
+        ', ' + (t.tool_errors || 0) + ' failed' +
+        (t.agent_tool_calls ? ', ' + fmtCount(t.agent_tool_calls) + ' by subagents' : '')),
       stat(fmtTokens(tokenTotal(k)), 'Tokens',
         fmtTokens(k.cache_read || 0) + ' cache read, ' + fmtTokens(k.output || 0) + ' output'),
-      stat(costText, 'Cost', cost)
+      stat(costText, 'Cost', costSplit(t))
     ]);
+  }
+
+  // costSplit says what a trace's cost covers: the main conversation's
+  // part and the subagents', and the models no price covers.
+  function costSplit(t) {
+    var text = t.cost_agents != null || t.tokens_agents
+      ? 'main ' + fmtCost(t.cost_main) + ', subagents ' + fmtCost(t.cost_agents)
+      : 'list prices, main conversation; no subagent cost recorded';
+    if (t.unpriced && t.unpriced.length) text += '; unpriced: ' + t.unpriced.join(', ');
+    return text;
   }
 
   function traceLegend() {
@@ -960,8 +1187,9 @@
       key(SPAN_COLORS.model, 'model call'),
       key(SPAN_COLORS.tool, 'tool call'),
       key('--red', 'failed tool call', true),
-      key(SPAN_COLORS.subagent, 'subagent edits'),
-      el('span', { class: 'muted' }, 'Each lane runs from its prompt to Stop. Click a bar to open the turn.')
+      key(SPAN_COLORS.subagent, 'subagent run'),
+      el('span', { class: 'muted' }, 'Each lane runs from its prompt to Stop; a subagent bar from its spawn ' +
+        'to its stop, cut at the lane\'s end. Click a bar to open the turn.')
     ]);
   }
 
@@ -973,21 +1201,47 @@
     var wall = Math.max(tt.span.duration_ms, 1);
     var href = '?turn=' + enc(tt.turn_id);
     var spans = started ? tt.spans || [] : [];
-    var rows = SPAN_ROWS.filter(function (kind) {
-      return kind !== 'subagent' || spans.some(function (s) { return s.kind === kind; });
-    }).map(function (kind) {
-      return el('div', { class: 'tr-row' }, spans.filter(function (s) { return s.kind === kind; })
-        .map(function (s) { return traceBar(s, started.getTime(), wall, href); }));
-    });
+    function ofKind(kind) { return spans.filter(function (s) { return s.kind === kind; }); }
+    var rows = [ofKind('model'), ofKind('tool')].concat(packRows(ofKind('subagent'), SUBAGENT_ROWS))
+      .map(function (row) {
+        return el('div', { class: 'tr-row' }, row.map(function (s) {
+          return traceBar(s, started.getTime(), wall, href);
+        }));
+      });
     var label = '#' + tt.seq + ' ' + (tt.prompt || '(no prompt recorded)');
     return el('div', { class: 'tr-lane' }, [
       el('a', { class: 'tr-label', href: href, title: label }, [
         el('span', { class: 'muted' }, '#' + tt.seq + ' '), tt.prompt || '(no prompt recorded)'
       ]),
       el('div', { class: 'tr-track' }, rows),
-      el('span', { class: 'tr-meta' },
+      el('span', { class: 'tr-meta', title: 'Cost: ' + costSplit(tt.totals) },
         fmtDuration(tt.totals.wall_ms) + ' · ' + fmtCost(tt.totals.cost))
     ]);
+  }
+
+  // packRows lays spans out in rows, each span in the first row whose last
+  // span ended before it starts, so parallel subagents sit one above the
+  // other. Past max rows a span joins the row that frees up first.
+  function packRows(spans, max) {
+    var rows = [];
+    var ends = [];
+    spans.slice().sort(function (a, b) { return startMS(a) - startMS(b); })
+      .forEach(function (s) {
+        var start = startMS(s);
+        var i = 0;
+        while (i < rows.length && ends[i] > start) i++;
+        if (i === rows.length && rows.length >= max) i = ends.indexOf(Math.min.apply(null, ends));
+        if (i === rows.length) rows.push([]);
+        rows[i].push(s);
+        ends[i] = Math.max(ends[i] || 0, start + s.duration_ms);
+      });
+    return rows;
+  }
+
+  // startMS is a span's start in milliseconds, 0 for one without a start.
+  function startMS(s) {
+    var at = parseTime(s.start);
+    return at ? at.getTime() : 0;
   }
 
   // traceBar is one span placed on its turn's track, or null (which el
@@ -999,8 +1253,12 @@
     var width = Math.min(s.duration_ms / wall, 1 - left);
     var failed = s.kind === 'tool' && s.is_error;
     var color = failed ? '--red' : SPAN_COLORS[s.kind];
+    var title = spanTitle(s);
+    if (s.kind === 'subagent' && (at.getTime() - start + s.duration_ms) > wall) {
+      title += ' · ran on past the turn\'s Stop';
+    }
     return el('a', {
-      class: 'tr-bar' + (failed ? ' tr-failed' : ''), href: href, title: spanTitle(s),
+      class: 'tr-bar' + (failed ? ' tr-failed' : ''), href: href, title: title,
       style: 'left:' + (left * 100).toFixed(3) + '%;width:' + (width * 100).toFixed(3) +
         '%;--bar:var(' + color + ')'
     });
@@ -1022,7 +1280,13 @@
       if (s.unfinished) parts.push('no result recorded');
       if (s.edit_ids && s.edit_ids.length) parts.push(plural(s.edit_ids.length, 'edit'));
     }
-    if (s.kind === 'subagent') parts.push(plural(s.edit_count || 0, 'edit'));
+    if (s.kind === 'subagent' && s.tokens) {
+      parts.push(plural(s.model_calls || 0, 'model call'), plural(s.tool_calls || 0, 'tool call'),
+        fmtTokens(tokenTotal(s.tokens)) + ' tokens', fmtCost(s.cost));
+    }
+    if (s.kind === 'subagent') {
+      parts.push(plural(s.edit_count || 0, 'edit') + (s.tokens ? '' : ', no agent transcript recorded'));
+    }
     return parts.join(' · ');
   }
 
@@ -1057,12 +1321,14 @@
         kvRow('Ended', fmtTime(t.ended_at) || (t.status === 'open' ? 'still open' : '-')),
         kvRow('Edits', plural(edits.length, 'edit') + (deltas.length
           ? ', ' + plural(deltas.length, 'unattributed delta') : '')),
-        skipped ? kvRow('Skipped', skipped) : null
+        t.trace_totals ? kvRow('Cost', fmtCost(t.trace_totals.cost) + ' · ' + costSplit(t.trace_totals)) : null,
+        skipped ? kvRow('Skipped', skipped) : null,
+        originRow(t)
       ].filter(Boolean)),
       el('div', { class: 'spaced' }, section('Prompt', [prose(t.prompt_chunk, '(no prompt recorded)')])),
       section('Final message', [prose(t.final_chunk,
         t.status === 'open' ? 'The turn is still open.' : '(no final message recorded)')]),
-      section('Agents', [agentTable(edits)]),
+      section('Agents', [agentTable(t.agents || [])]),
       section('Edits', editGroups(edits)),
       section('Unattributed deltas', deltas.length
         ? [note('Changes no recorded tool call explains: a formatter hook, a human, or another process wrote the file.')]
@@ -1097,27 +1363,39 @@
     return parts.join(', ');
   }
 
-  function agentTable(edits) {
-    var groups = [];
-    var byID = {};
-    edits.forEach(function (e) {
-      var key = e.agent_id || '';
-      if (!byID[key]) {
-        byID[key] = { type: agentName(e.agent_type, e.agent_id), id: key, count: 0 };
-        groups.push(byID[key]);
-      }
-      byID[key].count++;
+  // originRow says who started the turn when a person did not: filled
+  // once the prompt loads, for a turn recorded before moondb kept origins.
+  function originRow(t) {
+    var value = el('span', {}, 'a person');
+    var row = kvRow('Started by', value);
+    turnPrompt(t, 160).then(function (p) {
+      var b = ORIGIN_BADGES[p.origin];
+      if (b) value.replaceChildren(badge(b[0], b[1]), ' ' + b[2].toLowerCase());
+      else if (p.origin !== 'person') value.textContent = 'no prompt recorded';
     });
-    if (!groups.length) return el('div', { class: 'empty' }, 'No edits, so no agents seen.');
-    groups.sort(function (a, b) { return (a.id ? 1 : 0) - (b.id ? 1 : 0); });
-    return table(['Agent', 'Kind', 'Agent id', 'Edits'], groups.map(function (g) {
-      return el('tr', {}, [
-        el('td', {}, g.type),
-        el('td', {}, badge(g.id ? 'c' : 'outline', g.id ? 'subagent' : 'main conversation')),
-        monoCell(g.id || '-'),
-        el('td', { class: 'num' }, String(g.count))
-      ]);
-    }));
+    return row;
+  }
+
+  // agentTable lists the agents that worked in the turn: the main
+  // conversation first, then every subagent with its work under the turn,
+  // with or without edits.
+  function agentTable(rows) {
+    if (!rows.length) return el('div', { class: 'empty' }, 'No agents recorded.');
+    return table(['Agent', 'Kind', 'Model calls', 'Tool calls', 'Time', 'Edits', 'Cost', 'Agent id'],
+      rows.map(function (r) {
+        return el('tr', {}, [
+          el('td', { title: r.description || '' }, agentLabel(r) + (r.name && r.type && r.name !== r.type
+            ? ' (' + r.type + ')' : '')),
+          el('td', {}, badge(r.id ? 'c' : 'outline', r.id ? 'subagent' : 'main conversation')),
+          el('td', { class: 'num' }, r.recorded ? fmtCount(r.model_calls) : '-'),
+          el('td', { class: 'num' }, r.recorded ? fmtCount(r.tool_calls) : '-'),
+          el('td', { class: 'num nowrap' }, r.duration_ms ? fmtDuration(r.duration_ms) : '-'),
+          el('td', { class: 'num' }, fmtCount(r.edit_count)),
+          el('td', { class: 'num', title: r.recorded ? '' : 'No agent transcript was recorded for this agent' },
+            r.recorded ? fmtCost(r.cost) : '-'),
+          monoCell(r.id || '-')
+        ]);
+      }));
   }
 
   // editGroups lays the turn's edits out by worktree, then path, each path

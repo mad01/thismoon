@@ -17,7 +17,8 @@ is the problem, not this service.
 Capture runs in Claude Code hooks, not in serve. Each hook pipes its payload
 into `moondb record`, which writes an envelope to the spool and exits 0,
 printing nothing on stdout. It takes about 200 ms, or up to 2 s for the
-async Bash hook. At a turn's start and stop
+async Bash and SubagentStop hooks. SubagentStop records the subagent that
+stopped, with its own transcript cut to short heads. At a turn's start and stop
 it also snapshots the worktrees in play, within 2 s. So capture keeps working
 while serve is down: envelopes wait in the spool and serve ingests them when
 it comes back. `moondb import` brings in past sessions from their
@@ -46,9 +47,15 @@ capture off on this machine.
 
 ## failure modes
 
-Start with `moondb doctor`: one command runs the reachability, store, and
-version-skew checks below and prints one line per check, FAIL lines naming
-the cause. The paragraphs here cover what each failure means.
+Start with `moondb doctor`: one command runs the config, hook wiring,
+reachability, store, and version-skew checks below and prints one line per
+check, FAIL lines naming the cause. The paragraphs here cover what each
+failure means.
+
+`hooks-wired` fails: the Claude Code settings file (`~/.claude/settings.json`,
+or the config's `claude_settings`) lacks a `moondb record` hook entry for
+the events it names. Capture misses those events until the entry is added.
+With `capture.enabled = false` the check passes with a note.
 
 Connection refused, or "moondb serve not reachable": serve is not running.
 t-man typically supervises it. Run `t-man list` to see whether the moondb
@@ -75,6 +82,15 @@ inside a turn: from the model stopping to a new input such as a teammate
 message. Harness time far above a few minutes usually means a turn longer
 than the 4 MiB transcript tail, whose cut head counts as harness; its
 trace's lines then say `cut_head`.
+
+A cost with no subagent cost recorded, or a session that ran subagents
+with none listed: the SubagentStop hook is not wired, or the subagents ran
+before it was. `moondb import --force` brings their transcripts in, also
+for a session where no file was edited. Subagents "not priced yet" have no
+priced model, or their totals wait for the totals backfill, which runs
+while the spool is empty. An agent with `lines_cut` had a transcript over
+8 MiB after the cut to heads; the calls in its cut head add no cost. One
+marked `partial` ran out of the hook's 2 s budget before the file's end.
 
 An edit with `before_source: unknown`: serve could not reconstruct the file
 as it was before the edit. The patch hunks are still recorded.
@@ -110,7 +126,7 @@ doctor` runs this comparison as its version-skew check.
 
 ## first moves
 
-1. `moondb doctor`: serve reachable, store readable, and version skew in one pass
+1. `moondb doctor`: hooks wired, serve reachable, store readable, and version skew in one pass
 2. If serve is unreachable: `t-man list`, then `t-man restart moondb`
 3. On version skew: `t-man restart moondb`, then `moondb doctor` again
 4. `moondb sessions`, to confirm capture is recording on this machine

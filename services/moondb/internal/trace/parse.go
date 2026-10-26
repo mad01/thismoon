@@ -22,12 +22,16 @@ import (
 //
 // Every other line (attachments, other system lines, bookkeeping) is read
 // past. A line marked isSidechain belongs to a subagent, not the main
-// conversation, and is read past too.
+// conversation, and is read past in a turn's lines; an agent transcript
+// holds nothing else. A user line's promptId names the main turn it came
+// in under, which in an agent transcript says which turn the agent was
+// working for.
 type rawLine struct {
 	Type        string      `json:"type"`
 	Subtype     string      `json:"subtype"`
 	Timestamp   string      `json:"timestamp"`
 	IsSidechain bool        `json:"isSidechain"`
+	PromptID    string      `json:"promptId"`
 	Message     *rawMessage `json:"message"`
 }
 
@@ -86,6 +90,8 @@ type event struct {
 	// times, and which line of a streamed message came last.
 	line int
 	kind eventKind
+	// promptID is the line's promptId, "" on a line without one.
+	promptID string
 
 	// assistant lines
 	msgID      string
@@ -109,7 +115,9 @@ type toolResult struct {
 // counted as skipped and never fails the whole chunk. A chunk over the size
 // cap keeps its tail from a line boundary, so its head is missing rather
 // than broken; cutHead reports it.
-func parseLines(chunk []byte) ([]event, Lines) {
+// sidechain keeps the lines a subagent wrote, for an agent transcript; a
+// turn's lines read past them.
+func parseLines(chunk []byte, sidechain bool) ([]event, Lines) {
 	var counts Lines
 	var events []event
 	for i, raw := range bytes.Split(chunk, []byte("\n")) {
@@ -117,7 +125,7 @@ func parseLines(chunk []byte) ([]event, Lines) {
 			continue
 		}
 		counts.Read++
-		ev, ok, err := parseLine(raw, i)
+		ev, ok, err := parseLine(raw, i, sidechain)
 		switch {
 		case err != nil:
 			counts.Skipped++
@@ -144,20 +152,20 @@ func cutHead(events []event) bool {
 
 // parseLine decodes one line. ok is false for a line that is valid but not
 // on the timeline; err is set for one that is broken.
-func parseLine(raw []byte, line int) (ev event, ok bool, err error) {
+func parseLine(raw []byte, line int, sidechain bool) (ev event, ok bool, err error) {
 	var l rawLine
 	if err := json.Unmarshal(raw, &l); err != nil {
 		return event{}, false, err
 	}
 	kind, onTimeline := timelineKind(l)
-	if !onTimeline {
+	if !onTimeline || l.IsSidechain && !sidechain {
 		return event{}, false, nil
 	}
 	at, err := time.Parse(time.RFC3339Nano, l.Timestamp)
 	if err != nil {
 		return event{}, false, err
 	}
-	ev = event{at: at, line: line, kind: kind}
+	ev = event{at: at, line: line, kind: kind, promptID: l.PromptID}
 	if l.Message == nil {
 		return ev, true, nil
 	}
@@ -177,9 +185,6 @@ func parseLine(raw []byte, line int) (ev event, ok bool, err error) {
 // timelineKind maps a line's type to its event kind; false for lines the
 // timeline reads past.
 func timelineKind(l rawLine) (eventKind, bool) {
-	if l.IsSidechain {
-		return 0, false
-	}
 	switch l.Type {
 	case "assistant":
 		return evAssistant, true

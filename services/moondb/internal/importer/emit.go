@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/services/moondb"
+	"github.com/mad01/thismoon/services/moondb/internal/agentfile"
 	"github.com/mad01/thismoon/services/moondb/internal/patch"
 	"github.com/mad01/thismoon/services/moondb/internal/record"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
@@ -69,17 +70,60 @@ func (em *emitter) emit(edits []*call) error {
 	defer f.Close()
 	em.main, em.touched = f, map[string]time.Time{}
 	for _, st := range em.steps(edits) {
-		env, chunks := em.build(st)
-		em.counts.Envelopes++
-		if em.sink == nil {
-			continue
-		}
-		if err := em.sink.Write(env, chunks); err != nil {
-			return fmt.Errorf("importer: session %s: %w", em.s.id, err)
+		if err := em.write(em.build(st)); err != nil {
+			return err
 		}
 	}
 	em.counts.Turns += len(em.s.turns)
+	for _, path := range em.s.agentFiles {
+		env, chunks, ok := em.agent(path)
+		if !ok {
+			continue
+		}
+		if err := em.write(env, chunks); err != nil {
+			return err
+		}
+		em.counts.Agents++
+	}
 	return nil
+}
+
+// write counts one envelope and hands it to the sink, when there is one.
+func (em *emitter) write(env spool.Envelope, chunks chunkSet) error {
+	em.counts.Envelopes++
+	if em.sink == nil {
+		return nil
+	}
+	if err := em.sink.Write(env, chunks); err != nil {
+		return fmt.Errorf("importer: session %s: %w", em.s.id, err)
+	}
+	return nil
+}
+
+// agent builds the agent-close envelope of one subagent transcript, as the
+// SubagentStop hook builds it: the agent transcript cut to heads, who the
+// meta file says the agent was, and where its cwd sits in git. The stop
+// time is the last line's, which is all the file tells; false, counted
+// as skipped, for a file it cannot read or with no timeline line.
+func (em *emitter) agent(path string) (spool.Envelope, chunkSet, bool) {
+	c, err := agentfile.Read(em.places.ctx, path, "")
+	if err != nil {
+		em.counts.AgentFilesSkipped++
+		return spool.Envelope{}, nil, false
+	}
+	env := em.envelope(spool.KindAgentClose, fmt.Sprintf("%s:close:%d", c.ID, c.Lines.Read),
+		c.LastAt, "")
+	env.Agent = spool.AgentRef{ID: c.ID, Type: c.Type}
+	chunks := chunkSet{}
+	env.AgentClose = &spool.AgentClose{
+		Type: c.Type, Name: c.Name, Description: c.Description, Model: c.Model,
+		TurnIDs: c.TurnIDs, Cwd: c.Cwd, StartedAt: c.StartedAt, EndedAt: c.LastAt,
+		TranscriptChunk: chunks.add(c.Transcript), Lines: c.Lines,
+	}
+	if c.Cwd != "" {
+		env.AgentClose.Location = em.places.placeDir(c.Cwd, c.GitBranch)
+	}
+	return env, chunks, true
 }
 
 // steps orders the session's turns and edits by time.
@@ -139,7 +183,7 @@ func (em *emitter) open(t *turn) (spool.Envelope, chunkSet) {
 	env := em.envelope(spool.KindTurnOpen, t.id+":open", t.at, t.id)
 	env.Turn.TranscriptOffset = t.begin
 	chunks := chunkSet{}
-	env.TurnOpen = &spool.TurnOpen{}
+	env.TurnOpen = &spool.TurnOpen{Origin: store.PromptOrigin(t.prompt)}
 	if t.hasPrompt {
 		env.TurnOpen.PromptChunk = chunks.add([]byte(t.prompt))
 	}

@@ -48,6 +48,10 @@ const (
 	// KindSkipped counts the files one tool call changed that the hook
 	// skipped, so serve can show the count on the call's turn.
 	KindSkipped Kind = "skipped"
+	// KindAgentClose records one subagent when it stops: what kind it was,
+	// the turns it ran under and its agent transcript. Envelope.Agent
+	// names it.
+	KindAgentClose Kind = "agent-close"
 )
 
 // Envelope is one record handed to serve. Exactly one payload field is set,
@@ -75,7 +79,8 @@ type Envelope struct {
 	Snapshot  *Snapshot    `json:"snapshot,omitempty"`
 	// Skipped is the payload of a skipped envelope. Its At stays zero:
 	// the envelope's own At says when the hook began.
-	Skipped *store.SkippedFiles `json:"skipped,omitempty"`
+	Skipped    *store.SkippedFiles `json:"skipped,omitempty"`
+	AgentClose *AgentClose         `json:"agent_close,omitempty"`
 }
 
 // SessionRef identifies the session a payload belongs to and carries what
@@ -106,9 +111,12 @@ type AgentRef struct {
 	Type string `json:"type,omitempty"`
 }
 
-// TurnOpen carries the prompt.
+// TurnOpen carries the prompt and what it says opened the turn.
 type TurnOpen struct {
 	PromptChunk string `json:"prompt_chunk,omitempty"`
+	// Origin is store.PromptOrigin of the prompt; empty from a build that
+	// did not classify it.
+	Origin store.TurnOrigin `json:"origin,omitempty"`
 }
 
 // TurnClose carries what the session said last and the transcript lines of
@@ -119,6 +127,28 @@ type TurnClose struct {
 	// TranscriptEnd is the transcript file size at close.
 	TranscriptEnd int64            `json:"transcript_end,omitempty"`
 	Status        store.TurnStatus `json:"status"`
+}
+
+// AgentClose is one subagent as it stopped, read from its transcript file
+// and the meta file beside it. Serve puts the Agent record from it and
+// computes the agent's totals from its transcript lines.
+type AgentClose struct {
+	Type        string `json:"type"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Model       string `json:"model,omitempty"`
+	// TurnIDs are the main turns the agent's lines name, in order.
+	TurnIDs  []string       `json:"turn_ids,omitempty"`
+	Cwd      string         `json:"cwd,omitempty"`
+	Location store.Location `json:"location"`
+	// StartedAt is the agent's first line's time; EndedAt when it stopped,
+	// or its last line's time when the stop is not known (an import).
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at"`
+	// TranscriptChunk holds the agent transcript: the agent's lines cut
+	// to heads and capped (moondb.MaxAgentTranscriptBytes).
+	TranscriptChunk string           `json:"transcript_chunk,omitempty"`
+	Lines           store.AgentLines `json:"lines"`
 }
 
 // EditPayload is everything the hook could gather about one file a tool

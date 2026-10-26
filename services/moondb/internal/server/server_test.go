@@ -450,8 +450,19 @@ func TestTurnCarriesTraceTotals(t *testing.T) {
 		tot.HarnessMS != 11_000 || tot.ModelCalls != 2 || tot.ToolCalls != 1 {
 		t.Errorf("trace_totals = %+v", tot)
 	}
-	if tot.Cost == nil || fmt.Sprintf("%.5f", *tot.Cost) != "0.01444" {
-		t.Errorf("cost = %v, want 1010 input and 520 output tokens of claude-opus-5-5", tot.Cost)
+	// The main conversation's 1010 input and 520 output tokens, and the
+	// reviewer's 2100 and 150, on claude-opus-5-5.
+	if got := fmt.Sprintf("%.5f %.5f %.5f", deref(tot.Cost), deref(tot.CostMain),
+		deref(tot.CostAgents)); got != "0.02584 0.01444 0.01140" {
+		t.Errorf("cost, main, agents = %s; want the turn's calls and the reviewer's", got)
+	}
+	if len(old.Agents) != 2 || old.Agents[0].Type != MainAgentType ||
+		old.Agents[0].EditCount != 1 ||
+		old.Agents[1].ID != servertest.AgentID ||
+		old.Agents[1].ModelCalls != 2 ||
+		!old.Agents[1].Recorded ||
+		old.Agents[1].DurationMS != 120_000 {
+		t.Errorf("agents = %+v, want main with its edit, then the reviewer's 2 calls", old.Agents)
 	}
 	var open TurnView
 	h.getJSON(t, "/api/turns/"+servertest.NewTurn, http.StatusOK, &open)
@@ -495,8 +506,9 @@ func TestSessionTrace(t *testing.T) {
 	for _, s := range got.Turns[0].Spans {
 		kinds = append(kinds, s.Kind)
 	}
-	if !slices.Equal(kinds, []trace.Kind{trace.KindModel, trace.KindTool, trace.KindModel}) {
-		t.Errorf("span kinds = %v, want model, tool, model", kinds)
+	want := []trace.Kind{trace.KindModel, trace.KindTool, trace.KindSubagent, trace.KindModel}
+	if !slices.Equal(kinds, want) {
+		t.Errorf("span kinds = %v, want model, tool, the reviewer's subagent span, model", kinds)
 	}
 	if tool := got.Turns[0].Spans[1]; !slices.Equal(tool.EditIDs, []string{servertest.EditC}) {
 		t.Errorf("tool span edits = %v, want EditC", tool.EditIDs)
@@ -523,4 +535,60 @@ func TestSessionsCarryDuration(t *testing.T) {
 			durations,
 		)
 	}
+}
+
+func deref(f *float64) float64 {
+	if f == nil {
+		return -1
+	}
+	return *f
+}
+
+// TestSessionAgents: a session lists the main conversation first, then
+// each subagent with its calls and cost, the rows taking the place of the
+// store's records.
+func TestSessionAgents(t *testing.T) {
+	h := newHarness(t)
+	var v SessionView
+	h.getJSON(t, "/api/sessions/"+servertest.OldSession, http.StatusOK, &v)
+	if len(v.Agents) != 2 {
+		t.Fatalf("agents = %+v, want main and the reviewer", v.Agents)
+	}
+	main, rev := v.Agents[0], v.Agents[1]
+	if main.ID != "" || main.Type != MainAgentType || main.ModelCalls != 2 || main.EditCount != 1 ||
+		fmt.Sprintf("%.5f", deref(main.Cost)) != "0.01444" ||
+		!slices.Equal(main.Repos, []string{servertest.OtherRepo}) {
+		t.Errorf("main row = %+v", main)
+	}
+	if rev.ID != servertest.AgentID || rev.Name != servertest.AgentName ||
+		rev.Type != "general-purpose" || rev.ToolCalls != 1 || rev.DurationMS != 120_000 ||
+		fmt.Sprintf("%.5f", deref(rev.Cost)) != "0.01140" ||
+		!slices.Equal(rev.TurnIDs, []string{servertest.OldTurn}) || len(rev.Repos) != 0 {
+		t.Errorf("reviewer row = %+v", rev)
+	}
+}
+
+// TestTurnMainRowUnpriced: a turn's main row names the models the main
+// conversation left unpriced, not the ones only its subagents used.
+func TestTurnMainRowUnpriced(t *testing.T) {
+	tt := trace.TurnTrace{TurnID: "p1", Totals: trace.Totals{
+		Unpriced: []string{"agent-only"}, TokensMain: &trace.Tokens{}, CostMain: new(0.5),
+	}}
+	rows := (&Server{}).turnAgents(store.TurnDetail{Turn: store.Turn{ID: "p1"}}, tt, nil)
+	if len(rows) != 1 || rows[0].Unpriced != nil || deref(rows[0].Cost) != 0.5 {
+		t.Errorf("rows = %+v, want the main row with no unpriced model", rows)
+	}
+}
+
+// TestAgentRoute answers one agent with its record, row and trace, and
+// 404 for an unknown id.
+func TestAgentRoute(t *testing.T) {
+	h := newHarness(t)
+	var v AgentView
+	h.getJSON(t, "/api/agents/"+servertest.AgentID, http.StatusOK, &v)
+	if v.ID != servertest.AgentID || v.Row.ModelCalls != 2 || len(v.Trace.Spans) != 3 ||
+		len(v.Trace.Segments) != 1 || v.Trace.Segments[0].TurnID != servertest.OldTurn {
+		t.Errorf("agent = %+v", v)
+	}
+	h.wantAPIError(t, "/api/agents/nope", http.StatusNotFound, "not found")
 }

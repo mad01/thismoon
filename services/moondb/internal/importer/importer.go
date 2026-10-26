@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/services/moondb"
+	"github.com/mad01/thismoon/services/moondb/internal/jsonl"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
@@ -83,10 +84,13 @@ type Counts struct {
 	Transcripts         int `json:"transcripts"`
 	SubagentTranscripts int `json:"subagent_transcripts"`
 	// UnreadableTranscripts are main transcripts that could not be opened.
-	UnreadableTranscripts int     `json:"unreadable_transcripts"`
-	SessionsImported      int     `json:"sessions_imported"`
-	Skipped               Skipped `json:"sessions_skipped"`
-	Turns                 int     `json:"turns"`
+	UnreadableTranscripts int `json:"unreadable_transcripts"`
+	SessionsImported      int `json:"sessions_imported"`
+	// SessionsAgentsOnly counts the imported sessions without a file edit,
+	// imported for their subagent transcripts; SessionsImported holds them.
+	SessionsAgentsOnly int     `json:"sessions_agents_only"`
+	Skipped            Skipped `json:"sessions_skipped"`
+	Turns              int     `json:"turns"`
 	// Edits counts the edits written by tool.
 	Edits             map[string]int `json:"edits_by_tool"`
 	EditsWithoutPatch int            `json:"edits_without_patch"`
@@ -101,15 +105,21 @@ type Counts struct {
 	UnansweredCalls int `json:"unanswered_calls"`
 	// BashCalls are shell calls in imported sessions, which are not
 	// imported: the transcript records no diff for them.
-	BashCalls        int            `json:"bash_calls_not_imported"`
-	Envelopes        int            `json:"envelopes"`
-	UndecodableLines int            `json:"undecodable_lines"`
-	UnknownTypes     map[string]int `json:"unknown_types"`
+	BashCalls int `json:"bash_calls_not_imported"`
+	// Agents counts the subagents of imported sessions written as Agent
+	// records, one agent-close envelope each. AgentFilesSkipped counts
+	// their files that gave none: unreadable, or without a timeline line.
+	Agents            int            `json:"agents"`
+	AgentFilesSkipped int            `json:"agent_files_skipped"`
+	Envelopes         int            `json:"envelopes"`
+	UndecodableLines  int            `json:"undecodable_lines"`
+	UnknownTypes      map[string]int `json:"unknown_types"`
 	// ElapsedMS is set by the caller, which owns the clock.
 	ElapsedMS int64 `json:"elapsed_ms"`
 }
 
-// Skipped counts the sessions a run did not import, by reason.
+// Skipped counts the sessions a run did not import, by reason. NoEdits
+// counts the sessions with neither a file edit nor a subagent transcript.
 type Skipped struct {
 	InStore      int `json:"in_store"`
 	OutsideSince int `json:"outside_since"`
@@ -191,7 +201,7 @@ func firstTime(path string, fallback time.Time) time.Time {
 	defer f.Close()
 	var first time.Time
 	n := 0
-	_, _ = scanLines(f, maxLineBytes, func(line []byte, _ int64) bool {
+	_, _ = jsonl.Scan(f, maxLineBytes, func(line []byte, _ int64) bool {
 		n++
 		var e struct {
 			Timestamp string `json:"timestamp"`
@@ -208,7 +218,9 @@ func firstTime(path string, fallback time.Time) time.Time {
 }
 
 // importOne parses one transcript and, unless a skip rule applies, writes
-// its envelopes.
+// its envelopes. A session is worth importing when it has a file edit or a
+// subagent transcript: its agents need its turns. One with neither is
+// skipped, Force or not.
 func importOne(
 	ctx context.Context,
 	path string,
@@ -237,7 +249,7 @@ func importOne(
 		}
 	}
 	edits, failed, unanswered := s.edits()
-	if len(edits) == 0 {
+	if len(edits) == 0 && len(s.agentFiles) == 0 {
 		counts.Skipped.NoEdits++
 		return nil
 	}
@@ -246,6 +258,9 @@ func importOne(
 		return err
 	}
 	counts.SessionsImported++
+	if len(edits) == 0 {
+		counts.SessionsAgentsOnly++
+	}
 	counts.FailedCalls += failed
 	counts.UnansweredCalls += unanswered
 	counts.BashCalls += s.stats.bash

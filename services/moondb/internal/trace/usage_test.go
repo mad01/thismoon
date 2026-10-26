@@ -96,7 +96,7 @@ func TestBuildSessionMergesUsage(t *testing.T) {
 	b := TurnTrace{Seq: 2, Totals: Totals{Usage: []store.ModelUsage{
 		{Model: "m", Tokens: Tokens{Input: 2}}, {Model: "k", Tokens: Tokens{Output: 3}},
 	}}}
-	got := BuildSession("s", []TurnTrace{a, b}).Totals.Usage
+	got := BuildSession("s", []TurnTrace{a, b}, nil).Totals.Usage
 	want := []store.ModelUsage{
 		{Model: "k", Tokens: Tokens{Output: 3}}, {Model: "m", Tokens: Tokens{Input: 3}},
 	}

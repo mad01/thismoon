@@ -11,6 +11,9 @@ import "context"
 type Store interface {
 	PutSession(ctx context.Context, s Session) error
 	PutTurn(ctx context.Context, t Turn) error
+	// PutAgent upserts an agent: the newest record per id wins whole. An
+	// agent cannot move to another session.
+	PutAgent(ctx context.Context, a Agent) error
 	AppendEdit(ctx context.Context, e Edit) error
 	AppendDelta(ctx context.Context, d UnattributedDelta) error
 	AppendSnapshot(ctx context.Context, s Snapshot) error
@@ -31,6 +34,16 @@ type Store interface {
 	// Turn loads one turn with everything recorded under it. Returns
 	// ErrNotFound.
 	Turn(ctx context.Context, id string) (TurnDetail, error)
+	// Agents lists a session's agents in SortAgents order; none for an
+	// unknown session.
+	Agents(ctx context.Context, sessionID string) ([]Agent, error)
+	// Agent loads one agent. Returns ErrNotFound.
+	Agent(ctx context.Context, id string) (Agent, error)
+	// AgentsWithoutTotals lists up to limit agents whose Totals are
+	// missing or older than version, the newest session first and a
+	// session's agents in SortAgents order. serve's totals backfill
+	// computes them.
+	AgentsWithoutTotals(ctx context.Context, version, limit int) ([]Agent, error)
 	// Edits lists edits newest first, narrowed by q.
 	Edits(ctx context.Context, q EditQuery) ([]Edit, error)
 	// LatestAfter returns the most recent Edit q allows that has an

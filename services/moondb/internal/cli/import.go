@@ -36,8 +36,10 @@ var importCmd = &cobra.Command{
 	Short: "Import past sessions into the store from their transcripts",
 	Long: `Read the Claude Code session transcripts written within --since and spool
 what the hooks would have recorded: one turn per prompt, one edit per Edit,
-Write, MultiEdit and NotebookEdit call. serve ingests the spool as it does the
-hooks' envelopes, so it must be running for the import to reach the store.
+Write, MultiEdit and NotebookEdit call, and one agent per subagent
+transcript, its lines cut to heads as the SubagentStop hook cuts them. serve
+ingests the spool as it does the hooks' envelopes, so it must be running for
+the import to reach the store.
 
 A session the store already holds was captured live and is skipped; --force
 imports it anyway. A forced import only fills: an edit the store holds stays
@@ -45,7 +47,8 @@ as it is, a session or turn keeps every field it has and gets only its empty
 fields filled, and a turn still open is closed. An earlier imported prompt
 still moves a start time back. Run --force only while no session is active,
 because it closes a session's in-flight turn until the live Stop arrives.
-Sessions without a file edit are skipped.
+A session with neither a file edit nor a subagent transcript is skipped,
+with or without --force.
 
 A transcript records less than the hooks see: no disk read after an edit (so
 no unattributed delta), no HEAD (so no commit link until a later live turn
@@ -186,10 +189,13 @@ func printImport(w io.Writer, c importer.Counts, dryRun bool) {
 	rows := [][2]string{
 		{"transcripts", fmt.Sprintf("%d (%d subagent, %d unreadable)",
 			c.Transcripts, c.SubagentTranscripts, c.UnreadableTranscripts)},
-		{"sessions imported", fmtCount(c.SessionsImported)},
-		{"sessions skipped", fmt.Sprintf("%d in store, %d outside --since, %d without edits",
+		{"sessions imported", fmt.Sprintf("%d (%d for their subagents only)",
+			c.SessionsImported, c.SessionsAgentsOnly)},
+		{"sessions skipped", fmt.Sprintf(
+			"%d in store, %d outside --since, %d without edits or subagents",
 			c.Skipped.InStore, c.Skipped.OutsideSince, c.Skipped.NoEdits)},
 		{"turns", fmtCount(c.Turns)},
+		{"agents", fmt.Sprintf("%d (%d files skipped)", c.Agents, c.AgentFilesSkipped)},
 		{"edits", tally(c.Edits)},
 		{"edits without a patch", fmtCount(c.EditsWithoutPatch)},
 		{"originals from file history", fmtCount(c.OriginalsFromHistory)},
