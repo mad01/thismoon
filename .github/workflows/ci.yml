@@ -342,18 +342,10 @@ jobs:
         run: make test-recipes
 
       # The srt settings files are rendered from the access manifests
-      # (docs/adr/0027). A hand edit, a stale render, or a render nobody
-      # committed fails here.
+      # (docs/adr/0027). srtspec verify fails on a hand edit, a stale render,
+      # a render nobody committed, and an expansion layer that narrows.
       - name: Sandbox settings match their manifests
-        run: |
-          make sandbox-settings
-          git diff --exit-code -- recipes examples/dotfiles
-          untracked=$(git status --porcelain --untracked-files=all -- recipes examples/dotfiles)
-          if [ -n "$untracked" ]; then
-            echo "::error::make sandbox-settings left files git does not track:"
-            echo "$untracked"
-            exit 1
-          fi
+        run: make sandbox-verify
 
       # go list exits non-zero both when the module has no packages AND when a
       # package is broken — only the first may skip; the second must fail loud

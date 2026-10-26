@@ -137,3 +137,36 @@ func TestExplain(t *testing.T) {
 		t.Fatal("explain accepted a path as a label")
 	}
 }
+
+func TestVerify(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "services/events/service-info.yaml"), eventsInfo)
+	write(t, filepath.Join(root, "recipes/events/recipe.toml"), "")
+	if _, err := run(t, "generate", root); err != nil {
+		t.Fatal(err)
+	}
+	out, err := run(t, "verify", root)
+	want := "ok      recipes/events/events.srt.json (renders from services/events/service-info.yaml)"
+	if err != nil || !strings.Contains(out, want) {
+		t.Fatalf("verify after generate: %v\n%s", err, out)
+	}
+
+	settings := filepath.Join(root, "recipes/events/events.srt.json")
+	write(t, settings, "{}")
+	write(t, filepath.Join(root, "recipes/events/events.local.json"), `{"allowPty": true}`)
+	out, err = run(t, "verify", root)
+	if err == nil || !strings.Contains(err.Error(), "2 of 2 sandbox checks") {
+		t.Fatalf("verify on a broken tree = %v\n%s", err, out)
+	}
+	for _, line := range []string{
+		"FAIL    recipes/events/events.srt.json: drifted from services/events/service-info.yaml",
+		"FAIL    recipes/events/events.local.json: srt-run would refuse it",
+	} {
+		if !strings.Contains(out, line) {
+			t.Errorf("verify output lacks %q:\n%s", line, out)
+		}
+	}
+	if data, _ := os.ReadFile(settings); string(data) != "{}" {
+		t.Error("verify rewrote the settings file; only generate may write")
+	}
+}

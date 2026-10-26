@@ -41,16 +41,18 @@ func TestFind(t *testing.T) {
 		"services/events/service-info.yaml": comp("events", "{sandbox: srt, listen: 7430}"),
 		"services/catalog/service-info.yaml": comp("catalog",
 			"{sandbox: srt, label: catalog-web}"),
-		"services/csl/service-info.yaml":  comp("csl", "{sandbox: none, reason: ssh}"),
-		"tools/opener/service-info.yaml":  "kind: Component\nmetadata: {name: opener}\nspec: {owner: mad01}\n",
-		"mytool/service-info.yaml":        comp("mytool", "{sandbox: srt}"),
-		"recipes/events/":                 "",
-		"recipes/catalog/":                "",
-		"recipes/mytool/":                 "",
-		"recipes/claude-mcp/access.yaml":  "sandbox: srt\nlabel: github-mcp\ntls: true\n",
-		"recipes/speak-tts/access.yaml":   "sandbox: seatbelt\nreason: Metal\n",
-		"recipes/humanizer/recipe.toml":   "",
-		"recipes/humanizer/humanizer.txt": "",
+		"services/csl/service-info.yaml":         comp("csl", "{sandbox: none, reason: ssh}"),
+		"tools/opener/service-info.yaml":         "kind: Component\nmetadata: {name: opener}\nspec: {owner: mad01}\n",
+		"mytool/service-info.yaml":               comp("mytool", "{sandbox: srt}"),
+		"recipes/events/":                        "",
+		"recipes/catalog/":                       "",
+		"recipes/mytool/":                        "",
+		"recipes/claude-mcp/access.yaml":         "sandbox: srt\nlabel: github-mcp\ntls: true\n",
+		"recipes/speak-tts/access.yaml":          "sandbox: seatbelt\nreason: Metal\n",
+		"recipes/humanizer/recipe.toml":          "",
+		"recipes/humanizer/humanizer.txt":        "",
+		"recipes/themes/dark-notify/access.yaml": "sandbox: srt\n",
+		"recipes/speak/testdata/x/access.yaml":   "sandbox: srt\n",
 	})
 	targets, err := Find(root)
 	if err != nil {
@@ -61,12 +63,13 @@ func TestFind(t *testing.T) {
 		got[tg.Path] = tg.Output
 	}
 	want := map[string]string{
-		"services/events/service-info.yaml":  "recipes/events/events.srt.json",
-		"services/catalog/service-info.yaml": "recipes/catalog/catalog-web.srt.json",
-		"services/csl/service-info.yaml":     "",
-		"mytool/service-info.yaml":           "recipes/mytool/mytool.srt.json",
-		"recipes/claude-mcp/access.yaml":     "recipes/claude-mcp/github-mcp.srt.json",
-		"recipes/speak-tts/access.yaml":      "",
+		"services/events/service-info.yaml":      "recipes/events/events.srt.json",
+		"services/catalog/service-info.yaml":     "recipes/catalog/catalog-web.srt.json",
+		"services/csl/service-info.yaml":         "",
+		"mytool/service-info.yaml":               "recipes/mytool/mytool.srt.json",
+		"recipes/claude-mcp/access.yaml":         "recipes/claude-mcp/github-mcp.srt.json",
+		"recipes/speak-tts/access.yaml":          "",
+		"recipes/themes/dark-notify/access.yaml": "recipes/themes/dark-notify/dark-notify.srt.json",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Find() = %v, want %v", got, want)
@@ -126,9 +129,11 @@ func TestFindErrors(t *testing.T) {
 
 func TestOrphans(t *testing.T) {
 	root := tree(t, map[string]string{
-		"services/events/service-info.yaml": comp("events", "{sandbox: srt}"),
-		"recipes/events/events.srt.json":    "{}",
-		"recipes/events/old.srt.json":       "{}",
+		"services/events/service-info.yaml":        comp("events", "{sandbox: srt}"),
+		"recipes/events/events.srt.json":           "{}",
+		"recipes/events/old.srt.json":              "{}",
+		"recipes/themes/dark-notify/old.srt.json":  "{}",
+		"recipes/events/testdata/fixture.srt.json": "{}",
 	})
 	targets, err := Find(root)
 	if err != nil {
@@ -138,7 +143,28 @@ func TestOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(got, []string{"recipes/events/old.srt.json"}) {
-		t.Fatalf("Orphans() = %v", got)
+	want := []string{"recipes/events/old.srt.json", "recipes/themes/dark-notify/old.srt.json"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Orphans() = %v, want %v", got, want)
+	}
+}
+
+func TestLayers(t *testing.T) {
+	root := tree(t, map[string]string{
+		"recipes/speak/speak-web.local.json":                   "{}",
+		"recipes/themes/dark-notify/dark-notify.local.json":    "{}",
+		"recipes/speak/testdata/srt-local/ok-widen.local.json": "{}",
+		"recipes/speak/speak-web.srt.json":                     "{}",
+	})
+	got, err := Layers(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"recipes/speak/speak-web.local.json",
+		"recipes/themes/dark-notify/dark-notify.local.json",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Layers() = %v, want %v", got, want)
 	}
 }

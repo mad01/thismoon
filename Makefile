@@ -3,7 +3,7 @@
 COMPONENTS := $(patsubst %/Makefile,%,$(wildcard services/*/Makefile tools/*/Makefile))
 RECIPE_TESTS := $(wildcard recipes/*/*-test.sh)
 
-.PHONY: build test test-recipes sandbox-settings install-all components
+.PHONY: build test test-recipes sandbox-settings sandbox-verify install-all components
 
 build:
 	@for c in $(COMPONENTS); do $(MAKE) -C "$$c" build || exit 1; done
@@ -21,10 +21,17 @@ test-recipes:
 
 # Render every access manifest (spec.access in a service-info.yaml, or a
 # recipe's access.yaml) to its recipe's <label>.srt.json. The manifest is the
-# source of truth (docs/adr/0027); CI runs this and fails on any diff.
+# source of truth (docs/adr/0027); sandbox-verify is the gate CI runs.
 sandbox-settings:
 	go run ./tools/srtspec/cmd/srtspec generate .
 	go run ./tools/srtspec/cmd/srtspec generate examples/dotfiles
+
+# Fail when a committed settings file is not its manifest's render or has no
+# manifest, or when an expansion layer beside a recipe does more than widen.
+# Writes nothing; sandbox-settings is the fix.
+sandbox-verify:
+	go run ./tools/srtspec/cmd/srtspec verify .
+	go run ./tools/srtspec/cmd/srtspec verify examples/dotfiles
 
 install-all:
 	@for c in $(COMPONENTS); do $(MAKE) -C "$$c" install || exit 1; done

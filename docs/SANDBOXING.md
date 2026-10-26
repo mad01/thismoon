@@ -25,8 +25,9 @@ that explains it.
 2. **Render the settings.** `make sandbox-settings` here, or
    `srtspec render <manifest> -o recipes/<dir>/<label>.srt.json` in a
    consuming repo. The renderer refuses a `*` host, a lifted `~` deny and
-   a write into `~/.config/srt`. Never edit the JSON; CI fails on drift.
-   ([Render, check, generate](#render-check-generate))
+   a write into `~/.config/srt`. Never edit the JSON; `srtspec verify`
+   fails CI on drift.
+   ([Render, check, generate, verify](#render-check-generate-verify))
 3. **Link it into place.** A `[dotfiles.<name>_srt_settings]` item
    symlinks `<label>.srt.json` to `~/.config/srt/<label>.json`, with no
    profile gate: one file serves every machine. The file name is the label
@@ -292,22 +293,28 @@ one doesn't render. The decoder is strict, so a misspelled field fails
 instead of silently dropping a deny. A `~/` deny that sits under no `reads`
 root is refused as a likely typo, since `~` already covers it.
 
-### Render, check, generate
+### Render, check, generate, verify
 
 ```bash
 srtspec render services/events/service-info.yaml        # JSON to stdout
 srtspec check services/events/service-info.yaml recipes/events/events.srt.json
-make sandbox-settings                                    # every manifest in the repo
+make sandbox-settings                                    # render every manifest in the repo
+make sandbox-verify                                      # the CI gate; srtspec verify . elsewhere
 ```
 
 `make sandbox-settings` runs `srtspec generate`. It renders a component's
 manifest to `recipes/<component dir>/<label>.srt.json`, and an
 `access.yaml` into the directory it sits in. Output is deterministic:
-sorted keys, list entries in manifest order, two-space indent. CI runs the
-target and fails on any diff, so neither a hand edit to a settings file nor
-a manifest change without its render can merge. A `recipes/*/*.srt.json`
-that no manifest renders fails the target too. `check` compares by meaning,
-ignoring key and list order. It exits 1 with a diff on drift.
+sorted keys, list entries in manifest order, two-space indent.
+
+`make sandbox-verify` runs `srtspec verify`, the gate CI runs. It writes
+nothing and prints one line per check. It fails when a committed settings
+file is not its manifest's render byte for byte. It also fails when a
+`recipes/*/*.srt.json` has no manifest, and when a `<label>.local.json` kept
+beside a recipe does more than widen. So neither a hand edit to a settings
+file nor a manifest change without its render can merge. A consuming repo runs `srtspec verify .`
+over its own recipes the same way. `check` compares one pair by meaning,
+ignoring key and list order, and exits 1 with a diff on drift.
 
 ### The machine-local expansion layer
 
@@ -425,7 +432,7 @@ new sandboxed process, confirm:
   render, committed in the recipe dir that links it to
   `~/.config/srt/<label>.json`. That is the service's recipe here when the
   file is the same on every machine, and the consuming repo's otherwise.
-  `make sandbox-settings` leaves no diff. `catalog validate` fails a
+  `make sandbox-verify` passes. `catalog validate` fails a
   component whose recipe registers a t-man service or execs `srt-run`
   without `spec.access`.
 - Neither `~/.config/srt` nor the link's target is under any settings

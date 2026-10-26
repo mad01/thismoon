@@ -1,13 +1,17 @@
-// Package discover finds the access manifests in a repo tree and the srt
-// settings file each one renders to. The mapping is the fleet's layout
-// convention, so generate needs no per-manifest configuration:
+// Package discover finds the sandbox artifacts in a repo tree: the access
+// manifests and the srt settings file each one renders to, the settings
+// files nothing renders, and the expansion layers kept beside a recipe. The
+// mapping is the fleet's layout convention, so generate and verify need no
+// per-manifest configuration:
 //
 //   - a component's service-info.yaml (in services/<name>, tools/<name>, or a
 //     top-level <name> directory) renders to recipes/<name>/<label>.srt.json;
 //   - a recipe's own access.yaml renders beside it, as
-//     recipes/<name>/<label>.srt.json.
+//     recipes/<name>/<label>.srt.json; a recipe one level down
+//     (recipes/<group>/<name>/access.yaml) renders beside it the same way.
 //
-// A service-info.yaml without spec.access is not a manifest and is skipped.
+// A service-info.yaml without spec.access is not a manifest and is skipped,
+// and so is anything under a testdata directory.
 package discover
 
 import (
@@ -28,8 +32,16 @@ var componentGlobs = []string{
 	"tools/*/" + access.ServiceInfoFile,
 }
 
-// recipeGlob is where standalone manifests live, relative to the root.
-var recipeGlob = "recipes/*/" + access.StandaloneFile
+// The recipe-side locations, relative to the root: standalone manifests,
+// rendered settings files and expansion layers, each at both recipe depths.
+var (
+	recipeGlobs = []string{
+		"recipes/*/" + access.StandaloneFile,
+		"recipes/*/*/" + access.StandaloneFile,
+	}
+	settingsGlobs = []string{"recipes/*/*.srt.json", "recipes/*/*/*.srt.json"}
+	layerGlobs    = []string{"recipes/*/*.local.json", "recipes/*/*/*.local.json"}
+)
 
 // Target is one manifest and where it renders. Paths are relative to the
 // root Find was given.
@@ -44,24 +56,22 @@ type Target struct {
 // render into, and on two manifests that render to the same file.
 func Find(root string) ([]Target, error) {
 	var targets []Target
-	for _, glob := range componentGlobs {
-		paths, err := filepath.Glob(filepath.Join(root, glob))
+	paths, err := glob(root, componentGlobs)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range paths {
+		t, ok, err := component(root, p)
 		if err != nil {
-			return nil, fmt.Errorf("discover: %w", err)
+			return nil, err
 		}
-		for _, p := range paths {
-			t, ok, err := component(root, p)
-			if err != nil {
-				return nil, err
-			}
-			if ok {
-				targets = append(targets, t)
-			}
+		if ok {
+			targets = append(targets, t)
 		}
 	}
-	paths, err := filepath.Glob(filepath.Join(root, recipeGlob))
+	paths, err = glob(root, recipeGlobs)
 	if err != nil {
-		return nil, fmt.Errorf("discover: %w", err)
+		return nil, err
 	}
 	for _, p := range paths {
 		t, err := standalone(root, p)
@@ -136,9 +146,9 @@ func checkUnique(targets []Target) error {
 // relative to root. With the manifest as the source of truth, such a file is
 // either hand-written or left behind by a removed manifest.
 func Orphans(root string, targets []Target) ([]string, error) {
-	files, err := filepath.Glob(filepath.Join(root, "recipes", "*", "*.srt.json"))
+	files, err := glob(root, settingsGlobs)
 	if err != nil {
-		return nil, fmt.Errorf("discover: %w", err)
+		return nil, err
 	}
 	rendered := map[string]bool{}
 	for _, t := range targets {
@@ -151,6 +161,44 @@ func Orphans(root string, targets []Target) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// Layers returns the expansion layers (<label>.local.json) kept beside a
+// recipe, relative to root and sorted. A repo ships one when a machine needs
+// a widening the public manifest cannot name.
+func Layers(root string) ([]string, error) {
+	files, err := glob(root, layerGlobs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		out = append(out, relTo(root, f))
+	}
+	return out, nil
+}
+
+// glob matches every pattern under root, drops anything under a testdata
+// directory, and returns the matches sorted.
+func glob(root string, patterns []string) ([]string, error) {
+	var out []string
+	for _, pattern := range patterns {
+		paths, err := filepath.Glob(filepath.Join(root, pattern))
+		if err != nil {
+			return nil, fmt.Errorf("discover: %w", err)
+		}
+		for _, p := range paths {
+			if !underTestdata(relTo(root, p)) {
+				out = append(out, p)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+func underTestdata(rel string) bool {
+	return slices.Contains(strings.Split(filepath.ToSlash(rel), "/"), "testdata")
 }
 
 func relTo(root, path string) string {
