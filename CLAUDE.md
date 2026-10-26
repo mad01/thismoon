@@ -42,6 +42,8 @@ docs/SANDBOXING.md      srt sandboxing: a walkthrough for sandboxing a new proce
              files rendered from them, the machine-local expansion layer,
              spawn wrappers, and denial triage for sandboxed services and
              MCP servers
+docs/CONTAINER-BUILDS.md package-manager build steps (npm, pip, gem) in a throwaway
+             Apple container VM: the export-only pattern and the runtime setup
 ```
 
 ## Conventions

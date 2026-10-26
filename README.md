@@ -335,6 +335,7 @@ component, is in [docs/RELEASING.md](docs/RELEASING.md).
 | `docs/MEMORY-STACK.md` | Which store holds what an agent should remember, and the hooks behind them |
 | `docs/RELEASING.md` | Release process |
 | `docs/SANDBOXING.md` | Sandboxing with srt: how to sandbox a new process, then the launcher, access manifests, machine layers and denial triage |
+| `docs/CONTAINER-BUILDS.md` | Package-manager build steps in a throwaway Apple container VM: when it is the right tool, the export-only pattern, the runtime setup |
 
 Everything is one Go module: `github.com/mad01/thismoon`. Each component
 under `services/` or `tools/` has its own Makefile with `build`, `test`, and

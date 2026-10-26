@@ -186,8 +186,8 @@ not on your machine. Only the `dist/` artifacts come out, and
 the output is byte-identical to a host build. One-time setup: install
 [apple/container](https://github.com/apple/container/releases) and run
 `container system start`. The general containerized-build guide is
-[docs/container-builds.md](https://github.com/mad01/dotfiles/blob/main/docs/container-builds.md)
-in the dotfiles repo; this repo is its reference implementation.
+[docs/CONTAINER-BUILDS.md](../docs/CONTAINER-BUILDS.md); this package is its
+reference implementation.
 
 Edit `src/webkit.ts` and `src/webkit.css`, rebuild, review `git diff dist/`,
 **commit `dist/`** (it's intentionally tracked). Consumers pick the change up
