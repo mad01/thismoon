@@ -78,7 +78,7 @@ func registerSessionTools(s *mcp.Server, h *handlers) {
 		Description: "List recorded agent sessions newest first. Each has a title (the harness title, else its first prompt line), " +
 			"a status (running or ended), when it started, was last active and ended, its active time and wall time, its turn, edit, file and agent counts, " +
 			"the names of the subagents that ran (`agents`), its tokens and cost, its transcript path, and the repositories and worktrees it edited. " +
-			"`active_ms` is the time inside its turns, less the time a turn waited for input, so a pause between turns never counts. " +
+			"`active_ms` is the time inside its turns, less the time a turn waited for input or sat idle, so a pause between turns never counts. " +
 			"`duration_ms` is the wall time from the first prompt to the last turn's end, pauses included, and never below `active_ms`. " +
 			"An open turn ends at its last edit or agent stop for both. " +
 			"The cost covers the main conversation and its subagents; `cost_main` and `cost_agents` split it. " +

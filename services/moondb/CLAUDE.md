@@ -386,12 +386,11 @@ trace with a reason.
   page's trace lanes and turn list follow the same order and keep the Seq
   as the turn's number.
 - The session trace's wall time is the turns' wall times plus the user
-  gaps, its user time adds the gaps to the turns' own, and its idle time
-  is the turns'. The time split
-  then adds up to the wall whenever each turn's does. Without overlapping
-  turns the wall runs from the first start to the last end. A stretch two
-  turns overlap counts in each, so this wall can exceed the session row's
-  `duration_ms` by that overlap.
+  gaps. Its user time adds the gaps to the turns' own, and its idle time is
+  the turns'. The time split then adds up to the wall whenever each turn's
+  does. Without overlapping turns the wall runs from the first start to the
+  last end. A stretch two turns overlap counts in each, so this wall can
+  exceed the session row's `duration_ms` by that overlap.
 
 Cost comes from `moondb.DefaultPrices` (USD per million tokens), matched by
 exact model id, then by family (a dated or provider suffix). Fast mode
@@ -468,9 +467,9 @@ under a recover. A failed store write ends the batch and skips nothing, and
 so does a failed chunk read while the ping fails too. The next batch tries
 that turn again. Bump `trace.TotalsVersion` when a trace change alters the
 totals. The totals backfill then recomputes the stored ones, the Agents'
-too. Version 2 added idle time, so totals of version 1 are computed again. A turn-open
-that moves a closed turn's start back recomputes its totals; a transcript
-it cannot read then clears them for the totals backfill.
+too. Version 2 added idle time, so totals of version 1 are computed again.
+A turn-open that moves a closed turn's start back recomputes its totals; a
+transcript it cannot read then clears them for the totals backfill.
 
 Sessions get their names on the same paths. `Session.PromptLine` is the
 first line of a prompt that has text once tags are gone, cut to
@@ -620,10 +619,10 @@ A session row comes from the index alone, never a chunk
   last activity: the latest edit or agent stop at or after its start and
   before the next turn starts.
 - `active_ms`: the active time (`store.Summarize`). Each turn adds its
-  totals' wall time less their user and idle time, or without totals its recorded
-  span, and never less than zero. An open turn ends at its last activity,
-  as in `duration_ms`. The gaps between turns never count, so a session
-  left open overnight adds nothing for the night. It never exceeds
+  totals' wall time less their user and idle time, or without totals its
+  recorded span, and never less than zero. An open turn ends at its last
+  activity, as in `duration_ms`. The gaps between turns never count, so a
+  session left open overnight adds nothing for the night. It never exceeds
   `duration_ms`: overlapping turns, or totals that outlast the recorded
   span, are capped at the wall time.
 - `turn_count`, `edit_count`, `file_count` (distinct worktree and path) and
@@ -729,31 +728,29 @@ return, so keep it stable.
   details" disclosure. The Trace section has a totals strip (wall, model,
   tool, tokens, cost) and one timeline lane per turn, in the same order.
   The wall's note gives the time waiting for input and, when a turn had
-  some, the idle time.
-  A lane has rows for model, tool and subagent bars in the webkit series
-  colours, a failed tool call in red. Parallel subagents get a row each,
-  up to four. Each lane is scaled to its own turn, and a subagent bar
-  runs from its spawn to its stop, cut at the lane's end. An idle stretch
-  is a hatched break over the bars, titled "idle, no activity for over
-  30 min", at most 4% of the lane wide. The rest of the lane scales to
-  the turn's other time, so a turn with days of idle time still shows its
-  calls. A bar's hover
-  title gives its duration, calls, tokens and cost, and clicking it opens
-  the turn.
+  some, the idle time. A lane has rows for model, tool and subagent bars in
+  the webkit series colours, a failed tool call in red. Parallel subagents
+  get a row each, up to four. Each lane is scaled to its own turn, and a
+  subagent bar runs from its spawn to its stop, cut at the lane's end. An
+  idle stretch is a hatched break over the bars, at most 4% of the lane
+  wide. Its title gives its length and "no transcript line for over
+  30 min". The rest of the lane scales to the turn's other time, so a
+  turn with days of idle time still shows its calls. A bar's hover title
+  gives its duration, calls, tokens and cost, and clicking it opens the
+  turn.
 - `/?turn=<id>`: the full prompt and final message with fixation reading,
-  the turn's cost split between the main conversation and its subagents,
-  an "Idle" row when the turn has idle time,
-  who started it, a "Skipped" row when the Bash hook skipped files of a
-  command (clean after it, past the budget, or with a status git could not
-  give), the agents that worked in it with their calls, time, edits and
-  cost (those without edits too), and the edits grouped by
-  worktree, then path. Each edit shows its tool, kind, agent, time, before
-  source and observed match. Its unified diff is drawn in the browser from
-  the patch chunk, and a create without hunks shows its after content. Then the
-  unattributed deltas with their diffs, the snapshots with their file and
-  skipped counts, the commit links, and the raw transcript lines behind a
-  closed disclosure. Clicking an added line asks
-  `/api/why` about that line's text and shows the answer inline.
+  the turn's cost split between the main conversation and its subagents, an
+  "Idle" row when the turn has idle time, who started it, a "Skipped" row
+  when the Bash hook skipped files of a command (clean after it, past the
+  budget, or with a status git could not give), the agents that worked in
+  it with their calls, time, edits and cost (those without edits too), and
+  the edits grouped by worktree, then path. Each edit shows its tool, kind,
+  agent, time, before source and observed match. Its unified diff is drawn
+  in the browser from the patch chunk, and a create without hunks shows its
+  after content. Then the unattributed deltas with their diffs, the
+  snapshots with their file and skipped counts, the commit links, and the
+  raw transcript lines behind a closed disclosure. Clicking an added line
+  asks `/api/why` about that line's text and shows the answer inline.
 - `/?worktree=<abs>&path=<rel>`: the file today, from `/api/annotate`, with
   a gutter band per turn (solid for blame, dashed for a content match);
   hovering a line names its turn's prompt and clicking opens the turn.

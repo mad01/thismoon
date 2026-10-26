@@ -1276,8 +1276,9 @@
   // than moondb.IdleGapAfter (facts.go). A lane draws each one as a hatched
   // break no wider than IDLE_BREAK of the track, and scales the rest of the
   // track to the turn's other time, so a turn with days of idle time still
-  // shows its calls.
-  var IDLE_TITLE = 'idle, no activity for over 30 min';
+  // shows its calls. IDLE_RULE says what makes a stretch idle, in the CLI's
+  // words; its 30 min changes with IdleGapAfter.
+  var IDLE_RULE = 'no transcript line for over 30 min';
   var IDLE_BREAK = 0.04; // the widest share of a lane one idle break takes
   var IDLE_BREAKS = 0.3; // the widest share of a lane its idle breaks take together
 
@@ -1363,7 +1364,7 @@
     if (t.idle_ms > 0) wallSub += ', ' + fmtDuration(t.idle_ms) + ' idle';
     return el('div', { class: 'tr-stats' }, [
       stat(fmtDuration(t.wall_ms || 0), 'Wall', wallSub,
-        t.idle_ms > 0 ? 'Idle: ' + IDLE_TITLE + ' inside a turn' : null),
+        t.idle_ms > 0 ? 'Idle: ' + IDLE_RULE + ' inside a turn' : null),
       stat(fmtDuration(t.model_ms || 0), 'Model', plural(t.model_calls || 0, 'main call') +
         (t.agent_model_calls ? ', ' + fmtCount(t.agent_model_calls) + ' by subagents' : '')),
       stat(fmtDuration(t.tool_ms || 0), 'Tool', plural(t.tool_calls || 0, 'main call') +
@@ -1397,7 +1398,8 @@
       key(SPAN_COLORS.tool, 'tool call'),
       key('--red', 'failed tool call', true),
       key(SPAN_COLORS.subagent, 'subagent run'),
-      idle ? el('span', { class: 'row' }, [el('span', { class: 'swatch tr-idle-swatch' }), IDLE_TITLE]) : null,
+      idle ? el('span', { class: 'row' },
+        [el('span', { class: 'swatch tr-idle-swatch' }), 'idle, ' + IDLE_RULE]) : null,
       el('span', { class: 'muted' }, 'Each lane runs from its prompt to Stop; a subagent bar from its spawn ' +
         'to its stop, cut at the lane\'s end.' +
         (idle ? ' An idle stretch is a narrow break, whatever its length.' : '') +
@@ -1422,7 +1424,7 @@
       });
     var breaks = scale ? scale.breaks.map(idleBreak) : [];
     var idle = tt.totals.idle_ms > 0
-      ? '\nIdle: ' + fmtDuration(tt.totals.idle_ms) + ', ' + IDLE_TITLE : '';
+      ? '\nIdle: ' + fmtDuration(tt.totals.idle_ms) + ', ' + IDLE_RULE : '';
     var label = '#' + tt.seq + ' ' + (tt.prompt || '(no prompt recorded)');
     return el('div', { class: 'tr-lane' }, [
       el('a', { class: 'tr-label', href: href, title: label }, [
@@ -1480,7 +1482,7 @@
   // that run through it.
   function idleBreak(b) {
     return el('span', {
-      class: 'tr-idle', title: IDLE_TITLE + ' · ' + fmtDuration(b.ms),
+      class: 'tr-idle', title: 'Idle: ' + fmtDuration(b.ms) + ', ' + IDLE_RULE,
       style: 'left:' + (b.left * 100).toFixed(3) + '%;width:' + (b.width * 100).toFixed(3) + '%'
     });
   }
@@ -1591,7 +1593,7 @@
         t.trace_totals ? kvRow('Cost', fmtCost(t.trace_totals.cost) + ' · ' + costSplit(t.trace_totals)) : null,
         t.trace_totals && t.trace_totals.idle_ms > 0
           ? kvRow('Idle', fmtDuration(t.trace_totals.idle_ms) + ' of ' +
-            fmtDuration(t.trace_totals.wall_ms) + ' · ' + IDLE_TITLE)
+            fmtDuration(t.trace_totals.wall_ms) + ' · ' + IDLE_RULE)
           : null,
         skipped ? kvRow('Skipped', skipped) : null,
         originRow(t)

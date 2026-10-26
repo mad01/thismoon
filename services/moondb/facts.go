@@ -121,7 +121,9 @@ const (
 // days to be resumed, or a request hangs. So a longer stretch keeps its
 // first IdleGapAfter in its own class and the rest is idle time, which a
 // session's active time leaves out. Waiting for input is user time and is
-// never idle.
+// never idle. Two texts state 30 minutes as a literal and change with it:
+// IDLE_RULE in internal/server/app.js and the idle paragraph of
+// operating.md.
 const IdleGapAfter = 30 * time.Minute
 
 // Turn totals. serve stores each turn's trace totals when the turn closes;
