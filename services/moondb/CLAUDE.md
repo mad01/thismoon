@@ -374,12 +374,14 @@ trace with a reason.
   numbers the turns it adds after the live ones even when they ran first.
   A user gap runs from the latest turn end so far to the next turn's
   start, so a turn that starts before an earlier one ended adds none. The
-  session's wall time is the turns' wall times plus those gaps, and its
-  user time adds the gaps to the turns' own. The time split then adds up
-  to the wall whenever each turn's does. Without overlapping turns the
-  wall runs from the first start to the last end, and a stretch two turns
-  overlap counts in each. The page's trace lanes and turn list follow the
-  same order and keep the Seq as the turn's number.
+  page's trace lanes and turn list follow the same order and keep the Seq
+  as the turn's number.
+- The session trace's wall time is the turns' wall times plus the user
+  gaps, and its user time adds the gaps to the turns' own. The time split
+  then adds up to the wall whenever each turn's does. Without overlapping
+  turns the wall runs from the first start to the last end. A stretch two
+  turns overlap counts in each, so this wall can exceed the session row's
+  `duration_ms` by that overlap.
 
 Cost comes from `moondb.DefaultPrices` (USD per million tokens), matched by
 exact model id, then by family (a dated or provider suffix). Fast mode
@@ -598,11 +600,12 @@ A session row comes from the index alone, never a chunk
   turn is the one that started last, the higher Seq on a tie.
 - `started_at`, `last_activity_at`: the session's start, and its latest
   turn start, turn end, edit or agent stop.
-- `ended_at`: once the session is `ended`, its last turn's end, where
-  `duration_ms` ends. Absent while it runs.
+- `ended_at`: once the session is `ended`, the latest turn end, where
+  `duration_ms` ends. That turn need not be the last turn. Absent while
+  it runs.
 - `transcript_path`: the transcript file the session record keeps.
-- `duration_ms`: the wall time, from the first turn's start to the last
-  turn's end, the pauses between turns included. An open turn ends at its
+- `duration_ms`: the wall time, from the earliest turn start to the latest
+  turn end, the pauses between turns included. An open turn ends at its
   last activity: the latest edit or agent stop at or after its start and
   before the next turn starts.
 - `active_ms`: the active time (`store.Summarize`). Each turn adds its
@@ -716,9 +719,10 @@ return, so keep it stable.
   tool, tokens, cost) and one timeline lane per turn, in the same order.
   A lane has rows for model, tool and subagent bars in the webkit series
   colours, a failed tool call in red. Parallel subagents get a row each,
-  up to four. Each lane is scaled to its own turn, and a subagent bar runs from its spawn to its
-  stop, cut at the lane's end. A bar's hover title gives its duration,
-  calls, tokens and cost, and clicking it opens the turn.
+  up to four. Each lane is scaled to its own turn, and a subagent bar
+  runs from its spawn to its stop, cut at the lane's end. A bar's hover
+  title gives its duration, calls, tokens and cost, and clicking it opens
+  the turn.
 - `/?turn=<id>`: the full prompt and final message with fixation reading,
   the turn's cost split between the main conversation and its subagents,
   who started it, a "Skipped" row when the Bash hook skipped files of a

@@ -698,10 +698,11 @@ func TestBuildSession(t *testing.T) {
 	}
 }
 
-// TestBuildSessionTimeOrder: a session's turns run in time order, not Seq
-// order, since an import numbers the turns it adds after the live ones. A
-// user gap runs from the latest end so far to the next start, and the
-// session's time split adds up to its wall time, overlapping turns too.
+// TestBuildSessionTimeOrder: a session's turns run in time order, by start
+// and then Seq, not Seq order alone, since an import numbers the turns it
+// adds after the live ones. A user gap runs from the latest end so far to
+// the next start, and the session's time split adds up to its wall time,
+// overlapping turns too.
 func TestBuildSessionTimeOrder(t *testing.T) {
 	at := func(h, m int) time.Time { return time.Date(2026, 10, 1, h, m, 0, 0, time.UTC) }
 	// turn has a wall time split between every kind, as Build's are.
@@ -746,6 +747,16 @@ func TestBuildSessionTimeOrder(t *testing.T) {
 			wantSeqs: []int{1, 2, 3},
 			wantGaps: []string{"12:00-12:30"},
 			wantWall: at(12, 35).Sub(at(10, 0)) + 10*time.Minute,
+		},
+		{
+			name: "turns with the same start go by Seq with no gap between them",
+			turns: []TurnTrace{
+				turn(2, at(10, 0), at(10, 5)),
+				turn(1, at(10, 0), at(10, 3)),
+			},
+			wantSeqs: []int{1, 2},
+			wantGaps: nil,
+			wantWall: at(10, 5).Sub(at(10, 0)) + 3*time.Minute,
 		},
 	}
 	for _, tt := range tests {

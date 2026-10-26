@@ -200,17 +200,18 @@ harness title, else the first line of its first prompt serve saw, else the
 last segment of its cwd, else its id. One rule picks the harness title on
 every path: a name the person gave outranks a generated title, and within
 one rank the first title seen stays. A row is running while its last
-activity is under 10 minutes old, or its last turn is open and the
-activity is under 12 hours old. Its cost prices the stored tokens of its
-turns and its agents on read, split into the main conversation's part and
-the agents', so a price change reprices every row. Its active time adds
-each turn's wall time less its user time from the turn totals, or the
-turn's recorded span without them. The pauses between turns never count.
-Its wall time runs from the first turn's start to the last turn's end. An
-open turn ends at its last edit or agent stop for both times, and the
-active time is capped at the wall time. The time window keeps the sessions
-active in it, grouped by the day they started. The answer also adds up the
-whole filtered window and lists the window's repos for the page's chips.
+activity is under 10 minutes old, or while its last turn is open and the
+activity is under 12 hours old. The last turn is the one that started
+last. Its cost prices the stored tokens of its turns and its agents on
+read, split into the main conversation's part and the agents', so a price
+change reprices every row. Its active time adds each turn's wall time
+less its user time from the turn totals, or the turn's recorded span
+without them. The pauses between turns never count. Its wall time runs
+from the earliest turn start to the latest turn end. An open turn ends at
+its last edit or agent stop for both times, and the active time is capped
+at the wall time. The time window keeps the sessions active in it,
+grouped by the day they started. The answer also adds up the whole
+filtered window and lists the window's repos for the page's chips.
 
 Cost by repo is a view too. Model calls carry no repo, so the listing
 splits a session's cost by who spent it. A subagent's cost goes to the
