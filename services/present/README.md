@@ -7,7 +7,7 @@ Pages are created, read, updated, and listed through the MCP tools; deleting one
 ## Install
 
 ```bash
-make install   # builds and installs ~/code/bin/present (adhoc codesigned on macOS)
+make install   # builds and installs ~/code/bin/present (codesigned on macOS: the stable local identity, ad-hoc without it)
 ```
 
 ## Usage
@@ -252,9 +252,10 @@ t-man logs sandbox
 
 See `recipes/speak/CLAUDE.md` → "Triaging a denial" for the triage steps.
 
-Codesign. macOS kills adhoc-signed binaries with stale provenance xattrs.
-After a manual copy: `make resign BIN=~/code/bin/present`. `make install`
-handles this automatically.
+Codesign. `make install` signs with the stable local identity (`mad01 Local
+Signing`, docs/adr/0004) and falls back to ad-hoc when the cert is absent.
+macOS kills a binary whose provenance xattrs went stale, so after a manual
+copy run `make resign BIN=~/code/bin/present`.
 
 Debugging. Both processes log their resolved `workdir=… port=…` at
 startup. If updates don't appear, compare those values first:

@@ -37,7 +37,7 @@ Full format, voices and precedence: [config.md](config.md).
 ## Install
 
 ```bash
-make install   # builds and installs ~/code/bin/speak (adhoc codesigned on macOS)
+make install   # builds and installs ~/code/bin/speak (codesigned on macOS: the stable local identity, ad-hoc without it)
 ```
 
 The TTS engine (mlx-audio Kokoro-82M) installs separately via the consuming

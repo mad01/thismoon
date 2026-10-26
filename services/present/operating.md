@@ -57,6 +57,10 @@ http://speak.this; empty turns it off) and skips code and tables. Play buttons
 but no audio bar mean registration in flight, nothing speakable, or speak
 refused it and the page reads live. No buttons at all mean speak is down.
 
+A tab that fetches GET /p/<id> about once a second is a cached shell from
+before pages sent Cache-Control: no-store; hard-reload it or clear the
+browser cache.
+
 A deck tab that ignores `present deck` or present_deck: the MCP and serve
 resolved different workdirs (same check as above). Or the tab was opened
 after the command was sent (only later commands apply). Or the deck is on a

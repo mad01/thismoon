@@ -123,10 +123,10 @@ manifest and never the JSON. Authoring guide: `docs/SANDBOXING.md`,
 
 ```bash
 make build    # ./present binary
-make install  # build + cp to ~/code/bin/present + adhoc codesign
+make install  # build + cp to ~/code/bin/present + codesign (stable local identity, ad-hoc fallback)
 make test     # go test ./... then node --test on internal/server/test (skipped without node)
 make tidy     # go mod tidy
-make resign   # re-apply adhoc signature (macOS)
+make resign   # re-apply the signature (macOS)
 ```
 
 ## Commands
@@ -517,7 +517,7 @@ confirms which embedded webkit assets the running present server serves.
 - **A shell startup file can stall a terminal session for 10 s.** Some hooks in `~/.zshrc`, a theme hook say, write an escape sequence and wait for the terminal's reply. xterm.js never answers, so the session sits blank until the hook times out (10 s for a kitty hook that queries the terminal). Guard such hooks on `PRESENT_TERMINAL`, which every session sets to 1.
 - **Escape in a presenting deck is Chromium-only.** In browser fullscreen the browser takes Escape and leaves fullscreen, which ends presenting. A deck holding a terminal asks for the Keyboard Lock API on Escape when it enters fullscreen, so a focused terminal keeps the key, and holding it still leaves. Only Chromium has the API, and only in a secure context (https, or `localhost`): `http://present.this` gets none, and Safari and Firefox never do. There Escape leaves fullscreen as it would without a terminal.
 - **`ralph up` kills terminal sessions.** A rebuild of present restarts the serve agent, and `Manager.Close` kills every session as serve stops. Accepted for the first version; don't run an apply during a talk.
-- **Codesign for MCP.** macOS kills adhoc-signed binaries with stale provenance xattrs; `make install` re-signs.
+- **Codesign for MCP.** macOS kills a binary whose provenance xattrs went stale after a manual copy; `make install` re-signs with the stable local identity (docs/adr/0004), ad-hoc when the cert is absent.
 - **`present_share` reaches only allow-listed hosts from the MCP sandbox.** The consuming repo registers `present mcp` through `recipes/present/present-mcp-sandbox.sh`, which runs it under srt with `~/.config/srt/present.json`. Egress goes only to localhost (events) and the shared URL's host, which the wrapper derives from `PRESENT_SHARED_URL` and `srt-run` merges into the allow-list at launch; the wrapper also passes `PRESENT_SHARED_URL`/`PRESENT_AUTHOR_KEY` through from the ralph-managed secrets file. Any other host fails there with a connection error. The Share button (served by `present serve`, launched through `present-serve.sh` with the same two vars) and `present share` run outside the sandbox and take any URL.
 - **`SetShared` never bumps the version.** Sharing writes only the `shared` record in `meta.json`, so `/p/{id}/version` stays put and the open tab does not reload. The page view learns about a share from the `share` block in `GET /api/p/{id}` on load and from the `POST /p/{id}/share` response it just made.
 - **Bearer and host reach tool handlers through `req.Extra.Header`.** The go-sdk streamable HTTP transport copies the HTTP request headers onto every `CallToolRequest`, stateless mode included, so one server instance serves all replicas and nothing is threaded through context. `header(req)` in `tools.go` is nil-safe because stdio and tests pass no request.

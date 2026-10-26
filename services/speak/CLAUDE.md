@@ -219,10 +219,14 @@ Gotchas that cost time once:
   streamed body, not an error status. Any engine error after the status line
   (a G2P crash, say) looks the same: 200, then an empty or broken-off body.
   speak reports those as upstream failures pointing at `t-man logs speak-tts`.
-- **misaki pulls `en_core_web_sm` via `uv pip install` on first G2P**: that
-  subprocess needs `VIRTUAL_ENV` set or it dies with "No virtual environment
-  found" and the request hangs. The recipe warms G2P at install time and the
-  t-man agent sets `--env VIRTUAL_ENV=...` as a belt-and-suspenders.
+- **misaki's spaCy model is a pinned wheel, not a lazy download.** Left to
+  itself misaki fetches `en_core_web_sm` through `spacy.cli.download` on the
+  first G2P call, which shells out to pip or to a uv on PATH. The install
+  sandbox has neither, and the zero-egress runtime can't fetch it
+  mid-request. The consuming repo's engine recipe installs the wheel from its
+  `requirements.txt`, warms G2P at install time and fails the install when
+  the import is missing. The t-man agent still sets `--env VIRTUAL_ENV=...`
+  so any uv subprocess finds the venv.
 - **The engine runs SANDBOXED with zero network egress.** The consuming
   repo's `speak-tts` recipe registers it with a seatbelt profile: no outbound
   network (offline mode `HF_HUB_OFFLINE=1`; the Kokoro model is pre-fetched at
@@ -238,7 +242,7 @@ Gotchas that cost time once:
 
 ```bash
 make build    # ./speak binary (build metadata via ldflags, from ../../buildinfo.mk)
-make install  # build + cp to ~/code/bin/speak + adhoc codesign
+make install  # build + cp to ~/code/bin/speak + codesign (stable local identity, ad-hoc fallback)
 make test     # go test ./...
 ```
 
