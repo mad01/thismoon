@@ -102,8 +102,9 @@ var (
 // PromptLabel names a turn by its prompt for a lane or a list: a prompt
 // the harness wrote by what started the turn (store.PromptOrigin), such
 // as "background task finished: <summary>", "teammate message from
-// <id>: <summary>" or "continued after compaction", and a person's prompt
-// by its PromptLine. It is cut as PromptLine is.
+// <id>: <summary>", "message from subagent <sender>" or "continued after
+// compaction", and a person's prompt by its PromptLine. It is cut as
+// PromptLine is.
 func PromptLabel(prompt string) string {
 	switch store.PromptOrigin(prompt) {
 	case store.OriginTask:
@@ -111,8 +112,10 @@ func PromptLabel(prompt string) string {
 	case store.OriginTeammate:
 		attrs := attributes(teammateTag.FindString(prompt))
 		return labelWith("teammate message"+from(attrs["teammate_id"]), attrs["summary"])
-	case store.OriginAgent:
-		return cutLine("agent message" + from(firstMatch(messageFrom, prompt)))
+	case store.OriginSubagent:
+		return cutLine(
+			strings.TrimSpace("message from subagent " + firstMatch(messageFrom, prompt)),
+		)
 	case store.OriginContinuation:
 		return "continued after compaction"
 	}

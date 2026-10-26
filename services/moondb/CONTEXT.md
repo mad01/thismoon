@@ -15,7 +15,7 @@ One user prompt and everything up to the Stop that ends it, identified by the ho
 _Avoid_: exchange, step
 
 **Turn origin**:
-What opened a Turn: `person` (a typed prompt or a slash command), `task` (a background task's notification that it finished), `teammate` (a teammate's message), `agent` (a message from another agent session), `continuation` (the summary that resumes a session after compaction), or `none` (no prompt text). record and import read it from the head the harness gives a prompt it wrote itself; the web page reads a turn recorded before origins existed the same way.
+What opened a Turn: `person` (a typed prompt or a slash command), `task` (a background task's notification that it finished), `teammate` (a teammate's message), `subagent` (a message from a subagent or another session), `continuation` (the summary that resumes a session after compaction), or `none` (no prompt text). record and import read it from the head the harness gives a prompt it wrote itself, and a message relayed from another session by the wrapper inside it; the web page reads a turn recorded before origins existed the same way.
 _Avoid_: source, trigger, kind
 
 **Agent**:

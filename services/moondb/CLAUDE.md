@@ -478,7 +478,7 @@ Session{ ID, Harness, Cwd, Title, TitleSource /* named | generated */,
          PromptLine, Model, TranscriptPath, StartedAt, EndedAt }
 Turn{ ID, SessionID, Seq, PromptChunk, FinalChunk, TranscriptChunk,
       TranscriptOffset, Status /* open | closed | failed */, StartedAt, EndedAt,
-      Origin /* person | task | teammate | agent | continuation | none */,
+      Origin /* person | task | teammate | subagent | continuation | none */,
       Totals *TurnTotals, Skipped []SkippedFiles }
 Agent{ ID, SessionID, Type, Name, Description, Model, TurnIDs, Cwd, Location,
        StartedAt, EndedAt, TranscriptChunk, Lines AgentLines, Totals *TurnTotals }
@@ -634,7 +634,7 @@ return, so keep it stable.
   each subagent with its type, model, the turns it ran under, time, calls,
   edits, tokens and cost; clicking the Cost heading sorts the subagents
   costliest first. Each turn has its prompt label, a badge when a person
-  did not start it (`task`, `teammate`, `agent message`, `continued`),
+  did not start it (`task`, `teammate`, `subagent`, `continued`),
   status, edit count and every agent that ran under it. The page labels and
   classifies a turn recorded before origins existed from its prompt, as
   `trace.PromptLabel` and `store.PromptOrigin` do. The session id, cwd,

@@ -22,11 +22,19 @@ func TestPromptOrigin(t *testing.T) {
 		{"teammate message", "<teammate-message teammate_id=\"team-lead\" summary=\"Build it\">\n" +
 			"Build the PR.\n</teammate-message>", OriginTeammate},
 		{
-			"agent message", "<agent-message from=\"worker [3fa9c1]\">\nready\n</agent-message>",
-			OriginAgent,
+			"subagent message", "<agent-message from=\"worker [3fa9c1]\">\nready\n</agent-message>",
+			OriginSubagent,
 		},
 		{"cross-session message", "<cross-session-message from=\"worker\">\nhi\n" +
-			"</cross-session-message>", OriginAgent},
+			"</cross-session-message>", OriginSubagent},
+		{"subagent via another session", "Another Claude session sent a message:\n" +
+			"<agent-message from=\"aac17cb44ad3f4dd3\">\nDone.\n</agent-message>", OriginSubagent},
+		{"cross-session via another session", "Another Claude session sent a message: " +
+			"<cross-session-message from=\"worker\">\nhi\n</cross-session-message>", OriginSubagent},
+		{
+			"another session, no wrapper", "Another Claude session sent a message:\nhello",
+			OriginTeammate,
+		},
 		{"continuation", "This session is being continued from a previous conversation that " +
 			"ran out of context. The summary below covers the earlier portion.", OriginContinuation},
 		{"leading space", "  \n<task-notification>\n</task-notification>", OriginTask},

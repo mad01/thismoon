@@ -136,27 +136,42 @@
     return d ? pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) : '';
   }
 
-  // firstLine is the first non-blank line of text, cut to max characters.
-  function firstLine(text, max) {
+  // MARKUP mirrors trace.markup: an XML-like tag, which a prompt line
+  // reads better without.
+  var MARKUP = /<\/?[A-Za-z][\w:-]*(\s[^<>]*)?\/?>/g;
+
+  // promptText mirrors trace.PromptLine: the first line of text that holds
+  // words once its tags are gone, runs of space collapsed, cut to max.
+  function promptText(text, max) {
     var lines = (text || '').split('\n');
-    var line = '';
-    for (var i = 0; i < lines.length && !line; i++) line = lines[i].trim();
-    return cut(line, max);
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].replace(MARKUP, ' ').split(/\s+/).filter(Boolean).join(' ');
+      if (line) return cut(line, max);
+    }
+    return '';
   }
 
-  function cut(text, max) { return text.length > max ? text.slice(0, max - 1) + '…' : text; }
+  // cut mirrors trace.cutLine: text past max characters keeps max of them
+  // and gains an ellipsis.
+  function cut(text, max) {
+    var chars = Array.from(text);
+    return chars.length > max ? chars.slice(0, max).join('') + '…' : text;
+  }
 
   // ── turn origins ──
+
+  // RELAY_HEAD mirrors store.relayHead: the line before a message the
+  // harness relays from another session, whose wrapper says who sent it.
+  var RELAY_HEAD = 'Another Claude session sent a message:';
 
   // ORIGIN_HEADS mirrors store.PromptOrigin: the head the harness gives a
   // prompt it wrote itself, and the origin that head marks. A turn recorded
   // before moondb kept origins is classified here from its prompt.
   var ORIGIN_HEADS = [
     ['<task-notification>', 'task'],
-    ['Another Claude session sent a message:', 'teammate'],
     ['<teammate-message', 'teammate'],
-    ['<agent-message', 'agent'],
-    ['<cross-session-message', 'agent'],
+    ['<agent-message', 'subagent'],
+    ['<cross-session-message', 'subagent'],
     ['This session is being continued from a previous conversation', 'continuation']
   ];
 
@@ -164,13 +179,24 @@
   var ORIGIN_BADGES = {
     task: ['b', 'task', 'A background task finished, and its notification started this turn'],
     teammate: ['c', 'teammate', 'A teammate\'s message started this turn'],
-    agent: ['c', 'agent message', 'A message from another agent session started this turn'],
+    subagent: ['c', 'subagent', 'A message from a subagent or another session started this turn'],
     continuation: ['stat', 'continued', 'The session continued after compaction with this turn']
   };
 
+  // promptOrigin mirrors store.PromptOrigin: a relayed message is
+  // classified by the wrapper after RELAY_HEAD, a teammate's when none
+  // follows.
   function promptOrigin(text) {
     var head = (text || '').trim();
     if (!head) return 'none';
+    if (head.indexOf(RELAY_HEAD) === 0) {
+      var relayed = headOrigin(head.slice(RELAY_HEAD.length).trim());
+      return relayed === 'person' ? 'teammate' : relayed;
+    }
+    return headOrigin(head);
+  }
+
+  function headOrigin(head) {
     for (var i = 0; i < ORIGIN_HEADS.length; i++) {
       if (head.indexOf(ORIGIN_HEADS[i][0]) === 0) return ORIGIN_HEADS[i][1];
     }
@@ -189,12 +215,12 @@
       var tag = (/<teammate-message\b[^>]*>/.exec(text) || [''])[0];
       return cut(labelWith('teammate message' + fromWho(attr(tag, 'teammate_id')), attr(tag, 'summary')), max);
     }
-    if (origin === 'agent') {
+    if (origin === 'subagent') {
       var who = /<(?:agent|cross-session)-message\b[^>]*\bfrom="([^"]*)"/.exec(text);
-      return cut('agent message' + fromWho(who && who[1]), max);
+      return cut(('message from subagent ' + (who ? who[1] : '')).trim(), max);
     }
     if (origin === 'continuation') return 'continued after compaction';
-    return firstLine(text, max);
+    return promptText(text, max);
   }
 
   function labelWith(label, detail) {
