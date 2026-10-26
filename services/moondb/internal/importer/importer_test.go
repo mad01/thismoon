@@ -182,7 +182,8 @@ func wantCounts() Counts {
 		FailedCalls:          1,
 		UnansweredCalls:      1,
 		BashCalls:            1,
-		Envelopes:            17,
+		Agents:               1,
+		Envelopes:            18,
 		UndecodableLines:     1,
 		UnknownTypes:         map[string]int{"mystery-entry": 1},
 	}
@@ -209,6 +210,8 @@ func TestImportOrder(t *testing.T) {
 		"w-1:open", "toolu_r1:0", "w-1:close", "w-5:open", "w-5:close",
 		"p1:open", "toolu_e1:0", "toolu_w1:0", "toolu_env:0", "toolu_m1:0", "p1:close",
 		"p2:open", "toolu_big1:0", "toolu_big2:0", "toolu_sub:0", "toolu_nb:0", "p2:close",
+		// a session's agents follow its turns
+		"aworker-1:close:4",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("envelope order:\n got %q\nwant %q", got, want)
@@ -597,5 +600,38 @@ func TestFixtureIsJSONLines(t *testing.T) {
 	}
 	if bad != 1 {
 		t.Errorf("%d malformed fixture lines, want the 1 planted", bad)
+	}
+}
+
+// TestImportAgents writes each subagent transcript of an imported session
+// as the SubagentStop hook would: the agent transcript, who the meta file
+// says the agent was, the turns it ran under and where it worked.
+func TestImportAgents(t *testing.T) {
+	w := newWorld(t)
+	_, envs := w.run(t, w.options())
+	env, ok := byID(envs)["aworker-1:close:4"]
+	if !ok {
+		t.Fatal("aworker-1 not written")
+	}
+	ac := env.AgentClose
+	if env.Kind != spool.KindAgentClose || env.Agent.ID != "aworker-1" ||
+		env.Session.ID != "sess-1" {
+		t.Errorf("envelope = %+v", env)
+	}
+	if ac.Type != "worker" || ac.Name != "" || ac.Description != "edit sub.go" ||
+		ac.Model != "model-b" || !slices.Equal(ac.TurnIDs, []string{"p2"}) ||
+		ac.Cwd != w.cwd || ac.Location.Worktree != w.real || ac.Location.Repo == "" {
+		t.Errorf("AgentClose = %+v", ac)
+	}
+	start := time.Date(2026, 10, 1, 10, 5, 6, 0, time.UTC)
+	if !ac.StartedAt.Equal(start) || !ac.EndedAt.Equal(start.Add(2500*time.Millisecond)) ||
+		ac.Lines != (store.AgentLines{Read: 4, Kept: 4}) {
+		t.Errorf("times %v to %v, lines %+v", ac.StartedAt, ac.EndedAt, ac.Lines)
+	}
+	if lines := w.chunk(t, ac.TranscriptChunk); !strings.Contains(
+		lines,
+		`"tool_use_id":"toolu_sub"`,
+	) {
+		t.Errorf("agent transcript = %q, want the tool result's ids", lines)
 	}
 }

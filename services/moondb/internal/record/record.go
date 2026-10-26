@@ -42,9 +42,10 @@ const Harness = "claude-code"
 
 // Hook events Run records; every other event is ignored.
 const (
-	eventPrompt   = "UserPromptSubmit"
-	eventToolUsed = "PostToolUse"
-	eventStop     = "Stop"
+	eventPrompt       = "UserPromptSubmit"
+	eventToolUsed     = "PostToolUse"
+	eventStop         = "Stop"
+	eventSubagentStop = "SubagentStop"
 )
 
 // Options configures one Run.
@@ -67,6 +68,9 @@ type Options struct {
 	// SnapshotBudget is how long the turn-edge events spend on snapshots,
 	// after their own envelope; moondb.SnapshotBudget when zero.
 	SnapshotBudget time.Duration
+	// AgentBudget is Budget for a SubagentStop payload, whose hook is
+	// async; moondb.AgentBudget when zero.
+	AgentBudget time.Duration
 	// Logf receives one line for each Bash payload whose files Run left
 	// out, with the counts; nil discards it.
 	Logf func(format string, args ...any)
@@ -110,6 +114,8 @@ func Run(ctx context.Context, in io.Reader, opts Options) error {
 		return rec.require(rec.toolUsed, "tool_use_id", p.toolUseID)
 	case eventStop:
 		return rec.require(rec.closeTurn, "prompt_id", p.promptID)
+	case eventSubagentStop:
+		return rec.require(rec.closeAgent, "agent_id", p.agentID)
 	default:
 		return nil
 	}
@@ -131,17 +137,24 @@ func (o Options) withDefaults() Options {
 	if o.SnapshotBudget <= 0 {
 		o.SnapshotBudget = moondb.SnapshotBudget
 	}
+	if o.AgentBudget <= 0 {
+		o.AgentBudget = moondb.AgentBudget
+	}
 	if o.Logf == nil {
 		o.Logf = func(string, ...any) {}
 	}
 	return o
 }
 
-// budgetFor is how long Run gathers for p: BashBudget for a Bash payload,
-// whose async hook nobody waits on, Budget for every other.
+// budgetFor is how long Run gathers for p: BashBudget for a Bash payload
+// and AgentBudget for a SubagentStop, whose async hooks nobody waits on,
+// Budget for every other.
 func (o Options) budgetFor(p payload) time.Duration {
-	if p.event == eventToolUsed && p.tool == toolBash {
+	switch {
+	case p.event == eventToolUsed && p.tool == toolBash:
 		return o.BashBudget
+	case p.event == eventSubagentStop:
+		return o.AgentBudget
 	}
 	return o.Budget
 }

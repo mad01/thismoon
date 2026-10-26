@@ -29,27 +29,35 @@ func (in *Ingester) turnOpen(
 		return err
 	}
 	prompt := in.kept(env, missing, env.TurnOpen.PromptChunk)
-	if err := in.openTurn(ctx, env, prompt); err != nil {
+	if err := in.openTurn(ctx, env, prompt, env.TurnOpen.Origin); err != nil {
 		return err
 	}
 	return in.fillSession(ctx, env.Session.ID, titleOffer{})
 }
 
 // openTurn puts the turn a turn-open names, or fills the one the store
-// holds. A closed turn whose start moved back gets its totals again, since
-// its wall time grew.
-func (in *Ingester) openTurn(ctx context.Context, env spool.Envelope, prompt string) error {
+// holds, with its prompt and what started it. A closed turn whose start
+// moved back gets its totals again, since its wall time grew.
+func (in *Ingester) openTurn(
+	ctx context.Context,
+	env spool.Envelope,
+	prompt string,
+	origin store.TurnOrigin,
+) error {
 	td, found, err := in.loadTurn(ctx, env.Turn.ID)
 	if err != nil {
 		return err
 	}
 	if !found {
 		t := newTurn(env, store.TurnOpen)
-		t.PromptChunk = prompt
+		t.PromptChunk, t.Origin = prompt, origin
 		return in.putTurn(ctx, t)
 	}
 	t := td.Turn
 	changed := fill(&t.PromptChunk, prompt)
+	if t.Origin == "" && origin != "" {
+		t.Origin, changed = origin, true
+	}
 	if t.TranscriptOffset == 0 && env.Turn.TranscriptOffset != 0 {
 		t.TranscriptOffset, changed = env.Turn.TranscriptOffset, true
 	}

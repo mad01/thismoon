@@ -102,7 +102,10 @@ type Counts struct {
 	UnansweredCalls int `json:"unanswered_calls"`
 	// BashCalls are shell calls in imported sessions, which are not
 	// imported: the transcript records no diff for them.
-	BashCalls        int            `json:"bash_calls_not_imported"`
+	BashCalls int `json:"bash_calls_not_imported"`
+	// Agents counts the subagents of imported sessions written as Agent
+	// records, one agent-close envelope each.
+	Agents           int            `json:"agents"`
 	Envelopes        int            `json:"envelopes"`
 	UndecodableLines int            `json:"undecodable_lines"`
 	UnknownTypes     map[string]int `json:"unknown_types"`

@@ -496,6 +496,7 @@ func TestPromptThenStop(t *testing.T) {
 		{"Session.Title", open.Session.Title, "greeting work"},
 		{"Session.Cwd", open.Session.Cwd, s.cwd},
 		{"prompt", s.chunk(open.TurnOpen.PromptChunk), "rename the greeting"},
+		{"origin", string(open.TurnOpen.Origin), "person"},
 	})
 
 	during := "{\"line\":1}\n{\"line\":2}\n"
@@ -632,6 +633,8 @@ func TestRunErrors(t *testing.T) {
 		{"tool use without id", `{"hook_event_name":"PostToolUse","session_id":"s",` +
 			`"tool_name":"Edit","tool_input":{"file_path":"/x"}}`, true, nil},
 		{"unknown event", `{"hook_event_name":"SessionStart","session_id":"s"}`, false, nil},
+		{"subagent stop without agent id", `{"hook_event_name":"SubagentStop",` +
+			`"session_id":"s"}`, true, nil},
 		{"field of the wrong type", `{"hook_event_name":"UserPromptSubmit","session_id":"s",` +
 			`"prompt_id":"p","prompt":42}`, false, []spool.Kind{spool.KindTurnOpen}},
 	}

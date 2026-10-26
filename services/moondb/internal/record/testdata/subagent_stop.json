@@ -1,0 +1,12 @@
+{
+  "session_id": "sess-1",
+  "prompt_id": "prompt-1",
+  "transcript_path": "$TRANSCRIPT",
+  "cwd": "$CWD",
+  "hook_event_name": "SubagentStop",
+  "stop_hook_active": false,
+  "agent_id": "agent-7",
+  "agent_type": "worker",
+  "agent_transcript_path": "$AGENT_TRANSCRIPT",
+  "last_assistant_message": "Built it."
+}
