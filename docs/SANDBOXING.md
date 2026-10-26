@@ -74,6 +74,9 @@ is a complete worked example for a consuming repo: the manifest, its
 render, the wrapper, and the agent-sync drop-in that registers the server.
 The mise pins for srt and bun sit beside it in
 [`examples/dotfiles/recipes/mise/`](../examples/dotfiles/recipes/mise/).
+[`examples/dotfiles/recipes/agent-shell/`](../examples/dotfiles/recipes/agent-shell/)
+is the same for a coding agent's shell tool
+([Sandboxing an agent's shell](#sandboxing-an-agents-shell)).
 
 ## Why srt
 
@@ -569,6 +572,69 @@ into an alert. The fleet ignore list covers only t-man's own
 `~/Library/Logs/<name>/stdout.log` and `stderr.log`. Kill the probe when
 done.
 
+## Sandboxing an agent's shell
+
+A coding agent's shell tool runs whatever the model asks, so it is the
+process with the least predictable access and the one most worth
+confining. The same three pieces apply, with the agent's tool where the
+MCP client or t-man would be.
+[`examples/dotfiles/recipes/agent-shell/`](../examples/dotfiles/recipes/agent-shell/)
+is the template: the manifest, its render, the wrapper the tool spawns, and
+the watcher ignore line.
+
+The policy differs from a service's in three ways, all in the manifest:
+
+- **The workspace is `.`.** A service has one workdir; an agent's shell has
+  whichever directory the session runs in. srt resolves a relative entry
+  against the command's working directory, so `.` in `allowRead` and
+  `allowWrite` is the workspace wherever it is, and the relative secret
+  globs (`**/.env`, `**/*.pem`) keep that tree's secret files unreadable
+  even when it sits outside the code roots. The manifest fields refuse
+  relative paths, since a service launched from `/` has no workspace, so
+  these go in `extra`. The wrapper keeps the caller's cwd for the same
+  reason: no `cd /`. Never make the home directory the workspace: `.` would
+  then be `~` and lift the read deny. `denyWrite` names the policy
+  directories even so.
+- **Code roots and toolchains readable.** `~/code` and `~/.worktrees` for
+  the repos, plus mise's installs, shims, state and cache for the tools.
+  For builds, `~/go`, the Go build cache and Go's telemetry counters. For
+  the commit identity, `~/.gitconfig*` and the includes beside it. Nested
+  denies keep `.env` and key files under the roots unreadable. Credentials
+  stay out: the keychain, `~/.ssh` and `~/.config/gh` are never allowed, so
+  a `git push` fails inside the sandbox and runs outside it, through
+  whatever permission step the agent has.
+- **Egress per command.** The manifest's only egress is
+  `via SRT_RUN_ALLOW_DOMAINS`. The tool sets the variable for a command
+  that needs a host (`github.com,*.github.com` for a fetch, a registry for
+  an install) and leaves it unset otherwise, so the default command has no
+  network. `allowPty` is on, for test runners and pagers that open a
+  terminal.
+
+Wiring it into the tool call: spawn
+`recipes/agent-shell/agent-shell.sh "<command>"` where the tool would spawn
+`bash -c "<command>"`, with the workspace as cwd and the tool's own timeout.
+The wrapper rebuilds the environment from an allow-list (`PATH`, `HOME`,
+the locale and terminal variables, the Go variables,
+`SRT_RUN_ALLOW_DOMAINS`). It sets `DEVELOPER_DIR` to the Command Line Tools
+when the machine has them ([git inside the sandbox](#git-inside-the-sandbox)),
+then execs `srt-run`, so stdout, stderr and the exit code are the command's.
+srt forwards `SIGTERM` and `SIGINT` to the command, so the tool's timeout
+works as it does on bash. A denied command fails with
+`Operation not permitted` from the kernel or
+`CONNECT tunnel failed, response 403` from srt's proxy. A tool with an
+unsandboxed retry matches those strings, asks, and runs the command bare.
+That step is the agent's, not the sandbox's.
+
+Denials carry the label `agent-shell`. An agent probes paths all day, so
+the template ships the machine ignore line `^agent-shell ·`. Every denial
+still lands in the ledger as `IGNORED`, and
+`sandbox-audit.sh ledger agent-shell` is the record of what the agent
+tried. Drop the line to get a banner per denial instead. A machine that
+needs one more root for the agent adds it to
+`~/.config/srt/agent-shell.local.json`
+([the expansion layer](#the-machine-local-expansion-layer)), never to the
+manifest.
+
 ## Triaging a denial
 
 `sandbox-watch` (a t-man agent, registered by the
@@ -584,7 +650,10 @@ denial as `label · process(pid) · operation · target`, e.g.
   `~/.local/share/speak/logs/sandbox-denials.log`, tagged `ALERT`, or
   `IGNORED` with a reason (`ignore-list`). Denials from an agent's own bash
   sandbox carry srt's tag but no marker; they land there as
-  `IGNORED ... foreign` and never notify. Each banner is mirrored to
+  `IGNORED ... foreign` and never notify; one launched through the
+  template's wrapper carries the `agent-shell` label instead
+  ([Sandboxing an agent's shell](#sandboxing-an-agents-shell)). Each
+  banner is mirrored to
   `sandbox-notifications.log` beside it. `t-man logs sandbox` shows both.
 - Ledger format. A line is tab-separated
   `time  status  summary  [reason  [×N]]`. Each `ALERT` is written as it

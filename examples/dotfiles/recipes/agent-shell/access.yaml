@@ -1,0 +1,67 @@
+# Sandbox access for an agent's shell tool: the policy every command the
+# agent runs gets, launched by agent-shell.sh through srt-run. srtspec
+# renders this file to agent-shell.srt.json; edit it here and re-render,
+# never the JSON (thismoon docs/adr/0027 and docs/SANDBOXING.md,
+# "Sandboxing an agent's shell").
+sandbox: srt
+# The label is the directory name, agent-shell: the settings link to
+# ~/.config/srt/agent-shell.json and the ledger tags the agent's denials
+# `agent-shell · `.
+#
+# No network host is committed. The hosts one command may reach (a git
+# remote, a package registry) come from the caller as SRT_RUN_ALLOW_DOMAINS;
+# the wrapper passes the variable through and srt-run merges it at launch.
+# Unset, the command has no network.
+egress: [via SRT_RUN_ALLOW_DOMAINS]
+reads:
+  - ~/code                      # the code roots: every repo the agent may read. List yours.
+  - ~/.worktrees                #   (a second root, for git worktrees)
+  - ~/.local/bin                # tools installed per user
+  - ~/.local/share/mise         # the toolchains mise installs, and their shims
+  - ~/.config/mise              # mise's config, which the shims read
+  - ~/.local/state/mise         # mise's state: the configs it trusts and tracks
+  - ~/Library/Caches/mise       # mise's cache: the bin paths its shims resolve
+  - ~/go                        # GOPATH: the module cache and go-installed binaries
+  - ~/Library/Caches/go-build   # the Go build cache
+  - "~/Library/Application Support/go/telemetry"  # Go's usage counters; denied, every go command prints an error line
+  - ~/.gitconfig*               # the commit identity and the includes beside it; credentials stay out (see below)
+  - ~/.config/git               #   (ignores, attributes, identity includes)
+  - ~/.gitignore                # the global excludes file, when it lives here
+writes:
+  - temp
+  - ~/.local/state/mise         # the shims track the configs they loaded on every run
+  - ~/Library/Caches/mise       # and refresh their bin-path cache
+  - ~/go/pkg/mod                # go mod download
+  - ~/Library/Caches/go-build   # go build
+  - "~/Library/Application Support/go/telemetry"  # the counters, no secret in them
+# Secret-shaped files under the code roots stay denied; the most specific
+# rule wins in srt. Repeat the block for every root above. The keychain,
+# ~/.ssh and ~/.config/gh are never listed, so a push needs to run outside
+# the sandbox, through whatever permission step the agent has.
+deny:
+  - ~/code/**/.env
+  - ~/code/**/.env.*
+  - ~/code/**/*.pem
+  - ~/code/**/*.key
+  - ~/.worktrees/**/.env
+  - ~/.worktrees/**/.env.*
+  - ~/.worktrees/**/*.pem
+  - ~/.worktrees/**/*.key
+# What the fields above can't say. srt resolves a relative entry against
+# the command's working directory, which the agent's tool sets to its
+# workspace. So "." is the one directory the agent may read and write
+# wherever the workspace is. The relative globs keep secret-shaped files in
+# that tree unreadable when it sits outside the code roots. The
+# fields refuse relative paths because a service launched from / has no
+# workspace; here the workspace is the point, and the wrapper keeps the
+# caller's cwd for it. Never make the home directory the workspace: "."
+# would then be ~ and lift the read deny. denyWrite keeps the policy out
+# of reach even so. allowPty lets a command open a terminal, which test
+# runners and pagers expect.
+extra:
+  allowPty: true
+  filesystem:
+    allowRead: ["."]
+    allowWrite: ["."]
+    denyRead: ["**/.env", "**/.env.*", "**/*.pem", "**/*.key"]
+    denyWrite: ["~/.config/srt", "~/.config/ralph/sources"]

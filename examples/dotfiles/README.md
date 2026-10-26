@@ -17,6 +17,7 @@ your-dotfiles/
   recipes/
     agent-config/    # overlay: Claude Code settings, mods and MCP servers, applied by agent-sync
     mcp-sandbox/     # overlay: a third-party MCP server under srt (manifest, rendered settings, wrapper), via agent-sync's drop-in dir
+    agent-shell/     # overlay: a coding agent's shell tool under srt (manifest, rendered settings, wrapper, watcher ignore line)
     humanizer/       # overlay: the srt settings for a thismoon MCP server whose binary and wrapper ship from the source
     mise/            # overlay: the toolchain mise installs per user, the srt and bun pins included
     claude-hooks/    # overlay: belt config + the internal-names file belt and suspenders share
@@ -48,6 +49,7 @@ Each kind of machine-private wiring has a worked example in `recipes/`:
 |---------|---------|--------------|
 | Agent config: settings, mods, MCP | [`recipes/agent-config/`](recipes/agent-config/) | the Claude Code settings template and its machine overlay, the mods list, the MCP server set, and the agent-sync config that names them; synced on every `ralph up` |
 | Sandboxed MCP server | [`recipes/mcp-sandbox/`](recipes/mcp-sandbox/) | the access manifest, the srt settings srtspec renders from it (linked to `~/.config/srt/<label>.json`) and the launch wrapper for a third-party server, registered through agent-sync's drop-in dir instead of the base file |
+| Agent shell under srt | [`recipes/agent-shell/`](recipes/agent-shell/) | the policy every command a coding agent runs gets: the access manifest, the settings srtspec renders from it (linked to `~/.config/srt/agent-shell.json`), the wrapper the agent's tool spawns in place of `bash -c`, and the watcher ignore line that keeps the agent's denials in the ledger only |
 | Settings for a thismoon MCP server | [`recipes/humanizer/`](recipes/humanizer/) | the access manifest and rendered settings for humanizer; its binary and spawn wrapper ship from the source. The code roots it may read are this machine's choice, so the manifest is yours (`docs/adr/0006`) |
 | Toolchain (mise) | [`recipes/mise/`](recipes/mise/) | the runtimes and CLIs mise installs per user, with srt pinned exactly and bun for the srt launcher |
 | Agent hooks (belt) | [`recipes/claude-hooks/`](recipes/claude-hooks/) | the belt config and the internal-names file belt and suspenders share; the hooks block that registers belt sits in the settings template |
