@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/mad01/thismoon/compare/moondb/v0.4.0...moondb/v0.4.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **moondb,evals:** score eval sessions from their transcript and give each assertion its own pins ([#313](https://github.com/mad01/thismoon/issues/313)) ([9ce548c](https://github.com/mad01/thismoon/commit/9ce548c5b695689da2ae1d22a13fb150b0bd9b6d))
+
 ## [0.4.0](https://github.com/mad01/thismoon/compare/moondb/v0.3.0...moondb/v0.4.0) (2026-10-26)
 
 
