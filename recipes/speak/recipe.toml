@@ -18,11 +18,12 @@ wave = 0
 # secrets file and runs `speak serve` under srt; with no config it is the
 # local engine and loopback only.
 #
-# srt-run + sandbox-watch: the launcher every sandboxed process execs through
-# (anthropics/sandbox-runtime, one settings JSON per process) and the watcher
-# that streams their denials. They live here rather than with the engine: they
-# are wanted on every machine that runs a sandboxed process, not just the ones
-# with the TTS engine. docs/SANDBOXING.md has the pattern.
+# srt-run + sandbox-watch: the launcher path every sandboxed process execs
+# through (anthropics/sandbox-runtime, one settings JSON per process; the work
+# is `srtspec run`, tools/srtspec) and the watcher that streams their denials.
+# They live here rather than with the engine: they are wanted on every machine
+# that runs a sandboxed process, not just the ones with the TTS engine.
+# docs/SANDBOXING.md has the pattern.
 
 [packages.speak]
 source = "local"
@@ -80,7 +81,7 @@ action = "symlink"
 # "Sandboxing a t-man service"). --state-dir pins the state dir the settings
 # allow, so serve never falls back to the legacy ~/.local/share/speak.
 # depends_on names builds.speak_chmod_scripts, which keeps srt-run and the
-# launcher executable. ralph links dotfiles items before any build or package
+# launcher executable, and packages.srtspec, the launcher the shim execs. ralph links dotfiles items before any build or package
 # in every run, so the srt-run and settings links exist before this
 # registration.
 [hooks.builds.speak_web_service]
@@ -89,16 +90,19 @@ commands = [
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/speak"
 run = "always"
-depends_on = ["packages.speak", "packages.t_man", "builds.speak_chmod_scripts"]
+depends_on = ["packages.speak", "packages.t_man", "builds.speak_chmod_scripts", "packages.srtspec"]
 
 # ── srt-run: the sandbox launcher ──
-# `srt-run <settings-file> <argv...>` execs the command under srt with an
-# SRT_RUN=<label> marker that sandbox-watch attributes denials by. MCP
-# wrappers and t-man services exec it by this path. The per-process settings
-# (~/.config/srt/<tool>.json) ship beside a service's recipe when they are
-# generic, from the consuming repo otherwise (docs/adr/0006). srt itself is a
-# mise tool the consuming repo declares (npm:@anthropic-ai/sandbox-runtime);
-# srt-run finds it through the mise shims dir.
+# `srt-run <settings-file> <argv...>` is a shim that execs `srtspec run`,
+# which merges the machine's layers into the settings, picks bun or node and
+# runs the command under srt with an SRT_RUN=<label> marker that sandbox-watch
+# attributes denials by. MCP wrappers and t-man services exec it by this path.
+# The per-process settings (~/.config/srt/<tool>.json) ship beside a service's
+# recipe when they are generic, from the consuming repo otherwise
+# (docs/adr/0006). srt itself is a mise tool the consuming repo declares
+# (npm:@anthropic-ai/sandbox-runtime); srtspec run finds it through the mise
+# shims dir. The srtspec recipe (wave 0) builds the binary, and every service
+# registration above depends on packages.srtspec.
 [dotfiles.srt_run]
 source = "srt-run.sh"
 target = "~/code/bin/srt-run"

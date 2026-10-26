@@ -2,7 +2,7 @@ apiVersion: catalog.mad01/v1alpha1
 kind: Component
 metadata:
   name: srtspec
-  description: Renders sandbox access manifests to srt settings JSON and explains the effective policy srt-run launches under
+  description: Launches fleet processes under srt (the work behind ~/code/bin/srt-run), renders sandbox access manifests to srt settings JSON, verifies the renders and explains the effective policy
   tags: [go, cli, sandbox]
 spec:
   type: cli

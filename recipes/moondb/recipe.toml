@@ -56,7 +56,8 @@ action = "symlink"
 # always are, so DEVELOPER_DIR pins the shim to the Command Line Tools when
 # they are installed. Machines without them keep xcode-select's choice. --path
 # matches the deps recipe (docs/SANDBOXING.md, "git inside the sandbox").
-# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable,
+# and packages.srtspec, the launcher the shim execs.
 # ralph links dotfiles items before any build or package in every run, so the
 # srt-run and settings links exist before this registration; depends_on could
 # not name them anyway, since ralph only accepts builds. and packages. refs.
@@ -66,4 +67,4 @@ commands = [
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/moondb"
 run = "always"
-depends_on = ["packages.moondb", "packages.t_man", "builds.speak_chmod_scripts"]
+depends_on = ["packages.moondb", "packages.t_man", "builds.speak_chmod_scripts", "packages.srtspec"]

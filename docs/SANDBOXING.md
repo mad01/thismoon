@@ -104,14 +104,16 @@ Three pieces, split along the recipe layering in
 [docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.md):
 
 1. `srt-run`, shipped here by the speak recipe as `~/code/bin/srt-run`
-   ([`recipes/speak/srt-run.sh`](../recipes/speak/srt-run.sh)). Usage:
+   ([`recipes/speak/srt-run.sh`](../recipes/speak/srt-run.sh)): a shim
+   that execs `srtspec run` ([`tools/srtspec`](../tools/srtspec/)). Usage:
    `srt-run <settings-file> <argv...>`. It expands a leading `~` in the
-   settings path, finds srt through the mise shims dir, sets the child's
-   `TMPDIR`, and runs `srt --settings <abs> -- env SRT_RUN=<label> <argv...>`,
-   with srt itself under bun when one is installed
-   ([bun or node](#bun-or-node)). The label is the settings file's name
-   (`~/.config/srt/present.json` gives `present`); `SRT_RUN_LABEL`
-   overrides it.
+   settings path, merges the machine's layers into a copy srt reads, finds
+   srt through the mise shims dir, sets the child's `TMPDIR`, and runs
+   `srt --settings <abs> -- env SRT_RUN=<label> <argv...>`, with srt itself
+   under bun when one is installed ([bun or node](#bun-or-node)). The label
+   is the settings file's name (`~/.config/srt/present.json` gives
+   `present`); `SRT_RUN_LABEL` overrides it. Exit 2 is a usage error, 127 a
+   missing srt or runtime, 1 a refused layer.
 2. The settings file, `~/.config/srt/<label>.json`, rendered from the
    process's access manifest (see [Declaring access](#declaring-access)).
    A file that is the same on every machine ships beside its service's
@@ -198,9 +200,9 @@ such as present's shared instance or an LLM proxy, comes from the wrapper's
 own inputs at launch instead. Its manifest says so with the literal egress
 entry `via SRT_RUN_ALLOW_DOMAINS`, which renders nothing. The wrapper exports `SRT_RUN_ALLOW_DOMAINS`
 (comma-separated `host[:port]`), and `srt-run` merges it into
-`network.allowedDomains` with jq. The merged copy goes to
+`network.allowedDomains`. The merged copy goes to
 `~/.config/srt/merged/<label>.json` (mode 600, rewritten every launch) and
-srt reads that. With the variable set, a missing jq or a failed merge stops
+srt reads that. A host the launcher cannot parse, or a failed merge, stops
 the launch. present's wrapper derives the host from `PRESENT_SHARED_URL`, so
 its static file keeps `allowedDomains` empty. Never use `*`: srt 0.0.81
 rejects a bare `*` or `*:443`, and `srt-run` refuses one in the variable.
@@ -340,9 +342,9 @@ at launch, together with `SRT_RUN_ALLOW_DOMAINS`, into
 Anything else makes srt-run exit 1 before srt starts, naming each problem.
 That covers any other key, and an allow that undoes a deny: one equal to a
 deny entry, or `~` itself. It also covers a write that reaches
-`~/.config/srt` or the sources cache, and a `*` or `*:port` host. A missing
-jq, invalid JSON, or a failed merge stops the launch as well. The layer
-lives in `~/.config/srt`, which no sandbox may write.
+`~/.config/srt` or the sources cache, and a `*` or `*:port` host. Invalid
+JSON or a failed merge stops the launch as well. The layer lives in
+`~/.config/srt`, which no sandbox may write.
 
 A config file reached through a machine-specific symlink is the common
 case. srt matches resolved paths, so the manifest's path alone does not
@@ -367,8 +369,9 @@ the layer file to add.
 `srtspec explain <label>` prints the policy a launch would get. Each row is
 one entry with the layer it came from: `base` (the settings file), `local`
 (the expansion layer) or `env` (`SRT_RUN_ALLOW_DOMAINS`, read from the
-calling shell). Where srt-run would refuse to launch, explain says why and
-exits 1. It mirrors srt-run's merge, and both run the cases in
+calling shell). Where `srtspec run` would refuse to launch, explain says
+why and exits 1. The two commands merge through one package, and both run
+the cases in
 [`recipes/speak/testdata/srt-local`](../recipes/speak/testdata/srt-local).
 
 ### srt keys
@@ -494,7 +497,9 @@ and speak-web run this way. What carries over to the next one:
   package runs, so the settings link and `~/code/bin/srt-run` exist before
   the registration hook. ralph's `depends_on` accepts only `builds.` and
   `packages.` keys, so the hook depends on `builds.speak_chmod_scripts`,
-  which keeps `srt-run.sh` executable.
+  which keeps `srt-run.sh` executable, and on `packages.srtspec`, the
+  binary the shim execs; the srtspec recipe sits in wave 0 with the
+  services for that reason.
 - **Start minimal.** `listen` with the port (and `local: [events]` if it
   posts to events), `reads: [~/code/bin, workdir]`, `writes: [workdir,
   temp]`, no `egress`. Add only what a probe shows the service needs.
@@ -687,5 +692,5 @@ with one of these open and explain anything new.
   machine-local expansion layer when the target is machine-specific. The
   same holds for `allowWrite`.
 - Keep the launch machinery outside every `allowWrite`: srt's install,
-  bun's install, the mise shims, `srt-run`, and the settings. Under `SRT_DEBUG`, srt warns when
-  its own install sits in a writable path.
+  bun's install, the mise shims, `srt-run` and `srtspec`, and the settings.
+  Under `SRT_DEBUG`, srt warns when its own install sits in a writable path.

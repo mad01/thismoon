@@ -9,7 +9,7 @@ derived and never edited by hand.
 ## how it runs
 
 There is no serve process, no store and no MCP server. Every command reads
-files and exits:
+files and exits, except run, which ends by replacing itself with srt:
 
 - `{{.Bin}} render <manifest> [-o out.json]` renders one manifest. A
   manifest is the spec.access block of a component's service-info.yaml, or a
@@ -21,6 +21,12 @@ files and exits:
 - `{{.Bin}} verify [root]` checks every render, orphan and expansion layer
   under a repo without writing, one line per check; `make sandbox-verify`
   runs it in CI and a consuming repo's test calls it directly.
+- `{{.Bin}} run <settings> [--] <command...>` is what `~/code/bin/srt-run`
+  execs for every sandboxed service and MCP server. It merges
+  `~/.config/srt/<label>.local.json` and SRT_RUN_ALLOW_DOMAINS into
+  `~/.config/srt/merged/<label>.json`, picks bun or node, prints
+  `srt-run: <label> runtime <bun|node>` to stderr, and execs srt with the
+  command as `env SRT_RUN=<label> <command...>`.
 - `{{.Bin}} explain <label>` reads `~/.config/srt/<label>.json`, then
   `~/.config/srt/<label>.local.json`, then SRT_RUN_ALLOW_DOMAINS, and prints
   each effective entry with the layer it came from.
@@ -50,6 +56,13 @@ that "drifted" or "does not exist" wants `generate`. One that "matches in
 meaning but not in layout" was hand-edited, so generate again. A layer that
 "srt-run would refuse" must only widen.
 
+run says "may only widen the policy; refusing to launch": the process did
+not start, and the lines under it name each problem with
+`~/.config/srt/<label>.local.json`. Exit 1. "srt not found on PATH", "no bun
+under" and "cannot find srt's dist/cli.js" are exit 127: install srt (and
+bun) with mise, or set SRT_RUN_RUNTIME=node. Exit 2 is a usage error: a
+missing command, a label that is not a bare word, or an unknown runtime.
+
 explain says "srt-run refuses to launch": the process will not start. The
 local layer may only add to allowedDomains, allowRead, allowWrite,
 allowMachLookup and allowUnixSockets, and set allowLocalBinding or
@@ -65,5 +78,6 @@ read at spawn time; after changing one, restart the process it confines.
 ## first moves
 
 1. `{{.Bin}} explain <label>` to see what a sandboxed process may reach
-2. `{{.Bin}} check <manifest> <settings.json>` before editing either
-3. `{{.Bin}} docs` for this page
+2. `{{.Bin}} run ~/.config/srt/<label>.json <command>` to probe a process by hand
+3. `{{.Bin}} check <manifest> <settings.json>` before editing either
+4. `{{.Bin}} docs` for this page

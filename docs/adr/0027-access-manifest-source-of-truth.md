@@ -83,3 +83,16 @@ derived from it.
 - The catalog's detection reads recipe files by convention. An MCP server
   registered only in a consuming repo's server list, with no wrapper beside
   its recipe, isn't detected and isn't required to declare.
+
+## Amendment (2026-10-26)
+
+The expansion rules no longer exist twice. `~/code/bin/srt-run` is a shim
+over `srtspec run`: the launcher merges the expansion layer and
+`SRT_RUN_ALLOW_DOMAINS` through the same Go package explain reads, and the
+jq copy went with the shell launcher and its test. The shared fixtures stay,
+as the cases the launch and layers tests both run. The consequence above
+that srt-run "has to stay a dependency-free shell script" is withdrawn: the
+launch path depends on the srtspec binary, which its recipe builds in wave
+0, and every service registration names `packages.srtspec` in `depends_on`
+(ADR-0006, 2026-10-26 amendment). `srtspec verify` is the CI gate that keeps
+the renders honest.

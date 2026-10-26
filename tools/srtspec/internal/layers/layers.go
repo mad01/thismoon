@@ -1,19 +1,20 @@
 // Package layers computes the effective srt policy srt-run launches a label
 // under: the settings file ~/.config/srt/<label>.json, the machine-local
 // expansion layer ~/.config/srt/<label>.local.json beside it, and the hosts
-// in SRT_RUN_ALLOW_DOMAINS. It mirrors srt-run's merge and its refusal rules,
-// so explain shows what a launch would get without launching anything.
+// in SRT_RUN_ALLOW_DOMAINS. srtspec run merges through it at launch, and
+// explain shows what a launch would get without launching anything.
 //
 // The expansion layer may only widen: add to allowedDomains, allowRead,
 // allowWrite, allowMachLookup and allowUnixSockets, and set
-// allowLocalBinding or enableWeakerNetworkIsolation to true. srt-run refuses
-// to launch on anything else, and so does Resolve.
+// allowLocalBinding or enableWeakerNetworkIsolation to true. run refuses to
+// launch on anything else, and so does Resolve.
 package layers
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -84,7 +85,7 @@ func Paths(home, label string) (base, local string) {
 // bare * host in SRT_RUN_ALLOW_DOMAINS.
 func Resolve(in Input) (Policy, error) {
 	basePath, localPath := Paths(in.Home, in.Label)
-	base, err := readObject(basePath)
+	base, err := ReadObject(basePath)
 	if errors.Is(err, os.ErrNotExist) {
 		return Policy{}, fmt.Errorf(
 			"%s does not exist; srt fails closed and %s never starts",
@@ -98,7 +99,7 @@ func Resolve(in Input) (Policy, error) {
 	p := Policy{Label: in.Label, BasePath: basePath, Env: in.AllowDomains}
 	p.Entries = flatten("", base, Base)
 
-	local, err := readObject(localPath)
+	local, err := ReadObject(localPath)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
@@ -116,7 +117,7 @@ func Resolve(in Input) (Policy, error) {
 		p.Entries = widen(p.Entries, local)
 	}
 
-	hosts, err := envHosts(in.AllowDomains)
+	hosts, err := Hosts(in.AllowDomains)
 	if err != nil {
 		return Policy{}, fmt.Errorf("srt-run refuses to launch %s: %w", in.Label, err)
 	}
@@ -127,7 +128,9 @@ func Resolve(in Input) (Policy, error) {
 	return p, nil
 }
 
-func readObject(path string) (map[string]any, error) {
+// ReadObject reads a settings file or expansion layer as a JSON object. A
+// missing file comes back as os.ErrNotExist.
+func ReadObject(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -139,10 +142,20 @@ func readObject(path string) (map[string]any, error) {
 	return obj, nil
 }
 
-// CheckLocal reports every way local does more than widen base, in the
-// order srt-run checks them, or nil when it only widens. home turns
-// absolute paths under it back into ~ form before comparing.
+// CheckLocal reports every way local does more than widen base, or nil when
+// it only widens. home turns absolute paths under it back into ~ form before
+// comparing.
 func CheckLocal(base, local map[string]any, home string) error {
+	reasons := LocalProblems(base, local, home)
+	if len(reasons) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(reasons, "; "))
+}
+
+// LocalProblems lists every way local does more than widen base, one reason
+// per entry in the order run checks them, and nothing when it only widens.
+func LocalProblems(base, local map[string]any, home string) []string {
 	var reasons []string
 	add := func(format string, args ...any) { reasons = append(reasons, fmt.Sprintf(format, args...)) }
 
@@ -197,10 +210,74 @@ func CheckLocal(base, local map[string]any, home string) error {
 			add("%s may only be set to true", strings.Join(path, "."))
 		}
 	}
-	if len(reasons) == 0 {
-		return nil
+	return reasons
+}
+
+// Merge returns base widened by local and hosts: the settings run hands
+// srt. Each list the layer adds to becomes the sorted union, each flag it
+// sets turns on, and hosts (SRT_RUN_ALLOW_DOMAINS, already split) join
+// network.allowedDomains, which comes out sorted and deduplicated either
+// way. Merge checks nothing; call CheckLocal or LocalProblems first. Neither
+// argument is modified.
+func Merge(base, local map[string]any, hosts []string) map[string]any {
+	out := maps.Clone(base)
+	if out == nil {
+		out = map[string]any{}
 	}
-	return errors.New(strings.Join(reasons, "; "))
+	for _, section := range []string{"network", "filesystem"} {
+		if m, ok := out[section].(map[string]any); ok {
+			out[section] = maps.Clone(m)
+		}
+	}
+	for _, section := range []string{"network", "filesystem"} {
+		for _, k := range listKeys[section] {
+			v, ok := lookup(local, section, k)
+			if !ok {
+				continue
+			}
+			items, _ := stringList(v)
+			sec := object(out, section)
+			sec[k] = anyList(union(stringItems(sec[k]), items))
+		}
+	}
+	for _, path := range flagKeys {
+		if v, ok := lookup(local, path...); ok && v == true {
+			if len(path) == 1 {
+				out[path[0]] = true
+			} else {
+				object(out, path[0])[path[1]] = true
+			}
+		}
+	}
+	net := object(out, "network")
+	net["allowedDomains"] = anyList(union(stringItems(net["allowedDomains"]), hosts))
+	return out
+}
+
+// object returns out[key] as a map, creating it when absent.
+func object(out map[string]any, key string) map[string]any {
+	if m, ok := out[key].(map[string]any); ok {
+		return m
+	}
+	m := map[string]any{}
+	out[key] = m
+	return m
+}
+
+// union is the sorted, deduplicated set of both lists, the way jq's unique
+// read them.
+func union(a, b []string) []string {
+	all := slices.Concat(a, b)
+	slices.Sort(all)
+	return slices.Compact(all)
+}
+
+func anyList(in []string) []any {
+	out := make([]any, len(in))
+	for i, s := range in {
+		out[i] = s
+	}
+	return out
 }
 
 // widens reports whether the layer may set key k inside section.
@@ -280,9 +357,9 @@ func widen(entries []Entry, local map[string]any) []Entry {
 	return entries
 }
 
-// envHosts splits SRT_RUN_ALLOW_DOMAINS the way srt-run does, refusing a
-// bare * entry.
-func envHosts(v string) ([]string, error) {
+// Hosts splits SRT_RUN_ALLOW_DOMAINS (comma-separated host[:port], empty
+// entries ignored), refusing a bare * or *:port entry.
+func Hosts(v string) ([]string, error) {
 	var hosts []string
 	for _, h := range strings.Split(v, ",") {
 		if h == "" {

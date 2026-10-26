@@ -4,11 +4,12 @@
 srtspec/
   cmd/srtspec/          entrypoint
   internal/
-    cli/                cobra commands: render, check, generate, verify, explain, docs, version
+    cli/                cobra commands: render, check, generate, verify, run, explain, docs, version
     discover/           finds the manifests in a repo tree and the settings file each renders to
     drift/              compares a settings file to a render by meaning (canonical JSON + diff)
     layers/             base + local + env merge for explain, with srt-run's refusal rules
     verify/             the repo-wide check behind verify: renders, orphans, layers
+    launch/             what run does: settings path, label, merged copy, runtime, the exec
 kit/access/             (shared) manifest model, strict parsing, validation, Render
 ```
 
@@ -35,6 +36,16 @@ as a hand-edited layout or real drift. It lists the orphans, then runs
 the `<label>.srt.json` next to it, or an empty base when the repo ships only
 the layer. Nothing is written; the CLI prints one line per result.
 
+run: `launch.Plan` expands the settings path and derives the label, prepends
+the mise shims and system dirs to PATH and finds srt there, picks the
+runtime (bun from mise's installs dir or PATH, else node; `mise which srt`
+locates `dist/cli.js` for bun), then merges `<label>.local.json` and
+`SRT_RUN_ALLOW_DOMAINS` through `layers.LocalProblems` and `layers.Merge`
+into `~/.config/srt/merged/<label>.json`, written beside and renamed, mode
+600. It returns the exec; the CLI prints the runtime line and
+`syscall.Exec`s srt with `env SRT_RUN=<label> <argv>`. Failures are
+`launch.ExitError`s with the srt-run exit codes.
+
 explain: `layers.Resolve` reads `~/.config/srt/<label>.json`, checks and adds
 `<label>.local.json`, then adds `SRT_RUN_ALLOW_DOMAINS`, recording the layer
 of every entry.
@@ -46,5 +57,6 @@ of every entry.
 - Rendering is a pure function of the manifest: same input, same bytes.
 - `verify` passes on a tree `generate` just wrote and fails on any byte
   `generate` would rewrite.
-- `layers.CheckLocal` and srt-run's jq check accept and refuse the same
-  inputs; `recipes/speak/testdata/srt-local` holds the cases both run.
+- run and explain share `layers`: what explain shows is what run hands
+  srt, and `recipes/speak/testdata/srt-local` holds the cases the launch
+  and layers tests both run.

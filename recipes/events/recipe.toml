@@ -44,7 +44,8 @@ action = "symlink"
 # to it. Idempotent; run = "always" keeps it registered and self-heals if removed.
 # It runs sandboxed: the program is srt-run with the settings, then the command
 # (docs/SANDBOXING.md, "Sandboxing a t-man service").
-# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable.
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable,
+# and packages.srtspec, the launcher the shim execs.
 # ralph links dotfiles items before any build or package in every run, so the
 # srt-run and settings links exist before this registration; depends_on could
 # not name them anyway, since ralph only accepts builds. and packages. refs.
@@ -54,4 +55,4 @@ commands = [
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/events"
 run = "always"
-depends_on = ["packages.events", "packages.t_man", "builds.speak_chmod_scripts"]
+depends_on = ["packages.events", "packages.t_man", "builds.speak_chmod_scripts", "packages.srtspec"]
