@@ -1,0 +1,54 @@
+{
+  "allowPty": true,
+  "filesystem": {
+    "allowRead": [
+      "~/code",
+      "~/.worktrees",
+      "~/.local/bin",
+      "~/.local/share/mise",
+      "~/.config/mise",
+      "~/.local/state/mise",
+      "~/Library/Caches/mise",
+      "~/go",
+      "~/Library/Caches/go-build",
+      "~/Library/Application Support/go/telemetry",
+      "~/.gitconfig*",
+      "~/.config/git",
+      "~/.gitignore",
+      "."
+    ],
+    "allowWrite": [
+      "/private/tmp",
+      "/private/var/folders",
+      "~/.local/state/mise",
+      "~/Library/Caches/mise",
+      "~/go/pkg/mod",
+      "~/Library/Caches/go-build",
+      "~/Library/Application Support/go/telemetry",
+      "."
+    ],
+    "denyRead": [
+      "~",
+      "~/code/**/.env",
+      "~/code/**/.env.*",
+      "~/code/**/*.pem",
+      "~/code/**/*.key",
+      "~/.worktrees/**/.env",
+      "~/.worktrees/**/.env.*",
+      "~/.worktrees/**/*.pem",
+      "~/.worktrees/**/*.key",
+      "**/.env",
+      "**/.env.*",
+      "**/*.pem",
+      "**/*.key"
+    ],
+    "denyWrite": [
+      "~/.config/srt",
+      "~/.config/ralph/sources"
+    ]
+  },
+  "network": {
+    "allowedDomains": [],
+    "deniedDomains": []
+  }
+}

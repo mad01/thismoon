@@ -1,0 +1,53 @@
+# Example overlay: the sandbox for an agent's shell tool, so srt confines
+# every command a coding agent runs (thismoon docs/SANDBOXING.md,
+# "Sandboxing an agent's shell").
+#
+# Three pieces. access.yaml declares the policy and srtspec renders it to
+# agent-shell.srt.json, linked to ~/.config/srt/agent-shell.json. It reads
+# the code roots and toolchains, denies secret-shaped files under them,
+# writes the workspace and temp, and names no network host. agent-shell.sh
+# is what the agent's tool spawns in place of `bash -c`. It scrubs the
+# environment and execs the command through thismoon's srt-run launcher,
+# and srt-run merges the machine's expansion layer and the caller's
+# SRT_RUN_ALLOW_DOMAINS into the settings and tags the command with the
+# label. ignore.conf keeps the agent's denials out of Notification Center;
+# they stay in the ledger under the label.
+#
+# Edit the manifest, then re-render:
+#   srtspec render recipes/agent-shell/access.yaml -o recipes/agent-shell/agent-shell.srt.json
+# `srtspec verify .` in CI fails on drift, so a hand edit to the JSON never
+# merges. A root only this machine has goes in
+# ~/.config/srt/agent-shell.local.json, the expansion layer, not here.
+#
+# srt-run comes from thismoon's speak recipe (~/code/bin/srt-run), srtspec
+# from thismoon's srtspec recipe, and srt itself from mise (recipes/mise/
+# here, wave 0). Wave 1 like agent-config: the settings link and the ignore
+# list are dotfiles, laid down before any build hook runs.
+[recipe]
+name = "agent-shell"
+description = "srt confinement for an agent's shell tool (access manifest, rendered settings, launch wrapper, watcher ignore line)"
+wave = 1
+
+# The agent spawns the wrapper by path, so it must be executable. The file
+# is committed executable; the hook keeps it that way on a checkout that
+# lost the bit.
+[hooks.builds.agent_shell_chmod]
+commands = ["chmod +x agent-shell.sh"]
+working_dir = "~/code/src/github.com/you/dotfiles/recipes/agent-shell"
+run = "always"
+
+# The sandbox settings, where the wrapper and srt-run expect them. No
+# profile gate: the file names no host and no machine-only path, so one copy
+# serves every machine. srt reads it at every spawn, so a re-render applies
+# to the agent's next command.
+[dotfiles.agent_shell_srt_settings]
+source = "agent-shell.srt.json"
+target = "~/.config/srt/agent-shell.json"
+action = "symlink"
+
+# sandbox-watch's machine ignore list. The watcher re-reads it every batch,
+# so a change needs no restart.
+[dotfiles.agent_shell_watch_ignore]
+source = "ignore.conf"
+target = "~/.config/sandbox-watch/ignore.conf"
+action = "symlink"
