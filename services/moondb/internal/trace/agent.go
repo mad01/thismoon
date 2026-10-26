@@ -240,7 +240,7 @@ func withAgentWork(t Totals, work []Totals) Totals {
 	if len(work) == 0 {
 		return t
 	}
-	mainTokens, mainCost := t.Tokens, t.Cost
+	mainTokens, mainCost, mainUnpriced := t.Tokens, t.Cost, t.Unpriced
 	var agents Totals
 	usage := [][]store.ModelUsage{t.Usage}
 	for _, w := range work {
@@ -256,7 +256,7 @@ func withAgentWork(t Totals, work []Totals) Totals {
 		usage = append(usage, w.Usage)
 	}
 	t.TokensMain, t.TokensAgents = &mainTokens, &agents.Tokens
-	t.CostMain, t.CostAgents = mainCost, agents.Cost
+	t.CostMain, t.CostAgents, t.UnpricedMain = mainCost, agents.Cost, mainUnpriced
 	t.Tokens = mainTokens.Add(agents.Tokens)
 	if agents.Cost != nil {
 		t.addCost(agents.Cost, "")

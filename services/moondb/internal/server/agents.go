@@ -179,7 +179,7 @@ func (s *Server) turnAgents(
 		EndedAt: tt.Span.End, DurationMS: tt.Span.DurationMS, ModelCalls: tot.ModelCalls,
 		ToolCalls: tot.ToolCalls, ToolErrors: tot.ToolErrors, EditCount: len(main),
 		Repos: editRepos(main), Tokens: *cmp.Or(tot.TokensMain, &tot.Tokens),
-		Cost: mainCost(tot), Unpriced: tot.Unpriced, Recorded: true,
+		Cost: mainCost(tot), Unpriced: mainUnpriced(tot), Recorded: true,
 	}}
 	for _, sp := range tt.Spans {
 		if sp.Kind == trace.KindSubagent {
@@ -195,6 +195,15 @@ func mainCost(t trace.Totals) *float64 {
 		return t.CostMain
 	}
 	return t.Cost
+}
+
+// mainUnpriced names the models the main conversation's part of a turn's
+// cost leaves out, without the ones only its subagents used.
+func mainUnpriced(t trace.Totals) []string {
+	if t.TokensMain != nil {
+		return t.UnpricedMain
+	}
+	return t.Unpriced
 }
 
 // spanRow is a turn's row for one subagent span, with the run's record

@@ -385,9 +385,9 @@ segment under the turn gets one subagent span from its first such segment
 to its last, with the calls, tokens and cost there. It replaces the span the
 agent's edits made, keeps their edit count, and is not clamped: a
 background agent runs past Stop. The turn's `tokens`, `cost` and `usage`
-then add the agents', with `tokens_main`, `tokens_agents`, `cost_main` and
-`cost_agents` beside them and the agents' calls in `agent_model_calls` and
-`agent_tool_calls`. Time and the main call counts stay the main
+then add the agents', with `tokens_main`, `tokens_agents`, `cost_main`,
+`cost_agents` and `unpriced_main` beside them and the agents' calls in
+`agent_model_calls` and `agent_tool_calls`. Time and the main call counts stay the main
 conversation's. A session's trace adds every agent's whole run to its
 totals the same way, lists the runs under `agents`, and ranks the agents'
 tool and model calls with the main conversation's, each marked with

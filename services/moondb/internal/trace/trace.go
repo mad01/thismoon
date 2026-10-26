@@ -131,10 +131,13 @@ type Totals struct {
 	// main conversation's, as the Turn stores it. The time split and the
 	// call counts above stay the main conversation's, and the agents'
 	// calls are counted apart.
-	TokensMain      *Tokens  `json:"tokens_main,omitempty"`
-	TokensAgents    *Tokens  `json:"tokens_agents,omitempty"`
-	CostMain        *float64 `json:"cost_main,omitempty"`
-	CostAgents      *float64 `json:"cost_agents,omitempty"`
+	TokensMain   *Tokens  `json:"tokens_main,omitempty"`
+	TokensAgents *Tokens  `json:"tokens_agents,omitempty"`
+	CostMain     *float64 `json:"cost_main,omitempty"`
+	CostAgents   *float64 `json:"cost_agents,omitempty"`
+	// UnpricedMain names the models CostMain leaves out; Unpriced adds
+	// the agents' to them.
+	UnpricedMain    []string `json:"unpriced_main,omitempty"`
 	AgentModelCalls int      `json:"agent_model_calls,omitempty"`
 	AgentToolCalls  int      `json:"agent_tool_calls,omitempty"`
 }

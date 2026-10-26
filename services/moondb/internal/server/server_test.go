@@ -568,6 +568,18 @@ func TestSessionAgents(t *testing.T) {
 	}
 }
 
+// TestTurnMainRowUnpriced: a turn's main row names the models the main
+// conversation left unpriced, not the ones only its subagents used.
+func TestTurnMainRowUnpriced(t *testing.T) {
+	tt := trace.TurnTrace{TurnID: "p1", Totals: trace.Totals{
+		Unpriced: []string{"agent-only"}, TokensMain: &trace.Tokens{}, CostMain: new(0.5),
+	}}
+	rows := (&Server{}).turnAgents(store.TurnDetail{Turn: store.Turn{ID: "p1"}}, tt, nil)
+	if len(rows) != 1 || rows[0].Unpriced != nil || deref(rows[0].Cost) != 0.5 {
+		t.Errorf("rows = %+v, want the main row with no unpriced model", rows)
+	}
+}
+
 // TestAgentRoute answers one agent with its record, row and trace, and
 // 404 for an unknown id.
 func TestAgentRoute(t *testing.T) {

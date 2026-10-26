@@ -133,8 +133,9 @@ func turnSpans(st SessionTrace, kind Kind) []Ranked {
 
 // top ranks the lists together by order and keeps the first n, ties in
 // the order given: the main conversation's first.
+// The list is never nil, so the JSON says [] when both are empty.
 func top(main, agents []Ranked, n int, order func(a, b Span) int) []Ranked {
-	out := slices.Concat(main, agents)
+	out := append(append(make([]Ranked, 0, len(main)+len(agents)), main...), agents...)
 	slices.SortStableFunc(out, func(a, b Ranked) int { return order(a.Span, b.Span) })
 	return out[:min(n, len(out))]
 }

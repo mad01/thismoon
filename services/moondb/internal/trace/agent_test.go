@@ -1,6 +1,7 @@
 package trace
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -153,6 +154,17 @@ func TestWithAgents(t *testing.T) {
 	other.TurnID = "p9"
 	if again := WithAgents(other, []AgentRun{run}); again.Totals.CostAgents != nil {
 		t.Errorf("a turn the agent never ran under gained %v", deref1(again.Totals.CostAgents))
+	}
+}
+
+// TestWithAgentWorkKeepsMainUnpriced: a model only a subagent used is
+// unpriced in the turn's totals and not in the main conversation's part.
+func TestWithAgentWorkKeepsMainUnpriced(t *testing.T) {
+	main := Totals{Cost: new(0.5)}
+	got := withAgentWork(main, []Totals{{Unpriced: []string{"agent-only"}}})
+	if !slices.Equal(got.Unpriced, []string{"agent-only"}) || got.UnpricedMain != nil ||
+		deref1(got.CostMain) != 0.5 {
+		t.Errorf("Totals = %+v, want agent-only unpriced overall and not in main", got)
 	}
 }
 

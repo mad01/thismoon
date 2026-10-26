@@ -1,6 +1,7 @@
 package trace
 
 import (
+	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
@@ -701,6 +702,22 @@ func TestBuildSessionEmpty(t *testing.T) {
 	got := BuildSession("sess", nil, nil)
 	if got.Turns == nil || got.Gaps == nil || got.Totals.WallMS != 0 || got.Totals.Cost != nil {
 		t.Errorf("empty session trace = %+v", got)
+	}
+	data, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"agent_longest_tools":[]`, `"agent_costliest_models":[]`} {
+		if !strings.Contains(string(data), key) {
+			t.Errorf("JSON lacks %s: %s", key, data)
+		}
+	}
+	for name, list := range map[string][]Ranked{
+		"LongestTools": LongestTools(got, 10), "CostliestModels": CostliestModels(got, 10),
+	} {
+		if list == nil {
+			t.Errorf("%s = nil, want an empty list", name)
+		}
 	}
 }
 
