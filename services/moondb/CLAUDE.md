@@ -770,7 +770,7 @@ moondb record                  # one hook payload on stdin; wired by the hooks, 
 moondb import [--since 30d] [--dry-run] [--force] [--json]   # import past sessions from their transcripts
 moondb mcp                     # stdio MCP shim over serve
 moondb why <path>:<line>       # the Edit, turn, prompt, session and commit behind one line
-moondb history <path>          # the recorded edits of a path, newest first
+moondb history <path>          # the recorded edits of a path across every checkout, newest first; --worktree narrows to one
 moondb sessions [--repo <repo>]  # recorded sessions, newest first, with their title, active time and wall time; --repo adds COST and ATTRIBUTED
 moondb trace <session-id> [--json]   # time and cost totals, the agents, the longest tool calls, the most expensive model calls
 moondb doctor                  # config, hooks wired, serve reachable, store readable, version skew

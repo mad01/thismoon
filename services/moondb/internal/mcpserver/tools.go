@@ -53,8 +53,10 @@ func registerEditTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "moondb_history",
 		Description: "List the recorded edits of one file, newest first: which tool call changed it, in which turn and session, and what kind of change it was. " +
-			"`path` is REQUIRED (relative to the worktree root). `worktree` narrows to one checkout; `repo` (host/owner/repo) alone spans every checkout of the repository. " +
-			"`limit` caps the list (default 50).",
+			"`path` is REQUIRED (relative to the checkout root). Give `repo` (host/owner/repo as the origin remote names it) to span every checkout of the repository: " +
+			"agents edit in worktrees while a person reads in the main checkout, so a worktree alone misses most edits. " +
+			"`worktree` (absolute checkout root) narrows to that checkout. With neither, the path matches in every repository. " +
+			"`limit` caps the list (default 50). Follow up with moondb_turn on an edit's `turn_id` for the prompt and the rest of that turn.",
 		Annotations: readOnly(),
 	}, h.handleHistory)
 
