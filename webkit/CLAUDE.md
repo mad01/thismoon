@@ -228,9 +228,9 @@ host-side is mounted into the build, only `dist/webkit.js` + `dist/webkit.css`
 come out. Output is byte-identical to a host build (bundle output is
 platform-independent). Review `git diff dist/` before committing — the bundle
 rides into every consumer Go binary via `go:embed`. The general when-to guide
-and the extraction-pattern rules live in the dotfiles repo:
-[docs/container-builds.md](https://github.com/mad01/dotfiles/blob/main/docs/container-builds.md)
-(this repo is its reference implementation).
+and the extraction-pattern rules are in
+[docs/CONTAINER-BUILDS.md](../docs/CONTAINER-BUILDS.md); this package is its
+reference implementation.
 
 ### Adding a component
 

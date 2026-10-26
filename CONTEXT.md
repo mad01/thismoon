@@ -32,13 +32,33 @@ _Avoid_: version package, versioninfo
 What a binary reports about its own build: version, commit, component tag, and build time. Serialized as a four-key JSON object, every key always present and `""` when unknown, printed by `<binary> version -o json` and served at `GET /version`.
 _Avoid_: version info, version payload
 
+**srt**:
+anthropics/sandbox-runtime, the sandbox every service and MCP server in the fleet runs under. It generates a default-deny macOS seatbelt profile from a JSON settings file and allows egress only to the hosts the settings name. The consuming repo installs it through mise (docs/adr/0028).
+_Avoid_: seatbelt (for a process that runs under srt), jail, container
+
 **Access manifest**:
 What one sandboxed process may reach, declared beside its code: the `spec.access` block of a component's `service-info.yaml`, or a recipe's standalone `access.yaml`. It is the source of truth; the srt settings file is rendered from it. docs/SANDBOXING.md covers the fields.
 _Avoid_: sandbox profile (the hand-written seatbelt file), policy file, settings file (the rendered JSON)
 
+**srt settings**:
+The per-process srt JSON file at `~/.config/srt/<label>.json`, rendered from the access manifest and never edited by hand. It holds the static policy, and one file serves every machine; a host that depends on the machine comes from the wrapper at launch, never from this file.
+_Avoid_: profile, policy file, overlay
+
 **Expansion layer**:
 `~/.config/srt/<label>.local.json`, what one machine adds on top of a rendered settings file. srt-run merges it at launch and refuses one that does more than widen.
 _Avoid_: override (it can't narrow or replace), local settings
+
+**srt-run**:
+The fleet launcher (`recipes/speak/srt-run.sh`, linked to `~/code/bin/srt-run`) that starts a process under srt with its srt settings. It merges the wrapper's `SRT_RUN_ALLOW_DOMAINS` hosts and the expansion layer into them, and adds the `SRT_RUN=<label>` marker sandbox-watch attributes denials by.
+_Avoid_: wrapper (the per-process script that calls srt-run is the wrapper)
+
+**Seatbelt sandbox**:
+The legacy mechanism: a hand-written macOS `sandbox-exec` profile (`*.sb`) run through t-man's `--sandbox-profile`. Only a process srt can't express keeps one, with every deny rule tagged `(with message "SRT_RUN=<label>")`. The speak-tts runtime is the one case, because MLX needs Metal.
+_Avoid_: srt (for the hand-written profile), jail, container
+
+**Container build**:
+The throwaway Apple `container` VM a package-manager build step (npm, pip, gem) runs in, with only the named artifacts exported out; webkit's `make build` is the reference. A different mechanism from srt and the seatbelt sandbox (docs/CONTAINER-BUILDS.md).
+_Avoid_: sandbox, docker
 
 **Recipe**:
 A ralph recipe under `recipes/` that installs a component on a machine. Consumed remotely through ralph's `[[recipe_sources]]`, identified as `thismoon/<recipe>`.
