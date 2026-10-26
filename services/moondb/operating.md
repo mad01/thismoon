@@ -124,9 +124,12 @@ it is running and that `EVENTS_BASE_URL` points at it. Events `partial`
 means the service has no entry older than the session's first turn: it
 keeps 500 entries per source, so an older session's early hints may be
 gone. Kof `skipped` with events `unavailable` is expected: without hints
-there is no assertion to look up. Kof `unavailable` leaves each shown
-assertion's `pins` and `used` null; `partial` means keeper-of-facts no
-longer holds some of the assertions. `used` is per assertion: it is true
+there is no assertion to look up. Kof `unavailable` falls back to the
+hint's `pins` tag, which names the fire's first pins rather than each
+assertion's own, so the assertions of one fire then share a pin list; an
+assertion with no tag either has `pins` and `used` null. `partial` means
+keeper-of-facts no longer holds some of the assertions, which fall back the
+same way. `used` is per assertion: it is true
 when any agent of the session read or edited one of its files after the
 hint, since a hint serves the whole session. A csl_read counts only when it
 names the pin's repository as its full owner/name. A subagent's reads show

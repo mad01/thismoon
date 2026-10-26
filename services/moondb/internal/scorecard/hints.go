@@ -40,8 +40,9 @@ func byHint(hints []HintEvent) []HintCount {
 // kofStats lists each assertion the hints showed, once, at its first
 // showing, with its pins and whether a later call touched them. A hint
 // serves the whole session, so a call of any agent counts. The pins come
-// from the hint's pins tag, else from pins (keeper-of-facts); an assertion
-// neither gives keeps them unknown.
+// from pins (keeper-of-facts), which knows each assertion's own; else from
+// the hint's pins tag, whose bare paths the fire's assertions share; an
+// assertion neither gives keeps them unknown.
 func kofStats(hints []HintEvent, pins map[string][]Pin, touches []touchedPath) KofStats {
 	k := KofStats{Assertions: []ShownAssertion{}}
 	seen := map[string]bool{}
@@ -52,9 +53,9 @@ func kofStats(hints []HintEvent, pins map[string][]Pin, touches []touchedPath) K
 			}
 			seen[id] = true
 			a := ShownAssertion{ID: id, Hint: h.Hint, At: h.At, AgentID: h.AgentID}
-			ps, known := h.Pins[id]
+			ps, known := pins[id]
 			if !known {
-				ps, known = pins[id]
+				ps, known = h.Pins[id]
 			}
 			if !known {
 				k.UnknownPins++

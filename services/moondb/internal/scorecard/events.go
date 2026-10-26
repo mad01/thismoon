@@ -39,7 +39,9 @@ type HintEvent struct {
 	// Assertions are the keeper-of-facts assertion ids it showed.
 	Assertions []string
 	// Pins are the files its pins tag names, by assertion id; nil when the
-	// tag is absent, so keeper-of-facts is asked.
+	// tag is absent. belt tags the first pin of each shown assertion as a
+	// bare path, which every assertion of the fire then shares, so these
+	// are the fallback for an assertion keeper-of-facts does not hold.
 	Pins map[string][]Pin
 }
 
@@ -221,13 +223,14 @@ func eventID(t time.Time) string {
 	return fmt.Sprintf("%020d", t.UTC().UnixNano())
 }
 
-// ReadPins looks up in keeper-of-facts the pins of the assertions the hints
-// showed whose pins tag did not name them. It asks once, for the list of
-// every assertion, so a scorecard costs keeper-of-facts one request
+// ReadPins looks up in keeper-of-facts the pins of every assertion the
+// hints showed. The pins tag cannot stand in: its bare paths belong to the
+// whole fire, not to one assertion. It asks once, for the list of every
+// assertion, so a scorecard costs keeper-of-facts one request
 // (moondb.PeerTimeout) however many assertions it showed. An assertion
-// keeper-of-facts no longer holds keeps unknown pins. nil hints, the events
-// service not answering, leave no assertion to look up: keeper-of-facts is
-// skipped and says why.
+// keeper-of-facts no longer holds falls back to the tag in kofStats. nil
+// hints, the events service not answering, leave no assertion to look up:
+// keeper-of-facts is skipped and says why.
 func ReadPins(ctx context.Context, p Peers, hints []HintEvent) (map[string][]Pin, Source) {
 	if hints == nil {
 		return nil, Source{
@@ -235,11 +238,11 @@ func ReadPins(ctx context.Context, p Peers, hints []HintEvent) (map[string][]Pin
 			Detail: "no hints to read assertion ids from: the events service did not answer",
 		}
 	}
-	ids := lookupIDs(hints)
+	ids := shownIDs(hints)
 	if len(ids) == 0 {
 		return nil, Source{
 			Status: StatusSkipped,
-			Detail: "no assertion to look up: no kof hint was shown, or its tags named the pins",
+			Detail: "no assertion to look up: no kof hint was shown",
 		}
 	}
 	if p == nil {
@@ -270,16 +273,15 @@ func ReadPins(ctx context.Context, p Peers, hints []HintEvent) (map[string][]Pin
 	return pins, Source{Status: StatusOK}
 }
 
-// lookupIDs lists the assertion ids whose pins no hint's tag gave, in the
+// shownIDs lists the assertion ids the hints showed, once each, in the
 // order they were first shown.
-func lookupIDs(hints []HintEvent) []string {
+func shownIDs(hints []HintEvent) []string {
 	var ids []string
 	for _, h := range hints {
 		for _, id := range h.Assertions {
-			if _, tagged := h.Pins[id]; tagged || slices.Contains(ids, id) {
-				continue
+			if !slices.Contains(ids, id) {
+				ids = append(ids, id)
 			}
-			ids = append(ids, id)
 		}
 	}
 	return ids

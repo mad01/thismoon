@@ -480,12 +480,16 @@ never rename one.
   `tags.session_id`. Source `belt` holds the hints shown to the session.
   `belt-ledger` holds subagent starts and stops, permission denials,
   compactions and stop failures. A kof hint's assertion ids come from its
-  `assertions` tag (comma-separated, with `pins` as `<id>=<path>` entries)
-  or else from the `kof_get id=` lines of its message. events keeps 500
+  `assertions` tag (comma-separated) or else from the `kof_get id=` lines
+  of its message. Its `pins` tag is read too (`<id>=<path>` entries, or
+  bare paths that every assertion of the fire shares), but only as the
+  fallback for an assertion keeper-of-facts does not hold. events keeps 500
   entries per source, so a listing with no entry older than the session's
   first turn is `partial`.
 - **Pins** come from keeper-of-facts: one `GET /api/assertions` listing,
-  filtered by id, so a scorecard costs it one request. A file an assertion
+  filtered to every shown id, so a scorecard costs it one request and each
+  assertion gets its own pins, all of them, not the fire's shared first
+  pins. A file an assertion
   is pinned to is `used` when any agent of the session touched it later with
   Read, Edit, MultiEdit, Write, NotebookEdit or csl_read. A hint serves the
   whole session. A csl_read must name the pin's repository as its full

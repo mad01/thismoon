@@ -163,6 +163,41 @@ func TestKofStatsCounts(t *testing.T) {
 	}
 }
 
+// TestKofStatsPrefersKofPins: belt's pins tag holds the fire's first pins
+// as bare paths, so every assertion of the fire shares them. The pins
+// keeper-of-facts gave come first, and the tag serves only an assertion it
+// does not hold.
+func TestKofStatsPrefersKofPins(t *testing.T) {
+	calls := ParseCalls(chunk(
+		use(20, "r", "Read", `{"file_path":"/w/repo/c.go"}`),
+		result(21, "r", str("1\tx"), false, ""),
+	), "")
+	shared := []Pin{{File: "a.go"}, {File: "c.go"}}
+	hint := HintEvent{
+		Hint: "kof-consult", At: t0, Assertions: []string{"id1", "id2", "id3"},
+		Pins: map[string][]Pin{"id1": shared, "id2": shared, "id3": shared},
+	}
+	k := kofStats([]HintEvent{hint}, map[string][]Pin{
+		"id1": {{File: "a.go"}}, "id2": {{File: "c.go"}, {File: "d.go"}},
+	}, touched(calls))
+	if len(k.Assertions) != 3 {
+		t.Fatalf("assertions = %+v", k.Assertions)
+	}
+	id1, id2, id3 := k.Assertions[0], k.Assertions[1], k.Assertions[2]
+	if len(id1.Pins) != 1 || id1.Pins[0].Path != "a.go" || *id1.Used {
+		t.Errorf("id1 = %+v, want its own pin a.go, unused", id1)
+	}
+	if len(id2.Pins) != 2 || id2.Pins[0].Path != "c.go" || !*id2.Used {
+		t.Errorf("id2 = %+v, want its own pins c.go and d.go, used", id2)
+	}
+	if len(id3.Pins) != 2 || id3.Pins[0].Path != "a.go" || !*id3.Used {
+		t.Errorf("id3 = %+v, want the tag's shared pins, used", id3)
+	}
+	if k.PinnedPaths != 5 || k.UsedPaths != 2 || k.UnknownPins != 0 {
+		t.Errorf("counts = %+v, want 5 pinned, 2 used, 0 unknown", k)
+	}
+}
+
 func TestKofStatsWithoutPinsHasNoRate(t *testing.T) {
 	k := kofStats([]HintEvent{{Hint: "prefer-csl"}}, nil, nil)
 	if k.HitRate != nil || k.Assertions == nil || len(k.Assertions) != 0 {
