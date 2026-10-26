@@ -129,8 +129,8 @@ const (
 // fields a row shows are kept on the records or counted from them.
 const (
 	// SessionIdleAfter is how long a session goes without a recorded turn
-	// start, turn end or edit before the listing calls it ended rather
-	// than running.
+	// start, turn end, edit or agent stop before the listing calls it
+	// ended rather than running.
 	SessionIdleAfter = 10 * time.Minute
 	// OpenTurnStaleAfter is how long an open last turn keeps a session
 	// running without other activity. The harness sends no Stop for a turn

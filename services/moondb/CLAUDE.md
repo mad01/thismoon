@@ -575,11 +575,11 @@ A session row comes from the index alone, never a chunk
 
 - `title`: `Session.Title`, else `Session.PromptLine`, else the last
   segment of the cwd, else the session id. It is never empty.
-- `status`: `running` while the last turn start, turn end or edit is within
-  `SessionIdleAfter`, or the last turn is open and that activity is within
-  `OpenTurnStaleAfter`. Otherwise `ended`.
+- `status`: `running` while the last turn start, turn end, edit or agent
+  stop is within `SessionIdleAfter`, or the last turn is open and that
+  activity is within `OpenTurnStaleAfter`. Otherwise `ended`.
 - `started_at`, `last_activity_at`: the session's start, and its latest
-  turn start, turn end or edit.
+  turn start, turn end, edit or agent stop.
 - `ended_at`: once the session is `ended`, its last turn's end (an open
   turn ends where it started). Absent while it runs.
 - `transcript_path`: the transcript file the session record keeps.

@@ -127,7 +127,7 @@ These are compiled into the binary (`facts.go`) and not configurable:
 | trace rankings | 10 | spans `moondb trace` and `moondb_trace` list as the longest tool calls and the most expensive model calls |
 | totals backfill batch (`TotalsBackfillTurns`) | 20 | turns one totals backfill batch tries, computed or not, and sessions it fills a missing prompt line for |
 | totals backfill pace (`TotalsBackfillEvery`) | 1 s | how often the totals backfill runs a batch while the spool is empty |
-| session idle (`SessionIdleAfter`) | 10 min | how long a session goes without a turn start, turn end or edit before the listing calls it ended |
+| session idle (`SessionIdleAfter`) | 10 min | how long a session goes without a turn start, turn end, edit or agent stop before the listing calls it ended |
 | open turn stale (`OpenTurnStaleAfter`) | 12 h | how long an open last turn keeps an otherwise idle session running |
 | prompt line (`SessionPromptLineRunes`) | 100 runes | the cut of the prompt line a session keeps for its title and a trace shows per turn |
 

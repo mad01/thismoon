@@ -31,8 +31,8 @@ type SessionSummary struct {
 	AgentCount int `json:"agent_count"`
 	// LastTurnOpen is set when the session's last turn by Seq is open.
 	LastTurnOpen bool `json:"last_turn_open,omitempty"`
-	// LastActivityAt is the latest turn start, turn end or edit, or the
-	// session's start when it has none of them.
+	// LastActivityAt is the latest turn start, turn end, edit or agent
+	// stop, or the session's start when it has none of them.
 	LastActivityAt time.Time `json:"last_activity_at"`
 	// DurationMS runs from the first turn's start to the last turn's end,
 	// an open turn ending where it started. It reads the turn records
