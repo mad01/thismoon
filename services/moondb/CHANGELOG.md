@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/mad01/thismoon/compare/moondb/v0.3.0...moondb/v0.4.0) (2026-10-26)
+
+
+### Features
+
+* **moondb,belt:** name a checkout's files other sessions left uncommitted ([#311](https://github.com/mad01/thismoon/issues/311)) ([68ee61a](https://github.com/mad01/thismoon/commit/68ee61af48277c505890b5286e9922a27b9f1adf))
+* **moondb:** add a session scorecard ([#312](https://github.com/mad01/thismoon/issues/312)) ([fca139b](https://github.com/mad01/thismoon/commit/fca139b5eca47d34efe7e7f9675c94c8d0889d35))
+
+
+### Bug Fixes
+
+* **moondb:** list a path's history across every checkout by default ([#306](https://github.com/mad01/thismoon/issues/306)) ([8314dbb](https://github.com/mad01/thismoon/commit/8314dbb169258144df9ea711c894ab46e8bcd7b0))
+
 ## [0.3.0](https://github.com/mad01/thismoon/compare/moondb/v0.2.0...moondb/v0.3.0) (2026-10-26)
 
 
