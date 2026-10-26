@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.12.0](https://github.com/mad01/thismoon/compare/belt/v2.11.1...belt/v2.12.0) (2026-10-26)
+
+
+### Features
+
+* **belt:** add read-size hint for large whole-file reads ([#308](https://github.com/mad01/thismoon/issues/308)) ([d4dd468](https://github.com/mad01/thismoon/commit/d4dd46833cd0e6cc2085e1ee0662cd32972bdee9))
+* **belt:** rank kof-consult against the prompt and tag kof hint events ([#309](https://github.com/mad01/thismoon/issues/309)) ([9229b72](https://github.com/mad01/thismoon/commit/9229b728a6c8b3d843eb7b0af3d6d3e7945e5fa6))
+* **moondb,belt:** name a checkout's files other sessions left uncommitted ([#311](https://github.com/mad01/thismoon/issues/311)) ([68ee61a](https://github.com/mad01/thismoon/commit/68ee61af48277c505890b5286e9922a27b9f1adf))
+
 ## [2.11.1](https://github.com/mad01/thismoon/compare/belt/v2.11.0...belt/v2.11.1) (2026-10-21)
 
 
