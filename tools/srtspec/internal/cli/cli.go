@@ -1,6 +1,7 @@
 // Package cli wires the srtspec commands: render, check and generate turn
-// access manifests into srt settings files, and explain shows the policy a
-// launch would get once srt-run merges the machine-local layers.
+// access manifests into srt settings files, verify checks a repo's rendered
+// files and expansion layers without writing, and explain shows the policy
+// a launch would get once srt-run merges the machine-local layers.
 package cli
 
 import (
@@ -39,6 +40,7 @@ func root() *cobra.Command {
 		renderCmd(),
 		checkCmd(),
 		generateCmd(),
+		verifyCmd(),
 		explainCmd(),
 	)
 	return c

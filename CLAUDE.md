@@ -11,6 +11,7 @@ Monorepo for the `*.this` platform: local web services, CLI tools, the shared we
 | Install all components | `make install-all` |
 | List components | `make components` |
 | Render sandbox settings from the access manifests | `make sandbox-settings` |
+| Check the renders and expansion layers the way CI does | `make sandbox-verify` |
 
 ## Layout
 

@@ -18,6 +18,9 @@ files and exits:
   file drifted. Key order and list order do not count as drift.
 - `{{.Bin}} generate [root]` renders every manifest in a repo to its
   recipe's `<label>.srt.json`; `make sandbox-settings` runs it.
+- `{{.Bin}} verify [root]` checks every render, orphan and expansion layer
+  under a repo without writing, one line per check; `make sandbox-verify`
+  runs it in CI and a consuming repo's test calls it directly.
 - `{{.Bin}} explain <label>` reads `~/.config/srt/<label>.json`, then
   `~/.config/srt/<label>.local.json`, then SRT_RUN_ALLOW_DOMAINS, and prints
   each effective entry with the layer it came from.
@@ -41,6 +44,11 @@ sources cache, or a confined process could rewrite its own policy.
 
 "no manifest renders": generate found a recipes/*/*.srt.json without a
 manifest. Declare spec.access (or an access.yaml), or delete the file.
+
+"FAIL" lines from verify: each names a file and the fix. A settings file
+that "drifted" or "does not exist" wants `generate`. One that "matches in
+meaning but not in layout" was hand-edited, so generate again. A layer that
+"srt-run would refuse" must only widen.
 
 explain says "srt-run refuses to launch": the process will not start. The
 local layer may only add to allowedDomains, allowRead, allowWrite,
