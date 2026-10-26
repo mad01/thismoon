@@ -529,9 +529,10 @@ func TestSessionsCarryDuration(t *testing.T) {
 	for _, s := range got.Sessions {
 		durations[s.ID] = s.DurationMS
 	}
-	if durations[servertest.OldSession] != 120_000 || durations[servertest.NewSession] != 0 {
+	if durations[servertest.OldSession] != 120_000 ||
+		durations[servertest.NewSession] != 120_000 {
 		t.Errorf(
-			"durations = %v, want 2 minutes for the old session and 0 for the open one",
+			"durations = %v, want 2 minutes for the old session and for the open one to its last edit",
 			durations,
 		)
 	}

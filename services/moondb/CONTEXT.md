@@ -62,6 +62,10 @@ _Avoid_: event, log entry, metric, profile
 A closed Turn's Trace totals, kept on the Turn record so a listing never reads a transcript. They hold the time per class, the call counts and the tokens per model and rate. Never a cost: the tokens are priced when read. An Agent keeps totals of the same shape for its run. A turn or Agent stored before totals existed, or under an older trace version, gets them from the totals backfill.
 _Avoid_: stats, metrics, summary (the listing row's word)
 
+**Active time**:
+The time a Session spent inside its Turns, less the time a turn waited for input. A turn with Turn totals gives its wall time less its user time. The pauses between turns never count, so a session left open overnight adds nothing for the night. Its counterpart is the wall time, from the first prompt to the last turn's end with every pause included, and the active time never exceeds it. A session row carries both, as `active_ms` and `duration_ms`.
+_Avoid_: duration (say active time or wall time), run time, uptime
+
 **Span**:
 One timed piece of a Trace: the turn itself, one model call (an assistant message, with its tokens and cost), one tool call (from the line asking for it to its result) or one Agent's work under the turn. An Agent's span runs from its first line under the turn (its spawn, in the turn that spawned it) to its last there (its stop, in its last turn), with its calls, tokens and cost. An agent without a record gets a span from its first recorded edit to its last. A model whose price moondb does not know has tokens and no cost, never a zero cost.
 _Avoid_: event, log entry, metric

@@ -25,9 +25,11 @@ var sessionsCmd = &cobra.Command{
 	Use:   "sessions",
 	Short: "List recorded sessions, newest first",
 	Long: `List the sessions moondb has recorded, newest first, with how many turns
-and edits each made, how long it ran from the first prompt to the last Stop,
-and which repositories it touched. moondb trace <session-id> shows where
-that time went and what it cost.
+and edits each made, its active and wall time, and which repositories it
+touched. ACTIVE is the time inside its turns, less the time a turn waited
+for input; the pauses between turns never count. WALL runs from the first
+prompt to the last Stop, pauses included. moondb trace <session-id> shows
+where that time went and what it cost.
 
 --since keeps the sessions active since then, whenever they started, and
 takes an RFC 3339 time or a span before now: 90m, 24h, 7d.`,
@@ -76,11 +78,11 @@ func printSessions(w io.Writer, sessions []server.SessionSummary) {
 		return
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "STARTED\tSESSION\tTURNS\tEDITS\tDURATION\tREPOS\tTITLE")
+	fmt.Fprintln(tw, "STARTED\tSESSION\tTURNS\tEDITS\tACTIVE\tWALL\tREPOS\tTITLE")
 	for _, s := range sessions {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			when(s.StartedAt), short(s.ID), fmtCount(s.TurnCount), fmtCount(s.EditCount),
-			trace.FormatDuration(s.DurationMS),
+			trace.FormatDuration(s.ActiveMS), trace.FormatDuration(s.DurationMS),
 			orDash(strings.Join(s.Repos, ",")), orDash(s.Title))
 	}
 	_ = tw.Flush()

@@ -44,15 +44,20 @@ type SessionSummary struct {
 	StartedAt      time.Time `json:"started_at"`
 	LastActivityAt time.Time `json:"last_activity_at"`
 	// EndedAt is the last turn's end once the session is ended, an open
-	// turn ending where it started; absent while it runs or before it has
-	// a turn.
+	// turn ending at its last edit or agent stop; absent while it runs or
+	// before it has a turn.
 	EndedAt *time.Time `json:"ended_at,omitempty"`
-	// DurationMS runs from the first turn's start to the last turn's end,
-	// an open turn ending where it started. It reads the turn records
-	// only, so it can fall short of the session trace's wall time.
-	DurationMS int64 `json:"duration_ms"`
-	TurnCount  int   `json:"turn_count"`
-	EditCount  int   `json:"edit_count"`
+	// DurationMS is the wall span: from the first turn's start to the last
+	// turn's end, an open turn ending at its last edit or agent stop, the
+	// pauses between turns included. It reads the turn records only, so it
+	// can fall short of the session trace's wall time.
+	DurationMS int64 `json:"duration_ms"               jsonschema:"wall time in milliseconds: from the first prompt to the last turn's end, pauses between turns included"`
+	// ActiveMS is the active time: the time inside the turns, less the
+	// time a turn waited for input, never above DurationMS
+	// (store.SessionSummary.ActiveMS).
+	ActiveMS  int64 `json:"active_ms"                 jsonschema:"active time in milliseconds: the time inside the turns, less time waiting for input, never above duration_ms; pauses between turns never count"`
+	TurnCount int   `json:"turn_count"`
+	EditCount int   `json:"edit_count"`
 	// FileCount counts the distinct files the session edited.
 	FileCount int `json:"file_count"`
 	// AgentCount counts the agents that ran: the subagents with a record,
@@ -95,7 +100,9 @@ type SessionList struct {
 // WindowTotals adds up a set of sessions. A file edited in two of them
 // counts once.
 type WindowTotals struct {
-	Sessions int          `json:"sessions"`
+	Sessions int `json:"sessions"`
+	// ActiveMS sums the sessions' active time.
+	ActiveMS int64        `json:"active_ms"`
 	Turns    int          `json:"turns"`
 	Edits    int          `json:"edits"`
 	Files    int          `json:"files"`
@@ -205,6 +212,7 @@ func (s *Server) row(sum store.SessionSummary, now time.Time) SessionSummary {
 		LastActivityAt: sum.LastActivityAt,
 		EndedAt:        ended,
 		DurationMS:     sum.DurationMS,
+		ActiveMS:       sum.ActiveMS,
 		TurnCount:      sum.TurnCount,
 		EditCount:      sum.EditCount,
 		FileCount:      sum.FileCount,
@@ -221,13 +229,14 @@ func (s *Server) row(sum store.SessionSummary, now time.Time) SessionSummary {
 	}
 }
 
-// window adds up the sessions: their counts, their distinct files, and
-// their merged usage priced once.
+// window adds up the sessions: their counts, their active time, their
+// distinct files, and their merged usage priced once.
 func (s *Server) window(sessions []store.SessionSummary) WindowTotals {
 	t := WindowTotals{Sessions: len(sessions)}
 	files := map[store.FileKey]bool{}
 	var main, agents [][]store.ModelUsage
 	for _, sum := range sessions {
+		t.ActiveMS += sum.ActiveMS
 		t.Turns += sum.TurnCount
 		t.Edits += sum.EditCount
 		for _, f := range sum.Files {

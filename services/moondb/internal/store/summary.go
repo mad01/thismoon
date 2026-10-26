@@ -34,15 +34,26 @@ type SessionSummary struct {
 	// LastActivityAt is the latest turn start, turn end, edit or agent
 	// stop, or the session's start when it has none of them.
 	LastActivityAt time.Time `json:"last_activity_at"`
-	// DurationMS runs from the first turn's start to the last turn's end,
-	// an open turn ending where it started. It reads the turn records
-	// only, no transcript lines, so it can fall short of the session
-	// trace's wall time, whose turn spans stretch to a line written after
-	// the recorded end.
+	// DurationMS is the session's wall span, the pauses between turns
+	// included: from the first turn's start to the last turn's end. An
+	// open turn ends at its last activity, the latest edit or agent stop
+	// at or after its start and before the next turn starts. It reads the
+	// turn records only, no transcript lines, so it can fall short of the
+	// session trace's wall time, whose turn spans stretch to a line
+	// written after the recorded end.
 	DurationMS int64 `json:"duration_ms"`
+	// ActiveMS is the time inside the session's turns that did not wait
+	// for input, the session's active time. A turn with totals gives its
+	// wall time less its user time; one without gives its recorded span.
+	// An open turn ends where DurationMS ends it, at its last activity.
+	// A turn never counts below zero, and the gaps between turns never
+	// count, so a session left open overnight adds nothing for the night.
+	// It never exceeds DurationMS: turns that overlap, or totals whose
+	// wall outlasts the recorded span, are capped at the wall span.
+	ActiveMS int64 `json:"active_ms"`
 	// LastTurnEnd is where DurationMS ends: the latest turn end, an open
-	// turn ending where it started; zero without turns. It stays out of
-	// the JSON, where a listing row says it as ended_at.
+	// turn ending at its last activity; zero without turns. It stays out
+	// of the JSON, where a listing row says it as ended_at.
 	LastTurnEnd time.Time `json:"-"`
 	// Usage merges the usage of every turn and every agent with totals
 	// (MergeUsage): MainUsage and AgentUsage together.
@@ -81,8 +92,13 @@ func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) S
 	}
 	addTurns(&sum, turns)
 	seen := addAgents(&sum, agents)
+	times := newTurnTimes(turns)
+	for _, a := range agents {
+		times.see(a.EndedAt)
+	}
 	files := map[FileKey]bool{}
 	for e := range edits {
+		times.see(e.At)
 		sum.EditCount++
 		if !seen[e.AgentID] && e.AgentID != "" {
 			sum.AgentLabels = appendNew(sum.AgentLabels, cmp.Or(e.AgentType, "subagent"))
@@ -103,8 +119,90 @@ func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) S
 	})
 	sum.FileCount = len(sum.Files)
 	sum.AgentCount = len(seen)
+	times.apply(&sum)
 	sum.Usage = MergeUsage(sum.MainUsage, sum.AgentUsage)
 	return sum
+}
+
+// turnTimes adds up a session's wall span and active time from its turns.
+// A turn that is not open counts when it is made; an open turn's end waits
+// for the edits and agent stops Summarize reads after the turns.
+type turnTimes struct {
+	// first is the earliest turn start and end the latest turn start or
+	// end, open turns counted at their start until apply.
+	first, end time.Time
+	// closedMS is the active time of the turns that are not open.
+	closedMS int64
+	open     []openTurn
+}
+
+// openTurn is a turn still open: it runs from start to last, the latest
+// activity seen at or after start and before next, the start of the turn
+// after it (zero for the last turn).
+type openTurn struct {
+	start, next, last time.Time
+}
+
+func newTurnTimes(turns []Turn) turnTimes {
+	var tt turnTimes
+	for _, t := range turns {
+		if tt.first.IsZero() || t.StartedAt.Before(tt.first) {
+			tt.first = t.StartedAt
+		}
+		tt.end = later(tt.end, t.StartedAt)
+		if t.EndedAt != nil {
+			tt.end = later(tt.end, *t.EndedAt)
+		}
+		switch {
+		case t.Totals != nil:
+			tt.closedMS += max(t.Totals.WallMS-t.Totals.UserMS, 0)
+		case t.Status == TurnOpen:
+			tt.open = append(tt.open, openTurn{
+				start: t.StartedAt, next: nextStart(turns, t.StartedAt), last: t.StartedAt,
+			})
+		case t.EndedAt != nil:
+			tt.closedMS += max(t.EndedAt.Sub(t.StartedAt).Milliseconds(), 0)
+		}
+	}
+	return tt
+}
+
+// see records an edit or an agent stop at t, which ends every open turn
+// whose stretch holds it at t or later.
+func (tt *turnTimes) see(t time.Time) {
+	for i := range tt.open {
+		o := &tt.open[i]
+		if !t.Before(o.start) && (o.next.IsZero() || t.Before(o.next)) {
+			o.last = later(o.last, t)
+		}
+	}
+}
+
+// apply sets sum's LastTurnEnd, DurationMS and ActiveMS, every open turn
+// ending at its last activity for both times, and moves sum's last
+// activity up to LastTurnEnd.
+func (tt *turnTimes) apply(sum *SessionSummary) {
+	end, active := tt.end, tt.closedMS
+	for _, o := range tt.open {
+		end = later(end, o.last)
+		active += o.last.Sub(o.start).Milliseconds()
+	}
+	sum.LastTurnEnd = end
+	sum.DurationMS = end.Sub(tt.first).Milliseconds()
+	sum.ActiveMS = min(active, sum.DurationMS)
+	sum.LastActivityAt = later(sum.LastActivityAt, end)
+}
+
+// nextStart is the earliest turn start after start, or zero when no turn
+// starts later.
+func nextStart(turns []Turn, start time.Time) time.Time {
+	var next time.Time
+	for _, t := range turns {
+		if t.StartedAt.After(start) && (next.IsZero() || t.StartedAt.Before(next)) {
+			next = t.StartedAt
+		}
+	}
+	return next
 }
 
 // addAgents folds the Agent records into sum: their labels, their merged
@@ -124,21 +222,12 @@ func addAgents(sum *SessionSummary, agents []Agent) map[string]bool {
 	return seen
 }
 
-// addTurns folds the turns into sum: the duration, the last activity, the
-// last turn's status and the main conversation's merged usage.
+// addTurns folds the turns into sum: the last turn's status and the main
+// conversation's merged usage. turnTimes adds up their times.
 func addTurns(sum *SessionSummary, turns []Turn) {
-	var first, last time.Time
 	lastSeq := 0
 	var usage [][]ModelUsage
 	for _, t := range turns {
-		end := t.StartedAt
-		if t.EndedAt != nil {
-			end = later(end, *t.EndedAt)
-		}
-		if first.IsZero() || t.StartedAt.Before(first) {
-			first = t.StartedAt
-		}
-		last = later(last, end)
 		if t.Seq >= lastSeq {
 			lastSeq, sum.LastTurnOpen = t.Seq, t.Status == TurnOpen
 		}
@@ -146,9 +235,6 @@ func addTurns(sum *SessionSummary, turns []Turn) {
 			usage = append(usage, t.Totals.Usage)
 		}
 	}
-	sum.LastActivityAt = later(sum.LastActivityAt, last)
-	sum.LastTurnEnd = last
-	sum.DurationMS = last.Sub(first).Milliseconds()
 	sum.MainUsage = MergeUsage(usage...)
 }
 
