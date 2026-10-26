@@ -81,39 +81,17 @@ func TestSubagentStopWithoutTranscript(t *testing.T) {
 
 // TestSubagentStopTranscriptPath reads the agent transcript where the
 // payload says, a leading ~ expanded, or where the harness keeps it when
-// the payload names none, and records nothing for a path outside the
-// session's subagents directory.
+// the payload names none. It records nothing for a path outside the
+// session's subagents directory, a transcript_path that is missing or
+// relative, or a session_id that is not one path element.
 func TestSubagentStopTranscriptPath(t *testing.T) {
 	outside := filepath.Join(physicalTempDir(t), "agent-agent-7.jsonl")
 	writeFile(t, outside, agentTranscript("/work"))
-	cases := []struct {
-		name string
-		path func(s *testSession) string
-		want string // the envelope id; "" for none
-	}{
-		{"named", agentFile, "agent-7:close:3"},
-		{"empty field", func(*testSession) string { return "" }, "agent-7:close:3"},
-		{"tilde", func(s *testSession) string {
-			s.tb.Setenv("HOME", filepath.Dir(s.transcript))
-			return "~/sess-1/subagents/agent-agent-7.jsonl"
-		}, "agent-7:close:3"},
-		{"outside", func(*testSession) string { return outside }, ""},
-		{"climbs out", func(s *testSession) string {
-			return filepath.Join(filepath.Dir(agentFile(s)), "..", "..", "x.jsonl")
-		}, ""},
-		{"symlink out", func(s *testSession) string {
-			link := filepath.Join(filepath.Dir(agentFile(s)), "agent-link.jsonl")
-			if err := os.Symlink(outside, link); err != nil {
-				s.tb.Fatal(err)
-			}
-			return link
-		}, ""},
-	}
-	for _, c := range cases {
+	for _, c := range transcriptPathCases(outside) {
 		t.Run(c.name, func(t *testing.T) {
 			s := newSession(t, physicalTempDir(t))
 			writeFile(t, agentFile(s), agentTranscript(s.cwd))
-			s.mustRun("subagent_stop.json", "$AGENT_TRANSCRIPT", c.path(s))
+			s.mustRun("subagent_stop.json", "$AGENT_TRANSCRIPT", c.path(s), "sess-1", c.session)
 			envs := s.take()
 			switch {
 			case c.want == "" && (len(envs) != 0 || len(s.logs) != 1):
@@ -122,5 +100,55 @@ func TestSubagentStopTranscriptPath(t *testing.T) {
 				t.Errorf("spooled %v, logs %q; want %s", kinds(envs), s.logs, c.want)
 			}
 		})
+	}
+}
+
+// transcriptPathCase is one SubagentStop payload variant: the agent
+// transcript path it names and its session_id.
+type transcriptPathCase struct {
+	name    string
+	path    func(s *testSession) string
+	session string // the payload's session_id
+	want    string // the envelope id; "" for none
+}
+
+// transcriptPathCases are the payload variants of
+// TestSubagentStopTranscriptPath; outside is an agent transcript outside
+// every session's subagents directory.
+func transcriptPathCases(outside string) []transcriptPathCase {
+	none := func(*testSession) string { return "" }
+	return []transcriptPathCase{
+		{"named", agentFile, "sess-1", "agent-7:close:3"},
+		{"empty field", none, "sess-1", "agent-7:close:3"},
+		{"tilde", func(s *testSession) string {
+			s.tb.Setenv("HOME", filepath.Dir(s.transcript))
+			return "~/sess-1/subagents/agent-agent-7.jsonl"
+		}, "sess-1", "agent-7:close:3"},
+		{"outside", func(*testSession) string { return outside }, "sess-1", ""},
+		{"climbs out", func(s *testSession) string {
+			return filepath.Join(filepath.Dir(agentFile(s)), "..", "..", "x.jsonl")
+		}, "sess-1", ""},
+		{"symlink out", func(s *testSession) string {
+			link := filepath.Join(filepath.Dir(agentFile(s)), "agent-link.jsonl")
+			if err := os.Symlink(outside, link); err != nil {
+				s.tb.Fatal(err)
+			}
+			return link
+		}, "sess-1", ""},
+		{"no transcript_path", func(s *testSession) string {
+			s.transcript = ""
+			return ""
+		}, "sess-1", ""},
+		{"relative transcript_path", func(s *testSession) string {
+			s.transcript = "transcript.jsonl"
+			return ""
+		}, "sess-1", ""},
+		{"session_id is ..", none, "..", ""},
+		{"session_id with a separator", func(s *testSession) string {
+			nested := filepath.Join(filepath.Dir(s.transcript), "nested", "sess-1")
+			writeFile(s.tb, filepath.Join(nested, "subagents", "agent-agent-7.jsonl"),
+				agentTranscript(s.cwd))
+			return ""
+		}, "nested/sess-1", ""},
 	}
 }
