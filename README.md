@@ -11,9 +11,10 @@ Each one is a small web service on its own `http://<name>.this/` address and
 a CLI; most are also [MCP](https://modelcontextprotocol.io) servers, so you
 and your agent work against the same local data. The code search you run in
 a browser is the index Claude queries; the briefing an agent writes is the
-page you read at `present.this`. Services are launchd agents, notifications
-are native, binaries are codesigned. No cloud, no accounts: your code,
-notes, and dashboards stay on your disk.
+page you read at `present.this`. Services are sandboxed launchd agents, the
+MCP servers run sandboxed too, notifications are native, binaries are
+codesigned. No cloud, no accounts: your code, notes, and dashboards stay
+on your disk.
 
 One of the things I use daily is the reading support. The shared web chrome
 has a fixation toggle that bolds the first half of every word to pull your
@@ -163,6 +164,38 @@ session lifecycle to events. [tools/belt/README.md](tools/belt/README.md)
 lists every guard and hint, and
 [tools/belt/docs/hooks.md](tools/belt/docs/hooks.md) has the wiring.
 
+## Sandboxed by default
+
+Every service and MCP server in the fleet runs under
+[anthropics/sandbox-runtime](https://github.com/anthropics/sandbox-runtime)
+(srt). Each gets no network except the hosts its policy names, no reads
+under your home directory except what it declares, and writes only to its
+own state directory and temp. The policy is a few lines of YAML beside the
+code, in the component's `service-info.yaml`:
+
+```yaml
+spec:
+  access:
+    sandbox: srt
+    workdir: ~/.local/share/events
+    listen: 7430
+    reads: [~/code/bin, workdir]
+    writes: [workdir, temp]
+```
+
+`srtspec` renders that to the settings file srt enforces, and CI fails when
+the two drift. `srt-run`, the one launcher every sandboxed process goes
+through, merges the hosts a machine adds at launch and tags each process.
+So when the kernel denies something, `sandbox-watch` can name the process:
+a banner, a line in the denial ledger, an event. A third-party binary you
+install (an MCP server, a theme watcher) gets the same treatment from a
+short manifest in your config repo. The one process srt can't confine, the
+text-to-speech engine that needs Metal, keeps a hand-written seatbelt
+profile and says so in its manifest.
+[docs/SANDBOXING.md](docs/SANDBOXING.md) walks through sandboxing a new
+process and explains each piece; the decision is
+[ADR-0028](docs/adr/0028-sandbox-runtime-replaces-seatbelt.md).
+
 ## How it fits together
 
 Three layers, two of them public:
@@ -301,7 +334,7 @@ component, is in [docs/RELEASING.md](docs/RELEASING.md).
 | `docs/HOW-IT-FITS-TOGETHER.md` | The fleet pitch, ralph vocabulary, rollout order |
 | `docs/MEMORY-STACK.md` | Which store holds what an agent should remember, and the hooks behind them |
 | `docs/RELEASING.md` | Release process |
-| `docs/SANDBOXING.md` | srt sandboxing for services and MCP servers: the srt-run launcher, settings files, wrappers, denial triage |
+| `docs/SANDBOXING.md` | Sandboxing with srt: how to sandbox a new process, then the launcher, access manifests, machine layers and denial triage |
 
 Everything is one Go module: `github.com/mad01/thismoon`. Each component
 under `services/` or `tools/` has its own Makefile with `build`, `test`, and
