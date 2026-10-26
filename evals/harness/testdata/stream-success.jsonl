@@ -1,0 +1,13 @@
+{"type":"system","subtype":"hook_started","hook_name":"SessionStart:startup","session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"system","subtype":"init","session_id":"11111111-2222-3333-4444-555555555555","model":"claude-fable-5-1","cwd":"/src/thismoon","claude_code_version":"2.1.310","tools":["Read","Bash"],"mcp_servers":[{"name":"csl","status":"connected"}]}
+{"type":"user","message":{"role":"user","content":"Where is CanonicalRepo defined?"},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"look it up"}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"mcp__csl__csl_search","input":{"repo":"thismoon","query":"sym:CanonicalRepo"}}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"kit/gitloc/gitloc.go:121"}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_2","name":"Read","input":{"limit":20,"file_path":"/src/thismoon/kit/gitloc/gitloc.go","offset":115}}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_2","content":"func CanonicalRepo(remote string) string {"}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_3","name":"Bash","input":{"command":"cd /src/thismoon && git log -1 --format=%s","description":"Show last commit"}}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_3","content":"fix: x"}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"system","subtype":"thinking_tokens","estimated_tokens":50,"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"CanonicalRepo is defined in kit/gitloc/gitloc.go:121."}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":4200,"num_turns":4,"result":"CanonicalRepo is defined in kit/gitloc/gitloc.go:121.","session_id":"11111111-2222-3333-4444-555555555555","total_cost_usd":0.1234,"usage":{"input_tokens":10,"cache_creation_input_tokens":2000,"cache_read_input_tokens":50000,"output_tokens":300},"permission_denials":[{"tool_name":"Edit"}]}

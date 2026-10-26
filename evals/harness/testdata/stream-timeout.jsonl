@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"99999999-2222-3333-4444-555555555555","model":"claude-fable-5-1","claude_code_version":"2.1.310"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"/src/thismoon/tools/belt/internal/config/config.go"}}]},"session_id":"99999999-2222-3333-4444-555555555555"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_2","name":"mcp__csl__csl_outline","input":{"repo":"thismoon","path":"tools/belt"}}]}}
+{"type":"assistant","message":{"role":"assist

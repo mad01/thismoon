@@ -30,6 +30,9 @@ mods/        Claude Code mods (in-process plugin modules), one directory per
 skills/      agent skills (Claude + Codex), one directory per skill; each is
              symlinked into ~/.claude/skills and ~/.agents/skills by its
              paired recipe (skill-only recipes for skills with no binary)
+evals/harness/ harness eval runner (not a component): fixed tasks through
+             claude -p with the user's hooks and MCP servers, scored on outcome
+             and cost, stored to compare before and after a change
 examples/    worked private-config-repo layout (overlay recipes, example
              global CLAUDE.md) — the reference for the machine-private layer
 docs/adr/    architecture decision records
