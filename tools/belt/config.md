@@ -495,9 +495,10 @@ entries match the same way as `git_identity[].repos` and
 
 ### hints
 
-A map keyed by built-in hint id or a `custom_hints` name. All ten
+A map keyed by built-in hint id or a `custom_hints` name. All
 built-in hints default to enabled when the file or their entry is missing. The repo-aware hints (`commit-policy`,
-`lint-policy`, `prefer-csl`, `kof-assertions`, `kof-consult`) also read
+`lint-policy`, `prefer-csl`, `kof-assertions`, `kof-consult`,
+`moondb-inflight`) also read
 `exclude_repos`. The rest take only `enabled`. Any other key on a known id
 is a validation error (guards exempt repos with `allow_repos`, hints opt
 them out with `exclude_repos`, so each key on the wrong kind is rejected).
@@ -557,6 +558,10 @@ pattern tail (host dropped, case-insensitive).
   the cwd repo's kof assertions before any searching happens.
   `exclude_repos` silences it for the listed repos, matched against the cwd
   repo's origin remote.
+- `hints.moondb-inflight.enabled` (bool, default `true`): SessionStart,
+  lists the files of the checkout that other sessions edited and no commit
+  has taken yet, when git status shows them dirty. `exclude_repos` silences
+  it for the listed repos, matched against the checkout's origin remote.
 - `hints.kof-deposit.enabled` (bool, default `true`): UserPromptSubmit,
   nudges a session that did substantial work but never deposited a kof
   assertion.
@@ -594,6 +599,8 @@ environment at hook invocation time.
   fallback when `KOF_PORT` is unset): port of the local kof serve instance
   the `kof-assertions` and `kof-consult` hints, and the `belt doctor`
   reachability probe, query.
+- `MOONDB_PORT` (default `7433`): port of the local moondb serve instance
+  the `moondb-inflight` hint and the `belt doctor` moondb probe query.
 
 ## Example
 
@@ -716,6 +723,8 @@ hints:
   kof-assertions:
     enabled: true
   kof-consult:
+    enabled: true
+  moondb-inflight:
     enabled: true
   kof-deposit:
     enabled: true

@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-26 belt and moondb: in-flight files at session start need moondb first
+
+Change: thismoon #311 (MAD-493). A new belt session-start hint, `moondb-inflight`, asks moondb's new `GET /api/inflight` route which files of the checkout other sessions edited and no commit has taken yet.
+
+Run: nothing in the settings template, since `belt hint session-start` is already wired. Install moondb before belt: `ralph up`, then check that `curl http://127.0.0.1:7433/version` reports the merged commit. A belt on an older moondb gets a 404 from the route, and the hint stays silent until moondb catches up.
+
+Verify: `belt doctor` reports moondb serve as `reachable`, not as older than this belt. `moondb inflight` in a checkout prints a table or "no files".
+
 ## 2026-10-26 belt: read-size hint needs a Read hook entry
 
 Change: thismoon, belt `read-size` hint (#308, MAD-494). The hint fires when a Read with no offset or limit pulls in 300 lines or more from a csl-indexed repo, for a file type `csl_outline` has symbols for. It points at `csl_outline` or a ranged read, once per file per agent per session.

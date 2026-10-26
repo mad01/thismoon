@@ -46,8 +46,9 @@ internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     publish-internal-names), and the Custom guard that execs
                     config-registered external commands
 internal/hint/      the Hint interface and the hints (prefer-csl,
-                    read-size, commit-policy, lint-policy, kof-assertions, kof-consult,
-                    kof-deposit, agent-memory, humanizer-check, em-dash), the Custom
+                    read-size, commit-policy, lint-policy, kof-assertions,
+                    kof-consult, moondb-inflight, kof-deposit, agent-memory,
+                    humanizer-check, em-dash), the Custom
                     hint that execs config-registered external commands,
                     plus csl shard lookup, search-response parsing, and the
                     per-session seen store
@@ -155,7 +156,9 @@ humanizer-check) and the git repo a commit ran in. From that repo they read
 the branch, origin remote, and an optional repo-root `.belt.yaml` overlay,
 via git execs (commit-policy; overlay is hints-only and never denies,
 docs/adr/0012). They also read the local kof serve API on `KOF_PORT` with a
-400 ms budget (kof-consult, kof-assertions). A custom hint execs the command
+400 ms budget (kof-consult, kof-assertions), and the local moondb serve API
+on `MOONDB_PORT` with the same budget (moondb-inflight), which then runs one
+`git status` over the paths moondb names. A custom hint execs the command
 its `custom_hints` entry names, with the same 400 ms default budget
 (`timeout_ms` overrides it), and relays the command's stdout.
 

@@ -157,6 +157,18 @@ const (
 	SessionPromptLineRunes = 100
 )
 
+// In-flight files: what `GET /api/inflight` answers about one checkout,
+// the files other sessions edited that no commit has taken yet.
+const (
+	// InflightWindow is how far back the query reads edits when the
+	// request names no since. An older edit is never reported, committed
+	// or not.
+	InflightWindow = 72 * time.Hour
+	// InflightLimit caps the files the query returns when the request
+	// names no limit.
+	InflightLimit = 20
+)
+
 // Prompt caching bills a cache write and a cache read as a multiple of the
 // model's input rate (the claude-api skill, shared/prompt-caching.md,
 // Economics). A model whose cache read rate differs names it in its row.

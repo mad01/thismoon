@@ -30,7 +30,7 @@ Beyond the built-ins, a `custom_guards` config section registers named guards th
 
 ## Hints
 
-Ten hints add advisory context the agent reads next to a tool result or at session boundaries:
+The built-in hints add advisory context the agent reads next to a tool result or at session boundaries:
 
 - `prefer-csl`: after a bash command sweeps multiple files inside a repo csl already indexes, hands back the equivalent `csl_search` call with the pattern translated to zoekt syntax. Pipe filters (`cmd | grep x`) and single-file greps don't fire, since they aren't what csl replaces.
 - `read-size`: after a Read with no offset or limit pulls in a file of 300 lines or more inside a repo csl indexes, names the file and its line count. It then hands over the `csl_outline` call for orientation, and names `csl_read` or a ranged Read for a known region. It speaks only for file types `csl_outline` has symbols for, and once per file per agent per session.
@@ -38,6 +38,7 @@ Ten hints add advisory context the agent reads next to a tool result or at sessi
 - `lint-policy`: after a `git commit` in a repo whose root `.belt.yaml` declares a `hints.lint-policy.message`, relays that message once per session per repo. The repo states its own fmt/lint toolchain, belt only picks the moment (no language→tool table, nothing executed). A trigger that already names the toolchain (`make lint && git commit`) is skipped without spending the nudge.
 - `kof-assertions`: after a csl search, surfaces stored kof assertions about the code the search hit, so prior conclusions get read instead of re-derived. Caps at three, marks stale ones, and repeats nothing within a session.
 - `kof-consult`: when a session opens inside a git repo, surfaces that repo's kof assertions before any searching happens, so the session starts from what earlier sessions concluded. Caps at five; outside a repo, or with kof down, it stays silent.
+- `moondb-inflight`: when a session opens inside a git checkout, lists the files other sessions edited there that no commit has taken yet. A commit, stash or reset then won't sweep up or throw away their work unseen. It asks moondb, keeps the files git status shows dirty, and caps at ten; outside a repo, or with moondb down or too old, it stays silent.
 - `agent-memory`: when a session opens, injects the agent memory indexes (`~/.config/agent-memory/MEMORY.md`, plus `~/.config/agent-memory-work/MEMORY.md` on machines that have one). Cross-agent facts then arrive as context instead of relying on instruction prose to prompt a read. A missing store is silence, so the work index never appears on personal machines.
 - `kof-deposit`: once per session, nudges a session that did substantial work but never recorded a kof assertion to deposit what it derived before the conclusions evaporate with the context.
 - `humanizer-check`: once per session, after a tool call publishes text to a system other people read, points at `humanizer_detect` while the wording can still be edited. A session that already ran a humanizer tool is left alone.
@@ -98,7 +99,7 @@ belt version
 belt version -o json
 ```
 
-`belt doctor` prints the resolved state behind those decisions. First comes the installed build (version, commit, release tag, build time) and which config file loaded, or failed to parse. Next are the guards and hints in effect, with their allow/exclude counts. Doctor also probes the kof serve instance behind the kof-* hints and reports whether it is reachable and how many assertions it stores. The hints render "kof down" and "store empty" identically, as silence, so doctor is what tells them apart.
+`belt doctor` prints the resolved state behind those decisions. First comes the installed build (version, commit, release tag, build time) and which config file loaded, or failed to parse. Next are the guards and hints in effect, with their allow/exclude counts. Doctor also probes the kof serve instance behind the kof-* hints and reports whether it is reachable and how many assertions it stores. The hints render "kof down" and "store empty" identically, as silence, so doctor is what tells them apart. It probes moondb serve the same way for the moondb-inflight hint and says when moondb is too old to answer it.
 
 Doctor then shows the ledger and watch settings and whether the events service they post to and poll answers. An enabled watcher that cannot work is a warning. The last block is the full blocked-name set the write-internal-names and publish-internal-names guards match against. Doctor closes with a warnings section and exits 1 when that section is not empty, on a machine with no config at all included.
 

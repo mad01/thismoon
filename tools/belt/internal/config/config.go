@@ -1001,6 +1001,7 @@ var (
 		"kof-assertions":  {"exclude_repos"},
 		"kof-consult":     {"exclude_repos"},
 		"kof-deposit":     {},
+		"moondb-inflight": {"exclude_repos"},
 		"lint-policy":     {"exclude_repos"},
 		"prefer-csl":      {"exclude_repos"},
 		"read-size":       {},
