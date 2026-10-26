@@ -79,7 +79,9 @@ Add a `[prices."<model id>"]` table to the config and restart serve. A turn
 with no spans has no transcript lines: it is still open, or its lines were
 never recorded. User time is waiting for input, between turns and also
 inside a turn: from the model stopping to a new input such as a teammate
-message. Harness time far above a few minutes usually means a turn longer
+message. The trace walks turns in the order they started, so a turn an
+import added sits where it ran, under a higher number than the live turns
+after it. Harness time far above a few minutes usually means a turn longer
 than the 4 MiB transcript tail, whose cut head counts as harness; its
 trace's lines then say `cut_head`.
 

@@ -8,53 +8,67 @@ import (
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
-// BuildSession puts a session's turn traces in order and adds what lies
-// between them: the time from one turn's end to the next one's start is
-// user time, the session's and not either turn's. The session's user time
-// is those gaps plus the user time inside its turns. turns are the turns'
-// own traces (Build); agents are the traces of the session's subagents
-// with a record (BuildAgent), whose work BuildSession adds to each turn it
-// ran under and whose whole runs it adds to the session's tokens and cost.
+// BuildSession puts a session's turn traces in time order (inTimeOrder) and
+// adds what lies between them: the time from the latest turn end so far to
+// the next turn's start is user time, the session's and not either turn's.
+// turns are the turns' own traces (Build); agents are the traces of the
+// session's subagents with a record (BuildAgent), whose work BuildSession
+// adds to each turn it ran under and whose whole runs it adds to the
+// session's tokens and cost.
 func BuildSession(sessionID string, turns []TurnTrace, agents []AgentTrace) SessionTrace {
 	turns = slices.Clone(turns)
-	slices.SortStableFunc(turns, func(a, b TurnTrace) int { return cmp.Compare(a.Seq, b.Seq) })
-	st := SessionTrace{SessionID: sessionID, Turns: turns, Gaps: []Gap{}}
+	slices.SortStableFunc(turns, inTimeOrder)
+	st := SessionTrace{SessionID: sessionID, Turns: turns, Gaps: betweenTurns(turns)}
 	if turns == nil {
 		st.Turns = []TurnTrace{}
 	}
-	var user time.Duration
-	for i := 1; i < len(turns); i++ {
-		from, to := turns[i-1].Span.End, turns[i].Span.Start
-		if to.After(from) {
-			st.Gaps = append(st.Gaps, Gap{
-				Kind: GapUser, Start: from, End: to, DurationMS: to.Sub(from).Milliseconds(),
-			})
-			user += to.Sub(from)
-		}
-	}
-	st.Totals = sessionTotals(turns)
-	st.Totals.UserMS += user.Milliseconds()
+	st.Totals = sessionTotals(turns, st.Gaps)
 	st.addAgents(agents)
 	return st
 }
 
-// sessionTotals sums the turns; the wall time runs from the first turn's
-// start to the last one's end.
-func sessionTotals(turns []TurnTrace) Totals {
+// inTimeOrder orders turns as they ran: by start, then by Seq. Seq is not
+// time order: an import numbers the turns it adds after the live ones,
+// though they may have run before them.
+func inTimeOrder(a, b TurnTrace) int {
+	return cmp.Or(a.Span.Start.Compare(b.Span.Start), cmp.Compare(a.Seq, b.Seq))
+}
+
+// betweenTurns returns the user gaps between turns in time order: from the
+// latest end so far to the next turn's start, when that start is later. A
+// turn that starts before an earlier one ended adds none.
+func betweenTurns(turns []TurnTrace) []Gap {
+	gaps := []Gap{}
+	var end time.Time
+	for i, tt := range turns {
+		if from, to := end, tt.Span.Start; i > 0 && to.After(from) {
+			gaps = append(gaps, Gap{
+				Kind: GapUser, Start: from, End: to, DurationMS: to.Sub(from).Milliseconds(),
+			})
+		}
+		end = later(end, tt.Span.End)
+	}
+	return gaps
+}
+
+// sessionTotals sums the turns and the gaps between them, the gaps as user
+// time. The wall time is the turns' wall times plus the gaps, so the time
+// split adds up to it whenever each turn's does. Without overlapping turns
+// that runs from the first start to the last end; a stretch two turns
+// overlap counts once in each.
+func sessionTotals(turns []TurnTrace, gaps []Gap) Totals {
 	var t Totals
 	if len(turns) == 0 {
 		return t
 	}
-	first, last := turns[0].Span.Start, turns[0].Span.End
+	for _, g := range gaps {
+		t.WallMS += g.DurationMS
+		t.UserMS += g.DurationMS
+	}
 	usage := make([][]store.ModelUsage, 0, len(turns))
 	for _, tt := range turns {
-		if tt.Span.Start.Before(first) {
-			first = tt.Span.Start
-		}
-		if tt.Span.End.After(last) {
-			last = tt.Span.End
-		}
 		x := tt.Totals
+		t.WallMS += x.WallMS
 		t.ModelMS += x.ModelMS
 		t.ToolMS += x.ToolMS
 		t.HarnessMS += x.HarnessMS
@@ -71,7 +85,6 @@ func sessionTotals(turns []TurnTrace) Totals {
 			t.addCost(nil, m)
 		}
 	}
-	t.WallMS = last.Sub(first).Milliseconds()
 	t.Usage = store.MergeUsage(usage...)
 	return t
 }

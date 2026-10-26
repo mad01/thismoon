@@ -91,7 +91,9 @@ func (s *Server) sessionAgents(ctx context.Context, d store.SessionDetail) ([]Ag
 }
 
 // mainRow is the main conversation's row of a session: its turns' calls,
-// time and usage, and the edits it made itself.
+// time and usage, and the edits it made itself. Its time is the session's
+// wall time, from the earliest turn start, which an imported turn can hold
+// under a higher Seq, to the latest turn end.
 func (s *Server) mainRow(d store.SessionDetail, edits []store.Edit) AgentRow {
 	row := AgentRow{
 		Type: MainAgentType, Model: d.Model, TurnIDs: []string{}, Recorded: true,
@@ -106,7 +108,10 @@ func (s *Server) mainRow(d store.SessionDetail, edits []store.Edit) AgentRow {
 		}
 	}
 	if len(d.Turns) > 0 {
-		row.StartedAt, row.EndedAt = d.Turns[0].StartedAt, d.LastTurnEnd
+		first := slices.MinFunc(d.Turns, func(a, b store.Turn) int {
+			return a.StartedAt.Compare(b.StartedAt)
+		})
+		row.StartedAt, row.EndedAt = first.StartedAt, d.LastTurnEnd
 		row.DurationMS = d.DurationMS
 	}
 	row.Tokens = tokensOf(d.MainUsage)

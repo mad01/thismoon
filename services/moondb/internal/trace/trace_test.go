@@ -698,6 +698,107 @@ func TestBuildSession(t *testing.T) {
 	}
 }
 
+// TestBuildSessionTimeOrder: a session's turns run in time order, by start
+// and then Seq, not Seq order alone, since an import numbers the turns it
+// adds after the live ones. A user gap runs from the latest end so far to
+// the next start, and the session's time split adds up to its wall time,
+// overlapping turns too.
+func TestBuildSessionTimeOrder(t *testing.T) {
+	at := func(h, m int) time.Time { return time.Date(2026, 10, 1, h, m, 0, 0, time.UTC) }
+	// turn has a wall time split between every kind, as Build's are.
+	turn := func(seq int, start, end time.Time) TurnTrace {
+		wall := end.Sub(start).Milliseconds()
+		return TurnTrace{
+			TurnID: "turn-" + string(rune('0'+seq)), Seq: seq,
+			Span: Span{Kind: KindTurn, Start: start, End: end},
+			Totals: Totals{
+				WallMS: wall, ModelMS: wall / 2, ToolMS: wall / 4, HarnessMS: wall / 8,
+				UserMS: wall - wall/2 - wall/4 - wall/8,
+			},
+		}
+	}
+	// gap names a stretch by its clock times, "08:10-10:00".
+	gap := func(from, to time.Time) string { return from.Format("15:04") + "-" + to.Format("15:04") }
+	tests := []struct {
+		name     string
+		turns    []TurnTrace
+		wantSeqs []int
+		wantGaps []string
+		wantWall time.Duration
+	}{
+		{
+			name: "an imported turn ran before the live ones",
+			turns: []TurnTrace{
+				turn(1, at(10, 0), at(10, 5)),
+				turn(2, at(11, 0), at(11, 2)),
+				turn(3, at(8, 0), at(8, 10)),
+			},
+			wantSeqs: []int{3, 1, 2},
+			wantGaps: []string{"08:10-10:00", "10:05-11:00"},
+			wantWall: at(11, 2).Sub(at(8, 0)),
+		},
+		{
+			name: "a turn inside another adds no gap and counts in both",
+			turns: []TurnTrace{
+				turn(1, at(10, 0), at(12, 0)),
+				turn(2, at(10, 30), at(10, 40)),
+				turn(3, at(12, 30), at(12, 35)),
+			},
+			wantSeqs: []int{1, 2, 3},
+			wantGaps: []string{"12:00-12:30"},
+			wantWall: at(12, 35).Sub(at(10, 0)) + 10*time.Minute,
+		},
+		{
+			name: "turns with the same start go by Seq with no gap between them",
+			turns: []TurnTrace{
+				turn(2, at(10, 0), at(10, 5)),
+				turn(1, at(10, 0), at(10, 3)),
+			},
+			wantSeqs: []int{1, 2},
+			wantGaps: nil,
+			wantWall: at(10, 5).Sub(at(10, 0)) + 3*time.Minute,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BuildSession("sess", tt.turns, nil)
+			var seqs []int
+			var turnsUser int64
+			for _, x := range got.Turns {
+				seqs = append(seqs, x.Seq)
+				turnsUser += x.Totals.UserMS
+			}
+			if !slices.Equal(seqs, tt.wantSeqs) {
+				t.Errorf("turn order = %v, want %v", seqs, tt.wantSeqs)
+			}
+			var gaps []string
+			var gapsMS int64
+			for _, g := range got.Gaps {
+				gaps = append(gaps, gap(g.Start, g.End))
+				gapsMS += g.DurationMS
+				if g.Kind != GapUser || g.DurationMS != g.End.Sub(g.Start).Milliseconds() {
+					t.Errorf("gap %+v is not a user gap of its length", g)
+				}
+			}
+			if !slices.Equal(gaps, tt.wantGaps) {
+				t.Errorf("gaps = %v, want %v", gaps, tt.wantGaps)
+			}
+			tot := got.Totals
+			if tot.WallMS != tt.wantWall.Milliseconds() {
+				t.Errorf("wall = %dms, want %dms", tot.WallMS, tt.wantWall.Milliseconds())
+			}
+			if tot.UserMS != turnsUser+gapsMS {
+				t.Errorf("user = %dms, want the turns' %dms plus the gaps' %dms",
+					tot.UserMS, turnsUser, gapsMS)
+			}
+			if sum := tot.ModelMS + tot.ToolMS + tot.HarnessMS + tot.UserMS; sum != tot.WallMS {
+				t.Errorf("model, tool, harness and user time sum to %dms; wall is %dms",
+					sum, tot.WallMS)
+			}
+		})
+	}
+}
+
 func TestBuildSessionEmpty(t *testing.T) {
 	got := BuildSession("sess", nil, nil)
 	if got.Turns == nil || got.Gaps == nil || got.Totals.WallMS != 0 || got.Totals.Cost != nil {

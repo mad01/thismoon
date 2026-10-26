@@ -569,6 +569,40 @@ func TestSessionAgents(t *testing.T) {
 	}
 }
 
+// TestSessionMainRowStartsAtEarliestTurn: the main conversation's row
+// starts at the earliest turn start, not at the first turn by Seq, since an
+// import numbers the turns it adds after the live ones even when they ran
+// first. Its start plus its duration lands on its end.
+func TestSessionMainRowStartsAtEarliestTurn(t *testing.T) {
+	h := newHarness(t)
+	const session = "sess-imported"
+	earliest := servertest.T0.Add(time.Hour)
+	live := earliest.Add(2 * time.Hour)
+	turn := func(id string, seq int, start time.Time) store.Turn {
+		return store.Turn{
+			ID: id, SessionID: session, Seq: seq, Status: store.TurnClosed,
+			StartedAt: start, EndedAt: new(start.Add(10 * time.Minute)),
+		}
+	}
+	h.store.Add(
+		store.Session{ID: session, Harness: "test-harness", Cwd: "/work", StartedAt: live},
+		[]store.Turn{turn("turn-live", 1, live), turn("turn-imported", 2, earliest)},
+		nil, nil,
+	)
+	var v SessionView
+	h.getJSON(t, "/api/sessions/"+session, http.StatusOK, &v)
+	if len(v.Agents) == 0 {
+		t.Fatalf("agents = %+v, want the main conversation's row", v.Agents)
+	}
+	main, wantEnd := v.Agents[0], live.Add(10*time.Minute)
+	if !main.StartedAt.Equal(earliest) || !main.EndedAt.Equal(wantEnd) ||
+		main.DurationMS != wantEnd.Sub(earliest).Milliseconds() {
+		t.Errorf("main row runs %s to %s for %dms, want %s to %s for %dms",
+			main.StartedAt, main.EndedAt, main.DurationMS,
+			earliest, wantEnd, wantEnd.Sub(earliest).Milliseconds())
+	}
+}
+
 // TestTurnMainRowUnpriced: a turn's main row names the models the main
 // conversation left unpriced, not the ones only its subagents used.
 func TestTurnMainRowUnpriced(t *testing.T) {
