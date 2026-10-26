@@ -86,11 +86,11 @@ trace's lines then say `cut_head`.
 A cost with no subagent cost recorded, or a session that ran subagents
 with none listed: the SubagentStop hook is not wired, or the subagents ran
 before it was. `moondb import --force` brings their transcripts in, also
-for a session where no file was edited.
-Subagents "not priced yet" have no priced model, or their totals wait for
-the totals backfill, which runs while the spool is empty. An agent with `lines_cut` had a transcript over 8 MiB
-after the cut to heads; the calls in its cut head add no cost. One marked
-`partial` ran out of the hook's 2 s budget before the file's end.
+for a session where no file was edited. Subagents "not priced yet" have no
+priced model, or their totals wait for the totals backfill, which runs
+while the spool is empty. An agent with `lines_cut` had a transcript over
+8 MiB after the cut to heads; the calls in its cut head add no cost. One
+marked `partial` ran out of the hook's 2 s budget before the file's end.
 
 An edit with `before_source: unknown`: serve could not reconstruct the file
 as it was before the edit. The patch hunks are still recorded.
