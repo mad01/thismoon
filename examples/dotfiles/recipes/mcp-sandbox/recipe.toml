@@ -1,47 +1,70 @@
-# Example overlay: one MCP server run under a sandbox, contributed to the
-# machine's server set through agent-sync's mcp drop-in dir.
+# Example overlay: one third-party MCP server run under srt, contributed to
+# the machine's server set through agent-sync's mcp drop-in dir.
 #
-# Third-party or untrusted servers get confined: mytool-mcp-sandbox.sh execs
-# the binary through thismoon's srt-run launcher (anthropics/sandbox-runtime)
-# with the settings in mytool.srt.json (no network, no writes, $HOME reads
-# denied except ~/code/bin). The settings file is symlinked to
-# ~/.config/srt/mytool.json, the path the wrapper names; ~/.config/srt sits
-# outside every sandbox's allowWrite, so no confined process can rewrite its
-# own policy. The registration is
-# a drop-in, mysandboxed.json, symlinked into ~/.config/claude-mcp/servers.d/,
+# The server is github-mcp-server (github/github-mcp-server), a Go binary
+# built from source below. github-mcp-wrapper.sh resolves the token outside
+# the sandbox and execs the binary through thismoon's srt-run launcher with
+# the settings in github-mcp.srt.json: no egress host of its own, $HOME
+# reads denied except ~/code/bin, writes to temp only. The GitHub host
+# reaches the allow-list from the wrapper at launch (SRT_RUN_ALLOW_DOMAINS),
+# so one settings file serves every machine and no hostname is committed.
+#
+# The settings are rendered from access.yaml by srtspec (thismoon
+# docs/adr/0027). Edit the manifest, then re-render:
+#   srtspec render recipes/mcp-sandbox/access.yaml -o recipes/mcp-sandbox/github-mcp.srt.json
+# and `srtspec check recipes/mcp-sandbox/access.yaml recipes/mcp-sandbox/github-mcp.srt.json`
+# in CI, so a hand edit to the JSON never merges.
+#
+# The settings file is symlinked to ~/.config/srt/github-mcp.json, the path
+# the wrapper names; ~/.config/srt sits outside every sandbox's allowWrite,
+# so no confined process can rewrite its own policy. The registration is a
+# drop-in, gh-com.json, symlinked into ~/.config/claude-mcp/servers.d/,
 # which the agent-config recipe's mcp sync merges over its base servers.json.
 # So a recipe that owns a server declares it beside the server's own files,
 # and the base file never learns about it. The same shape serves a
-# profile-gated work source that brings its own servers.
+# profile-gated work source that brings an Enterprise instance of the same
+# server: its own drop-in, the same wrapper, its host as the argument.
 #
-# srt-run comes from thismoon's speak recipe (~/code/bin/srt-run), and srt
-# itself from mise (npm:@anthropic-ai/sandbox-runtime in the machine's mise
-# config).
+# srt-run comes from thismoon's speak recipe (~/code/bin/srt-run), srtspec
+# from thismoon's srtspec recipe, and srt itself from mise (recipes/mise/
+# here, wave 0).
 #
-# Wave 1 like agent-config. The drop-in is a dotfile, laid down before any
-# build hook runs, so the sync sees it on the same ralph up.
+# Wave 1 like agent-config. The drop-in and the settings link are dotfiles,
+# laid down before any build hook runs, so the sync sees them on the same
+# ralph up.
 [recipe]
 name = "mcp-sandbox"
-description = "A sandboxed MCP server (srt settings + wrapper), registered through agent-sync's servers.d/ drop-in dir"
+description = "A sandboxed third-party MCP server (access manifest, rendered srt settings, wrapper), registered through agent-sync's servers.d/ drop-in dir"
 wave = 1
+
+# The server binary. Pinned deliberately: third-party code running under
+# srt, so a bump means re-checking the manifest against the new version.
+# Installs to ~/code/bin, the one directory the sandbox may read.
+[packages.github_mcp_server]
+source = "go-install"
+module = "github.com/github/github-mcp-server/cmd/github-mcp-server"
+version = "v1.11.0"
+install_paths = ["~/code/bin/github-mcp-server"]
 
 # The MCP client spawns the wrapper by path, so it must be executable. The
 # file is committed executable; the hook keeps it that way on a checkout
 # that lost the bit.
 [hooks.builds.mcp_sandbox_chmod]
-commands = ["chmod +x mytool-mcp-sandbox.sh"]
+commands = ["chmod +x github-mcp-wrapper.sh"]
 working_dir = "~/code/src/github.com/you/dotfiles/recipes/mcp-sandbox"
 run = "always"
 
-# The sandbox settings, where the wrapper and srt-run expect them. srt reads
-# the file at every spawn, so an edit applies on the server's next start.
+# The sandbox settings, where the wrapper and srt-run expect them. No
+# profile gate: the file holds the static policy only, so one copy serves
+# every machine. srt reads it at every spawn, so a re-render applies on the
+# server's next start.
 [dotfiles.mcp_sandbox_settings]
-source = "mytool.srt.json"
-target = "~/.config/srt/mytool.json"
+source = "github-mcp.srt.json"
+target = "~/.config/srt/github-mcp.json"
 action = "symlink"
 
 # The drop-in. The agent-config recipe owns the servers.d/ directory.
 [dotfiles.mcp_sandbox_server]
-source = "mysandboxed.json"
-target = "~/.config/claude-mcp/servers.d/mysandboxed.json"
+source = "gh-com.json"
+target = "~/.config/claude-mcp/servers.d/gh-com.json"
 action = "symlink"

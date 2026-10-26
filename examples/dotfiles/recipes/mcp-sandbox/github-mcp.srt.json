@@ -1,0 +1,20 @@
+{
+  "enableWeakerNetworkIsolation": true,
+  "filesystem": {
+    "allowRead": [
+      "~/code/bin"
+    ],
+    "allowWrite": [
+      "/private/tmp",
+      "/private/var/folders"
+    ],
+    "denyRead": [
+      "~"
+    ],
+    "denyWrite": []
+  },
+  "network": {
+    "allowedDomains": [],
+    "deniedDomains": []
+  }
+}

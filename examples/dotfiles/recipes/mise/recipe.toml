@@ -1,0 +1,25 @@
+# The toolchain layer under ralph: mise installs the runtimes and CLIs the
+# fleet needs, srt among them. Wave 0 so `mise install` finishes before the
+# thismoon Go builds and before any sandboxed service registers; the
+# thismoon recipes find srt through the mise shims dir.
+[recipe]
+name = "mise"
+description = "mise toolchain: runtimes and prebuilt CLIs, srt and bun included"
+wave = 0
+
+[[tools]]
+name = "mise"
+check_command = "command -v mise"
+install_hint = "brew install mise"
+
+[dotfiles.mise_config]
+source = "config.toml"
+target = "~/.config/mise/config.toml"
+
+# Not `idempotent`: the command string never changes but its input (the
+# config) does, and ralph hashes only the string.
+[hooks.builds.mise_install]
+commands = [
+  "if command -v mise >/dev/null; then mise install --yes; else echo 'mise: skip install (mise not on PATH; brew install mise)'; fi",
+]
+run = "always"
