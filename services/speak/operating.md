@@ -114,8 +114,9 @@ synthesize. `t-man status speak-tts`, then `t-man restart speak-tts`.
 FAIL tts-synthesis: the provider answers but cannot speak; the detail carries
 its own reason, and an auth failure names the key variable to check. "broke off the audio stream" or "empty audio" means it failed
 after answering 200, so the cause is only in `t-man logs speak-tts`. A spaCy
-download error there means the G2P warm-up never ran and the sandbox blocked
-the lazy fetch.
+model error there means the engine venv is incomplete: the `en_core_web_sm`
+wheel the engine recipe pins did not land, and the offline runtime cannot
+fetch it. Re-run the engine install.
 
 FAIL service-reachable: serve is not running, so present pages show no
 read-aloud and the speech proxy is down. t-man supervises it as speak-web:

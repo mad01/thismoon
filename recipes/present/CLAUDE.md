@@ -71,7 +71,8 @@ The MCP server runs under anthropics/sandbox-runtime (srt). The dotfiles
 overlay registers `present-mcp-sandbox.sh` (not the bare binary). The wrapper
 `cd`-s to `/` (getcwd in a read-denied cwd is an EPERM). It scrubs the
 environment with `env -i` (only `HOME`, the three `PRESENT_*` config vars,
-and, when set, the two sharing vars and `SRT_DEBUG` pass through). Then it
+and, when set, the two sharing vars, `TMPDIR`, `SRT_DEBUG` and
+`SRT_RUN_ALLOW_DOMAINS` pass through). Then it
 execs `~/code/bin/srt-run ~/.config/srt/present.json ~/code/bin/present mcp`.
 `srt-run` ships with the speak recipe; it tags the process with the label
 `present`, which is how `sandbox-watch` attributes its denials.
@@ -107,9 +108,16 @@ source `present-shared-env.sh`, which reads exactly those two exports in a
 subshell (a var already in the environment wins) so neither the plist nor
 `servers.json` carries a secret. The login shell sources the same file for
 `present share`. With the pair unset nothing changes: sharing stays off.
+After adding the exports, `t-man restart present` picks them up for the
+Share button, and a new MCP session (`/mcp` reconnect) for `present_share`;
+`ralph up` is needed only when the recipe changed. `present doctor` checks
+the pair against the instance.
 
-`present_open` execs `/usr/bin/open`, which inherits the sandbox — the browser
-is launched by launchd *outside* the sandbox, so it runs unconfined.
+`present_open` execs `/usr/bin/open`, which inherits the sandbox: the browser
+is launched by launchd *outside* the sandbox, so it runs unconfined. Launch
+Services needs `allowAppleEvents: true` in the MCP settings (the manifest's
+`extra` block, since the schema has no field for it), or `present_open` fails
+under the sandbox.
 
 The `present serve` t-man agent runs under srt as well, with the label
 `present-serve` so its denials stay apart from the MCP server's.
