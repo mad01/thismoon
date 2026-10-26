@@ -273,21 +273,20 @@ func writeMerged(dir, out, label string, data []byte) error {
 		return err
 	}
 	tmp := f.Name()
-	_, werr := f.Write(data)
-	cerr := f.Close()
-	if err := errors.Join(werr, cerr); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	if err := os.Chmod(tmp, 0o600); err != nil {
-		os.Remove(tmp)
-		return err
+	if err := fill(f, data); err != nil {
+		return errors.Join(err, os.Remove(tmp))
 	}
 	if err := os.Rename(tmp, out); err != nil {
-		os.Remove(tmp)
-		return err
+		return errors.Join(err, os.Remove(tmp))
 	}
 	return nil
+}
+
+// fill writes data to f, sets mode 600 and closes it.
+func fill(f *os.File, data []byte) error {
+	_, werr := f.Write(data)
+	merr := f.Chmod(0o600)
+	return errors.Join(werr, merr, f.Close())
 }
 
 // environ renders env as sorted KEY=value pairs.
