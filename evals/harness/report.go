@@ -9,19 +9,47 @@ import (
 	"time"
 )
 
-// runMeta is run.json: what ran, with which claude and flags, and the
-// totals once the run finishes.
+// runMeta is run.json: what ran, with which claude, model, effort, and
+// flags, and the totals once the run finishes. Model and Effort are what
+// the runner asked for ("" leaves the user's setting); Models is what the
+// transcripts say actually ran. Stopped says why a run ended early.
 type runMeta struct {
 	RunID         string    `json:"run_id"`
 	StartedAt     time.Time `json:"started_at"`
 	FinishedAt    time.Time `json:"finished_at,omitzero"`
 	ClaudeVersion string    `json:"claude_version"`
 	Model         string    `json:"model"`
+	Effort        string    `json:"effort"`
+	Models        []string  `json:"models"`
 	Flags         []string  `json:"flags"`
 	Cases         []string  `json:"cases"`
 	Reps          int       `json:"reps"`
 	MaxBudgetUSD  float64   `json:"max_budget_usd"`
+	MaxTotalUSD   float64   `json:"max_total_usd"`
+	Stopped       string    `json:"stopped,omitempty"`
 	Totals        totals    `json:"totals"`
+}
+
+// modelsOf returns the distinct models the rows ran on, sorted.
+func modelsOf(rows []Row) []string {
+	var out []string
+	for _, r := range rows {
+		if r.Model != "" && !slices.Contains(out, r.Model) {
+			out = append(out, r.Model)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// describe is the one-line identity of a run: claude version, model, and
+// effort, as summaries and compares print it.
+func (m runMeta) describe() string {
+	model := modelLabel(m.Model)
+	if len(m.Models) > 0 {
+		model = strings.Join(m.Models, ", ")
+	}
+	return fmt.Sprintf("%s, model %s, effort %s", m.ClaudeVersion, model, orDefault(m.Effort))
 }
 
 // totals sums a run's rows.
@@ -60,7 +88,7 @@ func totalsOf(rows []Row) totals {
 	return t
 }
 
-// modelLabel names the model a run used for reports.
+// modelLabel names the model a run asked for.
 func modelLabel(model string) string {
 	if model == "" {
 		return "user default"
@@ -68,13 +96,22 @@ func modelLabel(model string) string {
 	return model
 }
 
+func orDefault(s string) string {
+	if s == "" {
+		return "default"
+	}
+	return s
+}
+
 // writeSummary renders summary.md: the headline, one row per (case, rep),
 // the tool calls of each row, failed graders, errors, and scorecards.
 func writeSummary(w io.Writer, meta runMeta, rows []Row) {
 	t := totalsOf(rows)
 	fmt.Fprintf(w, "# Harness eval: %s\n\n", meta.RunID)
-	fmt.Fprintf(w, "%s, model %s, cases %d, reps %d.\n\n",
-		meta.ClaudeVersion, modelLabel(meta.Model), len(meta.Cases), meta.Reps)
+	fmt.Fprintf(w, "%s, cases %d, reps %d.\n\n", meta.describe(), len(meta.Cases), meta.Reps)
+	if meta.Stopped != "" {
+		fmt.Fprintf(w, "Stopped early: %s.\n\n", meta.Stopped)
+	}
 	fmt.Fprintf(w, "%d rows, %d passed, mean score %.2f. Cost $%.3f plus judge $%.3f. "+
 		"%s tokens, %d tool calls, %s wall.\n\n",
 		t.Rows, t.Passed, t.MeanScore, t.CostUSD, t.JudgeCostUSD,
@@ -94,7 +131,11 @@ func writeSummary(w io.Writer, meta runMeta, rows []Row) {
 	fmt.Fprintln(w, "\n## Tool calls")
 	fmt.Fprintln(w)
 	for _, r := range rows {
-		fmt.Fprintf(w, "- %s rep %d: %s\n", r.Case, r.Rep, orDash(formatCounts(r.Tools)))
+		line := fmt.Sprintf("- %s rep %d: %s", r.Case, r.Rep, orDash(formatCounts(r.Tools)))
+		if r.AgentToolCalls > 0 {
+			line += "; subagents: " + formatCounts(r.AgentTools)
+		}
+		fmt.Fprintln(w, line)
 	}
 	writeFailures(w, rows)
 
@@ -161,18 +202,27 @@ func meansByCase(rows []Row) map[string]caseMeans {
 	return out
 }
 
+// compareSide is one run in a compare: its label, metadata, and rows.
+type compareSide struct {
+	Label string
+	Meta  runMeta
+	Rows  []Row
+}
+
 // writeCompare renders per-case deltas from run a to run b, each value the
 // mean over that run's reps. A case in only one run gets a note instead of
-// deltas.
-func writeCompare(w io.Writer, labelA, labelB string, a, b []Row) {
-	ma, mb := meansByCase(a), meansByCase(b)
+// deltas, and the totals cover only the cases both runs have.
+func writeCompare(w io.Writer, a, b compareSide) {
+	ma, mb := meansByCase(a.Rows), meansByCase(b.Rows)
 	ids := maps.Clone(ma)
 	maps.Copy(ids, mb)
-	fmt.Fprintf(w, "# Compare %s to %s\n\n", labelA, labelB)
+	fmt.Fprintf(w, "# Compare %s to %s\n\n", a.Label, b.Label)
+	fmt.Fprintf(w, "A: %s.\nB: %s.\n\n", a.Meta.describe(), b.Meta.describe())
 	fmt.Fprintln(w, "Each cell is run B's mean over its reps, then the change from run A.")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "| case | reps A/B | score | cost | turns | tokens | tool calls |")
 	fmt.Fprintln(w, "|---|---|---|---|---|---|---|")
+	var shared []string
 	for _, id := range slices.Sorted(maps.Keys(ids)) {
 		x, inA := ma[id]
 		y, inB := mb[id]
@@ -182,6 +232,7 @@ func writeCompare(w io.Writer, labelA, labelB string, a, b []Row) {
 		case !inA:
 			fmt.Fprintf(w, "| %s | 0/%d | only in B | | | | |\n", id, y.Reps)
 		default:
+			shared = append(shared, id)
 			fmt.Fprintf(w, "| %s | %d/%d | %.2f (%+.2f) | $%.3f (%+.3f) | %.1f (%+.1f) "+
 				"| %s (%s) | %.1f (%+.1f) |\n",
 				id, x.Reps, y.Reps, y.Score, y.Score-x.Score, y.CostUSD, y.CostUSD-x.CostUSD,
@@ -189,11 +240,32 @@ func writeCompare(w io.Writer, labelA, labelB string, a, b []Row) {
 				y.ToolCalls, y.ToolCalls-x.ToolCalls)
 		}
 	}
-	ta, tb := totalsOf(a), totalsOf(b)
-	fmt.Fprintf(w, "\nTotals: mean score %.2f (%+.2f), cost $%.3f (%+.3f), "+
-		"tool calls %d (%+d).\n",
-		tb.MeanScore, tb.MeanScore-ta.MeanScore, tb.CostUSD, tb.CostUSD-ta.CostUSD,
+	if len(shared) == 0 {
+		fmt.Fprintf(w, "\nNo cases in common, so no totals.\n")
+		return
+	}
+	ta, tb := passOver(ma, shared), passOver(mb, shared)
+	fmt.Fprintf(w, "\nTotals over the %d of %d cases both runs have, one rep each: "+
+		"mean score %.2f (%+.2f), cost $%.3f (%+.3f), tool calls %.1f (%+.1f).\n",
+		len(shared), len(ids), tb.Score, tb.Score-ta.Score, tb.CostUSD, tb.CostUSD-ta.CostUSD,
 		tb.ToolCalls, tb.ToolCalls-ta.ToolCalls)
+}
+
+// passOver adds up one rep of each case in ids from per-case means, so two
+// runs with different rep counts still compare like for like. Score is
+// the mean over the cases; the other fields are sums.
+func passOver(means map[string]caseMeans, ids []string) caseMeans {
+	var out caseMeans
+	for _, id := range ids {
+		m := means[id]
+		out.Score += m.Score
+		out.CostUSD += m.CostUSD
+		out.Turns += m.Turns
+		out.Tokens += m.Tokens
+		out.ToolCalls += m.ToolCalls
+	}
+	out.Score /= float64(len(ids))
+	return out
 }
 
 // kilo renders a token count in thousands.

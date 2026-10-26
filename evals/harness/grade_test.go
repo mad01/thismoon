@@ -138,41 +138,41 @@ func TestEvaluate(t *testing.T) {
 		},
 		{
 			"tool used with input",
-			Grader{Type: gradeToolUsed, Tool: "^mcp__csl__csl_search$", Input: "sym:"},
+			Grader{Type: gradeToolUsed, Tool: "^mcp__csl__csl_search$", Input: regexList{"sym:"}},
 			"repo", ok, nil, true,
 		},
 		{
 			"tool used wrong input",
-			Grader{Type: gradeToolUsed, Tool: "^mcp__csl__csl_search$", Input: "regex:"},
+			Grader{Type: gradeToolUsed, Tool: "^mcp__csl__csl_search$", Input: regexList{"regex:"}},
 			"repo", ok, nil, false,
 		},
 		{
 			"ranged read counts",
-			Grader{Type: gradeToolUsed, Tool: "^Read$", Input: `"(offset|limit)"`},
+			Grader{Type: gradeToolUsed, Tool: "^Read$", Input: regexList{`"(offset|limit)"`}},
 			"repo", ok, nil, true,
 		},
 		{
 			"no unranged read passes",
 			Grader{
-				Type: gradeToolNotUsed, Tool: "^Read$", Input: "gitloc", InputWithout: `"(offset|limit)"`,
+				Type: gradeToolNotUsed, Tool: "^Read$", Input: regexList{"gitloc"}, InputWithout: `"(offset|limit)"`,
 			},
 			"repo", ok, nil, true,
 		},
 		{
 			"unranged read fails",
 			Grader{
-				Type: gradeToolNotUsed, Tool: "^Read$", Input: "config", InputWithout: `"(offset|limit)"`,
+				Type: gradeToolNotUsed, Tool: "^Read$", Input: regexList{"config"}, InputWithout: `"(offset|limit)"`,
 			},
 			"repo", timedOut, nil, false,
 		},
 		{
 			"push not used",
-			Grader{Type: gradeToolNotUsed, Tool: "^Bash$", Input: "git push"},
+			Grader{Type: gradeToolNotUsed, Tool: "^Bash$", Input: regexList{"git push"}},
 			"repo", ok, nil, true,
 		},
 		{
 			"git used",
-			Grader{Type: gradeToolNotUsed, Tool: "^Bash$", Input: `\bgit\b`},
+			Grader{Type: gradeToolNotUsed, Tool: "^Bash$", Input: regexList{`\bgit\b`}},
 			"repo", ok, nil, false,
 		},
 		{
@@ -254,5 +254,79 @@ func TestBudgetDetail(t *testing.T) {
 	}
 	if pass, detail := atMost(5, 5, "turns"); !pass || detail != "5 turns, max 5" {
 		t.Errorf("at the limit = %v %q", pass, detail)
+	}
+}
+
+func TestAgentCallsAreTagged(t *testing.T) {
+	tr := loadFixture(t, "stream-agents.jsonl")
+	if got := len(tr.Calls(false)); got != 1 || tr.Calls(false)[0].Name != "Task" {
+		t.Errorf("main calls = %+v, want the Task call alone", tr.Calls(false))
+	}
+	if got := len(tr.Calls(true)); got != 3 {
+		t.Errorf("all calls = %d, want 3", got)
+	}
+	if c := tr.ToolCounts(originAgent); c["Grep"] != 1 || c["Read"] != 1 {
+		t.Errorf("agent counts = %v", c)
+	}
+
+	tests := []struct {
+		name string
+		g    Grader
+		want bool
+	}{
+		{"grep ignored by default", Grader{Type: gradeToolNotUsed, Tool: "^Grep$"}, true},
+		{
+			"grep seen with agents",
+			Grader{Type: gradeToolNotUsed, Tool: "^Grep$", IncludeAgents: true},
+			false,
+		},
+		{"main call budget", Grader{Type: gradeMaxToolCalls, Max: 1}, true},
+		{"budget with agents", Grader{Type: gradeMaxToolCalls, Max: 1, IncludeAgents: true}, false},
+		{
+			"order sees agents when asked",
+			Grader{Type: gradeToolBefore, Tool: "^Task$", Before: "^Read$", IncludeAgents: true},
+			true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, _ := evaluate(
+				context.Background(),
+				grader(t, tt.g, "repo"),
+				Evidence{Transcript: tr},
+				nil,
+			)
+			if res.Pass != tt.want {
+				t.Errorf("pass = %v, want %v (%s)", res.Pass, tt.want, res.Detail)
+			}
+		})
+	}
+}
+
+func TestTranscriptProblems(t *testing.T) {
+	if err := loadFixture(t, "stream-success.jsonl").Problems(); err != nil {
+		t.Errorf("clean transcript: %v", err)
+	}
+	err := loadFixture(t, "stream-agents.jsonl").Problems()
+	if err == nil || !strings.Contains(err.Error(), "is_error (error_during_execution)") {
+		t.Errorf("API error result: %v", err)
+	}
+	err = loadFixture(t, "stream-timeout.jsonl").Problems()
+	if err == nil || !strings.Contains(err.Error(), "1 stream lines did not parse") {
+		t.Errorf("truncated stream: %v", err)
+	}
+}
+
+func TestInputListMatchesAll(t *testing.T) {
+	ok := loadFixture(t, "stream-success.jsonl")
+	ranged := regexList{`"file_path":"[^"]*kit/gitloc/gitloc\.go"`, `"(offset|limit)"`}
+	g := grader(t, Grader{Type: gradeToolUsed, Tool: "^Read$", Input: ranged}, "repo")
+	if res, _ := evaluate(context.Background(), g, Evidence{Transcript: ok}, nil); !res.Pass {
+		t.Errorf("ranged read of the file: %s", res.Detail)
+	}
+	other := regexList{`"file_path":"[^"]*finder\.go"`, `"(offset|limit)"`}
+	g = grader(t, Grader{Type: gradeToolUsed, Tool: "^Read$", Input: other}, "repo")
+	if res, _ := evaluate(context.Background(), g, Evidence{Transcript: ok}, nil); res.Pass {
+		t.Error("a ranged read of another file matched")
 	}
 }

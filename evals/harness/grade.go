@@ -80,6 +80,7 @@ func gradeRun(ctx context.Context, c Case, ev Evidence, j judge) Grade {
 func evaluate(ctx context.Context, g Grader, ev Evidence, j judge) (GraderResult, float64) {
 	res := GraderResult{Grader: g.Name(), Weight: g.Weight}
 	var cost float64
+	calls := ev.Transcript.Calls(g.IncludeAgents)
 	switch g.Type {
 	case gradeRegex:
 		res.Pass = g.patternRE.MatchString(ev.Transcript.Result)
@@ -91,26 +92,25 @@ func evaluate(ctx context.Context, g Grader, ev Evidence, j judge) (GraderResult
 	case gradeCommit:
 		res.Pass, res.Detail = checkCommits(g, ev.Commits)
 	case gradeToolUsed:
-		n := len(matchingCalls(g, ev.Transcript.ToolCalls))
-		res.Pass = n > 0
+		res.Pass = len(matchingCalls(g, calls)) > 0
 		if !res.Pass {
-			res.Detail = "no matching call; tools: " + toolSummary(ev.Transcript)
+			res.Detail = "no matching call; tools: " + toolSummary(calls)
 		}
 	case gradeToolNotUsed:
-		calls := matchingCalls(g, ev.Transcript.ToolCalls)
-		res.Pass = len(calls) == 0
+		matched := matchingCalls(g, calls)
+		res.Pass = len(matched) == 0
 		if !res.Pass {
 			res.Detail = fmt.Sprintf("%d matching calls, first %s %s",
-				len(calls), calls[0].Name, clip(calls[0].Input, 160))
+				len(matched), matched[0].Name, clip(matched[0].Input, 160))
 		}
 	case gradeToolBefore:
-		res.Pass, res.Detail = checkOrder(g, ev.Transcript.ToolCalls)
+		res.Pass, res.Detail = checkOrder(g, calls)
 	case gradeMaxTurns:
 		res.Pass, res.Detail = atMost(float64(ev.Transcript.NumTurns), g.Max, "turns")
 	case gradeMaxCostUSD:
 		res.Pass, res.Detail = atMost(ev.Transcript.CostUSD, g.Max, "USD")
 	case gradeMaxToolCalls:
-		res.Pass, res.Detail = atMost(float64(len(ev.Transcript.ToolCalls)), g.Max, "tool calls")
+		res.Pass, res.Detail = atMost(float64(len(calls)), g.Max, "tool calls")
 	case gradeLLM:
 		res.Pass, res.Detail, cost = checkLLM(ctx, g, ev, j)
 	default:
@@ -160,8 +160,10 @@ func callMatches(g Grader, c ToolCall) bool {
 	if !g.toolRE.MatchString(c.Name) {
 		return false
 	}
-	if g.inputRE != nil && !g.inputRE.MatchString(c.Input) {
-		return false
+	for _, re := range g.inputREs {
+		if !re.MatchString(c.Input) {
+			return false
+		}
 	}
 	return g.withoutRE == nil || !g.withoutRE.MatchString(c.Input)
 }
@@ -207,12 +209,15 @@ func checkLLM(ctx context.Context, g Grader, ev Evidence, j judge) (bool, string
 	return v.Pass, clip(v.Reason, 300), v.CostUSD
 }
 
-// toolSummary renders the run's tool counts as "Name n, Name n", sorted by
-// name, for failure details and the summary.
-func toolSummary(t Transcript) string {
-	counts := t.ToolCounts()
-	if len(counts) == 0 {
+// toolSummary renders calls as "Name n, Name n", sorted by name, for
+// failure details.
+func toolSummary(calls []ToolCall) string {
+	if len(calls) == 0 {
 		return "none"
+	}
+	counts := map[string]int{}
+	for _, c := range calls {
+		counts[c.Name]++
 	}
 	return formatCounts(counts)
 }

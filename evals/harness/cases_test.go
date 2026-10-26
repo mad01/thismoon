@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,5 +110,58 @@ func TestSelectCases(t *testing.T) {
 	}
 	if _, err := selectCases(cases, "zzz"); err == nil {
 		t.Error("unknown id: want an error")
+	}
+}
+
+func TestParseCaseInputListAndNotes(t *testing.T) {
+	raw := strings.Replace(validCase, "    input: 'sym:'\n",
+		"    input: ['sym:', 'thismoon']\n    include_agents: true\n", 1)
+	raw = strings.Replace(raw, "title: Where is X defined\n",
+		"title: Where is X defined\nnotes: budgets are estimates\n", 1)
+	c, err := parseCase(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := c.Graders[1]
+	if len(g.Input) != 2 || !g.IncludeAgents || len(g.inputREs) != 2 {
+		t.Errorf("grader = %+v", g)
+	}
+	if c.Notes != "budgets are estimates" {
+		t.Errorf("notes = %q", c.Notes)
+	}
+	if got := g.Name(); got != "tool_used ^mcp__csl__csl_search$ input sym: & thismoon incl. agents" {
+		t.Errorf("name = %q", got)
+	}
+}
+
+func TestDisallowed(t *testing.T) {
+	repo := Case{
+		Workspace:       WorkspaceSpec{Kind: workspaceRepo, Repo: "x"},
+		DisallowedTools: []string{"Edit", "CaseOnly"},
+	}
+	got := repo.Disallowed()
+	for _, want := range []string{
+		"CaseOnly", "Write", "Bash(git commit:*)", "mcp__kof__kof_assert",
+		"mcp__brain__brain_write", "mcp__csl__csl_repo_pull",
+	} {
+		if !slices.Contains(got, want) {
+			t.Errorf("repo case list misses %q", want)
+		}
+	}
+	edits := 0
+	for _, tool := range got {
+		if tool == "Edit" {
+			edits++
+		}
+	}
+	if edits != 1 {
+		t.Errorf("Edit listed %d times, want once", edits)
+	}
+	worktree := Case{
+		Workspace:       WorkspaceSpec{Kind: workspaceWorktree, Repo: "x"},
+		DisallowedTools: []string{"Bash(git push:*)"},
+	}
+	if got := worktree.Disallowed(); len(got) != 1 {
+		t.Errorf("worktree case got the repo deny list: %v", got)
 	}
 }

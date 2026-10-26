@@ -25,6 +25,10 @@ type workspaceRoots struct {
 	TmpRoot      string
 }
 
+// lockReason starts the lock reason of every eval worktree. The runner's
+// pid follows it, so a sweep can tell a live run's worktree from a stale one.
+const lockReason = "harness-eval"
+
 // Workspace is a prepared directory a case runs in. Cleanup removes what
 // prepareWorkspace created; a repo workspace is the canonical checkout and
 // is left alone.
@@ -37,8 +41,9 @@ type Workspace struct {
 }
 
 // prepareWorkspace sets up the directory a case runs in. A worktree
-// workspace is a fresh git worktree on a throwaway branch, cut from the
-// canonical checkout's HEAD, at <WorktreeRoot>/<repo>/eval-<id>-<stamp>.
+// workspace is a fresh, locked git worktree on a throwaway eval/ branch,
+// cut from the canonical checkout's HEAD, at
+// <WorktreeRoot>/<repo>/eval-<id>-<stamp>.
 func prepareWorkspace(
 	ctx context.Context,
 	spec WorkspaceSpec,
@@ -92,11 +97,14 @@ func addWorktree(
 	stamp := now.Format("20060102-150405")
 	dir := filepath.Join(
 		repofind.ExpandHome(root), filepath.Base(repoDir), "eval-"+caseID+"-"+stamp)
-	branch := "eval/" + caseID + "-" + stamp
+	branch := evalBranchPrefix + caseID + "-" + stamp
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return nil, fmt.Errorf("worktree workspace: %w", err)
 	}
-	if _, err := git(ctx, repoDir, "worktree", "add", "-b", branch, dir, "HEAD"); err != nil {
+	reason := fmt.Sprintf("%s pid %d", lockReason, os.Getpid())
+	_, err := git(ctx, repoDir,
+		"worktree", "add", "--lock", "--reason", reason, "-b", branch, dir, "HEAD")
+	if err != nil {
 		return nil, fmt.Errorf("worktree workspace: %w", err)
 	}
 	ws := &Workspace{Dir: dir, Kind: workspaceWorktree, repoDir: repoDir, branch: branch}
@@ -106,6 +114,19 @@ func addWorktree(
 	}
 	ws.base = base
 	return ws, nil
+}
+
+// Canonical is the canonical checkout a workspace hangs off: the checkout
+// itself for a repo workspace, the main checkout for a worktree, and ""
+// for a tmpdir.
+func (w *Workspace) Canonical() string {
+	switch w.Kind {
+	case workspaceRepo:
+		return w.Dir
+	case workspaceWorktree:
+		return w.repoDir
+	}
+	return ""
 }
 
 // Commits returns the subjects of the commits made in a worktree workspace
@@ -129,13 +150,19 @@ func (w *Workspace) Cleanup() error {
 	defer cancel()
 	switch w.Kind {
 	case workspaceWorktree:
-		_, rmErr := git(ctx, w.repoDir, "worktree", "remove", "--force", w.Dir)
-		_, brErr := git(ctx, w.repoDir, "branch", "-D", w.branch)
-		return errors.Join(rmErr, brErr)
+		return removeEvalWorktree(ctx, w.repoDir, w.Dir, w.branch)
 	case workspaceTmpdir:
 		return os.RemoveAll(w.Dir)
 	}
 	return nil
+}
+
+// removeEvalWorktree removes a locked eval worktree (the doubled --force
+// is what removes a locked one) and deletes its branch.
+func removeEvalWorktree(ctx context.Context, repoDir, dir, branch string) error {
+	_, rmErr := git(ctx, repoDir, "worktree", "remove", "--force", "--force", dir)
+	_, brErr := git(ctx, repoDir, "branch", "-D", branch)
+	return errors.Join(rmErr, brErr)
 }
 
 // git runs one git command in dir and returns its trimmed stdout; the

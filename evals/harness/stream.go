@@ -5,8 +5,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
+)
+
+// Where a tool call came from: the session the case started, or a
+// subagent that session spawned.
+const (
+	originMain  = "main"
+	originAgent = "agent"
 )
 
 // Transcript is what one `claude -p --output-format stream-json` run
@@ -31,10 +39,12 @@ type Transcript struct {
 }
 
 // ToolCall is one tool_use block. Input is the call's input as compact JSON
-// with sorted keys, so graders can match it with a regex.
+// with sorted keys, so graders can match it with a regex. Origin is
+// originMain or originAgent.
 type ToolCall struct {
-	Name  string `json:"name"`
-	Input string `json:"input"`
+	Name   string `json:"name"`
+	Input  string `json:"input"`
+	Origin string `json:"origin"`
 }
 
 // Usage is the result event's token accounting.
@@ -50,21 +60,51 @@ func (u Usage) Total() int {
 	return u.InputTokens + u.OutputTokens + u.CacheCreationTokens + u.CacheReadTokens
 }
 
-// ToolCounts returns how many times each tool was called.
-func (t Transcript) ToolCounts() map[string]int {
-	out := map[string]int{}
+// Calls returns the main session's tool calls, plus the subagents' calls
+// when includeAgents is set, in stream order.
+func (t Transcript) Calls(includeAgents bool) []ToolCall {
+	var out []ToolCall
 	for _, c := range t.ToolCalls {
-		out[c.Name]++
+		if includeAgents || c.Origin == originMain {
+			out = append(out, c)
+		}
 	}
 	return out
 }
 
+// ToolCounts returns how many times each tool was called from origin.
+func (t Transcript) ToolCounts(origin string) map[string]int {
+	out := map[string]int{}
+	for _, c := range t.ToolCalls {
+		if c.Origin == origin {
+			out[c.Name]++
+		}
+	}
+	return out
+}
+
+// Problems reports what makes a transcript untrustworthy as a run record:
+// a result claude flagged as an error, or lines that did not parse. A
+// missing result is reported by the caller, which knows why it is missing.
+func (t Transcript) Problems() error {
+	var errs []error
+	if t.IsError {
+		errs = append(errs, fmt.Errorf("result is_error (%s): %s", t.Subtype, clip(t.Result, 200)))
+	}
+	if t.BadLines > 0 {
+		errs = append(errs, fmt.Errorf("%d stream lines did not parse", t.BadLines))
+	}
+	return errors.Join(errs...)
+}
+
 // streamEvent is the subset of a stream-json line the runner reads. Message
-// stays raw because a user event's content may be a plain string.
+// stays raw because a user event's content may be a plain string. A
+// subagent's events carry the id of the tool call that started it.
 type streamEvent struct {
 	Type              string            `json:"type"`
 	Subtype           string            `json:"subtype"`
 	SessionID         string            `json:"session_id"`
+	ParentToolUseID   *string           `json:"parent_tool_use_id"`
 	Model             string            `json:"model"`
 	Version           string            `json:"claude_code_version"`
 	Message           json.RawMessage   `json:"message"`
@@ -120,10 +160,15 @@ func (t *Transcript) apply(line []byte) {
 			t.BadLines++
 			return
 		}
+		origin := originMain
+		if ev.ParentToolUseID != nil && *ev.ParentToolUseID != "" {
+			origin = originAgent
+		}
 		for _, block := range msg.Content {
 			if block.Type == "tool_use" {
-				t.ToolCalls = append(t.ToolCalls,
-					ToolCall{Name: block.Name, Input: canonicalJSON(block.Input)})
+				t.ToolCalls = append(t.ToolCalls, ToolCall{
+					Name: block.Name, Input: canonicalJSON(block.Input), Origin: origin,
+				})
 			}
 		}
 	case ev.Type == "result":

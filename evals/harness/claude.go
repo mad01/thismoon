@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,34 +18,47 @@ import (
 )
 
 const (
-	// killGrace is how long a timed-out claude gets after SIGTERM before
-	// it is killed outright.
+	// killGrace is how long claude's process group gets after SIGTERM
+	// before it is killed outright.
 	killGrace = 10 * time.Second
 	// judgeTimeout bounds one llm grader call.
 	judgeTimeout = 2 * time.Minute
+	// judgeMaxBudgetUSD caps one llm grader call; a haiku verdict costs
+	// about a cent.
+	judgeMaxBudgetUSD = "0.05"
 	// scorecardTimeout bounds the optional moondb scorecard fetch.
 	scorecardTimeout = 3 * time.Second
 	// stderrTail is how much of claude's stderr a failed run keeps.
 	stderrTail = 2000
+	// groupPoll is how often reapGroup checks whether the group is gone.
+	groupPoll = 50 * time.Millisecond
 )
 
-// sessionEnv names the variables Claude Code sets on the processes it
-// spawns to tie them to its session. A run drops them so it starts as its
-// own session instead of nesting in the caller's. The list matches
-// services/keeper-of-facts/internal/recall.
+// effortLevels are the values `claude --effort` accepts.
+var effortLevels = []string{"low", "medium", "high", "xhigh", "max"}
+
+// sessionEnv names the variables a run must not inherit. The session ones
+// tie a process to the calling Claude Code session, so dropping them makes
+// the run its own session instead of nesting in the caller's (the same
+// list as services/keeper-of-facts/internal/recall). The effort and agent
+// teams ones would silently change how the run behaves, so a run sets
+// effort only through -effort and records it.
 var sessionEnv = map[string]bool{
-	"CLAUDECODE":                   true,
-	"CLAUDE_CODE_ENTRYPOINT":       true,
-	"CLAUDE_CODE_SESSION_ID":       true,
-	"CLAUDE_CODE_CHILD_SESSION":    true,
-	"CLAUDE_CODE_SESSION_ATTENDED": true,
-	"CLAUDE_CODE_MESSAGING_SOCKET": true,
-	"CLAUDE_CODE_MESSAGING_TOKEN":  true,
-	"CLAUDE_PROJECT_DIR":           true,
-	"CLAUDE_PID":                   true,
+	"CLAUDECODE":                           true,
+	"CLAUDE_CODE_ENTRYPOINT":               true,
+	"CLAUDE_CODE_SESSION_ID":               true,
+	"CLAUDE_CODE_CHILD_SESSION":            true,
+	"CLAUDE_CODE_SESSION_ATTENDED":         true,
+	"CLAUDE_CODE_MESSAGING_SOCKET":         true,
+	"CLAUDE_CODE_MESSAGING_TOKEN":          true,
+	"CLAUDE_PROJECT_DIR":                   true,
+	"CLAUDE_PID":                           true,
+	"CLAUDE_CODE_EFFORT_LEVEL":             true,
+	"CLAUDE_EFFORT":                        true,
+	"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": true,
 }
 
-// claudeEnv returns environ without the session-linking variables.
+// claudeEnv returns environ without the variables in sessionEnv.
 func claudeEnv(environ []string) []string {
 	out := make([]string, 0, len(environ))
 	for _, kv := range environ {
@@ -78,12 +92,13 @@ func claudeVersion(ctx context.Context, bin string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// invocation is one case run's claude command line. Model "" and
-// MaxBudgetUSD 0 leave the user's settings in charge.
+// invocation is one case run's claude command line. Model, Effort, and
+// MaxBudgetUSD left zero leave the user's settings in charge.
 type invocation struct {
 	SessionID       string
 	MaxTurns        int
 	Model           string
+	Effort          string
 	PermissionMode  string
 	DisallowedTools []string
 	MaxBudgetUSD    float64
@@ -105,6 +120,9 @@ func (inv invocation) args() []string {
 	if inv.Model != "" {
 		args = append(args, "--model", inv.Model)
 	}
+	if inv.Effort != "" {
+		args = append(args, "--effort", inv.Effort)
+	}
 	if inv.PermissionMode != "" {
 		args = append(args, "--permission-mode", inv.PermissionMode)
 	}
@@ -118,27 +136,79 @@ func (inv invocation) args() []string {
 	return append(args, "--", inv.Prompt)
 }
 
-// runClaude runs one case in dir and writes claude's stdout, the
-// stream-json transcript, to stream. On timeout the whole process group
-// (claude, its MCP servers, its hooks) gets SIGTERM, then SIGKILL after
-// killGrace. The error carries the tail of stderr.
-func runClaude(ctx context.Context, bin, dir string, inv invocation, stream io.Writer) error {
-	cmd := exec.CommandContext(ctx, bin, inv.args()...)
+// flagTemplate is the command line every case run shares, with the
+// per-case values as placeholders, for run.json.
+func flagTemplate(model, effort string, maxBudgetUSD float64) []string {
+	args := invocation{
+		SessionID: "<uuid>", Model: model, Effort: effort, MaxBudgetUSD: maxBudgetUSD,
+		Prompt: "<case prompt>",
+	}.args()
+	for i, a := range args {
+		if a == "--max-turns" {
+			args[i+1] = "<case max_turns>"
+		}
+	}
+	return args
+}
+
+// claudeCmd runs claude in its own process group, so the runner can signal
+// claude together with the MCP servers and hooks it starts.
+type claudeCmd struct {
+	bin   string
+	grace time.Duration
+}
+
+// run runs one case in dir and writes claude's stdout, the stream-json
+// transcript, to stream. When ctx ends first the group gets SIGTERM. On
+// every exit path, timeout or not, whatever is left of the group gets
+// SIGTERM and then SIGKILL after the grace period, so no MCP server or
+// hook outlives the case. The error carries the tail of stderr.
+func (c claudeCmd) run(ctx context.Context, dir string, inv invocation, stream io.Writer) error {
+	cmd := exec.CommandContext(ctx, c.bin, inv.args()...)
 	cmd.Dir = dir
 	cmd.Env = claudeEnv(os.Environ())
 	cmd.Stdout = stream
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
-	cmd.WaitDelay = killGrace
-	if err := cmd.Run(); err != nil {
+	cmd.Cancel = func() error { return signalGroup(cmd.Process.Pid, syscall.SIGTERM) }
+	cmd.WaitDelay = c.grace
+	err := cmd.Run()
+	if cmd.Process != nil {
+		reapGroup(cmd.Process.Pid, c.grace)
+	}
+	if err != nil {
 		if ctx.Err() != nil {
 			err = fmt.Errorf("%w (%w)", err, ctx.Err())
 		}
 		return fmt.Errorf("claude: %w: %s", err, tail(stderr.String(), stderrTail))
 	}
 	return nil
+}
+
+// signalGroup sends sig to every process in group pgid. A group that is
+// already gone is not an error.
+func signalGroup(pgid int, sig syscall.Signal) error {
+	if err := syscall.Kill(-pgid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	return nil
+}
+
+// reapGroup ends what is left of group pgid: SIGTERM, a wait of up to
+// grace for the group to empty, then SIGKILL.
+func reapGroup(pgid int, grace time.Duration) {
+	if errors.Is(syscall.Kill(-pgid, syscall.SIGTERM), syscall.ESRCH) {
+		return
+	}
+	deadline := time.Now().Add(grace)
+	for time.Now().Before(deadline) {
+		if errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH) {
+			return
+		}
+		time.Sleep(groupPoll)
+	}
+	_ = signalGroup(pgid, syscall.SIGKILL)
 }
 
 func tail(s string, n int) string {
@@ -156,8 +226,10 @@ the rubric. Reply with a single JSON object and nothing else:
 {"pass": true or false, "reason": "one sentence"}`
 
 // claudeJudge is the production judge: a one-shot haiku call with no
-// tools, no MCP servers, and no session, run from the temp directory so
-// repo-scoped hooks stay quiet.
+// tools, no MCP servers, no session, and a small spend cap. User settings
+// still load, so their hooks would fire; the flag settings turn every hook
+// off (disableAllHooks), and the run starts in the temp directory so no
+// repo's project settings or CLAUDE.md apply.
 type claudeJudge struct {
 	bin string
 }
@@ -172,7 +244,9 @@ func (j claudeJudge) Judge(ctx context.Context, rubric, prompt, answer string) (
 		"--model", "haiku",
 		"--tools", "",
 		"--strict-mcp-config",
+		"--settings", `{"disableAllHooks":true}`,
 		"--no-session-persistence",
+		"--max-budget-usd", judgeMaxBudgetUSD,
 		"--output-format", "json",
 		"--system-prompt", judgeSystem,
 		"--", user,
@@ -242,18 +316,4 @@ func fetchScorecard(
 		return nil, scorecardUnavailable
 	}
 	return body, "ok"
-}
-
-// flagTemplate is the command line every case run shares, with the
-// per-case values as placeholders, for run.json.
-func flagTemplate(model string, maxBudgetUSD float64) []string {
-	args := invocation{
-		SessionID: "<uuid>", Model: model, MaxBudgetUSD: maxBudgetUSD, Prompt: "<case prompt>",
-	}.args()
-	for i, a := range args {
-		if a == "--max-turns" {
-			args[i+1] = "<case max_turns>"
-		}
-	}
-	return args
 }

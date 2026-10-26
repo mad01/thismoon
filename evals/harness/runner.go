@@ -16,8 +16,10 @@ import (
 
 // Row is one (case, rep) result as results.jsonl stores it. DurationMS is
 // claude's own figure; WallMS is the runner's clock around the process, so
-// it includes MCP server startup and every hook. Error collects anything
-// that went wrong around the run; the graders still score what there is.
+// it includes MCP server startup and every hook. ToolCalls and Tools count
+// the main session; the Agent fields count subagents. Error collects
+// anything that went wrong around the run, a changed canonical checkout
+// included; the graders still score what there is.
 type Row struct {
 	Case                string          `json:"case"`
 	Rep                 int             `json:"rep"`
@@ -37,6 +39,8 @@ type Row struct {
 	Tokens              int             `json:"tokens"`
 	ToolCalls           int             `json:"tool_calls"`
 	Tools               map[string]int  `json:"tools"`
+	AgentToolCalls      int             `json:"agent_tool_calls"`
+	AgentTools          map[string]int  `json:"agent_tools,omitempty"`
 	PermissionDenials   int             `json:"permission_denials"`
 	Stop                string          `json:"stop"`
 	Model               string          `json:"model"`
@@ -50,12 +54,15 @@ type Row struct {
 // errNoResult marks a run whose transcript has no result event.
 var errNoResult = errors.New("harness: run ended without a result event")
 
-// runner runs cases through claude one at a time. Model "" and
-// MaxBudgetUSD 0 leave the user's settings in charge.
+// runner runs cases through claude one at a time. Model, effort, and
+// maxBudgetUSD left zero leave the user's settings in charge; maxTotalUSD
+// 0 means no run-wide cap.
 type runner struct {
-	bin          string
+	claude       claudeCmd
 	model        string
+	effort       string
 	maxBudgetUSD float64
+	maxTotalUSD  float64
 	roots        workspaceRoots
 	scorecardURL string
 	client       *http.Client
@@ -65,18 +72,31 @@ type runner struct {
 	log          io.Writer
 }
 
-// runAll runs every case reps times, case by case, and stops early when
-// ctx is cancelled.
-func (r *runner) runAll(ctx context.Context, cases []Case, reps int) []Row {
-	var rows []Row
+// runAll runs every case reps times, case by case. It stops early when ctx
+// is cancelled or, checked before each case, when the run has spent
+// maxTotalUSD; stopped says why, or is "" for a full run.
+func (r *runner) runAll(ctx context.Context, cases []Case, reps int) (rows []Row, stopped string) {
 	total := len(cases) * reps
+	var spent float64
 	for _, c := range cases {
 		for rep := range reps {
 			if ctx.Err() != nil {
-				return rows
+				return rows, "interrupted"
+			}
+			if r.maxTotalUSD > 0 && spent >= r.maxTotalUSD {
+				stopped = fmt.Sprintf(
+					"spent $%.2f, at or over -max-total-usd $%.2f, with %d of %d runs done",
+					spent,
+					r.maxTotalUSD,
+					len(rows),
+					total,
+				)
+				fmt.Fprintln(r.log, "stopping: "+stopped)
+				return rows, stopped
 			}
 			fmt.Fprintf(r.log, "[%d/%d] %s rep %d ... ", len(rows)+1, total, c.ID, rep)
 			row := r.runCase(ctx, c, rep)
+			spent += row.CostUSD + row.JudgeCostUSD
 			fmt.Fprintf(r.log, "score %.2f, %d turns, %d tool calls, $%.3f\n",
 				row.Score, row.Turns, row.ToolCalls, row.CostUSD)
 			if row.Error != "" {
@@ -85,13 +105,14 @@ func (r *runner) runAll(ctx context.Context, cases []Case, reps int) []Row {
 			rows = append(rows, row)
 		}
 	}
-	return rows
+	return rows, ""
 }
 
-// runCase prepares the workspace, runs claude, grades the run while the
-// workspace still exists, then tears the workspace down.
-func (r *runner) runCase(ctx context.Context, c Case, rep int) (row Row) {
-	row = Row{
+// runCase prepares the workspace and snapshots its canonical checkout,
+// runs claude, grades the run while the workspace still exists, tears the
+// workspace down, and then checks the canonical checkout did not change.
+func (r *runner) runCase(ctx context.Context, c Case, rep int) Row {
+	row := Row{
 		Case: c.ID, Rep: rep, Workspace: c.Workspace.String(),
 		ScorecardStatus: scorecardUnavailable,
 	}
@@ -100,23 +121,45 @@ func (r *runner) runCase(ctx context.Context, c Case, rep int) (row Row) {
 		row.Error = err.Error()
 		return row
 	}
-	defer func() {
-		if err := ws.Cleanup(); err != nil {
-			row.Error = joinErrText(row.Error, "cleanup: "+err.Error())
-		}
-	}()
+	before, snapErr := takeSnapshot(ctx, ws.Canonical())
+	errs := []error{snapErr, r.runIn(ctx, c, rep, ws, &row)}
+	if err := ws.Cleanup(); err != nil {
+		errs = append(errs, fmt.Errorf("cleanup: %w", err))
+	}
+	if snapErr == nil {
+		errs = append(errs, checkUnchanged(ws.Canonical(), before))
+	}
+	if err := errors.Join(errs...); err != nil {
+		row.Error = err.Error()
+	}
+	return row
+}
+
+// checkUnchanged compares the canonical checkout with its snapshot from
+// before the case. It runs on a fresh context so an interrupted run still
+// reports a change it made.
+func checkUnchanged(dir string, before snapshot) error {
+	after, err := takeSnapshot(context.Background(), dir)
+	if err != nil {
+		return fmt.Errorf("canonical checkout snapshot: %w", err)
+	}
+	if d := before.changes(after); d != "" {
+		return fmt.Errorf("canonical checkout %s changed during the case: %s", dir, d)
+	}
+	return nil
+}
+
+// runIn runs and grades one case in a prepared workspace and fills row.
+func (r *runner) runIn(ctx context.Context, c Case, rep int, ws *Workspace, row *Row) error {
 	sessionID := uuid.NewString()
 	streamName := fmt.Sprintf("%s-r%d.jsonl", c.ID, rep)
 	row.Stream = filepath.Join("streams", streamName)
 	t, wall, runErr := r.execute(ctx, c, ws.Dir, sessionID, filepath.Join(r.streamDir, streamName))
 	commits, commitErr := ws.Commits(ctx)
 	ev := Evidence{Transcript: t, Dir: ws.Dir, Commits: commits, Prompt: c.Prompt}
-	fillRow(&row, t, gradeRun(ctx, c, ev, r.judge), wall)
+	fillRow(row, t, gradeRun(ctx, c, ev, r.judge), wall)
 	if row.SessionID == "" {
 		row.SessionID = sessionID
-	}
-	if err := errors.Join(runErr, commitErr); err != nil {
-		row.Error = err.Error()
 	}
 	row.Scorecard, row.ScorecardStatus = fetchScorecard(
 		ctx,
@@ -124,7 +167,7 @@ func (r *runner) runCase(ctx context.Context, c Case, rep int) (row Row) {
 		r.scorecardURL,
 		row.SessionID,
 	)
-	return row
+	return errors.Join(runErr, t.Problems(), commitErr)
 }
 
 // execute runs claude for one case under the case timeout, keeps the raw
@@ -145,13 +188,14 @@ func (r *runner) execute(
 		SessionID:       sessionID,
 		MaxTurns:        c.MaxTurns,
 		Model:           r.model,
+		Effort:          r.effort,
 		PermissionMode:  c.PermissionMode,
-		DisallowedTools: c.DisallowedTools,
+		DisallowedTools: c.Disallowed(),
 		MaxBudgetUSD:    r.maxBudgetUSD,
 		Prompt:          c.Prompt,
 	}
 	start := r.now()
-	runErr := runClaude(runCtx, r.bin, dir, inv, f)
+	runErr := r.claude.run(runCtx, dir, inv, f)
 	wall := r.now().Sub(start)
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return Transcript{}, wall, errors.Join(runErr, err)
@@ -172,14 +216,8 @@ func fillRow(row *Row, t Transcript, g Grade, wall time.Duration) {
 	row.InputTokens, row.OutputTokens = t.Usage.InputTokens, t.Usage.OutputTokens
 	row.CacheReadTokens, row.CacheCreationTokens = t.Usage.CacheReadTokens, t.Usage.CacheCreationTokens
 	row.Tokens = t.Usage.Total()
-	row.ToolCalls, row.Tools = len(t.ToolCalls), t.ToolCounts()
+	row.Tools, row.AgentTools = t.ToolCounts(originMain), t.ToolCounts(originAgent)
+	row.ToolCalls, row.AgentToolCalls = len(t.Calls(false)), len(t.ToolCalls)-len(t.Calls(false))
 	row.PermissionDenials, row.Stop = t.PermissionDenials, t.Subtype
 	row.Model, row.SessionID = t.Model, t.SessionID
-}
-
-func joinErrText(a, b string) string {
-	if a == "" {
-		return b
-	}
-	return a + "; " + b
 }

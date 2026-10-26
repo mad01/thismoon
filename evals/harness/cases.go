@@ -40,6 +40,7 @@ const (
 type Case struct {
 	ID              string
 	Title           string
+	Notes           string
 	Workspace       WorkspaceSpec
 	Timeout         time.Duration
 	MaxTurns        int
@@ -70,29 +71,50 @@ func (w WorkspaceSpec) String() string {
 //	regex           Pattern matches the final result text
 //	file            Path exists in the workspace; Pattern, if set, matches its content
 //	commit          the run made at least one commit and every subject matches Pattern
-//	tool_used       some tool call matches Tool, Input, and InputWithout
-//	tool_not_used   no tool call matches Tool, Input, and InputWithout
+//	tool_used       some tool call matches Tool, every Input, and not InputWithout
+//	tool_not_used   no tool call matches Tool, every Input, and not InputWithout
 //	tool_before     a call matching Tool happens before any call matching Before
 //	max_turns       the run took at most Max turns
 //	max_cost_usd    the run cost at most Max dollars
 //	max_tool_calls  the run made at most Max tool calls
 //	llm             a haiku judge passes the result against Rubric
 //
-// Input and InputWithout are regexes on the call's input as compact JSON
-// with sorted keys, so {"file_path":"x.go"} is a Read with no range.
+// Input (one regex or a list) and InputWithout are regexes on the call's
+// input as compact JSON with sorted keys, so {"file_path":"x.go"} is a Read
+// with no range. The tool graders and max_tool_calls read the main
+// session's calls only, unless IncludeAgents adds the subagents' calls.
 type Grader struct {
-	Type         string  `yaml:"type"`
-	Weight       float64 `yaml:"weight"`
-	Pattern      string  `yaml:"pattern"`
-	Path         string  `yaml:"path"`
-	Tool         string  `yaml:"tool"`
-	Input        string  `yaml:"input"`
-	InputWithout string  `yaml:"input_without"`
-	Before       string  `yaml:"before"`
-	Max          float64 `yaml:"max"`
-	Rubric       string  `yaml:"rubric"`
+	Type          string    `yaml:"type"`
+	Weight        float64   `yaml:"weight"`
+	Pattern       string    `yaml:"pattern"`
+	Path          string    `yaml:"path"`
+	Tool          string    `yaml:"tool"`
+	Input         regexList `yaml:"input"`
+	InputWithout  string    `yaml:"input_without"`
+	Before        string    `yaml:"before"`
+	IncludeAgents bool      `yaml:"include_agents"`
+	Max           float64   `yaml:"max"`
+	Rubric        string    `yaml:"rubric"`
 
-	patternRE, toolRE, inputRE, withoutRE, beforeRE *regexp.Regexp
+	patternRE, toolRE, withoutRE, beforeRE *regexp.Regexp
+	inputREs                               []*regexp.Regexp
+}
+
+// regexList is a YAML field that takes one regex or a list of them.
+type regexList []string
+
+// UnmarshalYAML accepts a scalar or a sequence of scalars.
+func (l *regexList) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		*l = regexList{node.Value}
+		return nil
+	}
+	var many []string
+	if err := node.Decode(&many); err != nil {
+		return err
+	}
+	*l = many
+	return nil
 }
 
 // Name is a short label for reports: the type and the fields that make
@@ -105,7 +127,7 @@ func (g Grader) Name() string {
 		}
 	}
 	add("", g.Tool)
-	add("input ", g.Input)
+	add("input ", strings.Join(g.Input, " & "))
 	add("without ", g.InputWithout)
 	add("before ", g.Before)
 	add("", g.Path)
@@ -113,13 +135,52 @@ func (g Grader) Name() string {
 	if g.Max > 0 {
 		parts = append(parts, fmt.Sprintf("%g", g.Max))
 	}
+	if g.IncludeAgents {
+		parts = append(parts, "incl. agents")
+	}
 	return strings.Join(parts, " ")
+}
+
+// repoDenyList is denied to every case that runs in a repo workspace, on
+// top of the case's own list: a repo workspace is the canonical checkout,
+// and these tools write to it or to a shared store. Bash patterns use the
+// permission-rule prefix form claude accepts in --disallowedTools.
+var repoDenyList = []string{
+	"Edit", "Write", "NotebookEdit", "MultiEdit",
+	"Bash(git add:*)", "Bash(git am:*)", "Bash(git apply:*)", "Bash(git branch -d:*)",
+	"Bash(git branch -D:*)", "Bash(git branch -m:*)", "Bash(git branch -M:*)",
+	"Bash(git checkout:*)", "Bash(git cherry-pick:*)", "Bash(git clean:*)",
+	"Bash(git commit:*)", "Bash(git fetch:*)", "Bash(git merge:*)", "Bash(git mv:*)",
+	"Bash(git pull:*)", "Bash(git push:*)", "Bash(git rebase:*)", "Bash(git reset:*)",
+	"Bash(git restore:*)", "Bash(git revert:*)", "Bash(git rm:*)",
+	"Bash(git sparse-checkout:*)", "Bash(git stash:*)", "Bash(git switch:*)",
+	"Bash(git tag:*)", "Bash(git update-ref:*)", "Bash(git worktree:*)",
+	"Bash(sed -i:*)", "Bash(rm:*)", "Bash(mv:*)",
+	"mcp__csl__csl_repo_pull", "mcp__csl__csl_repo_reindex",
+	"mcp__kof__kof_assert", "mcp__kof__kof_retract",
+	"mcp__worklog__worklog_checkpoint",
+	"mcp__brain__brain_write", "mcp__brain__brain_edit",
+}
+
+// Disallowed is the --disallowedTools list a run of c gets: the case's own
+// list, plus repoDenyList for a repo workspace, without duplicates.
+func (c Case) Disallowed() []string {
+	out := slices.Clone(c.DisallowedTools)
+	if c.Workspace.Kind == workspaceRepo {
+		for _, tool := range repoDenyList {
+			if !slices.Contains(out, tool) {
+				out = append(out, tool)
+			}
+		}
+	}
+	return out
 }
 
 // caseFile is the frontmatter as written; parseCase turns it into a Case.
 type caseFile struct {
 	ID              string   `yaml:"id"`
 	Title           string   `yaml:"title"`
+	Notes           string   `yaml:"notes"`
 	Workspace       string   `yaml:"workspace"`
 	Timeout         int      `yaml:"timeout"`
 	MaxTurns        int      `yaml:"max_turns"`
@@ -180,6 +241,7 @@ func parseCase(raw string) (Case, error) {
 	c := Case{
 		ID:              f.ID,
 		Title:           f.Title,
+		Notes:           strings.TrimSpace(f.Notes),
 		Workspace:       ws,
 		Timeout:         time.Duration(f.Timeout) * time.Second,
 		MaxTurns:        f.MaxTurns,
@@ -255,7 +317,6 @@ func compileGrader(g *Grader, ws WorkspaceSpec) error {
 	}{
 		{g.Pattern, &g.patternRE},
 		{g.Tool, &g.toolRE},
-		{g.Input, &g.inputRE},
 		{g.InputWithout, &g.withoutRE},
 		{g.Before, &g.beforeRE},
 	} {
@@ -267,6 +328,13 @@ func compileGrader(g *Grader, ws WorkspaceSpec) error {
 			return err
 		}
 		*f.dst = re
+	}
+	for _, src := range g.Input {
+		re, err := regexp.Compile(src)
+		if err != nil {
+			return err
+		}
+		g.inputREs = append(g.inputREs, re)
 	}
 	return nil
 }

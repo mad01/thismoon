@@ -25,6 +25,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mad01/thismoon/kit/progstatus"
@@ -36,6 +39,10 @@ import (
 // work, so the cap leaves room for the edit cases.
 const defaultMaxBudgetUSD = 5.0
 
+// defaultMaxTotalUSD stops a run before the next case once the run has
+// spent this much: one rep of the seed cases costs about $10 to $15.
+const defaultMaxTotalUSD = 20.0
+
 type options struct {
 	casesDir     string
 	runsDir      string
@@ -43,7 +50,9 @@ type options struct {
 	caseIDs      string
 	reps         int
 	model        string
+	effort       string
 	maxBudgetUSD float64
+	maxTotalUSD  float64
 	roots        workspaceRoots
 	scorecardURL string
 	report       string
@@ -58,11 +67,15 @@ func main() {
 	flag.StringVar(&o.caseIDs, "case", "", "comma-separated case ids (default: all)")
 	flag.IntVar(&o.reps, "reps", 1, "repetitions per case")
 	flag.StringVar(&o.model, "model", "", "model for the runs (default: the user's setting)")
+	flag.StringVar(&o.effort, "effort", "",
+		"effort level for the runs: "+strings.Join(effortLevels, ", ")+" (default: claude's)")
 	flag.Float64Var(&o.maxBudgetUSD, "max-budget-usd", defaultMaxBudgetUSD,
 		"hard cost cap per case run, passed to claude (0 for none)")
+	flag.Float64Var(&o.maxTotalUSD, "max-total-usd", defaultMaxTotalUSD,
+		"stop before the next case once the run has spent this much (0 for none)")
 	flag.StringVar(&o.roots.SrcRoot, "src", "~/code/src/github.com/mad01",
 		"directory that bare repo names in workspaces resolve under")
-	flag.StringVar(&o.roots.WorktreeRoot, "worktrees", "~/.worktrees",
+	flag.StringVar(&o.roots.WorktreeRoot, "worktrees", "~/.cache/harness-eval/worktrees",
 		"directory worktree workspaces are created under")
 	flag.StringVar(&o.scorecardURL, "scorecard-url", "http://127.0.0.1:7433",
 		"moondb base URL for session scorecards (empty to skip)")
@@ -101,23 +114,32 @@ func run(o options, status *progstatus.Reporter) error {
 	if o.reps < 1 {
 		return errors.New("-reps must be at least 1")
 	}
+	if o.effort != "" && !slices.Contains(effortLevels, o.effort) {
+		return fmt.Errorf("-effort %q: want one of %s", o.effort, strings.Join(effortLevels, ", "))
+	}
 	return runEval(o, cases, status)
 }
 
 // runEval runs the cases and writes runs/<id>/: run.json, results.jsonl,
-// summary.md, and the raw transcripts under streams/.
+// summary.md, and the raw transcripts under streams/. SIGINT, SIGTERM, and
+// SIGHUP all stop the current case the same way, so its workspace is torn
+// down and the rows so far are written.
 func runEval(o options, cases []Case, status *progstatus.Reporter) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(),
+		os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
+	sweepWorktreeRepos(ctx, cases, o.roots, os.Stderr)
 	bin := claudeBin()
 	meta := runMeta{
 		RunID:         time.Now().Format("20060102-150405"),
 		StartedAt:     time.Now(),
 		ClaudeVersion: claudeVersion(ctx, bin),
 		Model:         o.model,
-		Flags:         flagTemplate(o.model, o.maxBudgetUSD),
+		Effort:        o.effort,
+		Flags:         flagTemplate(o.model, o.effort, o.maxBudgetUSD),
 		Reps:          o.reps,
 		MaxBudgetUSD:  o.maxBudgetUSD,
+		MaxTotalUSD:   o.maxTotalUSD,
 	}
 	for _, c := range cases {
 		meta.Cases = append(meta.Cases, c.ID)
@@ -131,13 +153,15 @@ func runEval(o options, cases []Case, status *progstatus.Reporter) error {
 		return err
 	}
 	r := &runner{
-		bin: bin, model: o.model, maxBudgetUSD: o.maxBudgetUSD, roots: o.roots,
+		claude: claudeCmd{bin: bin, grace: killGrace}, model: o.model, effort: o.effort,
+		maxBudgetUSD: o.maxBudgetUSD, maxTotalUSD: o.maxTotalUSD, roots: o.roots,
 		scorecardURL: o.scorecardURL, client: http.DefaultClient,
 		judge: claudeJudge{bin: bin}, streamDir: streamDir, now: time.Now, log: os.Stderr,
 	}
 	status.Working(fmt.Sprintf("running %d cases, %d reps", len(cases), o.reps))
-	rows := r.runAll(ctx, cases, o.reps)
+	rows, stopped := r.runAll(ctx, cases, o.reps)
 	meta.FinishedAt, meta.Totals = time.Now(), totalsOf(rows)
+	meta.Models, meta.Stopped = modelsOf(rows), stopped
 	if err := writeRun(dir, meta, rows); err != nil {
 		return err
 	}
@@ -187,16 +211,16 @@ func compareRuns(runsDir string, names []string) error {
 	if len(names) != 2 {
 		return errors.New("-compare takes two runs: -compare <runA> <runB>")
 	}
-	dirA, dirB := resolveRun(runsDir, names[0]), resolveRun(runsDir, names[1])
-	_, a, err := readRun(dirA)
-	if err != nil {
-		return err
+	var sides [2]compareSide
+	for i, name := range names {
+		dir := resolveRun(runsDir, name)
+		meta, rows, err := readRun(dir)
+		if err != nil {
+			return err
+		}
+		sides[i] = compareSide{Label: filepath.Base(dir), Meta: meta, Rows: rows}
 	}
-	_, b, err := readRun(dirB)
-	if err != nil {
-		return err
-	}
-	writeCompare(os.Stdout, filepath.Base(dirA), filepath.Base(dirB), a, b)
+	writeCompare(os.Stdout, sides[0], sides[1])
 	return nil
 }
 

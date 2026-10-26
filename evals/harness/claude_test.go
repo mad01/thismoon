@@ -11,20 +11,20 @@ import (
 
 func TestInvocationArgs(t *testing.T) {
 	inv := invocation{
-		SessionID: "sid", MaxTurns: 8, Model: "haiku", PermissionMode: "acceptEdits",
+		SessionID: "sid", MaxTurns: 8, Model: "haiku", Effort: "low", PermissionMode: "acceptEdits",
 		DisallowedTools: []string{"Edit", "Bash(git push:*)"}, MaxBudgetUSD: 1.5,
 		Prompt: "-starts with a dash",
 	}
 	got := strings.Join(inv.args(), " ")
 	want := "-p --output-format stream-json --verbose --session-id sid --no-session-persistence " +
-		"--max-turns 8 --model haiku --permission-mode acceptEdits --max-budget-usd 1.5 " +
+		"--max-turns 8 --model haiku --effort low --permission-mode acceptEdits --max-budget-usd 1.5 " +
 		"--disallowedTools Edit Bash(git push:*) -- -starts with a dash"
 	if got != want {
 		t.Errorf("args =\n%s\nwant\n%s", got, want)
 	}
 
 	bare := invocation{SessionID: "sid", MaxTurns: 3, Prompt: "hi"}.args()
-	for _, flag := range []string{"--model", "--permission-mode", "--max-budget-usd", "--disallowedTools"} {
+	for _, flag := range []string{"--model", "--effort", "--permission-mode", "--max-budget-usd", "--disallowedTools"} {
 		if slices.Contains(bare, flag) {
 			t.Errorf("unset option still passes %s: %v", flag, bare)
 		}
@@ -38,6 +38,7 @@ func TestClaudeEnv(t *testing.T) {
 	got := claudeEnv([]string{
 		"HOME=/home/x", "CLAUDECODE=1", "CLAUDE_CODE_SESSION_ID=abc",
 		"CLAUDE_CODE_MESSAGING_SOCKET=/tmp/s", "ANTHROPIC_API_KEY=k", "PATH=/bin",
+		"CLAUDE_CODE_EFFORT_LEVEL=max", "CLAUDE_EFFORT=high", "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1",
 	})
 	want := []string{"HOME=/home/x", "ANTHROPIC_API_KEY=k", "PATH=/bin"}
 	if !slices.Equal(got, want) {
@@ -106,8 +107,11 @@ func TestFetchScorecard(t *testing.T) {
 }
 
 func TestFlagTemplate(t *testing.T) {
-	got := strings.Join(flagTemplate("", 2), " ")
-	for _, want := range []string{"--session-id <uuid>", "--max-turns <case max_turns>", "--max-budget-usd 2", "-- <case prompt>"} {
+	got := strings.Join(flagTemplate("", "high", 2), " ")
+	for _, want := range []string{
+		"--session-id <uuid>", "--max-turns <case max_turns>", "--effort high",
+		"--max-budget-usd 2", "-- <case prompt>",
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("template %q missing %q", got, want)
 		}

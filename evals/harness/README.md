@@ -4,57 +4,54 @@ Runs fixed tasks through `claude -p` with your real hooks and MCP servers loaded
 
 ## Running it
 
-Run from the repo root. Every run is paid: a fresh session on the default model costs about a dollar before it does any work, so start with one case.
+Run from the repo root. Every run is paid: a fresh session on the default model costs about a dollar before it does any work. One rep of all eight cases should cost $10 to $15. The worst case is $40, eight cases at the $5 per-run cap, and `-max-total-usd` (default $20) stops the run before the next case once it has spent that much.
 
 ```
 go run ./evals/harness -list                      # the cases, no claude
 go run ./evals/harness -case where-defined        # one case, one rep
 go run ./evals/harness -case a,b -reps 3          # several cases and reps
-go run ./evals/harness -model haiku -case a       # override the model
+go run ./evals/harness -model haiku -effort low   # override model and effort
 go run ./evals/harness -report 20261026-191500    # re-render a summary
 go run ./evals/harness -compare <runA> <runB>     # per-case deltas
 ```
 
-Each case run starts as its own session: the runner strips the variables that would nest it in the calling session. It passes `--no-session-persistence`, `--session-id`, `--max-turns` from the case, and `--max-budget-usd` (5 dollars by default) as a hard cap. Ctrl-C stops the current case and still tears down its workspace.
+Each case run is its own session: the runner strips the variables that would nest it in the calling session or set effort behind its back. It passes `--max-turns` from the case and `--max-budget-usd` as a hard cap. Ctrl-C, SIGTERM and SIGHUP stop the current case, kill claude's whole process group, tear down the workspace and write the rows so far.
+
+## Workspaces
+
+- `repo:<name or path>` runs in the canonical checkout. The runner always denies edit tools, git write verbs, and the csl, kof, worklog and brain tools that write, on top of the case's own list.
+- `worktree:<name or path>` cuts a locked worktree on a throwaway `eval/` branch under `~/.cache/harness-eval/worktrees/<repo>/` and removes both afterwards. A run's start sweeps worktrees and branches a crashed run left behind.
+- `tmpdir` is an empty temp directory.
+
+For repo and worktree cases the runner compares the canonical checkout's HEAD and status before and after. Any change is an error on the row.
 
 ## Adding a case
 
-One markdown file in `cases/`, named after its id. The frontmatter is YAML and the body is the prompt. Unknown keys fail the load, and `go test ./evals/harness/` loads every case.
+One markdown file in `cases/`, named after its id: YAML frontmatter, then the prompt. Unknown keys fail the load, and `go test ./evals/harness/` loads every case.
 
 ```
 ---
 id: where-defined
 title: Find where a Go function is defined
-workspace: repo:thismoon      # or worktree:thismoon, or tmpdir
+notes: Where the budgets come from.
+workspace: repo:thismoon
 timeout: 300                  # seconds
 max_turns: 12                 # passed to claude
 permission_mode: acceptEdits  # optional; edits outside /tmp need it
-disallowed_tools: [Edit, Write, "Bash(git push:*)"]
+disallowed_tools: [NotebookEdit]
 graders:
   - type: tool_used
     tool: '^mcp__csl__csl_search$'
-    input: 'sym:'
+    input: 'sym:'             # one regex or a list that must all match
     weight: 2                 # default 1
 ---
 Where is `CanonicalRepo` defined? Answer with the path and line only.
 ```
 
-A `repo:` workspace runs in the canonical checkout, so read-only cases should disallow edits. A bare name resolves under `-src`. `worktree:` cuts a throwaway worktree and branch from the checkout's HEAD under `~/.worktrees/<repo>/eval-<id>-<stamp>` and removes both afterwards. `tmpdir` is an empty temp directory.
-
-Graders run before the workspace is torn down:
-
-- `regex`: `pattern` matches the final answer.
-- `file`: `path` exists in the workspace and, when `pattern` is set, its content matches.
-- `commit`: the run committed, and every subject matches `pattern`. Worktree only.
-- `tool_used`, `tool_not_used`: a call whose name matches `tool`. Optional `input` and `input_without` regexes test the call's input as sorted-key JSON.
-- `tool_before`: a `tool` call comes before any `before` call.
-- `max_turns`, `max_cost_usd`, `max_tool_calls`: the run stays at or under `max`.
-- `llm`: a haiku judge reads `rubric` and the answer.
+Graders run before teardown. `regex` matches the final answer. `file` checks a workspace path and its content. `commit` checks every new commit subject in a worktree. `tool_used`, `tool_not_used` and `tool_before` match tool names, with `input` and `input_without` regexes on the input as sorted-key JSON. They and `max_tool_calls` see only the main session unless `include_agents: true`. `max_turns`, `max_cost_usd` and `max_tool_calls` are budgets. `llm` has a hookless haiku judge read the `rubric`.
 
 ## Reading a run
 
-A run writes `runs/<timestamp>/`. `run.json` records the claude version and flags, the cases, and the totals. `results.jsonl` has one row per case and rep with the score, each grader's result, the usage numbers, and the session id. `streams/` keeps each raw transcript. `summary.md` repeats the totals, then gives one line per row, the tool calls per row, and every failed grader with the reason.
+A run writes `runs/<timestamp>/`. `run.json` records the claude version, the model and effort asked for and used, the flags, and the totals. `results.jsonl` has one row per case and rep with the score, each grader's result, usage, main and subagent tool counts, and the session id. `streams/` keeps each transcript, and `summary.md` lists the rows, their tool calls and every failure. The score is the passed share of grader weight. A row passes only when every grader does. An API error result, an unparsed stream line or a changed checkout puts the row in errors. Rows carry the moondb scorecard, or `unavailable`.
 
-The score is the passed share of the grader weight, and a row passes only when every grader passes. The cost column is the agent run alone; llm judge calls are counted apart. Rows also carry the moondb session scorecard when moondb serves one, and `unavailable` otherwise.
-
-Git ignores `runs/`. When a run settles a question, copy its `summary.md` to `results/<date>-<label>.md` so later runs have a baseline to compare against.
+Git ignores `runs/`. Copy a settled `summary.md` to `results/<date>-<label>.md` as a baseline. `-compare` totals only the cases both runs have.
