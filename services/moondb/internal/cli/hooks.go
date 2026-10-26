@@ -76,15 +76,15 @@ func checkHooksWired(path string, captureOn bool) error {
 }
 
 // runsRecord reports whether a group of event whose matcher selects tool
-// runs `moondb record`: a moondb binary by any path, record among its
-// arguments.
+// runs `moondb record`: a moondb binary by any path, quoted or not, record
+// among its arguments.
 func (s claudeSettings) runsRecord(event, tool string) bool {
 	for _, g := range s.Hooks[event] {
 		if tool != "" && !selects(g.Matcher, tool) {
 			continue
 		}
 		for _, h := range g.Hooks {
-			words := strings.Fields(h.Command)
+			words := commandWords(h.Command)
 			i := slices.IndexFunc(
 				words,
 				func(w string) bool { return filepath.Base(w) == "moondb" },
@@ -95,6 +95,17 @@ func (s claudeSettings) runsRecord(event, tool string) bool {
 		}
 	}
 	return false
+}
+
+// commandWords splits a hook command on spaces and trims the single and
+// double quotes around each word, so "$HOME/code/bin/moondb" reads as a
+// path ending in moondb.
+func commandWords(command string) []string {
+	words := strings.Fields(command)
+	for i, w := range words {
+		words[i] = strings.Trim(w, `"'`)
+	}
+	return words
 }
 
 // selects reports whether a hook matcher selects tool: an empty matcher

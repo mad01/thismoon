@@ -36,6 +36,11 @@ func TestCheckHooksWired(t *testing.T) {
 	}{
 		{"all wired", wiredSettings, true, ""},
 		{
+			"quoted binary", strings.NewReplacer(`~/code/bin/moondb record`,
+				`\"$HOME/code/bin/moondb\" record`, `"command": "moondb record"`,
+				`"command": "'moondb' record"`).Replace(wiredSettings), true, "",
+		},
+		{
 			"bash and subagent missing", strings.NewReplacer(`"matcher": "Bash"`, `"matcher": "Read"`,
 				`"SubagentStop"`, `"Notification"`).Replace(wiredSettings), true,
 			"for PostToolUse Bash, SubagentStop",
