@@ -52,10 +52,10 @@ func betweenTurns(turns []TurnTrace) []Gap {
 }
 
 // sessionTotals sums the turns and the gaps between them, the gaps as user
-// time. The wall time is the turns' wall times plus the gaps, so the time
-// split adds up to it whenever each turn's does. Without overlapping turns
-// that runs from the first start to the last end; a stretch two turns
-// overlap counts once in each.
+// time; idle time comes from the turns alone. The wall time is the turns'
+// wall times plus the gaps, so the time split adds up to it whenever each
+// turn's does. Without overlapping turns that runs from the first start to
+// the last end; a stretch two turns overlap counts once in each.
 func sessionTotals(turns []TurnTrace, gaps []Gap) Totals {
 	var t Totals
 	if len(turns) == 0 {
@@ -73,6 +73,7 @@ func sessionTotals(turns []TurnTrace, gaps []Gap) Totals {
 		t.ToolMS += x.ToolMS
 		t.HarnessMS += x.HarnessMS
 		t.UserMS += x.UserMS
+		t.IdleMS += x.IdleMS
 		t.Tokens = t.Tokens.Add(x.Tokens)
 		t.ModelCalls += x.ModelCalls
 		t.ToolCalls += x.ToolCalls

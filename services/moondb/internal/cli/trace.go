@@ -146,8 +146,9 @@ func printTrace(w io.Writer, st trace.SessionTrace) {
 func printTotals(w io.Writer, t trace.Totals) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	d := trace.FormatDuration
-	fmt.Fprintf(tw, "wall\t%s\tmodel %s, tool %s, harness %s, user %s\n",
-		d(t.WallMS), d(t.ModelMS), d(t.ToolMS), d(t.HarnessMS), d(t.UserMS))
+	fmt.Fprintf(tw, "wall\t%s\tmodel %s, tool %s, harness %s, user %s, idle %s%s\n",
+		d(t.WallMS), d(t.ModelMS), d(t.ToolMS), d(t.HarnessMS), d(t.UserMS), d(t.IdleMS),
+		idleNote(t.IdleMS))
 	k := t.Tokens
 	n := trace.FormatTokens
 	fmt.Fprintf(tw,
@@ -163,6 +164,16 @@ func printTotals(w io.Writer, t trace.Totals) {
 	fmt.Fprintf(tw, "calls\t%d\t%s\n",
 		t.ModelCalls+t.ToolCalls+t.AgentModelCalls+t.AgentToolCalls, calls)
 	_ = tw.Flush()
+}
+
+// idleNote says what idle time is when there is some: no transcript line
+// inside a turn for longer than moondb.IdleGapAfter.
+func idleNote(idleMS int64) string {
+	if idleMS == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (no transcript line inside a turn for over %d min)",
+		int(moondb.IdleGapAfter.Minutes()))
 }
 
 // costNote says what the cost line's figure is made of: the main

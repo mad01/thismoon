@@ -92,6 +92,11 @@ const (
 	// finishing to a new input under the same prompt id, such as a
 	// teammate message, or from a Stop line to the turn's recorded end.
 	GapUser GapKind = "user"
+	// GapIdle is the part of a model, tool or harness stretch past
+	// moondb.IdleGapAfter: no line was written for that long inside the
+	// turn, so nothing says what ran. The stretch keeps its first
+	// IdleGapAfter in its own kind. User time is never idle.
+	GapIdle GapKind = "idle"
 )
 
 // Gap is a stretch of time with one kind. A turn's gaps cover it from
@@ -111,6 +116,7 @@ type Totals struct {
 	ToolMS    int64  `json:"tool_ms"`
 	HarnessMS int64  `json:"harness_ms"`
 	UserMS    int64  `json:"user_ms"`
+	IdleMS    int64  `json:"idle_ms"`
 	Tokens    Tokens `json:"tokens"`
 	// Usage splits Tokens by model and rate, the shape a Turn stores so
 	// its cost can be priced again later.
@@ -193,9 +199,9 @@ type SessionTrace struct {
 	// Totals sum the turns and the agents. WallMS adds the turns' wall
 	// times and the gaps, which without overlapping turns is the stretch
 	// from the first turn's start to the last one's end. UserMS adds the
-	// gaps to the turns' user time, so the split adds up to WallMS
-	// whenever each turn's does. The time split is the main
-	// conversation's.
+	// gaps to the turns' user time and IdleMS sums the turns' idle time, so
+	// the split adds up to WallMS whenever each turn's does. The time split
+	// is the main conversation's.
 	Totals Totals     `json:"totals"`
 	Agents []AgentRun `json:"agents"`
 	// AgentLongestTools and AgentCostliestModels rank the agents' tool and

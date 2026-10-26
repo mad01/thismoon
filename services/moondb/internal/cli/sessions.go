@@ -27,9 +27,9 @@ var sessionsCmd = &cobra.Command{
 	Long: `List the sessions moondb has recorded, newest first, with how many turns
 and edits each made, its active and wall time, and which repositories it
 touched. ACTIVE is the time inside its turns, less the time a turn waited
-for input; the pauses between turns never count. WALL runs from the first
-prompt to the last Stop, pauses included. moondb trace <session-id> shows
-where that time went and what it cost.
+for input or sat idle; the pauses between turns never count. WALL runs
+from the first prompt to the last Stop, pauses included. moondb trace
+<session-id> shows where that time went and what it cost.
 
 --since keeps the sessions active since then, whenever they started, and
 takes an RFC 3339 time or a span before now: 90m, 24h, 7d.

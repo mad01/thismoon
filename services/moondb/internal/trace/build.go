@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
@@ -23,7 +24,8 @@ const (
 // for the call to the line that carried its result, and a subagent span
 // from the subagent's first recorded edit to its last, inside the turn's
 // span: its own transcript is a separate file the turn does not keep. The
-// gaps split the turn by the event that ends each stretch.
+// gaps split the turn by the event that ends each stretch, and a stretch
+// with no line for longer than moondb.IdleGapAfter is idle past that.
 //
 // Build never fails on its input: broken lines are counted in Lines and
 // read past, and a turn without lines gets an empty trace with a Reason.
@@ -257,9 +259,10 @@ func agentName(agentType string) string {
 // attachments, request setup, and the Stop hooks up to the Stop line. The
 // stretch after the last line is user time once the Stop line was seen,
 // and harness time before it. A moment when a tool and the model both ran
-// counts once, by the event that ends it. With cutHead, the stretch before
-// the first event is harness time whatever that event is: what ran in it
-// went with the cut lines.
+// counts once, by the event that ends it. A model, tool or harness stretch
+// longer than moondb.IdleGapAfter is idle past that (addStretch). With
+// cutHead, the stretch before the first event is harness time whatever
+// that event is, and never idle: what ran in it went with the cut lines.
 //
 // User time inside a turn is real: the harness keeps one prompt id across
 // a Stop when a teammate message or a task notification starts the loop
@@ -270,11 +273,11 @@ func partition(events []event, start, end time.Time, cutHead bool) []Gap {
 	finished, stopped := false, false
 	for i, ev := range events {
 		at := clamp(ev.at, prev, end)
-		kind := gapKind(ev, finished)
 		if i == 0 && cutHead {
-			kind = GapHarness
+			gaps = addGap(gaps, GapHarness, prev, at)
+		} else {
+			gaps = addStretch(gaps, gapKind(ev, finished), prev, at)
 		}
-		gaps = addGap(gaps, kind, prev, at)
 		prev = at
 		switch ev.kind {
 		case evAssistant:
@@ -289,7 +292,20 @@ func partition(events []event, start, end time.Time, cutHead bool) []Gap {
 	if stopped {
 		tail = GapUser
 	}
-	return addGap(gaps, tail, prev, end)
+	return addStretch(gaps, tail, prev, end)
+}
+
+// addStretch adds the stretch [from, to] that one event ends, of kind. A
+// model, tool or harness stretch longer than moondb.IdleGapAfter keeps its
+// first IdleGapAfter in kind, and the rest is idle: no line was written
+// for that long, so the event that ends it says nothing about what ran.
+// User time stays whole.
+func addStretch(gaps []Gap, kind GapKind, from, to time.Time) []Gap {
+	if kind == GapUser || to.Sub(from) <= moondb.IdleGapAfter {
+		return addGap(gaps, kind, from, to)
+	}
+	cut := from.Add(moondb.IdleGapAfter)
+	return addGap(addGap(gaps, kind, from, cut), GapIdle, cut, to)
 }
 
 // finishReasons are the stop reasons that end the model's work until new
@@ -328,7 +344,7 @@ func addGap(gaps []Gap, kind GapKind, from, to time.Time) []Gap {
 }
 
 // gapOrder is the order Totals lists the gap kinds in.
-var gapOrder = []GapKind{GapModel, GapTool, GapHarness, GapUser}
+var gapOrder = []GapKind{GapModel, GapTool, GapHarness, GapUser, GapIdle}
 
 // splitMS turns the time by gap kind into whole milliseconds that add up to
 // the wall time exactly. It truncates the running sum of the kinds, in
@@ -364,6 +380,7 @@ func turnTotals(turn Span, gaps []Gap, models, tools []Span) Totals {
 		ToolMS:     ms[GapTool],
 		HarnessMS:  ms[GapHarness],
 		UserMS:     ms[GapUser],
+		IdleMS:     ms[GapIdle],
 		ModelCalls: len(models),
 		ToolCalls:  len(tools),
 	}

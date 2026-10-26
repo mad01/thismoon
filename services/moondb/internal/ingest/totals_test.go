@@ -292,6 +292,52 @@ func TestBackfillTotals(t *testing.T) {
 	}
 }
 
+// TestBackfillRecomputesVersionOneTotals: totals of version 1 gave a stretch
+// with no line to the event that ends it, however long. The totals
+// backfill computes them again for a turn and an agent, and the stretch
+// past moondb.IdleGapAfter turns idle.
+func TestBackfillRecomputesVersionOneTotals(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	// The model answers 5 hours after the request: version 1 called it all
+	// model time.
+	const idleLines = `{"type":"user","isSidechain":true,"promptId":"p1",` +
+		`"timestamp":"2026-10-25T12:01:00Z","message":{"content":"go"}}
+{"type":"api-request","isSidechain":true,"timestamp":"2026-10-25T12:01:00Z"}
+{"type":"assistant","isSidechain":true,"timestamp":"2026-10-25T17:01:00Z","message":` +
+		`{"id":"m1","model":"claude-opus-5-5","stop_reason":"end_turn","content":[],` +
+		`"usage":{"input_tokens":1,"output_tokens":1}}}
+`
+	turnLines := strings.ReplaceAll(idleLines, `"isSidechain":true,`, "")
+	v1 := &store.TurnTotals{Version: 1, WallMS: 5 * 3_600_000, ModelMS: 5 * 3_600_000}
+	f.seedStore([]store.Session{{ID: "s1", StartedAt: at(0)}}, store.Turn{
+		ID: "t1", SessionID: "s1", TranscriptChunk: f.chunk(turnLines),
+		Status: store.TurnClosed, StartedAt: at(1), EndedAt: new(at(301)), Totals: v1,
+	})
+	if err := f.fake.PutAgent(ctx, store.Agent{
+		ID: "a1", SessionID: "s1", StartedAt: at(1), EndedAt: at(301),
+		TranscriptChunk: f.chunk(idleLines), Totals: v1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := f.in.backfillTotals(ctx, moondb.TotalsBackfillTurns, map[string]bool{})
+	if err != nil || b != (backfillBatch{tried: 2, computed: 2}) {
+		t.Fatalf("batch = %+v, %v; want t1 and a1 computed again", b, err)
+	}
+	wantModel := moondb.IdleGapAfter.Milliseconds()
+	wantIdle := 5*3_600_000 - wantModel
+	for name, tot := range map[string]*store.TurnTotals{
+		"t1": f.turn("t1").Totals, "a1": f.agent("a1").Totals,
+	} {
+		if tot == nil || tot.Version != trace.TotalsVersion || tot.ModelMS != wantModel ||
+			tot.IdleMS != wantIdle {
+			t.Errorf("%s totals = %+v; want version %d, %dms model and %dms idle",
+				name, tot, trace.TotalsVersion, wantModel, wantIdle)
+		}
+	}
+}
+
 // TestBackfillStoreFailures: a store failure ends the batch after the turn
 // it hit and skips nothing, so the turn is tried again; a failed session
 // fill after the turn's write leaves the turn computed.

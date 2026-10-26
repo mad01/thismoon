@@ -130,6 +130,7 @@ These are compiled into the binary (`facts.go`) and not configurable:
 | log segment | 64 MiB | the size at which `log/` rolls to a new file |
 | trace cache | 512 turns | turn traces serve keeps in memory, the least recently read dropped first |
 | trace rankings | 10 | spans `moondb trace` and `moondb_trace` list as the longest tool calls and the most expensive model calls |
+| idle gap (`IdleGapAfter`) | 30 min | the longest stretch inside a turn with no transcript line that a trace gives to model, tool or harness time. The rest of a longer one is idle time, which active time leaves out |
 | totals backfill batch (`TotalsBackfillTurns`) | 20 | turns one totals backfill batch tries, computed or not, and sessions it fills a missing prompt line for |
 | totals backfill pace (`TotalsBackfillEvery`) | 1 s | how often the totals backfill runs a batch while the spool is empty |
 | session idle (`SessionIdleAfter`) | 10 min | how long a session goes without a turn start, turn end, edit or agent stop before the listing calls it ended |

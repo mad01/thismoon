@@ -53,9 +53,9 @@ type SessionSummary struct {
 	// can fall short of the session trace's wall time.
 	DurationMS int64 `json:"duration_ms"               jsonschema:"wall time in milliseconds: from the first prompt to the last turn's end, pauses between turns included"`
 	// ActiveMS is the active time: the time inside the turns, less the
-	// time a turn waited for input, never above DurationMS
+	// time a turn waited for input or sat idle, never above DurationMS
 	// (store.SessionSummary.ActiveMS).
-	ActiveMS  int64 `json:"active_ms"                 jsonschema:"active time in milliseconds: the time inside the turns, less time waiting for input, never above duration_ms; pauses between turns never count"`
+	ActiveMS  int64 `json:"active_ms"                 jsonschema:"active time in milliseconds: the time inside the turns, less time waiting for input or idle, never above duration_ms; pauses between turns never count"`
 	TurnCount int   `json:"turn_count"`
 	EditCount int   `json:"edit_count"`
 	// FileCount counts the distinct files the session edited.

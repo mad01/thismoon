@@ -87,12 +87,15 @@ trace's lines then say `cut_head`.
 
 A session shows two times in `moondb sessions`, on the web page and in
 the `moondb_sessions` tool. Active time (`active_ms`) is the time
-inside its turns, less the time a turn waited for input. Wall time
-(`duration_ms`) runs from the first prompt to the last turn's end,
-the nights between turns included. When the active time is far above the
-work done, one turn's trace counted a long idle stretch as model, tool or
-harness time. The trace lanes on the session page show each turn's time,
-so the long one stands out.
+inside its turns, less the time a turn waited for input or sat idle. Wall
+time (`duration_ms`) runs from the first prompt to the last turn's end,
+the nights between turns included. Idle time is a stretch inside a turn
+with no transcript line for over 30 minutes, past its first 30 minutes,
+which stay model, tool or harness time. A laptop asleep, a session resumed
+days later or a request that hung leaves one. `moondb trace` lists it as
+`idle`, and the session page draws it as a hatched break in the turn's
+lane. Turns stored before idle time existed get it from the totals
+backfill once serve runs the new build.
 
 A cost with no subagent cost recorded, or a session that ran subagents
 with none listed: the SubagentStop hook is not wired, or the subagents ran

@@ -45,8 +45,9 @@ type SessionSummary struct {
 	// written after the recorded end.
 	DurationMS int64 `json:"duration_ms"`
 	// ActiveMS is the time inside the session's turns that did not wait
-	// for input, the session's active time. A turn with totals gives its
-	// wall time less its user time; one without gives its recorded span.
+	// for input and was not idle, the session's active time. A turn with
+	// totals gives its wall time less its user and idle time; one without
+	// gives its recorded span.
 	// An open turn ends where DurationMS ends it, at its last activity.
 	// A turn never counts below zero, and the gaps between turns never
 	// count, so a session left open overnight adds nothing for the night.
@@ -167,7 +168,7 @@ func newTurnTimes(turns []Turn) turnTimes {
 		}
 		switch {
 		case t.Totals != nil:
-			tt.closedMS += max(t.Totals.WallMS-t.Totals.UserMS, 0)
+			tt.closedMS += max(t.Totals.WallMS-t.Totals.UserMS-t.Totals.IdleMS, 0)
 		case t.Status == TurnOpen:
 			tt.open = append(tt.open, openTurn{
 				start: t.StartedAt, next: nextStart(turns, t.StartedAt), last: t.StartedAt,

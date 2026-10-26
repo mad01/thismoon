@@ -15,7 +15,7 @@ the same store.
 ```
 moondb/
   cmd/moondb/          - entrypoint (delegates to internal/cli)
-  facts.go             - port, workdir, capture caps and budgets, agent transcript head and cap, default excludes, trace limits, totals backfill pace, listing status rule, model prices, agentdoc.Facts
+  facts.go             - port, workdir, capture caps and budgets, agent transcript head and cap, default excludes, trace limits, idle gap, totals backfill pace, listing status rule, model prices, agentdoc.Facts
   embed.go             - embeds operating.md for `moondb docs`
   internal/
     cli/               - cobra: root, serve, record, import, mcp, why, history, sessions, trace, doctor, docs, version
@@ -362,6 +362,15 @@ trace with a reason.
   time: hooks, request setup, and the Stop hooks up to the Stop line (a
   `system` line with subtype `stop_hook_summary`). The tail after a Stop
   line is user time.
+- A model, tool or harness stretch longer than `IdleGapAfter` (30 minutes)
+  keeps its first 30 minutes in its own class, and the rest is idle time
+  (`GapIdle`, `idle_ms`). The transcript gets no line while a laptop
+  sleeps, a session waits days to be resumed, or a request hangs. Without
+  the rule, the line that ends such a stretch would claim all of it. The
+  rule applies to each stretch between two lines, before neighbours of one
+  class merge. User time is never idle. The stretch before the first kept
+  line of a cut head stays harness time at any length, since the harness
+  wrote lines there and the size cap dropped them.
 - The totals by kind add up to the wall time to the millisecond. Each kind
   is cut from the running sum of the kinds, so the sub-millisecond rest of
   one carries into the next.
@@ -377,11 +386,11 @@ trace with a reason.
   page's trace lanes and turn list follow the same order and keep the Seq
   as the turn's number.
 - The session trace's wall time is the turns' wall times plus the user
-  gaps, and its user time adds the gaps to the turns' own. The time split
-  then adds up to the wall whenever each turn's does. Without overlapping
-  turns the wall runs from the first start to the last end. A stretch two
-  turns overlap counts in each, so this wall can exceed the session row's
-  `duration_ms` by that overlap.
+  gaps. Its user time adds the gaps to the turns' own, and its idle time is
+  the turns'. The time split then adds up to the wall whenever each turn's
+  does. Without overlapping turns the wall runs from the first start to the
+  last end. A stretch two turns overlap counts in each, so this wall can
+  exceed the session row's `duration_ms` by that overlap.
 
 Cost comes from `moondb.DefaultPrices` (USD per million tokens), matched by
 exact model id, then by family (a dated or provider suffix). Fast mode
@@ -429,7 +438,7 @@ stores each closed or failed turn's trace totals on its Turn record when the
 turn closes, live and imported alike (`Turn.Totals`, `internal/ingest/totals.go`).
 A `TurnTotals` holds:
 
-- the milliseconds per class: wall, model, tool, harness and user
+- the milliseconds per class: wall, model, tool, harness, user and idle
 - the model calls, tool calls and failed tool calls
 - the tokens by kind per rate bucket: model, speed, US-only geo and the
   long-prompt tier
@@ -457,9 +466,10 @@ and skipped until serve restarts. So is a turn that panics: each turn runs
 under a recover. A failed store write ends the batch and skips nothing, and
 so does a failed chunk read while the ping fails too. The next batch tries
 that turn again. Bump `trace.TotalsVersion` when a trace change alters the
-totals, and the totals backfill recomputes the stored ones. A turn-open
-that moves a closed turn's start back recomputes its totals; a transcript
-it cannot read then clears them for the totals backfill.
+totals. The totals backfill then recomputes the stored ones, the Agents'
+too. Version 2 added idle time, so totals of version 1 are computed again.
+A turn-open that moves a closed turn's start back recomputes its totals; a
+transcript it cannot read then clears them for the totals backfill.
 
 Sessions get their names on the same paths. `Session.PromptLine` is the
 first line of a prompt that has text once tags are gone, cut to
@@ -507,7 +517,7 @@ Turn{ ID, SessionID, Seq, PromptChunk, FinalChunk, TranscriptChunk,
 Agent{ ID, SessionID, Type, Name, Description, Model, TurnIDs, Cwd, Location,
        StartedAt, EndedAt, TranscriptChunk, Lines AgentLines, Totals *TurnTotals }
 SkippedFiles{ Tool, ToolUseID, At, Clean, Timeout, Failed }
-TurnTotals{ Version, WallMS, ModelMS, ToolMS, HarnessMS, UserMS,
+TurnTotals{ Version, WallMS, ModelMS, ToolMS, HarnessMS, UserMS, IdleMS,
             Usage []ModelUsage{ Model, Speed, Geo, Long, Tokens },
             ModelCalls, ToolCalls, ToolErrors }
 Edit{ ID, ToolUseID, SessionID, TurnID, AgentID, AgentType, Tool, At,
@@ -609,10 +619,10 @@ A session row comes from the index alone, never a chunk
   last activity: the latest edit or agent stop at or after its start and
   before the next turn starts.
 - `active_ms`: the active time (`store.Summarize`). Each turn adds its
-  totals' wall time less their user time, or without totals its recorded
-  span, and never less than zero. An open turn ends at its last activity,
-  as in `duration_ms`. The gaps between turns never count, so a session
-  left open overnight adds nothing for the night. It never exceeds
+  totals' wall time less their user and idle time, or without totals its
+  recorded span, and never less than zero. An open turn ends at its last
+  activity, as in `duration_ms`. The gaps between turns never count, so a
+  session left open overnight adds nothing for the night. It never exceeds
   `duration_ms`: overlapping turns, or totals that outlast the recorded
   span, are capped at the wall time.
 - `turn_count`, `edit_count`, `file_count` (distinct worktree and path) and
@@ -717,25 +727,30 @@ return, so keep it stable.
   harness, model and transcript path sit last, in a closed "Session
   details" disclosure. The Trace section has a totals strip (wall, model,
   tool, tokens, cost) and one timeline lane per turn, in the same order.
-  A lane has rows for model, tool and subagent bars in the webkit series
-  colours, a failed tool call in red. Parallel subagents get a row each,
-  up to four. Each lane is scaled to its own turn, and a subagent bar
-  runs from its spawn to its stop, cut at the lane's end. A bar's hover
-  title gives its duration, calls, tokens and cost, and clicking it opens
-  the turn.
+  The wall's note gives the time waiting for input and, when a turn had
+  some, the idle time. A lane has rows for model, tool and subagent bars in
+  the webkit series colours, a failed tool call in red. Parallel subagents
+  get a row each, up to four. Each lane is scaled to its own turn, and a
+  subagent bar runs from its spawn to its stop, cut at the lane's end. An
+  idle stretch is a hatched break over the bars, at most 4% of the lane
+  wide. Its title gives its length and "no transcript line for over
+  30 min". The rest of the lane scales to the turn's other time, so a
+  turn with days of idle time still shows its calls. A bar's hover title
+  gives its duration, calls, tokens and cost, and clicking it opens the
+  turn.
 - `/?turn=<id>`: the full prompt and final message with fixation reading,
-  the turn's cost split between the main conversation and its subagents,
-  who started it, a "Skipped" row when the Bash hook skipped files of a
-  command (clean after it, past the budget, or with a status git could not
-  give), the agents that worked in it with their calls, time, edits and
-  cost (those without edits too), and the edits grouped by
-  worktree, then path. Each edit shows its tool, kind, agent, time, before
-  source and observed match. Its unified diff is drawn in the browser from
-  the patch chunk, and a create without hunks shows its after content. Then the
-  unattributed deltas with their diffs, the snapshots with their file and
-  skipped counts, the commit links, and the raw transcript lines behind a
-  closed disclosure. Clicking an added line asks
-  `/api/why` about that line's text and shows the answer inline.
+  the turn's cost split between the main conversation and its subagents, an
+  "Idle" row when the turn has idle time, who started it, a "Skipped" row
+  when the Bash hook skipped files of a command (clean after it, past the
+  budget, or with a status git could not give), the agents that worked in
+  it with their calls, time, edits and cost (those without edits too), and
+  the edits grouped by worktree, then path. Each edit shows its tool, kind,
+  agent, time, before source and observed match. Its unified diff is drawn
+  in the browser from the patch chunk, and a create without hunks shows its
+  after content. Then the unattributed deltas with their diffs, the
+  snapshots with their file and skipped counts, the commit links, and the
+  raw transcript lines behind a closed disclosure. Clicking an added line
+  asks `/api/why` about that line's text and shows the answer inline.
 - `/?worktree=<abs>&path=<rel>`: the file today, from `/api/annotate`, with
   a gutter band per turn (solid for blame, dashed for a content match);
   hovering a line names its turn's prompt and clicking opens the turn.
@@ -777,7 +792,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 - `moondb_history(path)`: the recorded edits of a path, newest first
 - `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links, and the agents that worked in it; the summary names its subagents
 - `moondb_sessions()`: recorded sessions, newest first, each with its title, status, times, active and wall time, counts, subagent names, tokens and cost split between the main conversation and the subagents, and its attributed cost per repository (`repo_costs`); with `repo`, also `repo_cost` beside the whole `cost`
-- `moondb_trace(id)`: one session's time split (model, tool, harness, user), tokens by kind and cost with its main and agent parts, the subagents costliest first, and the longest tool calls and most expensive model calls of every agent
+- `moondb_trace(id)`: one session's time split (model, tool, harness, user, idle), tokens by kind and cost with its main and agent parts, the subagents costliest first, and the longest tool calls and most expensive model calls of every agent
 - `moondb_doctor()`: the same checks as `moondb doctor`, returned as JSON, for a client that can call a tool but has no shell
 
 Tool responses include a `url` built from `MOONDB_BASE_URL` (for example

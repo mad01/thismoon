@@ -165,7 +165,8 @@
 .timeline .tl-prompt a:hover{color:var(--primary)}
 .timeline .diff{margin-top:0.5rem}
 /* session trace: a totals strip, then a lane per turn with a row of bars per
-   span kind, each lane scaled to its own turn */
+   span kind, each lane scaled to its own turn, an idle stretch drawn as a
+   narrow hatched break over the bars */
 .tr-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0.75rem;margin:0 0 1rem}
 .tr-stats wk-stat{margin:0;padding:0.8rem 1rem}
 .tr-stats wk-stat-value{font-size:1.6rem}
@@ -176,7 +177,10 @@
 .tr-lane{display:grid;grid-template-columns:15rem minmax(0,1fr) 8.5rem;align-items:center;gap:0.75rem;font-size:0.8rem}
 #app a.tr-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-1);text-decoration:none}
 #app a.tr-label:hover{color:var(--primary)}
-.tr-track{display:flex;flex-direction:column;gap:2px;padding:3px 0;background:var(--chip-bg);border-radius:4px}
+.tr-track{position:relative;display:flex;flex-direction:column;gap:2px;padding:3px 0;background:var(--chip-bg);border-radius:4px}
+.tr-idle,.tr-idle-swatch{background:repeating-linear-gradient(135deg,var(--text-3) 0 1px,var(--card-bg) 1px 4px)}
+.tr-idle{position:absolute;top:0;bottom:0;min-width:3px;z-index:2;border-inline:1px solid var(--text-3)}
+.tr-idle-swatch{border:1px solid var(--text-3)}
 .tr-row{position:relative;height:7px}
 .tr-bar{position:absolute;top:0;bottom:0;min-width:2px;border-radius:2px;background:var(--bar);box-shadow:0 0 0 0.5px var(--card-bg)}
 .tr-failed{background:repeating-linear-gradient(135deg,var(--bar) 0 2px,color-mix(in srgb,var(--bar) 35%,transparent) 2px 4px)}

@@ -152,11 +152,13 @@ turn keeps, so capture records nothing new for it. `trace.Build` makes a
 span per assistant message, from the event before it to its last line. It
 makes one per tool call, from the `tool_use` to its `tool_result`, and one
 per subagent without a record, from its first to its last recorded edit
-inside the turn. It
-splits the turn into gaps classed by the event that ends each one: model,
-tool, user (a new input after the model finished) or harness. The gaps add
-up to the wall time, and so do the totals by kind, to the millisecond. A
-turn longer than the 4 MiB transcript tail keeps only its tail; when the
+inside the turn. It splits the turn into gaps classed by the event that
+ends each one: model, tool, user (a new input after the model finished) or
+harness. A model, tool or harness stretch longer than 30 minutes
+(`IdleGapAfter`) keeps its first 30 minutes, and the rest is idle time. The
+transcript gets no line while a laptop sleeps or a request hangs. The gaps
+add up to the wall time, and so do the totals by kind, to the millisecond.
+A turn longer than the 4 MiB transcript tail keeps only its tail; when the
 first kept line is an assistant line or a tool result, the stretch before
 it counts as harness time.
 
@@ -168,8 +170,9 @@ times, so `query` caches it in memory under those, at most 512 turns. A
 session's trace puts its turns in the order they started, not by Seq: an
 import numbers the turns it adds after the live ones even when they ran
 first. It adds the user time between them, from the latest end so far to
-the next start. Its wall time is the turns' wall times plus those gaps,
-so its time split adds up the way a turn's does.
+the next start, and its idle time is the turns'. Its wall time is the
+turns' wall times plus those gaps, so its time split adds up the way a
+turn's does.
 
 Agents: `trace.BuildAgent` traces an Agent from its agent transcript with
 the same parser. Its run goes from its spawn to its stop, and its segments
@@ -204,14 +207,14 @@ activity is under 10 minutes old, or while its last turn is open and the
 activity is under 12 hours old. The last turn is the one that started
 last. Its cost prices the stored tokens of its turns and its agents on
 read, split into the main conversation's part and the agents', so a price
-change reprices every row. Its active time adds each turn's wall time
-less its user time from the turn totals, or the turn's recorded span
-without them. The pauses between turns never count. Its wall time runs
-from the earliest turn start to the latest turn end. An open turn ends at
-its last edit or agent stop for both times, and the active time is capped
-at the wall time. The time window keeps the sessions active in it,
-grouped by the day they started. The answer also adds up the whole
-filtered window and lists the window's repos for the page's chips.
+change reprices every row. Its active time adds each turn's wall time less
+its user and idle time from the turn totals, or the turn's recorded span
+without them. The pauses between turns never count. Its wall time runs from
+the earliest turn start to the latest turn end. An open turn ends at its
+last edit or agent stop for both times, and the active time is capped at
+the wall time. The time window keeps the sessions active in it, grouped by
+the day they started. The answer also adds up the whole filtered window and
+lists the window's repos for the page's chips.
 
 Cost by repo is a view too. Model calls carry no repo, so the listing
 splits a session's cost by who spent it. A subagent's cost goes to the

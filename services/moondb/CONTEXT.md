@@ -55,15 +55,19 @@ A recorded after-content blob id matched to a blob in a new commit, tying an Edi
 _Avoid_: attribution trailer, tag
 
 **Trace**:
-The account of what took time in a turn, an Agent or a session and what it cost, computed on read from a Turn's transcript lines and its Agents' transcripts. A turn's trace is its Spans plus its wall time split by what was running: model, tool, harness, or user time spent waiting for input. Its cost adds the work its Agents did under it. A session's trace adds the user time between one turn's Stop and the next prompt, and every Agent's whole run to its cost.
+The account of what took time in a turn, an Agent or a session and what it cost, computed on read from a Turn's transcript lines and its Agents' transcripts. A turn's trace is its Spans plus its wall time split by what was running: model, tool, harness, or user time spent waiting for input. Past a point, a stretch with no line is Idle time. Its cost adds the work its Agents did under it. A session's trace adds the user time between one turn's Stop and the next prompt, and every Agent's whole run to its cost.
 _Avoid_: event, log entry, metric, profile
+
+**Idle**:
+The part of a stretch inside a Turn or an Agent's run that goes on past `IdleGapAfter` (30 minutes) with no transcript line. A laptop asleep, a session resumed days later or a request that hung leaves one. A Trace classes each stretch by the line that ends it, so without this rule the whole stretch would count as model, tool or harness time. The stretch keeps its first `IdleGapAfter` in its own class, and the rest is idle time. Waiting for input is user time and never idle, inside a turn or between turns. Active time leaves idle time out. The listing's `SessionIdleAfter`, which calls a quiet session ended, is a different rule.
+_Avoid_: sleep, pause
 
 **Turn totals**:
 A closed Turn's Trace totals, kept on the Turn record so a listing never reads a transcript. They hold the time per class, the call counts and the tokens per model and rate. Never a cost: the tokens are priced when read. An Agent keeps totals of the same shape for its run. A turn or Agent stored before totals existed, or under an older trace version, gets them from the totals backfill.
 _Avoid_: stats, metrics, summary (the listing row's word)
 
 **Active time**:
-The time a Session spent inside its Turns, less the time a turn waited for input. A turn with Turn totals gives its wall time less its user time. The pauses between turns never count, so a session left open overnight adds nothing for the night. Its counterpart is the wall time, from the first prompt to the last turn's end with every pause included, and the active time never exceeds it. A session row carries both, as `active_ms` and `duration_ms`.
+The time a Session spent inside its Turns, less the time a turn waited for input or sat Idle. A turn with Turn totals gives its wall time less its user and idle time. The time between turns never counts, so a session left open overnight adds nothing for the night. Its counterpart is the wall time, from the first prompt to the last turn's end with the time between turns included, and the active time never exceeds it. A session row carries both, as `active_ms` and `duration_ms`.
 _Avoid_: duration (say active time or wall time), run time, uptime
 
 **Attributed cost**:

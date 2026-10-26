@@ -214,7 +214,7 @@ func TestTraceRoundTrip(t *testing.T) {
 		t.Errorf("agents = %+v, want the reviewer in turn 1 with its cost", out.Agents)
 	}
 	for _, want := range []string{
-		"1 turns", "wall 2m00s", "tool 1m00s", "cost $0.026 (main $0.014, 1 subagents $0.011)",
+		"1 turns", "wall 2m00s", "tool 1m00s", "user 0ms, idle 0ms", "cost $0.026 (main $0.014, 1 subagents $0.011)",
 		"longest tool call Edit 1m00s in turn 1 by main",
 	} {
 		if !strings.Contains(out.Summary, want) {

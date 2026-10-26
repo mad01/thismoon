@@ -12,6 +12,7 @@ import (
 	"github.com/mad01/thismoon/services/moondb/internal/client"
 	"github.com/mad01/thismoon/services/moondb/internal/server"
 	"github.com/mad01/thismoon/services/moondb/internal/server/servertest"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 // traceClient is a client of the real server handler over the fixture
@@ -68,7 +69,7 @@ func TestPrintTrace(t *testing.T) {
 	// reviewer's two calls under it cost $0.0114.
 	for _, want := range []string{
 		"session sess-old, 1 turn:",
-		"wall    2m00s",
+		"wall    2m00s   model 49.0s, tool 1m00s, harness 11.0s, user 0ms, idle 0ms\n",
 		"cost    $0.026  main $0.014, agents $0.011",
 		"calls   6       main: model 2, tool 1 (0 failed); agents: model 2, tool 1",
 		"AGENTS",
@@ -83,5 +84,17 @@ func TestPrintTrace(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}
+	}
+}
+
+// TestPrintTotalsIdle: the wall line names idle time, and says what it is
+// when a turn had some.
+func TestPrintTotalsIdle(t *testing.T) {
+	var out bytes.Buffer
+	printTotals(&out, trace.Totals{WallMS: 5 * 3_600_000, ModelMS: 1_800_000, IdleMS: 16_200_000})
+	want := "model 30m00s, tool 0ms, harness 0ms, user 0ms, idle 4h30m " +
+		"(no transcript line inside a turn for over 30 min)"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("output lacks %q:\n%s", want, out.String())
 	}
 }
