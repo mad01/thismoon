@@ -19,11 +19,11 @@ Each case run is its own session: the runner strips the variables that would nes
 
 ## Workspaces
 
-- `repo:<name or path>` runs in the canonical checkout. The runner always denies edit tools, git write verbs, and the csl, kof, worklog and brain tools that write, on top of the case's own list.
-- `worktree:<name or path>` cuts a locked worktree on a throwaway `eval/` branch under `~/.cache/harness-eval/worktrees/<repo>/` and removes both afterwards. A run's start sweeps worktrees and branches a crashed run left behind.
+- `repo:<name or path>` runs in the canonical checkout, so it also denies edit tools, git write verbs and the csl repo tools.
+- `worktree:<name or path>` cuts a worktree on a throwaway `eval/<id>-<stamp>` branch under `~/.cache/harness-eval/worktrees/<repo>/`, locked with the runner's pid, and removes both afterwards. A run's start removes only the worktrees under that root whose locking runner has died, and their branches.
 - `tmpdir` is an empty temp directory.
 
-For repo and worktree cases the runner compares the canonical checkout's HEAD and status before and after. Any change is an error on the row.
+Every case is denied the kof, worklog, brain and GitHub tools that write, on top of its own list. For repo and worktree cases the runner compares the canonical checkout's HEAD, branch and status before and after. Any change is an error on the row.
 
 ## Adding a case
 

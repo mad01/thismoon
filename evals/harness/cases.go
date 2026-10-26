@@ -141,10 +141,26 @@ func (g Grader) Name() string {
 	return strings.Join(parts, " ")
 }
 
-// repoDenyList is denied to every case that runs in a repo workspace, on
-// top of the case's own list: a repo workspace is the canonical checkout,
-// and these tools write to it or to a shared store. Bash patterns use the
-// permission-rule prefix form claude accepts in --disallowedTools.
+// sharedDenyList is denied to every case, whatever its workspace: these
+// tools write to stores and services that outlive the run (kof, worklog,
+// brain, GitHub), which no workspace teardown can undo.
+var sharedDenyList = []string{
+	"mcp__kof__kof_assert", "mcp__kof__kof_retract",
+	"mcp__worklog__worklog_checkpoint",
+	"mcp__brain__brain_write", "mcp__brain__brain_edit",
+	"mcp__gh_com__create_pull_request", "mcp__gh_com__update_pull_request",
+	"mcp__gh_com__update_pull_request_branch", "mcp__gh_com__merge_pull_request",
+	"mcp__gh_com__push_files", "mcp__gh_com__create_or_update_file",
+	"mcp__gh_com__delete_file", "mcp__gh_com__issue_write", "mcp__gh_com__sub_issue_write",
+	"mcp__gh_com__add_issue_comment", "mcp__gh_com__add_reply_to_pull_request_comment",
+	"mcp__gh_com__pull_request_review_write", "mcp__gh_com__add_comment_to_pending_review",
+	"mcp__gh_com__create_branch", "mcp__gh_com__create_repository",
+	"mcp__gh_com__delete_repository", "mcp__gh_com__fork_repository",
+}
+
+// repoDenyList is also denied to a case in a repo workspace, which is the
+// canonical checkout: these tools write to the checkout or its index. Bash
+// patterns use the permission-rule prefix form --disallowedTools accepts.
 var repoDenyList = []string{
 	"Edit", "Write", "NotebookEdit", "MultiEdit",
 	"Bash(git add:*)", "Bash(git am:*)", "Bash(git apply:*)", "Bash(git branch -d:*)",
@@ -157,21 +173,23 @@ var repoDenyList = []string{
 	"Bash(git tag:*)", "Bash(git update-ref:*)", "Bash(git worktree:*)",
 	"Bash(sed -i:*)", "Bash(rm:*)", "Bash(mv:*)",
 	"mcp__csl__csl_repo_pull", "mcp__csl__csl_repo_reindex",
-	"mcp__kof__kof_assert", "mcp__kof__kof_retract",
-	"mcp__worklog__worklog_checkpoint",
-	"mcp__brain__brain_write", "mcp__brain__brain_edit",
 }
 
 // Disallowed is the --disallowedTools list a run of c gets: the case's own
-// list, plus repoDenyList for a repo workspace, without duplicates.
+// list, then sharedDenyList, then repoDenyList for a repo workspace,
+// without duplicates.
 func (c Case) Disallowed() []string {
 	out := slices.Clone(c.DisallowedTools)
-	if c.Workspace.Kind == workspaceRepo {
-		for _, tool := range repoDenyList {
+	add := func(tools []string) {
+		for _, tool := range tools {
 			if !slices.Contains(out, tool) {
 				out = append(out, tool)
 			}
 		}
+	}
+	add(sharedDenyList)
+	if c.Workspace.Kind == workspaceRepo {
+		add(repoDenyList)
 	}
 	return out
 }

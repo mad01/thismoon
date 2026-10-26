@@ -157,11 +157,22 @@ func TestDisallowed(t *testing.T) {
 	if edits != 1 {
 		t.Errorf("Edit listed %d times, want once", edits)
 	}
-	worktree := Case{
-		Workspace:       WorkspaceSpec{Kind: workspaceWorktree, Repo: "x"},
-		DisallowedTools: []string{"Bash(git push:*)"},
-	}
-	if got := worktree.Disallowed(); len(got) != 1 {
-		t.Errorf("worktree case got the repo deny list: %v", got)
+	for _, kind := range []string{workspaceWorktree, workspaceTmpdir} {
+		c := Case{
+			Workspace:       WorkspaceSpec{Kind: kind},
+			DisallowedTools: []string{"Bash(git push:*)"},
+		}
+		got := c.Disallowed()
+		for _, want := range []string{
+			"Bash(git push:*)", "mcp__kof__kof_assert", "mcp__brain__brain_edit",
+			"mcp__gh_com__merge_pull_request", "mcp__gh_com__push_files",
+		} {
+			if !slices.Contains(got, want) {
+				t.Errorf("%s case list misses %q", kind, want)
+			}
+		}
+		if slices.Contains(got, "Edit") || slices.Contains(got, "Bash(git commit:*)") {
+			t.Errorf("%s case got the repo-only deny list: %v", kind, got)
+		}
 	}
 }
