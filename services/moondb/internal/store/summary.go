@@ -90,8 +90,10 @@ type FileKey struct {
 // SortAgents order; edits may come in any order. Summarize only reads
 // them. AgentCount counts every agent an Agent record or an edit names,
 // the main conversation among them when it edited. RepoUsage applies the
-// attribution rule to the same records.
+// attribution rule to the same records. A main segment's record
+// (Agent.IsMainSegment) adds nothing anywhere.
 func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) SessionSummary {
+	agents = slices.DeleteFunc(slices.Clone(agents), Agent.IsMainSegment)
 	sum := SessionSummary{
 		Session:        s,
 		Repos:          []string{},

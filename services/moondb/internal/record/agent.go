@@ -3,6 +3,8 @@ package record
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -17,10 +19,9 @@ import (
 // agent-close envelope. The envelope is named by the agent and the lines
 // read, so a replayed payload, or a second stop with nothing new in the
 // file, writes the same envelope again. A transcript that cannot be read
-// still records the agent, without lines, as the meta file and the
-// payload describe it. A path outside the session's subagents directory,
-// or a session_id that is not one path element, records nothing and is
-// logged.
+// still records the agent, without lines (readAgent). A main segment's
+// stop, a path outside the session's subagents directory, or a session_id
+// that is not one path element records nothing and is logged.
 func (rec *recorder) closeAgent() error {
 	p := rec.p
 	path, err := agentTranscriptFile(p)
@@ -28,11 +29,9 @@ func (rec *recorder) closeAgent() error {
 		rec.opts.Logf("agent %s: %v; not recorded", p.agentID, err)
 		return nil
 	}
-	c, err := agentfile.Read(rec.ctx, path, p.agentType)
-	if err != nil {
-		rec.opts.Logf("agent %s: %v; recording it without lines", p.agentID, err)
-		c = agentfile.Capture{}
-		c.Type, c.Name = agentfile.Kind(agentfile.ReadMeta(agentfile.MetaPath(path)), p.agentType)
+	c, ok := rec.readAgent(path)
+	if !ok {
+		return nil
 	}
 	env := rec.envelope(spool.KindAgentClose, fmt.Sprintf("%s:close:%d", p.agentID, c.Lines.Read))
 	chunks := chunkSet{}
@@ -52,6 +51,42 @@ func (rec *recorder) closeAgent() error {
 	}
 	env.AgentClose = ac
 	return rec.spool.Write(env, chunks)
+}
+
+// readAgent reads the agent transcript at path. One that cannot be read
+// gives the agent without lines, as the meta file and the payload describe
+// it, and is logged. A main segment's stop (mainSegment) gives nothing to
+// record: ok is false.
+func (rec *recorder) readAgent(path string) (c agentfile.Capture, ok bool) {
+	p := rec.p
+	c, err := agentfile.Read(rec.ctx, path, p.agentType)
+	if err == nil {
+		return c, true
+	}
+	meta := agentfile.MetaPath(path)
+	if mainSegment(err, p.agentType, meta) {
+		rec.opts.Logf("agent %s: no transcript and no type: "+
+			"a segment of the main conversation, not recorded", p.agentID)
+		return agentfile.Capture{}, false
+	}
+	rec.opts.Logf("agent %s: %v; recording it without lines", p.agentID, err)
+	c = agentfile.Capture{}
+	c.Type, c.Name = agentfile.Kind(agentfile.ReadMeta(meta), p.agentType)
+	return c, true
+}
+
+// mainSegment reports whether a stop whose agent transcript failed to read
+// with err is a main segment's: the transcript file does not exist, the
+// payload names no agent_type, and no meta file sits at meta. The harness
+// runs a stretch of the main conversation, such as one a teammate's
+// message wakes, under an agent id of its own and fires SubagentStop at
+// its end, while the stretch's lines go to the main transcript.
+func mainSegment(err error, hookType, meta string) bool {
+	if hookType != "" || !errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	_, err = os.Stat(meta)
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // agentTranscriptFile is the file closeAgent reads: agent_transcript_path with

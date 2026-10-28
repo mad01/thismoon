@@ -16,7 +16,9 @@ import (
 // first of it. A teammate stops after every message it works through, and
 // each stop reads a longer file, so the newest record wins whole: a live
 // envelope replaces the stored agent when it read as many lines or more,
-// an import only when it read more.
+// an import only when it read more. A main segment's stop
+// (store.Agent.IsMainSegment), which a spool written before record
+// skipped them can still hold, records nothing.
 func (in *Ingester) agentClose(
 	ctx context.Context,
 	env spool.Envelope,
@@ -28,6 +30,9 @@ func (in *Ingester) agentClose(
 	}
 	if env.Agent.ID == "" {
 		return fmt.Errorf("ingest: %s envelope %s has no agent id", env.Kind, env.ID)
+	}
+	if newAgent(env, p.TranscriptChunk).IsMainSegment() {
+		return nil
 	}
 	if err := in.upsertSession(ctx, env); err != nil {
 		return err

@@ -116,6 +116,28 @@ func TestAgentCloseMissingChunk(t *testing.T) {
 	}
 }
 
+// TestAgentCloseDropsMainSegment: a main segment's stop, as record spooled
+// it before it skipped them (no agent_type, no line read, no transcript),
+// leaves the spool and records neither an agent nor a session.
+func TestAgentCloseDropsMainSegment(t *testing.T) {
+	f := newFixture(t)
+	env := base(spool.KindAgentClose, "a67e:close:0", "s1", "", 3)
+	env.Agent = spool.AgentRef{ID: "a67e"}
+	env.AgentClose = &spool.AgentClose{Type: store.InternalAgent, StartedAt: at(3), EndedAt: at(3)}
+	f.write(env, chunkSet{})
+	f.drain()
+	ctx := context.Background()
+	if a, err := f.st.Agent(ctx, "a67e"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("agent = %+v, %v; want none", a, err)
+	}
+	if _, err := f.st.Session(ctx, "s1"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("session s1: %v; want none", err)
+	}
+	if n := f.pending(); n != 0 {
+		t.Errorf("%d envelopes pending, want the stop gone from the spool", n)
+	}
+}
+
 // TestAgentCloseNeedsAgentID: an agent-close without an agent id names
 // nothing to record.
 func TestAgentCloseNeedsAgentID(t *testing.T) {

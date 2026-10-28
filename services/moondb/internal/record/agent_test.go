@@ -5,11 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/mad01/thismoon/services/moondb/internal/agentfile"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
+	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 // agentTranscript is a subagent's transcript working in dir: messaged
@@ -66,16 +68,59 @@ func TestSubagentStop(t *testing.T) {
 	}
 }
 
-// TestSubagentStopWithoutTranscript still records the agent, as the
-// payload names it, starting and ending when the hook ran.
+// TestSubagentStopWithoutTranscript still records an agent whose
+// transcript cannot be read, as the payload and the meta file name it,
+// starting and ending when the hook ran. A stop with no transcript file,
+// no agent_type and no meta file is a main segment's: it records nothing.
+// Each case logs one line.
 func TestSubagentStopWithoutTranscript(t *testing.T) {
-	s := newSession(t, physicalTempDir(t))
-	s.mustRun("subagent_stop.json", "$AGENT_TRANSCRIPT", agentFile(s))
-	env := s.takeOne(spool.KindAgentClose)
-	ac := env.AgentClose
-	if env.ID != "agent-7:close:0" || ac.Type != "worker" || ac.TranscriptChunk != "" ||
-		!ac.StartedAt.Equal(testNow) || len(s.logs) != 1 {
-		t.Errorf("envelope %s = %+v, logs %q; want the worker without lines", env.ID, ac, s.logs)
+	cases := []struct {
+		name    string
+		untyped bool // the payload names no agent_type
+		setup   func(t *testing.T, file string)
+		want    string // the recorded type; "" for nothing recorded
+		log     string
+	}{
+		{"typed", false, nil, "worker", "recording it without lines"},
+		{"untyped", true, nil, "", "segment of the main conversation, not recorded"},
+		{"untyped with a meta file", true, func(t *testing.T, file string) {
+			writeFile(t, agentfile.MetaPath(file), `{"spawnedAgentType":"general-purpose"}`)
+		}, "general-purpose", "recording it without lines"},
+		{"untyped with an empty transcript", true, func(t *testing.T, file string) {
+			writeFile(t, file, "")
+		}, store.InternalAgent, "recording it without lines"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := newSession(t, physicalTempDir(t))
+			file := agentFile(s)
+			if c.setup != nil {
+				c.setup(t, file)
+			}
+			vars := []string{"$AGENT_TRANSCRIPT", file}
+			if c.untyped {
+				vars = append(vars, `"agent_type": "worker",`, "")
+			}
+			s.mustRun("subagent_stop.json", vars...)
+			envs := s.take()
+			if len(s.logs) != 1 || !strings.Contains(s.logs[0], c.log) {
+				t.Errorf("logs %q, want one saying %q", s.logs, c.log)
+			}
+			if c.want == "" {
+				if len(envs) != 0 {
+					t.Errorf("spooled %v, want nothing", kinds(envs))
+				}
+				return
+			}
+			if len(envs) != 1 {
+				t.Fatalf("spooled %v, want one %s", kinds(envs), spool.KindAgentClose)
+			}
+			env, ac := envs[0], envs[0].AgentClose
+			if env.ID != "agent-7:close:0" || ac.Type != c.want || ac.TranscriptChunk != "" ||
+				!ac.StartedAt.Equal(testNow) {
+				t.Errorf("envelope %s = %+v; want a %s without lines", env.ID, ac, c.want)
+			}
+		})
 	}
 }
 

@@ -2,6 +2,7 @@ package store
 
 import (
 	"iter"
+	"slices"
 	"testing"
 	"time"
 )
@@ -237,6 +238,58 @@ func TestSummarizeLastTurnOpen(t *testing.T) {
 			sum := Summarize(Session{ID: "s", StartedAt: minutes(0)}, tc.turns, nil, editsAt())
 			if sum.LastTurnOpen != tc.want {
 				t.Errorf("LastTurnOpen = %v, want %v", sum.LastTurnOpen, tc.want)
+			}
+		})
+	}
+}
+
+// TestSummarizeLeavesOutMainSegments: a main segment's record counts as no
+// agent, adds no label and is no activity, while an internal agent with
+// lines read is an Agent like any other. The agents passed in stay as
+// they were.
+func TestSummarizeLeavesOutMainSegments(t *testing.T) {
+	builder := Agent{
+		ID: "a1", SessionID: "s", Type: "general-purpose", Name: "builder",
+		StartedAt: minutes(1), EndedAt: minutes(2),
+		TranscriptChunk: "c1", Lines: AgentLines{Read: 3, Kept: 2},
+	}
+	segment := Agent{
+		ID: "a67e", SessionID: "s", Type: InternalAgent, StartedAt: minutes(30),
+		EndedAt: minutes(30),
+	}
+	internal := segment
+	internal.ID, internal.TranscriptChunk = "a68f", "c2"
+	internal.Lines = AgentLines{Read: 4, Kept: 4}
+	tests := []struct {
+		name       string
+		agents     []Agent
+		wantCount  int
+		wantLabels []string
+		wantLast   time.Time
+	}{
+		{"a main segment", []Agent{builder, segment}, 1, []string{"builder"}, minutes(5)},
+		{
+			"an internal agent with lines",
+			[]Agent{builder, internal},
+			2,
+			[]string{"builder", InternalAgent},
+			minutes(30),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			in := slices.Clone(tc.agents)
+			sum := Summarize(Session{ID: "s", StartedAt: minutes(0)},
+				[]Turn{closedTurn("t1", 1, 0, 5)}, tc.agents, editsAt())
+			if sum.AgentCount != tc.wantCount || !slices.Equal(sum.AgentLabels, tc.wantLabels) {
+				t.Errorf("AgentCount, AgentLabels = %d, %q; want %d, %q",
+					sum.AgentCount, sum.AgentLabels, tc.wantCount, tc.wantLabels)
+			}
+			if !sum.LastActivityAt.Equal(tc.wantLast) {
+				t.Errorf("LastActivityAt = %s, want %s", sum.LastActivityAt, tc.wantLast)
+			}
+			if !slices.EqualFunc(tc.agents, in, func(a, b Agent) bool { return a.ID == b.ID }) {
+				t.Errorf("agents after Summarize = %+v, want them as passed in", tc.agents)
 			}
 		})
 	}

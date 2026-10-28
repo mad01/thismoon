@@ -569,6 +569,38 @@ func TestSessionAgents(t *testing.T) {
 	}
 }
 
+// TestSessionAgentsLeaveOutMainSegments: a main segment's record, stored
+// before record skipped them, gets no row on the session page, no place in
+// the session's listing row and no run in its trace.
+func TestSessionAgentsLeaveOutMainSegments(t *testing.T) {
+	h := newHarness(t)
+	const session, turn = "sess-woken", "turn-woken"
+	worker := servertest.PricedAgent("agent-worker", session, turn, store.Location{})
+	segment := store.Agent{
+		ID: "a67ed122f8cd45e54", SessionID: session, Type: store.InternalAgent,
+		StartedAt: servertest.T0.Add(time.Hour), EndedAt: servertest.T0.Add(time.Hour),
+	}
+	h.store.Add(
+		store.Session{ID: session, Harness: "test-harness", Cwd: "/work", StartedAt: servertest.T0},
+		[]store.Turn{servertest.PricedTurn(turn, session)},
+		[]store.Agent{worker, segment}, nil,
+	)
+	var v SessionView
+	h.getJSON(t, "/api/sessions/"+session, http.StatusOK, &v)
+	if len(v.Agents) != 2 || v.Agents[1].ID != worker.ID {
+		t.Errorf("agents = %+v, want main and %s", v.Agents, worker.ID)
+	}
+	if v.Summary.AgentCount != 1 || !slices.Equal(v.Summary.Agents, []string{worker.Type}) {
+		t.Errorf("listing row counts %d agents %q, want 1 [%s]",
+			v.Summary.AgentCount, v.Summary.Agents, worker.Type)
+	}
+	var st trace.SessionTrace
+	h.getJSON(t, "/api/sessions/"+session+"/trace", http.StatusOK, &st)
+	if len(st.Agents) != 1 || st.Agents[0].AgentID != worker.ID {
+		t.Errorf("trace agents = %+v, want %s alone", st.Agents, worker.ID)
+	}
+}
+
 // TestSessionMainRowStartsAtEarliestTurn: the main conversation's row
 // starts at the earliest turn start, not at the first turn by Seq, since an
 // import numbers the turns it adds after the live ones even when they ran

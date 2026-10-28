@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+
+	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 // Meta is the part of a subagent's meta file (agent-<id>.meta.json) Read
@@ -39,8 +41,8 @@ func ReadMeta(path string) Meta {
 // spawned agent type when the meta file names it. Otherwise it is the
 // meta agentType or the hook's agent_type, whichever is set and is not
 // the spawn's name. A named spawn of no known kind is "subagent", and an
-// agent with nothing to go on is "internal": the harness ran it for
-// itself. The name is the spawn's name when it says more than the type.
+// agent with nothing to go on is store.InternalAgent: the harness ran it
+// for itself. The name is the spawn's name when it says more than the type.
 func Kind(m Meta, hookType string) (typ, name string) {
 	name = m.Name
 	switch {
@@ -53,7 +55,7 @@ func Kind(m Meta, hookType string) (typ, name string) {
 	case name != "":
 		typ = "subagent"
 	default:
-		typ = "internal"
+		typ = store.InternalAgent
 	}
 	if name == typ {
 		name = ""
