@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -119,7 +120,8 @@ func (e *Engine) Check(ctx context.Context) ([]store.Dependency, error) {
 // scanCompleteEvent builds the events-archive record for a finished full
 // check. It warns when anything is flagged or any repo and ecosystem failed
 // discovery, and the message names each failure, so an unchecked ecosystem
-// shows up there instead of reading as a clean scan.
+// shows up there instead of reading as a clean scan. A dependency whose only
+// findings are signals does not count as flagged: signals stay on the page.
 func scanCompleteEvent(
 	repos int,
 	deps []store.Dependency,
@@ -128,7 +130,9 @@ func scanCompleteEvent(
 ) notify.Event {
 	flagged := 0
 	for _, d := range deps {
-		if d.Flagged() {
+		if slices.ContainsFunc(d.Advisories, func(a store.Advisory) bool {
+			return a.Kind != store.KindSignal
+		}) {
 			flagged++
 		}
 	}
@@ -208,28 +212,103 @@ func (e *Engine) CheckAndNotify(ctx context.Context) error {
 	return err
 }
 
-// Notify fires ONE coalesced macOS notification summarizing every flagged
-// advisory not yet notified, then records them all as notified. Coalescing is
-// deliberate: a fresh scan can surface dozens of advisories across many
-// transitive deps, and firing one banner each would flood NotificationCenter
-// (the sandbox-watch script batches denials for the same reason). A delivery
-// failure leaves the flags pending so the next cycle retries. Returns the number
-// of advisories covered by the notification (0 if nothing new).
+// Notify fires the banners for every flagged advisory not yet notified, then
+// records them as notified. Malicious findings get their own banner, fired
+// first and never folded into the summary. Every other finding coalesces into
+// ONE summary banner. Coalescing is deliberate: a fresh scan can surface dozens
+// of advisories across many transitive deps, and firing one banner each would
+// flood NotificationCenter (the sandbox-watch script batches denials for the
+// same reason). A delivery failure leaves that banner's flags pending so the
+// next cycle retries. Returns the number of advisories the delivered banners
+// covered (0 if nothing new).
 func Notify(st *store.Store, n alert.Notifier) (int, error) {
-	pending := st.PendingFlags()
-	if len(pending) == 0 {
-		return 0, nil
+	malicious, rest := splitMalicious(st.PendingFlags())
+	delivered := 0
+	if len(malicious) > 0 {
+		title, body := maliciousBanner(malicious)
+		got, err := deliver(st, n, malicious, "error", title, body)
+		delivered += got
+		if err != nil {
+			return delivered, err
+		}
 	}
-	title, body := summarize(pending)
+	if len(rest) > 0 {
+		title, body := summarize(rest)
+		got, err := deliver(st, n, rest, "warn", title, body)
+		delivered += got
+		if err != nil {
+			return delivered, err
+		}
+	}
+	return delivered, nil
+}
+
+// deliver fires one banner covering flags, archives it as an event at level,
+// and marks the flags notified. A failed delivery is logged and leaves them
+// pending, so the next cycle retries.
+func deliver(
+	st *store.Store,
+	n alert.Notifier,
+	flags []store.Flag,
+	level, title, body string,
+) (int, error) {
 	if err := n.Notify(title, body); err != nil {
 		log.Printf("deps: notify failed, will retry: %v", err)
 		return 0, nil
 	}
-	notify.EmitEvent("deps", "warn", title, body, nil)
-	if err := st.MarkNotified(pending); err != nil {
-		return len(pending), err
+	notify.EmitEvent("deps", level, title, body, nil)
+	if err := st.MarkNotified(flags); err != nil {
+		return len(flags), err
 	}
-	return len(pending), nil
+	return len(flags), nil
+}
+
+// splitMalicious separates the malicious findings from the rest, keeping the
+// order of each.
+func splitMalicious(flags []store.Flag) (malicious, rest []store.Flag) {
+	for _, f := range flags {
+		if f.Advisory.Kind == store.KindMalicious {
+			malicious = append(malicious, f)
+		} else {
+			rest = append(rest, f)
+		}
+	}
+	return malicious, rest
+}
+
+// maliciousBanner names each malicious package version with the repos that
+// pin it, and says what to do. A malicious version may already have run its
+// install scripts, so the move is to check whether it was installed and rotate
+// the credentials it could reach, not to wait for a version bump.
+func maliciousBanner(flags []store.Flag) (title, body string) {
+	const maxNamed = 3
+	var pkgs []string
+	repos := map[string][]string{}
+	for _, f := range flags {
+		pkg := f.Dep.Name + "@" + f.Dep.Version
+		if _, ok := repos[pkg]; !ok {
+			pkgs = append(pkgs, pkg)
+		}
+		repo := filepath.Base(f.Dep.Repo)
+		if !slices.Contains(repos[pkg], repo) {
+			repos[pkg] = append(repos[pkg], repo)
+		}
+	}
+	if len(pkgs) == 1 {
+		title = "deps: malicious package " + pkgs[0]
+	} else {
+		title = fmt.Sprintf("deps: %d malicious packages", len(pkgs))
+	}
+	named := make([]string, 0, maxNamed)
+	for _, pkg := range pkgs[:min(len(pkgs), maxNamed)] {
+		named = append(named, pkg+" in "+strings.Join(repos[pkg], ", "))
+	}
+	body = strings.Join(named, "; ")
+	if len(pkgs) > maxNamed {
+		body += fmt.Sprintf("; +%d more", len(pkgs)-maxNamed)
+	}
+	body += ". Check whether each was installed, and rotate the credentials it could reach. See deps.this"
+	return title, body
 }
 
 // summarize builds the coalesced banner: a count in the title and, in the body,

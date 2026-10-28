@@ -262,3 +262,117 @@ func TestReadMissingStoreIsEmptyAndWritesNothing(t *testing.T) {
 		t.Errorf("Read created %s (stat err %v); it must stay read-only", dir, err)
 	}
 }
+
+// preKindScan is a scan.json in the shape serve wrote before findings had a
+// kind: no "kind" on any advisory. lodash's advisory was already notified, and
+// a former finding on an older version was acknowledged.
+const preKindScan = `{
+  "scanned_at": "2026-10-20T09:00:00Z",
+  "deps": [
+    {
+      "ecosystem": "npm", "name": "lodash", "version": "4.17.20",
+      "repo": "/r", "manifest_path": "/r/package-lock.json",
+      "direct": true, "imported": true,
+      "advisories": [{"id": "GHSA-35jh-r3h4-6jhm", "severity": "HIGH", "fixed_version": "4.17.21"}]
+    },
+    {
+      "ecosystem": "Go", "name": "golang.org/x/text", "version": "0.3.7",
+      "repo": "/r", "manifest_path": "/r/go.mod", "imported": true
+    }
+  ],
+  "notified": ["npm:lodash@4.17.20:GHSA-35jh-r3h4-6jhm"],
+  "resolved": ["Go:golang.org/x/net@0.17.0:GO-2023-2102"]
+}`
+
+// TestLoadsScanWrittenBeforeKinds: a pre-change scan.json loads unchanged,
+// with every advisory reading as a vulnerability, and the notified and
+// resolved sets still match their findings because the key format is the same.
+func TestLoadsScanWrittenBeforeKinds(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(preKindScan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := New(dir)
+	if err != nil {
+		t.Fatalf("load pre-change scan.json: %v", err)
+	}
+	sc := st.Snapshot()
+	if len(sc.Deps) != 2 || sc.ScannedAt.IsZero() {
+		t.Fatalf(
+			"loaded %d deps (scanned_at %v), want 2 and the saved time",
+			len(sc.Deps),
+			sc.ScannedAt,
+		)
+	}
+	want := Advisory{
+		ID: "GHSA-35jh-r3h4-6jhm", Kind: KindVuln,
+		Severity: "HIGH", FixedVersion: "4.17.21",
+	}
+	if got := sc.Deps[0].Advisories; len(got) != 1 || got[0] != want {
+		t.Errorf("lodash advisories = %+v, want [%+v]", got, want)
+	}
+	if pending := st.PendingFlags(); len(pending) != 0 {
+		t.Errorf("pending = %+v, want none: the notified set must still match", pending)
+	}
+	if !st.IsResolved("Go:golang.org/x/net@0.17.0:GO-2023-2102") {
+		t.Error("resolved set lost on load")
+	}
+
+	// The read-only path doctor uses sees the same kinds.
+	read, err := Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := read.Deps[0].Advisories[0].Kind; got != KindVuln {
+		t.Errorf("Read kind = %q, want %q", got, KindVuln)
+	}
+}
+
+// TestPendingFlagsFollowKind: a malicious finding notifies even on a dep that
+// is not compiled in, a vulnerability there does not, and a signal never
+// notifies on any dep.
+func TestPendingFlagsFollowKind(t *testing.T) {
+	st, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	graphOnly := Dependency{
+		Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Repo: "/r",
+		Advisories: []Advisory{
+			{ID: "MAL-2025-46969", Kind: KindMalicious},
+			{ID: "GHSA-9", Kind: KindVuln},
+		},
+	}
+	compiledIn := Dependency{
+		Ecosystem: "Go", Name: "a", Version: "1.0.0", Repo: "/r", Imported: true,
+		Advisories: []Advisory{{ID: "deps-movable-ref", Kind: KindSignal}},
+	}
+	if err := st.Save([]Dependency{graphOnly, compiledIn}, nil); err != nil {
+		t.Fatal(err)
+	}
+	pending := st.PendingFlags()
+	if len(pending) != 1 || pending[0].Advisory.ID != "MAL-2025-46969" {
+		t.Fatalf("pending = %+v, want only the malicious finding", pending)
+	}
+}
+
+// TestSignalResolvesByKey: a signal's rule id makes an ordinary key, so it
+// resolves and, once gone from the scan, parses back like any advisory.
+func TestSignalResolvesByKey(t *testing.T) {
+	st, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := FlagKey("npm", "@scope/pkg", "1.0.0", "deps-movable-ref")
+	if _, err := st.Resolve([]string{key}); err != nil {
+		t.Fatal(err)
+	}
+	fixed := st.ResolvedFixed()
+	want := ResolvedItem{
+		Ecosystem: "npm", Name: "@scope/pkg", Version: "1.0.0",
+		ID: "deps-movable-ref", Key: key,
+	}
+	if len(fixed) != 1 || fixed[0] != want {
+		t.Errorf("ResolvedFixed() = %+v, want [%+v]", fixed, want)
+	}
+}

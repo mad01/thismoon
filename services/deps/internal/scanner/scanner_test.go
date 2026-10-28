@@ -2,26 +2,36 @@ package scanner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/services/deps/internal/api"
 	"github.com/mad01/thismoon/services/deps/internal/discover"
 	"github.com/mad01/thismoon/services/deps/internal/osv"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
 
+// banner is one notification the fake notifier received.
+type banner struct {
+	title, body string
+}
+
 // fakeNotifier records every Notify call instead of shelling out to osascript.
 type fakeNotifier struct {
-	calls []string
+	calls []banner
 	fail  bool
 }
 
-func (f *fakeNotifier) Notify(title, _ string) error {
+func (f *fakeNotifier) Notify(title, body string) error {
 	if f.fail {
 		return errContext
 	}
-	f.calls = append(f.calls, title)
+	f.calls = append(f.calls, banner{title: title, body: body})
 	return nil
 }
 
@@ -197,5 +207,223 @@ func TestScanCompleteEventWarnsOnDiscoveryErrors(t *testing.T) {
 	}
 	if ev.Tags["discovery_errors"] != "1" {
 		t.Errorf("discovery_errors tag = %q, want 1", ev.Tags["discovery_errors"])
+	}
+}
+
+// widget is the one repo the end-to-end engines below scan.
+const widget = "/home/u/code/widget"
+
+// osvStub stands in for api.osv.dev. querybatch answers each query with the
+// ids batch lists for its package name; GET /v1/vulns/{id} serves records[id],
+// or fails with 502 when id has no record.
+func osvStub(t *testing.T, batch map[string][]string, records map[string]string) *osv.Client {
+	t.Helper()
+	type vulnID struct {
+		ID string `json:"id"`
+	}
+	type result struct {
+		Vulns []vulnID `json:"vulns"`
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/querybatch", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Queries []struct {
+				Package struct {
+					Name string `json:"name"`
+				} `json:"package"`
+			} `json:"queries"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode querybatch: %v", err)
+		}
+		results := make([]result, len(req.Queries))
+		for i, q := range req.Queries {
+			for _, id := range batch[q.Package.Name] {
+				results[i].Vulns = append(results[i].Vulns, vulnID{ID: id})
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"results": results})
+	})
+	mux.HandleFunc("GET /v1/vulns/{id}", func(w http.ResponseWriter, r *http.Request) {
+		rec, ok := records[r.PathValue("id")]
+		if !ok {
+			http.Error(w, "upstream timeout", http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write([]byte(rec))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return osv.NewWithURL(srv.URL)
+}
+
+// npmEngine scans widget for the given npm packages against checker.
+func npmEngine(
+	st *store.Store,
+	checker Checker,
+	n *fakeNotifier,
+	pkgs ...discover.Package,
+) *Engine {
+	return &Engine{
+		Prepare: func() ([]string, discover.Options, error) {
+			return []string{widget}, discover.Options{}, nil
+		},
+		Ecosystems: []discover.Ecosystem{stubEco{name: "npm", pkgs: pkgs}},
+		Checker:    checker,
+		Notifier:   n,
+		Store:      st,
+	}
+}
+
+func npmPkg(name, version string) discover.Package {
+	return discover.Package{Ecosystem: "npm", Name: name, Version: version, Imported: true}
+}
+
+const leftPadRecord = `{"id":"GHSA-xxxx","summary":"left-pad pads left",
+	"database_specific":{"severity":"HIGH"}}`
+
+// TestMaliciousFindingRanksFirstWithItsOwnBanner is the chalk@5.6.1 fixture end
+// to end: OSV returns MAL-2025-46969 (the record in osv's testdata), which is
+// saved as kind malicious, listed before an ordinary HIGH advisory, and fires
+// its own banner naming the package, version and repo, apart from the summary.
+func TestMaliciousFindingRanksFirstWithItsOwnBanner(t *testing.T) {
+	malRecord, err := os.ReadFile("../osv/testdata/MAL-2025-46969.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checker := osvStub(t,
+		map[string][]string{"left-pad": {"GHSA-xxxx"}, "chalk": {"MAL-2025-46969"}},
+		map[string]string{"GHSA-xxxx": leftPadRecord, "MAL-2025-46969": string(malRecord)},
+	)
+	st, n := newStore(t), &fakeNotifier{}
+	e := npmEngine(st, checker, n, npmPkg("left-pad", "1.2.0"), npmPkg("chalk", "5.6.1"))
+
+	if err := e.CheckAndNotify(context.Background()); err != nil {
+		t.Fatalf("CheckAndNotify: %v", err)
+	}
+
+	flagged := api.Flagged(api.Enrich(st.Flagged(), st.IsResolved))
+	if len(flagged) != 2 || flagged[0].Name != "chalk" {
+		t.Fatalf("flagged = %+v, want chalk first of 2", flagged)
+	}
+	if got := flagged[0].Advisories[0].Kind; got != store.KindMalicious {
+		t.Errorf("chalk kind = %q, want %q", got, store.KindMalicious)
+	}
+
+	if len(n.calls) != 2 {
+		t.Fatalf("banners = %+v, want a malicious banner and a summary", n.calls)
+	}
+	mal := n.calls[0]
+	if mal.title != "deps: malicious package chalk@5.6.1" {
+		t.Errorf("malicious banner title = %q", mal.title)
+	}
+	for _, want := range []string{"chalk@5.6.1 in widget", "installed", "rotate the credentials"} {
+		if !strings.Contains(mal.body, want) {
+			t.Errorf("malicious banner body = %q, want it to contain %q", mal.body, want)
+		}
+	}
+	summary := n.calls[1]
+	if strings.Contains(summary.title+summary.body, "chalk") {
+		t.Errorf("summary banner %+v repeats the malicious finding", summary)
+	}
+	if !strings.Contains(summary.body, "left-pad") {
+		t.Errorf("summary banner body = %q, want left-pad", summary.body)
+	}
+}
+
+// TestCheckSavesWhenOneRecordFetchFails: a failed GET /v1/vulns/{id} no longer
+// aborts the scan. It saves, the unfetched finding keeps its id, and the other
+// finding is intact.
+func TestCheckSavesWhenOneRecordFetchFails(t *testing.T) {
+	checker := osvStub(t,
+		map[string][]string{"left-pad": {"GHSA-xxxx"}, "evil": {"GHSA-gone"}},
+		map[string]string{"GHSA-xxxx": leftPadRecord},
+	)
+	st := newStore(t)
+	e := npmEngine(
+		st,
+		checker,
+		&fakeNotifier{},
+		npmPkg("evil", "1.0.0"),
+		npmPkg("left-pad", "1.2.0"),
+	)
+
+	if _, err := e.Check(context.Background()); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	sc := st.Snapshot()
+	if sc.ScannedAt.IsZero() {
+		t.Fatal("scan was not saved")
+	}
+	byName := map[string][]store.Advisory{}
+	for _, d := range sc.Deps {
+		byName[d.Name] = d.Advisories
+	}
+	gone := store.Advisory{ID: "GHSA-gone", Kind: store.KindVuln}
+	if got := byName["evil"]; len(got) != 1 || got[0] != gone {
+		t.Errorf("evil advisories = %+v, want [%+v]", got, gone)
+	}
+	intact := store.Advisory{
+		ID: "GHSA-xxxx", Kind: store.KindVuln,
+		Summary: "left-pad pads left", Severity: "HIGH",
+	}
+	if got := byName["left-pad"]; len(got) != 1 || got[0] != intact {
+		t.Errorf("left-pad advisories = %+v, want [%+v]", got, intact)
+	}
+}
+
+// TestSignalNeverNotifiesOrCountsActive: a signal on a compiled-in dep stays
+// off every alerting surface: no banner, no active count, no flagged tally in
+// the scan event. It is still listed, so it can be resolved by key.
+func TestSignalNeverNotifiesOrCountsActive(t *testing.T) {
+	st := newStore(t)
+	deps := []store.Dependency{{
+		Ecosystem: "npm", Name: "left-pad", Version: "1.2.0", Repo: widget, Imported: true,
+		Advisories: []store.Advisory{{ID: "deps-movable-ref", Kind: store.KindSignal}},
+	}}
+	if err := st.Save(deps, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	n := &fakeNotifier{}
+	delivered, err := Notify(st, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delivered != 0 || len(n.calls) != 0 {
+		t.Errorf("notify delivered %d in %+v, want no banner for a signal", delivered, n.calls)
+	}
+
+	flagged := api.Flagged(api.Enrich(st.Flagged(), st.IsResolved))
+	if len(flagged) != 1 {
+		t.Fatalf("flagged = %+v, want the signal listed", flagged)
+	}
+	if got := api.ActiveCount(flagged); got != 0 {
+		t.Errorf("active count = %d, want 0", got)
+	}
+	if ev := scanCompleteEvent(1, deps, nil, 0); ev.Tags["flagged"] != "0" || ev.Level != "info" {
+		t.Errorf("scan event = %+v, want info with 0 flagged", ev)
+	}
+}
+
+// TestMaliciousBannerNamesEachPackageOnce: one malicious version pinned in two
+// repos, plus three more, makes one banner that names a package with all its
+// repos and caps the list.
+func TestMaliciousBannerNamesEachPackageOnce(t *testing.T) {
+	flag := func(name, repo string) store.Flag {
+		return store.Flag{
+			Dep:      store.Dependency{Name: name, Version: "1.0.0", Repo: repo},
+			Advisory: store.Advisory{ID: "MAL-1", Kind: store.KindMalicious},
+		}
+	}
+	title, body := maliciousBanner([]store.Flag{
+		flag("a", "/c/one"), flag("a", "/c/two"), flag("b", "/c/one"),
+		flag("c", "/c/one"), flag("d", "/c/one"),
+	})
+	if title != "deps: 4 malicious packages" {
+		t.Errorf("title = %q", title)
+	}
+	if !strings.HasPrefix(body, "a@1.0.0 in one, two; b@1.0.0 in one; c@1.0.0 in one; +1 more.") {
+		t.Errorf("body = %q", body)
 	}
 }

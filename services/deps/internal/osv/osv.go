@@ -10,7 +10,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/mad01/thismoon/services/deps/internal/store"
@@ -44,11 +46,18 @@ type Query struct {
 	Version   string
 }
 
+// maxPages bounds the querybatch requests one batch may take, so a server that
+// keeps answering with a next_page_token cannot hold a scan forever. OSV pages
+// only past 1,000 advisories for one query or 3,000 for a batch, so a real scan
+// needs one or two.
+const maxPages = 20
+
 // Check returns the advisories for each query, aligned by index (queries[i] →
 // result[i]). It batches the lookups, then fetches each unique advisory once.
+// A record that fails to fetch still yields its finding, with the id and kind
+// but no summary, severity or fix: one unreadable record must not cost the
+// whole scan.
 func (c *Client) Check(ctx context.Context, queries []Query) ([][]store.Advisory, error) {
-	results := make([][]store.Advisory, len(queries))
-
 	// idsPerQuery[i] = advisory ids affecting queries[i].
 	idsPerQuery := make([][]string, len(queries))
 	for start := 0; start < len(queries); start += batchSize {
@@ -60,29 +69,18 @@ func (c *Client) Check(ctx context.Context, queries []Query) ([][]store.Advisory
 		copy(idsPerQuery[start:end], ids)
 	}
 
-	// Fetch each distinct advisory once.
-	cache := map[string]*vuln{}
-	for _, ids := range idsPerQuery {
-		for _, id := range ids {
-			if _, ok := cache[id]; ok {
-				continue
-			}
-			v, err := c.fetchVuln(ctx, id)
-			if err != nil {
-				return nil, err
-			}
-			cache[id] = v
-		}
+	records, err := c.fetchAll(ctx, idsPerQuery)
+	if err != nil {
+		return nil, err
 	}
 
+	results := make([][]store.Advisory, len(queries))
 	for i, ids := range idsPerQuery {
 		for _, id := range ids {
-			v := cache[id]
-			if v == nil {
-				continue
-			}
+			v := records[id]
 			results[i] = append(results[i], store.Advisory{
 				ID:           v.ID,
+				Kind:         kindOf(v.ID),
 				Summary:      v.summary(),
 				Severity:     v.severity(),
 				FixedVersion: v.fixedFor(queries[i]),
@@ -92,14 +90,50 @@ func (c *Client) Check(ctx context.Context, queries []Query) ([][]store.Advisory
 	return results, nil
 }
 
+// fetchAll fetches each distinct advisory id once. A failed fetch is logged
+// and stands in as a record carrying only its id; only a cancelled or expired
+// ctx fails the whole call.
+func (c *Client) fetchAll(ctx context.Context, idsPerQuery [][]string) (map[string]*vuln, error) {
+	records := map[string]*vuln{}
+	for _, ids := range idsPerQuery {
+		for _, id := range ids {
+			if _, ok := records[id]; ok {
+				continue
+			}
+			v, err := c.fetchVuln(ctx, id)
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				log.Printf("deps: osv: %v; keeping %s with its id only", err, id)
+				v = &vuln{ID: id}
+			}
+			records[id] = v
+		}
+	}
+	return records, nil
+}
+
+// kindOf classifies an advisory by its id. OSV serves the OpenSSF
+// malicious-packages database as MAL- records, GitHub's malware advisories
+// included, so the prefix alone marks a malicious version. It needs no fetched
+// record, so a finding whose record failed to load keeps its kind.
+func kindOf(id string) store.Kind {
+	if strings.HasPrefix(id, "MAL-") {
+		return store.KindMalicious
+	}
+	return store.KindVuln
+}
+
 // batchRequest / batchResponse model POST /v1/querybatch.
 type batchRequest struct {
 	Queries []batchQuery `json:"queries"`
 }
 
 type batchQuery struct {
-	Package batchPackage `json:"package"`
-	Version string       `json:"version"`
+	Package   batchPackage `json:"package"`
+	Version   string       `json:"version"`
+	PageToken string       `json:"page_token,omitempty"`
 }
 
 type batchPackage struct {
@@ -112,30 +146,57 @@ type batchResponse struct {
 		Vulns []struct {
 			ID string `json:"id"`
 		} `json:"vulns"`
+		NextPageToken string `json:"next_page_token"`
 	} `json:"results"`
 }
 
+// pageQuery is one query still owed results: its index in the batch and the
+// page token OSV handed back for it (empty on the first request).
+type pageQuery struct {
+	index int
+	token string
+}
+
 // queryBatch returns the advisory ids for each query in the batch, index-aligned.
+// OSV pages a result that grows past its limits: the next request repeats only
+// the queries that came back with a next_page_token, each carrying its token.
 func (c *Client) queryBatch(ctx context.Context, queries []Query) ([][]string, error) {
-	req := batchRequest{Queries: make([]batchQuery, len(queries))}
-	for i, q := range queries {
-		req.Queries[i] = batchQuery{
-			Package: batchPackage{Name: q.Name, Ecosystem: q.Ecosystem},
-			Version: q.Version,
-		}
-	}
-	var resp batchResponse
-	if err := c.post(ctx, "/v1/querybatch", req, &resp); err != nil {
-		return nil, err
-	}
 	out := make([][]string, len(queries))
+	pending := make([]pageQuery, len(queries))
 	for i := range queries {
-		if i >= len(resp.Results) {
-			break
+		pending[i] = pageQuery{index: i}
+	}
+	for page := 0; len(pending) > 0; page++ {
+		if page == maxPages {
+			return nil, fmt.Errorf("osv querybatch still paging after %d requests", maxPages)
 		}
-		for _, v := range resp.Results[i].Vulns {
-			out[i] = append(out[i], v.ID)
+		req := batchRequest{Queries: make([]batchQuery, len(pending))}
+		for j, p := range pending {
+			q := queries[p.index]
+			req.Queries[j] = batchQuery{
+				Package:   batchPackage{Name: q.Name, Ecosystem: q.Ecosystem},
+				Version:   q.Version,
+				PageToken: p.token,
+			}
 		}
+		var resp batchResponse
+		if err := c.post(ctx, "/v1/querybatch", req, &resp); err != nil {
+			return nil, err
+		}
+		var next []pageQuery
+		for j, p := range pending {
+			if j >= len(resp.Results) {
+				break
+			}
+			r := resp.Results[j]
+			for _, v := range r.Vulns {
+				out[p.index] = append(out[p.index], v.ID)
+			}
+			if r.NextPageToken != "" {
+				next = append(next, pageQuery{index: p.index, token: r.NextPageToken})
+			}
+		}
+		pending = next
 	}
 	return out, nil
 }

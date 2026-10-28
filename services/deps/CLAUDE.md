@@ -96,6 +96,15 @@ no file locks.
 
 - `POST /v1/querybatch` (≤1000/batch) to find advisory ids, then `GET
   /v1/vulns/{id}` once per unique id for summary/severity/fixed-version.
+- querybatch pages a result past OSV's limits: deps repeats only the paged
+  queries, each with its `next_page_token`, for at most 20 requests a batch.
+- **One unreadable record never costs the scan.** A failed `GET
+  /v1/vulns/{id}` is logged and the finding is kept with its id and kind but
+  no summary, severity or fix; the next check fills them in. Only a failed
+  querybatch or a cancelled request fails the check.
+- The finding's kind comes from the id alone (`osv.kindOf`): `MAL-` is
+  `malicious`, anything else `vuln`. OSV serves GitHub's malware advisories as
+  MAL- records too, so the prefix covers both.
 - One API; ecosystem strings are OSV's own (`Go`, `npm`, `PyPI`, `SwiftURL`); no
   mapping. SwiftURL names are the repo URL without scheme or `.git`
   (`github.com/vapor/vapor`), derived from each Package.resolved pin location.
@@ -118,14 +127,42 @@ no file locks.
 - Notifications are **coalesced**: one banner summarizing all newly-flagged
   advisories (a fresh scan can surface dozens), never one-per-advisory.
   Acknowledged (resolved) advisories don't notify.
+- **Malicious findings get their own banner**, fired before the summary and
+  never folded into it. It names each package version and its repos, and says
+  to check whether it was installed and rotate the credentials it could
+  reach. Each banner retries on its own if delivery fails.
 
 ## Data model & storage
 
 ```go
-Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL), Name, Version, Repo, ManifestPath, Direct, Advisories[] }
-Advisory{ ID, Summary, Severity, FixedVersion }   // OSV advisory for that exact version
-DiscoveryError{ Repo, Ecosystem, Error }          // a repo+ecosystem the scan could not read
+Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL), Name, Version, Repo, ManifestPath, Direct, Imported, Advisories[] }
+Advisory{ ID, Kind (vuln|malicious|signal), Summary, Severity, FixedVersion }  // one finding on that exact version
+DiscoveryError{ Repo, Ecosystem, Error }  // a repo+ecosystem the scan could not read
 ```
+
+### Finding kinds
+
+`store.Kind` is a closed set. The kind alone decides how a finding surfaces:
+
+| Kind | Set by | Banner | Counts as active | "Not compiled in" gate | Page |
+|------|--------|--------|------------------|------------------------|------|
+| `vuln` | an OSV id other than MAL-; also any empty kind | coalesced summary | yes, until resolved | applies | Active findings, by severity |
+| `malicious` | an OSV MAL- id | its own | yes, until resolved | bypassed (install scripts may have run) | first in Active findings, red badge; Resolve asks for confirmation |
+| `signal` | a deps rule | never | never, nor in `flagged_count` | not used | Warning signs section |
+
+- The banner and count rule is one function, `store.Kind.Alerts(imported)`.
+  `PendingFlags` and `api.Dependency.Active` call it; `app.js` mirrors it as
+  `alerts()`. `api.Flagged` lists deps with an unresolved malicious finding
+  first, so `/api/flagged` and the MCP tools lead with them.
+- An empty kind reads as `vuln` on load (`readScan`) and on `Save`/`SaveRepo`,
+  so a scan.json written before kinds existed loads unchanged.
+- **Adding a producer.** Build a `store.Advisory` with a kind and an id, and
+  append it to the dependency's `Advisories` before the scanner saves (OSV's
+  findings are attached in `scanner.Check`). A warning sign is
+  `store.Advisory{ID: "deps-movable-ref", Kind: store.KindSignal, Summary: "…"}`.
+  Nothing else changes: not the model, the key, the notifier, the API or the
+  page. A signal's id is a rule id: give it a `deps-` prefix and no `:`, since
+  `parseKey` splits the key on its last colon. Never add a kind.
 
 - **Scan store** holds the last scan's deps and discovery errors plus two
   string sets keyed by
@@ -177,10 +214,11 @@ The annotated key reference lives in `deps config --help`.
 ## MCP tools
 
 - `deps_scan`: discover all deps (no advisory check); per-ecosystem counts
-- `deps_check`: discover + OSV; return flagged (each advisory has `key`, `resolved`)
+- `deps_check`: discover + OSV; return flagged, malicious first (each advisory has `key`, `kind`, `resolved`)
 - `deps_list_flagged`: flagged from the last check, no re-scan
 - `deps_scan_repo(repo)`: rescan one repo (path or basename) and merge
-- `deps_resolve(keys)`: acknowledge advisories by key
+- `deps_resolve(keys)`: acknowledge advisories by key; the description tells
+  the agent to get the user's confirmation before resolving a malicious one
 - `deps_doctor`: run the same checks as `deps doctor` (service-reachable,
   store-readable, version-skew, discovery-clean) and return the report as
   JSON — for a client that can call a tool but has no shell
@@ -237,7 +275,8 @@ controls manually.
   (`Webkit.poll('/api/deps', render, 60000, …)` drives the 60s live refresh).
 - Components used: `<wk-header>`, `<wk-toast-host>` + `document.createElement('wk-toast')`
   for transient toasts, `<wk-page-header>` (+ `<wk-title>`/`<wk-subtitle>`),
-  `<wk-card>`, `<wk-badge>`, `<wk-button>`.
+  `<wk-card>`, `<wk-badge>`, `<wk-button>`, and the `<wk-modal>` in
+  `shell.html` that confirms resolving a malicious finding.
 - Only deps-specific layout stays local in `shell.html`'s inline `<style>`:
   the toolbar, repo chips, the inventory search row, the flagged/acknowledged
   card internals (`.flag-*`, `.adv-*`, `.repo-chip`, `.inv-*`, `.ack-*`).

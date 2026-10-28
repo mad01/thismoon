@@ -127,11 +127,66 @@ func TestAPIDeps(t *testing.T) {
 		`"scanned_at"`, `"total"`, `"flagged_count"`, `"deps"`,
 		`"ecosystem"`, `"name"`, `"version"`, `"repo"`, `"direct"`,
 		`"advisories"`, `"id"`, `"fixed_version"`, `"key"`, `"resolved"`,
-		`"imported"`,
+		`"imported"`, `"kind"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("api/deps JSON missing field %s", want)
 		}
+	}
+}
+
+// TestAPIFlaggedByKind: GET /api/flagged lists the malicious finding first and
+// carries every advisory's kind. flagged_count takes the malicious finding on a
+// dep that isn't compiled in and the compiled-in vulnerability, never the signal.
+func TestAPIFlaggedByKind(t *testing.T) {
+	st, err := store.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Save([]store.Dependency{
+		{
+			Ecosystem: "Go", Name: "golang.org/x/net", Version: "0.17.0",
+			Repo: "/home/u/code/widget", Imported: true,
+			Advisories: []store.Advisory{{ID: "GO-2024-0001", Severity: "HIGH"}},
+		},
+		{
+			Ecosystem: "npm", Name: "left-pad", Version: "1.2.0",
+			Repo: "/home/u/code/widget", Imported: true,
+			Advisories: []store.Advisory{{ID: "deps-movable-ref", Kind: store.KindSignal}},
+		},
+		{
+			Ecosystem: "npm", Name: "chalk", Version: "5.6.1",
+			Repo: "/home/u/code/widget", Imported: false,
+			Advisories: []store.Advisory{{ID: "MAL-2025-46969", Kind: store.KindMalicious}},
+		},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	New(st, nil, testInfo).Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/flagged", nil))
+
+	var got struct {
+		FlaggedCount int `json:"flagged_count"`
+		Flagged      []struct {
+			Name       string `json:"name"`
+			Advisories []struct {
+				Kind string `json:"kind"`
+			} `json:"advisories"`
+		} `json:"flagged"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.FlaggedCount != 2 {
+		t.Errorf("flagged_count = %d, want 2 (malicious + vuln, not the signal)", got.FlaggedCount)
+	}
+	var kinds []string
+	for _, d := range got.Flagged {
+		kinds = append(kinds, d.Name+"="+d.Advisories[0].Kind)
+	}
+	want := "chalk=malicious golang.org/x/net=vuln left-pad=signal"
+	if strings.Join(kinds, " ") != want {
+		t.Errorf("flagged = %v, want %s", kinds, want)
 	}
 }
 

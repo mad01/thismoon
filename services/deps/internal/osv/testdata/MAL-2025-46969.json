@@ -1,0 +1,31 @@
+{
+  "id": "MAL-2025-46969",
+  "summary": "Malicious code in chalk (npm)",
+  "details": "The package was compromised and malicious code added.",
+  "aliases": ["GHSA-2v46-p5h4-248w"],
+  "database_specific": {
+    "malicious-packages-origins": [
+      {
+        "id": "GHSA-2v46-p5h4-248w",
+        "source": "ghsa-malware",
+        "modified_time": "2025-09-10T17:52:52Z",
+        "versions": ["5.6.1"]
+      }
+    ]
+  },
+  "affected": [
+    {
+      "package": { "name": "chalk", "ecosystem": "npm", "purl": "pkg:npm/chalk" },
+      "versions": ["5.6.1"],
+      "database_specific": {
+        "cwes": [
+          {
+            "cweId": "CWE-506",
+            "name": "Embedded Malicious Code"
+          }
+        ],
+        "source": "https://github.com/ossf/malicious-packages/blob/main/osv/malicious/npm/chalk/MAL-2025-46969.json"
+      }
+    }
+  ]
+}

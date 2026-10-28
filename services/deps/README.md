@@ -45,6 +45,11 @@ on the next success.
 Notifications are coalesced: one banner summarizing everything newly flagged in a
 scan, not one per advisory. Acknowledged findings don't notify.
 
+A malicious package (an OSV `MAL-` record) is the exception. It gets its own
+banner naming the package, version and repo, with a reminder to check whether
+it was installed and to rotate the credentials it could reach. The page lists
+it first and asks before resolving it.
+
 ## Install
 
 It ships from the thismoon monorepo via ralph, personal Mac only. `ralph up` builds the binary to

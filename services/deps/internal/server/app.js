@@ -107,15 +107,39 @@
     return i >= 0 ? s.slice(i + 1) : s;
   }
 
+  // ── finding kinds (mirror store.Kind) ──
+  // vuln: an advisory, counted only while the dep is compiled in. malicious: an
+  // OSV MAL- record, counted even when not compiled in (its install scripts may
+  // have run). signal: a warning sign, shown in its own section and never
+  // counted. A missing or unknown kind (an older serve) reads as vuln.
+  function kindOf(a) {
+    return a.kind === 'malicious' || a.kind === 'signal' ? a.kind : 'vuln';
+  }
+  function isMalicious(a) { return kindOf(a) === 'malicious'; }
+  function isSignal(a) { return kindOf(a) === 'signal'; }
+  // alerts mirrors store.Kind.Alerts: whether advisory a is a real exposure on d.
+  function alerts(d, a) {
+    if (isMalicious(a)) return true;
+    if (isSignal(a)) return false;
+    return d.imported !== false;
+  }
   function depActive(d) {
-    return (d.advisories || []).some(function (a) { return !a.resolved; });
+    return (d.advisories || []).some(function (a) { return !a.resolved && alerts(d, a); });
+  }
+  function depMalicious(d) {
+    return (d.advisories || []).some(function (a) { return !a.resolved && isMalicious(a); });
+  }
+  // withAdvisories copies dep d with only the advisories keep accepts.
+  function withAdvisories(d, keep) {
+    return Object.assign({}, d, { advisories: (d.advisories || []).filter(keep) });
   }
 
   // ── severity ranking ──
   // OSV severities on live data are plain labels (CRITICAL/HIGH/MODERATE/LOW,
   // often empty). Rank worst-first so the active section leads with what
-  // matters; unknown/empty sorts last.
+  // matters; unknown/empty sorts last. A malicious finding outranks them all.
   var SEV_RANK = { CRITICAL: 0, HIGH: 1, MODERATE: 2, MEDIUM: 2, LOW: 3 };
+  var MALICIOUS_RANK = -1;
   function sevRank(s) {
     var r = SEV_RANK[String(s || '').toUpperCase()];
     return r === undefined ? 4 : r;
@@ -123,7 +147,8 @@
   function depSevRank(d) {
     var worst = 4;
     (d.advisories || []).forEach(function (a) {
-      if (!a.resolved) worst = Math.min(worst, sevRank(a.severity));
+      if (a.resolved) return;
+      worst = Math.min(worst, isMalicious(a) ? MALICIOUS_RANK : sevRank(a.severity));
     });
     return worst;
   }
@@ -194,7 +219,7 @@
       if (d.name.toLowerCase().indexOf(needle) < 0) return;
       var k = d.ecosystem + ':' + d.name + '@' + d.version;
       if (!by[k]) {
-        by[k] = { ecosystem: d.ecosystem, name: d.name, version: d.version, repoDirect: {}, repoOrder: [], flagged: false, graphOnly: true };
+        by[k] = { ecosystem: d.ecosystem, name: d.name, version: d.version, repoDirect: {}, repoOrder: [], flagged: false, malicious: false, signal: false, graphOnly: true };
         order.push(k);
       }
       var g = by[k];
@@ -203,7 +228,10 @@
       var rb = basename(d.repo);
       if (!(rb in g.repoDirect)) g.repoOrder.push(rb);
       g.repoDirect[rb] = g.repoDirect[rb] || !!d.direct;
-      if ((d.advisories || []).length) g.flagged = true;
+      (d.advisories || []).forEach(function (a) {
+        if (isSignal(a)) g.signal = true; else g.flagged = true;
+        if (isMalicious(a)) g.malicious = true;
+      });
       if (d.imported !== false) g.graphOnly = false;
     });
     return order.map(function (k) {
@@ -218,8 +246,10 @@
       Webkit.el('span', { class: 'flag-name' }, g.name + '@' + g.version),
       Webkit.el('span', { class: 'flag-repo' }, g.ecosystem + ' · ' + g.repos.join(', '))
     ];
-    if (g.flagged) head.push(Webkit.el('wk-badge', { variant: g.graphOnly ? 'outline' : 'accent' },
+    if (g.malicious) head.push(Webkit.el('wk-badge', { variant: 'error' }, 'malicious'));
+    else if (g.flagged) head.push(Webkit.el('wk-badge', { variant: g.graphOnly ? 'outline' : 'accent' },
       g.graphOnly ? 'flagged · not compiled in' : 'flagged'));
+    if (g.signal) head.push(Webkit.el('wk-badge', { variant: 'warn' }, 'warning sign'));
     return Webkit.el('div', { class: 'inv-row' }, head);
   }
 
@@ -247,12 +277,14 @@
       hasScan: hasScan(data.scanned_at),
       total: deps.length,
       activeCount: 0,
+      maliciousCount: 0,
       resolvedOnly: 0,
       byEcosystem: [],
       repos: [],
       active: [],
       acknowledged: [],
       notCompiledIn: [],
+      signals: [],
       discoveryErrors: data.discovery_errors || [],
       resolved: groupResolved(data.resolved_fixed)
     };
@@ -273,22 +305,30 @@
         repoSeen[d.repo] = true;
         v.repos.push({ name: basename(d.repo), path: d.repo, active: 0 });
       }
-      if (!(d.advisories || []).length) return;
+      // Signals get their own section and never touch the counts; the rest of
+      // the dep's advisories (its findings) go through the buckets below.
+      var sig = withAdvisories(d, isSignal);
+      if (sig.advisories.length) v.signals.push(sig);
+      var f = withAdvisories(d, function (a) { return !isSignal(a); });
+      if (!f.advisories.length) return;
       // imported === false: a graph-only transitive (in the module graph but
-      // not compiled into any binary). Not a real exposure — route it to the
-      // informational "not compiled in" bucket, never active/acknowledged. An
-      // undefined imported (older payload) fails open to imported.
-      if (d.imported === false) {
-        v.notCompiledIn.push(d);
+      // not compiled into any binary). A vulnerability there is not a real
+      // exposure, so route it to the informational "not compiled in" bucket,
+      // never active/acknowledged. A malicious finding skips this gate: its
+      // install scripts may have run anyway. An undefined imported (older
+      // payload) fails open to imported.
+      if (f.imported === false && !f.advisories.some(isMalicious)) {
+        v.notCompiledIn.push(f);
         return;
       }
-      if (depActive(d)) {
+      if (depActive(f)) {
         v.activeCount++;
-        repoActive[d.repo] = (repoActive[d.repo] || 0) + 1;
-        v.active.push(d);
+        if (depMalicious(f)) v.maliciousCount++;
+        repoActive[f.repo] = (repoActive[f.repo] || 0) + 1;
+        v.active.push(f);
       } else {
         v.resolvedOnly++;
-        v.acknowledged.push(d);
+        v.acknowledged.push(f);
       }
     });
     v.repos.forEach(function (r) { r.active = repoActive[r.path] || 0; });
@@ -298,10 +338,12 @@
 
     v.byEcosystem.sort(function (a, b) { return a.ecosystem < b.ecosystem ? -1 : a.ecosystem > b.ecosystem ? 1 : 0; });
     v.repos.sort(byName);
-    // Worst severity first so CRITICAL/HIGH lead the section; name breaks ties.
+    // Malicious first, then worst severity so CRITICAL/HIGH lead the section;
+    // name breaks ties.
     v.active.sort(function (a, b) { return depSevRank(a) - depSevRank(b) || byName(a, b); });
     v.acknowledged.sort(byName);
     v.notCompiledIn.sort(byName);
+    v.signals.sort(byName);
     return v;
   }
   function byName(a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }
@@ -309,7 +351,8 @@
   // ── DOM builders (mirror the old html/template markup) ──
   function pageHeader(v) {
     var sub = v.hasScan
-      ? (v.activeCount + ' active · ' + v.total + ' total'
+      ? ((v.maliciousCount ? v.maliciousCount + ' malicious · ' : '')
+        + v.activeCount + ' active · ' + v.total + ' total'
         + (v.resolved.length ? ' · ' + v.resolved.length + ' resolved' : '')
         + (v.resolvedOnly ? ' · ' + v.resolvedOnly + ' acknowledged' : '')
         + (v.notCompiledIn.length ? ' · ' + v.notCompiledIn.length + ' not compiled in' : '')
@@ -344,18 +387,24 @@
     return Webkit.el('span', { class: 'repo-chip' + (on ? ' sel' : '') }, kids);
   }
 
-  // advisoryRow builds a finding's advisory line for the active section: id +
-  // optional severity + optional fix + optional summary, with a Resolve action.
-  function advisoryRow(a) {
+  // advisoryRow builds one advisory line of dep d for the active and signal
+  // sections: id + kind or severity + optional fix + optional summary, with a
+  // Resolve action. A malicious finding's Resolve carries what the
+  // confirmation modal names.
+  function advisoryRow(d, a) {
     var line = [Webkit.el('span', { class: 'adv-id' }, a.id)];
-    if (a.severity) line.push(' ', Webkit.el('span', { class: sevClass(a.severity) }, '[' + a.severity + ']'));
+    if (isMalicious(a)) line.push(' ', Webkit.el('span', { class: 'sev-high' }, '[MALICIOUS]'));
+    else if (a.severity) line.push(' ', Webkit.el('span', { class: sevClass(a.severity) }, '[' + a.severity + ']'));
     if (a.fixed_version) line.push(' ', Webkit.el('span', { class: 'adv-fix' }, '→ fixed in ' + a.fixed_version));
     var left = [Webkit.el('div', {}, line)];
     if (a.summary) left.push(Webkit.el('div', {}, a.summary));
 
     var action = a.resolved
       ? Webkit.el('wk-badge', { variant: 'outline' }, 'resolved')
-      : Webkit.el('button', { class: 'btn btn-ghost', 'data-action': 'resolve', 'data-key': a.key }, 'Resolve');
+      : Webkit.el('button', {
+        class: 'btn btn-ghost', 'data-action': 'resolve', 'data-key': a.key,
+        'data-kind': kindOf(a), 'data-label': d.name + '@' + d.version + ' (' + a.id + ')'
+      }, 'Resolve');
 
     return Webkit.el('div', { class: 'adv' + (a.resolved ? ' resolved' : '') }, [
       Webkit.el('div', {}, left),
@@ -364,13 +413,29 @@
   }
 
   function activeCard(d) {
+    var badge = depMalicious(d)
+      ? Webkit.el('wk-badge', { variant: 'error' }, 'malicious')
+      : Webkit.el('wk-badge', { variant: 'accent' }, 'flagged');
     return Webkit.el('wk-card', {}, [
       Webkit.el('div', { class: 'flag-head' }, [
-        Webkit.el('wk-badge', { variant: 'accent' }, 'flagged'),
+        badge,
         Webkit.el('span', { class: 'flag-name' }, d.name + '@' + d.version),
-        Webkit.el('span', { class: 'flag-repo' }, d.ecosystem + ' · ' + basename(d.repo) + (d.direct ? '' : ' · transitive'))
+        Webkit.el('span', { class: 'flag-repo' }, d.ecosystem + ' · ' + basename(d.repo) + (d.direct ? '' : ' · transitive')
+          + (d.imported === false ? ' · not compiled in' : ''))
       ])
-    ].concat((d.advisories || []).map(advisoryRow)));
+    ].concat((d.advisories || []).map(function (a) { return advisoryRow(d, a); })));
+  }
+
+  // signalCard renders a dep's warning signs: not advisories, so they never
+  // count as active or alert, but each still resolves by key.
+  function signalCard(d) {
+    return Webkit.el('wk-card', {}, [
+      Webkit.el('div', { class: 'flag-head' }, [
+        Webkit.el('wk-badge', { variant: 'warn' }, 'warning sign'),
+        Webkit.el('span', { class: 'flag-name' }, d.name + '@' + d.version),
+        Webkit.el('span', { class: 'flag-repo' }, d.ecosystem + ' · ' + basename(d.repo))
+      ])
+    ].concat((d.advisories || []).map(function (a) { return advisoryRow(d, a); })));
   }
 
   function ackCard(d) {
@@ -493,6 +558,7 @@
       var activeList = v.active.filter(inFilter);
       var ackList = v.acknowledged.filter(inFilter);
       var notCompiledList = v.notCompiledIn.filter(inFilter);
+      var signalList = v.signals.filter(inFilter);
 
       if (v.active.length) {
         nodes.push(Webkit.el('div', { class: 'sec-title' }, 'Active findings'));
@@ -508,6 +574,22 @@
       } else {
         nodes.push(Webkit.el('div', { class: 'ok' },
           'No active findings — all ' + v.total + ' checked versions are clear of unresolved OSV advisories.'));
+      }
+
+      // Warning signs: findings that are not advisories (kind signal). Page
+      // only: they never alert or count as active. Open while any is
+      // unresolved, collapsed once all are.
+      if (signalList.length) {
+        var signalAttrs = { class: 'ack' };
+        if (signalList.some(function (d) { return d.advisories.some(function (a) { return !a.resolved; }); })) {
+          signalAttrs.open = '';
+        }
+        nodes.push(Webkit.el('details', signalAttrs, [
+          Webkit.el('summary', { class: 'sec-title ack-summary' }, 'Warning signs · ' + signalList.length),
+          Webkit.el('div', { class: 'note' },
+            'Not advisories: signs worth a look that never alert and never count as active.'),
+          Webkit.el('div', { class: 'flag-list ack-list' }, signalList.map(signalCard))
+        ]));
       }
 
       // Resolved: acknowledged findings that have since been fixed by a version
@@ -617,12 +699,44 @@
     }
     var resolve = e.target.closest('button[data-action="resolve"]');
     if (resolve) {
-      withButton(resolve, '…', async function () {
-        var res = await post('/api/resolve', { keys: [resolve.dataset.key] });
-        if (res.ok) { await refresh(); } else { toast('Resolve failed: ' + (await res.text()), 'err'); }
-      });
+      if (resolve.dataset.kind === 'malicious') openResolveModal(resolve); else resolveFinding(resolve);
       return;
     }
+    if (e.target === resolveModal || e.target.closest('#resolve-cancel, #resolve-x')) {
+      closeResolveModal();
+      return;
+    }
+    if (e.target.closest('#resolve-confirm')) {
+      var btn = pendingResolve;
+      closeResolveModal();
+      if (btn) resolveFinding(btn);
+    }
+  });
+
+  function resolveFinding(btn) {
+    withButton(btn, '…', async function () {
+      var res = await post('/api/resolve', { keys: [btn.dataset.key] });
+      if (res.ok) { await refresh(); } else { toast('Resolve failed: ' + (await res.text()), 'err'); }
+    });
+  }
+
+  // ── malicious-resolve confirmation ──
+  // Resolving a malicious finding silences its alert, so it goes through the
+  // modal in shell.html first; every other kind resolves on one click.
+  // pendingResolve is the Resolve button awaiting the answer.
+  var resolveModal = document.getElementById('resolve-modal');
+  var pendingResolve = null;
+  function openResolveModal(btn) {
+    pendingResolve = btn;
+    document.getElementById('resolve-pkg').textContent = btn.dataset.label;
+    resolveModal.removeAttribute('hidden');
+  }
+  function closeResolveModal() {
+    pendingResolve = null;
+    resolveModal.setAttribute('hidden', '');
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !resolveModal.hasAttribute('hidden')) closeResolveModal();
   });
 
   // Webkit.poll fetches immediately and then every 60s, replacing the old
