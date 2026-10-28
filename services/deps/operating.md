@@ -106,7 +106,18 @@ resolved to a commit, and that ref went unchecked. `ref list answered 401`
 means the action repo is missing or private, `no such tag or branch` means
 the ref is gone upstream, and `host is not on the allow list` means the
 sandbox lacks github.com. The repo's other refs were still checked. A ref
-pinned to a commit SHA never needs github.com.
+pinned to a commit SHA never needs github.com. A private action repo or
+reusable workflow answers 401 on every scan, so it stays a discovery error.
+The workaround is `exclude_paths`, which matches the repo-relative path in
+every repo, so `.github` stops the Actions check everywhere; exclude the
+narrowest directory that pins it, such as `.github/actions/<name>`.
+
+`OSV's GitHub Actions name list` in that error means the check couldn't read
+OSV's export of Actions advisories from its data bucket. Every action was
+still checked, by commit and by its name as written, but an advisory OSV
+files under another capitalization was missed. The next check retries.
+`host is not on the allow list` there means the sandbox settings predate the
+data bucket egress: re-run `ralph up`.
 
 A flagged advisory on a package nothing compiles in: Go scans cover the module
 graph (`go list -m -json all`), which includes modules no binary imports. So

@@ -69,7 +69,7 @@ func TestCheckAttachesAdvisories(t *testing.T) {
 		{Ecosystem: "Go", Name: "clean", Version: "1.0.0"},
 		{Ecosystem: "Go", Name: "bad", Version: "1.0.0"},
 	}
-	got, err := Check(context.Background(), deps, fakeChecker{flagName: "bad"})
+	got, _, err := Check(context.Background(), deps, fakeChecker{flagName: "bad"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +449,7 @@ func TestCheckKeepsDiscovererFindings(t *testing.T) {
 	deps := st.Snapshot().Deps
 	for range 2 {
 		var err error
-		if deps, err = Check(ctx, deps, fakeChecker{flagName: "left-pad"}); err != nil {
+		if deps, _, err = Check(ctx, deps, fakeChecker{flagName: "left-pad"}); err != nil {
 			t.Fatal(err)
 		}
 	}

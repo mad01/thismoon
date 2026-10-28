@@ -144,18 +144,25 @@ no file locks.
 - **GitHub Actions.** Each repo's `.github/workflows/*.yml|yaml` (top level
   only, as GitHub reads them) and every `action.yml|yaml` under
   `.github/actions` are parsed with yaml.v3 for `jobs.<id>.uses`,
-  `jobs.<id>.steps[].uses` and a composite action's `runs.steps[].uses`. Local
-  `./` refs and `docker://` images are skipped; `owner/repo/path@ref` is
-  package `owner/repo`, OSV's name for it. A ref pinned to a 40-hex SHA needs
-  no lookup. A tag or branch ref is resolved to its commit from the action
-  repo's ref list, a plain HTTPS GET of
+  `jobs.<id>.steps[].uses` and a composite action's `runs.steps[].uses`. A
+  local `uses: ./path` ref is followed to the `action.yml|yaml` in that
+  directory of the repo (`./` is the repo root), and its refs are read the
+  same way. Each file is read once, so a cycle ends. A path outside the repo,
+  under an `exclude_paths` glob, or with no action file (a job may generate
+  it) is skipped without an error. `docker://` images are skipped;
+  `owner/repo/path@ref` is package `owner/repo`, as written. A ref pinned to a
+  40-hex SHA needs no lookup. A tag or branch ref is resolved to its commit
+  from the action repo's ref list, a plain HTTPS GET of
   `https://github.com/<owner>/<repo>.git/info/refs?service=git-upload-pack`.
   It returns what `git ls-remote` prints, peeled `^{}` lines included, with no
   git binary in the sandbox and no API quota. A tag wins over a branch of the
   same name. `discover.Repos` memoizes each ref list for one walk, so a scan
   fetches each action repo once and the next scan sees a moved tag. A tag or
-  branch ref carries the `deps-movable-ref` signal. Every ref is Direct and
-  Imported, one row per workflow file.
+  branch ref carries the `deps-movable-ref` signal, which names the ref as
+  pinned. A ref that isn't a full `x.y.z` (`v46`, `main`) takes its label from
+  the highest full-version tag on the same commit (`v46.0.5`), so the range
+  filter can judge it. With no such tag, the ref is the label. Every ref is
+  Direct and Imported, one row per workflow file.
 - **A ref that can't be resolved is a discovery error, not a row.** A missing
   or private action repo (github.com answers 401), an unknown tag, or an
   unreachable host leaves the ref out. The repo's `GitHub Actions` discovery
@@ -224,14 +231,34 @@ no file locks.
   returns every advisory on the action. Check keeps a name hit only when the
   label falls in one of its `ECOSYSTEM` or `SEMVER` ranges. It fails open: a
   label that isn't a full `x.y.z` (`v4`, `main`), a record that didn't load,
-  or a bound it can't compare keeps the hit. An id found by both lookups is
-  listed once. A CVE record and its GitHub Security Advisory (GHSA) alias stay
-  two findings, as GO- and GHSA- pairs already do for Go.
+  or a bound it can't compare keeps the hit. At one version an `introduced`
+  sorts before a `fixed` or `last_affected`, in either record order. An id
+  found by both lookups is listed once. A CVE record and its GitHub Security
+  Advisory (GHSA) alias stay two findings, as GO- and GHSA- pairs already do
+  for Go.
+- **A SHA pin's `# vX.Y.Z` comment is trusted as its version label**, and it
+  alone drives the range filter. A comment newer than the pinned code would
+  drop advisories whose range holds the real version. Dependabot and Renovate
+  keep the comment in sync with the SHA, so this is an accepted risk.
+- **OSV matches GitHub Actions names case-sensitively; GitHub doesn't.**
+  `azure/setup-kubectl`, as its own README spells it, finds nothing, while
+  `Azure/setup-kubectl` finds GHSA-p756-rfxh-x63h. Most of OSV's Actions
+  ranges are `ECOSYSTEM` only, so the name lookup is the main detector. So
+  Check reads OSV's GitHub Actions export once per call
+  (`https://osv-vulnerabilities.storage.googleapis.com/GitHub%20Actions/all.zip`,
+  about 100 KB, one JSON record per advisory). It asks for each action in
+  every spelling OSV files it under that matches ignoring case, and matches
+  records the same way. The row and key keep the name as written. When the
+  export can't be read, the names go out as written and Check returns
+  `*osv.ActionNamesError` beside complete results. `scanner.Check` turns that
+  into a `GitHub Actions` discovery error for each repo with an Action, since
+  a log line alone would let the scan read as clean.
 - **serve runs under srt** (anthropics/sandbox-runtime), with the access
   declared as `spec.access` in `service-info.yaml`. It reads the repos under
   `~/code/src` minus secret-shaped files, the module cache,
   `~/.config/mise/mise.lock` and the whole mise installs directory (the Go
-  toolchain included). Egress goes to `api.osv.dev`, `proxy.golang.org`,
+  toolchain included). Egress goes to `api.osv.dev`,
+  `osv-vulnerabilities.storage.googleapis.com`, `proxy.golang.org`,
   `data.jsdelivr.com` and `github.com`. The installs grant is the plain
   directory, not `npm-**` / `pipx-**`: a tool declared by its short name
   (`cookiecutter`, backend `pipx:cookiecutter`) installs to
@@ -327,9 +354,11 @@ Summary: "…"}`. Follow-up producers build on these rules:
   holds. So the version must change whenever the pinned thing does. A GitHub
   Action's version is `<label>+<commit>` (`v45.0.7+a284dc18…`, the full
   40-hex SHA): the label is the tag or branch, or a SHA pin's `# vN` comment,
-  and a SHA pin with no comment is the commit alone. A tag repointed to other
-  code, as in the tj-actions attack, gets a new key. It notifies again, and a
-  resolve doesn't carry over. `discover.SplitActionVersion` is the one parser.
+  and a SHA pin with no comment is the commit alone. A tag or branch that
+  isn't a full `x.y.z` uses the release tag on its commit. A tag repointed to
+  other code, as in the tj-actions attack, gets a new key. It notifies again,
+  and a resolve doesn't carry over. `discover.SplitActionVersion` is the one
+  parser.
 - **A version never contains `@`.** `parseKey` splits name and version on
   the last `@`, the same way an id never contains `:`. Don't join a tag and
   its commit with `@`: a GitHub Action joins them with `+`, and a label with

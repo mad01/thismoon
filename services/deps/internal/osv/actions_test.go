@@ -20,15 +20,31 @@ const tjCommit = "a284dc1814e3fd07f2e34267fc8f81227ed29fb8"
 // The commit lookup finds CVE-2025-30066, whose git range holds the v45.0.7
 // commit. The name lookup finds both advisories on the package: the March
 // 2025 compromise (GHSA-mrrh-fwg8-r2c3, fixed in 46.0.1) and an older command
-// injection (GHSA-mcph-m25j-8j63, fixed in 41). The records in testdata are
-// trimmed copies of the real ones. It records each querybatch body.
+// injection (GHSA-mcph-m25j-8j63, fixed in 41). Like OSV, it matches names
+// case-sensitively, so Azure/setup-kubectl finds GHSA-p756-rfxh-x63h (fixed
+// in 3) and azure/setup-kubectl finds nothing. The records in testdata are
+// trimmed copies of the real ones, and the name list export is a zip of
+// them. It records each querybatch body.
 func tjStub(t *testing.T) (*httptest.Server, func() []batchRequest) {
+	t.Helper()
+	export := exportZip(t, testdataRecords(t)...)
+	return tjStubWithExport(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(export)
+	})
+}
+
+// tjStubWithExport is tjStub with export serving the name list.
+func tjStubWithExport(
+	t *testing.T,
+	export http.HandlerFunc,
+) (*httptest.Server, func() []batchRequest) {
 	t.Helper()
 	var (
 		mu     sync.Mutex
 		bodies []batchRequest
 	)
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /GitHub%20Actions/all.zip", export)
 	mux.HandleFunc("POST /v1/querybatch", func(w http.ResponseWriter, r *http.Request) {
 		var req batchRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -45,6 +61,10 @@ func tjStub(t *testing.T) (*httptest.Server, func() []batchRequest) {
 			case q.Package != nil && q.Package.Name == "tj-actions/changed-files":
 				results[i] = map[string]any{"vulns": []map[string]string{
 					{"id": "GHSA-mcph-m25j-8j63"}, {"id": "GHSA-mrrh-fwg8-r2c3"},
+				}}
+			case q.Package != nil && q.Package.Name == "Azure/setup-kubectl":
+				results[i] = map[string]any{"vulns": []map[string]string{
+					{"id": "GHSA-p756-rfxh-x63h"},
 				}}
 			default:
 				results[i] = map[string]any{}
@@ -201,6 +221,20 @@ func TestInRange(t *testing.T) {
 			"1.7.0", false, true,
 		},
 		{"unsorted", []event{{Fixed: "2.3.0"}, {Introduced: "2.0.0"}}, "2.1.0", true, true},
+		// An opening and a closing at one version bound an empty range in
+		// either record order.
+		{"introduced then fixed at one version", []event{
+			{Introduced: "1.0.0"}, {Fixed: "1.0.0"},
+		}, "1.0.0", false, true},
+		{"fixed then introduced at one version", []event{
+			{Fixed: "1.0.0"}, {Introduced: "1.0.0"},
+		}, "1.0.0", false, true},
+		{"last affected then introduced at one version", []event{
+			{LastAffected: "1.0.0"}, {Introduced: "1.0.0"},
+		}, "1.0.0", true, true},
+		{"past last affected then introduced at one version", []event{
+			{LastAffected: "1.0.0"}, {Introduced: "1.0.0"},
+		}, "1.0.1", false, true},
 		{
 			"bound not numeric",
 			[]event{{Introduced: "0"}, {Fixed: "2.0.0-rc1"}},

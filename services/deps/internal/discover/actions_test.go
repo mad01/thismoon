@@ -65,6 +65,16 @@ const (
 	checkoutV4Commit = "11d5960a326750d5838078e36cf38b85af677262"
 	codeqlV3Commit   = "2222222222222222222222222222222222222222"
 	acmeMainCommit   = "3333333333333333333333333333333333333333"
+
+	// tj-actions/changed-files: v46, v46.0.5 (an annotated tag) and main on
+	// one commit, with older and newer releases elsewhere.
+	tjV46Commit   = "4444444444444444444444444444444444444444"
+	tjV4605Tag    = "5555555555555555555555555555555555555555"
+	tjV4604Commit = "6666666666666666666666666666666666666666"
+	tjV47Commit   = "7777777777777777777777777777777777777777"
+	// actions/download-artifact: v4 on the v4.3.0 commit.
+	downloadV4Commit   = "8888888888888888888888888888888888888888"
+	downloadV421Commit = "9999999999999999999999999999999999999999"
 )
 
 // pkt frames s as one pkt-line.
@@ -99,6 +109,21 @@ func refServer(t *testing.T) (*httptest.Server, func(repo string) int) {
 		"github/codeql-action": advertisement(codeqlV3Commit + " refs/tags/v3"),
 		"acme/workflows": advertisement(
 			acmeMainCommit + " refs/heads/main",
+		),
+		"tj-actions/changed-files": advertisement(
+			tjV46Commit+" refs/heads/main",
+			tjV46Commit+" refs/tags/46.0.2",
+			tjV46Commit+" refs/tags/v46",
+			tjV4604Commit+" refs/tags/v46.0.4",
+			tjV4605Tag+" refs/tags/v46.0.5",
+			tjV46Commit+" refs/tags/v46.0.5^{}",
+			tjV46Commit+" refs/tags/v46.1.0-rc1",
+			tjV47Commit+" refs/tags/v47.0.0",
+		),
+		"actions/download-artifact": advertisement(
+			downloadV4Commit+" refs/tags/v4",
+			downloadV421Commit+" refs/tags/v4.2.1",
+			downloadV4Commit+" refs/tags/v4.3.0",
 		),
 	}
 	var (
@@ -259,6 +284,109 @@ func TestGitHubActionsResolvesTagsAndBranches(t *testing.T) {
 		if a.ID != "deps-movable-ref" || a.Kind != store.KindSignal ||
 			!strings.HasPrefix(a.Summary, w.summary) {
 			t.Errorf("%s signal = %+v, want deps-movable-ref %q", name, a, w.summary)
+		}
+	}
+}
+
+// TestGitHubActionsLabelsMajorPinsByTheirRelease: a ref that isn't a full
+// version takes the highest full-version tag on its commit as its label, so
+// OSV's range filter can judge it: tj-actions/changed-files@v46 runs v46.0.5,
+// past the fix of both its advisories. Pre-releases and tags on other
+// commits don't count, a full-version ref is its own label, and the
+// movable-ref signal still names the ref as pinned.
+func TestGitHubActionsLabelsMajorPinsByTheirRelease(t *testing.T) {
+	srv, _ := refServer(t)
+	root := writeRepo(t, map[string]string{".github/workflows/ci.yml": `jobs:
+  a:
+    steps:
+      - uses: tj-actions/changed-files@v46
+      - uses: actions/download-artifact@v4
+      - uses: tj-actions/changed-files@main
+      - uses: tj-actions/changed-files@v46.0.4
+      - uses: actions/checkout@v4
+`})
+
+	pkgs, err := GitHubActions{BaseURL: srv.URL}.Discover(root, Options{})
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	want := []struct{ name, version, signal string }{
+		{"tj-actions/changed-files", "v46.0.5+" + tjV46Commit, "pinned to the tag v46,"},
+		{"actions/download-artifact", "v4.3.0+" + downloadV4Commit, "pinned to the tag v4,"},
+		{"tj-actions/changed-files", "v46.0.5+" + tjV46Commit, "pinned to the branch main,"},
+		{"tj-actions/changed-files", "v46.0.4+" + tjV4604Commit, "pinned to the tag v46.0.4,"},
+		// No full-version tag on the commit: the ref stays the label.
+		{"actions/checkout", "v4+" + checkoutV4Commit, "pinned to the tag v4,"},
+	}
+	if len(pkgs) != len(want) {
+		t.Fatalf("got %d packages, want %d: %+v", len(pkgs), len(want), pkgs)
+	}
+	for i, w := range want {
+		p := pkgs[i]
+		if p.Name != w.name || p.Version != w.version {
+			t.Errorf("pkgs[%d] = %s %s, want %s %s", i, p.Name, p.Version, w.name, w.version)
+		}
+		if len(p.Advisories) != 1 || !strings.HasPrefix(p.Advisories[0].Summary, w.signal) {
+			t.Errorf("pkgs[%d] signal = %+v, want %q", i, p.Advisories, w.signal)
+		}
+	}
+}
+
+// TestGitHubActionsFollowsLocalActions: a `uses: ./path` ref runs the
+// action.yml or action.yaml in path, wherever it sits, and its remote refs
+// are read like a composite's. `uses: ./` runs the repo-root action. Each
+// file is read once however many files run it, so a cycle ends; a missing,
+// excluded or outside path is skipped without an error.
+func TestGitHubActionsFollowsLocalActions(t *testing.T) {
+	srv, _ := refServer(t)
+	root := writeRepo(t, map[string]string{
+		".github/workflows/ci.yml": `jobs:
+  a:
+    steps:
+      - uses: ./tools/setup
+      - uses: ./
+      - uses: ./tools/setup
+      - uses: ./not/generated/yet
+      - uses: ./excluded/action
+      - uses: ./../outside
+      - uses: ./.github/actions/present-image
+`,
+		"tools/setup/action.yaml": `runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+    - uses: ./
+`,
+		"action.yml": `runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+    - uses: ./tools/setup
+`,
+		"excluded/action/action.yml":               shaPinnedWorkflow,
+		".github/actions/present-image/action.yml": compositeAction,
+		"../outside/action.yml":                    "runs:\n  steps:\n    - uses: evil/outside@v1\n",
+	})
+	opts := Options{ExcludePath: func(rel string) bool { return rel == "excluded" }}
+
+	pkgs, err := GitHubActions{BaseURL: srv.URL}.Discover(root, opts)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	got := byName(t, pkgs)
+	composite := filepath.Join(root, ".github/actions/present-image/action.yml")
+	want := map[string]string{
+		"actions/setup-go":           filepath.Join(root, "tools/setup/action.yaml"),
+		"actions/checkout":           filepath.Join(root, "action.yml"),
+		"docker/setup-buildx-action": composite,
+		"docker/login-action":        composite,
+	}
+	if len(got) != len(want) {
+		t.Errorf("got %d packages, want %d: %+v", len(got), len(want), pkgs)
+	}
+	for name, manifest := range want {
+		if p, ok := got[name]; !ok || p.ManifestPath != manifest {
+			t.Errorf("%s = %+v, want it from %s", name, p, manifest)
 		}
 	}
 }

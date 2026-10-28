@@ -19,7 +19,7 @@ func (v *vuln) affects(q Query) bool {
 	}
 	judged := false
 	for _, a := range v.Affected {
-		if a.Package.Name != q.Name {
+		if !q.matchesName(a.Package.Name) {
 			continue
 		}
 		for _, r := range a.Ranges {
@@ -38,8 +38,10 @@ func (v *vuln) affects(q Query) bool {
 
 // inRange reports whether ver falls in the range the events bound, evaluated
 // the way the OSV schema does: events sorted by version, each introduced
-// opening the range and each fixed or last_affected closing it. ok is false
-// when an event's version can't be compared.
+// opening the range and each fixed or last_affected closing it. At one
+// version an opening sorts before a closing, whatever the record's order, so
+// introduced and fixed at 1.0.0 bound an empty range. ok is false when an
+// event's version can't be compared.
 func inRange(events []event, ver version) (in, ok bool) {
 	type bound struct {
 		at    version
@@ -70,7 +72,15 @@ func inRange(events []event, ver version) (in, ok bool) {
 		}
 		bounds = append(bounds, b)
 	}
-	slices.SortStableFunc(bounds, func(a, b bound) int { return a.at.compare(b.at) })
+	closes := func(b bound) int {
+		if b.opens {
+			return 0
+		}
+		return 1
+	}
+	slices.SortStableFunc(bounds, func(a, b bound) int {
+		return cmp.Or(a.at.compare(b.at), cmp.Compare(closes(a), closes(b)))
+	})
 	for _, b := range bounds {
 		c := ver.compare(b.at)
 		switch {

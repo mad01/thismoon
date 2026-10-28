@@ -1,0 +1,28 @@
+{
+  "id": "GHSA-p756-rfxh-x63h",
+  "summary": "Azure/setup-kubectl: Escalation of privilege vulnerability for v3 and lower",
+  "database_specific": {
+    "severity": "LOW"
+  },
+  "affected": [
+    {
+      "package": {
+        "name": "Azure/setup-kubectl",
+        "ecosystem": "GitHub Actions"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "3"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

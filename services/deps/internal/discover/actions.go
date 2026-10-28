@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -21,14 +23,15 @@ const ActionsEcosystem = "GitHub Actions"
 const movableRefID = "deps-movable-ref"
 
 // GitHubActions discovers the actions a repo's CI runs: every remote `uses:`
-// in the workflows under .github/workflows and in the local composite actions
-// under .github/actions. Each ref becomes a package named owner/repo whose
+// in the workflows under .github/workflows, in the local composite actions
+// under .github/actions, and in any other local action a `uses: ./path` ref
+// runs (localAction). Each ref becomes a package named owner/repo whose
 // version carries the commit it runs (see actionVersion), so OSV can match it
 // by commit. A tag or branch ref is resolved to its commit through the action
 // repo's ref advertisement and carries a movable-ref signal. A ref that can't
 // be resolved is left out and reported in the error, beside the refs that
-// were read. Local (./) and docker:// refs are skipped. Actions have no
-// reachability, so every ref is Direct and Imported.
+// were read. docker:// refs are skipped. Actions have no reachability, so
+// every ref is Direct and Imported.
 type GitHubActions struct {
 	// BaseURL serves the ref advertisements; empty means https://github.com.
 	BaseURL string
@@ -49,30 +52,87 @@ func (g GitHubActions) Discover(repoRoot string, opts Options) ([]Package, error
 		pkgs   []Package
 		errs   []error
 		failed = map[string]bool{}
+		// queued holds every file read or due, so a local action that
+		// several files run, or that runs itself, is read once.
+		queued = map[string]bool{}
 	)
-	for _, file := range files {
-		refs, err := parseActionFile(file)
+	for _, f := range files {
+		queued[f] = true
+	}
+	for i := 0; i < len(files); i++ { // files grows as local actions are found
+		refs, locals, err := parseActionFile(files[i])
 		if err != nil {
-			errs = append(errs, fmt.Errorf("parse %s: %w", file, err))
+			errs = append(errs, fmt.Errorf("parse %s: %w", files[i], err))
 			continue
 		}
-		seen := map[string]bool{}
-		for _, r := range refs {
-			id := r.repo + "@" + r.ref
-			if seen[id] || failed[id] {
-				continue
+		for _, uses := range locals {
+			if f, ok := localAction(repoRoot, uses, opts); ok && !queued[f] {
+				queued[f] = true
+				files = append(files, f)
 			}
-			seen[id] = true
-			p, err := g.pkg(r, file, cache)
-			if err != nil {
-				failed[id] = true
-				errs = append(errs, err)
-				continue
-			}
-			pkgs = append(pkgs, p)
 		}
+		got, refErrs := g.pkgs(refs, files[i], cache, failed)
+		pkgs = append(pkgs, got...)
+		errs = append(errs, refErrs...)
 	}
 	return pkgs, errors.Join(errs...)
+}
+
+// pkgs builds the packages for the refs in manifest, one per owner/repo@ref.
+// A ref that failed in an earlier file is skipped, so its error is reported
+// once per repo.
+func (g GitHubActions) pkgs(
+	refs []actionRef,
+	manifest string,
+	cache refCache,
+	failed map[string]bool,
+) ([]Package, []error) {
+	var (
+		pkgs []Package
+		errs []error
+		seen = map[string]bool{}
+	)
+	for _, r := range refs {
+		id := r.repo + "@" + r.ref
+		if seen[id] || failed[id] {
+			continue
+		}
+		seen[id] = true
+		p, err := g.pkg(r, manifest, cache)
+		if err != nil {
+			failed[id] = true
+			errs = append(errs, err)
+			continue
+		}
+		pkgs = append(pkgs, p)
+	}
+	return pkgs, errs
+}
+
+// localAction returns the action file a local `uses: ./path` ref runs: the
+// action.yml or action.yaml in path, which GitHub resolves against the repo
+// root, so `uses: ./` runs the repo's own action. A path outside the repo or
+// under an excluded directory is skipped, and so is one with no action file,
+// since a job may generate it before the step runs.
+func localAction(repoRoot, uses string, opts Options) (string, bool) {
+	root := filepath.Clean(repoRoot)
+	dir := filepath.Join(root, filepath.FromSlash(uses))
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	for d := dir; d != root && d != filepath.Dir(d); d = filepath.Dir(d) {
+		if opts.excluded(root, d) {
+			return "", false
+		}
+	}
+	for _, name := range []string{"action.yml", "action.yaml"} {
+		path := filepath.Join(dir, name)
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			return path, true
+		}
+	}
+	return "", false
 }
 
 // pkg builds the package for one ref in manifest. A SHA pin needs no lookup; a
@@ -97,9 +157,60 @@ func (g GitHubActions) pkg(r actionRef, manifest string, cache refCache) (Packag
 	if !ok {
 		return Package{}, fmt.Errorf("resolve %s@%s: no such tag or branch", r.repo, r.ref)
 	}
-	p.Version = actionVersion(r.ref, commit)
+	p.Version = actionVersion(releaseLabel(refs, r.ref, commit), commit)
 	p.Advisories = []store.Advisory{movableRef(kind, r.ref)}
 	return p, nil
+}
+
+// releaseLabel is the version label of an action pinned to ref, which
+// resolved to commit. A full version (v4.2.2) is its own label. Any other
+// ref, such as v4 or main, says nothing about which release it runs, so OSV's
+// range filter would keep every advisory on the action; the label is instead
+// the highest full-version tag on the same commit. With none, it is the ref.
+func releaseLabel(refs map[string]string, ref, commit string) string {
+	if _, ok := fullVersion(ref); ok {
+		return ref
+	}
+	var (
+		label string
+		best  [3]uint64
+	)
+	for name, sha := range refs {
+		tag, ok := strings.CutPrefix(name, "refs/tags/")
+		if !ok || !strings.EqualFold(sha, commit) {
+			continue
+		}
+		v, ok := fullVersion(tag)
+		if !ok {
+			continue
+		}
+		c := slices.Compare(v[:], best[:])
+		if label == "" || c > 0 || (c == 0 && tag < label) {
+			label, best = tag, v
+		}
+	}
+	if label == "" {
+		return ref
+	}
+	return label
+}
+
+// fullVersion reads a full release version, v4.2.2 or 4.2.2: the shape OSV's
+// range filter compares.
+func fullVersion(s string) ([3]uint64, bool) {
+	var v [3]uint64
+	parts := strings.Split(strings.TrimPrefix(s, "v"), ".")
+	if len(parts) != len(v) {
+		return v, false
+	}
+	for i, p := range parts {
+		n, err := strconv.ParseUint(p, 10, 64)
+		if err != nil {
+			return v, false
+		}
+		v[i] = n
+	}
+	return v, true
 }
 
 // advertisementURL is the smart-HTTP ref advertisement of the action repo
@@ -215,23 +326,26 @@ type actionRef struct {
 }
 
 // parseActionFile returns the remote refs a workflow or composite action
-// file uses, in file order.
-func parseActionFile(path string) ([]actionRef, error) {
+// file uses, in file order, and the local (./) action paths it runs.
+func parseActionFile(path string) (refs []actionRef, locals []string, err error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var refs []actionRef
 	for _, n := range usesNodes(&doc) {
+		if strings.HasPrefix(n.Value, "./") {
+			locals = append(locals, n.Value)
+			continue
+		}
 		if r, ok := parseUses(n.Value, n.LineComment); ok {
 			refs = append(refs, r)
 		}
 	}
-	return refs, nil
+	return refs, locals, nil
 }
 
 // usesNodes returns the `uses:` values GitHub runs: jobs.<id>.uses (a reusable
