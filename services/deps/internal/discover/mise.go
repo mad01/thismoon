@@ -247,15 +247,33 @@ func splitPackageKey(key string) (name, version string, ok bool) {
 	return name, version, true
 }
 
+// sitePackagesGlobs are the virtualenv layouts mise's pipx backend leaves in
+// a version's directory: <venv>/ when uv installs the tool, and venvs/<venv>/
+// when pipx does. pipx's shared/ venv (pip) matches the first, and every tool
+// venv imports it through a .pth file, so it is scanned with them.
+var sitePackagesGlobs = []string{
+	filepath.Join("*", "lib", "python3*", "site-packages"),
+	filepath.Join("venvs", "*", "lib", "python3*", "site-packages"),
+}
+
 // readSitePackages lists the *.dist-info folders of the virtualenv a pipx
-// install holds (<dir>/<venv>/lib/python3.*/site-packages). A folder is named
+// install holds (see sitePackagesGlobs). A folder is named
 // <name>-<version>.dist-info with any "-" in the name escaped to "_", so the
 // first "-" ends the name. Names are PEP 503 normalized; the package the tool
 // installs (tool) is the direct one.
 func readSitePackages(dir, tool string) ([]Package, error) {
-	sites, err := filepath.Glob(filepath.Join(dir, "*", "lib", "python3*", "site-packages"))
-	if err != nil {
+	// Glob drops read errors, so read dir first: a sandbox denial must
+	// surface as one, not as a tree with no site-packages.
+	if _, err := os.ReadDir(dir); err != nil {
 		return nil, err
+	}
+	var sites []string
+	for _, pattern := range sitePackagesGlobs {
+		matches, err := filepath.Glob(filepath.Join(dir, pattern))
+		if err != nil {
+			return nil, err
+		}
+		sites = append(sites, matches...)
 	}
 	if len(sites) == 0 {
 		return nil, fmt.Errorf("no site-packages under %s", dir)

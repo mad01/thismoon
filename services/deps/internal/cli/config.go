@@ -48,6 +48,8 @@ exclude_paths = ["third_party", "internal/gen/*"]
 # mise tools to scan; a lock that can't be read or parsed is a discovery
 # error. Each tool reports under the label "mise:<tool>", for example
 # "mise:npm:yarn", which 'deps check --repo' takes to rescan just that tool.
+# serve's sandbox reads only the default paths: a moved lock or installs
+# directory also needs an allowRead entry in ~/.config/srt/deps.local.json.
 [mise]
 lock = "` + config.DefaultMiseLock + `"
 installs = "` + config.DefaultMiseInstalls + `"

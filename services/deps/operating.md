@@ -72,10 +72,15 @@ not read an installed tool's tree. Each tool reports under its label, such as
 `mise:npm:yarn`. Ecosystem `mise` under the lock's path means mise.lock itself
 could not be read or parsed, which hides every tool. A `not installed` error
 under a label means the install lags the lock: run `mise install` (or `ralph
-up`), then `deps check --repo <label>`. An `operation not permitted` error
-comes from the sandbox. If mise.lock links to a file outside `~/code/src`, add
-that target to `~/.config/srt/deps.local.json`. No mise tools in the inventory
-and no error means there is no lock at the configured path.
+up`), then `deps check --repo <label>`. An `aube-lock.yaml: no such file`
+error means mise installed that npm tool before it wrote aube lockfiles, and
+`mise install` skips a version that is already there. Reinstall it with `mise
+install -f <tool>` (the label without `mise:`), then rescan. An `operation not
+permitted` error comes from the sandbox, which reads mise.lock and the
+installs directory only at their default paths. If mise.lock links to a file
+outside `~/code/src`, or the `[mise]` keys move the lock or the installs
+directory, add that path to `~/.config/srt/deps.local.json`. No mise tools in
+the inventory and no error means there is no lock at the configured path.
 
 A flagged advisory on a package nothing compiles in: Go scans cover the module
 graph (`go list -m -json all`), which includes modules no binary imports. So

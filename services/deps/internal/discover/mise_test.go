@@ -87,6 +87,47 @@ func TestMiseDiscoverReadsTheLockedTrees(t *testing.T) {
 	}
 }
 
+// TestMiseDiscoverReadsThePipxLayout: without uv, mise's pipx backend runs
+// pipx with PIPX_HOME in the version's directory, so the venv sits under
+// venvs/ and pip under the shared/ venv every tool venv imports.
+func TestMiseDiscoverReadsThePipxLayout(t *testing.T) {
+	m := miseFixture(t)
+	version := filepath.Join(m.InstallRoot, "pipx-httpie", "3.2.4")
+	if err := os.MkdirAll(filepath.Join(version, "venvs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(
+		filepath.Join(version, "httpie"),
+		filepath.Join(version, "venvs", "httpie"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	shared := filepath.Join(version, "shared", "lib", "python3.14", "site-packages")
+	if err := os.MkdirAll(filepath.Join(shared, "pip-25.2.dist-info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	deps, errs := m.Discover()
+	if len(errs) != 0 {
+		t.Fatalf("discovery errors = %+v, want none", errs)
+	}
+	var got []string
+	for _, s := range summary(deps) {
+		if strings.HasPrefix(s, "mise:pipx:httpie ") {
+			got = append(got, s)
+		}
+	}
+	want := []string{
+		"mise:pipx:httpie httpie@3.2.4 direct",
+		"mise:pipx:httpie markdown-it-py@4.2.0",
+		"mise:pipx:httpie pip@25.2",
+		"mise:pipx:httpie pysocks@1.7.1",
+		"mise:pipx:httpie requests@2.34.2",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("discovered:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
 // TestMiseDiscoverWithoutMise: a machine without mise has no lock or no
 // installs directory, and that is no tools, not a discovery error.
 func TestMiseDiscoverWithoutMise(t *testing.T) {
@@ -144,6 +185,15 @@ func TestMiseDiscoverReportsUnreadableTrees(t *testing.T) {
 			want: "no site-packages under",
 			damage: func(t *testing.T, m Mise) {
 				remove(t, filepath.Join(m.InstallRoot, "pipx-httpie", "3.2.4", "httpie", "lib"))
+			},
+		},
+		{
+			// A sandbox denial looks the same: the directory stats, but no
+			// read inside it succeeds.
+			name: "install directory unreadable", label: "mise:pipx:httpie", eco: "PyPI",
+			want: "permission denied",
+			damage: func(t *testing.T, m Mise) {
+				lockOut(t, filepath.Join(m.InstallRoot, "pipx-httpie", "3.2.4"))
 			},
 		},
 	}
@@ -245,6 +295,23 @@ func rewrite(t *testing.T, path, old, replacement string) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// lockOut removes every permission from the directory at path until the test
+// ends. Root reads through that, so the test is skipped as root.
+func lockOut(t *testing.T, path string) {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(path, 0o755); err != nil {
+			t.Error(err)
+		}
+	})
 }
 
 // remove deletes path and everything under it.

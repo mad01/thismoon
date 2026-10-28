@@ -92,7 +92,10 @@ effect on the next scan; `serve` does not need a restart.
 
 The `[mise]` table locates the tools mise installs with its npm: and pipx:
 backends, which deps scans beside the repos. Set a key only when mise keeps
-that file somewhere else; a leading `~` is expanded.
+that file somewhere else; a leading `~` is expanded. serve's sandbox reads
+only the default paths, so a moved lock or installs directory also needs an
+`allowRead` entry in `~/.config/srt/deps.local.json`, the machine-local
+expansion layer ([docs/SANDBOXING.md](../../docs/SANDBOXING.md#the-machine-local-expansion-layer)).
 
 - `[mise] lock` (string, default `~/.config/mise/mise.lock`): the lock that
   pins each tool's version. A missing lock means no mise tools to scan; a

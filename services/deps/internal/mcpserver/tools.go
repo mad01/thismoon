@@ -23,8 +23,8 @@ type handlers struct {
 func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_scan",
-		Description: "Discover every external dependency across the registered tool repos (Go modules, npm, PyPI, Swift) and persist the inventory, WITHOUT checking advisories. " +
-			"Returns a per-ecosystem count, plus discovery_errors naming any repo and ecosystem it could not read. Use deps_check to also check versions against OSV.",
+		Description: "Discover every external dependency across the registered tool repos (Go modules, npm, PyPI, Swift) and the installed mise tools (npm and PyPI trees, each under a label like 'mise:npm:yarn') and persist the inventory, WITHOUT checking advisories. " +
+			"Returns a per-ecosystem count, plus discovery_errors naming any repo or mise tool and ecosystem it could not read. Use deps_check to also check versions against OSV.",
 		// Replaces the whole persisted inventory, so a rescan is destructive
 		// but idempotent over an unchanged tree. Go discovery shells out to
 		// `go list -m -json all`, which resolves the module graph against the
@@ -38,8 +38,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_check",
-		Description: "Discover every dependency and check each version against the OSV.dev supply-chain advisory database. " +
-			"Returns the flagged packages with advisory id, kind, severity, and the version that fixes each, plus discovery_errors naming any repo and ecosystem whose dependencies went unchecked. " +
+		Description: "Discover every dependency across the registered tool repos and the installed mise tools, and check each version against the OSV.dev supply-chain advisory database. " +
+			"Returns the flagged packages with advisory id, kind, severity, and the version that fixes each, plus discovery_errors naming any repo or mise tool and ecosystem whose dependencies went unchecked. " +
 			"Kind is vuln (a known vulnerability), malicious (a known malicious version, from an OSV MAL- record), or signal (a warning sign that is not an advisory). " +
 			"Packages with a malicious finding come first: tell the user at once, because its install scripts may already have run. This reaches the network and may take a few seconds.",
 		// Same replace-the-store write as deps_scan, plus the OSV.dev query.

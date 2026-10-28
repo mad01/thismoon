@@ -72,7 +72,9 @@ no file locks.
   `latest`, major and minor alias links are never followed. npm trees come
   from the install's `aube-lock.yaml` (pnpm lockfile v9, `name@version`
   keys); pipx trees from the virtualenv's `*.dist-info` folder names, PEP 503
-  normalized. Discovery never runs mise, whose shims don't work inside the
+  normalized. The venv is `<version>/<pkg>/` when uv installed the tool and
+  `<version>/venvs/<pkg>/` (plus pip in `shared/`) when pipx did, so both
+  layouts are read. Discovery never runs mise, whose shims don't work inside the
   sandbox. Both paths are `[mise]` keys in the deps config.
 - **mise labels.** Each tool reports under the repo label `mise:<tool>`
   (`mise:npm:yarn`, `mise:pipx:httpie`). The label carries no version, so it
@@ -90,7 +92,11 @@ no file locks.
   DiscoveryError (ecosystem `mise`, repo = the lock path). A tool whose locked
   version directory, `aube-lock.yaml` or `site-packages` is missing or
   unreadable is a DiscoveryError under its label. A missing version directory
-  means the install lags the lock, which `mise install` fixes.
+  means the install lags the lock, which `mise install` fixes. An npm version
+  installed before mise wrote `aube-lock.yaml` has none, and only `mise
+  install -f <tool>` rewrites it. `readSitePackages` reads the version
+  directory before globbing, because `filepath.Glob` drops a sandbox
+  `operation not permitted` and would report no site-packages instead.
 - Transitive deps are scanned and flagged (real supply-chain risk); the web/CLI
   mark direct vs transitive.
 - **Discovery errors are saved, never only logged.** A discoverer that fails
@@ -140,12 +146,15 @@ no file locks.
   mapping. SwiftURL names are the repo URL without scheme or `.git`
   (`github.com/vapor/vapor`), derived from each Package.resolved pin location.
 - **serve runs under srt** (anthropics/sandbox-runtime), with the access
-  declared as `spec.access` in `service-info.yaml`: the repos under
-  `~/code/src` minus secret-shaped files, the Go toolchain and module cache,
-  `~/.config/mise/mise.lock` and the `npm-**` / `pipx-**` install trees,
-  egress to `api.osv.dev` and `proxy.golang.org`. The trees are spelled
-  `npm-**`, not `npm-*/**`: srt drops a trailing `/**` from an allow, which
-  leaves only the directory readable. `go list` gets a private
+  declared as `spec.access` in `service-info.yaml`. It reads the repos under
+  `~/code/src` minus secret-shaped files, the module cache,
+  `~/.config/mise/mise.lock` and the whole mise installs directory (the Go
+  toolchain included). Egress goes to `api.osv.dev` and `proxy.golang.org`. The
+  installs grant is the plain directory, not `npm-**` / `pipx-**`: a tool
+  declared by its short name (`cookiecutter`, backend `pipx:cookiecutter`)
+  installs to `installs/cookiecutter`. A plain path grants its subtree; srt
+  drops a trailing `/**` from an allow, which leaves only the directory
+  readable. `go list` gets a private
   build cache in the workdir (`GOCACHE`, set by the recipe) and
   `GOFLAGS=-buildvcs=false`, so it never writes the shared build cache or runs
   git.

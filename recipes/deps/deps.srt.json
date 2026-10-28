@@ -9,11 +9,9 @@
       "~/.config/catalog/registry.yaml",
       "~/code/src",
       "~/code/pkg/mod",
-      "~/.local/share/mise/installs/go",
       "~/Library/Application Support/go/env",
       "~/.config/mise/mise.lock",
-      "~/.local/share/mise/installs/npm-**",
-      "~/.local/share/mise/installs/pipx-**"
+      "~/.local/share/mise/installs"
     ],
     "allowWrite": [
       "~/.local/share/deps",
