@@ -330,12 +330,24 @@ func (s *Store) RegistryUnknown() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
-	for _, d := range s.deps {
-		if d.RegistryUnknown {
-			n++
-		}
+	for _, c := range RegistryUnknownByEcosystem(s.deps) {
+		n += c
 	}
 	return n
+}
+
+// RegistryUnknownByEcosystem counts, per ecosystem, the dependencies in deps
+// whose registry lookup got no answer. An ecosystem with none is left out, so
+// an empty map means every lookup was answered. Store.RegistryUnknown is its
+// total; doctor reads it from the persisted Scan.
+func RegistryUnknownByEcosystem(deps []Dependency) map[string]int {
+	out := map[string]int{}
+	for _, d := range deps {
+		if d.RegistryUnknown {
+			out[d.Ecosystem]++
+		}
+	}
+	return out
 }
 
 // Snapshot returns a copy of the current scan.
