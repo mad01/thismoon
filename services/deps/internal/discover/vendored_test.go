@@ -90,7 +90,7 @@ func TestVendoredJSNamesAPublishedFileByItsHash(t *testing.T) {
 	}
 	if len(pkgs) != 1 || pkgs[0].Name != want.Name || pkgs[0].Version != want.Version ||
 		pkgs[0].ManifestPath != want.ManifestPath || !pkgs[0].Direct || !pkgs[0].Imported ||
-		len(pkgs[0].Advisories) != 0 {
+		len(pkgs[0].Advisories) != 0 || pkgs[0].NameFromFile {
 		t.Errorf("pkgs = %+v, want [%+v]", pkgs, want)
 	}
 }
@@ -133,6 +133,9 @@ func TestVendoredJSFlagsAChangedFile(t *testing.T) {
 	}
 	if strings.ContainsAny(p.Version, "@:") {
 		t.Errorf("version %q holds a key separator", p.Version)
+	}
+	if !p.NameFromFile {
+		t.Error("NameFromFile = false, want true for a name taken from the file name")
 	}
 	if len(p.Advisories) != 1 || p.Advisories[0].ID != "deps-vendored-modified" ||
 		p.Advisories[0].Kind != store.KindSignal || p.Advisories[0].Summary == "" {
@@ -185,8 +188,12 @@ func TestVendoredPackageNamesAGitHubMatchByFileNameAndJSDelivrVersion(t *testing
 		Path:    "/dist/jquery.min.js",
 	}
 	p, ok := vendoredPackage("/r/static/jquery-3.7.1.min.js", sumOf(nil), gh, true)
-	if !ok || p.Name != "jquery" || p.Version != "3.7.0" || len(p.Advisories) != 0 {
-		t.Errorf("vendoredPackage = %+v, %v; want npm jquery@3.7.0 with no signal", p, ok)
+	if !ok || p.Name != "jquery" || p.Version != "3.7.0" || len(p.Advisories) != 0 ||
+		!p.NameFromFile {
+		t.Errorf(
+			"vendoredPackage = %+v, %v; want npm jquery@3.7.0 named from its file, no signal",
+			p, ok,
+		)
 	}
 }
 

@@ -38,6 +38,8 @@
       "api.osv.dev",
       "osv-vulnerabilities.storage.googleapis.com",
       "proxy.golang.org",
+      "registry.npmjs.org",
+      "pypi.org",
       "data.jsdelivr.com",
       "github.com"
     ],

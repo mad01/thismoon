@@ -81,8 +81,9 @@ type Advisory struct {
 	FixedVersion string `json:"fixed_version,omitempty"`
 }
 
-// Dependency is one resolved external package found in a repo, with any
-// advisories OSV reports for that exact version (empty = clean).
+// Dependency is one resolved external package found in a repo, with the
+// findings OSV, its registry or a discoverer raised against that exact version
+// (empty = clean).
 type Dependency struct {
 	Ecosystem    string `json:"ecosystem"` // OSV ecosystem: Go | npm | PyPI
 	Name         string `json:"name"`
@@ -98,6 +99,22 @@ type Dependency struct {
 	// malicious finding ignores this gate (see Kind.Alerts).
 	Imported   bool       `json:"imported"`
 	Advisories []Advisory `json:"advisories,omitempty"`
+	// RegistryUnknown is true when the last check's registry lookup for this
+	// version got no answer. Its registry findings are then the ones the check
+	// before found, kept so that an outage neither drops a finding nor makes a
+	// resolved one read as fixed, and whether the registry withdrew or yanked
+	// the version since is unknown rather than clean.
+	RegistryUnknown bool `json:"registry_unknown,omitempty"`
+	// OtherIndex is true when the manifest points its package manager at a
+	// source besides the public registry (a requirements.txt with
+	// --index-url, say). The version may come from there, so the public
+	// registry not serving it is no evidence it was withdrawn.
+	OtherIndex bool `json:"other_index,omitempty"`
+	// NameFromFile is true for a vendored file whose npm name comes from its
+	// file name rather than a jsDelivr npm match: a file that matches nothing
+	// published, or one published on GitHub. Its bytes aren't known to be the
+	// npm package of that name, so the registry is never asked about it.
+	NameFromFile bool `json:"name_from_file,omitempty"`
 }
 
 // Flagged reports whether the dependency has at least one advisory.
@@ -305,6 +322,20 @@ func (s *Store) DiscoveryErrors() []DiscoveryError {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]DiscoveryError(nil), s.discErrs...)
+}
+
+// RegistryUnknown counts the dependencies whose registry lookup got no answer
+// in the check that last saved them.
+func (s *Store) RegistryUnknown() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, d := range s.deps {
+		if d.RegistryUnknown {
+			n++
+		}
+	}
+	return n
 }
 
 // Snapshot returns a copy of the current scan.

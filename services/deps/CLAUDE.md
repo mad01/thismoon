@@ -4,10 +4,10 @@ Go CLI, HTTP server with an embedded webkit web UI, and an MCP server, over one
 JSON store. `deps` discovers every external dependency across the catalog-
 registered repos (Go modules, npm, PyPI, Swift, GitHub Actions) and the npm
 and PyPI trees of the tools mise installs, and checks each version against the
-OSV.dev advisory database. It surfaces findings at `http://deps.this/` and
-fires a macOS notification when a package is flagged. **The MCP tools (driven
-by Claude) and the web page are the primary surfaces**; the `deps` CLI mirrors
-them.
+OSV.dev advisory database and against the registry that publishes it. It
+surfaces findings at `http://deps.this/` and fires a macOS notification when a
+package is flagged. **The MCP tools (driven by Claude) and the web page are
+the primary surfaces**; the `deps` CLI mirrors them.
 
 ## Module layout
 
@@ -21,6 +21,7 @@ deps/
     discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (requirements.txt exact pins) + Swift (Package.resolved) + browser JavaScript as npm (jsDelivr URLs in *.sh, vendored files by hash) + GitHub Actions (workflow `uses:` refs, tags resolved to commits); shared walker skips worktrees/nested checkouts; Mise reads the installed mise npm/pipx trees
     jsdelivr/          - jsDelivr data API client (GET /v1/lookup/hash/{sha256}), in-memory cache
     osv/               - OSV.dev client (POST /v1/querybatch + GET /v1/vulns/{id})
+    regcheck/          - registry checker: npm, PyPI, Go module proxy (withdrawn, blocked, yanked, deprecated, retracted)
     store/             - Dependency/Advisory/Flag model + atomic JSON store; notified + resolved sets
     scanner/           - Engine: discover → check → persist; CheckRepo (per-repo merge); coalesced Notify
     alert/             - Notifier interface + osascript macOS notification (the
@@ -41,8 +42,9 @@ Like `reminder`, **`deps serve` is the only writer**:
 - **`deps serve`** owns the store (`~/.local/share/deps/scan.json`), runs the
   HTTP server (web + JSON API + `/version` + `/webkit/`), the daily catch-up
   scan loop, and fires notifications. It is the only process that reaches the
-  network: OSV for the check, jsDelivr when discovery names a vendored
-  JavaScript file, and github.com for GitHub Actions refs.
+  network: OSV and the package registries for the check, jsDelivr when
+  discovery names a vendored JavaScript file, and github.com for GitHub
+  Actions refs.
 - **`deps mcp`** and the **`deps` CLI** hold no state: they are thin HTTP
   clients to the serve API on `localhost:<port>`. If serve is down, they return
   "deps serve not reachable … (t-man status deps)".
@@ -59,8 +61,10 @@ no file locks.
   pattern that does not compile fails the scan rather than matching nothing.
   New catalogued repos auto-enroll.
 - Each repo is walked for `go.mod` (→ `go list -m -json all`, resolved graph,
-  v-prefix stripped for OSV), `package-lock.json` (lockfile v2/v3), and
-  `requirements.txt` (exact `name==version` pins only). Unpinned names and
+  v-prefix stripped for OSV), `package-lock.json` (lockfile v2/v3, entries
+  under `node_modules/` only, so a workspace's own source is skipped), and
+  `requirements.txt` (exact `name==version` pins only, the version cut before
+  a hashed pin's ` \` or `--hash`). Unpinned names and
   ranges have no OSV-checkable version and are skipped; names are PEP 503
   normalized. The walk also covers `Package.resolved` (v2/v3, remote pins with
   an exact version), and branch pins are skipped. The shared walker skips `.git/vendor/node_modules/testdata`, **git worktrees and nested
@@ -93,6 +97,13 @@ no file locks.
     first-party bundle with a version in its name (`static/app-1.4.0.js`)
     gets a false `deps-vendored-modified` signal and an OSV check of npm
     `app`; `exclude_paths` on its directory is the way out.
+  - **A name from the file name is never sent to the registry check.** The
+    no-match and GitHub rows carry `name_from_file`, and
+    `scanner.registryQuery` gives them no query: no finding and no unknown.
+    The npm package of that name may be unrelated. Before this rule a
+    first-party `static/utils-0.1.0.js` read as `deps-npm-withdrawn`, since npm
+    unpublished `utils@0.1.0` in 2012, and fired the malicious banner. A row
+    an npm hash match names is asked like a lockfile row.
   - The lookup cache lives in memory for the serve process: a match for good,
     a miss for 24h. That is the API's own Cache-Control, and a miss can turn
     into a match because jsDelivr indexes a file only after serving it once.
@@ -268,7 +279,8 @@ no file locks.
   `~/.config/mise/mise.lock` and the whole mise installs directory (the Go
   toolchain included). Egress goes to `api.osv.dev`,
   `osv-vulnerabilities.storage.googleapis.com`, `proxy.golang.org`,
-  `data.jsdelivr.com` and `github.com`. The installs grant is the plain
+  `registry.npmjs.org`, `pypi.org`, `data.jsdelivr.com` and `github.com`. The
+  installs grant is the plain
   directory, not `npm-**` / `pipx-**`: a tool declared by its short name
   (`cookiecutter`, backend `pipx:cookiecutter`) installs to
   `installs/cookiecutter`. A plain path grants its subtree; srt drops a
@@ -276,6 +288,62 @@ no file locks.
   `go list` gets a private build cache in the workdir (`GOCACHE`, set by the
   recipe) and `GOFLAGS=-buildvcs=false`, so it never writes the shared build
   cache or runs git.
+
+### Registry check
+
+A registry can pull or flag a version before any advisory exists, or without
+one. After OSV, every full and per-repo check asks the registry that publishes
+each version (`internal/regcheck`):
+
+| Rule id | Kind | The registry says |
+|---------|------|-------------------|
+| `deps-npm-withdrawn` | malicious | the package document's `time` lists the version but `versions` does not: unpublished, or replaced by a security holding package (chalk 5.6.1) |
+| `deps-npm-deprecated` | signal | the version document carries a non-empty `deprecated` |
+| `deps-pypi-withdrawn` | malicious | `/pypi/<name>/<version>/json` is 404 while the project's Simple API page exists (ultralytics 8.3.41), for a pin whose requirements file names no other index |
+| `deps-pypi-quarantined` | malicious | PEP 792 `project-status` is `quarantined` |
+| `deps-pypi-yanked` | signal | the release has `yanked: true` |
+| `deps-pypi-archived`, `deps-pypi-deprecated` | signal | PEP 792 `project-status` is `archived` or `deprecated` |
+| `deps-go-blocked` | malicious | `@v/list` answers 403 with a body that starts `SECURITY ERROR` (github.com/boltdb-go/bolt) |
+| `deps-go-retracted` | signal | a `retract` directive in the go.mod of the module's highest version covers the version |
+
+- **Only positive evidence counts.** A package or version the registry has no
+  record of (a private package, a module the proxy lacks) gets no finding.
+  PyPI keeps no trace of a project it deleted outright, so OSV's MAL- records
+  cover that case. PyPI is never asked about a version with a local label
+  (`2.1.0+cu118`) or one that isn't PEP 440. npm is never asked about a name
+  it couldn't hold. Neither registry serves those, so a 404 would prove
+  nothing. A requirements.txt that names `-i`/`--index-url`,
+  `--extra-index-url` or `-f`/`--find-links` marks its pins `other_index`,
+  and a 404 for one of them is no withdrawal either. An index set in
+  pip.conf, or in a file the requirements pull in with `-r` or `-c`, stays
+  invisible. A 403 from the Go proxy without `SECURITY ERROR`
+  (the sandbox refusing a host, say) is an unanswered lookup, never a blocked
+  module.
+- **Every npm, PyPI and Go row is asked**, mise tool rows included, except a
+  vendored file named from its file name (`name_from_file`, above).
+  `scanner.registryQuery` sends the version as the registry publishes it: an
+  npm build label is cut. A GitHub Action or a Swift package has no registry
+  here and gets no answer, which is neither a finding nor unknown.
+- **Calls.** One lookup per unique package per check, cached for that check:
+  npm takes one request per version, plus the package document when a version
+  is gone. PyPI takes the Simple API page plus one request per version. Go
+  takes `@v/list` plus one `.mod`: the highest compatible release's, else
+  the highest `+incompatible` release's, else the highest prerelease's. It
+  asks `@latest` only when the list is empty. That is the go.mod the go
+  command reads retractions from, so a version that retracts itself still
+  counts. At most 8 packages run at once, each request has 10s,
+  and the whole pass has 45s. A module matching `go env GONOPROXY` or
+  `GOPRIVATE` is never sent to the public proxy, even with `GONOPROXY=none`
+  behind a company GOPROXY. serve starts under launchd, so only `go env -w`
+  settings reach it, never a shell profile's exports.
+- **Graph-only Go modules are checked.** A blocked module is malicious, and a
+  malicious finding bypasses the "Not compiled in" gate. Measured on
+  2026-10-28, checking them took a full pass from 266 to 638 requests on what
+  was then a 648-dependency inventory.
+- **No background scan id.** That full pass took 2 to 6 seconds, so a full
+  check (about 20 to 30 seconds with discovery) stays well inside the CLI's
+  2-minute request timeout. The 45-second pass budget bounds a registry that
+  hangs.
 
 ### Scan loop, notifications, offline
 
@@ -303,7 +371,7 @@ no file locks.
 ## Data model & storage
 
 ```go
-Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL|GitHub Actions), Name, Version, Repo (root or mise label), ManifestPath, Direct, Imported, Advisories[] }
+Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL|GitHub Actions), Name, Version, Repo (root or mise label), ManifestPath, Direct, Imported, RegistryUnknown, OtherIndex, Advisories[] }
 Advisory{ ID, Kind (vuln|malicious|signal), Summary, Severity, FixedVersion }  // one finding on that exact version
 DiscoveryError{ Repo, Ecosystem, Error }  // a repo+ecosystem the scan could not read
 ```
@@ -317,6 +385,12 @@ DiscoveryError{ Repo, Ecosystem, Error }  // a repo+ecosystem the scan could not
 - **ScannedAt** is the last *full* scan time. A per-repo rescan
   (`SaveRepo`) deliberately does **not** reset it, so the daily catch-up still
   fires; it replaces only that repo's deps and discovery errors.
+- **RegistryUnknown** marks a dep whose registry lookup got no answer in the
+  check that saved it. It travels with the row, so `SaveRepo` merges it like
+  everything else (see "Adding a producer" for what it keeps).
+- **OtherIndex** marks a dep whose manifest names a package source besides
+  the public registry. Discovery sets it (only for requirements.txt today),
+  and the registry checker drops `deps-pypi-withdrawn` for it.
 
 ### Finding kinds
 
@@ -325,8 +399,8 @@ DiscoveryError{ Repo, Ecosystem, Error }  // a repo+ecosystem the scan could not
 | Kind | Set by | Banner | Counts as active | "Not compiled in" gate | Page |
 |------|--------|--------|------------------|------------------------|------|
 | `vuln` | an OSV id other than MAL- | coalesced summary | yes, until resolved | applies | Active findings, by severity |
-| `malicious` | an OSV MAL- id, or a producer's own rule (a version the registry withdrew, say) | its own | yes, until resolved | bypassed (install scripts may have run) | first in Active findings, red badge; Resolve asks for confirmation |
-| `signal` | a deps rule, such as `deps-movable-ref` on a tag-pinned Action | never | never, nor in `flagged_count` | not used | Warning signs section |
+| `malicious` | an OSV MAL- id, or a producer's own rule (a version the registry withdrew, quarantined or blocks) | its own | yes, until resolved | bypassed (install scripts may have run) | first in Active findings, red badge; Resolve asks for confirmation |
+| `signal` | a deps rule, such as `deps-movable-ref` on a tag-pinned Action, or a yanked, deprecated, archived or retracted version | never | never, nor in `flagged_count` | not used | Warning signs section |
 
 - The banner and count rule is one function, `store.Kind.Alerts(imported)`.
   `PendingFlags` and `api.Dependency.Active` call it; `app.js` mirrors it as
@@ -372,21 +446,35 @@ Summary: "…"}`. Follow-up producers build on these rules:
   the last `@`, the same way an id never contains `:`. Don't join a tag and
   its commit with `@`: a GitHub Action joins them with `+`, and a label with
   `@` or `:` in it is dropped.
-- **A second checker composes with OSV.** `Engine` holds one `Checker`. A
-  second one (a registry checker, say) merges its results with OSV's per
-  dependency index, and its error must neither fail the check nor discard
-  OSV's findings. Whoever adds the second checker builds that composition.
-- **There is no "unknown" state.** A finding that drops out of a scan reads
-  as gone, and a resolved one shows as "Resolved · updated past". A producer
-  that needs a failed lookup to read as neither clean nor fixed must make
-  that model change itself.
+- **The registry checker composes with OSV.** `Engine.Checker` (OSV) runs
+  first, and its error fails the check. `Engine.Registry` (a
+  `scanner.Registry`, in serve a `*regcheck.Client`) then runs over the same
+  deps through `CheckRegistry`, which asks with one `regcheck.Query` per dep
+  (`registryQuery`: the published version, plus `OtherIndex`). It has no
+  error of its own: it returns one `regcheck.Result` per dependency index,
+  and the findings merge in with `addFindings`. An answer replaces the
+  registry findings the dep already carried (`regcheck.IsRule` tells them
+  apart from OSV's and a discoverer's, which stay).
+- **"Unknown" belongs to registry lookups only.** A lookup that got no answer
+  (a network error, a timeout, an unexpected status, a body that does not
+  decode) sets `Result.Err`. The dep is saved with `RegistryUnknown: true`
+  and keeps the registry findings the stored inventory held for the same
+  version, from any repo (an `OtherIndex` pin keeps only another such pin's).
+  `Engine.Scan`, which asks no registry, keeps that state for every row. So
+  an outage neither drops a finding nor lists a resolved one under
+  "Resolved · updated past". `registry_unknown` counts
+  these deps on `/api/deps`, `/api/flagged` and `/api/check`, in the MCP
+  tools and `deps check`, in a page callout, and in the scan-complete event
+  (at warn). Any other finding that drops out of a scan still reads as gone,
+  and an OSV failure still fails the whole check.
 - **A partial read keeps what it read.** A discoverer may return packages
   beside its error; `discover.Repos` keeps them and records the error.
 - A new producer leaves the key format, the notifier, the API and the page
   as they are. `osv.Query` may grow fields for a new query shape. The
   commit reaches OSV through the version, not a new stored field:
   `scanner.Check` builds each query with `query`, which splits a GitHub
-  Action's version into `osv.Query.Version` (the label) and `Commit`. So
+  Action's version into `osv.Query.Version` (the label) and `Commit`, and
+  `registryQuery` derives the registry's version the same way. So
   `store.Dependency`, scan.json and the API keep their shape.
 
 ## Build / install / test
@@ -403,7 +491,8 @@ make test     # go test ./... (hermetic: t.TempDir, canned go-list/OSV/jsDelivr/
 - `GET  /api/deps`              : full inventory (enriched: advisory `key` + `resolved`)
 - `GET  /api/flagged`          : flagged deps only
 - `POST /api/scan`             : discover only (no OSV), persist, return per-ecosystem counts
-- `POST /api/check[?repo=]`    : discover + OSV check (full, or one repo merged), notify, return flagged
+- `POST /api/check[?repo=]`    : discover + OSV and registry check (full, or one repo merged), notify, return flagged
+- `/api/deps`, `/api/flagged` and `/api/check` also return `discovery_errors` and `registry_unknown`
 - `POST /api/resolve`          : body `{keys:[…]}`; acknowledge advisories
 - `POST /api/notify`           : fire pending notifications now
 - `GET  /version`              : the four-key build metadata object (`version`, `commit`, `tag`, `build_time`) · `GET /webkit/`
@@ -415,7 +504,7 @@ per HTTP endpoint above:
 
 ```bash
 deps scan                    # POST /api/scan - discover only, print per-ecosystem counts
-deps check [--repo <repo>]   # POST /api/check[?repo=] - discover + OSV, print flagged; <repo> may be a mise label
+deps check [--repo <repo>]   # POST /api/check[?repo=] - discover + OSV + registries, print flagged; <repo> may be a mise label
 deps resolve <key>...        # POST /api/resolve - acknowledge advisories by key
 deps notify                  # POST /api/notify - fire pending notifications now
 deps version [-o json]       # bare git sha; -o json prints the full build metadata object
@@ -429,7 +518,7 @@ The annotated key reference lives in `deps config --help`.
 ## MCP tools
 
 - `deps_scan`: discover all deps (no advisory check); per-ecosystem counts
-- `deps_check`: discover + OSV; return flagged, malicious first (each advisory has `key`, `kind`, `resolved`)
+- `deps_check`: discover + OSV + registries; return flagged, malicious first (each advisory has `key`, `kind`, `resolved`), plus `registry_unknown`
 - `deps_list_flagged`: flagged from the last check, no re-scan
 - `deps_scan_repo(repo)`: rescan one repo (path or basename) or mise tool
   (whole label) and merge

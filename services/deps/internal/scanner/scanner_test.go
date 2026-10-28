@@ -2,9 +2,12 @@ package scanner
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,7 +18,9 @@ import (
 
 	"github.com/mad01/thismoon/services/deps/internal/api"
 	"github.com/mad01/thismoon/services/deps/internal/discover"
+	"github.com/mad01/thismoon/services/deps/internal/jsdelivr"
 	"github.com/mad01/thismoon/services/deps/internal/osv"
+	"github.com/mad01/thismoon/services/deps/internal/regcheck"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
 
@@ -669,4 +674,462 @@ func TestCheckRepoRescansOneMiseTool(t *testing.T) {
 	if got := inventory(st); !slices.Equal(got, want) {
 		t.Errorf("failed rescans changed the inventory to %q, want %q", got, want)
 	}
+}
+
+// fakeRegistry answers each query with the Result listed for its package
+// name; a name it does not list gets a zero Result (nothing to say).
+type fakeRegistry map[string]regcheck.Result
+
+func (f fakeRegistry) Check(_ context.Context, queries []regcheck.Query) []regcheck.Result {
+	out := make([]regcheck.Result, len(queries))
+	for i, q := range queries {
+		out[i] = f[q.Name]
+	}
+	return out
+}
+
+var (
+	withdrawn = store.Advisory{
+		ID: regcheck.RuleNPMWithdrawn, Kind: store.KindMalicious, Summary: "npm no longer serves chalk@5.6.1",
+	}
+	deprecated = store.Advisory{
+		ID: regcheck.RuleNPMDeprecated, Kind: store.KindSignal, Summary: "Deprecated on npm: use pad-start",
+	}
+)
+
+// registryEngine scans widget for chalk@5.6.1 and left-pad@1.2.0. OSV flags
+// chalk as MAL-2025-46969 and left-pad as GHSA-xxxx; reg is the registry.
+func registryEngine(t *testing.T, st *store.Store, n *fakeNotifier, reg Registry) *Engine {
+	t.Helper()
+	malRecord, err := os.ReadFile("../osv/testdata/MAL-2025-46969.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checker := osvStub(t,
+		map[string][]string{"left-pad": {"GHSA-xxxx"}, "chalk": {"MAL-2025-46969"}},
+		map[string]string{"GHSA-xxxx": leftPadRecord, "MAL-2025-46969": string(malRecord)},
+	)
+	e := npmEngine(st, checker, n, npmPkg("chalk", "5.6.1"), npmPkg("left-pad", "1.2.0"))
+	e.Registry = reg
+	return e
+}
+
+// findingIDs maps each saved dep's name to its finding ids, in order.
+func findingIDs(st *store.Store) map[string][]string {
+	out := map[string][]string{}
+	for _, d := range st.Snapshot().Deps {
+		for _, a := range d.Advisories {
+			out[d.Name] = append(out[d.Name], a.ID)
+		}
+	}
+	return out
+}
+
+// TestRegistryFindingsJoinOSVFindings: the registry's findings sit beside
+// OSV's on the same dependency. A withdrawn version joins the malicious
+// banner, which still names the package once, and a deprecation stays off
+// every banner.
+func TestRegistryFindingsJoinOSVFindings(t *testing.T) {
+	st, n := newStore(t), &fakeNotifier{}
+	e := registryEngine(t, st, n, fakeRegistry{
+		"chalk":    {Findings: []store.Advisory{withdrawn}},
+		"left-pad": {Findings: []store.Advisory{deprecated}},
+	})
+
+	if err := e.CheckAndNotify(context.Background()); err != nil {
+		t.Fatalf("CheckAndNotify: %v", err)
+	}
+
+	want := map[string][]string{
+		"chalk":    {"MAL-2025-46969", regcheck.RuleNPMWithdrawn},
+		"left-pad": {"GHSA-xxxx", regcheck.RuleNPMDeprecated},
+	}
+	if got := findingIDs(st); !maps.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("findings = %v, want %v", got, want)
+	}
+	if len(n.calls) != 2 || n.calls[0].title != "deps: malicious package chalk@5.6.1" {
+		t.Fatalf("banners = %+v, want one malicious banner for chalk, then the summary", n.calls)
+	}
+	if n.calls[1].title != "deps: 1 new advisory(ies) across 1 package(s)" {
+		t.Errorf("summary banner title = %q, want only left-pad's GHSA counted", n.calls[1].title)
+	}
+	if got := st.RegistryUnknown(); got != 0 {
+		t.Errorf("registry unknown = %d, want 0 after every lookup answered", got)
+	}
+}
+
+// TestUnreachableRegistryDropsNoFindingAndShowsNothingFixed is the outage
+// case: after a check that found a withdrawn chalk and a deprecated left-pad,
+// both acknowledged, the registry goes unreachable. Full and per-repo checks
+// still save, keep OSV's findings and the registry's earlier ones, mark the
+// deps unknown, show nothing as fixed, and fire no banner. Once the registry
+// answers again, its answer replaces what was kept.
+func TestUnreachableRegistryDropsNoFindingAndShowsNothingFixed(t *testing.T) {
+	st, n := newStore(t), &fakeNotifier{}
+	e := registryEngine(t, st, n, fakeRegistry{
+		"chalk":    {Findings: []store.Advisory{withdrawn}},
+		"left-pad": {Findings: []store.Advisory{deprecated}},
+	})
+	ctx := context.Background()
+	if err := e.CheckAndNotify(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Resolve([]string{
+		store.FlagKey("npm", "chalk", "5.6.1", regcheck.RuleNPMWithdrawn),
+		store.FlagKey("npm", "left-pad", "1.2.0", regcheck.RuleNPMDeprecated),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before := findingIDs(st)
+	banners := len(n.calls)
+
+	e.Registry = downRegistry(t)
+	runs := []struct {
+		name  string
+		check func() error
+	}{
+		{"full check", func() error { return e.CheckAndNotify(ctx) }},
+		{"repo check", func() error { _, err := e.CheckRepo(ctx, "widget"); return err }},
+	}
+	for _, run := range runs {
+		if err := run.check(); err != nil {
+			t.Fatalf("%s with the registry down: %v", run.name, err)
+		}
+		if got := findingIDs(st); !maps.EqualFunc(got, before, slices.Equal) {
+			t.Errorf("%s: findings = %v, want every one kept: %v", run.name, got, before)
+		}
+		if fixed := st.ResolvedFixed(); len(fixed) != 0 {
+			t.Errorf("%s: resolved as fixed = %+v, want none", run.name, fixed)
+		}
+		if got := st.RegistryUnknown(); got != 2 {
+			t.Errorf("%s: registry unknown = %d, want both deps", run.name, got)
+		}
+		if _, err := e.Notify(); err != nil || len(n.calls) != banners {
+			t.Errorf(
+				"%s: banners = %+v (err %v), want no new one",
+				run.name,
+				n.calls[banners:],
+				err,
+			)
+		}
+	}
+
+	e.Registry = fakeRegistry{"chalk": {Findings: []store.Advisory{withdrawn}}}
+	if _, err := e.Check(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := findingIDs(st)["left-pad"]; !slices.Equal(got, []string{"GHSA-xxxx"}) {
+		t.Errorf("left-pad findings = %v, want the deprecation gone once npm answers", got)
+	}
+	if got := st.RegistryUnknown(); got != 0 {
+		t.Errorf("registry unknown = %d, want 0 once the registry answers", got)
+	}
+}
+
+// shortRegistry answers no query at all.
+type shortRegistry struct{}
+
+func (shortRegistry) Check(context.Context, []regcheck.Query) []regcheck.Result { return nil }
+
+// TestCheckRegistryShortAnswerIsUnknown: a registry that returns fewer
+// results than queries leaves the rest unknown, never clean.
+func TestCheckRegistryShortAnswerIsUnknown(t *testing.T) {
+	prev := []store.Dependency{{
+		Ecosystem: "npm", Name: "chalk", Version: "5.6.1",
+		Advisories: []store.Advisory{withdrawn},
+	}}
+	deps := []store.Dependency{{Ecosystem: "npm", Name: "chalk", Version: "5.6.1"}}
+	got := CheckRegistry(context.Background(), deps, shortRegistry{}, prev)
+	if !got[0].RegistryUnknown || len(got[0].Advisories) != 1 || got[0].Advisories[0] != withdrawn {
+		t.Errorf("dep = %+v, want unknown with the withdrawn finding kept", got[0])
+	}
+}
+
+// TestKeepRegistryMergesRowsFromDifferentChecks: after a per-repo check, two
+// repos' rows for one version can disagree. The version keeps the findings
+// one row has, even when an earlier row has none, and stays unknown when any
+// row is.
+func TestKeepRegistryMergesRowsFromDifferentChecks(t *testing.T) {
+	prev := []store.Dependency{
+		{Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Repo: "/a", RegistryUnknown: true},
+		{
+			Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Repo: "/b",
+			Advisories: []store.Advisory{withdrawn},
+		},
+	}
+	deps := []store.Dependency{
+		{Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Repo: "/a"},
+		{Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Repo: "/c"},
+	}
+	for _, d := range keepRegistry(deps, prev) {
+		if !d.RegistryUnknown || len(d.Advisories) != 1 || d.Advisories[0] != withdrawn {
+			t.Errorf("%s row = %+v, want unknown with the withdrawn finding", d.Repo, d)
+		}
+	}
+}
+
+func TestScanCompleteEventWarnsOnUnknownRegistry(t *testing.T) {
+	deps := []store.Dependency{
+		{Ecosystem: "npm", Name: "chalk", Version: "5.6.2", RegistryUnknown: true},
+		{Ecosystem: "npm", Name: "lodash", Version: "4.17.21"},
+	}
+	ev := scanCompleteEvent(1, deps, nil, 0)
+	if ev.Level != "warn" || ev.Tags["registry_unknown"] != "1" {
+		t.Errorf("event = %+v, want warn with registry_unknown 1", ev)
+	}
+	if !strings.HasSuffix(ev.Title, ", 1 registry lookup(s) unanswered") {
+		t.Errorf("title = %q, want the unanswered count", ev.Title)
+	}
+}
+
+// downRegistry is a real registry client whose hosts refuse every connection.
+func downRegistry(t *testing.T) *regcheck.Client {
+	t.Helper()
+	down := httptest.NewServer(http.NotFoundHandler())
+	down.Close()
+	return regcheck.NewWithEndpoints(regcheck.Endpoints{
+		NPM: down.URL, PyPI: down.URL, GoProxy: down.URL,
+	})
+}
+
+// TestScanKeepsRegistryFindingsForALaterOutage: a scan asks no registry, so it
+// keeps each version's registry findings. A check during a registry outage
+// after it still has them to keep, and shows nothing as fixed.
+func TestScanKeepsRegistryFindingsForALaterOutage(t *testing.T) {
+	st, n := newStore(t), &fakeNotifier{}
+	e := registryEngine(t, st, n, fakeRegistry{
+		"chalk":    {Findings: []store.Advisory{withdrawn}},
+		"left-pad": {Findings: []store.Advisory{deprecated}},
+	})
+	ctx := context.Background()
+	if err := e.CheckAndNotify(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Resolve([]string{
+		store.FlagKey("npm", "chalk", "5.6.1", regcheck.RuleNPMWithdrawn),
+		store.FlagKey("npm", "left-pad", "1.2.0", regcheck.RuleNPMDeprecated),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := e.Scan(); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]string{
+		"chalk":    {regcheck.RuleNPMWithdrawn},
+		"left-pad": {regcheck.RuleNPMDeprecated},
+	}
+	if got := findingIDs(st); !maps.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("after scan: findings = %v, want the registry's kept: %v", got, want)
+	}
+
+	e.Registry = downRegistry(t)
+	if _, err := e.Check(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := findingIDs(st)["chalk"]; !slices.Contains(got, regcheck.RuleNPMWithdrawn) {
+		t.Errorf("chalk findings = %v, want the withdrawn finding kept through the outage", got)
+	}
+	if fixed := st.ResolvedFixed(); len(fixed) != 0 {
+		t.Errorf("resolved as fixed = %+v, want none", fixed)
+	}
+}
+
+// TestScanKeepsRegistryUnknown: a version whose last lookup went unanswered
+// stays unknown through a scan, which asks no registry either.
+func TestScanKeepsRegistryUnknown(t *testing.T) {
+	st, n := newStore(t), &fakeNotifier{}
+	e := registryEngine(t, st, n, downRegistry(t))
+	if _, err := e.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Scan(); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.RegistryUnknown(); got != 2 {
+		t.Errorf("registry unknown after scan = %d, want both deps still unknown", got)
+	}
+}
+
+// TestCheckRegistryKeepsOtherIndexPinsApart: during an outage a pin from a
+// manifest that names another index keeps only its own registry findings,
+// never a withdrawn finding that a plain pin of the same version carried, and
+// the query tells the registry which pins those are.
+func TestCheckRegistryKeepsOtherIndexPinsApart(t *testing.T) {
+	gone := store.Advisory{ID: regcheck.RulePyPIWithdrawn, Kind: store.KindMalicious}
+	prev := []store.Dependency{
+		{Ecosystem: "PyPI", Name: "core", Version: "0.1.0", Advisories: []store.Advisory{gone}},
+		{Ecosystem: "PyPI", Name: "core", Version: "0.1.0", OtherIndex: true},
+	}
+	deps := []store.Dependency{
+		{Ecosystem: "PyPI", Name: "core", Version: "0.1.0", Repo: "/a"},
+		{Ecosystem: "PyPI", Name: "core", Version: "0.1.0", Repo: "/b", OtherIndex: true},
+	}
+	reg := &recordingRegistry{}
+	got := CheckRegistry(context.Background(), deps, reg, prev)
+	if len(got[0].Advisories) != 1 || got[0].Advisories[0] != gone {
+		t.Errorf("plain pin = %+v, want the withdrawn finding kept", got[0])
+	}
+	if len(got[1].Advisories) != 0 || !got[1].RegistryUnknown {
+		t.Errorf("other-index pin = %+v, want unknown with no finding", got[1])
+	}
+	if len(reg.queries) != 2 || reg.queries[0].OtherIndex || !reg.queries[1].OtherIndex {
+		t.Errorf("queries = %+v, want OtherIndex passed through per pin", reg.queries)
+	}
+}
+
+// TestCheckRegistryAsksForThePublishedVersion: the registry is asked about
+// the version as its registry publishes it. An npm build label is cut, and a
+// GitHub Action goes without its commit.
+func TestCheckRegistryAsksForThePublishedVersion(t *testing.T) {
+	const sha = "a284dc1814e3fd07f2e34267fc8f81227ed29fb8"
+	deps := []store.Dependency{
+		{Ecosystem: "npm", Name: "cytoscape", Version: "3.31.0+build.7"},
+		{
+			Ecosystem: discover.ActionsEcosystem,
+			Name:      "tj-actions/changed-files",
+			Version:   "v45.0.7+" + sha,
+		},
+		{Ecosystem: "PyPI", Name: "torch", Version: "2.1.0+cu118"},
+	}
+	reg := &recordingRegistry{}
+	CheckRegistry(context.Background(), deps, reg, nil)
+	want := []string{"3.31.0", "v45.0.7", "2.1.0+cu118"}
+	for i, q := range reg.queries {
+		if q.Version != want[i] {
+			t.Errorf("%s query version = %q, want %q", q.Name, q.Version, want[i])
+		}
+	}
+	if deps[0].Version != "3.31.0+build.7" {
+		t.Errorf("stored version = %q, want it unchanged", deps[0].Version)
+	}
+}
+
+// hashLookup answers a file's sha256 with the published file listed for it;
+// any other hash matches nothing.
+type hashLookup map[string]jsdelivr.File
+
+func (h hashLookup) Lookup(_ context.Context, sum string) (jsdelivr.File, bool, error) {
+	f, found := h[sum]
+	return f, found, nil
+}
+
+func sha256Hex(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+// withdrawingRegistry records its queries and answers every one with npm's
+// withdrawn finding, as npm answers for utils@0.1.0 (unpublished in 2012).
+type withdrawingRegistry struct{ queries []regcheck.Query }
+
+func (r *withdrawingRegistry) Check(_ context.Context, qs []regcheck.Query) []regcheck.Result {
+	r.queries = append(r.queries, qs...)
+	out := make([]regcheck.Result, len(qs))
+	for i := range out {
+		out[i].Findings = []store.Advisory{withdrawn}
+	}
+	return out
+}
+
+// TestRegistryNeverAsksAboutAVendoredFileNamedByItsFileName: a vendored file
+// named from its file name is never sent to npm, whether it matched nothing
+// (a first-party static/utils-0.1.0.js) or matched on GitHub
+// (static/core-1.0.23.js). npm withdrew unrelated packages of those names,
+// and that must not read as a malicious file or fire a banner. A file named
+// by an npm hash match is still asked.
+func TestRegistryNeverAsksAboutAVendoredFileNamedByItsFileName(t *testing.T) {
+	root := t.TempDir()
+	static := filepath.Join(root, "static")
+	if err := os.MkdirAll(static, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"utils-0.1.0.js":          "export const utils = {};\n",
+		"core-1.0.23.js":          "/* core 1.0.23, from GitHub */\n",
+		"cytoscape-3.31.0.min.js": "/* cytoscape 3.31.0, as published */\n",
+	}
+	for name, body := range files {
+		writeFile(t, filepath.Join(static, name), body)
+	}
+	lookup := hashLookup{
+		sha256Hex([]byte(files["core-1.0.23.js"])): {
+			Type: "gh", Name: "someone/core", Version: "v1.0.23",
+		},
+		sha256Hex([]byte(files["cytoscape-3.31.0.min.js"])): {
+			Type: "npm", Name: "cytoscape", Version: "3.31.0",
+		},
+	}
+	st, n, reg := newStore(t), &fakeNotifier{}, &withdrawingRegistry{}
+	e := &Engine{
+		Prepare:    func() (Plan, error) { return Plan{Repos: []string{root}}, nil },
+		Ecosystems: []discover.Ecosystem{discover.VendoredJS{Lookup: lookup}},
+		Checker:    fakeChecker{},
+		Registry:   reg,
+		Notifier:   n,
+		Store:      st,
+	}
+
+	if err := e.CheckAndNotify(context.Background()); err != nil {
+		t.Fatalf("CheckAndNotify: %v", err)
+	}
+
+	if len(reg.queries) != 1 || reg.queries[0].Name != "cytoscape" {
+		t.Errorf("registry queries = %+v, want cytoscape's alone", reg.queries)
+	}
+	want := map[string][]string{
+		"utils":     {"deps-vendored-modified"},
+		"cytoscape": {regcheck.RuleNPMWithdrawn},
+	}
+	if got := findingIDs(st); !maps.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("findings = %v, want %v", got, want)
+	}
+	if len(st.Snapshot().Deps) != 3 || st.RegistryUnknown() != 0 {
+		t.Errorf("deps = %+v, want 3 rows, none unknown", st.Snapshot().Deps)
+	}
+	if len(n.calls) != 1 || n.calls[0].title != "deps: malicious package cytoscape@3.31.0" {
+		t.Errorf("banners = %+v, want the malicious banner for cytoscape alone", n.calls)
+	}
+}
+
+// TestFileNamedVendoredRowTakesNoEarlierRegistryState: a vendored row named
+// by its file name takes neither the withdrawn finding nor the unknown mark
+// an earlier build saved for it, on a scan or on a check during an outage,
+// and the registry is never asked about it.
+func TestFileNamedVendoredRowTakesNoEarlierRegistryState(t *testing.T) {
+	const version = "0.1.0+sha256.0123456789ab"
+	prev := []store.Dependency{{
+		Ecosystem: "npm", Name: "utils", Version: version,
+		Advisories: []store.Advisory{withdrawn}, RegistryUnknown: true,
+	}}
+	row := func() []store.Dependency {
+		return []store.Dependency{
+			{Ecosystem: "npm", Name: "utils", Version: version, NameFromFile: true},
+		}
+	}
+	reg := &recordingRegistry{}
+	got := map[string]store.Dependency{
+		"scan":  keepRegistry(row(), prev)[0],
+		"check": CheckRegistry(context.Background(), row(), reg, prev)[0],
+	}
+	for path, d := range got {
+		if len(d.Advisories) != 0 || d.RegistryUnknown {
+			t.Errorf("%s: row = %+v, want no registry finding and not unknown", path, d)
+		}
+	}
+	if reg.queries != nil {
+		t.Errorf("registry queries = %+v, want none", reg.queries)
+	}
+}
+
+// recordingRegistry records its queries and answers none of them.
+type recordingRegistry struct{ queries []regcheck.Query }
+
+func (r *recordingRegistry) Check(_ context.Context, qs []regcheck.Query) []regcheck.Result {
+	r.queries = qs
+	out := make([]regcheck.Result, len(qs))
+	for i := range out {
+		out[i].Err = errors.New("registry down")
+	}
+	return out
 }

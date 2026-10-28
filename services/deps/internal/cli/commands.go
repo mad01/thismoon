@@ -47,8 +47,9 @@ var checkCmd = &cobra.Command{
 	Use:   "check",
 	Short: "Discover dependencies and check them against OSV; print flagged",
 	Long: `Trigger 'deps serve' to discover every dependency and check each version
-against the OSV.dev advisory database. Prints any flagged package with its
-advisory id, severity, and the version that fixes it.
+against the OSV.dev advisory database and the registry that publishes it (npm,
+PyPI, the Go module proxy). Prints any flagged package with its advisory id,
+severity, and the version that fixes it.
 
 With --repo, rescan a single repo (by path or basename) and merge the result.
 An installed mise tool rescans the same way by its whole label, as listed in
@@ -71,6 +72,13 @@ the inventory: --repo mise:npm:yarn.`,
 		status.Done(fmt.Sprintf("checked %d dependencies, %d flagged", res.Total, len(res.Flagged)))
 		printFlagged(cmd, res.Total, res.Flagged)
 		printDiscoveryErrors(cmd, res.DiscoveryErrors)
+		if res.RegistryUnknown > 0 {
+			fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"Registry lookup got no answer for %d dependencies; they keep their last registry findings.\n",
+				res.RegistryUnknown,
+			)
+		}
 		return nil
 	},
 }

@@ -56,3 +56,31 @@ func TestParseNPMLock(t *testing.T) {
 		t.Errorf("nested = %+v, want version 2.0.1 indirect", n)
 	}
 }
+
+// A workspaces lockfile lists each workspace's source by its path with a
+// version, and links it into node_modules/ with no version. Neither is a
+// registry package; the workspace's own dependency is.
+const npmWorkspacesLockJSON = `{
+  "name": "mono",
+  "lockfileVersion": 3,
+  "packages": {
+    "": { "name": "mono", "workspaces": ["packages/*"] },
+    "node_modules/a": { "resolved": "packages/a", "link": true },
+    "packages/a": { "name": "a", "version": "1.0.0", "dependencies": { "ms": "^2.1.3" } },
+    "packages/a/node_modules/ms": { "version": "2.1.3" }
+  }
+}`
+
+func TestParseNPMLockSkipsWorkspaceSources(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "package-lock.json")
+	if err := os.WriteFile(path, []byte(npmWorkspacesLockJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pkgs, err := parseNPMLock(path)
+	if err != nil {
+		t.Fatalf("parseNPMLock: %v", err)
+	}
+	if len(pkgs) != 1 || pkgs[0].Name != "ms" || pkgs[0].Version != "2.1.3" {
+		t.Errorf("packages = %+v, want only ms 2.1.3", pkgs)
+	}
+}

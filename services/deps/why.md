@@ -32,6 +32,14 @@ API whose ecosystem strings cover Go, npm, PyPI, and Swift with no mapping
 layer. It also matches GitHub Actions by the commit a ref runs. deps gives the
 human, the web page, and the agent the same findings from the same scan.
 
+A registry can act on a bad version before any advisory names it. npm
+withdraws a compromised release. PyPI removes a release or quarantines a
+malware project. The Go module proxy refuses to serve a module it considers
+malicious. A version installed before then can stay pinned. So deps also
+asks the registry that publishes each version what it knows. That adds
+registry.npmjs.org and pypi.org to the hosts deps calls, and asks more of
+proxy.golang.org, which `go list` already reached to download modules.
+
 ## Why this shape
 
 The load-bearing decision is single-writer: `deps serve` alone owns the scan
@@ -61,4 +69,6 @@ always treated as compiled in. Repos outside the catalog registry are not
 scanned. Of the installed tools, deps reads only mise's npm: and pipx: trees.
 It misses a native binary that a package downloads at install time, and any
 tool installed some other way. When the machine is offline it waits rather
-than caching or guessing advisory state.
+than caching or guessing advisory state. A registry that does not answer
+leaves its versions marked unknown with their last registry findings, never
+read as clean.

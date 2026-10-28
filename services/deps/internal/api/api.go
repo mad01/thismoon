@@ -30,6 +30,9 @@ type Dependency struct {
 	Direct     bool       `json:"direct"`
 	Imported   bool       `json:"imported"` // contributes compiled code (false = graph-only transitive)
 	Advisories []Advisory `json:"advisories,omitempty"`
+	// RegistryUnknown: the last registry lookup for this version got no
+	// answer, so it keeps its earlier registry findings and is not known clean.
+	RegistryUnknown bool `json:"registry_unknown,omitempty"`
 }
 
 // Active reports whether the dependency needs the user's attention: it has at
@@ -69,6 +72,8 @@ func Enrich(deps []store.Dependency, isResolved func(key string) bool) []Depende
 			Repo:      d.Repo,
 			Direct:    d.Direct,
 			Imported:  d.Imported,
+
+			RegistryUnknown: d.RegistryUnknown,
 		}
 		for _, a := range d.Advisories {
 			key := store.FlagKey(d.Ecosystem, d.Name, d.Version, a.ID)

@@ -466,3 +466,59 @@ func TestAPIReportsDiscoveryErrors(t *testing.T) {
 		}
 	}
 }
+
+// TestAPIReportsRegistryUnknown: a dep whose registry lookup got no answer is
+// counted in registry_unknown on every listing, and the inventory marks it, so
+// the page and the MCP tools never read it as clean.
+func TestAPIReportsRegistryUnknown(t *testing.T) {
+	srv := testServer(t)
+	deps := srv.store.Snapshot().Deps
+	deps[0].RegistryUnknown = true
+	if err := srv.store.Save(deps, nil); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+	for _, path := range []string{"/api/deps", "/api/flagged"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		var body struct {
+			RegistryUnknown int `json:"registry_unknown"`
+			Deps            []struct {
+				Name            string `json:"name"`
+				RegistryUnknown bool   `json:"registry_unknown"`
+			} `json:"deps"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		if body.RegistryUnknown != 1 {
+			t.Errorf("GET %s registry_unknown = %d, want 1", path, body.RegistryUnknown)
+		}
+		if path == "/api/deps" && (len(body.Deps) != 2 || !body.Deps[0].RegistryUnknown ||
+			body.Deps[1].RegistryUnknown) {
+			t.Errorf("GET /api/deps deps = %+v, want only %s marked", body.Deps, deps[0].Name)
+		}
+	}
+}
+
+// TestAppJSAllClearComesAfterEveryGap: the page shows its green all-clear only
+// after ruling out each way the last check can be incomplete, a discovery
+// error or an unanswered registry lookup. deps has no harness that runs
+// app.js, so this reads the branch chain that leads to the all-clear from the
+// served source.
+func TestAppJSAllClearComesAfterEveryGap(t *testing.T) {
+	rec := httptest.NewRecorder()
+	testServer(t).Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/app.js", nil))
+	src := rec.Body.String()
+	start := strings.Index(src, "if (v.active.length) {")
+	end := strings.Index(src, "{ class: 'ok' }")
+	if start < 0 || end < start {
+		t.Fatalf("app.js: no active-findings branch before the all-clear (%d, %d)", start, end)
+	}
+	chain := src[start:end]
+	for _, gap := range []string{"v.discoveryErrors.length", "data.registry_unknown"} {
+		if !strings.Contains(chain, "} else if ("+gap+")") {
+			t.Errorf("app.js reaches the all-clear without an else-if on %s", gap)
+		}
+	}
+}

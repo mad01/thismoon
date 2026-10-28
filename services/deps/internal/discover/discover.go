@@ -29,6 +29,12 @@ type Package struct {
 	// signal on how the package is pinned. The checker's findings are added
 	// to these, never in place of them.
 	Advisories []store.Advisory
+	// OtherIndex is true when the manifest points its package manager at a
+	// source besides the public registry, so the version may come from there.
+	OtherIndex bool
+	// NameFromFile is true when a vendored file's name, not an npm match,
+	// supplies Name (store.Dependency.NameFromFile).
+	NameFromFile bool
 }
 
 // Options tunes a discovery walk. ExcludePath, if set, skips a directory by its
@@ -128,5 +134,7 @@ func dependency(repo string, p Package) store.Dependency {
 		Direct:       p.Direct,
 		Imported:     p.Imported,
 		Advisories:   p.Advisories,
+		OtherIndex:   p.OtherIndex,
+		NameFromFile: p.NameFromFile,
 	}
 }

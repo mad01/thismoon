@@ -64,6 +64,13 @@ banner naming the package, version and repo, with a reminder to check whether
 it was installed and to rotate the credentials it could reach. The page lists
 it first and asks before resolving it.
 
+deps also asks the registry that publishes each version (npm, PyPI, the Go
+module proxy) what it knows, since a registry can pull a bad version before
+any advisory exists. A version the registry withdrew, quarantined or blocks
+counts as malicious. A yanked, deprecated or retracted one shows under Warning
+signs on the page and never raises a banner. When a registry doesn't answer,
+those versions keep what the last check found, and the page says so.
+
 ## Install
 
 It ships from the thismoon monorepo via ralph, personal Mac only. `ralph up` builds the binary to

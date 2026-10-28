@@ -5,20 +5,21 @@ the catalog-registered repos: Go modules, npm lockfiles, exact Python pins,
 Swift resolved files, browser libraries kept outside any lockfile, and GitHub
 Actions refs. It also reads the npm and PyPI trees of the tools mise installs
 with its npm: and pipx: backends. It checks each pinned version, or for an
-action the commit it runs, against the OSV.dev advisory database. It fires
-one coalesced macOS notification when packages are newly flagged, plus a
-separate one for a malicious package. Findings live on a local web page
-(default {{.BaseURL}}).
+action the commit it runs, against the OSV.dev advisory database, and each
+package version against the registry that publishes it (npm, PyPI, the Go
+module proxy). It fires one coalesced macOS notification when packages are
+newly flagged, plus a separate one for a malicious package. Findings live on
+a local web page (default {{.BaseURL}}).
 
 ## how it runs
 
 A single `deps serve` process is the only writer. It owns the scan store, runs
 the daily scan loop, serves the web page and JSON API on localhost, and is the
-only process that reaches the network: OSV, jsDelivr when discovery names a
-vendored JavaScript file, and github.com to resolve the tag or branch an
-action is pinned to. Everything else is a thin HTTP client over that API: the
-CLI commands (`scan`, `check`, `resolve`, `notify`) and the MCP
-server, a stdio shim spawned as `deps mcp`. The shim being up says nothing
+only process that reaches the network: OSV and the package registries,
+jsDelivr when discovery names a vendored JavaScript file, and github.com to
+resolve the tag or branch an action is pinned to. Everything else is a thin
+HTTP client over that API: the CLI commands (`scan`, `check`, `resolve`,
+`notify`) and the MCP server, a stdio shim spawned as `deps mcp`. The shim being up says nothing
 about the service: every deps_* tool call is a live HTTP request to serve, and
 it fails when serve is down. Machines usually also route http://deps.this to
 serve via the local domain front door. If the localhost port answers but the
@@ -133,20 +134,27 @@ resolve <key>`) instead. Reachability fails open: when `go list -deps` errors,
 every dep counts as imported, so a real advisory is never hidden. npm, PyPI,
 and Swift deps always count as imported.
 
-A finding of kind `malicious` (an OSV MAL- record): that version was published
-with malicious code. Its install scripts may have run even if nothing compiles
-it in, so it skips the "Not compiled in" section, sorts first, and fires its
-own banner. Treat it before anything else: check whether it was installed on
-this machine, rotate the credentials it could reach, then move the pin off
-that version. Resolve it only after that; the web page asks to confirm.
+A finding of kind `malicious`: an OSV MAL- record, or a registry rule
+(`deps-npm-withdrawn`, `deps-pypi-withdrawn`, `deps-pypi-quarantined`,
+`deps-go-blocked`) saying the registry pulled, quarantined or refuses to serve
+that version. Either way the version may carry malicious code, and its install
+scripts may have run even if nothing compiles it in. So it skips the "Not
+compiled in" section, sorts first, and fires its own banner. Treat it before
+anything else: check whether it was installed on this machine, rotate the
+credentials it could reach, then move the pin off that version. Resolve it
+only after that; the web page asks to confirm. A registry can also withdraw a
+version for a harmless reason, and the summary says what the registry
+reported. A withdrawn finding on a package you thought was private means a
+public package shares its name, which is a risk of its own.
 
 A finding with an id but no summary, severity, or fix: OSV's record fetch for
 that id failed during the scan, and the serve log names it. The finding is
 kept so it is not lost, with its kind intact; the next check fills it in.
 
 A finding of kind `signal`, in the "Warning signs" section: a deps rule
-flagged something that is not an advisory. It never notifies and never counts
-toward `flagged_count`, and it resolves by key like any other finding.
+flagged something that is not an advisory. A version its registry marks
+yanked, deprecated, archived or retracted is one. It never notifies and never
+counts toward `flagged_count`, and it resolves by key like any other finding.
 `deps-movable-ref` marks a GitHub Action pinned to a tag or branch, which the
 action repo can point at other code. Pin the commit SHA, with the version in
 a trailing comment, to clear it.
@@ -163,6 +171,32 @@ also miss, because jsDelivr indexes a file only after serving it once.
 deps asks again after a day. A first-party bundle with a version in its name,
 such as `static/app-1.4.0.js`, gets this signal falsely, and OSV checks it as
 the unrelated npm package `app`. Add its directory to `exclude_paths`.
+The registry check never asks npm about a file named from its file name, nor
+about one jsDelivr matched on GitHub. The npm package of that name may be
+unrelated, so npm withdrawing it says nothing about the file. A file named by
+an npm hash match is checked like any lockfile pin.
+
+A non-zero `registry_unknown`, also shown as a warn-level scan event and a
+callout on the web page: some registry lookups got no answer in the last
+check. Those dependencies keep the registry findings from the check before,
+so nothing reads as clean or fixed, and the next check asks again. The serve log line `deps: registry: N
+lookup(s) got no answer` names the first error. `host is not on the allow
+list` means the sandbox settings predate the registry hosts: re-run `ralph
+up`. A 429 or 5xx is the registry itself and passes.
+
+A `deps-pypi-withdrawn` finding on a pin you install from a private index:
+PyPI does not serve that version because your index holds it. deps skips the
+rule for every pin in a requirements.txt that names `-i`/`--index-url`,
+`--extra-index-url` or `-f`/`--find-links`. It can't see an index set in
+pip.conf or `PIP_INDEX_URL`, nor the one a mise pipx tool was installed from.
+It also misses an index named only in a file the requirements pull in with
+`-r` or `-c`.
+Name the index in the requirements file, or resolve the finding once you have
+confirmed where the version comes from.
+
+A private Go module sent to proxy.golang.org: deps skips every module that
+matches `go env GONOPROXY` or `GOPRIVATE`. serve starts under launchd, which
+never reads a shell profile, so set them with `go env -w`, not `export`.
 
 An acknowledged advisory came back: resolution is version-scoped by design.
 The key embeds the exact version, so bumping the package (or a new advisory

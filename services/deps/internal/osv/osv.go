@@ -2,9 +2,12 @@
 // One HTTP API (api.osv.dev) covers every ecosystem we discover (Go, npm,
 // PyPI, SwiftURL by version, GitHub Actions by commit), so the same batch query
 // path serves all of them. OSV's data export supplies the spelling it files
-// each GitHub Action under (names.go). Besides these, only discovery's lookups
-// (the jsdelivr package's hash lookup and the ref lists that resolve a GitHub
-// Action's tag) and go list's module downloads reach the network.
+// each GitHub Action under (names.go). Three other parts of deps reach the
+// network: package regcheck asks the npm registry, PyPI and the Go module
+// proxy whether each version was withdrawn, blocked, yanked, deprecated or
+// retracted; discovery looks files up by hash (the jsdelivr package) and reads
+// the ref lists that resolve a GitHub Action's tag; and go list downloads
+// modules.
 package osv
 
 import (

@@ -68,6 +68,12 @@ func parseNPMLock(path string) ([]Package, error) {
 		if installPath == "" || entry.Version == "" {
 			continue // root project / workspace links have no checkable version
 		}
+		// A workspace's own source ("packages/a") is part of the project, not
+		// a package from the registry: every installed package sits under a
+		// node_modules/.
+		if !strings.Contains(installPath, "node_modules/") {
+			continue
+		}
 		name := npmPackageName(installPath)
 		pkgs = append(pkgs, Package{
 			Ecosystem:    "npm",

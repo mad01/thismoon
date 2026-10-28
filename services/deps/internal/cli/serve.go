@@ -15,6 +15,7 @@ import (
 	"github.com/mad01/thismoon/services/deps/internal/config"
 	"github.com/mad01/thismoon/services/deps/internal/discover"
 	"github.com/mad01/thismoon/services/deps/internal/osv"
+	"github.com/mad01/thismoon/services/deps/internal/regcheck"
 	"github.com/mad01/thismoon/services/deps/internal/registry"
 	"github.com/mad01/thismoon/services/deps/internal/scanner"
 	"github.com/mad01/thismoon/services/deps/internal/server"
@@ -35,7 +36,8 @@ var serveCmd = &cobra.Command{
 	Short: "Run the deps HTTP server and periodic scan loop",
 	Long: `Serve dependency findings over HTTP on localhost: the web page at /, the JSON
 API the CLI and MCP call, and a background loop that re-checks dependencies
-against OSV and fires a macOS notification when one is newly flagged.
+against OSV and their package registries and fires a macOS notification when
+one is newly flagged.
 
 Typically run as a background service:
   t-man add --name deps -- deps serve --port 7429`,
@@ -49,10 +51,11 @@ func init() {
 }
 
 // buildEngine wires the store, registry-backed repo resolver, ecosystems, OSV
-// checker, and notifier into one Engine shared by serve's loop and handlers. The
-// discovery config (exclude_repos / exclude_paths / [mise]) is read once per
-// scan inside the plan resolver, so editing it takes effect on the next cycle
-// without a restart.
+// checker, package registry checker (npm, PyPI, the Go module proxy), and
+// notifier into one Engine shared by serve's loop and handlers. The discovery
+// config (exclude_repos / exclude_paths / [mise]) is read once per scan inside
+// the plan resolver, so editing it takes effect on the next cycle without a
+// restart.
 func buildEngine(st *store.Store, checker scanner.Checker, n alert.Notifier) *scanner.Engine {
 	registryPath, configPath := flagRegistry, flagConfig
 	return &scanner.Engine{
@@ -83,6 +86,7 @@ func buildEngine(st *store.Store, checker scanner.Checker, n alert.Notifier) *sc
 		},
 		Ecosystems: discover.Default(),
 		Checker:    checker,
+		Registry:   regcheck.New(),
 		Notifier:   n,
 		Store:      st,
 	}

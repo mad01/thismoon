@@ -95,6 +95,9 @@ func vendoredCandidate(rel string) bool {
 // GitHub match is published and unchanged but has no npm name, so the file
 // name supplies one without the signal; the version stays jsDelivr's, so a
 // different release swapped in under the same file name still changes it.
+// Both rows named from the file name are marked NameFromFile: the npm package
+// of that name may be unrelated (a first-party utils-0.1.0.js against npm's
+// utils, unpublished in 2012), so its registry state says nothing about them.
 func vendoredPackage(path, sum string, file jsdelivr.File, found bool) (Package, bool) {
 	pkg := Package{
 		Ecosystem:    "npm",
@@ -110,7 +113,7 @@ func vendoredPackage(path, sum string, file jsdelivr.File, found bool) (Package,
 	if m == nil {
 		return Package{}, false // an unversioned .min.js nobody published
 	}
-	pkg.Name, pkg.Version = m[1], m[2]
+	pkg.Name, pkg.Version, pkg.NameFromFile = m[1], m[2], true
 	if found {
 		pkg.Version = strings.TrimPrefix(file.Version, "v") // GitHub tags are often v1.2.3
 		return pkg, true
