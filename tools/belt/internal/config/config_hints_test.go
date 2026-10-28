@@ -85,8 +85,8 @@ func TestValidateRejectsUnusableCustomHints(t *testing.T) {
 		},
 		{
 			"shadowed built-in name",
-			"custom_hints:\n  kof-consult:\n    event: session-start\n    command: [journal]\n",
-			"custom_hints.kof-consult shadows the built-in hint of that name",
+			"custom_hints:\n  agent-memory:\n    event: session-start\n    command: [journal]\n",
+			"custom_hints.agent-memory shadows the built-in hint of that name",
 		},
 		{
 			"negative timeout",

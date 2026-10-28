@@ -12,7 +12,6 @@ test('the defaults name only this repo\'s servers and github.com, and no sandbox
     csl_: 'csl',
     humanizer_: 'humanizer',
     worklog_: 'worklog',
-    kof_: 'kof',
   })
   assert.deepEqual([...config.externalTextGuardServers], ['gh_com'])
   assert.deepEqual([...config.externalTextHintServers], ['gh_com', 'linear'])
@@ -41,7 +40,7 @@ test('every key adds to the defaults and unknown keys are ignored', () => {
 test('an mcpPrefixes entry overrides the default prefix it names', () => {
   const config = parseConfig({ mcpPrefixes: { csl_: 'other' } })
   assert.equal(directToolServer(config, 'csl_search'), 'other')
-  assert.equal(directToolServer(config, 'kof_assert'), 'kof')
+  assert.equal(directToolServer(config, 'worklog_show'), 'worklog')
 })
 
 test('a wrong shape is an error, never a silent default', () => {

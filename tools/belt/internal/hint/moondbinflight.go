@@ -22,9 +22,8 @@ import (
 // handful the block stops being read (docs/adr/0008); the rest are counted.
 const maxInflightPaths = 10
 
-// moondbTimeout bounds the call to moondb serve, the budget the kof hints
-// use: the session is opening, and a slow or dead moondb costs this and
-// then stays quiet.
+// moondbTimeout bounds the call to moondb serve: the session is opening,
+// and a slow or dead moondb costs this and then stays quiet.
 const moondbTimeout = 400 * time.Millisecond
 
 // inflightTitleRunes caps a session title in the block.

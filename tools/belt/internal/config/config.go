@@ -85,9 +85,9 @@ const (
 // binary never runs it on.
 var CustomHintEvents = []string{HintEventSessionStart, HintEventSubagentStart}
 
-// CustomHintTimeout is the default budget for one external hint run, the
-// same budget the kof hints give kof serve: a session-start hook runs before
-// the first prompt, and a slow external must cost nothing but this budget.
+// CustomHintTimeout is the default budget for one external hint run: a
+// session-start hook runs before the first prompt, and a slow external must
+// cost nothing but this budget.
 // custom_hints.<name>.timeout_ms overrides it per hint.
 const CustomHintTimeout = 400 * time.Millisecond
 
@@ -452,15 +452,6 @@ func (c Config) HintRepoExcluded(hintID, repo string) bool {
 	return RepoMatches(patterns, repo)
 }
 
-// HintRepoExcludedTail is HintRepoExcluded for the one hint that knows a
-// repo only as org/name (kof-assertions works on index-side search results
-// with no filesystem path to resolve): the host segment of each canonical
-// pattern is ignored and the tail matched, case-insensitively. Every hint
-// that can reach the working tree resolves the canonical identity instead.
-func (c Config) HintRepoExcludedTail(hintID, orgName string) bool {
-	return RepoTailMatches(c.Hints[hintID].ExcludeRepos, orgName)
-}
-
 // DirectMain reports whether the canonical repo is on the top-level
 // direct_main_repos list. Read by git-push-main and the commit-policy hint
 // only (see the Config field comment and docs/adr/0013).
@@ -508,21 +499,6 @@ func RepoMatches(patterns []string, repo string) bool {
 		}
 	}
 	return false
-}
-
-// RepoTailMatches matches the owner/name tail of canonical patterns against
-// an org/name identity, case-insensitively (kof lowercases its identities).
-// Dropping the host erases the public-vs-internal axis, so this is reserved
-// for per-hint lists on hints with no path to resolve (kof-assertions) —
-// never for guard exemption or the direct_main_repos list.
-func RepoTailMatches(patterns []string, orgName string) bool {
-	var tails []string
-	for _, p := range patterns {
-		if _, tail, ok := strings.Cut(p, "/"); ok && tail != "" {
-			tails = append(tails, strings.ToLower(tail))
-		}
-	}
-	return RepoMatches(tails, strings.ToLower(orgName))
 }
 
 // OverridesDir is where guard overrides live: one file per override name,
@@ -998,9 +974,6 @@ var (
 	HintFields = map[string][]string{
 		"agent-memory":    {},
 		"commit-policy":   {"exclude_repos"},
-		"kof-assertions":  {"exclude_repos"},
-		"kof-consult":     {"exclude_repos"},
-		"kof-deposit":     {},
 		"moondb-inflight": {"exclude_repos"},
 		"lint-policy":     {"exclude_repos"},
 		"prefer-csl":      {"exclude_repos"},

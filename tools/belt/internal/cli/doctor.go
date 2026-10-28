@@ -25,14 +25,13 @@ var errDoctorWarnings = errors.New("belt doctor: warnings present")
 
 func doctorCmd(paths pathsFunc) *cobra.Command {
 	return doctorCmdWith(paths, doctorProbes{
-		kof: liveKofProbe, moondb: liveMoondbProbe, events: liveEventsProbe,
+		moondb: liveMoondbProbe, events: liveEventsProbe,
 	})
 }
 
 // doctorProbes are the network checks doctor makes, injected so tests never
 // dial a real port.
 type doctorProbes struct {
-	kof    kofProbe
 	moondb moondbProbe
 	events eventsProbe
 }
@@ -42,15 +41,14 @@ type doctorProbes struct {
 func doctorCmdWith(paths pathsFunc, probes doctorProbes) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "Show the build and resolved config: surfaces loaded, guard/hint state, kof reachability, blocked names",
+		Short: "Show the build and resolved config: surfaces loaded, guard/hint state, moondb reachability, blocked names",
 		Long: `Show what belt is actually running with: which build is installed, which
 config surface loaded (or didn't), which guards and hints are enabled,
-whether the kof serve instance the kof-* hints query and the moondb serve
-instance the moondb-inflight hint queries are reachable, the
-ledger and watch settings with the events service they depend on, and
-the resolved blocked-name set the write-internal-names guard matches
-against. Use it to answer "why did that check fire": a deny names the
-guard, doctor names the build and the config behind it.
+whether the moondb serve instance the moondb-inflight hint queries is
+reachable, the ledger and watch settings with the events service they
+depend on, and the resolved blocked-name set the write-internal-names
+guard matches against. Use it to answer "why did that check fire": a deny
+names the guard, doctor names the build and the config behind it.
 
 The report ends with a warnings section and exits 1 when it is not empty:
 a broken config or include file (every hook is denying), a script guard
@@ -73,18 +71,6 @@ the internal-name, script and toggle cases by design.`,
 	}
 }
 
-// kofProbe reports kof serve reachability for the doctor report: the base URL
-// the hints query, the stored assertion count, and the connection error when
-// unreachable. Injected so tests never dial the real port.
-type kofProbe func() (base string, count int, err error)
-
-// liveKofProbe probes the same kof serve instance the kof-* hints query.
-func liveKofProbe() (string, int, error) {
-	base := hint.KofBaseURL()
-	count, err := hint.KofProbe(base)
-	return base, count, err
-}
-
 // moondbProbe reports moondb serve reachability for the doctor report: the
 // base URL the moondb-inflight hint queries and the probe error. Injected so
 // tests never dial the real port.
@@ -96,8 +82,8 @@ func liveMoondbProbe() (string, error) {
 	return base, hint.MoondbProbe(base)
 }
 
-// printMoondb renders the moondb section. Like kof, an unreachable moondb
-// is no warning: the hint it backs is advisory and stays silent.
+// printMoondb renders the moondb section. An unreachable moondb is no
+// warning: the hint it backs is advisory and stays silent.
 func printMoondb(w io.Writer, probe moondbProbe) {
 	base, err := probe()
 	fmt.Fprintln(w, "\nmoondb serve, backs the moondb-inflight hint:")
@@ -193,9 +179,6 @@ func runDoctor(w io.Writer, p config.Paths, probes doctorProbes) []string {
 
 	printCustomHints(w, cfg, customHints)
 
-	base, count, probeErr := probes.kof()
-	fmt.Fprintln(w, "\nkof serve — backs the kof-* hints:")
-	fmt.Fprintf(w, "  %s  %s\n", base, kofNote(count, probeErr))
 	printMoondb(w, probes.moondb)
 	// A broken config leaves watch at its disabled default, so this section
 	// cannot add a warning describing defaults on top of the BROKEN one.
@@ -407,20 +390,6 @@ func claudeDenyNote(cfg config.Config, p config.Paths) string {
 		files,
 		len(cfg.ClaudeDeny),
 	)
-}
-
-// kofNote renders the kof reachability line. It exists to split the three
-// states the hints render identically (as silence): kof down, store empty,
-// and store populated.
-func kofNote(count int, err error) string {
-	switch {
-	case err != nil:
-		return fmt.Sprintf("UNREACHABLE (%v) — kof-* hints stay silent", err)
-	case count == 0:
-		return "reachable, 0 assertions stored — kof-* hints stay silent until something deposits (kof_assert)"
-	default:
-		return fmt.Sprintf("reachable, %d assertions stored", count)
-	}
 }
 
 // ruleNote reports how many config rules feed the rule-driven guards — a

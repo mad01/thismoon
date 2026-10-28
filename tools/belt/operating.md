@@ -142,10 +142,8 @@ to the events service — check there when a guard seems silent. A hard
 hatch, not rewording the commit command. set/extend archive the reason as
 a warn event, a suppressed block leaves one too, and it expires on its own.
 
-Silence from the kof-backed hints is normal when the kof service is down or
-its store is empty; the doctor kof line tells those states apart. The
-moondb-inflight hint is silent the same way when moondb is down or older
-than its in-flight route, and the doctor moondb line says which. A custom
+The moondb-inflight hint is silent when moondb is down or older than its
+in-flight route, and the doctor moondb line says which. A custom
 hint (custom_hints in the belt config) that fails, runs past its budget, or
 prints nothing stays silent and leaves a warn event naming the cause. The
 doctor custom hints section says whether its command resolves to something
@@ -178,7 +176,7 @@ again.
 ## first moves
 
 1. `belt doctor`: build metadata, which config surface loaded (include
-   files too), guard and hint enablement, kof and moondb reachability, the ledger and
+   files too), guard and hint enablement, moondb reachability, the ledger and
    watch settings with events-service reachability, and the resolved
    blocked-name list. It ends with a warnings section and exits 1 when that
    section is not empty

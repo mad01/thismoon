@@ -17,12 +17,11 @@ import (
 // TestRunHintSessionStartListsInflightFiles feeds `belt hint session-start`
 // the raw SessionStart payload Claude Code sends, from a checkout holding an
 // untracked file a fake moondb names, and expects the moondb-inflight block
-// in the SessionStart envelope. HOME, kof and the events service point away
-// from the machine so the other session-start hints stay silent.
+// in the SessionStart envelope. HOME and the events service point away from
+// the machine so the other session-start hints stay silent.
 func TestRunHintSessionStartListsInflightFiles(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("EVENTS_BASE_URL", "http://127.0.0.1:1")
-	t.Setenv("KOF_PORT", "1")
 	dir := t.TempDir()
 	if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)

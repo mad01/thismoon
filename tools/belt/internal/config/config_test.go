@@ -144,7 +144,7 @@ func TestLoadTogglesHintsSection(t *testing.T) {
 [guards.git-push-main]
 enabled = true
 
-[hints.kof-assertions]
+[hints.read-size]
 enabled = false
 `
 	dir := t.TempDir()
@@ -154,8 +154,8 @@ enabled = false
 	if guards["git-push-main"].Enabled == nil || !*guards["git-push-main"].Enabled {
 		t.Error("guards section did not survive adding hints")
 	}
-	if hints["kof-assertions"].Enabled == nil || *hints["kof-assertions"].Enabled {
-		t.Error("hints.kof-assertions should have decoded as disabled")
+	if hints["read-size"].Enabled == nil || *hints["read-size"].Enabled {
+		t.Error("hints.read-size should have decoded as disabled")
 	}
 }
 
@@ -170,7 +170,7 @@ guards:
     exclude_paths:
       - recipes/belt/
 hints:
-  kof-assertions:
+  read-size:
     enabled: false
 `
 	dir := t.TempDir()
@@ -185,8 +185,8 @@ hints:
 	if len(excl) != 1 || excl[0] != "recipes/belt/" {
 		t.Errorf("exclude_paths = %v", excl)
 	}
-	if hints["kof-assertions"].Enabled == nil || *hints["kof-assertions"].Enabled {
-		t.Error("hints.kof-assertions should have decoded as disabled")
+	if hints["read-size"].Enabled == nil || *hints["read-size"].Enabled {
+		t.Error("hints.read-size should have decoded as disabled")
 	}
 }
 
@@ -282,8 +282,8 @@ func TestValidateRejectsUnusableValues(t *testing.T) {
 		},
 		{
 			"exclude_repos on a repo-less hint",
-			"hints:\n  kof-deposit:\n    exclude_repos:\n      - github.com/mad01/dotfiles\n",
-			"hints.kof-deposit: exclude_repos has no effect (kof-deposit reads: only enabled)",
+			"hints:\n  read-size:\n    exclude_repos:\n      - github.com/mad01/dotfiles\n",
+			"hints.read-size: exclude_repos has no effect (read-size reads: only enabled)",
 		},
 		{
 			"exclude_paths on a guard that ignores it",
@@ -308,29 +308,6 @@ func TestValidateRejectsUnusableValues(t *testing.T) {
 				t.Errorf("error %v does not mention %q", err, tt.want)
 			}
 		})
-	}
-}
-
-// TestRepoTailMatches pins the index-side matching rule: the host segment
-// of each canonical pattern is dropped and matching is case-insensitive, so
-// one spelling of a repo pattern still works for the hint that only knows
-// org/name.
-func TestRepoTailMatches(t *testing.T) {
-	patterns := []string{"github.com/mad01/dotfiles", "github.com/other/*"}
-	tests := []struct {
-		orgName string
-		want    bool
-	}{
-		{"mad01/dotfiles", true},
-		{"Mad01/DotFiles", true},
-		{"other/anything", true},
-		{"mad01/thismoon", false},
-		{"", false},
-	}
-	for _, tt := range tests {
-		if got := RepoTailMatches(patterns, tt.orgName); got != tt.want {
-			t.Errorf("RepoTailMatches(%q) = %v, want %v", tt.orgName, got, tt.want)
-		}
 	}
 }
 
@@ -416,12 +393,12 @@ func TestValidateAcceptsPublishGuardKeys(t *testing.T) {
 
 func TestHintEnabledDefaultsOn(t *testing.T) {
 	cfg := Config{}
-	if !cfg.HintEnabled("kof-assertions") {
+	if !cfg.HintEnabled("read-size") {
 		t.Error("a hint with no config entry should default to enabled")
 	}
 	off := false
-	cfg = Config{Hints: map[string]Toggle{"kof-assertions": {Enabled: &off}}}
-	if cfg.HintEnabled("kof-assertions") {
+	cfg = Config{Hints: map[string]Toggle{"read-size": {Enabled: &off}}}
+	if cfg.HintEnabled("read-size") {
 		t.Error("an explicitly disabled hint should report disabled")
 	}
 	if !cfg.HintEnabled("prefer-csl") {

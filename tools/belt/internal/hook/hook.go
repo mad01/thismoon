@@ -14,8 +14,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/mad01/thismoon/kit/gitloc"
@@ -45,10 +43,6 @@ type payload struct {
 	TranscriptPath lenientString `json:"transcript_path"`
 	AgentID        lenientString `json:"agent_id"`
 	AgentType      lenientString `json:"agent_type"`
-	// Prompt rides UserPromptSubmit only: the text the user submitted, which
-	// kof-consult ranks assertions against. No guard reads it, so it decodes
-	// leniently like the session fields.
-	Prompt lenientString `json:"prompt"`
 }
 
 // lenientString is a payload field that keeps a JSON string and ignores any
@@ -214,28 +208,6 @@ func withSession(tags map[string]string, p payload) map[string]string {
 	return tags
 }
 
-// reservedAdviceTags are the tags the hook owns on a hint event: which hint
-// fired, on which event, and the session identity guard.Identity.AddTo
-// writes. A hint's own tags never replace them, and a hint's identity tag is
-// dropped even when the payload has none to set, so a hint cannot
-// misattribute its fire.
-var reservedAdviceTags = []string{"hint", "event", "session_id", "agent_id", "agent_type"}
-
-// adviceTags builds the events tags for one hint fire: the hint's own tags
-// (the kof hints name the assertions and pins they showed) under the
-// reserved ones.
-func adviceTags(a hint.Advice, event string, p payload) map[string]string {
-	tags := make(map[string]string, len(a.Tags)+len(reservedAdviceTags))
-	for k, v := range a.Tags {
-		if !slices.Contains(reservedAdviceTags, k) {
-			tags[k] = v
-		}
-	}
-	tags["hint"] = a.Hint
-	tags["event"] = event
-	return withSession(tags, p)
-}
-
 // hintTitle names a hint fire on the events timeline: the tool call it
 // advised on, when there was one. Start and prompt events carry no tool.
 func hintTitle(tool, hintID string) string {
@@ -324,7 +296,7 @@ func (rn runner) hints(event string, r io.Reader, w io.Writer) {
 			"info",
 			hintTitle(p.ToolName, a.Hint),
 			a.Text,
-			adviceTags(a, event, p),
+			withSession(map[string]string{"hint": a.Hint, "event": event}, p),
 		)
 	}
 	writeAdvice(w, event, text)
@@ -504,11 +476,11 @@ func hintAdviceFor(event string) hintAdvice {
 	return hintAdvice{hookEvent: "PostToolUse"}
 }
 
-// toHintInput maps a hint payload onto the shared hint input. A search
-// carries its repo and hit paths in the response; a bash command carries only
-// what it ran; a read carries the file, whether it asked for a range, and the
-// file's line count from the response; an external-text call is identified
-// by the tool that made it; a prompt carries the text the user submitted.
+// toHintInput maps a hint payload onto the shared hint input. A bash
+// command carries only what it ran; a read carries the file, whether it
+// asked for a range, and the file's line count from the response; an
+// external-text call is identified by the tool that made it. A search or a
+// prompt carries only the session fields every event has.
 func toHintInput(event string, p payload) hint.Input {
 	in := hint.Input{
 		Event:          event,
@@ -534,20 +506,6 @@ func toHintInput(event string, p payload) hint.Input {
 	case hint.EventExternalText:
 		in.ToolName = p.ToolName
 		in.ToolInput = p.ToolInput
-	case hint.EventPrompt:
-		in.Prompt = string(p.Prompt)
-	case hint.EventSearch:
-		in.Paths = hint.PathsFromResponse(p.ToolResponse)
-		in.Repo = hint.RepoFromResponse(p.ToolResponse)
-		if in.Repo == "" {
-			// Fall back to the request's repo filter, which is a regex or
-			// substring rather than a resolved name — usable when it is
-			// already a plain org/repo.
-			if s, ok := p.ToolInput["repo"].(string); ok &&
-				!strings.ContainsAny(s, `.*+?[]()|\$^`) {
-				in.Repo = s
-			}
-		}
 	}
 	return in
 }

@@ -41,7 +41,7 @@ func runDoctorString(t *testing.T, p config.Paths) string {
 func runDoctorReport(t *testing.T, p config.Paths) (string, []string) {
 	t.Helper()
 	var b strings.Builder
-	warns := runDoctor(&b, p, stubProbes(stubKofProbe(3, nil), nil))
+	warns := runDoctor(&b, p, stubProbes(nil))
 	return b.String(), warns
 }
 
@@ -54,20 +54,11 @@ func armedConfig(t *testing.T, dir string) config.Paths {
 	return doctorPaths(dir)
 }
 
-// stubKofProbe keeps doctor tests off the network: the real probe dials the
-// kof port, which may or may not have a server behind it on a dev machine.
-func stubKofProbe(count int, err error) kofProbe {
-	return func() (string, int, error) {
-		return "http://127.0.0.1:7431", count, err
-	}
-}
-
-// stubProbes pairs a kof probe with an events probe that answers eventsErr
-// and a reachable moondb, so no doctor test dials the events or moondb port
-// either.
-func stubProbes(kof kofProbe, eventsErr error) doctorProbes {
+// stubProbes keeps doctor tests off the network: an events probe that
+// answers eventsErr and a reachable moondb, so no doctor test dials a real
+// port, which may or may not have a server behind it on a dev machine.
+func stubProbes(eventsErr error) doctorProbes {
 	return doctorProbes{
-		kof:    kof,
 		moondb: stubMoondbProbe(nil),
 		events: func() (string, error) { return "http://127.0.0.1:7430", eventsErr },
 	}
@@ -182,7 +173,7 @@ func TestDoctorReportsLifecycle(t *testing.T) {
 					"internal_names:\n  blocked_words:\n    - acmecorp\n"+tt.config)
 			}
 			var b strings.Builder
-			warns := runDoctor(&b, p, stubProbes(stubKofProbe(3, nil), tt.eventsErr))
+			warns := runDoctor(&b, p, stubProbes(tt.eventsErr))
 			out := b.String()
 			for _, want := range tt.wantLines {
 				if !strings.Contains(out, want) {
@@ -309,45 +300,9 @@ func setBuildInfo(t *testing.T, version, commit, tag, buildTime string) {
 	buildinfo.Tag, buildinfo.BuildTime = tag, buildTime
 }
 
-func TestDoctorReportsKofReachability(t *testing.T) {
-	tests := []struct {
-		name  string
-		count int
-		err   error
-		want  string
-	}{
-		{"populated", 27, nil, "reachable, 27 assertions stored"},
-		{
-			"empty store",
-			0,
-			nil,
-			"reachable, 0 assertions stored — kof-* hints stay silent until something deposits",
-		},
-		{
-			"unreachable",
-			0,
-			errors.New("dial tcp 127.0.0.1:7431: connection refused"),
-			"UNREACHABLE (dial tcp 127.0.0.1:7431: connection refused) — kof-* hints stay silent",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var b strings.Builder
-			runDoctor(&b, doctorPaths(t.TempDir()), stubProbes(stubKofProbe(tt.count, tt.err), nil))
-			out := b.String()
-			if !strings.Contains(out, "kof serve — backs the kof-* hints:") {
-				t.Errorf("kof section header missing:\n%s", out)
-			}
-			if !strings.Contains(out, tt.want) {
-				t.Errorf("output missing %q:\n%s", tt.want, out)
-			}
-		})
-	}
-}
-
 // TestDoctorReportsMoondbReachability tells a reachable moondb from a down
 // one and from one older than the in-flight route, and none of the three
-// warns: the hint it backs is advisory, as with kof.
+// warns: the hint it backs is advisory.
 func TestDoctorReportsMoondbReachability(t *testing.T) {
 	tests := []struct {
 		name string
@@ -369,7 +324,7 @@ func TestDoctorReportsMoondbReachability(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			probes := stubProbes(stubKofProbe(3, nil), nil)
+			probes := stubProbes(nil)
 			probes.moondb = stubMoondbProbe(tt.err)
 			var b strings.Builder
 			warns := runDoctor(&b, armedConfig(t, t.TempDir()), probes)
@@ -687,7 +642,7 @@ func TestDoctorCmdReturnsErrorOnWarnings(t *testing.T) {
 		t.Helper()
 		cmd := doctorCmdWith(
 			func() (config.Paths, error) { return p, nil },
-			stubProbes(stubKofProbe(0, nil), nil),
+			stubProbes(nil),
 		)
 		cmd.SetOut(&strings.Builder{})
 		cmd.SetArgs(nil)

@@ -19,10 +19,10 @@ import (
 // carries only the session's cwd and id. subagent-start runs on
 // SubagentStart, before a subagent's first prompt; its input adds the
 // agent's id and type, and its advice lands in the subagent's context, not
-// the parent's. prompt runs on UserPromptSubmit; its input adds the text the
-// user submitted. The two start events alias the config constants because the
-// config file names them (custom_hints.<name>.event) and validates them
-// there: one source for what a legal custom-hint event is.
+// the parent's. prompt runs on UserPromptSubmit with the session fields
+// only. The two start events alias the config constants because the config
+// file names them (custom_hints.<name>.event) and validates them there: one
+// source for what a legal custom-hint event is.
 const (
 	EventSearch        = "search"                      // matcher: the csl search MCP tools
 	EventBash          = "bash"                        // matcher: Bash
@@ -49,14 +49,11 @@ func Events() []string {
 // Input carries the fields extracted from a hook payload.
 type Input struct {
 	Event          string
-	Command        string   // bash: the shell command that ran
-	Cwd            string   // the session working directory
-	Prompt         string   // prompt: the text the user just submitted
-	Repo           string   // search: the repo filter the search was given
-	Paths          []string // search: repo-relative file paths the search returned
-	SessionID      string   // used to suppress repeat advice within one session
-	TranscriptPath string   // prompt, external-text: the session transcript JSONL on disk
-	ToolName       string   // external-text: the tool call that just ran
+	Command        string // bash: the shell command that ran
+	Cwd            string // the session working directory
+	SessionID      string // used to suppress repeat advice within one session
+	TranscriptPath string // external-text, custom hints: the session transcript JSONL on disk
+	ToolName       string // external-text: the tool call that just ran
 	// ToolInput carries the external-text tool call's input fields, so the
 	// nudge can name the exact text that was published.
 	ToolInput map[string]any
@@ -74,15 +71,10 @@ type Input struct {
 	AgentType string
 }
 
-// Advice is one hint's output: which hint spoke and what it said. Tags
-// label the events entry the fire leaves (the kof hints name the assertions
-// and evidence pins they showed), so a fire can be scored against what the
-// session did next. They never reach the model, and they cannot replace the
-// hint, event or session identity tags the hook sets.
+// Advice is one hint's output: which hint spoke and what it said.
 type Advice struct {
 	Hint string
 	Text string
-	Tags map[string]string
 }
 
 // Hint checks one tool call and optionally advises. Returning nil is the
@@ -102,10 +94,7 @@ func All(cfg config.Config) []Hint {
 		NewAgentMemory(cfg),
 		NewCommitPolicy(cfg),
 		NewLintPolicy(cfg),
-		NewKofAssertions(cfg),
-		NewKofConsult(cfg),
 		NewMoondbInflight(cfg),
-		NewKofDeposit(cfg),
 		NewHumanizer(cfg),
 		// One hint id on two events, like the publish-internal-names guard:
 		// MCP publishing calls and gh publishing commands. ForEvent keeps

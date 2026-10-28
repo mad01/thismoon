@@ -48,7 +48,6 @@ const DEFAULT_MCP_PREFIXES: Record<string, string> = {
 	csl_: "csl",
 	humanizer_: "humanizer",
 	worklog_: "worklog",
-	kof_: "kof",
 };
 const DEFAULT_GUARD_SERVERS = ["gh_com"];
 const DEFAULT_HINT_SERVERS = ["gh_com", "linear"];

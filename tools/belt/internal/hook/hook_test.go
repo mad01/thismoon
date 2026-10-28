@@ -590,28 +590,11 @@ func captureStdio(t *testing.T, fn func()) string {
 
 // The prompt event must emit plain text: UserPromptSubmit adds stdout to
 // context and is not in the hookSpecificOutput.additionalContext family.
-func TestRunHintPromptEmitsPlainText(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	transcript := filepath.Join(t.TempDir(), "t.jsonl")
-	line := `{"message":{"content":[{"type":"tool_use","name":"mcp__csl__csl_search"}]}}` + "\n"
-	if err := os.WriteFile(transcript, []byte(strings.Repeat(line, 40)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	p, err := json.Marshal(map[string]string{
-		"session_id":      "prompt-test",
-		"transcript_path": transcript,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestWriteAdvicePromptEmitsPlainText(t *testing.T) {
 	var out bytes.Buffer
-	RunHint("prompt", defaults, bytes.NewReader(p), &out)
-	got := out.String()
-	if !strings.HasPrefix(got, "belt[kof-deposit]:") {
-		t.Fatalf("prompt advice = %q, want plain text starting with belt[kof-deposit]:", got)
-	}
-	if strings.Contains(got, "hookSpecificOutput") {
-		t.Errorf("prompt advice %q must not be wrapped in the JSON envelope", got)
+	writeAdvice(&out, hint.EventPrompt, "belt[config]: advice")
+	if got := out.String(); got != "belt[config]: advice\n" {
+		t.Errorf("prompt advice = %q, want the plain text line with no JSON envelope", got)
 	}
 }
 
