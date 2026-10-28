@@ -12,24 +12,23 @@ import (
 // The read side of the index. Every method here only reads, so the store
 // serves them under a read lock, and every listing is a fresh slice.
 
-// sessionList walks every session newest first by start: Since selects by
-// last activity, which a session started long ago can still have, so no
-// start time ends the walk early.
+// sessionList summarizes every session f keeps and puts them in listing
+// order (store.SortSummaries) before the limit cuts the list: the order
+// and Since both go by last activity, which a session started long ago
+// can still have, so no start time ends the walk early.
 func (ix *index) sessionList(f store.SessionFilter) []store.SessionSummary {
 	out := []store.SessionSummary{}
-	for i := len(ix.sessionOrder) - 1; i >= 0; i-- {
-		s := ix.sessionOrder[i]
+	for _, s := range ix.sessionOrder {
 		if _, ok := ix.sessionRepos[s.ID][f.Repo]; f.Repo != "" && !ok {
 			continue // cheaper than a summary, and f.Keeps would drop it
 		}
-		sum := ix.summary(s)
-		if !f.Keeps(sum) {
-			continue
+		if sum := ix.summary(s); f.Keeps(sum) {
+			out = append(out, sum)
 		}
-		out = append(out, sum)
-		if f.Limit > 0 && len(out) == f.Limit {
-			break
-		}
+	}
+	store.SortSummaries(out)
+	if f.Limit > 0 && len(out) > f.Limit {
+		out = out[:f.Limit]
 	}
 	return out
 }

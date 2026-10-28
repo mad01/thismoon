@@ -81,7 +81,7 @@ type EditQuery struct {
 	Limit int
 }
 
-// Sessions lists recorded sessions newest first, each with what it touched.
+// Sessions lists recorded sessions most recently active first, each with what it touched.
 func (c *Client) Sessions(ctx context.Context, q SessionQuery) ([]server.SessionSummary, error) {
 	v := url.Values{}
 	set(v, "repo", q.Repo)

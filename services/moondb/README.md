@@ -102,7 +102,7 @@ the main checkout never sees Bash edits in a linked worktree.
 ```bash
 moondb why <path>:<line>     # the edit, turn, prompt and commit behind one line
 moondb history <path>        # every recorded edit of a file, in any checkout, newest first
-moondb sessions              # recorded sessions, newest first, with their titles, active time and wall time
+moondb sessions              # recorded sessions, most recently active first, with their titles, active time and wall time
 moondb trace <session-id>    # where a session's time went and what it cost
 moondb inflight              # files in this checkout other sessions edited that no commit has taken yet
 moondb scorecard <session-id>  # how a session spent its context: searches, reads, hints, flags
@@ -178,7 +178,7 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 | `moondb_history(path)` | Every recorded edit of a file, newest first |
 | `moondb_inflight(worktree)` | The files of a checkout that other sessions edited and no commit has taken yet, with the sessions behind them |
 | `moondb_turn(id)` | One turn: prompt, final message, edits, unattributed deltas, snapshots, the agents that worked in it |
-| `moondb_sessions()` | Recorded sessions, newest first, with title, status, counts, subagents and cost |
+| `moondb_sessions()` | Recorded sessions, most recently active first, with title, status, counts, subagents, cost and a slice per day |
 | `moondb_trace(id)` | One session's time and cost: totals, the subagents, the longest tool calls, the most expensive model calls |
 | `moondb_scorecard(id)` | How one session spent its context: searches, reads, hints, agents and flags |
 | `moondb_doctor()` | Run the `moondb doctor` checks and return the report |
@@ -186,19 +186,22 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 ### Web page
 
 Open `http://moondb.this/` (or `http://localhost:7433/`) for a read-only web
-UI. The front page lists the sessions active in the last 7 days, grouped
-by the day they started, newest first. Each row names the session and its
-repo, and says whether it still runs and when it was last active. It
-shows the session's active time: the time inside its turns, less the time it
-waited for you or sat idle. A night the session sat open between turns adds
-nothing. A turn that wrote no transcript line for hours adds only the first
-30 minutes of that stretch. "over 2 days" says its wall time crossed
-midnight, and the hover title gives that wall time. Its turn, edit, file and
-agent counts sit beside its cost, which covers the session and its
-subagents. Switch the window to 24 hours, 30 days or any time, and pick a
-repo chip to see one repo. A strip above the list adds up the sessions,
-turns, edits, files, active time and cost in view, and the subagents' part
-of it.
+UI. The front page lists the sessions active in the last 7 days under
+every day they were active on, newest day first, so a session that has
+run for weeks sits under today with today's work. Each row is one session
+on one day. It names the session and its repo, or the directory it
+started in when it sits in no repo, and says whether it still runs and
+when it was last active, or when that day's work ended. It shows the
+day's active time: the time inside its turns, less the time it waited for
+you or sat idle. A night the session sat open between turns adds nothing.
+A turn that wrote no transcript line for hours adds only the first 30
+minutes of that stretch. "day 2 of 5" says the session spans several
+days. The day's turn, edit, file and agent counts sit beside its cost,
+which covers the session and its subagents. Switch the window to 24
+hours, 30 days or any time, pick a repo chip to see one repo, or a
+directory chip to see the sessions outside any repo that started there.
+A strip above the list adds up the sessions, turns, edits, files, active
+time and cost in view, and the subagents' part of it.
 
 A bar under the strip splits that cost by repo. Model calls carry no repo,
 so each agent's cost goes to one. A subagent's goes to the repo most of

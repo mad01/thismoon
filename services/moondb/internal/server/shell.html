@@ -70,6 +70,9 @@
 /* a repo a session worked in without editing it: hollow and muted */
 #app a.ls-badge.is-cwd{background:none;color:var(--text-2);border:1px dashed color-mix(in srgb,var(--hue) 45%,transparent)}
 #app a.ls-badge.is-cwd:hover{border-color:var(--hue)}
+/* a session outside any repo shows the directory it started in: hollow and neutral, as its chip is */
+#app a.ls-badge.is-dir{color:var(--text-3)}
+.ls-chips wk-badge.is-dir{border-style:dashed}
 .ls-swatch{flex:none;width:0.5rem;height:0.5rem;border-radius:2px;background:var(--hue)}
 .is-cwd .ls-swatch{background:none;box-shadow:inset 0 0 0 1.5px var(--hue)}
 .ls-badge-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -79,6 +82,7 @@
 .ls-days{display:inline-block;white-space:nowrap;color:var(--text-3)}
 .ls-dot{display:inline-block;width:0.5rem;height:0.5rem;border-radius:50%;border:1.5px solid var(--text-3);margin-right:0.5rem;vertical-align:0.05em;box-sizing:border-box}
 .ls-dot.is-on{background:var(--green);border-color:var(--green);animation:ls-pulse 2.4s ease-out infinite}
+.ls-dot.is-more{border-style:dashed}
 @keyframes ls-pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--green) 55%,transparent)}70%,100%{box-shadow:0 0 0 6px transparent}}
 @media (prefers-reduced-motion:reduce){.ls-dot.is-on{animation:none}}
 .ls-ago.is-on{color:var(--green);font-weight:600}

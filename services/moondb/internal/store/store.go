@@ -6,7 +6,8 @@ import "context"
 // a backend may sit behind a network or a bucket; the local backend ignores
 // it. Put methods upsert (newest record per id wins); Append methods add an
 // immutable fact and are idempotent on ID, so a replayed spool envelope
-// changes nothing. Listings come newest first. There is one writer per
+// changes nothing. Listings come newest first, sessions by their last
+// activity. There is one writer per
 // store, the serve process; readers reach it over HTTP.
 type Store interface {
 	PutSession(ctx context.Context, s Session) error
@@ -19,9 +20,10 @@ type Store interface {
 	AppendSnapshot(ctx context.Context, s Snapshot) error
 	AppendCommitLink(ctx context.Context, l CommitLink) error
 
-	// Sessions lists sessions newest first by StartedAt, each summarized
-	// from its records (Summarize) and kept when f keeps it
-	// (SessionFilter.Keeps), so Since selects by last activity.
+	// Sessions lists sessions most recently active first (SortSummaries),
+	// each summarized from its records (Summarize) and kept when f keeps
+	// it (SessionFilter.Keeps), so Since and the order both go by last
+	// activity.
 	Sessions(ctx context.Context, f SessionFilter) ([]SessionSummary, error)
 	// Session loads one session with its summary and its turns in Seq
 	// order. Returns ErrNotFound.

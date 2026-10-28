@@ -82,6 +82,23 @@ type SessionSummary struct {
 	// totals has no part. It stays out of the JSON, where a listing row
 	// prices it as repo_costs.
 	RepoUsage []RepoUsage `json:"-"`
+	// Days are the local days the session was active on, oldest first,
+	// each with that day's slice of the session (DayActivity). A session
+	// with no activity but its start has its start day.
+	Days []DayActivity `json:"days"`
+}
+
+// SortSummaries puts summaries in listing order: the most recently active
+// first, then the later start, then by id. A session started weeks ago
+// that is still active sorts with today's, not under its start.
+func SortSummaries(list []SessionSummary) {
+	slices.SortFunc(list, func(a, b SessionSummary) int {
+		return cmp.Or(
+			b.LastActivityAt.Compare(a.LastActivityAt),
+			b.StartedAt.Compare(a.StartedAt),
+			cmp.Compare(a.ID, b.ID),
+		)
+	})
 }
 
 // FileKey names one edited file: its worktree and its path there, or ""
@@ -96,8 +113,9 @@ type FileKey struct {
 // them. AgentCount counts every agent an Agent record or an edit names,
 // the main conversation among them when it edited. RepoUsage applies the
 // attribution rule to the same records, and CwdRepos reads the session's
-// and its agents' locations. A main segment's record
-// (Agent.IsMainSegment) adds nothing anywhere.
+// and its agents' locations. Days cuts the same records by local day
+// (dayBuilder). A main segment's record (Agent.IsMainSegment) adds
+// nothing anywhere.
 func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) SessionSummary {
 	agents = slices.DeleteFunc(slices.Clone(agents), Agent.IsMainSegment)
 	sum := SessionSummary{
@@ -108,16 +126,20 @@ func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) S
 		TurnCount:      len(turns),
 		LastActivityAt: s.StartedAt,
 	}
+	days := dayBuilder{}
+	days.see(s.StartedAt)
 	addTurns(&sum, turns)
 	seen := addAgents(&sum, agents)
-	times := newTurnTimes(turns)
+	times := newTurnTimes(turns, days)
 	for _, a := range agents {
 		times.see(a.EndedAt)
+		days.agent(a)
 	}
 	files := map[FileKey]bool{}
 	tallies := agentTallies{}
 	for e := range edits {
 		times.see(e.At)
+		days.edit(e)
 		sum.EditCount++
 		tallies.add(e)
 		if !seen[e.AgentID] && e.AgentID != "" {
@@ -140,7 +162,8 @@ func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) S
 	})
 	sum.FileCount = len(sum.Files)
 	sum.AgentCount = len(seen)
-	times.apply(&sum)
+	times.apply(&sum, days)
+	sum.Days = days.finish()
 	sum.Usage = MergeUsage(sum.MainUsage, sum.AgentUsage)
 	sum.RepoUsage = attribute(sum.MainUsage, agents, tallies)
 	return sum
@@ -165,7 +188,9 @@ type openTurn struct {
 	start, next, last time.Time
 }
 
-func newTurnTimes(turns []Turn) turnTimes {
+// newTurnTimes reads the turns, counting each under its day in days with
+// the active time it has so far: an open turn's waits for apply.
+func newTurnTimes(turns []Turn, days dayBuilder) turnTimes {
 	var tt turnTimes
 	for _, t := range turns {
 		if tt.first.IsZero() || t.StartedAt.Before(tt.first) {
@@ -175,18 +200,31 @@ func newTurnTimes(turns []Turn) turnTimes {
 		if t.EndedAt != nil {
 			tt.end = later(tt.end, *t.EndedAt)
 		}
-		switch {
-		case t.Totals != nil:
-			tt.closedMS += max(t.Totals.WallMS-t.Totals.UserMS-t.Totals.IdleMS, 0)
-		case t.Status == TurnOpen:
+		active := turnActive(t)
+		days.turn(t, active)
+		if t.Totals == nil && t.Status == TurnOpen {
 			tt.open = append(tt.open, openTurn{
 				start: t.StartedAt, next: nextStart(turns, t.StartedAt), last: t.StartedAt,
 			})
-		case t.EndedAt != nil:
-			tt.closedMS += max(t.EndedAt.Sub(t.StartedAt).Milliseconds(), 0)
+			continue
 		}
+		tt.closedMS += active
 	}
 	return tt
+}
+
+// turnActive is the active time of a turn that is not open: its totals'
+// wall time less their user and idle time, or without totals its recorded
+// span, never below zero. An open turn without totals gives zero: its
+// time is known once its last activity is (apply).
+func turnActive(t Turn) int64 {
+	switch {
+	case t.Totals != nil:
+		return max(t.Totals.WallMS-t.Totals.UserMS-t.Totals.IdleMS, 0)
+	case t.Status == TurnOpen || t.EndedAt == nil:
+		return 0
+	}
+	return max(t.EndedAt.Sub(t.StartedAt).Milliseconds(), 0)
 }
 
 // see records an edit or an agent stop at t, which ends every open turn
@@ -202,12 +240,15 @@ func (tt *turnTimes) see(t time.Time) {
 
 // apply sets sum's LastTurnEnd, DurationMS and ActiveMS, every open turn
 // ending at its last activity for both times, and moves sum's last
-// activity up to LastTurnEnd.
-func (tt *turnTimes) apply(sum *SessionSummary) {
+// activity up to LastTurnEnd. Each open turn's active time goes to its
+// start day in days.
+func (tt *turnTimes) apply(sum *SessionSummary, days dayBuilder) {
 	end, active := tt.end, tt.closedMS
 	for _, o := range tt.open {
 		end = later(end, o.last)
-		active += o.last.Sub(o.start).Milliseconds()
+		ms := o.last.Sub(o.start).Milliseconds()
+		active += ms
+		days.active(o.start, ms)
 	}
 	sum.LastTurnEnd = end
 	sum.DurationMS = end.Sub(tt.first).Milliseconds()

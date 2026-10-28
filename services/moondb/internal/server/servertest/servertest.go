@@ -349,18 +349,18 @@ func (s *Store) AppendSnapshot(context.Context, store.Snapshot) error { return e
 // AppendCommitLink fails: the fixture is read-only.
 func (s *Store) AppendCommitLink(context.Context, store.CommitLink) error { return errReadOnly }
 
-// Sessions lists sessions newest first, narrowed by f, each summarized.
+// Sessions lists sessions most recently active first, narrowed by f, each
+// summarized.
 func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.SessionSummary, error) {
 	out := []store.SessionSummary{}
-	for _, sess := range slices.Backward(s.sessions) {
-		sum := s.summary(sess)
-		if !f.Keeps(sum) {
-			continue
+	for _, sess := range s.sessions {
+		if sum := s.summary(sess); f.Keeps(sum) {
+			out = append(out, sum)
 		}
-		out = append(out, sum)
-		if f.Limit > 0 && len(out) == f.Limit {
-			break
-		}
+	}
+	store.SortSummaries(out)
+	if f.Limit > 0 && len(out) > f.Limit {
+		out = out[:f.Limit]
 	}
 	return out, nil
 }

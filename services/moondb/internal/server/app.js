@@ -5,9 +5,10 @@
 // string:
 //
 //   /                              sessions active in the window (last 7 days by default),
-//                                  grouped by the day they started, newest first, under
+//                                  under every local day they were active on, newest day
+//                                  first, each row that day's slice of the session, under
 //                                  a strip whose bar splits the cost by repo;
-//                                  ?since= and ?repo= filter, ?limit= pages
+//                                  ?since=, ?repo= and ?cwd= filter, ?limit= pages
 //   /?session=<id>                 one session: its title, repos, status and cost by repo,
 //                                  its trace (a timeline lane per turn), its agents with
 //                                  their cost, its turns and the worktrees it touched
@@ -549,6 +550,7 @@
     document.title = 'Sessions · moondb';
     var state = {
       repo: params.get('repo') || '',
+      cwd: params.get('cwd') || '',
       since: params.get('since') || DEFAULT_SINCE,
       limit: parseInt(params.get('limit'), 10) || PAGE
     };
@@ -559,6 +561,7 @@
     function sync() {
       var q = qs({
         repo: state.repo,
+        cwd: state.cwd,
         since: state.since === DEFAULT_SINCE ? '' : state.since,
         limit: state.limit === PAGE ? '' : state.limit
       });
@@ -577,14 +580,15 @@
     }
     function load() {
       var since = state.since === 'any' ? '' : state.since;
-      getJSON('/api/sessions?' + qs({ repo: state.repo, since: since, limit: state.limit }))
+      getJSON('/api/sessions?' + qs({ repo: state.repo, cwd: state.cwd, since: since, limit: state.limit }))
         .then(function (data) {
           var sessions = data.sessions || [];
           var win = data.window || {};
-          controls.replaceChildren(sinceControl(state, set), repoChips(data.repos || [], state, set));
-          strip.replaceChildren.apply(strip, windowStrip(win, state));
+          controls.replaceChildren(sinceControl(state, set),
+            repoChips(data.repos || [], data.dirs || [], state, set));
+          strip.replaceChildren.apply(strip, windowStrip(win, state, data.dirs || []));
           list.replaceChildren.apply(list, sessionDays(sessions, state,
-            (win.sessions || 0) > sessions.length ? more : null));
+            (win.sessions || 0) > sessions.length ? more : null, data.dirs || []));
         })
         .catch(function (err) { list.replaceChildren(el('div', { class: 'empty' }, 'Failed to load: ' + err.message)); });
     }
@@ -592,8 +596,9 @@
     replace([
       el('wk-page-header', {}, [el('wk-title', {}, 'Sessions')]),
       el('p', { class: 'hint' },
-        'Each row is one Claude Code session: the repo it worked in, what it was about, and what it cost. ' +
-        'The list holds the sessions active in the window, grouped by the day they started.'),
+        'Each row is one Claude Code session on one day: the repo it worked in, what it was about, ' +
+        'and what it did and cost that day. The list holds the sessions active in the window, under ' +
+        'every day they were active on.'),
       controls,
       strip,
       list
@@ -620,16 +625,38 @@
 
   // repoChips offers every repo the window's sessions edited, worked in or
   // sent attributed cost, most used first, each with the cost attributed
-  // to it, and one to clear the filter.
-  function repoChips(repos, state, set) {
-    var chips = [chip('All repos', null, !state.repo, function () { set({ repo: '' }); })];
+  // to it, then the working directories of the sessions that count toward
+  // no repo (dirs), hollow, each with its sessions' cost, and one chip to
+  // clear the filter. A repo and a directory never filter together.
+  function repoChips(repos, dirs, state, set) {
+    var none = !state.repo && !state.cwd;
+    var chips = [chip('All repos', null, none, function () { set({ repo: '', cwd: '' }); })];
     var listed = repos.some(function (r) { return r.repo === state.repo; });
     if (state.repo && !listed) repos = [{ repo: state.repo, name: repoName(state.repo), sessions: 0 }].concat(repos);
     repos.forEach(function (r) {
-      chips.push(chip(r.name, r.sessions, r.repo === state.repo, function () { set({ repo: r.repo }); },
+      chips.push(chip(r.name, r.sessions, r.repo === state.repo,
+        function () { set({ repo: r.repo, cwd: '' }); },
         chipTitle(r), r.cost != null ? money(r.cost, r.unpriced) : null));
     });
-    return el('div', { class: 'ls-chips', role: 'group', 'aria-label': 'Repository' }, chips);
+    var listedDir = dirs.some(function (d) { return d.dir === state.cwd; });
+    if (state.cwd && !listedDir) dirs = [{ dir: state.cwd, name: repoName(state.cwd), sessions: 0 }].concat(dirs);
+    dirs.forEach(function (d) {
+      var c = chip(d.name, d.sessions, d.dir === state.cwd,
+        function () { set({ repo: '', cwd: d.dir }); },
+        dirChipTitle(d), d.cost != null ? money(d.cost, d.unpriced) : null);
+      c.classList.add('is-dir');
+      chips.push(c);
+    });
+    return el('div', { class: 'ls-chips', role: 'group', 'aria-label': 'Repository or directory' }, chips);
+  }
+
+  // dirChipTitle names a directory chip's path, its sessions and their
+  // cost: sessions that count toward no repo, grouped by where they started.
+  function dirChipTitle(d) {
+    var cost = d.cost != null ? 'Cost ' + fmtCost(d.cost)
+      : (d.unpriced || []).length ? 'Cost not priced' : 'No priced cost';
+    return [d.dir, plural(d.sessions || 0, 'session') + ' started here, outside any repo. ' + cost + '.',
+      unpricedText(d)].filter(Boolean).join('\n');
   }
 
   // chipTitle names a repo chip's repo, its sessions (the ones that edited
@@ -660,10 +687,18 @@
     return node;
   }
 
+  // cwdLabel is the short name of the cwd filter: the dir chip's name when
+  // the window lists it, else the path's last two segments.
+  function cwdLabel(cwd, dirs) {
+    var hit = (dirs || []).filter(function (d) { return d.dir === cwd; })[0];
+    return hit ? hit.name : repoName(cwd);
+  }
+
   // windowStrip is one line adding up every session the filters keep.
-  function windowStrip(w, state) {
+  function windowStrip(w, state, dirs) {
     var scope = SINCE_PHRASE[state.since] || 'active since ' + state.since;
     if (state.repo) scope += ', in ' + repoName(state.repo);
+    if (state.cwd) scope += ', started in ' + cwdLabel(state.cwd, dirs);
     function figure(n, word) {
       return el('span', { class: 'ls-fig' }, [el('b', {}, fmtCount(n)), plural(n || 0, word).replace(/^\d+ /, '')]);
     }
@@ -744,13 +779,15 @@
   }
 
   // sessionDays lays one page of sessions out as a table with a heading
-  // row per local day; more, when set, loads a longer page.
-  function sessionDays(sessions, state, more) {
+  // row per local day and a row per session under every day it was active
+  // on; more, when set, loads a longer page.
+  function sessionDays(sessions, state, more, dirs) {
     if (!sessions.length) {
       var scope = SINCE_PHRASE[state.since] || 'active since ' + state.since;
       return [el('div', { class: 'empty' }, state.repo
         ? 'No sessions in ' + repoName(state.repo) + ' ' + scope + '.'
-        : 'No sessions ' + scope + '. Older ones are under Any time.')];
+        : state.cwd ? 'No sessions started in ' + cwdLabel(state.cwd, dirs) + ' ' + scope + '.'
+          : 'No sessions ' + scope + '. Older ones are under Any time.')];
     }
     var now = new Date();
     var head = el('thead', {}, el('tr', {}, [
@@ -763,9 +800,9 @@
           '; hover a row for the session total\n' + ATTRIBUTION }, 'Attributed')
         : el('th', { class: 'num c-cost' }, 'Cost')
     ]));
-    var bodies = byDay(sessions).map(function (day) {
-      return el('tbody', {}, [dayRow(day, now, state)].concat(day.sessions.map(function (s) {
-        return sessionRow(s, now, state);
+    var bodies = byDay(sessions, state).map(function (day) {
+      return el('tbody', {}, [dayRow(day, now, state)].concat(day.rows.map(function (r) {
+        return sessionRow(r.s, r.d, now, state);
       })));
     });
     var nodes = [el('wk-table', { class: 'ls-table' }, el('table', {}, [head].concat(bodies)))];
@@ -776,48 +813,79 @@
     return nodes;
   }
 
-  // byDay groups sessions, newest first already, by the local day each
-  // one started.
-  function byDay(sessions) {
-    var days = [];
+  // byDay groups the page's sessions into session-days: one entry per
+  // local day a session was active on, newest day first, and within a day
+  // by that day's last activity, newest first. A session active on several
+  // days is under each of them with that day's slice (s.days), so a
+  // session started weeks ago that worked today is under Today. A day
+  // before the window's start is left out, except a session's newest day,
+  // which the window kept it by.
+  function byDay(sessions, state) {
+    var cutoff = windowStart(state.since);
+    var days = {};
     sessions.forEach(function (s) {
-      var d = parseTime(s.started_at) || new Date(0);
-      var key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
-      var last = days[days.length - 1];
-      if (!last || last.key !== key) days.push(last = { key: key, date: d, sessions: [] });
-      last.sessions.push(s);
+      var list = s.days || [];
+      list.forEach(function (d, i) {
+        var last = parseTime(d.last_at);
+        if (cutoff && last && last < cutoff && i < list.length - 1) return;
+        var g = days[d.date] || (days[d.date] = { key: d.date, date: dayDate(d.date), rows: [] });
+        g.rows.push({ s: s, d: d });
+      });
     });
-    return days;
+    return Object.keys(days).sort().reverse().map(function (k) {
+      var g = days[k];
+      g.rows.sort(function (a, b) {
+        return (parseTime(b.d.last_at) || 0) - (parseTime(a.d.last_at) || 0);
+      });
+      return g;
+    });
+  }
+
+  // windowStart is the earliest time the window shows, null for any time:
+  // the since value as the API reads it, a duration before now such as
+  // 90m, 24h or 7d, or an RFC 3339 time. A duration the page cannot read
+  // sets no bound.
+  function windowStart(since) {
+    if (!since || since === 'any') return null;
+    var m = /^(\d+)([mhd])$/.exec(since);
+    if (m) return new Date(Date.now() - parseInt(m[1], 10) * { m: 6e4, h: 36e5, d: 864e5 }[m[2]]);
+    return parseTime(since);
+  }
+
+  // dayDate is a day's YYYY-MM-DD key as a local Date at midnight.
+  function dayDate(key) {
+    var p = key.split('-');
+    return new Date(+p[0], +p[1] - 1, +p[2]);
   }
 
   // dayRow heads one day: its session count and the sum of the cost its
   // rows show, with the plus they show when any of them leaves a model
-  // unpriced. Filtered to a repo, that is the cost attributed to it and
-  // the models its attributed parts leave unpriced. It
-  // adds up the sessions on this page, so a page that cuts a day short
-  // sums only the part of the day it holds.
+  // unpriced. Each row's cost is its day's slice, so a session active on
+  // several days adds each day's own cost to that day. Filtered to a repo,
+  // that is the cost attributed to it and the models its attributed parts
+  // leave unpriced. It adds up the sessions on this page, so a page that
+  // cuts a day short sums only the part of the day it holds.
   function dayRow(day, now, state) {
     var cost = 0;
     var priced = false;
     var unpriced = [];
-    day.sessions.forEach(function (s) {
-      var shown = state.repo ? s.repo_cost : s.cost;
+    day.rows.forEach(function (r) {
+      var shown = state.repo ? r.d.repo_cost : r.d.cost;
       if (shown != null) {
         cost += shown;
         priced = true;
       }
-      ((state.repo ? repoPart(s, state.repo) : s).unpriced || []).forEach(function (m) {
+      ((state.repo ? repoPart(r.d, state.repo) : r.d).unpriced || []).forEach(function (m) {
         if (unpriced.indexOf(m) < 0) unpriced.push(m);
       });
     });
     var name = dayName(day.date, now);
-    var date = DAYS[day.date.getDay()] + ' ' + MONTHS[day.date.getMonth()] + ' ' + day.date.getDate();
-    if (day.date.getFullYear() !== now.getFullYear()) date += ', ' + day.date.getFullYear();
+    var date = fmtDay(day.date, now);
     return el('tr', { class: 'ls-day' }, el('td', { colspan: '8' }, el('div', { class: 'ls-day-in' }, [
       el('span', { class: 'ls-day-name' }, name || date),
       name ? el('span', { class: 'ls-day-date' }, date) : null,
       el('span', { class: 'ls-day-sum' },
-        plural(day.sessions.length, 'session') + (priced ? ' · ' + money(cost, unpriced) : ''))
+        plural(day.rows.length, 'session') + (priced ? ' · ' + money(cost, unpriced) : ''))
     ])));
   }
 
@@ -828,42 +896,75 @@
     return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : '';
   }
 
-  function sessionRow(s, now, state) {
+  // fmtDay is a date as a day heading reads it: Tue Oct 28, with the year
+  // when it is not this one.
+  function fmtDay(d, now) {
+    var date = DAYS[d.getDay()] + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate();
+    if (d.getFullYear() !== now.getFullYear()) date += ', ' + d.getFullYear();
+    return date;
+  }
+
+  // sessionRow is one session on one day: the session's repo and title,
+  // then the day's activity, counts and cost (d), so a row under a day
+  // says what the session did that day.
+  function sessionRow(s, d, now, state) {
     return el('tr', { class: 'ls-row' }, [
       el('td', { class: 'ls-repo' }, repoBadges(s, state)),
       el('td', { class: 'ls-title', 'data-fixation': '' }, el('div', { class: 'ls-title-in' }, [
         el('a', { href: '?session=' + enc(s.id), title: s.title + (s.cwd ? '\n' + s.cwd : '') },
           s.title || s.id)
       ].concat(sessionFlags(s)))),
-      el('td', { class: 'ls-when' }, whenCell(s, now)),
-      count(s.turn_count, 'c-sm'), count(s.edit_count), count(s.file_count, 'c-sm'),
-      agentCount(s),
+      el('td', { class: 'ls-when' }, whenCell(s, d, now)),
+      count(d.turns, 'c-sm'), count(d.edits), count(d.files, 'c-sm'),
+      agentCount(s, d),
       state.repo
-        ? el('td', { class: 'num ls-cost', title: attributedTitle(s, state.repo) },
-          money(s.repo_cost, repoPart(s, state.repo).unpriced))
-        : el('td', { class: 'num ls-cost', title: costTitle(s) }, money(s.cost, s.unpriced))
+        ? el('td', { class: 'num ls-cost', title: attributedTitle(s, d, state.repo) },
+          money(d.repo_cost, repoPart(d, state.repo).unpriced))
+        : el('td', { class: 'num ls-cost', title: dayCostTitle(s, d) }, money(d.cost, d.unpriced))
     ]);
   }
 
-  // repoPart is a row's attributed part for repo, or an empty one when the
-  // rule sends nothing there.
-  function repoPart(s, repo) {
-    return (s.repo_costs || []).filter(function (c) { return c.repo === repo; })[0] || { repo: repo };
+  // multiDay reports whether a session was active on more than one day.
+  function multiDay(s) { return (s.days || []).length > 1; }
+
+  // repoPart is a row's or a day's attributed part for repo, or an empty
+  // one when the rule sends nothing there.
+  function repoPart(x, repo) {
+    return (x.repo_costs || []).filter(function (c) { return c.repo === repo; })[0] || { repo: repo };
   }
 
-  // attributedTitle explains a filtered row's cost: the part attributed
-  // to repo, the session's whole cost, and the rule.
-  function attributedTitle(s, repo) {
-    var part = s.repo_cost != null ? fmtCost(s.repo_cost) : 'not priced';
-    var whole = s.cost != null ? fmtCost(s.cost) : 'not priced';
-    return ['Attributed to ' + repoName(repo) + ': ' + part + ' of the session\'s ' + whole,
-      unpricedText(repoPart(s, repo)), costTitle(s), ATTRIBUTION].filter(Boolean).join('\n');
+  // attributedTitle explains a filtered row's cost: the part of the day's
+  // cost attributed to repo, the session's whole part when it has more
+  // days, and the rule.
+  function attributedTitle(s, d, repo) {
+    var part = d.repo_cost != null ? fmtCost(d.repo_cost) : 'not priced';
+    var whole = d.cost != null ? fmtCost(d.cost) : 'not priced';
+    var of = multiDay(s) ? 'the day\'s ' : 'the session\'s ';
+    var session = multiDay(s)
+      ? 'Whole session: ' + (s.repo_cost != null ? fmtCost(s.repo_cost) : 'not priced') + ' of ' +
+        (s.cost != null ? fmtCost(s.cost) : 'not priced')
+      : '';
+    return ['Attributed to ' + repoName(repo) + ': ' + part + ' of ' + of + whole,
+      unpricedText(repoPart(d, repo)), session, costTitle(s), ATTRIBUTION].filter(Boolean).join('\n');
   }
 
-  // agentCount is the session's agent count, naming its subagents on hover.
-  function agentCount(s) {
-    var cell = count(s.agent_count, 'c-sm');
-    if ((s.agents || []).length) cell.title = 'Subagents: ' + s.agents.join(', ');
+  // dayCostTitle explains a row's cost: the day's tokens at list prices,
+  // the models it leaves out, and the session's whole cost split between
+  // the main conversation and its subagents.
+  function dayCostTitle(s, d) {
+    var tokens = tokenTotal(d.tokens);
+    if (d.cost == null && !tokens) return 'No token counts recorded yet';
+    var parts = [fmtTokens(tokens) + ' tokens at list prices' + (multiDay(s) ? ' that day' : '')];
+    if ((d.unpriced || []).length) parts.push('No price for ' + d.unpriced.join(', '));
+    parts.push((multiDay(s) ? 'Whole session: ' + costTitle(s) : agentCostText(s)));
+    return parts.join('. ');
+  }
+
+  // agentCount is the day's agent count, naming the session's subagents on
+  // hover.
+  function agentCount(s, d) {
+    var cell = count(d.agents, 'c-sm');
+    if ((s.agents || []).length) cell.title = 'Subagents in the session: ' + s.agents.join(', ');
     return cell;
   }
 
@@ -877,12 +978,14 @@
   // repoBadges is the session's first repo as a badge that filters the
   // list to it, with a count of the others. The repos it edited come first
   // and show solid; the ones it only worked in (workedRepos) follow and
-  // show hollow. "no repo" stands only when it counts toward no repo.
+  // show hollow. A session that counts toward no repo shows the directory
+  // it started in instead (dirBadge), and "no repo" stands only when that
+  // is unknown too.
   function repoBadges(s, state) {
     var edited = s.repos || [];
     var worked = workedRepos(s);
     var all = edited.concat(worked.map(function (w) { return w.repo; }));
-    if (!all.length) return el('span', { class: 'ls-norepo' }, 'no repo');
+    if (!all.length) return s.cwd ? dirBadge(s, state) : el('span', { class: 'ls-norepo' }, 'no repo');
     var href = '?' + qs({ repo: all[0], since: state.since === DEFAULT_SINCE ? '' : state.since });
     var first = edited.length ? repoBadge(edited[0], (s.repo_names || edited)[0], href)
       : workedBadge(worked[0], href);
@@ -925,6 +1028,18 @@
     return b;
   }
 
+  // dirBadge stands where the repo badge would for a session that counts
+  // toward no repo: the directory it started in, short (cwd_name), hollow
+  // and neutral, which filters the list to the sessions started there.
+  function dirBadge(s, state) {
+    var href = '?' + qs({ cwd: s.cwd, since: state.since === DEFAULT_SINCE ? '' : state.since });
+    var b = el('a', {
+      class: 'ls-badge is-cwd is-dir', href: href, style: '--hue:var(--text-3)',
+      title: 'Outside any repo, started in ' + s.cwd + '\nShow only the sessions started there'
+    }, [el('span', { class: 'ls-swatch' }), el('span', { class: 'ls-badge-name' }, s.cwd_name || repoName(s.cwd))]);
+    return el('span', { class: 'row ls-repos' }, b);
+  }
+
   // sessionFlags marks how a session ran, then adds one badge per tag its
   // launcher set, such as eval. An entrypoint that starts with sdk- (claude
   // -p and the SDKs) reads headless; any other set entrypoint but cli, such
@@ -963,27 +1078,69 @@
     return parts.length <= 2 ? repo : parts.slice(-2).join('/');
   }
 
-  // whenCell is the status dot, how long ago the session was last active,
-  // and its shown time. The days its wall span touched follow when that is
-  // more than one, in a span of their own that wraps under the rest when
-  // the column is too narrow for one line.
-  function whenCell(s, now) {
-    var running = s.status === 'running';
+  // whenCell is a row's activity on its day. On the session's newest day
+  // it is the status dot and how long ago the session was last active; on
+  // an earlier day it is a dashed dot and when that day's activity ended,
+  // since the session went on. The day's active time follows. When the
+  // session has several days, which one this is follows in a span of its
+  // own that wraps under the rest when the column is too narrow for one
+  // line.
+  function whenCell(s, d, now) {
+    var days = s.days || [];
+    var index = days.indexOf(d);
+    var newest = index < 0 || index === days.length - 1;
+    var running = newest && s.status === 'running';
     var at = parseTime(s.last_activity_at);
-    var shown = shownTime(s);
-    var days = shown ? wallDays(s) : 1;
+    var main = newest
+      ? [statusDot(running), el('span', {
+        class: running ? 'ls-ago is-on' : 'ls-ago',
+        title: (running ? 'Running, last active ' : 'Ended, last active ') + fmtTime(s.last_activity_at)
+      }, at ? ago(at, now) : '-')]
+      : [continuedDot(), el('span', {
+        class: 'ls-ago',
+        title: 'Active that day ' + clock(d.first_at) + ' to ' + clock(d.last_at) +
+          '\nThe session went on; last active ' + fmtTime(s.last_activity_at)
+      }, 'until ' + clock(d.last_at))];
+    if (d.active_ms > 0) {
+      main.push(el('span', { class: 'ls-span', title: dayTimeTitle(s, d) }, fmtSpan(d.active_ms)));
+    }
     return [
-      el('span', { class: 'ls-when-main' }, [
-        statusDot(running),
-        el('span', {
-          class: running ? 'ls-ago is-on' : 'ls-ago',
-          title: (running ? 'Running, last active ' : 'Ended, last active ') + fmtTime(s.last_activity_at)
-        }, at ? ago(at, now) : '-'),
-        shown ? el('span', { class: 'ls-span', title: timeTitle(s) }, fmtSpan(shown)) : null
-      ]),
-      days > 1 ? ' ' : null,
-      days > 1 ? el('span', { class: 'ls-days', title: timeTitle(s) }, 'over ' + days + ' days') : null
+      el('span', { class: 'ls-when-main' }, main),
+      days.length > 1 ? ' ' : null,
+      days.length > 1 ? el('span', { class: 'ls-days', title: daysTitle(s, now) },
+        'day ' + (index + 1) + ' of ' + days.length) : null
     ];
+  }
+
+  // dayTimeTitle explains a row's time: the day's active time, and the
+  // session's active and wall time when it has more days.
+  function dayTimeTitle(s, d) {
+    var day = 'Active ' + fmtSpan(d.active_ms || 0) + (multiDay(s) ? ' that day' : '') +
+      ': time inside the turns that started that day, less waiting for input and idle time';
+    return multiDay(s) ? day + '\nWhole session: ' + timeTitle(s).replace('\n', '; ') : day + '\n' +
+      'Wall ' + fmtSpan(s.duration_ms || 0) + ': first prompt to the last turn\'s end, pauses included';
+  }
+
+  // daysTitle names the days a session was active on: how many, the first
+  // and the last.
+  function daysTitle(s, now) {
+    var days = s.days || [];
+    return 'Active on ' + plural(days.length, 'day') + ', ' + fmtDay(dayDate(days[0].date), now) +
+      ' to ' + fmtDay(dayDate(days[days.length - 1].date), now);
+  }
+
+  // clock is a time of day, HH:MM, '' for an absent time.
+  function clock(iso) {
+    var d = parseTime(iso);
+    return d ? pad(d.getHours()) + ':' + pad(d.getMinutes()) : '';
+  }
+
+  // continuedDot marks a row on a day the session went on after.
+  function continuedDot() {
+    return el('span', {
+      class: 'ls-dot is-more', role: 'img',
+      'aria-label': 'continued', title: 'The session went on after this day'
+    });
   }
 
   // shownTime is the time a session row shows: its active time, or its
