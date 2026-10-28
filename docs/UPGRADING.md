@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-10-28 catalog and keeper-of-facts: removed
 
-Change: thismoon #NNN. The catalog and keeper-of-facts (kof) services leave the repo with their recipes. deps keeps reading `~/.config/catalog/registry.yaml`, which the consuming repo still installs. moondb's scorecard drops its `kof` source and the `hints.kof` block and now reports `version` 2. belt loses its kof-consult, kof-assertions and kof-deposit hints and its kof doctor probe.
+Change: thismoon #332. The catalog and keeper-of-facts (kof) services leave the repo with their recipes. deps keeps reading `~/.config/catalog/registry.yaml`, which the consuming repo still installs. moondb's scorecard drops its `kof` source and the `hints.kof` block and now reports `version` 2. belt loses its kof-consult, kof-assertions and kof-deposit hints and its kof doctor probe.
 
 Run, in order:
 
