@@ -18,6 +18,11 @@ type SessionSummary struct {
 	// Worktrees are the checkout roots the session edited, sorted. An edit
 	// outside any repository adds none.
 	Worktrees []string `json:"worktrees"`
+	// CwdRepos are the repositories the session worked in without editing
+	// them, sorted: the one its own cwd sits in and each recorded
+	// subagent's (Location), less Repos. An agent without a location adds
+	// none. Nil when there are none.
+	CwdRepos  []string `json:"cwd_repos,omitempty"`
 	TurnCount int      `json:"turn_count"`
 	EditCount int      `json:"edit_count"`
 	// FileCount counts the distinct files the session edited, which Files
@@ -90,7 +95,8 @@ type FileKey struct {
 // SortAgents order; edits may come in any order. Summarize only reads
 // them. AgentCount counts every agent an Agent record or an edit names,
 // the main conversation among them when it edited. RepoUsage applies the
-// attribution rule to the same records. A main segment's record
+// attribution rule to the same records, and CwdRepos reads the session's
+// and its agents' locations. A main segment's record
 // (Agent.IsMainSegment) adds nothing anywhere.
 func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) SessionSummary {
 	agents = slices.DeleteFunc(slices.Clone(agents), Agent.IsMainSegment)
@@ -125,6 +131,7 @@ func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) S
 	}
 	slices.Sort(sum.Repos)
 	slices.Sort(sum.Worktrees)
+	sum.CwdRepos = cwdRepos(s, agents, sum.Repos)
 	for f := range files {
 		sum.Files = append(sum.Files, f)
 	}
@@ -218,6 +225,23 @@ func nextStart(turns []Turn, start time.Time) time.Time {
 		}
 	}
 	return next
+}
+
+// cwdRepos lists the repositories the session's cwd and its agents' cwds
+// sit in that it never edited, sorted; nil when there are none.
+func cwdRepos(s Session, agents []Agent, edited []string) []string {
+	var out []string
+	add := func(repo string) {
+		if !slices.Contains(edited, repo) {
+			out = appendNew(out, repo)
+		}
+	}
+	add(s.Location.Repo)
+	for _, a := range agents {
+		add(a.Location.Repo)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // addAgents folds the Agent records into sum: their labels, their merged

@@ -754,10 +754,14 @@ A session row comes from the index alone, never a chunk
   no priced cost, and otherwise 0 when the rule sends nothing there.
 - `repos`, `repo_names` (each repo's last two path segments) and
   `worktrees`.
-- `cwd_repo`, `cwd_repo_name`: the repository the session's cwd sits in
-  (`Session.Location`) and its short name, whether or not the session
-  edited there. Absent for a cwd outside any repository, and for a session
-  recorded before sessions kept a location until an import fills it.
+- `cwd_repos`, `cwd_repo_names`: the repositories the session worked in
+  without editing them (`store.SessionSummary.CwdRepos`), sorted, and
+  their short names. They are the repository its own cwd sits in
+  (`Session.Location`) and each recorded subagent's cwd repository
+  (`Agent.Location`), less `repos`. A cwd outside any repository adds
+  none. Both are absent when the list is empty. A session recorded before
+  sessions kept a location lacks its own cwd's until an import fills it;
+  its subagents' are there already.
 - `entrypoint`: how the harness was started (`cli`, `sdk-cli`), and
   `tags`: the tags its launcher set, such as `eval`. Both absent when not
   recorded.
@@ -778,14 +782,13 @@ started. `window` adds up every session the filters keep, past the limit,
 whole: sessions, active time, turns, edits, distinct files, tokens and cost, with
 `cost_main`, `cost_agents` and `repo_costs`. `repos` ignores the `repo`
 filter, so a page can offer every repo of the time window. A repository
-there counts each session that edited it or sends it a part of its cost,
-such as through a subagent whose cwd sits in it. A session that edited no
-repository counts toward its `cwd_repo` too, so the row's cwd badge finds
-it. The `repo` filter keeps sessions by the same rule (`chipRepos`). So a
-chip's `sessions` is the filtered `window`'s, and its `cost` equals the
-filtered window's part for it and the sum of the filtered rows'
-`repo_cost`. A session kept by its cwd alone adds its attributed part,
-often 0, never its whole cost.
+there counts each session that has it in `repos` or `cwd_repos`, or sends
+it a part of its cost in `repo_costs`, once even when two of those hold.
+The `repo` filter keeps sessions by the same rule (`chipRepos`), so every
+repo a row shows a badge for lists the row. So a chip's `sessions` is
+the filtered `window`'s, and its `cost` equals the filtered window's part
+for it and the sum of the filtered rows' `repo_cost`. A session kept only because it worked there adds its
+attributed part, often 0, never its whole cost.
 
 An agent row (`internal/server/agents.go`) is the main conversation
 (`type` `main`, id empty) or one subagent. It carries `id`, `type`, `name`,
@@ -820,9 +823,15 @@ return, so keep it stable.
   otherwise (`since=any` lifts the bound), grouped by the day they started,
   newest first.
   A row has a repo badge, the title as the link, and a running or ended
-  dot with how long ago the session was last active. A session that
-  edited no repo shows its `cwd_repo` as a hollow badge instead, which
-  filters to that repo, and "no repo" only when its cwd sits in none.
+  dot with how long ago the session was last active. The badge is the
+  session's first repo and filters to it, with "+N" for the rest. The
+  repos it edited come first as solid badges, then its `cwd_repos`, and
+  any other repo `repo_costs` names, as hollow ones. So a session started
+  from a scratch directory shows the
+  repos its subagents worked in. The hover title lists the other edited
+  repos ("Also edited") and the worked-in ones ("Worked in"). "no repo"
+  shows only when `repos`, `cwd_repos` and the repos of `repo_costs` are
+  all empty.
   Small badges follow the title. A set entrypoint other than `cli` gets
   one: `headless` when it starts with `sdk-` (`claude -p` and the SDKs),
   else the value itself, such as a desktop app's or an IDE extension's.
@@ -836,18 +845,18 @@ return, so keep it stable.
   included, with the subagents'
   part of the cost beside the total. A cost's hover title splits it.
   Each chip counts the sessions its filter lists, the ones that edited
-  its repo or sent it cost, and shows the cost they attribute to it.
+  its repo, worked in it or sent it cost, and shows the cost they
+  attribute to it.
   Under the strip's figures a bar stacks the window's cost by repo, then
   orchestration and "no repo (cwd)", the page's name for `no_repo`. A
-  row's "no repo" badge stays apart: that session edited no repo and its
-  cwd sits in none.
+  row's "no repo" text stays apart: that session counts toward no repo.
   A label under it gives each part's amount, and a hover title its share
   and the attribution rule. Filtered to a repo, the cost column turns into
   "Attributed": the part each session gives that repo, with the session
   total in the hover title. The day rows then add those parts.
   `Show more` grows `limit`. The filters stay in the URL.
-- `/?session=<id>`: the title, repo badges (or the hollow cwd badge), the
-  entrypoint and tag badges, status, the active time over
+- `/?session=<id>`: the title, a badge for every repo (the edited ones
+  solid, then the `cwd_repos` hollow), the entrypoint and tag badges, status, the active time over
   the wall time ("active 1h 51m over 23h 05m (2 days)") and start time,
   and a "Cost by repo" line with the session's `repo_costs`. Then a Trace
   section, an Agents section, the turns in the order they started and the

@@ -294,3 +294,54 @@ func TestSummarizeLeavesOutMainSegments(t *testing.T) {
 		})
 	}
 }
+
+// TestSummarizeCwdRepos: the repositories a session worked in without
+// editing them are its own cwd's and each recorded agent's cwd's, each
+// once and sorted. A repository it edited is left out, and so is an agent
+// or a session cwd outside any repository; nil when none is left.
+func TestSummarizeCwdRepos(t *testing.T) {
+	const repoC = "example.com/o/c"
+	tests := []struct {
+		name   string
+		cwd    string
+		agents []Agent
+		edits  []Edit
+		want   []string
+	}{
+		{name: "nothing recorded", want: nil},
+		{name: "session cwd only", cwd: repoA, want: []string{repoA}},
+		{
+			name: "agents from a scratch cwd",
+			agents: []Agent{
+				agentWith("a1", repoC, 1), agentWith("a2", repoB, 0), agentWith("a3", "", 1),
+				agentWith("a4", repoB, 1),
+			},
+			want: []string{repoB, repoC},
+		},
+		{
+			name: "edited repositories are left out",
+			cwd:  repoB,
+			agents: []Agent{
+				agentWith("a1", repoA, 1), agentWith("a2", repoB, 1), agentWith("a3", repoC, 1),
+			},
+			edits: []Edit{editIn("e1", "", repoA, 1), editIn("e2", "a3", repoA, 2)},
+			want:  []string{repoB, repoC},
+		},
+		{
+			name:   "every cwd edited",
+			cwd:    repoA,
+			agents: []Agent{agentWith("a1", repoA, 1)},
+			edits:  []Edit{editIn("e1", "a1", repoA, 1)},
+			want:   nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := Session{ID: "s", StartedAt: minutes(0), Location: Location{Repo: tt.cwd}}
+			sum := Summarize(s, nil, tt.agents, editSeq(tt.edits))
+			if !slices.Equal(sum.CwdRepos, tt.want) || (tt.want == nil) != (sum.CwdRepos == nil) {
+				t.Errorf("CwdRepos = %#v, want %#v", sum.CwdRepos, tt.want)
+			}
+		})
+	}
+}

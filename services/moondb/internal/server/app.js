@@ -618,10 +618,9 @@
     }));
   }
 
-  // repoChips offers every repo the window's sessions edited or sent
-  // attributed cost, or that holds the cwd of a session that edited no
-  // repo, most used first, each with the cost attributed to it, and one to
-  // clear the filter.
+  // repoChips offers every repo the window's sessions edited, worked in or
+  // sent attributed cost, most used first, each with the cost attributed
+  // to it, and one to clear the filter.
   function repoChips(repos, state, set) {
     var chips = [chip('All repos', null, !state.repo, function () { set({ repo: '' }); })];
     var listed = repos.some(function (r) { return r.repo === state.repo; });
@@ -634,13 +633,13 @@
   }
 
   // chipTitle names a repo chip's repo, its sessions (the ones that edited
-  // it, sent it attributed cost, or edited no repo with their cwd in it, as
-  // the repo filter keeps them) and the cost they attribute to it, with the
-  // rule behind that cost.
+  // it, worked in it or sent it attributed cost, as the repo filter keeps
+  // them) and the cost they attribute to it, with the rule behind that
+  // cost.
   function chipTitle(r) {
     var cost = r.cost != null ? 'Attributed cost ' + fmtCost(r.cost)
       : (r.unpriced || []).length ? 'Attributed cost not priced' : 'No priced cost attributed here';
-    var who = plural(r.sessions || 0, 'session') + ' edited it, sent it cost, or worked in it and edited no repo. ';
+    var who = plural(r.sessions || 0, 'session') + ' edited it, worked in it or sent it cost. ';
     return [r.repo, who + cost + '.', unpricedText(r), ATTRIBUTION].filter(Boolean).join('\n');
   }
 
@@ -733,8 +732,7 @@
 
   // costName is how a person reads an attributed part's repo or label.
   // The no_repo label reads "no repo (cwd)", apart from a row's "no repo"
-  // badge, which says the session edited no repo and its cwd sits in no
-  // known repo.
+  // text, which says the session counts toward no repo.
   function costName(repo) {
     if (repo === ORCHESTRATION) return 'orchestration';
     if (repo === NO_REPO) return 'no repo (cwd)';
@@ -877,29 +875,48 @@
   function fmtCount(n) { return (n || 0).toLocaleString('en-US'); }
 
   // repoBadges is the session's first repo as a badge that filters the
-  // list to it, with a count of the others. A session that edited no repo
-  // shows the repo its cwd sits in as a hollow badge, and "no repo" when
-  // its cwd sits in none.
+  // list to it, with a count of the others. The repos it edited come first
+  // and show solid; the ones it only worked in (workedRepos) follow and
+  // show hollow. "no repo" stands only when it counts toward no repo.
   function repoBadges(s, state) {
-    var repos = s.repos || [];
-    var since = state.since === DEFAULT_SINCE ? '' : state.since;
-    if (!repos.length) {
-      return s.cwd_repo ? cwdBadge(s, '?' + qs({ repo: s.cwd_repo, since: since }))
-        : el('span', { class: 'ls-norepo' }, 'no repo');
-    }
-    var names = s.repo_names || repos;
-    var badge = repoBadge(repos[0], names[0], '?' + qs({ repo: repos[0], since: since }));
-    badge.title = 'Show only ' + repos[0] + (repos.length > 1 ? '\nAlso edited: ' + repos.slice(1).join(', ') : '');
-    return el('span', { class: 'row ls-repos' }, [badge,
-      repos.length > 1 ? el('span', { class: 'ls-more' }, '+' + (repos.length - 1)) : null]);
+    var edited = s.repos || [];
+    var worked = workedRepos(s);
+    var all = edited.concat(worked.map(function (w) { return w.repo; }));
+    if (!all.length) return el('span', { class: 'ls-norepo' }, 'no repo');
+    var href = '?' + qs({ repo: all[0], since: state.since === DEFAULT_SINCE ? '' : state.since });
+    var first = edited.length ? repoBadge(edited[0], (s.repo_names || edited)[0], href)
+      : workedBadge(worked[0], href);
+    first.title = ['Show only ' + all[0],
+      edited.length > 1 ? 'Also edited: ' + edited.slice(1).join(', ') : '',
+      worked.length ? 'Worked in: ' + all.slice(edited.length).join(', ') : ''
+    ].filter(Boolean).join('\n');
+    return el('span', { class: 'row ls-repos' }, [first,
+      all.length > 1 ? el('span', { class: 'ls-more' }, '+' + (all.length - 1)) : null]);
   }
 
-  // cwdBadge is the hollow badge of the repo a session's cwd sits in, for
-  // a session that edited no repo; the repo filter lists the session there.
-  function cwdBadge(s, href) {
-    var b = repoBadge(s.cwd_repo, s.cwd_repo_name, href);
+  // workedRepos are the repos a session counts toward without editing
+  // them, each with its short name: its cwd_repos (its own cwd's and its
+  // subagents'), then any repo its repo_costs sends cost to that it
+  // neither edited nor worked in, so the badges cover every repo the repo
+  // filter lists it under.
+  function workedRepos(s) {
+    var edited = s.repos || [];
+    var names = s.cwd_repo_names || [];
+    var out = (s.cwd_repos || []).map(function (r, i) { return { repo: r, name: names[i] }; });
+    (s.repo_costs || []).forEach(function (c) {
+      var r = c.repo;
+      if (r === ORCHESTRATION || r === NO_REPO || edited.indexOf(r) >= 0 ||
+        out.some(function (w) { return w.repo === r; })) return;
+      out.push({ repo: r, name: repoName(r) });
+    });
+    return out;
+  }
+
+  // workedBadge is the hollow badge of a repo a session worked in without
+  // editing it; the repo filter lists the session there too.
+  function workedBadge(w, href) {
+    var b = repoBadge(w.repo, w.name, href);
     b.classList.add('is-cwd');
-    b.title = 'Worked in ' + s.cwd_repo + '; edited no repo. Show its sessions';
     return b;
   }
 
@@ -1137,10 +1154,10 @@
     ]);
   }
 
-  // sessionLine sits under a session's title: the repos it edited, or the
-  // one its cwd sits in when it edited none, the entrypoint and tag badges,
-  // whether it is running and when it was last active, its active time
-  // over its wall span, and when it started.
+  // sessionLine sits under a session's title: the repos it edited, then the
+  // hollow ones it only worked in, the entrypoint and tag badges, whether
+  // it is running and when it was last active, its active time over its
+  // wall span, and when it started.
   function sessionLine(s) {
     var running = s.status === 'running';
     var at = parseTime(s.last_activity_at);
@@ -1149,8 +1166,11 @@
       var b = repoBadge(r, names[i], '/?' + qs({ repo: r }));
       b.title = 'Sessions in ' + r;
       return b;
-    });
-    if (!badges.length && s.cwd_repo) badges.push(cwdBadge(s, '/?' + qs({ repo: s.cwd_repo })));
+    }).concat(workedRepos(s).map(function (w) {
+      var b = workedBadge(w, '/?' + qs({ repo: w.repo }));
+      b.title = 'Sessions in ' + w.repo + '\nWorked in it without editing it';
+      return b;
+    }));
     return el('div', { class: 'ss-line' }, badges.concat(sessionFlags(s), [
       el('span', { class: running ? 'ss-status is-on' : 'ss-status' }, [statusDot(running),
         (running ? 'Running' : 'Ended') + (at ? ', last active ' + ago(at, new Date()) : '')]),
