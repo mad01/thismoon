@@ -3,6 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 
 	"github.com/mad01/thismoon/kit/agentdoc/agentcli"
 	"github.com/mad01/thismoon/kit/doctor"
@@ -25,6 +28,7 @@ func doctorChecks(context.Context) []doctor.Check {
 		doctor.StoreReadable(flagWorkdir),
 		doctor.VersionSkew(baseURL),
 		discoveryClean(flagWorkdir),
+		registryAnswered(flagWorkdir),
 	}
 }
 
@@ -53,6 +57,40 @@ func discoveryClean(workdir string) doctor.Check {
 				first.Ecosystem,
 				first.Repo,
 				first.Error,
+			)
+		},
+	}
+}
+
+// registryAnswered fails when the last check saved dependencies whose npm,
+// PyPI or Go proxy lookup got no answer, and names the ecosystems. Those keep
+// their earlier registry findings, so a sandbox missing a registry host would
+// otherwise pass every other check while no registry is asked at all.
+func registryAnswered(workdir string) doctor.Check {
+	return doctor.Check{
+		Name: "registry-answered",
+		Run: func(context.Context) error {
+			sc, err := store.Read(workdir)
+			if err != nil {
+				return err
+			}
+			if sc.ScannedAt.IsZero() {
+				return doctor.Skip("skipped: no scan has completed yet")
+			}
+			byEco := store.RegistryUnknownByEcosystem(sc.Deps)
+			if len(byEco) == 0 {
+				return nil
+			}
+			total := 0
+			parts := make([]string, 0, len(byEco))
+			for _, eco := range slices.Sorted(maps.Keys(byEco)) {
+				total += byEco[eco]
+				parts = append(parts, fmt.Sprintf("%s %d", eco, byEco[eco]))
+			}
+			return fmt.Errorf(
+				"last check got no registry answer for %d dep(s) (%s), so whether the registry withdrew or yanked them since is unknown",
+				total,
+				strings.Join(parts, ", "),
 			)
 		},
 	}

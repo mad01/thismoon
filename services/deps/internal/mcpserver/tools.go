@@ -97,12 +97,13 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_doctor",
 		Description: "Diagnose deps itself: is `deps serve` reachable, is the scan store readable, was the " +
-			"running service built from the same commit as the installed binary, and did the last scan read every " +
-			"repo and ecosystem (discovery-clean). " +
+			"running service built from the same commit as the installed binary, did the last scan read every " +
+			"repo and ecosystem (discovery-clean), and did every npm, PyPI and Go proxy lookup in the last check " +
+			"get an answer (registry-answered, which names the ecosystems that did not). " +
 			"Returns one result per check with `ok` false if any failed. " +
 			"Read-only: it probes, it changes nothing. " +
 			"Call this when another deps tool errors or comes back empty: it answers whether the fault is the " +
-			"service, the store, a discovery failure, or a genuinely clean scan.",
+			"service, the store, a discovery failure, an unreachable registry, or a genuinely clean scan.",
 		// Probes localhost serve, the local store file, and the local binary's
 		// version; nothing external, nothing written.
 		Annotations: &mcp.ToolAnnotations{

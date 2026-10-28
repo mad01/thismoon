@@ -465,8 +465,12 @@ Summary: "…"}`. Follow-up producers build on these rules:
   "Resolved · updated past". `registry_unknown` counts
   these deps on `/api/deps`, `/api/flagged` and `/api/check`, in the MCP
   tools and `deps check`, in a page callout, and in the scan-complete event
-  (at warn). Any other finding that drops out of a scan still reads as gone,
-  and an OSV failure still fails the whole check.
+  (at warn). The doctor `registry-answered` check reads the same flag from
+  the store through `store.RegistryUnknownByEcosystem`, the store count's
+  one source (the scan-complete event tallies its own). It fails above 0
+  and names the ecosystems, since kit/doctor has no warn level. Any other
+  finding that drops out of a scan still reads as gone, and an OSV failure
+  still fails the whole check.
 - **A partial read keeps what it read.** A discoverer may return packages
   beside its error; `discover.Repos` keeps them and records the error.
 - A new producer leaves the key format, the notifier, the API and the page
@@ -525,8 +529,8 @@ The annotated key reference lives in `deps config --help`.
 - `deps_resolve(keys)`: acknowledge advisories by key; the description tells
   the agent to get the user's confirmation before resolving a malicious one
 - `deps_doctor`: run the same checks as `deps doctor` (service-reachable,
-  store-readable, version-skew, discovery-clean) and return the report as
-  JSON — for a client that can call a tool but has no shell
+  store-readable, version-skew, discovery-clean, registry-answered) and
+  return the report as JSON, for a client that can call a tool but has no shell
 
 ## Shared UI: webkit
 

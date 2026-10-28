@@ -41,10 +41,10 @@ directory; `deps config` prints the paths in use.
 ## failure modes
 
 Start with `deps doctor`: one command runs the reachability, store,
-version-skew, and discovery-clean checks below and prints one line per check,
-FAIL lines naming the cause. From an MCP client with no shell, the `deps_doctor` tool runs the same
-checks and returns the report as JSON. The paragraphs here cover what each
-failure means and what to do next.
+version-skew, discovery-clean, and registry-answered checks below and prints
+one line per check, FAIL lines naming the cause. From an MCP client with no
+shell, the `deps_doctor` tool runs the same checks and returns the report as
+JSON. The paragraphs here cover what each failure means and what to do next.
 
 A scan cycle failing with a config parse error: a pattern in `exclude_repos` or
 `exclude_paths` does not compile. The log line names the key and the pattern.
@@ -176,13 +176,16 @@ about one jsDelivr matched on GitHub. The npm package of that name may be
 unrelated, so npm withdrawing it says nothing about the file. A file named by
 an npm hash match is checked like any lockfile pin.
 
-A non-zero `registry_unknown`, also shown as a warn-level scan event and a
-callout on the web page: some registry lookups got no answer in the last
-check. Those dependencies keep the registry findings from the check before,
-so nothing reads as clean or fixed, and the next check asks again. The serve log line `deps: registry: N
-lookup(s) got no answer` names the first error. `host is not on the allow
-list` means the sandbox settings predate the registry hosts: re-run `ralph
-up`. A 429 or 5xx is the registry itself and passes.
+A registry-answered FAIL, or a non-zero `registry_unknown`, also shown as a
+warn-level scan event and a callout on the web page: some registry lookups got
+no answer in the last check. The doctor line counts them per ecosystem. Those
+dependencies keep the registry findings from the check before, so nothing
+reads as clean or fixed, and the next check asks again. The serve log line
+`deps: registry: N lookup(s) got no answer` names the first error. `host is
+not on the allow list` means the sandbox settings predate the registry hosts:
+re-run `ralph up`. A 429 or 5xx comes from the registry itself and clears at
+serve's next scheduled check, daily by default. The FAIL stays until then, or
+run `deps check` once the registry is back.
 
 A `deps-pypi-withdrawn` finding on a pin you install from a private index:
 PyPI does not serve that version because your index holds it. deps skips the
@@ -220,8 +223,8 @@ runs this comparison as its version-skew check.
 
 ## first moves
 
-1. `deps doctor`: serve reachable, store readable, version skew, and discovery
-   errors in one pass
+1. `deps doctor`: serve reachable, store readable, version skew, discovery
+   errors, and unanswered registry lookups in one pass
 2. If serve is unreachable: `t-man list`, then `t-man restart deps`
 3. On version skew: `t-man restart deps`, then `deps doctor` again
 4. Before treating a finding as real, check whether it sits in the dimmed
