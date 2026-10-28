@@ -782,12 +782,16 @@ started. `window` adds up every session the filters keep, past the limit,
 whole: sessions, active time, turns, edits, distinct files, tokens and cost, with
 `cost_main`, `cost_agents` and `repo_costs`. `repos` ignores the `repo`
 filter, so a page can offer every repo of the time window. A repository
-there counts each session that has it in `repos` or `cwd_repos`, or sends
-it a part of its cost in `repo_costs`, once even when two of those hold.
-The `repo` filter keeps sessions by the same rule (`chipRepos`), so every
-repo a row shows a badge for lists the row. So a chip's `sessions` is
-the filtered `window`'s, and its `cost` equals the filtered window's part
-for it and the sum of the filtered rows' `repo_cost`. A session kept only because it worked there adds its
+there counts each session that has it in `repos` or `cwd_repos`, once
+even when both hold. Every repository `repo_costs` names is one of those
+or a label: a part goes to an edit majority or to an agent's cwd
+repository. `chipRepos` still adds any other `repo_costs` repository as
+a guard, so a later change to the attribution rule cannot hide a session
+from a repo it sends cost to. The `repo` filter keeps sessions by the
+same rule, so every repo a row shows a badge for lists the row. So a
+chip's `sessions` is the filtered `window`'s, and its `cost` equals the
+filtered window's part for it and the sum of the filtered rows'
+`repo_cost`. A session kept only because it worked there adds its
 attributed part, often 0, never its whole cost.
 
 An agent row (`internal/server/agents.go`) is the main conversation
@@ -825,13 +829,13 @@ return, so keep it stable.
   A row has a repo badge, the title as the link, and a running or ended
   dot with how long ago the session was last active. The badge is the
   session's first repo and filters to it, with "+N" for the rest. The
-  repos it edited come first as solid badges, then its `cwd_repos`, and
-  any other repo `repo_costs` names, as hollow ones. So a session started
-  from a scratch directory shows the
-  repos its subagents worked in. The hover title lists the other edited
-  repos ("Also edited") and the worked-in ones ("Worked in"). "no repo"
-  shows only when `repos`, `cwd_repos` and the repos of `repo_costs` are
-  all empty.
+  repos it edited come first as solid badges, then its `cwd_repos` as
+  hollow ones. So a session started from a scratch directory shows the
+  repos its subagents worked in. A `repo_costs` repository outside both
+  would get a hollow badge too, though the attribution rule sends cost
+  nowhere else today. The hover title lists the other edited repos
+  ("Also edited") and the worked-in ones ("Worked in"). "no repo" shows
+  only when the session counts toward no repo.
   Small badges follow the title. A set entrypoint other than `cli` gets
   one: `headless` when it starts with `sdk-` (`claude -p` and the SDKs),
   else the value itself, such as a desktop app's or an IDE extension's.
@@ -856,10 +860,11 @@ return, so keep it stable.
   total in the hover title. The day rows then add those parts.
   `Show more` grows `limit`. The filters stay in the URL.
 - `/?session=<id>`: the title, a badge for every repo (the edited ones
-  solid, then the `cwd_repos` hollow), the entrypoint and tag badges, status, the active time over
-  the wall time ("active 1h 51m over 23h 05m (2 days)") and start time,
-  and a "Cost by repo" line with the session's `repo_costs`. Then a Trace
-  section, an Agents section, the turns in the order they started and the
+  solid, then the `cwd_repos` hollow), the entrypoint and tag badges,
+  status, the active time over the wall time
+  ("active 1h 51m over 23h 05m (2 days)") and start time, and a "Cost by
+  repo" line with the session's `repo_costs`. Then a Trace section, an
+  Agents section, the turns in the order they started and the
   worktrees. The Agents section lists the main conversation first, then
   each subagent with its type, model, the turns it ran under, time, calls,
   edits, tokens and cost; clicking the Cost heading sorts the subagents

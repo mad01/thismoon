@@ -338,7 +338,11 @@ func (s *Server) repoCounts(sessions []store.SessionSummary) []RepoCount {
 // own or a subagent's cwd repository (CwdRepos), and any other the
 // attribution rule sends a part of its cost to. So every repository its
 // row shows a badge for is here. The repo filter keeps a session by them
-// and a repo chip counts it by them.
+// and a repo chip counts it by them. The rule sends cost only to an edit
+// majority (in Repos), an agent's cwd repository (in CwdRepos) or a
+// label, so the RepoUsage loop adds nothing today. It stays as a guard: a
+// later change to the rule must not hide a session from a repository it
+// sends cost to.
 func chipRepos(sum store.SessionSummary) []string {
 	repos := slices.Concat(sum.Repos, sum.CwdRepos)
 	for _, p := range sum.RepoUsage {

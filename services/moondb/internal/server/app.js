@@ -886,9 +886,12 @@
     var href = '?' + qs({ repo: all[0], since: state.since === DEFAULT_SINCE ? '' : state.since });
     var first = edited.length ? repoBadge(edited[0], (s.repo_names || edited)[0], href)
       : workedBadge(worked[0], href);
+    // Like "Also edited", "Worked in" names only the repos the badge does
+    // not show: with no edited repo, the badge is the first worked-in one.
+    var alsoWorked = all.slice(Math.max(edited.length, 1));
     first.title = ['Show only ' + all[0],
       edited.length > 1 ? 'Also edited: ' + edited.slice(1).join(', ') : '',
-      worked.length ? 'Worked in: ' + all.slice(edited.length).join(', ') : ''
+      alsoWorked.length ? 'Worked in: ' + alsoWorked.join(', ') : ''
     ].filter(Boolean).join('\n');
     return el('span', { class: 'row ls-repos' }, [first,
       all.length > 1 ? el('span', { class: 'ls-more' }, '+' + (all.length - 1)) : null]);
@@ -898,7 +901,9 @@
   // them, each with its short name: its cwd_repos (its own cwd's and its
   // subagents'), then any repo its repo_costs sends cost to that it
   // neither edited nor worked in, so the badges cover every repo the repo
-  // filter lists it under.
+  // filter lists it under. The attribution rule sends cost only to an
+  // edited repo, an agent's cwd repo or a label, so that second leg finds
+  // nothing today; it guards against a later change to the rule.
   function workedRepos(s) {
     var edited = s.repos || [];
     var names = s.cwd_repo_names || [];

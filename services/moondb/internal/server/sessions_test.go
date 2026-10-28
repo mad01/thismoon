@@ -577,12 +577,24 @@ func TestCwdReposCount(t *testing.T) {
 	for id, want := range wantRow {
 		r := rows[id]
 		if !slices.Equal(r.CwdRepos, want[0]) || !slices.Equal(r.CwdRepoNames, want[1]) {
-			t.Errorf("%s: cwd_repos %v (%v), want %v (%v)", id, r.CwdRepos, r.CwdRepoNames, want[0], want[1])
+			t.Errorf(
+				"%s: cwd_repos %v (%v), want %v (%v)",
+				id,
+				r.CwdRepos,
+				r.CwdRepoNames,
+				want[0],
+				want[1],
+			)
 		}
 	}
 	if quiet := rows[quietID]; len(quiet.Repos) != 0 || quiet.Entrypoint != headlessCLI ||
 		!slices.Equal(quiet.Tags, []string{"eval"}) {
-		t.Errorf("quiet row repos %v entrypoint %q tags %v", quiet.Repos, quiet.Entrypoint, quiet.Tags)
+		t.Errorf(
+			"quiet row repos %v entrypoint %q tags %v",
+			quiet.Repos,
+			quiet.Entrypoint,
+			quiet.Tags,
+		)
 	}
 	if old := rows[servertest.OldSession]; old.CwdRepos != nil || old.CwdRepoNames != nil ||
 		old.Entrypoint != "" || old.Tags != nil {
@@ -599,7 +611,11 @@ func TestCwdReposCount(t *testing.T) {
 		}
 	}
 	if scoutCost == nil {
-		t.Fatalf("scout agent row %+v: want a priced cost attributed to %s", view.Agents, fourthRepo)
+		t.Fatalf(
+			"scout agent row %+v: want a priced cost attributed to %s",
+			view.Agents,
+			fourthRepo,
+		)
 	}
 
 	chips := map[string]RepoCount{}
@@ -625,10 +641,21 @@ func TestCwdReposCount(t *testing.T) {
 		}
 		slices.Sort(ids)
 		if !slices.Equal(ids, want) || chip.Sessions != len(want) {
-			t.Errorf("%s: filtered rows %v, chip counts %d; want %v", repo, ids, chip.Sessions, want)
+			t.Errorf(
+				"%s: filtered rows %v, chip counts %d; want %v",
+				repo,
+				ids,
+				chip.Sessions,
+				want,
+			)
 		}
 		if (chip.Cost == nil && sum != 0) || (chip.Cost != nil && !near(sum, *chip.Cost)) {
-			t.Errorf("%s: chip cost %v, filtered rows add %v; want one number", repo, chip.Cost, sum)
+			t.Errorf(
+				"%s: chip cost %v, filtered rows add %v; want one number",
+				repo,
+				chip.Cost,
+				sum,
+			)
 		}
 	}
 	// quiet's and editor's main conversations send their cost elsewhere, so
@@ -640,6 +667,76 @@ func TestCwdReposCount(t *testing.T) {
 		t.Errorf("editor session's repo_cost for %s %v, want a real zero", thirdRepo, p)
 	}
 	if p := parts[fourthRepo][scratchID]; p == nil || !near(*p, *scoutCost) {
-		t.Errorf("scratch session's repo_cost for %s %v, want the scout's %v", fourthRepo, p, *scoutCost)
+		t.Errorf(
+			"scratch session's repo_cost for %s %v, want the scout's %v",
+			fourthRepo,
+			p,
+			*scoutCost,
+		)
+	}
+}
+
+// TestUntotalledAgentCountsItsRepo: a session whose only link to a
+// repository is a subagent with its cwd there and no totals yet counts
+// toward that repository before the totals backfill reaches the agent.
+// The repo filter keeps it and the chip counts it, but it adds no cost
+// there: its repo_cost is a real zero when the row is priced and nil when
+// not, and the chip's cost leaves it out.
+func TestUntotalledAgentCountsItsRepo(t *testing.T) {
+	h := newHarness(t)
+	const (
+		fifthRepo  = "example.com/owner/fifth"
+		pricedID   = "sess-waiting-priced"
+		unpricedID = "sess-waiting-unpriced"
+	)
+	fifth := store.Location{Repo: fifthRepo, Worktree: "/home/.worktrees/fifth/scout"}
+	// waiting adds a session that starts outside any repository, edits
+	// nothing and runs one subagent in fifth that has no totals yet. Its
+	// one turn has totals when priced.
+	waiting := func(id string, priced bool) {
+		turn := servertest.PricedTurn(id+"-turn", id)
+		if !priced {
+			turn.Totals = nil
+		}
+		agent := servertest.PricedAgent(id+"-agent", id, turn.ID, fifth)
+		agent.Totals = nil
+		h.store.Add(
+			store.Session{
+				ID: id, Harness: "test-harness", Cwd: "/home/.tmp/scratch",
+				StartedAt: servertest.T0,
+			},
+			[]store.Turn{turn}, []store.Agent{agent}, nil,
+		)
+	}
+	waiting(pricedID, true)
+	waiting(unpricedID, false)
+
+	var chip RepoCount
+	for _, r := range h.sessionList(t, "").Repos {
+		if r.Repo == fifthRepo {
+			chip = r
+		}
+	}
+	rows := map[string]SessionSummary{}
+	ids := []string{}
+	for _, r := range h.sessionList(t, "?repo="+fifthRepo).Sessions {
+		rows[r.ID] = r
+		ids = append(ids, r.ID)
+	}
+	slices.Sort(ids)
+	if want := []string{pricedID, unpricedID}; !slices.Equal(ids, want) ||
+		chip.Sessions != len(want) {
+		t.Errorf("filtered rows %v, chip counts %d; want %v", ids, chip.Sessions, want)
+	}
+	if r := rows[pricedID]; r.Cost == nil || r.RepoCost == nil || *r.RepoCost != 0 {
+		t.Errorf("priced session's cost %v, repo_cost %v; want a cost and a real zero",
+			r.Cost, r.RepoCost)
+	}
+	if r := rows[unpricedID]; r.Cost != nil || r.RepoCost != nil {
+		t.Errorf("unpriced session's cost %v, repo_cost %v; want both nil", r.Cost, r.RepoCost)
+	}
+	if chip.Cost != nil || chip.Unpriced != nil {
+		t.Errorf("chip cost %v (unpriced %v), want no part for agents without totals",
+			chip.Cost, chip.Unpriced)
 	}
 }

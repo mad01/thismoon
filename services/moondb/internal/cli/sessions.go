@@ -36,8 +36,9 @@ takes an RFC 3339 time or a span before now: 90m, 24h, 7d.
 
 --repo keeps the sessions that edited the repository, worked in it (their
 cwd or a subagent's cwd sat in it) or attribute a part of their cost to
-it, and adds two columns. COST is the whole session's cost. ATTRIBUTED is the part the attribution rule gives the repository,
-"unknown" when no price covers that part. Each subagent's cost goes to
+it, and adds two columns. COST is the whole session's cost. ATTRIBUTED
+is the part the attribution rule gives the repository, "unknown" when no
+price covers that part. Each subagent's cost goes to
 the repository most of its edits touched, else its cwd's repository,
 else no_repo. The main conversation's goes to the repository most of its
 own edits touched, else to orchestration.`,
