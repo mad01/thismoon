@@ -11,6 +11,7 @@ import (
 
 	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/kit/mcptest"
+	"github.com/mad01/thismoon/services/deps/internal/api"
 	"github.com/mad01/thismoon/services/deps/internal/client"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
@@ -90,6 +91,24 @@ func TestListFlaggedCarriesDiscoveryErrors(t *testing.T) {
 	}
 	if len(out.DiscoveryErrors) != 1 || out.DiscoveryErrors[0] != failed {
 		t.Errorf("discovery_errors = %+v, want [%+v]", out.DiscoveryErrors, failed)
+	}
+}
+
+func TestListFlaggedCarriesKind(t *testing.T) {
+	h := newStubHandlers(
+		t,
+		client.CheckResult{Total: 1, FlaggedCount: 1, Flagged: []api.Dependency{{
+			Ecosystem: "npm", Name: "chalk", Version: "5.6.1",
+			Advisories: []api.Advisory{{ID: "MAL-2025-46969", Kind: store.KindMalicious}},
+		}}},
+	)
+
+	_, out, err := h.handleListFlagged(context.Background(), nil, struct{}{})
+	if err != nil {
+		t.Fatalf("list flagged: %v", err)
+	}
+	if len(out.Flagged) != 1 || out.Flagged[0].Advisories[0].Kind != store.KindMalicious {
+		t.Errorf("flagged = %+v, want chalk with kind malicious", out.Flagged)
 	}
 }
 

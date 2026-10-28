@@ -1,12 +1,21 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/services/deps/internal/alert"
+	"github.com/mad01/thismoon/services/deps/internal/discover"
+	"github.com/mad01/thismoon/services/deps/internal/osv"
+	"github.com/mad01/thismoon/services/deps/internal/scanner"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
 
@@ -127,11 +136,66 @@ func TestAPIDeps(t *testing.T) {
 		`"scanned_at"`, `"total"`, `"flagged_count"`, `"deps"`,
 		`"ecosystem"`, `"name"`, `"version"`, `"repo"`, `"direct"`,
 		`"advisories"`, `"id"`, `"fixed_version"`, `"key"`, `"resolved"`,
-		`"imported"`,
+		`"imported"`, `"kind"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("api/deps JSON missing field %s", want)
 		}
+	}
+}
+
+// TestAPIFlaggedByKind: GET /api/flagged lists the malicious finding first and
+// carries every advisory's kind. flagged_count takes the malicious finding on a
+// dep that isn't compiled in and the compiled-in vulnerability, never the signal.
+func TestAPIFlaggedByKind(t *testing.T) {
+	st, err := store.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Save([]store.Dependency{
+		{
+			Ecosystem: "Go", Name: "golang.org/x/net", Version: "0.17.0",
+			Repo: "/home/u/code/widget", Imported: true,
+			Advisories: []store.Advisory{{ID: "GO-2024-0001", Severity: "HIGH"}},
+		},
+		{
+			Ecosystem: "npm", Name: "left-pad", Version: "1.2.0",
+			Repo: "/home/u/code/widget", Imported: true,
+			Advisories: []store.Advisory{{ID: "deps-movable-ref", Kind: store.KindSignal}},
+		},
+		{
+			Ecosystem: "npm", Name: "chalk", Version: "5.6.1",
+			Repo: "/home/u/code/widget", Imported: false,
+			Advisories: []store.Advisory{{ID: "MAL-2025-46969", Kind: store.KindMalicious}},
+		},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	New(st, nil, testInfo).Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/flagged", nil))
+
+	var got struct {
+		FlaggedCount int `json:"flagged_count"`
+		Flagged      []struct {
+			Name       string `json:"name"`
+			Advisories []struct {
+				Kind string `json:"kind"`
+			} `json:"advisories"`
+		} `json:"flagged"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.FlaggedCount != 2 {
+		t.Errorf("flagged_count = %d, want 2 (malicious + vuln, not the signal)", got.FlaggedCount)
+	}
+	var kinds []string
+	for _, d := range got.Flagged {
+		kinds = append(kinds, d.Name+"="+d.Advisories[0].Kind)
+	}
+	want := "chalk=malicious golang.org/x/net=vuln left-pad=signal"
+	if strings.Join(kinds, " ") != want {
+		t.Errorf("flagged = %v, want %s", kinds, want)
 	}
 }
 
@@ -166,6 +230,129 @@ func TestAPIDepsExcludesNonImportedFromFlagged(t *testing.T) {
 	}
 	if got.FlaggedCount != 0 {
 		t.Errorf("flagged_count = %d, want 0 (graph-only dep excluded)", got.FlaggedCount)
+	}
+}
+
+// recordingNotifier records each banner title instead of shelling out to
+// osascript.
+type recordingNotifier struct{ titles []string }
+
+func (n *recordingNotifier) Notify(title, _ string) error {
+	n.titles = append(n.titles, title)
+	return nil
+}
+
+// stubEco discovers a fixed set of packages in every repo.
+type stubEco struct{ pkgs []discover.Package }
+
+func (stubEco) Name() string { return "npm" }
+
+func (s stubEco) Discover(string, discover.Options) ([]discover.Package, error) {
+	return s.pkgs, nil
+}
+
+// malChecker reports one MAL- finding for chalk and nothing else.
+type malChecker struct{}
+
+func (malChecker) Check(_ context.Context, queries []osv.Query) ([][]store.Advisory, error) {
+	out := make([][]store.Advisory, len(queries))
+	for i, q := range queries {
+		if q.Name == "chalk" {
+			out[i] = []store.Advisory{{ID: "MAL-2025-46969", Kind: store.KindMalicious}}
+		}
+	}
+	return out, nil
+}
+
+// chalkEngine is an engine over st whose one repo pins chalk@5.6.1, which
+// malChecker flags as malicious, delivering banners through n.
+func chalkEngine(st *store.Store, n alert.Notifier) *scanner.Engine {
+	return &scanner.Engine{
+		Prepare: func() ([]string, discover.Options, error) {
+			return []string{"/home/u/code/widget"}, discover.Options{}, nil
+		},
+		Ecosystems: []discover.Ecosystem{stubEco{pkgs: []discover.Package{
+			{Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Imported: true},
+		}}},
+		Checker:  malChecker{},
+		Notifier: n,
+		Store:    st,
+	}
+}
+
+// TestManualCheckNotifiesOnce: a manual check that finds a new malicious
+// finding fires its banner, on the full and the per-repo path alike, and a
+// second check does not fire it again. A manual check resets the scan time,
+// so the loop would skip it and no banner would ever fire.
+func TestManualCheckNotifiesOnce(t *testing.T) {
+	for _, path := range []string{"/api/check", "/api/check?repo=widget"} {
+		t.Run(path, func(t *testing.T) {
+			st, err := store.New(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			n := &recordingNotifier{}
+			h := New(st, chalkEngine(st, n), testInfo).Handler()
+			for range 2 {
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))
+				if rec.Code != 200 {
+					t.Fatalf("POST %s = %d: %s", path, rec.Code, rec.Body)
+				}
+			}
+			want := []string{"deps: malicious package chalk@5.6.1"}
+			if !slices.Equal(n.titles, want) {
+				t.Errorf("banners = %q, want %q once", n.titles, want)
+			}
+		})
+	}
+}
+
+// notifierFunc delivers each banner by calling the function, in place of
+// osascript.
+type notifierFunc func() error
+
+func (f notifierFunc) Notify(string, string) error { return f() }
+
+// TestManualCheckKeepsResultWhenNotifyFails: the check is saved before the
+// banners fire, so a failed banner or a failed write of the notified set still
+// answers 200 with the flagged list. A 500 would show "Scan failed" and hide
+// the finding.
+func TestManualCheckKeepsResultWhenNotifyFails(t *testing.T) {
+	cases := map[string]func(workdir string) error{
+		"notifier fails": func(string) error { return errors.New("osascript still running") },
+		// The banner goes out, then a directory where the store writes its temp
+		// file makes the save of the notified set fail.
+		"store fails": func(workdir string) error {
+			return os.Mkdir(filepath.Join(workdir, "scan.json.tmp"), 0o755)
+		},
+	}
+	for name, notify := range cases {
+		t.Run(name, func(t *testing.T) {
+			workdir := t.TempDir()
+			st, err := store.New(workdir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			n := notifierFunc(func() error { return notify(workdir) })
+			rec := httptest.NewRecorder()
+			New(st, chalkEngine(st, n), testInfo).Handler().
+				ServeHTTP(rec, httptest.NewRequest("POST", "/api/check", nil))
+			if rec.Code != 200 {
+				t.Fatalf("POST /api/check = %d: %s", rec.Code, rec.Body)
+			}
+			var got struct {
+				Flagged []struct {
+					Name string `json:"name"`
+				} `json:"flagged"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Flagged) != 1 || got.Flagged[0].Name != "chalk" {
+				t.Errorf("flagged = %+v, want chalk", got.Flagged)
+			}
+		})
 	}
 }
 

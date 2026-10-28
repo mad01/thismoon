@@ -114,6 +114,9 @@ func printFlagged(cmd *cobra.Command, total int, flagged []api.Dependency) {
 	for _, d := range flagged {
 		for _, a := range d.Advisories {
 			line := fmt.Sprintf("  %s %s@%s  %s", d.Ecosystem, d.Name, d.Version, a.ID)
+			if a.Kind == store.KindMalicious || a.Kind == store.KindSignal {
+				line += " (" + string(a.Kind) + ")"
+			}
 			if a.Severity != "" {
 				line += " [" + a.Severity + "]"
 			}

@@ -4,7 +4,8 @@ deps is a supply-chain scanner. It discovers every external dependency across
 the catalog-registered repos (Go modules, npm lockfiles, exact Python pins,
 Swift resolved files). It checks each pinned version against the OSV.dev
 advisory database and fires one coalesced macOS notification when packages
-are newly flagged. Findings live on a local web page (default {{.BaseURL}}).
+are newly flagged, plus a separate one for a malicious package. Findings live
+on a local web page (default {{.BaseURL}}).
 
 ## how it runs
 
@@ -75,6 +76,21 @@ resolve <key>`) instead. Reachability fails open: when `go list -deps` errors,
 every dep counts as imported, so a real advisory is never hidden. npm, PyPI,
 and Swift deps always count as imported.
 
+A finding of kind `malicious` (an OSV MAL- record): that version was published
+with malicious code. Its install scripts may have run even if nothing compiles
+it in, so it skips the "Not compiled in" section, sorts first, and fires its
+own banner. Treat it before anything else: check whether it was installed on
+this machine, rotate the credentials it could reach, then move the pin off
+that version. Resolve it only after that; the web page asks to confirm.
+
+A finding with an id but no summary, severity, or fix: OSV's record fetch for
+that id failed during the scan, and the serve log names it. The finding is
+kept so it is not lost, with its kind intact; the next check fills it in.
+
+A finding of kind `signal`, in the "Warning signs" section: a deps rule
+flagged something that is not an advisory. It never notifies and never counts
+toward `flagged_count`, and it resolves by key like any other finding.
+
 An acknowledged advisory came back: resolution is version-scoped by design.
 The key embeds the exact version, so bumping the package (or a new advisory
 landing on it) resurfaces the finding. Resolve it again if it still does not
@@ -83,7 +99,8 @@ apply.
 Large scan output: `deps check` and `deps_check` return every flagged dep, and
 the full inventory can be big. Query the persisted store file with jq instead
 of re-scanning, for example
-`jq '.deps[] | select(.advisories != null)' scan.json`.
+`jq '.deps[] | select(.advisories != null)' scan.json`, or only the malicious
+ones with `jq '.deps[] | select(any(.advisories[]?; .kind == "malicious"))' scan.json`.
 
 ## version skew
 

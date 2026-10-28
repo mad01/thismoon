@@ -20,9 +20,62 @@ import (
 // fileName is the JSON file under the workdir that holds the latest scan.
 const fileName = "scan.json"
 
-// Advisory is a single OSV advisory affecting a dependency version.
+// Kind classifies a finding, and the kind alone decides how deps surfaces it.
+// The set is closed: a producer picks one of the constants below. An empty
+// kind (a scan.json written before kinds existed, or a producer that left it
+// unset) is derived from the finding's id by KindForID.
+type Kind string
+
+const (
+	// KindVuln is a known vulnerability from an advisory database. It counts as
+	// active and notifies in the coalesced summary banner, but only while the
+	// dependency is compiled in (Dependency.Imported).
+	KindVuln Kind = "vuln"
+	// KindMalicious is a version known to be malicious: an OSV MAL- record, or
+	// a version another producer's rule marks as such. It counts as active and
+	// fires its own banner even when the dependency is not compiled in,
+	// because its install scripts may already have run.
+	KindMalicious Kind = "malicious"
+	// KindSignal is a warning sign that is not an advisory. It shows on the
+	// page only: it never notifies and never counts as active, though it can
+	// still be resolved by key. Its Advisory.ID is a rule id with no ':' in it
+	// (such as deps-movable-ref), so the FlagKey stays parseable.
+	KindSignal Kind = "signal"
+)
+
+// KindForID classifies an OSV advisory by its id. OSV serves the OpenSSF
+// malicious-packages database as MAL- records, GitHub's malware advisories
+// included, so the prefix alone marks a malicious version. It needs no fetched
+// record, so a finding whose record failed to load keeps its kind, and a
+// finding saved before kinds existed loads with the kind it would get today.
+func KindForID(id string) Kind {
+	if strings.HasPrefix(id, "MAL-") {
+		return KindMalicious
+	}
+	return KindVuln
+}
+
+// Alerts reports whether a finding of kind k is a real exposure on a
+// dependency that is, or is not, compiled in: one that notifies when new and
+// counts as active until resolved. It is the one rule PendingFlags and the API
+// counts share; the web page mirrors it.
+func (k Kind) Alerts(imported bool) bool {
+	switch k {
+	case KindMalicious:
+		return true
+	case KindSignal:
+		return false
+	default:
+		return imported
+	}
+}
+
+// Advisory is one finding against a dependency version: an OSV advisory, or a
+// signal a deps rule raised. Kind says which; ID is the advisory id or the
+// rule id.
 type Advisory struct {
 	ID           string `json:"id"`
+	Kind         Kind   `json:"kind"`
 	Summary      string `json:"summary,omitempty"`
 	Severity     string `json:"severity,omitempty"`
 	FixedVersion string `json:"fixed_version,omitempty"`
@@ -40,8 +93,9 @@ type Dependency struct {
 	// Imported is true when the dependency contributes at least one package to
 	// the main module's build (Go) — i.e. it is actually compiled in, not a
 	// graph-only transitive. Ecosystems where reachability isn't computed (npm,
-	// PyPI) leave it true. A flagged-but-not-imported dep is informational only:
-	// it doesn't count as active and never notifies.
+	// PyPI) leave it true. A vulnerability on a not-imported dep is
+	// informational only: it doesn't count as active and never notifies. A
+	// malicious finding ignores this gate (see Kind.Alerts).
 	Imported   bool       `json:"imported"`
 	Advisories []Advisory `json:"advisories,omitempty"`
 }
@@ -142,7 +196,21 @@ func readScan(path string) (Scan, error) {
 	if err := json.Unmarshal(raw, &sc); err != nil {
 		return sc, fmt.Errorf("parse store: %w", err)
 	}
+	defaultKinds(sc.Deps)
 	return sc, nil
+}
+
+// defaultKinds sets every empty Advisory.Kind in deps from its id with
+// KindForID, in place. A scan.json written before kinds existed then loads a
+// MAL- finding as malicious, so it surfaces and notifies like one found today.
+func defaultKinds(deps []Dependency) {
+	for i := range deps {
+		for j := range deps[i].Advisories {
+			if a := &deps[i].Advisories[j]; a.Kind == "" {
+				a.Kind = KindForID(a.ID)
+			}
+		}
+	}
 }
 
 func (s *Store) load() error {
@@ -200,6 +268,7 @@ func (s *Store) save() error {
 func (s *Store) Save(deps []Dependency, discErrs []DiscoveryError) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defaultKinds(deps)
 	s.deps = deps
 	s.discErrs = discErrs
 	s.scanned = s.now()
@@ -212,6 +281,7 @@ func (s *Store) Save(deps []Dependency, discErrs []DiscoveryError) error {
 func (s *Store) SaveRepo(repo string, deps []Dependency, discErrs []DiscoveryError) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defaultKinds(deps)
 	kept := make([]Dependency, 0, len(s.deps))
 	for _, d := range s.deps {
 		if d.Repo != repo {
@@ -278,8 +348,8 @@ type ResolvedItem struct {
 }
 
 // parseKey splits a FlagKey (eco:name@version:advisoryID) back into parts. Module
-// names, versions, ecosystems, and advisory IDs contain no ':' and the name/
-// version split is the last '@', so the bounds are unambiguous.
+// names, versions, ecosystems, advisory IDs and signal rule ids contain no ':'
+// and the name/version split is the last '@', so the bounds are unambiguous.
 func parseKey(k string) (ResolvedItem, bool) {
 	eco, rest, ok := strings.Cut(k, ":")
 	if !ok {
@@ -366,20 +436,20 @@ func (s *Store) Resolve(keys []string) (int, error) {
 }
 
 // PendingFlags returns each advisory-against-dependency that has neither been
-// notified nor resolved — the set the notifier should fire on. It does not
-// mutate the notified set; the caller marks the flags it delivered via
-// MarkNotified, so a failed notification retries.
+// notified nor resolved: the set the notifier should fire on. Only findings
+// whose kind Alerts qualify: a signal never notifies, and neither does a
+// vulnerability on a graph-only dependency (in the module graph but not
+// compiled in). It does not mutate the notified set; the caller marks the
+// flags it delivered via MarkNotified, so a failed notification retries.
 func (s *Store) PendingFlags() []Flag {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var pending []Flag
 	for _, d := range s.deps {
-		if !d.Imported {
-			// Graph-only transitive: in the module graph but not compiled in.
-			// Not a real exposure — never notify on it.
-			continue
-		}
 		for _, a := range d.Advisories {
+			if !a.Kind.Alerts(d.Imported) {
+				continue
+			}
 			key := FlagKey(d.Ecosystem, d.Name, d.Version, a.ID)
 			if _, ok := s.notified[key]; ok {
 				continue

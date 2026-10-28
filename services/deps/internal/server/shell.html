@@ -55,7 +55,7 @@
 .ack[open] .ack-summary::before{transform:rotate(90deg)}
 .ack-list{margin-top:0.75rem;margin-bottom:0}
 .notcompiled .ack-list{opacity:0.65}
-.notcompiled .note{padding:0.5rem 0 0.25rem}
+.ack .note{padding:0.5rem 0 0.25rem}
 wk-callout .disc-errs{margin:0.5rem 0 0;padding-left:1.25rem;font-size:0.9rem}
 wk-callout .disc-errs li{margin:0.15rem 0;overflow-wrap:anywhere}
 button[disabled]{opacity:0.5;cursor:default}
@@ -65,6 +65,22 @@ button[disabled]{opacity:0.5;cursor:default}
 <wk-header brand="deps" title="Dependencies"><a data-nav href="/webkit/themes">Themes</a></wk-header>
 <main class="wrap"><div id="app"></div></main>
 <wk-toast-host id="toast-host"></wk-toast-host>
+<wk-modal hidden id="resolve-modal">
+  <wk-modal-panel role="dialog" aria-modal="true" aria-labelledby="resolve-heading">
+    <wk-modal-head>
+      <h2 id="resolve-heading">Resolve a malicious package?</h2>
+      <button class="btn btn-ghost" id="resolve-x" aria-label="Close">✕</button>
+    </wk-modal-head>
+    <wk-modal-body>
+      <p><strong id="resolve-pkg"></strong> is a known malicious version. Resolving it stops the alert for this version.</p>
+      <p>Resolve it only after you have checked whether it was installed and rotated the credentials it could reach.</p>
+    </wk-modal-body>
+    <wk-modal-actions>
+      <wk-button variant="ghost" id="resolve-cancel">Cancel</wk-button>
+      <wk-button variant="danger" id="resolve-confirm">Resolve</wk-button>
+    </wk-modal-actions>
+  </wk-modal-panel>
+</wk-modal>
 <script src="/webkit/webkit.js"></script>
 <script src="/app.js"></script>
 </body>
