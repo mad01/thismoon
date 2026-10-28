@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.0](https://github.com/mad01/thismoon/compare/deps/v0.14.0...deps/v0.15.0) (2026-10-28)
+
+
+### Features
+
+* **deps:** fail doctor when registry lookups go unanswered ([#324](https://github.com/mad01/thismoon/issues/324)) ([b60d1b3](https://github.com/mad01/thismoon/commit/b60d1b35e284f1370ae630e864099444bb54f4ce))
+
+
+### Bug Fixes
+
+* **deps:** match OSV Action advisories filed under a sub-path or URL ([#326](https://github.com/mad01/thismoon/issues/326)) ([89d126a](https://github.com/mad01/thismoon/commit/89d126a9f198af8c5295275543f53066378cb49b))
+
 ## [0.14.0](https://github.com/mad01/thismoon/compare/deps/v0.13.0...deps/v0.14.0) (2026-10-28)
 
 
