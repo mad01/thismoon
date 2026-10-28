@@ -2,8 +2,8 @@
 // cost and time went to, how its tool calls went, whether its csl searches
 // came back empty or cut, how much its reads pulled in, which belt hints it
 // was shown, and how its subagents ran. An eval suite scores sessions
-// against it, so the JSON shape carries a Version and changes by adding
-// fields.
+// against it, so the JSON shape carries a Version. Adding a field keeps the
+// Version; a field that goes away or changes meaning raises it.
 //
 // Build is a pure function of a session trace, the tool calls parsed from
 // the session's transcript lines (ParseCalls), and what the events service
@@ -17,8 +17,8 @@ import (
 )
 
 // Version is the scorecard's JSON shape. Raise it when a field changes
-// meaning or goes away; a new field keeps it. Version 2 dropped the
-// assertion-store source and the hints block it fed.
+// meaning or goes away; a new field keeps it. Version 2 dropped sources.kof
+// and hints.kof.
 const Version = 2
 
 // Scorecard is one session's account of its context use.

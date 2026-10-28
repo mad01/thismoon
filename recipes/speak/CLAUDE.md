@@ -71,9 +71,9 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   <bun|node>` to stderr. `srtspec explain <label>` shows the merged result.
   Settings that are the same on every machine are rendered from each
   service's `spec.access` manifest and ship beside its recipe in this repo:
-  events, moondb, present serve, deps, status and speak-web. The rest come from the consuming repo. The launcher's rules
-  and the bun measurements: `tools/srtspec/CLAUDE.md` and
-  `docs/SANDBOXING.md`, "bun or node".
+  events, moondb, present serve, deps, status and speak-web. The rest come
+  from the consuming repo. The launcher's rules and the bun measurements:
+  `tools/srtspec/CLAUDE.md` and `docs/SANDBOXING.md`, "bun or node".
 - **`testdata/srt-local/`**: the expansion-layer cases (`ok-*` must launch,
   `refuse-*` must exit 1 before srt starts) that srtspec's launch and layers
   tests both run (`go test ./tools/srtspec/...`). Add a case there, not in

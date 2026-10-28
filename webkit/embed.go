@@ -1,10 +1,11 @@
 // Package webkit ships the shared web chrome — palette, header, and the
 // font/fixation/size/reload/theme controls — used by the mad01 local web tools
-// (present, csl, deps, events, moondb, speak, status). The CSS/JS are authored in TypeScript under src/ and
-// compiled to dist/ (committed), which is embedded here so consumers need no
-// node toolchain. Mount Handler() at "GET /webkit/" to serve them. The palette
-// is a collection of theme families (src/themes/*.json) compiled into the
-// stylesheet; Themes() and Roles() expose the same collection to Go.
+// (present, csl, deps, events, moondb, speak, status). The CSS/JS are
+// authored in TypeScript under src/ and compiled to dist/ (committed), which
+// is embedded here so consumers need no node toolchain. Mount Handler() at
+// "GET /webkit/" to serve them. The palette is a collection of theme families
+// (src/themes/*.json) compiled into the stylesheet; Themes() and Roles()
+// expose the same collection to Go.
 package webkit
 
 import (

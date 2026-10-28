@@ -495,9 +495,9 @@ transcript chunk, edit count, times, label and cut lines, at most
 
 `query.Service.SessionScorecard` joins a session's trace with two more
 inputs and `scorecard.Build` turns them into one JSON object, versioned by
-`scorecard.Version`. The eval suite scores against it, so add fields and
-never rename one. Version 2 dropped the assertion-store source and the
-hints block it fed.
+`scorecard.Version`. The eval suite scores against it: adding a field
+keeps the version, and a field that goes away or changes meaning raises
+it. Version 2 dropped `sources.kof` and `hints.kof`.
 
 - **Tool calls** come from the turns' and agents' transcript chunks
   (`scorecard.ParseCalls`): each `tool_use` paired with its `tool_result`,

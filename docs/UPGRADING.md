@@ -10,16 +10,15 @@ Change: thismoon #332. The catalog and keeper-of-facts (kof) services leave the 
 
 Run, in order:
 
-1. `ralph up --enable-cleanup`. The first apply after a recipe removal needs the flag: it runs the recipes' `pre_uninstall` hooks, which stop both agents, and removes the binaries.
-2. If `t-man list` still shows them, run `t-man remove catalog-web` and `t-man remove keeper-of-facts`.
-3. Delete the srt links `~/.config/srt/catalog-web.json` and `~/.config/srt/keeper-of-facts.json`, and any copies of them under `~/.config/srt/merged/`.
-4. Run `claude mcp remove --scope user kof`. agent-sync registers servers at user scope and does not prune, so dropping kof from `servers.json` leaves it registered. On Codex, delete the `[mcp_servers.kof]` table from `~/.codex/config.toml`.
-5. In the consuming repo, drop the `kof` and `catalog` routes from the d-man routes file.
-6. In the consuming repo's belt config, delete every `hints.kof-*` block (kof-consult, kof-assertions, kof-deposit). The new belt still runs its guards and hooks with an unknown hint id in the config, but `belt doctor` reports it and exits 1.
+1. In the consuming repo, drop the `kof` and `catalog` routes from the d-man routes file. In its belt config, delete every `hints.kof-*` block (kof-consult, kof-assertions, kof-deposit). The new belt still runs its guards and hooks with an unknown hint id in the config, but `belt doctor` reports it and exits 1.
+2. `ralph up --enable-cleanup`. The first apply after a recipe removal needs the flag. It runs the recipes' `pre_uninstall` hooks, which stop both agents. It also removes the binaries and applies the route and config edits.
+3. If `t-man list` still shows them, run `t-man remove catalog-web` and `t-man remove keeper-of-facts`.
+4. Delete the srt links `~/.config/srt/catalog-web.json` and `~/.config/srt/keeper-of-facts.json`, and any copies of them under `~/.config/srt/merged/`.
+5. Run `claude mcp remove --scope user kof`. agent-sync's `mcp.prune` is off by default, and with it off, dropping kof from `servers.json` leaves the server registered. On Codex, delete the `[mcp_servers.kof]` table from `~/.codex/config.toml`.
 
 The assertion store stays at `~/.local/share/kof`, and the t-man logs stay under `~/Library/Logs/keeper-of-facts` and `~/Library/Logs/catalog-web`. Nothing reads them now. Whether to delete them is your call.
 
-Verify: `t-man list` shows neither `catalog-web` nor `keeper-of-facts`. `claude mcp list` has no `kof` entry. `belt doctor` reports no kof probe and no unknown-hint warning. `moondb scorecard <session-id> --json` reports `"version": 2`.
+Verify: `t-man list` shows neither `catalog-web` nor `keeper-of-facts`. d-man's managed block no longer names the routes, so `grep -E 'kof\.this|catalog\.this' /etc/hosts` prints nothing. `claude mcp list` has no `kof` entry. `belt doctor` reports no kof probe and no unknown-hint warning. `moondb scorecard <session-id> --json` reports `"version": 2`.
 
 ## 2026-10-28 moondb: sessions keep their cwd repo, entrypoint and tags
 

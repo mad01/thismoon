@@ -117,14 +117,14 @@ func TestInstructions(t *testing.T) {
 		},
 		{
 			name: "doctor tool leads the recovery line",
-			facts: Facts{
-				Name: "moondb", Bin: "moondb",
-				Purpose: "edit history between commits", BaseURL: "http://moondb.this",
-				HasDoctor: true, MCPDoctorTool: "moondb_doctor",
-			},
-			want: "moondb: edit history between commits.\n" +
-				"Tools call the local moondb service (default http://moondb.this) via this stdio shim; the service must be running.\n" +
-				"On any tool error or unexpected empty result: call 'moondb_doctor' or run 'moondb doctor'. Full doc: 'moondb docs'.",
+			facts: func() Facts {
+				f := splitFacts
+				f.MCPDoctorTool = "sample_doctor"
+				return f
+			}(),
+			want: "sample: sample backing store.\n" +
+				"Tools call the local sample-store service (default http://sample.this) via this stdio shim; the service must be running.\n" +
+				"On any tool error or unexpected empty result: call 'sample_doctor' or run 'sample doctor'. Full doc: 'sample docs'.",
 		},
 		{
 			name: "doctor tool without a doctor subcommand",

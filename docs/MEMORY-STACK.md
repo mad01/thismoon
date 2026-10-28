@@ -3,10 +3,10 @@
 Every agent session starts with an empty context window. On a machine running
 the fleet, six stores carry what one session learned into the next. Five of
 them ship here or are set up from the examples here. The sixth, auto
-memory, is built into Claude Code. Each store answers one question. The one
-that matters at a predictable moment, agent-memory, doesn't wait for the
-agent to remember it: belt's hooks put it in front of the agent at session
-start.
+memory, is built into Claude Code. Each store answers one question. Two of
+them don't wait for the agent to ask. At session start, belt's hooks put the
+agent-memory indexes in front of the agent, along with moondb's list of the
+files other sessions edited and no commit has taken yet.
 
 This page says which store holds what, how a fact gets in and back out,
 whether a command line tool exists for it, and which hook does the prompting.
@@ -161,9 +161,9 @@ belt:
 Every hint prints under a `belt[<name>]:` prefix, so a transcript shows which
 context was injected and which the agent produced. On Codex the reference
 setup wires only the tool-event entries, so the session-start injections
-stay Claude-only. It wires
-no `belt record` entry either, so a Codex session leaves nothing in the
-ledger; Codex can still read the ledger through the events service.
+stay Claude-only. It wires no `belt record` entry either, so a Codex session
+leaves nothing in the ledger; Codex can still read the ledger through the
+events service.
 
 To turn all of this on, register the hooks in your agent settings. The
 wiring is in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md), and a

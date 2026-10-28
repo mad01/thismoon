@@ -1,11 +1,11 @@
 # webkit components — design spec
 
-Goal: a small, reusable UI kit shared by `present`, `csl` and the other `*.this` services. React-like
-**composition without React** via **web components (custom elements), light DOM**,
-styled by the shared `webkit.css`. Consumers write declarative markup
-(`<wk-card>…`) in their server-rendered HTML; `webkit.js` upgrades the interactive
-ones. CSS-vars (palette) and the fixation text-walk keep working because everything
-is light DOM (no Shadow DOM).
+Goal: a small, reusable UI kit shared by `present`, `csl` and the other `*.this`
+services. React-like **composition without React** via **web components (custom
+elements), light DOM**, styled by the shared `webkit.css`. Consumers write
+declarative markup (`<wk-card>…`) in their server-rendered HTML; `webkit.js`
+upgrades the interactive ones. CSS-vars (palette) and the fixation text-walk keep
+working because everything is light DOM (no Shadow DOM).
 
 ## Principles
 - **Light DOM only.** No Shadow DOM. Components render into themselves / are styled
@@ -21,9 +21,9 @@ is light DOM (no Shadow DOM).
   family and mode at the top of `webkit.css`. Component rules read roles only;
   a literal or a ramp name in a rule would stop following the family. The
   component visuals (`.panel`, `.data-table`, `.chip*`, `.callout`, etc.) were
-  ported verbatim into `webkit.css` from present's original page template and
-  from csl/catalog `internal/web/assets/static/app.css` (`.card`, `.search-bar`,
-  `.kind-badge`).
+  ported verbatim into `webkit.css` from present's original page template,
+  csl's `internal/web/assets/static/app.css` and the retired catalog service's
+  stylesheet (`.card`, `.search-bar`, `.kind-badge`).
 
 ## Components
 
@@ -55,7 +55,7 @@ Replaces `Webkit.init()`. Renders the sticky `.topbar` with `.topbar-inner`
 Light-DOM children it relocates into the bar:
 - `<a data-nav [class=active]>…</a>` → nav links area.
 - `<button data-extra id=…>…</button>` → controls area (rendered as-is, app keeps
-  its own click handler — e.g. present's `shareBtn`).
+  its own click handler, e.g. present's `shareBtn`).
 
 Behavior (ported from the current `Webkit.init`): font/fixation/size/reload/theme
 controls wired to GLOBAL keys `webkit-theme|font|size|fixation` (default light,

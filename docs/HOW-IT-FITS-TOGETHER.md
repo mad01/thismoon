@@ -187,9 +187,10 @@ on remembering to use them.
 - **events**: what actually *happened*. Every guard deny, every hint, every
   service's audit trail, queryable on one timeline.
 
-Claude Code's own auto memory and the `/handoff` skill's bridge documents sit
-beside these three. [MEMORY-STACK.md](MEMORY-STACK.md) covers these five and moondb: which
-store gets which fact, how each is read and written, and the hook behind each.
+Claude Code's own auto memory, the `/handoff` skill's bridge documents and
+moondb's edit history sit beside these three. [MEMORY-STACK.md](MEMORY-STACK.md)
+covers all six: which store gets which fact, how each is read and written, and
+the hook behind each.
 
 ## Skills
 

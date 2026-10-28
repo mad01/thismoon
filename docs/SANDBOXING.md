@@ -475,7 +475,8 @@ t-man add --name events \
   $HOME/code/bin/events serve --port 7430 --workdir $HOME/.local/share/events
 ```
 
-events, moondb, present serve, deps, status and speak-web run this way. What carries over to the next one:
+events, moondb, present serve, deps, status and speak-web run this way. What
+carries over to the next one:
 
 - **The label is the service name.** The settings file's name gives the
   label, and it matches the t-man name. present serve is the exception: its
