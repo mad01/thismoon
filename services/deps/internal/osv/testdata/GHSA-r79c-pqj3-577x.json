@@ -1,0 +1,47 @@
+{
+  "id": "GHSA-r79c-pqj3-577x",
+  "summary": "Super-linter is vulnerable to command injection via crafted filenames in Super-linter Action",
+  "database_specific": {
+    "severity": "HIGH"
+  },
+  "affected": [
+    {
+      "package": {
+        "name": "super-linter/super-linter",
+        "ecosystem": "GitHub Actions"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "6.0.0"
+            },
+            {
+              "fixed": "8.3.1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "package": {
+        "name": "super-linter/super-linter/slim",
+        "ecosystem": "GitHub Actions"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "6.0.0"
+            },
+            {
+              "fixed": "8.3.1"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -19,7 +19,7 @@ func (v *vuln) affects(q Query) bool {
 	}
 	judged := false
 	for _, a := range v.Affected {
-		if !q.matchesName(a.Package.Name) {
+		if !q.matchesPackage(a.Package.Ecosystem, a.Package.Name) {
 			continue
 		}
 		for _, r := range a.Ranges {

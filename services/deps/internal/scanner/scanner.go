@@ -112,8 +112,8 @@ func Check(
 // actionNameErrors gives each repo with a GitHub Action a discovery error
 // naming err, the name list that could not be read. A log line alone would
 // let the page and deps_check read as clean while an advisory filed under
-// another capitalization went unasked for; a discovery error marks the scan
-// as incomplete there and warns in the scan-complete event.
+// another capitalization or a longer name went unasked for; a discovery error
+// marks the scan as incomplete there and warns in the scan-complete event.
 func actionNameErrors(deps []store.Dependency, err error) []store.DiscoveryError {
 	var out []store.DiscoveryError
 	seen := map[string]bool{}
