@@ -212,9 +212,12 @@ its user and idle time from the turn totals, or the turn's recorded span
 without them. The pauses between turns never count. Its wall time runs from
 the earliest turn start to the latest turn end. An open turn ends at its
 last edit or agent stop for both times, and the active time is capped at
-the wall time. The time window keeps the sessions active in it, grouped by
-the day they started. The answer also adds up the whole filtered window and
-lists the window's repos for the page's chips.
+the wall time. The time window keeps the sessions active in it, most
+recently active first, and each row carries a session day per local day
+it was active on, so the page lists a session under every day it worked.
+The answer also adds up the whole filtered window and lists the window's
+repos, and the directories of its sessions outside any repo, for the
+page's chips.
 
 Cost by repo is a view too. Model calls carry no repo, so the listing
 splits a session's cost by who spent it. A subagent's cost goes to the

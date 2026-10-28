@@ -3,7 +3,9 @@ package server
 import (
 	"cmp"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -96,16 +98,55 @@ type SessionSummary struct {
 	// names in the same order. Both absent when there are none.
 	CwdRepos     []string `json:"cwd_repos,omitempty"       jsonschema:"repositories the session worked in without editing them: the one its cwd sits in and each recorded subagent's cwd repository, less the repos it edited, sorted; absent when there are none. A session recorded before sessions kept a location lacks its own cwd's"`
 	CwdRepoNames []string `json:"cwd_repo_names,omitempty"`
+	// CwdName is the cwd as a person reads it (dirName), set for a
+	// session that counts toward no repository: the badge it shows and
+	// the chip it groups under instead of a repo.
+	CwdName string `json:"cwd_name,omitempty"        jsonschema:"the cwd's short name, only for a session that counts toward no repository: its last two segments, or tmp/... under the temp directory"`
 	// Entrypoint is how the harness was started: cli for an interactive
 	// session, sdk-cli for `claude -p`.
 	Entrypoint string `json:"entrypoint,omitempty"      jsonschema:"how the harness was started, as Claude Code names it: cli for an interactive terminal session, sdk-cli for claude -p (headless); absent when not recorded"`
 	// Tags are the session tags its launcher set, such as eval.
 	Tags []string `json:"tags,omitempty"            jsonschema:"short tokens the session's launcher set in MOONDB_SESSION_TAGS, such as eval for an eval run"`
+	// Days are the local days the session was active on, oldest first,
+	// each with that day's slice of the session, so a listing can show
+	// the session under every day it worked.
+	Days []DayRow `json:"days"                      jsonschema:"the local days the session was active on, oldest first, each with that day's turns, edits, files, agents, active time, tokens and cost; a session active on several days has one entry per day"`
+}
+
+// DayRow is one local day a session was active on, with that day's slice
+// of the session priced (store.DayActivity). A turn counts under the day
+// it started, an edit under the day it was made, an agent's tokens under
+// the day it started.
+type DayRow struct {
+	// Date is the day as YYYY-MM-DD in serve's local zone, which is the
+	// zone of the page that reads it.
+	Date string `json:"date"`
+	// FirstAt and LastAt bound the activity seen that day.
+	FirstAt time.Time `json:"first_at"`
+	LastAt  time.Time `json:"last_at"`
+	// Turns counts the turns that started that day, Edits the edits made
+	// that day, Files the distinct files they touched and Agents the
+	// agents that started or edited that day.
+	Turns  int `json:"turns"`
+	Edits  int `json:"edits"`
+	Files  int `json:"files"`
+	Agents int `json:"agents"`
+	// ActiveMS is the active time of the turns that started that day.
+	ActiveMS int64 `json:"active_ms"`
+	// Tokens and Cost cover the turns and the agents that started that
+	// day, and RepoCosts splits the cost by the attribution rule over the
+	// day's own edits. RepoCost is set only when the listing filters by
+	// repository: the part attributed to it, as a row's is.
+	Tokens    store.Tokens `json:"tokens"`
+	Cost      *float64     `json:"cost,omitempty"`
+	Unpriced  []string     `json:"unpriced,omitempty"`
+	RepoCosts []RepoCost   `json:"repo_costs"`
+	RepoCost  *float64     `json:"repo_cost,omitempty"`
 }
 
 // SessionList is what GET /api/sessions answers: one page of rows, the
-// totals of every session the filters keep, and the repositories of the
-// time window.
+// totals of every session the filters keep, and the repositories and
+// working directories of the time window.
 type SessionList struct {
 	Sessions []SessionSummary `json:"sessions"`
 	// Window adds up every session the filters keep, past the limit.
@@ -114,6 +155,10 @@ type SessionList struct {
 	// toward (chipRepos), the repo filter left out, so a page can offer
 	// each one.
 	Repos []RepoCount `json:"repos"`
+	// Dirs are the working directories of the time window's sessions
+	// that count toward no repository (dirCounts), so a page can group
+	// what no repo badge can.
+	Dirs []DirCount `json:"dirs"`
 }
 
 // WindowTotals adds up a set of sessions. A file edited in two of them
@@ -141,6 +186,18 @@ type WindowTotals struct {
 // window: absent when no priced part goes there.
 type RepoCount struct {
 	Repo     string   `json:"repo"`
+	Name     string   `json:"name"`
+	Sessions int      `json:"sessions"`
+	Cost     *float64 `json:"cost,omitempty"`
+	Unpriced []string `json:"unpriced,omitempty"`
+}
+
+// DirCount is one working directory of the sessions that count toward no
+// repository: how many of them started there and what they cost. Name is
+// the directory as a person reads it (dirName), and Dir the value the
+// cwd filter takes.
+type DirCount struct {
+	Dir      string   `json:"dir"`
 	Name     string   `json:"name"`
 	Sessions int      `json:"sessions"`
 	Cost     *float64 `json:"cost,omitempty"`
@@ -183,10 +240,11 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		writeBackendErr(w, err)
 		return
 	}
-	kept, repo := all, q.Get("repo")
-	if repo != "" {
+	kept, repo, cwd := all, q.Get("repo"), strings.TrimRight(q.Get("cwd"), "/")
+	if repo != "" || cwd != "" {
 		kept = slices.DeleteFunc(slices.Clone(all), func(sum store.SessionSummary) bool {
-			return !slices.Contains(chipRepos(sum), repo)
+			return (repo != "" && !slices.Contains(chipRepos(sum), repo)) ||
+				(cwd != "" && strings.TrimRight(sum.Cwd, "/") != cwd)
 		})
 	}
 	now := s.now()
@@ -194,7 +252,10 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	for _, sum := range kept[:min(limit, len(kept))] {
 		row := s.row(sum, now)
 		if repo != "" {
-			row.RepoCost = attributedCost(row, repo)
+			row.RepoCost = attributedCost(row.RepoCosts, row.Cost, repo)
+			for i, d := range row.Days {
+				row.Days[i].RepoCost = attributedCost(d.RepoCosts, d.Cost, repo)
+			}
 		}
 		rows = append(rows, row)
 	}
@@ -202,6 +263,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		Sessions: rows,
 		Window:   s.window(kept),
 		Repos:    s.repoCounts(all),
+		Dirs:     s.dirCounts(all),
 	})
 }
 
@@ -238,6 +300,10 @@ func (s *Server) row(sum store.SessionSummary, now time.Time) SessionSummary {
 	if status == StatusEnded && !sum.LastTurnEnd.IsZero() {
 		ended = &sum.LastTurnEnd
 	}
+	var cwdName string
+	if sum.Cwd != "" && len(chipRepos(sum)) == 0 {
+		cwdName = dirName(sum.Cwd)
+	}
 	return SessionSummary{
 		ID:             sum.ID,
 		Title:          sessionTitle(sum.Session),
@@ -267,9 +333,29 @@ func (s *Server) row(sum store.SessionSummary, now time.Time) SessionSummary {
 		Worktrees:      sum.Worktrees,
 		CwdRepos:       sum.CwdRepos,
 		CwdRepoNames:   repoNames(sum.CwdRepos),
+		CwdName:        cwdName,
 		Entrypoint:     sum.Entrypoint,
 		Tags:           sum.Tags,
+		Days:           s.dayRows(sum.Days),
 	}
+}
+
+// dayRows prices a session's days, each on its own usage and attributed
+// parts.
+func (s *Server) dayRows(days []store.DayActivity) []DayRow {
+	out := make([]DayRow, 0, len(days))
+	for _, d := range days {
+		row := DayRow{
+			Date: d.Date, FirstAt: d.FirstAt, LastAt: d.LastAt,
+			Turns: d.Turns, Edits: d.Edits, Files: d.Files, Agents: d.Agents,
+			ActiveMS:  d.ActiveMS,
+			Tokens:    tokensOf(d.Usage),
+			RepoCosts: s.repoCosts(d.RepoUsage),
+		}
+		row.Cost, row.Unpriced = s.query.UsageCost(d.Usage)
+		out = append(out, row)
+	}
+	return out
 }
 
 // window adds up the sessions: their counts, their active time, their
@@ -373,15 +459,76 @@ func (s *Server) repoCosts(parts []store.RepoUsage) []RepoCost {
 	return out
 }
 
-// attributedCost is the part of row's cost attributed to repo. With an
-// entry for repo it is that entry's cost, nil when none of its models is
-// priced. Without one it is a real zero when the row is priced, nil when
-// the row has no priced cost.
-func attributedCost(row SessionSummary, repo string) *float64 {
-	if i := slices.IndexFunc(row.RepoCosts, func(c RepoCost) bool { return c.Repo == repo }); i >= 0 {
-		return row.RepoCosts[i].Cost
+// dirCounts lists the working directories of the sessions that count
+// toward no repository (chipRepos), most sessions first, then by name,
+// each with the cost of its sessions: the one grouping a no-repo session
+// offers. A session with no recorded cwd counts nowhere.
+func (s *Server) dirCounts(sessions []store.SessionSummary) []DirCount {
+	counts := map[string]int{}
+	usage := map[string][][]store.ModelUsage{}
+	for _, sum := range sessions {
+		dir := strings.TrimRight(sum.Cwd, "/")
+		if dir == "" || len(chipRepos(sum)) > 0 {
+			continue
+		}
+		counts[dir]++
+		usage[dir] = append(usage[dir], sum.Usage)
 	}
-	if row.Cost == nil {
+	out := make([]DirCount, 0, len(counts))
+	for dir, n := range counts {
+		c := DirCount{Dir: dir, Name: dirName(dir), Sessions: n}
+		c.Cost, c.Unpriced = s.query.UsageCost(store.MergeUsage(usage[dir]...))
+		out = append(out, c)
+	}
+	slices.SortFunc(out, func(a, b DirCount) int {
+		return cmp.Or(cmp.Compare(b.Sessions, a.Sessions), cmp.Compare(a.Name, b.Name),
+			cmp.Compare(a.Dir, b.Dir))
+	})
+	return out
+}
+
+// tempDir is the machine's temp directory with symlinks resolved, the way
+// a session's cwd records it: /private/var/folders/.../T on macOS, where
+// eval runs and probes start.
+var tempDir = resolvedTempDir()
+
+func resolvedTempDir() string {
+	dir := strings.TrimRight(os.TempDir(), "/")
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = strings.TrimRight(resolved, "/")
+	}
+	return dir
+}
+
+// dirName is a working directory as a person reads it in a badge or a
+// chip: "tmp" for the temp directory and "tmp/<rest>" under it, else its
+// last two path segments, as a repository's short name is.
+func dirName(dir string) string {
+	dir = strings.TrimRight(dir, "/")
+	if tempDir != "" {
+		if dir == tempDir {
+			return "tmp"
+		}
+		if rel, ok := strings.CutPrefix(dir, tempDir+"/"); ok {
+			return "tmp/" + rel
+		}
+	}
+	parts := strings.Split(strings.Trim(dir, "/"), "/")
+	if len(parts) > 2 {
+		parts = parts[len(parts)-2:]
+	}
+	return strings.Join(parts, "/")
+}
+
+// attributedCost is the part of a priced total attributed to repo. With
+// an entry for repo in costs it is that entry's cost, nil when none of
+// its models is priced. Without one it is a real zero when the total is
+// priced, nil when nothing is.
+func attributedCost(costs []RepoCost, total *float64, repo string) *float64 {
+	if i := slices.IndexFunc(costs, func(c RepoCost) bool { return c.Repo == repo }); i >= 0 {
+		return costs[i].Cost
+	}
+	if total == nil {
 		return nil
 	}
 	return new(0.0)

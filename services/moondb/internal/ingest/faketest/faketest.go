@@ -194,7 +194,7 @@ func appendNew[T any](s *Store, list *[]T, v T, id func(T) string) error {
 	return nil
 }
 
-// Sessions lists sessions newest first by StartedAt, each summarized and
+// Sessions lists sessions most recently active first, each summarized and
 // kept when f keeps it.
 func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.SessionSummary, error) {
 	s.mu.Lock()
@@ -205,9 +205,7 @@ func (s *Store) Sessions(_ context.Context, f store.SessionFilter) ([]store.Sess
 			out = append(out, sum)
 		}
 	}
-	slices.SortFunc(out, func(a, b store.SessionSummary) int {
-		return b.StartedAt.Compare(a.StartedAt)
-	})
+	store.SortSummaries(out)
 	return limit(out, f.Limit), nil
 }
 

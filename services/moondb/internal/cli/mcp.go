@@ -27,7 +27,7 @@ Tools exposed:
   moondb_history   List the recorded edits of a path, newest first.
   moondb_inflight  List a checkout's files other sessions edited and no commit took.
   moondb_turn      Show one turn with its edits and the prompt that drove it.
-  moondb_sessions  List recorded sessions, newest first.
+  moondb_sessions  List recorded sessions, most recently active first.
   moondb_doctor    Run the doctor checks and return the report.
 
 ` + agentdoc.RegistrationSnippet(moondb.Facts()),

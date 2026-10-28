@@ -263,6 +263,114 @@ func TestSessionTitle(t *testing.T) {
 	}
 }
 
+// rowByID is the listed row of session id; it fails t without one.
+func rowByID(t *testing.T, list SessionList, id string) SessionSummary {
+	t.Helper()
+	i := slices.IndexFunc(list.Sessions, func(r SessionSummary) bool { return r.ID == id })
+	if i < 0 {
+		t.Fatalf("no row for %s among %d rows", id, len(list.Sessions))
+	}
+	return list.Sessions[i]
+}
+
+// sameRepoCost compares two attributed parts by repository and cost.
+func sameRepoCost(a, b RepoCost) bool {
+	return a.Repo == b.Repo && (a.Cost == nil) == (b.Cost == nil) &&
+		(a.Cost == nil || near(*a.Cost, *b.Cost))
+}
+
+// TestSessionDays: a row lists the local days the session was active on,
+// each with that day's slice. Every fixture record falls on one day, so
+// each row has one day whose figures are the row's own, priced the same,
+// and under the repo filter the day carries its attributed part too.
+func TestSessionDays(t *testing.T) {
+	h := newHarness(t)
+	got := h.sessionList(t, "").Sessions
+	if len(got) != 2 {
+		t.Fatalf("sessions = %d, want 2", len(got))
+	}
+	for _, row := range got {
+		if len(row.Days) != 1 {
+			t.Errorf("%s has %d days, want 1", row.ID, len(row.Days))
+			continue
+		}
+		d := row.Days[0]
+		if d.Date != store.LocalDay(row.StartedAt) || d.Turns != row.TurnCount ||
+			d.Edits != row.EditCount || d.Files != row.FileCount || d.Agents != row.AgentCount ||
+			d.ActiveMS != row.ActiveMS || !d.LastAt.Equal(row.LastActivityAt) ||
+			(d.Cost == nil) != (row.Cost == nil) || (d.Cost != nil && !near(*d.Cost, *row.Cost)) ||
+			!slices.EqualFunc(d.RepoCosts, row.RepoCosts, sameRepoCost) {
+			t.Errorf("%s day = %+v, want the row's own figures: %+v", row.ID, d, row)
+		}
+	}
+	filtered := h.sessionList(t, "?repo="+servertest.OtherRepo).Sessions
+	if len(filtered) != 1 || len(filtered[0].Days) != 1 {
+		t.Fatalf("filtered = %+v, want the older session with its one day", filtered)
+	}
+	row, d := filtered[0], filtered[0].Days[0]
+	if row.RepoCost == nil || d.RepoCost == nil || !near(*d.RepoCost, *row.RepoCost) {
+		t.Errorf("day repo_cost %v, row %v; want the day's attributed part, the row's",
+			d.RepoCost, row.RepoCost)
+	}
+}
+
+// TestSessionsDirs: the sessions that count toward no repository are
+// grouped by working directory, trailing slash dropped, each with its
+// cost, and the cwd filter keeps one directory's sessions.
+func TestSessionsDirs(t *testing.T) {
+	h := newHarness(t)
+	const scratch = "sess-scratch"
+	start := servertest.T0.Add(70 * time.Minute)
+	h.store.Add(
+		store.Session{
+			ID:        scratch,
+			Harness:   "test-harness",
+			Cwd:       "/scratch/probe/",
+			StartedAt: start,
+		},
+		[]store.Turn{{
+			ID: "turn-scratch", SessionID: scratch, Seq: 1, Status: store.TurnOpen,
+			StartedAt: start,
+		}},
+		nil,
+		nil,
+	)
+	list := h.sessionList(t, "")
+	want := []DirCount{{Dir: "/scratch/probe", Name: "scratch/probe", Sessions: 1}}
+	if !slices.EqualFunc(list.Dirs, want, func(a, b DirCount) bool {
+		return a.Dir == b.Dir && a.Name == b.Name && a.Sessions == b.Sessions && a.Cost == nil
+	}) {
+		t.Errorf("dirs = %+v, want %+v: the fixture's other sessions have repos", list.Dirs, want)
+	}
+	kept := h.sessionList(t, "?cwd=/scratch/probe")
+	if len(kept.Sessions) != 1 || kept.Sessions[0].ID != scratch || kept.Window.Sessions != 1 ||
+		kept.Sessions[0].CwdName != "scratch/probe" {
+		t.Errorf("cwd filter kept %+v (window %d), want the scratch session alone, its cwd named",
+			kept.Sessions, kept.Window.Sessions)
+	}
+	if row := rowByID(t, list, servertest.NewSession); row.CwdName != "" {
+		t.Errorf("a session with a repo has cwd_name %q, want none", row.CwdName)
+	}
+	if none := h.sessionList(t, "?cwd=/nowhere"); len(none.Sessions) != 0 {
+		t.Errorf("unknown cwd kept %d sessions, want none", len(none.Sessions))
+	}
+}
+
+func TestDirName(t *testing.T) {
+	for dir, want := range map[string]string{
+		"/private/tmp/mad494":  "tmp/mad494",
+		"/home/u/.tmp/scratch": ".tmp/scratch",
+		"/scratch/probe":       "scratch/probe",
+		"/x":                   "x",
+		tempDir:                "tmp",
+		tempDir + "/eval-1":    "tmp/eval-1",
+	} {
+		if got := dirName(dir); got != want {
+			t.Errorf("dirName(%q) = %q, want %q", dir, got, want)
+		}
+	}
+}
+
 func TestRepoName(t *testing.T) {
 	for repo, want := range map[string]string{
 		"github.com/mad01/thismoon": "mad01/thismoon",
@@ -344,9 +452,10 @@ func TestSessionsAttributeCost(t *testing.T) {
 	if len(list.Sessions) != 3 {
 		t.Fatalf("sessions = %d, want 3", len(list.Sessions))
 	}
-	newer, orch, older := list.Sessions[0], list.Sessions[1], list.Sessions[2]
-	if orch.ID != orchSession || older.CostMain == nil || older.CostAgents == nil {
-		t.Fatalf("rows %s, %s, %s; want the older session priced", newer.ID, orch.ID, older.ID)
+	newer, orch, older := rowByID(t, list, servertest.NewSession), rowByID(t, list, orchSession),
+		rowByID(t, list, servertest.OldSession)
+	if older.CostMain == nil || older.CostAgents == nil {
+		t.Fatalf("older row = %+v, want it priced", older)
 	}
 	turnCost, agentCost := *older.CostMain, *older.CostAgents
 

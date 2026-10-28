@@ -79,7 +79,7 @@ func registerEditTools(s *mcp.Server, h *handlers) {
 func registerSessionTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "moondb_sessions",
-		Description: "List recorded agent sessions newest first. Each has a title (the harness title, else its first prompt line), " +
+		Description: "List recorded agent sessions, most recently active first. Each has a title (the harness title, else its first prompt line), " +
 			"a status (running or ended), when it started, was last active and ended, its active time and wall time, its turn, edit, file and agent counts, " +
 			"the names of the subagents that ran (`agents`), its tokens and cost, its transcript path, and the repositories and worktrees it edited. " +
 			"`cwd_repos` are the repositories it worked in without editing them: the one its cwd sits in and each recorded subagent's cwd repository, less the ones it edited; `cwd_repo_names` are their short names. Both are absent when there are none; an older session recorded without a location lacks its own cwd's. " +
@@ -92,6 +92,8 @@ func registerSessionTools(s *mcp.Server, h *handlers) {
 			"`repo_costs` splits it by repository: each subagent's cost goes to the repository most of its edits touched, else its cwd's repository, else `no_repo`; " +
 			"the main conversation's goes to the repository most of its own edits touched, else `orchestration`. " +
 			"With `repo`, each session also has `repo_cost`: the part of `cost` attributed to that repository, while `cost` stays the whole session's. " +
+			"`days` splits the session by local day, oldest first: each day's turns, edits, files, agents, active time, tokens and cost, so a session that ran for weeks shows what it did on each day. " +
+			"`cwd_name` is the cwd's short name for a session that sits in no repository. " +
 			"Filter by `repo` (host/owner/repo; sessions that have it in `repos` or `cwd_repos`, or attribute a part of their cost to it in `repo_costs`), " +
 			"`since` (sessions active since then, whenever they started: " +
 			"an RFC 3339 time or a duration such as 24h or 7d), and `limit` (default 50).",
@@ -362,7 +364,7 @@ func truncate(s string, n int) string {
 type sessionsInput struct {
 	Repo  string `json:"repo,omitempty"  jsonschema:"repository identity host/owner/repo; keeps sessions that edited it, worked in it without editing it (cwd_repos), or attribute a part of their cost to it in repo_costs"`
 	Since string `json:"since,omitempty" jsonschema:"keeps sessions active since then: an RFC 3339 time, or a duration before now such as 90m, 24h or 7d"`
-	Limit int    `json:"limit,omitempty" jsonschema:"maximum sessions to return, newest first (default 50)"`
+	Limit int    `json:"limit,omitempty" jsonschema:"maximum sessions to return, most recently active first (default 50)"`
 }
 
 type sessionsOutput struct {
@@ -389,8 +391,8 @@ func (h *handlers) handleSessions(
 	}
 	summary := "no sessions recorded"
 	if len(list) > 0 {
-		summary = fmt.Sprintf("%d sessions, newest started %s",
-			len(list), list[0].StartedAt.Format("2006-01-02 15:04"))
+		summary = fmt.Sprintf("%d sessions, last active %s",
+			len(list), list[0].LastActivityAt.Format("2006-01-02 15:04"))
 	}
 	return nil, sessionsOutput{Sessions: list, Summary: summary, URL: h.webURL}, nil
 }

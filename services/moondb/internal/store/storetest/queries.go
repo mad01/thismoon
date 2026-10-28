@@ -15,9 +15,9 @@ const (
 	repoB = "github.com/o/b"
 )
 
-// sessionsFilter: Sessions lists newest first by start, Since keeps the
-// sessions last active at or after it whenever they started, and each
-// filter field narrows on its own and together with the others.
+// sessionsFilter: Sessions lists the most recently active first, whenever
+// they started, Since keeps the sessions last active at or after it, and
+// each filter field narrows on its own and together with the others.
 func sessionsFilter(t *testing.T, st store.Store) {
 	seed(t, st,
 		session("s1", at(0)), session("s2", at(60)), session("s3", at(120)),
@@ -32,12 +32,15 @@ func sessionsFilter(t *testing.T, st store.Store) {
 		f    store.SessionFilter
 		want string // ids in order, space-separated
 	}{
-		{"all", store.SessionFilter{}, "s3 s2 s1 s4"},
+		// s1 started first but its edit at minute 90 is the second newest
+		// activity, so it lists second; s4's open turn at minute -20 is its
+		// last activity.
+		{"all", store.SessionFilter{}, "s3 s1 s2 s4"},
 		{"repo", store.SessionFilter{Repo: repoA}, "s1"},
-		{"since", store.SessionFilter{Since: at(60)}, "s3 s2 s1"},
+		{"since", store.SessionFilter{Since: at(60)}, "s3 s1 s2"},
 		{"since past an old start", store.SessionFilter{Since: at(62)}, "s3 s1"},
 		{"since every activity", store.SessionFilter{Since: at(121)}, ""},
-		{"limit", store.SessionFilter{Limit: 2}, "s3 s2"},
+		{"limit", store.SessionFilter{Limit: 2}, "s3 s1"},
 		{"repo and since", store.SessionFilter{Repo: repoA, Since: at(60)}, "s1"},
 		{"repo and later since", store.SessionFilter{Repo: repoA, Since: at(91)}, ""},
 		{"unknown repo", store.SessionFilter{Repo: "github.com/o/x"}, ""},

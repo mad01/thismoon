@@ -292,9 +292,9 @@ func (s *Store) appendFact(
 	return s.commit(kind, v)
 }
 
-// Sessions lists sessions newest first by StartedAt, each summarized from
-// the index. Since keeps sessions last active at or after it; Repo keeps
-// sessions with an edit in the repo.
+// Sessions lists sessions most recently active first (store.SortSummaries),
+// each summarized from the index. Since keeps sessions last active at or
+// after it; Repo keeps sessions with an edit in the repo.
 func (s *Store) Sessions(
 	ctx context.Context,
 	f store.SessionFilter,

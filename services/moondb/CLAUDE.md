@@ -689,7 +689,7 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 
 - `GET  /`                      : webkit-chromed web page, read-only (see Web page below)
 - `GET  /app.js`                : the page's client script
-- `GET  /api/sessions`          : one page of session rows, newest first (`sessions`), the totals of every session the filters keep (`window`), and the repositories the time window's sessions edited or sent attributed cost, with their session counts and attributed cost (`repos`); `since`, `repo` and `limit` filter
+- `GET  /api/sessions`          : one page of session rows, most recently active first (`sessions`), each with its `days`; the totals of every session the filters keep (`window`); the repositories the time window's sessions edited or sent attributed cost, with their session counts and attributed cost (`repos`); and the directories its sessions outside any repository started in, with their session counts and cost (`dirs`); `since`, `repo`, `cwd` and `limit` filter
 - `GET  /api/sessions/{id}`     : one session with its turns and counts, plus `summary`, its listing row, and `agents`, its agent rows (below)
 - `GET  /api/sessions/{id}/trace`: the session's trace: every turn's spans, gaps and totals, the user gaps between turns, the agents' runs, session totals
 - `GET  /api/sessions/{id}/scorecard`: the session's scorecard (Scorecard above): totals, tools, csl searches, reads, hints, agents, flags and the status of each source
@@ -762,9 +762,25 @@ A session row comes from the index alone, never a chunk
   none. Both are absent when the list is empty. A session recorded before
   sessions kept a location lacks its own cwd's until an import fills it;
   its subagents' are there already.
+- `cwd_name`: only for a session that counts toward no repository (no
+  `repos`, no `cwd_repos`): its cwd's short name, the last two path
+  segments, or `tmp` and `tmp/<rest>` under the temp directory
+  (`dirName`). The page's badge and the `dirs` chips show it.
 - `entrypoint`: how the harness was started (`cli`, `sdk-cli`), and
   `tags`: the tags its launcher set, such as `eval`. Both absent when not
   recorded.
+- `days`: the local days (`store.LocalDay`, the server's zone) the
+  session was active on, oldest first, its start day at least. Each has
+  `date`, `first_at`, `last_at`, that day's `turns`, `edits`, `files`,
+  `agents` and `active_ms`, its `tokens`, `cost` and `unpriced`, its
+  `repo_costs`, and under the `repo` filter its `repo_cost`
+  (`store.DayActivity`). A turn's count, active time and usage go to the
+  day it started, an edit's to its own day, an agent's usage to the day it
+  started, and the attribution rule runs over each day's own edits. A day
+  that holds only a turn's end or an agent's stop counts nothing. Turns,
+  edits, tokens and cost add up to the row's; active time does too unless
+  the wall-time cap cut the row's; files and agents count distinct items
+  per day.
 
 The attributed cost (`store/attribution.go`) is a view over the records,
 never stored. A subagent's cost goes to the repository most of its edits
@@ -777,8 +793,11 @@ in them, adds nothing. `store.Summarize` keeps the parts as unpriced
 usage (`RepoUsage`), and the server prices each one on read.
 
 `since` keeps the sessions active in the window: last active at or after
-it, whenever they started. Rows stay ordered and grouped by the day they
-started. `window` adds up every session the filters keep, past the limit,
+it, whenever they started. Rows come most recently active first
+(`store.SortSummaries`: last activity, then start, then id) and `limit`
+cuts that order, so a session that worked today is on the first page
+however long ago it started; the page groups the rows by `days`, not by
+this order. `window` adds up every session the filters keep, past the limit,
 whole: sessions, active time, turns, edits, distinct files, tokens and cost, with
 `cost_main`, `cost_agents` and `repo_costs`. `repos` ignores the `repo`
 filter, so a page can offer every repo of the time window. A repository
@@ -793,6 +812,13 @@ chip's `sessions` is the filtered `window`'s, and its `cost` equals the
 filtered window's part for it and the sum of the filtered rows'
 `repo_cost`. A session kept only because it worked there adds its
 attributed part, often 0, never its whole cost.
+
+`dirs` groups the window's sessions that count toward no repository (no
+`repos`, no `cwd_repos`) by their cwd, trailing slash dropped: `dir`, its
+`name` (the rows' `cwd_name`), `sessions`, and their whole `cost` and
+`unpriced`, most sessions first. Like `repos` it ignores the `repo` and
+`cwd` filters. `cwd` keeps the sessions whose cwd is that directory, so a
+`dirs` chip lists exactly the sessions it counts.
 
 An agent row (`internal/server/agents.go`) is the main conversation
 (`type` `main`, id empty) or one subagent. It carries `id`, `type`, `name`,
@@ -824,40 +850,50 @@ theme. The query string picks one of four views. The `?session=` form is the URL
 return, so keep it stable.
 
 - `/`: the sessions active in the last 7 days unless `since` says
-  otherwise (`since=any` lifts the bound), grouped by the day they started,
-  newest first.
-  A row has a repo badge, the title as the link, and a running or ended
-  dot with how long ago the session was last active. The badge is the
+  otherwise (`since=any` lifts the bound), under every local day they
+  were active on, newest day first. Each row is one session day
+  (`days`): a session that worked on three days is three rows, each with
+  that day's counts, active time and cost. A day whose last activity is
+  before the window's start stays out, so a 24-hour window shows only the
+  session days in it. Within a day the rows order by the day's last
+  activity.
+  A row has a repo badge, the title as the link, and its activity. On the
+  session's newest day that is a running or ended dot with how long ago
+  the session was last active; on an earlier day a dashed dot and "until"
+  the time that day's work ended, since the session went on. The day's
+  active time follows when it has one, and "day N of M" when the session
+  has several days, its first and last in the hover title. The badge is the
   session's first repo and filters to it, with "+N" for the rest. The
   repos it edited come first as solid badges, then its `cwd_repos` as
   hollow ones. So a session started from a scratch directory shows the
   repos its subagents worked in. A `repo_costs` repository outside both
   would get a hollow badge too, though the attribution rule sends cost
   nowhere else today. The hover title lists the other edited repos
-  ("Also edited") and the worked-in ones ("Worked in"). "no repo" shows
-  only when the session counts toward no repo.
+  ("Also edited") and the worked-in ones ("Worked in"). A session that
+  counts toward no repo gets a neutral hollow badge with its `cwd_name`
+  instead, which filters to that directory (`cwd`); "no repo" shows only
+  when it has no cwd either.
   Small badges follow the title. A set entrypoint other than `cli` gets
   one: `headless` when it starts with `sdk-` (`claude -p` and the SDKs),
   else the value itself, such as a desktop app's or an IDE extension's.
-  Its hover title names the entrypoint. Each tag gets a badge too. The
-  row's active time follows, or its wall time when it has none. When the wall time crosses a
-  local midnight, "over N days" follows, on a second line when the column
-  is too narrow, and the hover title gives the wall time. Then come
-  its turn, edit, file and agent counts and its cost, the main
-  conversation's and its subagents'. A window switch and repo chips
-  (`repo`) sit above a strip that adds the window up, active time
-  included, with the subagents'
-  part of the cost beside the total. A cost's hover title splits it.
-  Each chip counts the sessions its filter lists, the ones that edited
-  its repo, worked in it or sent it cost, and shows the cost they
-  attribute to it.
+  Its hover title names the entrypoint. Each tag gets a badge too. Then
+  come the day's turn, edit, file and agent counts and its cost, the main
+  conversation's and its subagents'. A window switch and the chips sit
+  above a strip that adds the window up, active time included, with the
+  subagents' part of the cost beside the total. A cost's hover title
+  splits it. Each repo chip (`repo`) counts the sessions its filter lists,
+  the ones that edited its repo, worked in it or sent it cost, and shows
+  the cost they attribute to it. After them, dashed chips (`dirs`) group
+  the sessions that count toward no repo by the directory they started
+  in, each with its session count and whole cost, and filter to it
+  (`cwd`). "All repos" clears both filters.
   Under the strip's figures a bar stacks the window's cost by repo, then
   orchestration and "no repo (cwd)", the page's name for `no_repo`. A
   row's "no repo" text stays apart: that session counts toward no repo.
   A label under it gives each part's amount, and a hover title its share
   and the attribution rule. Filtered to a repo, the cost column turns into
-  "Attributed": the part each session gives that repo, with the session
-  total in the hover title. The day rows then add those parts.
+  "Attributed": the part each session day gives that repo, with the
+  session total in the hover title. The day rows then add those parts.
   `Show more` grows `limit`. The filters stay in the URL.
 - `/?session=<id>`: the title, a badge for every repo (the edited ones
   solid, then the `cwd_repos` hollow), the entrypoint and tag badges,
@@ -922,7 +958,7 @@ moondb mcp                     # stdio MCP shim over serve
 moondb why <path>:<line>       # the Edit, turn, prompt, session and commit behind one line
 moondb history <path>          # the recorded edits of a path across every checkout, newest first; --worktree narrows to one
 moondb inflight [--worktree <root>] [--exclude-session <id>]   # files in the checkout other sessions edited that no commit has taken yet
-moondb sessions [--repo <repo>]  # recorded sessions, newest first, with their title, active time and wall time; --repo adds COST and ATTRIBUTED
+moondb sessions [--repo <repo>]  # recorded sessions, most recently active first, with their title, active time and wall time; --repo adds COST and ATTRIBUTED
 moondb trace <session-id> [--json]   # time and cost totals, the agents, the longest tool calls, the most expensive model calls
 moondb scorecard <session-id> [--json]   # how a session spent its context: searches, reads, hints, agents, flags
 moondb doctor                  # config, hooks wired, serve reachable, store readable, version skew
@@ -944,7 +980,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 - `moondb_history(path)`: the recorded edits of a path, newest first
 - `moondb_inflight(worktree)`: the files of a checkout with edits no commit has taken yet, with the sessions behind them; `exclude_session` leaves the caller's own out
 - `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links, and the agents that worked in it; the summary names its subagents
-- `moondb_sessions()`: recorded sessions, newest first, each with its title, status, times, active and wall time, counts, subagent names, tokens and cost split between the main conversation and the subagents, and its attributed cost per repository (`repo_costs`); with `repo`, also `repo_cost` beside the whole `cost`
+- `moondb_sessions()`: recorded sessions, most recently active first, each with its title, status, times, active and wall time, counts, subagent names, tokens and cost split between the main conversation and the subagents, its attributed cost per repository (`repo_costs`), and its `days`; with `repo`, also `repo_cost` beside the whole `cost`
 - `moondb_trace(id)`: one session's time split (model, tool, harness, user, idle), tokens by kind and cost with its main and agent parts, the subagents costliest first, and the longest tool calls and most expensive model calls of every agent
 - `moondb_scorecard(id)`: the session's scorecard, the same JSON as `GET /api/sessions/{id}/scorecard`, with a one-line summary
 - `moondb_doctor()`: the same checks as `moondb doctor`, returned as JSON, for a client that can call a tool but has no shell

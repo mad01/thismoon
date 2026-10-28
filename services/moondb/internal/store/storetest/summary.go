@@ -17,7 +17,8 @@ import (
 // time come from the turn records, an open turn ending both at its last
 // activity, and the usage of every turn and agent with totals merges by
 // model, apart for the main conversation and the agents. The attribution
-// rule splits the same usage by repository.
+// rule splits the same usage by repository. Every record falls on one
+// local day, whose slice is then the whole session.
 func sessionSummary(t *testing.T, st store.Store) {
 	ctx := context.Background()
 	seedSummary(t, st)
@@ -28,6 +29,23 @@ func sessionSummary(t *testing.T, st store.Store) {
 		return
 	}
 	got := list[1]
+	merged := []store.ModelUsage{
+		usage("model-a", 1150, 115), usage("model-b", 5, 1), usage("model-c", 9, 1),
+	}
+	// The main conversation edited only repoA. agent-1's one edit in a
+	// repository is in repoB, its other outside any. agent-2 edited
+	// nothing and its cwd sits in no repository.
+	attributed := []store.RepoUsage{
+		{
+			Repo:  repoA,
+			Usage: []store.ModelUsage{usage("model-a", 150, 15), usage("model-b", 5, 1)},
+		},
+		{Repo: repoB, Usage: []store.ModelUsage{usage("model-a", 1000, 100)}},
+		{Repo: store.CostNoRepo, Usage: []store.ModelUsage{usage("model-c", 9, 1)}},
+	}
+	// t1 and t2 give their totals' 1 s each, and the open t3 runs from
+	// minute 30 to agent-2's stop at minute 35.
+	active := 2000 + (5 * time.Minute).Milliseconds()
 	want := store.SessionSummary{
 		Session:   got.Session,
 		Repos:     []string{repoA, repoB},
@@ -40,29 +58,21 @@ func sessionSummary(t *testing.T, st store.Store) {
 		},
 		LastTurnOpen:   true,
 		LastActivityAt: at(35),
-		// t1 starts at minute 1, and the open t3 runs from minute 30 to
-		// agent-2's stop at minute 35, which ends the wall span too.
-		DurationMS: (34 * time.Minute).Milliseconds(),
-		// t1 and t2 give their totals' 1 s each.
-		ActiveMS:    2000 + (5 * time.Minute).Milliseconds(),
+		// t1 starts at minute 1, and t3's end at minute 35 ends the wall
+		// span too.
+		DurationMS:  (34 * time.Minute).Milliseconds(),
+		ActiveMS:    active,
 		LastTurnEnd: at(35),
-		Usage: []store.ModelUsage{
-			usage("model-a", 1150, 115), usage("model-b", 5, 1), usage("model-c", 9, 1),
-		},
+		Usage:       merged,
 		MainUsage:   []store.ModelUsage{usage("model-a", 150, 15), usage("model-b", 5, 1)},
 		AgentUsage:  []store.ModelUsage{usage("model-a", 1000, 100), usage("model-c", 9, 1)},
 		AgentLabels: []string{"builder", "Explore"},
-		// The main conversation edited only repoA. agent-1's one edit in a
-		// repository is in repoB, its other outside any. agent-2 edited
-		// nothing and its cwd sits in no repository.
-		RepoUsage: []store.RepoUsage{
-			{
-				Repo:  repoA,
-				Usage: []store.ModelUsage{usage("model-a", 150, 15), usage("model-b", 5, 1)},
-			},
-			{Repo: repoB, Usage: []store.ModelUsage{usage("model-a", 1000, 100)}},
-			{Repo: store.CostNoRepo, Usage: []store.ModelUsage{usage("model-c", 9, 1)}},
-		},
+		RepoUsage:   attributed,
+		Days: []store.DayActivity{{
+			Date: store.LocalDay(at(0)), FirstAt: at(0), LastAt: at(35),
+			Turns: 3, Edits: 4, Files: 3, Agents: 3, ActiveMS: active,
+			Usage: merged, RepoUsage: attributed,
+		}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("s1 summary =\n%+v\nwant\n%+v", got, want)
@@ -74,8 +84,10 @@ func sessionSummary(t *testing.T, st store.Store) {
 	}
 	empty := list[0]
 	if empty.TurnCount != 0 || empty.EditCount != 0 || empty.FileCount != 0 ||
-		empty.Repos == nil || empty.Worktrees == nil || !empty.LastActivityAt.Equal(at(40)) {
-		t.Errorf("s2 summary = %+v, want zero counts, empty lists and its start as activity", empty)
+		empty.Repos == nil || empty.Worktrees == nil || !empty.LastActivityAt.Equal(at(40)) ||
+		len(empty.Days) != 1 || empty.Days[0].Date != store.LocalDay(at(40)) {
+		t.Errorf("s2 summary = %+v, want zero counts, empty lists and its start as activity "+
+			"and as its one day", empty)
 	}
 }
 

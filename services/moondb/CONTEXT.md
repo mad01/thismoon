@@ -14,6 +14,10 @@ _Avoid_: conversation, chat
 A short lowercase token the launcher of a Session gave it through `MOONDB_SESSION_TAGS`, such as `eval` for an eval run. The hook reads it from its environment, so an import cannot recover it. A session keeps the union of the tags its envelopes carried, at most eight.
 _Avoid_: label, category
 
+**Session day**:
+The slice of one Session that falls on one local day, cut in the server's zone: that day's turns, edits, files, agents, active time, tokens and attributed cost. A turn counts under the day it started, an edit under its own day, an agent's usage under the day it started. A session has one for every day a record of it falls on, its start day included, and the web page lists the session once under each.
+_Avoid_: day bucket, daily summary
+
 **Turn**:
 One user prompt and everything up to the Stop that ends it, identified by the hook's `prompt_id` (the transcript's `promptId`; an import of a transcript without one uses the prompt entry's uuid). It carries the prompt text, the final assistant message, the turn's raw transcript lines and its Turn origin.
 _Avoid_: exchange, step

@@ -23,8 +23,8 @@ var (
 
 var sessionsCmd = &cobra.Command{
 	Use:   "sessions",
-	Short: "List recorded sessions, newest first",
-	Long: `List the sessions moondb has recorded, newest first, with how many turns
+	Short: "List recorded sessions, most recently active first",
+	Long: `List the sessions moondb has recorded, most recently active first, with how many turns
 and edits each made, its active and wall time, and which repositories it
 touched. ACTIVE is the time inside its turns, less the time a turn waited
 for input or sat idle; the pauses between turns never count. WALL runs
