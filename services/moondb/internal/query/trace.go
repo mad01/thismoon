@@ -124,7 +124,9 @@ func (s *Service) SessionTrace(ctx context.Context, id string) (trace.SessionTra
 }
 
 // sessionTraces loads a session and computes its trace, with the trace of
-// each of its agents, in the session's agent order.
+// each of its agents, in the session's agent order. The session it returns
+// leaves out the records of main segments (store.Agent.IsMainSegment), as
+// the trace does.
 func (s *Service) sessionTraces(
 	ctx context.Context,
 	id string,
@@ -133,6 +135,7 @@ func (s *Service) sessionTraces(
 	if err != nil {
 		return store.SessionDetail{}, trace.SessionTrace{}, nil, err
 	}
+	sess.Agents = slices.DeleteFunc(sess.Agents, store.Agent.IsMainSegment)
 	turns := make([]trace.TurnTrace, 0, len(sess.Turns))
 	var edits []store.Edit
 	for _, t := range sess.Turns {

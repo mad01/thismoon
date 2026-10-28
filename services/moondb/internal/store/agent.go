@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+// InternalAgent is the Type of an agent with nothing to tell its kind by:
+// no spawned agent type, no agent_type and no name. The harness ran it for
+// itself.
+const InternalAgent = "internal"
+
 // Agent is one subagent of a session, recorded when it stops: what kind it
 // was, which main turns it ran under, when it ran, and its transcript lines
 // cut to heads (an agent transcript), so its model and tool calls can be
@@ -17,7 +22,7 @@ type Agent struct {
 	SessionID string `json:"session_id"`
 	// Type is the kind of agent the harness ran: the spawned agent type
 	// (general-purpose, Explore, ...), "subagent" for a named spawn whose
-	// kind the harness did not say, or "internal" for an agent of the
+	// kind the harness did not say, or InternalAgent for an agent of the
 	// harness itself.
 	Type string `json:"type"`
 	// Name is the name it was spawned under, when it had one other than
@@ -65,6 +70,16 @@ type AgentLines struct {
 
 // Label names an agent for a person: its name, else its type.
 func (a Agent) Label() string { return cmp.Or(a.Name, a.Type, "subagent") }
+
+// IsMainSegment reports whether the record stands for a main segment, not
+// an Agent: a stretch of the main conversation the harness ran under an
+// agent id of its own and reported as a subagent stop. Its agent
+// transcript file never exists, so the record is an InternalAgent with no
+// line read and no agent transcript. record no longer spools one and
+// ingest drops one, so this hides only records stored before that.
+func (a Agent) IsMainSegment() bool {
+	return a.Type == InternalAgent && a.Lines.Read == 0 && a.TranscriptChunk == ""
+}
 
 // RanIn reports whether the agent ran under the main turn turnID.
 func (a Agent) RanIn(turnID string) bool { return slices.Contains(a.TurnIDs, turnID) }

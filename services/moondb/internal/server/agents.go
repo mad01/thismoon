@@ -77,7 +77,8 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 
 // sessionAgents lists a session's agents: the main conversation first,
 // then the subagents with a record by start, then those known only from
-// their edits.
+// their edits. A main segment's record (store.Agent.IsMainSegment) gets
+// no row.
 func (s *Server) sessionAgents(ctx context.Context, d store.SessionDetail) ([]AgentRow, error) {
 	edits, err := s.store.Edits(ctx, store.EditQuery{SessionID: d.ID})
 	if err != nil {
@@ -85,6 +86,9 @@ func (s *Server) sessionAgents(ctx context.Context, d store.SessionDetail) ([]Ag
 	}
 	rows := []AgentRow{s.mainRow(d, query.AgentEdits(edits, ""))}
 	for _, a := range d.Agents {
+		if a.IsMainSegment() {
+			continue
+		}
 		rows = append(rows, s.recordedRow(a, query.AgentEdits(edits, a.ID)))
 	}
 	return append(rows, editOnlyRows(edits, rows)...), nil

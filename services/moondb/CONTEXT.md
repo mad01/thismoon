@@ -22,6 +22,10 @@ _Avoid_: source, trigger, kind
 A subagent of a session, identified by the `agent_id` its hook payloads carry; a payload without one belongs to the main conversation. When it stops, or an import reads its transcript file, serve keeps its record: type, name, model, the Turns it ran under, its start and stop, its Agent transcript and its totals. A teammate runs under every Turn that sent it a message. An agent known only from its edits has no record. Listings show the main conversation beside the agents as `main`.
 _Avoid_: worker, subagent as a concept apart from Agent
 
+**Main segment**:
+A stretch of the main conversation the harness runs under an agent id of its own. A teammate's message or a queued prompt that wakes the session while it waits on background agents starts one. The harness fires SubagentStop at its end with no `agent_type` and a transcript path that never exists, since the lines go to the main transcript. It is not an Agent: record spools nothing for it, and ingest drops an older spool's stop of one. Every listing leaves out a record of one stored before (type `internal`, no line read, no Agent transcript). An `internal` Agent with lines read is a real Agent.
+_Avoid_: phantom agent, ghost agent, internal agent (an `internal` Agent with lines is a real one)
+
 **Agent transcript**:
 An Agent's transcript file as moondb keeps it: the timeline lines only (user, assistant, API request, system), with the fields a Trace reads, and each text, thinking block, tool input and tool result cut to a head of `AgentHeadBytes`. Usage, ids and times survive the cut, so its Trace prices the same as the whole file's. Past `MaxAgentTranscriptBytes` whole lines go from its head; the Agent counts them, and their calls add no tokens or cost.
 _Avoid_: subagent log, sidechain (the transcript field, not a moondb term)

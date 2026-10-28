@@ -116,6 +116,48 @@ func TestAgentCloseMissingChunk(t *testing.T) {
 	}
 }
 
+// TestAgentCloseDropsMainSegment: a main segment's stop, as record spooled
+// it before it skipped them (no agent_type, no line read, no transcript),
+// leaves the spool and records neither an agent nor a session.
+func TestAgentCloseDropsMainSegment(t *testing.T) {
+	f := newFixture(t)
+	env := base(spool.KindAgentClose, "a67e:close:0", "s1", "", 3)
+	env.Agent = spool.AgentRef{ID: "a67e"}
+	env.AgentClose = &spool.AgentClose{Type: store.InternalAgent, StartedAt: at(3), EndedAt: at(3)}
+	f.write(env, chunkSet{})
+	f.drain()
+	ctx := context.Background()
+	if a, err := f.st.Agent(ctx, "a67e"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("agent = %+v, %v; want none", a, err)
+	}
+	if _, err := f.st.Session(ctx, "s1"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("session s1: %v; want none", err)
+	}
+	if n := f.pending(); n != 0 {
+		t.Errorf("%d envelopes pending, want the stop gone from the spool", n)
+	}
+}
+
+// TestAgentCloseKeepsInternalAgentWithLines: an internal agent with lines
+// read and an agent transcript is an Agent, not a main segment: its stop
+// records it and its session.
+func TestAgentCloseKeepsInternalAgentWithLines(t *testing.T) {
+	f := newFixture(t)
+	c := chunkSet{}
+	env := agentEnv(c, "s1", "a68f", 3, 2)
+	env.Agent.Type = ""
+	env.AgentClose.Type, env.AgentClose.Name = store.InternalAgent, ""
+	f.write(env, c)
+	f.drain()
+	if a := f.agent("a68f"); a.Type != store.InternalAgent || a.TranscriptChunk == "" ||
+		a.Lines.Read != 2 {
+		t.Errorf("agent = %+v, want the internal agent with its transcript", a)
+	}
+	if s := f.session("s1"); s.ID != "s1" {
+		t.Errorf("session = %+v, want it created from the envelope", s)
+	}
+}
+
 // TestAgentCloseNeedsAgentID: an agent-close without an agent id names
 // nothing to record.
 func TestAgentCloseNeedsAgentID(t *testing.T) {
