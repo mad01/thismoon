@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mad01/thismoon/kit/firstlaunchtest"
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/ingest"
 	"github.com/mad01/thismoon/services/moondb/internal/ingest/faketest"
@@ -463,9 +464,7 @@ func gitCounter(t *testing.T) string {
 	}
 	// A new executable's first launch can wait on the system's check of
 	// it; take that wait here, not under the budget.
-	if err := exec.Command(filepath.Join(bin, "git"), "version").Run(); err != nil {
-		t.Fatal(err)
-	}
+	firstlaunchtest.Warm(t, filepath.Join(bin, "git"), []string{"version"}, nil)
 	if err := os.Remove(log); err != nil {
 		t.Fatal(err)
 	}

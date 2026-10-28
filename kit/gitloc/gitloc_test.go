@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/mad01/thismoon/kit/firstlaunchtest"
 )
 
 const sha = "1a612e4313cddd60ef596c66f2fccaacea2e8410"
@@ -222,7 +224,7 @@ func TestOutputDoesNotWaitOnALingeringChild(t *testing.T) {
 			t.Cleanup(func() { killRecorded(pidFile) })
 			// A fresh script's first launch can be slow under load; launch it
 			// once untimed so the deadline measures the pipe, not the launch.
-			_ = exec.Command(git, "warm").Run()
+			firstlaunchtest.Warm(t, git, []string{"warm"}, nil)
 			dir := t.TempDir()
 
 			ctx, cancel := context.WithTimeout(context.Background(), tt.timeout)
