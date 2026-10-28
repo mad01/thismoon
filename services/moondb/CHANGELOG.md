@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/mad01/thismoon/compare/moondb/v0.5.0...moondb/v0.6.0) (2026-10-28)
+
+
+### Features
+
+* **moondb:** list sessions under every day they were active ([#330](https://github.com/mad01/thismoon/issues/330)) ([0fc2d50](https://github.com/mad01/thismoon/commit/0fc2d509dfc32d56d62ac75f758065be75aefe8d))
+
 ## [0.5.0](https://github.com/mad01/thismoon/compare/moondb/v0.4.1...moondb/v0.5.0) (2026-10-28)
 
 
