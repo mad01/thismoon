@@ -576,7 +576,9 @@ func inventory(st *store.Store) []string {
 }
 
 // TestCheckCoversMiseTools: a full check reports the installed mise tools
-// beside the repos, each under its label, and checks them against OSV.
+// beside the repos, each under its label, and checks them against OSV. A mise
+// row is imported, so its vulnerability counts as active instead of hiding as
+// not compiled in.
 func TestCheckCoversMiseTools(t *testing.T) {
 	st := newStore(t)
 	m := writeMise(t, t.TempDir(),
@@ -609,6 +611,9 @@ func TestCheckCoversMiseTools(t *testing.T) {
 	if len(flagged) != 1 || flagged[0].Name != "pad-core" ||
 		flagged[0].Repo != "mise:npm:left-pad" {
 		t.Errorf("flagged = %+v, want pad-core under mise:npm:left-pad", flagged)
+	}
+	if got := api.ActiveCount(api.Enrich(flagged, st.IsResolved)); got != 1 {
+		t.Errorf("active count = %d, want 1: every mise row must be imported", got)
 	}
 }
 

@@ -48,16 +48,20 @@ import-graph reachability with `go list -deps -json ./...`, tagging deps that
 contribute no compiled Go package as graph-only; this fails open so a real
 advisory is never hidden. A discoverer that fails for one repo and ecosystem
 (typically `go list` without a `go` on PATH) becomes a `DiscoveryError` and
-the walk goes on with the rest. Beside the repos, discovery reads the tools
-mise installs with its npm: and pipx: backends. `mise.lock` pins each tool's
-version, and that version's install directory holds an `aube-lock.yaml` (npm)
-or a virtualenv's `*.dist-info` folders (pipx). It reads those files and never
-runs mise. Each tool reports under the repo label `mise:<tool>`, which a
-per-repo rescan takes as one unit. An unreadable lock is one `DiscoveryError`
-for every tool, and an unreadable tree is one for its tool.
-The check step posts versions to OSV's
-`/v1/querybatch` (up to 1000 per batch, following `next_page_token` for paged
-results) and fetches each unique advisory id once. A record that fails to
+the walk goes on with the rest.
+
+Beside the repos, discovery reads the tools mise installs with its npm: and
+pipx: backends. `mise.lock` pins each tool's version, and that version's
+install directory holds an `aube-lock.yaml` (npm) or a virtualenv's
+`*.dist-info` folders (pipx). It reads those files and never runs mise. Each
+tool reports under the repo label `mise:<tool>`, which a per-repo rescan takes
+as one unit. Every mise row counts as compiled in, since reachability is
+computed for Go alone. An unreadable lock is one `DiscoveryError` for every
+tool, and an unreadable tree is one for its tool.
+
+The check step posts versions to OSV's `/v1/querybatch` (up to 1000 per
+batch, following `next_page_token` for paged results) and fetches each unique
+advisory id once. A record that fails to
 load keeps its finding with the id alone, so one bad fetch never aborts the
 scan. Each finding has a kind: `malicious` for an OSV MAL- id, `vuln` for any
 other advisory, and `signal` for a warning sign a deps rule raises. The

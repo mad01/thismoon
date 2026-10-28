@@ -75,7 +75,9 @@ no file locks.
   normalized. The venv is `<version>/<pkg>/` when uv installed the tool and
   `<version>/venvs/<pkg>/` (plus pip in `shared/`) when pipx did, so both
   layouts are read. Discovery never runs mise, whose shims don't work inside the
-  sandbox. Both paths are `[mise]` keys in the deps config.
+  sandbox. Both paths are `[mise]` keys in the deps config. Every mise row sets
+  `Imported: true` (see "Adding a producer"), so its vulnerabilities count and
+  notify like any compiled-in dep's.
 - **mise labels.** Each tool reports under the repo label `mise:<tool>`
   (`mise:npm:yarn`, `mise:pipx:httpie`). The label carries no version, so it
   stays the rescan key and the page's `?repo=` filter across upgrades; the
@@ -174,12 +176,13 @@ no file locks.
   never folded into it. It names each package version and its repos, and says
   to check whether it was installed and rotate the credentials it could
   reach. Each banner retries on its own if delivery fails.
-- **A manual check notifies too.** `POST /api/check`, full or per repo (the
-  page's rescan buttons, `deps_check`, `deps check`), fires the banners for
-  anything new once the check succeeds. A full check resets `ScannedAt`, so
-  the loop skips its next cycle; without this, checking by hand every day
-  would mean no banner ever fires. `Engine.Notify` is serialized and the
-  notified set keeps the loop from firing the same banner again.
+- **A manual check notifies too.** `POST /api/check`, full, per repo or per
+  mise label (the page's rescan buttons, `deps_check`, `deps check`), fires
+  the banners for anything new once the check succeeds. A full check resets
+  `ScannedAt`, so the loop skips its next cycle; without this, checking by
+  hand every day would mean no banner ever fires. `Engine.Notify` is
+  serialized and the notified set keeps the loop from firing the same banner
+  again.
 
 ## Data model & storage
 
