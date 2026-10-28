@@ -21,9 +21,11 @@ internal/
   config/            ~/.config/deps/config.toml (exclude_repos, exclude_paths,
                      [mise] lock and installs paths)
   registry/          reads the catalog registry.yaml into the repo set to scan
-  discover/          Ecosystem interface + Go, npm, Python, Swift discoverers
-                     and the shared walker that skips nested checkouts; Mise
+  discover/          Ecosystem interface + Go, npm, Python, Swift discoverers,
+                     the browser JavaScript discoverers that report npm, and
+                     the shared walker that skips nested checkouts; Mise
                      reads the installed mise npm and pipx trees
+  jsdelivr/          jsDelivr data API client (file lookup by sha256), cached
   osv/               OSV.dev client (querybatch, then per-id vuln fetch)
   scanner/           Engine: discover, check, persist, coalesced notify
   notify/            Notifier interface, osascript banner, event emission
@@ -46,9 +48,18 @@ catalog registry, trims it by `exclude_repos`, and walks each repo for
 `requirements.txt` pins, and `Package.resolved`. For Go it also computes
 import-graph reachability with `go list -deps -json ./...`, tagging deps that
 contribute no compiled Go package as graph-only; this fails open so a real
-advisory is never hidden. A discoverer that fails for one repo and ecosystem
-(typically `go list` without a `go` on PATH) becomes a `DiscoveryError` and
-the walk goes on with the rest.
+advisory is never hidden. Browser JavaScript outside any lockfile becomes npm
+rows too. Shell scripts are read for `cdn.jsdelivr.net/npm/<name>@<version>`
+URLs, with a `$VAR` version resolved from the script's own literal
+assignments. Library files committed under a `static` directory (named with a
+version or ending in `.min.js`) are hashed and looked up on
+`data.jsdelivr.com`. A match names the npm package and version. A file that
+matches nothing takes both from its file name and carries the
+`deps-vendored-modified` signal. Lookups are cached in memory, a match for
+the life of the process and a miss for a day. A discoverer that fails for one
+repo and ecosystem becomes a `DiscoveryError`, and the walk goes on with the
+rest. Typical causes are `go list` without a `go` on PATH, or a jsDelivr
+lookup that got no answer.
 
 Beside the repos, discovery reads the tools mise installs with its npm: and
 pipx: backends. `mise.lock` pins each tool's version, and that version's

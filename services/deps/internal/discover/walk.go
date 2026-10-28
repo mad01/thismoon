@@ -6,12 +6,19 @@ import (
 	"path/filepath"
 )
 
-// findManifests walks root and returns every file named filename. It skips the
-// usual non-source trees, any directory the Options exclude, and — crucially —
-// any nested git checkout (a submodule or a linked worktree), so a worktree
-// sitting under a registry repo isn't scanned twice. The repo root itself is
-// never skipped on the nested-repo test (it legitimately holds .git).
+// findManifests walks root and returns every file named filename, skipping what
+// findFiles skips.
 func findManifests(root, filename string, opts Options) ([]string, error) {
+	return findFiles(root, opts, func(rel string) bool { return filepath.Base(rel) == filename })
+}
+
+// findFiles walks root and returns every file whose root-relative path match
+// accepts. It skips the usual non-source trees, any directory the Options
+// exclude, and — crucially — any nested git checkout (a submodule or a linked
+// worktree), so a worktree sitting under a registry repo isn't scanned twice.
+// The repo root itself is never skipped on the nested-repo test (it
+// legitimately holds .git).
+func findFiles(root string, opts Options, match func(rel string) bool) ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -26,7 +33,7 @@ func findManifests(root, filename string, opts Options) ([]string, error) {
 			}
 			return nil
 		}
-		if d.Name() == filename {
+		if rel, err := filepath.Rel(root, path); err == nil && match(rel) {
 			out = append(out, path)
 		}
 		return nil

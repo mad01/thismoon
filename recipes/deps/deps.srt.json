@@ -36,7 +36,8 @@
     ],
     "allowedDomains": [
       "api.osv.dev",
-      "proxy.golang.org"
+      "proxy.golang.org",
+      "data.jsdelivr.com"
     ],
     "deniedDomains": []
   }

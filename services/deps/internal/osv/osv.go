@@ -1,7 +1,8 @@
 // Package osv checks dependency versions against the OSV.dev advisory database.
 // One HTTP API (api.osv.dev) covers every ecosystem we discover — Go, npm,
-// PyPI — so the same batch query path serves all of them. It is the only part
-// of deps that talks to the network.
+// PyPI — so the same batch query path serves all of them. Besides it, only the
+// jsdelivr package's hash lookup (during discovery) and go list's module
+// downloads reach the network.
 package osv
 
 import (

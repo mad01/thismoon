@@ -9,6 +9,7 @@ package discover
 import (
 	"path/filepath"
 
+	"github.com/mad01/thismoon/services/deps/internal/jsdelivr"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
 
@@ -59,10 +60,14 @@ type Ecosystem interface {
 }
 
 // Default is the ecosystem set built today: Go (resolved module graph +
-// reachability), npm (package-lock), PyPI (requirements.txt exact pins), and
-// Swift (Package.resolved pins).
+// reachability), npm (package-lock), PyPI (requirements.txt exact pins), Swift
+// (Package.resolved pins), and browser JavaScript outside any lockfile mapped
+// to npm: jsDelivr URLs in shell scripts, and vendored files named by a
+// jsDelivr hash lookup.
 func Default() []Ecosystem {
-	return []Ecosystem{Go{}, NPM{}, Python{}, Swift{}}
+	return []Ecosystem{
+		Go{}, NPM{}, Python{}, Swift{}, JSDelivrScripts{}, VendoredJS{Lookup: jsdelivr.New()},
+	}
 }
 
 // Repos discovers dependencies across every repo using every ecosystem, tagging

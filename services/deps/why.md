@@ -3,9 +3,11 @@
 ## The problem
 
 The repos on this machine pin hundreds of external packages (Go modules, npm
-lockfiles, exact Python pins, Swift resolved files). A version that was
-clean when it was pinned can grow an advisory later. On a single developer
-machine there is no CI fleet re-checking old lockfiles, so a vulnerability in
+lockfiles, exact Python pins, Swift resolved files). Some browser libraries
+skip lockfiles entirely: a script downloads them from jsDelivr by version, or
+the file itself is committed. A version that was clean when it was pinned can
+grow an advisory later. On a single developer machine there is no CI fleet
+re-checking old lockfiles, so a vulnerability in
 an already-pinned version sits unnoticed until something else surfaces it. The
 missing piece is a background check that keeps running after the pin is made
 and says something only when a package is actually flagged.
@@ -33,7 +35,10 @@ the same scan.
 
 The load-bearing decision is single-writer: `deps serve` alone owns the scan
 store, reaches the network, and fires notifications, while the CLI and the MCP
-tools are thin HTTP clients to it. Every reader sees the same data and no file
+tools are thin HTTP clients to it. Its network callers are the OSV check, the
+module downloads `go list` makes, and a jsDelivr lookup that names a committed
+library file by its sha256, since a file name alone can't prove which
+published version the bytes are. Every reader sees the same data and no file
 locks exist. Acknowledgment is version-scoped: a resolve is keyed by
 ecosystem, name, exact version, and advisory id. So an acknowledged finding
 resurfaces automatically when the package version changes or a new advisory
