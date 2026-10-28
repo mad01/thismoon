@@ -41,16 +41,21 @@ var ErrNotFound = errors.New("present: page not found")
 
 ## Map errors at the boundary with `errors.Is`/`errors.As`
 
-Branch on a sentinel with `errors.Is`, never by string-matching. The HTTP layer maps the store's sentinel to a status code in one helper:
+Branch on a sentinel with `errors.Is`, never by string-matching. The HTTP layer maps the store's and the query layer's sentinels to status codes in one helper:
 
 ```go
-// keeper-of-facts/internal/server/server.go
-func writeStoreErr(w http.ResponseWriter, err error) {
-	if errors.Is(err, store.ErrNotFound) {
-		writeErr(w, http.StatusNotFound, err)
-		return
+// moondb/internal/server/server.go
+func writeBackendErr(w http.ResponseWriter, err error) {
+	code := http.StatusInternalServerError
+	switch {
+	case errors.Is(err, query.ErrInvalidRequest):
+		code = http.StatusBadRequest
+	case errors.Is(err, store.ErrNotFound):
+		code = http.StatusNotFound
+	case errors.Is(err, query.ErrNotImplemented):
+		code = http.StatusNotImplemented
 	}
-	writeErr(w, http.StatusBadRequest, err)
+	writeErr(w, code, fmt.Errorf("moondb: %w", err))
 }
 ```
 

@@ -6,7 +6,6 @@
 /dist
 .github
 .claude
-services/catalog/catalog
 services/csl/csl
 services/d-man/d-man
 services/deps/deps

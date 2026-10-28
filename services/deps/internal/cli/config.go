@@ -26,8 +26,8 @@ const configReference = `# deps discovery config: every key optional. The two ex
 # it, not a silently disabled exclusion.
 #
 # This file only TRIMS the repo set; it never adds to it. The set itself comes
-# from the catalog registry (~/.config/catalog/registry.yaml), so a newly
-# catalogued repo enrolls on its own. Edits take effect on the next scan: no
+# from the catalog registry (~/.config/catalog/registry.yaml), so a repo
+# added there enrolls on its own. Edits take effect on the next scan: no
 # restart of 'deps serve' needed.
 
 # Skip a whole repo: by basename, by org/repo, or by a deeper path suffix.

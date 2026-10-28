@@ -1,12 +1,12 @@
 # The memory stack
 
 Every agent session starts with an empty context window. On a machine running
-the fleet, seven stores carry what one session learned into the next. Six of
-them ship here or are set up from the examples here. The seventh, auto
-memory, is built into Claude Code. Each store answers one question. The two that
-matter at a predictable moment, agent-memory and kof, don't wait for the
-agent to remember them: belt's hooks put agent-memory in front of the agent
-at session start, and kof on each prompt and after a search.
+the fleet, six stores carry what one session learned into the next. Five of
+them ship here or are set up from the examples here. The sixth, auto
+memory, is built into Claude Code. Each store answers one question. The one
+that matters at a predictable moment, agent-memory, doesn't wait for the
+agent to remember it: belt's hooks put it in front of the agent at session
+start.
 
 This page says which store holds what, how a fact gets in and back out,
 whether a command line tool exists for it, and which hook does the prompting.
@@ -19,7 +19,6 @@ every hook in depth is in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md
 |---|---|---|---|---|
 | Claude Code auto memory | what this agent learned in this repo | `~/.claude/projects/<project>/memory/` | `/memory` inside Claude Code, plain files | Claude Code loads the index itself |
 | agent-memory | facts about *you*, for every agent on every machine | `~/.config/agent-memory/` (usually a git clone) | git, plain files | belt's `agent-memory` hint |
-| keeper-of-facts (kof) | how a piece of code behaves, pinned to its lines | `~/.local/share/kof/` | `kof` CLI, MCP, web | belt's `kof-consult` and `kof-assertions` hints |
 | worklog | where a task stands | `~/code/worklog/` | `worklog` CLI, MCP | the `/worklog` skill |
 | handoff | what the next session needs to pick this one up | `~/.handoff/` | the `/handoff` skill | the next session reads the file |
 | events | what actually happened | `~/.local/share/events/` | `events` CLI, MCP, web | you query it; nothing is injected |
@@ -76,14 +75,8 @@ machines and across agents.
 Codex gets no SessionStart hook in the reference setup, so its instruction
 file (`AGENTS.md`) has to tell it to read the index.
 
-## keeper-of-facts, worklog, handoff, events and moondb
+## worklog, handoff, events and moondb
 
-- kof holds claims about code, not about you. Each assertion is one
-  sentence pinned to a hashed file line range. `kof check` flips it stale
-  when those lines change, so this memory decays visibly instead of silently
-  going wrong. The agent writes with the `kof_assert` MCP tool (or
-  `kof assert`); belt does the reading for it. See
-  [services/keeper-of-facts/README.md](../services/keeper-of-facts/README.md).
 - worklog holds task state keyed by ticket or topic rather than by
   directory. That covers the case auto memory loses: work started in
   `/tmp/foo` that spans three repos ends up filed under a tmp directory
@@ -111,8 +104,8 @@ file (`AGENTS.md`) has to tell it to read the index.
 
 ## Keeping the stores private
 
-None of these stores needs a git host. kof, events and moondb never leave
-the machine. The other three can stay local too, or sync through a Google Drive
+None of these stores needs a git host. events and moondb never leave the
+machine. The other three can stay local too, or sync through a Google Drive
 folder that only your account can see. A git remote is one option among
 these, not a requirement.
 
@@ -149,8 +142,6 @@ The split it uses:
   goes to agent-memory.
 - A gotcha about one project, or about Claude Code itself, goes to auto
   memory.
-- A claim about how code behaves, one you could prove by pointing at lines,
-  goes to kof.
 - Progress on a task that will span sessions goes to worklog.
 - A session ending mid-task gets a worklog checkpoint, plus a handoff when
   the next agent needs the story and not only the state.
@@ -164,16 +155,13 @@ belt:
 |---|---|---|---|
 | `belt hint session-start` | SessionStart | `agent-memory` | the agent-memory indexes |
 | `belt hint session-start` | SessionStart | `moondb-inflight` | up to ten files of the checkout that other sessions edited and no commit has taken, when git status shows them dirty |
-| `belt hint search` | PostToolUse on the csl search tools | `kof-assertions` | up to three assertions about the code the search hit, stale ones marked |
-| `belt hint prompt` | UserPromptSubmit | `kof-consult` | the assertions about the session's repo that the prompt is about: up to five in the first block, three after, none repeated |
-| `belt hint prompt` | UserPromptSubmit | `kof-deposit` | once per session, after 30 tool calls with no `kof_assert`: a prefilled nudge to deposit what it derived |
 | `belt hint session-start`, `belt hint subagent-start` | SessionStart, SubagentStart | custom hints | machine-private context from a command you configure, such as a daily journal or a worker brief |
 | `belt record <event>` | nine lifecycle events | the ledger | nothing; it writes to events and never to the session |
 
 Every hint prints under a `belt[<name>]:` prefix, so a transcript shows which
 context was injected and which the agent produced. On Codex the reference
-setup wires only the tool-event entries: `kof-assertions` fires there, while
-the session-start injections and the prompt hints stay Claude-only. It wires
+setup wires only the tool-event entries, so the session-start injections
+stay Claude-only. It wires
 no `belt record` entry either, so a Codex session leaves nothing in the
 ledger; Codex can still read the ledger through the events service.
 
@@ -181,5 +169,4 @@ To turn all of this on, register the hooks in your agent settings. The
 wiring is in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md), and a
 worked settings block is in
 [`examples/dotfiles/recipes/agent-config/settings.json`](../examples/dotfiles/recipes/agent-config/settings.json).
-Check the result with `belt doctor`, which also tells "kof down" apart from
-"kof empty"; the hints render both as silence.
+Check the result with `belt doctor`.

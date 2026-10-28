@@ -73,7 +73,7 @@ When a path comes from config or env that the shell didn't expand, expand a lead
 ## Serialization formats by source
 
 - **TOML** (`BurntSushi/toml`) for human-edited config: `d-man`'s `routes.toml`, `status`.
-- **JSON** for machine state: the `present` `meta.json`. **JSONL** for append-only logs: the `events` and `keeper-of-facts` stores.
+- **JSON** for machine state: the `present` `meta.json`. **JSONL** for append-only logs: the `events` and `moondb` stores.
 - **YAML frontmatter** (`gopkg.in/yaml.v3`) for markdown documents: `worklog`'s `CONTEXT.md` `Frontmatter`.
 
 Define a struct with explicit tags and document the contract:

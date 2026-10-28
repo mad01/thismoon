@@ -12,8 +12,8 @@ import (
 // faking testing.TB, which its unexported method forbids.
 func TestVerifyOperatingDoc(t *testing.T) {
 	f := agentdoc.Facts{
-		Name: "keeper-of-facts", Bin: "kof",
-		BaseURL: "http://kof.this", StorePath: "~/.local/share/kof",
+		Name: "moondb", Bin: "moondb",
+		BaseURL: "http://moondb.this", StorePath: "~/.local/state/moondb",
 	}
 	doc := "run {{.Bin}} against {{.BaseURL}}, store in {{.StorePath}}\n"
 	VerifyOperatingDoc(t, doc, f)

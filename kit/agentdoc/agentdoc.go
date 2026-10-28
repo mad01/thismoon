@@ -14,17 +14,17 @@ import (
 // doc, MCP instructions, and error hints. Values come from the component's
 // own config/constants so docs cannot drift from code.
 type Facts struct {
-	Name      string // component name, e.g. "keeper-of-facts"
-	Bin       string // installed binary name, e.g. "kof"
+	Name      string // component name, e.g. "moondb"
+	Bin       string // installed binary name, e.g. "moondb"
 	Purpose   string // one-line purpose, used in MCP instructions
-	BaseURL   string // default backing-service base URL, e.g. "http://kof.this"; empty for CLI-only tools
+	BaseURL   string // default backing-service base URL, e.g. "http://moondb.this"; empty for CLI-only tools
 	StorePath string // default on-disk store location; empty if none
 	LogPath   string // default log location; empty if none
 	HasDoctor bool   // whether the binary ships a doctor subcommand
 	MCPNote   string // overrides the instructions transport line for MCPs that are not a shim over the service
 
 	// MCPDoctorTool names the server's read-only doctor tool, e.g.
-	// "kof_doctor". Empty when the server exposes none, which keeps the
+	// "moondb_doctor". Empty when the server exposes none, which keeps the
 	// instructions from advertising a tool that is not registered.
 	MCPDoctorTool string
 }

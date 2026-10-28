@@ -1,7 +1,7 @@
 // Package registry resolves the list of repos to scan from the catalog registry
-// file (recipes/catalog/registry.yaml, symlinked to ~/.config/catalog/
-// registry.yaml). Reusing it means a new tool repo enrolls in dependency
-// scanning the moment it is catalogued — one source of truth, no second list.
+// file (~/.config/catalog/registry.yaml), which the consuming repo installs per
+// machine. Reading it means a new tool repo enrolls in dependency scanning the
+// moment it is listed there: one source of truth, no second list.
 package registry
 
 import (
@@ -13,12 +13,11 @@ import (
 	"github.com/mad01/thismoon/kit/confdir"
 )
 
-// FileName is the registry's name inside the catalog config directory. deps
-// reads the file catalog owns, so both resolve it the same way.
+// FileName is the registry's name inside the catalog config directory.
 const FileName = "registry.yaml"
 
 // DefaultPath is the compiled fallback location of the catalog registry
-// symlink the catalog recipe maintains, used when the config directory cannot
+// symlink the consuming repo installs, used when the config directory cannot
 // be resolved. Normal resolution goes through confdir.Path("catalog",
 // FileName), which honors XDG_CONFIG_HOME.
 const DefaultPath = "~/.config/catalog/" + FileName

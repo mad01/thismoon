@@ -10,61 +10,20 @@ import (
 	"time"
 )
 
-// kofMessage is a kof hint's text as belt renders it (tools/belt,
-// internal/hint/kofassert.go): the first pin of each assertion, then its
-// kof_get id.
-const kofMessage = "2 stored assertion(s) for repo:acme/repo/services/x - prior sessions " +
-	"derived these; treat stale ones as needing re-verification.\n" +
-	"  [fresh] the server binds to loopback only\n" +
-	"          services/x/serve.go:40-52 (kof_get id=01792948229235707000-1e1c)\n" +
-	"  [stale] the cache holds 512 traces\n" +
-	"          services/x/facts.go:10-12 (kof_get id=01792943011031490000-016f)\n" +
-	"  Correct one that proves wrong with kof_retract rather than working around it."
-
 func TestParseHint(t *testing.T) {
 	tests := []struct {
-		name   string
-		event  Event
-		ok     bool
-		want   HintEvent
-		pinned map[string][]Pin
+		name  string
+		event Event
+		ok    bool
+		want  HintEvent
 	}{
 		{
-			name: "kof ids from the text",
-			event: Event{
-				Time: t0, Title: "hinted mcp__csl__csl_search (kof-assertions)", Message: kofMessage,
-				Tags: map[string]string{
-					"hint": "kof-assertions", "event": "search", "session_id": "s1", "agent_id": "a1",
-				},
-			},
-			ok: true,
-			want: HintEvent{Hint: "kof-assertions", At: t0, AgentID: "a1", Assertions: []string{
-				"01792948229235707000-1e1c", "01792943011031490000-016f",
-			}},
-		},
-		{
-			name: "ids and pins from the tags",
-			event: Event{Time: t0, Message: "ignored kof_get id=other", Tags: map[string]string{
-				"hint": "kof-consult", "assertions": "id1, id2",
-				"pins": "id1=services/x/a.go,id2=services/y/b.go,id1=services/x/c.go",
+			name: "hint id from the tag",
+			event: Event{Time: t0, Title: "ignored", Tags: map[string]string{
+				"hint": "em-dash", "event": "edit", "session_id": "s1", "agent_id": "a1",
 			}},
 			ok:   true,
-			want: HintEvent{Hint: "kof-consult", At: t0, Assertions: []string{"id1", "id2"}},
-			pinned: map[string][]Pin{
-				"id1": {{File: "services/x/a.go"}, {File: "services/x/c.go"}},
-				"id2": {{File: "services/y/b.go"}},
-			},
-		},
-		{
-			name: "bare pins belong to every assertion",
-			event: Event{Time: t0, Tags: map[string]string{
-				"hint": "kof-consult", "assertions": "id1,id2", "pins": "services/x/a.go",
-			}},
-			ok:   true,
-			want: HintEvent{Hint: "kof-consult", At: t0, Assertions: []string{"id1", "id2"}},
-			pinned: map[string][]Pin{
-				"id1": {{File: "services/x/a.go"}}, "id2": {{File: "services/x/a.go"}},
-			},
+			want: HintEvent{Hint: "em-dash", At: t0},
 		},
 		{
 			name: "hint id from the title",
@@ -89,13 +48,8 @@ func TestParseHint(t *testing.T) {
 			if ok != tt.ok {
 				t.Fatalf("ok = %t, want %t", ok, tt.ok)
 			}
-			pins := got.Pins
-			got.Pins = nil
-			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
+			if got != tt.want {
 				t.Errorf("hint = %+v, want %+v", got, tt.want)
-			}
-			if fmt.Sprint(pins) != fmt.Sprint(tt.pinned) {
-				t.Errorf("pins = %v, want %v", pins, tt.pinned)
 			}
 		})
 	}
@@ -119,15 +73,11 @@ func TestCountLedger(t *testing.T) {
 	}
 }
 
-// fakePeers answers from fixed entries and assertions, as the events
-// service and keeper-of-facts filter them, and counts the assertion
-// listings it was asked for.
+// fakePeers answers from fixed entries, as the events service filters
+// them.
 type fakePeers struct {
-	events     map[string][]Event // by source, newest first
-	eventsErr  error
-	assertions []Assertion
-	kofErr     error
-	listings   int
+	events    map[string][]Event // by source, newest first
+	eventsErr error
 }
 
 func (f *fakePeers) Events(_ context.Context, q EventQuery) ([]Event, error) {
@@ -145,14 +95,6 @@ func (f *fakePeers) Events(_ context.Context, q EventQuery) ([]Event, error) {
 		out = append(out, e)
 	}
 	return out[:min(len(out), q.Limit)], nil
-}
-
-func (f *fakePeers) Assertions(context.Context) ([]Assertion, error) {
-	f.listings++
-	if f.kofErr != nil {
-		return nil, f.kofErr
-	}
-	return f.assertions, nil
 }
 
 // entry is an events entry stamped sec seconds after t0, tagged with the
@@ -175,7 +117,7 @@ func TestReadEvents(t *testing.T) {
 	mention.Message = "this message names s1 but belongs to s2"
 	peers := &fakePeers{events: map[string][]Event{
 		"belt": {
-			entry(60, "s1", map[string]string{"hint": "kof-consult", "assertions": "id1"}),
+			entry(60, "s1", map[string]string{"hint": "em-dash"}),
 			mention,
 			entry(20, "s1", map[string]string{"hint": "prefer-csl"}),
 			older,
@@ -194,7 +136,7 @@ func TestReadEvents(t *testing.T) {
 	for _, h := range got.Hints {
 		hints = append(hints, h.Hint)
 	}
-	if !slices.Equal(hints, []string{"prefer-csl", "kof-consult"}) {
+	if !slices.Equal(hints, []string{"prefer-csl", "em-dash"}) {
 		t.Errorf("hints = %v, want s1's two in time order", hints)
 	}
 	if got.Ledger == nil || *got.Ledger != (Ledger{SubagentStart: 1, PreCompact: 1}) {
@@ -234,77 +176,5 @@ func TestReadEventsNoTurnsSkipsTheProbe(t *testing.T) {
 	got := ReadEvents(context.Background(), peers, "s1", time.Time{})
 	if got.Source.Status != StatusOK || got.Hints == nil {
 		t.Errorf("got %+v, want ok with an empty hint list", got)
-	}
-}
-
-func TestReadPins(t *testing.T) {
-	pin := Pin{Repo: "github.com/acme/repo", File: "services/x/a.go"}
-	hints := []HintEvent{
-		{Hint: "kof-consult", Assertions: []string{"id1", "id2"}},
-		{Hint: "kof-assertions", Assertions: []string{"id1", "id3"}},
-		{
-			Hint: "kof-assertions", Assertions: []string{"tagged"},
-			Pins: map[string][]Pin{"tagged": {{File: "b.go"}}},
-		},
-	}
-	held := []Assertion{
-		{ID: "id1", Pins: []Pin{pin}}, {ID: "id2"}, {ID: "id3"}, {ID: "unshown"},
-		{ID: "tagged", Pins: []Pin{pin, {Repo: pin.Repo, File: "services/x/b.go"}}},
-	}
-	tests := []struct {
-		name         string
-		peers        *fakePeers
-		hints        []HintEvent
-		status       Status
-		detail       string // a part of the detail
-		wantPins     []string
-		wantListings int
-	}{
-		{
-			// The tagged one too: its tag holds the fire's first pins, not
-			// its own.
-			name:  "every assertion found in one listing",
-			peers: &fakePeers{assertions: held}, hints: hints,
-			status: StatusOK, wantPins: []string{"id1", "id2", "id3", "tagged"}, wantListings: 1,
-		},
-		{
-			name:  "one assertion gone",
-			peers: &fakePeers{assertions: []Assertion{held[0], held[2], held[4]}}, hints: hints,
-			status: StatusPartial, detail: "no assertion id2",
-			wantPins: []string{"id1", "id3", "tagged"}, wantListings: 1,
-		},
-		{
-			name:  "kof down",
-			peers: &fakePeers{kofErr: errors.New("kof: connection refused")}, hints: hints,
-			status: StatusUnavailable, detail: "connection refused", wantListings: 1,
-		},
-		{
-			name:   "no kof hint",
-			peers:  &fakePeers{assertions: held},
-			hints:  []HintEvent{{Hint: "prefer-csl"}},
-			status: StatusSkipped, detail: "no assertion to look up",
-		},
-		{
-			name:   "events did not answer",
-			peers:  &fakePeers{assertions: held},
-			status: StatusSkipped, detail: "the events service did not answer",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pins, src := ReadPins(context.Background(), tt.peers, tt.hints)
-			if src.Status != tt.status || !strings.Contains(src.Detail, tt.detail) {
-				t.Errorf("source = %+v, want %s with %q", src, tt.status, tt.detail)
-			}
-			var ids []string
-			for id := range pins {
-				ids = append(ids, id)
-			}
-			slices.Sort(ids)
-			if !slices.Equal(ids, tt.wantPins) || tt.peers.listings != tt.wantListings {
-				t.Errorf("pins for %v after %d listings, want %v after %d",
-					ids, tt.peers.listings, tt.wantPins, tt.wantListings)
-			}
-		})
 	}
 }

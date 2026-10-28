@@ -40,10 +40,9 @@ var effortLevels = []string{"low", "medium", "high", "xhigh", "max"}
 
 // sessionEnv names the variables a run must not inherit. The session ones
 // tie a process to the calling Claude Code session, so dropping them makes
-// the run its own session instead of nesting in the caller's (the same
-// list as services/keeper-of-facts/internal/recall). The effort and agent
-// teams ones would silently change how the run behaves, so a run sets
-// effort only through -effort and records it.
+// the run its own session instead of nesting in the caller's. The effort
+// and agent teams ones would silently change how the run behaves, so a run
+// sets effort only through -effort and records it.
 var sessionEnv = map[string]bool{
 	"CLAUDECODE":                           true,
 	"CLAUDE_CODE_ENTRYPOINT":               true,

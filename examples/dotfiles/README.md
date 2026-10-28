@@ -78,7 +78,7 @@ Each kind of machine-private wiring has a worked example in `recipes/`:
    listed machines. `config.toml` carries a worked block; the short form is:
 
 ```toml
-[recipes_config.overrides."thismoon/catalog"]
+[recipes_config.overrides."thismoon/status"]
 enable = false
 ```
 

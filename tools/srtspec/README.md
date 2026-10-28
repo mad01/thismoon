@@ -33,8 +33,8 @@ srtspec docs                                            # the operating doc
 spec:
   access:
     sandbox: srt                 # srt | seatbelt | none (none and seatbelt need a reason)
-    workdir: ~/.local/share/kof  # the value of the workdir symbol
-    listen: 7431                 # turns on allowLocalBinding
+    workdir: ~/.local/state/moondb  # the value of the workdir symbol
+    listen: 7433                 # turns on allowLocalBinding
     local: [events]              # loopback peers; also turns on allowLocalBinding
     egress: [via SRT_RUN_ALLOW_DOMAINS]   # or host / *.domain / host:port
     reads: [~/code, workdir]

@@ -19,11 +19,6 @@
       "command": "~/.config/ralph/sources/thismoon/recipes/humanizer/humanizer-mcp-sandbox.sh",
       "args": []
     },
-    "kof": {
-      "_comment": "A thin client of the kof service: registered everywhere, the tools answer unreachable until `kof serve` runs.",
-      "command": "~/code/bin/kof",
-      "args": ["mcp"]
-    },
     "events": {
       "command": "~/code/bin/events",
       "args": ["mcp"]

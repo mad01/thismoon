@@ -141,7 +141,7 @@ func TestDisallowed(t *testing.T) {
 	}
 	got := repo.Disallowed()
 	for _, want := range []string{
-		"CaseOnly", "Write", "Bash(git commit:*)", "mcp__kof__kof_assert",
+		"CaseOnly", "Write", "Bash(git commit:*)", "mcp__worklog__worklog_checkpoint",
 		"mcp__brain__brain_write", "mcp__csl__csl_repo_pull",
 	} {
 		if !slices.Contains(got, want) {
@@ -164,7 +164,7 @@ func TestDisallowed(t *testing.T) {
 		}
 		got := c.Disallowed()
 		for _, want := range []string{
-			"Bash(git push:*)", "mcp__kof__kof_assert", "mcp__brain__brain_edit",
+			"Bash(git push:*)", "mcp__worklog__worklog_checkpoint", "mcp__brain__brain_edit",
 			"mcp__gh_com__merge_pull_request", "mcp__gh_com__push_files",
 		} {
 			if !slices.Contains(got, want) {

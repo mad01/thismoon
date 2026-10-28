@@ -1,30 +1,29 @@
 # HTTP service patterns
 
-The shape every `net/http` server in this repo shares (`events`, `keeper-of-facts`, `present`, `d-man`, `status`). Stdlib only, no chi/gin/echo. Backed by the `net/http` docs and the repo servers.
+The shape every `net/http` server in this repo shares (`events`, `moondb`, `present`, `d-man`, `status`). Stdlib only, no chi/gin/echo. Backed by the `net/http` docs and the repo servers.
 
 ## ServeMux with Go 1.22 method routing
 
-Build routes on `http.NewServeMux` using method+path patterns (`"GET /path"`, `"POST /path"`) and `{id}` wildcards read back with `r.PathValue("id")`. Wrap the mux in middleware and return it from a `Handler()` method. From `keeper-of-facts/internal/server/server.go`:
+Build routes on `http.NewServeMux` using method+path patterns (`"GET /path"`, `"POST /path"`) and `{id}` wildcards read back with `r.PathValue("id")`. Wrap the mux in middleware and return it from a `Handler()` method. From `moondb/internal/server/server.go`, with most of its read-only routes left out:
 
 ```go
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /app.js", s.handleAppJS)
-	mux.HandleFunc("GET /api/assertions", s.handleList)
-	mux.HandleFunc("POST /api/assertions", s.handleCreate)
-	mux.HandleFunc("GET /api/assertions/{id}", s.handleGet)
-	mux.HandleFunc("POST /api/assertions/{id}/retract", s.handleRetract)
-	mux.HandleFunc("POST /api/check", s.handleCheck)
-	mux.HandleFunc("POST /api/recall", s.handleRecallGone)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
+	mux.HandleFunc("GET /api/sessions", s.handleSessions)
+	mux.HandleFunc("GET /api/sessions/{id}", s.handleSession)
+	mux.HandleFunc("GET /api/sessions/{id}/trace", s.handleSessionTrace)
+	mux.HandleFunc("GET /api/chunks/{sha}", s.handleChunk)
+	mux.HandleFunc("GET /api/", handleNoRoute)
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /version", s.info.Handler())
 	webkit.Mount(mux)
 	return logRequests(mux)
 }
 ```
+
+`events` registers `POST /api/events` and `DELETE /api/events` beside its `GET` the same way.
 
 `GET /{$}` matches exactly `/` (not a catch-all). webkit-chromed tools mount shared UI at `GET /webkit/` and expose `GET /version`, which serves the same four-key build metadata object the CLI prints for `version -o json` (`version`, `commit`, `tag`, `build_time`; see `cli.md`), pretty-printed, `application/json`, `Cache-Control: no-store`:
 

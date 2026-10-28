@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// cytoscapeSum is the sha256 of cytoscape 3.31.0's dist/cytoscape.min.js, the
-// file catalog commits; testdata/lookup-cytoscape-3.31.0.json is the API's
-// recorded answer for it.
+// cytoscapeSum is the sha256 of cytoscape 3.31.0's dist/cytoscape.min.js, as
+// a component vendors it under static/; testdata/lookup-cytoscape-3.31.0.json
+// is the API's recorded answer for it.
 const cytoscapeSum = "e7d4c6c286bee0ba346c68ed1c8b8b82b4740b75be5d0c4d6602ee38df55d9c1"
 
 // stub serves the recorded answers: the cytoscape hit for cytoscapeSum, the

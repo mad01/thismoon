@@ -264,8 +264,8 @@ HTTP: `GET /` and `/app.js` (read-only web page), `GET /api/sessions`,
 `trace <session-id>`, `scorecard <session-id>`, `doctor`, `docs`, `version`. MCP
 tools: `moondb_why`, `moondb_history`, `moondb_inflight`, `moondb_turn`,
 `moondb_sessions`, `moondb_trace`, `moondb_scorecard`, `moondb_doctor`, all
-read-only. The scorecard reads the events service (`EVENTS_BASE_URL`) and
-keeper-of-facts (`KOF_PORT`) on loopback. Config surfaces are
+read-only. The scorecard reads the events service (`EVENTS_BASE_URL`) on
+loopback. Config surfaces are
 `--port` (`MOONDB_PORT`), `--workdir` (`MOONDB_WORKDIR`), `--base-url`
 (`MOONDB_BASE_URL`, display-only), and `~/.config/moondb/config.toml` for
 the capture settings and the model prices.

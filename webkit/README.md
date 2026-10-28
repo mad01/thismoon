@@ -1,7 +1,7 @@
 # webkit
 
 Shared web-component UI kit for the mad01 local tools (`present`, `csl`,
-`catalog`): one palette, one header, one full component library. Author once,
+`deps`, `events`, `moondb`, `speak`, `status`): one palette, one header, one full component library. Author once,
 embed everywhere — so the tools look and behave the same.
 
 ## What it ships

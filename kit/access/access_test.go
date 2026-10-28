@@ -216,11 +216,11 @@ spec:
 		{
 			name: "label overrides the name",
 			yaml: `kind: Component
-metadata: {name: catalog}
+metadata: {name: speak}
 spec:
-  access: {sandbox: srt, label: catalog-web}
+  access: {sandbox: srt, label: speak-web}
 `,
-			wantLabel: "catalog-web",
+			wantLabel: "speak-web",
 		},
 		{
 			name: "system and component in one file",

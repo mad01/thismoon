@@ -8,7 +8,7 @@ max_turns: 15
 disallowed_tools: [Edit, Write, NotebookEdit, "Bash(git push:*)"]
 graders:
   - type: regex
-    pattern: '(?s)kofconsult\.go.*recipes/claude/settings\.json|recipes/claude/settings\.json.*kofconsult\.go'
+    pattern: '(?s)agentmemory\.go.*recipes/claude/settings\.json|recipes/claude/settings\.json.*agentmemory\.go'
     weight: 2
   - type: tool_used
     tool: '^mcp__csl__csl_(search|hybrid_search)$'
@@ -22,4 +22,4 @@ graders:
   - type: max_cost_usd
     max: 2.5
 ---
-A question across two of my repos. Which Go file in thismoon implements belt's kof-consult session-start hint, and which file in the dotfiles repo registers `belt hint session-start` as a Claude Code SessionStart hook? Answer with the two repo-relative paths.
+A question across two of my repos. Which Go file in thismoon implements belt's agent-memory session-start hint, and which file in the dotfiles repo registers `belt hint session-start` as a Claude Code SessionStart hook? Answer with the two repo-relative paths.

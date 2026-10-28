@@ -132,20 +132,15 @@ const (
 // operating.md.
 const IdleGapAfter = 30 * time.Minute
 
-// Scorecard peers. A session's scorecard joins two loopback services: the
+// Scorecard peers. A session's scorecard joins one loopback service: the
 // events log, for the belt hints a session was shown and its belt ledger
-// entries, and keeper-of-facts, for the files an assertion a hint showed is
-// pinned to. EVENTS_BASE_URL and KOF_PORT override the defaults, as they do
-// for belt and the kof MCP. Neither is required: a peer that does not answer
-// leaves its part of the scorecard null and says so in its sources.
+// entries. EVENTS_BASE_URL overrides the default, as it does for belt. It
+// is not required: a peer that does not answer leaves its part of the
+// scorecard null and says so in its sources.
 const (
 	// DefaultEventsURL is where the events service listens.
 	DefaultEventsURL = "http://127.0.0.1:7430"
-	// DefaultKofPort is the port keeper-of-facts listens on, on loopback.
-	DefaultKofPort = 7431
-	// PeerTimeout bounds one request to a peer. A scorecard sends
-	// keeper-of-facts one request, for the list of every assertion, so this
-	// is its whole budget there.
+	// PeerTimeout bounds one request to a peer.
 	PeerTimeout = 2 * time.Second
 	// EventsPerSource is how many entries the events service keeps per
 	// source, and how many a scorecard asks for. An older entry is gone.
@@ -170,12 +165,6 @@ const (
 	// FlagToolErrors flags the tool calls that failed, every agent's
 	// included.
 	FlagToolErrors = 5
-	// FlagUnusedPins flags the files the shown kof assertions are pinned to
-	// that no later Read or Edit touched, once at least this many are
-	// known.
-	FlagUnusedPins = 2
-	// FlagPinHitRate is the hit rate under which unused pins are flagged.
-	FlagPinHitRate = 0.5
 	// FlagCompactions flags the context compactions (belt ledger
 	// pre-compact entries).
 	FlagCompactions = 1

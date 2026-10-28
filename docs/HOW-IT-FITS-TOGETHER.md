@@ -18,13 +18,11 @@ A concrete session on a fully wired machine:
 
 1. You open Claude Code in a repo. Before you type anything, belt's
    SessionStart hooks inject two things. One is the shared agent-memory index
-   (facts you told any agent to remember, on any machine). The other is the
-   repo's stored keeper-of-facts (kof) assertions: conclusions previous
-   sessions derived about this code, each pinned to the lines that prove it.
+   (facts you told any agent to remember, on any machine). The other is
+   moondb's list of the files other sessions edited in this checkout that no
+   commit has taken yet. A commit or reset then leaves their work alone.
 2. The agent searches with `csl_search`, the same zoekt index you query in
-   the browser at `csl.this`. belt's search hint surfaces any kof assertions
-   about the code the search just hit, and marks the ones whose pinned lines
-   have changed since they were written.
+   the browser at `csl.this`.
 3. The agent slips into habit and runs a recursive grep instead. belt hands
    back the equivalent `csl_search` call with the pattern already
    translated. Not a lecture, a replacement.
@@ -35,10 +33,7 @@ A concrete session on a fully wired machine:
    name derivation, same config) would have caught it at commit.
 5. The agent posts a PR comment through an MCP server. belt nudges it once:
    run `humanizer_detect` before more text leaves the machine.
-6. Thirty tool calls in, belt asks the session to deposit what it derived as
-   a kof assertion, so the next session starts where this one ended instead
-   of re-deriving it.
-7. Every deny and every hint landed in the events timeline (`events.this`),
+6. Every deny and every hint landed in the events timeline (`events.this`),
    so you can see what the guardrails actually did this week. `status.this`
    watches the services; `deps` scans the dependencies your repos pin;
    the agent publishes its findings as a briefing page you read at
@@ -181,24 +176,19 @@ blocks too.
 
 ## The memory stack
 
-Four stores, one question each. Hooks prompt every one of them; none depend
+Three stores, one question each. Hooks prompt every one of them; none depend
 on remembering to use them.
 
 - **agent-memory**: durable facts about *you*, portable across agents and
   machines (a git repo of one-fact files). belt injects its index at session
   start.
-- **keeper-of-facts (kof)**: claims about *code*, each pinned to file
-  lines. The pins let `kof check` flip a claim stale when the code moves, so
-  the memory decays detectably instead of silently going wrong. belt
-  surfaces assertions at session start and after searches, and nudges
-  deposits.
 - **worklog**: where a *task* stands, keyed by ticket or topic rather than
   directory, so a fresh session can resume mid-task.
 - **events**: what actually *happened*. Every guard deny, every hint, every
   service's audit trail, queryable on one timeline.
 
 Claude Code's own auto memory and the `/handoff` skill's bridge documents sit
-beside these four. [MEMORY-STACK.md](MEMORY-STACK.md) covers all six: which
+beside these three. [MEMORY-STACK.md](MEMORY-STACK.md) covers these five and moondb: which
 store gets which fact, how each is read and written, and the hook behind each.
 
 ## Skills

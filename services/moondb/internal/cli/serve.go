@@ -87,13 +87,10 @@ func runServe(_ *cobra.Command, _ []string) error {
 	return listen(ctx, server.New(st, q, buildinfo.Get()))
 }
 
-// scorecardPeers points a scorecard at the events service and
-// keeper-of-facts on loopback, where EVENTS_BASE_URL and KOF_PORT say, as
-// they do for belt and the kof MCP.
+// scorecardPeers points a scorecard at the events service on loopback,
+// where EVENTS_BASE_URL says, as it does for belt.
 func scorecardPeers() *scorecard.HTTPPeers {
-	events := envdefault.String("EVENTS_BASE_URL", moondb.DefaultEventsURL)
-	kof := fmt.Sprintf("http://127.0.0.1:%d", envdefault.Int("KOF_PORT", moondb.DefaultKofPort))
-	return scorecard.NewHTTPPeers(events, kof)
+	return scorecard.NewHTTPPeers(envdefault.String("EVENTS_BASE_URL", moondb.DefaultEventsURL))
 }
 
 // listen serves s on the loopback port until ctx ends, then gives

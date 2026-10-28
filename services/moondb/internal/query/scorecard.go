@@ -11,9 +11,8 @@ import (
 
 // SessionScorecard computes how a session spent its context: its trace,
 // the tool calls in its turns' and agents' transcript lines, and what the
-// events service and keeper-of-facts (Peers) say about it. A peer that
-// does not answer leaves its part null. Returns store.ErrNotFound for an
-// unknown session.
+// events service (Peers) says about it. A peer that does not answer leaves
+// its part null. Returns store.ErrNotFound for an unknown session.
 func (s *Service) SessionScorecard(ctx context.Context, id string) (scorecard.Scorecard, error) {
 	sess, st, agents, err := s.sessionTraces(ctx, id)
 	if err != nil {
@@ -34,7 +33,6 @@ func (s *Service) SessionScorecard(ctx context.Context, id string) (scorecard.Sc
 	}
 	in.Transcripts = counts.Source()
 	in.Events = scorecard.ReadEvents(ctx, s.Peers, id, sessionStart(st))
-	in.Pins, in.Kof = scorecard.ReadPins(ctx, s.Peers, in.Events.Hints)
 	return scorecard.Build(in), nil
 }
 

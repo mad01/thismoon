@@ -58,10 +58,10 @@ The fixation text-walk works in place: each text node under a target that holds 
 **Example:**
 
 ```html
-<wk-header brand="catalog." brand-href="/">
-  <a data-nav class="active" href="/">Systems</a>
-  <a data-nav href="/components">Components</a>
-  <button data-extra id="refreshBtn">Refresh</button>
+<wk-header brand="present." brand-href="/">
+  <a data-nav class="active" href="/">Pages</a>
+  <a data-nav href="/webkit/themes">Themes</a>
+  <button data-extra id="shareBtn">Share</button>
 </wk-header>
 ```
 
@@ -246,7 +246,7 @@ Key/value list. `variant="card"` adds a border, rounded corners, and uppercased 
   </wk-kv-row>
   <wk-kv-row>
     <wk-kv-label>Port</wk-kv-label>
-    <wk-kv-value><code>7575</code></wk-kv-value>
+    <wk-kv-value><code>7433</code></wk-kv-value>
   </wk-kv-row>
 </wk-kv>
 ```
@@ -329,7 +329,7 @@ Client-side, `webkit.js` highlights every `.wk-prose pre > code[class*="language
 Standalone code block for use outside a `.wk-prose` body. Gets the same Prism highlight, language badge, and copy button. Use `language-text` when the language is unknown.
 
 ```html
-<pre class="wk-code-block"><code class="language-bash">catalog validate ./path</code></pre>
+<pre class="wk-code-block"><code class="language-bash">moondb why ./main.go:12</code></pre>
 ```
 
 ---

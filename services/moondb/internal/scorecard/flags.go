@@ -10,7 +10,7 @@ import (
 // flags names the costliest patterns a scorecard shows, each once its
 // count reaches its threshold in facts.go. They come in a fixed order, the
 // ones that fill the context most directly first: large reads, then
-// searches, failed calls, compactions and errors, then unused hints.
+// searches, failed calls, compactions and errors.
 func flags(sc Scorecard) []string {
 	out := []string{}
 	add := func(n, threshold int, one, many, rest string) {
@@ -35,20 +35,7 @@ func flags(sc Scorecard) []string {
 		add(l.PermissionDenied, moondb.FlagPermissionDenials, "tool call", "tool calls",
 			"denied by a permission check")
 	}
-	if h := sc.Hints; h != nil && unusedPins(h.Kof) {
-		k := h.Kof
-		out = append(out, fmt.Sprintf(
-			"kof assertions shown were pinned to %d %s, %d read or edited later",
-			k.PinnedPaths, noun(k.PinnedPaths, "file", "files"), k.UsedPaths))
-	}
 	return out
-}
-
-// unusedPins reports whether enough pinned paths are known and too few of
-// them were touched after their hint.
-func unusedPins(k KofStats) bool {
-	return k.PinnedPaths >= moondb.FlagUnusedPins && k.HitRate != nil &&
-		*k.HitRate < moondb.FlagPinHitRate
 }
 
 // noun is one for a count of 1, many otherwise.

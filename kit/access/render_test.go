@@ -8,8 +8,8 @@ import (
 func TestRenderGolden(t *testing.T) {
 	m := Manifest{
 		Sandbox: SandboxSRT,
-		Workdir: "~/.local/share/kof",
-		Listen:  7431,
+		Workdir: "~/.local/state/moondb",
+		Listen:  7433,
 		Reads:   []string{"~/code", "~/.worktrees", SymbolWorkdir},
 		Writes:  []string{SymbolWorkdir, SymbolTemp},
 		Deny:    []string{"~/code/**/.env", "~/.worktrees/**/*.key"},
@@ -26,10 +26,10 @@ func TestRenderGolden(t *testing.T) {
     "allowRead": [
       "~/code",
       "~/.worktrees",
-      "~/.local/share/kof"
+      "~/.local/state/moondb"
     ],
     "allowWrite": [
-      "~/.local/share/kof",
+      "~/.local/state/moondb",
       "/private/tmp",
       "/private/var/folders"
     ],

@@ -97,9 +97,6 @@ func TestFlags(t *testing.T) {
 		Reads:  ReadStats{Large: moondb.FlagLargeReads - 1},
 		Search: SearchStats{Zero: moondb.FlagZeroSearches - 1},
 		Agents: AgentStats{Ledger: &Ledger{}},
-		Hints: &HintStats{Kof: KofStats{
-			PinnedPaths: moondb.FlagUnusedPins, UsedPaths: 1, HitRate: ptr(0.5),
-		}},
 	}
 	if got := flags(below); len(got) != 0 {
 		t.Errorf("below every threshold: flags = %q", got)
@@ -113,7 +110,6 @@ func TestFlags(t *testing.T) {
 		},
 		Totals: Totals{ToolErrors: moondb.FlagToolErrors},
 		Agents: AgentStats{Ledger: &Ledger{PreCompact: 1, StopFailure: 1, PermissionDenied: 2}},
-		Hints:  &HintStats{Kof: KofStats{PinnedPaths: 4, UsedPaths: 1, HitRate: ptr(0.25)}},
 	}
 	want := []string{
 		"2 whole-file reads of 300 lines or more",
@@ -124,7 +120,6 @@ func TestFlags(t *testing.T) {
 		"1 context compaction",
 		"1 turn ended on an API error",
 		"2 tool calls denied by a permission check",
-		"kof assertions shown were pinned to 4 files, 1 read or edited later",
 	}
 	if got := flags(at); !slices.Equal(got, want) {
 		t.Errorf("flags =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

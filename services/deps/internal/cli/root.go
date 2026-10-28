@@ -91,9 +91,9 @@ func defaultConfigPath() string {
 	return config.DefaultPath
 }
 
-// defaultRegistryPath resolves the catalog registry inside catalog's config
-// directory. deps reads the file catalog owns, so the two have to agree about
-// where XDG_CONFIG_HOME puts it.
+// defaultRegistryPath resolves the catalog registry inside the catalog config
+// directory, where the consuming repo installs it, so XDG_CONFIG_HOME moves it
+// the way it moves every other config file.
 func defaultRegistryPath() string {
 	if path, err := confdir.Path("catalog", registry.FileName); err == nil {
 		return path

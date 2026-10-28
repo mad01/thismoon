@@ -149,12 +149,10 @@ asks this at session start and checks `git status` before it says anything.
 `moondb scorecard` scores how a session spent its context. It counts the csl
 searches that came back empty, cut at the limit or failed, and the Read
 calls that took a whole file of 300 lines or more. It counts the belt hints
-shown to the session, and whether any of its agents read or edited the files
-the shown assertions are pinned to later. It also adds the belt ledger's
-compactions and permission denials. Flags at the top name the costliest
-patterns. The hints come from the events service and the pins from
-keeper-of-facts. When one of them does not answer, the scorecard leaves that
-part out and says so. `--json` prints the same object as
+shown to the session by id. It also adds the belt ledger's compactions and
+permission denials. Flags at the top name the costliest patterns. The hints
+come from the events service. When it does not answer, the scorecard leaves
+that part out and says so. `--json` prints the same object as
 `GET /api/sessions/{id}/scorecard`. The session page links to it under
 Session details. Subagent transcripts keep only the head of each result, so
 a subagent's reads are mostly unsized and its searches unread.

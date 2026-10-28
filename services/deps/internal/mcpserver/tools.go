@@ -197,7 +197,7 @@ func (h *handlers) handleListFlagged(
 
 // flaggedZero phrases the empty-store hint. ScannedAt tells "nothing ever
 // ran" apart from "a scan completed but discovered zero dependencies" (an
-// empty or fully excluded catalog).
+// empty or fully excluded registry).
 func flaggedZero(res client.CheckResult) *flaggedZeroHint {
 	if res.ScannedAt.IsZero() {
 		return &flaggedZeroHint{Notes: []string{

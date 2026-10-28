@@ -69,7 +69,7 @@ func (a *jsdelivrAPI) hashes() []string {
 	return append([]string(nil), a.asked...)
 }
 
-const staticDir = "services/catalog/internal/web/assets/static/"
+const staticDir = "web/assets/static/"
 
 func TestVendoredJSNamesAPublishedFileByItsHash(t *testing.T) {
 	api := &jsdelivrAPI{}

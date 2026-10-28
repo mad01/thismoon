@@ -1,7 +1,7 @@
 # operating deps
 
 deps is a supply-chain scanner. It discovers every external dependency across
-the catalog-registered repos: Go modules, npm lockfiles, exact Python pins,
+the repos in the catalog registry: Go modules, npm lockfiles, exact Python pins,
 Swift resolved files, browser libraries kept outside any lockfile, and GitHub
 Actions refs. It also reads the npm and PyPI trees of the tools mise installs
 with its npm: and pipx: backends. It checks each pinned version, or for an

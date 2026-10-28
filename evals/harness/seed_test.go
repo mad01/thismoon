@@ -13,8 +13,8 @@ func TestSeedCasesLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cases) < 8 {
-		t.Errorf("loaded %d seed cases, want at least 8", len(cases))
+	if len(cases) < 7 {
+		t.Errorf("loaded %d seed cases, want at least 7", len(cases))
 	}
 	for _, c := range cases {
 		if !strings.HasSuffix(c.Path, c.ID+".md") {

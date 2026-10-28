@@ -39,7 +39,7 @@ asking worktree, so reads cover the code roots (`~/code`, `~/.worktrees`,
 the ralph sources cache) minus nested `.env`, `.env.*`, `*.pem` and `*.key`
 files. `.git/config` stays readable, because git reads it on every command.
 Blame is read-only and needs no identity or credential helper, so the agent
-runs with `GIT_CONFIG_GLOBAL=/dev/null`, like keeper-of-facts. On a machine
+runs with `GIT_CONFIG_GLOBAL=/dev/null`. On a machine
 with the Command Line Tools it also gets `DEVELOPER_DIR` pointing at them
 (docs/SANDBOXING.md, "git inside the sandbox"). A worktree outside those
 roots answers without blame.
