@@ -50,9 +50,10 @@ import-graph reachability with `go list -deps -json ./...`, tagging deps that
 contribute no compiled Go package as graph-only; this fails open so a real
 advisory is never hidden. Browser JavaScript outside any lockfile becomes npm
 rows too. Shell scripts are read for `cdn.jsdelivr.net/npm/<name>@<version>`
-URLs, with a `$VAR` version resolved from the script's own literal
-assignments. Library files committed under a `static` directory (named with a
-version or ending in `.min.js`) are hashed and looked up on
+URLs, with a `$VAR` version resolved only when the script always assigns it
+the same literal, and comment lines ignored. Library files committed at any
+depth below a `static` directory, `static/vendor/` included (named with a
+version or ending in `.min.js`), are hashed and looked up on
 `data.jsdelivr.com`. A match names the npm package and version. A file that
 matches nothing takes both from its file name and carries the
 `deps-vendored-modified` signal. Lookups are cached in memory, a match for

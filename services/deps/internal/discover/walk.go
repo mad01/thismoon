@@ -7,18 +7,24 @@ import (
 )
 
 // findManifests walks root and returns every file named filename, skipping what
-// findFiles skips.
+// findFiles skips with skipDir.
 func findManifests(root, filename string, opts Options) ([]string, error) {
-	return findFiles(root, opts, func(rel string) bool { return filepath.Base(rel) == filename })
+	named := func(rel string) bool { return filepath.Base(rel) == filename }
+	return findFiles(root, opts, skipDir, named)
 }
 
 // findFiles walks root and returns every file whose root-relative path match
-// accepts. It skips the usual non-source trees, any directory the Options
+// accepts. It skips every directory skip names, any directory the Options
 // exclude, and — crucially — any nested git checkout (a submodule or a linked
 // worktree), so a worktree sitting under a registry repo isn't scanned twice.
 // The repo root itself is never skipped on the nested-repo test (it
 // legitimately holds .git).
-func findFiles(root string, opts Options, match func(rel string) bool) ([]string, error) {
+func findFiles(
+	root string,
+	opts Options,
+	skip func(name string) bool,
+	match func(rel string) bool,
+) ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -28,7 +34,7 @@ func findFiles(root string, opts Options, match func(rel string) bool) ([]string
 			if path == root {
 				return nil
 			}
-			if skipDir(d.Name()) || isNestedCheckout(path) || opts.excluded(root, path) {
+			if skip(d.Name()) || isNestedCheckout(path) || opts.excluded(root, path) {
 				return fs.SkipDir
 			}
 			return nil
@@ -48,6 +54,12 @@ func skipDir(name string) bool {
 		return true
 	}
 	return false
+}
+
+// skipDirKeepingVendor is skipDir without vendor, for discoverers whose files
+// live there: a vendored browser library usually sits in static/vendor/.
+func skipDirKeepingVendor(name string) bool {
+	return name != "vendor" && skipDir(name)
 }
 
 // isNestedCheckout reports whether dir is the root of a nested git checkout — a

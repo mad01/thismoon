@@ -98,6 +98,38 @@ func TestParseJSDelivrScript(t *testing.T) {
 			want: []string{"@xterm/xterm@6.0.0"},
 		},
 		{
+			name: "same literal assigned twice resolves",
+			script: "V=1.0.0\nV=\"1.0.0\"; X=4.0.0; curl https://cdn.jsdelivr.net/npm/x@$X/x.js\n" +
+				"curl https://cdn.jsdelivr.net/npm/a@$V/a.js\n",
+			want: []string{"x@4.0.0", "a@1.0.0"},
+		},
+		{
+			name: "variable assigned two versions resolves nowhere",
+			script: "VERSION=1.0.0\n" +
+				"curl https://cdn.jsdelivr.net/npm/a@${VERSION}/a.js\n" +
+				"VERSION=2.0.0\n" +
+				"curl https://cdn.jsdelivr.net/npm/b@${VERSION}/b.js\n" +
+				"W=1.0.0\n[ -n \"$NEXT\" ] && W=2.0.0\n" +
+				"curl https://cdn.jsdelivr.net/npm/c@$W/c.js\n" +
+				"Y=1.0.0\nY=$(cat VERSION)\n" +
+				"curl https://cdn.jsdelivr.net/npm/d@$Y/d.js\n",
+		},
+		{
+			name: "value runs on past the literal",
+			script: "V=1.2.3$SUFFIX\nW=\"4.5.6\"-rc.1\n" +
+				"curl https://cdn.jsdelivr.net/npm/a@$V/a.js\n" +
+				"curl https://cdn.jsdelivr.net/npm/b@${W}/b.js\n",
+		},
+		{
+			name: "comment lines are not downloads",
+			script: "#!/bin/sh\n" +
+				"# was https://cdn.jsdelivr.net/npm/old@0.1.0/old.js\n" +
+				"  # V=0.9.0 before the upgrade\n" +
+				"V=1.0.0\n" +
+				"curl https://cdn.jsdelivr.net/npm/new@$V/new.js\n",
+			want: []string{"new@1.0.0"},
+		},
+		{
 			name:   "other CDN paths",
 			script: "https://cdn.jsdelivr.net/gh/user/repo@1.0.0/x.js\nhttps://unpkg.com/a@1.0.0/a.js\n",
 		},

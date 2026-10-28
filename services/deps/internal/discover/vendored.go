@@ -27,11 +27,13 @@ type HashLookup interface {
 // files, outside any lockfile. A candidate is a .js file inside a directory
 // named static whose name ends in .min.js or carries a version
 // (cytoscape-3.31.0.min.js). First-party scripts like app.js are never hashed,
-// so the network calls stay at one per vendored file. Each candidate is hashed
-// and looked up: a match names the npm package and version for certain.
-// Without one, the file name supplies them and the row carries the
-// deps-vendored-modified signal. Apart from the module downloads go list may
-// make, this is the one discoverer that reaches the network.
+// so the network calls stay at one per vendored file. Unlike the other
+// discoverers it walks into vendor directories, since static/vendor/ is where
+// such files usually live. Each candidate is hashed and looked up: a match
+// names the npm package and version for certain. Without one, the file name
+// supplies them and the row carries the deps-vendored-modified signal. Apart
+// from the module downloads go list may make, this is the one discoverer that
+// reaches the network.
 type VendoredJS struct {
 	Lookup HashLookup
 }
@@ -42,7 +44,7 @@ func (VendoredJS) Name() string { return "npm" }
 // up is neither known clean nor known modified, so it is reported as a
 // discovery error rather than a guess.
 func (v VendoredJS) Discover(repoRoot string, opts Options) ([]Package, error) {
-	files, err := findFiles(repoRoot, opts, vendoredCandidate)
+	files, err := findFiles(repoRoot, opts, skipDirKeepingVendor, vendoredCandidate)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +93,8 @@ func vendoredCandidate(rel string) bool {
 // signal, and its version gains +sha256.<prefix> so the finding keys change
 // whenever the file does (OSV ignores semver build metadata when matching). A
 // GitHub match is published and unchanged but has no npm name, so the file
-// name supplies one without the signal.
+// name supplies one without the signal; the version stays jsDelivr's, so a
+// different release swapped in under the same file name still changes it.
 func vendoredPackage(path, sum string, file jsdelivr.File, found bool) (Package, bool) {
 	pkg := Package{
 		Ecosystem:    "npm",
@@ -109,6 +112,7 @@ func vendoredPackage(path, sum string, file jsdelivr.File, found bool) (Package,
 	}
 	pkg.Name, pkg.Version = m[1], m[2]
 	if found {
+		pkg.Version = strings.TrimPrefix(file.Version, "v") // GitHub tags are often v1.2.3
 		return pkg, true
 	}
 	pkg.Version += "+sha256." + sum[:12]

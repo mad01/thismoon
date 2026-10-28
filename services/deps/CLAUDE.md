@@ -64,27 +64,34 @@ no file locks.
   normalized. The walk also covers `Package.resolved` (v2/v3, remote pins with
   an exact version), and branch pins are skipped. The shared walker skips `.git/vendor/node_modules/testdata`, **git worktrees and nested
   checkouts** (a `.git` entry in a subdir), and any `exclude_paths` glob.
+  `VendoredJS` alone walks into `vendor`.
 - **Browser JavaScript outside any lockfile is reported as npm.** Two
   discoverers add `npm` rows, each `Direct` and `Imported`:
   - `JSDelivrScripts` reads every `*.sh` the walker reaches for
     `cdn.jsdelivr.net/npm/<name>@<version>` URLs. The version is a literal or
-    a `$VAR` / `${VAR}` the script sets to a literal, so no script's variable
-    names are built in. Only exact versions count: a range, a tag such as
+    a `$VAR` / `${VAR}` the script always sets to the same literal, so no
+    script's variable names are built in. A variable assigned two values, or
+    anything that expands, is skipped rather than guessed, and so is a URL on
+    a comment line. Only exact versions count: a range, a tag such as
     `latest`, or a variable it can't resolve is skipped. present's
     `scripts/cache-assets.sh` yields ten packages; its xterm script and
     stylesheet share one version and make one row.
-  - `VendoredJS` hashes the `.js` files inside a directory named `static`
-    whose name ends in `.min.js` or carries a version
-    (`cytoscape-3.31.0.min.js`). It looks each sha256 up at
+  - `VendoredJS` hashes every `.js` file at any depth below a directory named
+    `static` whose name ends in `.min.js` or carries a version
+    (`cytoscape-3.31.0.min.js`). Its walk enters `vendor`, since
+    `static/vendor/` is where such files usually live. It looks each sha256 up at
     `data.jsdelivr.com/v1/lookup/hash/`. First-party files like `app.js` are
     never hashed, so the calls stay at one per vendored file (one today). An
     npm match names the package and version. With no match, the file name
     supplies them and the row carries the `deps-vendored-modified` signal.
     The version also gains `+sha256.<first 12 hex>`, so a resolve lapses when
     the file changes; OSV ignores semver build metadata. A GitHub match is
-    published and unchanged, so it takes the file name's npm name without the
-    signal. An unversioned `.min.js` with no match is skipped as a
-    first-party build.
+    published and unchanged, so it takes the file name's npm name and
+    jsDelivr's version (a leading `v` dropped) without the signal. An
+    unversioned `.min.js` with no match is skipped as a first-party build. A
+    first-party bundle with a version in its name (`static/app-1.4.0.js`)
+    gets a false `deps-vendored-modified` signal and an OSV check of npm
+    `app`; `exclude_paths` on its directory is the way out.
   - The lookup cache lives in memory for the serve process: a match for good,
     a miss for 24h. That is the API's own Cache-Control, and a miss can turn
     into a match because jsDelivr indexes a file only after serving it once.
@@ -93,7 +100,9 @@ no file locks.
   - **A failed lookup is a `DiscoveryError`** (ecosystem `npm`) for that
     repo's vendored files, never a guess. The file is neither known clean nor
     known changed, and a sandbox without the jsDelivr egress has to reach
-    doctor, the event and the page, which a signal never does.
+    doctor, the event and the page, which a signal never does. Lookups aren't
+    paced and a failed one isn't cached, so a jsDelivr 429 comes back as the
+    same error on every scan until `exclude_paths` trims the candidates.
 - **Installed mise tools.** Beside the repos, `discover.Mise` reads the tools
   mise installs with its npm: and pipx: backends, code that runs on the host
   outside any sandbox. `mise.lock` (default `~/.config/mise/mise.lock`) pins

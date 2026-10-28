@@ -95,6 +95,21 @@ func TestVendoredJSNamesAPublishedFileByItsHash(t *testing.T) {
 	}
 }
 
+func TestVendoredJSHashesFilesUnderVendor(t *testing.T) {
+	api := &jsdelivrAPI{}
+	root := t.TempDir()
+	path := writeRepoFile(t, root, "web/static/vendor/cytoscape-3.31.0.min.js", published)
+
+	pkgs, err := VendoredJS{Lookup: api.serve(t)}.Discover(root, Options{})
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(pkgs) != 1 || pkgs[0].Name != "cytoscape" || pkgs[0].Version != "3.31.0" ||
+		pkgs[0].ManifestPath != path {
+		t.Errorf("pkgs = %+v, want cytoscape@3.31.0 from %s", pkgs, path)
+	}
+}
+
 func TestVendoredJSFlagsAChangedFile(t *testing.T) {
 	api := &jsdelivrAPI{}
 	root := t.TempDir()
@@ -160,16 +175,18 @@ func TestVendoredJSFailsTheRepoWhenALookupFails(t *testing.T) {
 	}
 }
 
-func TestVendoredPackageUsesTheFileNameForAGitHubMatch(t *testing.T) {
+// A GitHub match has no npm name, so the file name supplies it, but the
+// version is jsDelivr's: here 3.7.0's file sits under 3.7.1's name.
+func TestVendoredPackageNamesAGitHubMatchByFileNameAndJSDelivrVersion(t *testing.T) {
 	gh := jsdelivr.File{
 		Type:    "gh",
 		Name:    "jquery/jquery",
-		Version: "3.7.1",
+		Version: "v3.7.0",
 		Path:    "/dist/jquery.min.js",
 	}
 	p, ok := vendoredPackage("/r/static/jquery-3.7.1.min.js", sumOf(nil), gh, true)
-	if !ok || p.Name != "jquery" || p.Version != "3.7.1" || len(p.Advisories) != 0 {
-		t.Errorf("vendoredPackage = %+v, %v; want npm jquery@3.7.1 with no signal", p, ok)
+	if !ok || p.Name != "jquery" || p.Version != "3.7.0" || len(p.Advisories) != 0 {
+		t.Errorf("vendoredPackage = %+v, %v; want npm jquery@3.7.0 with no signal", p, ok)
 	}
 }
 

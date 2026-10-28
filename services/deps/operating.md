@@ -1,10 +1,10 @@
 # operating deps
 
 deps is a supply-chain scanner. It discovers every external dependency across
-the catalog-registered repos (Go modules, npm lockfiles, exact Python pins,
-Swift resolved files, and browser libraries kept outside any lockfile) and the
-npm and PyPI trees of the tools mise installs with its npm: and pipx: backends.
-It checks each pinned version against the OSV.dev advisory database and fires
+the catalog-registered repos: Go modules, npm lockfiles, exact Python pins,
+Swift resolved files, and browser libraries kept outside any lockfile. It also
+reads the npm and PyPI trees of the tools mise installs with its npm: and pipx:
+backends. It checks each pinned version against the OSV.dev advisory database and fires
 one coalesced macOS notification when packages are newly flagged, plus a
 separate one for a malicious package. Findings live on a local web page
 (default {{.BaseURL}}).
@@ -85,12 +85,19 @@ directory, add that path to `~/.config/srt/deps.local.json`. No mise tools in
 the inventory and no error means there is no lock at the configured path.
 
 A discovery error for `npm` that reads `look up <file>: jsdelivr: ...`: deps
-hashes each vendored library file (a `.js` under a `static` directory, named
-with a version or ending in `.min.js`). It looks the sha256 up on
-data.jsdelivr.com to learn the npm name and version. The lookup failed, so none of that repo's
-vendored files were checked, rather than read as clean. A timeout or a 5xx
-from jsDelivr clears on the next check. `host is not on the allow list` means
-the sandbox settings predate the jsDelivr egress: re-run `ralph up`.
+hashes each vendored library file (a `.js` at any depth below a `static`
+directory, `static/vendor/` included, named with a version or ending in
+`.min.js`). It looks the sha256 up on data.jsdelivr.com to learn the npm name
+and version. The lookup failed, so none of that repo's vendored files were
+checked, rather than read as clean. A timeout or a 5xx from jsDelivr clears on
+the next check. `host is not on the allow list` means the sandbox settings
+predate the jsDelivr egress: re-run `ralph up`.
+
+The same error with `lookup returned 429` on every check: jsDelivr is
+limiting the request rate. deps sends one lookup per candidate file with no
+pause between them, and a failed lookup isn't cached, so each scan asks again
+and fails again. Add the directories that hold the most candidates to
+`exclude_paths`.
 
 A flagged advisory on a package nothing compiles in: Go scans cover the module
 graph (`go list -m -json all`), which includes modules no binary imports. So
@@ -127,7 +134,9 @@ the file with the published one at
 `https://cdn.jsdelivr.net/npm/<name>@<version>/<path>`, then download it again
 or resolve the signal if the change is yours. A file just added to npm can
 also miss, because jsDelivr indexes a file only after serving it once.
-deps asks again after a day.
+deps asks again after a day. A first-party bundle with a version in its name,
+such as `static/app-1.4.0.js`, gets this signal falsely, and OSV checks it as
+the unrelated npm package `app`. Add its directory to `exclude_paths`.
 
 An acknowledged advisory came back: resolution is version-scoped by design.
 The key embeds the exact version, so bumping the package (or a new advisory
