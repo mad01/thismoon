@@ -1,7 +1,7 @@
 // Package osv checks dependency versions against the OSV.dev advisory database.
 // One HTTP API (api.osv.dev) covers every ecosystem we discover (Go, npm,
 // PyPI, SwiftURL by version, GitHub Actions by commit), so the same batch query
-// path serves all of them. OSV's data export supplies the spelling it files
+// path serves all of them. OSV's data export supplies the names it files
 // each GitHub Action under (names.go). Three other parts of deps reach the
 // network: package regcheck asks the npm registry, PyPI and the Go module
 // proxy whether each version was withdrawn, blocked, yanked, deprecated or
@@ -60,9 +60,10 @@ func NewWithURL(baseURL string) *Client {
 // can't match by version. OSV is then asked twice: for the advisories whose
 // git ranges hold the commit, and for every advisory on Name, of which Check
 // keeps those whose version ranges hold Version (a label such as v45.0.7).
-// A label it can't compare keeps them all. A GitHub Action's name is asked
-// for in each spelling OSV files it under (actionNames), and the results stay
-// aligned with the query as written.
+// A label it can't compare keeps them all. A GitHub Action is also asked for
+// by each other name OSV files it under (actionNames): another
+// capitalization, or a sub-action's path or URL. The results stay aligned
+// with the query as written.
 type Query struct {
 	Name      string
 	Ecosystem string
@@ -184,11 +185,14 @@ func lookups(queries []Query, names actionNames) []lookup {
 	return out
 }
 
-// matchesName reports whether name, a record's affected package, is q's package.
-// A GitHub Action matches ignoring case, as GitHub resolves owner/repo.
-func (q Query) matchesName(name string) bool {
+// matchesPackage reports whether a record's affected package, by ecosystem
+// and name, is q's package. A GitHub Action matches only a GitHub Actions
+// entry, so a record's GIT entry for the same repo never lends its commit
+// ranges to the row. It matches ignoring case, as GitHub resolves owner/repo,
+// and a longer name matches the owner/repo it is filed under (actionRepo).
+func (q Query) matchesPackage(ecosystem, name string) bool {
 	if q.Ecosystem == actionsEcosystem {
-		return strings.EqualFold(name, q.Name)
+		return ecosystem == actionsEcosystem && strings.EqualFold(actionRepo(name), q.Name)
 	}
 	return name == q.Name
 }
@@ -358,7 +362,7 @@ func (v *vuln) severity() string {
 // OSV lists no fix.
 func (v *vuln) fixedFor(q Query) string {
 	for _, a := range v.Affected {
-		if !q.matchesName(a.Package.Name) {
+		if !q.matchesPackage(a.Package.Ecosystem, a.Package.Name) {
 			continue
 		}
 		for _, r := range a.Ranges {

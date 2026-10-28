@@ -119,7 +119,8 @@ turns off the workflow check in every repo.
 `OSV's GitHub Actions name list` in that error means the check couldn't read
 OSV's export of Actions advisories from its data bucket. Every action was
 still checked, by commit and by its name as written, but an advisory OSV
-files under another capitalization was missed. The next check retries.
+files under another capitalization, or under a sub-action's path or URL, was
+missed. The next check retries.
 `host is not on the allow list` there means the sandbox settings predate the
 data bucket egress: re-run `ralph up`.
 

@@ -22,9 +22,12 @@ const tjCommit = "a284dc1814e3fd07f2e34267fc8f81227ed29fb8"
 // 2025 compromise (GHSA-mrrh-fwg8-r2c3, fixed in 46.0.1) and an older command
 // injection (GHSA-mcph-m25j-8j63, fixed in 41). Like OSV, it matches names
 // case-sensitively, so Azure/setup-kubectl finds GHSA-p756-rfxh-x63h (fixed
-// in 3) and azure/setup-kubectl finds nothing. The records in testdata are
-// trimmed copies of the real ones, and the name list export is a zip of
-// them. It records each querybatch body.
+// in 3) and azure/setup-kubectl finds nothing. It also answers for the two
+// actions OSV files under a longer name than owner/repo: GHSA-r79c-pqj3-577x
+// under super-linter/super-linter and its /slim sub-action, and
+// GHSA-hw6r-g8gj-2987 under a URL to a pytorch sub-action alone. The records
+// in testdata are trimmed copies of the real ones, and the name list export
+// is a zip of them. It records each querybatch body.
 func tjStub(t *testing.T) (*httptest.Server, func() []batchRequest) {
 	t.Helper()
 	export := exportZip(t, testdataRecords(t)...)
@@ -32,6 +35,20 @@ func tjStub(t *testing.T) (*httptest.Server, func() []batchRequest) {
 		_, _ = w.Write(export)
 	})
 }
+
+// stubNameHits is the advisories tjStub lists for each package name, matched
+// case-sensitively as OSV does.
+var stubNameHits = map[string][]string{
+	"tj-actions/changed-files":       {"GHSA-mcph-m25j-8j63", "GHSA-mrrh-fwg8-r2c3"},
+	"Azure/setup-kubectl":            {"GHSA-p756-rfxh-x63h"},
+	"super-linter/super-linter":      {"GHSA-r79c-pqj3-577x"},
+	"super-linter/super-linter/slim": {"GHSA-r79c-pqj3-577x"},
+	pytorchFilterAction:              {"GHSA-hw6r-g8gj-2987"},
+}
+
+// pytorchFilterAction is the name OSV files GHSA-hw6r-g8gj-2987 under: a URL
+// to a sub-action of pytorch/pytorch.
+const pytorchFilterAction = "https://github.com/pytorch/pytorch/.github/actions/filter-test-configs"
 
 // tjStubWithExport is tjStub with export serving the name list.
 func tjStubWithExport(
@@ -55,19 +72,20 @@ func tjStubWithExport(
 		mu.Unlock()
 		results := make([]map[string]any, len(req.Queries))
 		for i, q := range req.Queries {
+			var found []string
 			switch {
 			case q.Commit == tjCommit:
-				results[i] = map[string]any{"vulns": []map[string]string{{"id": "CVE-2025-30066"}}}
-			case q.Package != nil && q.Package.Name == "tj-actions/changed-files":
-				results[i] = map[string]any{"vulns": []map[string]string{
-					{"id": "GHSA-mcph-m25j-8j63"}, {"id": "GHSA-mrrh-fwg8-r2c3"},
-				}}
-			case q.Package != nil && q.Package.Name == "Azure/setup-kubectl":
-				results[i] = map[string]any{"vulns": []map[string]string{
-					{"id": "GHSA-p756-rfxh-x63h"},
-				}}
-			default:
-				results[i] = map[string]any{}
+				found = []string{"CVE-2025-30066"}
+			case q.Package != nil:
+				found = stubNameHits[q.Package.Name]
+			}
+			vulns := make([]map[string]string, 0, len(found))
+			for _, id := range found {
+				vulns = append(vulns, map[string]string{"id": id})
+			}
+			results[i] = map[string]any{}
+			if len(vulns) > 0 {
+				results[i]["vulns"] = vulns
 			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"results": results})

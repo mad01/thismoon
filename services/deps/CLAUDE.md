@@ -273,6 +273,21 @@ no file locks.
   results. `scanner.Check` turns that into a `GitHub Actions` discovery error
   for each repo with an Action, since a log line alone would let the scan
   read as clean.
+- **OSV files a few Actions under a longer name than `owner/repo`.** The
+  name is a sub-action's path (`super-linter/super-linter/slim`) or a URL to
+  one (`https://github.com/pytorch/pytorch/.github/actions/filter-test-configs`).
+  `osv.actionRepo` cuts such a name to the `owner/repo` discovery gives the
+  row, dropping the `https://github.com/` prefix and the path past the second
+  segment. Any other URL, or a name without a non-empty owner and repo,
+  stays as it is: missed, never filed under the wrong row. The name list
+  files every name under its `owner/repo`, so the row is asked for by the
+  longer names too. Their records are matched, range-filtered and given a
+  fix through the same cut, and an advisory filed under both names
+  (GHSA-r79c-pqj3-577x) is listed once. Only a record's `GitHub Actions`
+  entries count, so a `GIT` entry for the same repo never lends its commit
+  ranges to the row. Discovery names a row by `owner/repo` whatever
+  sub-action it runs, so an advisory filed under one sub-action lands on
+  every row for that repo, the same granularity the commit lookup has.
 - **serve runs under srt** (anthropics/sandbox-runtime), with the access
   declared as `spec.access` in `service-info.yaml`. It reads the repos under
   `~/code/src` minus secret-shaped files, the module cache,
