@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,8 +17,8 @@ import (
 
 const hungRemoteURL = "git@localhost:fake/repo.git"
 
-// fakeSSH stands in for ssh on a dead socket: every invocation logs its pid,
-// then sleeps far past any timeout under test.
+// fakeSSH stands in for ssh on a dead socket: every invocation but the
+// warm-up logs its pid, then sleeps far past any timeout under test.
 type fakeSSH struct{ pidLog string }
 
 // installHungSSH routes every git ssh connection in this test to a fakeSSH and
@@ -28,9 +29,14 @@ func installHungSSH(t *testing.T) fakeSSH {
 	bin := t.TempDir()
 	pidLog := filepath.Join(bin, "ssh.pids")
 	script := filepath.Join(bin, "fake-ssh")
-	body := "#!/bin/sh\necho $$ >> '" + pidLog + "'\nexec sleep 60\n"
+	body := "#!/bin/sh\n[ \"$1\" = warm ] && exit 0\necho $$ >> '" + pidLog + "'\nexec sleep 60\n"
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatalf("write fake ssh: %v", err)
+	}
+	// A fresh script's first launch can be slow under load; launch it once
+	// untimed, before it logs a pid, so the pull timeout measures git.
+	if out, err := exec.Command(script, "warm").CombinedOutput(); err != nil {
+		t.Fatalf("first launch of fake ssh: %v: %s", err, out)
 	}
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")

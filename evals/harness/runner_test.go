@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -23,6 +24,25 @@ func fakeClaude(t *testing.T) claudeCmd {
 		t.Fatal(err)
 	}
 	return claudeCmd{bin: bin, grace: testGrace}
+}
+
+// firstLaunchBudget bounds the warm-up launch of the fake claude.
+const firstLaunchBudget = 30 * time.Second
+
+// launchOnce runs the fake claude once, outside any test deadline and with
+// nothing to do. macOS checks each newly written file on its first exec, so
+// the first run after a checkout pays it, and under load that can outlast a
+// test's deadline. The bare environment keeps the warm-up from writing any
+// file a test later checks.
+func launchOnce(t *testing.T, c claudeCmd) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), firstLaunchBudget)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.bin)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "FAKE_CLAUDE_STREAM=" + os.DevNull}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("first launch of %s: %v: %s", c.bin, err, out)
+	}
 }
 
 func setStream(t *testing.T, fixture string) {
@@ -62,6 +82,8 @@ func readPID(t *testing.T, path string) int {
 }
 
 func TestClaudeCmdTimeoutKillsGroup(t *testing.T) {
+	claude := fakeClaude(t)
+	launchOnce(t, claude)
 	setStream(t, "stream-timeout.jsonl")
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
 	t.Setenv("FAKE_CLAUDE_PIDFILE", pidFile)
@@ -72,7 +94,7 @@ func TestClaudeCmdTimeoutKillsGroup(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	var out strings.Builder
-	err := fakeClaude(t).run(ctx, t.TempDir(), invocation{Prompt: "p"}, &out)
+	err := claude.run(ctx, t.TempDir(), invocation{Prompt: "p"}, &out)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("err = %v, want the deadline", err)
 	}
