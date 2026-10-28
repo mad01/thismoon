@@ -2,9 +2,10 @@
 
 deps is a supply-chain scanner. It discovers every external dependency across
 the catalog-registered repos: Go modules, npm lockfiles, exact Python pins,
-Swift resolved files, and browser libraries kept outside any lockfile. It also
-reads the npm and PyPI trees of the tools mise installs with its npm: and pipx:
-backends. It checks each pinned version against the OSV.dev advisory database and fires
+Swift resolved files, browser libraries kept outside any lockfile, and GitHub
+Actions refs. It also reads the npm and PyPI trees of the tools mise installs
+with its npm: and pipx: backends. It checks each pinned version, or for an
+action the commit it runs, against the OSV.dev advisory database. It fires
 one coalesced macOS notification when packages are newly flagged, plus a
 separate one for a malicious package. Findings live on a local web page
 (default {{.BaseURL}}).
@@ -13,9 +14,10 @@ separate one for a malicious package. Findings live on a local web page
 
 A single `deps serve` process is the only writer. It owns the scan store, runs
 the daily scan loop, serves the web page and JSON API on localhost, and is the
-only process that reaches the network: OSV, and jsDelivr when discovery names
-a vendored JavaScript file. Everything else is a thin HTTP client over that
-API: the CLI commands (`scan`, `check`, `resolve`, `notify`) and the MCP
+only process that reaches the network: OSV, jsDelivr when discovery names a
+vendored JavaScript file, and github.com to resolve the tag or branch an
+action is pinned to. Everything else is a thin HTTP client over that API: the
+CLI commands (`scan`, `check`, `resolve`, `notify`) and the MCP
 server, a stdio shim spawned as `deps mcp`. The shim being up says nothing
 about the service: every deps_* tool call is a live HTTP request to serve, and
 it fails when serve is down. Machines usually also route http://deps.this to
@@ -99,6 +101,27 @@ pause between them, and a failed lookup isn't cached, so each scan asks again
 and fails again. Add the directories that hold the most candidates to
 `exclude_paths`.
 
+A `GitHub Actions` discovery error names each action ref that could not be
+resolved to a commit, and that ref went unchecked. `ref list answered 401`
+means the action repo is missing or private, `no such tag or branch` means
+the ref is gone upstream, and `host is not on the allow list` means the
+sandbox lacks github.com. The repo's other refs were still checked. A ref
+pinned to a commit SHA never needs github.com. A private action repo or
+reusable workflow answers 401 on every scan, so it stays a discovery error.
+The workaround is `exclude_paths`. It matches repo-relative directories in
+every repo, not single files, so `.github` stops the Actions check
+everywhere. To silence a private ref in a composite action, exclude that
+action's directory, such as `.github/actions/<name>`. For a private ref in a
+workflow file, the only directory to exclude is `.github/workflows`, and that
+turns off the workflow check in every repo.
+
+`OSV's GitHub Actions name list` in that error means the check couldn't read
+OSV's export of Actions advisories from its data bucket. Every action was
+still checked, by commit and by its name as written, but an advisory OSV
+files under another capitalization was missed. The next check retries.
+`host is not on the allow list` there means the sandbox settings predate the
+data bucket egress: re-run `ralph up`.
+
 A flagged advisory on a package nothing compiles in: Go scans cover the module
 graph (`go list -m -json all`), which includes modules no binary imports. So
 an advisory can flag a version that is never compiled. deps computes
@@ -124,6 +147,9 @@ kept so it is not lost, with its kind intact; the next check fills it in.
 A finding of kind `signal`, in the "Warning signs" section: a deps rule
 flagged something that is not an advisory. It never notifies and never counts
 toward `flagged_count`, and it resolves by key like any other finding.
+`deps-movable-ref` marks a GitHub Action pinned to a tag or branch, which the
+action repo can point at other code. Pin the commit SHA, with the version in
+a trailing comment, to clear it.
 
 The signal `deps-vendored-modified`: a committed library file's sha256
 matches no file jsDelivr has served. It was edited after download, or it never
@@ -140,8 +166,9 @@ the unrelated npm package `app`. Add its directory to `exclude_paths`.
 
 An acknowledged advisory came back: resolution is version-scoped by design.
 The key embeds the exact version, so bumping the package (or a new advisory
-landing on it) resurfaces the finding. Resolve it again if it still does not
-apply.
+landing on it) resurfaces the finding. A GitHub Action's version is its label
+plus the commit it runs (`v4+11d5960a…`), so a tag moved to other code
+resurfaces it too. Resolve it again if it still does not apply.
 
 Large scan output: `deps check` and `deps_check` return every flagged dep, and
 the full inventory can be big. Query the persisted store file with jq instead

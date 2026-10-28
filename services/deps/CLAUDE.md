@@ -2,11 +2,12 @@
 
 Go CLI, HTTP server with an embedded webkit web UI, and an MCP server, over one
 JSON store. `deps` discovers every external dependency across the catalog-
-registered repos (Go modules, npm, PyPI, Swift) and the npm and PyPI trees of
-the tools mise installs, and checks each version against the OSV.dev advisory
-database. It surfaces findings at `http://deps.this/` and fires a macOS
-notification when a package is flagged. **The MCP tools (driven by Claude) and
-the web page are the primary surfaces**; the `deps` CLI mirrors them.
+registered repos (Go modules, npm, PyPI, Swift, GitHub Actions) and the npm
+and PyPI trees of the tools mise installs, and checks each version against the
+OSV.dev advisory database. It surfaces findings at `http://deps.this/` and
+fires a macOS notification when a package is flagged. **The MCP tools (driven
+by Claude) and the web page are the primary surfaces**; the `deps` CLI mirrors
+them.
 
 ## Module layout
 
@@ -17,7 +18,7 @@ deps/
     cli/               - cobra: root, serve, scan, check (+--repo), resolve, notify, mcp, config, version
     config/            - discovery config (exclude_repos / exclude_paths / [mise] lock, installs), ~/.config/deps/config.toml
     registry/          - reads the catalog registry.yaml → repo roots to scan
-    discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (requirements.txt exact pins) + Swift (Package.resolved) + browser JavaScript as npm (jsDelivr URLs in *.sh, vendored files by hash); shared walker skips worktrees/nested checkouts; Mise reads the installed mise npm/pipx trees
+    discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (requirements.txt exact pins) + Swift (Package.resolved) + browser JavaScript as npm (jsDelivr URLs in *.sh, vendored files by hash) + GitHub Actions (workflow `uses:` refs, tags resolved to commits); shared walker skips worktrees/nested checkouts; Mise reads the installed mise npm/pipx trees
     jsdelivr/          - jsDelivr data API client (GET /v1/lookup/hash/{sha256}), in-memory cache
     osv/               - OSV.dev client (POST /v1/querybatch + GET /v1/vulns/{id})
     store/             - Dependency/Advisory/Flag model + atomic JSON store; notified + resolved sets
@@ -40,8 +41,8 @@ Like `reminder`, **`deps serve` is the only writer**:
 - **`deps serve`** owns the store (`~/.local/share/deps/scan.json`), runs the
   HTTP server (web + JSON API + `/version` + `/webkit/`), the daily catch-up
   scan loop, and fires notifications. It is the only process that reaches the
-  network: OSV for the check, and jsDelivr when discovery names a vendored
-  JavaScript file.
+  network: OSV for the check, jsDelivr when discovery names a vendored
+  JavaScript file, and github.com for GitHub Actions refs.
 - **`deps mcp`** and the **`deps` CLI** hold no state: they are thin HTTP
   clients to the serve API on `localhost:<port>`. If serve is down, they return
   "deps serve not reachable … (t-man status deps)".
@@ -140,8 +141,45 @@ no file locks.
   install -f <tool>` rewrites it. `readSitePackages` reads the version
   directory before globbing, because `filepath.Glob` drops a sandbox
   `operation not permitted` and would report no site-packages instead.
+- **GitHub Actions.** Each repo's `.github/workflows/*.yml|yaml` (top level
+  only, as GitHub reads them) and every `action.yml|yaml` under
+  `.github/actions` are parsed with yaml.v3 for `jobs.<id>.uses`,
+  `jobs.<id>.steps[].uses` and a composite action's `runs.steps[].uses`. A
+  local `uses: ./path` ref is followed to the `action.yml|yaml` in that
+  directory of the repo (`./` is the repo root), and its refs are read the
+  same way. For a local ref and an action file under `.github/actions` alike,
+  symlinks are resolved first, so the file is checked and keyed at its real
+  place in the repo. Each file is read once, so a cycle ends. A file outside
+  the repo (a symlink can lead there), under an `exclude_paths` glob, or
+  missing (a job may generate it) is skipped without an error. `docker://`
+  images are skipped; `owner/repo/path@ref` is package `owner/repo`, as
+  written. A ref pinned to a 40-hex SHA needs no lookup. A tag or branch ref
+  is resolved to its commit from the action repo's ref list, a plain HTTPS
+  GET of
+  `https://github.com/<owner>/<repo>.git/info/refs?service=git-upload-pack`.
+  It returns what `git ls-remote` prints, peeled `^{}` lines included, with no
+  git binary in the sandbox and no API quota. A tag wins over a branch of the
+  same name. `discover.Repos` memoizes each ref list for one walk, so a scan
+  fetches each action repo once and the next scan sees a moved tag. A tag or
+  branch ref carries the `deps-movable-ref` signal, which names the ref as
+  pinned. A ref that isn't a full `x.y.z` (`v46`, `main`) takes its label from
+  the highest full-version tag on the same commit (`v46.0.5`), so the range
+  filter can judge it. A release-line ref takes a tag in its line only: `v45`
+  a `v45.x.y` and `v4.2` a `v4.2.x`. A later major's tag on that commit would
+  read the pin as past fixes its line may lack. A branch takes any. With no
+  such tag, the ref is the label. Every ref is Direct and Imported, one row
+  per workflow file.
+- **A ref that can't be resolved is a discovery error, not a row.** A missing
+  or private action repo (github.com answers 401), an unknown tag, or an
+  unreachable host leaves the ref out. The repo's `GitHub Actions` discovery
+  error names it, and the repo's other refs stay. An unresolved row would have
+  to carry a version without the commit, so an outage would change its key:
+  the finding would re-notify, and a resolved one would resurface. Leaving it
+  out keeps the keys stable, and the existing discovery-error surfaces show it
+  as unchecked.
 - Transitive deps are scanned and flagged (real supply-chain risk); the web/CLI
-  mark direct vs transitive.
+  mark direct vs transitive. The refs inside a third-party action (a remote
+  composite action's own `uses:`) are not followed.
 - **Discovery errors are saved, never only logged.** A discoverer that fails
   for one repo and ecosystem (a `go list` with no `go` on PATH, an unreadable
   lockfile) becomes a `store.DiscoveryError{Repo, Ecosystem, Error}`; the walk
@@ -150,7 +188,9 @@ no file locks.
   `/api/check`, and the MCP scan/check tools pass them through. The
   scan-complete event goes to `warn` with the count. The doctor
   `discovery-clean` check reads them from the store, and the page shows a red
-  callout in place of the all-clear text. A failed `go list` appends its first stderr line to the error.
+  callout in place of the all-clear text. A failed `go list` appends its first
+  stderr line to the error. Packages a discoverer returns beside its error are
+  kept, since it read them.
 - **serve needs `go` on its PATH.** The t-man agent runs
   `recipes/deps/deps-serve.sh`, which resolves the real mise `go` with
   `mise which go` outside the sandbox and execs `deps serve` through srt-run
@@ -185,22 +225,57 @@ no file locks.
 - The finding's kind comes from the id alone (`store.KindForID`): `MAL-` is
   `malicious`, anything else `vuln`. OSV serves GitHub's malware advisories as
   MAL- records too, so the prefix covers both.
-- One API; ecosystem strings are OSV's own (`Go`, `npm`, `PyPI`, `SwiftURL`); no
-  mapping. SwiftURL names are the repo URL without scheme or `.git`
-  (`github.com/vapor/vapor`), derived from each Package.resolved pin location.
+- One API; ecosystem strings are OSV's own (`Go`, `npm`, `PyPI`, `SwiftURL`,
+  `GitHub Actions`); no mapping. SwiftURL names are the repo URL without scheme
+  or `.git` (`github.com/vapor/vapor`), derived from each Package.resolved pin
+  location.
+- **GitHub Actions are checked by commit.** OSV has no version comparator for
+  the ecosystem (google/osv.dev#2308), so a name and version query finds
+  nothing. A query with `osv.Query.Commit` set becomes two querybatch
+  lookups. The commit alone (OSV rejects a commit beside a version) matches
+  the git ranges of records such as CVE-2025-30066. The package name alone
+  returns every advisory on the action. Check keeps a name hit only when the
+  label falls in one of its `ECOSYSTEM` or `SEMVER` ranges. It fails open: a
+  label that isn't a full `x.y.z` (`v4`, `main`), a record that didn't load,
+  or a bound it can't compare keeps the hit. At one version, in any record
+  order, a `fixed` sorts first, then an `introduced`, then a `last_affected`.
+  So a range re-introduced at its own fix stays open, and an `introduced` and
+  a `fixed` at one version fail open and keep the hit. An id found by both
+  lookups is listed once. A CVE record and its GitHub Security Advisory
+  (GHSA) alias stay two findings, as GO- and GHSA- pairs already do for Go.
+- **A SHA pin's `# vX.Y.Z` comment is trusted as its version label**, and it
+  alone drives the range filter. A comment newer than the pinned code would
+  drop advisories whose range holds the real version. Dependabot and Renovate
+  keep the comment in sync with the SHA, so this is an accepted risk.
+- **OSV matches GitHub Actions names case-sensitively; GitHub doesn't.**
+  `azure/setup-kubectl`, as its own README spells it, finds nothing, while
+  `Azure/setup-kubectl` finds GHSA-p756-rfxh-x63h. Most of OSV's Actions
+  ranges are `ECOSYSTEM` only, so the name lookup is the main detector. So
+  Check reads OSV's GitHub Actions export once per call
+  (`https://osv-vulnerabilities.storage.googleapis.com/GitHub%20Actions/all.zip`,
+  about 100 KB, one JSON record per advisory). It asks for each action as
+  written and in every other spelling OSV files it under that matches
+  ignoring case, and matches records the same way. The written name stays
+  because the export can lag an advisory filed under it. The row and key
+  keep the name as written. When the export can't be read, the names go out
+  as written and Check returns `*osv.ActionNamesError` beside complete
+  results. `scanner.Check` turns that into a `GitHub Actions` discovery error
+  for each repo with an Action, since a log line alone would let the scan
+  read as clean.
 - **serve runs under srt** (anthropics/sandbox-runtime), with the access
   declared as `spec.access` in `service-info.yaml`. It reads the repos under
   `~/code/src` minus secret-shaped files, the module cache,
   `~/.config/mise/mise.lock` and the whole mise installs directory (the Go
-  toolchain included). Egress goes to `api.osv.dev`, `proxy.golang.org` and
-  `data.jsdelivr.com`. The installs grant is the plain directory, not `npm-**` / `pipx-**`: a tool
-  declared by its short name (`cookiecutter`, backend `pipx:cookiecutter`)
-  installs to `installs/cookiecutter`. A plain path grants its subtree; srt
-  drops a trailing `/**` from an allow, which leaves only the directory
-  readable. `go list` gets a private
-  build cache in the workdir (`GOCACHE`, set by the recipe) and
-  `GOFLAGS=-buildvcs=false`, so it never writes the shared build cache or runs
-  git.
+  toolchain included). Egress goes to `api.osv.dev`,
+  `osv-vulnerabilities.storage.googleapis.com`, `proxy.golang.org`,
+  `data.jsdelivr.com` and `github.com`. The installs grant is the plain
+  directory, not `npm-**` / `pipx-**`: a tool declared by its short name
+  (`cookiecutter`, backend `pipx:cookiecutter`) installs to
+  `installs/cookiecutter`. A plain path grants its subtree; srt drops a
+  trailing `/**` from an allow, which leaves only the directory readable.
+  `go list` gets a private build cache in the workdir (`GOCACHE`, set by the
+  recipe) and `GOFLAGS=-buildvcs=false`, so it never writes the shared build
+  cache or runs git.
 
 ### Scan loop, notifications, offline
 
@@ -228,7 +303,7 @@ no file locks.
 ## Data model & storage
 
 ```go
-Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL), Name, Version, Repo (root or mise label), ManifestPath, Direct, Imported, Advisories[] }
+Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL|GitHub Actions), Name, Version, Repo (root or mise label), ManifestPath, Direct, Imported, Advisories[] }
 Advisory{ ID, Kind (vuln|malicious|signal), Summary, Severity, FixedVersion }  // one finding on that exact version
 DiscoveryError{ Repo, Ecosystem, Error }  // a repo+ecosystem the scan could not read
 ```
@@ -251,7 +326,7 @@ DiscoveryError{ Repo, Ecosystem, Error }  // a repo+ecosystem the scan could not
 |------|--------|--------|------------------|------------------------|------|
 | `vuln` | an OSV id other than MAL- | coalesced summary | yes, until resolved | applies | Active findings, by severity |
 | `malicious` | an OSV MAL- id, or a producer's own rule (a version the registry withdrew, say) | its own | yes, until resolved | bypassed (install scripts may have run) | first in Active findings, red badge; Resolve asks for confirmation |
-| `signal` | a deps rule | never | never, nor in `flagged_count` | not used | Warning signs section |
+| `signal` | a deps rule, such as `deps-movable-ref` on a tag-pinned Action | never | never, nor in `flagged_count` | not used | Warning signs section |
 
 - The banner and count rule is one function, `store.Kind.Alerts(imported)`.
   `PendingFlags` and `api.Dependency.Active` call it; `app.js` mirrors it as
@@ -285,20 +360,18 @@ Summary: "…"}`. Follow-up producers build on these rules:
   "Not compiled in": its vulnerabilities never count and never notify.
 - **The version in the key must track the pin.** `FlagKey` embeds the
   version, and a resolved or notified finding keeps that state while its key
-  holds. So the version must change whenever the pinned thing does: for a
-  SHA-pinned GitHub Action it carries the SHA, not only the `# vN` label, or
-  a re-pin keeps the old resolve. A ref pinned to a tag or branch also
-  carries the commit it resolved to. A tag moved to another commit then
-  makes a new key and can't reuse a notified or resolved one. The
-  tj-actions attack moved tags that way.
+  holds. So the version must change whenever the pinned thing does. A GitHub
+  Action's version is `<label>+<commit>` (`v45.0.7+a284dc18…`, the full
+  40-hex SHA): the label is the tag or branch, or a SHA pin's `# vN` comment,
+  and a SHA pin with no comment is the commit alone. A tag or branch that
+  isn't a full `x.y.z` uses the release tag on its commit. A tag repointed to
+  other code, as in the tj-actions attack, gets a new key. It notifies again,
+  and a resolve doesn't carry over. `discover.SplitActionVersion` is the one
+  parser.
 - **A version never contains `@`.** `parseKey` splits name and version on
   the last `@`, the same way an id never contains `:`. Don't join a tag and
-  its commit with `@`.
-- **How a commit reaches OSV is the producer's call.** `scanner.Check`
-  builds each `osv.Query` from `Name`, `Ecosystem` and `Version` only. A
-  producer that checks Actions refs against OSV by commit either derives the
-  commit from the version or adds a field to the query. It documents which
-  one it chose.
+  its commit with `@`: a GitHub Action joins them with `+`, and a label with
+  `@` or `:` in it is dropped.
 - **A second checker composes with OSV.** `Engine` holds one `Checker`. A
   second one (a registry checker, say) merges its results with OSV's per
   dependency index, and its error must neither fail the check nor discard
@@ -307,8 +380,14 @@ Summary: "…"}`. Follow-up producers build on these rules:
   as gone, and a resolved one shows as "Resolved · updated past". A producer
   that needs a failed lookup to read as neither clean nor fixed must make
   that model change itself.
+- **A partial read keeps what it read.** A discoverer may return packages
+  beside its error; `discover.Repos` keeps them and records the error.
 - A new producer leaves the key format, the notifier, the API and the page
-  as they are.
+  as they are. `osv.Query` may grow fields for a new query shape. The
+  commit reaches OSV through the version, not a new stored field:
+  `scanner.Check` builds each query with `query`, which splits a GitHub
+  Action's version into `osv.Query.Version` (the label) and `Commit`. So
+  `store.Dependency`, scan.json and the API keep their shape.
 
 ## Build / install / test
 

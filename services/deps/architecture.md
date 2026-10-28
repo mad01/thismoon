@@ -9,8 +9,9 @@ runtime `deps serve --port 7429`
 (loopback only, fronted by d-man as `http://deps.this/`, run as a t-man agent)
 is the single long-running process. It owns the scan store, runs the scan
 loop, serves the web page and JSON API, and is the only process that reaches
-the network. The `deps` CLI and `deps mcp` hold no state; both are thin HTTP
-clients to the serve API and report "serve not reachable" when it is down.
+the network (OSV, and github.com to resolve GitHub Actions refs). The `deps`
+CLI and `deps mcp` hold no state; both are thin HTTP clients to the serve API
+and report "serve not reachable" when it is down.
 
 ## Structure
 
@@ -21,10 +22,10 @@ internal/
   config/            ~/.config/deps/config.toml (exclude_repos, exclude_paths,
                      [mise] lock and installs paths)
   registry/          reads the catalog registry.yaml into the repo set to scan
-  discover/          Ecosystem interface + Go, npm, Python, Swift discoverers,
-                     the browser JavaScript discoverers that report npm, and
-                     the shared walker that skips nested checkouts; Mise
-                     reads the installed mise npm and pipx trees
+  discover/          Ecosystem interface + Go, npm, Python, Swift, GitHub
+                     Actions discoverers, the browser JavaScript discoverers
+                     that report npm, and the shared walker that skips nested
+                     checkouts; Mise reads the installed mise npm and pipx trees
   jsdelivr/          jsDelivr data API client (file lookup by sha256), cached
   osv/               OSV.dev client (querybatch, then per-id vuln fetch)
   scanner/           Engine: discover, check, persist, coalesced notify
@@ -45,7 +46,15 @@ a chrome-only `shell.html`; the page body renders client-side from
 A scan cycle runs discover, check, persist, notify. Discovery reads the
 catalog registry, trims it by `exclude_repos`, and walks each repo for
 `go.mod` (resolved with `go list -m -json all`), `package-lock.json`, exact
-`requirements.txt` pins, and `Package.resolved`. For Go it also computes
+`requirements.txt` pins, `Package.resolved`, and the `uses:` refs in
+`.github/workflows`, `.github/actions`, and any local action a `uses: ./path`
+ref runs. A GitHub Action pinned to a tag or branch is resolved to its commit
+from the action repo's ref list on github.com, fetched once per scan. It
+carries a movable-ref signal. Its version is the label and the commit
+(`v45.0.7+a284dc18…`), so a repointed tag reads as a new version. A ref like
+`v4` takes its label from the full release tag on the same commit. A ref
+that can't be resolved is left out and reported as a discovery error beside
+the refs that were read. For Go it also computes
 import-graph reachability with `go list -deps -json ./...`, tagging deps that
 contribute no compiled Go package as graph-only; this fails open so a real
 advisory is never hidden. Browser JavaScript outside any lockfile becomes npm
@@ -73,11 +82,15 @@ tool, and an unreadable tree is one for its tool.
 
 The check step posts versions to OSV's `/v1/querybatch` (up to 1000 per
 batch, following `next_page_token` for paged results) and fetches each unique
-advisory id once. A record that fails to
-load keeps its finding with the id alone, so one bad fetch never aborts the
-scan. Each finding has a kind: `malicious` for an OSV MAL- id, `vuln` for any
-other advisory, and `signal` for a warning sign a deps rule raises. The
-checker's findings are added to any a discoverer attached, never in place of
+advisory id once. A GitHub Action is looked up by its commit and by its
+name, as written and in each other spelling OSV files it under. OSV matches
+names case-sensitively, so the check first reads OSV's export of Actions
+advisories from its data bucket. A failed read is a discovery error. A name hit stays
+only when the version label falls in its range or can't be compared. A record
+that fails to load keeps its finding with the id alone, so one bad fetch never
+aborts the scan. Each finding has a kind: `malicious` for an OSV MAL- id,
+`vuln` for any other advisory, and `signal` for a warning sign a deps rule
+raises. The checker's findings are added to any a discoverer attached, never in place of
 them. `scanner.Engine` persists the result and the discovery errors through the
 store. It then fires a separate banner for newly flagged malicious packages,
 then one coalesced notification covering the other newly flagged advisories.

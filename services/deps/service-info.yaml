@@ -25,7 +25,17 @@ spec:
     # does unsandboxed; repos commit go.sum, so the checksum database is not
     # consulted. data.jsdelivr.com because discovery looks up each vendored
     # JavaScript file by its sha256 to learn its npm name and version.
-    egress: [api.osv.dev, proxy.golang.org, data.jsdelivr.com]
+    # github.com for the ref lists that resolve a tag- or branch-pinned
+    # GitHub Action to its commit (a plain HTTPS GET of <repo>.git/info/refs,
+    # so no git runs in the sandbox). The OSV data bucket for its GitHub
+    # Actions export, read once per check for the spelling OSV files each
+    # action's advisories under.
+    egress:
+      - api.osv.dev
+      - osv-vulnerabilities.storage.googleapis.com
+      - proxy.golang.org
+      - data.jsdelivr.com
+      - github.com
     reads:
       - ~/code/bin
       - workdir

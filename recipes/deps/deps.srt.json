@@ -36,8 +36,10 @@
     ],
     "allowedDomains": [
       "api.osv.dev",
+      "osv-vulnerabilities.storage.googleapis.com",
       "proxy.golang.org",
-      "data.jsdelivr.com"
+      "data.jsdelivr.com",
+      "github.com"
     ],
     "deniedDomains": []
   }

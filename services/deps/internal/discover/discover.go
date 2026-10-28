@@ -16,7 +16,7 @@ import (
 // Package is one resolved dependency a discoverer found. It maps directly onto
 // store.Dependency; the scanner's checker adds its findings to Advisories.
 type Package struct {
-	Ecosystem    string // OSV ecosystem string: Go | npm | PyPI | SwiftURL
+	Ecosystem    string // OSV ecosystem string: Go | npm | PyPI | SwiftURL | GitHub Actions
 	Name         string
 	Version      string
 	ManifestPath string // the go.mod / package-lock.json / site-packages that declared it
@@ -36,6 +36,11 @@ type Package struct {
 // applies. Git worktrees and nested checkouts are skipped regardless of Options.
 type Options struct {
 	ExcludePath func(relPath string) bool
+
+	// refs memoizes the action repos' ref advertisements for one Repos walk,
+	// so a scan fetches each once and the next scan sees a moved tag. Outside
+	// Repos it is nil, and each Discover call keeps its own.
+	refs refCache
 }
 
 // excluded reports whether the directory at path (under repoRoot) is excluded.
@@ -52,28 +57,37 @@ func (o Options) excluded(repoRoot, path string) bool {
 
 // Ecosystem discovers the dependencies of one package manager within a repo.
 type Ecosystem interface {
-	// Name is the OSV ecosystem string (Go, npm, PyPI, SwiftURL) for reporting.
+	// Name is the OSV ecosystem string (Go, npm, PyPI, SwiftURL, GitHub
+	// Actions) for reporting.
 	Name() string
 	// Discover walks repoRoot for this ecosystem's manifests and returns every
 	// resolved dependency. A repo with no matching manifest yields nil, nil.
+	// A partial read returns the packages it did read beside the error.
 	Discover(repoRoot string, opts Options) ([]Package, error)
 }
 
 // Default is the ecosystem set built today: Go (resolved module graph +
 // reachability), npm (package-lock), PyPI (requirements.txt exact pins), Swift
-// (Package.resolved pins), and browser JavaScript outside any lockfile mapped
-// to npm: jsDelivr URLs in shell scripts, and vendored files named by a
-// jsDelivr hash lookup.
+// (Package.resolved pins), browser JavaScript outside any lockfile mapped to
+// npm (jsDelivr URLs in shell scripts, and vendored files named by a jsDelivr
+// hash lookup), and GitHub Actions (workflow refs by commit).
 func Default() []Ecosystem {
 	return []Ecosystem{
-		Go{}, NPM{}, Python{}, Swift{}, JSDelivrScripts{}, VendoredJS{Lookup: jsdelivr.New()},
+		Go{},
+		NPM{},
+		Python{},
+		Swift{},
+		JSDelivrScripts{},
+		VendoredJS{Lookup: jsdelivr.New()},
+		GitHubActions{},
 	}
 }
 
 // Repos discovers dependencies across every repo using every ecosystem, tagging
 // each with the repo it came from. A discoverer error on one repo/ecosystem is
 // recorded as a store.DiscoveryError and does not abort the rest of the scan, so
-// one bad repo neither loses the others' deps nor passes for a clean read.
+// one bad repo neither loses the others' deps nor passes for a clean read. The
+// packages a discoverer returns beside its error are kept: it read those.
 func Repos(
 	repos []string,
 	ecosystems []Ecosystem,
@@ -83,6 +97,7 @@ func Repos(
 		deps []store.Dependency
 		errs []store.DiscoveryError
 	)
+	opts.refs = refCache{}
 	for _, repo := range repos {
 		for _, eco := range ecosystems {
 			pkgs, err := eco.Discover(repo, opts)
@@ -92,7 +107,6 @@ func Repos(
 					Ecosystem: eco.Name(),
 					Error:     err.Error(),
 				})
-				continue
 			}
 			for _, p := range pkgs {
 				deps = append(deps, dependency(repo, p))

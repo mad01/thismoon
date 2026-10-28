@@ -23,7 +23,7 @@ type handlers struct {
 func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_scan",
-		Description: "Discover every external dependency across the registered tool repos (Go modules, npm, PyPI, Swift) and the installed mise tools (npm and PyPI trees, each under a label like 'mise:npm:yarn') and persist the inventory, WITHOUT checking advisories. " +
+		Description: "Discover every external dependency across the registered tool repos (Go modules, npm, PyPI, Swift, GitHub Actions) and the installed mise tools (npm and PyPI trees, each under a label like 'mise:npm:yarn') and persist the inventory, WITHOUT checking advisories. " +
 			"Returns a per-ecosystem count, plus discovery_errors naming any repo or mise tool and ecosystem it could not read. Use deps_check to also check versions against OSV.",
 		// Replaces the whole persisted inventory, so a rescan is destructive
 		// but idempotent over an unchanged tree. Go discovery shells out to
@@ -114,7 +114,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 // scanOut is the deps_scan response.
 type scanOut struct {
 	Total           int                    `json:"total"                      jsonschema:"total dependencies discovered"`
-	ByEcosystem     map[string]int         `json:"by_ecosystem"               jsonschema:"count per ecosystem (Go, npm, PyPI)"`
+	ByEcosystem     map[string]int         `json:"by_ecosystem"               jsonschema:"count per ecosystem (Go, npm, PyPI, SwiftURL, GitHub Actions)"`
 	DiscoveryErrors []store.DiscoveryError `json:"discovery_errors,omitempty" jsonschema:"repo and ecosystem pairs the last scan could not read; their dependencies were NOT checked, so an empty flagged list is not clean while this is set"`
 	URL             string                 `json:"url"                        jsonschema:"web page where the user can view findings"`
 }

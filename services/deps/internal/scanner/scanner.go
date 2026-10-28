@@ -7,6 +7,7 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -23,6 +24,8 @@ import (
 )
 
 // Checker is the OSV surface the scanner needs (real *osv.Client or a fake).
+// Like *osv.Client, it may return complete results beside an
+// *osv.ActionNamesError.
 type Checker interface {
 	Check(ctx context.Context, queries []osv.Query) ([][]store.Advisory, error)
 }
@@ -62,29 +65,72 @@ func logged(errs []store.DiscoveryError) []store.DiscoveryError {
 // annotated set. Findings a discoverer attached are kept; a checker finding
 // whose id the dependency already lists replaces it, so checking the same deps
 // twice lists each finding once. Dependencies with no finding come back
-// unchanged.
+// unchanged. When the checker could not read OSV's GitHub Actions name list,
+// its findings are still added, and each repo with an Action gets a
+// discovery error saying so (actionNameErrors).
 func Check(
 	ctx context.Context,
 	deps []store.Dependency,
 	checker Checker,
-) ([]store.Dependency, error) {
+) ([]store.Dependency, []store.DiscoveryError, error) {
 	if len(deps) == 0 {
-		return deps, nil
+		return deps, nil, nil
 	}
 	queries := make([]osv.Query, len(deps))
 	for i, d := range deps {
-		queries[i] = osv.Query{Name: d.Name, Ecosystem: d.Ecosystem, Version: d.Version}
+		queries[i] = query(d)
 	}
 	advisories, err := checker.Check(ctx, queries)
+	var (
+		namesErr *osv.ActionNamesError
+		discErrs []store.DiscoveryError
+	)
+	if errors.As(err, &namesErr) {
+		log.Printf("deps: %v", namesErr)
+		discErrs, err = actionNameErrors(deps, namesErr), nil
+	}
 	if err != nil {
-		return nil, fmt.Errorf("osv check: %w", err)
+		return nil, nil, fmt.Errorf("osv check: %w", err)
 	}
 	for i := range deps {
 		if i < len(advisories) {
 			deps[i].Advisories = addFindings(deps[i].Advisories, advisories[i])
 		}
 	}
-	return deps, nil
+	return deps, discErrs, nil
+}
+
+// actionNameErrors gives each repo with a GitHub Action a discovery error
+// naming err, the name list that could not be read. A log line alone would
+// let the page and deps_check read as clean while an advisory filed under
+// another capitalization went unasked for; a discovery error marks the scan
+// as incomplete there and warns in the scan-complete event.
+func actionNameErrors(deps []store.Dependency, err error) []store.DiscoveryError {
+	var out []store.DiscoveryError
+	seen := map[string]bool{}
+	for _, d := range deps {
+		if d.Ecosystem != discover.ActionsEcosystem || seen[d.Repo] {
+			continue
+		}
+		seen[d.Repo] = true
+		out = append(out, store.DiscoveryError{
+			Repo:      d.Repo,
+			Ecosystem: d.Ecosystem,
+			Error:     err.Error(),
+		})
+	}
+	return out
+}
+
+// query is the OSV query for d. A GitHub Action's version carries the commit
+// it runs (discover.SplitActionVersion), so OSV checks it by that commit, with
+// the label before it as the version.
+func query(d store.Dependency) osv.Query {
+	q := osv.Query{Name: d.Name, Ecosystem: d.Ecosystem, Version: d.Version}
+	if d.Ecosystem == discover.ActionsEcosystem {
+		q.Version, q.Commit = discover.SplitActionVersion(d.Version)
+	}
+	return q
 }
 
 // addFindings returns have with found added. A found finding whose id is
@@ -150,10 +196,11 @@ func (e *Engine) Check(ctx context.Context) ([]store.Dependency, error) {
 		return nil, err
 	}
 	deps, discErrs := Discover(plan, e.Ecosystems)
-	deps, err = Check(ctx, deps, e.Checker)
+	deps, checkErrs, err := Check(ctx, deps, e.Checker)
 	if err != nil {
 		return nil, err
 	}
+	discErrs = append(discErrs, checkErrs...)
 	if err := e.Store.Save(deps, discErrs); err != nil {
 		return nil, err
 	}
@@ -222,10 +269,11 @@ func (e *Engine) CheckRepo(ctx context.Context, repoID string) ([]store.Dependen
 	if err != nil {
 		return nil, err
 	}
-	deps, err = Check(ctx, deps, e.Checker)
+	deps, checkErrs, err := Check(ctx, deps, e.Checker)
 	if err != nil {
 		return nil, err
 	}
+	discErrs = append(discErrs, checkErrs...)
 	if err := e.Store.SaveRepo(unit, deps, discErrs); err != nil {
 		return nil, err
 	}
