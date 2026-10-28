@@ -1,6 +1,7 @@
 package hint
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -27,6 +28,24 @@ func writeHintScript(t *testing.T, dir, name, body string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// firstLaunchBudget bounds the untimed launch that warms a fresh script.
+const firstLaunchBudget = 30 * time.Second
+
+// launchOnce runs a freshly written script once with the argument warm,
+// outside any hint budget. macOS checks each new executable on its first
+// exec, and under a full-repo `go test ./...` that check can outlast a
+// short budget. These tests configure the command without arguments, so a
+// script whose first line exits on warm starts nothing and writes nothing
+// here.
+func launchOnce(t *testing.T, path string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), firstLaunchBudget)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, path, "warm").CombinedOutput(); err != nil {
+		t.Fatalf("first launch of %s: %v: %s", path, err, out)
+	}
 }
 
 // generousBudget keeps every test that is not about the timeout off the
@@ -162,8 +181,8 @@ func TestCustomHintKeepsOutputWhenAChildLingers(t *testing.T) {
 // about the warn, not the exec.
 func TestCustomHintWarnDoesNotHoldTheSession(t *testing.T) {
 	dir := t.TempDir()
-	fails := writeHintScript(t, dir, "fails.sh", "exit 1")
-	_ = exec.Command(fails).Run()
+	fails := writeHintScript(t, dir, "fails.sh", "[ \"$1\" = warm ] && exit 0\nexit 1")
+	launchOnce(t, fails)
 	started := make(chan struct{})
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
@@ -198,11 +217,15 @@ func TestCustomHintWarnDoesNotHoldTheSession(t *testing.T) {
 
 // TestCustomHintTimeoutKillsGrandchildren pins the process-group kill: a
 // grandchild the script started (the curl inside a journal script, say)
-// must be gone after the timeout, not left to outlive the hook.
+// must be gone after the timeout, not left to outlive the hook. The script
+// is warmed first so the budget goes to reaching line two, not to its
+// first exec.
 func TestCustomHintTimeoutKillsGrandchildren(t *testing.T) {
 	dir := t.TempDir()
 	pidfile := filepath.Join(dir, "grandchild.pid")
-	hangs := writeHintScript(t, dir, "hangs.sh", "sleep 30 &\necho $! > "+pidfile+"\nwait")
+	hangs := writeHintScript(t, dir, "hangs.sh",
+		"[ \"$1\" = warm ] && exit 0\nsleep 30 &\necho $! > "+pidfile+"\nwait")
+	launchOnce(t, hangs)
 	var warned []string
 	h := newCustomHint(config.CustomHint{Command: []string{hangs}, TimeoutMS: 1000}, &warned)
 
