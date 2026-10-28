@@ -90,6 +90,16 @@ type SessionSummary struct {
 	RepoNames []string `json:"repo_names"`
 	// Worktrees are the checkout roots the session edited, sorted.
 	Worktrees []string `json:"worktrees"`
+	// CwdRepo is the repository the session's cwd sits in
+	// (store.Session.Location), edited or not, and CwdRepoName its short
+	// name; both absent for a cwd outside any repository.
+	CwdRepo     string `json:"cwd_repo,omitempty"        jsonschema:"the repository the session's cwd sits in (its location), whether or not it edited there; absent for a cwd outside any repository or a session recorded before sessions kept a location"`
+	CwdRepoName string `json:"cwd_repo_name,omitempty"`
+	// Entrypoint is how the harness was started: cli for an interactive
+	// session, sdk-cli for `claude -p`.
+	Entrypoint string `json:"entrypoint,omitempty"      jsonschema:"how the harness was started, as Claude Code names it: cli for an interactive terminal session, sdk-cli for claude -p (headless); absent when not recorded"`
+	// Tags are the session tags its launcher set, such as eval.
+	Tags []string `json:"tags,omitempty"            jsonschema:"short tokens the session's launcher set in MOONDB_SESSION_TAGS, such as eval for an eval run"`
 }
 
 // SessionList is what GET /api/sessions answers: one page of rows, the
@@ -125,8 +135,9 @@ type WindowTotals struct {
 	RepoCosts  []RepoCost `json:"repo_costs"`
 }
 
-// RepoCount is one repository with how many sessions edited it or sent it
-// attributed cost (chipRepos), and the cost the attribution rule gives it
+// RepoCount is one repository with how many sessions edited it, sent it
+// attributed cost, or edited no repository with their cwd in it
+// (chipRepos), and the cost the attribution rule gives it
 // across the time window: absent when no priced part goes there.
 type RepoCount struct {
 	Repo     string   `json:"repo"`
@@ -257,6 +268,10 @@ func (s *Server) row(sum store.SessionSummary, now time.Time) SessionSummary {
 		Repos:          sum.Repos,
 		RepoNames:      names,
 		Worktrees:      sum.Worktrees,
+		CwdRepo:        sum.Location.Repo,
+		CwdRepoName:    repoName(sum.Location.Repo), // "" for no repository
+		Entrypoint:     sum.Entrypoint,
+		Tags:           sum.Tags,
 	}
 }
 
@@ -323,14 +338,19 @@ func (s *Server) repoCounts(sessions []store.SessionSummary) []RepoCount {
 
 // chipRepos lists the repositories a session counts toward: the ones it
 // edited, then the ones the attribution rule sends a part of its cost to
-// without an edit there, such as a subagent's cwd repository. The repo
-// filter keeps a session by them and a repo chip counts it by them.
+// without an edit there, such as a subagent's cwd repository. A session
+// that edited no repository counts toward its cwd's repository too, so the
+// badge its row shows for it lists it. The repo filter keeps a session by
+// them and a repo chip counts it by them.
 func chipRepos(sum store.SessionSummary) []string {
 	repos := slices.Clone(sum.Repos)
 	for _, p := range sum.RepoUsage {
 		if !isCostLabel(p.Repo) && !slices.Contains(repos, p.Repo) {
 			repos = append(repos, p.Repo)
 		}
+	}
+	if cwd := sum.Location.Repo; len(sum.Repos) == 0 && cwd != "" && !slices.Contains(repos, cwd) {
+		repos = append(repos, cwd)
 	}
 	return repos
 }

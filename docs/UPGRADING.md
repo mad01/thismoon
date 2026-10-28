@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-28 moondb: sessions keep their cwd repo, entrypoint and tags
+
+Change: thismoon PR TBD. A session now records the repository its cwd sits in, the harness entrypoint (`cli`, or `sdk-cli` for `claude -p`) and the tags a launcher sets in `MOONDB_SESSION_TAGS`. The sessions list shows a session that edited no repo under its cwd's repo, and marks headless and tagged sessions. The eval runner tags its sessions `eval`.
+
+Run: `ralph up`, then `moondb import --since 30d --force` while no other session is working, so sessions recorded before this build get their location and entrypoint. A held session with no edit and no subagent is now imported too, for this. A session whose transcript file is gone keeps neither. Tags cannot be backfilled: they exist only in the hook's environment.
+
+Verify: on `http://moondb.this/`, an older eval session such as "Where is the Go function `CanonicalRepo` defined" shows a hollow `mad01/thismoon` badge in the REPO column instead of "no repo". A `headless` badge sits beside its title, and its session page lists `sdk-cli` as the entrypoint.
+
 ## 2026-10-26 belt: kof-consult runs on the prompt, not at session start
 
 Change: thismoon #309 (MAD-492). belt's `kof-consult` hint now runs on UserPromptSubmit and shows the repo's assertions that the prompt is about, in place of the whole repo's list at session start. The kof hints' events now carry `assertions` and `pins` tags.

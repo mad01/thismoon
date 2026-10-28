@@ -507,3 +507,89 @@ func TestRepoFilterFollowsAttribution(t *testing.T) {
 		}
 	}
 }
+
+// TestCwdRepoCountsWithoutEdits: a row names its cwd's repository, its
+// entrypoint and its tags. A session that edited no repository counts
+// toward its cwd's: the repo filter keeps it and the chip counts it, while
+// the chip's cost stays the attributed cost. A session that edited one
+// counts only by its edits and attribution.
+func TestCwdRepoCountsWithoutEdits(t *testing.T) {
+	h := newHarness(t)
+	const (
+		thirdRepo   = "example.com/owner/third"
+		quietID     = "sess-quiet"
+		quietTurn   = "turn-quiet"
+		editorID    = "sess-editor"
+		editorTurn  = "turn-editor"
+		headlessCLI = "sdk-cli"
+	)
+	here := store.Location{Repo: servertest.Repo, Worktree: servertest.Worktree}
+	h.store.Add(
+		store.Session{
+			ID: quietID, Harness: "test-harness", Cwd: servertest.Worktree, Location: here,
+			Entrypoint: headlessCLI, Tags: []string{"eval"}, StartedAt: servertest.T0,
+		},
+		[]store.Turn{servertest.PricedTurn(quietTurn, quietID)}, nil, nil,
+	)
+	h.store.Add(
+		store.Session{
+			ID: editorID, Harness: "test-harness", Cwd: "/work/third",
+			Location:  store.Location{Repo: thirdRepo, Worktree: "/work/third"},
+			StartedAt: servertest.T0,
+		},
+		[]store.Turn{servertest.PricedTurn(editorTurn, editorID)},
+		nil,
+		[]store.Edit{
+			servertest.Edit("toolu_ed:0", editorID, editorTurn, "", 2, here, servertest.PathA),
+		},
+	)
+
+	all := h.sessionList(t, "")
+	rows := map[string]SessionSummary{}
+	for _, r := range all.Sessions {
+		rows[r.ID] = r
+	}
+	quiet := rows[quietID]
+	if len(quiet.Repos) != 0 || quiet.CwdRepo != servertest.Repo ||
+		quiet.CwdRepoName != "owner/thismoon" || quiet.Entrypoint != headlessCLI ||
+		!slices.Equal(quiet.Tags, []string{"eval"}) {
+		t.Errorf("quiet row repos %v cwd repo %q (%q) entrypoint %q tags %v",
+			quiet.Repos, quiet.CwdRepo, quiet.CwdRepoName, quiet.Entrypoint, quiet.Tags)
+	}
+	if old := rows[servertest.OldSession]; old.CwdRepo != "" || old.CwdRepoName != "" ||
+		old.Entrypoint != "" || old.Tags != nil {
+		t.Errorf("a session without an origin has cwd repo %q (%q) entrypoint %q tags %v",
+			old.CwdRepo, old.CwdRepoName, old.Entrypoint, old.Tags)
+	}
+
+	chips := map[string]RepoCount{}
+	for _, r := range all.Repos {
+		chips[r.Repo] = r
+	}
+	if _, ok := chips[thirdRepo]; ok {
+		t.Errorf("chips %v list %s, which a session that edited elsewhere only worked in",
+			all.Repos, thirdRepo)
+	}
+	chip := chips[servertest.Repo]
+	filtered := h.sessionList(t, "?repo="+servertest.Repo)
+	ids, sum := []string{}, 0.0
+	for _, row := range filtered.Sessions {
+		ids = append(ids, row.ID)
+		if row.RepoCost != nil {
+			sum += *row.RepoCost
+		}
+	}
+	slices.Sort(ids)
+	if want := []string{editorID, servertest.NewSession, quietID}; !slices.Equal(ids, want) ||
+		chip.Sessions != len(want) {
+		t.Errorf("filtered rows %v, chip counts %d; want %v", ids, chip.Sessions, want)
+	}
+	for _, row := range filtered.Sessions {
+		if row.ID == quietID && (row.RepoCost == nil || *row.RepoCost != 0) {
+			t.Errorf("quiet session's attributed cost %v, want a real zero", row.RepoCost)
+		}
+	}
+	if chip.Cost == nil || !near(sum, *chip.Cost) {
+		t.Errorf("chip cost %v, filtered rows add %v; want one number", chip.Cost, sum)
+	}
+}

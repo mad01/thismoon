@@ -114,7 +114,8 @@ on the page). The main conversation's goes to the repo most of its own
 edits touched, else to "orchestration". So a session that edited a repo
 can give it nothing (`repo_cost` 0). A repo chip and the repo filter take
 a session that edited the repo or sends it a part of its cost. A subagent
-that only read there is enough. The chip's count and cost then match the
+that only read there is enough, and so is a session that edited no repo
+with its cwd in this one. The chip's count and cost then match the
 filtered list. An agent waiting for the totals backfill adds nothing
 until it has totals.
 

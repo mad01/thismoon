@@ -82,6 +82,9 @@ func registerSessionTools(s *mcp.Server, h *handlers) {
 		Description: "List recorded agent sessions newest first. Each has a title (the harness title, else its first prompt line), " +
 			"a status (running or ended), when it started, was last active and ended, its active time and wall time, its turn, edit, file and agent counts, " +
 			"the names of the subagents that ran (`agents`), its tokens and cost, its transcript path, and the repositories and worktrees it edited. " +
+			"`cwd_repo` is the repository its cwd sits in (the session's `location`), whether or not it edited there. " +
+			"`entrypoint` says how the harness was started: `cli` for an interactive session, `sdk-cli` for a headless `claude -p` run. " +
+			"`tags` are what its launcher set in MOONDB_SESSION_TAGS, such as `eval` for an eval run. " +
 			"`active_ms` is the time inside its turns, less the time a turn waited for input or sat idle, so a pause between turns never counts. " +
 			"`duration_ms` is the wall time from the first prompt to the last turn's end, pauses included, and never below `active_ms`. " +
 			"An open turn ends at its last edit or agent stop for both. " +
@@ -89,7 +92,8 @@ func registerSessionTools(s *mcp.Server, h *handlers) {
 			"`repo_costs` splits it by repository: each subagent's cost goes to the repository most of its edits touched, else its cwd's repository, else `no_repo`; " +
 			"the main conversation's goes to the repository most of its own edits touched, else `orchestration`. " +
 			"With `repo`, each session also has `repo_cost`: the part of `cost` attributed to that repository, while `cost` stays the whole session's. " +
-			"Filter by `repo` (host/owner/repo; sessions that edited it or attribute a part of their cost to it in `repo_costs`, such as through a subagent whose cwd is there), `since` (sessions active since then, whenever they started: " +
+			"Filter by `repo` (host/owner/repo; sessions that edited it or attribute a part of their cost to it in `repo_costs`, such as through a subagent whose cwd is there, " +
+			"and sessions that edited no repository with their cwd there), `since` (sessions active since then, whenever they started: " +
 			"an RFC 3339 time or a duration such as 24h or 7d), and `limit` (default 50).",
 		Annotations: readOnly(),
 	}, h.handleSessions)
@@ -356,7 +360,7 @@ func truncate(s string, n int) string {
 // ── sessions ──
 
 type sessionsInput struct {
-	Repo  string `json:"repo,omitempty"  jsonschema:"repository identity host/owner/repo; keeps sessions that edited it or attribute a part of their cost to it in repo_costs"`
+	Repo  string `json:"repo,omitempty"  jsonschema:"repository identity host/owner/repo; keeps sessions that edited it or attribute a part of their cost to it in repo_costs, and sessions that edited no repository with their cwd in it"`
 	Since string `json:"since,omitempty" jsonschema:"keeps sessions active since then: an RFC 3339 time, or a duration before now such as 90m, 24h or 7d"`
 	Limit int    `json:"limit,omitempty" jsonschema:"maximum sessions to return, newest first (default 50)"`
 }

@@ -59,12 +59,19 @@
 .ls-day-name{font-size:0.9rem;font-weight:650;color:var(--text-1)}
 .ls-day-date{font-size:0.78rem;color:var(--text-3)}
 .ls-day-sum{margin-left:auto;font-size:0.78rem;color:var(--text-3);font-variant-numeric:tabular-nums}
-#app .ls-title a{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-1);font-weight:500;text-decoration:none}
+#app .ls-title a{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-1);font-weight:500;text-decoration:none}
 #app .ls-title a:hover{color:var(--primary);text-decoration:underline}
+/* the title, then its headless and tag badges, which never shrink */
+.ls-title-in{display:flex;align-items:center;gap:0.35rem;min-width:0}
+.ls-title-in wk-badge{flex:none;font-size:0.68rem;padding:0.1rem 0.4rem}
 .ls-repos{flex-wrap:nowrap;gap:0.3rem;min-width:0}
 #app a.ls-badge{display:inline-flex;align-items:center;gap:0.4rem;min-width:0;max-width:100%;padding:0.18rem 0.5rem 0.18rem 0.4rem;border-radius:4px;background:color-mix(in srgb,var(--hue) 13%,transparent);color:var(--text-1);font-family:var(--mono);font-size:0.72rem;text-decoration:none;border:1px solid transparent}
 #app a.ls-badge:hover{border-color:color-mix(in srgb,var(--hue) 55%,transparent)}
+/* the repo a session worked in without editing any: hollow and muted */
+#app a.ls-badge.is-cwd{background:none;color:var(--text-2);border:1px dashed color-mix(in srgb,var(--hue) 45%,transparent)}
+#app a.ls-badge.is-cwd:hover{border-color:var(--hue)}
 .ls-swatch{flex:none;width:0.5rem;height:0.5rem;border-radius:2px;background:var(--hue)}
+.is-cwd .ls-swatch{background:none;box-shadow:inset 0 0 0 1.5px var(--hue)}
 .ls-badge-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ls-more,.ls-norepo{font-size:0.72rem;color:var(--text-3);white-space:nowrap}
 .ls-when{color:var(--text-2);font-variant-numeric:tabular-nums;overflow:hidden}

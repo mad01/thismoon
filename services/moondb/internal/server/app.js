@@ -633,13 +633,14 @@
   }
 
   // chipTitle names a repo chip's repo, its sessions (the ones that edited
-  // it or sent it attributed cost, as the repo filter keeps them) and the
-  // cost they attribute to it, with the rule behind that cost.
+  // it, sent it attributed cost, or edited no repo with their cwd in it, as
+  // the repo filter keeps them) and the cost they attribute to it, with the
+  // rule behind that cost.
   function chipTitle(r) {
     var cost = r.cost != null ? 'Attributed cost ' + fmtCost(r.cost)
       : (r.unpriced || []).length ? 'Attributed cost not priced' : 'No priced cost attributed here';
-    return [r.repo, plural(r.sessions || 0, 'session') + ' edited it or sent it cost. ' + cost + '.',
-      unpricedText(r), ATTRIBUTION].filter(Boolean).join('\n');
+    var who = plural(r.sessions || 0, 'session') + ' edited it, sent it cost, or worked in it and edited no repo. ';
+    return [r.repo, who + cost + '.', unpricedText(r), ATTRIBUTION].filter(Boolean).join('\n');
   }
 
   function chip(label, n, active, onPick, title, cost) {
@@ -830,9 +831,10 @@
   function sessionRow(s, now, state) {
     return el('tr', { class: 'ls-row' }, [
       el('td', { class: 'ls-repo' }, repoBadges(s, state)),
-      el('td', { class: 'ls-title', 'data-fixation': '' }, el('a', {
-        href: '?session=' + enc(s.id), title: s.title + (s.cwd ? '\n' + s.cwd : '')
-      }, s.title || s.id)),
+      el('td', { class: 'ls-title', 'data-fixation': '' }, el('div', { class: 'ls-title-in' }, [
+        el('a', { href: '?session=' + enc(s.id), title: s.title + (s.cwd ? '\n' + s.cwd : '') },
+          s.title || s.id)
+      ].concat(sessionFlags(s)))),
       el('td', { class: 'ls-when' }, whenCell(s, now)),
       count(s.turn_count, 'c-sm'), count(s.edit_count), count(s.file_count, 'c-sm'),
       agentCount(s),
@@ -873,17 +875,44 @@
   function fmtCount(n) { return (n || 0).toLocaleString('en-US'); }
 
   // repoBadges is the session's first repo as a badge that filters the
-  // list to it, with a count of the others.
+  // list to it, with a count of the others. A session that edited no repo
+  // shows the repo its cwd sits in as a hollow badge, and "no repo" when
+  // its cwd sits in none.
   function repoBadges(s, state) {
     var repos = s.repos || [];
-    if (!repos.length) return el('span', { class: 'ls-norepo' }, 'no repo');
+    var since = state.since === DEFAULT_SINCE ? '' : state.since;
+    if (!repos.length) {
+      return s.cwd_repo ? cwdBadge(s, '?' + qs({ repo: s.cwd_repo, since: since }))
+        : el('span', { class: 'ls-norepo' }, 'no repo');
+    }
     var names = s.repo_names || repos;
-    var badge = repoBadge(repos[0], names[0], '?' + qs({
-      repo: repos[0], since: state.since === DEFAULT_SINCE ? '' : state.since
-    }));
+    var badge = repoBadge(repos[0], names[0], '?' + qs({ repo: repos[0], since: since }));
     badge.title = 'Show only ' + repos[0] + (repos.length > 1 ? '\nAlso edited: ' + repos.slice(1).join(', ') : '');
     return el('span', { class: 'row ls-repos' }, [badge,
       repos.length > 1 ? el('span', { class: 'ls-more' }, '+' + (repos.length - 1)) : null]);
+  }
+
+  // cwdBadge is the hollow badge of the repo a session's cwd sits in, for
+  // a session that edited no repo; the repo filter lists the session there.
+  function cwdBadge(s, href) {
+    var b = repoBadge(s.cwd_repo, s.cwd_repo_name, href);
+    b.classList.add('is-cwd');
+    b.title = 'Worked in ' + s.cwd_repo + '; edited no repo. Show its sessions';
+    return b;
+  }
+
+  // sessionFlags marks how a session ran: headless when the harness says
+  // it was not started from an interactive terminal, and one badge per
+  // tag its launcher set, such as eval.
+  function sessionFlags(s) {
+    var flags = [];
+    if (s.entrypoint && s.entrypoint !== 'cli') {
+      flags.push(badge('stat', 'headless', 'Entrypoint: ' + s.entrypoint));
+    }
+    (s.tags || []).forEach(function (t) {
+      flags.push(badge('outline', t, 'Tag set by the session\'s launcher (MOONDB_SESSION_TAGS)'));
+    });
+    return flags;
   }
 
   // repoBadge is a repo's short name on its hue; with href it is a link.
@@ -1089,6 +1118,7 @@
           kvRow('Session', code(d.id)),
           kvRow('Cwd', code(d.cwd || '-')),
           kvRow('Harness', d.harness || '-'),
+          kvRow('Entrypoint', d.entrypoint || '-'),
           kvRow('Model', d.model || '-'),
           kvRow('Transcript', d.transcript_path ? code(d.transcript_path) : '-'),
           kvRow('Started', fmtTime(d.started_at) || '-'),
@@ -1101,9 +1131,10 @@
     ]);
   }
 
-  // sessionLine sits under a session's title: the repos it edited, whether
-  // it is running and when it was last active, its active time over its
-  // wall span, and when it started.
+  // sessionLine sits under a session's title: the repos it edited, or the
+  // one its cwd sits in when it edited none, the headless and tag badges,
+  // whether it is running and when it was last active, its active time
+  // over its wall span, and when it started.
   function sessionLine(s) {
     var running = s.status === 'running';
     var at = parseTime(s.last_activity_at);
@@ -1113,7 +1144,8 @@
       b.title = 'Sessions in ' + r;
       return b;
     });
-    return el('div', { class: 'ss-line' }, badges.concat([
+    if (!badges.length && s.cwd_repo) badges.push(cwdBadge(s, '/?' + qs({ repo: s.cwd_repo })));
+    return el('div', { class: 'ss-line' }, badges.concat(sessionFlags(s), [
       el('span', { class: running ? 'ss-status is-on' : 'ss-status' }, [statusDot(running),
         (running ? 'Running' : 'Ended') + (at ? ', last active ' + ago(at, new Date()) : '')]),
       shownTime(s) ? el('span', { title: timeTitle(s) }, activeLine(s)) : null,
