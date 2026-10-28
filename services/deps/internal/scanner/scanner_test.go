@@ -2,6 +2,8 @@ package scanner
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/mad01/thismoon/services/deps/internal/api"
 	"github.com/mad01/thismoon/services/deps/internal/discover"
+	"github.com/mad01/thismoon/services/deps/internal/jsdelivr"
 	"github.com/mad01/thismoon/services/deps/internal/osv"
 	"github.com/mad01/thismoon/services/deps/internal/regcheck"
 	"github.com/mad01/thismoon/services/deps/internal/store"
@@ -976,12 +979,12 @@ func TestCheckRegistryKeepsOtherIndexPinsApart(t *testing.T) {
 }
 
 // TestCheckRegistryAsksForThePublishedVersion: the registry is asked about
-// the version as its registry publishes it. A vendored file's +sha256 label is
-// cut, and a GitHub Action goes without its commit.
+// the version as its registry publishes it. An npm build label is cut, and a
+// GitHub Action goes without its commit.
 func TestCheckRegistryAsksForThePublishedVersion(t *testing.T) {
 	const sha = "a284dc1814e3fd07f2e34267fc8f81227ed29fb8"
 	deps := []store.Dependency{
-		{Ecosystem: "npm", Name: "cytoscape", Version: "3.31.0+sha256.0123456789ab"},
+		{Ecosystem: "npm", Name: "cytoscape", Version: "3.31.0+build.7"},
 		{
 			Ecosystem: discover.ActionsEcosystem,
 			Name:      "tj-actions/changed-files",
@@ -997,8 +1000,125 @@ func TestCheckRegistryAsksForThePublishedVersion(t *testing.T) {
 			t.Errorf("%s query version = %q, want %q", q.Name, q.Version, want[i])
 		}
 	}
-	if deps[0].Version != "3.31.0+sha256.0123456789ab" {
+	if deps[0].Version != "3.31.0+build.7" {
 		t.Errorf("stored version = %q, want it unchanged", deps[0].Version)
+	}
+}
+
+// hashLookup answers a file's sha256 with the published file listed for it;
+// any other hash matches nothing.
+type hashLookup map[string]jsdelivr.File
+
+func (h hashLookup) Lookup(_ context.Context, sum string) (jsdelivr.File, bool, error) {
+	f, found := h[sum]
+	return f, found, nil
+}
+
+func sha256Hex(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+// withdrawingRegistry records its queries and answers every one with npm's
+// withdrawn finding, as npm answers for utils@0.1.0 (unpublished in 2012).
+type withdrawingRegistry struct{ queries []regcheck.Query }
+
+func (r *withdrawingRegistry) Check(_ context.Context, qs []regcheck.Query) []regcheck.Result {
+	r.queries = append(r.queries, qs...)
+	out := make([]regcheck.Result, len(qs))
+	for i := range out {
+		out[i].Findings = []store.Advisory{withdrawn}
+	}
+	return out
+}
+
+// TestRegistryNeverAsksAboutAVendoredFileNamedByItsFileName: a vendored file
+// named from its file name is never sent to npm, whether it matched nothing
+// (a first-party static/utils-0.1.0.js) or matched on GitHub
+// (static/core-1.0.23.js). npm withdrew unrelated packages of those names,
+// and that must not read as a malicious file or fire a banner. A file named
+// by an npm hash match is still asked.
+func TestRegistryNeverAsksAboutAVendoredFileNamedByItsFileName(t *testing.T) {
+	root := t.TempDir()
+	static := filepath.Join(root, "static")
+	if err := os.MkdirAll(static, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"utils-0.1.0.js":          "export const utils = {};\n",
+		"core-1.0.23.js":          "/* core 1.0.23, from GitHub */\n",
+		"cytoscape-3.31.0.min.js": "/* cytoscape 3.31.0, as published */\n",
+	}
+	for name, body := range files {
+		writeFile(t, filepath.Join(static, name), body)
+	}
+	lookup := hashLookup{
+		sha256Hex([]byte(files["core-1.0.23.js"])): {
+			Type: "gh", Name: "someone/core", Version: "v1.0.23",
+		},
+		sha256Hex([]byte(files["cytoscape-3.31.0.min.js"])): {
+			Type: "npm", Name: "cytoscape", Version: "3.31.0",
+		},
+	}
+	st, n, reg := newStore(t), &fakeNotifier{}, &withdrawingRegistry{}
+	e := &Engine{
+		Prepare:    func() (Plan, error) { return Plan{Repos: []string{root}}, nil },
+		Ecosystems: []discover.Ecosystem{discover.VendoredJS{Lookup: lookup}},
+		Checker:    fakeChecker{},
+		Registry:   reg,
+		Notifier:   n,
+		Store:      st,
+	}
+
+	if err := e.CheckAndNotify(context.Background()); err != nil {
+		t.Fatalf("CheckAndNotify: %v", err)
+	}
+
+	if len(reg.queries) != 1 || reg.queries[0].Name != "cytoscape" {
+		t.Errorf("registry queries = %+v, want cytoscape's alone", reg.queries)
+	}
+	want := map[string][]string{
+		"utils":     {"deps-vendored-modified"},
+		"cytoscape": {regcheck.RuleNPMWithdrawn},
+	}
+	if got := findingIDs(st); !maps.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("findings = %v, want %v", got, want)
+	}
+	if len(st.Snapshot().Deps) != 3 || st.RegistryUnknown() != 0 {
+		t.Errorf("deps = %+v, want 3 rows, none unknown", st.Snapshot().Deps)
+	}
+	if len(n.calls) != 1 || n.calls[0].title != "deps: malicious package cytoscape@3.31.0" {
+		t.Errorf("banners = %+v, want the malicious banner for cytoscape alone", n.calls)
+	}
+}
+
+// TestFileNamedVendoredRowTakesNoEarlierRegistryState: a vendored row named
+// by its file name takes neither the withdrawn finding nor the unknown mark
+// an earlier build saved for it, on a scan or on a check during an outage,
+// and the registry is never asked about it.
+func TestFileNamedVendoredRowTakesNoEarlierRegistryState(t *testing.T) {
+	const version = "0.1.0+sha256.0123456789ab"
+	prev := []store.Dependency{{
+		Ecosystem: "npm", Name: "utils", Version: version,
+		Advisories: []store.Advisory{withdrawn}, RegistryUnknown: true,
+	}}
+	row := func() []store.Dependency {
+		return []store.Dependency{
+			{Ecosystem: "npm", Name: "utils", Version: version, NameFromFile: true},
+		}
+	}
+	reg := &recordingRegistry{}
+	got := map[string]store.Dependency{
+		"scan":  keepRegistry(row(), prev)[0],
+		"check": CheckRegistry(context.Background(), row(), reg, prev)[0],
+	}
+	for path, d := range got {
+		if len(d.Advisories) != 0 || d.RegistryUnknown {
+			t.Errorf("%s: row = %+v, want no registry finding and not unknown", path, d)
+		}
+	}
+	if reg.queries != nil {
+		t.Errorf("registry queries = %+v, want none", reg.queries)
 	}
 }
 

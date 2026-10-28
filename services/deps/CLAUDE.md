@@ -97,6 +97,13 @@ no file locks.
     first-party bundle with a version in its name (`static/app-1.4.0.js`)
     gets a false `deps-vendored-modified` signal and an OSV check of npm
     `app`; `exclude_paths` on its directory is the way out.
+  - **A name from the file name is never sent to the registry check.** The
+    no-match and GitHub rows carry `name_from_file`, and
+    `scanner.registryQuery` gives them no query: no finding and no unknown.
+    The npm package of that name may be unrelated. Before this rule a
+    first-party `static/utils-0.1.0.js` read as `deps-npm-withdrawn`, since npm
+    unpublished `utils@0.1.0` in 2012, and fired the malicious banner. A row
+    an npm hash match names is asked like a lockfile row.
   - The lookup cache lives in memory for the serve process: a match for good,
     a miss for 24h. That is the API's own Cache-Control, and a miss can turn
     into a match because jsDelivr indexes a file only after serving it once.
@@ -308,29 +315,31 @@ each version (`internal/regcheck`):
   nothing. A requirements.txt that names `-i`/`--index-url`,
   `--extra-index-url` or `-f`/`--find-links` marks its pins `other_index`,
   and a 404 for one of them is no withdrawal either. An index set in
-  pip.conf stays invisible. A 403 from the Go proxy without `SECURITY ERROR`
+  pip.conf, or in a file the requirements pull in with `-r` or `-c`, stays
+  invisible. A 403 from the Go proxy without `SECURITY ERROR`
   (the sandbox refusing a host, say) is an unanswered lookup, never a blocked
   module.
-- **Every npm, PyPI and Go row is asked**, mise tool rows included.
-  `scanner.registryQuery` sends the version as the registry publishes it: a
-  vendored file's `+sha256.<hex>` label is cut, so npm is asked about the
-  release the file name claims. A GitHub Action or a Swift package has no
-  registry here and gets no answer, which is neither a finding nor unknown.
+- **Every npm, PyPI and Go row is asked**, mise tool rows included, except a
+  vendored file named from its file name (`name_from_file`, above).
+  `scanner.registryQuery` sends the version as the registry publishes it: an
+  npm build label is cut. A GitHub Action or a Swift package has no registry
+  here and gets no answer, which is neither a finding nor unknown.
 - **Calls.** One lookup per unique package per check, cached for that check:
   npm takes one request per version, plus the package document when a version
   is gone. PyPI takes the Simple API page plus one request per version. Go
-  takes `@v/list` plus the `.mod` at its highest release (else its highest
-  prerelease), and asks `@latest` only when the list is empty. That is the
-  go.mod the go command reads retractions from, so a version that retracts
-  itself still counts. At most 8 packages run at once, each request has 10s,
+  takes `@v/list` plus one `.mod`: the highest compatible release's, else
+  the highest `+incompatible` release's, else the highest prerelease's. It
+  asks `@latest` only when the list is empty. That is the go.mod the go
+  command reads retractions from, so a version that retracts itself still
+  counts. At most 8 packages run at once, each request has 10s,
   and the whole pass has 45s. A module matching `go env GONOPROXY` or
   `GOPRIVATE` is never sent to the public proxy, even with `GONOPROXY=none`
   behind a company GOPROXY. serve starts under launchd, so only `go env -w`
   settings reach it, never a shell profile's exports.
 - **Graph-only Go modules are checked.** A blocked module is malicious, and a
-  malicious finding bypasses the "Not compiled in" gate. Checking them took a
-  full pass from 266 to 638 requests on the 648-dependency inventory
-  (2026-10-28).
+  malicious finding bypasses the "Not compiled in" gate. Measured on
+  2026-10-28, checking them took a full pass from 266 to 638 requests on what
+  was then a 648-dependency inventory.
 - **No background scan id.** That full pass took 2 to 6 seconds, so a full
   check (about 20 to 30 seconds with discovery) stays well inside the CLI's
   2-minute request timeout. The 45-second pass budget bounds a registry that

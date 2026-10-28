@@ -67,10 +67,12 @@ depth below a `static` directory, `static/vendor/` included (named with a
 version or ending in `.min.js`), are hashed and looked up on
 `data.jsdelivr.com`. A match names the npm package and version. A file that
 matches nothing takes both from its file name and carries the
-`deps-vendored-modified` signal. Lookups are cached in memory, a match for
-the life of the process and a miss for a day. A discoverer that fails for one
-repo and ecosystem becomes a `DiscoveryError`, and the walk goes on with the
-rest. Typical causes are `go list` without a `go` on PATH, or a jsDelivr
+`deps-vendored-modified` signal. That row, and one jsDelivr matched only on
+GitHub, is marked `name_from_file` and skipped by the registry check, since
+npm's record for that name may belong to an unrelated package. Lookups are
+cached in memory, a match for the life of the process and a miss for a day.
+A discoverer that fails for one repo and ecosystem becomes a
+`DiscoveryError`, and the walk goes on with the rest. Typical causes are `go list` without a `go` on PATH, or a jsDelivr
 lookup that got no answer.
 
 Beside the repos, discovery reads the tools mise installs with its npm: and

@@ -1,5 +1,4 @@
 // Package scanner orchestrates one scan: discover dependencies across the
-// Package scanner orchestrates one scan: discover dependencies across the
 // registered repos and the installed mise tools, check each against OSV and
 // its package registry, persist the result, and (for serve) notify on
 // advisories not seen before. It is the functional core wiring discover + osv
@@ -145,12 +144,16 @@ func query(d store.Dependency) osv.Query {
 
 // registryQuery is the registry lookup for d, with the version as its registry
 // publishes it. An npm version loses its build label, which npm drops on
-// publish: a vendored file that matches no published file carries
-// +sha256.<hex> (discover.VendoredJS), and the registry is asked about the
-// release its name claims. A GitHub Action has no package registry and gets
-// no answer from regcheck; its query carries the label without the commit.
-func registryQuery(d store.Dependency) regcheck.Query {
-	q := regcheck.Query{
+// publish. A GitHub Action has no package registry and gets no answer from
+// regcheck; its query carries the label without the commit. ok is false for a
+// vendored file named by its file name (store.Dependency.NameFromFile): the
+// npm package of that name may be unrelated, so npm withdrawing it would read
+// as a malicious file that npm never served.
+func registryQuery(d store.Dependency) (q regcheck.Query, ok bool) {
+	if d.NameFromFile {
+		return regcheck.Query{}, false
+	}
+	q = regcheck.Query{
 		Ecosystem:  d.Ecosystem,
 		Name:       d.Name,
 		Version:    d.Version,
@@ -162,7 +165,7 @@ func registryQuery(d store.Dependency) regcheck.Query {
 	case discover.ActionsEcosystem:
 		q.Version, _ = discover.SplitActionVersion(d.Version)
 	}
-	return q
+	return q, true
 }
 
 // addFindings returns have with found added. A found finding whose id is
@@ -189,31 +192,23 @@ func addFindings(have, found []store.Advisory) []store.Advisory {
 // finding the dependency already carried; the other findings stay. A
 // dependency whose lookup got no answer is marked RegistryUnknown and keeps the
 // registry findings previous holds for the same version, so a registry outage
-// neither drops a finding nor makes a resolved one read as fixed.
+// neither drops a finding nor makes a resolved one read as fixed. A dependency
+// registryQuery has no query for is never asked and ends with no registry
+// finding.
 func CheckRegistry(
 	ctx context.Context,
 	deps []store.Dependency,
 	reg Registry,
 	previous []store.Dependency,
 ) []store.Dependency {
-	if len(deps) == 0 {
-		return deps
-	}
-	queries := make([]regcheck.Query, len(deps))
-	for i, d := range deps {
-		queries[i] = registryQuery(d)
-	}
-	results := reg.Check(ctx, queries)
+	results := registryResults(ctx, deps, reg)
 	kept := registryStates(previous)
 	var (
 		unknown  int
 		firstErr error
 	)
 	for i := range deps {
-		r := regcheck.Result{Err: errNoRegistryResult}
-		if i < len(results) {
-			r = results[i]
-		}
+		r := results[i]
 		found := r.Findings
 		if r.Err != nil {
 			found = kept[registryKey(deps[i])].findings
@@ -233,6 +228,38 @@ func CheckRegistry(
 		)
 	}
 	return deps
+}
+
+// registryResults asks reg about each dependency registryQuery has a query for
+// and returns one Result per dependency, aligned by index. A dependency with
+// no query gets a zero Result, and reg is not called when none has one.
+func registryResults(
+	ctx context.Context,
+	deps []store.Dependency,
+	reg Registry,
+) []regcheck.Result {
+	results := make([]regcheck.Result, len(deps))
+	var (
+		queries []regcheck.Query
+		asked   []int // asked[j] is the index in deps that queries[j] came from
+	)
+	for i, d := range deps {
+		if q, ok := registryQuery(d); ok {
+			queries = append(queries, q)
+			asked = append(asked, i)
+		}
+	}
+	if len(queries) == 0 {
+		return results
+	}
+	answers := reg.Check(ctx, queries)
+	for j, i := range asked {
+		results[i] = regcheck.Result{Err: errNoRegistryResult}
+		if j < len(answers) {
+			results[i] = answers[j]
+		}
+	}
+	return results
 }
 
 // errNoRegistryResult stands in for a result the registry checker left out,
@@ -281,10 +308,14 @@ func registryStates(deps []store.Dependency) map[string]registryState {
 // keepRegistry gives each dependency the registry state previous holds for
 // the same version, for a save that asks no registry. Without it a scan would
 // drop the registry findings, and a check during a later registry outage
-// would have none left to keep.
+// would have none left to keep. A dependency the registry is never asked
+// about (registryQuery) takes nothing.
 func keepRegistry(deps, previous []store.Dependency) []store.Dependency {
 	kept := registryStates(previous)
 	for i := range deps {
+		if _, ok := registryQuery(deps[i]); !ok {
+			continue
+		}
 		st := kept[registryKey(deps[i])]
 		deps[i].RegistryUnknown = st.unknown
 		deps[i].Advisories = addFindings(withoutRegistry(deps[i].Advisories), st.findings)

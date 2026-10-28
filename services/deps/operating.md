@@ -163,15 +163,18 @@ The signal `deps-vendored-modified`: a committed library file's sha256
 matches no file jsDelivr has served. It was edited after download, or it never
 came from npm as is. Its name and version come from the file name. The
 version also carries `+sha256.` and the first 12 hex digits of the hash, so a
-new edit brings a resolved signal back. OSV still checks that version, and
-the registry check asks npm about it without the `+sha256` part. Compare
+new edit brings a resolved signal back. OSV still checks that version. Compare
 the file with the published one at
 `https://cdn.jsdelivr.net/npm/<name>@<version>/<path>`, then download it again
 or resolve the signal if the change is yours. A file just added to npm can
 also miss, because jsDelivr indexes a file only after serving it once.
 deps asks again after a day. A first-party bundle with a version in its name,
-such as `static/app-1.4.0.js`, gets this signal falsely, and both checks treat
-it as the unrelated npm package `app`. Add its directory to `exclude_paths`.
+such as `static/app-1.4.0.js`, gets this signal falsely, and OSV checks it as
+the unrelated npm package `app`. Add its directory to `exclude_paths`.
+The registry check never asks npm about a file named from its file name, nor
+about one jsDelivr matched on GitHub. The npm package of that name may be
+unrelated, so npm withdrawing it says nothing about the file. A file named by
+an npm hash match is checked like any lockfile pin.
 
 A non-zero `registry_unknown`, also shown as a warn-level scan event and a
 callout on the web page: some registry lookups got no answer in the last
@@ -186,6 +189,8 @@ PyPI does not serve that version because your index holds it. deps skips the
 rule for every pin in a requirements.txt that names `-i`/`--index-url`,
 `--extra-index-url` or `-f`/`--find-links`. It can't see an index set in
 pip.conf or `PIP_INDEX_URL`, nor the one a mise pipx tool was installed from.
+It also misses an index named only in a file the requirements pull in with
+`-r` or `-c`.
 Name the index in the requirements file, or resolve the finding once you have
 confirmed where the version comes from.
 

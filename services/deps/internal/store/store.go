@@ -110,6 +110,11 @@ type Dependency struct {
 	// --index-url, say). The version may come from there, so the public
 	// registry not serving it is no evidence it was withdrawn.
 	OtherIndex bool `json:"other_index,omitempty"`
+	// NameFromFile is true for a vendored file whose npm name comes from its
+	// file name rather than a jsDelivr npm match: a file that matches nothing
+	// published, or one published on GitHub. Its bytes aren't known to be the
+	// npm package of that name, so the registry is never asked about it.
+	NameFromFile bool `json:"name_from_file,omitempty"`
 }
 
 // Flagged reports whether the dependency has at least one advisory.
