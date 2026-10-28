@@ -39,6 +39,11 @@ under a `static` directory. deps names a committed file by looking its sha256
 up on jsDelivr. One that matches no published file gets a warning sign on the
 page: it was most likely changed after download.
 
+It also reads the GitHub Actions each repo's workflows use. OSV can't match an
+action by version, so deps checks the commit the ref runs. A ref pinned to a
+tag or branch is first resolved to its commit through github.com. It also
+shows under "Warning signs", since the tag can be moved to other code.
+
 A flagged finding carries the advisory id, severity, and the version that fixes
 it. You can **resolve** (acknowledge) one to drop it from the active list. It
 comes back if the package version changes or a new advisory lands on it, since

@@ -5,7 +5,8 @@
 The repos on this machine pin hundreds of external packages (Go modules, npm
 lockfiles, exact Python pins, Swift resolved files). Some browser libraries
 skip lockfiles entirely: a script downloads them from jsDelivr by version, or
-the file itself is committed. A version that was clean when it was pinned can
+the file itself is committed. Their CI also runs third-party GitHub Actions
+with the workflow's token. A version that was clean when it was pinned can
 grow an advisory later. On a single developer machine there is no CI fleet
 re-checking old lockfiles, so a vulnerability in
 an already-pinned version sits unnoticed until something else surfaces it. The
@@ -28,8 +29,8 @@ process — a daily scan with wake-from-sleep catch-up and offline backoff is
 not something a one-shot tool can provide. Per-ecosystem scanners run one repo
 and one ecosystem at a time. deps checks every checkout against OSV.dev, one
 API whose ecosystem strings cover Go, npm, PyPI, and Swift with no mapping
-layer. It gives the human, the web page, and the agent the same findings from
-the same scan.
+layer. It also matches GitHub Actions by the commit a ref runs. deps gives the
+human, the web page, and the agent the same findings from the same scan.
 
 ## Why this shape
 
@@ -55,9 +56,9 @@ advisory is never hidden.
 deps does not fix anything: no automatic version bumps, no generated pull
 requests, only the fixed version named in each finding. It is not a CI gate
 and blocks nothing. Reachability stays module-level and Go-only: there is no
-function-level analysis, and npm, PyPI, and Swift packages are always treated
-as compiled in. Repos outside the catalog registry are not scanned. Of the
-installed tools, deps reads only mise's npm: and pipx: trees. It misses a
-native binary that a package downloads at install time, and any tool installed
-some other way. When the machine is offline it waits rather than caching or
-guessing advisory state.
+function-level analysis, and npm, PyPI, Swift, and GitHub Actions packages are
+always treated as compiled in. Repos outside the catalog registry are not
+scanned. Of the installed tools, deps reads only mise's npm: and pipx: trees.
+It misses a native binary that a package downloads at install time, and any
+tool installed some other way. When the machine is offline it waits rather
+than caching or guessing advisory state.

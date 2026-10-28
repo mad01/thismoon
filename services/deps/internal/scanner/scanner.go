@@ -73,7 +73,7 @@ func Check(
 	}
 	queries := make([]osv.Query, len(deps))
 	for i, d := range deps {
-		queries[i] = osv.Query{Name: d.Name, Ecosystem: d.Ecosystem, Version: d.Version}
+		queries[i] = query(d)
 	}
 	advisories, err := checker.Check(ctx, queries)
 	if err != nil {
@@ -85,6 +85,17 @@ func Check(
 		}
 	}
 	return deps, nil
+}
+
+// query is the OSV query for d. A GitHub Action's version carries the commit
+// it runs (discover.SplitActionVersion), so OSV checks it by that commit, with
+// the label before it as the version.
+func query(d store.Dependency) osv.Query {
+	q := osv.Query{Name: d.Name, Ecosystem: d.Ecosystem, Version: d.Version}
+	if d.Ecosystem == discover.ActionsEcosystem {
+		q.Version, q.Commit = discover.SplitActionVersion(d.Version)
+	}
+	return q
 }
 
 // addFindings returns have with found added. A found finding whose id is

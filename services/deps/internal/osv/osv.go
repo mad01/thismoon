@@ -1,8 +1,9 @@
 // Package osv checks dependency versions against the OSV.dev advisory database.
-// One HTTP API (api.osv.dev) covers every ecosystem we discover — Go, npm,
-// PyPI — so the same batch query path serves all of them. Besides it, only the
-// jsdelivr package's hash lookup (during discovery) and go list's module
-// downloads reach the network.
+// One HTTP API (api.osv.dev) covers every ecosystem we discover (Go, npm,
+// PyPI, SwiftURL by version, GitHub Actions by commit), so the same batch query
+// path serves all of them. Besides it, only discovery's lookups (the jsdelivr
+// package's hash lookup and the ref lists that resolve a GitHub Action's tag)
+// and go list's module downloads reach the network.
 package osv
 
 import (
@@ -13,6 +14,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/mad01/thismoon/services/deps/internal/store"
@@ -39,11 +41,17 @@ func NewWithURL(baseURL string) *Client {
 	return &Client{baseURL: baseURL, http: &http.Client{Timeout: 30 * time.Second}}
 }
 
-// Query identifies one package version to check.
+// Query identifies one package version to check. Commit, when set, checks a
+// package pinned to a git commit, such as a GitHub Action, whose ecosystem OSV
+// can't match by version. OSV is then asked twice: for the advisories whose
+// git ranges hold the commit, and for every advisory on Name, of which Check
+// keeps those whose version ranges hold Version (a label such as v45.0.7).
+// A label it can't compare keeps them all.
 type Query struct {
 	Name      string
 	Ecosystem string
 	Version   string
+	Commit    string
 }
 
 // maxPages bounds the querybatch requests one batch may take, so a server that
@@ -58,36 +66,73 @@ const maxPages = 20
 // but no summary, severity or fix: one unreadable record must not cost the
 // whole scan.
 func (c *Client) Check(ctx context.Context, queries []Query) ([][]store.Advisory, error) {
-	// idsPerQuery[i] = advisory ids affecting queries[i].
-	idsPerQuery := make([][]string, len(queries))
-	for start := 0; start < len(queries); start += batchSize {
-		end := min(start+batchSize, len(queries))
-		ids, err := c.queryBatch(ctx, queries[start:end])
+	ls := lookups(queries)
+	// idsPerLookup[j] = advisory ids ls[j] matched.
+	idsPerLookup := make([][]string, len(ls))
+	for start := 0; start < len(ls); start += batchSize {
+		end := min(start+batchSize, len(ls))
+		ids, err := c.queryBatch(ctx, ls[start:end])
 		if err != nil {
 			return nil, err
 		}
-		copy(idsPerQuery[start:end], ids)
+		copy(idsPerLookup[start:end], ids)
 	}
 
-	records, err := c.fetchAll(ctx, idsPerQuery)
+	records, err := c.fetchAll(ctx, idsPerLookup)
 	if err != nil {
 		return nil, err
 	}
 
 	results := make([][]store.Advisory, len(queries))
-	for i, ids := range idsPerQuery {
+	for j, ids := range idsPerLookup {
+		i, q := ls[j].query, queries[ls[j].query]
 		for _, id := range ids {
 			v := records[id]
+			if ls[j].byName && !v.affects(q) {
+				continue
+			}
+			if slices.ContainsFunc(
+				results[i],
+				func(a store.Advisory) bool { return a.ID == v.ID },
+			) {
+				continue
+			}
 			results[i] = append(results[i], store.Advisory{
 				ID:           v.ID,
 				Kind:         store.KindForID(v.ID),
 				Summary:      v.summary(),
 				Severity:     v.severity(),
-				FixedVersion: v.fixedFor(queries[i]),
+				FixedVersion: v.fixedFor(q),
 			})
 		}
 	}
 	return results, nil
+}
+
+// lookup is one querybatch entry and the index of the Query it serves. A
+// Query by version or by commit is one lookup; a commit Query adds a byName
+// lookup, which asks for every advisory on the package.
+type lookup struct {
+	query  int
+	byName bool
+	wire   batchQuery
+}
+
+// lookups expands queries into the querybatch entries that answer them.
+func lookups(queries []Query) []lookup {
+	out := make([]lookup, 0, len(queries))
+	for i, q := range queries {
+		pkg := &batchPackage{Name: q.Name, Ecosystem: q.Ecosystem}
+		if q.Commit == "" {
+			out = append(out, lookup{query: i, wire: batchQuery{Package: pkg, Version: q.Version}})
+			continue
+		}
+		out = append(out,
+			lookup{query: i, wire: batchQuery{Commit: q.Commit}},
+			lookup{query: i, byName: true, wire: batchQuery{Package: pkg}},
+		)
+	}
+	return out
 }
 
 // fetchAll fetches each distinct advisory id once. A failed fetch is logged
@@ -114,15 +159,18 @@ func (c *Client) fetchAll(ctx context.Context, idsPerQuery [][]string) (map[stri
 	return records, nil
 }
 
-// batchRequest / batchResponse model POST /v1/querybatch.
+// batchRequest / batchResponse model POST /v1/querybatch. A query names a
+// package and version, a commit alone (OSV rejects a commit beside a
+// version), or a package alone for every advisory on it.
 type batchRequest struct {
 	Queries []batchQuery `json:"queries"`
 }
 
 type batchQuery struct {
-	Package   batchPackage `json:"package"`
-	Version   string       `json:"version"`
-	PageToken string       `json:"page_token,omitempty"`
+	Package   *batchPackage `json:"package,omitempty"`
+	Version   string        `json:"version,omitempty"`
+	Commit    string        `json:"commit,omitempty"`
+	PageToken string        `json:"page_token,omitempty"`
 }
 
 type batchPackage struct {
@@ -146,13 +194,14 @@ type pageQuery struct {
 	token string
 }
 
-// queryBatch returns the advisory ids for each query in the batch, index-aligned.
-// OSV pages a result that grows past its limits: the next request repeats only
-// the queries that came back with a next_page_token, each carrying its token.
-func (c *Client) queryBatch(ctx context.Context, queries []Query) ([][]string, error) {
-	out := make([][]string, len(queries))
-	pending := make([]pageQuery, len(queries))
-	for i := range queries {
+// queryBatch returns the advisory ids for each lookup in the batch,
+// index-aligned. OSV pages a result that grows past its limits: the next
+// request repeats only the lookups that came back with a next_page_token, each
+// carrying its token.
+func (c *Client) queryBatch(ctx context.Context, ls []lookup) ([][]string, error) {
+	out := make([][]string, len(ls))
+	pending := make([]pageQuery, len(ls))
+	for i := range ls {
 		pending[i] = pageQuery{index: i}
 	}
 	for page := 0; len(pending) > 0; page++ {
@@ -161,12 +210,8 @@ func (c *Client) queryBatch(ctx context.Context, queries []Query) ([][]string, e
 		}
 		req := batchRequest{Queries: make([]batchQuery, len(pending))}
 		for j, p := range pending {
-			q := queries[p.index]
-			req.Queries[j] = batchQuery{
-				Package:   batchPackage{Name: q.Name, Ecosystem: q.Ecosystem},
-				Version:   q.Version,
-				PageToken: p.token,
-			}
+			req.Queries[j] = ls[p.index].wire
+			req.Queries[j].PageToken = p.token
 		}
 		var resp batchResponse
 		if err := c.post(ctx, "/v1/querybatch", req, &resp); err != nil {
@@ -208,13 +253,17 @@ type vuln struct {
 			Name      string `json:"name"`
 		} `json:"package"`
 		Ranges []struct {
-			Type   string `json:"type"`
-			Events []struct {
-				Introduced string `json:"introduced"`
-				Fixed      string `json:"fixed"`
-			} `json:"events"`
+			Type   string  `json:"type"`
+			Events []event `json:"events"`
 		} `json:"ranges"`
 	} `json:"affected"`
+}
+
+// event is one bound of an affected range.
+type event struct {
+	Introduced   string `json:"introduced"`
+	Fixed        string `json:"fixed"`
+	LastAffected string `json:"last_affected"`
 }
 
 func (c *Client) fetchVuln(ctx context.Context, id string) (*vuln, error) {
