@@ -18,6 +18,10 @@ import (
 // file-history versions it lists.
 type session struct {
 	id, cwd, model string
+	// branch is the git branch of the line that gave cwd, and entrypoint
+	// the first valid one a line names (store.ParseEntrypoint): how the
+	// harness was started.
+	branch, entrypoint string
 	// title is the session's title by store.OfferTitle over its agent-name
 	// and ai-title lines in transcript order, and titleSource the kind of
 	// line it came from.
@@ -201,14 +205,17 @@ func (r *reader) line(raw []byte, end int64) bool {
 	return true
 }
 
-// track notes the session's cwd and moves the open turn's end past this
-// line.
+// track notes the session's cwd with its branch and its entrypoint, and
+// moves the open turn's end past this line.
 func (r *reader) track(e entry, end int64) {
 	if !r.main {
 		return
 	}
 	if r.s.cwd == "" && e.Cwd != "" {
-		r.s.cwd = e.Cwd
+		r.s.cwd, r.s.branch = e.Cwd, e.GitBranch
+	}
+	if r.s.entrypoint == "" {
+		r.s.entrypoint = store.ParseEntrypoint(e.Entrypoint)
 	}
 	if r.cur == nil {
 		return

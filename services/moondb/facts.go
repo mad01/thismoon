@@ -90,6 +90,12 @@ const (
 	DefaultFileHistoryDir = "~/.claude/file-history"
 )
 
+// SessionTagsEnv is the variable a launcher sets to tag the sessions it
+// starts, such as an eval runner tagging its runs "eval". The hooks inherit
+// it, and `moondb record` keeps its comma-separated tags on the session
+// (store.ParseTags says which ones count).
+const SessionTagsEnv = "MOONDB_SESSION_TAGS"
+
 // DefaultClaudeSettings is the Claude Code settings file `moondb doctor`
 // reads the hook wiring from, unless the config's claude_settings names
 // another. The leading ~ is expanded at runtime.

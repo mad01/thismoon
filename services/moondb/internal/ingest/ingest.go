@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/mad01/thismoon/services/moondb/internal/derive"
@@ -123,11 +124,14 @@ func (in *Ingester) kept(env spool.Envelope, missing map[string]bool, key string
 // upsertSession creates the envelope's session, or refreshes the model and
 // transcript path of a known one. The envelope's title is offered through
 // store.OfferTitle, so it replaces a stored one only by outranking it.
-// Cwd and Harness keep their first value, since the session started there;
-// StartedAt keeps the earliest time seen, so a session first known from a
-// late envelope moves back when an earlier one arrives. An import only
-// fills empty fields, except that its turn-open moves StartedAt back too:
-// live capture may have begun after the session's first prompt.
+// Cwd, Harness and Entrypoint keep their first value, since the session
+// started there and that way. Location keeps its first value too, and only
+// a location of the stored cwd counts. Tags are a union (store.MergeTags),
+// so a tag once recorded stays. StartedAt keeps the earliest time seen, so
+// a session first known from a late envelope moves back when an earlier
+// one arrives. An import only fills empty fields, except that its
+// turn-open moves StartedAt back too: live capture may have begun after
+// the session's first prompt.
 func (in *Ingester) upsertSession(ctx context.Context, env spool.Envelope) error {
 	ref := env.Session
 	if ref.ID == "" {
@@ -136,7 +140,8 @@ func (in *Ingester) upsertSession(ctx context.Context, env spool.Envelope) error
 	cur, err := in.Store.Session(ctx, ref.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		s := store.Session{
-			ID: ref.ID, Harness: env.Harness, Cwd: ref.Cwd, Model: ref.Model,
+			ID: ref.ID, Harness: env.Harness, Cwd: ref.Cwd, Location: ref.Location,
+			Entrypoint: ref.Entrypoint, Tags: store.MergeTags(nil, ref.Tags), Model: ref.Model,
 			TranscriptPath: ref.TranscriptPath, StartedAt: env.At,
 		}
 		store.OfferTitle(&s.Title, &s.TitleSource, ref.Title, ref.TitleSource)
@@ -149,6 +154,13 @@ func (in *Ingester) upsertSession(ctx context.Context, env spool.Envelope) error
 	set := setter(env)
 	changed := fill(&s.Harness, env.Harness)
 	changed = fill(&s.Cwd, ref.Cwd) || changed
+	if ref.Cwd == s.Cwd {
+		changed = fillLocation(&s.Location, ref.Location) || changed
+	}
+	changed = fill(&s.Entrypoint, ref.Entrypoint) || changed
+	if tags := store.MergeTags(s.Tags, ref.Tags); !slices.Equal(tags, s.Tags) {
+		s.Tags, changed = tags, true
+	}
 	changed = store.OfferTitle(&s.Title, &s.TitleSource, ref.Title, ref.TitleSource) || changed
 	changed = set(&s.Model, ref.Model) || changed
 	changed = set(&s.TranscriptPath, ref.TranscriptPath) || changed
@@ -226,6 +238,16 @@ func setter(env spool.Envelope) func(dst *string, v string) bool {
 // fill sets an empty *dst to v and reports whether it changed.
 func fill(dst *string, v string) bool {
 	if *dst != "" || v == "" {
+		return false
+	}
+	*dst = v
+	return true
+}
+
+// fillLocation sets a zero *dst to a non-zero v and reports whether it
+// changed.
+func fillLocation(dst *store.Location, v store.Location) bool {
+	if *dst != (store.Location{}) || v == (store.Location{}) {
 		return false
 	}
 	*dst = v

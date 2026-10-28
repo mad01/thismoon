@@ -28,6 +28,18 @@ type Session struct {
 	Harness string `json:"harness"`
 	// Cwd is the working directory the session started in.
 	Cwd string `json:"cwd"`
+	// Location is where Cwd sits in git, as an Agent's Location is: zero
+	// for a cwd outside any repository, and for a session recorded before
+	// sessions kept it.
+	Location Location `json:"location,omitzero"`
+	// Entrypoint is how the harness was started, as Claude Code names it:
+	// "cli" for an interactive terminal session, "sdk-cli" for `claude -p`.
+	// A value that breaks the session tag rule is never kept
+	// (ParseEntrypoint).
+	Entrypoint string `json:"entrypoint,omitempty"`
+	// Tags are the short tokens the session's launcher gave it, such as
+	// "eval" for an eval run: sorted, at most MaxSessionTags (MergeTags).
+	Tags []string `json:"tags,omitempty"`
 	// Title is the harness's session title when it has one: the hook's
 	// session title, or the name or generated title a transcript line
 	// gives. OfferTitle decides which one it holds.

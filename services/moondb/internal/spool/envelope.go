@@ -95,6 +95,16 @@ type SessionRef struct {
 	TitleSource    store.TitleSource `json:"title_source,omitempty"`
 	Model          string            `json:"model,omitempty"`
 	TranscriptPath string            `json:"transcript_path,omitempty"`
+	// Location is where Cwd sits in git. The hook sets it on a turn-open
+	// only, an import on every envelope.
+	Location store.Location `json:"location,omitzero"`
+	// Entrypoint is the harness entrypoint: the hook's
+	// CLAUDE_CODE_ENTRYPOINT, or an import's first transcript line that
+	// names a valid one, empty when invalid (store.ParseEntrypoint).
+	Entrypoint string `json:"entrypoint,omitempty"`
+	// Tags are the session tags the hook read from its environment
+	// (store.ParseTags); an import sets none.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // TurnRef identifies the turn a payload belongs to. TranscriptOffset is the

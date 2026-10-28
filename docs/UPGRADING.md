@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-28 moondb: sessions keep their cwd repo, entrypoint and tags
+
+Change: thismoon #320. A session now records the repository its cwd sits in, the harness entrypoint (`cli`, or `sdk-cli` for `claude -p`) and the tags a launcher sets in `MOONDB_SESSION_TAGS`. A sessions row lists the repos the session worked in without editing them (`cwd_repos`): its own cwd's and each subagent's cwd repo. The repo filter and chips count the session under its edited repos and its `cwd_repos`. The REPO column shows the first of them as a badge, hollow for a worked-in repo, and folds the rest into "+N"; the session page shows a badge for each. The list also marks headless and tagged sessions. The eval runner tags its sessions `eval`.
+
+Run: `ralph up`. The subagents' repos in `cwd_repos` need no import, since recorded agents already carry their location. A session's own cwd location and its entrypoint still need `moondb import --since 30d --force` on sessions recorded before this build; run it while no other session is working. A held session with no edit and no subagent is now imported too, for this. A session whose transcript file is gone keeps neither. A forced import fills a location only when the session's cwd still exists or can be placed, so eval sessions that ran in a throwaway `worktree:` workspace under `~/.cache/harness-eval` get none. Tags cannot be backfilled: they exist only in the hook's environment.
+
+Verify: on `http://moondb.this/`, an older eval session such as "Where is the Go function `CanonicalRepo` defined" shows a hollow `mad01/thismoon` badge in the REPO column instead of "no repo". A `headless` badge sits beside its title, and its session page lists `sdk-cli` as the entrypoint. A session started from a scratch directory whose subagents only read in a repo shows that repo as a hollow badge and appears under `?repo=` for it.
+
 ## 2026-10-26 belt: kof-consult runs on the prompt, not at session start
 
 Change: thismoon #309 (MAD-492). belt's `kof-consult` hint now runs on UserPromptSubmit and shows the repo's assertions that the prompt is about, in place of the whole repo's list at session start. The kof hints' events now carry `assertions` and `pins` tags.

@@ -88,9 +88,13 @@ type Counts struct {
 	SessionsImported      int `json:"sessions_imported"`
 	// SessionsAgentsOnly counts the imported sessions without a file edit,
 	// imported for their subagent transcripts; SessionsImported holds them.
-	SessionsAgentsOnly int     `json:"sessions_agents_only"`
-	Skipped            Skipped `json:"sessions_skipped"`
-	Turns              int     `json:"turns"`
+	SessionsAgentsOnly int `json:"sessions_agents_only"`
+	// SessionsTurnsOnly counts the imported sessions with neither a file
+	// edit nor a subagent transcript: held ones a forced import fills.
+	// SessionsImported holds them.
+	SessionsTurnsOnly int     `json:"sessions_turns_only"`
+	Skipped           Skipped `json:"sessions_skipped"`
+	Turns             int     `json:"turns"`
 	// Edits counts the edits written by tool.
 	Edits             map[string]int `json:"edits_by_tool"`
 	EditsWithoutPatch int            `json:"edits_without_patch"`
@@ -119,7 +123,8 @@ type Counts struct {
 }
 
 // Skipped counts the sessions a run did not import, by reason. NoEdits
-// counts the sessions with neither a file edit nor a subagent transcript.
+// counts the sessions with neither a file edit nor a subagent transcript,
+// other than the held ones a forced import fills.
 type Skipped struct {
 	InStore      int `json:"in_store"`
 	OutsideSince int `json:"outside_since"`
@@ -220,7 +225,9 @@ func firstTime(path string, fallback time.Time) time.Time {
 // importOne parses one transcript and, unless a skip rule applies, writes
 // its envelopes. A session is worth importing when it has a file edit or a
 // subagent transcript: its agents need its turns. One with neither is
-// skipped, Force or not.
+// skipped, unless Force is set and the store holds it: then the import
+// fills what its session and turns have empty, such as the session's
+// location and entrypoint.
 func importOne(
 	ctx context.Context,
 	path string,
@@ -249,22 +256,44 @@ func importOne(
 		}
 	}
 	edits, failed, unanswered := s.edits()
-	if len(edits) == 0 && len(s.agentFiles) == 0 {
-		counts.Skipped.NoEdits++
-		return nil
+	turnsOnly := len(edits) == 0 && len(s.agentFiles) == 0
+	if turnsOnly {
+		held, err := opts.heldForced(ctx, s.id)
+		if err != nil {
+			return err
+		}
+		if !held {
+			counts.Skipped.NoEdits++
+			return nil
+		}
 	}
 	em := &emitter{s: s, opts: opts, places: places, counts: counts, sink: opts.Sink}
 	if err := em.emit(edits); err != nil {
 		return err
 	}
 	counts.SessionsImported++
-	if len(edits) == 0 {
+	switch {
+	case turnsOnly:
+		counts.SessionsTurnsOnly++
+	case len(edits) == 0:
 		counts.SessionsAgentsOnly++
 	}
 	counts.FailedCalls += failed
 	counts.UnansweredCalls += unanswered
 	counts.BashCalls += s.stats.bash
 	return nil
+}
+
+// heldForced reports whether Force is set and the store holds session id.
+func (o Options) heldForced(ctx context.Context, id string) (bool, error) {
+	if !o.Force || o.Known == nil {
+		return false, nil
+	}
+	held, err := o.Known(ctx, id)
+	if err != nil {
+		return false, fmt.Errorf("importer: look up session %s: %w", id, err)
+	}
+	return held, nil
 }
 
 // edits returns the calls that changed a file, in the order they were

@@ -58,6 +58,9 @@ type emitter struct {
 	sink    Sink
 	main    *os.File
 	touched map[string]time.Time // last edit time per file key
+	// loc is where the session's cwd sits in git, as an agent's cwd is
+	// placed.
+	loc store.Location
 }
 
 // emit writes the session's envelopes in time order. A nil sink builds
@@ -69,6 +72,9 @@ func (em *emitter) emit(edits []*call) error {
 	}
 	defer f.Close()
 	em.main, em.touched = f, map[string]time.Time{}
+	if em.s.cwd != "" {
+		em.loc = em.places.placeDir(em.s.cwd, em.s.branch)
+	}
 	for _, st := range em.steps(edits) {
 		if err := em.write(em.build(st)); err != nil {
 			return err
@@ -154,9 +160,9 @@ func (em *emitter) build(st step) (spool.Envelope, chunkSet) {
 	}
 }
 
-// envelope starts an envelope with what every one of the session carries.
-// Every envelope is marked Backfill, so it never overwrites what the store
-// already holds.
+// envelope starts an envelope with what every one of the session carries,
+// its cwd's location and its entrypoint among them. Every envelope is
+// marked Backfill, so it never overwrites what the store already holds.
 func (em *emitter) envelope(
 	kind spool.Kind,
 	id string,
@@ -172,7 +178,7 @@ func (em *emitter) envelope(
 		Harness: record.Harness,
 		Session: spool.SessionRef{
 			ID: s.id, Cwd: s.cwd, Title: s.title, TitleSource: s.titleSource,
-			Model: s.model, TranscriptPath: s.path,
+			Model: s.model, TranscriptPath: s.path, Location: em.loc, Entrypoint: s.entrypoint,
 		},
 		Turn:     spool.TurnRef{ID: turnID},
 		Backfill: true,

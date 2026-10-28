@@ -48,7 +48,7 @@ one pipes its JSON payload on stdin:
 
 | Hook | Mode | What `record` spools |
 |------|------|----------------------|
-| UserPromptSubmit | async | turn-open: `prompt_id`, the prompt text as a chunk, `session_id`, cwd, the transcript byte offset. Then a `pre` snapshot of each worktree in play. |
+| UserPromptSubmit | async | turn-open: `prompt_id`, the prompt text as a chunk, `session_id`, cwd and its location, the transcript byte offset. Then a `pre` snapshot of each worktree in play. |
 | PostToolUse on `Edit\|Write\|MultiEdit\|NotebookEdit` | sync, 3 s timeout | one edit envelope per file. It holds `tool_use_id`, the tool input and patch, the location (repo, worktree, branch, HEAD), the observed bytes with their blob id, and the path's HEAD blob id and content. |
 | PostToolUse on `Bash` | async | one edit envelope per file in the payload's `bashEditDiff.files`: its hunks as the patch, the observed bytes and blob id, and the HEAD blob id and content, with no tool input. One more per other `changedFiles` path, with no hunks. A file `git status` reports clean after the command gets none, and neither does one whose status git cannot give or one the budget does not reach; a `skipped` envelope counts them. Nothing when the payload has no `bashEditDiff`. |
 | Stop | async | turn-close: the final assistant message, the transcript tail from the turn's offset, and a head-moved report for each touched worktree whose HEAD changed. Then a `post` snapshot of each worktree in play. |
@@ -58,6 +58,21 @@ The Edit hook is synchronous on purpose. Edits in one assistant message land
 milliseconds apart, so an async hook would read the disk after the next edit
 had already changed it. NotebookEdit is recorded by path only. A file outside
 any git repo lands in a `norepo` bucket.
+
+Every envelope also says how the session runs, from the hook's environment.
+The entrypoint is Claude Code's `CLAUDE_CODE_ENTRYPOINT`: `cli` for an
+interactive terminal session, `sdk-cli` for `claude -p`. The tags are the
+comma-separated `MOONDB_SESSION_TAGS` a launcher set, such as `eval` from
+the eval runner. A tag is lowercase letters, digits and dashes, starts
+with a letter or digit and is at most 32 bytes. Invalid ones are dropped,
+and a session keeps at most 8 (`store.ParseTags`). The entrypoint follows
+the same rule and is dropped when invalid (`store.ParseEntrypoint`), here
+and in the import. The turn-open looks up its cwd's location within
+`RecordBudget`. An answered lookup is cached for the run, and the pre
+snapshot reuses it. A lookup the budget cuts is not cached: the snapshot
+repeats the git calls, and that turn-open carries no location, which a
+later turn fills. serve keeps the first location and entrypoint a session
+gets, and the union of its tags.
 
 Claude Code reports `bashEditDiff` only when the user setting
 `bashEditDiffEnabled` is on (v2.1.269 or later). `files` holds up to five
@@ -214,7 +229,10 @@ ingests them with no import code of its own. A session the store already
 holds was captured live and is skipped unless `--force`. Run `--force` only
 while no session is active, because it closes a session's in-flight turn
 until the live Stop arrives. A session with neither a file edit nor a
-subagent transcript is skipped, with or without `--force`. One with a
+subagent transcript is skipped, unless `--force` is set and the store holds
+it. Such a held session is imported for its turns, which fills what its
+session and turns have empty, such as the session's location and
+entrypoint. It counts under `sessions_turns_only`. One with a
 subagent transcript and no edit is imported for its turns and agents, and
 counted under `sessions_agents_only`. `--dry-run` reads and counts
 everything and writes nothing; with serve down it runs without the store
@@ -240,8 +258,11 @@ What a transcript gives back:
 
 - recovered: the prompt, the final message, the turn's transcript lines, the
   tool input, the structured patch, `originalFile` when Claude Code kept it,
-  a Write's content, the subagent behind an edit, and each subagent's
-  agent transcript
+  a Write's content, the subagent behind an edit, each subagent's agent
+  transcript, and the session's entrypoint (the first valid one a line names)
+  and its cwd's location, placed as a file in it would be
+- not recoverable: the session's tags, which only the hook's environment
+  holds
 - from the file history: the transcript has no `originalFile` for a file over
   about 10 KB. The import takes the copy under
   `~/.claude/file-history/<session>/` taken last before the edit, when no
@@ -733,6 +754,17 @@ A session row comes from the index alone, never a chunk
   no priced cost, and otherwise 0 when the rule sends nothing there.
 - `repos`, `repo_names` (each repo's last two path segments) and
   `worktrees`.
+- `cwd_repos`, `cwd_repo_names`: the repositories the session worked in
+  without editing them (`store.SessionSummary.CwdRepos`), sorted, and
+  their short names. They are the repository its own cwd sits in
+  (`Session.Location`) and each recorded subagent's cwd repository
+  (`Agent.Location`), less `repos`. A cwd outside any repository adds
+  none. Both are absent when the list is empty. A session recorded before
+  sessions kept a location lacks its own cwd's until an import fills it;
+  its subagents' are there already.
+- `entrypoint`: how the harness was started (`cli`, `sdk-cli`), and
+  `tags`: the tags its launcher set, such as `eval`. Both absent when not
+  recorded.
 
 The attributed cost (`store/attribution.go`) is a view over the records,
 never stored. A subagent's cost goes to the repository most of its edits
@@ -750,11 +782,17 @@ started. `window` adds up every session the filters keep, past the limit,
 whole: sessions, active time, turns, edits, distinct files, tokens and cost, with
 `cost_main`, `cost_agents` and `repo_costs`. `repos` ignores the `repo`
 filter, so a page can offer every repo of the time window. A repository
-there counts each session that edited it or sends it a part of its cost,
-such as through a subagent whose cwd sits in it. The `repo` filter keeps
-sessions by the same rule. So a chip's `sessions` is the filtered
-`window`'s, and its `cost` equals the filtered window's part for it and
-the sum of the filtered rows' `repo_cost`.
+there counts each session that has it in `repos` or `cwd_repos`, once
+even when both hold. Every repository `repo_costs` names is one of those
+or a label: a part goes to an edit majority or to an agent's cwd
+repository. `chipRepos` still adds any other `repo_costs` repository as
+a guard, so a later change to the attribution rule cannot hide a session
+from a repo it sends cost to. The `repo` filter keeps sessions by the
+same rule, so every repo a row shows a badge for lists the row. So a
+chip's `sessions` is the filtered `window`'s, and its `cost` equals the
+filtered window's part for it and the sum of the filtered rows'
+`repo_cost`. A session kept only because it worked there adds its
+attributed part, often 0, never its whole cost.
 
 An agent row (`internal/server/agents.go`) is the main conversation
 (`type` `main`, id empty) or one subagent. It carries `id`, `type`, `name`,
@@ -789,8 +827,20 @@ return, so keep it stable.
   otherwise (`since=any` lifts the bound), grouped by the day they started,
   newest first.
   A row has a repo badge, the title as the link, and a running or ended
-  dot with how long ago the session was last active. Its active time
-  follows, or its wall time when it has none. When the wall time crosses a
+  dot with how long ago the session was last active. The badge is the
+  session's first repo and filters to it, with "+N" for the rest. The
+  repos it edited come first as solid badges, then its `cwd_repos` as
+  hollow ones. So a session started from a scratch directory shows the
+  repos its subagents worked in. A `repo_costs` repository outside both
+  would get a hollow badge too, though the attribution rule sends cost
+  nowhere else today. The hover title lists the other edited repos
+  ("Also edited") and the worked-in ones ("Worked in"). "no repo" shows
+  only when the session counts toward no repo.
+  Small badges follow the title. A set entrypoint other than `cli` gets
+  one: `headless` when it starts with `sdk-` (`claude -p` and the SDKs),
+  else the value itself, such as a desktop app's or an IDE extension's.
+  Its hover title names the entrypoint. Each tag gets a badge too. The
+  row's active time follows, or its wall time when it has none. When the wall time crosses a
   local midnight, "over N days" follows, on a second line when the column
   is too narrow, and the hover title gives the wall time. Then come
   its turn, edit, file and agent counts and its cost, the main
@@ -799,19 +849,22 @@ return, so keep it stable.
   included, with the subagents'
   part of the cost beside the total. A cost's hover title splits it.
   Each chip counts the sessions its filter lists, the ones that edited
-  its repo or sent it cost, and shows the cost they attribute to it.
+  its repo, worked in it or sent it cost, and shows the cost they
+  attribute to it.
   Under the strip's figures a bar stacks the window's cost by repo, then
   orchestration and "no repo (cwd)", the page's name for `no_repo`. A
-  row's "no repo" badge stays apart: that session edited no repo.
+  row's "no repo" text stays apart: that session counts toward no repo.
   A label under it gives each part's amount, and a hover title its share
   and the attribution rule. Filtered to a repo, the cost column turns into
   "Attributed": the part each session gives that repo, with the session
   total in the hover title. The day rows then add those parts.
   `Show more` grows `limit`. The filters stay in the URL.
-- `/?session=<id>`: the title, repo badges, status, the active time over
-  the wall time ("active 1h 51m over 23h 05m (2 days)") and start time,
-  and a "Cost by repo" line with the session's `repo_costs`. Then a Trace
-  section, an Agents section, the turns in the order they started and the
+- `/?session=<id>`: the title, a badge for every repo (the edited ones
+  solid, then the `cwd_repos` hollow), the entrypoint and tag badges,
+  status, the active time over the wall time
+  ("active 1h 51m over 23h 05m (2 days)") and start time, and a "Cost by
+  repo" line with the session's `repo_costs`. Then a Trace section, an
+  Agents section, the turns in the order they started and the
   worktrees. The Agents section lists the main conversation first, then
   each subagent with its type, model, the turns it ran under, time, calls,
   edits, tokens and cost; clicking the Cost heading sorts the subagents
@@ -821,7 +874,7 @@ return, so keep it stable.
   status, edit count and every agent that ran under it. The page labels and
   classifies a turn recorded before origins existed from its prompt, as
   `trace.PromptLabel` and `store.PromptOrigin` do. The session id, cwd,
-  harness, model and transcript path sit last, in a closed "Session
+  harness, entrypoint, model and transcript path sit last, in a closed "Session
   details" disclosure. The Trace section has a totals strip (wall, model,
   tool, tokens, cost) and one timeline lane per turn, in the same order.
   The wall's note gives the time waiting for input and, when a turn had

@@ -10,12 +10,19 @@ import (
 )
 
 // openTurn records a submitted prompt and remembers where the transcript
-// stood, so the close can tail the turn's lines from there. Then it takes
-// the turn's pre snapshots.
+// stood, so the close can tail the turn's lines from there. The envelope
+// carries the git place of the session's cwd, which the snapshots after it
+// reuse instead of asking git again; a lookup the budget cuts short is left
+// out, so a later turn fills it. Then it takes the turn's pre snapshots.
 func (rec *recorder) openTurn() error {
 	offset := fileSize(rec.p.transcriptPath)
 	env := rec.envelope(spool.KindTurnOpen, rec.p.promptID+":open")
 	env.Turn.TranscriptOffset = offset
+	if rec.p.cwd != "" {
+		if loc, ok := rec.locateAnswered(rec.p.cwd); ok {
+			env.Session.Location = loc
+		}
+	}
 	chunks := chunkSet{}
 	env.TurnOpen = &spool.TurnOpen{Origin: store.PromptOrigin(rec.p.prompt)}
 	if rec.p.prompt != "" {

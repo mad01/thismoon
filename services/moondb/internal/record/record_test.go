@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -90,6 +91,9 @@ type testSession struct {
 	transcript string
 	excludes   []string
 	budget     time.Duration
+	// env is the environment Run reads, so a test never sees the one it
+	// runs in; empty unless a test sets it.
+	env map[string]string
 	// now is the clock Run reads; testNow throughout when nil.
 	now func() time.Time
 	// logs holds the lines Run logged, in order.
@@ -135,6 +139,7 @@ func (s *testSession) runRaw(body string) error {
 		Logf: func(format string, args ...any) {
 			s.logs = append(s.logs, fmt.Sprintf(format, args...))
 		},
+		Getenv: func(key string) string { return s.env[key] },
 	})
 }
 
@@ -263,7 +268,7 @@ func TestEditInRepo(t *testing.T) {
 		t.Errorf("Location = %+v, want %+v", ep.Location, wantLoc)
 	}
 	wantSession := spool.SessionRef{ID: "sess-1", Cwd: repo, TranscriptPath: s.transcript}
-	if env.Session != wantSession || !env.At.Equal(testNow) {
+	if !reflect.DeepEqual(env.Session, wantSession) || !env.At.Equal(testNow) {
 		t.Errorf(
 			"envelope session %+v at %v, want %+v at %v",
 			env.Session,
@@ -514,6 +519,71 @@ func TestPromptThenStop(t *testing.T) {
 		{"final", s.chunk(tc.FinalChunk), "Renamed the greeting."},
 		{"transcript", s.chunk(tc.TranscriptChunk), during},
 	})
+}
+
+// TestSessionOrigin: a turn-open carries where the session's cwd sits in
+// git, and every envelope the entrypoint and the valid tags the
+// environment gives. A cwd outside any repository has no location.
+func TestSessionOrigin(t *testing.T) {
+	repo := newRepo(t)
+	head := git(t, repo, "rev-parse", "HEAD")
+	s := newSession(t, repo)
+	s.env = map[string]string{EntrypointEnv: "sdk-cli", moondb.SessionTagsEnv: "eval, Bad,ci,eval"}
+	s.mustRun("prompt.json")
+	file := filepath.Join(repo, "a.txt")
+	writeFile(t, file, "one\ndeux\n")
+	s.mustRun("edit.json", "$FILE", file, "$TOOL_USE_ID", "toolu_edit_1")
+	s.mustRun("stop.json")
+
+	envs := s.take()
+	wantLoc := store.Location{
+		Repo: "github.com/example/demo", Worktree: repo, Canonical: repo, Branch: "main", Head: head,
+	}
+	for _, env := range envs {
+		ref := env.Session
+		if ref.Entrypoint != "sdk-cli" || !slices.Equal(ref.Tags, []string{"ci", "eval"}) {
+			t.Errorf(
+				"%s: entrypoint %q tags %v, want sdk-cli and [ci eval]",
+				env.ID,
+				ref.Entrypoint,
+				ref.Tags,
+			)
+		}
+		want := store.Location{}
+		if env.Kind == spool.KindTurnOpen {
+			want = wantLoc
+		}
+		if ref.Location != want {
+			t.Errorf("%s: session location %+v, want %+v", env.ID, ref.Location, want)
+		}
+	}
+
+	outside := newSession(t, physicalTempDir(t))
+	outside.mustRun("prompt.json")
+	open := outside.takeOne(spool.KindTurnOpen).Session
+	if open.Location != (store.Location{}) || open.Entrypoint != "" || open.Tags != nil {
+		t.Errorf("session outside a repo with no environment = %+v, want no origin", open)
+	}
+}
+
+// TestEntrypointBounded: the hook keeps an entrypoint only when it passes
+// the session tag rule, so a list badge built from it stays short.
+func TestEntrypointBounded(t *testing.T) {
+	tests := map[string]string{
+		"sdk-ts":                "sdk-ts",
+		"claude-desktop":        "claude-desktop",
+		"Claude Desktop":        "",
+		strings.Repeat("x", 33): "",
+		"sdk-cli;echo":          "",
+	}
+	for raw, want := range tests {
+		s := newSession(t, physicalTempDir(t))
+		s.env = map[string]string{EntrypointEnv: raw}
+		s.mustRun("prompt.json")
+		if got := s.takeOne(spool.KindTurnOpen).Session.Entrypoint; got != want {
+			t.Errorf("entrypoint %q recorded as %q, want %q", raw, got, want)
+		}
+	}
 }
 
 func TestStopWithoutOpenOmitsTranscript(t *testing.T) {

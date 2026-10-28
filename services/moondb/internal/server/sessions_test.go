@@ -507,3 +507,236 @@ func TestRepoFilterFollowsAttribution(t *testing.T) {
 		}
 	}
 }
+
+// TestCwdReposCount: a row lists the repositories its session worked in
+// without editing them, its own cwd's and its subagents' cwds', and names
+// its entrypoint and tags. A session counts toward each of them as toward
+// the ones it edited or sends cost to: the repo filter keeps it, the chip
+// counts it once, and the chip's cost and the rows' repo_cost stay the
+// attributed cost.
+func TestCwdReposCount(t *testing.T) {
+	h := newHarness(t)
+	const (
+		thirdRepo   = "example.com/owner/third"
+		fourthRepo  = "example.com/owner/fourth"
+		quietID     = "sess-quiet"
+		editorID    = "sess-editor"
+		scratchID   = "sess-scratch"
+		scoutID     = "agent-scout"
+		headlessCLI = "sdk-cli"
+	)
+	here := store.Location{Repo: servertest.Repo, Worktree: servertest.Worktree}
+	fourth := store.Location{Repo: fourthRepo, Worktree: "/home/.worktrees/fourth/scout"}
+	// quiet's cwd sits in Repo and it edits nothing.
+	h.store.Add(
+		store.Session{
+			ID: quietID, Harness: "test-harness", Cwd: servertest.Worktree, Location: here,
+			Entrypoint: headlessCLI, Tags: []string{"eval"}, StartedAt: servertest.T0,
+		},
+		[]store.Turn{servertest.PricedTurn("turn-quiet", quietID)}, nil, nil,
+	)
+	// editor's cwd sits in third, and it edits Repo.
+	h.store.Add(
+		store.Session{
+			ID: editorID, Harness: "test-harness", Cwd: "/work/third",
+			Location:  store.Location{Repo: thirdRepo, Worktree: "/work/third"},
+			StartedAt: servertest.T0,
+		},
+		[]store.Turn{servertest.PricedTurn("turn-editor", editorID)},
+		nil,
+		[]store.Edit{
+			servertest.Edit("toolu_ed:0", editorID, "turn-editor", "", 2, here, servertest.PathA),
+		},
+	)
+	// scratch starts outside any repository and edits nothing. One
+	// subagent reads in a worktree of fourth, one runs outside any
+	// repository.
+	h.store.Add(
+		store.Session{
+			ID: scratchID, Harness: "test-harness", Cwd: "/home/.tmp/scratch",
+			StartedAt: servertest.T0,
+		},
+		[]store.Turn{servertest.PricedTurn("turn-scratch", scratchID)},
+		[]store.Agent{
+			servertest.PricedAgent(scoutID, scratchID, "turn-scratch", fourth),
+			servertest.PricedAgent("agent-drifter", scratchID, "turn-scratch", store.Location{}),
+		},
+		nil,
+	)
+
+	all := h.sessionList(t, "")
+	rows := map[string]SessionSummary{}
+	for _, r := range all.Sessions {
+		rows[r.ID] = r
+	}
+	wantRow := map[string][2][]string{
+		quietID:   {{servertest.Repo}, {"owner/thismoon"}},
+		editorID:  {{thirdRepo}, {"owner/third"}},
+		scratchID: {{fourthRepo}, {"owner/fourth"}},
+	}
+	for id, want := range wantRow {
+		r := rows[id]
+		if !slices.Equal(r.CwdRepos, want[0]) || !slices.Equal(r.CwdRepoNames, want[1]) {
+			t.Errorf(
+				"%s: cwd_repos %v (%v), want %v (%v)",
+				id,
+				r.CwdRepos,
+				r.CwdRepoNames,
+				want[0],
+				want[1],
+			)
+		}
+	}
+	if quiet := rows[quietID]; len(quiet.Repos) != 0 || quiet.Entrypoint != headlessCLI ||
+		!slices.Equal(quiet.Tags, []string{"eval"}) {
+		t.Errorf(
+			"quiet row repos %v entrypoint %q tags %v",
+			quiet.Repos,
+			quiet.Entrypoint,
+			quiet.Tags,
+		)
+	}
+	if old := rows[servertest.OldSession]; old.CwdRepos != nil || old.CwdRepoNames != nil ||
+		old.Entrypoint != "" || old.Tags != nil {
+		t.Errorf("a session without an origin has cwd repos %v (%v) entrypoint %q tags %v",
+			old.CwdRepos, old.CwdRepoNames, old.Entrypoint, old.Tags)
+	}
+
+	var view SessionView
+	h.getJSON(t, "/api/sessions/"+scratchID, http.StatusOK, &view)
+	var scoutCost *float64
+	for _, a := range view.Agents {
+		if a.ID == scoutID && a.CostRepo == fourthRepo {
+			scoutCost = a.Cost
+		}
+	}
+	if scoutCost == nil {
+		t.Fatalf(
+			"scout agent row %+v: want a priced cost attributed to %s",
+			view.Agents,
+			fourthRepo,
+		)
+	}
+
+	chips := map[string]RepoCount{}
+	for _, r := range all.Repos {
+		chips[r.Repo] = r
+	}
+	// parts maps each filter's rows to their repo_cost.
+	parts := map[string]map[string]*float64{}
+	for repo, want := range map[string][]string{
+		servertest.Repo: {editorID, servertest.NewSession, quietID},
+		thirdRepo:       {editorID},
+		fourthRepo:      {scratchID},
+	} {
+		chip := chips[repo]
+		ids, sum := []string{}, 0.0
+		parts[repo] = map[string]*float64{}
+		for _, row := range h.sessionList(t, "?repo="+repo).Sessions {
+			ids = append(ids, row.ID)
+			parts[repo][row.ID] = row.RepoCost
+			if row.RepoCost != nil {
+				sum += *row.RepoCost
+			}
+		}
+		slices.Sort(ids)
+		if !slices.Equal(ids, want) || chip.Sessions != len(want) {
+			t.Errorf(
+				"%s: filtered rows %v, chip counts %d; want %v",
+				repo,
+				ids,
+				chip.Sessions,
+				want,
+			)
+		}
+		if (chip.Cost == nil && sum != 0) || (chip.Cost != nil && !near(sum, *chip.Cost)) {
+			t.Errorf(
+				"%s: chip cost %v, filtered rows add %v; want one number",
+				repo,
+				chip.Cost,
+				sum,
+			)
+		}
+	}
+	// quiet's and editor's main conversations send their cost elsewhere, so
+	// the repository they only worked in gets a real zero.
+	if p := parts[servertest.Repo][quietID]; p == nil || *p != 0 {
+		t.Errorf("quiet session's repo_cost %v, want a real zero", p)
+	}
+	if p := parts[thirdRepo][editorID]; p == nil || *p != 0 {
+		t.Errorf("editor session's repo_cost for %s %v, want a real zero", thirdRepo, p)
+	}
+	if p := parts[fourthRepo][scratchID]; p == nil || !near(*p, *scoutCost) {
+		t.Errorf(
+			"scratch session's repo_cost for %s %v, want the scout's %v",
+			fourthRepo,
+			p,
+			*scoutCost,
+		)
+	}
+}
+
+// TestUntotalledAgentCountsItsRepo: a session whose only link to a
+// repository is a subagent with its cwd there and no totals yet counts
+// toward that repository before the totals backfill reaches the agent.
+// The repo filter keeps it and the chip counts it, but it adds no cost
+// there: its repo_cost is a real zero when the row is priced and nil when
+// not, and the chip's cost leaves it out.
+func TestUntotalledAgentCountsItsRepo(t *testing.T) {
+	h := newHarness(t)
+	const (
+		fifthRepo  = "example.com/owner/fifth"
+		pricedID   = "sess-waiting-priced"
+		unpricedID = "sess-waiting-unpriced"
+	)
+	fifth := store.Location{Repo: fifthRepo, Worktree: "/home/.worktrees/fifth/scout"}
+	// waiting adds a session that starts outside any repository, edits
+	// nothing and runs one subagent in fifth that has no totals yet. Its
+	// one turn has totals when priced.
+	waiting := func(id string, priced bool) {
+		turn := servertest.PricedTurn(id+"-turn", id)
+		if !priced {
+			turn.Totals = nil
+		}
+		agent := servertest.PricedAgent(id+"-agent", id, turn.ID, fifth)
+		agent.Totals = nil
+		h.store.Add(
+			store.Session{
+				ID: id, Harness: "test-harness", Cwd: "/home/.tmp/scratch",
+				StartedAt: servertest.T0,
+			},
+			[]store.Turn{turn}, []store.Agent{agent}, nil,
+		)
+	}
+	waiting(pricedID, true)
+	waiting(unpricedID, false)
+
+	var chip RepoCount
+	for _, r := range h.sessionList(t, "").Repos {
+		if r.Repo == fifthRepo {
+			chip = r
+		}
+	}
+	rows := map[string]SessionSummary{}
+	ids := []string{}
+	for _, r := range h.sessionList(t, "?repo="+fifthRepo).Sessions {
+		rows[r.ID] = r
+		ids = append(ids, r.ID)
+	}
+	slices.Sort(ids)
+	if want := []string{pricedID, unpricedID}; !slices.Equal(ids, want) ||
+		chip.Sessions != len(want) {
+		t.Errorf("filtered rows %v, chip counts %d; want %v", ids, chip.Sessions, want)
+	}
+	if r := rows[pricedID]; r.Cost == nil || r.RepoCost == nil || *r.RepoCost != 0 {
+		t.Errorf("priced session's cost %v, repo_cost %v; want a cost and a real zero",
+			r.Cost, r.RepoCost)
+	}
+	if r := rows[unpricedID]; r.Cost != nil || r.RepoCost != nil {
+		t.Errorf("unpriced session's cost %v, repo_cost %v; want both nil", r.Cost, r.RepoCost)
+	}
+	if chip.Cost != nil || chip.Unpriced != nil {
+		t.Errorf("chip cost %v (unpriced %v), want no part for agents without totals",
+			chip.Cost, chip.Unpriced)
+	}
+}

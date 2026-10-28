@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -39,6 +40,13 @@ import (
 // Harness names the agent runtime whose hook payloads Run reads and whose
 // transcripts `moondb import` reads; every envelope carries it.
 const Harness = "claude-code"
+
+// EntrypointEnv is the variable Claude Code sets for its hooks to say how
+// it was started: "cli" for an interactive terminal session, "sdk-cli" for
+// `claude -p`. Every envelope carries its value as the session's
+// entrypoint, or none when the value breaks the session tag rule
+// (store.ParseEntrypoint).
+const EntrypointEnv = "CLAUDE_CODE_ENTRYPOINT"
 
 // Hook events Run records; every other event is ignored.
 const (
@@ -75,6 +83,9 @@ type Options struct {
 	// out, with the counts, and for each subagent Run did not record or
 	// recorded without lines; nil discards it.
 	Logf func(format string, args ...any)
+	// Getenv reads the hook's environment: EntrypointEnv and
+	// moondb.SessionTagsEnv; os.Getenv when nil.
+	Getenv func(key string) string
 }
 
 // Run records one hook payload read from in. It returns an error only for
@@ -93,12 +104,14 @@ func Run(ctx context.Context, in io.Reader, opts Options) error {
 	budgeted, cancel := context.WithTimeout(ctx, opts.budgetFor(p))
 	defer cancel()
 	rec := &recorder{
-		base:  ctx,
-		ctx:   budgeted,
-		start: opts.Now(),
-		p:     p,
-		opts:  opts,
-		locs:  map[string]store.Location{},
+		base:       ctx,
+		ctx:        budgeted,
+		start:      opts.Now(),
+		p:          p,
+		opts:       opts,
+		entrypoint: store.ParseEntrypoint(opts.Getenv(EntrypointEnv)),
+		tags:       store.ParseTags(opts.Getenv(moondb.SessionTagsEnv)),
+		locs:       map[string]store.Location{},
 		spool: &spool.Writer{
 			Dir:     filepath.Join(opts.Workdir, moondb.SpoolDirName),
 			Objects: filepath.Join(opts.Workdir, moondb.ObjectsDirName),
@@ -144,6 +157,9 @@ func (o Options) withDefaults() Options {
 	if o.Logf == nil {
 		o.Logf = func(string, ...any) {}
 	}
+	if o.Getenv == nil {
+		o.Getenv = os.Getenv
+	}
 	return o
 }
 
@@ -171,6 +187,10 @@ type recorder struct {
 	opts  Options
 	spool *spool.Writer
 	state sessionState
+	// entrypoint and tags are what the environment says about the session,
+	// read once per Run.
+	entrypoint string
+	tags       []string
 	// locs caches the git location of each directory git placed in this
 	// Run, the zero Location for one outside any repository.
 	locs map[string]store.Location
@@ -197,9 +217,10 @@ func (rec *recorder) require(handle func() error, key, id string) error {
 }
 
 // envelope starts an envelope of kind with what every payload carries,
-// stamped when the hook began. The Bash hook is async, so an Edit of a file
-// the command changed can land before the hook reads it; stamped before
-// the read, the Bash edit sorts before that Edit. A snapshot restamps its
+// stamped when the hook began: the session with its entrypoint and tags
+// from the environment. The Bash hook is async, so an Edit of a file the
+// command changed can land before the hook reads it; stamped before the
+// read, the Bash edit sorts before that Edit. A snapshot restamps its
 // envelope once its reads are done.
 func (rec *recorder) envelope(kind spool.Kind, id string) spool.Envelope {
 	p := rec.p
@@ -211,6 +232,7 @@ func (rec *recorder) envelope(kind spool.Kind, id string) spool.Envelope {
 		Harness: Harness,
 		Session: spool.SessionRef{
 			ID: p.sessionID, Cwd: p.cwd, Title: p.title, TranscriptPath: p.transcriptPath,
+			Entrypoint: rec.entrypoint, Tags: rec.tags,
 		},
 		Turn:  spool.TurnRef{ID: p.promptID},
 		Agent: spool.AgentRef{ID: p.agentID, Type: p.agentType},
