@@ -26,9 +26,8 @@ covers both paths, what each one gives you, and how to verify the result.
 A single tool standalone is fully functional. The fleet makes each tool
 better. [status](../services/status/README.md) watches every service with a
 30-day uptime history, every service reports problems to one audit log at
-`events.this`, and [belt](../tools/belt/README.md) turns
-[kof](../services/keeper-of-facts/README.md)'s assertions into hints inside
-your agent sessions.
+`events.this`, and [belt](../tools/belt/README.md) turns your agent memory
+and other sessions' uncommitted edits into hints inside your agent sessions.
 
 ## Prerequisites
 
@@ -46,7 +45,7 @@ your agent sessions.
 ## One tool with Homebrew
 
 The [tap](https://github.com/mad01/homebrew-tap) carries formulas for most
-components (csl, kof, present, speak, d-man, belt, t-man, toss-bin, and
+components (csl, present, speak, d-man, belt, t-man, toss-bin, and
 ralph itself):
 
 ```sh
@@ -82,7 +81,7 @@ make install-all                    # everything
 
 [mise](https://mise.jdx.dev) reaches the same release tarballs through its
 `github` backend. Every component releases from this one repository under
-its own tag prefix (`csl/v0.18.2`, `keeper-of-facts/v0.13.0`). So mise
+its own tag prefix (`csl/v0.18.2`, `present/v1.20.0`). So mise
 needs a tool alias per component and a `version_prefix` that picks the
 component's tags out of the shared feed. Two commands put csl on your PATH:
 
@@ -104,7 +103,7 @@ csl = { version = "latest", version_prefix = "csl/" }
 
 The alias is the binary name and the prefix is the component's directory
 name under `services/` or `tools/`. So both commands take the same word for
-every component below except keeper-of-facts, whose binary is `kof`:
+every component below:
 
 | Component | Alias | `version_prefix` |
 |-----------|-------|------------------|
@@ -115,7 +114,6 @@ every component below except keeper-of-facts, whose binary is `kof`:
 | deps | `deps` | `deps/` |
 | events | `events` | `events/` |
 | humanizer | `humanizer` | `humanizer/` |
-| keeper-of-facts | `kof` | `keeper-of-facts/` |
 | opener | `opener` | `opener/` |
 | present | `present` | `present/` |
 | speak | `speak` | `speak/` |
@@ -311,11 +309,9 @@ you want them):
 
 | Address | Service | Port |
 |---|---|---|
-| `catalog.this` | catalog | 7575 |
 | `csl.this` | csl | 7424 |
 | `deps.this` | deps | 7429 |
 | `events.this` | events | 7430 |
-| `kof.this` | keeper-of-facts | 7431 |
 | `moondb.this` | moondb | 7433 |
 | `present.this` | present | 7423 |
 | `speak.this` | speak | 7425 |
@@ -342,7 +338,7 @@ component's own `config.md` for its specific keys.
                      |
         d-man: /etc/hosts + proxy on :80
                      |
-    csl   present   events   kof   status   ...
+    csl   present   events   deps   status   ...
         launchd agents, managed by t-man
 ```
 
@@ -357,9 +353,9 @@ component's own `config.md` for its specific keys.
   than the one installed on disk.
 - **events collects from everything.** Services report warnings and errors
   to `events.this`, one audit log instead of a folder of log files.
-- **kof and belt close the loop for agents.** kof stores evidence-pinned
-  assertions about your code; belt's hints surface them in Claude Code
-  sessions when you work in the matching repo.
+- **belt and moondb close the loop for agents.** moondb records every edit
+  an agent session makes; belt's hints surface your agent memory and the
+  files other sessions edited but never committed, in Claude Code sessions.
 
 [HOW-IT-FITS-TOGETHER.md](HOW-IT-FITS-TOGETHER.md) is the longer version of
 this argument: what the connections between the tools add up to, the ralph

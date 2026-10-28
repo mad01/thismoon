@@ -533,7 +533,7 @@
     var v = buildView(data);
     var nodes = [pageHeader(v), toolbar(v)];
     nodes.push(Webkit.el('p', { class: 'hint' },
-      'Supply-chain scan across the catalog-registered repos, checked against OSV.dev and each package registry. Resolve a finding to acknowledge it; it returns if the version changes or a new advisory lands.'));
+      'Supply-chain scan across the repos in the catalog registry, checked against OSV.dev and each package registry. Resolve a finding to acknowledge it; it returns if the version changes or a new advisory lands.'));
 
     if (!v.hasScan) {
       nodes.push(Webkit.el('div', { class: 'empty' }, [

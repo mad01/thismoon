@@ -202,7 +202,7 @@ expect_alert 'Sandbox: moondb(123) deny(1) sysctl-read kern.ipc.maxsockbuf'
 
 # The launch bash stats a t-man service's own std logs; nothing wider.
 expect_ignored 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/Library/Logs/events/stdout.log'
-expect_ignored 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/Library/Logs/keeper-of-facts/stderr.log'
+expect_ignored 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/Library/Logs/moondb/stderr.log'
 expect_alert 'Sandbox: bash(123) deny(1) file-read-data /Users/x/Library/Logs/events/stdout.log'
 expect_alert 'Sandbox: events(123) deny(1) file-read-metadata /Users/x/Library/Logs/events/stdout.log'
 expect_alert 'Sandbox: bash(123) deny(1) file-read-metadata /Users/x/Library/Logs/events/other.log'

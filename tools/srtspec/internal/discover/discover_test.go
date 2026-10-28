@@ -39,13 +39,13 @@ func comp(name, block string) string {
 func TestFind(t *testing.T) {
 	root := tree(t, map[string]string{
 		"services/events/service-info.yaml": comp("events", "{sandbox: srt, listen: 7430}"),
-		"services/catalog/service-info.yaml": comp("catalog",
-			"{sandbox: srt, label: catalog-web}"),
+		"services/speak/service-info.yaml": comp("speak",
+			"{sandbox: srt, label: speak-web}"),
 		"services/csl/service-info.yaml":         comp("csl", "{sandbox: none, reason: ssh}"),
 		"tools/opener/service-info.yaml":         "kind: Component\nmetadata: {name: opener}\nspec: {owner: mad01}\n",
 		"mytool/service-info.yaml":               comp("mytool", "{sandbox: srt}"),
 		"recipes/events/":                        "",
-		"recipes/catalog/":                       "",
+		"recipes/speak/":                         "",
 		"recipes/mytool/":                        "",
 		"recipes/claude-mcp/access.yaml":         "sandbox: srt\nlabel: github-mcp\ntls: true\n",
 		"recipes/speak-tts/access.yaml":          "sandbox: seatbelt\nreason: Metal\n",
@@ -64,7 +64,7 @@ func TestFind(t *testing.T) {
 	}
 	want := map[string]string{
 		"services/events/service-info.yaml":      "recipes/events/events.srt.json",
-		"services/catalog/service-info.yaml":     "recipes/catalog/catalog-web.srt.json",
+		"services/speak/service-info.yaml":       "recipes/speak/speak-web.srt.json",
 		"services/csl/service-info.yaml":         "",
 		"mytool/service-info.yaml":               "recipes/mytool/mytool.srt.json",
 		"recipes/claude-mcp/access.yaml":         "recipes/claude-mcp/github-mcp.srt.json",

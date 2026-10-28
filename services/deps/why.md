@@ -23,7 +23,7 @@ install tree on disk lists every package that came with it.
 ## Why its own service
 
 Advisory checking is a cross-repo concern: the repo set comes from the catalog
-registry, so a repo enrolls the moment it is catalogued. The findings only
+registry, so a repo enrolls the moment it is listed there. The findings only
 make sense as one inventory across all of them. It also needs a long-running
 process — a daily scan with wake-from-sleep catch-up and offline backoff is
 not something a one-shot tool can provide. Per-ecosystem scanners run one repo

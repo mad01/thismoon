@@ -142,10 +142,9 @@ func (g Grader) Name() string {
 }
 
 // sharedDenyList is denied to every case, whatever its workspace: these
-// tools write to stores and services that outlive the run (kof, worklog,
-// brain, GitHub), which no workspace teardown can undo.
+// tools write to stores and services that outlive the run (worklog, brain,
+// GitHub), which no workspace teardown can undo.
 var sharedDenyList = []string{
-	"mcp__kof__kof_assert", "mcp__kof__kof_retract",
 	"mcp__worklog__worklog_checkpoint",
 	"mcp__brain__brain_write", "mcp__brain__brain_edit",
 	"mcp__gh_com__create_pull_request", "mcp__gh_com__update_pull_request",

@@ -197,7 +197,7 @@ jobs:
       - name: Build platform tarballs
         run: |
           # Go components name the binary after the sole cmd/ subdir, which can
-          # differ from the component dir (services/keeper-of-facts -> kof).
+          # differ from the component dir.
           # Swift components have no cmd/ and keep the component dir name.
           name=$(basename "$COMPONENT_PATH")
           if [ -d "${COMPONENT_PATH}/cmd" ]; then

@@ -91,7 +91,7 @@ The part of a Session's cost the attribution rule gives one repository. It is co
 _Avoid_: allocation, charge-back, and "repo cost" or "cost split" as prose names for it (the fields `repo_cost` and `repo_costs` keep theirs)
 
 **Scorecard**:
-One Session's report of how it spent its context, computed on read. It holds the Trace totals and tool calls, the csl searches by how they came back, and the Read calls by size. It also holds the belt hints shown to the session, the Agents, and flags naming the costliest patterns. For the kof hints it says whether any Agent of the session read or edited the files the shown assertions are pinned to later, since a hint serves the whole session. The hints and the belt ledger's counts come from the events service, and the pins from keeper-of-facts. Each input reports whether it answered, and a part whose input did not is null rather than zero. It is versioned and only grows, since an eval suite scores against it.
+One Session's report of how it spent its context, computed on read. It holds the Trace totals and tool calls, the csl searches by how they came back, and the Read calls by size. It also holds the belt hints shown to the session, the Agents, and flags naming the costliest patterns. The hints and the belt ledger's counts come from the events service. Each input reports whether it answered, and a part whose input did not is null rather than zero. It is versioned, since an eval suite scores against it: adding a field keeps the version, and a field that goes away or changes meaning raises it.
 _Avoid_: report card, score, stats
 
 **Span**:

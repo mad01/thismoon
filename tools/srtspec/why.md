@@ -23,8 +23,8 @@ is a short YAML block a reviewer reads in seconds. Something has to turn it
 into the JSON srt reads, check the committed JSON never drifts from it,
 merge a machine's layers into it at launch, and explain the merged result
 on a live machine. Those jobs share one schema and one merge, so they live
-in one binary; the schema itself sits in `kit/access`, where the catalog
-reads it too.
+in one binary; the schema itself sits in `kit/access`, so any other Go
+tool can read it too.
 
 ## Why this shape
 

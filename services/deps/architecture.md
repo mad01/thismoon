@@ -3,7 +3,7 @@
 ## Overview
 
 deps is the supply-chain scanner service: it discovers every external
-dependency across the catalog-registered repos and the tools mise installs,
+dependency across the repos in the catalog registry and the tools mise installs,
 and checks each pinned version against the OSV.dev advisory database and the
 registry that publishes it. At
 runtime `deps serve --port 7429`

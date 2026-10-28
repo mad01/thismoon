@@ -119,8 +119,7 @@ func (c *Client) SessionTrace(ctx context.Context, id string) (trace.SessionTrac
 
 // SessionScorecard loads how a session spent its context. It rides the
 // slow client: serve reads every turn's and agent's transcript chunk and
-// asks the events service and keeper-of-facts. A missing id matches
-// store.ErrNotFound.
+// asks the events service. A missing id matches store.ErrNotFound.
 func (c *Client) SessionScorecard(ctx context.Context, id string) (scorecard.Scorecard, error) {
 	var out scorecard.Scorecard
 	path := "/api/sessions/" + url.PathEscape(id) + "/scorecard"

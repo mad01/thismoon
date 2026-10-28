@@ -48,10 +48,10 @@ skip.
   always targets `localhost:<port>`. Pointing `--base-url` at
   `http://deps.this` changes the link text, not the request destination.
 - `--registry <path>` (string, default `~/.config/catalog/registry.yaml`,
-  env `DEPS_REGISTRY`): the catalog registry listing repos to scan. The
-  same file `catalog` reads; deps does not maintain its own repo list, and
-  resolves the default through catalog's config directory so
-  `XDG_CONFIG_HOME` moves both together.
+  env `DEPS_REGISTRY`): the catalog registry listing repos to scan, a file
+  the consuming repo installs per machine. deps does not maintain its own
+  repo list, and resolves the default through the catalog config directory
+  so `XDG_CONFIG_HOME` moves it.
 - `--config <path>` (string, default `~/.config/deps/config.toml`, env
   `DEPS_CONFIG`): the discovery config file, see below.
 - `serve --interval <duration>` (duration, default `24h`): max age of the

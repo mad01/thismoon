@@ -24,8 +24,8 @@ Claude Code tools, the web page) talks to that agent. So you see the same
 findings everywhere and only one process touches the network or the file.
 
 The repos it scans come from the catalog registry
-(`~/.config/catalog/registry.yaml`), so a repo enrolls in scanning the moment
-it's catalogued. In each repo it finds Go modules (the resolved graph from
+(`~/.config/catalog/registry.yaml`, a repo list the consuming repo installs per
+machine), so a repo enrolls in scanning the moment it's listed there. In each repo it finds Go modules (the resolved graph from
 `go list -m -json all`) and npm lockfiles (`package-lock.json`), then asks OSV
 whether any of those exact versions has a known advisory. Git worktrees and
 nested checkouts are skipped, so a repo isn't scanned twice. Beside the repos

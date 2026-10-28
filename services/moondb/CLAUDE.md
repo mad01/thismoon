@@ -32,7 +32,7 @@ moondb/
       storetest/       - conformance suite every backend must pass
     query/             - why, history and annotate answers over the store and git; traces with their cache; session scorecards
     trace/             - turn, agent and session traces from transcript lines: spans, gaps, segments, totals, prices (pure)
-    scorecard/         - a session's scorecard: tool calls parsed from transcript lines, search and read stats, hint and ledger events, kof pins, flags
+    scorecard/         - a session's scorecard: tool calls parsed from transcript lines, search and read stats, hint and ledger events, flags
     server/            - HTTP API + webkit web page
     client/            - HTTP client shared by the CLI and mcpserver
     mcpserver/         - MCP tools
@@ -493,10 +493,11 @@ transcript chunk, edit count, times, label and cut lines, at most
 
 ### Scorecard: how a session spent its context
 
-`query.Service.SessionScorecard` joins a session's trace with three more
+`query.Service.SessionScorecard` joins a session's trace with two more
 inputs and `scorecard.Build` turns them into one JSON object, versioned by
-`scorecard.Version`. The eval suite scores against it, so add fields and
-never rename one.
+`scorecard.Version`. The eval suite scores against it: adding a field
+keeps the version, and a field that goes away or changes meaning raises
+it. Version 2 dropped `sources.kof` and `hints.kof`.
 
 - **Tool calls** come from the turns' and agents' transcript chunks
   (`scorecard.ParseCalls`): each `tool_use` paired with its `tool_result`,
@@ -513,29 +514,15 @@ never rename one.
 - **Hints and ledger** come from the events service, kept to the session's
   `tags.session_id`. Source `belt` holds the hints shown to the session.
   `belt-ledger` holds subagent starts and stops, permission denials,
-  compactions and stop failures. A kof hint's assertion ids come from its
-  `assertions` tag (comma-separated) or else from the `kof_get id=` lines
-  of its message. Its `pins` tag is read too (`<id>=<path>` entries, or
-  bare paths that every assertion of the fire shares), but only as the
-  fallback for an assertion keeper-of-facts does not hold. events keeps 500
-  entries per source, so a listing with no entry older than the session's
-  first turn is `partial`.
-- **Pins** come from keeper-of-facts: one `GET /api/assertions` listing,
-  filtered to every shown id, so a scorecard costs it one request and each
-  assertion gets its own pins, all of them, not the fire's shared first
-  pins. A file an assertion
-  is pinned to is `used` when any agent of the session touched it later with
-  Read, Edit, MultiEdit, Write, NotebookEdit or csl_read. A hint serves the
-  whole session. A csl_read must name the pin's repository as its full
-  owner/name.
+  compactions and stop failures. A hint's id comes from its `hint` tag, or
+  else from its title. events keeps 500 entries per source, so a listing
+  with no entry older than the session's first turn is `partial`.
 
 Each input reports its status under `sources` (`ok`, `partial`,
 `unavailable`, `skipped`). A peer that does not answer within `PeerTimeout`
 leaves its part null, and the scorecard still returns 200. For the events
-service that is `hints` and `agents.ledger`; for keeper-of-facts, each shown
-assertion's `pins` and `used`. Without hints there is no assertion to look
-up, so keeper-of-facts is `skipped` and its detail says why. `flags` name
-the costliest patterns once a count reaches its threshold in `facts.go`.
+service that is `hints` and `agents.ledger`. `flags` name the costliest
+patterns once a count reaches its threshold in `facts.go`.
 
 ### Turn totals: what the session listing reads
 
@@ -668,8 +655,8 @@ snapshot's `MapChunk` is a JSON array of its files sorted by path.
 under srt. `make sandbox-settings` renders it to
 `recipes/moondb/moondb.srt.json`, which CI diffs, so change the manifest and
 never the JSON. Authoring guide: `docs/SANDBOXING.md`, "Declaring access".
-`local: [events, keeper-of-facts]` names the loopback peers the scorecard
-reads (`EVENTS_BASE_URL`, `KOF_PORT`).
+`local: [events]` names the loopback peer the scorecard reads
+(`EVENTS_BASE_URL`).
 
 ## Build / install / test
 

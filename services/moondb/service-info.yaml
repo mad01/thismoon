@@ -16,7 +16,7 @@ spec:
     sandbox: srt
     workdir: ~/.local/state/moondb
     listen: 7433
-    local: [events, keeper-of-facts]
+    local: [events]
     reads: [~/code, ~/.worktrees, ~/.config/ralph/sources, workdir]
     writes: [workdir, temp]
     deny:

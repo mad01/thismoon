@@ -6,8 +6,8 @@ a committed settings file for drift and explains the effective policy a
 label launches under. `verify` runs every render and expansion layer in a
 repo through the same checks without writing; it is the gate CI runs. `run`
 is the launcher: `~/code/bin/srt-run` (speak recipe) is a shim that execs
-it, so every sandboxed service and MCP server starts through this binary. The manifest schema lives in `kit/access` so the
-catalog validates the same block. Why it exists: `why.md`. Flow and
+it, so every sandboxed service and MCP server starts through this binary. The manifest schema lives in `kit/access`, apart
+from the binary. Why it exists: `why.md`. Flow and
 invariants: `architecture.md`. The full authoring guide is the "Declaring
 access" section of `docs/SANDBOXING.md`; the decision is docs/adr/0027.
 

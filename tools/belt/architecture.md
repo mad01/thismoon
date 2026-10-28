@@ -46,9 +46,8 @@ internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     publish-internal-names), and the Custom guard that execs
                     config-registered external commands
 internal/hint/      the Hint interface and the hints (prefer-csl,
-                    read-size, commit-policy, lint-policy, kof-assertions,
-                    kof-consult, moondb-inflight, kof-deposit, agent-memory,
-                    humanizer-check, em-dash), the Custom
+                    read-size, commit-policy, lint-policy, moondb-inflight,
+                    agent-memory, humanizer-check, em-dash), the Custom
                     hint that execs config-registered external commands,
                     plus csl shard lookup, search-response parsing, and the
                     per-session seen store
@@ -126,8 +125,8 @@ decision can be inspected without a live Claude Code session.
 belt writes per-session files under `~/.cache/belt`, named through
 `internal/cache` so a malformed session id cannot escape the directory. The
 seen markers, `seen-<session-id>` with one hint id per line, are how the
-once-per-session hints (kof-deposit, humanizer-check) and the per-session
-dedupe (kof-assertions, kof-consult) remember what a session already saw.
+once-per-session hints (humanizer-check, lint-policy, read-size) remember
+what a session already saw.
 Every failure path around that store degrades to "not seen". The watcher
 keeps `watch-<session-id>`, the id of the newest item it delivered, and
 `watch-<session-id>.pid`, the owner token of the newest watcher. Both are
@@ -151,14 +150,13 @@ belt config per machine class.
 The hints also read the world they advise about: the csl shard listing in
 `~/.config/csl/search-index/` (prefer-csl and read-size, no csl process launched) and the
 agent-memory index files in `~/.config/agent-memory[-work]/` (agent-memory).
-They read the session transcript file named in the payload (kof-deposit,
-humanizer-check) and the git repo a commit ran in. From that repo they read
+They read the session transcript file named in the payload
+(humanizer-check) and the git repo a commit ran in. From that repo they read
 the branch, origin remote, and an optional repo-root `.belt.yaml` overlay,
 via git execs (commit-policy; overlay is hints-only and never denies,
-docs/adr/0012). They also read the local kof serve API on `KOF_PORT` with a
-400 ms budget (kof-consult, kof-assertions), and the local moondb serve API
-on `MOONDB_PORT` with the same budget (moondb-inflight), which then runs one
-`git status` over the paths moondb names. A custom hint execs the command
+docs/adr/0012). They also read the local moondb serve API on `MOONDB_PORT`
+with a 400 ms budget (moondb-inflight), which then runs one `git status`
+over the paths moondb names. A custom hint execs the command
 its `custom_hints` entry names, with the same 400 ms default budget
 (`timeout_ms` overrides it), and relays the command's stdout.
 
@@ -176,7 +174,7 @@ search|bash|external-text|session-start|subagent-start|prompt`,
 `belt check bash "<command>"` and `belt check write --file <path> --content
 <text>` (dry runs), and `belt doctor` (installed build, resolved config,
 guard/hint state, custom guard and custom hint reachability, active
-overrides, kof reachability, and the blocked-name set). The CLI also has `belt override`
+overrides, moondb reachability, and the blocked-name set). The CLI also has `belt override`
 (list/set/clear the named switches commit-guard rules honor) and `belt config`
 (config locations + the settings in effect; the annotated setting reference
 is in its `--help`). The remaining two are `belt docs` (the embedded operating

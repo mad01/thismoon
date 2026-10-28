@@ -4,7 +4,7 @@ Runs fixed tasks through `claude -p` with your real hooks and MCP servers loaded
 
 ## Running it
 
-Run from the repo root. Every run is paid: a fresh session on the default model costs about a dollar before it does any work. One rep of all eight cases should cost $10 to $15. The worst case is $40, eight cases at the $5 per-run cap, and `-max-total-usd` (default $20) stops the run before the next case once it has spent that much.
+Run from the repo root. Every run is paid: a fresh session on the default model costs about a dollar before it does any work. One rep of all seven cases should cost $9 to $13. The worst case is $35, seven cases at the $5 per-run cap, and `-max-total-usd` (default $20) stops the run before the next case once it has spent that much.
 
 ```
 go run ./evals/harness -list                      # the cases, no claude
@@ -23,7 +23,7 @@ Each case run is its own session: the runner strips the variables that would nes
 - `worktree:<name or path>` cuts a worktree on a throwaway `eval/<id>-<stamp>` branch under `~/.cache/harness-eval/worktrees/<repo>/`, locked with the runner's pid, and removes both afterwards. A run's start removes only the worktrees under that root whose locking runner has died, and their branches.
 - `tmpdir` is an empty temp directory.
 
-Every case is denied the kof, worklog, brain and GitHub tools that write, on top of its own list. For repo and worktree cases the runner compares the canonical checkout's HEAD, branch and status before and after. Any change is an error on the row.
+Every case is denied the worklog, brain and GitHub tools that write, on top of its own list. For repo and worktree cases the runner compares the canonical checkout's HEAD, branch and status before and after. Any change is an error on the row.
 
 ## Adding a case
 

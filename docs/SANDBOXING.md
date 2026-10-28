@@ -337,7 +337,7 @@ at launch, together with `SRT_RUN_ALLOW_DOMAINS`, into
 
 ```json
 {
-  "_comment": "kof on this machine also checks pins in ~/notes",
+  "_comment": "moondb on this machine also blames files in ~/notes",
   "filesystem": { "allowRead": ["~/notes"] }
 }
 ```
@@ -438,9 +438,9 @@ new sandboxed process, confirm:
   render, committed in the recipe dir that links it to
   `~/.config/srt/<label>.json`. That is the service's recipe here when the
   file is the same on every machine, and the consuming repo's otherwise.
-  `make sandbox-verify` passes. `catalog validate` fails a
-  component whose recipe registers a t-man service or execs `srt-run`
-  without `spec.access`.
+  `make sandbox-verify` passes. No check catches a component whose recipe
+  registers a t-man service or execs `srt-run` without `spec.access`, so
+  confirm the manifest exists by hand.
 - Neither `~/.config/srt` nor the link's target is under any settings
   file's `allowWrite`. This prints every entry that covers the directory,
   and should print nothing:
@@ -475,8 +475,8 @@ t-man add --name events \
   $HOME/code/bin/events serve --port 7430 --workdir $HOME/.local/share/events
 ```
 
-events, keeper-of-facts, moondb, catalog-web, present serve, deps, status
-and speak-web run this way. What carries over to the next one:
+events, moondb, present serve, deps, status and speak-web run this way. What
+carries over to the next one:
 
 - **The label is the service name.** The settings file's name gives the
   label, and it matches the t-man name. present serve is the exception: its
@@ -517,9 +517,9 @@ A service that runs git under `denyRead: ["~"]` needs two things:
 
 - **A global config git can skip.** git dies on a read-denied
   `~/.gitconfig` (`fatal: unable to access '~/.gitconfig': Operation not
-  permitted`). keeper-of-facts and moondb only run read-only commands
+  permitted`). moondb only runs read-only commands
   (`rev-parse`, `blame`), which need no identity or credential helper, so
-  they get `--env GIT_CONFIG_GLOBAL=/dev/null`. The repo's own `.git/config`
+  it gets `--env GIT_CONFIG_GLOBAL=/dev/null`. The repo's own `.git/config`
   has to stay readable, because git reads it on every command.
 - **A readable developer directory.** `srt-run` puts `/usr/bin` ahead of the
   caller's `PATH`, so git resolves to `/usr/bin/git`, an xcrun shim that
@@ -527,8 +527,8 @@ A service that runs git under `denyRead: ["~"]` needs two things:
   in t-man's `--path` doesn't change that. An Xcode under `$HOME`, such as a
   beta in `~/Downloads`, is unreadable inside the sandbox, and every git call
   fails with `xcrun: error: invalid active developer path`. The Command Line
-  Tools under `/Library` are always readable, so the keeper-of-facts and
-  moondb hooks add `--env DEVELOPER_DIR=/Library/Developer/CommandLineTools`
+  Tools under `/Library` are always readable, so the deps and moondb hooks
+  add `--env DEVELOPER_DIR=/Library/Developer/CommandLineTools`
   when that directory exists. Machines without them keep `xcode-select`'s
   choice.
 

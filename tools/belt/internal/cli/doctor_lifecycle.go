@@ -13,8 +13,8 @@ import (
 	"github.com/mad01/thismoon/tools/belt/internal/ledger"
 )
 
-// eventsProbeTimeout bounds the doctor's events-service check, the same
-// budget the kof probe gets: a local service answers in milliseconds.
+// eventsProbeTimeout bounds the doctor's events-service check: a local
+// service answers in milliseconds.
 const eventsProbeTimeout = 400 * time.Millisecond
 
 // eventsProbe reports whether the events service answers: the base URL the

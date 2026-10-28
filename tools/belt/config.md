@@ -310,8 +310,7 @@ machine's rendered config, not in belt and not in a second hook.
   `{"event","cwd","session_id","transcript_path"}`, plus `"agent_id"` and
   `"agent_type"` inside a subagent (every subagent-start run).
 - `custom_hints.<name>.timeout_ms` (int, default `400`): the budget for one
-  run, the same budget the kof hints give kof serve. Zero means the
-  default; a negative value is a config error.
+  run. Zero means the default; a negative value is a config error.
 - `custom_hints.<name>.exclude_repos` (list of string, default: empty):
   repos opted out of this hint, matched like every other `exclude_repos`
   against the session cwd's origin remote. A `hints.<name>.exclude_repos`
@@ -497,15 +496,12 @@ entries match the same way as `git_identity[].repos` and
 
 A map keyed by built-in hint id or a `custom_hints` name. All
 built-in hints default to enabled when the file or their entry is missing. The repo-aware hints (`commit-policy`,
-`lint-policy`, `prefer-csl`, `kof-assertions`, `kof-consult`,
-`moondb-inflight`) also read
+`lint-policy`, `prefer-csl`, `moondb-inflight`) also read
 `exclude_repos`. The rest take only `enabled`. Any other key on a known id
 is a validation error (guards exempt repos with `allow_repos`, hints opt
 them out with `exclude_repos`, so each key on the wrong kind is rejected).
 Exclusion matches the canonical `host/owner/repo` identity resolved from
-the repo's origin remote everywhere a working tree is reachable. Only
-`kof-assertions`, which sees index-side results with no path, matches the
-pattern tail (host dropped, case-insensitive).
+the repo's origin remote.
 
 - `hints.agent-memory.enabled` (bool, default `true`): SessionStart, injects
   the agent memory index files.
@@ -550,22 +546,10 @@ pattern tail (host dropped, case-insensitive).
     whole advice (the repo names its own fmt/lint commands; belt ships no
     language table and executes nothing). `exclude` opts the repo out or
     back in over the machine list (docs/adr/0012).
-- `hints.kof-assertions.enabled` (bool, default `true`): PostToolUse
-  (search), surfaces kof assertions about code a search just hit.
-  `exclude_repos` silences it for the listed repos (pattern tail matched —
-  the search results carry no path to resolve a host from).
-- `hints.kof-consult.enabled` (bool, default `true`): UserPromptSubmit
-  (prompt), surfaces the cwd repo's kof assertions that the prompt is
-  about, before any searching happens.
-  `exclude_repos` silences it for the listed repos, matched against the cwd
-  repo's origin remote.
 - `hints.moondb-inflight.enabled` (bool, default `true`): SessionStart,
   lists the files of the checkout that other sessions edited and no commit
   has taken yet, when git status shows them dirty. `exclude_repos` silences
   it for the listed repos, matched against the checkout's origin remote.
-- `hints.kof-deposit.enabled` (bool, default `true`): UserPromptSubmit,
-  nudges a session that did substantial work but never deposited a kof
-  assertion.
 - `hints.humanizer-check.enabled` (bool, default `true`): fires after an MCP
   call publishes text off the machine, pointing at `humanizer_detect` while
   the wording is still editable.
@@ -596,10 +580,6 @@ environment at hook invocation time.
   events service that guard denials, hint fires, soft-mode/fail-open
   warnings and ledger entries POST to, and that `belt watch` polls. A POST
   failure (service down) is silently dropped.
-- `KOF_PORT` (default `7431`; the legacy `KEEP_PORT` is honored as a
-  fallback when `KOF_PORT` is unset): port of the local kof serve instance
-  the `kof-assertions` and `kof-consult` hints, and the `belt doctor`
-  reachability probe, query.
 - `MOONDB_PORT` (default `7433`): port of the local moondb serve instance
   the `moondb-inflight` hint and the `belt doctor` moondb probe query.
 
@@ -721,13 +701,7 @@ hints:
     enabled: true
   read-size:
     enabled: true
-  kof-assertions:
-    enabled: true
-  kof-consult:
-    enabled: true
   moondb-inflight:
-    enabled: true
-  kof-deposit:
     enabled: true
   humanizer-check:
     enabled: true

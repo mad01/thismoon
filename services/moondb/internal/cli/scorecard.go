@@ -27,12 +27,10 @@ var scorecardCmd = &cobra.Command{
 conversation and its subagents; its tools by calls; its csl searches by
 how they came back (zero results with or without a zero_result_hint, cut
 at the limit, relaxed, failed); its Read calls by size (a read of a whole
-file of %d lines or more is large); the belt hints it was shown, and
-whether any agent of the session read or edited the files the shown kof
-assertions are pinned to later; and its subagents with the belt ledger's
-counts. Flags name the costliest patterns. The hints and the ledger come
-from the events service and the pins from keeper-of-facts; a service that
-does not answer leaves its part out and the sources line says so.
+file of %d lines or more is large); the belt hints it was shown, by id;
+and its subagents with the belt ledger's counts. Flags name the costliest
+patterns. The hints and the ledger come from the events service; when it
+does not answer, their part is left out and the sources line says so.
 
 The text lists the top %d tools and agents. --json prints the whole
 scorecard, the shape GET /api/sessions/{id}/scorecard and the
@@ -120,11 +118,11 @@ func printScorecard(w io.Writer, sc scorecard.Scorecard) {
 // sourcesLine names each input's status, with the detail of one that is
 // not ok.
 func sourcesLine(s scorecard.Sources) string {
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 2)
 	for _, src := range []struct {
 		name string
 		src  scorecard.Source
-	}{{"transcripts", s.Transcripts}, {"events", s.Events}, {"kof", s.Kof}} {
+	}{{"transcripts", s.Transcripts}, {"events", s.Events}} {
 		part := src.name + " " + string(src.src.Status)
 		if src.src.Detail != "" {
 			part += " (" + src.src.Detail + ")"
@@ -192,8 +190,8 @@ func readsLine(r scorecard.ReadStats) string {
 	return line
 }
 
-// hintsLine sums the hints by id and the kof hints' hit rate. Without
-// hints the events service did not answer; the sources line says why.
+// hintsLine sums the hints by id. Without hints the events service did
+// not answer; the sources line says why.
 func hintsLine(h *scorecard.HintStats) string {
 	if h == nil {
 		return "unavailable: the events service did not answer"
@@ -205,21 +203,7 @@ func hintsLine(h *scorecard.HintStats) string {
 	for _, c := range h.ByHint {
 		counts = append(counts, fmt.Sprintf("%s %d", c.Hint, c.Count))
 	}
-	line := fmt.Sprintf("%d shown: %s", h.Shown, strings.Join(counts, ", "))
-	k := h.Kof
-	if len(k.Assertions) == 0 {
-		return line
-	}
-	line += fmt.Sprintf("; kof: %d %s shown, pinned to %d %s, %d read or edited later",
-		len(k.Assertions), noun(len(k.Assertions), "assertion", "assertions"),
-		k.PinnedPaths, noun(k.PinnedPaths, "file", "files"), k.UsedPaths)
-	if k.HitRate != nil {
-		line += fmt.Sprintf(" (%.0f%%)", *k.HitRate*100)
-	}
-	if k.UnknownPins > 0 {
-		line += fmt.Sprintf(", %d with unknown pins", k.UnknownPins)
-	}
-	return line
+	return fmt.Sprintf("%d shown: %s", h.Shown, strings.Join(counts, ", "))
 }
 
 // agentsLine counts the subagents and the ledger's entries.

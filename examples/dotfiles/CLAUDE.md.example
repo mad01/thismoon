@@ -3,7 +3,7 @@
 An example `~/.claude/CLAUDE.md` (user-global instructions, applied to every
 project) tuned for someone running the `*.this` platform locally. It wires
 Claude Code to the thismoon MCP servers (csl, worklog, humanizer, events,
-deps, present, kof, speak, clipboard, opener) and sets sensible defaults for
+deps, present, speak, clipboard, opener) and sets sensible defaults for
 commits, PRs, code search, and agent discipline.
 
 Copy the parts you want into your own `~/.claude/CLAUDE.md`. Everything here is
@@ -131,31 +131,6 @@ in a tmp dir.
   session to re-discover everything.
 - Worklog holds resumable task state. "Remember" still routes to auto-memory
   (durable atomic facts); `/handoff` writes a one-off bridge doc.
-
-## keeper-of-facts (kof): assertion store (evidence-pinned session knowledge)
-keeper-of-facts, short kof (a thismoon service, web at `http://kof.this/`),
-stores **assertions**: one-sentence statements about how a system behaves,
-each pinned to a hashed file line-range. `kof check` flips assertions stale
-when the pinned code changes, so unlike docs or memory they decay detectably.
-
-- **belt hooks do the prompting:** each prompt surfaces the cwd repo's
-  assertions that it is about (`belt[kof-consult]`), csl searches surface
-  assertions about the code they hit (`belt[kof-assertions]`), and a
-  once-per-session nudge reminds about depositing (`belt[kof-deposit]`). Act
-  on those when they appear. The hooks can't see repos that are neither the
-  cwd nor csl-searched; when working in one, run `kof_query` yourself with a
-  `subject` prefix (`repo:<org>/<repo>...`); `kof_get` shows the pins.
-- **Deposit after deriving:** when a session works out something non-obvious
-  that took real effort (behavior, invariant, dead end), store it with
-  `kof_assert`. At least one evidence pin (`repo_path`, `file`,
-  `start_line`, `end_line`) is required, one sentence per assertion, subject
-  namespaced like `repo:<org>/<repo>/path`.
-- **Correct, don't tolerate:** an assertion that proves wrong gets
-  `kof_retract` with a note (the counter-evidence). Treat `stale` assertions
-  as unverified hints until re-checked.
-- **Division of labor:** auto-memory = durable facts about you and your
-  projects; worklog = resumable task state; kof = evidence-pinned claims
-  about code behavior that go stale with the code.
 
 ## Language & Tool Preferences
 - Go for CLI tools and infrastructure tooling (install to `~/code/bin`, use

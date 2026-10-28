@@ -1,9 +1,0 @@
-# Sources scanned by `catalog`. Each path is a repo root; the scanner walks it
-# for service-info.yaml files (a monorepo may hold many; a single-tool repo one).
-# Copy this to ~/.config/catalog/registry.yaml (the default) or pass --registry,
-# then swap the myorg row for your own repo paths.
-sources:
-  - path: ~/code/src/github.com/mad01/dotfiles
-  - path: ~/code/src/github.com/mad01/thismoon
-  - path: ~/code/src/github.com/mad01/ralph
-  - path: ~/code/src/github.com/myorg/my-service

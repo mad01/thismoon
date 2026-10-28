@@ -32,9 +32,8 @@ var guardInputFields = map[string][]string{
 // and limit are left out on purpose: they are JSON numbers, and toHintInput
 // reads only whether they are present.
 var hintInputFields = map[string][]string{
-	hint.EventBash:   {"command"},
-	hint.EventSearch: {"repo"},
-	hint.EventRead:   {"file_path"},
+	hint.EventBash: {"command"},
+	hint.EventRead: {"file_path"},
 }
 
 // fieldTypeError is a payload field that arrived with the wrong JSON type,

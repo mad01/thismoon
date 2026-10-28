@@ -1,8 +1,8 @@
 # deps, supply-chain dependency scanner (CLI + MCP + web service)
 
 Go CLI, HTTP server with an embedded webkit web UI, and an MCP server, over one
-JSON store. `deps` discovers every external dependency across the catalog-
-registered repos (Go modules, npm, PyPI, Swift, GitHub Actions) and the npm
+JSON store. `deps` discovers every external dependency across the repos in
+the catalog registry (Go modules, npm, PyPI, Swift, GitHub Actions) and the npm
 and PyPI trees of the tools mise installs, and checks each version against the
 OSV.dev advisory database and against the registry that publishes it. It
 surfaces findings at `http://deps.this/` and fires a macOS notification when a
@@ -54,12 +54,13 @@ no file locks.
 
 ### Discovery
 
-- Repo set = the catalog registry (`~/.config/catalog/registry.yaml`, resolved
-  through catalog's config dir so `XDG_CONFIG_HOME` moves both together),
+- Repo set = the catalog registry (`~/.config/catalog/registry.yaml`, a repo
+  list the consuming repo installs per machine, resolved through the catalog
+  config dir so `XDG_CONFIG_HOME` moves it),
   trimmed by `exclude_repos` in the deps config. Exclude patterns match every
   trailing run of path segments, so `mad01/*` and `*/archive/*` both work; a
   pattern that does not compile fails the scan rather than matching nothing.
-  New catalogued repos auto-enroll.
+  A repo added to the registry auto-enrolls.
 - Each repo is walked for `go.mod` (→ `go list -m -json all`, resolved graph,
   v-prefix stripped for OSV), `package-lock.json` (lockfile v2/v3, entries
   under `node_modules/` only, so a workspace's own source is skipped), and
@@ -637,4 +638,4 @@ confirms which embedded webkit assets the running deps server serves.
 - Route: the consuming repo's `recipes/d-man/routes.toml` overlay (`deps` → 7429; docs/adr/0006)
 - Config: `recipes/deps/config.toml` → `~/.config/deps/config.toml`
 - MCP registration: the consuming repo's agent-sync `servers.json` (worked example: `examples/dotfiles/recipes/agent-config/`)
-- Repo list source of truth: `recipes/catalog/registry.yaml`
+- Repo list source of truth: the consuming repo's `registry.yaml`, linked to `~/.config/catalog/registry.yaml`

@@ -204,10 +204,6 @@ git before 2.38 there is no proof, so `-d` is the only delete.
 `git worktree prune` clears any stale administrative entries left by a
 worktree removed by hand.
 
-Before removing a worktree, harvest anything durable that points into it:
-evidence-pinned assertions (kof) record absolute paths, so a pin made in a
-worktree dies with it. Re-pin against the canonical checkout.
-
 ## Sweep
 
 The Agent tool's isolation mode makes worktrees outside this layout:

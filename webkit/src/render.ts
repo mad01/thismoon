@@ -1,6 +1,6 @@
 // render.ts — small, opt-in client render helpers shared by the CSR consumers.
-// Extracted from the hand-rolled copies that csl/catalog (escapeHtml, el) and
-// events (poll) each carry, so tools stop reinventing them. Re-exported from
+// Extracted from the hand-rolled copies that csl (escapeHtml, el) and events
+// (poll) each carried, so tools stop reinventing them. Re-exported from
 // webkit.ts, so they land on the global as Webkit.escapeHtml / Webkit.el /
 // Webkit.poll. Deliberately tiny and vanilla — webkit ships chrome, components,
 // and these primitives, not a rendering framework.
@@ -16,7 +16,7 @@ const HTML_ENTITIES: Record<string, string> = {
 };
 
 // escapeHtml escapes a value for safe interpolation into innerHTML. Verbatim in
-// behaviour with the identical csl/catalog implementations.
+// behaviour with the identical csl implementation.
 export function escapeHtml(s: unknown): string {
   return String(s).replace(/[&<>"']/g, (c) => HTML_ENTITIES[c]);
 }
@@ -29,7 +29,7 @@ export type ElAttrs = Record<string, unknown>;
 // `on*` whose value is a function -> addEventListener(name without "on"); any
 // other non-nullish value -> setAttribute. Children are appended in order;
 // string children become text nodes, so untrusted data is XSS-safe by
-// construction. Ported from catalog's helper.
+// construction.
 export function el(tag: string, attrs: ElAttrs = {}, children: ElChild | ElChild[] = []): HTMLElement {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {

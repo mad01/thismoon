@@ -3,7 +3,6 @@ package scorecard
 import (
 	"encoding/json"
 	"regexp"
-	"strings"
 
 	"github.com/mad01/thismoon/services/moondb"
 )
@@ -41,7 +40,7 @@ func parseReadInput(raw json.RawMessage) (path string, ranged bool) {
 	if !ok {
 		return "", false
 	}
-	return headString(head, "file_path"), headRange.MatchString(head)
+	return headFilePath(head), headRange.MatchString(head)
 }
 
 // inputHead is the head a subagent's transcript cut an input to; false
@@ -51,25 +50,14 @@ func inputHead(raw json.RawMessage) (string, bool) {
 	return head, json.Unmarshal(raw, &head) == nil
 }
 
-// headKeys match the string value of each input key a scorecard reads
-// from a head: the file keys of fileTools, and csl_read's file and repo.
-var headKeys = func() map[string]*regexp.Regexp {
-	out := map[string]*regexp.Regexp{}
-	for _, key := range []string{"file_path", "notebook_path", "file", "repo"} {
-		out[key] = regexp.MustCompile(`"` + key + `":\s*("(?:[^"\\]|\\.)*")`)
-	}
-	return out
-}()
+// headFilePathKey matches the string value of a Read input's file_path in
+// a head.
+var headFilePathKey = regexp.MustCompile(`"file_path":\s*("(?:[^"\\]|\\.)*")`)
 
-// headString reads the string value of key from the head of a JSON
-// object, "" when the head does not hold it whole or key is not one of
-// headKeys.
-func headString(head, key string) string {
-	re, ok := headKeys[key]
-	if !ok {
-		return ""
-	}
-	m := re.FindStringSubmatch(head)
+// headFilePath reads the file_path value from the head of a JSON object,
+// "" when the head does not hold it whole.
+func headFilePath(head string) string {
+	m := headFilePathKey.FindStringSubmatch(head)
 	if m == nil {
 		return ""
 	}
@@ -138,59 +126,4 @@ func readStats(calls []Call) ReadStats {
 		}
 	}
 	return s
-}
-
-// touchedPath is a file a call read or edited, for joining hints to what
-// the session did after them. Repo is the csl repo a csl_read named, ""
-// for a path on disk.
-type touchedPath struct {
-	path, repo string
-	call       Call
-}
-
-// fileTools are the tools whose input names one file on disk, by the key
-// that holds it.
-var fileTools = map[string]string{
-	"Read": "file_path", "Edit": "file_path", "MultiEdit": "file_path",
-	"Write": "file_path", "NotebookEdit": "notebook_path",
-}
-
-// touched lists the files the calls read or edited, in call order: the
-// harness's file tools and csl_read. An input a subagent's transcript cut
-// to its head is read for the keys the head still holds.
-func touched(calls []Call) []touchedPath {
-	var out []touchedPath
-	for _, c := range calls {
-		if c.IsError {
-			continue
-		}
-		if key, ok := fileTools[c.Name]; ok {
-			if p := inputString(c.Input, key); p != "" {
-				out = append(out, touchedPath{path: p, call: c})
-			}
-			continue
-		}
-		if strings.HasPrefix(c.Name, "mcp__") && toolName(c.Name) == "csl_read" {
-			if file := inputString(c.Input, "file"); file != "" {
-				out = append(out, touchedPath{
-					path: file, repo: inputString(c.Input, "repo"), call: c,
-				})
-			}
-		}
-	}
-	return out
-}
-
-// inputString is the string value of key in a call's input, whole or cut
-// to its head; "" when it holds none.
-func inputString(raw json.RawMessage, key string) string {
-	var in map[string]any
-	if json.Unmarshal(raw, &in) == nil {
-		s, _ := in[key].(string)
-		return s
-	}
-	if head, ok := inputHead(raw); ok {
-		return headString(head, key)
-	}
-	return ""
 }

@@ -40,14 +40,12 @@ jobs:
       - name: Serve-bearing components ship a doctor
         run: |
           required='
-            services/keeper-of-facts
             services/moondb
             services/events
             services/deps
             services/present
             services/speak
             services/status
-            services/catalog
             services/csl
             services/d-man
           '

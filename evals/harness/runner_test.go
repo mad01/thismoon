@@ -138,7 +138,9 @@ func TestRunCaseRepoWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"CaseOnly", "Edit", "Bash(git commit:*)", "mcp__kof__kof_assert"} {
+	for _, want := range []string{
+		"CaseOnly", "Edit", "Bash(git commit:*)", "mcp__worklog__worklog_checkpoint",
+	} {
 		if !strings.Contains(string(args), want+"\n") {
 			t.Errorf("claude was not told to disallow %s", want)
 		}

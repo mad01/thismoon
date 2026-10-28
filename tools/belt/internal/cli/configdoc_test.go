@@ -199,7 +199,7 @@ func TestConfigHelpCarriesTheReference(t *testing.T) {
 		"exclude_paths",
 		"extra_patterns",
 		"include",
-		"kof-assertions",
+		"moondb-inflight",
 		"Pair it with doctor",
 	} {
 		if !strings.Contains(long, want) {

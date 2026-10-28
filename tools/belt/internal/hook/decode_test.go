@@ -300,11 +300,6 @@ func TestRunHintStaysSilentOnAnUnreadablePayload(t *testing.T) {
 			"field tool_input.command is a JSON number, want a string",
 		},
 		{
-			"numeric search repo", "search",
-			`{"tool_name":"mcp__csl__csl_search","tool_input":{"repo":7}}`,
-			"field tool_input.repo is a JSON number, want a string",
-		},
-		{
 			"numeric read file_path", "read",
 			`{"tool_name":"Read","tool_input":{"file_path":7}}`,
 			"field tool_input.file_path is a JSON number, want a string",

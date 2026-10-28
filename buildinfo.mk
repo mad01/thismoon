@@ -4,11 +4,11 @@
 # Include it from a component Makefile after setting COMPONENT (the name the
 # component's release tags are prefixed with), then link with the flags:
 #
-#     COMPONENT := keeper-of-facts
+#     COMPONENT := moondb
 #     include ../../buildinfo.mk
 #
 #     build:
-#     	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/kof
+#     	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/moondb
 #
 # The relative include path holds on fleet machines too: ralph's sources cache
 # preserves the repo layout, and component Makefiles always run with the

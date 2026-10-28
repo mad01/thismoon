@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { fuzzyMatch, rankSites } from '../src/fuzzy.ts';
 
 const SITES = [
-  { name: 'catalog', host: 'catalog.this', url: 'http://catalog.this/' },
+  { name: 'moondb', host: 'moondb.this', url: 'http://moondb.this/' },
   { name: 'csl', host: 'csl.this', url: 'http://csl.this/' },
   { name: 'status', host: 'status.this', url: 'http://status.this/' },
   { name: 'present', host: 'present.this', url: 'http://present.this/' },
@@ -14,9 +14,9 @@ const SITES = [
 ];
 
 test('fuzzyMatch: subsequence matches and reports indices', () => {
-  const m = fuzzyMatch('ctl', 'catalog');
+  const m = fuzzyMatch('mdb', 'moondb');
   assert.ok(m);
-  assert.deepEqual(m.indices, [0, 2, 4]); // c-a-T-a-L-og  -> c,t,l
+  assert.deepEqual(m.indices, [0, 4, 5]); // m-o-o-n-D-B  -> m,d,b
 });
 
 test('fuzzyMatch: is case-insensitive', () => {
@@ -25,7 +25,7 @@ test('fuzzyMatch: is case-insensitive', () => {
 });
 
 test('fuzzyMatch: returns null when a char is missing or out of order', () => {
-  assert.equal(fuzzyMatch('xyz', 'catalog'), null);
+  assert.equal(fuzzyMatch('xyz', 'moondb'), null);
   assert.equal(fuzzyMatch('lc', 'csl'), null); // right chars, wrong order
 });
 
@@ -51,8 +51,8 @@ test('rankSites: empty query returns every site in original order', () => {
 });
 
 test('rankSites: drops non-matching sites', () => {
-  const out = rankSites('cat', SITES);
-  assert.deepEqual(out.map(o => o.site.name), ['catalog']);
+  const out = rankSites('moo', SITES);
+  assert.deepEqual(out.map(o => o.site.name), ['moondb']);
 });
 
 test('rankSites: falls back to host when the name does not match', () => {

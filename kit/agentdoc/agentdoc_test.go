@@ -6,13 +6,15 @@ import (
 	"testing"
 )
 
-var kofFacts = Facts{
-	Name:      "keeper-of-facts",
-	Bin:       "kof",
-	Purpose:   "evidence-pinned assertion store",
-	BaseURL:   "http://kof.this",
-	StorePath: "~/.local/share/kof",
-	LogPath:   "~/.local/share/kof/kof.log",
+// splitFacts is a sample service whose binary is named apart from its
+// component, so each output shows which of the two names it uses.
+var splitFacts = Facts{
+	Name:      "sample-store",
+	Bin:       "sample",
+	Purpose:   "sample backing store",
+	BaseURL:   "http://sample.this",
+	StorePath: "~/.local/share/sample",
+	LogPath:   "~/.local/share/sample/sample.log",
 	HasDoctor: true,
 }
 
@@ -26,7 +28,7 @@ func TestRender(t *testing.T) {
 		{
 			name: "happy path",
 			doc:  "Service at {{.BaseURL}}, store in {{.StorePath}}, run {{.Bin}}.",
-			want: "Service at http://kof.this, store in ~/.local/share/kof, run kof.",
+			want: "Service at http://sample.this, store in ~/.local/share/sample, run sample.",
 		},
 		{
 			name: "no placeholders",
@@ -46,7 +48,7 @@ func TestRender(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := Render(tc.doc, kofFacts)
+			got, err := Render(tc.doc, splitFacts)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("Render(%q) = %q, want error", tc.doc, got)
@@ -71,10 +73,10 @@ func TestInstructions(t *testing.T) {
 	}{
 		{
 			name:  "service with doctor",
-			facts: kofFacts,
-			want: "kof: evidence-pinned assertion store.\n" +
-				"Tools call the local keeper-of-facts service (default http://kof.this) via this stdio shim; the service must be running.\n" +
-				"On any tool error or unexpected empty result: run 'kof doctor'. Full doc: 'kof docs'.",
+			facts: splitFacts,
+			want: "sample: sample backing store.\n" +
+				"Tools call the local sample-store service (default http://sample.this) via this stdio shim; the service must be running.\n" +
+				"On any tool error or unexpected empty result: run 'sample doctor'. Full doc: 'sample docs'.",
 		},
 		{
 			name: "service without doctor",
@@ -115,14 +117,14 @@ func TestInstructions(t *testing.T) {
 		},
 		{
 			name: "doctor tool leads the recovery line",
-			facts: Facts{
-				Name: "keeper-of-facts", Bin: "kof",
-				Purpose: "evidence-pinned assertion store", BaseURL: "http://kof.this",
-				HasDoctor: true, MCPDoctorTool: "kof_doctor",
-			},
-			want: "kof: evidence-pinned assertion store.\n" +
-				"Tools call the local keeper-of-facts service (default http://kof.this) via this stdio shim; the service must be running.\n" +
-				"On any tool error or unexpected empty result: call 'kof_doctor' or run 'kof doctor'. Full doc: 'kof docs'.",
+			facts: func() Facts {
+				f := splitFacts
+				f.MCPDoctorTool = "sample_doctor"
+				return f
+			}(),
+			want: "sample: sample backing store.\n" +
+				"Tools call the local sample-store service (default http://sample.this) via this stdio shim; the service must be running.\n" +
+				"On any tool error or unexpected empty result: call 'sample_doctor' or run 'sample doctor'. Full doc: 'sample docs'.",
 		},
 		{
 			name: "doctor tool without a doctor subcommand",
@@ -145,18 +147,18 @@ func TestInstructions(t *testing.T) {
 }
 
 func TestHint(t *testing.T) {
-	if got := Hint(nil, kofFacts); got != nil {
+	if got := Hint(nil, splitFacts); got != nil {
 		t.Fatalf("Hint(nil) = %v, want nil", got)
 	}
 
 	base := errors.New("connection refused")
 
 	t.Run("with doctor", func(t *testing.T) {
-		got := Hint(base, kofFacts)
+		got := Hint(base, splitFacts)
 		if !errors.Is(got, base) {
 			t.Errorf("Hint result does not wrap the original error: %v", got)
 		}
-		want := "connection refused (run 'kof doctor' to diagnose)"
+		want := "connection refused (run 'sample doctor' to diagnose)"
 		if got.Error() != want {
 			t.Errorf("Hint() = %q, want %q", got.Error(), want)
 		}
@@ -175,7 +177,7 @@ func TestHint(t *testing.T) {
 	})
 
 	t.Run("unwrap", func(t *testing.T) {
-		got := Hint(base, kofFacts)
+		got := Hint(base, splitFacts)
 		if errors.Unwrap(got) != base {
 			t.Errorf("errors.Unwrap(Hint()) = %v, want the original error", errors.Unwrap(got))
 		}
@@ -186,12 +188,12 @@ func TestInstructionsStayThreeLines(t *testing.T) {
 	// Ten servers inject this into every session whether or not anything
 	// fails, so the block is hard-capped at three lines (ADR-0009).
 	facts := []Facts{
-		kofFacts,
+		splitFacts,
 		{Name: "toss", Bin: "toss", Purpose: "file sharing helper"},
 		{Name: "csl", Bin: "csl", Purpose: "local code search", MCPNote: "Nothing must be running."},
 		{
-			Name: "kof", Bin: "kof", Purpose: "assertion store", BaseURL: "http://kof.this",
-			HasDoctor: true, MCPDoctorTool: "kof_doctor",
+			Name: "moondb", Bin: "moondb", Purpose: "edit history", BaseURL: "http://moondb.this",
+			HasDoctor: true, MCPDoctorTool: "moondb_doctor",
 		},
 	}
 	for _, f := range facts {
@@ -203,11 +205,11 @@ func TestInstructionsStayThreeLines(t *testing.T) {
 }
 
 func TestRegistrationSnippet(t *testing.T) {
-	got := RegistrationSnippet(kofFacts)
+	got := RegistrationSnippet(splitFacts)
 	for _, want := range []string{
-		"claude mcp add kof -- kof mcp",
-		"[mcp_servers.kof]",
-		`command = "kof"`,
+		"claude mcp add sample -- sample mcp",
+		"[mcp_servers.sample]",
+		`command = "sample"`,
 		`args = ["mcp"]`,
 		"~/.codex/config.toml",
 	} {
@@ -215,16 +217,16 @@ func TestRegistrationSnippet(t *testing.T) {
 			t.Errorf("RegistrationSnippet() missing %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "keeper-of-facts") {
+	if strings.Contains(got, "sample-store") {
 		t.Errorf("RegistrationSnippet() names the component, want the binary:\n%s", got)
 	}
 }
 
 func TestOutputIsASCII(t *testing.T) {
 	outputs := []string{
-		Instructions(kofFacts),
-		Hint(errors.New("boom"), kofFacts).Error(),
-		RegistrationSnippet(kofFacts),
+		Instructions(splitFacts),
+		Hint(errors.New("boom"), splitFacts).Error(),
+		RegistrationSnippet(splitFacts),
 	}
 	for _, s := range outputs {
 		for _, r := range s {

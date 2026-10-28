@@ -36,8 +36,8 @@ func TestPersistentPreRunExpandsEveryPath(t *testing.T) {
 }
 
 // TestDefaultPathsHonorXDG pins where the two config-directory files resolve.
-// The registry lives under catalog's directory, not deps's: deps reads the
-// file catalog owns, so both have to move together when XDG_CONFIG_HOME does.
+// The registry lives under the catalog directory, not deps's: the consuming
+// repo installs it there, and XDG_CONFIG_HOME moves it too.
 func TestDefaultPathsHonorXDG(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

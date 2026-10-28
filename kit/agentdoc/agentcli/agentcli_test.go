@@ -12,18 +12,20 @@ import (
 	"github.com/mad01/thismoon/kit/doctor"
 )
 
-var kofFacts = agentdoc.Facts{
-	Name: "keeper-of-facts", Bin: "kof",
-	Purpose: "evidence-pinned assertion store",
-	BaseURL: "http://kof.this", HasDoctor: true,
+// splitFacts is a sample service whose binary is named apart from its
+// component, so the commands show they use the binary.
+var splitFacts = agentdoc.Facts{
+	Name: "sample-store", Bin: "sample",
+	Purpose: "sample backing store",
+	BaseURL: "http://sample.this", HasDoctor: true,
 }
 
 func TestDocsCommand(t *testing.T) {
-	cmd := DocsCommand("Service at {{.BaseURL}}, run {{.Bin}}.\n", kofFacts)
+	cmd := DocsCommand("Service at {{.BaseURL}}, run {{.Bin}}.\n", splitFacts)
 	if got := cmd.Use; got != "docs" {
 		t.Errorf("Use = %q, want %q", got, "docs")
 	}
-	if !strings.Contains(cmd.Short, "kof") {
+	if !strings.Contains(cmd.Short, "sample") {
 		t.Errorf("Short = %q, want it to name the binary", cmd.Short)
 	}
 
@@ -33,14 +35,14 @@ func TestDocsCommand(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	want := "Service at http://kof.this, run kof.\n"
+	want := "Service at http://sample.this, run sample.\n"
 	if got := out.String(); got != want {
 		t.Errorf("output = %q, want %q", got, want)
 	}
 }
 
 func TestDocsCommandBadTemplate(t *testing.T) {
-	cmd := DocsCommand("see {{.NoSuchField}}", kofFacts)
+	cmd := DocsCommand("see {{.NoSuchField}}", splitFacts)
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err == nil {
@@ -50,7 +52,7 @@ func TestDocsCommandBadTemplate(t *testing.T) {
 
 func TestDoctorCommand(t *testing.T) {
 	built := false
-	cmd := DoctorCommand(kofFacts, func(context.Context) []doctor.Check {
+	cmd := DoctorCommand(splitFacts, func(context.Context) []doctor.Check {
 		built = true
 		return []doctor.Check{
 			{Name: "alpha", Run: func(context.Context) error { return nil }},
@@ -72,14 +74,14 @@ func TestDoctorCommand(t *testing.T) {
 	if !built {
 		t.Error("checks func never invoked")
 	}
-	want := "ok alpha\nall checks passed; for semantics and gotchas run 'kof docs'\n"
+	want := "ok alpha\nall checks passed; for semantics and gotchas run 'sample docs'\n"
 	if got := out.String(); got != want {
 		t.Errorf("output = %q, want %q", got, want)
 	}
 }
 
 func TestDoctorCommandFailure(t *testing.T) {
-	cmd := DoctorCommand(kofFacts, func(context.Context) []doctor.Check {
+	cmd := DoctorCommand(splitFacts, func(context.Context) []doctor.Check {
 		return []doctor.Check{
 			{Name: "alpha", Run: func(context.Context) error { return errors.New("boom") }},
 		}

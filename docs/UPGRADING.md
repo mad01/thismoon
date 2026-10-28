@@ -4,6 +4,22 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-28 catalog and keeper-of-facts: removed
+
+Change: thismoon #332. The catalog and keeper-of-facts (kof) services leave the repo with their recipes. deps keeps reading `~/.config/catalog/registry.yaml`, which the consuming repo still installs. moondb's scorecard drops its `kof` source and the `hints.kof` block and now reports `version` 2. belt loses its kof-consult, kof-assertions and kof-deposit hints and its kof doctor probe.
+
+Run, in order:
+
+1. In the consuming repo, drop the `kof` and `catalog` routes from the d-man routes file. In its belt config, delete every `hints.kof-*` block (kof-consult, kof-assertions, kof-deposit). The new belt still runs its guards and hooks with an unknown hint id in the config, but `belt doctor` reports it and exits 1.
+2. `ralph up --enable-cleanup`. The first apply after a recipe removal needs the flag. It runs the recipes' `pre_uninstall` hooks, which stop both agents. It also removes the binaries and applies the route and config edits.
+3. If `t-man list` still shows them, run `t-man remove catalog-web` and `t-man remove keeper-of-facts`.
+4. Delete the srt links `~/.config/srt/catalog-web.json` and `~/.config/srt/keeper-of-facts.json`, and any copies of them under `~/.config/srt/merged/`.
+5. Run `claude mcp remove --scope user kof`. agent-sync's `mcp.prune` is off by default, and with it off, dropping kof from `servers.json` leaves the server registered. On Codex, delete the `[mcp_servers.kof]` table from `~/.codex/config.toml`.
+
+The assertion store stays at `~/.local/share/kof`, and the t-man logs stay under `~/Library/Logs/keeper-of-facts` and `~/Library/Logs/catalog-web`. Nothing reads them now. Whether to delete them is your call.
+
+Verify: `t-man list` shows neither `catalog-web` nor `keeper-of-facts`. d-man's managed block no longer names the routes, so `grep -E 'kof\.this|catalog\.this' /etc/hosts` prints nothing. `claude mcp list` has no `kof` entry. `belt doctor` reports no kof probe and no unknown-hint warning. `moondb scorecard <session-id> --json` reports `"version": 2`.
+
 ## 2026-10-28 moondb: sessions keep their cwd repo, entrypoint and tags
 
 Change: thismoon #320. A session now records the repository its cwd sits in, the harness entrypoint (`cli`, or `sdk-cli` for `claude -p`) and the tags a launcher sets in `MOONDB_SESSION_TAGS`. A sessions row lists the repos the session worked in without editing them (`cwd_repos`): its own cwd's and each subagent's cwd repo. The repo filter and chips count the session under its edited repos and its `cwd_repos`. The REPO column shows the first of them as a badge, hollow for a worked-in repo, and folds the rest into "+N"; the session page shows a badge for each. The list also marks headless and tagged sessions. The eval runner tags its sessions `eval`.

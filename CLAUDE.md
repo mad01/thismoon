@@ -38,8 +38,8 @@ examples/    worked private-config-repo layout (overlay recipes, example
 docs/adr/    architecture decision records
 docs/GETTING-STARTED.md install guide: one tool via brew vs the fleet via ralph
 docs/HOW-IT-FITS-TOGETHER.md fleet pitch, ralph vocabulary, rollout order
-docs/MEMORY-STACK.md    memory stores (auto memory, agent-memory, kof, worklog,
-             handoff, events) and the belt hooks that surface them
+docs/MEMORY-STACK.md    memory stores (auto memory, agent-memory, worklog,
+             handoff, events, moondb) and the belt hooks that surface them
 docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
 docs/UPGRADING.md       actions a change needs on consuming machines (newest
              first), added in the same PR as the change

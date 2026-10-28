@@ -14,9 +14,6 @@ import (
 	"github.com/mad01/thismoon/services/moondb/internal/server/servertest"
 )
 
-// assertionID is the kof assertion the fixture's hint names.
-const assertionID = "01792948229235707000-1e1c"
-
 // fakeEvents is an events service holding entries per source, newest
 // first. It filters by q and before as the real one does, and fails every
 // request when down is set.
@@ -46,29 +43,6 @@ func fakeEvents(t *testing.T, entries map[string][]scorecard.Event, down bool) s
 	return ts.URL
 }
 
-// fakeKof is keeper-of-facts holding the assertion the hint names, pinned
-// to a.go, and another one. It answers only the listing a scorecard asks
-// for, and counts the requests.
-func fakeKof(t *testing.T, requests *int) string {
-	t.Helper()
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		*requests++
-		if r.URL.Path != "/api/assertions" {
-			http.NotFound(w, r)
-			return
-		}
-		pins := []map[string]any{
-			{"repo": "github.com/owner/other", "file": "a.go", "start_line": 1, "end_line": 9},
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"assertions": []map[string]any{
-			{"id": "01792948229235707000-ffff", "claim": "b.go does another", "pins": pins},
-			{"id": assertionID, "claim": "a.go does the thing", "pins": pins},
-		}})
-	}))
-	t.Cleanup(ts.Close)
-	return ts.URL
-}
-
 // sessionEvents are the belt and belt-ledger entries of the older
 // session, which runs from minute 1, with one older entry of another
 // session in each source, so neither listing reaches back to its cap. Ids
@@ -85,12 +59,10 @@ func sessionEvents() map[string][]scorecard.Event {
 	older := func() scorecard.Event {
 		return ev(-60, "sess-gone", "hinted Bash (prefer-csl)", "", map[string]string{})
 	}
-	kofText := "1 stored assertion(s) for repo:owner/other\n  [fresh] a.go does the thing\n" +
-		"          a.go:1-9 (kof_get id=" + assertionID + ")"
 	return map[string][]scorecard.Event{
 		"belt": {
-			ev(2, servertest.OldSession, "hinted Edit (kof-assertions)", kofText,
-				map[string]string{"hint": "kof-assertions", "event": "edit"}),
+			ev(2, servertest.OldSession, "hinted Edit (em-dash)", "",
+				map[string]string{"hint": "em-dash", "event": "edit"}),
 			ev(2, servertest.NewSession, "hinted Bash (prefer-csl)", "",
 				map[string]string{"hint": "prefer-csl"}),
 			ev(1, servertest.OldSession, "hinted Bash (prefer-csl)", "",
@@ -106,12 +78,10 @@ func sessionEvents() map[string][]scorecard.Event {
 }
 
 // TestSessionScorecard: the scorecard joins the session's trace with its
-// hints from the events service and their pins from keeper-of-facts.
+// hints and ledger entries from the events service.
 func TestSessionScorecard(t *testing.T) {
 	h := newHarness(t)
-	var kofRequests int
-	h.query.SetPeers(scorecard.NewHTTPPeers(
-		fakeEvents(t, sessionEvents(), false), fakeKof(t, &kofRequests)))
+	h.query.SetPeers(scorecard.NewHTTPPeers(fakeEvents(t, sessionEvents(), false)))
 
 	var sc scorecard.Scorecard
 	h.getJSON(t, "/api/sessions/"+servertest.OldSession+"/scorecard", http.StatusOK, &sc)
@@ -119,7 +89,7 @@ func TestSessionScorecard(t *testing.T) {
 		t.Errorf("scorecard = %+v", sc)
 	}
 	ok := scorecard.Source{Status: scorecard.StatusOK}
-	if sc.Sources.Transcripts != ok || sc.Sources.Events != ok || sc.Sources.Kof != ok {
+	if sc.Sources.Transcripts != ok || sc.Sources.Events != ok {
 		t.Errorf("sources = %+v, want all ok", sc.Sources)
 	}
 	if sc.Totals.Turns != 1 || sc.Agents.Count != 1 {
@@ -127,14 +97,6 @@ func TestSessionScorecard(t *testing.T) {
 	}
 	if sc.Hints == nil || sc.Hints.Shown != 2 || len(sc.Hints.ByHint) != 2 {
 		t.Fatalf("hints = %+v, want the older session's two", sc.Hints)
-	}
-	k := sc.Hints.Kof
-	if len(k.Assertions) != 1 || k.Assertions[0].ID != assertionID || k.PinnedPaths != 1 ||
-		k.Assertions[0].Used == nil || *k.Assertions[0].Used {
-		t.Errorf("kof = %+v, want one assertion pinned to a.go, not used", k)
-	}
-	if kofRequests != 1 {
-		t.Errorf("keeper-of-facts requests = %d, want the one listing", kofRequests)
 	}
 	want := scorecard.Ledger{SubagentStart: 1, SubagentStop: 1}
 	if sc.Agents.Ledger == nil || *sc.Agents.Ledger != want {
@@ -152,8 +114,7 @@ func TestSessionScorecard(t *testing.T) {
 // scorecard still comes back.
 func TestSessionScorecardWithoutEvents(t *testing.T) {
 	h := newHarness(t)
-	var kofRequests int
-	h.query.SetPeers(scorecard.NewHTTPPeers(fakeEvents(t, nil, true), fakeKof(t, &kofRequests)))
+	h.query.SetPeers(scorecard.NewHTTPPeers(fakeEvents(t, nil, true)))
 
 	var raw map[string]json.RawMessage
 	h.getJSON(t, "/api/sessions/"+servertest.OldSession+"/scorecard", http.StatusOK, &raw)
@@ -165,11 +126,8 @@ func TestSessionScorecardWithoutEvents(t *testing.T) {
 	if sc.Sources.Events.Status != scorecard.StatusUnavailable || sc.Sources.Events.Detail == "" {
 		t.Errorf("events source = %+v, want unavailable with a detail", sc.Sources.Events)
 	}
-	if sc.Sources.Kof.Status != scorecard.StatusSkipped ||
-		!strings.Contains(sc.Sources.Kof.Detail, "events service did not answer") ||
-		sc.Agents.Ledger != nil || kofRequests != 0 {
-		t.Errorf("kof = %+v after %d requests, ledger = %+v; want skipped, saying why, "+
-			"without asking, and null", sc.Sources.Kof, kofRequests, sc.Agents.Ledger)
+	if sc.Agents.Ledger != nil {
+		t.Errorf("ledger = %+v, want null", sc.Agents.Ledger)
 	}
 	if sc.Totals.Turns != 1 {
 		t.Errorf("totals = %+v, want the trace's turn", sc.Totals)

@@ -574,7 +574,7 @@ func (q *Querier) SessionTrace(ctx context.Context, id string) (trace.SessionTra
 }
 
 // SessionScorecard computes the session's scorecard with the real query
-// service. Without SetPeers its events and kof parts are unavailable.
+// service. Without SetPeers its events part is unavailable.
 func (q *Querier) SessionScorecard(ctx context.Context, id string) (scorecard.Scorecard, error) {
 	return q.traces.SessionScorecard(ctx, id)
 }

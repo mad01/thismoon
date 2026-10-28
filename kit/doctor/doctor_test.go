@@ -16,9 +16,11 @@ import (
 	"github.com/mad01/thismoon/kit/agentdoc"
 )
 
-var kofFacts = agentdoc.Facts{
-	Name: "keeper-of-facts", Bin: "kof",
-	Purpose: "evidence-pinned assertion store", HasDoctor: true,
+// splitFacts is a sample service whose binary is named apart from its
+// component, so the summary line shows it names the binary.
+var splitFacts = agentdoc.Facts{
+	Name: "sample-store", Bin: "sample",
+	Purpose: "sample backing store", HasDoctor: true,
 }
 
 func pass(name string) Check {
@@ -40,7 +42,7 @@ func TestRun(t *testing.T) {
 			name:   "all pass",
 			checks: []Check{pass("alpha"), pass("beta")},
 			want: "ok alpha\nok beta\n" +
-				"all checks passed; for semantics and gotchas run 'kof docs'\n",
+				"all checks passed; for semantics and gotchas run 'sample docs'\n",
 		},
 		{
 			name:    "one fails",
@@ -63,13 +65,13 @@ func TestRun(t *testing.T) {
 				}},
 			},
 			want: "ok alpha\nok beta (skipped: nothing to examine)\n" +
-				"all checks passed; for semantics and gotchas run 'kof docs'\n",
+				"all checks passed; for semantics and gotchas run 'sample docs'\n",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var b strings.Builder
-			err := Run(context.Background(), &b, kofFacts, tc.checks)
+			err := Run(context.Background(), &b, splitFacts, tc.checks)
 			if got := b.String(); got != tc.want {
 				t.Errorf("Run output = %q, want %q", got, tc.want)
 			}

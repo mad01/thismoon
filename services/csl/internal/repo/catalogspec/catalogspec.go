@@ -12,9 +12,9 @@
 // from the descriptor it names.
 //
 // The package is a file-format reader, not a catalog client: it never talks
-// to the catalog service or to Backstage, and it does not validate the entity
-// beyond what it needs, because a descriptor that the catalog would reject
-// (say, a Component with no owner) still names a system worth matching on.
+// to a catalog service such as Backstage, and it does not validate the entity
+// beyond what it needs, because a descriptor a catalog would reject (say, a
+// Component with no owner) still names a system worth matching on.
 package catalogspec
 
 import (
@@ -38,7 +38,7 @@ const PointerFile = ".csl-catalog.yaml"
 
 // FileNames are the descriptor file names looked for at a repo root after
 // PointerFile, in order of precedence: the Backstage default first, then the
-// catalog service's.
+// name thismoon's own descriptors use.
 var FileNames = []string{"catalog-info.yaml", "service-info.yaml"}
 
 // maxDescriptorBytes caps how much of a descriptor is read. Discovery reads
@@ -50,8 +50,7 @@ const maxDescriptorBytes = 1 << 20
 // Groups are the apiVersion groups (the text before the slash) a descriptor
 // may declare. Any version under a listed group is accepted, so a repo on
 // backstage.io/v1beta1 reads the same as one on backstage.io/v1alpha1. An
-// empty apiVersion also passes, because the catalog service defaults it to
-// its own group rather than rejecting the file.
+// empty apiVersion also passes rather than failing the file.
 var Groups = []string{"backstage.io", "catalog.mad01"}
 
 // kindComponent is the only entity kind csl reads; System, Group, and the
@@ -77,7 +76,7 @@ type Component struct {
 }
 
 // entity is the lenient on-disk shape: every field optional, so a document
-// that the catalog service would reject still yields whatever identity it
+// that a stricter catalog would reject still yields whatever identity it
 // carries.
 type entity struct {
 	APIVersion string `yaml:"apiVersion"`

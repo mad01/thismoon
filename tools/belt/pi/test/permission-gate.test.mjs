@@ -85,10 +85,10 @@ test('belt.json adds guarded servers and maps direct adapter tools to them', asy
 
 test('a mapped direct tool matches Claude rules under its server name', async (t) => {
   const env = scratch(t)
-  env.claudeSettings({ permissions: { deny: ['mcp__kof__*'] } })
+  env.claudeSettings({ permissions: { deny: ['mcp__worklog__*'] } })
   const { call } = load()
-  const res = await call('tool_call', { toolName: 'kof_assert', input: { subject: 'x' } }, headlessCtx(env.dir))
-  assert.match(res.reason, /^Denied by Claude settings: mcp__kof__\*/)
+  const res = await call('tool_call', { toolName: 'worklog_checkpoint', input: { key: 'x' } }, headlessCtx(env.dir))
+  assert.match(res.reason, /^Denied by Claude settings: mcp__worklog__\*/)
   assert.equal(env.argv(), null)
 })
 

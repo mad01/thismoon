@@ -81,11 +81,9 @@ address, managed as launchd agents by t-man.
 | [d-man](services/d-man/README.md) | The `.this` front door: managed `/etc/hosts` entries + reverse proxy | CLI | proven |
 | [deps](services/deps/README.md) | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP | proven |
 | [events](services/events/README.md) | Local event and audit log, archive-only JSONL store | web · CLI · MCP | proven |
-| [keeper-of-facts](services/keeper-of-facts/README.md) | Assertion store (`kof`): evidence-pinned claims about code that go stale with it | web · CLI · MCP | proven |
 | [present](services/present/README.md) | Single-page HTML briefings and slide decks, authored as structured JSON | web · CLI · MCP | proven |
 | [speak](services/speak/README.md) | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
 | [status](services/status/README.md) | Status page with 30-day uptime history for the fleet | web · CLI | proven |
-| [catalog](services/catalog/README.md) | Reads `service-info.yaml` across your repos, serves a service catalog | web · CLI | evaluating |
 | [moondb](services/moondb/README.md) | Edit history between commits: every file edit an agent session makes, linked to the turn and prompt behind it | web · CLI · MCP | experimental |
 
 ## Tools
@@ -137,12 +135,11 @@ have nothing to call — registration is machine-private wiring (see
 
 Every agent session starts with an empty context window. On a fleet machine
 the stores below carry context from one session to the next, and belt's hooks
-inject the memory and kof stores without the agent having to ask:
+inject the memory store without the agent having to ask:
 
 | Store | Holds | Reaches the session through |
 |-------|-------|-----------------------------|
 | agent-memory | facts about you, for every agent on every machine (a directory of one-fact files, usually a private git clone, set up from [`examples/dotfiles/recipes/agent-memory/`](examples/dotfiles/recipes/agent-memory/)) | belt's `agent-memory` hint at session start |
-| [keeper-of-facts](services/keeper-of-facts/README.md) | claims about code, pinned to the lines that prove them | belt's `kof-consult` hint on each prompt and `kof-assertions` after csl searches; `kof-deposit` nudges for new ones |
 | [worklog](tools/worklog/README.md) | where a task stands, keyed by ticket or topic | the `/worklog` skill |
 | [handoff](skills/handoff/SKILL.md) | a bridge document for the next session | the `/handoff` skill |
 | [events](services/events/README.md) | what the guards, hints and services did | belt's ledger writes it; you query it |
@@ -254,7 +251,7 @@ brew install mad01/tap/csl
 brew services start mad01/tap/csl   # web UI on http://127.0.0.1:7424
 ```
 
-Most components have formulas (csl, kof, present, speak, d-man, belt,
+Most components have formulas (csl, present, speak, d-man, belt,
 t-man, toss-bin, and ralph itself); the rest follow as they prove useful
 outside the fleet. [mise](https://mise.jdx.dev) reaches the same release
 tarballs, one tool alias per component:

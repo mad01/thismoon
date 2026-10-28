@@ -23,10 +23,6 @@ type Input struct {
 	Transcripts Source
 	// Events is what the events service said (ReadEvents).
 	Events EventsResult
-	// Pins are the assertions' pins keeper-of-facts gave (ReadPins), and
-	// Kof its status.
-	Pins map[string][]Pin
-	Kof  Source
 }
 
 // Build computes a session's scorecard. It never fails: an input that was
@@ -35,14 +31,12 @@ func Build(in Input) Scorecard {
 	sc := Scorecard{
 		Version:   Version,
 		SessionID: in.Trace.SessionID,
-		Sources: Sources{
-			Transcripts: in.Transcripts, Events: in.Events.Source, Kof: in.Kof,
-		},
-		Totals: totals(in.Trace),
-		Tools:  toolStats(in.Trace, in.AgentSpans),
-		Search: searchStats(in.Calls),
-		Reads:  readStats(in.Calls),
-		Hints:  hintStats(in.Events.Hints, in.Pins, in.Calls),
+		Sources:   Sources{Transcripts: in.Transcripts, Events: in.Events.Source},
+		Totals:    totals(in.Trace),
+		Tools:     toolStats(in.Trace, in.AgentSpans),
+		Search:    searchStats(in.Calls),
+		Reads:     readStats(in.Calls),
+		Hints:     hintStats(in.Events.Hints),
 		Agents: AgentStats{
 			Count: len(in.Trace.Agents), Runs: agentRuns(in.Trace.Agents),
 			Ledger: in.Events.Ledger,

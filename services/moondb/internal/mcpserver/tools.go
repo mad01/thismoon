@@ -137,10 +137,10 @@ func registerSessionTools(s *mcp.Server, h *handlers) {
 				"`reads`: Read calls, the ones of a whole file, and the large ones among those (%d lines or more), with the largest. ",
 				moondb.LargeReadLines,
 			) +
-			"`hints`: the belt hints shown, by id, and whether any agent read or edited the files the shown kof assertions are pinned to later (`kof.hit_rate`). " +
+			"`hints`: the belt hints shown, by id. " +
 			"`agents`: each subagent's run, costliest first, and the belt ledger's subagent, permission-denied, compaction and stop-failure counts. " +
 			"`flags` name the costliest patterns found. " +
-			"The hints and the ledger come from the events service, which keeps only its newest entries, and the pins from keeper-of-facts: " +
+			"The hints and the ledger come from the events service, which keeps only its newest entries: " +
 			"`sources` says which inputs answered, and a part whose input did not is null. " +
 			"`id` is REQUIRED: a session id from moondb_sessions.",
 		Annotations: readOnly(),

@@ -17,10 +17,9 @@ const maxMemoryFacts = 30
 
 // AgentMemory injects the shared agent memory index when a session starts.
 // The instruction files say "read ~/.config/agent-memory/MEMORY.md at session
-// start", and instruction-only prose does not trigger reliably — the same
-// failure mode the kof consult had before the session-start hint. Unlike the
-// kof hints this one has no per-session dedupe: the index is the thing to see
-// every session, not advice to show once.
+// start", and instruction-only prose does not trigger reliably. This hint has
+// no per-session dedupe: the index is the thing to see every session, not
+// advice to show once.
 //
 // Two stores exist: the personal one at ~/.config/agent-memory (cloned on
 // every machine) and a work one at ~/.config/agent-memory-work, which only

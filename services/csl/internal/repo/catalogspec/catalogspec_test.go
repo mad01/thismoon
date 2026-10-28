@@ -24,7 +24,7 @@ func TestParse(t *testing.T) {
 			wantOK: true,
 		},
 		{
-			name: "catalog service component",
+			name: "catalog.mad01 component",
 			in: "apiVersion: catalog.mad01/v1alpha1\nkind: Component\n" +
 				"metadata:\n  name: csl\nspec:\n  owner: mad01\n  system: thismoon\n",
 			want:   Component{Name: "csl", Owner: "mad01", System: "thismoon"},

@@ -2,9 +2,9 @@
 
 Private Go module + TS package that supplies the **shared theme/header/controls
 and content components** for the mad01 local web tools (`present`, `csl`,
-`catalog`). Single source of truth for how they look. Authored in
-TypeScript/CSS, compiled to committed `dist/`, embedded in consumers via
-`go:embed` and served at `GET /webkit/`.
+`deps`, `events`, `moondb`, `speak`, `status`). Single source of truth for how
+they look. Authored in TypeScript/CSS, compiled to committed `dist/`, embedded
+in consumers via `go:embed` and served at `GET /webkit/`.
 
 ## Layout
 
@@ -39,7 +39,7 @@ Light-DOM children it relocates:
   controls plus a read-aloud/speed section when `speed` is present.
 
 On theme toggle dispatches `new CustomEvent('wk-themechange', {detail:{theme, palette, mode}})`
-on `document` — consumers listen there (catalog/present recolor their Cytoscape graphs).
+on `document`. Consumers listen there (present recolors its Cytoscape graphs).
 The same event fires when another tab of the origin changes the theme (the
 themes page beside a brief) and when the system appearance flips in system mode.
 
@@ -271,7 +271,7 @@ reference implementation.
   the literal values the old stylesheet and present's colour code carried;
   change the default on purpose or not at all.
 - **`data-extra` buttons are not wired by webkit.** The consuming app keeps its
-  own click handler (e.g. catalog's `refreshBtn`/`addBtn`).
+  own click handler (e.g. present's `shareBtn`).
 - **Light DOM only.** No Shadow DOM — everything is styled by tag + attribute
   selectors in `webkit.css`, so CSS vars and fixation text-walk work normally.
 

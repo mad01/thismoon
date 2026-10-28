@@ -1,26 +1,25 @@
 // Package scorecard says how a session spent its context: what its tokens,
 // cost and time went to, how its tool calls went, whether its csl searches
-// came back empty or cut, how much its reads pulled in, whether the belt
-// hints it was shown were followed, and how its subagents ran. An eval suite
-// scores sessions against it, so the JSON shape carries a Version and
-// changes by adding fields.
+// came back empty or cut, how much its reads pulled in, which belt hints it
+// was shown, and how its subagents ran. An eval suite scores sessions
+// against it, so the JSON shape carries a Version. Adding a field keeps the
+// Version; a field that goes away or changes meaning raises it.
 //
 // Build is a pure function of a session trace, the tool calls parsed from
 // the session's transcript lines (ParseCalls), and what the events service
-// and keeper-of-facts said (ReadEvents, ReadPins, both over Peers). Each
-// outside input reports in Sources whether it was reachable. One that was
-// not leaves its part null and never fails the scorecard.
+// said (ReadEvents, over Peers). Each outside input reports in Sources
+// whether it was reachable. One that was not leaves its part null and never
+// fails the scorecard.
 package scorecard
 
 import (
-	"time"
-
 	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 // Version is the scorecard's JSON shape. Raise it when a field changes
-// meaning or goes away; a new field keeps it.
-const Version = 1
+// meaning or goes away; a new field keeps it. Version 2 dropped sources.kof
+// and hints.kof.
+const Version = 2
 
 // Scorecard is one session's account of its context use.
 type Scorecard struct {
@@ -67,8 +66,6 @@ type Sources struct {
 	Transcripts Source `json:"transcripts"`
 	// Events is the events service: belt hints and belt ledger entries.
 	Events Source `json:"events"`
-	// Kof is keeper-of-facts, for the files an assertion is pinned to.
-	Kof Source `json:"kof"`
 }
 
 // Totals is the session's time, tokens, cost and calls. The time split is
@@ -174,50 +171,12 @@ type HintStats struct {
 	Shown int `json:"shown"`
 	// ByHint has one row per hint id, most shown first.
 	ByHint []HintCount `json:"by_hint"`
-	Kof    KofStats    `json:"kof"`
 }
 
 // HintCount is how often one hint fired.
 type HintCount struct {
 	Hint  string `json:"hint"`
 	Count int    `json:"count"`
-}
-
-// KofStats says whether the stored assertions a hint showed were followed:
-// a file an assertion is pinned to counts as used when a later Read or
-// edit by any agent of the session touched it, since a hint serves the
-// whole session.
-type KofStats struct {
-	Assertions []ShownAssertion `json:"assertions"`
-	// PinnedPaths counts the pinned files of the assertions whose pins are
-	// known, UsedPaths the ones touched later. HitRate is their ratio,
-	// null when no pin is known.
-	PinnedPaths int      `json:"pinned_paths"`
-	UsedPaths   int      `json:"used_paths"`
-	HitRate     *float64 `json:"hit_rate"`
-	// UnknownPins counts the assertions whose pins neither the hint nor
-	// keeper-of-facts gave.
-	UnknownPins int `json:"unknown_pins"`
-}
-
-// ShownAssertion is one assertion a hint showed, at its first showing.
-type ShownAssertion struct {
-	ID   string    `json:"id"`
-	Hint string    `json:"hint"`
-	At   time.Time `json:"at"`
-	// AgentID is the subagent it was first shown to, "" for the main
-	// conversation.
-	AgentID string `json:"agent_id,omitempty"`
-	// Pins are its pinned files, null when unknown. Used is whether any
-	// was touched later, null when the pins are unknown.
-	Pins []PinUse `json:"pins"`
-	Used *bool    `json:"used"`
-}
-
-// PinUse is one pinned file and whether a later call touched it.
-type PinUse struct {
-	Path string `json:"path"`
-	Used bool   `json:"used"`
 }
 
 // AgentStats is the session's subagents: their runs from the trace, and

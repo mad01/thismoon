@@ -95,9 +95,9 @@ descriptor from its root. `.csl-catalog.yaml` comes first: a csl-only pointer
 file whose single `descriptor:` key names a repo-relative path, for a monorepo
 or non-standard layout where the descriptor isn't at the root. Otherwise it
 reads `catalog-info.yaml` (Backstage's name), else `service-info.yaml` (the
-catalog service's name). The first Component entity wins; `backstage.io/*` and
+name thismoon's own descriptors use). The first Component entity wins; `backstage.io/*` and
 `catalog.mad01/*` apiVersion groups are accepted at any version, and a
-missing apiVersion is treated as the catalog service's default. csl keeps
+missing apiVersion is accepted. csl keeps
 only `metadata.name` (component), `spec.owner` (owner), and `spec.system`
 (system), on `finder.Repo.Catalog`. A malformed descriptor is dropped
 silently so one repo's YAML never fails the walk; `csl doctor`
