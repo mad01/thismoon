@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.14.0](https://github.com/mad01/thismoon/compare/deps/v0.13.0...deps/v0.14.0) (2026-10-28)
+
+
+### Features
+
+* **deps:** check GitHub Actions refs against OSV by commit ([#321](https://github.com/mad01/thismoon/issues/321)) ([bdfa5f0](https://github.com/mad01/thismoon/commit/bdfa5f05cb6e937ac139d128189ea87a11a79926))
+* **deps:** flag versions the registry withdrew or blocks ([#322](https://github.com/mad01/thismoon/issues/322)) ([6b3302a](https://github.com/mad01/thismoon/commit/6b3302aa7b9e8299522021eced09d3c13dc831cd))
+* **deps:** map vendored JS files to npm and check them ([#318](https://github.com/mad01/thismoon/issues/318)) ([7bbb01b](https://github.com/mad01/thismoon/commit/7bbb01b28060b1765e84b147483fb5ba621620e5))
+* **deps:** rank malicious findings first with their own alert ([#315](https://github.com/mad01/thismoon/issues/315)) ([eaedc9b](https://github.com/mad01/thismoon/commit/eaedc9bff10fe47270993f76deff4536f87145ba))
+* **deps:** scan the installed mise npm and pipx trees ([#317](https://github.com/mad01/thismoon/issues/317)) ([c834cd3](https://github.com/mad01/thismoon/commit/c834cd37ef6d6df740bdb8b7076668e5c971994f))
+
 ## [0.13.0](https://github.com/mad01/thismoon/compare/deps/v0.12.1...deps/v0.13.0) (2026-10-25)
 
 
