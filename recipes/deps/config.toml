@@ -14,3 +14,10 @@ exclude_repos = []
 # Skip sub-directories while walking a repo (matched against the repo-relative
 # path or a directory's basename), e.g. generated trees or vendored examples.
 exclude_paths = []
+
+# Beside the repos, deps scans the npm and PyPI trees of the tools mise
+# installs with its npm: and pipx: backends. These are the default paths; set
+# one only when mise keeps that file somewhere else.
+# [mise]
+# lock = "~/.config/mise/mise.lock"
+# installs = "~/.local/share/mise/installs"

@@ -15,7 +15,8 @@ import (
 // configReference documents every discovery key, shipped in the binary so a
 // repo that is scanned (or skipped) unexpectedly can be debugged from the
 // terminal.
-const configReference = `# deps discovery config: both keys optional, both lists of glob patterns.
+const configReference = `# deps discovery config: every key optional. The two exclude keys are lists
+# of glob patterns.
 # A pattern is matched a path segment at a time against every trailing run of
 # segments: "thismoon", then "mad01/thismoon", then
 # "github.com/mad01/thismoon", up to the absolute path. So "archive-old" names
@@ -39,13 +40,25 @@ exclude_paths = ["third_party", "internal/gen/*"]
 
 # Git worktrees, nested checkouts, and .git/vendor/node_modules/testdata are
 # skipped by the walker regardless of what this file says.
+
+# Beside the repos, deps scans the npm and PyPI packages of the tools mise
+# installs with its npm: and pipx: backends. lock is the mise.lock that pins
+# each tool's version; installs is the directory mise installs tools into.
+# Both default to mise's own locations, shown here. A missing lock means no
+# mise tools to scan; a lock that can't be read or parsed is a discovery
+# error. Each tool reports under the label "mise:<tool>", for example
+# "mise:npm:yarn", which 'deps check --repo' takes to rescan just that tool.
+[mise]
+lock = "` + config.DefaultMiseLock + `"
+installs = "` + config.DefaultMiseInstalls + `"
 `
 
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Show the current effective config",
 	Long: `Print which discovery config deps loaded and the effective configuration it
-produced: the file's own values, or empty lists when there is no file.
+produced: the file's own values, or empty lists and the default mise paths
+when there is no file.
 
 The config is resolved in this order, first match winning:
 
@@ -54,7 +67,8 @@ The config is resolved in this order, first match winning:
   $XDG_CONFIG_HOME/deps/config.toml   (when that variable holds an absolute path)
   ~/.config/deps/config.toml          (where the recipe symlinks it)
 
-A missing file isn't an error: discovery then runs with no extra exclusions.
+A missing file isn't an error: discovery then runs with no extra exclusions
+and mise at its default paths.
 A file that is present but malformed (bad TOML, or a pattern that doesn't
 compile) fails the scan naming the key and the pattern, rather than skipping
 the exclusion in silence. A leading ~ is expanded before the file is opened.
@@ -100,14 +114,14 @@ func withEmptyLists(c config.Config) config.Config {
 
 // effectiveConfig loads the discovery config at path and reports how it
 // resolved. A missing or unparseable file is not an error here: the caller
-// still gets the empty config deps scans with, and the status says why.
+// still gets the default config, and the status says why.
 func effectiveConfig(path string) (config.Config, string) {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		return config.Config{}, "missing, defaults in use"
+		return config.Default(), "missing, defaults in use"
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
-		return config.Config{}, "parse error: " + err.Error()
+		return config.Default(), "parse error: " + err.Error()
 	}
 	return cfg, "loaded"
 }

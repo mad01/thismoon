@@ -268,8 +268,8 @@ func (malChecker) Check(_ context.Context, queries []osv.Query) ([][]store.Advis
 // malChecker flags as malicious, delivering banners through n.
 func chalkEngine(st *store.Store, n alert.Notifier) *scanner.Engine {
 	return &scanner.Engine{
-		Prepare: func() ([]string, discover.Options, error) {
-			return []string{"/home/u/code/widget"}, discover.Options{}, nil
+		Prepare: func() (scanner.Plan, error) {
+			return scanner.Plan{Repos: []string{"/home/u/code/widget"}}, nil
 		},
 		Ecosystems: []discover.Ecosystem{stubEco{pkgs: []discover.Package{
 			{Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Imported: true},

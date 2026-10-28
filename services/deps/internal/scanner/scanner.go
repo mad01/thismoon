@@ -1,7 +1,8 @@
 // Package scanner orchestrates one scan: discover dependencies across the
-// registered repos, check each against OSV, persist the result, and (for serve)
-// notify on advisories not seen before. It is the functional core wiring
-// discover + osv + store + alert together; the CLI and serve loop call in here.
+// registered repos and the installed mise tools, check each against OSV,
+// persist the result, and (for serve) notify on advisories not seen before. It
+// is the functional core wiring discover + osv + store + alert together; the
+// CLI and serve loop call in here.
 package scanner
 
 import (
@@ -26,21 +27,35 @@ type Checker interface {
 	Check(ctx context.Context, queries []osv.Query) ([][]store.Advisory, error)
 }
 
-// Discover enumerates dependencies across repos without checking advisories.
-// Returned dependencies carry only the findings a discoverer raised itself
-// (usually none). Each repo and ecosystem that failed comes back as a
-// DiscoveryError alongside whatever was found, so a single bad repo doesn't
-// lose the rest. Every failure is also logged.
+// Plan is what one scan covers. Engine.Prepare resolves it from the discovery
+// config on every scan, so a config edit takes effect without a restart.
+type Plan struct {
+	Repos   []string         // repo roots to walk
+	Options discover.Options // path-level exclusions for the walk
+	Mise    discover.Mise    // installed mise tool trees; the zero value scans none
+}
+
+// Discover enumerates the dependencies of every repo and installed mise tool
+// in plan, without checking advisories. Returned dependencies carry only the
+// findings a discoverer raised itself (usually none). Each repo or tool and
+// ecosystem that failed comes back as a DiscoveryError alongside whatever was
+// found, so a single bad repo doesn't lose the rest. Every failure is also
+// logged.
 func Discover(
-	repos []string,
+	plan Plan,
 	ecosystems []discover.Ecosystem,
-	opts discover.Options,
 ) ([]store.Dependency, []store.DiscoveryError) {
-	deps, errs := discover.Repos(repos, ecosystems, opts)
+	deps, errs := discover.Repos(plan.Repos, ecosystems, plan.Options)
+	toolDeps, toolErrs := plan.Mise.Discover()
+	return append(deps, toolDeps...), logged(append(errs, toolErrs...))
+}
+
+// logged writes each discovery error to the log and returns them unchanged.
+func logged(errs []store.DiscoveryError) []store.DiscoveryError {
 	for _, e := range errs {
 		log.Printf("deps: discovery: %s in %s: %s", e.Ecosystem, e.Repo, e.Error)
 	}
-	return deps, errs
+	return errs
 }
 
 // Check adds the checker's findings to each dependency in place and returns the
@@ -95,10 +110,11 @@ func addFindings(have, found []store.Advisory) []store.Advisory {
 // and the HTTP handlers share one Engine, so a scheduled scan and an on-demand
 // one take exactly the same path.
 type Engine struct {
-	// Prepare resolves, per scan, the repos to walk and the path-level
-	// exclusions to apply — both derived from the discovery config, loaded once
-	// here so editing the config takes effect next cycle without a restart.
-	Prepare    func() ([]string, discover.Options, error)
+	// Prepare resolves, per scan, the repos to walk, the path-level exclusions
+	// to apply and the mise paths to read — all derived from the discovery
+	// config, loaded once here so editing the config takes effect next cycle
+	// without a restart.
+	Prepare    func() (Plan, error)
 	Ecosystems []discover.Ecosystem
 	Checker    Checker
 	Notifier   alert.Notifier
@@ -114,11 +130,11 @@ type Engine struct {
 // discovery errors. Discovery problems are saved, not fatal, so a transient bad
 // repo still yields a scan.
 func (e *Engine) Scan() ([]store.Dependency, error) {
-	repos, opts, err := e.Prepare()
+	plan, err := e.Prepare()
 	if err != nil {
 		return nil, err
 	}
-	deps, discErrs := Discover(repos, e.Ecosystems, opts)
+	deps, discErrs := Discover(plan, e.Ecosystems)
 	if err := e.Store.Save(deps, discErrs); err != nil {
 		return nil, err
 	}
@@ -129,11 +145,11 @@ func (e *Engine) Scan() ([]store.Dependency, error) {
 // annotated set with the discovery errors, and emits the scan-complete event.
 func (e *Engine) Check(ctx context.Context) ([]store.Dependency, error) {
 	start := time.Now()
-	repos, opts, err := e.Prepare()
+	plan, err := e.Prepare()
 	if err != nil {
 		return nil, err
 	}
-	deps, discErrs := Discover(repos, e.Ecosystems, opts)
+	deps, discErrs := Discover(plan, e.Ecosystems)
 	deps, err = Check(ctx, deps, e.Checker)
 	if err != nil {
 		return nil, err
@@ -141,7 +157,7 @@ func (e *Engine) Check(ctx context.Context) ([]store.Dependency, error) {
 	if err := e.Store.Save(deps, discErrs); err != nil {
 		return nil, err
 	}
-	ev := scanCompleteEvent(len(repos), deps, discErrs, time.Since(start))
+	ev := scanCompleteEvent(len(plan.Repos), deps, discErrs, time.Since(start))
 	notify.EmitEvent(ev.Source, ev.Level, ev.Title, ev.Message, ev.Tags)
 	return deps, nil
 }
@@ -192,27 +208,58 @@ func scanCompleteEvent(
 	}
 }
 
-// CheckRepo rescans a single repo (matched by absolute path or basename),
-// checks it against OSV, and merges the result into the store without touching
-// the other repos or the last full-scan time. It is the per-repo "Rescan" path.
+// CheckRepo rescans a single repo (matched by absolute path or basename) or
+// installed mise tool (matched by its whole label, "mise:npm:yarn"), checks it
+// against OSV, and merges the result into the store without touching the
+// other repos and tools or the last full-scan time. It is the per-repo
+// "Rescan" path.
 func (e *Engine) CheckRepo(ctx context.Context, repoID string) ([]store.Dependency, error) {
-	repos, opts, err := e.Prepare()
+	plan, err := e.Prepare()
 	if err != nil {
 		return nil, err
 	}
-	repo, ok := matchRepo(repos, repoID)
-	if !ok {
-		return nil, fmt.Errorf("repo %q is not among the scanned repos", repoID)
+	unit, deps, discErrs, err := discoverUnit(plan, e.Ecosystems, repoID)
+	if err != nil {
+		return nil, err
 	}
-	deps, discErrs := Discover([]string{repo}, e.Ecosystems, opts)
 	deps, err = Check(ctx, deps, e.Checker)
 	if err != nil {
 		return nil, err
 	}
-	if err := e.Store.SaveRepo(repo, deps, discErrs); err != nil {
+	if err := e.Store.SaveRepo(unit, deps, discErrs); err != nil {
 		return nil, err
 	}
 	return deps, nil
+}
+
+// discoverUnit rediscovers the one repo or mise tool id names, and returns the
+// key the store files it under: the repo root, or the tool's label. A label
+// that names no installed tool is an error like an unknown repo, and so is a
+// mise.lock that can't be read, so a rescan never saves an empty result over
+// the tool's last one.
+func discoverUnit(
+	plan Plan,
+	ecosystems []discover.Ecosystem,
+	id string,
+) (string, []store.Dependency, []store.DiscoveryError, error) {
+	if !discover.IsMiseLabel(id) {
+		repo, ok := matchRepo(plan.Repos, id)
+		if !ok {
+			return "", nil, nil, fmt.Errorf("repo %q is not among the scanned repos", id)
+		}
+		deps, errs := Discover(Plan{Repos: []string{repo}, Options: plan.Options}, ecosystems)
+		return repo, deps, errs, nil
+	}
+	tools, err := plan.Mise.Locked()
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("read mise tools: %w", err)
+	}
+	tools = slices.DeleteFunc(tools, func(t discover.MiseTool) bool { return t.Label != id })
+	if len(tools) == 0 {
+		return "", nil, nil, fmt.Errorf("%q is not among the installed mise tools", id)
+	}
+	deps, errs := discover.Tools(tools)
+	return id, deps, logged(errs), nil
 }
 
 // matchRepo resolves a user-supplied repo id (an absolute path or a basename)

@@ -28,7 +28,10 @@ The repos it scans come from the catalog registry
 it's catalogued. In each repo it finds Go modules (the resolved graph from
 `go list -m -json all`) and npm lockfiles (`package-lock.json`), then asks OSV
 whether any of those exact versions has a known advisory. Git worktrees and
-nested checkouts are skipped, so a repo isn't scanned twice.
+nested checkouts are skipped, so a repo isn't scanned twice. Beside the repos
+it reads the tools mise installs with its npm: and pipx: backends: the version
+`mise.lock` pins, and every npm or PyPI package in that version's install
+tree. Each tool shows up as its own repo label, such as `mise:npm:yarn`.
 
 A flagged finding carries the advisory id, severity, and the version that fixes
 it. You can **resolve** (acknowledge) one to drop it from the active list. It
@@ -104,7 +107,7 @@ Ask in plain language: "scan for vulnerable dependencies", "what's flagged",
 - `deps_scan`: discover all dependencies, no advisory check
 - `deps_check`: discover and check against OSV; returns the flagged packages
 - `deps_list_flagged`: re-read the last findings without re-scanning
-- `deps_scan_repo`: rescan one repo (by path or basename) and merge the result
+- `deps_scan_repo`: rescan one repo (by path or basename) or mise tool (by label) and merge the result
 - `deps_resolve`: acknowledge advisories by their key
 - `deps_doctor`: run the same checks as `deps doctor` and return the report
 
@@ -123,10 +126,14 @@ that doesn't compile fails the scan naming it.
 ```toml
 exclude_repos = ["archive-*", "mad01/*"]   # skip whole repos
 exclude_paths = ["third_party"]            # skip sub-directories while walking a repo
+
+[mise]                                     # where mise keeps its lock and installs
+lock = "~/.config/mise/mise.lock"          # the defaults; set only what moved
+installs = "~/.local/share/mise/installs"
 ```
 
 `deps config` prints which file was picked up (`--config`, `$DEPS_CONFIG`, or the
-default path) and the values in effect; `deps config --help` documents both keys.
+default path) and the values in effect; `deps config --help` documents every key.
 
 ## Where things live
 

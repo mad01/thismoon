@@ -101,8 +101,11 @@
   // staleAfter matches render.go (the serve loop's default daily interval).
   var STALE_AFTER = DAY;
 
+  // basename shortens a repo path to its last segment. A mise tool label
+  // ("mise:npm:@googleworkspace/cli") is no path and shows whole.
   function basename(p) {
     var s = String(p || '');
+    if (s.indexOf('mise:') === 0) return s;
     var i = s.lastIndexOf('/');
     return i >= 0 ? s.slice(i + 1) : s;
   }

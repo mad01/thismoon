@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/confdir"
 	"github.com/mad01/thismoon/services/deps/internal/alert"
 	"github.com/mad01/thismoon/services/deps/internal/config"
 	"github.com/mad01/thismoon/services/deps/internal/discover"
@@ -49,20 +50,20 @@ func init() {
 
 // buildEngine wires the store, registry-backed repo resolver, ecosystems, OSV
 // checker, and notifier into one Engine shared by serve's loop and handlers. The
-// discovery config (exclude_repos / exclude_paths) is read once per scan inside
-// the repo resolver, so editing it takes effect on the next cycle without a
-// restart.
+// discovery config (exclude_repos / exclude_paths / [mise]) is read once per
+// scan inside the plan resolver, so editing it takes effect on the next cycle
+// without a restart.
 func buildEngine(st *store.Store, checker scanner.Checker, n alert.Notifier) *scanner.Engine {
 	registryPath, configPath := flagRegistry, flagConfig
 	return &scanner.Engine{
-		Prepare: func() ([]string, discover.Options, error) {
+		Prepare: func() (scanner.Plan, error) {
 			cfg, err := config.Load(configPath)
 			if err != nil {
-				return nil, discover.Options{}, err
+				return scanner.Plan{}, err
 			}
 			repos, err := registry.Repos(registryPath)
 			if err != nil {
-				return nil, discover.Options{}, err
+				return scanner.Plan{}, err
 			}
 			kept := repos[:0]
 			for _, r := range repos {
@@ -70,13 +71,34 @@ func buildEngine(st *store.Store, checker scanner.Checker, n alert.Notifier) *sc
 					kept = append(kept, r)
 				}
 			}
-			return kept, discover.Options{ExcludePath: cfg.PathExcluded}, nil
+			mise, err := miseFrom(cfg.Mise)
+			if err != nil {
+				return scanner.Plan{}, err
+			}
+			return scanner.Plan{
+				Repos:   kept,
+				Options: discover.Options{ExcludePath: cfg.PathExcluded},
+				Mise:    mise,
+			}, nil
 		},
 		Ecosystems: discover.Default(),
 		Checker:    checker,
 		Notifier:   n,
 		Store:      st,
 	}
+}
+
+// miseFrom resolves the configured mise paths, expanding a leading ~.
+func miseFrom(c config.Mise) (discover.Mise, error) {
+	lock, err := confdir.Expand(c.Lock)
+	if err != nil {
+		return discover.Mise{}, err
+	}
+	installs, err := confdir.Expand(c.Installs)
+	if err != nil {
+		return discover.Mise{}, err
+	}
+	return discover.Mise{LockPath: lock, InstallRoot: installs}, nil
 }
 
 func runServe(_ *cobra.Command, _ []string) error {

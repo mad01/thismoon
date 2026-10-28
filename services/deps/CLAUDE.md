@@ -2,8 +2,9 @@
 
 Go CLI, HTTP server with an embedded webkit web UI, and an MCP server, over one
 JSON store. `deps` discovers every external dependency across the catalog-
-registered repos (Go modules, npm) and checks each version against the OSV.dev
-advisory database. It surfaces findings at `http://deps.this/` and fires a macOS
+registered repos (Go modules, npm, PyPI, Swift) and the npm and PyPI trees of
+the tools mise installs, and checks each version against the OSV.dev advisory
+database. It surfaces findings at `http://deps.this/` and fires a macOS
 notification when a package is flagged. **The MCP tools (driven by Claude) and
 the web page are the primary surfaces**; the `deps` CLI mirrors them.
 
@@ -14,9 +15,9 @@ deps/
   cmd/deps/            - entrypoint (delegates to internal/cli)
   internal/
     cli/               - cobra: root, serve, scan, check (+--repo), resolve, notify, mcp, config, version
-    config/            - discovery config (exclude_repos / exclude_paths), ~/.config/deps/config.toml
+    config/            - discovery config (exclude_repos / exclude_paths / [mise] lock, installs), ~/.config/deps/config.toml
     registry/          - reads the catalog registry.yaml → repo roots to scan
-    discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (requirements.txt exact pins) + Swift (Package.resolved); shared walker skips worktrees/nested checkouts
+    discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (requirements.txt exact pins) + Swift (Package.resolved); shared walker skips worktrees/nested checkouts; Mise reads the installed mise npm/pipx trees
     osv/               - OSV.dev client (POST /v1/querybatch + GET /v1/vulns/{id})
     store/             - Dependency/Advisory/Flag model + atomic JSON store; notified + resolved sets
     scanner/           - Engine: discover → check → persist; CheckRepo (per-repo merge); coalesced Notify
@@ -61,6 +62,35 @@ no file locks.
   normalized. The walk also covers `Package.resolved` (v2/v3, remote pins with
   an exact version), and branch pins are skipped. The shared walker skips `.git/vendor/node_modules/testdata`, **git worktrees and nested
   checkouts** (a `.git` entry in a subdir), and any `exclude_paths` glob.
+- **Installed mise tools.** Beside the repos, `discover.Mise` reads the tools
+  mise installs with its npm: and pipx: backends, code that runs on the host
+  outside any sandbox. `mise.lock` (default `~/.config/mise/mise.lock`) pins
+  each tool's version, and only that version's directory is read:
+  `<installs>/<tool in kebab case>/<version>`, default installs
+  `~/.local/share/mise/installs`. The kebab rule is mise's own (Rust's heck
+  crate), so `npm:@googleworkspace/cli` lives in `npm-googleworkspace-cli`. The
+  `latest`, major and minor alias links are never followed. npm trees come
+  from the install's `aube-lock.yaml` (pnpm lockfile v9, `name@version`
+  keys); pipx trees from the virtualenv's `*.dist-info` folder names, PEP 503
+  normalized. Discovery never runs mise, whose shims don't work inside the
+  sandbox. Both paths are `[mise]` keys in the deps config.
+- **mise labels.** Each tool reports under the repo label `mise:<tool>`
+  (`mise:npm:yarn`, `mise:pipx:httpie`). The label carries no version, so it
+  stays the rescan key and the page's `?repo=` filter across upgrades; the
+  tool's own package (marked direct) shows the version. `deps check --repo`
+  and `deps_scan_repo` take the whole label, matched exactly; `SaveRepo`
+  replaces that tool alone. An unknown label, or a lock that can't be read,
+  fails the rescan and leaves the store untouched. The page shows a label
+  whole: `basename` in `app.js` leaves `mise:` labels uncut, since
+  `mise:npm:@scope/name` would otherwise shorten to `name`.
+- **What a mise scan treats as absent vs failed.** No lock or no installs
+  directory means no mise, so no tools. A tool the lock pins but this machine
+  never installed (no tool directory) is skipped, since one lock covers every
+  machine class. A lock that exists but can't be read or parsed is one
+  DiscoveryError (ecosystem `mise`, repo = the lock path). A tool whose locked
+  version directory, `aube-lock.yaml` or `site-packages` is missing or
+  unreadable is a DiscoveryError under its label. A missing version directory
+  means the install lags the lock, which `mise install` fixes.
 - Transitive deps are scanned and flagged (real supply-chain risk); the web/CLI
   mark direct vs transitive.
 - **Discovery errors are saved, never only logged.** A discoverer that fails
@@ -112,7 +142,10 @@ no file locks.
 - **serve runs under srt** (anthropics/sandbox-runtime), with the access
   declared as `spec.access` in `service-info.yaml`: the repos under
   `~/code/src` minus secret-shaped files, the Go toolchain and module cache,
-  egress to `api.osv.dev` and `proxy.golang.org`. `go list` gets a private
+  `~/.config/mise/mise.lock` and the `npm-**` / `pipx-**` install trees,
+  egress to `api.osv.dev` and `proxy.golang.org`. The trees are spelled
+  `npm-**`, not `npm-*/**`: srt drops a trailing `/**` from an allow, which
+  leaves only the directory readable. `go list` gets a private
   build cache in the workdir (`GOCACHE`, set by the recipe) and
   `GOFLAGS=-buildvcs=false`, so it never writes the shared build cache or runs
   git.
@@ -142,7 +175,7 @@ no file locks.
 ## Data model & storage
 
 ```go
-Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL), Name, Version, Repo, ManifestPath, Direct, Imported, Advisories[] }
+Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL), Name, Version, Repo (root or mise label), ManifestPath, Direct, Imported, Advisories[] }
 Advisory{ ID, Kind (vuln|malicious|signal), Summary, Severity, FixedVersion }  // one finding on that exact version
 DiscoveryError{ Repo, Ecosystem, Error }  // a repo+ecosystem the scan could not read
 ```
@@ -250,7 +283,7 @@ per HTTP endpoint above:
 
 ```bash
 deps scan                    # POST /api/scan - discover only, print per-ecosystem counts
-deps check [--repo <repo>]   # POST /api/check[?repo=] - discover + OSV, print flagged
+deps check [--repo <repo>]   # POST /api/check[?repo=] - discover + OSV, print flagged; <repo> may be a mise label
 deps resolve <key>...        # POST /api/resolve - acknowledge advisories by key
 deps notify                  # POST /api/notify - fire pending notifications now
 deps version [-o json]       # bare git sha; -o json prints the full build metadata object
@@ -266,7 +299,8 @@ The annotated key reference lives in `deps config --help`.
 - `deps_scan`: discover all deps (no advisory check); per-ecosystem counts
 - `deps_check`: discover + OSV; return flagged, malicious first (each advisory has `key`, `kind`, `resolved`)
 - `deps_list_flagged`: flagged from the last check, no re-scan
-- `deps_scan_repo(repo)`: rescan one repo (path or basename) and merge
+- `deps_scan_repo(repo)`: rescan one repo (path or basename) or mise tool
+  (whole label) and merge
 - `deps_resolve(keys)`: acknowledge advisories by key; the description tells
   the agent to get the user's confirmation before resolving a malicious one
 - `deps_doctor`: run the same checks as `deps doctor` (service-reachable,

@@ -1,14 +1,16 @@
 // Package config loads the optional deps discovery config — which repos to skip
-// entirely and which sub-paths to skip while walking. It mirrors how csl is
-// configured: a small TOML file, symlinked into place by the recipe, that the
-// tool reads at scan time. A missing file is not an error; discovery just runs
-// with no extra exclusions (git worktrees and nested checkouts are skipped
-// regardless, in the walker). A file that is present but holds a pattern that
-// does not compile IS an error: an exclusion that silently disables itself
-// scans a repo the operator asked to skip.
+// entirely, which sub-paths to skip while walking, and where mise keeps the
+// tool trees scanned beside the repos. It mirrors how csl is configured: a
+// small TOML file, symlinked into place by the recipe, that the tool reads at
+// scan time. A missing file is not an error; discovery just runs with no extra
+// exclusions and mise at its default paths (git worktrees and nested checkouts
+// are skipped regardless, in the walker). A file that is present but holds a
+// pattern that does not compile IS an error: an exclusion that silently
+// disables itself scans a repo the operator asked to skip.
 package config
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -29,21 +31,42 @@ const FileName = "config.toml"
 // confdir.Path("deps", FileName), which honors XDG_CONFIG_HOME.
 const DefaultPath = "~/.config/deps/" + FileName
 
+// Default locations of the mise files discovery reads: the global lock beside
+// mise's config, and the installs directory under mise's data directory.
+const (
+	DefaultMiseLock     = "~/.config/mise/mise.lock"
+	DefaultMiseInstalls = "~/.local/share/mise/installs"
+)
+
 // Config is the parsed, validated discovery config. Both lists are glob
 // patterns (the gobwas/glob syntax prs's excludes use) matched a path segment
 // at a time: `*` never crosses a "/", `**` does, and `{a,b}` alternates.
 //
-// Load is the constructor — it compiles the patterns. A Config built as a
-// literal carries no compiled patterns and therefore excludes nothing.
+// Load is the constructor — it compiles the patterns and fills the mise
+// defaults. A Config built as a literal carries no compiled patterns and no
+// mise paths, so it excludes nothing and scans no mise tools.
 type Config struct {
 	// ExcludeRepos skips a whole repo. See RepoExcluded for what each pattern
 	// is matched against.
 	ExcludeRepos []string `toml:"exclude_repos"`
 	// ExcludePaths skips a directory while walking a repo. See PathExcluded.
 	ExcludePaths []string `toml:"exclude_paths"`
+	// Mise locates the installed mise tools scanned beside the repos.
+	Mise Mise `toml:"mise"`
 
 	repoGlobs []glob.Glob
 	pathGlobs []glob.Glob
+}
+
+// Mise holds the paths of the mise files discovery reads, each with a leading
+// ~ allowed. An unset path takes its default, so a config names only the path
+// that moved. A machine without mise needs no setting: a missing lock or
+// installs directory just means no tools to scan.
+type Mise struct {
+	// Lock is the mise.lock that pins each tool's version.
+	Lock string `toml:"lock"`
+	// Installs is the directory mise installs tools into, one per tool.
+	Installs string `toml:"installs"`
 }
 
 // fileConfig mirrors the TOML on disk, kept apart from Config so the compiled
@@ -51,10 +74,24 @@ type Config struct {
 type fileConfig struct {
 	ExcludeRepos []string `toml:"exclude_repos"`
 	ExcludePaths []string `toml:"exclude_paths"`
+	Mise         Mise     `toml:"mise"`
 }
 
-// Load reads the config at path (tilde-expanded). A missing file yields an
-// empty Config and no error. A file that is present but malformed — bad TOML,
+// Default is the config deps scans with when no file exists: no exclusions,
+// and mise at its default paths.
+func Default() Config {
+	return Config{}.withMiseDefaults()
+}
+
+// withMiseDefaults fills each unset mise path with its default.
+func (c Config) withMiseDefaults() Config {
+	c.Mise.Lock = cmp.Or(c.Mise.Lock, DefaultMiseLock)
+	c.Mise.Installs = cmp.Or(c.Mise.Installs, DefaultMiseInstalls)
+	return c
+}
+
+// Load reads the config at path (tilde-expanded). A missing file yields the
+// Default config and no error. A file that is present but malformed — bad TOML,
 // or a pattern that does not compile — is an error naming what failed.
 func Load(path string) (Config, error) {
 	expanded, err := confdir.Expand(path)
@@ -63,7 +100,7 @@ func Load(path string) (Config, error) {
 	}
 	raw, err := os.ReadFile(expanded)
 	if errors.Is(err, os.ErrNotExist) {
-		return Config{}, nil
+		return Default(), nil
 	}
 	if err != nil {
 		return Config{}, fmt.Errorf("read config %s: %w", path, err)
@@ -72,7 +109,11 @@ func Load(path string) (Config, error) {
 	if err := toml.Unmarshal(raw, &fc); err != nil {
 		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 	}
-	c := Config{ExcludeRepos: fc.ExcludeRepos, ExcludePaths: fc.ExcludePaths}
+	c := Config{
+		ExcludeRepos: fc.ExcludeRepos,
+		ExcludePaths: fc.ExcludePaths,
+		Mise:         fc.Mise,
+	}.withMiseDefaults()
 	if c.repoGlobs, err = compile(path, "exclude_repos", fc.ExcludeRepos); err != nil {
 		return Config{}, err
 	}

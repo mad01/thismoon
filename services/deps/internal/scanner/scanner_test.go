@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -160,8 +161,8 @@ func TestCheckSavesDiscoveryErrors(t *testing.T) {
 	st := newStore(t)
 	goErr := `go list in /r1: exec: "go": executable file not found in $PATH`
 	e := &Engine{
-		Prepare: func() ([]string, discover.Options, error) {
-			return []string{"/r1"}, discover.Options{}, nil
+		Prepare: func() (Plan, error) {
+			return Plan{Repos: []string{"/r1"}}, nil
 		},
 		Ecosystems: []discover.Ecosystem{
 			stubEco{name: "Go", err: errors.New(goErr)},
@@ -267,8 +268,8 @@ func npmEngine(
 	pkgs ...discover.Package,
 ) *Engine {
 	return &Engine{
-		Prepare: func() ([]string, discover.Options, error) {
-			return []string{widget}, discover.Options{}, nil
+		Prepare: func() (Plan, error) {
+			return Plan{Repos: []string{widget}}, nil
 		},
 		Ecosystems: []discover.Ecosystem{stubEco{name: "npm", pkgs: pkgs}},
 		Checker:    checker,
@@ -522,5 +523,145 @@ func TestMaliciousBannerNamesEachPackageOnce(t *testing.T) {
 	}
 	if !strings.HasPrefix(body, "a@1.0.0 in one, two; b@1.0.0 in one; c@1.0.0 in one; +1 more.") {
 		t.Errorf("body = %q", body)
+	}
+}
+
+// npmTool is one npm: tool in a scratch mise install: the version mise.lock
+// pins, and the further "name@version" packages its tree resolves.
+type npmTool struct {
+	name    string
+	version string
+	tree    []string
+}
+
+// writeMise writes a mise.lock pinning tools, and an aube-lock.yaml install
+// for each, under dir. It returns the Mise that reads them.
+func writeMise(t *testing.T, dir string, tools ...npmTool) discover.Mise {
+	t.Helper()
+	installs := filepath.Join(dir, "installs")
+	var lock strings.Builder
+	for _, tool := range tools {
+		fmt.Fprintf(&lock, "[[tools.%q]]\nversion = %q\n\n", "npm:"+tool.name, tool.version)
+		aube := fmt.Sprintf("lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n"+
+			"      %s: {version: %s}\npackages:\n", tool.name, tool.version)
+		for _, p := range append([]string{tool.name + "@" + tool.version}, tool.tree...) {
+			aube += "  " + p + ": {}\n"
+		}
+		versionDir := filepath.Join(installs, "npm-"+tool.name, tool.version)
+		if err := os.MkdirAll(versionDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(versionDir, "aube-lock.yaml"), aube)
+	}
+	lockPath := filepath.Join(dir, "mise.lock")
+	writeFile(t, lockPath, lock.String())
+	return discover.Mise{LockPath: lockPath, InstallRoot: installs}
+}
+
+func writeFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// inventory renders the store's dependencies as sorted "repo name@version".
+func inventory(st *store.Store) []string {
+	var out []string
+	for _, d := range st.Snapshot().Deps {
+		out = append(out, d.Repo+" "+d.Name+"@"+d.Version)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// TestCheckCoversMiseTools: a full check reports the installed mise tools
+// beside the repos, each under its label, and checks them against OSV.
+func TestCheckCoversMiseTools(t *testing.T) {
+	st := newStore(t)
+	m := writeMise(t, t.TempDir(),
+		npmTool{name: "yarn", version: "1.22.22"},
+		npmTool{name: "left-pad", version: "1.3.0", tree: []string{"pad-core@2.0.0"}},
+	)
+	e := &Engine{
+		Prepare: func() (Plan, error) {
+			return Plan{Repos: []string{"/r1"}, Mise: m}, nil
+		},
+		Ecosystems: []discover.Ecosystem{stubEco{name: "npm", pkgs: []discover.Package{
+			{Ecosystem: "npm", Name: "lodash", Version: "4.17.21", Imported: true},
+		}}},
+		Checker: fakeChecker{flagName: "pad-core"},
+		Store:   st,
+	}
+	if _, err := e.Check(context.Background()); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	want := []string{
+		"/r1 lodash@4.17.21",
+		"mise:npm:left-pad left-pad@1.3.0",
+		"mise:npm:left-pad pad-core@2.0.0",
+		"mise:npm:yarn yarn@1.22.22",
+	}
+	if got := inventory(st); !slices.Equal(got, want) {
+		t.Errorf("inventory = %q, want %q", got, want)
+	}
+	flagged := st.Flagged()
+	if len(flagged) != 1 || flagged[0].Name != "pad-core" ||
+		flagged[0].Repo != "mise:npm:left-pad" {
+		t.Errorf("flagged = %+v, want pad-core under mise:npm:left-pad", flagged)
+	}
+}
+
+// TestCheckRepoRescansOneMiseTool: a rescan by label replaces only that
+// tool's packages and keeps the full-scan time. A label that names no
+// installed tool, or a lock that no longer parses, fails the rescan and leaves
+// the store as it was.
+func TestCheckRepoRescansOneMiseTool(t *testing.T) {
+	st := newStore(t)
+	dir := t.TempDir()
+	m := writeMise(t, dir,
+		npmTool{name: "yarn", version: "1.22.22"},
+		npmTool{name: "left-pad", version: "1.3.0"},
+	)
+	e := &Engine{
+		Prepare: func() (Plan, error) { return Plan{Mise: m}, nil },
+		Checker: fakeChecker{},
+		Store:   st,
+	}
+	if _, err := e.Check(context.Background()); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	scannedAt := st.Snapshot().ScannedAt
+
+	// Both tools upgrade on disk; only yarn is rescanned.
+	writeMise(t, dir,
+		npmTool{name: "yarn", version: "1.22.23"},
+		npmTool{name: "left-pad", version: "1.3.1"},
+	)
+	if _, err := e.CheckRepo(context.Background(), "mise:npm:yarn"); err != nil {
+		t.Fatalf("CheckRepo: %v", err)
+	}
+	want := []string{"mise:npm:left-pad left-pad@1.3.0", "mise:npm:yarn yarn@1.22.23"}
+	if got := inventory(st); !slices.Equal(got, want) {
+		t.Errorf("after the yarn rescan, inventory = %q, want %q", got, want)
+	}
+	if !st.Snapshot().ScannedAt.Equal(scannedAt) {
+		t.Error("a per-tool rescan must not change the full-scan time")
+	}
+
+	_, err := e.CheckRepo(context.Background(), "mise:npm:absent")
+	if err == nil || !strings.Contains(err.Error(), "not among the installed mise tools") {
+		t.Errorf(
+			"rescan of an unknown label: err = %v, want not among the installed mise tools",
+			err,
+		)
+	}
+	writeFile(t, m.LockPath, "[[tools\n")
+	_, err = e.CheckRepo(context.Background(), "mise:npm:yarn")
+	if err == nil || !strings.Contains(err.Error(), m.LockPath) {
+		t.Errorf("rescan with a broken lock: err = %v, want it to name %s", err, m.LockPath)
+	}
+	if got := inventory(st); !slices.Equal(got, want) {
+		t.Errorf("failed rescans changed the inventory to %q, want %q", got, want)
 	}
 }

@@ -65,7 +65,9 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_scan_repo",
 		Description: "Rescan a SINGLE repo (by absolute path or basename, e.g. 'dotfiles') against OSV and merge the result, " +
-			"without re-sweeping every repo. Use after bumping dependencies in one repo to re-check just it. Returns the full flagged set.",
+			"without re-sweeping every repo. Use after bumping dependencies in one repo to re-check just it. " +
+			"An installed mise tool rescans by its whole label from the inventory's repo field (e.g. 'mise:npm:yarn'). " +
+			"Returns the full flagged set.",
 		// Replaces that repo's slice of the store (other repos are kept), and
 		// queries OSV for the rescanned versions.
 		Annotations: &mcp.ToolAnnotations{
@@ -205,7 +207,7 @@ func flaggedZero(res client.CheckResult) *flaggedZeroHint {
 }
 
 type scanRepoInput struct {
-	Repo string `json:"repo" jsonschema:"repo to rescan: absolute path or basename (e.g. 'dotfiles')"`
+	Repo string `json:"repo" jsonschema:"repo to rescan: absolute path or basename (e.g. 'dotfiles'), or a mise tool label (e.g. 'mise:npm:yarn')"`
 }
 
 func (h *handlers) handleScanRepo(

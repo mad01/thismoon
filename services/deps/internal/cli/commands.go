@@ -50,7 +50,9 @@ var checkCmd = &cobra.Command{
 against the OSV.dev advisory database. Prints any flagged package with its
 advisory id, severity, and the version that fixes it.
 
-With --repo, rescan a single repo (by path or basename) and merge the result.`,
+With --repo, rescan a single repo (by path or basename) and merge the result.
+An installed mise tool rescans the same way by its whole label, as listed in
+the inventory: --repo mise:npm:yarn.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		status := progstatus.New("deps")
 		status.Working("checking dependencies against OSV")
@@ -148,6 +150,6 @@ func printDiscoveryErrors(cmd *cobra.Command, errs []store.DiscoveryError) {
 
 func init() {
 	checkCmd.Flags().
-		StringVar(&flagCheckRepo, "repo", "", "rescan only this repo (path or basename)")
+		StringVar(&flagCheckRepo, "repo", "", "rescan only this repo (path or basename) or mise tool (label)")
 	rootCmd.AddCommand(scanCmd, checkCmd, notifyCmd, resolveCmd)
 }
