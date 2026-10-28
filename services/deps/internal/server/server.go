@@ -119,7 +119,8 @@ func (s *Server) handleScan(w http.ResponseWriter, _ *http.Request) {
 // anything newly flagged. A full check resets ScannedAt, so the scan loop
 // skips its next cycle: without notifying here, someone who checks by hand
 // every day would never get a banner. The notified set keeps the loop from
-// firing the same banner again.
+// firing the same banner again. A notify error is logged, not returned: the
+// check is saved by then, and a 500 would hide its flagged list.
 func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if repo := r.URL.Query().Get("repo"); repo != "" {
@@ -127,12 +128,12 @@ func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 	} else {
 		_, err = s.engine.Check(r.Context())
 	}
-	if err == nil {
-		_, err = s.engine.Notify()
-	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
+	}
+	if _, err := s.engine.Notify(); err != nil {
+		log.Printf("deps: notify after check: %v", err)
 	}
 	// Report the full current flagged set so the caller sees the merged picture.
 	sc := s.store.Snapshot()

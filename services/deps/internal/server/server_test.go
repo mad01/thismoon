@@ -3,12 +3,16 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/services/deps/internal/alert"
 	"github.com/mad01/thismoon/services/deps/internal/discover"
 	"github.com/mad01/thismoon/services/deps/internal/osv"
 	"github.com/mad01/thismoon/services/deps/internal/scanner"
@@ -260,6 +264,22 @@ func (malChecker) Check(_ context.Context, queries []osv.Query) ([][]store.Advis
 	return out, nil
 }
 
+// chalkEngine is an engine over st whose one repo pins chalk@5.6.1, which
+// malChecker flags as malicious, delivering banners through n.
+func chalkEngine(st *store.Store, n alert.Notifier) *scanner.Engine {
+	return &scanner.Engine{
+		Prepare: func() ([]string, discover.Options, error) {
+			return []string{"/home/u/code/widget"}, discover.Options{}, nil
+		},
+		Ecosystems: []discover.Ecosystem{stubEco{pkgs: []discover.Package{
+			{Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Imported: true},
+		}}},
+		Checker:  malChecker{},
+		Notifier: n,
+		Store:    st,
+	}
+}
+
 // TestManualCheckNotifiesOnce: a manual check that finds a new malicious
 // finding fires its banner, on the full and the per-repo path alike, and a
 // second check does not fire it again. A manual check resets the scan time,
@@ -272,18 +292,7 @@ func TestManualCheckNotifiesOnce(t *testing.T) {
 				t.Fatal(err)
 			}
 			n := &recordingNotifier{}
-			engine := &scanner.Engine{
-				Prepare: func() ([]string, discover.Options, error) {
-					return []string{"/home/u/code/widget"}, discover.Options{}, nil
-				},
-				Ecosystems: []discover.Ecosystem{stubEco{pkgs: []discover.Package{
-					{Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Imported: true},
-				}}},
-				Checker:  malChecker{},
-				Notifier: n,
-				Store:    st,
-			}
-			h := New(st, engine, testInfo).Handler()
+			h := New(st, chalkEngine(st, n), testInfo).Handler()
 			for range 2 {
 				rec := httptest.NewRecorder()
 				h.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))
@@ -294,6 +303,54 @@ func TestManualCheckNotifiesOnce(t *testing.T) {
 			want := []string{"deps: malicious package chalk@5.6.1"}
 			if !slices.Equal(n.titles, want) {
 				t.Errorf("banners = %q, want %q once", n.titles, want)
+			}
+		})
+	}
+}
+
+// notifierFunc delivers each banner by calling the function, in place of
+// osascript.
+type notifierFunc func() error
+
+func (f notifierFunc) Notify(string, string) error { return f() }
+
+// TestManualCheckKeepsResultWhenNotifyFails: the check is saved before the
+// banners fire, so a failed banner or a failed write of the notified set still
+// answers 200 with the flagged list. A 500 would show "Scan failed" and hide
+// the finding.
+func TestManualCheckKeepsResultWhenNotifyFails(t *testing.T) {
+	cases := map[string]func(workdir string) error{
+		"notifier fails": func(string) error { return errors.New("osascript still running") },
+		// The banner goes out, then a directory where the store writes its temp
+		// file makes the save of the notified set fail.
+		"store fails": func(workdir string) error {
+			return os.Mkdir(filepath.Join(workdir, "scan.json.tmp"), 0o755)
+		},
+	}
+	for name, notify := range cases {
+		t.Run(name, func(t *testing.T) {
+			workdir := t.TempDir()
+			st, err := store.New(workdir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			n := notifierFunc(func() error { return notify(workdir) })
+			rec := httptest.NewRecorder()
+			New(st, chalkEngine(st, n), testInfo).Handler().
+				ServeHTTP(rec, httptest.NewRequest("POST", "/api/check", nil))
+			if rec.Code != 200 {
+				t.Fatalf("POST /api/check = %d: %s", rec.Code, rec.Body)
+			}
+			var got struct {
+				Flagged []struct {
+					Name string `json:"name"`
+				} `json:"flagged"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Flagged) != 1 || got.Flagged[0].Name != "chalk" {
+				t.Errorf("flagged = %+v, want chalk", got.Flagged)
 			}
 		})
 	}

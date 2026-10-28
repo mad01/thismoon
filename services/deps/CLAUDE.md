@@ -201,7 +201,18 @@ Summary: "…"}`. Follow-up producers build on these rules:
   version, and a resolved or notified finding keeps that state while its key
   holds. So the version must change whenever the pinned thing does: for a
   SHA-pinned GitHub Action it carries the SHA, not only the `# vN` label, or
-  a re-pin keeps the old resolve.
+  a re-pin keeps the old resolve. A ref pinned to a tag or branch also
+  carries the commit it resolved to. A tag moved to another commit then
+  makes a new key and can't reuse a notified or resolved one. The
+  tj-actions attack moved tags that way.
+- **A version never contains `@`.** `parseKey` splits name and version on
+  the last `@`, the same way an id never contains `:`. Don't join a tag and
+  its commit with `@`.
+- **How a commit reaches OSV is the producer's call.** `scanner.Check`
+  builds each `osv.Query` from `Name`, `Ecosystem` and `Version` only. A
+  producer that checks Actions refs against OSV by commit either derives the
+  commit from the version or adds a field to the query. It documents which
+  one it chose.
 - **A second checker composes with OSV.** `Engine` holds one `Checker`. A
   second one (a registry checker, say) merges its results with OSV's per
   dependency index, and its error must neither fail the check nor discard
@@ -211,8 +222,7 @@ Summary: "…"}`. Follow-up producers build on these rules:
   that needs a failed lookup to read as neither clean nor fixed must make
   that model change itself.
 - A new producer leaves the key format, the notifier, the API and the page
-  as they are. `osv.Query` may grow fields for a new query shape, such as a
-  commit query for a pinned Action.
+  as they are.
 
 ## Build / install / test
 
