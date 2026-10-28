@@ -86,6 +86,7 @@ func (s *Server) handleDeps(w http.ResponseWriter, _ *http.Request) {
 		"flagged_count":    api.ActiveCount(api.Flagged(deps)),
 		"deps":             deps,
 		"discovery_errors": discoveryErrors(sc.DiscoveryErrors),
+		"registry_unknown": s.store.RegistryUnknown(),
 		"resolved_fixed":   s.store.ResolvedFixed(),
 	})
 }
@@ -184,9 +185,10 @@ func (s *Server) handleNotify(w http.ResponseWriter, _ *http.Request) {
 }
 
 // writeFlagged is the common flagged-list response (used by /api/flagged and
-// /api/check): flagged_count is the *active* (unresolved) count, and
-// discovery_errors names what the last scan could not read, so an empty
-// flagged list is never mistaken for a clean scan.
+// /api/check): flagged_count is the *active* (unresolved) count,
+// discovery_errors names what the last scan could not read, and
+// registry_unknown counts the deps whose registry lookup got no answer, so an
+// empty flagged list is never mistaken for a clean scan.
 func (s *Server) writeFlagged(
 	w http.ResponseWriter,
 	scannedAt any,
@@ -199,6 +201,7 @@ func (s *Server) writeFlagged(
 		"flagged_count":    api.ActiveCount(flagged),
 		"flagged":          flagged,
 		"discovery_errors": discoveryErrors(s.store.DiscoveryErrors()),
+		"registry_unknown": s.store.RegistryUnknown(),
 	})
 }
 

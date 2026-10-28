@@ -508,6 +508,16 @@
     ]);
   }
 
+  // registryCallout says how many versions got no answer from their registry
+  // (npm, PyPI, the Go module proxy) in the last check. They keep the registry
+  // findings from the check before, so nothing here reads as clean or fixed.
+  function registryCallout(n) {
+    return Webkit.el('wk-callout', { variant: 'warn' }, [
+      Webkit.el('strong', {}, 'Registry lookup got no answer for ' + n + ' dependenc' + (n !== 1 ? 'ies' : 'y')),
+      ': whether their registry has withdrawn or yanked them since is unknown. They keep the registry findings from the check before; the next check asks again.'
+    ]);
+  }
+
   function render(data) {
     lastData = data;
     // Repo basenames from the URL resolve to paths on the first render, once
@@ -523,7 +533,7 @@
     var v = buildView(data);
     var nodes = [pageHeader(v), toolbar(v)];
     nodes.push(Webkit.el('p', { class: 'hint' },
-      'Supply-chain scan across the catalog-registered repos, checked against OSV.dev. Resolve a finding to acknowledge it — it returns if the version changes or a new advisory lands.'));
+      'Supply-chain scan across the catalog-registered repos, checked against OSV.dev and each package registry. Resolve a finding to acknowledge it; it returns if the version changes or a new advisory lands.'));
 
     if (!v.hasScan) {
       nodes.push(Webkit.el('div', { class: 'empty' }, [
@@ -531,6 +541,7 @@
       ]));
     } else {
       if (v.discoveryErrors.length) nodes.push(discoveryCallout(v.discoveryErrors));
+      if (data.registry_unknown) nodes.push(registryCallout(data.registry_unknown));
       nodes.push(Webkit.el('div', { class: 'counts' }, v.byEcosystem.map(function (e) {
         var attrs = { variant: 'filter', 'data-action': 'filter-eco', 'data-eco': e.ecosystem,
           title: (ecoSel[e.ecosystem] ? 'Remove ' + e.ecosystem + ' from filter' : 'Filter to ' + e.ecosystem) };
@@ -577,7 +588,7 @@
           'No active findings among the ' + v.total + ' versions read, but the scan is incomplete: see the discovery errors above.'));
       } else {
         nodes.push(Webkit.el('div', { class: 'ok' },
-          'No active findings — all ' + v.total + ' checked versions are clear of unresolved OSV advisories.'));
+          'No active findings: all ' + v.total + ' checked versions are clear of unresolved OSV advisories and withdrawn or blocked versions.'));
       }
 
       // Warning signs: findings that are not advisories (kind signal). Page

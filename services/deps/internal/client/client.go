@@ -27,7 +27,8 @@ type Client struct {
 }
 
 // New returns a Client for the serve instance at baseURL. The timeout is
-// generous: a full check fans out to OSV across every dependency.
+// generous: a full check runs discovery, then fans out to OSV and the package
+// registries across every dependency.
 func New(baseURL string) *Client {
 	return &Client{baseURL: baseURL, http: &http.Client{Timeout: 2 * time.Minute}}
 }
@@ -40,13 +41,15 @@ type ScanResult struct {
 	DiscoveryErrors []store.DiscoveryError `json:"discovery_errors"`
 }
 
-// CheckResult is the outcome of a discover + OSV check.
+// CheckResult is the outcome of a discover + OSV + registry check.
 type CheckResult struct {
 	ScannedAt       time.Time              `json:"scanned_at"`
 	Total           int                    `json:"total"`
 	FlaggedCount    int                    `json:"flagged_count"`
 	Flagged         []api.Dependency       `json:"flagged"`
 	DiscoveryErrors []store.DiscoveryError `json:"discovery_errors"`
+	// RegistryUnknown counts the deps whose registry lookup got no answer.
+	RegistryUnknown int `json:"registry_unknown"`
 }
 
 // NotifyResult reports how many flags were delivered.

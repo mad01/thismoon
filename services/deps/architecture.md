@@ -4,7 +4,8 @@
 
 deps is the supply-chain scanner service: it discovers every external
 dependency across the catalog-registered repos and the tools mise installs,
-and checks each pinned version against the OSV.dev advisory database. At
+and checks each pinned version against the OSV.dev advisory database and the
+registry that publishes it. At
 runtime `deps serve --port 7429`
 (loopback only, fronted by d-man as `http://deps.this/`, run as a t-man agent)
 is the single long-running process. It owns the scan store, runs the scan
@@ -28,6 +29,7 @@ internal/
                      checkouts; Mise reads the installed mise npm and pipx trees
   jsdelivr/          jsDelivr data API client (file lookup by sha256), cached
   osv/               OSV.dev client (querybatch, then per-id vuln fetch)
+  regcheck/          registry checker: npm, PyPI, the Go module proxy
   scanner/           Engine: discover, check, persist, coalesced notify
   notify/            Notifier interface, osascript banner, event emission
   store/             Dependency/Advisory/Flag model, atomic JSON store
@@ -88,11 +90,18 @@ names case-sensitively, so the check first reads OSV's export of Actions
 advisories from its data bucket. A failed read is a discovery error. A name hit stays
 only when the version label falls in its range or can't be compared. A record
 that fails to load keeps its finding with the id alone, so one bad fetch never
-aborts the scan. Each finding has a kind: `malicious` for an OSV MAL- id,
-`vuln` for any other advisory, and `signal` for a warning sign a deps rule
-raises. The checker's findings are added to any a discoverer attached, never in place of
-them. `scanner.Engine` persists the result and the discovery errors through the
-store. It then fires a separate banner for newly flagged malicious packages,
+aborts the scan. The registry check then asks npm, PyPI or the Go module
+proxy about each package once, with at most 8 at a time and 45 seconds for
+the whole pass. A version the registry withdrew, quarantined or blocks is a
+`malicious` finding, and a yanked, deprecated, archived or retracted one is a
+`signal`. A failed registry lookup never fails the check: the dependency is
+marked `registry_unknown` and keeps the registry findings it had, so an
+outage reads as neither clean nor fixed. Each finding has a kind: `malicious`
+for an OSV MAL- id or a registry block, `vuln` for any other advisory, and
+`signal` for a warning sign a deps rule raises. The checkers' findings are
+added to any a discoverer attached, never in place of them. `scanner.Engine`
+persists the result and the discovery errors through the store. It then
+fires a separate banner for newly flagged malicious packages,
 then one coalesced notification covering the other newly flagged advisories.
 Signals never notify. Last it emits a scan-complete event to the events
 service, at warn level when anything is flagged or discovery failed.
@@ -114,7 +123,7 @@ for confirmation before it resolves a malicious finding.
 One file: `~/.local/share/deps/scan.json`, a single JSON document written
 atomically (temp file, then rename) and only ever by serve. It holds the last
 scan's dependencies (ecosystem, name, version, repo, manifest path, direct
-flag, advisories with their kind), the `discovery_errors` (repo, ecosystem, error) the scan
+flag, `registry_unknown` flag, advisories with their kind), the `discovery_errors` (repo, ecosystem, error) the scan
 hit, plus two string sets keyed by
 `ecosystem:name@version:advisoryID`: `notified` (already alerted) and
 `resolved` (user-acknowledged). An advisory with no kind, as in a file
@@ -133,7 +142,8 @@ HTTP: `GET /` (web page), `GET /api/deps`, `GET /api/flagged`,
 `deps_scan_repo` take a repo path or basename, or a mise label. MCP tools:
 `deps_scan`, `deps_check`, `deps_list_flagged`, `deps_scan_repo`,
 `deps_resolve`, and `deps_doctor`. The scan and check responses carry
-`discovery_errors` alongside the findings. Config surfaces: the deps config file above
+`discovery_errors` alongside the findings, and the check and flagged ones
+carry `registry_unknown`. Config surfaces: the deps config file above
 (which also locates mise.lock and the mise installs directory), the catalog
 registry as the repo source of truth, and the `DEPS_PORT` / `DEPS_BASE_URL`
 environment variables mirrored by `--port` / `--base-url`.

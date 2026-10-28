@@ -1,8 +1,9 @@
 // Package scanner orchestrates one scan: discover dependencies across the
-// registered repos and the installed mise tools, check each against OSV,
-// persist the result, and (for serve) notify on advisories not seen before. It
-// is the functional core wiring discover + osv + store + alert together; the
-// CLI and serve loop call in here.
+// Package scanner orchestrates one scan: discover dependencies across the
+// registered repos and the installed mise tools, check each against OSV and
+// its package registry, persist the result, and (for serve) notify on
+// advisories not seen before. It is the functional core wiring discover + osv
+// + regcheck + store + alert together; the CLI and serve loop call in here.
 package scanner
 
 import (
@@ -20,6 +21,7 @@ import (
 	"github.com/mad01/thismoon/services/deps/internal/alert"
 	"github.com/mad01/thismoon/services/deps/internal/discover"
 	"github.com/mad01/thismoon/services/deps/internal/osv"
+	"github.com/mad01/thismoon/services/deps/internal/regcheck"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
 
@@ -28,6 +30,14 @@ import (
 // *osv.ActionNamesError.
 type Checker interface {
 	Check(ctx context.Context, queries []osv.Query) ([][]store.Advisory, error)
+}
+
+// Registry is the second checker (real *regcheck.Client or a fake): it looks
+// each version up in the registry that publishes it, after OSV. Its lookups
+// fail one at a time, so it has no error of its own: a lookup that got no
+// answer comes back with Err set for its index.
+type Registry interface {
+	Check(ctx context.Context, queries []osv.Query) []regcheck.Result
 }
 
 // Plan is what one scan covers. Engine.Prepare resolves it from the discovery
@@ -152,6 +162,98 @@ func addFindings(have, found []store.Advisory) []store.Advisory {
 	return out
 }
 
+// CheckRegistry adds the registry's findings to each dependency in place and
+// returns the annotated set. The registry's answer replaces any registry
+// finding the dependency already carried; the other findings stay. A
+// dependency whose lookup got no answer is marked RegistryUnknown and keeps the
+// registry findings previous holds for the same version, so a registry outage
+// neither drops a finding nor makes a resolved one read as fixed.
+func CheckRegistry(
+	ctx context.Context,
+	deps []store.Dependency,
+	reg Registry,
+	previous []store.Dependency,
+) []store.Dependency {
+	if len(deps) == 0 {
+		return deps
+	}
+	queries := make([]osv.Query, len(deps))
+	for i, d := range deps {
+		queries[i] = osv.Query{Name: d.Name, Ecosystem: d.Ecosystem, Version: d.Version}
+	}
+	results := reg.Check(ctx, queries)
+	kept := registryFindings(previous)
+	var (
+		unknown  int
+		firstErr error
+	)
+	for i := range deps {
+		r := regcheck.Result{Err: errNoRegistryResult}
+		if i < len(results) {
+			r = results[i]
+		}
+		found := r.Findings
+		if r.Err != nil {
+			found = kept[versionKey(deps[i])]
+			unknown++
+			if firstErr == nil {
+				firstErr = r.Err
+			}
+		}
+		deps[i].RegistryUnknown = r.Err != nil
+		deps[i].Advisories = addFindings(withoutRegistry(deps[i].Advisories), found)
+	}
+	if unknown > 0 {
+		log.Printf(
+			"deps: registry: %d lookup(s) got no answer, keeping their last findings; first: %v",
+			unknown,
+			firstErr,
+		)
+	}
+	return deps
+}
+
+// errNoRegistryResult stands in for a result the registry checker left out,
+// so a short answer reads as unknown, never as clean.
+var errNoRegistryResult = errors.New("deps: registry returned no result for this dependency")
+
+// versionKey names one version of one package, whatever repo pins it.
+func versionKey(d store.Dependency) string {
+	return d.Ecosystem + ":" + d.Name + "@" + d.Version
+}
+
+// registryFindings indexes the registry findings in deps by version. Every row
+// for a version carries the same ones, so the first row that has any is used.
+func registryFindings(deps []store.Dependency) map[string][]store.Advisory {
+	out := map[string][]store.Advisory{}
+	for _, d := range deps {
+		k := versionKey(d)
+		if _, ok := out[k]; ok {
+			continue
+		}
+		var fs []store.Advisory
+		for _, a := range d.Advisories {
+			if regcheck.IsRule(a.ID) {
+				fs = append(fs, a)
+			}
+		}
+		if len(fs) > 0 {
+			out[k] = fs
+		}
+	}
+	return out
+}
+
+// withoutRegistry returns advs without the registry's findings. advs is never
+// written through, since it may share its array with a store snapshot.
+func withoutRegistry(advs []store.Advisory) []store.Advisory {
+	isRegistry := func(a store.Advisory) bool { return regcheck.IsRule(a.ID) }
+	if !slices.ContainsFunc(advs, isRegistry) {
+		return advs
+	}
+	return slices.DeleteFunc(slices.Clone(advs), isRegistry)
+}
+
 // Engine binds the scan pieces to a concrete store and repo set. The serve loop
 // and the HTTP handlers share one Engine, so a scheduled scan and an on-demand
 // one take exactly the same path.
@@ -163,6 +265,7 @@ type Engine struct {
 	Prepare    func() (Plan, error)
 	Ecosystems []discover.Ecosystem
 	Checker    Checker
+	Registry   Registry // runs after Checker on every check; nil skips it
 	Notifier   alert.Notifier
 	Store      *store.Store
 
@@ -187,8 +290,23 @@ func (e *Engine) Scan() ([]store.Dependency, error) {
 	return deps, nil
 }
 
-// Check discovers dependencies, checks them against OSV, persists the
-// annotated set with the discovery errors, and emits the scan-complete event.
+// check runs both checkers over freshly discovered deps: OSV, whose error fails
+// the check, then the registry, whose failed lookups never do. The stored
+// inventory supplies the findings a failed lookup keeps.
+func (e *Engine) check(
+	ctx context.Context,
+	deps []store.Dependency,
+) ([]store.Dependency, []store.DiscoveryError, error) {
+	deps, checkErrs, err := Check(ctx, deps, e.Checker)
+	if err != nil || e.Registry == nil {
+		return deps, checkErrs, err
+	}
+	return CheckRegistry(ctx, deps, e.Registry, e.Store.Snapshot().Deps), checkErrs, nil
+}
+
+// Check discovers dependencies, checks them against OSV and the registries,
+// persists the annotated set with the discovery errors, and emits the
+// scan-complete event.
 func (e *Engine) Check(ctx context.Context) ([]store.Dependency, error) {
 	start := time.Now()
 	plan, err := e.Prepare()
@@ -196,7 +314,7 @@ func (e *Engine) Check(ctx context.Context) ([]store.Dependency, error) {
 		return nil, err
 	}
 	deps, discErrs := Discover(plan, e.Ecosystems)
-	deps, checkErrs, err := Check(ctx, deps, e.Checker)
+	deps, checkErrs, err := e.check(ctx, deps)
 	if err != nil {
 		return nil, err
 	}
@@ -210,35 +328,35 @@ func (e *Engine) Check(ctx context.Context) ([]store.Dependency, error) {
 }
 
 // scanCompleteEvent builds the events-archive record for a finished full
-// check. It warns when anything is flagged or any repo and ecosystem failed
-// discovery, and the message names each failure, so an unchecked ecosystem
-// shows up there instead of reading as a clean scan. A dependency whose only
-// findings are signals does not count as flagged: signals stay on the page.
+// check. It warns when anything is flagged, any repo and ecosystem failed
+// discovery, or any registry lookup got no answer, and the message names each
+// gap, so an unchecked ecosystem or registry shows up there instead of reading
+// as a clean scan. A dependency whose only findings are signals does not count
+// as flagged: signals stay on the page.
 func scanCompleteEvent(
 	repos int,
 	deps []store.Dependency,
 	discErrs []store.DiscoveryError,
 	took time.Duration,
 ) notify.Event {
-	flagged := 0
-	for _, d := range deps {
-		if slices.ContainsFunc(d.Advisories, func(a store.Advisory) bool {
-			return a.Kind != store.KindSignal
-		}) {
-			flagged++
-		}
-	}
+	flagged, unknown := tally(deps)
 	level := "info"
-	if flagged > 0 || len(discErrs) > 0 {
+	if flagged > 0 || len(discErrs) > 0 || unknown > 0 {
 		level = "warn"
 	}
 	title := fmt.Sprintf("scan complete: %d deps, %d flagged", len(deps), flagged)
-	lines := make([]string, 0, len(discErrs))
+	lines := make([]string, 0, len(discErrs)+1)
 	if len(discErrs) > 0 {
 		title += fmt.Sprintf(", %d discovery error(s)", len(discErrs))
 		for _, de := range discErrs {
 			lines = append(lines, fmt.Sprintf("%s in %s: %s", de.Ecosystem, de.Repo, de.Error))
 		}
+	}
+	if unknown > 0 {
+		title += fmt.Sprintf(", %d registry lookup(s) unanswered", unknown)
+		lines = append(lines, fmt.Sprintf(
+			"registry lookups got no answer for %d dep(s), which keep their last registry findings",
+			unknown))
 	}
 	return notify.Event{
 		Source:  "deps",
@@ -250,16 +368,33 @@ func scanCompleteEvent(
 			"deps":             fmt.Sprintf("%d", len(deps)),
 			"flagged":          fmt.Sprintf("%d", flagged),
 			"discovery_errors": fmt.Sprintf("%d", len(discErrs)),
+			"registry_unknown": fmt.Sprintf("%d", unknown),
 			"duration":         took.Round(time.Second).String(),
 		},
 	}
 }
 
+// tally counts the deps with a finding other than a signal (flagged) and the
+// deps whose registry lookup got no answer (unknown).
+func tally(deps []store.Dependency) (flagged, unknown int) {
+	for _, d := range deps {
+		if slices.ContainsFunc(d.Advisories, func(a store.Advisory) bool {
+			return a.Kind != store.KindSignal
+		}) {
+			flagged++
+		}
+		if d.RegistryUnknown {
+			unknown++
+		}
+	}
+	return flagged, unknown
+}
+
 // CheckRepo rescans a single repo (matched by absolute path or basename) or
 // installed mise tool (matched by its whole label, "mise:npm:yarn"), checks it
-// against OSV, and merges the result into the store without touching the
-// other repos and tools or the last full-scan time. It is the per-repo
-// "Rescan" path.
+// against OSV and the registries, and merges the result into the store without
+// touching the other repos and tools or the last full-scan time. It is the
+// per-repo "Rescan" path.
 func (e *Engine) CheckRepo(ctx context.Context, repoID string) ([]store.Dependency, error) {
 	plan, err := e.Prepare()
 	if err != nil {
@@ -269,7 +404,7 @@ func (e *Engine) CheckRepo(ctx context.Context, repoID string) ([]store.Dependen
 	if err != nil {
 		return nil, err
 	}
-	deps, checkErrs, err := Check(ctx, deps, e.Checker)
+	deps, checkErrs, err := e.check(ctx, deps)
 	if err != nil {
 		return nil, err
 	}

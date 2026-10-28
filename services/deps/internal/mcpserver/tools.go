@@ -38,11 +38,12 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_check",
-		Description: "Discover every dependency across the registered tool repos and the installed mise tools, and check each version against the OSV.dev supply-chain advisory database. " +
-			"Returns the flagged packages with advisory id, kind, severity, and the version that fixes each, plus discovery_errors naming any repo or mise tool and ecosystem whose dependencies went unchecked. " +
-			"Kind is vuln (a known vulnerability), malicious (a known malicious version, from an OSV MAL- record), or signal (a warning sign that is not an advisory). " +
+		Description: "Discover every dependency across the registered tool repos and the installed mise tools, and check each version against the OSV.dev supply-chain advisory database and the registry that publishes it (npm, PyPI, the Go module proxy). " +
+			"Returns the flagged packages with advisory id, kind, severity, and the version that fixes each, plus discovery_errors naming any repo or mise tool and ecosystem whose dependencies went unchecked, and registry_unknown counting the dependencies whose registry lookup got no answer. " +
+			"Kind is vuln (a known vulnerability), malicious (a known malicious version: an OSV MAL- record, or a version its registry withdrew, quarantined or blocks), or signal (a warning sign that is not an advisory, such as a yanked, deprecated or retracted version). " +
 			"Packages with a malicious finding come first: tell the user at once, because its install scripts may already have run. This reaches the network and may take a few seconds.",
-		// Same replace-the-store write as deps_scan, plus the OSV.dev query.
+		// Same replace-the-store write as deps_scan, plus the OSV.dev and
+		// registry queries.
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: new(true),
 			IdempotentHint:  true,
@@ -54,7 +55,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name: "deps_list_flagged",
 		Description: "Return the flagged packages from the most recent check WITHOUT re-scanning (fast, no network). " +
 			"Use after deps_check to re-read the findings. Each advisory carries a `key`, a `kind` (vuln, malicious or signal) and a `resolved` flag; packages with a malicious finding come first. " +
-			"An empty flagged list with total > 0 and no discovery_errors means the persisted inventory carries no unresolved advisories (run deps_check to re-verify against OSV). A non-empty discovery_errors means those repos and ecosystems were never checked, so the list is not a clean bill. With total == 0 the response carries zero_result_hint, because an empty store means nothing was checked, not that anything is clean.",
+			"An empty flagged list with total > 0, no discovery_errors and no registry_unknown means the persisted inventory carries no unresolved advisories (run deps_check to re-verify against OSV). A non-empty discovery_errors means those repos and ecosystems were never checked, and a non-zero registry_unknown means that many dependencies got no registry answer, so the list is not a clean bill. With total == 0 the response carries zero_result_hint, because an empty store means nothing was checked, not that anything is clean.",
 		// Reads the persisted store through the local serve API; no OSV call.
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
@@ -142,6 +143,7 @@ type flaggedOut struct {
 	FlaggedCount    int                    `json:"flagged_count"              jsonschema:"number of dependencies with at least one UNRESOLVED finding that counts: a malicious one, or a vuln on a dependency that is compiled in; signals never count"`
 	Flagged         []api.Dependency       `json:"flagged"                    jsonschema:"the flagged dependencies, those with an unresolved malicious finding first; each advisory has a key, a kind and a resolved flag"`
 	DiscoveryErrors []store.DiscoveryError `json:"discovery_errors,omitempty" jsonschema:"repo and ecosystem pairs the last scan could not read; their dependencies were NOT checked, so an empty flagged list is not clean while this is set"`
+	RegistryUnknown int                    `json:"registry_unknown,omitempty" jsonschema:"dependencies whose registry lookup (npm, PyPI, the Go module proxy) got no answer in the last check; each keeps its earlier registry findings, but whether the registry has since withdrawn or yanked it is unknown"`
 	URL             string                 `json:"url"                        jsonschema:"web page where the user can view findings"`
 	ZeroHint        *flaggedZeroHint       `json:"zero_result_hint,omitempty" jsonschema:"set by deps_list_flagged only, when the store holds zero dependencies: an empty flagged list then means nothing was checked, not that the dependencies are clean"`
 }
@@ -159,6 +161,7 @@ func (h *handlers) flagged(res client.CheckResult) flaggedOut {
 		FlaggedCount:    res.FlaggedCount,
 		Flagged:         res.Flagged,
 		DiscoveryErrors: res.DiscoveryErrors,
+		RegistryUnknown: res.RegistryUnknown,
 		URL:             h.webURL,
 	}
 }

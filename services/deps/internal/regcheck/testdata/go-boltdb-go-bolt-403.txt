@@ -1,0 +1,4 @@
+SECURITY ERROR
+The module proxy considers this module to be malicious
+and will not serve it. It may be dangerous to execute
+the code contained within this module.

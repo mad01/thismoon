@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "_last-serial": 42830201,
+    "api-version": "1.4"
+  },
+  "name": "ultralytics",
+  "project-status": {
+    "status": "active"
+  },
+  "versions": [
+    "8.3.39",
+    "8.3.40",
+    "8.3.43"
+  ],
+  "files": []
+}

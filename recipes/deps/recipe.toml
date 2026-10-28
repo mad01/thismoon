@@ -55,9 +55,10 @@ idempotent = true
 # the Go toolchain and module cache, the discovery config and the catalog
 # registry (and the targets their symlinks resolve to), plus the store.
 # Writes go to the store, the module cache and the temp dirs. Egress is
-# api.osv.dev, proxy.golang.org and data.jsdelivr.com (the hash lookup for
-# vendored JavaScript); loopback for the events post. A machine whose
-# registry lists repos outside ~/code/src adds them in
+# api.osv.dev and its data bucket, proxy.golang.org, registry.npmjs.org,
+# pypi.org, data.jsdelivr.com (the hash lookup for vendored JavaScript) and
+# github.com (GitHub Action ref lists); loopback for the events post. A
+# machine whose registry lists repos outside ~/code/src adds them in
 # ~/.config/srt/deps.local.json (docs/SANDBOXING.md, "The machine-local
 # expansion layer").
 # Rendered from spec.access in services/deps/service-info.yaml by
