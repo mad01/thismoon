@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mad01/thismoon/kit/firstlaunchtest"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
 
@@ -35,9 +35,7 @@ func installHungSSH(t *testing.T) fakeSSH {
 	}
 	// A fresh script's first launch can be slow under load; launch it once
 	// untimed, before it logs a pid, so the pull timeout measures git.
-	if out, err := exec.Command(script, "warm").CombinedOutput(); err != nil {
-		t.Fatalf("first launch of fake ssh: %v: %s", err, out)
-	}
+	firstlaunchtest.Warm(t, script, []string{"warm"}, nil)
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_SSH_COMMAND", script)

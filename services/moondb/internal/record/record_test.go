@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mad01/thismoon/kit/firstlaunchtest"
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
@@ -671,9 +672,7 @@ func TestBudgetStillWritesTheEdit(t *testing.T) {
 		}
 		// A new executable's first launch can wait on the system's check of
 		// it; take that wait here, not under the budget.
-		if err := exec.Command(fake, "warm").Run(); err != nil {
-			t.Fatal(err)
-		}
+		firstlaunchtest.Warm(t, fake, []string{"warm"}, nil)
 		t.Setenv("PATH", bin)
 		s := newSession(t, repo)
 		s.budget = 200 * time.Millisecond

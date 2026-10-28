@@ -7,10 +7,11 @@ import (
 	"io/fs"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/kit/firstlaunchtest"
 )
 
 // modsCasesDir holds one directory per scenario, written by
@@ -70,11 +71,8 @@ func modsFakeClaude(t *testing.T) string {
 	if err := os.WriteFile(path, readFile(t, "../mods/testdata/fake-claude.sh"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	warm := exec.Command(path, "warm-up")
-	warm.Env = append(os.Environ(), "FAKE_CLAUDE_LOG="+filepath.Join(dir, "warm-up.log"))
-	if out, err := warm.CombinedOutput(); err != nil {
-		t.Fatalf("fake claude: %v: %s", err, out)
-	}
+	firstlaunchtest.Warm(t, path, []string{"warm-up"},
+		append(os.Environ(), "FAKE_CLAUDE_LOG="+filepath.Join(dir, "warm-up.log")))
 	return path
 }
 

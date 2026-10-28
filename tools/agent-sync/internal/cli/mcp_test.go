@@ -9,10 +9,11 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/kit/firstlaunchtest"
 )
 
 // mcpCasesDir holds one directory per scenario: case.json (the steps, what
@@ -320,11 +321,8 @@ func mcpFakeBin(t *testing.T) string {
 	if err := os.WriteFile(claude, readFile(t, mcpFakeClaude), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	warm := exec.Command(claude, "mcp", "list")
-	warm.Env = append(os.Environ(), "FAKE_CLAUDE_DIR="+t.TempDir())
-	if out, err := warm.CombinedOutput(); err != nil {
-		t.Fatalf("fake claude: %v: %s", err, out)
-	}
+	firstlaunchtest.Warm(t, claude, []string{"mcp", "list"},
+		append(os.Environ(), "FAKE_CLAUDE_DIR="+t.TempDir()))
 	return bin
 }
 

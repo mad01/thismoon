@@ -6,13 +6,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/mad01/thismoon/kit/firstlaunchtest"
 	"github.com/mad01/thismoon/services/status/internal/discover"
 )
 
@@ -108,7 +107,9 @@ func TestBinaryVersion(t *testing.T) {
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	launchOnce(t, bin)
+	// Under a full make test the fake's first launch can outlast the 3 s
+	// probe timeout, so take it here, untimed.
+	firstlaunchtest.Warm(t, bin, []string{"version"}, nil)
 	if got := BinaryVersion(context.Background(), bin); got != "abc1234" {
 		t.Errorf("BinaryVersion = %q, want abc1234", got)
 	}
@@ -117,22 +118,5 @@ func TestBinaryVersion(t *testing.T) {
 	}
 	if got := BinaryVersion(context.Background(), ""); got != "" {
 		t.Errorf("BinaryVersion(empty path) = %q, want empty", got)
-	}
-}
-
-// firstLaunchBudget bounds the untimed launch that warms a fake binary.
-const firstLaunchBudget = 30 * time.Second
-
-// launchOnce runs a newly written executable once, outside any probe
-// deadline. macOS assesses a new executable on its first launch, and while a
-// full make test is linking and launching dozens of fresh test binaries that
-// queue made a fake script's first launch take up to 4.9 s, past the 3 s
-// probe timeout; later launches of the same file took milliseconds.
-func launchOnce(t *testing.T, path string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), firstLaunchBudget)
-	defer cancel()
-	if out, err := exec.CommandContext(ctx, path, "version").CombinedOutput(); err != nil {
-		t.Fatalf("first launch of %s: %v: %s", path, err, out)
 	}
 }

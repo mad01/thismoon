@@ -1,12 +1,10 @@
 package hint
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -15,12 +13,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mad01/thismoon/kit/firstlaunchtest"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
 // writeHintScript drops an executable /bin/sh script into dir. Scripts are
 // generated per test rather than committed as testdata so the exec bit never
-// depends on checkout behavior.
+// depends on checkout behavior. A script whose first line exits on the
+// argument warm can be warmed with firstlaunchtest.Warm: these tests configure
+// the command without arguments, so the hint's own run never takes that exit.
 func writeHintScript(t *testing.T, dir, name, body string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -28,24 +29,6 @@ func writeHintScript(t *testing.T, dir, name, body string) string {
 		t.Fatal(err)
 	}
 	return path
-}
-
-// firstLaunchBudget bounds the untimed launch that warms a fresh script.
-const firstLaunchBudget = 30 * time.Second
-
-// launchOnce runs a freshly written script once with the argument warm,
-// outside any hint budget. macOS checks each new executable on its first
-// exec, and under a full-repo `go test ./...` that check can outlast a
-// short budget. These tests configure the command without arguments, so a
-// script whose first line exits on warm starts nothing and writes nothing
-// here.
-func launchOnce(t *testing.T, path string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), firstLaunchBudget)
-	defer cancel()
-	if out, err := exec.CommandContext(ctx, path, "warm").CombinedOutput(); err != nil {
-		t.Fatalf("first launch of %s: %v: %s", path, err, out)
-	}
 }
 
 // generousBudget keeps every test that is not about the timeout off the
@@ -182,7 +165,7 @@ func TestCustomHintKeepsOutputWhenAChildLingers(t *testing.T) {
 func TestCustomHintWarnDoesNotHoldTheSession(t *testing.T) {
 	dir := t.TempDir()
 	fails := writeHintScript(t, dir, "fails.sh", "[ \"$1\" = warm ] && exit 0\nexit 1")
-	launchOnce(t, fails)
+	firstlaunchtest.Warm(t, fails, []string{"warm"}, nil)
 	started := make(chan struct{})
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
@@ -225,7 +208,7 @@ func TestCustomHintTimeoutKillsGrandchildren(t *testing.T) {
 	pidfile := filepath.Join(dir, "grandchild.pid")
 	hangs := writeHintScript(t, dir, "hangs.sh",
 		"[ \"$1\" = warm ] && exit 0\nsleep 30 &\necho $! > "+pidfile+"\nwait")
-	launchOnce(t, hangs)
+	firstlaunchtest.Warm(t, hangs, []string{"warm"}, nil)
 	var warned []string
 	h := newCustomHint(config.CustomHint{Command: []string{hangs}, TimeoutMS: 1000}, &warned)
 
