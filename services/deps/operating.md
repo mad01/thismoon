@@ -2,10 +2,11 @@
 
 deps is a supply-chain scanner. It discovers every external dependency across
 the catalog-registered repos (Go modules, npm lockfiles, exact Python pins,
-Swift resolved files). It checks each pinned version against the OSV.dev
-advisory database and fires one coalesced macOS notification when packages
-are newly flagged, plus a separate one for a malicious package. Findings live
-on a local web page (default {{.BaseURL}}).
+Swift resolved files) and the npm and PyPI trees of the tools mise installs
+with its npm: and pipx: backends. It checks each pinned version against the
+OSV.dev advisory database and fires one coalesced macOS notification when
+packages are newly flagged, plus a separate one for a malicious package.
+Findings live on a local web page (default {{.BaseURL}}).
 
 ## how it runs
 
@@ -29,7 +30,8 @@ The store is one JSON file, `scan.json`, in the workdir, default {{.StorePath}}
 it is always safe to read directly. The discovery config (exclude lists) is a
 separate file, default `~/.config/deps/config.toml` (or under
 $XDG_CONFIG_HOME/deps when that is set), and the repo set comes from the
-catalog registry.
+catalog registry. Its `[mise]` keys locate mise.lock and the mise installs
+directory; `deps config` prints the paths in use.
 
 ## failure modes
 
@@ -64,6 +66,21 @@ are the sandbox's: `operation not permitted` for a repo outside `~/code/src`
 list` for a module go would fetch from somewhere other than proxy.golang.org,
 such as a GOPRIVATE module. `t-man logs deps --source sandbox` shows the
 denials.
+
+A discovery error under a `mise:` label, or with ecosystem `mise`: deps could
+not read an installed tool's tree. Each tool reports under its label, such as
+`mise:npm:yarn`. Ecosystem `mise` under the lock's path means mise.lock itself
+could not be read or parsed, which hides every tool. A `not installed` error
+under a label means the install lags the lock: run `mise install` (or `ralph
+up`), then `deps check --repo <label>`. An `aube-lock.yaml: no such file`
+error means mise installed that npm tool before it wrote aube lockfiles, and
+`mise install` skips a version that is already there. Reinstall it with `mise
+install -f <tool>` (the label without `mise:`), then rescan. An `operation not
+permitted` error comes from the sandbox, which reads mise.lock and the
+installs directory only at their default paths. If mise.lock links to a file
+outside `~/code/src`, or the `[mise]` keys move the lock or the installs
+directory, add that path to `~/.config/srt/deps.local.json`. No mise tools in
+the inventory and no error means there is no lock at the configured path.
 
 A flagged advisory on a package nothing compiles in: Go scans cover the module
 graph (`go list -m -json all`), which includes modules no binary imports. So

@@ -10,6 +10,13 @@ an already-pinned version sits unnoticed until something else surfaces it. The
 missing piece is a background check that keeps running after the pin is made
 and says something only when a package is actually flagged.
 
+The repos are not the only place packages run from. The CLI tools that mise
+installs with its npm: and pipx: backends run on the host, outside any sandbox
+and with the user's credentials. Their npm and PyPI trees pull in dozens of
+packages no repo pins. So deps also scans the installed tools of the mise
+config, not only repo manifests. mise.lock names each tool's version, and the
+install tree on disk lists every package that came with it.
+
 ## Why its own service
 
 Advisory checking is a cross-repo concern: the repo set comes from the catalog
@@ -44,6 +51,8 @@ deps does not fix anything: no automatic version bumps, no generated pull
 requests, only the fixed version named in each finding. It is not a CI gate
 and blocks nothing. Reachability stays module-level and Go-only: there is no
 function-level analysis, and npm, PyPI, and Swift packages are always treated
-as compiled in. Repos outside the catalog registry are not scanned, and when
-the machine is offline it waits rather than caching or guessing advisory
-state.
+as compiled in. Repos outside the catalog registry are not scanned. Of the
+installed tools, deps reads only mise's npm: and pipx: trees. It misses a
+native binary that a package downloads at install time, and any tool installed
+some other way. When the machine is offline it waits rather than caching or
+guessing advisory state.

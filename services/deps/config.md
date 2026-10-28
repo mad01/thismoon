@@ -3,7 +3,8 @@
 deps has two separate configuration surfaces: root flags/environment
 variables that locate the store, the registry, and the discovery config
 file. The other is the discovery config file itself, which trims the repo
-set that `deps serve` scans.
+set that `deps serve` scans and locates the mise tools it scans beside the
+repos.
 
 ## Where config lives
 
@@ -23,7 +24,8 @@ A leading `~` is expanded before the file is opened, and a home directory
 that cannot be resolved is an error rather than a path relative to the
 working directory.
 
-A missing file is not an error: discovery runs with no extra exclusions. A
+A missing file is not an error: discovery runs with no extra exclusions and
+mise at its default paths. A
 file that is present but malformed (bad TOML, or an exclude pattern that
 does not compile) **is** an error naming the key and the pattern. `deps
 config` reports it as `parse error: <err>` and still prints the empty
@@ -76,9 +78,9 @@ agent with no shell gets the same report from the `deps_doctor` MCP tool.
 
 ## Discovery config keys
 
-`~/.config/deps/config.toml`. Both keys are optional lists of glob patterns.
-The file only trims the repo set the catalog registry produces; it never
-adds to it.
+`~/.config/deps/config.toml`. Every key is optional. The two exclude keys are
+lists of glob patterns that only trim the repo set the catalog registry
+produces; they never add to it.
 
 - `exclude_repos` ([]string, default `[]`): skip a whole repo.
 - `exclude_paths` ([]string, default `[]`): skip a directory while walking
@@ -87,6 +89,24 @@ adds to it.
 Git worktrees, nested checkouts, and `.git`/`vendor`/`node_modules`/
 `testdata` are skipped by the walker regardless of this file. Edits take
 effect on the next scan; `serve` does not need a restart.
+
+The `[mise]` table locates the tools mise installs with its npm: and pipx:
+backends, which deps scans beside the repos. Set a key only when mise keeps
+that file somewhere else; a leading `~` is expanded. serve's sandbox reads
+only the default paths, so a moved lock or installs directory also needs an
+`allowRead` entry in `~/.config/srt/deps.local.json`, the machine-local
+expansion layer ([docs/SANDBOXING.md](../../docs/SANDBOXING.md#the-machine-local-expansion-layer)).
+
+- `[mise] lock` (string, default `~/.config/mise/mise.lock`): the lock that
+  pins each tool's version. A missing lock means no mise tools to scan; a
+  lock that can't be read or parsed is a discovery error.
+- `[mise] installs` (string, default `~/.local/share/mise/installs`): the
+  directory mise installs tools into, one subdirectory per tool. A tool the
+  lock pins with no directory here is not installed on this machine and is
+  skipped.
+
+Each tool reports under the label `mise:<tool>`, for example `mise:npm:yarn`.
+`deps check --repo mise:npm:yarn` rescans that tool alone.
 
 ### How a pattern is matched
 
@@ -122,8 +142,13 @@ child of any `internal/gen`.
 # ~/.config/deps/config.toml
 exclude_repos = ["scratch-repo", "archive-*", "mad01/*", "*/archive/*"]
 exclude_paths = ["third_party", "internal/gen/*"]
+
+[mise]
+lock = "~/.config/mise/mise.lock"
+installs = "~/.local/share/mise/installs"
 ```
 
 `deps config` prints which file resolved and the effective values (empty
-lists when there is no file); `deps config --help` prints this same
+lists and the default mise paths when there is no file); `deps config --help`
+prints this same
 annotated reference from inside the binary.

@@ -56,7 +56,7 @@ func TestWriteEffectiveConfig(t *testing.T) {
 			if len(got.ExcludeRepos) != tt.repos {
 				t.Errorf("exclude_repos = %d entries, want %d", len(got.ExcludeRepos), tt.repos)
 			}
-			for _, key := range []string{"exclude_repos", "exclude_paths"} {
+			for _, key := range []string{"exclude_repos", "exclude_paths", "[mise]", "lock", "installs"} {
 				if !strings.Contains(body, key) {
 					t.Errorf("body omits %q:\n%s", key, body)
 				}
@@ -69,7 +69,7 @@ func TestWriteEffectiveConfig(t *testing.T) {
 // discovery key landing without a line explaining it.
 func TestConfigLongDocumentsEveryKey(t *testing.T) {
 	for _, want := range []string{
-		"exclude_repos", "exclude_paths",
+		"exclude_repos", "exclude_paths", "[mise]", "lock =", "installs =",
 		"DEPS_CONFIG", "~/.config/deps/config.toml", "catalog registry",
 	} {
 		if !strings.Contains(configCmd.Long, want) {

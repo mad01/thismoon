@@ -9,8 +9,9 @@
       "~/.config/catalog/registry.yaml",
       "~/code/src",
       "~/code/pkg/mod",
-      "~/.local/share/mise/installs/go",
-      "~/Library/Application Support/go/env"
+      "~/Library/Application Support/go/env",
+      "~/.config/mise/mise.lock",
+      "~/.local/share/mise/installs"
     ],
     "allowWrite": [
       "~/.local/share/deps",

@@ -1,0 +1,51 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@anthropic-ai/sandbox-runtime':
+        specifier: 0.0.81
+        version: 0.0.81
+
+packages:
+
+  '@anthropic-ai/sandbox-runtime@0.0.81':
+    resolution: {integrity: sha512-fixture}
+    engines: {node: '>=22.12.0'}
+    hasBin: true
+
+  '@pondwader/socks5-server@1.0.10':
+    resolution: {integrity: sha512-fixture}
+
+  commander@12.1.0:
+    resolution: {integrity: sha512-fixture}
+    engines: {node: '>=18'}
+
+  node-forge@1.4.0:
+    resolution: {integrity: sha512-fixture}
+    engines: {node: '>= 6.13.0'}
+
+  zod@3.25.76:
+    resolution: {integrity: sha512-fixture}
+
+snapshots:
+
+  '@anthropic-ai/sandbox-runtime@0.0.81':
+    dependencies:
+      '@pondwader/socks5-server': 1.0.10
+      commander: 12.1.0
+      node-forge: 1.4.0
+      zod: 3.25.76
+
+  '@pondwader/socks5-server@1.0.10': {}
+
+  commander@12.1.0: {}
+
+  node-forge@1.4.0: {}
+
+  zod@3.25.76: {}

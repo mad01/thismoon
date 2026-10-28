@@ -1,7 +1,9 @@
 // Package discover enumerates external dependencies across repos, one Ecosystem
 // implementation per package manager. The set is pluggable: adding a language
-// means adding an Ecosystem, not touching the walker. Discovery is read-only and
-// produces resolved name@version tuples — the advisory check happens elsewhere.
+// means adding an Ecosystem, not touching the walker. Beside the repos, Mise
+// reads the npm and PyPI trees of the tools mise installed. Discovery is
+// read-only and produces resolved name@version tuples — the advisory check
+// happens elsewhere.
 package discover
 
 import (
@@ -16,7 +18,7 @@ type Package struct {
 	Ecosystem    string // OSV ecosystem string: Go | npm | PyPI | SwiftURL
 	Name         string
 	Version      string
-	ManifestPath string // the go.mod / package-lock.json that declared it
+	ManifestPath string // the go.mod / package-lock.json / site-packages that declared it
 	Direct       bool
 	// Imported is true when the package contributes compiled code to the main
 	// module's build (Go reachability via `go list -deps`). Ecosystems that
@@ -88,18 +90,24 @@ func Repos(
 				continue
 			}
 			for _, p := range pkgs {
-				deps = append(deps, store.Dependency{
-					Ecosystem:    p.Ecosystem,
-					Name:         p.Name,
-					Version:      p.Version,
-					Repo:         repo,
-					ManifestPath: p.ManifestPath,
-					Direct:       p.Direct,
-					Imported:     p.Imported,
-					Advisories:   p.Advisories,
-				})
+				deps = append(deps, dependency(repo, p))
 			}
 		}
 	}
 	return deps, errs
+}
+
+// dependency turns a discovered package into the stored dependency of repo, a
+// repo root or a mise tool label.
+func dependency(repo string, p Package) store.Dependency {
+	return store.Dependency{
+		Ecosystem:    p.Ecosystem,
+		Name:         p.Name,
+		Version:      p.Version,
+		Repo:         repo,
+		ManifestPath: p.ManifestPath,
+		Direct:       p.Direct,
+		Imported:     p.Imported,
+		Advisories:   p.Advisories,
+	}
 }

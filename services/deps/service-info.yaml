@@ -36,11 +36,21 @@ spec:
       - ~/.config/catalog/registry.yaml
       # The repos the registry lists.
       - ~/code/src
-      # GOMODCACHE (GOPATH is ~/code), the mise Go toolchain the launcher
-      # resolves, and the go env file (GOPRIVATE and friends).
+      # GOMODCACHE (GOPATH is ~/code) and the go env file (GOPRIVATE and
+      # friends). The mise Go toolchain the launcher resolves is in the
+      # installs directory below.
       - ~/code/pkg/mod
-      - ~/.local/share/mise/installs/go
       - ~/Library/Application Support/go/env
+      # The installed mise tools scanned beside the repos: the lock that pins
+      # their versions, and the whole installs directory. A tool declared by
+      # its short name (cookiecutter, backend pipx:cookiecutter) installs to
+      # installs/cookiecutter, so no npm-/pipx- prefix covers every tree, and
+      # the directory holds only installed public software. A plain path
+      # grants its subtree. The lock is a symlink into the dotfiles checkout
+      # under ~/code/src, read above; a machine that links it from elsewhere
+      # adds the target to its expansion layer.
+      - ~/.config/mise/mise.lock
+      - ~/.local/share/mise/installs
     # The module cache takes downloads, as above. The build cache go list
     # needs is a private one in the workdir (GOCACHE, set by the recipe), so
     # the sandbox never writes the build cache other go builds trust.

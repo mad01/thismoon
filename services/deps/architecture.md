@@ -3,8 +3,9 @@
 ## Overview
 
 deps is the supply-chain scanner service: it discovers every external
-dependency across the catalog-registered repos and checks each pinned version
-against the OSV.dev advisory database. At runtime `deps serve --port 7429`
+dependency across the catalog-registered repos and the tools mise installs,
+and checks each pinned version against the OSV.dev advisory database. At
+runtime `deps serve --port 7429`
 (loopback only, fronted by d-man as `http://deps.this/`, run as a t-man agent)
 is the single long-running process. It owns the scan store, runs the scan
 loop, serves the web page and JSON API, and is the only process that reaches
@@ -17,10 +18,12 @@ clients to the serve API and report "serve not reachable" when it is down.
 cmd/deps/            entrypoint, delegates to internal/cli
 internal/
   cli/               Cobra commands: serve, scan, check, resolve, notify, mcp, version
-  config/            ~/.config/deps/config.toml (exclude_repos, exclude_paths)
+  config/            ~/.config/deps/config.toml (exclude_repos, exclude_paths,
+                     [mise] lock and installs paths)
   registry/          reads the catalog registry.yaml into the repo set to scan
   discover/          Ecosystem interface + Go, npm, Python, Swift discoverers
-                     and the shared walker that skips nested checkouts
+                     and the shared walker that skips nested checkouts; Mise
+                     reads the installed mise npm and pipx trees
   osv/               OSV.dev client (querybatch, then per-id vuln fetch)
   scanner/           Engine: discover, check, persist, coalesced notify
   notify/            Notifier interface, osascript banner, event emission
@@ -45,9 +48,20 @@ import-graph reachability with `go list -deps -json ./...`, tagging deps that
 contribute no compiled Go package as graph-only; this fails open so a real
 advisory is never hidden. A discoverer that fails for one repo and ecosystem
 (typically `go list` without a `go` on PATH) becomes a `DiscoveryError` and
-the walk goes on with the rest. The check step posts versions to OSV's
-`/v1/querybatch` (up to 1000 per batch, following `next_page_token` for paged
-results) and fetches each unique advisory id once. A record that fails to
+the walk goes on with the rest.
+
+Beside the repos, discovery reads the tools mise installs with its npm: and
+pipx: backends. `mise.lock` pins each tool's version, and that version's
+install directory holds an `aube-lock.yaml` (npm) or a virtualenv's
+`*.dist-info` folders (pipx). It reads those files and never runs mise. Each
+tool reports under the repo label `mise:<tool>`, which a per-repo rescan takes
+as one unit. Every mise row counts as compiled in, since reachability is
+computed for Go alone. An unreadable lock is one `DiscoveryError` for every
+tool, and an unreadable tree is one for its tool.
+
+The check step posts versions to OSV's `/v1/querybatch` (up to 1000 per
+batch, following `next_page_token` for paged results) and fetches each unique
+advisory id once. A record that fails to
 load keeps its finding with the id alone, so one bad fetch never aborts the
 scan. Each finding has a kind: `malicious` for an OSV MAL- id, `vuln` for any
 other advisory, and `signal` for a warning sign a deps rule raises. The
@@ -90,9 +104,11 @@ HTTP: `GET /` (web page), `GET /api/deps`, `GET /api/flagged`,
 `POST /api/scan` (discover only), `POST /api/check[?repo=]`,
 `POST /api/resolve`, `POST /api/notify`, `GET /version`, `GET /webkit/`. CLI:
 `deps serve`, `scan`, `check [--repo]`, `resolve <key>...`, `notify`, `mcp`,
-`version`, each a single call to the matching endpoint. MCP tools:
+`version`, each a single call to the matching endpoint. `--repo` and
+`deps_scan_repo` take a repo path or basename, or a mise label. MCP tools:
 `deps_scan`, `deps_check`, `deps_list_flagged`, `deps_scan_repo`,
 `deps_resolve`, and `deps_doctor`. The scan and check responses carry
-`discovery_errors` alongside the findings. Config surfaces: the deps config file above, the catalog
+`discovery_errors` alongside the findings. Config surfaces: the deps config file above
+(which also locates mise.lock and the mise installs directory), the catalog
 registry as the repo source of truth, and the `DEPS_PORT` / `DEPS_BASE_URL`
 environment variables mirrored by `--port` / `--base-url`.

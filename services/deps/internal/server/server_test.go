@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -265,11 +266,12 @@ func (malChecker) Check(_ context.Context, queries []osv.Query) ([][]store.Advis
 }
 
 // chalkEngine is an engine over st whose one repo pins chalk@5.6.1, which
-// malChecker flags as malicious, delivering banners through n.
-func chalkEngine(st *store.Store, n alert.Notifier) *scanner.Engine {
+// malChecker flags as malicious, delivering banners through n. It also scans
+// the installed tools mise points at; the zero Mise scans none.
+func chalkEngine(st *store.Store, n alert.Notifier, mise discover.Mise) *scanner.Engine {
 	return &scanner.Engine{
-		Prepare: func() ([]string, discover.Options, error) {
-			return []string{"/home/u/code/widget"}, discover.Options{}, nil
+		Prepare: func() (scanner.Plan, error) {
+			return scanner.Plan{Repos: []string{"/home/u/code/widget"}, Mise: mise}, nil
 		},
 		Ecosystems: []discover.Ecosystem{stubEco{pkgs: []discover.Package{
 			{Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Imported: true},
@@ -280,19 +282,49 @@ func chalkEngine(st *store.Store, n alert.Notifier) *scanner.Engine {
 	}
 }
 
+// chalkTool writes a mise install whose one tool is npm:chalk@5.6.1 and
+// returns the Mise that reads it.
+func chalkTool(t *testing.T) discover.Mise {
+	t.Helper()
+	dir := t.TempDir()
+	version := filepath.Join(dir, "installs", "npm-chalk", "5.6.1")
+	if err := os.MkdirAll(version, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		filepath.Join(dir, "mise.lock"): "[[tools.\"npm:chalk\"]]\nversion = \"5.6.1\"\n",
+		filepath.Join(version, "aube-lock.yaml"): "lockfileVersion: '9.0'\nimporters:\n  .:\n" +
+			"    dependencies:\n      chalk: {version: 5.6.1}\npackages:\n  chalk@5.6.1: {}\n",
+	}
+	for path, body := range files {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return discover.Mise{
+		LockPath:    filepath.Join(dir, "mise.lock"),
+		InstallRoot: filepath.Join(dir, "installs"),
+	}
+}
+
 // TestManualCheckNotifiesOnce: a manual check that finds a new malicious
-// finding fires its banner, on the full and the per-repo path alike, and a
-// second check does not fire it again. A manual check resets the scan time,
-// so the loop would skip it and no banner would ever fire.
+// finding fires its banner, on the full, the per-repo and the per-tool path
+// alike, and a second check does not fire it again. A manual check resets the
+// scan time, so the loop would skip it and no banner would ever fire.
 func TestManualCheckNotifiesOnce(t *testing.T) {
-	for _, path := range []string{"/api/check", "/api/check?repo=widget"} {
+	paths := []string{
+		"/api/check",
+		"/api/check?repo=widget",
+		"/api/check?repo=" + url.QueryEscape("mise:npm:chalk"),
+	}
+	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {
 			st, err := store.New(t.TempDir())
 			if err != nil {
 				t.Fatal(err)
 			}
 			n := &recordingNotifier{}
-			h := New(st, chalkEngine(st, n), testInfo).Handler()
+			h := New(st, chalkEngine(st, n, chalkTool(t)), testInfo).Handler()
 			for range 2 {
 				rec := httptest.NewRecorder()
 				h.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))
@@ -336,7 +368,7 @@ func TestManualCheckKeepsResultWhenNotifyFails(t *testing.T) {
 			}
 			n := notifierFunc(func() error { return notify(workdir) })
 			rec := httptest.NewRecorder()
-			New(st, chalkEngine(st, n), testInfo).Handler().
+			New(st, chalkEngine(st, n, discover.Mise{}), testInfo).Handler().
 				ServeHTTP(rec, httptest.NewRequest("POST", "/api/check", nil))
 			if rec.Code != 200 {
 				t.Fatalf("POST /api/check = %d: %s", rec.Code, rec.Body)

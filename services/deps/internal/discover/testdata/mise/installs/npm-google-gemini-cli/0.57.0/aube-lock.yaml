@@ -1,0 +1,15 @@
+lockfileVersion: '9.0'
+
+# An install mise.lock no longer pins: discovery must not report it.
+importers:
+
+  .:
+    dependencies:
+      '@google/gemini-cli':
+        specifier: 0.57.0
+        version: 0.57.0
+
+packages:
+
+  '@google/gemini-cli@0.57.0':
+    resolution: {integrity: sha512-fixture}

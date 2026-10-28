@@ -115,6 +115,25 @@ func TestLoadMissingFileIsEmptyConfig(t *testing.T) {
 	}
 }
 
+// TestLoadMiseDefaults pins that mise paths default when unset, missing file
+// included, and that a config overriding one keeps the other's default.
+func TestLoadMiseDefaults(t *testing.T) {
+	missing, err := Load(filepath.Join(t.TempDir(), "absent.toml"))
+	if err != nil {
+		t.Fatalf("Load(missing): %v", err)
+	}
+	want := Mise{Lock: DefaultMiseLock, Installs: DefaultMiseInstalls}
+	if missing.Mise != want {
+		t.Errorf("missing file: Mise = %+v, want %+v", missing.Mise, want)
+	}
+
+	moved := load(t, "[mise]\nlock = \"/elsewhere/mise.lock\"\n")
+	want = Mise{Lock: "/elsewhere/mise.lock", Installs: DefaultMiseInstalls}
+	if moved.Mise != want {
+		t.Errorf("lock override: Mise = %+v, want %+v", moved.Mise, want)
+	}
+}
+
 // TestLoadRejectsMalformedTOML keeps the parse error distinguishable from the
 // missing-file case, which `deps config` reports differently.
 func TestLoadRejectsMalformedTOML(t *testing.T) {
