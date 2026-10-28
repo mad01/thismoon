@@ -23,8 +23,9 @@ spec:
     # api.osv.dev for the advisory checks. proxy.golang.org because go list
     # downloads a module the cache lacks (a fresh dependency bump), as it
     # does unsandboxed; repos commit go.sum, so the checksum database is not
-    # consulted.
-    egress: [api.osv.dev, proxy.golang.org]
+    # consulted. data.jsdelivr.com because discovery looks up each vendored
+    # JavaScript file by its sha256 to learn its npm name and version.
+    egress: [api.osv.dev, proxy.golang.org, data.jsdelivr.com]
     reads:
       - ~/code/bin
       - workdir

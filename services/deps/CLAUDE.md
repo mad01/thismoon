@@ -17,7 +17,8 @@ deps/
     cli/               - cobra: root, serve, scan, check (+--repo), resolve, notify, mcp, config, version
     config/            - discovery config (exclude_repos / exclude_paths / [mise] lock, installs), ~/.config/deps/config.toml
     registry/          - reads the catalog registry.yaml → repo roots to scan
-    discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (requirements.txt exact pins) + Swift (Package.resolved); shared walker skips worktrees/nested checkouts; Mise reads the installed mise npm/pipx trees
+    discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (requirements.txt exact pins) + Swift (Package.resolved) + browser JavaScript as npm (jsDelivr URLs in *.sh, vendored files by hash); shared walker skips worktrees/nested checkouts; Mise reads the installed mise npm/pipx trees
+    jsdelivr/          - jsDelivr data API client (GET /v1/lookup/hash/{sha256}), in-memory cache
     osv/               - OSV.dev client (POST /v1/querybatch + GET /v1/vulns/{id})
     store/             - Dependency/Advisory/Flag model + atomic JSON store; notified + resolved sets
     scanner/           - Engine: discover → check → persist; CheckRepo (per-repo merge); coalesced Notify
@@ -39,7 +40,8 @@ Like `reminder`, **`deps serve` is the only writer**:
 - **`deps serve`** owns the store (`~/.local/share/deps/scan.json`), runs the
   HTTP server (web + JSON API + `/version` + `/webkit/`), the daily catch-up
   scan loop, and fires notifications. It is the only process that reaches the
-  network (OSV).
+  network: OSV for the check, and jsDelivr when discovery names a vendored
+  JavaScript file.
 - **`deps mcp`** and the **`deps` CLI** hold no state: they are thin HTTP
   clients to the serve API on `localhost:<port>`. If serve is down, they return
   "deps serve not reachable … (t-man status deps)".
@@ -62,6 +64,45 @@ no file locks.
   normalized. The walk also covers `Package.resolved` (v2/v3, remote pins with
   an exact version), and branch pins are skipped. The shared walker skips `.git/vendor/node_modules/testdata`, **git worktrees and nested
   checkouts** (a `.git` entry in a subdir), and any `exclude_paths` glob.
+  `VendoredJS` alone walks into `vendor`.
+- **Browser JavaScript outside any lockfile is reported as npm.** Two
+  discoverers add `npm` rows, each `Direct` and `Imported`:
+  - `JSDelivrScripts` reads every `*.sh` the walker reaches for
+    `cdn.jsdelivr.net/npm/<name>@<version>` URLs. The version is a literal or
+    a `$VAR` / `${VAR}` the script always sets to the same literal, so no
+    script's variable names are built in. A variable assigned two values, or
+    anything that expands, is skipped rather than guessed, and so is a URL on
+    a comment line. Only exact versions count: a range, a tag such as
+    `latest`, or a variable it can't resolve is skipped. present's
+    `scripts/cache-assets.sh` yields ten packages; its xterm script and
+    stylesheet share one version and make one row.
+  - `VendoredJS` hashes every `.js` file at any depth below a directory named
+    `static` whose name ends in `.min.js` or carries a version
+    (`cytoscape-3.31.0.min.js`). Its walk enters `vendor`, since
+    `static/vendor/` is where such files usually live. It looks each sha256 up at
+    `data.jsdelivr.com/v1/lookup/hash/`. First-party files like `app.js` are
+    never hashed, so the calls stay at one per vendored file (one today). An
+    npm match names the package and version. With no match, the file name
+    supplies them and the row carries the `deps-vendored-modified` signal.
+    The version also gains `+sha256.<first 12 hex>`, so a resolve lapses when
+    the file changes; OSV ignores semver build metadata. A GitHub match is
+    published and unchanged, so it takes the file name's npm name and
+    jsDelivr's version (a leading `v` dropped) without the signal. An
+    unversioned `.min.js` with no match is skipped as a first-party build. A
+    first-party bundle with a version in its name (`static/app-1.4.0.js`)
+    gets a false `deps-vendored-modified` signal and an OSV check of npm
+    `app`; `exclude_paths` on its directory is the way out.
+  - The lookup cache lives in memory for the serve process: a match for good,
+    a miss for 24h. That is the API's own Cache-Control, and a miss can turn
+    into a match because jsDelivr indexes a file only after serving it once.
+    It isn't persisted: one call per vendored file per serve start isn't
+    worth a second file in the workdir.
+  - **A failed lookup is a `DiscoveryError`** (ecosystem `npm`) for that
+    repo's vendored files, never a guess. The file is neither known clean nor
+    known changed, and a sandbox without the jsDelivr egress has to reach
+    doctor, the event and the page, which a signal never does. Lookups aren't
+    paced and a failed one isn't cached, so a jsDelivr 429 comes back as the
+    same error on every scan until `exclude_paths` trims the candidates.
 - **Installed mise tools.** Beside the repos, `discover.Mise` reads the tools
   mise installs with its npm: and pipx: backends, code that runs on the host
   outside any sandbox. `mise.lock` (default `~/.config/mise/mise.lock`) pins
@@ -151,8 +192,8 @@ no file locks.
   declared as `spec.access` in `service-info.yaml`. It reads the repos under
   `~/code/src` minus secret-shaped files, the module cache,
   `~/.config/mise/mise.lock` and the whole mise installs directory (the Go
-  toolchain included). Egress goes to `api.osv.dev` and `proxy.golang.org`. The
-  installs grant is the plain directory, not `npm-**` / `pipx-**`: a tool
+  toolchain included). Egress goes to `api.osv.dev`, `proxy.golang.org` and
+  `data.jsdelivr.com`. The installs grant is the plain directory, not `npm-**` / `pipx-**`: a tool
   declared by its short name (`cookiecutter`, backend `pipx:cookiecutter`)
   installs to `installs/cookiecutter`. A plain path grants its subtree; srt
   drops a trailing `/**` from an allow, which leaves only the directory
@@ -274,7 +315,7 @@ Summary: "…"}`. Follow-up producers build on these rules:
 ```bash
 make build    # ./deps binary (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/deps + adhoc codesign
-make test     # go test ./... (hermetic: t.TempDir, canned go-list/OSV/lock fixtures, fake notifier; no real network/go/osascript)
+make test     # go test ./... (hermetic: t.TempDir, canned go-list/OSV/jsDelivr/lock fixtures, fake notifier; no real network/go/osascript)
 ```
 
 ## HTTP API

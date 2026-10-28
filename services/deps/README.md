@@ -33,6 +33,12 @@ it reads the tools mise installs with its npm: and pipx: backends: the version
 `mise.lock` pins, and every npm or PyPI package in that version's install
 tree. Each tool shows up as its own repo label, such as `mise:npm:yarn`.
 
+Browser libraries kept outside any lockfile count as npm packages too: the
+jsDelivr URLs a shell script downloads from, and library files committed
+under a `static` directory. deps names a committed file by looking its sha256
+up on jsDelivr. One that matches no published file gets a warning sign on the
+page: it was most likely changed after download.
+
 A flagged finding carries the advisory id, severity, and the version that fixes
 it. You can **resolve** (acknowledge) one to drop it from the active list. It
 comes back if the package version changes or a new advisory lands on it, since
@@ -152,9 +158,9 @@ make install  # build + cp to ~/code/bin/deps + adhoc codesign
 make test     # go test ./...
 ```
 
-Tests are hermetic: they use temp dirs and canned `go list` / OSV / lockfile
-fixtures and a fake notifier, so they never hit the network or fire a real
-notification.
+Tests are hermetic: they use temp dirs and canned `go list` / OSV / jsDelivr /
+lockfile fixtures and a fake notifier, so they never hit the network or fire a
+real notification.
 
 See [`CLAUDE.md`](CLAUDE.md) for the architecture: the data model, the HTTP
 API, the MCP tools.

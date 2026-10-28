@@ -1,0 +1,6 @@
+{
+	"type": "npm",
+	"name": "cytoscape",
+	"version": "3.31.0",
+	"file": "/dist/cytoscape.min.js"
+}

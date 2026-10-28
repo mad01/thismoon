@@ -1,18 +1,20 @@
 # operating deps
 
 deps is a supply-chain scanner. It discovers every external dependency across
-the catalog-registered repos (Go modules, npm lockfiles, exact Python pins,
-Swift resolved files) and the npm and PyPI trees of the tools mise installs
-with its npm: and pipx: backends. It checks each pinned version against the
-OSV.dev advisory database and fires one coalesced macOS notification when
-packages are newly flagged, plus a separate one for a malicious package.
-Findings live on a local web page (default {{.BaseURL}}).
+the catalog-registered repos: Go modules, npm lockfiles, exact Python pins,
+Swift resolved files, and browser libraries kept outside any lockfile. It also
+reads the npm and PyPI trees of the tools mise installs with its npm: and pipx:
+backends. It checks each pinned version against the OSV.dev advisory database and fires
+one coalesced macOS notification when packages are newly flagged, plus a
+separate one for a malicious package. Findings live on a local web page
+(default {{.BaseURL}}).
 
 ## how it runs
 
 A single `deps serve` process is the only writer. It owns the scan store, runs
 the daily scan loop, serves the web page and JSON API on localhost, and is the
-only process that reaches OSV. Everything else is a thin HTTP client over that
+only process that reaches the network: OSV, and jsDelivr when discovery names
+a vendored JavaScript file. Everything else is a thin HTTP client over that
 API: the CLI commands (`scan`, `check`, `resolve`, `notify`) and the MCP
 server, a stdio shim spawned as `deps mcp`. The shim being up says nothing
 about the service: every deps_* tool call is a live HTTP request to serve, and
@@ -82,6 +84,21 @@ outside `~/code/src`, or the `[mise]` keys move the lock or the installs
 directory, add that path to `~/.config/srt/deps.local.json`. No mise tools in
 the inventory and no error means there is no lock at the configured path.
 
+A discovery error for `npm` that reads `look up <file>: jsdelivr: ...`: deps
+hashes each vendored library file (a `.js` at any depth below a `static`
+directory, `static/vendor/` included, named with a version or ending in
+`.min.js`). It looks the sha256 up on data.jsdelivr.com to learn the npm name
+and version. The lookup failed, so none of that repo's vendored files were
+checked, rather than read as clean. A timeout or a 5xx from jsDelivr clears on
+the next check. `host is not on the allow list` means the sandbox settings
+predate the jsDelivr egress: re-run `ralph up`.
+
+The same error with `lookup returned 429` on every check: jsDelivr is
+limiting the request rate. deps sends one lookup per candidate file with no
+pause between them, and a failed lookup isn't cached, so each scan asks again
+and fails again. Add the directories that hold the most candidates to
+`exclude_paths`.
+
 A flagged advisory on a package nothing compiles in: Go scans cover the module
 graph (`go list -m -json all`), which includes modules no binary imports. So
 an advisory can flag a version that is never compiled. deps computes
@@ -107,6 +124,19 @@ kept so it is not lost, with its kind intact; the next check fills it in.
 A finding of kind `signal`, in the "Warning signs" section: a deps rule
 flagged something that is not an advisory. It never notifies and never counts
 toward `flagged_count`, and it resolves by key like any other finding.
+
+The signal `deps-vendored-modified`: a committed library file's sha256
+matches no file jsDelivr has served. It was edited after download, or it never
+came from npm as is. Its name and version come from the file name. The
+version also carries `+sha256.` and the first 12 hex digits of the hash, so a
+new edit brings a resolved signal back. OSV still checks that version. Compare
+the file with the published one at
+`https://cdn.jsdelivr.net/npm/<name>@<version>/<path>`, then download it again
+or resolve the signal if the change is yours. A file just added to npm can
+also miss, because jsDelivr indexes a file only after serving it once.
+deps asks again after a day. A first-party bundle with a version in its name,
+such as `static/app-1.4.0.js`, gets this signal falsely, and OSV checks it as
+the unrelated npm package `app`. Add its directory to `exclude_paths`.
 
 An acknowledged advisory came back: resolution is version-scoped by design.
 The key embeds the exact version, so bumping the package (or a new advisory
