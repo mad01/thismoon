@@ -73,8 +73,8 @@ func nameLookups(reqs []batchRequest) []string {
 
 // TestCheckActionAsksForOSVSpelling: OSV files Azure/setup-kubectl with a
 // capital A and matches names case-sensitively, so the action written as
-// azure/setup-kubectl, as its README spells it, is asked for in OSV's
-// spelling. The range filter and the fix version match it too.
+// azure/setup-kubectl, as its README spells it, is asked for as written and
+// in OSV's spelling. The range filter and the fix version match it too.
 func TestCheckActionAsksForOSVSpelling(t *testing.T) {
 	srv, bodies := tjStub(t)
 
@@ -104,9 +104,42 @@ func TestCheckActionAsksForOSVSpelling(t *testing.T) {
 	if want := []string{"CVE-2025-30066", "GHSA-mrrh-fwg8-r2c3"}; !slices.Equal(ids(got[1]), want) {
 		t.Errorf("TJ-Actions/Changed-Files advisories = %v, want %v", ids(got[1]), want)
 	}
-	want := []string{"Azure/setup-kubectl", "tj-actions/changed-files"}
+	want := []string{
+		"azure/setup-kubectl", "Azure/setup-kubectl",
+		"TJ-Actions/Changed-Files", "tj-actions/changed-files",
+	}
 	if names := nameLookups(bodies()); !slices.Equal(names, want) {
-		t.Errorf("name lookups = %v, want OSV's spellings %v", names, want)
+		t.Errorf(
+			"name lookups = %v, want each name as written, then OSV's spellings %v",
+			names,
+			want,
+		)
+	}
+}
+
+// TestCheckActionAsksForTheWrittenName: the export can lag OSV. When it holds
+// only another spelling of an action, an advisory OSV files under the name as
+// written is still found.
+func TestCheckActionAsksForTheWrittenName(t *testing.T) {
+	export := exportZip(t, []byte(
+		`{"id":"GHSA-0000-0000-0000","affected":[{"package":`+
+			`{"ecosystem":"GitHub Actions","name":"TJ-Actions/changed-files"}}]}`,
+	))
+	srv, _ := tjStubWithExport(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(export)
+	})
+
+	got, err := NewWithURL(srv.URL).Check(context.Background(), []Query{{
+		Name:      "tj-actions/changed-files",
+		Ecosystem: "GitHub Actions",
+		Version:   "v45.0.7",
+		Commit:    tjCommit,
+	}})
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if want := []string{"CVE-2025-30066", "GHSA-mrrh-fwg8-r2c3"}; !slices.Equal(ids(got[0]), want) {
+		t.Errorf("advisories = %v, want %v", ids(got[0]), want)
 	}
 }
 
@@ -176,9 +209,13 @@ func TestParseActionNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseActionNames: %v", err)
 	}
-	want := []string{"Azure/setup-kubectl", "azure/Setup-Kubectl"}
+	want := []string{"azure/setup-kubectl", "Azure/setup-kubectl", "azure/Setup-Kubectl"}
 	if got := names.spellings("azure/setup-kubectl"); !slices.Equal(got, want) {
 		t.Errorf("spellings = %v, want %v (npm names left out)", got, want)
+	}
+	want = []string{"Azure/setup-kubectl", "azure/Setup-Kubectl"}
+	if got := names.spellings("Azure/setup-kubectl"); !slices.Equal(got, want) {
+		t.Errorf("spellings of an OSV spelling = %v, want %v (no repeat)", got, want)
 	}
 	if got := names.spellings("acme/unknown"); !slices.Equal(got, []string{"acme/unknown"}) {
 		t.Errorf("spellings of a name with no advisory = %v, want it as written", got)

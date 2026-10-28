@@ -51,13 +51,17 @@ func (e *ActionNamesError) Unwrap() error { return e.Err }
 // same as strings.EqualFold.
 type actionNames map[string][]string
 
-// spellings returns the names to look name up by: OSV's spellings of it, or
-// name itself when OSV has none, as when the list could not be read.
+// spellings returns the names to look name up by: name as written, then each
+// other spelling OSV files it under. The written name stays even when OSV has
+// others, since the export can lag an advisory filed under it.
 func (n actionNames) spellings(name string) []string {
-	if s := n[strings.ToLower(name)]; len(s) > 0 {
-		return s
+	out := []string{name}
+	for _, s := range n[strings.ToLower(name)] {
+		if s != name {
+			out = append(out, s)
+		}
 	}
-	return []string{name}
+	return out
 }
 
 // needsActionNames reports whether any query looks a GitHub Action up by

@@ -332,11 +332,45 @@ func TestGitHubActionsLabelsMajorPinsByTheirRelease(t *testing.T) {
 	}
 }
 
+// TestReleaseLabel: a ref that isn't a full version takes the highest
+// full-version tag on its commit within its release line, so a major pin
+// never reads as the next major's release on the same commit. A branch takes
+// any full-version tag, and a ref no tag extends stays its own label.
+func TestReleaseLabel(t *testing.T) {
+	const commit, other = tjV46Commit, tjV47Commit
+	refs := map[string]string{
+		"refs/heads/main":   commit,
+		"refs/tags/v45":     commit,
+		"refs/tags/v45.0.7": commit,
+		"refs/tags/v46.0.5": commit,
+		"refs/tags/44.1.0":  commit,
+		"refs/tags/v4.2.1":  commit,
+		"refs/tags/v4.3.0":  commit,
+		"refs/tags/v45.1.0": other,
+	}
+	for ref, want := range map[string]string{
+		"v45":    "v45.0.7",
+		"45":     "v45.0.7",
+		"v44":    "44.1.0",
+		"v4.2":   "v4.2.1",
+		"v4":     "v4.3.0",
+		"main":   "v46.0.5",
+		"v47":    "v47",
+		"v4.2.2": "v4.2.2",
+	} {
+		if got := releaseLabel(refs, ref, commit); got != want {
+			t.Errorf("releaseLabel(%q) = %q, want %q", ref, got, want)
+		}
+	}
+}
+
 // TestGitHubActionsFollowsLocalActions: a `uses: ./path` ref runs the
 // action.yml or action.yaml in path, wherever it sits, and its remote refs
 // are read like a composite's. `uses: ./` runs the repo-root action. Each
 // file is read once however many files run it, so a cycle ends; a missing,
-// excluded or outside path is skipped without an error.
+// excluded or outside path is skipped without an error. Symlinks are followed
+// first: a link to a directory or file outside the repo is skipped, and a
+// link to an action inside it is that action, read once.
 func TestGitHubActionsFollowsLocalActions(t *testing.T) {
 	srv, _ := refServer(t)
 	root := writeRepo(t, map[string]string{
@@ -350,6 +384,9 @@ func TestGitHubActionsFollowsLocalActions(t *testing.T) {
       - uses: ./excluded/action
       - uses: ./../outside
       - uses: ./.github/actions/present-image
+      - uses: ./linked
+      - uses: ./filelink
+      - uses: ./inside
 `,
 		"tools/setup/action.yaml": `runs:
   using: composite
@@ -367,6 +404,19 @@ func TestGitHubActionsFollowsLocalActions(t *testing.T) {
 		".github/actions/present-image/action.yml": compositeAction,
 		"../outside/action.yml":                    "runs:\n  steps:\n    - uses: evil/outside@v1\n",
 	})
+	for link, target := range map[string]string{
+		"linked":              "../outside",
+		"filelink/action.yml": "../../outside/action.yml",
+		"inside":              ".github/actions/present-image",
+	} {
+		path := filepath.Join(root, link)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, path); err != nil {
+			t.Fatal(err)
+		}
+	}
 	opts := Options{ExcludePath: func(rel string) bool { return rel == "excluded" }}
 
 	pkgs, err := GitHubActions{BaseURL: srv.URL}.Discover(root, opts)

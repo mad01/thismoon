@@ -158,7 +158,8 @@ type lookup struct {
 }
 
 // lookups expands queries into the querybatch entries that answer them,
-// asking for a GitHub Action by each spelling names has for it.
+// asking for a GitHub Action as written and by each other spelling names has
+// for it.
 func lookups(queries []Query, names actionNames) []lookup {
 	out := make([]lookup, 0, len(queries))
 	for i, q := range queries {

@@ -82,10 +82,10 @@ tool, and an unreadable tree is one for its tool.
 
 The check step posts versions to OSV's `/v1/querybatch` (up to 1000 per
 batch, following `next_page_token` for paged results) and fetches each unique
-advisory id once. A GitHub Action is looked up twice, by its commit and by
-its name in the spelling OSV files it under. OSV matches names
-case-sensitively, so the check first reads OSV's export of Actions advisories
-from its data bucket. A failed read is a discovery error. A name hit stays
+advisory id once. A GitHub Action is looked up by its commit and by its
+name, as written and in each other spelling OSV files it under. OSV matches
+names case-sensitively, so the check first reads OSV's export of Actions
+advisories from its data bucket. A failed read is a discovery error. A name hit stays
 only when the version label falls in its range or can't be compared. A record
 that fails to load keeps its finding with the id alone, so one bad fetch never
 aborts the scan. Each finding has a kind: `malicious` for an OSV MAL- id,

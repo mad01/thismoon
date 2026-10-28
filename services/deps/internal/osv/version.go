@@ -39,9 +39,12 @@ func (v *vuln) affects(q Query) bool {
 // inRange reports whether ver falls in the range the events bound, evaluated
 // the way the OSV schema does: events sorted by version, each introduced
 // opening the range and each fixed or last_affected closing it. At one
-// version an opening sorts before a closing, whatever the record's order, so
-// introduced and fixed at 1.0.0 bound an empty range. ok is false when an
-// event's version can't be compared.
+// version, whatever the record's order, a fixed sorts first, then an
+// introduced, then a last_affected. A range re-introduced at its own fix
+// stays open, and a last_affected keeps the version it shares with an
+// introduced. An introduced and a fixed at one version read as affected from
+// there on, which keeps the advisory rather than hiding it. ok is false when
+// an event's version can't be compared.
 func inRange(events []event, ver version) (in, ok bool) {
 	type bound struct {
 		at    version
@@ -72,14 +75,19 @@ func inRange(events []event, ver version) (in, ok bool) {
 		}
 		bounds = append(bounds, b)
 	}
-	closes := func(b bound) int {
-		if b.opens {
+	// tie orders the bounds at one version: fixed, introduced, last_affected.
+	tie := func(b bound) int {
+		switch {
+		case b.opens:
+			return 1
+		case b.inclusive:
+			return 2
+		default:
 			return 0
 		}
-		return 1
 	}
 	slices.SortStableFunc(bounds, func(a, b bound) int {
-		return cmp.Or(a.at.compare(b.at), cmp.Compare(closes(a), closes(b)))
+		return cmp.Or(a.at.compare(b.at), cmp.Compare(tie(a), tie(b)))
 	})
 	for _, b := range bounds {
 		c := ver.compare(b.at)

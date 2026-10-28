@@ -108,9 +108,12 @@ the ref is gone upstream, and `host is not on the allow list` means the
 sandbox lacks github.com. The repo's other refs were still checked. A ref
 pinned to a commit SHA never needs github.com. A private action repo or
 reusable workflow answers 401 on every scan, so it stays a discovery error.
-The workaround is `exclude_paths`, which matches the repo-relative path in
-every repo, so `.github` stops the Actions check everywhere; exclude the
-narrowest directory that pins it, such as `.github/actions/<name>`.
+The workaround is `exclude_paths`. It matches repo-relative directories in
+every repo, not single files, so `.github` stops the Actions check
+everywhere. To silence a private ref in a composite action, exclude that
+action's directory, such as `.github/actions/<name>`. For a private ref in a
+workflow file, the only directory to exclude is `.github/workflows`, and that
+turns off the workflow check in every repo.
 
 `OSV's GitHub Actions name list` in that error means the check couldn't read
 OSV's export of Actions advisories from its data bucket. Every action was

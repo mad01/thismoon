@@ -221,14 +221,27 @@ func TestInRange(t *testing.T) {
 			"1.7.0", false, true,
 		},
 		{"unsorted", []event{{Fixed: "2.3.0"}, {Introduced: "2.0.0"}}, "2.1.0", true, true},
-		// An opening and a closing at one version bound an empty range in
-		// either record order.
+		// At one version a fixed sorts before an introduced in either record
+		// order, so a range re-introduced at its own fix stays open.
+		{"re-introduced at its fix", []event{
+			{Introduced: "0"}, {Fixed: "1.0.0"}, {Introduced: "1.0.0"},
+		}, "1.0.0", true, true},
+		{"past re-introduced at its fix", []event{
+			{Introduced: "0"}, {Fixed: "1.0.0"}, {Introduced: "1.0.0"},
+		}, "1.5.0", true, true},
+		{"before re-introduced at its fix", []event{
+			{Introduced: "0"}, {Fixed: "1.0.0"}, {Introduced: "1.0.0"},
+		}, "0.5.0", true, true},
+		// An introduced and a fixed at one version then fail open: affected.
 		{"introduced then fixed at one version", []event{
 			{Introduced: "1.0.0"}, {Fixed: "1.0.0"},
-		}, "1.0.0", false, true},
+		}, "1.0.0", true, true},
 		{"fixed then introduced at one version", []event{
 			{Fixed: "1.0.0"}, {Introduced: "1.0.0"},
-		}, "1.0.0", false, true},
+		}, "1.0.0", true, true},
+		{"before introduced and fixed at one version", []event{
+			{Fixed: "1.0.0"}, {Introduced: "1.0.0"},
+		}, "0.9.0", false, true},
 		{"last affected then introduced at one version", []event{
 			{LastAffected: "1.0.0"}, {Introduced: "1.0.0"},
 		}, "1.0.0", true, true},

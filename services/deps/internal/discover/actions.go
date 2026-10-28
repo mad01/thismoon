@@ -111,26 +111,35 @@ func (g GitHubActions) pkgs(
 
 // localAction returns the action file a local `uses: ./path` ref runs: the
 // action.yml or action.yaml in path, which GitHub resolves against the repo
-// root, so `uses: ./` runs the repo's own action. A path outside the repo or
-// under an excluded directory is skipped, and so is one with no action file,
-// since a job may generate it before the step runs.
+// root, so `uses: ./` runs the repo's own action. Symlinks are resolved
+// before any check, and the file is returned at its resolved place in the
+// repo, so a link to another action is that action. A file outside the repo
+// or under an excluded directory is skipped, and so is a path with no action
+// file, since a job may generate it before the step runs.
 func localAction(repoRoot, uses string, opts Options) (string, bool) {
-	root := filepath.Clean(repoRoot)
-	dir := filepath.Join(root, filepath.FromSlash(uses))
-	rel, err := filepath.Rel(root, dir)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	root, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
 		return "", false
 	}
-	for d := dir; d != root && d != filepath.Dir(d); d = filepath.Dir(d) {
-		if opts.excluded(root, d) {
+	dir := filepath.Join(repoRoot, filepath.FromSlash(uses))
+	for _, name := range []string{"action.yml", "action.yaml"} {
+		path, err := filepath.EvalSymlinks(filepath.Join(dir, name))
+		if err != nil {
+			continue // missing, or a link to nothing
+		}
+		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil || !filepath.IsLocal(rel) {
 			return "", false
 		}
-	}
-	for _, name := range []string{"action.yml", "action.yaml"} {
-		path := filepath.Join(dir, name)
-		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
-			return path, true
+		for d := filepath.Dir(path); d != root && d != filepath.Dir(d); d = filepath.Dir(d) {
+			if opts.excluded(root, d) {
+				return "", false
+			}
 		}
+		return filepath.Join(repoRoot, rel), true
 	}
 	return "", false
 }
@@ -166,11 +175,15 @@ func (g GitHubActions) pkg(r actionRef, manifest string, cache refCache) (Packag
 // resolved to commit. A full version (v4.2.2) is its own label. Any other
 // ref, such as v4 or main, says nothing about which release it runs, so OSV's
 // range filter would keep every advisory on the action; the label is instead
-// the highest full-version tag on the same commit. With none, it is the ref.
+// the highest full-version tag on the same commit in ref's release line: v45
+// takes a v45.x.y and v4.2 a v4.2.x. A later major's tag on that commit
+// would read the pin as past fixes its own line may lack. A branch takes any
+// full-version tag. With none, the label is the ref.
 func releaseLabel(refs map[string]string, ref, commit string) string {
 	if _, ok := fullVersion(ref); ok {
 		return ref
 	}
+	line, isLine := versionNumbers(ref)
 	var (
 		label string
 		best  [3]uint64
@@ -181,7 +194,7 @@ func releaseLabel(refs map[string]string, ref, commit string) string {
 			continue
 		}
 		v, ok := fullVersion(tag)
-		if !ok {
+		if !ok || (isLine && !inLine(v, line)) {
 			continue
 		}
 		c := slices.Compare(v[:], best[:])
@@ -195,22 +208,36 @@ func releaseLabel(refs map[string]string, ref, commit string) string {
 	return label
 }
 
+// inLine reports whether v belongs to the release line whose numbers are
+// line: whether v starts with them, as 45.0.7 starts with 45.
+func inLine(v [3]uint64, line []uint64) bool {
+	return len(line) <= len(v) && slices.Equal(v[:len(line)], line)
+}
+
 // fullVersion reads a full release version, v4.2.2 or 4.2.2: the shape OSV's
 // range filter compares.
 func fullVersion(s string) ([3]uint64, bool) {
-	var v [3]uint64
-	parts := strings.Split(strings.TrimPrefix(s, "v"), ".")
-	if len(parts) != len(v) {
-		return v, false
+	n, ok := versionNumbers(s)
+	if !ok || len(n) != 3 {
+		return [3]uint64{}, false
 	}
-	for i, p := range parts {
+	return [3]uint64(n), true
+}
+
+// versionNumbers reads the dot-separated numbers of a version or a release
+// line, with or without a leading v: v4.2.2, v4.2 or 45. ok is false for any
+// other shape, such as a branch or a pre-release.
+func versionNumbers(s string) ([]uint64, bool) {
+	parts := strings.Split(strings.TrimPrefix(s, "v"), ".")
+	nums := make([]uint64, 0, len(parts))
+	for _, p := range parts {
 		n, err := strconv.ParseUint(p, 10, 64)
 		if err != nil {
-			return v, false
+			return nil, false
 		}
-		v[i] = n
+		nums = append(nums, n)
 	}
-	return v, true
+	return nums, true
 }
 
 // advertisementURL is the smart-HTTP ref advertisement of the action repo

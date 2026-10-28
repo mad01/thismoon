@@ -147,11 +147,12 @@ no file locks.
   `jobs.<id>.steps[].uses` and a composite action's `runs.steps[].uses`. A
   local `uses: ./path` ref is followed to the `action.yml|yaml` in that
   directory of the repo (`./` is the repo root), and its refs are read the
-  same way. Each file is read once, so a cycle ends. A path outside the repo,
-  under an `exclude_paths` glob, or with no action file (a job may generate
-  it) is skipped without an error. `docker://` images are skipped;
-  `owner/repo/path@ref` is package `owner/repo`, as written. A ref pinned to a
-  40-hex SHA needs no lookup. A tag or branch ref is resolved to its commit
+  same way. Symlinks are resolved first, so the file is checked and keyed at
+  its real place in the repo. Each file is read once, so a cycle ends. A file
+  outside the repo (a symlink can lead there), under an `exclude_paths` glob,
+  or missing (a job may generate it) is skipped without an error. `docker://`
+  images are skipped; `owner/repo/path@ref` is package `owner/repo`, as
+  written. A ref pinned to a 40-hex SHA needs no lookup. A tag or branch ref is resolved to its commit
   from the action repo's ref list, a plain HTTPS GET of
   `https://github.com/<owner>/<repo>.git/info/refs?service=git-upload-pack`.
   It returns what `git ls-remote` prints, peeled `^{}` lines included, with no
@@ -161,8 +162,11 @@ no file locks.
   branch ref carries the `deps-movable-ref` signal, which names the ref as
   pinned. A ref that isn't a full `x.y.z` (`v46`, `main`) takes its label from
   the highest full-version tag on the same commit (`v46.0.5`), so the range
-  filter can judge it. With no such tag, the ref is the label. Every ref is
-  Direct and Imported, one row per workflow file.
+  filter can judge it. A release-line ref takes a tag in its line only: `v45`
+  a `v45.x.y` and `v4.2` a `v4.2.x`. A later major's tag on that commit would
+  read the pin as past fixes its line may lack. A branch takes any. With no
+  such tag, the ref is the label. Every ref is Direct and Imported, one row
+  per workflow file.
 - **A ref that can't be resolved is a discovery error, not a row.** A missing
   or private action repo (github.com answers 401), an unknown tag, or an
   unreachable host leaves the ref out. The repo's `GitHub Actions` discovery
@@ -231,11 +235,12 @@ no file locks.
   returns every advisory on the action. Check keeps a name hit only when the
   label falls in one of its `ECOSYSTEM` or `SEMVER` ranges. It fails open: a
   label that isn't a full `x.y.z` (`v4`, `main`), a record that didn't load,
-  or a bound it can't compare keeps the hit. At one version an `introduced`
-  sorts before a `fixed` or `last_affected`, in either record order. An id
-  found by both lookups is listed once. A CVE record and its GitHub Security
-  Advisory (GHSA) alias stay two findings, as GO- and GHSA- pairs already do
-  for Go.
+  or a bound it can't compare keeps the hit. At one version, in any record
+  order, a `fixed` sorts first, then an `introduced`, then a `last_affected`.
+  So a range re-introduced at its own fix stays open, and an `introduced` and
+  a `fixed` at one version fail open and keep the hit. An id found by both
+  lookups is listed once. A CVE record and its GitHub Security Advisory
+  (GHSA) alias stay two findings, as GO- and GHSA- pairs already do for Go.
 - **A SHA pin's `# vX.Y.Z` comment is trusted as its version label**, and it
   alone drives the range filter. A comment newer than the pinned code would
   drop advisories whose range holds the real version. Dependabot and Renovate
@@ -246,13 +251,15 @@ no file locks.
   ranges are `ECOSYSTEM` only, so the name lookup is the main detector. So
   Check reads OSV's GitHub Actions export once per call
   (`https://osv-vulnerabilities.storage.googleapis.com/GitHub%20Actions/all.zip`,
-  about 100 KB, one JSON record per advisory). It asks for each action in
-  every spelling OSV files it under that matches ignoring case, and matches
-  records the same way. The row and key keep the name as written. When the
-  export can't be read, the names go out as written and Check returns
-  `*osv.ActionNamesError` beside complete results. `scanner.Check` turns that
-  into a `GitHub Actions` discovery error for each repo with an Action, since
-  a log line alone would let the scan read as clean.
+  about 100 KB, one JSON record per advisory). It asks for each action as
+  written and in every other spelling OSV files it under that matches
+  ignoring case, and matches records the same way. The written name stays
+  because the export can lag an advisory filed under it. The row and key
+  keep the name as written. When the export can't be read, the names go out
+  as written and Check returns `*osv.ActionNamesError` beside complete
+  results. `scanner.Check` turns that into a `GitHub Actions` discovery error
+  for each repo with an Action, since a log line alone would let the scan
+  read as clean.
 - **serve runs under srt** (anthropics/sandbox-runtime), with the access
   declared as `spec.access` in `service-info.yaml`. It reads the repos under
   `~/code/src` minus secret-shaped files, the module cache,
