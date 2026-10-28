@@ -46,6 +46,24 @@ func TestClaudeEnv(t *testing.T) {
 	}
 }
 
+// TestCaseEnv: a case run drops the session variables and tags its
+// session eval, replacing any tags it inherited.
+func TestCaseEnv(t *testing.T) {
+	got := caseEnv([]string{
+		"HOME=/home/x", "CLAUDE_CODE_ENTRYPOINT=cli", "MOONDB_SESSION_TAGS=dev,mine", "PATH=/bin",
+		"MOONDB_SESSION_TAGS_EXTRA=kept",
+	})
+	want := []string{
+		"HOME=/home/x",
+		"PATH=/bin",
+		"MOONDB_SESSION_TAGS_EXTRA=kept",
+		"MOONDB_SESSION_TAGS=eval",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("env = %v, want %v", got, want)
+	}
+}
+
 func TestParseJudgeOutput(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -68,6 +69,24 @@ func claudeEnv(environ []string) []string {
 		}
 	}
 	return out
+}
+
+// moondbTagsEnv is the variable moondb's capture hook reads a session's
+// tags from (services/moondb, SessionTagsEnv), and evalTag the tag every
+// case run's session gets, so moondb can tell eval sessions apart.
+const (
+	moondbTagsEnv = "MOONDB_SESSION_TAGS"
+	evalTag       = "eval"
+)
+
+// caseEnv is the environment of one case run: claudeEnv with the session
+// tags set to evalTag alone, whatever the caller's environment set.
+func caseEnv(environ []string) []string {
+	out := claudeEnv(environ)
+	out = slices.DeleteFunc(out, func(kv string) bool {
+		return strings.HasPrefix(kv, moondbTagsEnv+"=")
+	})
+	return append(out, moondbTagsEnv+"="+evalTag)
 }
 
 // claudeBin resolves the claude CLI, falling back to the install location
@@ -161,14 +180,15 @@ type claudeCmd struct {
 }
 
 // run runs one case in dir and writes claude's stdout, the stream-json
-// transcript, to stream. When ctx ends first the group gets SIGTERM. On
+// transcript, to stream. Its session carries the eval tag (caseEnv). When
+// ctx ends first the group gets SIGTERM. On
 // every exit path, timeout or not, whatever is left of the group gets
 // SIGTERM and then SIGKILL after the grace period, so no MCP server or
 // hook outlives the case. The error carries the tail of stderr.
 func (c claudeCmd) run(ctx context.Context, dir string, inv invocation, stream io.Writer) error {
 	cmd := exec.CommandContext(ctx, c.bin, inv.args()...)
 	cmd.Dir = dir
-	cmd.Env = claudeEnv(os.Environ())
+	cmd.Env = caseEnv(os.Environ())
 	cmd.Stdout = stream
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
