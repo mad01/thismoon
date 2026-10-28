@@ -61,8 +61,10 @@ no file locks.
   pattern that does not compile fails the scan rather than matching nothing.
   New catalogued repos auto-enroll.
 - Each repo is walked for `go.mod` (→ `go list -m -json all`, resolved graph,
-  v-prefix stripped for OSV), `package-lock.json` (lockfile v2/v3), and
-  `requirements.txt` (exact `name==version` pins only). Unpinned names and
+  v-prefix stripped for OSV), `package-lock.json` (lockfile v2/v3, entries
+  under `node_modules/` only, so a workspace's own source is skipped), and
+  `requirements.txt` (exact `name==version` pins only, the version cut before
+  a hashed pin's ` \` or `--hash`). Unpinned names and
   ranges have no OSV-checkable version and are skipped; names are PEP 503
   normalized. The walk also covers `Package.resolved` (v2/v3, remote pins with
   an exact version), and branch pins are skipped. The shared walker skips `.git/vendor/node_modules/testdata`, **git worktrees and nested
@@ -290,27 +292,41 @@ each version (`internal/regcheck`):
 |---------|------|-------------------|
 | `deps-npm-withdrawn` | malicious | the package document's `time` lists the version but `versions` does not: unpublished, or replaced by a security holding package (chalk 5.6.1) |
 | `deps-npm-deprecated` | signal | the version document carries a non-empty `deprecated` |
-| `deps-pypi-withdrawn` | malicious | `/pypi/<name>/<version>/json` is 404 while the project's Simple API page exists (ultralytics 8.3.41) |
+| `deps-pypi-withdrawn` | malicious | `/pypi/<name>/<version>/json` is 404 while the project's Simple API page exists (ultralytics 8.3.41), for a pin whose requirements file names no other index |
 | `deps-pypi-quarantined` | malicious | PEP 792 `project-status` is `quarantined` |
 | `deps-pypi-yanked` | signal | the release has `yanked: true` |
 | `deps-pypi-archived`, `deps-pypi-deprecated` | signal | PEP 792 `project-status` is `archived` or `deprecated` |
-| `deps-go-blocked` | malicious | `@latest` answers 403 with a body that starts `SECURITY ERROR` (github.com/boltdb-go/bolt) |
-| `deps-go-retracted` | signal | a `retract` directive in the go.mod at `@latest` covers the version |
+| `deps-go-blocked` | malicious | `@v/list` answers 403 with a body that starts `SECURITY ERROR` (github.com/boltdb-go/bolt) |
+| `deps-go-retracted` | signal | a `retract` directive in the go.mod of the module's highest version covers the version |
 
 - **Only positive evidence counts.** A package or version the registry has no
   record of (a private package, a module the proxy lacks) gets no finding.
   PyPI keeps no trace of a project it deleted outright, so OSV's MAL- records
-  cover that case. A PyPI version with a local label (`2.1.0+cu118`) never
-  counts as withdrawn: PyPI does not serve those. A 403 from the Go proxy
-  without `SECURITY ERROR` (the sandbox refusing a host, say) is an
-  unanswered lookup, never a blocked module.
+  cover that case. PyPI is never asked about a version with a local label
+  (`2.1.0+cu118`) or one that isn't PEP 440. npm is never asked about a name
+  it couldn't hold. Neither registry serves those, so a 404 would prove
+  nothing. A requirements.txt that names `-i`/`--index-url`,
+  `--extra-index-url` or `-f`/`--find-links` marks its pins `other_index`,
+  and a 404 for one of them is no withdrawal either. An index set in
+  pip.conf stays invisible. A 403 from the Go proxy without `SECURITY ERROR`
+  (the sandbox refusing a host, say) is an unanswered lookup, never a blocked
+  module.
+- **Every npm, PyPI and Go row is asked**, mise tool rows included.
+  `scanner.registryQuery` sends the version as the registry publishes it: a
+  vendored file's `+sha256.<hex>` label is cut, so npm is asked about the
+  release the file name claims. A GitHub Action or a Swift package has no
+  registry here and gets no answer, which is neither a finding nor unknown.
 - **Calls.** One lookup per unique package per check, cached for that check:
   npm takes one request per version, plus the package document when a version
   is gone. PyPI takes the Simple API page plus one request per version. Go
-  takes `@latest` plus the `.mod` at that version. At most 8 packages run at
-  once, each request has 10s, and the whole pass has 45s. A module matching
-  `go env GONOPROXY` (GOPRIVATE by default) is never sent to the proxy, the
-  same rule go follows.
+  takes `@v/list` plus the `.mod` at its highest release (else its highest
+  prerelease), and asks `@latest` only when the list is empty. That is the
+  go.mod the go command reads retractions from, so a version that retracts
+  itself still counts. At most 8 packages run at once, each request has 10s,
+  and the whole pass has 45s. A module matching `go env GONOPROXY` or
+  `GOPRIVATE` is never sent to the public proxy, even with `GONOPROXY=none`
+  behind a company GOPROXY. serve starts under launchd, so only `go env -w`
+  settings reach it, never a shell profile's exports.
 - **Graph-only Go modules are checked.** A blocked module is malicious, and a
   malicious finding bypasses the "Not compiled in" gate. Checking them took a
   full pass from 266 to 638 requests on the 648-dependency inventory
@@ -346,7 +362,7 @@ each version (`internal/regcheck`):
 ## Data model & storage
 
 ```go
-Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL|GitHub Actions), Name, Version, Repo (root or mise label), ManifestPath, Direct, Imported, RegistryUnknown, Advisories[] }
+Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL|GitHub Actions), Name, Version, Repo (root or mise label), ManifestPath, Direct, Imported, RegistryUnknown, OtherIndex, Advisories[] }
 Advisory{ ID, Kind (vuln|malicious|signal), Summary, Severity, FixedVersion }  // one finding on that exact version
 DiscoveryError{ Repo, Ecosystem, Error }  // a repo+ecosystem the scan could not read
 ```
@@ -363,6 +379,9 @@ DiscoveryError{ Repo, Ecosystem, Error }  // a repo+ecosystem the scan could not
 - **RegistryUnknown** marks a dep whose registry lookup got no answer in the
   check that saved it. It travels with the row, so `SaveRepo` merges it like
   everything else (see "Adding a producer" for what it keeps).
+- **OtherIndex** marks a dep whose manifest names a package source besides
+  the public registry. Discovery sets it (only for requirements.txt today),
+  and the registry checker drops `deps-pypi-withdrawn` for it.
 
 ### Finding kinds
 
@@ -421,17 +440,20 @@ Summary: "…"}`. Follow-up producers build on these rules:
 - **The registry checker composes with OSV.** `Engine.Checker` (OSV) runs
   first, and its error fails the check. `Engine.Registry` (a
   `scanner.Registry`, in serve a `*regcheck.Client`) then runs over the same
-  deps through `CheckRegistry`. It has no error of its own: it returns one
-  `regcheck.Result` per dependency index, and the findings merge in with
-  `addFindings`. An answer replaces the registry findings the dep already
-  carried (`regcheck.IsRule` tells them apart from OSV's and a discoverer's,
-  which stay).
+  deps through `CheckRegistry`, which asks with one `regcheck.Query` per dep
+  (`registryQuery`: the published version, plus `OtherIndex`). It has no
+  error of its own: it returns one `regcheck.Result` per dependency index,
+  and the findings merge in with `addFindings`. An answer replaces the
+  registry findings the dep already carried (`regcheck.IsRule` tells them
+  apart from OSV's and a discoverer's, which stay).
 - **"Unknown" belongs to registry lookups only.** A lookup that got no answer
   (a network error, a timeout, an unexpected status, a body that does not
   decode) sets `Result.Err`. The dep is saved with `RegistryUnknown: true`
   and keeps the registry findings the stored inventory held for the same
-  version, from any repo. So an outage neither drops a finding nor lists a
-  resolved one under "Resolved · updated past". `registry_unknown` counts
+  version, from any repo (an `OtherIndex` pin keeps only another such pin's).
+  `Engine.Scan`, which asks no registry, keeps that state for every row. So
+  an outage neither drops a finding nor lists a resolved one under
+  "Resolved · updated past". `registry_unknown` counts
   these deps on `/api/deps`, `/api/flagged` and `/api/check`, in the MCP
   tools and `deps check`, in a page callout, and in the scan-complete event
   (at warn). Any other finding that drops out of a scan still reads as gone,
@@ -442,7 +464,8 @@ Summary: "…"}`. Follow-up producers build on these rules:
   as they are. `osv.Query` may grow fields for a new query shape. The
   commit reaches OSV through the version, not a new stored field:
   `scanner.Check` builds each query with `query`, which splits a GitHub
-  Action's version into `osv.Query.Version` (the label) and `Commit`. So
+  Action's version into `osv.Query.Version` (the label) and `Commit`, and
+  `registryQuery` derives the registry's version the same way. So
   `store.Dependency`, scan.json and the API keep their shape.
 
 ## Build / install / test

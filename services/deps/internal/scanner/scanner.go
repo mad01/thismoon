@@ -37,7 +37,7 @@ type Checker interface {
 // fail one at a time, so it has no error of its own: a lookup that got no
 // answer comes back with Err set for its index.
 type Registry interface {
-	Check(ctx context.Context, queries []osv.Query) []regcheck.Result
+	Check(ctx context.Context, queries []regcheck.Query) []regcheck.Result
 }
 
 // Plan is what one scan covers. Engine.Prepare resolves it from the discovery
@@ -143,6 +143,28 @@ func query(d store.Dependency) osv.Query {
 	return q
 }
 
+// registryQuery is the registry lookup for d, with the version as its registry
+// publishes it. An npm version loses its build label, which npm drops on
+// publish: a vendored file that matches no published file carries
+// +sha256.<hex> (discover.VendoredJS), and the registry is asked about the
+// release its name claims. A GitHub Action has no package registry and gets
+// no answer from regcheck; its query carries the label without the commit.
+func registryQuery(d store.Dependency) regcheck.Query {
+	q := regcheck.Query{
+		Ecosystem:  d.Ecosystem,
+		Name:       d.Name,
+		Version:    d.Version,
+		OtherIndex: d.OtherIndex,
+	}
+	switch d.Ecosystem {
+	case "npm":
+		q.Version, _, _ = strings.Cut(d.Version, "+")
+	case discover.ActionsEcosystem:
+		q.Version, _ = discover.SplitActionVersion(d.Version)
+	}
+	return q
+}
+
 // addFindings returns have with found added. A found finding whose id is
 // already in have replaces that entry; the rest are appended. have is copied,
 // never written through, since it may share its array with a store snapshot.
@@ -177,12 +199,12 @@ func CheckRegistry(
 	if len(deps) == 0 {
 		return deps
 	}
-	queries := make([]osv.Query, len(deps))
+	queries := make([]regcheck.Query, len(deps))
 	for i, d := range deps {
-		queries[i] = osv.Query{Name: d.Name, Ecosystem: d.Ecosystem, Version: d.Version}
+		queries[i] = registryQuery(d)
 	}
 	results := reg.Check(ctx, queries)
-	kept := registryFindings(previous)
+	kept := registryStates(previous)
 	var (
 		unknown  int
 		firstErr error
@@ -194,7 +216,7 @@ func CheckRegistry(
 		}
 		found := r.Findings
 		if r.Err != nil {
-			found = kept[versionKey(deps[i])]
+			found = kept[registryKey(deps[i])].findings
 			unknown++
 			if firstErr == nil {
 				firstErr = r.Err
@@ -217,31 +239,57 @@ func CheckRegistry(
 // so a short answer reads as unknown, never as clean.
 var errNoRegistryResult = errors.New("deps: registry returned no result for this dependency")
 
-// versionKey names one version of one package, whatever repo pins it.
-func versionKey(d store.Dependency) string {
-	return d.Ecosystem + ":" + d.Name + "@" + d.Version
+// registryKey names one version of one package, whatever repo pins it. A pin
+// from a manifest that names another index has its own key, since the
+// registry's word on it differs (regcheck.Query.OtherIndex).
+func registryKey(d store.Dependency) string {
+	k := d.Ecosystem + ":" + d.Name + "@" + d.Version
+	if d.OtherIndex {
+		k += " other-index"
+	}
+	return k
 }
 
-// registryFindings indexes the registry findings in deps by version. Every row
-// for a version carries the same ones, so the first row that has any is used.
-func registryFindings(deps []store.Dependency) map[string][]store.Advisory {
-	out := map[string][]store.Advisory{}
+// registryState is what the last check learned from the registry about one
+// version: its registry findings, and whether the lookup went unanswered.
+type registryState struct {
+	findings []store.Advisory
+	unknown  bool
+}
+
+// registryStates indexes the registry state in deps by registryKey. Rows a
+// per-repo check saved can differ from the rest, so a version takes the
+// findings of its first row that has any, and is unknown if any row is.
+func registryStates(deps []store.Dependency) map[string]registryState {
+	out := map[string]registryState{}
 	for _, d := range deps {
-		k := versionKey(d)
-		if _, ok := out[k]; ok {
-			continue
-		}
-		var fs []store.Advisory
-		for _, a := range d.Advisories {
-			if regcheck.IsRule(a.ID) {
-				fs = append(fs, a)
+		k := registryKey(d)
+		st := out[k]
+		if st.findings == nil {
+			for _, a := range d.Advisories {
+				if regcheck.IsRule(a.ID) {
+					st.findings = append(st.findings, a)
+				}
 			}
 		}
-		if len(fs) > 0 {
-			out[k] = fs
-		}
+		st.unknown = st.unknown || d.RegistryUnknown
+		out[k] = st
 	}
 	return out
+}
+
+// keepRegistry gives each dependency the registry state previous holds for
+// the same version, for a save that asks no registry. Without it a scan would
+// drop the registry findings, and a check during a later registry outage
+// would have none left to keep.
+func keepRegistry(deps, previous []store.Dependency) []store.Dependency {
+	kept := registryStates(previous)
+	for i := range deps {
+		st := kept[registryKey(deps[i])]
+		deps[i].RegistryUnknown = st.unknown
+		deps[i].Advisories = addFindings(withoutRegistry(deps[i].Advisories), st.findings)
+	}
+	return deps
 }
 
 // withoutRegistry returns advs without the registry's findings. advs is never
@@ -276,14 +324,16 @@ type Engine struct {
 }
 
 // Scan discovers dependencies (no advisory check) and persists them with the
-// discovery errors. Discovery problems are saved, not fatal, so a transient bad
-// repo still yields a scan.
+// discovery errors. Each version keeps the registry state the last check gave
+// it (keepRegistry). Discovery problems are saved, not fatal, so a transient
+// bad repo still yields a scan.
 func (e *Engine) Scan() ([]store.Dependency, error) {
 	plan, err := e.Prepare()
 	if err != nil {
 		return nil, err
 	}
 	deps, discErrs := Discover(plan, e.Ecosystems)
+	deps = keepRegistry(deps, e.Store.Snapshot().Deps)
 	if err := e.Store.Save(deps, discErrs); err != nil {
 		return nil, err
 	}

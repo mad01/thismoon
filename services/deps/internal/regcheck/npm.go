@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -19,11 +20,26 @@ type npmPackument struct {
 	DistTags map[string]string          `json:"dist-tags"`
 }
 
+// npmName matches a name the npm registry can hold: an optional @scope/ and
+// one URL-safe segment, at most 214 characters (npm's
+// validate-npm-package-name). Capitals pass, since packages published before
+// npm required lowercase keep theirs.
+var npmName = regexp.MustCompile(
+	`^(?:@[A-Za-z0-9*~-][A-Za-z0-9*._~-]*/)?[A-Za-z0-9~-][A-Za-z0-9._~-]*$`,
+)
+
+// npmMaxName is the longest package name npm accepts.
+const npmMaxName = 214
+
 // npm looks each version of one npm package up. A version the registry serves
 // is checked for a deprecation notice. A version it does not serve is withdrawn
 // when the full package document still lists its publish time. A package or
-// version npm has no record of at all (a private package, say) gets no finding.
+// version npm has no record of at all (a private package, say) gets no finding,
+// and neither does a name npm could not hold, which is never asked about.
 func (c *Client) npm(ctx context.Context, name string, versions []string) map[string]Result {
+	if len(name) > npmMaxName || !npmName.MatchString(name) {
+		return nil
+	}
 	out := make(map[string]Result, len(versions))
 	var (
 		doc    *npmPackument // fetched once, for the first version npm does not serve

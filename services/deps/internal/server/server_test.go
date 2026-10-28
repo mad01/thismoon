@@ -500,3 +500,25 @@ func TestAPIReportsRegistryUnknown(t *testing.T) {
 		}
 	}
 }
+
+// TestAppJSAllClearComesAfterEveryGap: the page shows its green all-clear only
+// after ruling out each way the last check can be incomplete, a discovery
+// error or an unanswered registry lookup. deps has no harness that runs
+// app.js, so this reads the branch chain that leads to the all-clear from the
+// served source.
+func TestAppJSAllClearComesAfterEveryGap(t *testing.T) {
+	rec := httptest.NewRecorder()
+	testServer(t).Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/app.js", nil))
+	src := rec.Body.String()
+	start := strings.Index(src, "if (v.active.length) {")
+	end := strings.Index(src, "{ class: 'ok' }")
+	if start < 0 || end < start {
+		t.Fatalf("app.js: no active-findings branch before the all-clear (%d, %d)", start, end)
+	}
+	chain := src[start:end]
+	for _, gap := range []string{"v.discoveryErrors.length", "data.registry_unknown"} {
+		if !strings.Contains(chain, "} else if ("+gap+")") {
+			t.Errorf("app.js reaches the all-clear without an else-if on %s", gap)
+		}
+	}
+}

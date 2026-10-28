@@ -24,7 +24,6 @@ import (
 
 	"golang.org/x/mod/module"
 
-	"github.com/mad01/thismoon/services/deps/internal/osv"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
 
@@ -53,7 +52,8 @@ const (
 	// RuleGoBlocked: the Go module proxy refuses to serve the module because it
 	// considers it malicious. Malicious.
 	RuleGoBlocked = "deps-go-blocked"
-	// RuleGoRetracted: the module's latest go.mod retracts the version. Signal.
+	// RuleGoRetracted: the go.mod of the module's highest version retracts the
+	// version. Signal.
 	RuleGoRetracted = "deps-go-retracted"
 )
 
@@ -76,6 +76,16 @@ var ruleKinds = map[string]store.Kind{
 func IsRule(id string) bool {
 	_, ok := ruleKinds[id]
 	return ok
+}
+
+// Query names one package version to look up. OtherIndex marks a version
+// whose manifest also names another package source (Dependency.OtherIndex):
+// the registry not serving it is then no evidence it was withdrawn.
+type Query struct {
+	Ecosystem  string
+	Name       string
+	Version    string
+	OtherIndex bool
 }
 
 // Result is the registry's answer for one query. Err is set when the registry
@@ -124,26 +134,27 @@ const (
 type Client struct {
 	endpoints Endpoints
 	http      *http.Client
-	// noProxy returns the go command's GONOPROXY patterns. The Go proxy is
-	// never asked about a module that matches them, as go itself never asks.
-	noProxy func(ctx context.Context) (string, error)
+	// private returns the go command's GONOPROXY and GOPRIVATE patterns, comma
+	// separated. The public Go proxy is never asked about a module that
+	// matches either.
+	private func(ctx context.Context) (string, error)
 }
 
 // New returns a Client against the public registries, which reads GONOPROXY
-// from the go command on every Check.
+// and GOPRIVATE from the go command on every Check.
 func New() *Client {
 	c := NewWithEndpoints(publicEndpoints)
-	c.noProxy = goEnvNoProxy
+	c.private = goEnvPrivate
 	return c
 }
 
-// NewWithEndpoints returns a Client against e, with no GONOPROXY patterns
+// NewWithEndpoints returns a Client against e, with no private module patterns
 // (used by tests with an httptest server).
 func NewWithEndpoints(e Endpoints) *Client {
 	return &Client{
 		endpoints: e,
 		http:      &http.Client{Timeout: requestTimeout},
-		noProxy:   func(context.Context) (string, error) { return "", nil },
+		private:   func(context.Context) (string, error) { return "", nil },
 	}
 }
 
@@ -156,8 +167,8 @@ type pkgKey struct {
 // aligned by index (queries[i] → result[i]). Each package is looked up once
 // however many queries name it, at most maxInFlight packages at a time, and
 // the whole pass stops after passBudget. Ecosystems with no registry here
-// (SwiftURL) get a zero Result.
-func (c *Client) Check(ctx context.Context, queries []osv.Query) []Result {
+// (SwiftURL, GitHub Actions) get a zero Result.
+func (c *Client) Check(ctx context.Context, queries []Query) []Result {
 	ctx, cancel := context.WithTimeout(ctx, passBudget)
 	defer cancel()
 
@@ -172,7 +183,7 @@ func (c *Client) Check(ctx context.Context, queries []osv.Query) []Result {
 			versions[k] = append(versions[k], q.Version)
 		}
 	}
-	noProxy, noProxyErr := c.noProxy(ctx)
+	private, privateErr := c.private(ctx)
 
 	var (
 		mu      sync.Mutex
@@ -184,7 +195,7 @@ func (c *Client) Check(ctx context.Context, queries []osv.Query) []Result {
 		slots <- struct{}{}
 		wg.Go(func() {
 			defer func() { <-slots }()
-			got := c.lookup(ctx, k, versions[k], noProxy, noProxyErr)
+			got := c.lookup(ctx, k, versions[k], private, privateErr)
 			mu.Lock()
 			answers[k] = got
 			mu.Unlock()
@@ -194,7 +205,11 @@ func (c *Client) Check(ctx context.Context, queries []osv.Query) []Result {
 
 	out := make([]Result, len(queries))
 	for i, q := range queries {
-		out[i] = answers[pkgKey{q.Ecosystem, q.Name}][q.Version]
+		r := answers[pkgKey{q.Ecosystem, q.Name}][q.Version]
+		if q.OtherIndex {
+			r.Findings = withoutPyPIWithdrawn(r.Findings)
+		}
+		out[i] = r
 	}
 	return out
 }
@@ -205,8 +220,8 @@ func (c *Client) lookup(
 	ctx context.Context,
 	k pkgKey,
 	versions []string,
-	noProxy string,
-	noProxyErr error,
+	private string,
+	privateErr error,
 ) map[string]Result {
 	switch k.ecosystem {
 	case "npm":
@@ -214,10 +229,10 @@ func (c *Client) lookup(
 	case "PyPI":
 		return c.pypi(ctx, k.name, versions)
 	case "Go":
-		if noProxyErr != nil {
-			return allUnknown(versions, noProxyErr)
+		if privateErr != nil {
+			return allUnknown(versions, privateErr)
 		}
-		if module.MatchPrefixPatterns(noProxy, k.name) {
+		if module.MatchPrefixPatterns(private, k.name) {
 			return nil
 		}
 		return c.goModule(ctx, k.name, versions)
@@ -225,15 +240,17 @@ func (c *Client) lookup(
 	return nil
 }
 
-// goEnvNoProxy asks the go command for GONOPROXY, which falls back to
-// GOPRIVATE: the modules go fetches straight from their origin, never through
-// a proxy.
-func goEnvNoProxy(ctx context.Context) (string, error) {
-	out, err := exec.CommandContext(ctx, "go", "env", "GONOPROXY").Output()
+// goEnvPrivate asks the go command for GONOPROXY and GOPRIVATE and returns
+// both pattern lists as one. GONOPROXY names the modules go fetches straight
+// from their origin. GOPRIVATE still counts when GONOPROXY is "none": go then
+// fetches private modules through a company GOPROXY, and the public proxy
+// must not hear their names either.
+func goEnvPrivate(ctx context.Context) (string, error) {
+	out, err := exec.CommandContext(ctx, "go", "env", "GONOPROXY", "GOPRIVATE").Output()
 	if err != nil {
-		return "", fmt.Errorf("go env GONOPROXY: %w", err)
+		return "", fmt.Errorf("go env GONOPROXY GOPRIVATE: %w", err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.Join(strings.Fields(string(out)), ","), nil
 }
 
 // get fetches url and returns its status and body. Any status is an answer for

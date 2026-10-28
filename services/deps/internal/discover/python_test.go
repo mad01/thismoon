@@ -54,6 +54,12 @@ func TestParseRequirementLine(t *testing.T) {
 		{"requests==2.31.0  # inline comment", "requests", "2.31.0", true},
 		{`requests==2.31.0 ; python_version < "3.12"`, "requests", "2.31.0", true},
 		{"requests==2.31.0,<3", "requests", "2.31.0", true},
+		// pip-compile / uv --generate-hashes: the version ends before the
+		// continuation backslash and before an inline --hash.
+		{`requests==2.32.3 \`, "requests", "2.32.3", true},
+		{`requests==2.32.3\`, "requests", "2.32.3", true},
+		{"requests==2.32.3 --hash=sha256:70761cfe", "requests", "2.32.3", true},
+		{"    --hash=sha256:70761cfe", "", "", false}, // continuation line
 		// PEP 503 normalization: OSV keys PyPI on the normalized name.
 		{"Django==4.2", "django", "4.2", true},
 		{"zope.interface==6.0", "zope-interface", "6.0", true},
@@ -77,6 +83,49 @@ func TestParseRequirementLine(t *testing.T) {
 			t.Errorf("parseRequirementLine(%q) = %q, %q, %v; want %q, %q, %v",
 				tt.line, name, version, ok, tt.name, tt.version, tt.ok)
 		}
+	}
+}
+
+// TestParseRequirementsMarksOtherIndex: every pin in a file that names
+// another package source, in any spelling pip accepts and on any line, is
+// marked OtherIndex; a plain file's pins are not.
+func TestParseRequirementsMarksOtherIndex(t *testing.T) {
+	const (
+		pins  = "core==0.1.0\nrequests==2.32.3\n"
+		index = "https://pypi.corp.example/simple"
+	)
+	tests := []struct {
+		name, body string
+		want       bool
+	}{
+		{"plain", pins, false},
+		{"commented out", "# --index-url " + index + "\n" + pins, false},
+		{"index-url", "--index-url " + index + "\n" + pins, true},
+		{"index-url=", "--index-url=" + index + "\n" + pins, true},
+		{"short -i", "-i " + index + "\n" + pins, true},
+		{"extra-index-url after the pins", pins + "  --extra-index-url " + index + "\n", true},
+		{"find-links", "--find-links ./wheels\n" + pins, true},
+		{"short -f", "-f ./wheels\n" + pins, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "requirements.txt")
+			if err := os.WriteFile(path, []byte(tt.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			pkgs, err := parseRequirements(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(pkgs) != 2 {
+				t.Fatalf("got %+v, want core and requests", pkgs)
+			}
+			for _, p := range pkgs {
+				if p.OtherIndex != tt.want {
+					t.Errorf("%s OtherIndex = %v, want %v", p.Name, p.OtherIndex, tt.want)
+				}
+			}
+		})
 	}
 }
 

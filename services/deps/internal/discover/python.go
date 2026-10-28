@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
+	"unicode"
 )
 
 // Python discovers PyPI dependencies from requirements.txt files. Only exact
@@ -12,7 +14,8 @@ import (
 // names, ranges (>=, ~=), wildcards, option lines (-r, --index-url), and
 // direct URL references are skipped. requirements.txt declares direct deps
 // only (no lockfile format is in use across the scanned repos), and Python
-// reachability isn't computed, so every package is Direct and Imported.
+// reachability isn't computed, so every package is Direct and Imported. A file
+// that names another package source marks each of its pins OtherIndex.
 type Python struct{}
 
 func (Python) Name() string { return "PyPI" }
@@ -38,8 +41,10 @@ func parseRequirements(path string) ([]Package, error) {
 	if err != nil {
 		return nil, err
 	}
+	lines := strings.Split(string(raw), "\n")
+	otherIndex := slices.ContainsFunc(lines, namesOtherIndex)
 	var pkgs []Package
-	for line := range strings.SplitSeq(string(raw), "\n") {
+	for _, line := range lines {
 		name, version, ok := parseRequirementLine(line)
 		if !ok {
 			continue
@@ -51,9 +56,25 @@ func parseRequirements(path string) ([]Package, error) {
 			ManifestPath: path,
 			Direct:       true,
 			Imported:     true, // PyPI reachability isn't computed; never hide.
+			OtherIndex:   otherIndex,
 		})
 	}
 	return pkgs, nil
+}
+
+// otherIndexOptions are the pip options that point pip at a package source
+// besides PyPI: an index that replaces or joins it, or a page or directory of
+// archives. No other pip option starts with one of these.
+var otherIndexOptions = []string{"-i", "-f", "--index-url", "--extra-index-url", "--find-links"}
+
+// namesOtherIndex reports whether a requirements.txt line is a pip option
+// naming another package source. pip applies such an option to every pin in
+// the file, so any pin may come from there.
+func namesOtherIndex(line string) bool {
+	line = strings.TrimSpace(line)
+	return slices.ContainsFunc(otherIndexOptions, func(opt string) bool {
+		return strings.HasPrefix(line, opt)
+	})
 }
 
 // parseRequirementLine extracts an exact `name==version` pin from one
@@ -90,6 +111,14 @@ func parseRequirementLine(line string) (name, version string, ok bool) {
 	// A multi-specifier keeps only the pinned part: "1.2.3,<2" -> "1.2.3".
 	if i := strings.Index(version, ","); i >= 0 {
 		version = strings.TrimSpace(version[:i])
+	}
+	// The version ends at the first space or backslash. pip-compile and uv
+	// write a hashed pin as "name==1.2.3 \", with --hash options after it on
+	// the same line or on continuation lines.
+	if i := strings.IndexFunc(version, func(r rune) bool {
+		return unicode.IsSpace(r) || r == '\\'
+	}); i >= 0 {
+		version = version[:i]
 	}
 	// "===" (arbitrary equality) leaves a leading "="; "==1.*" is not exact.
 	if name == "" || version == "" || strings.HasPrefix(version, "=") ||

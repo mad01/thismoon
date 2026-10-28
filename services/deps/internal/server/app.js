@@ -586,6 +586,10 @@
         // Never the all-clear while part of the inventory went unread.
         nodes.push(Webkit.el('div', { class: 'note' },
           'No active findings among the ' + v.total + ' versions read, but the scan is incomplete: see the discovery errors above.'));
+      } else if (data.registry_unknown) {
+        // Nor while some registry lookups went unanswered.
+        nodes.push(Webkit.el('div', { class: 'note' },
+          'No active findings among the ' + v.total + ' versions checked, but some registry lookups got no answer: see the registry callout above.'));
       } else {
         nodes.push(Webkit.el('div', { class: 'ok' },
           'No active findings: all ' + v.total + ' checked versions are clear of unresolved OSV advisories and withdrawn or blocked versions.'));

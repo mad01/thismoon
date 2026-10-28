@@ -104,7 +104,8 @@ persists the result and the discovery errors through the store. It then
 fires a separate banner for newly flagged malicious packages,
 then one coalesced notification covering the other newly flagged advisories.
 Signals never notify. Last it emits a scan-complete event to the events
-service, at warn level when anything is flagged or discovery failed.
+service, at warn level when anything is flagged, discovery failed, or a
+registry lookup got no answer.
 
 Scheduling checks staleness rather than counting ticks: serve heartbeats every
 15 minutes and runs a full check whenever the last scan is older than

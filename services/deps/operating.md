@@ -163,14 +163,15 @@ The signal `deps-vendored-modified`: a committed library file's sha256
 matches no file jsDelivr has served. It was edited after download, or it never
 came from npm as is. Its name and version come from the file name. The
 version also carries `+sha256.` and the first 12 hex digits of the hash, so a
-new edit brings a resolved signal back. OSV still checks that version. Compare
+new edit brings a resolved signal back. OSV still checks that version, and
+the registry check asks npm about it without the `+sha256` part. Compare
 the file with the published one at
 `https://cdn.jsdelivr.net/npm/<name>@<version>/<path>`, then download it again
 or resolve the signal if the change is yours. A file just added to npm can
 also miss, because jsDelivr indexes a file only after serving it once.
 deps asks again after a day. A first-party bundle with a version in its name,
-such as `static/app-1.4.0.js`, gets this signal falsely, and OSV checks it as
-the unrelated npm package `app`. Add its directory to `exclude_paths`.
+such as `static/app-1.4.0.js`, gets this signal falsely, and both checks treat
+it as the unrelated npm package `app`. Add its directory to `exclude_paths`.
 
 A non-zero `registry_unknown`, also shown as a warn-level scan event and a
 callout on the web page: some registry lookups got no answer in the last
@@ -179,6 +180,18 @@ so nothing reads as clean or fixed, and the next check asks again. The serve log
 lookup(s) got no answer` names the first error. `host is not on the allow
 list` means the sandbox settings predate the registry hosts: re-run `ralph
 up`. A 429 or 5xx is the registry itself and passes.
+
+A `deps-pypi-withdrawn` finding on a pin you install from a private index:
+PyPI does not serve that version because your index holds it. deps skips the
+rule for every pin in a requirements.txt that names `-i`/`--index-url`,
+`--extra-index-url` or `-f`/`--find-links`. It can't see an index set in
+pip.conf or `PIP_INDEX_URL`, nor the one a mise pipx tool was installed from.
+Name the index in the requirements file, or resolve the finding once you have
+confirmed where the version comes from.
+
+A private Go module sent to proxy.golang.org: deps skips every module that
+matches `go env GONOPROXY` or `GOPRIVATE`. serve starts under launchd, which
+never reads a shell profile, so set them with `go env -w`, not `export`.
 
 An acknowledged advisory came back: resolution is version-scoped by design.
 The key embeds the exact version, so bumping the package (or a new advisory

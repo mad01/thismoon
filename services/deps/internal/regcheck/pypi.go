@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/mad01/thismoon/services/deps/internal/store"
@@ -86,11 +88,23 @@ func pypiStatus(p pypiProject) (store.Advisory, bool) {
 	return finding(rule, summary), true
 }
 
+// pep440 matches a version PEP 440 accepts, in any spelling it normalizes
+// (the regular expression in PEP 440's appendix B).
+var pep440 = regexp.MustCompile(`(?i)^v?(?:[0-9]+!)?[0-9]+(?:\.[0-9]+)*` +
+	`(?:[-_.]?(?:a|b|c|rc|alpha|beta|pre|preview)[-_.]?[0-9]*)?` +
+	`(?:-[0-9]+|[-_.]?(?:post|rev|r)[-_.]?[0-9]*)?` +
+	`(?:[-_.]?dev[-_.]?[0-9]*)?` +
+	`(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?$`)
+
 // pypiRelease looks one release up. PyPI matches the version the way pip does,
 // so a 404 means the release is gone from a project PyPI still lists, and
-// counts as withdrawn. A version with a local label (1.0+cu118) is exempt: PyPI
-// never serves those, so it was installed from another index.
+// counts as withdrawn. Two kinds of version are never asked about, since PyPI
+// cannot serve them: one that is not a PEP 440 version (a misread pin, say),
+// and one with a local label (1.0+cu118), which came from another index.
 func (c *Client) pypiRelease(ctx context.Context, name, version string) Result {
+	if !pep440.MatchString(version) || strings.Contains(version, "+") {
+		return Result{}
+	}
 	u := fmt.Sprintf("%s/pypi/%s/%s/json",
 		c.endpoints.PyPI, url.PathEscape(name), url.PathEscape(version))
 	status, body, err := c.get(ctx, u, "")
@@ -98,9 +112,6 @@ func (c *Client) pypiRelease(ctx context.Context, name, version string) Result {
 	case err != nil:
 		return Result{Err: err}
 	case status == http.StatusNotFound:
-		if strings.Contains(version, "+") {
-			return Result{}
-		}
 		return found(finding(RulePyPIWithdrawn,
 			fmt.Sprintf("PyPI lists %s but no longer serves version %s", name, version)))
 	case status != http.StatusOK:
@@ -118,4 +129,16 @@ func (c *Client) pypiRelease(ctx context.Context, name, version string) Result {
 		summary += ": " + rel.Info.YankedReason
 	}
 	return found(finding(RulePyPIYanked, summary))
+}
+
+// withoutPyPIWithdrawn returns fs without a PyPI withdrawn finding, which
+// rests on PyPI not serving the version: from a manifest that names another
+// index, the version may live there. fs is never written through, since
+// queries for the same version share it.
+func withoutPyPIWithdrawn(fs []store.Advisory) []store.Advisory {
+	isWithdrawn := func(a store.Advisory) bool { return a.ID == RulePyPIWithdrawn }
+	if !slices.ContainsFunc(fs, isWithdrawn) {
+		return fs
+	}
+	return slices.DeleteFunc(slices.Clone(fs), isWithdrawn)
 }

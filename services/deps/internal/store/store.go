@@ -105,6 +105,11 @@ type Dependency struct {
 	// resolved one read as fixed, and whether the registry withdrew or yanked
 	// the version since is unknown rather than clean.
 	RegistryUnknown bool `json:"registry_unknown,omitempty"`
+	// OtherIndex is true when the manifest points its package manager at a
+	// source besides the public registry (a requirements.txt with
+	// --index-url, say). The version may come from there, so the public
+	// registry not serving it is no evidence it was withdrawn.
+	OtherIndex bool `json:"other_index,omitempty"`
 }
 
 // Flagged reports whether the dependency has at least one advisory.
