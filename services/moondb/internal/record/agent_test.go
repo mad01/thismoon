@@ -70,9 +70,9 @@ func TestSubagentStop(t *testing.T) {
 
 // TestSubagentStopWithoutTranscript still records an agent whose
 // transcript cannot be read, as the payload and the meta file name it,
-// starting and ending when the hook ran. A stop with no transcript file,
-// no agent_type and no meta file is a main segment's: it records nothing.
-// Each case logs one line.
+// starting and ending when the hook ran, unless that leaves an internal
+// agent with no line read: a main segment's record, which ingest drops.
+// That records nothing. Each case logs one line.
 func TestSubagentStopWithoutTranscript(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -82,13 +82,13 @@ func TestSubagentStopWithoutTranscript(t *testing.T) {
 		log     string
 	}{
 		{"typed", false, nil, "worker", "recording it without lines"},
-		{"untyped", true, nil, "", "segment of the main conversation, not recorded"},
+		{"untyped", true, nil, "", "no line read"},
 		{"untyped with a meta file", true, func(t *testing.T, file string) {
 			writeFile(t, agentfile.MetaPath(file), `{"spawnedAgentType":"general-purpose"}`)
 		}, "general-purpose", "recording it without lines"},
 		{"untyped with an empty transcript", true, func(t *testing.T, file string) {
 			writeFile(t, file, "")
-		}, store.InternalAgent, "recording it without lines"},
+		}, "", "no line read"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -121,6 +121,20 @@ func TestSubagentStopWithoutTranscript(t *testing.T) {
 				t.Errorf("envelope %s = %+v; want a %s without lines", env.ID, ac, c.want)
 			}
 		})
+	}
+}
+
+// TestSubagentStopInternalAgent records an untyped agent with no meta
+// file whose transcript has lines: an internal agent, not a main segment.
+func TestSubagentStopInternalAgent(t *testing.T) {
+	s := newSession(t, physicalTempDir(t))
+	file := agentFile(s)
+	writeFile(t, file, agentTranscript(s.cwd))
+	s.mustRun("subagent_stop.json", "$AGENT_TRANSCRIPT", file, `"agent_type": "worker",`, "")
+	ac := s.takeOne(spool.KindAgentClose).AgentClose
+	if ac.Type != store.InternalAgent || ac.Lines.Read != 3 || ac.TranscriptChunk == "" ||
+		len(s.logs) != 0 {
+		t.Errorf("AgentClose = %+v, logs %q; want an internal agent with its lines", ac, s.logs)
 	}
 }
 

@@ -138,6 +138,26 @@ func TestAgentCloseDropsMainSegment(t *testing.T) {
 	}
 }
 
+// TestAgentCloseKeepsInternalAgentWithLines: an internal agent with lines
+// read and an agent transcript is an Agent, not a main segment: its stop
+// records it and its session.
+func TestAgentCloseKeepsInternalAgentWithLines(t *testing.T) {
+	f := newFixture(t)
+	c := chunkSet{}
+	env := agentEnv(c, "s1", "a68f", 3, 2)
+	env.Agent.Type = ""
+	env.AgentClose.Type, env.AgentClose.Name = store.InternalAgent, ""
+	f.write(env, c)
+	f.drain()
+	if a := f.agent("a68f"); a.Type != store.InternalAgent || a.TranscriptChunk == "" ||
+		a.Lines.Read != 2 {
+		t.Errorf("agent = %+v, want the internal agent with its transcript", a)
+	}
+	if s := f.session("s1"); s.ID != "s1" {
+		t.Errorf("session = %+v, want it created from the envelope", s)
+	}
+}
+
 // TestAgentCloseNeedsAgentID: an agent-close without an agent id names
 // nothing to record.
 func TestAgentCloseNeedsAgentID(t *testing.T) {

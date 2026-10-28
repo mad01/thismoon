@@ -15,6 +15,7 @@ import (
 	"github.com/mad01/thismoon/buildinfo"
 
 	"github.com/mad01/thismoon/services/moondb/internal/query"
+	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
 	"github.com/mad01/thismoon/services/moondb/internal/server/servertest"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 	"github.com/mad01/thismoon/services/moondb/internal/trace"
@@ -571,7 +572,8 @@ func TestSessionAgents(t *testing.T) {
 
 // TestSessionAgentsLeaveOutMainSegments: a main segment's record, stored
 // before record skipped them, gets no row on the session page, no place in
-// the session's listing row and no run in its trace.
+// the session's listing row and no run in its trace, and its scorecard
+// counts no agent transcript missing.
 func TestSessionAgentsLeaveOutMainSegments(t *testing.T) {
 	h := newHarness(t)
 	const session, turn = "sess-woken", "turn-woken"
@@ -598,6 +600,12 @@ func TestSessionAgentsLeaveOutMainSegments(t *testing.T) {
 	h.getJSON(t, "/api/sessions/"+session+"/trace", http.StatusOK, &st)
 	if len(st.Agents) != 1 || st.Agents[0].AgentID != worker.ID {
 		t.Errorf("trace agents = %+v, want %s alone", st.Agents, worker.ID)
+	}
+	var sc scorecard.Scorecard
+	h.getJSON(t, "/api/sessions/"+session+"/scorecard", http.StatusOK, &sc)
+	if sc.Sources.Transcripts.Status != scorecard.StatusOK || sc.Agents.Count != 1 {
+		t.Errorf("scorecard transcripts = %+v, agents = %d; want ok and %s alone",
+			sc.Sources.Transcripts, sc.Agents.Count, worker.ID)
 	}
 }
 

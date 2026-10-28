@@ -140,12 +140,15 @@ recorded up to there and marked partial.
 The harness also fires SubagentStop for a main segment: a stretch of the
 main conversation that it runs under an agent id of its own. A teammate's
 message or a queued prompt that wakes the session while it waits on
-background agents starts one. Its payload names no `agent_type`, and the transcript
-file it names never exists, since the lines go to the main transcript. A
-stop with no transcript file, no `agent_type` and no meta file is taken
-for one: `record` spools nothing and logs it on stderr. Any other
-transcript that cannot be read still records the agent, without lines,
-as the meta file and the payload describe it.
+background agents starts one. Its payload names no `agent_type`, and the
+transcript file it names never exists, since the lines go to the main
+transcript. A transcript that cannot be read records the agent without
+lines, as the meta file and the payload describe it. The exception is an
+`internal` agent with no line read, which is a main segment's record
+(`store.Agent.IsMainSegment`) and which ingest drops. `record` spools
+nothing for one and logs it on stderr. An untyped agent with no meta
+file whose transcript holds no timeline line yet looks the same and is
+skipped too. A later `moondb import` records it once its file has lines.
 
 The agent's type is the meta file's `spawnedAgentType`, else its
 `agentType` when that differs from the name, else the hook's `agent_type`
@@ -767,10 +770,11 @@ trace, then a row per subagent span.
 
 A main segment's record (`store.Agent.IsMainSegment`: type `internal`, no
 line read, no agent transcript) is not an Agent. Such records were stored
-before `record` skipped them, and no reader shows one: it gets no agent
+before `record` skipped them, and no listing shows one: it gets no agent
 row, and the listing's `agent_count` and `agents`, the session trace and
-the scorecard leave it out. Ingest drops such an envelope from an older
-spool, so no store migration is needed.
+the scorecard leave it out. `GET /api/agents/{id}` still serves one asked
+for by id. Ingest drops such an envelope from an older spool, so no store
+migration is needed.
 
 ## Web page
 
