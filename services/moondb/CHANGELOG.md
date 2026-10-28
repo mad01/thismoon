@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/mad01/thismoon/compare/moondb/v0.4.1...moondb/v0.5.0) (2026-10-28)
+
+
+### Features
+
+* **moondb,evals:** show where a session worked, mark headless and eval runs ([#320](https://github.com/mad01/thismoon/issues/320)) ([165ce0b](https://github.com/mad01/thismoon/commit/165ce0b745d13464efd61c7554047d5381caff1d))
+
+
+### Bug Fixes
+
+* **moondb:** drop the subagent stops Claude Code fires for the main conversation ([#319](https://github.com/mad01/thismoon/issues/319)) ([db1f9b8](https://github.com/mad01/thismoon/commit/db1f9b886b65019fae4ed7557e3b9367d9d9b923))
+
 ## [0.4.1](https://github.com/mad01/thismoon/compare/moondb/v0.4.0...moondb/v0.4.1) (2026-10-26)
 
 
