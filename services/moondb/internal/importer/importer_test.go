@@ -300,12 +300,25 @@ func TestImportTurns(t *testing.T) {
 		t.Errorf("p1 close: end %d status %q, want %d closed", tc.TranscriptEnd, tc.Status, p2)
 	}
 	s := got["p1:open"].Session
+	// The session's cwd is placed as an agent's is: the branch is the one
+	// the transcript recorded there, and no HEAD.
+	if s.Location.Repo != gitloc.CanonicalRepo(fixtureOrigin) || s.Location.Worktree != w.real ||
+		s.Location.Branch != "feature-x" || s.Location.Head != "" {
+		t.Errorf("session location %+v, want the fixture repo on feature-x", s.Location)
+	}
 	want := spool.SessionRef{
 		ID: "sess-1", Cwd: w.cwd, Title: "fixture session", TitleSource: store.TitleNamed,
-		Model: "model-a", TranscriptPath: w.transcript("sess-1"),
+		Model: "model-a", TranscriptPath: w.transcript("sess-1"), Location: s.Location,
+		Entrypoint: "sdk-cli",
 	}
-	if s != want || got["p1:open"].Harness != "claude-code" {
+	if !reflect.DeepEqual(s, want) || got["p1:open"].Harness != "claude-code" {
 		t.Errorf("session ref %+v harness %q, want %+v", s, got["p1:open"].Harness, want)
+	}
+	// Every envelope of the session carries the same, its agents' too.
+	for _, env := range envs {
+		if env.Session.ID == "sess-1" && !reflect.DeepEqual(env.Session, want) {
+			t.Errorf("%s: session ref %+v, want %+v", env.ID, env.Session, want)
+		}
 	}
 	at := time.Date(2026, 10, 1, 10, 0, 14, 0, time.UTC)
 	if !got["p1:close"].At.Equal(at) {
@@ -543,6 +556,15 @@ func TestImportIngests(t *testing.T) {
 	if sd.Title != "fixture session" || len(sd.Turns) != 2 {
 		t.Errorf("session: title %q, %d turns", sd.Title, len(sd.Turns))
 	}
+	if sd.Location.Worktree != w.real || sd.Location.Repo == "" || sd.Entrypoint != "sdk-cli" ||
+		sd.Tags != nil {
+		t.Errorf(
+			"session location %+v entrypoint %q tags %v; want the cwd's repo, sdk-cli, no tags",
+			sd.Location,
+			sd.Entrypoint,
+			sd.Tags,
+		)
+	}
 	td, err := st.Turn(ctx, "p2")
 	if err != nil {
 		t.Fatal(err)
@@ -663,13 +685,24 @@ const readerAgent = `{"type":"user","uuid":"r-1","parentUuid":null,"sessionId":"
 `
 
 // TestImportAgentOnlySessions imports a session without a file edit when
-// it has a subagent transcript, turns and agent, and skips one with
-// neither, forced or not.
+// it has a subagent transcript, turns and agent. A forced import also
+// imports one with neither when the store holds it, so its session and
+// turns get their empty fields filled, and skips one the store lacks.
 func TestImportAgentOnlySessions(t *testing.T) {
-	for name, withAgent := range map[string]bool{"reader subagent": true, "neither": false} {
-		t.Run(name, func(t *testing.T) {
+	tests := []struct {
+		name                           string
+		withAgent, held                bool
+		wantTurn                       bool
+		skipped, agentsOnly, turnsOnly int
+	}{
+		{name: "reader subagent", withAgent: true, held: true, wantTurn: true, agentsOnly: 1},
+		{name: "neither, held", held: true, wantTurn: true, turnsOnly: 1},
+		{name: "neither, new", skipped: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			w := newWorld(t)
-			if withAgent {
+			if tc.withAgent {
 				dir := filepath.Join(
 					strings.TrimSuffix(w.transcript("sess-2"), ".jsonl"),
 					"subagents",
@@ -677,23 +710,26 @@ func TestImportAgentOnlySessions(t *testing.T) {
 				writeAgent(t, dir, "areader-1", strings.ReplaceAll(readerAgent, "{CWD}", w.cwd))
 			}
 			opts := w.options()
-			opts.Known = func(context.Context, string) (bool, error) { return true, nil }
+			opts.Known = func(_ context.Context, id string) (bool, error) {
+				return tc.held || id != "sess-2", nil
+			}
 			opts.Force = true
 			got, envs := w.run(t, opts)
 			agent, hasAgent := byID(envs)["areader-1:close:2"]
-			_, hasTurn := byID(envs)["q1:close"]
-			skipped, agentsOnly := 1, 0
-			if withAgent {
-				skipped, agentsOnly = 0, 1
+			open, hasTurn := byID(envs)["q1:open"]
+			if hasAgent != tc.withAgent || hasTurn != tc.wantTurn ||
+				got.Skipped.NoEdits != tc.skipped || got.SessionsAgentsOnly != tc.agentsOnly ||
+				got.SessionsTurnsOnly != tc.turnsOnly {
+				t.Errorf("agent %v turn %v, skipped %+v, agents only %d, turns only %d",
+					hasAgent, hasTurn, got.Skipped, got.SessionsAgentsOnly, got.SessionsTurnsOnly)
 			}
-			if hasAgent != withAgent || hasTurn != withAgent ||
-				got.Skipped.NoEdits != skipped || got.SessionsAgentsOnly != agentsOnly {
-				t.Errorf("agent %v turn %v, skipped %+v, agents only %d",
-					hasAgent, hasTurn, got.Skipped, got.SessionsAgentsOnly)
-			}
-			if withAgent && (agent.Session.ID != "sess-2" ||
+			if tc.withAgent && (agent.Session.ID != "sess-2" ||
 				!slices.Equal(agent.AgentClose.TurnIDs, []string{"q1"})) {
 				t.Errorf("agent envelope = %+v", agent)
+			}
+			if tc.wantTurn && open.Session.Location.Worktree != w.real {
+				t.Errorf("q1 open session location %+v, want the cwd's worktree %s",
+					open.Session.Location, w.real)
 			}
 		})
 	}

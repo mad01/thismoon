@@ -2,19 +2,28 @@ package storetest
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 // putSessionUpserts: a second Put replaces the session whole, and an
-// EndedAt set by a later Put persists.
+// EndedAt set by a later Put persists. The cwd's location, the entrypoint
+// and the tags come back from both the listing and the detail.
 func putSessionUpserts(t *testing.T, st store.Store) {
 	ctx := context.Background()
 	s := session("s1", at(0))
 	s.Title = "first"
 	seed(t, st, s)
 	s.Title = "second"
+	s.Location = store.Location{
+		Repo:      "example.com/o/r",
+		Worktree:  "/w",
+		Canonical: "/w",
+		Branch:    "main",
+	}
+	s.Entrypoint, s.Tags = "sdk-cli", []string{"ci", "eval"}
 	seed(t, st, s)
 	ended := at(30)
 	s.EndedAt = &ended
@@ -27,6 +36,13 @@ func putSessionUpserts(t *testing.T, st store.Store) {
 	}
 	d, err := st.Session(ctx, "s1")
 	must(t, err)
+	for what, got := range map[string]store.Session{"listing": list[0].Session, "detail": d.Session} {
+		if got.Location != s.Location || got.Entrypoint != s.Entrypoint ||
+			!slices.Equal(got.Tags, s.Tags) {
+			t.Errorf("%s session origin = %+v, %q, %v; want %+v, %q, %v", what,
+				got.Location, got.Entrypoint, got.Tags, s.Location, s.Entrypoint, s.Tags)
+		}
+	}
 	if d.Title != "second" || d.EndedAt == nil || !d.EndedAt.Equal(ended) {
 		t.Errorf(
 			"Session(s1) = title %q, ended %v; want %q, %v",

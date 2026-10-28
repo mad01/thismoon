@@ -7,8 +7,12 @@ CONTEXT.md.
 ## Language
 
 **Session**:
-One Claude Code session, identified by the hook payload's `session_id`. moondb creates it lazily from the first turn it sees. Its title is the name the harness gives it (the hook's session title, or a transcript `agent-name` or `ai-title` line), else the first line of the first prompt serve saw, else the last segment of its cwd. One rule picks the title on every path. A name the person gave (`agent-name`) outranks a generated title (`ai-title`, or the hook's session title), which outranks the prompt line. Within the same rank the first title seen wins. The prompt line, once set, is never replaced.
+One Claude Code session, identified by the hook payload's `session_id`. moondb creates it lazily from the first turn it sees. Its title is the name the harness gives it (the hook's session title, or a transcript `agent-name` or `ai-title` line), else the first line of the first prompt serve saw, else the last segment of its cwd. One rule picks the title on every path. A name the person gave (`agent-name`) outranks a generated title (`ai-title`, or the hook's session title), which outranks the prompt line. Within the same rank the first title seen wins. The prompt line, once set, is never replaced. It also keeps where its cwd sits in git (its location), the entrypoint the harness was started by (`cli`, or `sdk-cli` for a headless `claude -p` run), and its Session tags.
 _Avoid_: conversation, chat
+
+**Session tag**:
+A short lowercase token the launcher of a Session gave it through `MOONDB_SESSION_TAGS`, such as `eval` for an eval run. The hook reads it from its environment, so an import cannot recover it. A session keeps the union of the tags its envelopes carried, at most eight.
+_Avoid_: label, category
 
 **Turn**:
 One user prompt and everything up to the Stop that ends it, identified by the hook's `prompt_id` (the transcript's `promptId`; an import of a transcript without one uses the prompt entry's uuid). It carries the prompt text, the final assistant message, the turn's raw transcript lines and its Turn origin.

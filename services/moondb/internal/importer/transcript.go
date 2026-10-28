@@ -15,7 +15,8 @@ import (
 //	<project>/<sessionId>/subagents/agent-<agentId>.jsonl one subagent's entries
 //	<project>/<sessionId>/subagents/agent-<agentId>.meta.json   agentType
 //
-// Every entry: type, sessionId, timestamp. The types read:
+// Every entry: type, sessionId, timestamp, and on most the entrypoint
+// (cli, sdk-cli, ...) the harness was started by. The types read:
 //
 //	user, assistant   uuid, cwd, gitBranch, isSidechain, isMeta, agentId
 //	                  (subagent entries), promptId (user entries, the same id
@@ -95,6 +96,7 @@ type entry struct {
 	Timestamp     string          `json:"timestamp"`
 	Cwd           string          `json:"cwd"`
 	GitBranch     string          `json:"gitBranch"`
+	Entrypoint    string          `json:"entrypoint"`
 	IsSidechain   bool            `json:"isSidechain"`
 	IsMeta        bool            `json:"isMeta"`
 	AgentID       string          `json:"agentId"`
