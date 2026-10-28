@@ -108,9 +108,9 @@
   }
 
   // ── finding kinds (mirror store.Kind) ──
-  // vuln: an advisory, counted only while the dep is compiled in. malicious: an
-  // OSV MAL- record, counted even when not compiled in (its install scripts may
-  // have run). signal: a warning sign, shown in its own section and never
+  // vuln: an advisory, counted only while the dep is compiled in. malicious: a
+  // known malicious version (such as an OSV MAL- record), counted even when not
+  // compiled in (its install scripts may have run). signal: a warning sign, shown in its own section and never
   // counted. A missing or unknown kind (an older serve) reads as vuln.
   function kindOf(a) {
     return a.kind === 'malicious' || a.kind === 'signal' ? a.kind : 'vuln';
@@ -314,10 +314,11 @@
       // imported === false: a graph-only transitive (in the module graph but
       // not compiled into any binary). A vulnerability there is not a real
       // exposure, so route it to the informational "not compiled in" bucket,
-      // never active/acknowledged. A malicious finding skips this gate: its
-      // install scripts may have run anyway. An undefined imported (older
-      // payload) fails open to imported.
-      if (f.imported === false && !f.advisories.some(isMalicious)) {
+      // never active/acknowledged. An unresolved malicious finding skips this
+      // gate: its install scripts may have run anyway. A resolved one does
+      // not, or the dep's open vulnerabilities would read as acknowledged.
+      // An undefined imported (older payload) fails open to imported.
+      if (f.imported === false && !depMalicious(f)) {
         v.notCompiledIn.push(f);
         return;
       }

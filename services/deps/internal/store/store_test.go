@@ -285,8 +285,9 @@ const preKindScan = `{
 }`
 
 // TestLoadsScanWrittenBeforeKinds: a pre-change scan.json loads unchanged,
-// with every advisory reading as a vulnerability, and the notified and
-// resolved sets still match their findings because the key format is the same.
+// each advisory taking the kind its id gives (a GHSA id reads as a
+// vulnerability), and the notified and resolved sets still match their
+// findings because the key format is the same.
 func TestLoadsScanWrittenBeforeKinds(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(preKindScan), 0o644); err != nil {
@@ -325,6 +326,49 @@ func TestLoadsScanWrittenBeforeKinds(t *testing.T) {
 	}
 	if got := read.Deps[0].Advisories[0].Kind; got != KindVuln {
 		t.Errorf("Read kind = %q, want %q", got, KindVuln)
+	}
+}
+
+func TestKindForID(t *testing.T) {
+	for id, want := range map[string]Kind{
+		"MAL-2025-46969":      KindMalicious,
+		"GHSA-35jh-r3h4-6jhm": KindVuln,
+		"GO-2024-0001":        KindVuln,
+		"PYSEC-2024-1":        KindVuln,
+		"mal-lowercase":       KindVuln,
+	} {
+		if got := KindForID(id); got != want {
+			t.Errorf("KindForID(%q) = %q, want %q", id, got, want)
+		}
+	}
+}
+
+// TestEmptyKindDerivesFromID: an advisory saved with no kind takes its id's
+// kind on load and on Save, on the store and on the read-only doctor path.
+func TestEmptyKindDerivesFromID(t *testing.T) {
+	dir := t.TempDir()
+	st, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Save([]Dependency{{
+		Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Repo: "/r",
+		Advisories: []Advisory{{ID: "MAL-2025-46969"}, {ID: "GHSA-9"}},
+	}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	read, err := Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, deps := range map[string][]Dependency{
+		"Save": st.Snapshot().Deps,
+		"Read": read.Deps,
+	} {
+		got := deps[0].Advisories
+		if got[0].Kind != KindMalicious || got[1].Kind != KindVuln {
+			t.Errorf("%s kinds = %q, %q; want malicious, vuln", name, got[0].Kind, got[1].Kind)
+		}
 	}
 }
 

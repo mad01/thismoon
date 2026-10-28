@@ -1,12 +1,17 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/services/deps/internal/discover"
+	"github.com/mad01/thismoon/services/deps/internal/osv"
+	"github.com/mad01/thismoon/services/deps/internal/scanner"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
 
@@ -221,6 +226,76 @@ func TestAPIDepsExcludesNonImportedFromFlagged(t *testing.T) {
 	}
 	if got.FlaggedCount != 0 {
 		t.Errorf("flagged_count = %d, want 0 (graph-only dep excluded)", got.FlaggedCount)
+	}
+}
+
+// recordingNotifier records each banner title instead of shelling out to
+// osascript.
+type recordingNotifier struct{ titles []string }
+
+func (n *recordingNotifier) Notify(title, _ string) error {
+	n.titles = append(n.titles, title)
+	return nil
+}
+
+// stubEco discovers a fixed set of packages in every repo.
+type stubEco struct{ pkgs []discover.Package }
+
+func (stubEco) Name() string { return "npm" }
+
+func (s stubEco) Discover(string, discover.Options) ([]discover.Package, error) {
+	return s.pkgs, nil
+}
+
+// malChecker reports one MAL- finding for chalk and nothing else.
+type malChecker struct{}
+
+func (malChecker) Check(_ context.Context, queries []osv.Query) ([][]store.Advisory, error) {
+	out := make([][]store.Advisory, len(queries))
+	for i, q := range queries {
+		if q.Name == "chalk" {
+			out[i] = []store.Advisory{{ID: "MAL-2025-46969", Kind: store.KindMalicious}}
+		}
+	}
+	return out, nil
+}
+
+// TestManualCheckNotifiesOnce: a manual check that finds a new malicious
+// finding fires its banner, on the full and the per-repo path alike, and a
+// second check does not fire it again. A manual check resets the scan time,
+// so the loop would skip it and no banner would ever fire.
+func TestManualCheckNotifiesOnce(t *testing.T) {
+	for _, path := range []string{"/api/check", "/api/check?repo=widget"} {
+		t.Run(path, func(t *testing.T) {
+			st, err := store.New(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			n := &recordingNotifier{}
+			engine := &scanner.Engine{
+				Prepare: func() ([]string, discover.Options, error) {
+					return []string{"/home/u/code/widget"}, discover.Options{}, nil
+				},
+				Ecosystems: []discover.Ecosystem{stubEco{pkgs: []discover.Package{
+					{Ecosystem: "npm", Name: "chalk", Version: "5.6.1", Imported: true},
+				}}},
+				Checker:  malChecker{},
+				Notifier: n,
+				Store:    st,
+			}
+			h := New(st, engine, testInfo).Handler()
+			for range 2 {
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))
+				if rec.Code != 200 {
+					t.Fatalf("POST %s = %d: %s", path, rec.Code, rec.Body)
+				}
+			}
+			want := []string{"deps: malicious package chalk@5.6.1"}
+			if !slices.Equal(n.titles, want) {
+				t.Errorf("banners = %q, want %q once", n.titles, want)
+			}
+		})
 	}
 }
 

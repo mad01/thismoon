@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mad01/thismoon/kit/notify"
@@ -26,9 +27,10 @@ type Checker interface {
 }
 
 // Discover enumerates dependencies across repos without checking advisories.
-// Returned dependencies have no Advisories attached. Each repo and ecosystem
-// that failed comes back as a DiscoveryError alongside whatever was found, so a
-// single bad repo doesn't lose the rest. Every failure is also logged.
+// Returned dependencies carry only the findings a discoverer raised itself
+// (usually none). Each repo and ecosystem that failed comes back as a
+// DiscoveryError alongside whatever was found, so a single bad repo doesn't
+// lose the rest. Every failure is also logged.
 func Discover(
 	repos []string,
 	ecosystems []discover.Ecosystem,
@@ -41,8 +43,11 @@ func Discover(
 	return deps, errs
 }
 
-// Check attaches OSV advisories to each dependency in place and returns the
-// annotated set. Dependencies with no advisory come back unchanged.
+// Check adds the checker's findings to each dependency in place and returns the
+// annotated set. Findings a discoverer attached are kept; a checker finding
+// whose id the dependency already lists replaces it, so checking the same deps
+// twice lists each finding once. Dependencies with no finding come back
+// unchanged.
 func Check(
 	ctx context.Context,
 	deps []store.Dependency,
@@ -61,10 +66,29 @@ func Check(
 	}
 	for i := range deps {
 		if i < len(advisories) {
-			deps[i].Advisories = advisories[i]
+			deps[i].Advisories = addFindings(deps[i].Advisories, advisories[i])
 		}
 	}
 	return deps, nil
+}
+
+// addFindings returns have with found added. A found finding whose id is
+// already in have replaces that entry; the rest are appended. have is copied,
+// never written through, since it may share its array with a store snapshot.
+func addFindings(have, found []store.Advisory) []store.Advisory {
+	if len(found) == 0 {
+		return have
+	}
+	out := slices.Clone(have)
+	for _, f := range found {
+		i := slices.IndexFunc(out, func(a store.Advisory) bool { return a.ID == f.ID })
+		if i >= 0 {
+			out[i] = f
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // Engine binds the scan pieces to a concrete store and repo set. The serve loop
@@ -79,6 +103,11 @@ type Engine struct {
 	Checker    Checker
 	Notifier   alert.Notifier
 	Store      *store.Store
+
+	// notifyMu serializes Notify. The loop and a manual check can finish
+	// together, and without it both would read the same pending flags before
+	// either marks them notified, firing the banner twice.
+	notifyMu sync.Mutex
 }
 
 // Scan discovers dependencies (no advisory check) and persists them with the
@@ -197,8 +226,11 @@ func matchRepo(repos []string, id string) (string, bool) {
 	return "", false
 }
 
-// Notify fires the notifier for flagged advisories not yet delivered.
+// Notify fires the notifier for flagged advisories not yet delivered. Calls
+// are serialized, so each flag is delivered once however many callers race.
 func (e *Engine) Notify() (int, error) {
+	e.notifyMu.Lock()
+	defer e.notifyMu.Unlock()
 	return Notify(e.Store, e.Notifier)
 }
 

@@ -11,7 +11,7 @@ import (
 )
 
 // Package is one resolved dependency a discoverer found. It maps directly onto
-// store.Dependency once advisories are attached.
+// store.Dependency; the scanner's checker adds its findings to Advisories.
 type Package struct {
 	Ecosystem    string // OSV ecosystem string: Go | npm | PyPI | SwiftURL
 	Name         string
@@ -22,6 +22,10 @@ type Package struct {
 	// module's build (Go reachability via `go list -deps`). Ecosystems that
 	// don't compute reachability set it true so nothing is hidden.
 	Imported bool
+	// Advisories holds the findings the discoverer raised itself, such as a
+	// signal on how the package is pinned. The checker's findings are added
+	// to these, never in place of them.
+	Advisories []store.Advisory
 }
 
 // Options tunes a discovery walk. ExcludePath, if set, skips a directory by its
@@ -92,6 +96,7 @@ func Repos(
 					ManifestPath: p.ManifestPath,
 					Direct:       p.Direct,
 					Imported:     p.Imported,
+					Advisories:   p.Advisories,
 				})
 			}
 		}

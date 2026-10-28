@@ -12,7 +12,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/mad01/thismoon/services/deps/internal/store"
@@ -80,7 +79,7 @@ func (c *Client) Check(ctx context.Context, queries []Query) ([][]store.Advisory
 			v := records[id]
 			results[i] = append(results[i], store.Advisory{
 				ID:           v.ID,
-				Kind:         kindOf(v.ID),
+				Kind:         store.KindForID(v.ID),
 				Summary:      v.summary(),
 				Severity:     v.severity(),
 				FixedVersion: v.fixedFor(queries[i]),
@@ -112,17 +111,6 @@ func (c *Client) fetchAll(ctx context.Context, idsPerQuery [][]string) (map[stri
 		}
 	}
 	return records, nil
-}
-
-// kindOf classifies an advisory by its id. OSV serves the OpenSSF
-// malicious-packages database as MAL- records, GitHub's malware advisories
-// included, so the prefix alone marks a malicious version. It needs no fetched
-// record, so a finding whose record failed to load keeps its kind.
-func kindOf(id string) store.Kind {
-	if strings.HasPrefix(id, "MAL-") {
-		return store.KindMalicious
-	}
-	return store.KindVuln
 }
 
 // batchRequest / batchResponse model POST /v1/querybatch.

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -403,6 +405,101 @@ func TestSignalNeverNotifiesOrCountsActive(t *testing.T) {
 	}
 	if ev := scanCompleteEvent(1, deps, nil, 0); ev.Tags["flagged"] != "0" || ev.Level != "info" {
 		t.Errorf("scan event = %+v, want info with 0 flagged", ev)
+	}
+}
+
+// TestCheckKeepsDiscovererFindings: a finding a discoverer attached survives the
+// checker on both the full and the per-repo path, beside the checker's own
+// finding, and checking again lists each finding once.
+func TestCheckKeepsDiscovererFindings(t *testing.T) {
+	signal := store.Advisory{ID: "deps-movable-ref", Kind: store.KindSignal}
+	vuln := store.Advisory{ID: "GHSA-1", Kind: store.KindVuln, FixedVersion: "9.9.9"}
+	pkg := npmPkg("left-pad", "1.2.0")
+	pkg.Advisories = []store.Advisory{signal}
+	st := newStore(t)
+	e := npmEngine(st, fakeChecker{flagName: "left-pad"}, &fakeNotifier{}, pkg)
+
+	ctx := context.Background()
+	full := func() error { _, err := e.Check(ctx); return err }
+	repo := func() error { _, err := e.CheckRepo(ctx, "widget"); return err }
+	runs := []struct {
+		name  string
+		check func() error
+	}{
+		{"full check", full},
+		{"full check again", full},
+		{"repo check", repo},
+	}
+	for _, run := range runs {
+		if err := run.check(); err != nil {
+			t.Fatalf("%s: %v", run.name, err)
+		}
+		deps := st.Snapshot().Deps
+		if len(deps) != 1 {
+			t.Fatalf("%s: saved %d deps, want 1", run.name, len(deps))
+		}
+		got := deps[0].Advisories
+		if len(got) != 2 || got[0] != signal || got[1] != vuln {
+			t.Errorf("%s: advisories = %+v, want [%+v %+v]", run.name, got, signal, vuln)
+		}
+	}
+
+	// Check itself is idempotent on deps it already annotated.
+	deps := st.Snapshot().Deps
+	for range 2 {
+		var err error
+		if deps, err = Check(ctx, deps, fakeChecker{flagName: "left-pad"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := deps[0].Advisories; len(got) != 2 {
+		t.Errorf("re-checked advisories = %+v, want the signal and GHSA-1 once each", got)
+	}
+}
+
+// preKindMaliciousScan is a scan.json written before findings had a kind,
+// holding a MAL- finding on a dep that is not compiled in. It was never
+// notified.
+const preKindMaliciousScan = `{
+  "scanned_at": "2026-10-20T09:00:00Z",
+  "deps": [{
+    "ecosystem": "npm", "name": "chalk", "version": "5.6.1",
+    "repo": "/home/u/code/widget", "manifest_path": "/home/u/code/widget/package-lock.json",
+    "imported": false,
+    "advisories": [{"id": "MAL-2025-46969"}]
+  }],
+  "notified": [],
+  "resolved": []
+}`
+
+// TestPreKindMaliciousFindingLoadsAsMalicious: a MAL- finding saved before
+// kinds existed loads as malicious, so it fires the malicious banner (not the
+// summary) despite the dep not being compiled in, under the key it always had.
+func TestPreKindMaliciousFindingLoadsAsMalicious(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "scan.json"), []byte(preKindMaliciousScan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Snapshot().Deps[0].Advisories[0].Kind; got != store.KindMalicious {
+		t.Fatalf("loaded kind = %q, want %q", got, store.KindMalicious)
+	}
+
+	n := &fakeNotifier{}
+	for range 2 {
+		if _, err := Notify(st, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(n.calls) != 1 || n.calls[0].title != "deps: malicious package chalk@5.6.1" {
+		t.Fatalf("banners = %+v, want one malicious banner for chalk@5.6.1", n.calls)
+	}
+	want := []string{"npm:chalk@5.6.1:MAL-2025-46969"}
+	if got := st.Snapshot().Notified; !slices.Equal(got, want) {
+		t.Errorf("notified = %v, want %v (the key is unchanged)", got, want)
 	}
 }
 

@@ -23,7 +23,7 @@ const fileName = "scan.json"
 // Kind classifies a finding, and the kind alone decides how deps surfaces it.
 // The set is closed: a producer picks one of the constants below. An empty
 // kind (a scan.json written before kinds existed, or a producer that left it
-// unset) reads as KindVuln.
+// unset) is derived from the finding's id by KindForID.
 type Kind string
 
 const (
@@ -31,10 +31,10 @@ const (
 	// active and notifies in the coalesced summary banner, but only while the
 	// dependency is compiled in (Dependency.Imported).
 	KindVuln Kind = "vuln"
-	// KindMalicious is a version an advisory database lists as malicious (an
-	// OSV MAL- record). It counts as active and fires its own banner even when
-	// the dependency is not compiled in, because its install scripts may
-	// already have run.
+	// KindMalicious is a version known to be malicious: an OSV MAL- record, or
+	// a version another producer's rule marks as such. It counts as active and
+	// fires its own banner even when the dependency is not compiled in,
+	// because its install scripts may already have run.
 	KindMalicious Kind = "malicious"
 	// KindSignal is a warning sign that is not an advisory. It shows on the
 	// page only: it never notifies and never counts as active, though it can
@@ -42,6 +42,18 @@ const (
 	// (such as deps-movable-ref), so the FlagKey stays parseable.
 	KindSignal Kind = "signal"
 )
+
+// KindForID classifies an OSV advisory by its id. OSV serves the OpenSSF
+// malicious-packages database as MAL- records, GitHub's malware advisories
+// included, so the prefix alone marks a malicious version. It needs no fetched
+// record, so a finding whose record failed to load keeps its kind, and a
+// finding saved before kinds existed loads with the kind it would get today.
+func KindForID(id string) Kind {
+	if strings.HasPrefix(id, "MAL-") {
+		return KindMalicious
+	}
+	return KindVuln
+}
 
 // Alerts reports whether a finding of kind k is a real exposure on a
 // dependency that is, or is not, compiled in: one that notifies when new and
@@ -188,14 +200,14 @@ func readScan(path string) (Scan, error) {
 	return sc, nil
 }
 
-// defaultKinds sets every empty Advisory.Kind in deps to KindVuln, in place.
-// A scan.json written before kinds existed, or a producer that left the kind
-// unset, then reads as a vulnerability.
+// defaultKinds sets every empty Advisory.Kind in deps from its id with
+// KindForID, in place. A scan.json written before kinds existed then loads a
+// MAL- finding as malicious, so it surfaces and notifies like one found today.
 func defaultKinds(deps []Dependency) {
 	for i := range deps {
 		for j := range deps[i].Advisories {
-			if deps[i].Advisories[j].Kind == "" {
-				deps[i].Advisories[j].Kind = KindVuln
+			if a := &deps[i].Advisories[j]; a.Kind == "" {
+				a.Kind = KindForID(a.ID)
 			}
 		}
 	}

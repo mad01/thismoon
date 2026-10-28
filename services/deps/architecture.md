@@ -50,8 +50,9 @@ the walk goes on with the rest. The check step posts versions to OSV's
 results) and fetches each unique advisory id once. A record that fails to
 load keeps its finding with the id alone, so one bad fetch never aborts the
 scan. Each finding has a kind: `malicious` for an OSV MAL- id, `vuln` for any
-other advisory, and `signal` for a warning sign a deps rule raises.
-`scanner.Engine` persists the result and the discovery errors through the
+other advisory, and `signal` for a warning sign a deps rule raises. The
+checker's findings are added to any a discoverer attached, never in place of
+them. `scanner.Engine` persists the result and the discovery errors through the
 store. It then fires a separate banner for newly flagged malicious packages,
 then one coalesced notification covering the other newly flagged advisories.
 Signals never notify. Last it emits a scan-complete event to the events
@@ -60,7 +61,10 @@ service, at warn level when anything is flagged or discovery failed.
 Scheduling checks staleness rather than counting ticks: serve heartbeats every
 15 minutes and runs a full check whenever the last scan is older than
 `--interval` (default 24h). So a wake from sleep catches up promptly. Failures
-back off exponentially up to 6 hours. Resolution flows the other way: a
+back off exponentially up to 6 hours. A manual check (`POST /api/check`, full
+or per repo) notifies the same way, since a full one resets the scan time the
+loop goes by. The notified set stops either path from firing a banner twice.
+Resolution flows the other way: a
 `POST /api/resolve` (from the web page, CLI, or `deps_resolve`) adds advisory
 keys to the resolved set. Because the key embeds the exact version, an
 acknowledged advisory resurfaces when the package is bumped. The web page asks
@@ -75,7 +79,8 @@ flag, advisories with their kind), the `discovery_errors` (repo, ecosystem, erro
 hit, plus two string sets keyed by
 `ecosystem:name@version:advisoryID`: `notified` (already alerted) and
 `resolved` (user-acknowledged). An advisory with no kind, as in a file
-written before kinds existed, reads as `vuln`. `ScannedAt` records the last full scan; a
+written before kinds existed, takes its kind from its id: a MAL- id reads as
+`malicious`, any other as `vuln`. `ScannedAt` records the last full scan; a
 per-repo rescan merges, replacing only that repo's deps and discovery
 errors, without resetting it, so the daily catch-up still fires. Config lives at `~/.config/deps/config.toml`.
 

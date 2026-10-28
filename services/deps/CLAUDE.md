@@ -101,8 +101,9 @@ no file locks.
 - **One unreadable record never costs the scan.** A failed `GET
   /v1/vulns/{id}` is logged and the finding is kept with its id and kind but
   no summary, severity or fix; the next check fills them in. Only a failed
-  querybatch or a cancelled request fails the check.
-- The finding's kind comes from the id alone (`osv.kindOf`): `MAL-` is
+  querybatch, a batch still paging after 20 requests, or a cancelled request
+  fails the check.
+- The finding's kind comes from the id alone (`store.KindForID`): `MAL-` is
   `malicious`, anything else `vuln`. OSV serves GitHub's malware advisories as
   MAL- records too, so the prefix covers both.
 - One API; ecosystem strings are OSV's own (`Go`, `npm`, `PyPI`, `SwiftURL`); no
@@ -131,6 +132,12 @@ no file locks.
   never folded into it. It names each package version and its repos, and says
   to check whether it was installed and rotate the credentials it could
   reach. Each banner retries on its own if delivery fails.
+- **A manual check notifies too.** `POST /api/check`, full or per repo (the
+  page's rescan buttons, `deps_check`, `deps check`), fires the banners for
+  anything new once the check succeeds. A full check resets `ScannedAt`, so
+  the loop skips its next cycle; without this, checking by hand every day
+  would mean no banner ever fires. `Engine.Notify` is serialized and the
+  notified set keeps the loop from firing the same banner again.
 
 ## Data model & storage
 
@@ -139,30 +146,6 @@ Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL), Name, Version, Repo, ManifestPath,
 Advisory{ ID, Kind (vuln|malicious|signal), Summary, Severity, FixedVersion }  // one finding on that exact version
 DiscoveryError{ Repo, Ecosystem, Error }  // a repo+ecosystem the scan could not read
 ```
-
-### Finding kinds
-
-`store.Kind` is a closed set. The kind alone decides how a finding surfaces:
-
-| Kind | Set by | Banner | Counts as active | "Not compiled in" gate | Page |
-|------|--------|--------|------------------|------------------------|------|
-| `vuln` | an OSV id other than MAL-; also any empty kind | coalesced summary | yes, until resolved | applies | Active findings, by severity |
-| `malicious` | an OSV MAL- id | its own | yes, until resolved | bypassed (install scripts may have run) | first in Active findings, red badge; Resolve asks for confirmation |
-| `signal` | a deps rule | never | never, nor in `flagged_count` | not used | Warning signs section |
-
-- The banner and count rule is one function, `store.Kind.Alerts(imported)`.
-  `PendingFlags` and `api.Dependency.Active` call it; `app.js` mirrors it as
-  `alerts()`. `api.Flagged` lists deps with an unresolved malicious finding
-  first, so `/api/flagged` and the MCP tools lead with them.
-- An empty kind reads as `vuln` on load (`readScan`) and on `Save`/`SaveRepo`,
-  so a scan.json written before kinds existed loads unchanged.
-- **Adding a producer.** Build a `store.Advisory` with a kind and an id, and
-  append it to the dependency's `Advisories` before the scanner saves (OSV's
-  findings are attached in `scanner.Check`). A warning sign is
-  `store.Advisory{ID: "deps-movable-ref", Kind: store.KindSignal, Summary: "…"}`.
-  Nothing else changes: not the model, the key, the notifier, the API or the
-  page. A signal's id is a rule id: give it a `deps-` prefix and no `:`, since
-  `parseKey` splits the key on its last colon. Never add a kind.
 
 - **Scan store** holds the last scan's deps and discovery errors plus two
   string sets keyed by
@@ -173,6 +156,63 @@ DiscoveryError{ Repo, Ecosystem, Error }  // a repo+ecosystem the scan could not
 - **ScannedAt** is the last *full* scan time. A per-repo rescan
   (`SaveRepo`) deliberately does **not** reset it, so the daily catch-up still
   fires; it replaces only that repo's deps and discovery errors.
+
+### Finding kinds
+
+`store.Kind` is a closed set. The kind alone decides how a finding surfaces:
+
+| Kind | Set by | Banner | Counts as active | "Not compiled in" gate | Page |
+|------|--------|--------|------------------|------------------------|------|
+| `vuln` | an OSV id other than MAL- | coalesced summary | yes, until resolved | applies | Active findings, by severity |
+| `malicious` | an OSV MAL- id, or a producer's own rule (a version the registry withdrew, say) | its own | yes, until resolved | bypassed (install scripts may have run) | first in Active findings, red badge; Resolve asks for confirmation |
+| `signal` | a deps rule | never | never, nor in `flagged_count` | not used | Warning signs section |
+
+- The banner and count rule is one function, `store.Kind.Alerts(imported)`.
+  `PendingFlags` and `api.Dependency.Active` call it; `app.js` mirrors it as
+  `alerts()`. `api.Flagged` lists deps with an unresolved malicious finding
+  first, so `/api/flagged` and the MCP tools lead with them.
+- An empty kind is derived from the id with `store.KindForID`, on load
+  (`readScan`) and on `Save`/`SaveRepo`. A scan.json written before kinds
+  existed loads a MAL- finding as `malicious` under its old `FlagKey`, and
+  everything else as `vuln`.
+
+### Adding a producer
+
+A producer builds `store.Advisory` values with a kind and an id. A warning
+sign is `store.Advisory{ID: "deps-movable-ref", Kind: store.KindSignal,
+Summary: "…"}`. Follow-up producers build on these rules:
+
+- **Attach in one of two places.** A discoverer sets
+  `discover.Package.Advisories` during discovery, or a `scanner.Checker`
+  returns the finding for its query index. `scanner.Check` adds the checker's
+  findings to the discovered ones; a checker finding whose id is already
+  there replaces it. The full path (`Engine.Check`, then `Save`) and the
+  per-repo path (`Engine.CheckRepo`, then `SaveRepo`) both run it. A finding
+  attached in `Engine.Check` alone would vanish on a per-repo rescan.
+- **Ids.** An OSV id is used as-is. Any other id is the producer's rule id,
+  whatever its kind: give it a `deps-` prefix and no `:`, since `parseKey`
+  splits the key on its last colon.
+- **Kinds.** Pick one of the three and never add a kind. `malicious` isn't
+  OSV's alone: a producer may set it under its own rule id.
+- **New dependency rows set `Imported: true`**, unless their ecosystem
+  computes reachability (only Go does today). A row left false is gated as
+  "Not compiled in": its vulnerabilities never count and never notify.
+- **The version in the key must track the pin.** `FlagKey` embeds the
+  version, and a resolved or notified finding keeps that state while its key
+  holds. So the version must change whenever the pinned thing does: for a
+  SHA-pinned GitHub Action it carries the SHA, not only the `# vN` label, or
+  a re-pin keeps the old resolve.
+- **A second checker composes with OSV.** `Engine` holds one `Checker`. A
+  second one (a registry checker, say) merges its results with OSV's per
+  dependency index, and its error must neither fail the check nor discard
+  OSV's findings. Whoever adds the second checker builds that composition.
+- **There is no "unknown" state.** A finding that drops out of a scan reads
+  as gone, and a resolved one shows as "Resolved · updated past". A producer
+  that needs a failed lookup to read as neither clean nor fixed must make
+  that model change itself.
+- A new producer leaves the key format, the notifier, the API and the page
+  as they are. `osv.Query` may grow fields for a new query shape, such as a
+  commit query for a pinned Action.
 
 ## Build / install / test
 
@@ -188,7 +228,7 @@ make test     # go test ./... (hermetic: t.TempDir, canned go-list/OSV/lock fixt
 - `GET  /api/deps`              : full inventory (enriched: advisory `key` + `resolved`)
 - `GET  /api/flagged`          : flagged deps only
 - `POST /api/scan`             : discover only (no OSV), persist, return per-ecosystem counts
-- `POST /api/check[?repo=]`    : discover + OSV check (full, or one repo merged), return flagged
+- `POST /api/check[?repo=]`    : discover + OSV check (full, or one repo merged), notify, return flagged
 - `POST /api/resolve`          : body `{keys:[…]}`; acknowledge advisories
 - `POST /api/notify`           : fire pending notifications now
 - `GET  /version`              : the four-key build metadata object (`version`, `commit`, `tag`, `build_time`) · `GET /webkit/`

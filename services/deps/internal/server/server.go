@@ -115,13 +115,20 @@ func (s *Server) handleScan(w http.ResponseWriter, _ *http.Request) {
 }
 
 // handleCheck runs a full check, or — when a `repo` query param is given — a
-// single-repo rescan merged into the store.
+// single-repo rescan merged into the store, then fires the banners for
+// anything newly flagged. A full check resets ScannedAt, so the scan loop
+// skips its next cycle: without notifying here, someone who checks by hand
+// every day would never get a banner. The notified set keeps the loop from
+// firing the same banner again.
 func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if repo := r.URL.Query().Get("repo"); repo != "" {
 		_, err = s.engine.CheckRepo(r.Context(), repo)
 	} else {
 		_, err = s.engine.Check(r.Context())
+	}
+	if err == nil {
+		_, err = s.engine.Notify()
 	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
