@@ -171,6 +171,20 @@ func writeRepo(t *testing.T, files map[string]string) string {
 	return root
 }
 
+// writeLinks adds symlinks (repo-relative path to link target) under root.
+func writeLinks(t *testing.T, root string, links map[string]string) {
+	t.Helper()
+	for link, target := range links {
+		path := filepath.Join(root, link)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // byName indexes packages by name, failing on a duplicate.
 func byName(t *testing.T, pkgs []Package) map[string]Package {
 	t.Helper()
@@ -404,19 +418,11 @@ func TestGitHubActionsFollowsLocalActions(t *testing.T) {
 		".github/actions/present-image/action.yml": compositeAction,
 		"../outside/action.yml":                    "runs:\n  steps:\n    - uses: evil/outside@v1\n",
 	})
-	for link, target := range map[string]string{
+	writeLinks(t, root, map[string]string{
 		"linked":              "../outside",
 		"filelink/action.yml": "../../outside/action.yml",
 		"inside":              ".github/actions/present-image",
-	} {
-		path := filepath.Join(root, link)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(target, path); err != nil {
-			t.Fatal(err)
-		}
-	}
+	})
 	opts := Options{ExcludePath: func(rel string) bool { return rel == "excluded" }}
 
 	pkgs, err := GitHubActions{BaseURL: srv.URL}.Discover(root, opts)
@@ -437,6 +443,42 @@ func TestGitHubActionsFollowsLocalActions(t *testing.T) {
 	for name, manifest := range want {
 		if p, ok := got[name]; !ok || p.ManifestPath != manifest {
 			t.Errorf("%s = %+v, want it from %s", name, p, manifest)
+		}
+	}
+}
+
+// TestGitHubActionsResolvesCompositeSymlinks: an action file under
+// .github/actions is followed through its symlinks first, by the same rule as
+// a local ref. A link that leaves the repo or lands under an excluded
+// directory is skipped without an error, and a link to another action in the
+// repo is that action, read once.
+func TestGitHubActionsResolvesCompositeSymlinks(t *testing.T) {
+	srv, _ := refServer(t)
+	root := writeRepo(t, map[string]string{
+		".github/actions/present-image/action.yml": compositeAction,
+		"excluded/action.yml":                      "runs:\n  steps:\n    - uses: evil/excluded@v1\n",
+		"../outside/action.yml":                    "runs:\n  steps:\n    - uses: evil/outside@v1\n",
+	})
+	writeLinks(t, root, map[string]string{
+		".github/actions/escape/action.yml": "../../../../outside/action.yml",
+		".github/actions/hidden/action.yml": "../../../excluded/action.yml",
+		".github/actions/alias/action.yml":  "../present-image/action.yml",
+	})
+	opts := Options{ExcludePath: func(rel string) bool { return rel == "excluded" }}
+
+	pkgs, err := GitHubActions{BaseURL: srv.URL}.Discover(root, opts)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	got := byName(t, pkgs)
+	composite := filepath.Join(root, ".github/actions/present-image/action.yml")
+	want := []string{"docker/setup-buildx-action", "docker/login-action"}
+	if len(got) != len(want) {
+		t.Errorf("got %d packages, want %d: %+v", len(got), len(want), pkgs)
+	}
+	for _, name := range want {
+		if p, ok := got[name]; !ok || p.ManifestPath != composite {
+			t.Errorf("%s = %+v, want it from %s", name, p, composite)
 		}
 	}
 }

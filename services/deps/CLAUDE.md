@@ -147,13 +147,15 @@ no file locks.
   `jobs.<id>.steps[].uses` and a composite action's `runs.steps[].uses`. A
   local `uses: ./path` ref is followed to the `action.yml|yaml` in that
   directory of the repo (`./` is the repo root), and its refs are read the
-  same way. Symlinks are resolved first, so the file is checked and keyed at
-  its real place in the repo. Each file is read once, so a cycle ends. A file
-  outside the repo (a symlink can lead there), under an `exclude_paths` glob,
-  or missing (a job may generate it) is skipped without an error. `docker://`
+  same way. For a local ref and an action file under `.github/actions` alike,
+  symlinks are resolved first, so the file is checked and keyed at its real
+  place in the repo. Each file is read once, so a cycle ends. A file outside
+  the repo (a symlink can lead there), under an `exclude_paths` glob, or
+  missing (a job may generate it) is skipped without an error. `docker://`
   images are skipped; `owner/repo/path@ref` is package `owner/repo`, as
-  written. A ref pinned to a 40-hex SHA needs no lookup. A tag or branch ref is resolved to its commit
-  from the action repo's ref list, a plain HTTPS GET of
+  written. A ref pinned to a 40-hex SHA needs no lookup. A tag or branch ref
+  is resolved to its commit from the action repo's ref list, a plain HTTPS
+  GET of
   `https://github.com/<owner>/<repo>.git/info/refs?service=git-upload-pack`.
   It returns what `git ls-remote` prints, peeled `^{}` lines included, with no
   git binary in the sandbox and no API quota. A tag wins over a branch of the

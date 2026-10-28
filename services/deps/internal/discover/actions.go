@@ -123,25 +123,41 @@ func localAction(repoRoot, uses string, opts Options) (string, bool) {
 	}
 	dir := filepath.Join(repoRoot, filepath.FromSlash(uses))
 	for _, name := range []string{"action.yml", "action.yaml"} {
-		path, err := filepath.EvalSymlinks(filepath.Join(dir, name))
-		if err != nil {
-			continue // missing, or a link to nothing
+		if real, ok := resolveFile(filepath.Join(dir, name)); ok {
+			return inRepo(repoRoot, root, real, opts)
 		}
-		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-			continue
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil || !filepath.IsLocal(rel) {
-			return "", false
-		}
-		for d := filepath.Dir(path); d != root && d != filepath.Dir(d); d = filepath.Dir(d) {
-			if opts.excluded(root, d) {
-				return "", false
-			}
-		}
-		return filepath.Join(repoRoot, rel), true
 	}
 	return "", false
+}
+
+// resolveFile follows the symlinks in path to the regular file it names. ok
+// is false when there is none: path is missing, a link to nothing, or a
+// directory.
+func resolveFile(path string) (string, bool) {
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", false
+	}
+	if info, err := os.Stat(real); err != nil || !info.Mode().IsRegular() {
+		return "", false
+	}
+	return real, true
+}
+
+// inRepo returns real, a path with its symlinks resolved, at its place under
+// repoRoot, whose resolved form is root. ok is false when real is outside the
+// repo or under an excluded directory.
+func inRepo(repoRoot, root, real string, opts Options) (string, bool) {
+	rel, err := filepath.Rel(root, real)
+	if err != nil || !filepath.IsLocal(rel) {
+		return "", false
+	}
+	for d := filepath.Dir(real); d != root && d != filepath.Dir(d); d = filepath.Dir(d) {
+		if opts.excluded(root, d) {
+			return "", false
+		}
+	}
+	return filepath.Join(repoRoot, rel), true
 }
 
 // pkg builds the package for one ref in manifest. A SHA pin needs no lookup; a
@@ -305,7 +321,10 @@ func isCommitSHA(s string) bool {
 
 // actionFiles lists the files whose refs a repo's CI runs: the workflows
 // directly under .github/workflows (GitHub reads no subdirectory there) and
-// every action.yml or action.yaml under .github/actions.
+// every action.yml or action.yaml under .github/actions. An action file is
+// resolved through its symlinks by localAction's rule: one that resolves
+// outside the repo or under an excluded directory is skipped, and one that
+// resolves to another action file is listed once, at that file's place.
 func actionFiles(repoRoot string, opts Options) ([]string, error) {
 	if opts.excluded(repoRoot, filepath.Join(repoRoot, ".github")) {
 		return nil, nil
@@ -328,6 +347,10 @@ func actionFiles(repoRoot string, opts Options) ([]string, error) {
 	if _, err := os.Stat(actions); errors.Is(err, fs.ErrNotExist) {
 		return files, nil
 	}
+	root, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
+		return files, err
+	}
 	err = filepath.WalkDir(actions, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // unreadable subtree: skip, don't abort the repo
@@ -338,8 +361,13 @@ func actionFiles(repoRoot string, opts Options) ([]string, error) {
 			}
 			return nil
 		}
-		if d.Name() == "action.yml" || d.Name() == "action.yaml" {
-			files = append(files, path)
+		if d.Name() != "action.yml" && d.Name() != "action.yaml" {
+			return nil
+		}
+		if real, ok := resolveFile(path); ok {
+			if f, ok := inRepo(repoRoot, root, real, opts); ok && !slices.Contains(files, f) {
+				files = append(files, f)
+			}
 		}
 		return nil
 	})
