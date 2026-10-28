@@ -566,6 +566,26 @@ func TestSessionOrigin(t *testing.T) {
 	}
 }
 
+// TestEntrypointBounded: the hook keeps an entrypoint only when it passes
+// the session tag rule, so a list badge built from it stays short.
+func TestEntrypointBounded(t *testing.T) {
+	tests := map[string]string{
+		"sdk-ts":                "sdk-ts",
+		"claude-desktop":        "claude-desktop",
+		"Claude Desktop":        "",
+		strings.Repeat("x", 33): "",
+		"sdk-cli;echo":          "",
+	}
+	for raw, want := range tests {
+		s := newSession(t, physicalTempDir(t))
+		s.env = map[string]string{EntrypointEnv: raw}
+		s.mustRun("prompt.json")
+		if got := s.takeOne(spool.KindTurnOpen).Session.Entrypoint; got != want {
+			t.Errorf("entrypoint %q recorded as %q, want %q", raw, got, want)
+		}
+	}
+}
+
 func TestStopWithoutOpenOmitsTranscript(t *testing.T) {
 	s := newSession(t, physicalTempDir(t))
 	writeFile(t, s.transcript, "{\"line\":1}\n")

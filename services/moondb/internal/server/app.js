@@ -619,8 +619,9 @@
   }
 
   // repoChips offers every repo the window's sessions edited or sent
-  // attributed cost, most used first, each with the cost attributed to it,
-  // and one to clear the filter.
+  // attributed cost, or that holds the cwd of a session that edited no
+  // repo, most used first, each with the cost attributed to it, and one to
+  // clear the filter.
   function repoChips(repos, state, set) {
     var chips = [chip('All repos', null, !state.repo, function () { set({ repo: '' }); })];
     var listed = repos.some(function (r) { return r.repo === state.repo; });
@@ -732,7 +733,8 @@
 
   // costName is how a person reads an attributed part's repo or label.
   // The no_repo label reads "no repo (cwd)", apart from a row's "no repo"
-  // badge, which says the session edited no repo.
+  // badge, which says the session edited no repo and its cwd sits in no
+  // known repo.
   function costName(repo) {
     if (repo === ORCHESTRATION) return 'orchestration';
     if (repo === NO_REPO) return 'no repo (cwd)';
@@ -901,13 +903,17 @@
     return b;
   }
 
-  // sessionFlags marks how a session ran: headless when the harness says
-  // it was not started from an interactive terminal, and one badge per
-  // tag its launcher set, such as eval.
+  // sessionFlags marks how a session ran, then adds one badge per tag its
+  // launcher set, such as eval. An entrypoint that starts with sdk- (claude
+  // -p and the SDKs) reads headless; any other set entrypoint but cli, such
+  // as a desktop app or an IDE extension, shows its own value. The hover
+  // title names the entrypoint either way.
   function sessionFlags(s) {
     var flags = [];
-    if (s.entrypoint && s.entrypoint !== 'cli') {
-      flags.push(badge('stat', 'headless', 'Entrypoint: ' + s.entrypoint));
+    var ep = s.entrypoint;
+    if (ep && ep !== 'cli') {
+      var sdk = ep.indexOf('sdk-') === 0;
+      flags.push(badge('stat', sdk ? 'headless' : ep, 'Entrypoint: ' + ep));
     }
     (s.tags || []).forEach(function (t) {
       flags.push(badge('outline', t, 'Tag set by the session\'s launcher (MOONDB_SESSION_TAGS)'));
@@ -1132,7 +1138,7 @@
   }
 
   // sessionLine sits under a session's title: the repos it edited, or the
-  // one its cwd sits in when it edited none, the headless and tag badges,
+  // one its cwd sits in when it edited none, the entrypoint and tag badges,
   // whether it is running and when it was last active, its active time
   // over its wall span, and when it started.
   function sessionLine(s) {

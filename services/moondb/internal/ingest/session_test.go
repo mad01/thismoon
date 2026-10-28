@@ -56,7 +56,8 @@ func TestSessionOriginFirstWins(t *testing.T) {
 
 // TestSessionLocationFollowsCwd: a location counts only for the cwd the
 // session keeps, so a later envelope from another directory leaves it
-// empty.
+// empty. A session first seen without a cwd takes the cwd and the
+// location a later turn-open brings together.
 func TestSessionLocationFollowsCwd(t *testing.T) {
 	f := newFixture(t)
 	c := chunkSet{}
@@ -64,6 +65,10 @@ func TestSessionLocationFollowsCwd(t *testing.T) {
 	elsewhere := origin(openEnv(c, "s1", "p2", 2, "moved"), laterLoc, "")
 	elsewhere.Session.Cwd = "/wt/b"
 	f.write(elsewhere, c)
+	noCwd := openEnv(c, "s2", "q1", 1, "no cwd yet")
+	noCwd.Session.Cwd = ""
+	f.write(noCwd, c)
+	f.write(origin(openEnv(c, "s2", "q2", 2, "cwd and location"), cwdLoc, ""), c)
 	f.drain()
 
 	if s := f.session("s1"); s.Cwd != worktree || s.Location != (store.Location{}) {
@@ -72,6 +77,15 @@ func TestSessionLocationFollowsCwd(t *testing.T) {
 			s.Cwd,
 			s.Location,
 			worktree,
+		)
+	}
+	if s := f.session("s2"); s.Cwd != worktree || s.Location != cwdLoc {
+		t.Errorf(
+			"session first seen without a cwd: cwd %q location %+v; want %q at %+v",
+			s.Cwd,
+			s.Location,
+			worktree,
+			cwdLoc,
 		)
 	}
 }

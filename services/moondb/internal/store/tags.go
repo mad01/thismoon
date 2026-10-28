@@ -22,6 +22,17 @@ func validTag(tag string) bool {
 	return len(tag) <= MaxSessionTagLen && tagPattern.MatchString(tag)
 }
 
+// ParseEntrypoint is raw when it is a valid entrypoint, else empty. An
+// entrypoint is the harness's name for how it was started, such as cli or
+// sdk-cli. It follows the session tag rule, since the sessions list shows
+// it as a badge and the environment or a transcript can hold any value.
+func ParseEntrypoint(raw string) string {
+	if !validTag(raw) {
+		return ""
+	}
+	return raw
+}
+
 // ParseTags reads a comma-separated tag list, as a launcher sets it in the
 // environment. Each tag is trimmed of spaces; an invalid one is dropped. The
 // rest are deduplicated, sorted and cut to the first MaxSessionTags. Nil

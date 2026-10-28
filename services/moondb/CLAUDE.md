@@ -65,10 +65,14 @@ interactive terminal session, `sdk-cli` for `claude -p`. The tags are the
 comma-separated `MOONDB_SESSION_TAGS` a launcher set, such as `eval` from
 the eval runner. A tag is lowercase letters, digits and dashes, starts
 with a letter or digit and is at most 32 bytes. Invalid ones are dropped,
-and a session keeps at most 8 (`store.ParseTags`). The turn-open's cwd
-location is the git lookup its pre snapshot reuses, so it costs no extra
-git call. serve keeps the first location and entrypoint a session gets,
-and the union of its tags.
+and a session keeps at most 8 (`store.ParseTags`). The entrypoint follows
+the same rule and is dropped when invalid (`store.ParseEntrypoint`), here
+and in the import. The turn-open looks up its cwd's location within
+`RecordBudget`. An answered lookup is cached for the run, and the pre
+snapshot reuses it. A lookup the budget cuts is not cached: the snapshot
+repeats the git calls, and that turn-open carries no location, which a
+later turn fills. serve keeps the first location and entrypoint a session
+gets, and the union of its tags.
 
 Claude Code reports `bashEditDiff` only when the user setting
 `bashEditDiffEnabled` is on (v2.1.269 or later). `files` holds up to five
@@ -255,7 +259,7 @@ What a transcript gives back:
 - recovered: the prompt, the final message, the turn's transcript lines, the
   tool input, the structured patch, `originalFile` when Claude Code kept it,
   a Write's content, the subagent behind an edit, each subagent's agent
-  transcript, and the session's entrypoint (the first line that names one)
+  transcript, and the session's entrypoint (the first valid one a line names)
   and its cwd's location, placed as a file in it would be
 - not recoverable: the session's tags, which only the hook's environment
   holds
@@ -819,9 +823,11 @@ return, so keep it stable.
   dot with how long ago the session was last active. A session that
   edited no repo shows its `cwd_repo` as a hollow badge instead, which
   filters to that repo, and "no repo" only when its cwd sits in none.
-  Small badges follow the title: `headless` when the entrypoint is set
-  and not `cli` (the hover title names it), and one per tag. Its active time
-  follows, or its wall time when it has none. When the wall time crosses a
+  Small badges follow the title. A set entrypoint other than `cli` gets
+  one: `headless` when it starts with `sdk-` (`claude -p` and the SDKs),
+  else the value itself, such as a desktop app's or an IDE extension's.
+  Its hover title names the entrypoint. Each tag gets a badge too. The
+  row's active time follows, or its wall time when it has none. When the wall time crosses a
   local midnight, "over N days" follows, on a second line when the column
   is too narrow, and the hover title gives the wall time. Then come
   its turn, edit, file and agent counts and its cost, the main
@@ -833,14 +839,15 @@ return, so keep it stable.
   its repo or sent it cost, and shows the cost they attribute to it.
   Under the strip's figures a bar stacks the window's cost by repo, then
   orchestration and "no repo (cwd)", the page's name for `no_repo`. A
-  row's "no repo" badge stays apart: that session edited no repo.
+  row's "no repo" badge stays apart: that session edited no repo and its
+  cwd sits in none.
   A label under it gives each part's amount, and a hover title its share
   and the attribution rule. Filtered to a repo, the cost column turns into
   "Attributed": the part each session gives that repo, with the session
   total in the hover title. The day rows then add those parts.
   `Show more` grows `limit`. The filters stay in the URL.
 - `/?session=<id>`: the title, repo badges (or the hollow cwd badge), the
-  headless and tag badges, status, the active time over
+  entrypoint and tag badges, status, the active time over
   the wall time ("active 1h 51m over 23h 05m (2 days)") and start time,
   and a "Cost by repo" line with the session's `repo_costs`. Then a Trace
   section, an Agents section, the turns in the order they started and the

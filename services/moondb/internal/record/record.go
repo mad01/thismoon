@@ -44,7 +44,8 @@ const Harness = "claude-code"
 // EntrypointEnv is the variable Claude Code sets for its hooks to say how
 // it was started: "cli" for an interactive terminal session, "sdk-cli" for
 // `claude -p`. Every envelope carries its value as the session's
-// entrypoint.
+// entrypoint, or none when the value breaks the session tag rule
+// (store.ParseEntrypoint).
 const EntrypointEnv = "CLAUDE_CODE_ENTRYPOINT"
 
 // Hook events Run records; every other event is ignored.
@@ -108,7 +109,7 @@ func Run(ctx context.Context, in io.Reader, opts Options) error {
 		start:      opts.Now(),
 		p:          p,
 		opts:       opts,
-		entrypoint: opts.Getenv(EntrypointEnv),
+		entrypoint: store.ParseEntrypoint(opts.Getenv(EntrypointEnv)),
 		tags:       store.ParseTags(opts.Getenv(moondb.SessionTagsEnv)),
 		locs:       map[string]store.Location{},
 		spool: &spool.Writer{

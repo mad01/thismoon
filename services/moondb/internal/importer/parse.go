@@ -19,7 +19,8 @@ import (
 type session struct {
 	id, cwd, model string
 	// branch is the git branch of the line that gave cwd, and entrypoint
-	// the first one a line names: how the harness was started.
+	// the first valid one a line names (store.ParseEntrypoint): how the
+	// harness was started.
 	branch, entrypoint string
 	// title is the session's title by store.OfferTitle over its agent-name
 	// and ai-title lines in transcript order, and titleSource the kind of
@@ -214,7 +215,7 @@ func (r *reader) track(e entry, end int64) {
 		r.s.cwd, r.s.branch = e.Cwd, e.GitBranch
 	}
 	if r.s.entrypoint == "" {
-		r.s.entrypoint = e.Entrypoint
+		r.s.entrypoint = store.ParseEntrypoint(e.Entrypoint)
 	}
 	if r.cur == nil {
 		return

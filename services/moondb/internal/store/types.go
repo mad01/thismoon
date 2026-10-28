@@ -34,6 +34,8 @@ type Session struct {
 	Location Location `json:"location,omitzero"`
 	// Entrypoint is how the harness was started, as Claude Code names it:
 	// "cli" for an interactive terminal session, "sdk-cli" for `claude -p`.
+	// A value that breaks the session tag rule is never kept
+	// (ParseEntrypoint).
 	Entrypoint string `json:"entrypoint,omitempty"`
 	// Tags are the short tokens the session's launcher gave it, such as
 	// "eval" for an eval run: sorted, at most MaxSessionTags (MergeTags).

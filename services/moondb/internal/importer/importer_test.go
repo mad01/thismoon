@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -730,6 +731,49 @@ func TestImportAgentOnlySessions(t *testing.T) {
 			if tc.wantTurn && open.Session.Location.Worktree != w.real {
 				t.Errorf("q1 open session location %+v, want the cwd's worktree %s",
 					open.Session.Location, w.real)
+			}
+		})
+	}
+}
+
+// TestParseEntrypoint: a transcript's entrypoint is the first one a main
+// line names that passes the session tag rule, as the hook keeps it.
+func TestParseEntrypoint(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{"first named", []string{"", "sdk-cli", "cli"}, "sdk-cli"},
+		{"invalid skipped", []string{"Claude Desktop", "sdk-ts"}, "sdk-ts"},
+		{"too long dropped", []string{strings.Repeat("x", 33)}, ""},
+		{"none", []string{""}, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var b strings.Builder
+			for i, ep := range tc.lines {
+				line, err := json.Marshal(map[string]any{
+					"type": "user", "uuid": fmt.Sprint("u-", i), "sessionId": "sess-e",
+					"timestamp": "2026-10-01T10:00:00.000Z", "cwd": "/tmp/x",
+					"entrypoint": ep, "promptId": "p1",
+					"message": map[string]any{"role": "user", "content": "hi"},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				b.Write(append(line, '\n'))
+			}
+			path := filepath.Join(t.TempDir(), "sess-e.jsonl")
+			if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			s, err := parseSession(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if s.entrypoint != tc.want {
+				t.Errorf("entrypoint %q, want %q", s.entrypoint, tc.want)
 			}
 		})
 	}

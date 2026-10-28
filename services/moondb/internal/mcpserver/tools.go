@@ -82,7 +82,7 @@ func registerSessionTools(s *mcp.Server, h *handlers) {
 		Description: "List recorded agent sessions newest first. Each has a title (the harness title, else its first prompt line), " +
 			"a status (running or ended), when it started, was last active and ended, its active time and wall time, its turn, edit, file and agent counts, " +
 			"the names of the subagents that ran (`agents`), its tokens and cost, its transcript path, and the repositories and worktrees it edited. " +
-			"`cwd_repo` is the repository its cwd sits in (the session's `location`), whether or not it edited there. " +
+			"`cwd_repo` is the repository its cwd sits in, whether or not it edited there, and `cwd_repo_name` its short name; both are absent for a cwd outside any repository and for an older session recorded without it. " +
 			"`entrypoint` says how the harness was started: `cli` for an interactive session, `sdk-cli` for a headless `claude -p` run. " +
 			"`tags` are what its launcher set in MOONDB_SESSION_TAGS, such as `eval` for an eval run. " +
 			"`active_ms` is the time inside its turns, less the time a turn waited for input or sat idle, so a pause between turns never counts. " +

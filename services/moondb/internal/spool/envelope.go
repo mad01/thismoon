@@ -100,7 +100,7 @@ type SessionRef struct {
 	Location store.Location `json:"location,omitzero"`
 	// Entrypoint is the harness entrypoint: the hook's
 	// CLAUDE_CODE_ENTRYPOINT, or an import's first transcript line that
-	// names one.
+	// names a valid one, empty when invalid (store.ParseEntrypoint).
 	Entrypoint string `json:"entrypoint,omitempty"`
 	// Tags are the session tags the hook read from its environment
 	// (store.ParseTags); an import sets none.

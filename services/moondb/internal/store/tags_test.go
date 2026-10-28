@@ -48,6 +48,30 @@ func TestParseTags(t *testing.T) {
 	}
 }
 
+// TestParseEntrypoint: an entrypoint is kept only when it passes the tag
+// rule.
+func TestParseEntrypoint(t *testing.T) {
+	longest := strings.Repeat("x", MaxSessionTagLen)
+	tests := map[string]string{
+		"":            "",
+		"cli":         "cli",
+		"sdk-cli":     "sdk-cli",
+		"claude-ide":  "claude-ide",
+		longest:       longest,
+		longest + "x": "",
+		"Sdk-cli":     "",
+		" cli":        "",
+		"-cli":        "",
+		"sdk_cli":     "",
+		"cli\nx":      "",
+	}
+	for raw, want := range tests {
+		if got := ParseEntrypoint(raw); got != want {
+			t.Errorf("ParseEntrypoint(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
 // TestMergeTags: a merge adds the valid tags a session lacks while there is
 // room, and never drops one it holds.
 func TestMergeTags(t *testing.T) {

@@ -48,7 +48,12 @@ own edits touched, else to orchestration.`,
 
 func init() {
 	sessionsCmd.Flags().
-		StringVar(&sessionsRepo, "repo", "", "keep sessions that edited this repository or attribute cost to it")
+		StringVar(
+			&sessionsRepo,
+			"repo",
+			"",
+			"keep sessions that edited this repository, attribute cost to it, or edited none with their cwd in it",
+		)
 	sessionsCmd.Flags().
 		StringVar(&sessionsSince, "since", "", "keep sessions active since this time or span")
 	sessionsCmd.Flags().
