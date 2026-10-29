@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/mad01/thismoon/compare/moondb/v0.7.0...moondb/v0.8.0) (2026-10-29)
+
+
+### Features
+
+* **moondb:** show the last parent message before each subagent edit ([#347](https://github.com/mad01/thismoon/issues/347)) ([a721dca](https://github.com/mad01/thismoon/commit/a721dca07945251907c19abb27b28ca438dd3c9c))
+
 ## [0.7.0](https://github.com/mad01/thismoon/compare/moondb/v0.6.0...moondb/v0.7.0) (2026-10-29)
 
 
