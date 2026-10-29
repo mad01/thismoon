@@ -507,6 +507,7 @@
     }), 'turn');
     nodes.push(el('div', {}, [e.tool + ' by ' + agentName(e.agent_type, e.agent_id) + ', ' +
       fmtTime(e.at) + ', in ', turnLink]));
+    if (res.agent) nodes.push(whyBrief(res.agent));
     if (res.session) {
       nodes.push(el('div', { class: 'muted' }, ['session ', el('a', {
         href: '?session=' + enc(res.session.id)
@@ -521,6 +522,18 @@
       })));
     }
     return nodes;
+  }
+
+  // whyBrief shows the brief of the subagent that made the edit, the prompt
+  // it was spawned with, which says why it made the edit; the turn link
+  // above carries the person's prompt.
+  function whyBrief(a) {
+    var label = 'Brief to ' + (a.name || a.type || 'subagent');
+    if (!a.brief_chunk) return el('div', { class: 'muted' }, label + ': ' + briefMissing(a.recorded));
+    var line = el('span', {}, '…');
+    fill(line, chunk(a.brief_chunk).then(function (text) { return promptText(text, 120); }),
+      '(brief unavailable)');
+    return el('details', {}, [el('summary', {}, [label + ': ', line]), prose(a.brief_chunk, '')]);
   }
 
   // ── sessions list ──
@@ -1822,6 +1835,7 @@
         originRow(t)
       ].filter(Boolean)),
       el('div', { class: 'spaced' }, section('Prompt', [prose(t.prompt_chunk, '(no prompt recorded)')])),
+      briefsSection(t.agents || []),
       section('Final message', [prose(t.final_chunk,
         t.status === 'open' ? 'The turn is still open.' : '(no final message recorded)')]),
       section('Agents', [agentTable(t.agents || [])]),
@@ -1892,6 +1906,31 @@
           monoCell(r.id || '-')
         ]);
       }));
+  }
+
+  // briefsSection sits under the turn's prompt, the person's message to
+  // the main conversation: the brief of each subagent that worked in the
+  // turn, the prompt it was spawned with. null when none ran.
+  function briefsSection(rows) {
+    var subs = rows.filter(function (r) { return r.id; });
+    if (!subs.length) return null;
+    return section('Subagent briefs', subs.map(briefPanel));
+  }
+
+  // briefPanel is one subagent's brief in a disclosure headed by the agent,
+  // its kind and its description.
+  function briefPanel(r) {
+    var head = [el('strong', {}, agentLabel(r))];
+    if (r.name && r.type && r.name !== r.type) head.push(el('span', { class: 'muted' }, ' ' + r.type));
+    if (r.description) head.push(el('span', { class: 'muted' }, ' · ' + r.description));
+    return el('details', {}, [el('summary', {}, head), prose(r.brief_chunk, briefMissing(r.recorded))]);
+  }
+
+  // briefMissing says why an agent has no brief to show.
+  function briefMissing(recorded) {
+    return recorded
+      ? 'Brief unknown: the agent was recorded before moondb kept briefs. moondb import --force fills it.'
+      : 'Brief unknown: moondb has no record of this agent, only its edits.';
   }
 
   // editGroups lays the turn's edits out by worktree, then path, each path

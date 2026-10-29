@@ -5,6 +5,7 @@
 package query
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -70,9 +71,9 @@ type WhyRequest struct {
 }
 
 // WhyResult is the answer: the Edit that produced the line, the turn and
-// session it belongs to, and the commit it landed in when known. When the
-// blob join fails, Candidates lists content matches best first and Edit is
-// the top one.
+// session it belongs to, the subagent that made it when one did, and the
+// commit it landed in when known. When the blob join fails, Candidates
+// lists content matches best first and Edit is the top one.
 type WhyResult struct {
 	Path       string            `json:"path"`
 	Line       int               `json:"line"`
@@ -82,9 +83,28 @@ type WhyResult struct {
 	Edit       *store.Edit       `json:"edit,omitempty"`
 	Turn       *store.Turn       `json:"turn,omitempty"`
 	Session    *store.Session    `json:"session,omitempty"`
+	Agent      *WhyAgent         `json:"agent,omitempty"`
 	CommitLink *store.CommitLink `json:"commit_link,omitempty"`
 	Candidates []Candidate       `json:"candidates,omitempty"`
 }
+
+// WhyAgent is the subagent that made an edit: who it was and its brief,
+// the prompt the conversation that spawned it gave it. The brief says why
+// the agent made the edit; the turn's prompt is the person's message to
+// the main conversation. Recorded is false when the store holds no Agent
+// record, only the edit's agent id and type. BriefChunk is empty then, and
+// on a record stored before briefs were kept: the brief is unknown.
+type WhyAgent struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	BriefChunk  string `json:"brief_chunk,omitempty"`
+	Recorded    bool   `json:"recorded"`
+}
+
+// Label names the agent for a person: its name, else its type.
+func (a WhyAgent) Label() string { return cmp.Or(a.Name, a.Type, "subagent") }
 
 // Candidate is one Edit that may explain a line, with how well it fits.
 type Candidate struct {
@@ -168,11 +188,11 @@ func (r WhyRequest) validate() error {
 	return nil
 }
 
-// attach fills res with the Edit that explains the line, its turn and
-// session, and the commit link: the one for res.Commit at path when blame
-// named the commit, else the one recorded for the Edit, whose commit then
-// becomes res.Commit. A turn or session the store lacks is left out
-// rather than failing the answer.
+// attach fills res with the Edit that explains the line, its turn,
+// session and subagent, and the commit link: the one for res.Commit at
+// path when blame named the commit, else the one recorded for the Edit,
+// whose commit then becomes res.Commit. A turn or session the store lacks
+// is left out rather than failing the answer.
 func (s *Service) attach(ctx context.Context, res *WhyResult, e store.Edit, path string) error {
 	res.Edit = &e
 	if e.TurnID != "" {
@@ -188,17 +208,47 @@ func (s *Service) attach(ctx context.Context, res *WhyResult, e store.Edit, path
 	if res.Commit == "" && res.CommitLink != nil {
 		res.Commit = res.CommitLink.Commit
 	}
-	if e.SessionID == "" {
+	if err := s.attachSession(ctx, res, e.SessionID); err != nil {
+		return err
+	}
+	agent, err := s.whyAgent(ctx, e)
+	res.Agent = agent
+	return err
+}
+
+// attachSession sets res.Session to session id; left out when id is empty
+// or the store lacks it.
+func (s *Service) attachSession(ctx context.Context, res *WhyResult, id string) error {
+	if id == "" {
 		return nil
 	}
-	sd, err := s.Store.Session(ctx, e.SessionID)
+	sd, err := s.Store.Session(ctx, id)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return fmt.Errorf("query: session %s: %w", e.SessionID, err)
+		return fmt.Errorf("query: session %s: %w", id, err)
 	}
 	if err == nil {
 		res.Session = &sd.Session
 	}
 	return nil
+}
+
+// whyAgent is the subagent that made e, from its Agent record or, without
+// one, from the edit alone; nil for an edit of the main conversation.
+func (s *Service) whyAgent(ctx context.Context, e store.Edit) (*WhyAgent, error) {
+	if e.AgentID == "" {
+		return nil, nil
+	}
+	a, err := s.Store.Agent(ctx, e.AgentID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return &WhyAgent{ID: e.AgentID, Type: cmp.Or(e.AgentType, "subagent")}, nil
+	case err != nil:
+		return nil, fmt.Errorf("query: agent %s: %w", e.AgentID, err)
+	}
+	return &WhyAgent{
+		ID: a.ID, Type: a.Type, Name: a.Name, Description: a.Description,
+		BriefChunk: a.BriefChunk, Recorded: true,
+	}, nil
 }
 
 // linkFor picks the commit link of commit at path, or, with no commit, the

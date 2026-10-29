@@ -92,6 +92,8 @@ const (
 		`{"id":"msg_rev_2","model":"claude-opus-5-5","content":[{"type":"text","text":"ok"}],` +
 		`"usage":{"input_tokens":100,"output_tokens":50}}}
 `
+	// AgentBrief is AgentID's brief, its agent transcript's first user line.
+	AgentBrief = "review it"
 )
 
 // Chunk keys of the fixture contents.
@@ -100,6 +102,7 @@ var (
 	AfterSHA           = Key([]byte(After))
 	TranscriptSHA      = Key([]byte(Transcript))
 	AgentTranscriptSHA = Key([]byte(AgentTranscript))
+	AgentBriefSHA      = Key([]byte(AgentBrief))
 )
 
 // T0 anchors every fixture time.
@@ -184,15 +187,16 @@ func NewStore() *Store {
 			AfterSHA:           []byte(After),
 			TranscriptSHA:      []byte(Transcript),
 			AgentTranscriptSHA: []byte(AgentTranscript),
+			AgentBriefSHA:      []byte(AgentBrief),
 		},
 	}
 }
 
-// fixtureAgent is AgentID with the totals its AgentTranscript gives. Its
-// cwd sits in no repository the fixture knows.
+// fixtureAgent is AgentID with the totals its AgentTranscript gives and
+// its AgentBrief. Its cwd sits in no repository the fixture knows.
 func fixtureAgent() store.Agent {
 	a := PricedAgent(AgentID, OldSession, OldTurn, store.Location{})
-	a.Name, a.Cwd = AgentName, "/work/other"
+	a.Name, a.Cwd, a.BriefChunk = AgentName, "/work/other", AgentBriefSHA
 	return a
 }
 
@@ -632,7 +636,8 @@ func (q *Querier) LastAnnotate() query.AnnotateRequest {
 	return q.lastAnnotate
 }
 
-// Why names the newest edit of req.Path as a content match, or MethodNone.
+// Why names the newest edit of req.Path as a content match, with the
+// subagent that made it when its record is in the store, or MethodNone.
 func (q *Querier) Why(ctx context.Context, req query.WhyRequest) (query.WhyResult, error) {
 	q.mu.Lock()
 	q.lastWhy = req
@@ -655,6 +660,12 @@ func (q *Querier) Why(ctx context.Context, req query.WhyRequest) (query.WhyResul
 	res.Turn = &turn.Turn
 	res.Session = &sess.Session
 	res.Candidates = []query.Candidate{{Edit: edits[0], Score: 1, Reason: "fixture"}}
+	if a, err := q.store.Agent(ctx, edits[0].AgentID); err == nil {
+		res.Agent = &query.WhyAgent{
+			ID: a.ID, Type: a.Type, Name: a.Name, Description: a.Description,
+			BriefChunk: a.BriefChunk, Recorded: true,
+		}
+	}
 	return res, nil
 }
 

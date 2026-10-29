@@ -18,8 +18,9 @@ Capture runs in Claude Code hooks, not in serve. Each hook pipes its payload
 into `moondb record`, which writes an envelope to the spool and exits 0,
 printing nothing on stdout. It takes about 200 ms, or up to 2 s for the
 async Bash and SubagentStop hooks. SubagentStop records the subagent that
-stopped, with its own transcript cut to short heads. At a turn's start and stop
-it also snapshots the worktrees in play, within 2 s. So capture keeps working
+stopped, with its own transcript cut to short heads and its brief, the
+prompt its parent gave it. At a turn's start and stop it also snapshots
+the worktrees in play, within 2 s. So capture keeps working
 while serve is down: envelopes wait in the spool and serve ingests them when
 it comes back. `moondb import` brings in past sessions from their
 transcripts through the same spool, so it too needs serve running before
@@ -121,6 +122,12 @@ priced model, or their totals wait for the totals backfill, which runs
 while the spool is empty. An agent with `lines_cut` had a transcript over
 8 MiB after the cut to heads; the calls in its cut head add no cost. One
 marked `partial` ran out of the hook's 2 s budget before the file's end.
+
+`why` or a turn shows a subagent's brief as unknown: the agent was
+recorded before moondb kept briefs, or moondb knows only its edits. Run
+`moondb import --force` while no session is active. It fills the brief of
+every agent whose transcript is still under `~/.claude/projects`; an agent
+whose transcript file is gone stays unknown.
 
 A repo's cost looks wrong: the page, `moondb sessions --repo` and the
 `moondb_sessions` tool split a session's cost by agent, since model calls

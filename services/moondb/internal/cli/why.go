@@ -112,6 +112,9 @@ func printWhy(ctx context.Context, w io.Writer, c *client.Client, res query.WhyR
 	e := res.Edit
 	fmt.Fprintf(w, "  edit:     %s %s at %s by %s  [%s]\n",
 		e.Tool, e.Kind, when(e.At), agentLabel(e.AgentType), e.ID)
+	if res.Agent != nil {
+		printAgent(ctx, w, c, *res.Agent)
+	}
 	if res.Turn != nil {
 		fmt.Fprintf(w, "  turn:     %s", res.Turn.ID)
 		if prompt := promptOf(ctx, c, res.Turn.PromptChunk); prompt != "" {
@@ -134,6 +137,26 @@ func printWhy(ctx context.Context, w io.Writer, c *client.Client, res query.WhyR
 		fmt.Fprintf(w, "  also:     %d other edits added this line\n", len(res.Candidates)-1)
 	}
 	fmt.Fprintf(w, "  url:      %s\n", sessionURL(e.SessionID))
+}
+
+// printAgent names the subagent that made the edit and the first line of
+// its brief, the prompt it was spawned with, or why the brief is unknown.
+func printAgent(ctx context.Context, w io.Writer, c *client.Client, a query.WhyAgent) {
+	who := a.Label()
+	if a.Name != "" && a.Name != a.Type {
+		who += " (" + a.Type + ")"
+	}
+	fmt.Fprintf(w, "  agent:    %s  [%s]\n", who, a.ID)
+	brief := promptOf(ctx, c, a.BriefChunk)
+	switch {
+	case brief != "":
+		fmt.Fprintf(w, "  brief:    %q\n", brief)
+	case !a.Recorded:
+		fmt.Fprintln(w, "  brief:    unknown, no agent record, only its edits")
+	default:
+		fmt.Fprintln(w, "  brief:    unknown, recorded before moondb kept briefs; "+
+			"moondb import --force fills it")
+	}
 }
 
 // sessionLabel is the title when the harness gave one, else the cwd.

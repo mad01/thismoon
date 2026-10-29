@@ -16,8 +16,11 @@ import (
 // first of it. A teammate stops after every message it works through, and
 // each stop reads a longer file, so the newest record wins whole: a live
 // envelope replaces the stored agent when it read as many lines or more,
-// an import only when it read more. A main segment's stop
-// (store.Agent.IsMainSegment), which a spool written before record
+// an import only when it read more. The brief is the agent's first user
+// line, the same in every stop, so a record keeps the one it has when a
+// replacing envelope carries none, and an envelope that does not replace
+// it still fills a record that lacks one (fillBrief). A main segment's
+// stop (store.Agent.IsMainSegment), which a spool written before record
 // skipped them can still hold, records nothing.
 func (in *Ingester) agentClose(
 	ctx context.Context,
@@ -40,12 +43,27 @@ func (in *Ingester) agentClose(
 	cur, err := in.Store.Agent(ctx, env.Agent.ID)
 	switch {
 	case err == nil && !replaces(env, cur, p):
-		return nil
+		return in.fillBrief(ctx, cur, in.kept(env, missing, p.BriefChunk))
 	case err != nil && !errors.Is(err, store.ErrNotFound):
 		return fmt.Errorf("ingest: load agent %s: %w", env.Agent.ID, err)
 	}
 	a := newAgent(env, in.kept(env, missing, p.TranscriptChunk))
+	a.BriefChunk = cmp.Or(in.kept(env, missing, p.BriefChunk), cur.BriefChunk)
 	in.withAgentTotals(ctx, &a)
+	if err := in.Store.PutAgent(ctx, a); err != nil {
+		return fmt.Errorf("ingest: put agent %s: %w", a.ID, err)
+	}
+	return nil
+}
+
+// fillBrief gives a stored agent the brief of an envelope that does not
+// replace it, when the record has none: an agent stored before briefs
+// were kept gets one from a forced import.
+func (in *Ingester) fillBrief(ctx context.Context, a store.Agent, brief string) error {
+	if a.BriefChunk != "" || brief == "" {
+		return nil
+	}
+	a.BriefChunk = brief
 	if err := in.Store.PutAgent(ctx, a); err != nil {
 		return fmt.Errorf("ingest: put agent %s: %w", a.ID, err)
 	}

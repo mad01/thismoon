@@ -15,12 +15,12 @@ the same store.
 ```
 moondb/
   cmd/moondb/          - entrypoint (delegates to internal/cli)
-  facts.go             - port, workdir, capture caps and budgets, agent transcript head and cap, default excludes, trace limits, idle gap, totals backfill pace, listing status rule, scorecard peers and thresholds, model prices, agentdoc.Facts
+  facts.go             - port, workdir, capture caps and budgets, agent transcript head and cap, brief cap, default excludes, trace limits, idle gap, totals backfill pace, listing status rule, scorecard peers and thresholds, model prices, agentdoc.Facts
   embed.go             - embeds operating.md for `moondb docs`
   internal/
     cli/               - cobra: root, serve, record, import, mcp, why, history, inflight, sessions, trace, scorecard, doctor, docs, version
     record/            - the capture hook: payload decode, envelopes, observed read, HEAD blob, transcript tail, Bash diffs, turn-edge snapshots, subagent stops, per-session state
-    agentfile/         - one subagent's transcript file read and cut to its agent transcript, its meta file, the type and name rule
+    agentfile/         - one subagent's transcript file read and cut to its agent transcript, its brief, its meta file, the type and name rule
     importer/          - the transcript import: transcript parse, turns, edits and agents as envelopes, file-history originals
     spool/             - envelope format, atomic writer, drain reader
     ingest/            - serve's spool drain: envelopes to records, turn and agent totals, the totals backfill, session titles
@@ -52,7 +52,7 @@ one pipes its JSON payload on stdin:
 | PostToolUse on `Edit\|Write\|MultiEdit\|NotebookEdit` | sync, 3 s timeout | one edit envelope per file. It holds `tool_use_id`, the tool input and patch, the location (repo, worktree, branch, HEAD), the observed bytes with their blob id, and the path's HEAD blob id and content. |
 | PostToolUse on `Bash` | async | one edit envelope per file in the payload's `bashEditDiff.files`: its hunks as the patch, the observed bytes and blob id, and the HEAD blob id and content, with no tool input. One more per other `changedFiles` path, with no hunks. A file `git status` reports clean after the command gets none, and neither does one whose status git cannot give or one the budget does not reach; a `skipped` envelope counts them. Nothing when the payload has no `bashEditDiff`. |
 | Stop | async | turn-close: the final assistant message, the transcript tail from the turn's offset, and a head-moved report for each touched worktree whose HEAD changed. Then a `post` snapshot of each worktree in play. |
-| SubagentStop | async | agent-close: the agent's type, name, description and model, the turns it ran under, its start and stop, its cwd and location, and its agent transcript as a chunk. |
+| SubagentStop | async | agent-close: the agent's type, name, description and model, the turns it ran under, its start and stop, its cwd and location, its agent transcript as a chunk, and its brief as a chunk. |
 
 The Edit hook is synchronous on purpose. Edits in one assistant message land
 milliseconds apart, so an async hook would read the disk after the next edit
@@ -151,6 +151,16 @@ and times survive, so the cut transcript prices the same as the file: an
 calls add no tokens or cost. The work fits in `AgentBudget` (2 s); a file
 the budget does not reach the end of, or whose read fails partway, is
 recorded up to there and marked partial.
+
+The same read takes the agent's brief: the text of the transcript's first
+user line, the prompt its parent gave it. A teammate's message loses its
+`<teammate-message>` wrapper, a fork's directive loses its
+`<fork-boilerplate>` block, and a tool result in that line is left out.
+The brief is not cut to a head, only to `MaxBriefBytes` (64 KiB). The
+agent-close carries it as a chunk, so the store keeps it once per agent
+(`Agent.BriefChunk`). Neither the SubagentStart nor the SubagentStop
+payload holds the prompt, so the transcript is the one source, for the
+hook and for import alike.
 
 The harness also fires SubagentStop for a main segment: a stretch of the
 main conversation that it runs under an agent id of its own. A teammate's
@@ -252,7 +262,9 @@ to the main turn its entries name. Each subagent file also gives one
 agent-close envelope, written after the session's turns and cut as the
 SubagentStop hook cuts it. Its stop is the time of its last line. A file
 that cannot be read, or holds no timeline line, gives none and counts as
-skipped.
+skipped. The agent-close carries the brief as the hook's does. An import
+that does not replace a recorded agent still fills a brief the record
+lacks, so `import --force` gives the agents recorded before briefs theirs.
 
 What a transcript gives back:
 
@@ -383,6 +395,13 @@ dirty for that reason.
    first. It skips trivial lines (braces, blank lines, bare `return`,
    imports). Method `content`, with ranked candidates.
 3. Nothing explains the line: method `none`.
+
+An Edit a subagent made also names its agent (`agent`): id, type, name,
+description, brief chunk, and `recorded` when a record stands behind it.
+The brief is unknown for an agent recorded before briefs, until a forced
+import fills it, and for one known only from its edits. The turn's prompt
+stays beside it, so an answer shows both what the person asked and what
+the parent told the subagent.
 
 A per-worktree line walk through later hunks is planned for a later release.
 
@@ -609,8 +628,9 @@ Turn{ ID, SessionID, Seq, PromptChunk, FinalChunk, TranscriptChunk,
       TranscriptOffset, Status /* open | closed | failed */, StartedAt, EndedAt,
       Origin /* person | task | teammate | subagent | continuation | none */,
       Totals *TurnTotals, Skipped []SkippedFiles }
-Agent{ ID, SessionID, Type, Name, Description, Model, TurnIDs, Cwd, Location,
-       StartedAt, EndedAt, TranscriptChunk, Lines AgentLines, Totals *TurnTotals }
+Agent{ ID, SessionID, Type, Name, Description, BriefChunk, Model, TurnIDs, Cwd,
+       Location, StartedAt, EndedAt, TranscriptChunk, Lines AgentLines,
+       Totals *TurnTotals }
 SkippedFiles{ Tool, ToolUseID, At, Clean, Timeout, Failed }
 TurnTotals{ Version, WallMS, ModelMS, ToolMS, HarnessMS, UserMS, IdleMS,
             Usage []ModelUsage{ Model, Speed, Geo, Long, Tokens },
@@ -685,7 +705,7 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 - `GET  /api/turns/{id}`        : one turn with its edits, unattributed deltas and snapshots, `agents` (the agents that worked in it), plus `trace_totals` when its transcript lines hold a timeline or an agent ran under it, and `skipped` when the Bash hook skipped files of a command
 - `GET  /api/agents/{id}`       : one Agent record with `row`, its session row, and `trace`, its agent trace
 - `GET  /api/edits`             : edits, newest first, narrowed by repo, worktree, path, blob id, since and limit
-- `GET  /api/why`               : the answer for one line of one file
+- `GET  /api/why`               : the answer for one line of one file; `agent` names the subagent that made the edit, with its brief chunk
 - `GET  /api/history`           : the recorded edits of one path, newest first
 - `GET  /api/inflight`          : the files of one checkout (`worktree`, required) with edits no commit has taken yet, newest edit first, each with `path`, `last_edit_at`, `linked_commit` (or null) and `sessions` (`id`, `title`, `last_edit_at`, `edits`); `exclude_session` leaves one session's edits out, `since` (default `InflightWindow`, 72h) and `limit` (default `InflightLimit`, 20) bound it
 - `GET  /api/annotate`          : every line of one file on disk (`worktree`, `path`, optional `repo`), each with the edit, turn, session, agent and commit behind it
@@ -811,15 +831,17 @@ attributed part, often 0, never its whole cost.
 
 An agent row (`internal/server/agents.go`) is the main conversation
 (`type` `main`, id empty) or one subagent. It carries `id`, `type`, `name`,
-`model`, `turn_ids`, `started_at`, `ended_at`, `duration_ms`,
+`description`, `model`, `turn_ids`, `started_at`, `ended_at`, `duration_ms`,
 `model_calls`, `tool_calls`, `tool_errors`, `edit_count`, `repos`,
-`cost_repo`, `tokens`, `cost` and `recorded`. `cost_repo` names where the
+`cost_repo`, `tokens`, `cost`, `recorded` and `brief_chunk`, the record's
+brief. `cost_repo` names where the
 attribution rule sends a session row's cost; a row without tokens, and
 every turn row, leaves it out. A session lists the main conversation first, its time and
 calls from the turn totals, then each Agent record by start, then each
 subagent known only from its edits (`recorded` false, no calls or cost). A
 turn lists the same rows for its own work: the main row from the turn's
-trace, then a row per subagent span.
+trace, then a row per subagent span. A turn row takes its description and
+brief from the session's Agent records.
 
 A main segment's record (`store.Agent.IsMainSegment`: type `internal`, no
 line read, no agent transcript) is not an Agent. Such records were stored
@@ -914,6 +936,8 @@ return, so keep it stable.
   gives its duration, calls, tokens and cost, and clicking it opens the
   turn.
 - `/?turn=<id>`: the full prompt and final message with fixation reading,
+  each subagent's brief under the prompt ("Subagent briefs", one closed
+  disclosure per agent, "unknown" when none was recorded),
   the turn's cost split between the main conversation and its subagents, an
   "Idle" row when the turn has idle time, who started it, a "Skipped" row
   when the Bash hook skipped files of a command (clean after it, past the
@@ -925,7 +949,9 @@ return, so keep it stable.
   after content. Then the unattributed deltas with their diffs, the
   snapshots with their file and skipped counts, the commit links, and the
   raw transcript lines behind a closed disclosure. Clicking an added line
-  asks `/api/why` about that line's text and shows the answer inline.
+  asks `/api/why` about that line's text and shows the answer inline,
+  with the subagent's brief beside the turn's prompt when a subagent made
+  the edit.
 - `/?worktree=<abs>&path=<rel>`: the file today, from `/api/annotate`, with
   a gutter band per turn (solid for blame, dashed for a content match);
   hovering a line names its turn's prompt and clicking opens the turn.
@@ -944,7 +970,7 @@ moondb serve [--port 7433] [--workdir ~/.local/state/moondb]
 moondb record                  # one hook payload on stdin; wired by the hooks, not run by hand
 moondb import [--since 30d] [--dry-run] [--force] [--json]   # import past sessions from their transcripts
 moondb mcp                     # stdio MCP shim over serve
-moondb why <path>:<line>       # the Edit, turn, prompt, session and commit behind one line
+moondb why <path>:<line>       # the Edit, turn, prompt, session, subagent brief and commit behind one line
 moondb history <path>          # the recorded edits of a path across every checkout, newest first; --worktree narrows to one
 moondb inflight [--worktree <root>] [--exclude-session <id>]   # files in the checkout other sessions edited that no commit has taken yet
 moondb sessions [--repo <repo>]  # recorded sessions, most recently active first, with their title, active time and wall time; --repo adds COST and ATTRIBUTED
@@ -965,10 +991,10 @@ prints the full build metadata object.
 Thin client over the API above (`internal/client`), served on stdio by
 `moondb mcp`. Every tool is read-only:
 
-- `moondb_why(path, line)`: the Edit behind one line, with its turn, prompt, session, agent and commit link, or ranked candidates when only the content matched
+- `moondb_why(path, line)`: the Edit behind one line, with its turn, the turn's prompt text (`prompt`), session, agent (`result.agent`), the subagent's brief (`brief`) and commit link, or ranked candidates when only the content matched
 - `moondb_history(path)`: the recorded edits of a path, newest first
 - `moondb_inflight(worktree)`: the files of a checkout with edits no commit has taken yet, with the sessions behind them; `exclude_session` leaves the caller's own out
-- `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links, and the agents that worked in it; the summary names its subagents
+- `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links, and the agents that worked in it, with each subagent's brief (`briefs`); the summary names its subagents
 - `moondb_sessions()`: recorded sessions, most recently active first, each with its title, status, times, active and wall time, counts, subagent names, tokens and cost split between the main conversation and the subagents, its attributed cost per repository (`repo_costs`), and its `days`; with `repo`, also `repo_cost` beside the whole `cost`
 - `moondb_trace(id)`: one session's time split (model, tool, harness, user, idle), tokens by kind and cost with its main and agent parts, the subagents costliest first, and the longest tool calls and most expensive model calls of every agent
 - `moondb_scorecard(id)`: the session's scorecard, the same JSON as `GET /api/sessions/{id}/scorecard`, with a one-line summary

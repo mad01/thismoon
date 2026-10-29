@@ -51,9 +51,9 @@ func (rec *recorder) closeAgent() error {
 	return rec.spool.Write(env, chunks)
 }
 
-// agentClose is the agent-close payload of c, its agent transcript added
-// to chunks. It ends when the hook ran, and starts then too when no line
-// says when it started.
+// agentClose is the agent-close payload of c, its agent transcript and its
+// brief added to chunks. It ends when the hook ran, and starts then too
+// when no line says when it started.
 func (rec *recorder) agentClose(c agentfile.Capture, chunks chunkSet) *spool.AgentClose {
 	ac := &spool.AgentClose{
 		Type: c.Type, Name: c.Name, Description: c.Description, Model: c.Model,
@@ -65,6 +65,9 @@ func (rec *recorder) agentClose(c agentfile.Capture, chunks chunkSet) *spool.Age
 	}
 	if len(c.Transcript) > 0 {
 		ac.TranscriptChunk = chunks.add(c.Transcript)
+	}
+	if c.Brief != "" {
+		ac.BriefChunk = chunks.add([]byte(c.Brief))
 	}
 	if c.Cwd != "" {
 		ac.Location = rec.locate(c.Cwd)

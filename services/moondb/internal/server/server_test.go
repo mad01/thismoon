@@ -465,6 +465,14 @@ func TestTurnCarriesTraceTotals(t *testing.T) {
 		old.Agents[1].DurationMS != 120_000 {
 		t.Errorf("agents = %+v, want main with its edit, then the reviewer's 2 calls", old.Agents)
 	}
+	if len(old.Agents) == 2 && (old.Agents[0].BriefChunk != "" ||
+		old.Agents[1].BriefChunk != servertest.AgentBriefSHA ||
+		old.Agents[1].Description != "review the change") {
+		t.Errorf(
+			"agents = %+v, want the reviewer's description and brief from its record",
+			old.Agents,
+		)
+	}
 	var open TurnView
 	h.getJSON(t, "/api/turns/"+servertest.NewTurn, http.StatusOK, &open)
 	if open.TraceTotals != nil {
@@ -563,6 +571,7 @@ func TestSessionAgents(t *testing.T) {
 		t.Errorf("main row = %+v", main)
 	}
 	if rev.ID != servertest.AgentID || rev.Name != servertest.AgentName ||
+		rev.BriefChunk != servertest.AgentBriefSHA ||
 		rev.Type != "general-purpose" || rev.ToolCalls != 1 || rev.DurationMS != 120_000 ||
 		fmt.Sprintf("%.5f", deref(rev.Cost)) != "0.01140" ||
 		!slices.Equal(rev.TurnIDs, []string{servertest.OldTurn}) || len(rev.Repos) != 0 {

@@ -48,7 +48,10 @@ func registerEditTools(s *mcp.Server, h *handlers) {
 			"When the checkout is gone, give `repo` (host/owner/repo) and the line's `text` instead. " +
 			"Returns the edit that produced the line, its turn and session, the commit it landed in when known, and `method`: " +
 			"blame (git blame joined a recorded blob), content (the line's text matched a line an edit added; `candidates` lists matches best first), or none (nothing recorded explains the line). " +
-			"Follow up with moondb_turn on the returned turn id for the prompt and everything else that turn changed.",
+			"`prompt` is the turn's prompt: the person's message to the main conversation. " +
+			"When a subagent made the edit, `result.agent` names it and `brief` is the prompt it was spawned with, which usually says why the edit was made; " +
+			"`brief` is absent when unknown (an agent recorded before moondb kept briefs, or known only from its edits). " +
+			"Follow up with moondb_turn on the returned turn id for everything else that turn changed.",
 		Annotations: readOnly(),
 	}, h.handleWhy)
 
@@ -69,6 +72,7 @@ func registerEditTools(s *mcp.Server, h *handlers) {
 			"edits, unattributed deltas (changes no tool call explains, such as a formatter or a human between turns), " +
 			"turn-boundary snapshots, and commit links. `turn.agents` lists the agents that worked in the turn: " +
 			"the main conversation first, then each subagent with its model calls, time, edits and cost there. " +
+			"`briefs` gives each subagent's brief, the prompt it was spawned with, beside the turn's `prompt`, which is the person's. " +
 			"`turn.trace_totals.cost` covers them all; `cost_main` and `cost_agents` split it. " +
 			"Turn ids come from moondb_why and moondb_history (`turn_id`).",
 		Annotations: readOnly(),
@@ -178,8 +182,10 @@ type whyInput struct {
 
 type whyOutput struct {
 	Result  query.WhyResult `json:"result"`
+	Prompt  string          `json:"prompt,omitempty" jsonschema:"the turn's prompt, the person's message to the main conversation, cut at 2000 bytes; absent when none was recorded"`
+	Brief   string          `json:"brief,omitempty"  jsonschema:"when a subagent made the edit, the prompt it was spawned with, cut at 8000 bytes; absent when unknown"`
 	Summary string          `json:"summary"`
-	URL     string          `json:"url"     jsonschema:"web page showing the session that made the edit"`
+	URL     string          `json:"url"              jsonschema:"web page showing the session that made the edit"`
 }
 
 func (h *handlers) handleWhy(
@@ -201,11 +207,20 @@ func (h *handlers) handleWhy(
 	if res.Edit != nil {
 		sessionID = res.Edit.SessionID
 	}
-	return nil, whyOutput{Result: res, Summary: whySummary(res), URL: h.sessionURL(sessionID)}, nil
+	out := whyOutput{Result: res, URL: h.sessionURL(sessionID)}
+	if res.Turn != nil {
+		out.Prompt = h.chunkText(ctx, res.Turn.PromptChunk, promptExcerpt)
+	}
+	if res.Agent != nil {
+		out.Brief = h.chunkText(ctx, res.Agent.BriefChunk, briefExcerpt)
+	}
+	out.Summary = whySummary(res, out.Prompt, out.Brief)
+	return nil, out, nil
 }
 
-// whySummary says in one line which edit explains the line and how it was found.
-func whySummary(r query.WhyResult) string {
+// whySummary says in one line which edit explains the line and how it was
+// found, and the first lines of the subagent's brief and the turn's prompt.
+func whySummary(r query.WhyResult, prompt, brief string) string {
 	where := fmt.Sprintf("line %d of %s", r.Line, r.Path)
 	if r.Edit == nil {
 		return fmt.Sprintf("no recorded edit explains %s (method %s)", where, r.Method)
@@ -218,6 +233,12 @@ func whySummary(r query.WhyResult) string {
 	}
 	if n := len(r.Candidates); n > 1 {
 		s += fmt.Sprintf("; %d candidates, best first", n)
+	}
+	if r.Agent != nil {
+		s += "; " + briefLine(*r.Agent, brief)
+	}
+	if line := trace.PromptLine(prompt); line != "" {
+		s += fmt.Sprintf("; turn prompt: %q", line)
 	}
 	return s
 }
@@ -275,6 +296,7 @@ type turnInput struct {
 type turnOutput struct {
 	Turn    server.TurnView `json:"turn"`
 	Prompt  string          `json:"prompt,omitempty" jsonschema:"the prompt text, cut at 2000 bytes; absent when no prompt was recorded"`
+	Briefs  []agentBrief    `json:"briefs,omitempty" jsonschema:"each subagent of turn.agents with the prompt it was spawned with"`
 	Summary string          `json:"summary"`
 	URL     string          `json:"url"              jsonschema:"web page showing the turn's session"`
 }
@@ -288,7 +310,19 @@ func (h *handlers) handleTurn(
 	if err != nil {
 		return nil, turnOutput{}, err
 	}
-	prompt := h.prompt(ctx, d.PromptChunk)
+	prompt := h.chunkText(ctx, d.PromptChunk, promptExcerpt)
+	return nil, turnOutput{
+		Turn:    d,
+		Prompt:  prompt,
+		Briefs:  h.briefs(ctx, d.Agents),
+		Summary: turnSummary(d, prompt),
+		URL:     h.sessionURL(d.SessionID),
+	}, nil
+}
+
+// turnSummary says in one line what a turn holds, what it took and cost,
+// which subagents worked in it and the first line of its prompt.
+func turnSummary(d server.TurnView, prompt string) string {
 	summary := fmt.Sprintf(
 		"turn %d of session %s, %s: %d edits, %d unattributed deltas, %d commit links",
 		d.Seq,
@@ -315,12 +349,7 @@ func (h *handlers) handleTurn(
 	if line := trace.PromptLine(prompt); line != "" {
 		summary += fmt.Sprintf("; prompt: %q", line)
 	}
-	return nil, turnOutput{
-		Turn:    d,
-		Prompt:  prompt,
-		Summary: summary,
-		URL:     h.sessionURL(d.SessionID),
-	}, nil
+	return summary
 }
 
 // subagentNames lists the subagents of an agent listing by name, with the
@@ -339,9 +368,10 @@ func subagentNames(rows []server.AgentRow) string {
 	return strings.Join(names, ", ")
 }
 
-// prompt fetches a turn's prompt text. Best-effort: a missing or unreadable
-// chunk leaves the prompt out rather than failing the whole turn.
-func (h *handlers) prompt(ctx context.Context, sha string) string {
+// chunkText fetches a prompt or a brief, cut to at most n bytes.
+// Best-effort: a missing or unreadable chunk leaves the text out rather
+// than failing the whole answer.
+func (h *handlers) chunkText(ctx context.Context, sha string, n int) string {
 	if sha == "" {
 		return ""
 	}
@@ -349,7 +379,7 @@ func (h *handlers) prompt(ctx context.Context, sha string) string {
 	if err != nil {
 		return ""
 	}
-	return truncate(string(data), promptExcerpt)
+	return truncate(string(data), n)
 }
 
 // truncate cuts s to at most n bytes without splitting a UTF-8 sequence.

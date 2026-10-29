@@ -72,6 +72,11 @@ const (
 	// Agent record, and the model calls in them add no tokens or cost, as
 	// for a turn's transcript (MaxTranscriptBytes).
 	MaxAgentTranscriptBytes = 8 << 20
+	// MaxBriefBytes caps an Agent's brief, the text of its transcript's
+	// first user line, which is kept whole beside the agent transcript.
+	// Briefs run to a few KB; a longer one is cut at its end and says how
+	// many bytes it lost.
+	MaxBriefBytes = 64 << 10
 	// AgentBudget is how long `moondb record` works on a SubagentStop
 	// payload. The hook is async, so no session waits on it, and reading
 	// and cutting a large transcript takes longer than RecordBudget. It

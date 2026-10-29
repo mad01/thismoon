@@ -53,9 +53,16 @@ type Capture struct {
 	// line carries, the lines the cap cut among them.
 	StartedAt time.Time
 	LastAt    time.Time
+	// Brief is the prompt the agent was spawned with: the text of the
+	// file's first user line (briefOf), whole up to moondb.MaxBriefBytes.
+	// "" when that line holds no text.
+	Brief string
 	// Transcript is the agent transcript, newline-terminated lines.
 	Transcript []byte
 	Lines      store.AgentLines
+
+	// sawUser is set once the first user line has given the brief.
+	sawUser bool
 }
 
 // ErrNoLines is returned for a file with no timeline line in it.
@@ -128,6 +135,10 @@ func (c *Capture) add(line []byte) ([]byte, bool) {
 	typ := l.str("type")
 	if !timelineTypes[typ] {
 		return nil, false
+	}
+	if typ == "user" && !c.sawUser {
+		c.sawUser = true
+		c.Brief = briefOf(l)
 	}
 	slim, model := slimLine(l)
 	c.note(l, model)

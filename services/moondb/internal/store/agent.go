@@ -29,6 +29,10 @@ type Agent struct {
 	// its type. A named spawn's hooks report the name as agent_type.
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
+	// BriefChunk holds its brief: the prompt the conversation that spawned
+	// it gave it, the text of its transcript's first user line. Empty on a
+	// record stored before briefs were kept, until an import fills it.
+	BriefChunk string `json:"brief_chunk,omitempty"`
 	// Model is the model of its first model call.
 	Model string `json:"model,omitempty"`
 	// TurnIDs are the main turns it ran under, in the order its lines name

@@ -20,6 +20,7 @@ import (
 	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
 	"github.com/mad01/thismoon/services/moondb/internal/server"
 	"github.com/mad01/thismoon/services/moondb/internal/server/servertest"
+	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 // noChecks satisfies Config.Checks where the doctor tool is not under test.
@@ -52,7 +53,16 @@ func TestNewRequiresChecks(t *testing.T) {
 // on the fixture store, and returns a connected MCP client session.
 func session(t *testing.T, checks func(context.Context) []doctor.Check) *mcp.ClientSession {
 	t.Helper()
-	st := servertest.NewStore()
+	return sessionOn(t, servertest.NewStore(), checks)
+}
+
+// sessionOn is session over st, for a test that adds records first.
+func sessionOn(
+	t *testing.T,
+	st *servertest.Store,
+	checks func(context.Context) []doctor.Check,
+) *mcp.ClientSession {
+	t.Helper()
 	ts := httptest.NewServer(server.New(st, servertest.NewQuerier(st), buildinfo.Info{}).Handler())
 	t.Cleanup(ts.Close)
 	s := newServer(
@@ -188,6 +198,77 @@ func TestTurnSummaryCarriesTraceTotals(t *testing.T) {
 			"took 2m00s, cost $0.026; subagents: reviewer (general-purpose)",
 		) {
 		t.Errorf("summary = %q, totals = %+v", out.Summary, out.Turn.TraceTotals)
+	}
+}
+
+// TestTurnCarriesBriefs: a turn's answer gives each subagent the prompt
+// it was spawned with, beside the person's prompt.
+func TestTurnCarriesBriefs(t *testing.T) {
+	cs := session(t, noChecks)
+	var out turnOutput
+	call(t, cs, "moondb_turn", map[string]any{"id": servertest.OldTurn}, &out)
+	want := []agentBrief{{
+		AgentID: servertest.AgentID, Agent: servertest.AgentName, Brief: servertest.AgentBrief,
+	}}
+	if !slices.Equal(out.Briefs, want) {
+		t.Errorf("briefs = %+v, want %+v", out.Briefs, want)
+	}
+}
+
+// TestWhyCarriesTheBrief: an edit a subagent made answers with its brief
+// beside the turn's prompt, and one by an agent recorded before briefs
+// says the brief is unknown.
+func TestWhyCarriesTheBrief(t *testing.T) {
+	st := servertest.NewStore()
+	turn := store.Turn{
+		ID: "turn-b", SessionID: "sess-b", Seq: 1, PromptChunk: servertest.PromptSHA,
+		Status: store.TurnClosed, StartedAt: servertest.T0,
+	}
+	agents := []store.Agent{
+		{
+			ID: "a-new", SessionID: "sess-b", Type: "general-purpose", Name: "builder",
+			BriefChunk: servertest.AgentBriefSHA, TurnIDs: []string{"turn-b"},
+		},
+		{ID: "a-old", SessionID: "sess-b", Type: "Explore", TurnIDs: []string{"turn-b"}},
+	}
+	var edits []store.Edit
+	for _, a := range agents {
+		edits = append(edits, store.Edit{
+			ID: a.ID + ":0", SessionID: "sess-b", TurnID: "turn-b", AgentID: a.ID,
+			AgentType: a.Type, Tool: "Edit", At: servertest.T0, Path: a.ID + ".go",
+			Location: store.Location{Repo: servertest.Repo, Worktree: servertest.Worktree},
+		})
+	}
+	st.Add(store.Session{ID: "sess-b", StartedAt: servertest.T0}, []store.Turn{turn}, agents, edits)
+	cs := sessionOn(t, st, noChecks)
+	cases := []struct{ path, brief, summary string }{
+		{
+			"a-new.go",
+			servertest.AgentBrief,
+			`subagent builder (general-purpose), brief: "review it"`,
+		},
+		{"a-old.go", "", "subagent Explore, brief unknown"},
+	}
+	for _, tc := range cases {
+		var out whyOutput
+		call(
+			t,
+			cs,
+			"moondb_why",
+			map[string]any{"repo": servertest.Repo, "path": tc.path, "line": 1},
+			&out,
+		)
+		if out.Brief != tc.brief || out.Prompt != servertest.Prompt ||
+			!strings.Contains(out.Summary, tc.summary) ||
+			!strings.Contains(out.Summary, `turn prompt: "add the server"`) {
+			t.Errorf(
+				"%s: brief %q, prompt %q, summary %q",
+				tc.path,
+				out.Brief,
+				out.Prompt,
+				out.Summary,
+			)
+		}
 	}
 }
 

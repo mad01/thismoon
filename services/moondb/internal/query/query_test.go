@@ -297,6 +297,53 @@ func TestWhyByContent(t *testing.T) {
 	}
 }
 
+// TestWhyNamesTheSubagent: an edit a subagent made answers with the agent
+// and its brief beside the turn. A record from before briefs has none, an
+// agent known only from its edits has no record, and the main
+// conversation's edit names no agent.
+func TestWhyNamesTheSubagent(t *testing.T) {
+	f := newFixture(t)
+	brief := f.chunk("Order the lanes by start time.")
+	f.seed(store.Agent{
+		ID: "a-new", SessionID: "s1", Type: "general-purpose", Name: "builder",
+		Description: "trace order", BriefChunk: brief,
+	}, store.Agent{ID: "a-old", SessionID: "s1", Type: "Explore"})
+	cases := []struct {
+		agentID, agentType string
+		want               *WhyAgent
+	}{
+		{"a-new", "builder", &WhyAgent{
+			ID: "a-new", Type: "general-purpose", Name: "builder",
+			Description: "trace order", BriefChunk: brief, Recorded: true,
+		}},
+		{"a-old", "Explore", &WhyAgent{ID: "a-old", Type: "Explore", Recorded: true}},
+		{"a-gone", "worker", &WhyAgent{ID: "a-gone", Type: "worker"}},
+		{"", "", nil},
+	}
+	for i, tc := range cases {
+		path := fmt.Sprintf("f%d.go", i)
+		e := f.adding(edit(fmt.Sprintf("e%d", i), i, "/wt/a", path), "lanes := byStart(turns)")
+		e.AgentID, e.AgentType = tc.agentID, tc.agentType
+		f.seed(e)
+		res, err := f.svc.Why(context.Background(),
+			WhyRequest{Repo: repo, Path: path, Text: "lanes := byStart(turns)"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Turn == nil || !equalAgent(res.Agent, tc.want) {
+			t.Errorf("agent %q: Agent = %+v with turn %v, want %+v", tc.agentID, res.Agent,
+				res.Turn != nil, tc.want)
+		}
+	}
+}
+
+func equalAgent(a, b *WhyAgent) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 func TestWhyNone(t *testing.T) {
 	f := newFixture(t)
 	f.seed(f.adding(edit("e1", 1, "/wt/a", "a.go"), "}", "return nil, err", "x := one()"))

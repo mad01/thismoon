@@ -102,6 +102,55 @@ func TestAgentCloseReplaces(t *testing.T) {
 	}
 }
 
+// TestAgentCloseBrief: a stop records the agent's brief once. An import
+// that does not replace the record fills a missing brief and leaves a
+// stored one alone, and a replacing stop without a brief keeps the stored
+// one.
+func TestAgentCloseBrief(t *testing.T) {
+	cases := []struct {
+		name               string
+		stored, next, want string
+		read               int
+		backfill           bool
+	}{
+		{"first stop", "", "fix the parser", "fix the parser", 10, false},
+		{
+			"import fills a record from before briefs",
+			"-",
+			"fix the parser",
+			"fix the parser",
+			10,
+			true,
+		},
+		{"import keeps the stored brief", "fix the parser", "other", "fix the parser", 10, true},
+		{"replacing stop without one keeps it", "fix the parser", "", "fix the parser", 11, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			c := chunkSet{}
+			if tc.stored != "" {
+				first := agentEnv(c, "s1", "a1", 3, 10)
+				if tc.stored != "-" {
+					first.AgentClose.BriefChunk = c.add(tc.stored)
+				}
+				f.write(first, c)
+				f.drain()
+			}
+			env := agentEnv(c, "s1", "a1", 5, tc.read)
+			env.Backfill = tc.backfill
+			if tc.next != "" {
+				env.AgentClose.BriefChunk = c.add(tc.next)
+			}
+			f.write(env, c)
+			f.drain()
+			if got := f.agent("a1").BriefChunk; got != spool.ChunkKey([]byte(tc.want)) {
+				t.Errorf("brief chunk = %q, want the one of %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestAgentCloseMissingChunk records the agent without its transcript and
 // says so.
 func TestAgentCloseMissingChunk(t *testing.T) {

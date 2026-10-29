@@ -107,10 +107,11 @@ func (em *emitter) write(env spool.Envelope, chunks chunkSet) error {
 }
 
 // agent builds the agent-close envelope of one subagent transcript, as the
-// SubagentStop hook builds it: the agent transcript cut to heads, who the
-// meta file says the agent was, and where its cwd sits in git. The stop
-// time is the last line's, which is all the file tells; false, counted
-// as skipped, for a file it cannot read or with no timeline line.
+// SubagentStop hook builds it: the agent transcript cut to heads, its
+// brief, who the meta file says the agent was, and where its cwd sits in
+// git. The stop time is the last line's, which is all the file tells;
+// false, counted as skipped, for a file it cannot read or with no timeline
+// line.
 func (em *emitter) agent(path string) (spool.Envelope, chunkSet, bool) {
 	c, err := agentfile.Read(em.places.ctx, path, "")
 	if err != nil {
@@ -125,6 +126,9 @@ func (em *emitter) agent(path string) (spool.Envelope, chunkSet, bool) {
 		Type: c.Type, Name: c.Name, Description: c.Description, Model: c.Model,
 		TurnIDs: c.TurnIDs, Cwd: c.Cwd, StartedAt: c.StartedAt, EndedAt: c.LastAt,
 		TranscriptChunk: chunks.add(c.Transcript), Lines: c.Lines,
+	}
+	if c.Brief != "" {
+		env.AgentClose.BriefChunk = chunks.add([]byte(c.Brief))
 	}
 	if c.Cwd != "" {
 		env.AgentClose.Location = em.places.placeDir(c.Cwd, c.GitBranch)

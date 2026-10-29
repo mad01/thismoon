@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -48,27 +49,58 @@ func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.turnView(r.Context(), d))
 }
 
-// turnView adds a turn's trace totals and its agents. A trace that cannot
-// be computed is logged and left out, and the agents come from the edits
-// alone: the turn itself is still the answer.
+// turnView adds a turn's trace totals and its agents, each subagent with
+// its record's description and brief. A trace that cannot be computed is
+// logged and left out, and the agents come from the edits alone: the turn
+// itself is still the answer.
 func (s *Server) turnView(ctx context.Context, d store.TurnDetail) TurnView {
 	v := TurnView{TurnDetail: d}
+	tt, runs := s.turnRuns(ctx, d)
+	if tt.Lines.Events > 0 || len(runs) > 0 {
+		v.TraceTotals = &tt.Totals
+	}
+	v.Agents = s.turnAgents(d, tt, runs)
+	s.withAgentRecords(ctx, d.SessionID, v.Agents)
+	return v
+}
+
+// turnRuns is a turn's trace with the work of its agents added, and their
+// runs. A trace that cannot be computed is logged and gives an empty one
+// with no runs; agents that cannot be traced are logged and left out.
+func (s *Server) turnRuns(
+	ctx context.Context,
+	d store.TurnDetail,
+) (trace.TurnTrace, []trace.AgentRun) {
 	tt, err := s.query.TurnTrace(ctx, d)
 	if err != nil {
 		log.Printf("moondb: trace of turn %s: %v", d.ID, err)
-		v.Agents = s.turnAgents(d, trace.TurnTrace{TurnID: d.ID}, nil)
-		return v
+		return trace.TurnTrace{TurnID: d.ID}, nil
 	}
 	runs, err := s.query.TurnAgents(ctx, d)
 	if err != nil {
 		log.Printf("moondb: agents of turn %s: %v", d.ID, err)
 	}
-	tt = trace.WithAgents(tt, runs)
-	if tt.Lines.Events > 0 || len(runs) > 0 {
-		v.TraceTotals = &tt.Totals
+	return trace.WithAgents(tt, runs), runs
+}
+
+// withAgentRecords gives each subagent row of a turn the description and
+// brief of its Agent record, which a run does not carry. A listing the
+// store cannot give is logged and leaves the rows as they are.
+func (s *Server) withAgentRecords(ctx context.Context, sessionID string, rows []AgentRow) {
+	agents, err := s.store.Agents(ctx, sessionID)
+	if err != nil {
+		log.Printf("moondb: agents of session %s: %v", sessionID, err)
+		return
 	}
-	v.Agents = s.turnAgents(d, tt, runs)
-	return v
+	for i, r := range rows {
+		j := slices.IndexFunc(
+			agents,
+			func(a store.Agent) bool { return r.ID != "" && a.ID == r.ID },
+		)
+		if j >= 0 {
+			rows[i].Description, rows[i].BriefChunk = agents[j].Description, agents[j].BriefChunk
+		}
+	}
 }
 
 // handleSessionTrace answers what took time in a session: every turn's

@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-29 moondb: subagent briefs need a forced import for past agents
+
+Change: thismoon #343 (MAD-496). moondb now keeps each subagent's brief, the prompt its parent gave it, read from the first user line of the subagent's own transcript. `why` and a turn show it beside the turn's prompt, in the CLI, in the `moondb_why` and `moondb_turn` tools and on the session page. The SubagentStop hook entry stays as it is: the brief comes from the transcript the hook already reads.
+
+Run: `ralph up`, then check that `curl http://127.0.0.1:7433/version` reports the merged commit. Agents recorded before this build have no brief and show it as unknown. To fill them, run `moondb import --since 30d --force` while no other session is working, and let serve drain the spool. The import keeps each stored agent and adds only the missing brief. An agent whose transcript file is gone keeps an unknown brief.
+
+Verify: `moondb why <path>:<line>` on a line a subagent wrote prints an `agent:` line and a `brief:` line with the quoted brief, not "unknown". `moondb_turn` on a turn that ran a subagent returns `briefs`, and the session page shows a "Subagent briefs" section under that turn's prompt.
+
 ## 2026-10-28 catalog and keeper-of-facts: removed
 
 Change: thismoon #332. The catalog and keeper-of-facts (kof) services leave the repo with their recipes. deps keeps reading `~/.config/catalog/registry.yaml`, which the consuming repo still installs. moondb's scorecard drops its `kof` source and the `hints.kof` block and now reports `version` 2. belt loses its kof-consult, kof-assertions and kof-deposit hints and its kof doctor probe.
