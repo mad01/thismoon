@@ -14,22 +14,19 @@ import (
 )
 
 // Event names match `belt hint <event>` and the hook matcher they are
-// registered under. Search, bash, read, and external-text run on PostToolUse;
+// registered under. Bash, read, and external-text run on PostToolUse;
 // session-start runs on SessionStart, where there is no tool call — the input
 // carries only the session's cwd and id. subagent-start runs on
 // SubagentStart, before a subagent's first prompt; its input adds the
 // agent's id and type, and its advice lands in the subagent's context, not
-// the parent's. prompt runs on UserPromptSubmit with the session fields
-// only. The two start events alias the config constants because the config
+// the parent's. The two start events alias the config constants because the config
 // file names them (custom_hints.<name>.event) and validates them there: one
 // source for what a legal custom-hint event is.
 const (
-	EventSearch        = "search"                      // matcher: the csl search MCP tools
 	EventBash          = "bash"                        // matcher: Bash
 	EventRead          = "read"                        // matcher: Read
 	EventSessionStart  = config.HintEventSessionStart  // hook: SessionStart
 	EventSubagentStart = config.HintEventSubagentStart // hook: SubagentStart
-	EventPrompt        = "prompt"                      // hook: UserPromptSubmit
 	// matcher: the MCP tools that write human-read text off this machine.
 	// Which tools those are is consuming-repo wiring (docs/adr/0006); belt
 	// only drops the read-only calls a broad matcher would sweep in.
@@ -41,8 +38,7 @@ const (
 // silently rejected at the command line.
 func Events() []string {
 	return []string{
-		EventSearch, EventBash, EventRead, EventSessionStart, EventSubagentStart, EventPrompt,
-		EventExternalText,
+		EventBash, EventRead, EventSessionStart, EventSubagentStart, EventExternalText,
 	}
 }
 

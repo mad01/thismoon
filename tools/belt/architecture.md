@@ -4,7 +4,7 @@
 
 belt is a tool that runs as Claude Code hooks. Claude Code invokes
 `belt hook <event>` (PreToolUse), `belt hint <event>` (PostToolUse,
-SessionStart, SubagentStart, UserPromptSubmit) or `belt record <event>` (the
+SessionStart, SubagentStart) or `belt record <event>` (the
 subagent, task, teammate, permission-denied, notification, compaction,
 session-end and stop-failure lifecycle hooks) with the event payload on
 stdin. belt runs the guards or hints registered for that event and writes its
@@ -31,8 +31,8 @@ internal/cli/       cobra commands: hook <event>, hint <event>,
                     record <event>, watch, check, doctor, config, override,
                     docs, version; Execute maps a watcher's wake to exit 2
 internal/hook/      payload parsing + output emission per event: deny JSON,
-                    additionalContext JSON, plain stdout for prompt, nothing
-                    for record; the watch entrypoint
+                    additionalContext JSON, nothing for record; the watch
+                    entrypoint
 internal/ledger/    the record events and the pure entry builder: title,
                     level, 500-byte message, session/agent/repo/worktree tags,
                     model and effort from ledger.agent_types
@@ -84,13 +84,12 @@ always exits 0 (the deny is data, not an exit code), and an allow produces
 no output at all. Across belt the only non-zero exit on
 purpose is `belt watch`'s exit 2 (see the watch path below).
 
-The hint path mirrors it: `belt hint search|bash|read|external-text|
-session-start|prompt` maps the payload onto a `hint.Input` (tool name, request, response,
+The hint path mirrors it: `belt hint bash|read|external-text|
+session-start|subagent-start` maps the payload onto a `hint.Input` (tool name, request, response,
 session id, transcript path, cwd) and runs every enabled hint for the event.
 Hints do not short-circuit, each speaks or stays silent independently. Advice
 is emitted as `hookSpecificOutput.additionalContext` with the invoking
-event's name, except the prompt event, which writes plain stdout text because
-UserPromptSubmit adds stdout to context directly. Every fired hint POSTs an
+event's name. Every fired hint POSTs an
 info event, so hint volume is measurable from the events timeline. A
 payload that fails the same decode runs no hint, writes nothing, and POSTs
 a warn event tagged `decode_error`.
@@ -169,7 +168,7 @@ local events service (`http://127.0.0.1:7430/api/events`, overridable via
 ## Interfaces
 
 The hook entrypoints are `belt hook bash|write|external-text`, `belt hint
-search|bash|external-text|session-start|subagent-start|prompt`,
+bash|read|external-text|session-start|subagent-start`,
 `belt record <lifecycle event>` and `belt watch`. The other CLI commands are
 `belt check bash "<command>"` and `belt check write --file <path> --content
 <text>` (dry runs), and `belt doctor` (installed build, resolved config,

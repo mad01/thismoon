@@ -4,6 +4,19 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-29 belt: the search and prompt hint events are gone
+
+Change: thismoon #PRNUM (MAD-517). belt drops its `search` and `prompt` hint events. No hint has run on either since keeper-of-facts left, so their hook entries spawned a process on every csl search and every prompt for no output. The pi package stops calling them in the same change. belt now rejects both as unknown events, so an entry that still calls one errors on each call.
+
+Run, in order:
+
+1. Merge the consuming repo's change that drops the PostToolUse `belt hint search` entry and the UserPromptSubmit `belt hint prompt` entry from its Claude settings template, and the `belt hint search` entry from its Codex hooks file. The old belt runs fine without them, so this can land first.
+2. `ralph up`. It rebuilds belt and syncs the template into `~/.claude/settings.json`. agent-sync replaces the live hook arrays with the template's, so no prune entry is needed.
+
+A machine that gets this belt before its template drops the entries shows a hook error on every csl search and every prompt until it does. The errors do not block the call or the prompt.
+
+Verify: `belt hint search </dev/null` exits 1 with `unknown hint event "search"`. `grep -E 'belt hint (search|prompt)' ~/.claude/settings.json ~/.codex/hooks.json` prints nothing.
+
 ## 2026-10-29 csl and belt: one csl rules file, the CLI for fleet search
 
 Change: thismoon #338 (MAD-514, MAD-518). The agent-facing csl rules now live in one file, `services/csl/claude-md.md`. It sends fleet-wide searches and anything that would page to the `csl` CLI, and keeps the MCP tools for answers that fit one call. The csl recipe links the file to `~/.claude/CLAUDE.csl.md`. `examples/dotfiles/CLAUDE.csl.md` is gone, and the eval harness's default `-steer-file` is the new file. belt's `prefer-csl` hint now leads with the `csl search` command. It names the repo the command searched, after a `cd`, a `git -C` or an absolute path, instead of the session's. It stays quiet on a grep of one or two named files.
