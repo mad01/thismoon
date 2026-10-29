@@ -23,7 +23,8 @@ and with scripts off. Fixation reading and the header controls need scripts
 on, and work offline. Graph, chart, and diagram libraries load from
 cdn.jsdelivr.net at the versions the asset cache holds, each pinned by an
 integrity hash, and only the ones the page uses. A terminal block shows a
-note, since it needs the local serve.
+note, since it needs the local serve. Read-aloud, share, and the other
+controls that need the server stay out of the file.
 
 The brief is exported unless --deck asks for the slide deck; a page with only
 a deck exports its deck. The file is <id>.html (<id>-deck.html for a deck) in

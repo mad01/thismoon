@@ -82,11 +82,14 @@ function chartBlock(kind) {
 }
 
 // exportedPage builds the fake document of an exported brief holding
-// blocks, runs app.js over it, and returns the document and every fetch
-// app.js made.
-function exportedPage(blocks) {
+// blocks, with extra merged into its page data, runs app.js over it, and
+// returns the document, every element app.js created, and every fetch it
+// made.
+function exportedPage(blocks, extra = {}) {
   const brief = new El('div', { class: 'brief' }, blocks);
-  const data = { id: 'p1', title: 'Exported', version: 3, view: 'brief', has_graph: false, graph: '', references: [] };
+  const data = {
+    id: 'p1', title: 'Exported', version: 3, view: 'brief', has_graph: false, graph: '', references: [], ...extra,
+  };
   const html = new El('html', { 'data-present-mode': 'export' }, [
     new El('body', {}, [
       new El('main', { id: 'root' }, [brief]),
@@ -94,6 +97,7 @@ function exportedPage(blocks) {
     ]),
   ]);
   const listeners = {};
+  const created = [];
   const document = {
     documentElement: html,
     body: html.children[0],
@@ -101,14 +105,14 @@ function exportedPage(blocks) {
     getElementById: (id) => html.descendants().find((e) => e.id === id) || null,
     querySelector: (sel) => html.querySelector(sel),
     querySelectorAll: (sel) => html.querySelectorAll(sel),
-    createElement: (tag) => new El(tag),
+    createElement: (tag) => { const el = new El(tag); created.push(el); return el; },
     addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); },
   };
   const window = { addEventListener() {} };
   const fetches = [];
   const fetch = (url) => { fetches.push(url); return new Promise(() => {}); };
   new Function('window', 'document', 'fetch', appSrc)(window, document, fetch);
-  return { document, brief, fetches, listeners };
+  return { document, brief, created, fetches, listeners };
 }
 
 function note(block) {
@@ -150,4 +154,17 @@ test('export: links in the body open in a new tab, fragment links stay', () => {
   assert.equal(out.target, '_blank');
   assert.equal(out.rel, 'noopener');
   assert.equal(frag.target, undefined);
+});
+
+test('export: no read-aloud control or other server call, even when the page data names a speak URL', () => {
+  const section = new El('wk-section', {}, [new El('p', {}, [], 'Prose to read.')]);
+  const { document, created, fetches } = exportedPage([section], {
+    speak_url: 'http://localhost:7423/speak',
+    share: { enabled: true },
+    deck_control: true,
+    has_deck: true,
+  });
+  assert.equal(document.querySelector('wk-read-aloud'), null, 'the TTS control is in the page');
+  assert.deepEqual(created.filter((e) => e.tagName === 'WK-READ-ALOUD'), [], 'app.js built a TTS control');
+  assert.deepEqual(fetches, [], 'an exported page asks no server for anything');
 });

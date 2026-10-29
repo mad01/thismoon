@@ -148,6 +148,35 @@ func TestProsePageCarriesItsBodyAndNoLibrary(t *testing.T) {
 	}
 }
 
+// An export names no server for a control to use: its header lists only the
+// controls that run in the browser, and its page data carries no speak URL,
+// share, or deck remote (app.js builds none of them under standalone either).
+func TestExportNamesNoServer(t *testing.T) {
+	p := store.Page{ID: "prose", Title: "T", Content: compiled(t, proseDoc), HasDeck: true, Deck: "D"}
+	for _, deck := range []bool{false, true} {
+		out := string(export(t, newWorkdir(t), p, deck).HTML)
+		if !strings.Contains(out, `<wk-header title="`) ||
+			!strings.Contains(out, `controls="font,fixation,size,theme,help"`) {
+			t.Errorf("deck=%v: the header lists a control beyond font, fixation, size, theme and help", deck)
+		}
+		island := regexp.MustCompile(`id="present-export">([^<]*)</script>`).FindStringSubmatch(out)
+		if island == nil {
+			t.Fatalf("deck=%v: no page data", deck)
+		}
+		var data map[string]any
+		if err := json.Unmarshal([]byte(island[1]), &data); err != nil {
+			t.Fatal(err)
+		}
+		for key := range data {
+			switch key {
+			case "id", "title", "version", "view", "has_graph", "graph", "references":
+			default:
+				t.Errorf("deck=%v: page data carries %q", deck, key)
+			}
+		}
+	}
+}
+
 const graphDoc = `{"sections":[{"h":"Topology","blocks":[{"t":"graph"}]}]}`
 
 func graphPage(t *testing.T, layout string) store.Page {

@@ -4,8 +4,8 @@
 **Status:** Accepted
 
 **Scope:** `services/present`: `internal/export`, `present export`, the
-`present_export` tool, the standalone branch in `internal/server/app.js`,
-and `THIRD-PARTY.md`. Builds on
+`present_export` tool, the standalone branch in `internal/server/app.js`
+with its one rule for server-backed controls, and `THIRD-PARTY.md`. Builds on
 [ADR-0022](0022-vendored-browser-assets.md). Decided in MAD-520.
 
 ## Context
@@ -29,6 +29,16 @@ Hybrid. The export inlines what is ours, together with the body, the page
 data, and the page's local images as data URIs. The prose then reads
 offline and with scripts off. Fixation reading and the header controls
 come from webkit.js, so they need scripts on, and they work offline.
+
+An export keeps what runs in the browser alone: fixation reading, the
+outline, the deck's slide controls, graphs, charts, and diagrams. Every
+control that needs the present server stays out. That covers read-aloud and
+its player, share, the links between the brief and the deck, change marks,
+the version poll, the deck remote, and terminal sessions. One flag in
+app.js decides it: `standalone` is true when `<html>` says
+`data-present-mode="export"`. Each such control checks it, and a new one
+has to as well. The inline fetch guard answers any root-relative request
+with a 404, so a control that misses the flag still reaches no server.
 
 The body is parsed and serialized again before it goes in, so it closes
 everything it opens. A served page mounts the body through innerHTML,

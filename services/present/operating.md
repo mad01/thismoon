@@ -127,7 +127,8 @@ services/present. Missing fonts only add a note: the file then uses system
 fonts. In the file, a graph, chart, or diagram that reads "which did not
 load" means the browser could not reach cdn.jsdelivr.net or got other bytes
 than the pinned hash. Everything else in the file works offline, and a
-terminal block shows a note.
+terminal block shows a note. The file has no control that needs the server:
+no read-aloud, share, brief or deck link, or live update.
 
 ## live terminal
 

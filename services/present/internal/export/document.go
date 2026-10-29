@@ -28,7 +28,8 @@ var documentTmpl = template.Must(template.New("export").Parse(documentSrc))
 // fetchGuard runs before webkit.js. An exported page has no server, yet
 // webkit polls /webkit/version every few seconds; the guard answers every
 // root-relative request with a 404 at once, so the browser makes no request
-// that is bound to fail and logs nothing.
+// that is bound to fail and logs nothing. It also catches an app.js control
+// that misses the standalone flag.
 const fetchGuard = `(function () {
   var real = window.fetch;
   if (!real) return;

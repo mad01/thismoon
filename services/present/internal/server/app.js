@@ -9,10 +9,18 @@
 // the deck into slides (renderDeck below). webkit.js loads before this file,
 // so Webkit.el/escapeHtml/poll and the wk-* custom elements are available.
 (function () {
-  // An exported page (present export) is one file with no server behind
-  // it. Its <html> says so, and the code below then asks no server for
-  // anything (renderExport at the end).
-  var exported = document.documentElement.getAttribute('data-present-mode') === 'export';
+  // standalone is true in an exported page (present export): one file with
+  // no server behind it, whose <html> says data-present-mode="export". It
+  // is the one rule for every control that needs the server, that is one
+  // that calls /api or another served route, or opens a served URL: under
+  // standalone that control is not built and asks nothing. Read-aloud and
+  // its player, share, the version poll, change marks, the deck remote,
+  // terminal sessions, and the links to the other rendition all check it,
+  // and a new control checks it too. The export's fetch guard backs it up:
+  // it answers any root-relative fetch with a 404 and no request. What runs
+  // in the browser alone stays: fixation, the outline, the deck's slide
+  // controls, charts, diagrams, and the graph.
+  var standalone = document.documentElement.getAttribute('data-present-mode') === 'export';
 
   // ── Graph layout engines ──
   // The layout option objects live here rather than in the generated graph
@@ -471,7 +479,7 @@
   // needsAsset is the note a block shows when a library it draws with did
   // not load: a served page names the cache step, an exported one the CDN.
   function needsAsset(what, asset) {
-    return exported
+    return standalone
       ? what + ' needs the ' + asset + ' from cdn.jsdelivr.net, which did not load: open this page online.'
       : what + ' needs the ' + asset + ': run make cache in services/present.';
   }
@@ -1778,8 +1786,7 @@
     var canvas = block.querySelector('.present-terminal-canvas');
     if (block._terminal || !canvas) return;
     var rows = parseInt(block.getAttribute('data-rows'), 10);
-    var mode = document.documentElement.getAttribute('data-present-mode');
-    var shared = mode === 'shared' || mode === 'export';
+    var shared = standalone || document.documentElement.getAttribute('data-present-mode') === 'shared';
     var missing = typeof Terminal !== 'function' || !window.FitAddon;
     var session = block.getAttribute('data-session') || '';
     var ctl = {
@@ -1796,7 +1803,7 @@
     if (shared) {
       [run, kill].forEach(function (b) { if (b) b.hidden = true; });
       terminalStatus(ctl, 'unavailable');
-      terminalNote(ctl, mode === 'export'
+      terminalNote(ctl, standalone
         ? 'Live terminal is not available in an exported page.'
         : 'Live terminal is not available on a shared instance.');
       return;
@@ -1992,13 +1999,14 @@
   var root = document.getElementById('root');
 
   // readAloud builds the page's read-aloud element, or returns null without
-  // a speak URL (a shared instance, say). Any earlier element goes first, so
-  // a re-render never leaves two. The element reads its targets on connect,
-  // so callers create it once the content is mounted.
+  // a speak URL (a shared instance, say) or a server (standalone). Any
+  // earlier element goes first, so a re-render never leaves two. The
+  // element reads its targets on connect, so callers create it once the
+  // content is mounted.
   function readAloud(data) {
     var old = document.querySelector('wk-read-aloud');
     if (old) old.remove();
-    if (!data.speak_url) return null;
+    if (standalone || !data.speak_url) return null;
     var ra = document.createElement('wk-read-aloud');
     ra.setAttribute('targets', '.brief-summary, wk-section');
     ra.setAttribute('prepare', '');
@@ -2088,6 +2096,7 @@
   // history (a shared instance) answers 404, and nothing is marked; a first
   // visit only records the version.
   function markChangedSections(id, version) {
+    if (standalone) return;
     var key = 'present-seen:' + id;
     var seen = 0;
     try { seen = parseInt(localStorage.getItem(key) || '0', 10) || 0; } catch (e) {}
@@ -2110,6 +2119,7 @@
   // brief offers Slides when the page has a deck, the deck offers Brief when
   // the page has one. Both anchors sit hidden in the shell's header.
   function showViewLink(elID, href) {
+    if (standalone) return;
     var a = document.getElementById(elID);
     if (!a) return;
     a.href = href;
@@ -2122,6 +2132,7 @@
   // it. Confirm posts to /p/{id}/share; the result shows the shared URL and
   // whether it expires. Re-sharing replaces the copy under the same URL.
   function wireShare(share) {
+    if (standalone) return;
     var btn = document.getElementById('shareBtn');
     var modal = document.getElementById('share-modal');
     if (!btn || !modal || !share || !share.enabled) return;
@@ -2187,6 +2198,7 @@
   var STREAM_SILENCE_MS = 60000;
 
   function watchVersion(id, known) {
+    if (standalone) return;
     var base = '/p/' + encodeURIComponent(id);
     var poller = null;
     var stream = null;
@@ -2920,6 +2932,7 @@
   var COMMAND_POLL_MS = 1000;
   var COMMAND_FRESH_MS = 10000;
   function watchDeckCommands(id, apply, memory) {
+    if (standalone) return;
     var base = '/p/' + encodeURIComponent(id) + '/deck/command';
     var known = memory.seq();
     var timer = null;
@@ -2978,9 +2991,9 @@
   // page data in #present-export and the body already in #root, which a
   // reader with scripts off sees as it is. The brief keeps that body and
   // gets its graph, charts, and the rest. The deck is split from it, less
-  // the references block, which the deck makes its last slide. Nothing
-  // here asks a server: no version poll, share, change marks, deck remote,
-  // or terminal session.
+  // the references block, which the deck makes its last slide. Every
+  // control that needs a server stays out under standalone (top of this
+  // file).
   function renderExport() {
     var island = document.getElementById('present-export');
     var brief = root.querySelector('.brief');
@@ -2999,7 +3012,7 @@
     enhanceBrief(brief, data);
     followTheme();
   }
-  if (exported) { renderExport(); return; }
+  if (standalone) { renderExport(); return; }
 
   // pageId reads the page id from the URL; deckView says whether this is the
   // /p/{id}/deck rendition of it.

@@ -216,7 +216,10 @@ head comment carries the third-party notices.
 
 In the browser, `data-present-mode="export"` sends
 app.js down `renderExport`, which works on the body already in the file and
-asks no server for anything (docs/adr/0029). The CLI writes the file where
+asks no server for anything (docs/adr/0029). The same attribute sets app.js's
+`standalone` flag, which every server-backed control checks: read-aloud,
+share, the rendition links, change marks, the version poll, the deck remote,
+and terminals. The CLI writes the file where
 `-o` says; the tool writes it under `exports/` in the workdir, which the MCP
 sandbox may write.
 
