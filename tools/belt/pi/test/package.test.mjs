@@ -25,7 +25,7 @@ test('the manifest loads every extension and nothing else', async (t) => {
     events[file] = [...handlers.keys()].sort()
   }
   assert.deepEqual(events, {
-    'belt-hooks.ts': ['before_agent_start', 'input', 'session_start', 'tool_result'],
+    'belt-hooks.ts': ['before_agent_start', 'session_start', 'tool_result'],
     'permission-broker.ts': ['session_shutdown', 'session_start'],
     'permission-gate.ts': ['session_shutdown', 'session_start', 'session_tree', 'tool_call'],
   })

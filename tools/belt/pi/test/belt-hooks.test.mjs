@@ -36,13 +36,12 @@ test('a tool no hint watches passes through untouched', async (t) => {
   assert.equal(env.argv(), null)
 })
 
-test('csl searches run the search hint under the Claude tool name', async (t) => {
+test('csl searches pass through without running belt', async (t) => {
   const env = scratch(t)
   const { call } = load()
   const res = await call('tool_result', { toolName: 'csl_search', input: { query: 'x' }, content: OUT }, headlessCtx(env.dir))
-  assert.deepEqual(res.content.at(-1), advice('search'))
-  assert.equal(env.stdin().tool_name, 'mcp__csl__csl_search')
-  assert.equal(env.stdin().tool_response, 'out')
+  assert.equal(res, undefined)
+  assert.equal(env.argv(), null)
 })
 
 test('publishing calls run the external-text hint for the configured servers only', async (t) => {

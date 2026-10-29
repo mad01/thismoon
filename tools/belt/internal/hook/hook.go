@@ -1,6 +1,6 @@
 // Package hook adapts Claude Code hook payloads to belt's three concepts.
 // PreToolUse payloads become guard inputs and guard denials become deny
-// decisions. PostToolUse, SessionStart and UserPromptSubmit payloads become
+// decisions. PostToolUse, SessionStart and SubagentStart payloads become
 // hint inputs and hint advice becomes added context. Lifecycle payloads
 // (subagents, tasks, compaction, session end, failed turns) become ledger
 // entries and print nothing at all. Every entrypoint exits 0: a hook must
@@ -209,7 +209,7 @@ func withSession(tags map[string]string, p payload) map[string]string {
 }
 
 // hintTitle names a hint fire on the events timeline: the tool call it
-// advised on, when there was one. Start and prompt events carry no tool.
+// advised on, when there was one. Start events carry no tool.
 func hintTitle(tool, hintID string) string {
 	if tool == "" {
 		return fmt.Sprintf("hinted (%s)", hintID)
@@ -281,7 +281,7 @@ func (rn runner) hints(event string, r io.Reader, w io.Writer) {
 	if err != nil {
 		// A hint has no denial path, so a broken config travels as advice:
 		// the guards are already blocking every tool call, and this says why
-		// on the events (a search or a prompt) they never see.
+		// on the events (a read or a session start) they never see.
 		writeAdvice(w, event, configDenial(err).Reason)
 		return
 	}
@@ -435,14 +435,9 @@ func toLedgerInput(p recordPayload) ledger.Input {
 
 // writeAdvice emits advice in the form the invoking hook event accepts.
 func writeAdvice(w io.Writer, event, text string) {
-	out := hintAdviceFor(event)
-	if out.plain {
-		fmt.Fprintln(w, text)
-		return
-	}
 	_ = json.NewEncoder(w).Encode(adviceDecision{
 		HookSpecificOutput: adviceOutput{
-			HookEventName:     out.hookEvent,
+			HookEventName:     hintAdviceFor(event).hookEvent,
 			AdditionalContext: text,
 		},
 	})
@@ -450,21 +445,15 @@ func writeAdvice(w io.Writer, event, text string) {
 
 // hintAdvice is how one hint event's advice must travel: the Claude Code
 // hook the event is registered under, whose name the JSON envelope has to
-// carry or Claude Code drops the output, and whether that hook reads plain
-// stdout instead of the envelope.
+// carry or Claude Code drops the output.
 type hintAdvice struct {
 	hookEvent string
-	plain     bool
 }
 
 // hintAdviceByEvent lists the hint events that do not ride PostToolUse.
-// UserPromptSubmit adds plain stdout to context on exit 0; it is not in the
-// hookSpecificOutput.additionalContext event family, so the JSON envelope
-// would be dropped (or injected verbatim) there.
 var hintAdviceByEvent = map[string]hintAdvice{
 	hint.EventSessionStart:  {hookEvent: "SessionStart"},
 	hint.EventSubagentStart: {hookEvent: "SubagentStart"},
-	hint.EventPrompt:        {hookEvent: "UserPromptSubmit", plain: true},
 }
 
 // hintAdviceFor maps a hint event to how its advice travels; every event
@@ -479,8 +468,8 @@ func hintAdviceFor(event string) hintAdvice {
 // toHintInput maps a hint payload onto the shared hint input. A bash
 // command carries only what it ran; a read carries the file, whether it
 // asked for a range, and the file's line count from the response; an
-// external-text call is identified by the tool that made it. A search or a
-// prompt carries only the session fields every event has.
+// external-text call is identified by the tool that made it. A start event
+// carries only the session fields every event has.
 func toHintInput(event string, p payload) hint.Input {
 	in := hint.Input{
 		Event:          event,

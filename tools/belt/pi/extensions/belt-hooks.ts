@@ -1,7 +1,6 @@
 // @ts-nocheck -- Pi resolves extension and Node types from its global runtime.
 /**
- * Belt Hooks Extension: PostToolUse, SessionStart, and UserPromptSubmit
- * parity for pi.
+ * Belt Hooks Extension: PostToolUse and SessionStart parity for pi.
  *
  * permission-gate.ts owns Belt's blocking pre-tool checks. This extension owns
  * advisory hints and adapts Pi events/session entries to Belt's Claude hook
@@ -48,7 +47,6 @@ function runBeltHint(event: string, payload: Record<string, unknown>): string {
 	beltAvailable = true;
 	const output = (result.stdout ?? "").trim();
 	if (!output) return "";
-	if (event === "prompt") return output;
 	try {
 		const decoded = JSON.parse(output);
 		return decoded?.hookSpecificOutput?.additionalContext ?? "";
@@ -136,27 +134,9 @@ function payloadBase(ctx: ExtensionContext): Record<string, unknown> {
 	};
 }
 
-function toolResponseText(
-	content: Array<{ type: string; text?: string }>,
-): string {
-	return content
-		.flatMap((block) => (block.type === "text" ? [block.text ?? ""] : []))
-		.join("\n");
-}
-
 function isBashTool(toolName: string): boolean {
 	return (
 		toolName === "bash" || toolName === "ctx_shell" || toolName === "shell"
-	);
-}
-
-function isCslSearch(identity: McpIdentity | null): boolean {
-	if (!identity || identity.server !== "csl") return false;
-	const operation = identity.operation.replace(/^csl_/, "");
-	return (
-		operation === "search" ||
-		operation === "semantic_search" ||
-		operation === "hybrid_search"
 	);
 }
 
@@ -182,7 +162,6 @@ function appendAdvice(
 export default function (pi: ExtensionAPI) {
 	let config: BeltPiConfig = loadConfig().config;
 	let sessionStartAdvice = "";
-	let promptAdvice = "";
 
 	pi.on("session_start", async (event, ctx) => {
 		config = loadConfig().config;
@@ -190,23 +169,9 @@ export default function (pi: ExtensionAPI) {
 		sessionStartAdvice = runBeltHint("session-start", payloadBase(ctx));
 	});
 
-	pi.on("input", async (event, ctx) => {
-		if (event.source === "extension") return { action: "continue" };
-		promptAdvice = withClaudeLikeTranscript(config, ctx, (transcriptPath) =>
-			runBeltHint("prompt", {
-				...payloadBase(ctx),
-				transcript_path: transcriptPath,
-			}),
-		);
-		return { action: "continue" };
-	});
-
 	pi.on("before_agent_start", async (event) => {
-		const advice = [sessionStartAdvice, promptAdvice]
-			.filter(Boolean)
-			.join("\n\n");
+		const advice = sessionStartAdvice;
 		sessionStartAdvice = "";
-		promptAdvice = "";
 		if (!advice) return undefined;
 		return {
 			systemPrompt: `${event.systemPrompt}\n\n## Belt lifecycle hints\n\n${advice}`,
@@ -225,17 +190,6 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const identity = mcpIdentity(config, event.toolName, input);
-		if (identity && isCslSearch(identity)) {
-			const advice = runBeltHint("search", {
-				...payloadBase(ctx),
-				tool_name: identity.claudeToolName,
-				tool_input:
-					input.args && typeof input.args === "object" ? input.args : input,
-				tool_response: toolResponseText(event.content),
-			});
-			return appendAdvice(event, advice);
-		}
-
 		if (isExternalTextTool(config, identity)) {
 			const advice = withClaudeLikeTranscript(config, ctx, (transcriptPath) =>
 				runBeltHint("external-text", {

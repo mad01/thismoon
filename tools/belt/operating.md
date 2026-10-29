@@ -14,9 +14,8 @@ or steer anything, even by mistake.
 There is no daemon. Claude Code spawns `belt hook <event>`,
 `belt hint <event>` or `belt record <event>` as a fresh process for every
 event it is wired to, feeds the payload on stdin, and reads the decision or
-advice on stdout. The output is JSON for every hint event except
-`hint prompt`, which writes plain text because UserPromptSubmit reads stdout
-directly as context; `record` writes nothing. Each exits 0 even when it
+advice on stdout. The output is JSON for every hint event; `record` writes
+nothing. Each exits 0 even when it
 denies: the deny travels in the JSON, never the exit code, so a belt bug
 cannot break tool calls.
 
