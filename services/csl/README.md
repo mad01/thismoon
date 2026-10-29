@@ -168,8 +168,9 @@ Both forms read the same index and take the same query language.
 
 - **MCP tools for answers that fit in one call**: repo lookups, file reads, `csl_outline` and counts. A search belongs here too when its whole result fits one response, such as a definition, a handful of files or a few hundred lines.
 - **The CLI through Bash for everything bigger**: fleet-wide searches, ranking across many candidates, and any result that would need a second page or spill to a file. Give `csl search` a `--limit` high enough for the whole result and aggregate in the shell pipe (`cut`, `awk`, `sort | uniq -c`), so only the summary reaches the context.
-- **Never page `csl_search` with `offset`.** Each MCP result is capped, and the pages pile up in context. When a first page comes back `truncated`, rerun the query as a CLI pipe.
+- **Don't page `csl_search` with `offset` when the CLI is on PATH.** Each MCP result is capped, and the pages pile up in context. When a first page comes back `truncated`, rerun the query as a CLI pipe.
 - **CLI only** (`csl` on PATH, no `mcp__csl__*` tools): run every csl call through Bash.
+- **MCP only** (`mcp__csl__*` tools, no `csl` on PATH): paging with `offset` is then the only way past the cap. Keep it to a few pages, and say in the answer that a count built from them is partial.
 - **Neither**: say that csl is not available and fall back to `rg` with narrow globs. Prefer `rg --files -g <glob>` over `find`, and scope every search to the smallest directory that can hold the answer.
 - **A CLI miss prints only `no matches`.** The CLI has no zero-result hint yet, so retry once with one term dropped, or run `csl query '<query>'` to see how it parsed.
 - **`--repo` on the CLI is a case-sensitive regex**, unlike the MCP `repo` parameter. Spell the repo the way `csl repo --list` prints it.

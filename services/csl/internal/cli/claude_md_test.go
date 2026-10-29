@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,15 +14,16 @@ import (
 )
 
 // TestClaudeMDCLIBlockMatchesCommands is the cheat-sheet gate. The fenced sh
-// block in claude-md.md is what lets an agent run the CLI without spending a
-// turn on --help, so every subcommand and flag it names must exist in the
+// blocks in claude-md.md are what let an agent run the CLI without spending
+// a turn on --help, so every subcommand and flag they name must exist in the
 // cobra tree. Inline `csl ...` spans in the prose are held to the same rule.
 func TestClaudeMDCLIBlockMatchesCommands(t *testing.T) {
-	block := fencedShellBlock(t, csl.ClaudeMD)
 	var invocations []string
-	for line := range strings.SplitSeq(block, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "csl ") {
-			invocations = append(invocations, strings.TrimSpace(line))
+	for _, block := range fencedShellBlocks(t, csl.ClaudeMD) {
+		for line := range strings.SplitSeq(block, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "csl ") {
+				invocations = append(invocations, strings.TrimSpace(line))
+			}
 		}
 	}
 	if len(invocations) < 5 {
@@ -53,6 +55,12 @@ func TestCheckInvocation(t *testing.T) {
 		{`csl search 'a b' --limit 5000 | cut -d/ -f1-2 | sort -u`, true},
 		{`csl outline <repo> [path] --kinds struct,function # ranked`, true},
 		{`csl semantic files --skipped <path>`, true},
+		{`csl semantic '<query>' --k 5`, true},
+		{`csl semantic "where do we retry" --k 5`, true},
+		{`csl semantic <query>`, true},
+		{`csl hooks install`, true},
+		{`csl semantic flies`, false}, // a typo for files, not a query
+		{`csl hooks instal`, false},
 		{`csl repo --list --config=/tmp/c.yaml`, true}, // persistent root flag
 		{`csl search '<query>' --nope`, false},
 		{`csl search '<query>' -Z`, false},
@@ -79,30 +87,35 @@ var inlineCSLSpan = regexp.MustCompile("`(csl [^`]+)`")
 
 // checkInvocation walks one `csl ...` command line down the cobra tree from
 // root: leading words name subcommands, then every flag must be defined on
-// the resolved command or inherited from a parent. Positional arguments and
-// flag values are not checked. Parsing stops at a pipe or a comment.
+// the resolved command or inherited from a parent. A bare word after a
+// command that has subcommands must name one of them, so a misspelled
+// subcommand cannot pass as an argument; a literal argument there is
+// written quoted or as a <placeholder>. Other positional arguments and flag
+// values are not checked. Parsing stops at a pipe or a comment.
 func checkInvocation(root *cobra.Command, inv string) error {
 	words := shellWords(inv)
-	if len(words) == 0 || words[0] != root.Name() {
+	if len(words) == 0 || words[0].text != root.Name() {
 		return fmt.Errorf("does not start with %q", root.Name())
 	}
 
 	cmd := root
 	descending := true
 	for i := 1; i < len(words); i++ {
-		w := words[i]
+		w := words[i].text
 		if w == "|" || strings.HasPrefix(w, "#") {
 			break
 		}
 		if !strings.HasPrefix(w, "-") || w == "-" {
 			if descending {
-				sub := subcommand(cmd, w)
-				if sub == nil && cmd == root {
-					return fmt.Errorf("no subcommand %q", w)
-				}
-				if sub != nil {
+				if sub := subcommand(cmd, w); sub != nil {
 					cmd = sub
 					continue
+				}
+				if cmd == root {
+					return fmt.Errorf("no subcommand %q", w)
+				}
+				if cmd.HasSubCommands() && !words[i].isArgument() {
+					return fmt.Errorf("%q has no subcommand %q", cmd.CommandPath(), w)
 				}
 			}
 			descending = false // a positional argument ends the command path
@@ -178,13 +191,25 @@ func subcommand(cmd *cobra.Command, name string) *cobra.Command {
 	return nil
 }
 
+// shellWord is one word of a command line with its quotes dropped.
+type shellWord struct {
+	text   string
+	quoted bool // some of the word sat inside quotes
+}
+
+// isArgument reports whether the word is plainly an argument rather than a
+// subcommand name: quoted, or a <placeholder> or [optional] one.
+func (w shellWord) isArgument() bool {
+	return w.quoted || strings.HasPrefix(w.text, "<") || strings.HasPrefix(w.text, "[")
+}
+
 // shellWords splits a command line on spaces outside quotes and drops the
 // quotes, enough for the one-line commands the fragment shows.
-func shellWords(line string) []string {
-	var out []string
+func shellWords(line string) []shellWord {
+	var out []shellWord
 	var cur strings.Builder
 	var quote rune
-	inWord := false
+	inWord, quoted := false, false
 	for _, r := range line {
 		switch {
 		case quote != 0:
@@ -195,12 +220,12 @@ func shellWords(line string) []string {
 			}
 		case r == '\'' || r == '"':
 			quote = r
-			inWord = true
+			inWord, quoted = true, true
 		case r == ' ' || r == '\t':
 			if inWord {
-				out = append(out, cur.String())
+				out = append(out, shellWord{cur.String(), quoted})
 				cur.Reset()
-				inWord = false
+				inWord, quoted = false, false
 			}
 		default:
 			cur.WriteRune(r)
@@ -208,22 +233,41 @@ func shellWords(line string) []string {
 		}
 	}
 	if inWord {
-		out = append(out, cur.String())
+		out = append(out, shellWord{cur.String(), quoted})
 	}
 	return out
 }
 
-// fencedShellBlock returns the body of the first ```sh block in md.
-func fencedShellBlock(t *testing.T, md string) string {
+// TestFencedShellBlocksFindsEvery pins the block walk, so a second sh block
+// in the fragment cannot escape the gate.
+func TestFencedShellBlocksFindsEvery(t *testing.T) {
+	md := "# x\n\n```sh\ncsl repo --list\n```\n\ntext\n\n```sh\ncsl serch x\n```\n"
+	got := fencedShellBlocks(t, md)
+	want := []string{"csl repo --list", "csl serch x"}
+	if !slices.Equal(got, want) {
+		t.Errorf("fencedShellBlocks = %q, want %q", got, want)
+	}
+}
+
+// fencedShellBlocks returns the body of every ```sh block in md.
+func fencedShellBlocks(t *testing.T, md string) []string {
 	t.Helper()
 
-	_, body, found := strings.Cut(md, "\n```sh\n")
-	if !found {
+	var blocks []string
+	for rest := md; ; {
+		_, body, found := strings.Cut(rest, "\n```sh\n")
+		if !found {
+			break
+		}
+		block, after, found := strings.Cut(body, "\n```")
+		if !found {
+			t.Fatal("unterminated ```sh block in claude-md.md")
+		}
+		blocks = append(blocks, block)
+		rest = after
+	}
+	if len(blocks) == 0 {
 		t.Fatal("claude-md.md has no ```sh block")
 	}
-	block, _, found := strings.Cut(body, "\n```")
-	if !found {
-		t.Fatal("unterminated ```sh block in claude-md.md")
-	}
-	return block
+	return blocks
 }

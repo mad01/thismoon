@@ -8,8 +8,9 @@ Both forms read the same index and take the same query language.
 
 - **MCP tools for answers that fit in one call**: repo lookups, file reads, `csl_outline` and counts. A search belongs here too when its whole result fits one response, such as a definition, a handful of files or a few hundred lines.
 - **The CLI through Bash for everything bigger**: fleet-wide searches, ranking across many candidates, and any result that would need a second page or spill to a file. Give `csl search` a `--limit` high enough for the whole result and aggregate in the shell pipe (`cut`, `awk`, `sort | uniq -c`), so only the summary reaches the context.
-- **Never page `csl_search` with `offset`.** Each MCP result is capped, and the pages pile up in context. When a first page comes back `truncated`, rerun the query as a CLI pipe.
+- **Don't page `csl_search` with `offset` when the CLI is on PATH.** Each MCP result is capped, and the pages pile up in context. When a first page comes back `truncated`, rerun the query as a CLI pipe.
 - **CLI only** (`csl` on PATH, no `mcp__csl__*` tools): run every csl call through Bash.
+- **MCP only** (`mcp__csl__*` tools, no `csl` on PATH): paging with `offset` is then the only way past the cap. Keep it to a few pages, and say in the answer that a count built from them is partial.
 - **Neither**: say that csl is not available and fall back to `rg` with narrow globs. Prefer `rg --files -g <glob>` over `find`, and scope every search to the smallest directory that can hold the answer.
 - **A CLI miss prints only `no matches`.** The CLI has no zero-result hint yet, so retry once with one term dropped, or run `csl query '<query>'` to see how it parsed.
 - **`--repo` on the CLI is a case-sensitive regex**, unlike the MCP `repo` parameter. Spell the repo the way `csl repo --list` prints it.
@@ -18,7 +19,7 @@ Both forms read the same index and take the same query language.
 
 1. **Any search over more than one file goes through csl.** Pattern search, symbol lookup, "which files contain", "which repos have", counts per repo, listing a repo's files, reading a file by repo and path. csl is the default, and the filesystem tools are the fallback.
 2. **Fleet-wide discovery is where csl matters most.** Ask csl before you walk directories or loop `grep` over checkouts. One CLI search piped through `sort | uniq -c` answers "which repos have this", `csl_count` with `group_by: repo` answers "how many per repo", and `csl_repo_lookup` with `owner`, `system` or `component` answers catalog questions.
-3. **csl before any filesystem walk.** `find`, `ls -R`, `Glob` over a tree, `grep -r`, `rg`, `git grep` across checkouts, and scripts that walk directories are last resorts. Use them only when csl reports the repo is not indexed, or for one known file.
+3. **csl before any filesystem walk.** `find`, `ls -R`, `Glob` over a tree, `grep -r`, `rg`, `git grep` across checkouts, and scripts that walk directories are last resorts. Use them only when csl reports the repo is not indexed, or to read one or two known files.
 4. **Check the repo is indexed when in doubt.** `csl_repo_lookup` (or `csl repo <name>`) resolves a name to a checkout. An empty result means csl does not index it, and plain `grep` is then correct. Say so in the answer.
 5. **Plain `grep` stays fine for filtering.** Piping another command's output through `grep`, `awk` or `jq`, or checking a line in one or two known files, is filtering and needs no csl.
 6. **A `belt[prefer-csl]` hint is a directive.** When a hook answers a `grep` or `find` with a ready csl command (the CLI form first, the `csl_search` call after it), run one of them next instead of another filesystem search. The hint already translated the pattern into zoekt syntax.
@@ -78,7 +79,7 @@ Every search flag is a regex, including `--repo` and `--file`. A file result pri
 - `sym:Name` matches definitions only (functions, types, methods, classes) and skips call sites. Use it for "where is X defined". Two names: `sym:Foo|Bar`.
 - Exact phrase: `"foo bar"` on one line. Proximity: `foo.*bar`.
 - A `csl_search` with zero results carries a hint: how the query parsed, how many files each term matches alone, and the term to drop. Read it before retrying. A query refused with a fix means apply the fix, not resend it.
-- Translation: `grep -r foo` is `foo`; `grep --include='*.go' foo` is `foo f:\.go$`; `grep -v test` is `foo -test` or `-f:_test\.go`; `grep -E 'a\|b'` is `a|b`; `find . -name '*.yaml' | xargs grep foo` is `foo f:\.ya?ml$`.
+- Translation: `grep -r foo` is `foo`; `grep --include='*.go' foo` is `foo f:\.go$`; `grep -v test` is `foo -test` or `-f:_test\.go`; `grep -E 'a|b'` is `a|b`; `find . -name '*.yaml' | xargs grep foo` is `foo f:\.ya?ml$`.
 
 ### Fleet questions, worked
 
