@@ -224,7 +224,8 @@ func searchOptions(pattern string) search.SearchOptions {
 // searchInProcess runs the search without the daemon: it indexes first when
 // there is no index yet or --reindex asks for it, searches the shards, and
 // re-indexes stale repos in the background afterwards. With --repo set, only
-// the repos the filter matches are checked and indexed.
+// the repos the filter matches are checked and indexed, none when it matches
+// no discovered repo.
 func searchInProcess(
 	ctx context.Context,
 	cmd *cobra.Command,
@@ -239,9 +240,9 @@ func searchInProcess(
 		if err != nil {
 			return nil, err
 		}
-		if len(matched) == 0 {
-			return nil, fmt.Errorf("no repos matching %q found", req.Repo)
-		}
+		// A filter that matches no discovered repo is not an error: with
+		// nothing to check or index, the search below comes back empty and
+		// reportSearch explains the filter, as it does after a daemon search.
 		repos = matched
 	}
 

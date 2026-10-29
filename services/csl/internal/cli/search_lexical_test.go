@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/lexical/lexicaltest"
+	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
@@ -22,12 +25,15 @@ func keepSearchFlags(t *testing.T) {
 	t.Helper()
 	mode, asJSON, toon := searchOutputModeFlag, searchJSONFlag, searchToonFlag
 	repo, file, limit := searchRepoFlag, searchFileFlag, searchLimitFlag
+	reindex := searchReindexFlag
 	t.Cleanup(func() {
 		searchOutputModeFlag, searchJSONFlag, searchToonFlag = mode, asJSON, toon
 		searchRepoFlag, searchFileFlag, searchLimitFlag = repo, file, limit
+		searchReindexFlag = reindex
 	})
 	searchOutputModeFlag, searchJSONFlag, searchToonFlag = "files_with_matches", false, false
 	searchRepoFlag, searchFileFlag, searchLimitFlag = "", "", 50
+	searchReindexFlag = false
 }
 
 // runReport runs reportSearch for pattern against the shared fixture index
@@ -76,6 +82,69 @@ func TestRunSearch_RefusesMalformedQuery(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("csl search %q: err = %v, want it to contain %q", tt.query, err, tt.want)
 		}
+	}
+}
+
+// TestRunSearch_FallbackRepoFilterMatchesNone: on the in-process path, a
+// --repo filter that matches no discovered repo prints "no matches" and the
+// repo-filter hint and succeeds, as the daemon path does; an invalid filter
+// still fails and names --repo.
+func TestRunSearch_FallbackRepoFilterMatchesNone(t *testing.T) {
+	keepSearchFlags(t)
+	dirs := t.TempDir()
+	repoDir := filepath.Join(dirs, "org", "myrepo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitInit(t, repoDir)
+	if err := os.WriteFile(filepath.Join(repoDir, "b.go"), []byte("package b\n\nfunc Blocks() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	setupTestConfig(t, "dirs:\n  - "+dirs+"\n")
+	indexDiscovered(t)
+
+	searchReindexFlag = true // skip the daemon: this is the in-process path
+	searchRepoFlag = "nomatchzz"
+	var stdout, stderr bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	if err := runSearch(cmd, []string{"Blocks"}); err != nil {
+		t.Fatalf("csl search --repo nomatchzz: %v", err)
+	}
+	if stdout.String() != "no matches\n" {
+		t.Errorf("stdout = %q, want only the no-matches line", stdout.String())
+	}
+	want := `repo filter "nomatchzz" matched none of the 1 locally discovered repos; check the name with csl repo --list`
+	if !strings.Contains(stderr.String(), want) {
+		t.Errorf("stderr lacks %q:\n%s", want, stderr.String())
+	}
+
+	searchRepoFlag = "("
+	err := runSearch(&cobra.Command{}, []string{"Blocks"})
+	if err == nil || !strings.Contains(err.Error(), "--repo") {
+		t.Errorf(`csl search --repo "(": err = %v, want an invalid-regex error naming --repo`, err)
+	}
+}
+
+// indexDiscovered indexes the repos the test config discovers into the
+// isolated default index dir, so a search finds a real index.
+func indexDiscovered(t *testing.T) {
+	t.Helper()
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos, _, err := cfg.DiscoverReposReport()
+	if err != nil || len(repos) != 1 {
+		t.Fatalf("discover: repos=%+v err=%v, want the one fixture repo", repos, err)
+	}
+	indexDir, err := search.DefaultIndexDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := search.IndexRepos(indexDir, repos, nil, nil); err != nil {
+		t.Fatalf("IndexRepos: %v", err)
 	}
 }
 
