@@ -499,7 +499,11 @@
     try { spec = JSON.parse(specEl.textContent); } catch (e) { return; }
     if (spec.kind === 'ribbon') { buildRibbon(block, spec, opts); return; }
     var canvas = block.querySelector('canvas');
-    if (!canvas || typeof Chart === 'undefined') return;
+    if (!canvas) return;
+    if (typeof Chart === 'undefined') {
+      chartNote(block, needsAsset('Chart', 'chart.js asset'));
+      return;
+    }
     if (block._chart) { block._chart.destroy(); block._chart = null; }
     var kind = spec.kind || 'bar';
     block.classList.toggle('is-sparkline', kind === 'sparkline');

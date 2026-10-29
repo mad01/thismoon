@@ -1,14 +1,22 @@
 package export
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 
 	"github.com/mad01/thismoon/services/present/internal/images"
 	"github.com/mad01/thismoon/services/present/internal/render"
@@ -104,12 +112,16 @@ func TestProsePageCarriesItsBodyAndNoLibrary(t *testing.T) {
 	out := string(res.HTML)
 
 	// The body is in the file as markup, so it reads with scripts off.
-	if !strings.Contains(out, `<main id="root"><div class="brief">`+body) {
+	mounted, err := wellFormed(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `<main id="root"><div class="brief">`+mounted) {
 		t.Error("the rendered body is not mounted in #root")
 	}
 	if !strings.Contains(
 		out,
-		`<a href="https://example.com/runbook" target="_blank" rel="noopener">Runbook</a>`,
+		`<a href="https://example.com/runbook" rel="noopener" target="_blank">Runbook</a>`,
 	) {
 		t.Error("the references block is not in the body")
 	}
@@ -334,22 +346,6 @@ func TestMissingFontsDegrade(t *testing.T) {
 	}
 }
 
-func TestNPMBytesCutsTheGeneratedBanner(t *testing.T) {
-	npm := []byte("/*!\n * Chart.js v4.4.6\n */\n!function(){}();")
-	generated := append(
-		[]byte(
-			"/**\n * Skipped minification because the original files appears to be already minified.\n"+
-				" * Do NOT use SRI with dynamically generated files!\n */\n",
-		),
-		npm...)
-	if got := npmBytes(generated); string(got) != string(npm) {
-		t.Errorf("npmBytes(generated) = %q, want the npm file", got)
-	}
-	if got := npmBytes(npm); string(got) != string(npm) {
-		t.Errorf("npmBytes(npm) = %q, want it unchanged", got)
-	}
-}
-
 func TestInlineTextCannotCloseItsElement(t *testing.T) {
 	if got := scriptText(`a = "</script><!--"; b = /<\/SCRIPT>/`); strings.Contains(
 		strings.ToLower(got),
@@ -363,46 +359,109 @@ func TestInlineTextCannotCloseItsElement(t *testing.T) {
 	}
 }
 
-// The library table and scripts/cache-assets.sh must name the same files at
-// the same package versions, so an export hashes the file the CDN serves
-// for the version the shell loads.
+// The library table and scripts/cache-assets.sh must name the same URL for
+// every library, and the script must pin the sha256 of what it fetches
+// there. The cached file an export hashes is then the file the CDN serves
+// at the URL the export loads.
 func TestLibrariesMatchTheAssetCache(t *testing.T) {
-	script, err := os.ReadFile("../../scripts/cache-assets.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fetched := cachedURLs(t, string(script))
+	fetched := cacheFetches(t)
 	for _, lib := range libraries {
-		url, ok := fetched[lib.file]
+		f, ok := fetched[lib.file]
 		if !ok {
 			t.Errorf("cache-assets.sh never fetches %s", lib.file)
 			continue
 		}
-		pkg := cdnBase + strings.SplitN(lib.npm, "/", 2)[0] + "/"
-		if !strings.HasPrefix(url, pkg) {
-			t.Errorf(
-				"%s: cache-assets.sh fetches %s, export loads %s",
-				lib.file,
-				url,
-				cdnBase+lib.npm,
-			)
+		if want := cdnBase + lib.npm; f.url != want {
+			t.Errorf("%s: cache-assets.sh fetches %s, export loads %s", lib.file, f.url, want)
+		}
+		if f.sha256 == "" {
+			t.Errorf("%s: cache-assets.sh pins no sha256 for it", lib.file)
 		}
 	}
 }
 
+// With an asset cache on this machine ($PRESENT_WORKDIR or
+// ~/.config/present), every cached library must hash to its pin, and the
+// export must load it from its URL with the integrity hash of those bytes.
+// The test skips without a cache, and skips a library the cache lacks.
+func TestIntegrityOfTheRealAssetCache(t *testing.T) {
+	assets := realAssets(t)
+	fetched := cacheFetches(t)
+	checked := 0
+	for _, lib := range libraries {
+		data, err := os.ReadFile(filepath.Join(assets, "js", lib.file))
+		if errors.Is(err, fs.ErrNotExist) {
+			t.Logf("%s is not in %s, skipped", lib.file, assets)
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		checked++
+		if got, want := fmt.Sprintf("%x", sha256.Sum256(data)), fetched[lib.file].sha256; got != want {
+			t.Errorf("%s: cached sha256 %s, cache-assets.sh pins %s: run make cache-force",
+				lib.file, got, want)
+		}
+		scripts, err := cdnScripts(assets, map[string]bool{lib.name: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := cdnScript{
+			Package:   strings.SplitN(lib.npm, "/", 2)[0],
+			URL:       cdnBase + lib.npm,
+			Integrity: integrity(data),
+		}
+		if len(scripts) != 1 || scripts[0] != want {
+			t.Errorf("%s: export tags %+v, want %+v", lib.name, scripts, want)
+		}
+	}
+	if checked == 0 {
+		t.Skipf("no library is in the asset cache at %s", assets)
+	}
+}
+
+// realAssets is this machine's asset cache, the one present serve uses; the
+// test skips when there is none.
+func realAssets(t *testing.T) string {
+	t.Helper()
+	workdir := os.Getenv("PRESENT_WORKDIR")
+	if workdir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Skipf("no home directory: %v", err)
+		}
+		workdir = filepath.Join(home, ".config", "present")
+	}
+	assets := filepath.Join(workdir, "assets")
+	if _, err := os.Stat(filepath.Join(assets, "js")); err != nil {
+		t.Skipf("no asset cache at %s", assets)
+	}
+	return assets
+}
+
+// cacheFetch is one js download in cache-assets.sh: the URL and the pinned
+// sha256, empty when the script pins none.
+type cacheFetch struct{ url, sha256 string }
+
 var (
-	reVersionVar = regexp.MustCompile(`(?m)^([A-Z0-9_]+_VERSION)="([^"]+)"$`)
-	reFileVar    = regexp.MustCompile(`(?m)^([a-z0-9_]+_file)="\$ASSETS/js/([^"]+)"$`)
-	reFetch      = regexp.MustCompile(`(?m)^fetch "([^"]+)" "\$([a-z0-9_]+_file)"`)
-	reVarRef     = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
+	reScriptVar = regexp.MustCompile(`(?m)^([A-Z0-9_]+_(?:VERSION|SHA256))="([^"]+)"$`)
+	reFileVar   = regexp.MustCompile(`(?m)^([a-z0-9_]+_file)="\$ASSETS/js/([^"]+)"$`)
+	reFetch     = regexp.MustCompile(
+		`(?m)^fetch "([^"]+)" "\$([a-z0-9_]+_file)"(?: "\$([A-Z0-9_]+_SHA256)")?`,
+	)
+	reVarRef = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
 )
 
-// cachedURLs maps each cached js file name to the URL cache-assets.sh
-// fetches it from.
-func cachedURLs(t *testing.T, script string) map[string]string {
+// cacheFetches maps each cached js file name to the download that fills it.
+func cacheFetches(t *testing.T) map[string]cacheFetch {
 	t.Helper()
+	b, err := os.ReadFile("../../scripts/cache-assets.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(b)
 	vars := map[string]string{}
-	for _, m := range reVersionVar.FindAllStringSubmatch(script, -1) {
+	for _, m := range reScriptVar.FindAllStringSubmatch(script, -1) {
 		vars[m[1]] = m[2]
 	}
 	expand := func(s string) string {
@@ -415,14 +474,155 @@ func cachedURLs(t *testing.T, script string) map[string]string {
 	for _, m := range reFileVar.FindAllStringSubmatch(script, -1) {
 		files[m[1]] = expand(m[2])
 	}
-	out := map[string]string{}
+	out := map[string]cacheFetch{}
 	for _, m := range reFetch.FindAllStringSubmatch(script, -1) {
 		if name, ok := files[m[2]]; ok {
-			out[name] = expand(m[1])
+			out[name] = cacheFetch{url: expand(m[1]), sha256: vars[m[3]]}
 		}
 	}
 	if len(out) == 0 {
 		t.Fatal("found no js fetch in cache-assets.sh; the patterns no longer match")
 	}
 	return out
+}
+
+// An html block can hold markup that would reach past the body in a file:
+// an unclosed comment or element, a stray end tag, a script left in its
+// escaped state, plaintext, or a comment a reader without scripts sees in
+// a noscript block. None may swallow the page data or the scripts after
+// it, whether the browser runs scripts or not.
+func TestBodyCannotReachPastItself(t *testing.T) {
+	cases := map[string]string{
+		"comment opener as noscript text": `<noscript>&lt;!-- shown as text</noscript>`,
+		"unclosed comment":                `<p>before</p><!-- never closed`,
+		"stray script end tag":            `<p>one</p></script><p>two</p>`,
+		"script left escaped":             `<script><!--<script>var a = 1;`,
+		"plaintext":                       `<plaintext>the rest`,
+		"comment in a noscript":           `<noscript><!-- never closed</noscript>`,
+		"unclosed rcdata/table":           `<table><tr><td><textarea>`,
+		"unclosed style element":          `<style>p { color: red }`,
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			quoted, err := json.Marshal(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc := `{"sections":[{"h":"Raw","blocks":[{"t":"html","text":` + string(quoted) +
+				`},{"t":"p","text":"after the block"}]}]}`
+			p := store.Page{ID: "raw", Title: "Raw", Content: compiled(t, doc), HasBrief: true}
+			out := export(t, newWorkdir(t), p, false).HTML
+			for _, scripting := range []bool{true, false} {
+				checkFileIntact(t, out, scripting)
+			}
+		})
+	}
+}
+
+// checkFileIntact parses an exported file the way a browser does and fails
+// unless the page data and the four inline scripts after it are whole.
+func checkFileIntact(t *testing.T, out []byte, scripting bool) {
+	t.Helper()
+	root, err := html.ParseWithOptions(
+		bytes.NewReader(out),
+		html.ParseOptionEnableScripting(scripting),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scripts []*html.Node
+	for n := range root.Descendants() {
+		if n.Type == html.ElementNode && n.DataAtom == atom.Script && n.Namespace == "" {
+			scripts = append(scripts, n)
+		}
+	}
+	island := slices.IndexFunc(
+		scripts,
+		func(n *html.Node) bool { return attr(n, "id") == "present-export" },
+	)
+	if island < 0 {
+		t.Fatalf("scripting %v: the page data is gone", scripting)
+	}
+	var data pageData
+	if err := json.Unmarshal([]byte(text(scripts[island])), &data); err != nil || data.ID != "raw" {
+		t.Errorf("scripting %v: page data %q: %v", scripting, text(scripts[island]), err)
+	}
+	after := scripts[island+1:]
+	if len(after) != 4 ||
+		!strings.Contains(text(after[0]), "real.call(this, input, init)") ||
+		!strings.Contains(text(after[2]), "window.PresentViz") ||
+		!strings.Contains(text(after[3]), "function renderExport()") ||
+		!strings.HasSuffix(strings.TrimSpace(text(after[3])), "})();") {
+		t.Errorf("scripting %v: the scripts after the page data are not whole", scripting)
+	}
+}
+
+func attr(n *html.Node, key string) string {
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+func text(n *html.Node) string {
+	var b strings.Builder
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.TextNode {
+			b.WriteString(c.Data)
+		}
+	}
+	return b.String()
+}
+
+// A library tag waits for the body: the browser paints the prose first, and
+// an unreachable CDN holds up the page's scripts, never its text.
+func TestLibraryTagsFollowTheBody(t *testing.T) {
+	res := export(t, newWorkdir(t), graphPage(t, ""), false)
+	out := string(res.HTML)
+	if head := out[:strings.Index(out, "</head>")]; strings.Contains(head, "<script src=") {
+		t.Error("a library tag sits in the head")
+	}
+	island := strings.Index(out, `id="present-export"`)
+	guard := strings.Index(out, "real.call(this, input, init)")
+	for _, url := range res.Libraries {
+		at := strings.Index(out, `<script src="`+url+`"`)
+		if at < island || at > guard {
+			t.Errorf("%s loads at byte %d, want it between the page data (%d) and the guard (%d)",
+				url, at, island, guard)
+		}
+	}
+}
+
+// The head comment carries the notices the inlined third-party code needs:
+// each font family's copyright line and the OFL, and Prism's MIT licence.
+// THIRD-PARTY.md lists the same lines.
+func TestHeadCommentCarriesTheNotices(t *testing.T) {
+	p := store.Page{ID: "prose", Title: "P", Version: 2, Content: compiled(t, proseDoc)}
+	out := string(export(t, newWorkdir(t), p, false).HTML)
+	start, end := strings.Index(out, "<!--"), strings.Index(out, "-->")
+	if start < 0 || end < start || end > strings.Index(out, "<script") {
+		t.Fatal("no comment before the first script")
+	}
+	comment := out[start:end]
+	wants := append(
+		slices.Clone(fontCopyrights),
+		oflURL,
+		"Exported by present from page prose, version 2.",
+	)
+	for _, want := range append(wants, strings.Split(prismLicense, "\n")...) {
+		if !strings.Contains(comment, want) {
+			t.Errorf("head comment lacks %q", want)
+		}
+	}
+	third, err := os.ReadFile("../../THIRD-PARTY.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range append(slices.Clone(fontCopyrights), oflURL, "Copyright (c) 2012 Lea Verou") {
+		if !strings.Contains(string(third), want) {
+			t.Errorf("THIRD-PARTY.md lacks %q", want)
+		}
+	}
 }

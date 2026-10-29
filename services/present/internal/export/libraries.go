@@ -1,7 +1,6 @@
 package export
 
 import (
-	"bytes"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
@@ -19,7 +18,9 @@ const cdnBase = "https://cdn.jsdelivr.net/npm/"
 
 // library is one browser library the page shell loads from the asset cache
 // (scripts/cache-assets.sh, docs/adr/0022): the cached file under
-// <workdir>/assets/js and the same bytes at an npm path on the CDN.
+// <workdir>/assets/js and the npm path on the CDN it was fetched from.
+// cache-assets.sh checks each download against a pinned sha256, so the
+// cached bytes are the bytes the CDN serves at that path.
 type library struct {
 	name string // what the page needs it for; also its key in a needs set
 	file string // the cached file name
@@ -34,10 +35,7 @@ var libraries = []library{
 	{"cytoscape-dagre", "cytoscape-dagre-2.5.0.js", "cytoscape-dagre@2.5.0/cytoscape-dagre.js"},
 	{"elkjs", "elk-0.12.0.bundled.js", "elkjs@0.12.0/lib/elk.bundled.js"},
 	{"cytoscape-elk", "cytoscape-elk-2.3.0.js", "cytoscape-elk@2.3.0/dist/cytoscape-elk.js"},
-	// The cache holds jsDelivr's generated chart.umd.min.js, which is its
-	// banner comment and then the npm file chart.umd.js byte for byte. The
-	// export strips the banner and loads the npm file, whose bytes are fixed.
-	{"chart.js", "chart-4.4.6.umd.min.js", "chart.js@4.4.6/dist/chart.umd.js"},
+	{"chart.js", "chart-4.4.6.umd.js", "chart.js@4.4.6/dist/chart.umd.js"},
 	{
 		"chartjs-chart-sankey",
 		"chartjs-chart-sankey-0.15.3.min.js",
@@ -52,11 +50,9 @@ var (
 	reChartSpec  = regexp.MustCompile(
 		`(?s)<script type="application/json" class="chart-spec">(.*?)</script>`,
 	)
-	reDiagram     = regexp.MustCompile(`class="diagram-spec"`)
-	reELKEngine   = regexp.MustCompile(`['"]elk(?:-[a-z]+)?['"]`)
-	reChartCall   = regexp.MustCompile(`\bnew Chart\(`)
-	generatedHead = []byte("/**\n * Skipped minification")
-	commentEnd    = []byte("*/\n")
+	reDiagram   = regexp.MustCompile(`class="diagram-spec"`)
+	reELKEngine = regexp.MustCompile(`['"]elk(?:-[a-z]+)?['"]`)
+	reChartCall = regexp.MustCompile(`\bnew Chart\(`)
 )
 
 // needs returns the libraries a rendition's body and the page's graph
@@ -132,23 +128,10 @@ func cdnScripts(assets string, set map[string]bool) ([]cdnScript, error) {
 		out = append(out, cdnScript{
 			Package:   strings.SplitN(lib.npm, "/", 2)[0],
 			URL:       cdnBase + lib.npm,
-			Integrity: integrity(npmBytes(data)),
+			Integrity: integrity(data),
 		})
 	}
 	return out, nil
-}
-
-// npmBytes is a cached file as its npm package ships it: jsDelivr's banner
-// on a file it generated is cut off, anything else is returned unchanged.
-func npmBytes(data []byte) []byte {
-	if !bytes.HasPrefix(data, generatedHead) {
-		return data
-	}
-	end := bytes.Index(data, commentEnd)
-	if end < 0 {
-		return data
-	}
-	return data[end+len(commentEnd):]
 }
 
 // integrity is the Subresource Integrity value for data.

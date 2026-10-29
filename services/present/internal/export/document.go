@@ -160,23 +160,31 @@ func headerTitle(view string) string {
 	return "Brief"
 }
 
-// notice is the comment at the head of the file: where the page came from
-// and the licences of what it loads or carries.
+// notice is the comment at the head of the file: where the page came from,
+// the libraries it loads, and the copyright and licence notices of the
+// third-party code it carries, the fonts when it inlines them and the
+// Prism code in webkit's bundle always.
 func notice(p store.Page, scripts []cdnScript, fonts bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Exported by present from page %s, version %d.", p.ID, p.Version)
+	fmt.Fprintf(&b, "Exported by present from page %s, version %d.\n", p.ID, p.Version)
 	if len(scripts) > 0 {
 		pkgs := make([]string, 0, len(scripts))
 		for _, s := range scripts {
 			pkgs = append(pkgs, s.Package)
 		}
-		fmt.Fprintf(&b, " Loads %s from cdn.jsdelivr.net, each under its own licence.",
+		fmt.Fprintf(&b, "It loads %s from cdn.jsdelivr.net, each under its own licence.\n",
 			strings.Join(pkgs, ", "))
 	}
 	if fonts {
-		b.WriteString(" The inlined fonts are under the SIL Open Font License 1.1.")
+		fmt.Fprintf(&b, "\nThe latin faces of these font families are inlined below, under the "+
+			"SIL Open Font License, Version 1.1, %s\n", oflURL)
+		for _, c := range fontCopyrights {
+			b.WriteString(c + "\n")
+		}
 	}
-	b.WriteString(" Notices: services/present/THIRD-PARTY.md in github.com/mad01/thismoon.")
+	b.WriteString("\nThe webkit script below includes Prism, https://github.com/PrismJS/prism, " +
+		"under this licence:\n\n")
+	b.WriteString(prismLicense)
 	return b.String()
 }
 

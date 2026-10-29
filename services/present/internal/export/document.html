@@ -4,21 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{.Title}}</title>
-<!-- {{.Notice}} -->
+<!--
+{{.Notice}}
+-->
 <script>{{.Boot}}</script>
 {{- if .Fonts}}
 <style>{{.Fonts}}</style>
 {{- end}}
 <style>{{.WebkitCSS}}</style>
-{{- range .Scripts}}
-<script src="{{.URL}}" integrity="{{.Integrity}}" crossorigin="anonymous"></script>
-{{- end}}
 <style>{{.ShellCSS}}</style>
 </head>
 <body>
 <wk-header title="{{.HeaderTitle}}" controls="font,fixation,size,theme,help" fixation-targets="{{.FixationTargets}}"></wk-header>
 <main id="root"><div class="brief">{{.Body}}</div></main>
 <script type="application/json" id="present-export">{{.Data}}</script>
+{{- range .Scripts}}
+<script src="{{.URL}}" integrity="{{.Integrity}}" crossorigin="anonymous"></script>
+{{- end}}
 <script>{{.Guard}}</script>
 <script>{{.WebkitJS}}</script>
 <script>{{.VizJS}}</script>

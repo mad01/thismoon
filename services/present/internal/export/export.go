@@ -75,7 +75,10 @@ func (e *Exporter) Export(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	body += referencesHTML(p.References)
+	body, err = wellFormed(body + referencesHTML(p.References))
+	if err != nil {
+		return Result{}, err
+	}
 	assets := filepath.Join(e.workdir, "assets")
 	scripts, err := cdnScripts(assets, needs(body, p.Graph))
 	if err != nil {

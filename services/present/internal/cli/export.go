@@ -3,6 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -15,16 +18,18 @@ var exportCmd = &cobra.Command{
 	Short: "Write a page as one HTML file that opens without present",
 	Long: `Write a page as one HTML file that opens in any browser, offline included,
 with no present server behind it. The file carries the page's markup, styles,
-and scripts, its page data, and its local images, so prose and fixation
-reading work offline and with scripts off. Graph, chart, and diagram
-libraries load from cdn.jsdelivr.net at the versions the asset cache holds,
-each pinned by an integrity hash, and only the ones the page uses. A terminal
-block shows a note, since it needs the local serve.
+and scripts, its page data, and its local images, so the prose reads offline
+and with scripts off. Fixation reading and the header controls need scripts
+on, and work offline. Graph, chart, and diagram libraries load from
+cdn.jsdelivr.net at the versions the asset cache holds, each pinned by an
+integrity hash, and only the ones the page uses. A terminal block shows a
+note, since it needs the local serve.
 
 The brief is exported unless --deck asks for the slide deck; a page with only
 a deck exports its deck. The file is <id>.html (<id>-deck.html for a deck) in
-the current directory unless -o names another path. It needs only the
-workdir and its asset cache, so it works with serve running or not.`,
+the current directory, or in the directory -o names, or at the path -o
+names. It needs only the workdir and its asset cache, so it works with serve
+running or not.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runExport,
 }
@@ -36,7 +41,7 @@ var (
 
 func init() {
 	exportCmd.Flags().StringVarP(&flagExportOutput, "output", "o", "",
-		"file to write (default <id>.html, or <id>-deck.html for a deck, in the current directory)")
+		"file or directory to write to (default <id>.html, or <id>-deck.html for a deck, in the current directory)")
 	exportCmd.Flags().BoolVar(&flagExportDeck, "deck", false,
 		"export the page's slide deck instead of its brief")
 	rootCmd.AddCommand(exportCmd)
@@ -53,10 +58,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	path := flagExportOutput
-	if path == "" {
-		path = export.FileName(id, res.Rendition)
-	}
+	path := exportPath(flagExportOutput, export.FileName(id, res.Rendition))
 	if err := export.WriteFile(path, res.HTML); err != nil {
 		return err
 	}
@@ -66,4 +68,20 @@ func runExport(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s %s, %d bytes, %d libraries from the CDN\n",
 		id, res.Rendition, path, len(res.HTML), len(res.Libraries))
 	return nil
+}
+
+// exportPath is where -o puts the file named name: the current directory
+// when -o is empty, inside out when it is an existing directory or ends in
+// a separator, and out itself otherwise.
+func exportPath(out, name string) string {
+	if out == "" {
+		return name
+	}
+	if strings.HasSuffix(out, string(filepath.Separator)) {
+		return filepath.Join(out, name)
+	}
+	if fi, err := os.Stat(out); err == nil && fi.IsDir() {
+		return filepath.Join(out, name)
+	}
+	return out
 }
