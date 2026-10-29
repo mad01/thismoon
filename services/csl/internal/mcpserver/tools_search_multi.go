@@ -3,6 +3,8 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -175,6 +177,9 @@ func runSearchMulti(
 		g.Go(func() error {
 			defer func() {
 				if p := recover(); p != nil {
+					// The entry carries the value; the stack goes to stderr, the
+					// only place a stdio MCP server can leave it.
+					fmt.Fprintf(os.Stderr, "csl_search_multi: panic in query %q: %v\n%s", q.Query, p, debug.Stack())
 					results[i] = searchMultiResult{
 						Query: q.Query,
 						Error: fmt.Sprintf("internal error: %v", p),
