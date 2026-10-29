@@ -38,6 +38,8 @@ Replaces `Webkit.init()`. Renders the sticky `.topbar` with `.topbar-inner`
   `.this` sites, which a network-facing page has none of.
 - `page-width` — number, sets `--page-width` (default 1080).
 - `fixation-targets` — selector override.
+- `themes-link`: `off` drops the feature guide's Themes row, which links
+  `/webkit/themes`, for a page with no server behind it (present's exported file).
 - `help` — a `?` control that opens a feature-guide modal (dismiss on X, Esc, or
   a click outside). It documents the controls this header renders and adds a
   read-aloud/speed section when `speed` is present. It also appends the

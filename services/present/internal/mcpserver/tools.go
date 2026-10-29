@@ -63,6 +63,9 @@ type handlers struct {
 	checks  func(ctx context.Context) []doctor.Check
 	sharer  *sharedclient.Client
 	images  *images.Store
+	// workdir is the local page store's directory, where present_export
+	// reads the asset cache and writes its file; empty on a shared instance.
+	workdir string
 }
 
 // createAnnotations is shared by both create tools.
@@ -150,6 +153,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		},
 	}, withHint(h.handleUpdate))
 	registerSectionTool(s, h)
+	registerExportTool(s, h)
 
 	// A shared instance lists nothing (pages are reachable by id alone) and
 	// has no browser to open.
