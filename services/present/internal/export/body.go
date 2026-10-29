@@ -40,18 +40,25 @@ func wellFormed(body string) (string, error) {
 // as "<". Built in two parts so the source shows the escape as written.
 var scriptCommentOpen = `\` + `u003C!--`
 
-// contain rewrites the three elements whose serialized text can still
-// change how a browser reads what follows them. A plaintext element runs to
-// the end of the file, so it becomes the pre it looks like. A "<!--" in a
-// script lets a later "<script" keep the closing tag from ending it, so it
-// becomes scriptCommentOpen. The text of a noscript block is written as it
-// is, and a reader with scripts off parses it as markup, so it is escaped
-// first; with scripts on the browser never shows it.
+// contain makes every script in the body inert (see inert) and rewrites the
+// three elements whose serialized text can still change how a browser reads
+// what follows them. A plaintext element runs to the end of the file, so it
+// becomes the pre it looks like. A "<!--" in a script lets a later "<script"
+// keep the closing tag from ending it, so it becomes scriptCommentOpen. The
+// text of a noscript block is written as it is, and a reader with scripts
+// off parses it as markup, so it is escaped first; with scripts on the
+// browser never shows it.
 func contain(n *html.Node) {
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		contain(c)
 	}
-	if n.Type != html.ElementNode || n.Namespace != "" {
+	if n.Type != html.ElementNode {
+		return
+	}
+	if n.Data == "script" { // an SVG script runs in a parsed document too
+		inert(n)
+	}
+	if n.Namespace != "" {
 		return
 	}
 	switch n.DataAtom {
@@ -65,6 +72,39 @@ func contain(n *html.Node) {
 	case atom.Noscript:
 		eachText(n, html.EscapeString)
 	}
+}
+
+// jsonType is the one script type the renderer writes into a body: data
+// app.js reads, which a browser never runs.
+const jsonType = "application/json"
+
+// inert gives a script the type text/plain, which a browser neither runs
+// nor fetches, unless the script is a JSON island. A served page mounts the
+// body through innerHTML, which never runs a script, so a script an html
+// block carries runs in neither. The browser reads the first type attribute
+// of a tag, so that is the one checked, and every one is replaced.
+func inert(n *html.Node) {
+	i := attrIndex(n, "type")
+	if i >= 0 && strings.EqualFold(strings.TrimSpace(n.Attr[i].Val), jsonType) {
+		return
+	}
+	attrs := []html.Attribute{{Key: "type", Val: "text/plain"}}
+	for _, a := range n.Attr {
+		if a.Namespace != "" || a.Key != "type" {
+			attrs = append(attrs, a)
+		}
+	}
+	n.Attr = attrs
+}
+
+// attrIndex returns the index of n's first attribute named key, or -1.
+func attrIndex(n *html.Node, key string) int {
+	for i, a := range n.Attr {
+		if a.Namespace == "" && a.Key == key {
+			return i
+		}
+	}
+	return -1
 }
 
 // eachText replaces the data of every text child of n with fn of it.

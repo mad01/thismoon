@@ -18,11 +18,11 @@
 <wk-header title="{{.HeaderTitle}}" controls="font,fixation,size,theme,help" fixation-targets="{{.FixationTargets}}"></wk-header>
 <main id="root"><div class="brief">{{.Body}}</div></main>
 <script type="application/json" id="present-export">{{.Data}}</script>
+<script>{{.Guard}}</script>
+<script>{{.WebkitJS}}</script>
 {{- range .Scripts}}
 <script src="{{.URL}}" integrity="{{.Integrity}}" crossorigin="anonymous"></script>
 {{- end}}
-<script>{{.Guard}}</script>
-<script>{{.WebkitJS}}</script>
 <script>{{.VizJS}}</script>
 <script>{{.AppJS}}</script>
 </body>

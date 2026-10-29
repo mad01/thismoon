@@ -605,8 +605,9 @@ func text(n *html.Node) string {
 	return b.String()
 }
 
-// A library tag waits for the body: the browser paints the prose first, and
-// an unreachable CDN holds up the page's scripts, never its text.
+// A library tag waits for the body and webkit.js: the browser paints the
+// prose and builds the header controls first, so a CDN that hangs holds up
+// only viz.js and app.js, which draw with the libraries.
 func TestLibraryTagsFollowTheBody(t *testing.T) {
 	res := export(t, newWorkdir(t), graphPage(t, ""), false)
 	out := string(res.HTML)
@@ -615,11 +616,22 @@ func TestLibraryTagsFollowTheBody(t *testing.T) {
 	}
 	island := strings.Index(out, `id="present-export"`)
 	guard := strings.Index(out, "real.call(this, input, init)")
+	kit := strings.Index(out, "var Webkit = ")
+	viz := strings.Index(out, "window.PresentViz")
+	if island < 0 || guard < island || kit < guard || viz < kit {
+		t.Fatalf(
+			"want the page data (%d), the guard (%d), webkit.js (%d), and viz.js (%d) in that order",
+			island,
+			guard,
+			kit,
+			viz,
+		)
+	}
 	for _, url := range res.Libraries {
 		at := strings.Index(out, `<script src="`+url+`"`)
-		if at < island || at > guard {
-			t.Errorf("%s loads at byte %d, want it between the page data (%d) and the guard (%d)",
-				url, at, island, guard)
+		if at < kit || at > viz {
+			t.Errorf("%s loads at byte %d, want it between webkit.js (%d) and viz.js (%d)",
+				url, at, kit, viz)
 		}
 	}
 }
@@ -653,5 +665,47 @@ func TestHeadCommentCarriesTheNotices(t *testing.T) {
 		if !strings.Contains(string(third), want) {
 			t.Errorf("THIRD-PARTY.md lacks %q", want)
 		}
+	}
+}
+
+// A served page mounts the body through innerHTML, which never runs a
+// script, so a script an html block carries must not run in an export
+// either. The renderer's own JSON islands keep their type and text.
+func TestBodyScriptsDoNotRun(t *testing.T) {
+	raw := `<script id="classic">document.documentElement.dataset.ran = "1"</script>` +
+		`<script id="module" type="module">import "./x.js"</script>` +
+		`<script id="upper" type=" TEXT/JAVASCRIPT ">var a = 1</script>` +
+		`<svg><script id="svg">document.title = "ran"</script></svg>` +
+		`<script id="island" type="application/json">{"a":"<b>"}</script>`
+	quoted, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := `{"sections":[{"h":"Raw","blocks":[{"t":"html","text":` + string(quoted) + `}]}]}`
+	p := store.Page{ID: "raw", Title: "Raw", Content: compiled(t, doc), HasBrief: true}
+	root, err := html.Parse(bytes.NewReader(export(t, newWorkdir(t), p, false).HTML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scripts := map[string]*html.Node{}
+	for n := range root.Descendants() {
+		if n.Type == html.ElementNode && n.Data == "script" && attr(n, "id") != "" {
+			scripts[attr(n, "id")] = n
+		}
+	}
+	for _, id := range []string{"classic", "module", "upper", "svg"} {
+		n := scripts[id]
+		if n == nil {
+			t.Errorf("script %s is gone", id)
+			continue
+		}
+		if got := attr(n, "type"); got != "text/plain" {
+			t.Errorf("script %s has type %q, want text/plain", id, got)
+		}
+	}
+	island := scripts["island"]
+	if island == nil || attr(island, "type") != "application/json" ||
+		text(island) != `{"a":"<b>"}` {
+		t.Errorf("the JSON island changed: %v", island)
 	}
 }

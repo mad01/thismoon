@@ -206,13 +206,14 @@ instance and clears the record.
 The export path reads and never writes the store. `present export` and
 `present_export` call `export.Exporter.Export`, which gets the page, picks the
 brief or the deck, and swaps each `/img/` file for a data URI. It parses and
-serializes the body again, so the body closes everything it opens. It then
+serializes the body again, so the body closes everything it opens, and gives
+every script in it but a JSON island an inert type. It then
 reads the body for the blocks that need a library and builds the file from
 one template. The template takes webkit's files from `webkit.FS()` and the
 shell's stylesheet, app.js, and viz.js from `server.StandaloneAssets`. It adds
 the latin font faces of the cached `fonts.css`, the body, and the page data
-app.js would have fetched. The library tags follow the page data, and the
-head comment carries the third-party notices.
+app.js would have fetched. webkit.js follows the page data, the library tags follow
+webkit.js, and the head comment carries the third-party notices.
 
 In the browser, `data-present-mode="export"` sends
 app.js down `renderExport`, which works on the body already in the file and

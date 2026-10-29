@@ -44,7 +44,9 @@ The body is parsed and serialized again before it goes in, so it closes
 everything it opens. A served page mounts the body through innerHTML,
 which contains any damage. A file has no such boundary: an html block or a
 legacy page with an unclosed comment or element would swallow the page
-data and the scripts after it.
+data and the scripts after it. A script in the body runs in neither kind
+of page: innerHTML never runs one, and the export gives every script but
+a JSON island the type text/plain, which a browser does not run.
 
 The libraries load from jsDelivr's npm mirror, at the versions the asset
 cache holds. Each script tag carries an integrity hash computed from the
@@ -56,8 +58,9 @@ shows its "needs the asset" note. Chart.js now comes from its npm file
 `dist/chart.umd.js`, the move ADR-0022 left its pin waiting for. The
 `chart.umd.min.js` jsDelivr generates from it carries a banner jsDelivr
 writes, and jsDelivr warns against pinning a hash on that file. The tags
-sit after the body, so the prose paints before the browser waits on
-jsDelivr.
+sit after the body and webkit.js, so the prose and the header controls
+are ready before the browser waits on jsDelivr. viz.js and app.js follow
+the tags, since they draw with the libraries.
 
 The fonts' latin faces are inlined as data URIs. The families are not on
 npm in the bytes Google Fonts serves, and a stylesheet cannot pin a font
