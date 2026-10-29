@@ -59,8 +59,9 @@ type Capture struct {
 	Brief string
 	// Messages are the later messages, oldest first: the ones the file
 	// shows reaching the agent after its spawn brief, such as a lead's
-	// follow-ups to a teammate (messagesOf), and any envelope after the
-	// first in the brief's own line. The brief holds none of them.
+	// follow-ups to a teammate (messagesOf), a parent's SendMessage queued
+	// to a running subagent (queuedOf), and any envelope after the first
+	// in the brief's own line. The brief holds none of them.
 	Messages []Message
 	// Transcript is the agent transcript, newline-terminated lines.
 	Transcript []byte
@@ -68,6 +69,10 @@ type Capture struct {
 
 	// sawUser is set once the first user line has given the brief.
 	sawUser bool
+	// response is the message id of the latest model response read, and
+	// calls holds the ids of the tool calls each response made, by its id.
+	response string
+	calls    map[string][]string
 }
 
 // ErrNoLines is returned for a file with no timeline line in it.
@@ -111,6 +116,7 @@ func readLines(ctx context.Context, r io.Reader) (Capture, error) {
 		}
 		return true
 	})
+	c.placeMessages()
 	switch {
 	case err != nil && len(kept) == 0:
 		return Capture{}, err
@@ -138,11 +144,16 @@ func (c *Capture) add(line []byte) ([]byte, bool) {
 		return nil, false
 	}
 	typ := l.str("type")
+	switch typ {
+	case "user":
+		c.noteUser(l)
+	case "assistant":
+		c.noteResponse(l)
+	case "attachment":
+		c.noteMessages(l, queuedOf(l))
+	}
 	if !timelineTypes[typ] {
 		return nil, false
-	}
-	if typ == "user" {
-		c.noteUser(l)
 	}
 	slim, model := slimLine(l)
 	c.note(l, model)
@@ -153,18 +164,48 @@ func (c *Capture) add(line []byte) ([]byte, bool) {
 // noteUser takes the spawn brief from the first user line and the
 // messages every user line delivers after it.
 func (c *Capture) noteUser(l fields) {
-	var envs []envelope
 	if c.sawUser {
-		envs = messagesOf(l)
-	} else {
-		c.sawUser = true
-		c.Brief, envs = briefOf(l)
+		c.noteMessages(l, messagesOf(l))
+		return
 	}
+	c.sawUser = true
+	var envs []envelope
+	c.Brief, envs = briefOf(l)
+	c.noteMessages(l, envs)
+}
+
+// noteMessages adds the messages envs line l delivered, at its time and
+// after the latest model response read.
+func (c *Capture) noteMessages(l fields, envs []envelope) {
 	at := lineTime(l)
 	for _, e := range envs {
 		c.Messages = append(c.Messages, Message{
-			At: at, From: e.from, Text: cut(e.body, moondb.MaxBriefBytes),
+			At: at, From: e.from, Text: cut(e.body, moondb.MaxBriefBytes), response: c.response,
 		})
+	}
+}
+
+// noteResponse notes the model response an assistant line belongs to and
+// the tool calls the line holds. The lines of one response share its
+// message id, and tool results can come between them.
+func (c *Capture) noteResponse(l fields) {
+	id, calls := responseOf(l)
+	c.response = id
+	if id == "" || len(calls) == 0 {
+		return
+	}
+	if c.calls == nil {
+		c.calls = map[string][]string{}
+	}
+	c.calls[id] = append(c.calls[id], calls...)
+}
+
+// placeMessages gives each message the tool calls of the model response
+// it arrived after, once the whole file is read: a line of that response
+// can follow the message's line.
+func (c *Capture) placeMessages() {
+	for i, m := range c.Messages {
+		c.Messages[i].AfterCalls = c.calls[m.response]
 	}
 }
 
@@ -173,7 +214,9 @@ func (c *Capture) noteUser(l fields) {
 func (c Capture) AgentMessages(add func([]byte) string) []store.AgentMessage {
 	var out []store.AgentMessage
 	for _, m := range c.Messages {
-		out = append(out, store.AgentMessage{At: m.At, From: m.From, Chunk: add([]byte(m.Text))})
+		out = append(out, store.AgentMessage{
+			At: m.At, From: m.From, Chunk: add([]byte(m.Text)), AfterCalls: m.AfterCalls,
+		})
 	}
 	return out
 }

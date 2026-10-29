@@ -376,14 +376,19 @@ func equalMessage(a, b *store.AgentMessage) bool {
 // TestWhyLastMessage: an edit's answer names the latest later message
 // that reached its subagent before the edit. Before the first message
 // the spawn brief was the last word, so none is named, and an edit
-// between two messages names the first.
+// between two messages names the first. A message that came in during
+// the round of tool calls an edit was one of is not before that edit,
+// though the edit's time is later; the next round's edit names it.
 func TestWhyLastMessage(t *testing.T) {
 	f := newFixture(t)
 	goWithC := store.AgentMessage{At: at(2), From: "team-lead", Chunk: f.chunk("Go with C.")}
 	tighten := store.AgentMessage{At: at(5), From: "team-lead", Chunk: f.chunk("Tighten it.")}
+	queued := store.AgentMessage{
+		At: at(8), Chunk: f.chunk("Read main instead."), AfterCalls: []string{"m9"},
+	}
 	f.seed(store.Agent{
 		ID: "a1", SessionID: "s1", Type: "general-purpose", BriefChunk: f.chunk("Build it."),
-		LaterMessages: 2, Messages: []store.AgentMessage{goWithC, tighten},
+		LaterMessages: 3, Messages: []store.AgentMessage{goWithC, tighten, queued},
 	})
 	cases := []struct {
 		minute int
@@ -393,6 +398,8 @@ func TestWhyLastMessage(t *testing.T) {
 		{2, &goWithC},
 		{3, &goWithC},
 		{6, &tighten},
+		{9, &tighten},
+		{10, &queued},
 	}
 	for _, tc := range cases {
 		path := fmt.Sprintf("m%d.go", tc.minute)
@@ -407,7 +414,8 @@ func TestWhyLastMessage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Agent == nil || !equalMessage(res.Agent.LastMessage, tc.want) {
+		if res.Agent == nil || !equalMessage(res.Agent.LastMessage, tc.want) ||
+			!res.Agent.MessagesKept {
 			t.Errorf("edit at minute %d: agent %+v, want last message %+v", tc.minute, res.Agent,
 				tc.want)
 		}

@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
@@ -107,11 +106,15 @@ type WhyAgent struct {
 	// LaterMessages counts the messages that reached the agent after its
 	// spawn brief, which the brief does not hold.
 	LaterMessages int `json:"later_messages,omitempty"`
-	// LastMessage is the latest later message that arrived at or before
-	// the edit (store.Agent.LastMessage); nil when none had, so the spawn
-	// brief was the last word, and when the record kept no messages.
+	// LastMessage is the latest later message that reached the agent
+	// before the edit (store.Agent.LastMessage); nil when none had, so the
+	// spawn brief was the last word, and when the record kept no messages.
 	LastMessage *store.AgentMessage `json:"last_message,omitempty"`
-	Recorded    bool                `json:"recorded"`
+	// MessagesKept is set when the record keeps every later message it
+	// counts, so a nil LastMessage means none had reached the agent before
+	// the edit.
+	MessagesKept bool `json:"messages_kept,omitempty"`
+	Recorded     bool `json:"recorded"`
 }
 
 // Label names the agent for a person: its name, else its type.
@@ -271,18 +274,19 @@ func (s *Service) whyAgent(ctx context.Context, e store.Edit) (*WhyAgent, error)
 	case err != nil:
 		return nil, fmt.Errorf("query: agent %s: %w", e.AgentID, err)
 	}
-	agent := RecordedWhyAgent(a, e.At)
+	agent := RecordedWhyAgent(a, e)
 	return &agent, nil
 }
 
 // RecordedWhyAgent is the WhyAgent of an agent the store holds a record
-// of, for its edit at at.
-func RecordedWhyAgent(a store.Agent, at time.Time) WhyAgent {
+// of, for its edit e.
+func RecordedWhyAgent(a store.Agent, e store.Edit) WhyAgent {
 	w := WhyAgent{
 		ID: a.ID, Type: a.Type, Name: a.Name, Description: a.Description,
 		BriefChunk: a.BriefChunk, LaterMessages: a.LaterMessages, Recorded: true,
+		MessagesKept: len(a.Messages) > 0 && len(a.Messages) >= a.LaterMessages,
 	}
-	if m, ok := a.LastMessage(at); ok {
+	if m, ok := a.LastMessage(e.At, e.ToolUseID); ok {
 		w.LastMessage = &m
 	}
 	return w

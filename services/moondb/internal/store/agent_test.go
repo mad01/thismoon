@@ -68,13 +68,43 @@ func TestLastMessage(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			m, ok := a.LastMessage(c.at)
+			m, ok := a.LastMessage(c.at, "")
 			if got := map[bool]string{true: m.Chunk}[ok]; got != c.want {
 				t.Errorf("LastMessage = %q (%v), want %q", m.Chunk, ok, c.want)
 			}
 		})
 	}
-	if _, ok := (store.Agent{}).LastMessage(t0); ok {
+	if _, ok := (store.Agent{}).LastMessage(t0, ""); ok {
 		t.Error("an agent with no messages has a last message")
+	}
+}
+
+// TestLastMessageInTheEditsRound: a message that came in during the round
+// of tool calls an edit was one of is not before that edit, even when the
+// edit's hook ran after the message's line. An edit of a later round, and
+// one asked about with no call, see it.
+func TestLastMessageInTheEditsRound(t *testing.T) {
+	result := time.Date(2026, 10, 21, 12, 22, 49, 791e6, time.UTC)
+	a := store.Agent{Messages: []store.AgentMessage{
+		{At: result.Add(-time.Hour), Chunk: "earlier"},
+		{At: result.Add(3 * time.Millisecond), Chunk: "queued", AfterCalls: []string{"toolu_a", "toolu_b"}},
+	}}
+	hook := result.Add(10 * time.Millisecond)
+	cases := []struct {
+		name string
+		at   time.Time
+		call string
+		want string
+	}{
+		{"an edit of that round", hook, "toolu_b", "earlier"},
+		{"an edit of the next round", hook.Add(5 * time.Second), "toolu_c", "queued"},
+		{"no call named", hook, "", "queued"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if m, ok := a.LastMessage(c.at, c.call); !ok || m.Chunk != c.want {
+				t.Errorf("LastMessage = %q (%v), want %q", m.Chunk, ok, c.want)
+			}
+		})
 	}
 }

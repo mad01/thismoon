@@ -158,13 +158,15 @@ func printAgent(ctx context.Context, w io.Writer, c *client.Client, a query.WhyA
 	}
 	fmt.Fprintf(w, "  brief:    %q\n", brief)
 	shown := printLastMessage(ctx, w, c, a.LastMessage)
+	const later = "  later:    %d messages from its parent after the spawn brief"
 	switch {
-	case a.LaterMessages > 0 && shown:
-		fmt.Fprintf(w, "  later:    %d messages from its parent after the spawn brief\n",
-			a.LaterMessages)
-	case a.LaterMessages > 0:
-		fmt.Fprintf(w, "  later:    %d messages from its parent after the spawn brief, "+
-			"none shown\n", a.LaterMessages)
+	case a.LaterMessages == 0:
+	case shown:
+		fmt.Fprintf(w, later+"\n", a.LaterMessages)
+	case a.LastMessage == nil && a.MessagesKept:
+		fmt.Fprintf(w, later+", none before this edit\n", a.LaterMessages)
+	default:
+		fmt.Fprintf(w, later+", none shown\n", a.LaterMessages)
 	}
 }
 

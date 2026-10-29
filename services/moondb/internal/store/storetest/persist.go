@@ -143,11 +143,12 @@ func historySkipped() []store.SkippedFiles {
 }
 
 // historyMessages is the later messages of history's agent: one a lead
-// sent and one with no envelope.
+// sent and one with no envelope that came in during a round of two tool
+// calls.
 func historyMessages() []store.AgentMessage {
 	return []store.AgentMessage{
 		{At: at(5), From: "team-lead", Chunk: "m-lead"},
-		{At: at(7), Chunk: "m-typed"},
+		{At: at(7), Chunk: "m-queued", AfterCalls: []string{"tu5", "tu6"}},
 	}
 }
 
@@ -155,7 +156,8 @@ func historyMessages() []store.AgentMessage {
 // instants.
 func sameMessages(got, want []store.AgentMessage) bool {
 	return slices.EqualFunc(got, want, func(g, w store.AgentMessage) bool {
-		return g.At.Equal(w.At) && g.From == w.From && g.Chunk == w.Chunk
+		return g.At.Equal(w.At) && g.From == w.From && g.Chunk == w.Chunk &&
+			slices.Equal(g.AfterCalls, w.AfterCalls)
 	})
 }
 

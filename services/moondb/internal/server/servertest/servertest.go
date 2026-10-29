@@ -682,7 +682,7 @@ func (q *Querier) Why(ctx context.Context, req query.WhyRequest) (query.WhyResul
 	res.Session = &sess.Session
 	res.Candidates = []query.Candidate{{Edit: edits[0], Score: 1, Reason: "fixture"}}
 	if a, err := q.store.Agent(ctx, edits[0].AgentID); err == nil {
-		agent := query.RecordedWhyAgent(a, edits[0].At)
+		agent := query.RecordedWhyAgent(a, edits[0])
 		res.Agent = &agent
 	}
 	return res, nil

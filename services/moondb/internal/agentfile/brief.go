@@ -43,6 +43,12 @@ type Message struct {
 	From string
 	// Text is its body without the envelope, cut to moondb.MaxBriefBytes.
 	Text string
+	// AfterCalls are the ids of the tool calls of the model response it
+	// arrived after. The agent made those calls before it could read it.
+	AfterCalls []string
+
+	// response is the message id of that model response.
+	response string
 }
 
 // envelope is one teammate envelope: who sent it and its body.
@@ -80,6 +86,54 @@ func messagesOf(l fields) []envelope {
 		return nil
 	}
 	return []envelope{{body: text}}
+}
+
+// queuedOf lists the messages an attachment line delivers: a prompt the
+// harness queued while the agent worked and showed it at its next model
+// call, such as its parent's SendMessage to a running subagent or a line
+// a person typed into its busy pane. The prompt gives one message per
+// envelope it opens with, else one of its whole text. A queued task
+// notification, and any other attachment, delivers none.
+func queuedOf(l fields) []envelope {
+	var a fields
+	if json.Unmarshal(l["attachment"], &a) != nil || a.str("type") != "queued_command" ||
+		a.str("commandMode") == "task-notification" {
+		return nil
+	}
+	text := strings.TrimSpace(messageText(a["prompt"]))
+	if text == "" || store.PromptOrigin(text) == store.OriginTask {
+		return nil
+	}
+	if envs := envelopes(text); len(envs) > 0 {
+		return envs
+	}
+	return []envelope{{body: text}}
+}
+
+// responseOf is the message id of an assistant line's model response and
+// the ids of the tool calls the line holds.
+func responseOf(l fields) (string, []string) {
+	var msg struct {
+		ID      string          `json:"id"`
+		Content json.RawMessage `json:"content"`
+	}
+	if json.Unmarshal(l["message"], &msg) != nil {
+		return "", nil
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
+	}
+	if json.Unmarshal(msg.Content, &blocks) != nil {
+		return msg.ID, nil
+	}
+	var calls []string
+	for _, b := range blocks {
+		if b.Type == "tool_use" && b.ID != "" {
+			calls = append(calls, b.ID)
+		}
+	}
+	return msg.ID, calls
 }
 
 // harnessLine reports whether the harness marks l as a line it wrote for

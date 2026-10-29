@@ -162,7 +162,7 @@ func lastMessage(a store.Agent, end time.Time) *store.AgentMessage {
 	if end.IsZero() && len(a.Messages) > 0 {
 		end = a.Messages[len(a.Messages)-1].At
 	}
-	m, ok := a.LastMessage(end)
+	m, ok := a.LastMessage(end, "")
 	if !ok {
 		return nil
 	}

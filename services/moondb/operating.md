@@ -135,13 +135,15 @@ and so does an agent of type `internal`, which has no transcript, and one
 moondb knows only from its edits.
 
 The spawn brief is the first message a subagent got and nothing after it.
-A teammate's lead can send it more while it works, which `later_messages`
-counts. moondb keeps each of those messages with the time it arrived.
-`why` on a line the subagent wrote shows the last one before the edit as
-`last message`, which often holds the instruction the edit followed. A
-count with no last message means none arrived before the edit, or the
-agent was recorded before moondb kept them, which the forced import above
-fills.
+Its parent can send it more while it works, to a teammate or to a running
+subagent, which `later_messages` counts. moondb keeps each of those
+messages with the time it arrived. `why` on a line the subagent wrote
+shows the last one before the edit as `last message`, which often holds
+the instruction the edit followed. One that came in while the edit's own
+round of tool calls ran counts as after it. A count that ends in `none
+before this edit` means none had arrived yet. One that ends in `none
+shown` means the agent was recorded before moondb kept them, which the
+forced import above fills.
 
 A repo's cost looks wrong: the page, `moondb sessions --repo` and the
 `moondb_sessions` tool split a session's cost by agent, since model calls

@@ -173,6 +173,20 @@ envelope's `teammate_id` as its sender, and its body as a chunk, cut at
 and so is any envelope after the first in the brief's own line.
 `Agent.LaterMessages` counts them.
 
+Two kinds of message take another path: a parent's SendMessage to a
+running subagent that isn't a teammate, and a line a person types into a
+busy agent's pane. The harness queues the prompt and shows it at the
+agent's next model call.
+The transcript records it as an `attachment` line of type
+`queued_command` with the text in `attachment.prompt`, about 3 ms after
+the tool result of the round it came in during. `agentfile.queuedOf`
+takes each one whose `commandMode` is not `task-notification` as a later
+message at its line's time. Each later message also keeps the tool_use
+ids of the model response it came in after (`AgentMessage.AfterCalls`).
+They are grouped by the response's message id, since tool results can
+come between that response's lines. The agent made those calls before it
+could read the message.
+
 A tool result, a meta line or a compaction summary is no message. Nor is
 a line the harness opens with a head of its own: a reminder, a task
 notification, a local command's output or an interrupt marker
@@ -423,11 +437,16 @@ dirty for that reason.
 
 An Edit a subagent made also names its agent (`agent`): id, type, name,
 description, spawn brief chunk, `later_messages`, `last_message` (the
-latest later message that arrived at or before the edit's time, with its
-`at`, `from` and `chunk`; absent when none had, so the brief was the last
-word), and `recorded` when a record stands behind it. The record keeps
-each message once, and `why` picks the last one per edit by time
-(`store.Agent.LastMessage`), so no edit copies it. The brief is unknown for three kinds of agent,
+latest later message that arrived at or before the edit's time and not
+after the edit's own tool call, with its `at`, `from` and `chunk`; absent
+when none had, so the brief was the last word), `messages_kept` when the
+record keeps every later message it counts, and `recorded` when a record
+stands behind it. The record keeps each message once, and `why` picks the
+last one per edit (`store.Agent.LastMessage`), so no edit copies it. Time
+alone would misplace a message that came in during the edit's own round.
+An edit's time is when its hook began, which can fall after the message's
+line. So a message whose `after_calls` holds the edit's `tool_use_id`
+counts as after it. The brief is unknown for three kinds of agent,
 and `query.MissingBrief` names which: one recorded before briefs, until a
 forced import fills it, one of type `internal`, which has no transcript,
 and one known only from its edits. The turn's prompt stays beside it, so

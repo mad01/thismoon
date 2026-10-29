@@ -76,8 +76,9 @@ func TestPrintWhyShowsTheBrief(t *testing.T) {
 
 // TestPrintWhyShowsTheLastMessage: an edit made after its subagent got a
 // later message prints that message's first line, when it arrived and who
-// sent it, under the brief; with no message before the edit the count
-// says none is shown.
+// sent it, under the brief. With none before the edit the count says so
+// when the record keeps its messages, and says none is shown when it
+// does not.
 func TestPrintWhyShowsTheLastMessage(t *testing.T) {
 	st := servertest.NewStore()
 	key := st.AddChunk([]byte("Tighten the marker scan to command values.\nThen land."))
@@ -92,25 +93,29 @@ func TestPrintWhyShowsTheLastMessage(t *testing.T) {
 	cases := []struct {
 		name string
 		last *store.AgentMessage
+		kept bool
 		want []string
 	}{
 		{
 			"one before the edit",
-			&store.AgentMessage{At: at, From: "team-lead", Chunk: key},
+			&store.AgentMessage{At: at, From: "team-lead", Chunk: key}, true,
 			[]string{
 				`last message: "Tighten the marker scan to command values."  ` +
 					`(2026-10-29 20:09 from team-lead, before this edit)`,
 				"later:    3 messages from its parent after the spawn brief\n",
 			},
 		},
-		{"none before the edit", nil, []string{
-			"later:    3 messages from its parent after the spawn brief, none shown",
+		{"none before the edit", nil, true, []string{
+			"later:    3 messages from its parent after the spawn brief, none before this edit\n",
+		}},
+		{"no messages kept", nil, false, []string{
+			"later:    3 messages from its parent after the spawn brief, none shown\n",
 		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			a := agent
-			a.LastMessage = tc.last
+			a.LastMessage, a.MessagesKept = tc.last, tc.kept
 			res := query.WhyResult{
 				Path: "a.go", Line: 3, Method: query.MethodContent, Agent: &a,
 				Edit: &store.Edit{ID: "e1:0", Tool: "Edit", Kind: store.EditUpdate, AgentID: a.ID},

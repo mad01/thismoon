@@ -84,9 +84,10 @@ type AgentLines struct {
 }
 
 // AgentMessage is a later message: one that reached an Agent after its
-// spawn brief, such as a lead's follow-up to a teammate or a line the
-// person typed into the agent's pane. Its text sits in a chunk, so the
-// record names it and no edit copies it.
+// spawn brief, such as a lead's follow-up to a teammate, a parent's
+// SendMessage queued to a running subagent, or a line the person typed
+// into the agent's pane. Its text sits in a chunk, so the record names it
+// and no edit copies it.
 type AgentMessage struct {
 	// At is the time of the transcript line that delivered it.
 	At time.Time `json:"at"`
@@ -95,6 +96,11 @@ type AgentMessage struct {
 	From string `json:"from,omitempty"`
 	// Chunk holds its text, without the envelope.
 	Chunk string `json:"chunk"`
+	// AfterCalls are the tool_use ids of the model response it arrived
+	// after. The agent made those calls before it could read it, so an
+	// edit one of them made came first, even when the edit's hook ran
+	// after the line. Empty on a record stored before they were kept.
+	AfterCalls []string `json:"after_calls,omitempty"`
 }
 
 // Label names an agent for a person: its name, else its type.
@@ -113,14 +119,22 @@ func (a Agent) IsMainSegment() bool {
 // RanIn reports whether the agent ran under the main turn turnID.
 func (a Agent) RanIn(turnID string) bool { return slices.Contains(a.TurnIDs, turnID) }
 
-// LastMessage is the latest of a's later messages that arrived at or
-// before t: the last word its parent gave it before it acted at t. false
-// when none had arrived by then, so the spawn brief was the last.
-func (a Agent) LastMessage(t time.Time) (AgentMessage, bool) {
+// LastMessage is the latest of a's later messages that reached it before
+// it acted at t in the tool call call ("" for none): the last word its
+// parent gave it by then. A message counts when it arrived at or before t
+// and not after call's model response (AfterCalls). The line of a message
+// that comes in during a round of tool calls lands a few milliseconds
+// after the round's results, so an edit hook of that round can run after
+// it. false when none had arrived by then, so the spawn brief was the
+// last.
+func (a Agent) LastMessage(t time.Time, call string) (AgentMessage, bool) {
 	var last AgentMessage
 	found := false
 	for _, m := range a.Messages {
-		if !m.At.After(t) && (!found || !m.At.Before(last.At)) {
+		if m.At.After(t) || call != "" && slices.Contains(m.AfterCalls, call) {
+			continue
+		}
+		if !found || !m.At.Before(last.At) {
 			last, found = m, true
 		}
 	}

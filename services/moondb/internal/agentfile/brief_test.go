@@ -153,18 +153,100 @@ func TestSender(t *testing.T) {
 	}
 }
 
+// The lines of TestQueuedMessages, in the shapes Claude Code 2.1.306 and
+// 2.1.270 wrote them with their text replaced: a parent's SendMessage to a
+// running subagent, queued and shown to it at its next model call, comes
+// as an attachment line a few milliseconds after the round's tool result,
+// and so does a line a person typed into the agent's busy pane. The
+// second tool call of the first response comes after the queued line.
+const (
+	queuedSpawn = `{"type":"user","timestamp":"2026-10-21T12:00:00.000Z",` +
+		`"message":{"role":"user","content":"Build the scaffold."}}`
+	queuedCallA = `{"type":"assistant","timestamp":"2026-10-21T12:22:48.790Z",` +
+		`"message":{"id":"msg_1","role":"assistant","content":[` +
+		`{"type":"tool_use","id":"toolu_a","name":"Bash","input":{"command":"ls"}}]}}`
+	queuedResultA = `{"type":"user","timestamp":"2026-10-21T12:22:49.791Z",` +
+		`"message":{"role":"user","content":[` +
+		`{"type":"tool_result","tool_use_id":"toolu_a","content":"ok"}]}}`
+	queuedFromParent = `{"parentUuid":"ab247e8a-6d58-4bf5-8e4d-4b33018780ae","isSidechain":true,` +
+		`"agentId":"a542846d3bf4a5bee","attachment":{"type":"queued_command",` +
+		`"prompt":"Read the reference from main instead.",` +
+		`"source_uuid":"e68c3d76-1251-41ab-a04b-7c38e3f30978","origin":{"kind":"coordinator"},` +
+		`"isMeta":true,"reminderId":"32a7ec589e20d36d"},"type":"attachment",` +
+		`"uuid":"3560a9a6-8149-4813-a97f-68793414050d","timestamp":"2026-10-21T12:22:49.794Z",` +
+		`"rendered":[{"content":"<system-reminder id=\"32a7ec589e20d36d\">\nThe coordinator sent ` +
+		`a message while you were working:\nRead the reference from main instead.\n\nAddress ` +
+		`this before completing your current task.\n</system-reminder id=\"32a7ec589e20d36d\">"}],` +
+		`"renderedRole":"system","userType":"external","entrypoint":"cli","cwd":"/r",` +
+		`"sessionId":"5f3a9a42-6a12-4367-b8f5-d25284d072f6","version":"2.1.306","gitBranch":"main"}`
+	queuedTokens = `{"type":"attachment","timestamp":"2026-10-21T12:22:49.794Z",` +
+		`"attachment":{"type":"total_tokens_reminder"}}`
+	queuedCallB = `{"type":"assistant","timestamp":"2026-10-21T12:22:49.800Z",` +
+		`"message":{"id":"msg_1","role":"assistant","content":[` +
+		`{"type":"tool_use","id":"toolu_b","name":"Edit","input":{}}]}}`
+	queuedNotice = `{"type":"attachment","timestamp":"2026-10-21T12:22:50.000Z",` +
+		`"attachment":{"type":"queued_command","prompt":"<task-notification>\n` +
+		`<task-id>b1</task-id>\n</task-notification>","commandMode":"task-notification",` +
+		`"origin":{"kind":"task-notification","producer":"session-task"}}}`
+	queuedCallC = `{"type":"assistant","timestamp":"2026-10-21T12:22:54.059Z",` +
+		`"message":{"id":"msg_2","role":"assistant","content":[` +
+		`{"type":"thinking","thinking":""},{"type":"tool_use","id":"toolu_c","name":"Write","input":{}}]}}`
+	queuedFromPerson = `{"isSidechain":true,"agentId":"a6ba2876559e2bf7a","attachment":{` +
+		`"type":"queued_command","prompt":"Is there a package for this?",` +
+		`"source_uuid":"57694ad7-0000-4000-8000-000000000000","origin":{"kind":"human"},` +
+		`"isMeta":true},"type":"attachment","timestamp":"2026-10-21T12:22:55.196Z",` +
+		`"version":"2.1.270"}`
+)
+
+// TestQueuedMessages keeps a queued message from the parent and one a
+// person typed as later messages, at their lines' times, each after every
+// tool call of the model response it came in after; a queued task
+// notification and another attachment are none.
+func TestQueuedMessages(t *testing.T) {
+	lines := []string{
+		queuedSpawn, queuedCallA, queuedResultA, queuedFromParent, queuedTokens, queuedCallB,
+		queuedNotice, queuedCallC, queuedFromPerson,
+	}
+	c, err := readLines(context.Background(), strings.NewReader(strings.Join(lines, "\n")+"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Message{
+		{
+			At:   time.Date(2026, 10, 21, 12, 22, 49, 794e6, time.UTC),
+			Text: "Read the reference from main instead.", AfterCalls: []string{"toolu_a", "toolu_b"},
+		},
+		{
+			At:   time.Date(2026, 10, 21, 12, 22, 55, 196e6, time.UTC),
+			Text: "Is there a package for this?", AfterCalls: []string{"toolu_c"},
+		},
+	}
+	if !slices.EqualFunc(c.Messages, want, func(a, b Message) bool {
+		return a.At.Equal(b.At) && a.From == b.From && a.Text == b.Text &&
+			slices.Equal(a.AfterCalls, b.AfterCalls)
+	}) {
+		t.Errorf("messages = %+v\nwant %+v", c.Messages, want)
+	}
+	if c.Brief != "Build the scaffold." {
+		t.Errorf("brief %q, want the spawn line's", c.Brief)
+	}
+}
+
 // TestAgentMessages puts each message's text in a chunk and keeps its
-// time and sender beside the key.
+// time, sender and the tool calls it came in after beside the key.
 func TestAgentMessages(t *testing.T) {
 	at := time.Date(2026, 10, 29, 20, 1, 56, 0, time.UTC)
-	c := Capture{Messages: []Message{{At: at, From: "team-lead", Text: "Go with C."}}}
+	c := Capture{Messages: []Message{
+		{At: at, From: "team-lead", Text: "Go with C.", AfterCalls: []string{"toolu_a"}},
+	}}
 	chunks := map[string]string{}
 	got := c.AgentMessages(func(b []byte) string {
 		chunks["k1"] = string(b)
 		return "k1"
 	})
 	if len(got) != 1 || !got[0].At.Equal(at) || got[0].From != "team-lead" ||
-		got[0].Chunk != "k1" || chunks["k1"] != "Go with C." {
+		got[0].Chunk != "k1" || chunks["k1"] != "Go with C." ||
+		!slices.Equal(got[0].AfterCalls, []string{"toolu_a"}) {
 		t.Errorf("AgentMessages = %+v with chunks %v", got, chunks)
 	}
 	if (Capture{}).AgentMessages(nil) != nil {
