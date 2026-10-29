@@ -2,11 +2,14 @@ package csl
 
 import "github.com/mad01/thismoon/kit/agentdoc"
 
-// parallelCallsNote asks clients to batch independent calls into one turn.
-// It names the two tools that write: every other csl tool sets ReadOnlyHint,
-// and clients run read-only calls from one turn concurrently.
+// parallelCallsNote asks clients to batch independent calls into one turn,
+// or independent searches into one csl_search_multi call, which clients that
+// defer tools would not otherwise find. It names the two tools that write:
+// every other csl tool sets ReadOnlyHint, and clients run read-only calls
+// from one turn concurrently.
 const parallelCallsNote = "Every tool but csl_repo_pull and csl_repo_reindex is read-only and safe to run concurrently: " +
-	"send independent searches and reads as parallel calls in one turn; " +
+	"send independent searches and reads as parallel calls in one turn, " +
+	"or batch several searches, or a search plus a read of its top file, into one csl_search_multi call; " +
 	"only a call that needs an earlier result belongs in the next turn."
 
 // Facts returns the mechanical facts rendered into OperatingDoc, the MCP

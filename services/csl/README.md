@@ -145,15 +145,15 @@ claude mcp list   # expect: csl: csl mcp - ✓ Connected
 
 `--scope user` makes the server available in every project; without it Claude Code registers csl for the current directory only. The registration stores the bare command name, so `csl` must be on the PATH of whatever launches Claude Code. A mise user who starts Claude Code from the Dock should register `"$HOME/.local/share/mise/shims/csl" mcp` instead. The ralph recipe does not register the server, because which agents run on a machine is machine-private wiring. Run the command above once, or ship it from your own companion recipe (`docs/adr/0006` at the repo root, worked example under `examples/dotfiles/recipes/agent-config/`, applied by agent-sync). Nothing needs to be running first, since the search daemon auto-starts on the first query and idles out on its own (see How it works). What does need to exist is `dirs` in the config file (see Configuration). Without at least one directory to walk, there's nothing to index. If a tool call comes back empty or erroring, run `csl doctor`.
 
-The MCP server exposes sixteen `csl_*` tools:
+The MCP server exposes seventeen `csl_*` tools:
 
 - Repo: `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`, `csl_repo_pull`, `csl_repo_reindex`
-- Search: `csl_search`, `csl_count`, `csl_query_validate`
+- Search: `csl_search`, `csl_search_multi` (up to ten independent queries in one call), `csl_count`, `csl_query_validate`
 - Semantic and hybrid: `csl_semantic_search`, `csl_hybrid_search`
 - Read and info: `csl_read`, `csl_ls`, `csl_outline` (a repo's definitions ranked by cross-file references), `csl_show_file`, `csl_index_info`
 - Diagnosis: `csl_doctor`, the `csl doctor` checks as JSON, for a client with no shell
 
-The two semantic tools are registered only when `semantic.enabled` is true in `config.yaml`; with it off, `csl mcp` exposes the other fourteen.
+The two semantic tools are registered only when `semantic.enabled` is true in `config.yaml`; with it off, `csl mcp` exposes the other fifteen.
 
 See [docs/mcp.md](docs/mcp.md) for the per-tool reference (inputs, return shape, defaults). Every tool takes a `response_format` parameter, `text` by default and `json` for the structured object; the other formats and the precedence rule are in the same document under Response formats.
 

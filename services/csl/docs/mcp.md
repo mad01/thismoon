@@ -21,7 +21,7 @@ The registration stores the command name (not an absolute path), so `csl` must b
 
 ## Tools
 
-Sixteen tools are registered, grouped into four areas. The areas are `csl_repo_*` for repo management, `csl_search` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, `csl_read` / `csl_ls` / `csl_outline` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself. `csl_semantic_search` and `csl_hybrid_search` are registered only when `semantic.enabled` is true in `config.yaml`; with it off the server advertises the other fourteen.
+Seventeen tools are registered, grouped into four areas. The areas are `csl_repo_*` for repo management, `csl_search` / `csl_search_multi` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, `csl_read` / `csl_ls` / `csl_outline` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself. `csl_semantic_search` and `csl_hybrid_search` are registered only when `semantic.enabled` is true in `config.yaml`; with it off the server advertises the other fifteen.
 
 | Tool | Purpose |
 |---|---|
@@ -31,6 +31,7 @@ Sixteen tools are registered, grouped into four areas. The areas are `csl_repo_*
 | [`csl_repo_pull`](#csl_repo_pull) | `git pull --ff-only` with safety checks |
 | [`csl_repo_reindex`](#csl_repo_reindex) | Rebuild the zoekt index for a single repo |
 | [`csl_search`](#csl_search) | Search code by exact text or regex (lexical) |
+| [`csl_search_multi`](#csl_search_multi) | Run up to ten independent `csl_search` queries in one call |
 | [`csl_semantic_search`](#csl_semantic_search) | Search code by meaning (vector embeddings) |
 | [`csl_hybrid_search`](#csl_hybrid_search) | Fuse lexical and semantic results with Reciprocal Rank Fusion |
 | [`csl_count`](#csl_count) | Count matches, optionally grouped by repo or language |
@@ -420,6 +421,53 @@ A search that matches nothing carries `zero_result_hint`: the query as zoekt par
 
 Use [`csl_query_validate`](#csl_query_validate) to debug complex queries.
 
+### `csl_search_multi`
+
+Run several independent `csl_search` queries in one call and get one entry per query, in the order sent.
+
+**When to call:** two or more searches that do not depend on each other's results, such as several symbols, patterns, or repos. A search followed by a read of its top file also fits one call with `read_top_hit`. For a single query, call [`csl_search`](#csl_search).
+
+**Input:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `queries` | array | (required) | 1 to 10 queries; more is refused as a tool error |
+| `queries[].query` | string | (required) | Zoekt query, same syntax as `csl_search` |
+| `queries[].repo`, `.lang`, `.file`, `.output_mode`, `.context_lines`, `.limit`, `.case_sensitive` | | as `csl_search` | The `csl_search` parameters, per query. There is no `offset`: every query reads the first page |
+| `queries[].read_top_hit` | bool | `false` | Also return the first 60 lines of the query's top-ranked file as `top_hit` |
+| `response_format` | string | `text` | See [Response formats](#response-formats) |
+
+**Output:**
+
+```json
+{
+  "results": [
+    {
+      "query": "sym:handleSearch",
+      "output_mode": "files_with_matches",
+      "files": [
+        {"repo": "mad01/thismoon", "path": "services/csl/internal/mcpserver/tools_search.go"}
+      ],
+      "total": 1,
+      "truncated": false,
+      "top_hit": {
+        "repo": "mad01/thismoon",
+        "path": "services/csl/internal/mcpserver/tools_search.go",
+        "lines": [{"number": 1, "text": "package mcpserver"}],
+        "total_lines": 436,
+        "truncated": true
+      }
+    },
+    {"query": "retry", "error": "output_mode must be \"files_with_matches\" or \"content\", got \"lines\""}
+  ],
+  "truncated": false
+}
+```
+
+Each successful entry carries the `csl_search` output fields for its query, including `zero_result_hint`, `relaxed_query`, and `dropped_terms`. A failing query carries only `query` and `error`, and the other entries are unaffected. A top file that cannot be read sets `top_hit_error` and leaves the search result in place. A top file outside the repo is refused the way `csl_read` refuses one.
+
+**Limits.** Queries run four at a time, after one repo discovery and one daemon start shared by the whole call. When the daemon does not start, every query in the call searches in-process. Content lines and `top_hit` lines share one 300-line budget per call, the same cap one `csl_search` call has. The budget is split evenly across the entries that need lines, and what an entry leaves unused goes to the others. Within an entry the search lines come first and `top_hit` gets the rest. A `top_hit` left with no lines is dropped, and `top_hit_error` says to read the file with `csl_read`. A cut entry is marked `truncated` with `total_available`, the top-level `truncated` is set, and `note` says to rerun that query alone with `csl_search` for its full page. In `files_with_matches` mode each query's `limit` caps the file paths, and the budget does not apply.
+
 ### `csl_semantic_search`
 
 Find code by meaning across locally checked-out repos using vector embeddings. This is the counterpart to [`csl_search`](#csl_search): lexical search matches exact text and regex, semantic search matches intent. So it finds synonyms and paraphrases of a description even when the words don't appear in the code.
@@ -746,11 +794,11 @@ A check can also come back `skipped`, which counts as a pass with something to r
 
 ## Response formats
 
-Every one of the fifteen tools accepts a `response_format` parameter. The JSON examples in this document show the `json` format; the default is `text`.
+Every tool accepts a `response_format` parameter. The JSON examples in this document show the `json` format; the default is `text`.
 
 Precedence: the `response_format` parameter on the call, then `mcp.response_format` in `config.yaml`, then the built-in default `text`. An unknown value in either place is an error that names where the value came from.
 
-`text` is tool-specific. `csl_search` in `content` mode prints ripgrep `--heading` style: one `repo/path` header per file, `LINE:match` lines, `LINE-context` lines, `--` between non-contiguous groups in a file, a blank line between files, and a trailer `N lines in M files`. When the 300-line cap hits, a second trailer reads `truncated: showing N of M lines; next offset=K`. In `files_with_matches` mode it lists `repo/path` lines with an `N files` trailer. Zero results print `no matches` followed by the hint lines, including `files per term: retry=37, jitter=0` when term counts ran. A relaxed result opens with `relaxed: dropped 'jitter' (0 files); showing results for `retry backoff`` and a blank line, then the normal listing. `csl_hybrid_search` and `csl_semantic_search` print a header per hit (path, line range, score) and then the raw snippet. `csl_read` prints `LINE:text`. `csl_ls`, `csl_count`, and `csl_doctor` print one short line per entry. Every other tool falls back to `markdown-kv`.
+`text` is tool-specific. `csl_search` in `content` mode prints ripgrep `--heading` style: one `repo/path` header per file, `LINE:match` lines, `LINE-context` lines, `--` between non-contiguous groups in a file, a blank line between files, and a trailer `N lines in M files`. When the 300-line cap hits, a second trailer reads `truncated: showing N of M lines; next offset=K`. In `files_with_matches` mode it lists `repo/path` lines with an `N files` trailer. Zero results print `no matches` followed by the hint lines, including `files per term: retry=37, jitter=0` when term counts ran. A relaxed result opens with `relaxed: dropped 'jitter' (0 files); showing results for `retry backoff`` and a blank line, then the normal listing. `csl_search_multi` prints each entry under a `=== query N/M: <query>` header, then `error: ...` or that query's `csl_search` text, then `top hit:` and the `csl_read` text when `read_top_hit` was set; a closing `note:` line appears when the shared line budget cut an entry. `csl_hybrid_search` and `csl_semantic_search` print a header per hit (path, line range, score) and then the raw snippet. `csl_read` prints `LINE:text`. `csl_ls`, `csl_count`, and `csl_doctor` print one short line per entry. Every other tool falls back to `markdown-kv`.
 
 `csl_search` with `output_mode: "content"` and `context_lines: 1`:
 
