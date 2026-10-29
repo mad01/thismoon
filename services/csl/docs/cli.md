@@ -44,11 +44,23 @@ csl search --stop                  # stop the running daemon
 
 After every search, stale repos (new commits, dirty tree, branch switched) are re-indexed in the background before the next call.
 
+A query that is empty, only quotes, or has an unbalanced quote is refused with the fix, and the command exits non-zero without searching.
+
+When a search comes back empty, `csl search` explains it the way the `csl_search` MCP tool does; both run the same code. If the query has two or more AND terms and some match no file at all while others do, it reruns once without those terms and prints the rerun's results. A line on stderr names the dropped terms first:
+
+```text
+relaxed: dropped 'zzz' (0 files); showing results for `retry backoff`
+```
+
+Otherwise stdout says `no matches` and stderr carries the zero-result hint. The hint shows how zoekt parsed the query and how many files each AND term matches on its own. It also gives the repos the filters covered, the index age, and notes on known traps. `--toon` prints the same stderr lines. `--json` carries them as fields instead (see the flags table).
+
+There is no `--offset`. To see past the first page, raise `--limit` and slice the output in the shell, for example `csl search "TODO" --limit 200 | sed -n '51,100p'` for files 51 to 100.
+
 ### Flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `-r, --repo <regex>` | `""` | Restrict to repos matching this regex or substring |
+| `-r, --repo <regex>` | `""` | Restrict to repo names matching this regex or substring, case-insensitive, the same match as the `csl_search` `repo` parameter |
 | `-l, --lang <name>` | `""` | Restrict to a single language (e.g. `go`, `python`, `swift`) |
 | `-f, --file <regex>` | `""` | Restrict to file paths matching this regex (e.g. `\.go$`) |
 | `-o, --output-mode <mode>` | `files_with_matches` | `files_with_matches` prints unique paths; `content` prints matching lines with context, grouped per file (see below) |
@@ -56,7 +68,7 @@ After every search, stale repos (new commits, dirty tree, branch switched) are r
 | `--limit <n>` | `50` | Maximum number of file results |
 | `--case-sensitive` | `false` | Force case-sensitive matching. Default is smart case (case-insensitive unless the query has uppercase) |
 | `--reindex` | `false` | Synchronously re-index before searching |
-| `--json` | `false` | Emit results as a JSON array of match objects |
+| `--json` | `false` | Emit a JSON object: `matches` holds the match objects. After an empty first search it also carries `relaxed_query` and `dropped_terms` (the rerun's results are in `matches`) or `zero_result_hint` |
 | `--toon` | `false` | Emit results as [TOON](https://github.com/alpkeskin/gotoon), a compact format designed for LLM consumption |
 | `--serve` | `false` | Run the search daemon in the foreground (blocks until `SIGINT` or idle timeout) |
 | `--stop` | `false` | Send a shutdown request to the running daemon |
@@ -79,7 +91,7 @@ After every search, stale repos (new commits, dirty tree, branch switched) are r
 | `sym:Name` | Restrict to symbol definitions (functions, types, methods, classes); content hits carry `kind` |
 | `case:yes` | Case-sensitive this term |
 
-`content` mode prints ripgrep `--heading` style, the same grammar as the `csl_search` MCP tool's text format. Each file gets one `repo/path` header. A matching line prints as `LINE:COL:text` (`COL` is the 1-based column where the match starts, as with ripgrep `--column`; the MCP text form prints `LINE:text` without it). A context line prints as `LINE-text`, and a blank line sits between files. Hits that sit within each other's context window merge into one block, so every line prints once; `--` separates blocks that are not adjacent in the file. A `sym:` hit's line ends with `kind=<kind>` (plus `parent=<name>` when nested). `--json` keeps one entry per matching line, each with its own `before`/`after` context.
+`content` mode prints ripgrep `--heading` style, the same grammar as the `csl_search` MCP tool's text format. Each file gets one `repo/path` header. A matching line prints as `LINE:COL:text` (`COL` is the 1-based column where the match starts, as with ripgrep `--column`; the MCP text form prints `LINE:text` without it). A context line prints as `LINE-text`, and a blank line sits between files. Hits that sit within each other's context window merge into one block, so every line prints once; `--` separates blocks that are not adjacent in the file. A `sym:` hit's line ends with `kind=<kind>` (plus `parent=<name>` when nested). `--json` keeps one entry per matching line in `matches`, each with its own `before`/`after` context.
 
 Regex metacharacters inside the pattern need shell-escaping too. Validate a tricky query first with [`csl query`](#csl-query).
 
@@ -100,7 +112,7 @@ csl search "fmt\.Errorf" --repo thismoon --lang go --output-mode content -C 3
 **Machine-readable output for piping into tools:**
 
 ```sh
-csl search "import.*cobra" --file "\.go$" --limit 10 --json
+csl search "import.*cobra" --file "\.go$" --limit 10 --json | jq -r '.matches[].file'
 ```
 
 **Force a re-index before searching, useful after a manual git checkout:**

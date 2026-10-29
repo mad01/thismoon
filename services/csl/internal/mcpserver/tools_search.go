@@ -2,12 +2,12 @@ package mcpserver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
+	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
@@ -64,27 +64,7 @@ type searchOutput struct {
 	TotalAvailable int               `json:"total_available,omitempty"  jsonschema:"matches in this page before limit capped it (only set when truncated is true); not a grand total across pages"`
 	RelaxedQuery   string            `json:"relaxed_query,omitempty"    jsonschema:"set when the original query matched nothing and the search reran once without the AND terms that match no file at all; the query these results come from"`
 	DroppedTerms   []string          `json:"dropped_terms,omitempty"    jsonschema:"the AND terms removed to form relaxed_query, each matching zero files under the same filters; do not add them back"`
-	ZeroHint       *searchZeroHint   `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: how the query was parsed, files per AND term, how many repos the filters covered, and index age; read it before assuming the code doesn't exist"`
-}
-
-// searchZeroHint explains a zero-hit search so an agent can tell a genuinely
-// empty result from a malformed query or a stale index. Additive: it appears
-// only when the search returned nothing, and never changes non-empty output.
-type searchZeroHint struct {
-	ParsedQuery     string      `json:"parsed_query,omitempty"      jsonschema:"the effective query (filters folded in) as zoekt parsed it; check that terms and operators mean what you intended"`
-	ReposSearched   int         `json:"repos_searched"              jsonschema:"repos the repo filter matched that are also present in the search index (only indexed repos can produce hits); 0 means the filter or index coverage is the problem, not the query"`
-	ReposDiscovered int         `json:"repos_discovered"            jsonschema:"git repos discovered under the configured dirs"`
-	ReposIndexed    int         `json:"repos_indexed,omitempty"     jsonschema:"repos present in the search index; a repo discovered but not indexed is invisible to search until indexed"`
-	NewestIndexedAt string      `json:"newest_indexed_at,omitempty" jsonschema:"most recent per-repo index time (RFC3339)"`
-	OldestIndexedAt string      `json:"oldest_indexed_at,omitempty" jsonschema:"least recent per-repo index time (RFC3339); very old means some repo's index is stale"`
-	TermCounts      []termCount `json:"term_counts,omitempty"       jsonschema:"files matching each top-level AND term on its own under the same filters, in query order; a 0 names the term that killed the query, and all non-zero means the terms exist but never in one file"`
-	Notes           []string    `json:"notes,omitempty"             jsonschema:"targeted suggestions for this query (known syntax traps, filter mismatches)"`
-}
-
-// termCount is one entry of term_counts.
-type termCount struct {
-	Term  string `json:"term"`
-	Files int    `json:"files" jsonschema:"files matching this term alone under the query's filters"`
+	ZeroHint       *lexical.ZeroHint `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: how the query was parsed, files per AND term, how many repos the filters covered, and index age; read it before assuming the code doesn't exist"`
 }
 
 // countInput is the typed input for the csl_count tool.
@@ -187,7 +167,7 @@ func handleSearch(
 	_ *mcp.CallToolRequest,
 	in searchInput,
 ) (*mcp.CallToolResult, searchOutput, error) {
-	if m := checkQueryShape(in.Query); m != nil {
+	if m := lexical.CheckShape(in.Query); m != nil {
 		return nil, searchOutput{}, m
 	}
 
@@ -227,7 +207,7 @@ func handleSearch(
 		return nil, searchOutput{}, fmt.Errorf("walk repos: %w", err)
 	}
 	if len(repos) == 0 {
-		return nil, searchOutput{OutputMode: outputMode, ZeroHint: &searchZeroHint{
+		return nil, searchOutput{OutputMode: outputMode, ZeroHint: &lexical.ZeroHint{
 			Notes: []string{
 				"no git repos discovered under the configured dirs; run 'csl config' to check dirs and index.hosts",
 			},
@@ -241,7 +221,7 @@ func handleSearch(
 
 	opts := search.SearchOptions{
 		Pattern:       in.Query,
-		RepoFilter:    insensitiveRepoFilter(in.Repo),
+		RepoFilter:    lexical.RepoFilter(in.Repo),
 		FileFilter:    in.File,
 		Lang:          in.Lang,
 		CaseSensitive: in.CaseSensitive,
@@ -251,8 +231,11 @@ func handleSearch(
 		OutputMode:    outputMode,
 	}
 
-	backend := daemonBackend{indexDir: indexDir, socketPath: socketPath, repoNames: repoNames}
-	matches, err := backend.search(ctx, opts)
+	backend := lexical.Daemon{
+		Local:      lexical.Local{IndexDir: indexDir, RepoNames: repoNames},
+		SocketPath: socketPath,
+	}
+	matches, err := backend.Search(ctx, opts)
 	if err != nil {
 		return nil, searchOutput{}, err
 	}
@@ -261,57 +244,30 @@ func handleSearch(
 	if out.Total > 0 {
 		return nil, out, nil
 	}
-	return nil, explainZero(ctx, backend, in, opts, repos, indexDir), nil
+	req := lexical.Request{Options: opts, Repo: in.Repo, Repos: repos, IndexDir: indexDir}
+	return nil, explainZero(ctx, backend, req), nil
 }
 
-// searchBackend is the query surface the search tools need: a search and a
-// count over the same index. daemonBackend is the production one; tests
-// substitute a fake to drive the zero-result diagnosis.
-type searchBackend interface {
-	search(ctx context.Context, opts search.SearchOptions) ([]search.Match, error)
-	count(ctx context.Context, opts search.CountOptions) ([]search.CountResult, int, error)
+// mcpSurface points the csl_search hint notes at the MCP tools.
+var mcpSurface = lexical.Surface{
+	RepoLookup: "csl_repo_lookup",
+	Reindex:    "csl_repo_reindex",
+	ParamNote:  paramNameNote,
 }
 
-// daemonBackend mirrors the daemon-first-then-fallback pattern from
-// internal/cli/search.go, minus the indexing / progress output (the daemon
-// handles that, and MCP clients do not benefit from progress logs written
-// to stderr during a single JSON-RPC call).
-type daemonBackend struct {
-	indexDir   string
-	socketPath string
-	repoNames  map[string]string
-}
-
-func (b daemonBackend) search(
-	ctx context.Context,
-	opts search.SearchOptions,
-) ([]search.Match, error) {
-	if err := daemon.EnsureDaemon(b.indexDir, b.socketPath); err == nil {
-		matches, err := daemon.SearchVia(ctx, b.socketPath, opts, b.repoNames)
-		if err == nil {
-			return matches, nil
-		}
-		if !errors.Is(err, daemon.ErrDaemonNotRunning) {
-			return nil, err
-		}
+// explainZero shapes the outcome of an empty first page as csl_search output:
+// the relaxed rerun's page when lexical.ExplainZero found one, else an empty
+// page carrying the zero-result hint.
+func explainZero(ctx context.Context, b lexical.Backend, req lexical.Request) searchOutput {
+	opts := req.Options
+	res := lexical.ExplainZero(ctx, b, mcpSurface, req)
+	if res.Hint != nil {
+		return searchOutput{OutputMode: opts.OutputMode, Offset: opts.Offset, ZeroHint: res.Hint}
 	}
-	return search.Search(ctx, b.indexDir, opts, b.repoNames)
-}
-
-func (b daemonBackend) count(
-	ctx context.Context,
-	opts search.CountOptions,
-) ([]search.CountResult, int, error) {
-	if err := daemon.EnsureDaemon(b.indexDir, b.socketPath); err == nil {
-		results, total, err := daemon.CountVia(ctx, b.socketPath, opts)
-		if err == nil {
-			return results, total, nil
-		}
-		if !errors.Is(err, daemon.ErrDaemonNotRunning) {
-			return nil, 0, err
-		}
-	}
-	return search.Count(ctx, b.indexDir, opts)
+	out := buildSearchOutput(opts.OutputMode, opts.Limit, 0, res.Matches)
+	out.RelaxedQuery = res.RelaxedQuery
+	out.DroppedTerms = res.DroppedTerms
+	return out
 }
 
 const maxContentLines = 300
@@ -373,7 +329,7 @@ func handleCount(
 	_ *mcp.CallToolRequest,
 	in countInput,
 ) (*mcp.CallToolResult, countOutput, error) {
-	if m := checkQueryShape(in.Query); m != nil {
+	if m := lexical.CheckShape(in.Query); m != nil {
 		return nil, countOutput{}, m
 	}
 	if in.GroupBy != "" && in.GroupBy != "repo" && in.GroupBy != "language" {
@@ -391,12 +347,12 @@ func handleCount(
 
 	opts := search.CountOptions{
 		Pattern:    in.Query,
-		RepoFilter: insensitiveRepoFilter(in.Repo),
+		RepoFilter: lexical.RepoFilter(in.Repo),
 		Lang:       in.Lang,
 		GroupBy:    in.GroupBy,
 	}
-	backend := daemonBackend{indexDir: indexDir, socketPath: socketPath}
-	results, total, err := backend.count(ctx, opts)
+	backend := lexical.Daemon{Local: lexical.Local{IndexDir: indexDir}, SocketPath: socketPath}
+	results, total, err := backend.Count(ctx, opts)
 	if err != nil {
 		return nil, countOutput{}, fmt.Errorf("count: %w", err)
 	}
@@ -414,7 +370,7 @@ func handleQueryValidate(
 	_ *mcp.CallToolRequest,
 	in queryValidateInput,
 ) (*mcp.CallToolResult, queryValidateOutput, error) {
-	if m := checkQueryShape(in.Query); m != nil {
+	if m := lexical.CheckShape(in.Query); m != nil {
 		return nil, queryValidateOutput{Error: m.Problem, Hint: m.Fix}, nil
 	}
 	info := search.ValidateQuery(in.Query)
@@ -427,7 +383,7 @@ func handleQueryValidate(
 	if !info.Valid {
 		return nil, out, nil
 	}
-	parts := splitTerms(in.Query)
+	parts := lexical.SplitTerms(in.Query)
 	out.Terms, out.Filters = parts.Terms, parts.Fixed
 	if note := paramNameNote(in.Query); note != "" {
 		out.Hint = note

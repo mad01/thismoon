@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
@@ -49,7 +50,7 @@ func TestOutputSearchResults_ContentMergesBlocks(t *testing.T) {
 			Before: "",
 			After:  "",
 		},
-	})
+	}, lexical.Result{})
 	if err != nil {
 		t.Fatalf("outputSearchResults: %v", err)
 	}
@@ -87,7 +88,7 @@ func TestOutputSearchResults_FilesUnchanged(t *testing.T) {
 		{Repo: "org/repo", File: "a.go", Line: 5, Text: "five", After: "six\n"},
 		{Repo: "org/repo", File: "a.go", Line: 7, Text: "seven"},
 		{Repo: "org/repo", File: "b.go", Line: 1, Text: "one"},
-	})
+	}, lexical.Result{})
 	if err != nil {
 		t.Fatalf("outputSearchResults: %v", err)
 	}
