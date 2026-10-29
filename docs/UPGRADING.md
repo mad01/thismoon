@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-29 moondb: subagent spawn briefs need a forced import for past agents
+
+Change: thismoon #343 (MAD-496). moondb now keeps each subagent's spawn brief, the prompt it was spawned with, read from the first user line of its own transcript. It also counts the messages its parent sent it after that brief. `why` and a turn show both beside the turn's prompt, in the CLI, in the `moondb_why` and `moondb_turn` tools and on the session page. The SubagentStop hook entry stays as it is: the brief comes from the transcript the hook already reads. `moondb doctor` gains an `agent-briefs` check that counts the agents still without a brief.
+
+Run: `ralph up`, then check that `curl http://127.0.0.1:7433/version` reports the merged commit. Agents recorded before this build have no brief and show it as unknown, and `moondb doctor` prints `ok agent-briefs (N agents without a brief; run moondb import --since 30d --force)`. To fill them, run `moondb import --since 30d --force` while no other session is working, and let serve drain the spool. The import keeps each stored agent and adds only the missing brief and its message count. An agent whose transcript file is gone keeps an unknown brief.
+
+Verify: `moondb doctor` prints `ok agent-briefs` with no count. `moondb why <path>:<line>` on a line a subagent wrote prints an `agent:` line and a `brief:` line with the quoted brief, not "unknown". `moondb_turn` on a turn that ran a subagent returns `briefs`, and the session page shows a "Subagent spawn briefs" section under that turn's prompt.
+
 ## 2026-10-29 belt: the search and prompt hint events are gone
 
 Change: thismoon #344 (MAD-517). belt drops its `search` and `prompt` hint events. No hint has run on either since keeper-of-facts left, so their hook entries spawned a process on every csl search and every prompt for no output. The pi package stops calling them in the same change. belt now rejects both as unknown events, so an entry that still calls one errors on each call.

@@ -18,8 +18,10 @@ Capture runs in Claude Code hooks, not in serve. Each hook pipes its payload
 into `moondb record`, which writes an envelope to the spool and exits 0,
 printing nothing on stdout. It takes about 200 ms, or up to 2 s for the
 async Bash and SubagentStop hooks. SubagentStop records the subagent that
-stopped, with its own transcript cut to short heads. At a turn's start and stop
-it also snapshots the worktrees in play, within 2 s. So capture keeps working
+stopped, with its own transcript cut to short heads, its spawn brief (the
+prompt it was spawned with) and a count of the messages its parent sent it
+later. At a turn's start and stop it also snapshots
+the worktrees in play, within 2 s. So capture keeps working
 while serve is down: envelopes wait in the spool and serve ingests them when
 it comes back. `moondb import` brings in past sessions from their
 transcripts through the same spool, so it too needs serve running before
@@ -48,9 +50,9 @@ capture off on this machine.
 ## failure modes
 
 Start with `moondb doctor`: one command runs the config, hook wiring,
-reachability, store, and version-skew checks below and prints one line per
-check, FAIL lines naming the cause. The paragraphs here cover what each
-failure means.
+reachability, store, version-skew and agent-briefs checks below and prints
+one line per check, FAIL lines naming the cause. The paragraphs here cover
+what each failure means.
 
 `hooks-wired` fails: the Claude Code settings file (`~/.claude/settings.json`,
 or the config's `claude_settings`) lacks a `moondb record` hook entry for
@@ -122,6 +124,20 @@ while the spool is empty. An agent with `lines_cut` had a transcript over
 8 MiB after the cut to heads; the calls in its cut head add no cost. One
 marked `partial` ran out of the hook's 2 s budget before the file's end.
 
+`why` or a turn shows a subagent's spawn brief as unknown, or `moondb
+doctor` notes `agent-briefs` with a count of agents without a brief: those
+agents were recorded before moondb kept briefs. Run `moondb import --since
+30d --force` while no session is active. It fills the brief of every agent
+whose transcript is still under `~/.claude/projects`. The doctor count
+covers the agents that ended in those 30 days. An agent whose transcript
+file is gone stays unknown, and so does an agent of type `internal`, which
+has no transcript, and one moondb knows only from its edits.
+
+The spawn brief is the first message a subagent got and nothing after it.
+A teammate's lead can send it more while it works, which `later_messages`
+counts. A count above zero means the brief may be out of date (showing the
+last message before each edit is MAD-524).
+
 A repo's cost looks wrong: the page, `moondb sessions --repo` and the
 `moondb_sessions` tool split a session's cost by agent, since model calls
 carry no repo. A subagent's cost goes to the repo most of its edits
@@ -179,7 +195,7 @@ doctor` runs this comparison as its version-skew check.
 
 ## first moves
 
-1. `moondb doctor`: hooks wired, serve reachable, store readable, and version skew in one pass
+1. `moondb doctor`: hooks wired, serve reachable, store readable, version skew and agents without a brief in one pass
 2. If serve is unreachable: `t-man list`, then `t-man restart moondb`
 3. On version skew: `t-man restart moondb`, then `moondb doctor` again
 4. `moondb sessions`, to confirm capture is recording on this machine

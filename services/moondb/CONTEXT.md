@@ -27,7 +27,7 @@ What opened a Turn: `person` (a typed prompt or a slash command), `task` (a back
 _Avoid_: source, trigger, kind
 
 **Agent**:
-A subagent of a session, identified by the `agent_id` its hook payloads carry; a payload without one belongs to the main conversation. When it stops, or an import reads its transcript file, serve keeps its record: type, name, model, the Turns it ran under, its start and stop, its Agent transcript and its totals. A teammate runs under every Turn that sent it a message. An agent known only from its edits has no record. Listings show the main conversation beside the agents as `main`.
+A subagent of a session, identified by the `agent_id` its hook payloads carry; a payload without one belongs to the main conversation. When it stops, or an import reads its transcript file, serve keeps its record: type, name, model, the Turns it ran under, its start and stop, its Agent transcript, its Spawn brief and its totals. A teammate runs under every Turn that sent it a message. An agent known only from its edits has no record. Listings show the main conversation beside the agents as `main`.
 _Avoid_: worker, subagent as a concept apart from Agent
 
 **Main segment**:
@@ -37,6 +37,10 @@ _Avoid_: phantom agent, ghost agent, internal agent (an `internal` Agent with li
 **Agent transcript**:
 An Agent's transcript file as moondb keeps it: the timeline lines only (user, assistant, API request, system), with the fields a Trace reads, and each text, thinking block, tool input and tool result cut to a head of `AgentHeadBytes`. Usage, ids and times survive the cut, so its Trace prices the same as the whole file's. Past `MaxAgentTranscriptBytes` whole lines go from its head; the Agent counts them, and their calls add no tokens or cost.
 _Avoid_: subagent log, sidechain (the transcript field, not a moondb term)
+
+**Spawn brief**:
+The prompt an Agent was spawned with: the text of the first user line of its transcript, without a teammate's message envelope or a fork's boilerplate, cut only at `MaxBriefBytes`. The Agent keeps it once, as a Chunk. `why` and a Turn show it beside the Turn's prompt, so the task its parent gave it explains a subagent's Edit. Messages the parent sends after it, such as a lead's follow-ups to a teammate, aren't part of it. The Agent counts them (`later_messages`), and a count above zero says the spawn brief may be out of date. An Agent recorded before spawn briefs were kept, one of type `internal`, or one known only from its edits has none: `why` and a Turn call it unknown.
+_Avoid_: subagent prompt, task description (the spawn's `description` is a short label, not the spawn brief)
 
 **Edit**:
 One recorded change to one file by one tool call. It carries the tool, repo, worktree, branch and path, the patch hunks, the before and after chunk ids, the after content's git blob id, and HEAD at the time. Append-only; its identity is the `tool_use_id` plus the path.

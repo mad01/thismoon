@@ -221,6 +221,14 @@ func (c *Client) Health(ctx context.Context) error {
 	return err
 }
 
+// Doctor returns the counts serve keeps for `moondb doctor`. A serve
+// built before GET /api/doctor answers 404, which matches
+// store.ErrNotFound.
+func (c *Client) Doctor(ctx context.Context) (server.DoctorView, error) {
+	var out server.DoctorView
+	return out, c.getJSON(ctx, c.http, "/api/doctor", nil, &out)
+}
+
 // Version returns the build metadata serve reports on /version.
 func (c *Client) Version(ctx context.Context) (buildinfo.Info, error) {
 	var out buildinfo.Info

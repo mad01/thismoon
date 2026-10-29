@@ -37,9 +37,9 @@ var importCmd = &cobra.Command{
 	Long: `Read the Claude Code session transcripts written within --since and spool
 what the hooks would have recorded: one turn per prompt, one edit per Edit,
 Write, MultiEdit and NotebookEdit call, and one agent per subagent
-transcript, its lines cut to heads as the SubagentStop hook cuts them. serve
-ingests the spool as it does the hooks' envelopes, so it must be running for
-the import to reach the store.
+transcript, its lines cut to heads as the SubagentStop hook cuts them and
+its brief kept whole. serve ingests the spool as it does the hooks'
+envelopes, so it must be running for the import to reach the store.
 
 A session the store already holds was captured live and is skipped; --force
 imports it anyway. A forced import only fills: an edit the store holds stays
@@ -50,7 +50,8 @@ because it closes a session's in-flight turn until the live Stop arrives.
 A session with neither a file edit nor a subagent transcript is skipped,
 unless --force is set and the store holds it. Then its turns are imported
 to fill what its session and turns have empty, such as the session's
-location and entrypoint.
+location and entrypoint. A forced import also fills the brief of an agent
+recorded before moondb kept briefs.
 
 A transcript records less than the hooks see: no disk read after an edit (so
 no unattributed delta), no HEAD (so no commit link until a later live turn

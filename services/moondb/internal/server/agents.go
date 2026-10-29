@@ -19,7 +19,7 @@ const MainAgentType = trace.MainAgent
 // AgentRow is one agent of a session or a turn: the main conversation or a
 // subagent. In a session it covers the agent's whole run, in a turn its
 // work under that turn. A subagent known only from its edits has no
-// record behind it (Recorded false), so no calls, time or cost.
+// record behind it (Recorded false), so no calls, time, cost or brief.
 type AgentRow struct {
 	ID          string    `json:"id"`
 	Type        string    `json:"type"`
@@ -49,6 +49,12 @@ type AgentRow struct {
 	// LinesCut counts the lines the agent transcript's size cap cut, whose
 	// calls the row leaves out.
 	LinesCut int `json:"lines_cut,omitempty"`
+	// BriefChunk is the record's spawn brief (store.Agent.BriefChunk);
+	// empty for the main conversation and for a subagent whose brief is
+	// unknown. LaterMessages counts the messages that reached the subagent
+	// after it (store.Agent.LaterMessages).
+	BriefChunk    string `json:"brief_chunk,omitempty"`
+	LaterMessages int    `json:"later_messages,omitempty"`
 }
 
 // AgentView is one agent as GET /api/agents/{id} answers it: the record,
@@ -129,7 +135,8 @@ func (s *Server) mainRow(d store.SessionDetail, edits []store.Edit) AgentRow {
 // recordedRow is a subagent's row from its record and the edits it made.
 func (s *Server) recordedRow(a store.Agent, edits []store.Edit) AgentRow {
 	row := AgentRow{
-		ID: a.ID, Type: a.Type, Name: a.Name, Description: a.Description, Model: a.Model,
+		ID: a.ID, Type: a.Type, Name: a.Name, Description: a.Description,
+		BriefChunk: a.BriefChunk, LaterMessages: a.LaterMessages, Model: a.Model,
 		TurnIDs: orEmpty(a.TurnIDs), StartedAt: a.StartedAt, EndedAt: a.EndedAt,
 		DurationMS: a.EndedAt.Sub(a.StartedAt).Milliseconds(),
 		EditCount:  len(edits), Repos: editRepos(edits), Recorded: true, LinesCut: a.Lines.Cut,

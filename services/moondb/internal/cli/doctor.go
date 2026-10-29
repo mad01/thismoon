@@ -2,11 +2,14 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/mad01/thismoon/kit/agentdoc/agentcli"
 	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/client"
+	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 func init() {
@@ -27,6 +30,30 @@ func doctorChecks(context.Context) []doctor.Check {
 		{Name: "store-ping", Run: client.New(api).Health},
 		doctor.StoreReadable(flagWorkdir),
 		doctor.VersionSkew(api),
+		{Name: "agent-briefs", Run: briefsCheck(client.New(api))},
+	}
+}
+
+// briefsCheck warns about agents an import could still give a brief:
+// they were recorded before moondb kept briefs. The check passes with the
+// count and the command that fills them as its note, since the edits and
+// traces of those agents are whole; only the brief is missing. A serve it
+// cannot ask is left to service-reachable and version-skew.
+func briefsCheck(c *client.Client) func(context.Context) error {
+	return func(ctx context.Context) error {
+		v, err := c.Doctor(ctx)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			return doctor.Skip("serve predates this check; see version-skew")
+		case err != nil:
+			return doctor.Skip("serve did not answer; see service-reachable")
+		case v.AgentsWithoutBrief > 0:
+			return doctor.Skip(fmt.Sprintf(
+				"%d agents without a brief; run moondb import --since %s --force",
+				v.AgentsWithoutBrief, moondb.DefaultImportSince,
+			))
+		}
+		return nil
 	}
 }
 
