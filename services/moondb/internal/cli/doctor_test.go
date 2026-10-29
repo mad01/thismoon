@@ -22,10 +22,10 @@ func TestBriefsCheck(t *testing.T) {
 		body     string
 		wantNote string // "" means a plain pass
 	}{
-		{"none missing", http.StatusOK, `{"agents_without_brief":0}`, ""},
+		{"none missing", http.StatusOK, `{"agents_to_fill":0}`, ""},
 		{
-			"some missing", http.StatusOK, `{"agents_without_brief":3}`,
-			"3 agents without a brief; run moondb import --since 30d --force",
+			"some missing", http.StatusOK, `{"agents_to_fill":3}`,
+			"3 agents without a spawn brief or later messages; run moondb import --since 30d --force",
 		},
 		{"older serve", http.StatusNotFound, `{"error":"moondb: no API route"}`, "version-skew"},
 		{

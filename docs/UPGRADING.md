@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-29 moondb: the last parent message before a subagent's edit needs a forced import for past agents
+
+Change: thismoon #PRNUM (MAD-524). moondb now keeps each message a subagent's parent sent it after its spawn brief, such as a lead's follow-up to a teammate, with the time it arrived and its sender. `why` shows the last one that arrived before the edit under the spawn brief: in the CLI as a `last message:` line, in the `moondb_why` tool as `last_message`, and on the session page. `moondb_turn` and a turn's page show each subagent's last message there. The SubagentStop hook entry stays as it is: the messages come from the transcript the hook already reads. The `agent-briefs` doctor check now also counts agents that have a brief but lack the later messages their count names, and `GET /api/doctor` reports that count as `agents_to_fill`.
+
+Run: `ralph up`, then check that `curl http://127.0.0.1:7433/version` reports the merged commit. Agents recorded before this build kept no later messages, and `moondb doctor` notes `agent-briefs` with `N agents without a spawn brief or later messages; run moondb import --since 30d --force`. To fill them, run `moondb import --since 30d --force` while no other session is working, and let serve drain the spool. The import keeps each stored agent and adds only what it lacks. An agent whose transcript file is gone keeps only its count.
+
+Verify: `moondb doctor` shows `agent-briefs` with no count. Pick a line a teammate wrote after its lead sent it a follow-up message. `moondb why <path>:<line>` on it prints a `last message:` line under the `brief:` line, quoting that follow-up with its time and sender.
+
 ## 2026-10-29 moondb: subagent spawn briefs need a forced import for past agents
 
 Change: thismoon #343 (MAD-496). moondb now keeps each subagent's spawn brief, the prompt it was spawned with, read from the first user line of its own transcript. It also counts the messages its parent sent it after that brief. `why` and a turn show both beside the turn's prompt, in the CLI, in the `moondb_why` and `moondb_turn` tools and on the session page. The SubagentStop hook entry stays as it is: the brief comes from the transcript the hook already reads. `moondb doctor` gains an `agent-briefs` check that counts the agents still without a brief.

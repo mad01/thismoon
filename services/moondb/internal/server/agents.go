@@ -52,9 +52,11 @@ type AgentRow struct {
 	// BriefChunk is the record's spawn brief (store.Agent.BriefChunk);
 	// empty for the main conversation and for a subagent whose brief is
 	// unknown. LaterMessages counts the messages that reached the subagent
-	// after it (store.Agent.LaterMessages).
-	BriefChunk    string `json:"brief_chunk,omitempty"`
-	LaterMessages int    `json:"later_messages,omitempty"`
+	// after it (store.Agent.LaterMessages), and LastMessage is the latest
+	// of them that arrived by the row's end (lastMessage).
+	BriefChunk    string              `json:"brief_chunk,omitempty"`
+	LaterMessages int                 `json:"later_messages,omitempty"`
+	LastMessage   *store.AgentMessage `json:"last_message,omitempty"`
 }
 
 // AgentView is one agent as GET /api/agents/{id} answers it: the record,
@@ -136,7 +138,8 @@ func (s *Server) mainRow(d store.SessionDetail, edits []store.Edit) AgentRow {
 func (s *Server) recordedRow(a store.Agent, edits []store.Edit) AgentRow {
 	row := AgentRow{
 		ID: a.ID, Type: a.Type, Name: a.Name, Description: a.Description,
-		BriefChunk: a.BriefChunk, LaterMessages: a.LaterMessages, Model: a.Model,
+		BriefChunk: a.BriefChunk, LaterMessages: a.LaterMessages,
+		LastMessage: lastMessage(a, a.EndedAt), Model: a.Model,
 		TurnIDs: orEmpty(a.TurnIDs), StartedAt: a.StartedAt, EndedAt: a.EndedAt,
 		DurationMS: a.EndedAt.Sub(a.StartedAt).Milliseconds(),
 		EditCount:  len(edits), Repos: editRepos(edits), Recorded: true, LinesCut: a.Lines.Cut,
@@ -150,6 +153,20 @@ func (s *Server) recordedRow(a store.Agent, edits []store.Edit) AgentRow {
 		row.CostRepo = store.AgentCostRepo(a, edits)
 	}
 	return row
+}
+
+// lastMessage is the latest later message a's record kept that arrived
+// by end, the end of a row's work, or by any time when end is zero; nil
+// when none did.
+func lastMessage(a store.Agent, end time.Time) *store.AgentMessage {
+	if end.IsZero() && len(a.Messages) > 0 {
+		end = a.Messages[len(a.Messages)-1].At
+	}
+	m, ok := a.LastMessage(end)
+	if !ok {
+		return nil
+	}
+	return &m
 }
 
 // editOnlyRows are the rows of the subagents that made an edit but have no

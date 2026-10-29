@@ -12,6 +12,7 @@ import (
 
 	"github.com/mad01/thismoon/services/moondb/internal/client"
 	"github.com/mad01/thismoon/services/moondb/internal/query"
+	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 var (
@@ -140,8 +141,10 @@ func printWhy(ctx context.Context, w io.Writer, c *client.Client, res query.WhyR
 }
 
 // printAgent names the subagent that made the edit and the first line of
-// its spawn brief, the prompt it was spawned with, with the count of
-// messages its parent sent it after, or why the brief is unknown.
+// its spawn brief, the prompt it was spawned with, or why the brief is
+// unknown. Then the first line of the last message its parent sent it
+// before the edit, with when it arrived and who sent it, and the count of
+// messages sent after the brief.
 func printAgent(ctx context.Context, w io.Writer, c *client.Client, a query.WhyAgent) {
 	who := a.Label()
 	if a.Name != "" && a.Name != a.Type {
@@ -154,10 +157,41 @@ func printAgent(ctx context.Context, w io.Writer, c *client.Client, a query.WhyA
 		return
 	}
 	fmt.Fprintf(w, "  brief:    %q\n", brief)
-	if a.LaterMessages > 0 {
-		fmt.Fprintf(w, "  later:    %d messages from its parent after the spawn brief, not shown\n",
+	shown := printLastMessage(ctx, w, c, a.LastMessage)
+	switch {
+	case a.LaterMessages > 0 && shown:
+		fmt.Fprintf(w, "  later:    %d messages from its parent after the spawn brief\n",
 			a.LaterMessages)
+	case a.LaterMessages > 0:
+		fmt.Fprintf(w, "  later:    %d messages from its parent after the spawn brief, "+
+			"none shown\n", a.LaterMessages)
 	}
+}
+
+// printLastMessage prints the first line of the last message an agent got
+// before the edit, with when it arrived and who sent it, and reports
+// whether it printed one: not for none, or one whose text serve cannot
+// give.
+func printLastMessage(
+	ctx context.Context,
+	w io.Writer,
+	c *client.Client,
+	m *store.AgentMessage,
+) bool {
+	if m == nil {
+		return false
+	}
+	text := promptOf(ctx, c, m.Chunk)
+	if text == "" {
+		return false
+	}
+	from := ""
+	if m.From != "" {
+		from = " from " + m.From
+	}
+	fmt.Fprintf(w, "  last message: %q  (%s%s, before this edit)\n",
+		text, when(m.At), from)
+	return true
 }
 
 // sessionLabel is the title when the harness gave one, else the cwd.

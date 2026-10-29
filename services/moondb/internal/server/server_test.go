@@ -677,15 +677,15 @@ func TestAgentRoute(t *testing.T) {
 	h.wantAPIError(t, "/api/agents/nope", http.StatusNotFound, "not found")
 }
 
-// TestDoctorCountsAgentsWithoutBrief: the fixture agent has its brief; an
+// TestDoctorCountsAgentsToFill: the fixture agent has its brief; an
 // added agent without one counts, an internal one does not, and the
 // window is the one a default import reads.
-func TestDoctorCountsAgentsWithoutBrief(t *testing.T) {
+func TestDoctorCountsAgentsToFill(t *testing.T) {
 	h := newHarness(t)
 	var v DoctorView
 	h.getJSON(t, "/api/doctor", http.StatusOK, &v)
-	if v.AgentsWithoutBrief != 0 {
-		t.Errorf("baseline agents_without_brief = %d, want 0", v.AgentsWithoutBrief)
+	if v.AgentsToFill != 0 {
+		t.Errorf("baseline agents_to_fill = %d, want 0", v.AgentsToFill)
 	}
 	missing := servertest.PricedAgent("a-missing", "s-doctor", "t-doctor", store.Location{})
 	internal := servertest.PricedAgent("a-internal", "s-doctor", "t-doctor", store.Location{})
@@ -693,8 +693,8 @@ func TestDoctorCountsAgentsWithoutBrief(t *testing.T) {
 	h.store.Add(store.Session{ID: "s-doctor", StartedAt: servertest.T0}, nil,
 		[]store.Agent{missing, internal}, nil)
 	h.getJSON(t, "/api/doctor", http.StatusOK, &v)
-	if v.AgentsWithoutBrief != 1 {
-		t.Errorf("agents_without_brief = %d, want 1 (a-missing)", v.AgentsWithoutBrief)
+	if v.AgentsToFill != 1 {
+		t.Errorf("agents_to_fill = %d, want 1 (a-missing)", v.AgentsToFill)
 	}
 	if want := fixedNow.Add(-30 * 24 * time.Hour); !v.Since.Equal(want) {
 		t.Errorf("since = %v, want %v", v.Since, want)
@@ -721,5 +721,39 @@ func TestWithAgentRecordsMarksRecorded(t *testing.T) {
 	}
 	if rows[2].Recorded || rows[2].BriefChunk != "" {
 		t.Errorf("row without a record = %+v, want it unchanged", rows[2])
+	}
+}
+
+// TestRowsCarryTheLastMessage: a turn row names the latest later message
+// that reached its subagent by the end of its work under the turn, a
+// session row the latest of all, and a row ending before the first names
+// none.
+func TestRowsCarryTheLastMessage(t *testing.T) {
+	st := servertest.NewStore()
+	s := New(st, servertest.NewQuerier(st), testInfo)
+	first := store.AgentMessage{At: servertest.T0.Add(time.Minute), From: "team-lead", Chunk: "m1"}
+	second := store.AgentMessage{At: servertest.T0.Add(5 * time.Minute), Chunk: "m2"}
+	a := servertest.PricedAgent("a-msg", "s-msg", "t-msg", store.Location{})
+	a.LaterMessages, a.Messages = 2, []store.AgentMessage{first, second}
+	a.EndedAt = servertest.T0.Add(10 * time.Minute)
+	st.Add(store.Session{ID: "s-msg", StartedAt: servertest.T0}, nil, []store.Agent{a}, nil)
+	cases := []struct {
+		end  time.Time
+		want string
+	}{
+		{servertest.T0, ""},
+		{servertest.T0.Add(3 * time.Minute), "m1"},
+		{servertest.T0.Add(time.Hour), "m2"},
+	}
+	for _, c := range cases {
+		rows := []AgentRow{{ID: "a-msg", Type: "general-purpose", EndedAt: c.end}}
+		s.withAgentRecords(t.Context(), "s-msg", rows)
+		if got := rows[0].LastMessage; (got == nil) != (c.want == "") ||
+			(got != nil && got.Chunk != c.want) {
+			t.Errorf("row ending %v: last message %+v, want %q", c.end, got, c.want)
+		}
+	}
+	if row := s.recordedRow(a, nil); row.LastMessage == nil || row.LastMessage.Chunk != "m2" {
+		t.Errorf("session row last message = %+v, want m2", row.LastMessage)
 	}
 }

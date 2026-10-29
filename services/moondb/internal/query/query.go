@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
@@ -92,7 +93,8 @@ type WhyResult struct {
 // WhyAgent is the subagent that made an edit: who it was and its spawn
 // brief, the prompt it was spawned with, which names the task the edit
 // served. Messages its parent sent it later are not in the brief;
-// LaterMessages counts them. The turn's prompt is the person's message to
+// LaterMessages counts them, and LastMessage is the latest of them that
+// arrived before the edit. The turn's prompt is the person's message to
 // the main conversation. Recorded is false when the store holds no Agent
 // record, only the edit's agent id and type. BriefChunk is empty then, and
 // on a record stored before briefs were kept: the brief is unknown.
@@ -104,8 +106,12 @@ type WhyAgent struct {
 	BriefChunk  string `json:"brief_chunk,omitempty"`
 	// LaterMessages counts the messages that reached the agent after its
 	// spawn brief, which the brief does not hold.
-	LaterMessages int  `json:"later_messages,omitempty"`
-	Recorded      bool `json:"recorded"`
+	LaterMessages int `json:"later_messages,omitempty"`
+	// LastMessage is the latest later message that arrived at or before
+	// the edit (store.Agent.LastMessage); nil when none had, so the spawn
+	// brief was the last word, and when the record kept no messages.
+	LastMessage *store.AgentMessage `json:"last_message,omitempty"`
+	Recorded    bool                `json:"recorded"`
 }
 
 // Label names the agent for a person: its name, else its type.
@@ -265,16 +271,21 @@ func (s *Service) whyAgent(ctx context.Context, e store.Edit) (*WhyAgent, error)
 	case err != nil:
 		return nil, fmt.Errorf("query: agent %s: %w", e.AgentID, err)
 	}
-	agent := RecordedWhyAgent(a)
+	agent := RecordedWhyAgent(a, e.At)
 	return &agent, nil
 }
 
-// RecordedWhyAgent is the WhyAgent of an agent the store holds a record of.
-func RecordedWhyAgent(a store.Agent) WhyAgent {
-	return WhyAgent{
+// RecordedWhyAgent is the WhyAgent of an agent the store holds a record
+// of, for its edit at at.
+func RecordedWhyAgent(a store.Agent, at time.Time) WhyAgent {
+	w := WhyAgent{
 		ID: a.ID, Type: a.Type, Name: a.Name, Description: a.Description,
 		BriefChunk: a.BriefChunk, LaterMessages: a.LaterMessages, Recorded: true,
 	}
+	if m, ok := a.LastMessage(at); ok {
+		w.LastMessage = &m
+	}
+	return w
 }
 
 // linkFor picks the commit link of commit at path, or, with no commit, the

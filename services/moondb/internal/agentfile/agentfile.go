@@ -57,12 +57,11 @@ type Capture struct {
 	// text of the file's first user line (briefOf), whole up to
 	// moondb.MaxBriefBytes. "" when that line holds no text.
 	Brief string
-	// LaterMessages counts the messages the file shows reaching the agent
-	// after its spawn brief, such as a lead's follow-ups to a teammate:
-	// the envelopes later user lines open with (laterMessages), and any
-	// after the first in the brief's own line. The brief holds none of
-	// them.
-	LaterMessages int
+	// Messages are the later messages, oldest first: the ones the file
+	// shows reaching the agent after its spawn brief, such as a lead's
+	// follow-ups to a teammate (messagesOf), and any envelope after the
+	// first in the brief's own line. The brief holds none of them.
+	Messages []Message
 	// Transcript is the agent transcript, newline-terminated lines.
 	Transcript []byte
 	Lines      store.AgentLines
@@ -151,17 +150,41 @@ func (c *Capture) add(line []byte) ([]byte, bool) {
 	return out, err == nil
 }
 
-// noteUser takes the spawn brief from the first user line and counts the
+// noteUser takes the spawn brief from the first user line and the
 // messages every user line delivers after it.
 func (c *Capture) noteUser(l fields) {
+	var envs []envelope
 	if c.sawUser {
-		c.LaterMessages += laterMessages(l)
-		return
+		envs = messagesOf(l)
+	} else {
+		c.sawUser = true
+		c.Brief, envs = briefOf(l)
 	}
-	c.sawUser = true
-	var more int
-	c.Brief, more = briefOf(l)
-	c.LaterMessages += more
+	at := lineTime(l)
+	for _, e := range envs {
+		c.Messages = append(c.Messages, Message{
+			At: at, From: e.from, Text: cut(e.body, moondb.MaxBriefBytes),
+		})
+	}
+}
+
+// AgentMessages is c's later messages as the Agent record keeps them,
+// each one's text put in a chunk by add, which returns the chunk's key.
+func (c Capture) AgentMessages(add func([]byte) string) []store.AgentMessage {
+	var out []store.AgentMessage
+	for _, m := range c.Messages {
+		out = append(out, store.AgentMessage{At: m.At, From: m.From, Chunk: add([]byte(m.Text))})
+	}
+	return out
+}
+
+// lineTime is the time a line carries, zero when it carries none.
+func lineTime(l fields) time.Time {
+	at, err := time.Parse(time.RFC3339Nano, l.str("timestamp"))
+	if err != nil {
+		return time.Time{}
+	}
+	return at
 }
 
 // note folds one timeline line's ids, place, time and model into c.
@@ -175,8 +198,8 @@ func (c *Capture) note(l fields, model string) {
 	if c.Model == "" && model != syntheticModel {
 		c.Model = model
 	}
-	at, err := time.Parse(time.RFC3339Nano, l.str("timestamp"))
-	if err != nil {
+	at := lineTime(l)
+	if at.IsZero() {
 		return
 	}
 	if c.StartedAt.IsZero() || at.Before(c.StartedAt) {

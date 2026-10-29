@@ -151,6 +151,9 @@ func (e Envelope) ChunkKeys() []string {
 	}
 	if p := e.AgentClose; p != nil {
 		add(p.TranscriptChunk, p.BriefChunk)
+		for _, m := range p.Messages {
+			add(m.Chunk)
+		}
 	}
 	return keys
 }

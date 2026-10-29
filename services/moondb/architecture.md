@@ -40,7 +40,7 @@ internal/
                     snapshots, subagent stops, per-session state, the
                     200 ms and 2 s budgets
   agentfile/        one subagent's transcript file: read it, cut it to an
-                    agent transcript, take its spawn brief, count later
+                    agent transcript, take its spawn brief and later
                     messages, read its meta
                     file, name its type
   importer/         the transcript import: parse a session transcript

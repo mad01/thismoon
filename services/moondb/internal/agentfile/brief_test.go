@@ -3,8 +3,10 @@ package agentfile
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/services/moondb"
 )
@@ -76,41 +78,97 @@ func TestBriefOf(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, more := briefOf(userLine(t, tc.content))
-			if got != tc.want || more != tc.more {
-				t.Errorf("briefOf = %.120q, %d; want %.120q, %d", got, more, tc.want, tc.more)
+			if got != tc.want || len(more) != tc.more {
+				t.Errorf("briefOf = %.120q, %d more; want %.120q, %d", got, len(more), tc.want,
+					tc.more)
 			}
 		})
 	}
 }
 
-// TestLaterMessages counts the messages that reach an agent after its
-// spawn brief: envelopes a later user line opens with, two in one line
-// among them, and not a tool result, a reminder or a compaction summary
-// that quotes one.
+// TestLaterMessages keeps the messages that reach an agent after its
+// spawn brief, each with its time and sender: envelopes a later user line
+// opens with, two in one line among them, a line a person typed, and the
+// envelope after the brief in the brief's own line. A tool result, a
+// meta line, a reminder, an interrupt marker and a compaction summary
+// that quotes an envelope are none.
 func TestLaterMessages(t *testing.T) {
 	env := func(summary, body string) string {
 		return `<teammate-message teammate_id=\"team-lead\" summary=\"` + summary + `\">\n` +
 			body + `\n</teammate-message>`
 	}
-	user := func(content string) string {
-		return `{"type":"user","timestamp":"2026-10-25T10:00:00Z","message":{"content":` + content + `}}`
+	user := func(at, content string, extra ...string) string {
+		return `{"type":"user","timestamp":"2026-10-25T10:00:` + at + `Z",` +
+			strings.Join(append(extra, ""), ",") + `"message":{"content":` + content + `}}`
 	}
 	toolResult := `[{"type":"tool_result","tool_use_id":"t1","content":"` + env("hit", "x") + `"}]`
 	twoInOne := `"` + env("a > b", "Tighten it.") + `\n\n` + env("second", "Land.") + `"`
+	spawn := `"` + env("spawn", "Build it.") + `\n\n` + env("queued", "Also docs.") + `"`
 	lines := []string{
-		user(`"` + env("spawn", "Build it.") + `"`),
-		user(toolResult),
-		user(`"<system-reminder>\nagents\n</system-reminder>"`),
-		user(twoInOne),
-		user(`"This session is being continued. ` + env("quoted", "old") + `"`),
-		user(`[{"type":"text","text":"` + env("third", "Stop.") + `"}]`),
+		user("00", spawn),
+		user("01", toolResult),
+		user("02", `"<system-reminder>\nagents\n</system-reminder>"`),
+		user("03", `"Base directory for this skill"`, `"isMeta":true`),
+		user("04", twoInOne),
+		user("05", `"This session is being continued from a previous conversation. `+
+			env("quoted", "old")+`"`, `"isCompactSummary":true`),
+		user("06", `[{"type":"text","text":"`+env("third", "Stop.")+`"}]`),
+		user("07", `"[Request interrupted by user]"`),
+		user("08", `"leave the rules out"`),
 	}
 	c, err := readLines(context.Background(), strings.NewReader(strings.Join(lines, "\n")+"\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Brief != "Build it." || c.LaterMessages != 3 {
-		t.Errorf("brief %q, later messages %d; want %q, 3", c.Brief, c.LaterMessages, "Build it.")
+	if c.Brief != "Build it." {
+		t.Errorf("brief %q, want %q", c.Brief, "Build it.")
+	}
+	at := func(sec int) time.Time { return time.Date(2026, 10, 25, 10, 0, sec, 0, time.UTC) }
+	want := []Message{
+		{At: at(0), From: "team-lead", Text: "Also docs."},
+		{At: at(4), From: "team-lead", Text: "Tighten it."},
+		{At: at(4), From: "team-lead", Text: "Land."},
+		{At: at(6), From: "team-lead", Text: "Stop."},
+		{At: at(8), Text: "leave the rules out"},
+	}
+	if !slices.EqualFunc(c.Messages, want, func(a, b Message) bool {
+		return a.At.Equal(b.At) && a.From == b.From && a.Text == b.Text
+	}) {
+		t.Errorf("messages = %+v\nwant %+v", c.Messages, want)
+	}
+}
+
+// TestSender reads the teammate_id among an envelope's attributes, not
+// one a summary quotes.
+func TestSender(t *testing.T) {
+	cases := []struct{ attrs, want string }{
+		{` teammate_id="team-lead" summary="s"`, "team-lead"},
+		{` summary="teammate_id=x" teammate_id="fix-337"`, "fix-337"},
+		{` summary="no sender"`, ""},
+	}
+	for _, c := range cases {
+		if got := sender(c.attrs); got != c.want {
+			t.Errorf("sender(%q) = %q, want %q", c.attrs, got, c.want)
+		}
+	}
+}
+
+// TestAgentMessages puts each message's text in a chunk and keeps its
+// time and sender beside the key.
+func TestAgentMessages(t *testing.T) {
+	at := time.Date(2026, 10, 29, 20, 1, 56, 0, time.UTC)
+	c := Capture{Messages: []Message{{At: at, From: "team-lead", Text: "Go with C."}}}
+	chunks := map[string]string{}
+	got := c.AgentMessages(func(b []byte) string {
+		chunks["k1"] = string(b)
+		return "k1"
+	})
+	if len(got) != 1 || !got[0].At.Equal(at) || got[0].From != "team-lead" ||
+		got[0].Chunk != "k1" || chunks["k1"] != "Go with C." {
+		t.Errorf("AgentMessages = %+v with chunks %v", got, chunks)
+	}
+	if (Capture{}).AgentMessages(nil) != nil {
+		t.Error("a capture without messages gives some")
 	}
 }
 
