@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-10-29 belt: the search and prompt hint events are gone
 
-Change: thismoon #PRNUM (MAD-517). belt drops its `search` and `prompt` hint events. No hint has run on either since keeper-of-facts left, so their hook entries spawned a process on every csl search and every prompt for no output. The pi package stops calling them in the same change. belt now rejects both as unknown events, so an entry that still calls one errors on each call.
+Change: thismoon #344 (MAD-517). belt drops its `search` and `prompt` hint events. No hint has run on either since keeper-of-facts left, so their hook entries spawned a process on every csl search and every prompt for no output. The pi package stops calling them in the same change. belt now rejects both as unknown events, so an entry that still calls one errors on each call.
 
 Run, in order:
 
