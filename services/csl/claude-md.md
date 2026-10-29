@@ -42,7 +42,7 @@ Both forms read the same index and take the same query language.
 ### MCP tools
 
 - Repo: `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`, `csl_repo_pull`, `csl_repo_reindex`.
-- Search: `csl_search` (`output_mode: content` for lines, `file` and `lang` to narrow), `csl_count` (totals, or per repo with `group_by: repo`), `csl_query_validate`.
+- Search: `csl_search` (`output_mode: content` for lines, `file` and `lang` to narrow), `csl_search_multi` (several independent queries in one call, one entry each; `read_top_hit` inlines the top file), `csl_count` (totals, or per repo with `group_by: repo`), `csl_query_validate`.
 - Semantic: `csl_semantic_search`, `csl_hybrid_search`. They need the semantic index (`csl index --semantic-all`) and Ollama running, so reach for them only when `csl_index_info` reports `semantic.built: true`. Otherwise stay on `csl_search`.
 - Read and orient: `csl_read` (file by repo and path, with `start_line` and `end_line`), `csl_ls`, `csl_outline`, `csl_show_file` (opens a section in the csl web UI for the user, so `csl web` must be running), `csl_index_info`.
 - Diagnosis: `csl_doctor`. Call it before retrying a failed call.

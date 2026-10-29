@@ -61,7 +61,7 @@ Index freshness is checked once per CLI call via `search.CheckStaleness()`. Stal
 ### `csl mcp` → Claude Code tool call
 
 1. Claude Code spawns `csl mcp` as a subprocess and sends an `initialize` JSON-RPC message over stdin.
-2. `internal/mcpserver.New()` registers fifteen `csl_*` tools against the `modelcontextprotocol/go-sdk` server.
+2. `internal/mcpserver.New()` registers the `csl_*` tools against the `modelcontextprotocol/go-sdk` server.
 3. A `tools/call` for `csl_search` lands in `handleSearch`, which follows the same daemon-first-then-fallback pattern as the CLI (minus the stderr progress output).
 4. When Claude Code closes the session, stdin EOF causes the server loop to return. The process exits.
 

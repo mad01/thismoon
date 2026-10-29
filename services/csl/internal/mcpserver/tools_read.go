@@ -35,6 +35,9 @@ type readOutput struct {
 	Truncated  bool       `json:"truncated"   jsonschema:"true if output was capped; use start_line/end_line to read specific ranges"`
 }
 
+// maxReadLines caps a csl_read call that sets no range.
+const maxReadLines = 500
+
 func registerReadTools(s *mcp.Server) {
 	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_read",
@@ -79,21 +82,41 @@ func handleRead(
 		return nil, readOutput{}, err
 	}
 
-	absPath := filepath.Join(matched.Path, in.File)
-	f, err := os.Open(absPath)
-	if err != nil {
-		return nil, readOutput{}, fmt.Errorf("open %s: %w", absPath, err)
-	}
-	defer f.Close()
-
-	const defaultMaxLines = 500
-
-	// Apply default cap when no range is specified.
+	// Apply the default cap when no range is specified.
 	effectiveEnd := in.EndLine
 	unbounded := in.StartLine <= 0 && in.EndLine <= 0
 	if unbounded {
-		effectiveEnd = defaultMaxLines
+		effectiveEnd = maxReadLines
 	}
+
+	lines, totalLines, err := readLines(
+		filepath.Join(matched.Path, in.File),
+		in.StartLine,
+		effectiveEnd,
+	)
+	if err != nil {
+		return nil, readOutput{}, err
+	}
+	truncated := unbounded && totalLines > maxReadLines
+
+	return nil, readOutput{
+		Repo:       matched.Name,
+		Path:       in.File,
+		Lines:      lines,
+		TotalLines: totalLines,
+		Truncated:  truncated,
+	}, nil
+}
+
+// readLines returns lines start through end of the file at path, 1-based and
+// inclusive (0 leaves that side open), plus the file's total line count. The
+// scan reads to the end either way, so the count is always the whole file's.
+func readLines(path string, start, end int) ([]readLine, int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, 0, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
 	// Increase the buffer so lines longer than 64 KB don't trip the scanner.
@@ -103,27 +126,17 @@ func handleRead(
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
-		if in.StartLine > 0 && lineNum < in.StartLine {
+		if start > 0 && lineNum < start {
 			continue
 		}
-		if effectiveEnd > 0 && lineNum > effectiveEnd {
-			// Keep counting for total_lines but stop collecting.
+		if end > 0 && lineNum > end {
+			// Keep counting for the total but stop collecting.
 			continue
 		}
 		lines = append(lines, readLine{Number: lineNum, Text: scanner.Text()})
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, readOutput{}, fmt.Errorf("read %s: %w", absPath, err)
+		return nil, 0, fmt.Errorf("read %s: %w", path, err)
 	}
-
-	totalLines := lineNum
-	truncated := unbounded && totalLines > defaultMaxLines
-
-	return nil, readOutput{
-		Repo:       matched.Name,
-		Path:       in.File,
-		Lines:      lines,
-		TotalLines: totalLines,
-		Truncated:  truncated,
-	}, nil
+	return lines, lineNum, nil
 }

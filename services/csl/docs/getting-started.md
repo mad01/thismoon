@@ -328,7 +328,7 @@ and how to pick a different model.
 
 - [CLI reference](cli.md): every subcommand and flag.
 - [Configuration reference](configuration.md): every file csl reads or writes, and where.
-- [MCP reference](mcp.md): the fifteen `csl_*` tools and their contracts.
+- [MCP reference](mcp.md): the `csl_*` tools and their contracts.
 - [Web UI](web.md): the browser UI, the JSON API, and the refresh loop.
 - [Semantic search](semantic.md): lexical vs semantic, the vector index, embedding models.
 - [Architecture](architecture.md): how the daemon, index, and MCP server fit together.

@@ -45,6 +45,7 @@ func New(version string, opts Options) *mcp.Server {
 
 	registerRepoTools(s)
 	registerSearchTools(s)
+	registerSearchMultiTools(s)
 	if opts.SemanticEnabled {
 		registerSemanticTools(s)
 		registerHybridTools(s)
