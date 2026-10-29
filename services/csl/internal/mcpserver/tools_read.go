@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/mad01/thismoon/services/csl/internal/repo/repopath"
 )
 
 // readInput is the typed input for the csl_read tool.
@@ -79,6 +81,9 @@ func handleRead(
 
 	matched, err := resolveRepo(in.Repo)
 	if err != nil {
+		return nil, readOutput{}, err
+	}
+	if _, err := repopath.Resolve(matched.Path, "file", in.File); err != nil {
 		return nil, readOutput{}, err
 	}
 

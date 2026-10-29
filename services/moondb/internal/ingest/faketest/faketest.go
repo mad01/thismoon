@@ -147,6 +147,20 @@ func (s *Store) AgentsWithoutTotals(_ context.Context, version, n int) ([]store.
 	return limit(out, n), nil
 }
 
+// CountAgentsWithoutBrief counts the agents store.NeedsBrief keeps for
+// since.
+func (s *Store) CountAgentsWithoutBrief(_ context.Context, since time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, a := range s.agents {
+		if store.NeedsBrief(a, since) {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // sessionAgents lists one session's agents; the caller holds mu.
 func (s *Store) sessionAgents(id string) []store.Agent {
 	out := []store.Agent{}

@@ -89,3 +89,24 @@ func agentsWithoutTotals(t *testing.T, st store.Store) {
 		})
 	}
 }
+
+// countAgentsWithoutBrief counts the agents an import could still give a
+// brief: one with a brief, an internal agent, one that read no line and
+// one that ended before since are left out.
+func countAgentsWithoutBrief(t *testing.T, st store.Store) {
+	ctx := context.Background()
+	briefed := agent("a2", "s1", 2, 3)
+	briefed.BriefChunk = "brief-sha"
+	internal := agent("a3", "s1", 3, 4)
+	internal.Type = store.InternalAgent
+	unread := agent("a4", "s1", 4, 5)
+	unread.Lines = store.AgentLines{}
+	seed(t, st, session("s1", at(0)), session("s2", at(10)),
+		agent("old", "s1", 0, 1), agent("a1", "s1", 1, 2), briefed, internal, unread,
+		agent("b1", "s2", 11, 12))
+	got, err := st.CountAgentsWithoutBrief(ctx, at(2))
+	must(t, err)
+	if got != 2 {
+		t.Errorf("CountAgentsWithoutBrief(at 2) = %d, want 2 (a1, b1)", got)
+	}
+}

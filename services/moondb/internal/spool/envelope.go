@@ -159,6 +159,13 @@ type AgentClose struct {
 	// to heads and capped (moondb.MaxAgentTranscriptBytes).
 	TranscriptChunk string           `json:"transcript_chunk,omitempty"`
 	Lines           store.AgentLines `json:"lines"`
+	// BriefChunk holds the agent's spawn brief, the text of its
+	// transcript's first user line (moondb.MaxBriefBytes); empty when it
+	// had none.
+	BriefChunk string `json:"brief_chunk,omitempty"`
+	// LaterMessages counts the messages its transcript shows reaching it
+	// after the spawn brief.
+	LaterMessages int `json:"later_messages,omitempty"`
 }
 
 // EditPayload is everything the hook could gather about one file a tool

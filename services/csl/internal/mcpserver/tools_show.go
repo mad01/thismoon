@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
+	"github.com/mad01/thismoon/services/csl/internal/repo/repopath"
 )
 
 // showFileInput is the typed input for the csl_show_file tool.
@@ -83,17 +84,16 @@ func handleShowFile(
 
 	// Confine the path to the repo root and check the file exists, so the tool
 	// fails here with a clear error instead of opening a browser tab on a 404.
-	clean := filepath.Clean("/" + in.File)
-	absPath := filepath.Join(matched.Path, clean)
-	if !strings.HasPrefix(absPath, matched.Path+string(os.PathSeparator)) {
-		return nil, showFileOutput{}, fmt.Errorf("invalid path %q", in.File)
+	absPath, err := repopath.Resolve(matched.Path, "file", in.File)
+	if err != nil {
+		return nil, showFileOutput{}, err
 	}
 	if fi, err := os.Stat(absPath); err != nil {
 		return nil, showFileOutput{}, fmt.Errorf("stat %s: %w", absPath, err)
 	} else if fi.IsDir() {
 		return nil, showFileOutput{}, fmt.Errorf("%s is a directory", absPath)
 	}
-	relPath := strings.TrimPrefix(clean, "/")
+	relPath := filepath.ToSlash(filepath.Clean(in.File))
 
 	cfg, err := config.Load()
 	if err != nil {

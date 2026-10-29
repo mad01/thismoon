@@ -215,10 +215,13 @@ func TestBuild_KindsFilter(t *testing.T) {
 }
 
 // TestBuild_BadPath: a missing or escaping path is an error, not an empty
-// outline.
+// outline. "out" is a symlink to a directory outside the repo.
 func TestBuild_BadPath(t *testing.T) {
 	repo := fixtureRepo(t)
-	for _, p := range []string{"nope", "../x", "/etc"} {
+	if err := os.Symlink(t.TempDir(), filepath.Join(repo.Path, "out")); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"nope", "../x", "/etc", "out"} {
 		if _, err := Build(repo, Options{Path: p}); err == nil {
 			t.Errorf("Build(path=%q) succeeded, want an error", p)
 		}

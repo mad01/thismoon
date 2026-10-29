@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
+	"io"
 	"time"
 
 	"github.com/alpkeskin/gotoon"
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
+	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
@@ -51,6 +52,15 @@ Query syntax:
   lang:go         Restrict to a specific language
   case:yes        Force case-sensitive search
 
+Empty results:
+  A query that is empty, only quotes, or has an unbalanced quote is refused
+  with the fix. When a search with several AND terms finds nothing and some
+  terms match no file at all, it reruns once without them and says which it
+  dropped. Otherwise it explains the empty result: how zoekt parsed the
+  query, files per term, repos searched, and index age. Text and TOON
+  output print these on stderr; --json carries them as relaxed_query,
+  dropped_terms, and zero_result_hint.
+
 Examples:
   csl search "func Walk"
   csl search "TODO|FIXME" --repo thismoon
@@ -71,7 +81,7 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchJSONFlag, "json", false, "output as JSON")
 	searchCmd.Flags().BoolVar(&searchToonFlag, "toon", false, "output as TOON for LLMs")
 	searchCmd.Flags().
-		StringVarP(&searchRepoFlag, "repo", "r", "", "filter results to repos matching this name")
+		StringVarP(&searchRepoFlag, "repo", "r", "", "restrict to repo names matching this case-insensitive regex (a plain substring also works)")
 	searchCmd.Flags().
 		StringVarP(&searchLangFlag, "lang", "l", "", "filter results to a specific language")
 	searchCmd.Flags().
@@ -131,6 +141,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		)
 	}
 	pattern := args[0]
+	if m := lexical.CheckShape(pattern, cliSurface); m != nil {
+		return m
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -160,23 +173,22 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		repoNames[r.Name] = r.Path
 	}
 
-	opts := search.SearchOptions{
-		Pattern:       pattern,
-		RepoFilter:    searchRepoFlag,
-		FileFilter:    searchFileFlag,
-		Lang:          searchLangFlag,
-		CaseSensitive: searchCaseSensitiveFlag,
-		Limit:         searchLimitFlag,
-		ContextLines:  searchContextLinesFlag,
-		OutputMode:    searchOutputModeFlag,
+	ctx := context.Background()
+	local := lexical.Local{IndexDir: indexDir, RepoNames: repoNames}
+	req := lexical.Request{
+		Options:  searchOptions(pattern),
+		Repo:     searchRepoFlag,
+		Repos:    repos,
+		IndexDir: indexDir,
 	}
 
 	// Try daemon first (auto-starts if not running).
 	if !searchReindexFlag {
 		if err := daemon.EnsureDaemon(indexDir, socketPath); err == nil {
-			matches, err := daemon.SearchVia(context.Background(), socketPath, opts, repoNames)
+			matches, err := daemon.SearchVia(ctx, socketPath, req.Options, repoNames)
 			if err == nil {
-				return outputSearchResults(cmd, matches)
+				backend := lexical.Daemon{Local: local, SocketPath: socketPath}
+				return reportSearch(ctx, cmd, backend, req, matches)
 			}
 			// Daemon failed — fall through to in-process search.
 			fmt.Fprintf(
@@ -187,27 +199,61 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Fallback: in-process search (handles indexing too).
-	// Filter by --repo if specified.
-	if searchRepoFlag != "" {
-		filtered, err := reposMatching(repos, searchRepoFlag)
+	matches, err := searchInProcess(ctx, cmd, cfg, local, req)
+	if err != nil {
+		return err
+	}
+	return reportSearch(ctx, cmd, local, req, matches)
+}
+
+// searchOptions builds the search the flags ask for. The repo filter is
+// widened to case-insensitive, the way csl_search's repo parameter matches.
+func searchOptions(pattern string) search.SearchOptions {
+	return search.SearchOptions{
+		Pattern:       pattern,
+		RepoFilter:    lexical.RepoFilter(searchRepoFlag),
+		FileFilter:    searchFileFlag,
+		Lang:          searchLangFlag,
+		CaseSensitive: searchCaseSensitiveFlag,
+		Limit:         searchLimitFlag,
+		ContextLines:  searchContextLinesFlag,
+		OutputMode:    searchOutputModeFlag,
+	}
+}
+
+// searchInProcess runs the search without the daemon: it indexes first when
+// there is no index yet or --reindex asks for it, searches the shards, and
+// re-indexes stale repos in the background afterwards. With --repo set, only
+// the repos the filter matches are checked and indexed, none when it matches
+// no discovered repo.
+func searchInProcess(
+	ctx context.Context,
+	cmd *cobra.Command,
+	cfg *config.Config,
+	local lexical.Local,
+	req lexical.Request,
+) ([]search.Match, error) {
+	indexDir := local.IndexDir
+	repos := req.Repos
+	if req.Repo != "" {
+		matched, err := reposMatching(repos, req.Repo)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if len(filtered) == 0 {
-			return fmt.Errorf("no repos matching %q found", searchRepoFlag)
-		}
-		repos = filtered
+		// A filter that matches no discovered repo is not an error: with
+		// nothing to check or index, the search below comes back empty and
+		// reportSearch explains the filter, as it does after a daemon search.
+		repos = matched
 	}
 
 	state, err := search.LoadState(indexDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	staleness, err := search.CheckStaleness(repos, state)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// If no index exists at all, do a full sync index.
@@ -219,14 +265,14 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		}
 		if len(toIndex) > 0 {
 			if err := indexForSearch(cmd, indexDir, toIndex, cfg.AllowedHiddenDirs(), staleness, state); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	matches, err := search.Search(context.Background(), indexDir, opts, repoNames)
+	matches, err := local.Search(ctx, req.Options)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Background re-index for stale repos, under the sync lock so it never
@@ -257,8 +303,24 @@ func runSearch(cmd *cobra.Command, args []string) error {
 			_ = freshState.Save(indexDir)
 		}()
 	}
+	return matches, nil
+}
 
-	return outputSearchResults(cmd, matches)
+// reposMatching narrows repos to the ones the --repo filter names, by the
+// case-insensitive regex finder.CompileMatcher builds, the same match the
+// search applies to repo names.
+func reposMatching(repos []finder.Repo, filter string) ([]finder.Repo, error) {
+	re, err := finder.CompileMatcher(filter)
+	if err != nil {
+		return nil, fmt.Errorf("--repo: %w", err)
+	}
+	var matched []finder.Repo
+	for _, r := range repos {
+		if re.MatchString(r.Name) {
+			matched = append(matched, r)
+		}
+	}
+	return matched, nil
 }
 
 // indexForSearch builds the index for toIndex before the foreground search
@@ -307,15 +369,79 @@ func indexForSearch(
 	return nil
 }
 
-func outputSearchResults(cmd *cobra.Command, matches []search.Match) error {
+// cliSurface points the csl search hint notes at CLI commands and the
+// malformed-query fixes at the pattern argument. The CLI has no parameter
+// names to mistype into the pattern, so it skips that note.
+var cliSurface = lexical.Surface{
+	QueryArg:   "the <pattern> argument",
+	RepoLookup: "csl repo --list",
+	Reindex:    "csl index --repo <path>",
+}
+
+// reportSearch prints a search's matches. An empty first search goes through
+// lexical.ExplainZero first: a relaxed rerun's matches print in place of the
+// empty page, and otherwise the zero-result hint explains it.
+func reportSearch(
+	ctx context.Context,
+	cmd *cobra.Command,
+	b lexical.Backend,
+	req lexical.Request,
+	matches []search.Match,
+) error {
+	var res lexical.Result
+	if len(matches) == 0 {
+		res = lexical.ExplainZero(ctx, b, cliSurface, req)
+		matches = res.Matches
+	}
+	return outputSearchResults(cmd, matches, res)
+}
+
+// searchJSON is the --json document: the matches and, after an empty first
+// search, the relaxed rerun's query and dropped terms or the hint.
+type searchJSON struct {
+	Matches      []search.Match    `json:"matches"`
+	RelaxedQuery string            `json:"relaxed_query,omitempty"`
+	DroppedTerms []string          `json:"dropped_terms,omitempty"`
+	ZeroHint     *lexical.ZeroHint `json:"zero_result_hint,omitempty"`
+}
+
+// outputSearchResults prints matches in the format the flags ask for. --json
+// carries the relaxed rerun and the hint as fields; text and TOON keep stdout
+// to the matches and print the relaxed line before them and the hint after
+// them on stderr.
+func outputSearchResults(cmd *cobra.Command, matches []search.Match, res lexical.Result) error {
 	w := cmd.OutOrStdout()
 
 	if searchJSONFlag {
+		if matches == nil {
+			matches = []search.Match{}
+		}
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		return enc.Encode(matches)
+		return enc.Encode(searchJSON{
+			Matches:      matches,
+			RelaxedQuery: res.RelaxedQuery,
+			DroppedTerms: res.DroppedTerms,
+			ZeroHint:     res.Hint,
+		})
 	}
 
+	errw := cmd.ErrOrStderr()
+	if res.RelaxedQuery != "" {
+		fmt.Fprintln(errw, lexical.RelaxedLine(res.DroppedTerms, res.RelaxedQuery))
+	}
+	if err := printMatches(w, matches); err != nil {
+		return err
+	}
+	for _, line := range res.Hint.Lines() {
+		fmt.Fprintln(errw, line)
+	}
+	return nil
+}
+
+// printMatches prints matches as TOON or as text: one path per file, or
+// ripgrep-style blocks in content mode.
+func printMatches(w io.Writer, matches []search.Match) error {
 	if searchToonFlag {
 		items := make([]map[string]any, len(matches))
 		for i, m := range matches {
@@ -365,21 +491,4 @@ func outputSearchResults(cmd *cobra.Command, matches []search.Match) error {
 	}
 
 	return nil
-}
-
-// reposMatching keeps the repos whose name matches expr. It reads --repo as
-// the case-sensitive regex a daemon search applies as a zoekt repo: filter,
-// so an anchored '^org/repo$' finds the same repo on both paths.
-func reposMatching(repos []finder.Repo, expr string) ([]finder.Repo, error) {
-	re, err := regexp.Compile(expr)
-	if err != nil {
-		return nil, fmt.Errorf("--repo %q is not a valid regex: %w", expr, err)
-	}
-	var out []finder.Repo
-	for _, r := range repos {
-		if re.MatchString(r.Name) {
-			out = append(out, r)
-		}
-	}
-	return out, nil
 }

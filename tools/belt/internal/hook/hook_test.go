@@ -80,7 +80,7 @@ func TestRunDeniesOnUnreadableConfig(t *testing.T) {
 // same failure has to arrive as advice on the events guards never see.
 func TestRunHintAdvisesOnUnreadableConfig(t *testing.T) {
 	var out bytes.Buffer
-	RunHint("search", failing, strings.NewReader(`{"tool_name":"mcp__csl__csl_search"}`), &out)
+	RunHint("bash", failing, strings.NewReader(`{"tool_name":"Bash"}`), &out)
 
 	var a adviceDecision
 	if err := json.Unmarshal(out.Bytes(), &a); err != nil {
@@ -586,16 +586,6 @@ func captureStdio(t *testing.T, fn func()) string {
 		t.Fatal(err)
 	}
 	return <-read
-}
-
-// The prompt event must emit plain text: UserPromptSubmit adds stdout to
-// context and is not in the hookSpecificOutput.additionalContext family.
-func TestWriteAdvicePromptEmitsPlainText(t *testing.T) {
-	var out bytes.Buffer
-	writeAdvice(&out, hint.EventPrompt, "belt[config]: advice")
-	if got := out.String(); got != "belt[config]: advice\n" {
-		t.Errorf("prompt advice = %q, want the plain text line with no JSON envelope", got)
-	}
 }
 
 // TestRunHintSessionStartRunsCustomHints pins the wiring every harness

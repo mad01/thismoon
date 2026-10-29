@@ -629,6 +629,8 @@ Read a file from a named local repo by repo name and relative path.
 
 The line scanner buffers up to 1 MB per line, so files with very long minified lines still read cleanly.
 
+`file` must stay inside the repo: an absolute path, a `..` escape, or a symlink that resolves outside the checkout is refused.
+
 ### `csl_show_file`
 
 Show a file section to the user: builds a deep link into the csl web UI's file-view page and opens it in the browser via `/usr/bin/open`. The page renders the section like a search match, with controls to widen the context up to the full file and a copy-local-path button. It reads the file live from disk, so `csl web` must be running.

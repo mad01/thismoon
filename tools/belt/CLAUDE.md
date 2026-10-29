@@ -13,7 +13,7 @@ belt/
   cmd/belt/          - entrypoint
   internal/
     cli/             - cobra commands: `hook <event>`, `hint <event>`, `record <event>`, `watch`, `check`, `doctor`, `config`, `override`, `docs`, `version` (build metadata from the shared buildinfo package); `Execute` maps a watcher's wake to exit 2
-    hook/             - payload parsing + output emission per event (deny JSON, additionalContext JSON, plain stdout for prompt, nothing for record) and the watch entrypoint
+    hook/             - payload parsing + output emission per event (deny JSON, additionalContext JSON, nothing for record) and the watch entrypoint
     ledger/           - the record events and the pure entry builder (title, level, 500-byte message, session/agent/repo/worktree/branch tags, model/effort from ledger.agent_types)
     watch/            - the inbox poller: own GET client, `to`-tag filter, per-session cursor and owner files
     cache/            - per-session file names under ~/.cache/belt (session id reduced to path-safe characters), shared by the seen store and the watcher
@@ -119,10 +119,9 @@ make lint     # golangci-lint run ./...
 
 ```
 belt hook bash|write|external-text   # PreToolUse entrypoint: payload on stdin, deny JSON on stdout
-belt hint search|bash|read  # PostToolUse entrypoint: payload on stdin, additionalContext JSON on stdout
+belt hint bash|read      # PostToolUse entrypoint: payload on stdin, additionalContext JSON on stdout
 belt hint session-start  # SessionStart entrypoint: same contract, emits hookEventName SessionStart
 belt hint subagent-start # SubagentStart entrypoint: custom hints only, emits hookEventName SubagentStart
-belt hint prompt         # UserPromptSubmit entrypoint: advice as plain stdout text, not JSON
 belt record <event>      # lifecycle ledger entrypoint: payload on stdin, one events entry, never any output
 belt watch               # asyncRewake inbox watcher (Stop, SessionStart): exit 2 + items on stderr to wake, else exit 0
 belt check bash "git push origin main"                # dry-run, one verdict line per guard

@@ -68,7 +68,7 @@ make install  # build + cp to ~/code/bin/belt + adhoc codesign
 
 - `permission-gate.ts` runs `belt check bash`, `belt check write` and `belt check external-text` before each tool call and blocks on a `DENY` line. It fails closed when belt is missing or errors. After belt it applies the allow, ask and deny lists from `~/.claude/settings.json`. Each belt denial is also announced on pi's extension bus as `belt:deny` with `{ kind, target, reason }`, which the session-band mod counts. pi-mcp-adapter's script mode (`mcpScript`) makes its MCP calls inside the adapter, where neither belt nor those lists see them, so every `mcpScript` call asks first. With no UI and no parent session to ask, that is a block. While it is loaded it sets `globalThis[Symbol.for("mad01.pi.belt-gate")]`. pi says nothing when a declared package path is missing, so an extension outside the package can check that marker and block tool calls when no gate loaded.
 - `permission-broker.ts` carries a headless subagent's confirmation to the root session over a private socket, so a subagent never approves its own call.
-- `belt-hooks.ts` runs `belt hint` at session start, on each prompt, and after bash, csl search and publishing calls, and appends the advice. It never blocks.
+- `belt-hooks.ts` runs `belt hint` at session start and after bash and publishing calls, and appends the advice. It never blocks.
 
 Settings live in `~/.pi/agent/belt.json` (`PI_CODING_AGENT_DIR` moves the directory). Every key is optional and adds to or overrides the defaults, which name no machine-specific server. The server lists only grow, but an `mcpPrefixes` entry for a default prefix such as `csl_` remaps it. Unknown keys are ignored, and pi names them at session start and in `/permissions`:
 
@@ -106,7 +106,7 @@ When a deny surprises you: `check` shows the verdict, `doctor` shows the state t
 
 `belt version` prints the bare version token of the installed build. With `-o json` it prints the full build metadata (`version`, `commit`, `tag`, `build_time`), the same four keys every tool in this repo reports, so one probe can ask any of them what build is running.
 
-`belt hook <event>`, `belt hint <event>`, `belt record <event>` and `belt watch` are the real hook entrypoints, with the payload on stdin; Claude Code invokes them, not the user. `hook` carries deny decisions for guards on stdout. `hint` carries `additionalContext` JSON for the search, bash, external-text, session-start and subagent-start events, and plain stdout text for prompt (UserPromptSubmit adds stdout to context directly). `record` prints nothing. `watch` prints only when it wakes the session, on stderr with exit 2.
+`belt hook <event>`, `belt hint <event>`, `belt record <event>` and `belt watch` are the real hook entrypoints, with the payload on stdin; Claude Code invokes them, not the user. `hook` carries deny decisions for guards on stdout. `hint` carries `additionalContext` JSON for the bash, read, external-text, session-start and subagent-start events. `record` prints nothing. `watch` prints only when it wakes the session, on stderr with exit 2.
 
 ## Configuration
 

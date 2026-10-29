@@ -642,8 +642,8 @@ func TestImportCountsSkippedAgentFiles(t *testing.T) {
 }
 
 // TestImportAgents writes each subagent transcript of an imported session
-// as the SubagentStop hook would: the agent transcript, who the meta file
-// says the agent was, the turns it ran under and where it worked.
+// as the SubagentStop hook would: the agent transcript, its brief, who the
+// meta file says the agent was, the turns it ran under and where it worked.
 func TestImportAgents(t *testing.T) {
 	w := newWorld(t)
 	_, envs := w.run(t, w.options())
@@ -665,6 +665,9 @@ func TestImportAgents(t *testing.T) {
 	if !ac.StartedAt.Equal(start) || !ac.EndedAt.Equal(start.Add(2500*time.Millisecond)) ||
 		ac.Lines != (store.AgentLines{Read: 4, Kept: 4}) {
 		t.Errorf("times %v to %v, lines %+v", ac.StartedAt, ac.EndedAt, ac.Lines)
+	}
+	if brief := w.chunk(t, ac.BriefChunk); brief != "change sub.go" {
+		t.Errorf("brief = %q, want the first user line's text", brief)
 	}
 	if lines := w.chunk(t, ac.TranscriptChunk); !strings.Contains(
 		lines,

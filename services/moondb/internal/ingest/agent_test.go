@@ -102,6 +102,67 @@ func TestAgentCloseReplaces(t *testing.T) {
 	}
 }
 
+// TestAgentCloseBrief: a stop records the agent's spawn brief once and its
+// count of later messages. An import that does not replace the record
+// fills a missing brief with its count and leaves a stored one alone, and
+// a replacing stop without a brief keeps the stored one.
+func TestAgentCloseBrief(t *testing.T) {
+	cases := []struct {
+		name               string
+		stored, next, want string
+		read               int
+		backfill           bool
+		later, wantLater   int
+	}{
+		{
+			name: "first stop", next: "fix the parser", want: "fix the parser",
+			read: 10, later: 1, wantLater: 1,
+		},
+		{
+			name: "import fills a record from before briefs", stored: "-",
+			next: "fix the parser", want: "fix the parser", read: 10, backfill: true,
+			later: 2, wantLater: 2,
+		},
+		{
+			name: "import keeps the stored brief", stored: "fix the parser", next: "other",
+			want: "fix the parser", read: 10, backfill: true, later: 2, wantLater: 0,
+		},
+		{
+			name: "replacing stop without one keeps it", stored: "fix the parser",
+			want: "fix the parser", read: 11, later: 3, wantLater: 3,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			c := chunkSet{}
+			if tc.stored != "" {
+				first := agentEnv(c, "s1", "a1", 3, 10)
+				if tc.stored != "-" {
+					first.AgentClose.BriefChunk = c.add(tc.stored)
+				}
+				f.write(first, c)
+				f.drain()
+			}
+			env := agentEnv(c, "s1", "a1", 5, tc.read)
+			env.Backfill = tc.backfill
+			if tc.next != "" {
+				env.AgentClose.BriefChunk = c.add(tc.next)
+			}
+			env.AgentClose.LaterMessages = tc.later
+			f.write(env, c)
+			f.drain()
+			got := f.agent("a1")
+			if got.BriefChunk != spool.ChunkKey([]byte(tc.want)) {
+				t.Errorf("brief chunk = %q, want the one of %q", got.BriefChunk, tc.want)
+			}
+			if got.LaterMessages != tc.wantLater {
+				t.Errorf("later messages = %d, want %d", got.LaterMessages, tc.wantLater)
+			}
+		})
+	}
+}
+
 // TestAgentCloseMissingChunk records the agent without its transcript and
 // says so.
 func TestAgentCloseMissingChunk(t *testing.T) {

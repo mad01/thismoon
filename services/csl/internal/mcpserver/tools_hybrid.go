@@ -9,6 +9,7 @@ import (
 
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
 	"github.com/mad01/thismoon/services/csl/internal/hybrid"
+	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/services/csl/internal/semantic"
@@ -127,17 +128,16 @@ func hybridLexical(ctx context.Context, in hybridSearchInput, limit int) ([]sear
 
 	opts := search.SearchOptions{
 		Pattern:    in.Query,
-		RepoFilter: insensitiveRepoFilter(in.Repo),
+		RepoFilter: lexical.RepoFilter(in.Repo),
 		Lang:       in.Lang,
 		Limit:      limit,
 		OutputMode: contentOutputMode,
 	}
-	backend := daemonBackend{
-		indexDir:   indexDir,
-		socketPath: daemon.DefaultSocketPath(),
-		repoNames:  repoNames,
+	backend := lexical.Daemon{
+		Local:      lexical.Local{IndexDir: indexDir, RepoNames: repoNames},
+		SocketPath: daemon.DefaultSocketPath(),
 	}
-	return backend.search(ctx, opts)
+	return backend.Search(ctx, opts)
 }
 
 // hybridSemantic reuses the csl_semantic_search handler so the daemon-first

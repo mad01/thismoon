@@ -43,10 +43,6 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^mcp__csl__csl_(search|semantic_search|hybrid_search)$",
-        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint search" }]
-      },
-      {
         "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint bash" }]
       },
@@ -73,11 +69,6 @@
           { "type": "command", "command": "~/code/bin/belt hint subagent-start" },
           { "type": "command", "command": "~/code/bin/belt record subagent-start" }
         ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint prompt" }]
       }
     ],
     "Stop": [

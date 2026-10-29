@@ -33,7 +33,8 @@ func agentFile(s *testSession) string {
 }
 
 // TestSubagentStop records the agent's transcript, cut to heads, with who
-// it was and where it worked, named by the lines read.
+// it was, the brief it was spawned with and where it worked, named by the
+// lines read.
 func TestSubagentStop(t *testing.T) {
 	repo := newRepo(t)
 	s := newSession(t, repo)
@@ -60,6 +61,7 @@ func TestSubagentStop(t *testing.T) {
 		{"Cwd", ac.Cwd, repo},
 		{"Location.Repo", ac.Location.Repo, "github.com/example/demo"},
 		{"transcript", s.chunk(ac.TranscriptChunk), string(want.Transcript)},
+		{"brief", s.chunk(ac.BriefChunk), "go"},
 	})
 	if !slices.Equal(ac.TurnIDs, []string{"prompt-1"}) || ac.Lines.Read != 3 ||
 		ac.Lines.Kept != 2 || !ac.EndedAt.Equal(testNow) ||
