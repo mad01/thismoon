@@ -26,18 +26,28 @@ GPL-3.0 for elkjs).
 ## Decision
 
 Hybrid. The export inlines what is ours, together with the body, the page
-data, and the page's local images as data URIs. Prose and fixation reading
-then work offline and with scripts off.
+data, and the page's local images as data URIs. The prose then reads
+offline and with scripts off. Fixation reading and the header controls
+come from webkit.js, so they need scripts on, and they work offline.
+
+The body is parsed and serialized again before it goes in, so it closes
+everything it opens. A served page mounts the body through innerHTML,
+which contains any damage. A file has no such boundary: an html block or a
+legacy page with an unclosed comment or element would swallow the page
+data and the scripts after it.
 
 The libraries load from jsDelivr's npm mirror, at the versions the asset
 cache holds. Each script tag carries an integrity hash computed from the
 cached file, and the export adds only the libraries the page's blocks use.
-jsDelivr serves an npm file byte for byte, so the hash matches the CDN
-response. A browser refuses any other bytes, and the block shows its
-"needs the asset" note. The cached Chart.js file is the one exception: it
-is a file jsDelivr generates, which is its banner comment followed by the
-npm file `dist/chart.umd.js`. The export strips the banner and loads that
-npm file, whose bytes are fixed.
+The asset cache fetches each library from the URL the export names and
+checks a pinned sha256 of those bytes, so the hash covers exactly what
+jsDelivr serves there. A browser refuses any other bytes, and the block
+shows its "needs the asset" note. Chart.js now comes from its npm file
+`dist/chart.umd.js`, the move ADR-0022 left its pin waiting for. The
+`chart.umd.min.js` jsDelivr generates from it carries a banner jsDelivr
+writes, and jsDelivr warns against pinning a hash on that file. The tags
+sit after the body, so the prose paints before the browser waits on
+jsDelivr.
 
 The fonts' latin faces are inlined as data URIs. The families are not on
 npm in the bytes Google Fonts serves, and a stylesheet cannot pin a font
@@ -57,10 +67,14 @@ cannot drift from the binary that wrote it.
   table in `internal/export` names the same files, and a test holds it to
   `scripts/cache-assets.sh`.
 - An export references the libraries without redistributing them. It does
-  carry the fonts, which the SIL Open Font License allows with the notice
-  that `THIRD-PARTY.md` and the file's head comment give.
+  carry the fonts, which the SIL Open Font License allows with each
+  family's copyright notice and the licence. It also carries Prism inside
+  webkit's bundle, under MIT. The file's head comment holds the font
+  copyright lines, the licence link, and Prism's licence text.
 - A terminal block cannot work in a file, because it needs a local
   pseudo-terminal behind a WebSocket. It shows a note instead.
 - A deck shows no default logo in an export: the repo logo is 340 KB and
   would make the file half again as large. A logo URL in the deck's chrome
   still shows.
+- Known gap: nothing removes the files `present_export` writes to
+  `exports/` in the workdir. They stay until someone deletes them.

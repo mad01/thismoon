@@ -118,8 +118,8 @@ answers 502 from POST /p/<id>/share; the failure is the instance's.
 ## exporting a page
 
 `present export <id> [-o path] [--deck]` writes a page as one HTML file that
-opens with no server: <id>.html in the current directory by default. The
-present_export tool writes the same file to exports/ in the workdir, the one
+opens with no server: <id>.html in the current directory by default, or in
+the directory -o names. The present_export tool writes the same file to exports/ in the workdir, the one
 place the MCP sandbox may write, and returns its path. Both read the asset
 cache, assets/ in the workdir. A page with a graph, chart, or diagram is
 refused with "not in the asset cache" until `make cache` has run in
