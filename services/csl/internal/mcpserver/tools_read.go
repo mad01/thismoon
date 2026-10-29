@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -83,7 +82,8 @@ func handleRead(
 	if err != nil {
 		return nil, readOutput{}, err
 	}
-	if _, err := repopath.Resolve(matched.Path, "file", in.File); err != nil {
+	path, err := repopath.Resolve(matched.Path, "file", in.File)
+	if err != nil {
 		return nil, readOutput{}, err
 	}
 
@@ -94,11 +94,7 @@ func handleRead(
 		effectiveEnd = maxReadLines
 	}
 
-	lines, totalLines, err := readLines(
-		filepath.Join(matched.Path, in.File),
-		in.StartLine,
-		effectiveEnd,
-	)
+	lines, totalLines, err := readLines(path, in.StartLine, effectiveEnd)
 	if err != nil {
 		return nil, readOutput{}, err
 	}

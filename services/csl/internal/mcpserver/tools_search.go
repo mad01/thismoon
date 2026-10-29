@@ -9,6 +9,7 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
 	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
+	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
@@ -167,85 +168,127 @@ func handleSearch(
 	_ *mcp.CallToolRequest,
 	in searchInput,
 ) (*mcp.CallToolResult, searchOutput, error) {
-	if m := lexical.CheckShape(in.Query, mcpSurface); m != nil {
-		return nil, searchOutput{}, m
-	}
-
-	outputMode := in.OutputMode
-	if outputMode == "" {
-		outputMode = defaultSearchOutput
-	}
-	if outputMode != filesOutputMode && outputMode != contentOutputMode {
-		return nil, searchOutput{}, fmt.Errorf(
-			"output_mode must be %q or %q, got %q",
-			filesOutputMode, contentOutputMode, outputMode,
-		)
-	}
-
-	limit := in.Limit
-	if limit <= 0 {
-		limit = defaultSearchLimit
-	}
-	offset := in.Offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	indexDir, err := search.DefaultIndexDir()
-	if err != nil {
-		return nil, searchOutput{}, fmt.Errorf("resolve index dir: %w", err)
-	}
-	socketPath := daemon.DefaultSocketPath()
-
-	cfg, err := config.Load()
-	if err != nil {
-		return nil, searchOutput{}, fmt.Errorf("load csl config: %w", err)
-	}
-
-	repos, err := cfg.DiscoverRepos()
-	if err != nil {
-		return nil, searchOutput{}, fmt.Errorf("walk repos: %w", err)
-	}
-	if len(repos) == 0 {
-		return nil, searchOutput{OutputMode: outputMode, ZeroHint: &lexical.ZeroHint{
-			Notes: []string{
-				"no git repos discovered under the configured dirs; run 'csl config' to check dirs and index.hosts",
-			},
-		}}, nil
-	}
-
-	repoNames := make(map[string]string, len(repos))
-	for _, r := range repos {
-		repoNames[r.Name] = r.Path
-	}
-
-	opts := search.SearchOptions{
-		Pattern:       in.Query,
-		RepoFilter:    lexical.RepoFilter(in.Repo),
-		FileFilter:    in.File,
-		Lang:          in.Lang,
-		CaseSensitive: in.CaseSensitive,
-		Limit:         limit,
-		Offset:        offset,
-		ContextLines:  in.ContextLines,
-		OutputMode:    outputMode,
-	}
-
-	backend := lexical.Daemon{
-		Local:      lexical.Local{IndexDir: indexDir, RepoNames: repoNames},
-		SocketPath: socketPath,
-	}
-	matches, err := backend.Search(ctx, opts)
+	req, err := newSearchRequest(in)
 	if err != nil {
 		return nil, searchOutput{}, err
 	}
-
-	out := buildSearchOutput(outputMode, limit, offset, matches)
-	if out.Total > 0 {
-		return nil, out, nil
+	env, err := newSearchEnv()
+	if err != nil {
+		return nil, searchOutput{}, err
 	}
-	req := lexical.Request{Options: opts, Repo: in.Repo, Repos: repos, IndexDir: indexDir}
-	return nil, explainZero(ctx, backend, req), nil
+	out, err := env.search(ctx, req)
+	if err != nil {
+		return nil, searchOutput{}, err
+	}
+	return nil, out, nil
+}
+
+// noReposNote is the whole answer when discovery finds no repos at all.
+const noReposNote = "no git repos discovered under the configured dirs; run 'csl config' to check dirs and index.hosts"
+
+// searchRequest is a csl_search input that passed the shape check, with its
+// output mode, limit, and offset defaulted.
+type searchRequest struct {
+	in     searchInput
+	mode   string
+	limit  int
+	offset int
+}
+
+// newSearchRequest refuses a malformed query or output mode and applies the
+// defaults. It needs no config or index, so a bad input is refused before
+// any setup runs.
+func newSearchRequest(in searchInput) (searchRequest, error) {
+	if m := lexical.CheckShape(in.Query, mcpSurface); m != nil {
+		return searchRequest{}, m
+	}
+	r := searchRequest{in: in, mode: in.OutputMode, limit: in.Limit, offset: max(in.Offset, 0)}
+	if r.mode == "" {
+		r.mode = defaultSearchOutput
+	}
+	if r.mode != filesOutputMode && r.mode != contentOutputMode {
+		return searchRequest{}, fmt.Errorf(
+			"output_mode must be %q or %q, got %q",
+			filesOutputMode, contentOutputMode, r.mode,
+		)
+	}
+	if r.limit <= 0 {
+		r.limit = defaultSearchLimit
+	}
+	return r, nil
+}
+
+// searchEnv is the setup a lexical search runs against: the backend, the
+// repos discovery found, their checkout paths by name, and the index they
+// search. csl_search builds one per call; csl_search_multi shares one across
+// its queries.
+type searchEnv struct {
+	backend   lexical.Backend
+	repos     []finder.Repo
+	repoPaths map[string]string
+	indexDir  string
+}
+
+// newSearchEnv resolves the index, loads the config, and discovers the
+// repos. Its backend asks the daemon first and searches in-process without
+// one.
+func newSearchEnv() (searchEnv, error) {
+	indexDir, err := search.DefaultIndexDir()
+	if err != nil {
+		return searchEnv{}, fmt.Errorf("resolve index dir: %w", err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return searchEnv{}, fmt.Errorf("load csl config: %w", err)
+	}
+	repos, err := cfg.DiscoverRepos()
+	if err != nil {
+		return searchEnv{}, fmt.Errorf("walk repos: %w", err)
+	}
+	repoPaths := make(map[string]string, len(repos))
+	for _, r := range repos {
+		repoPaths[r.Name] = r.Path
+	}
+	return searchEnv{
+		backend: lexical.Daemon{
+			Local:      lexical.Local{IndexDir: indexDir, RepoNames: repoPaths},
+			SocketPath: daemon.DefaultSocketPath(),
+		},
+		repos:     repos,
+		repoPaths: repoPaths,
+		indexDir:  indexDir,
+	}, nil
+}
+
+// search runs one checked request: the search, the page shaped the way
+// csl_search returns it, and on an empty page the zero-result diagnosis with
+// its one relaxation.
+func (e searchEnv) search(ctx context.Context, r searchRequest) (searchOutput, error) {
+	if len(e.repos) == 0 {
+		return searchOutput{OutputMode: r.mode, ZeroHint: &lexical.ZeroHint{
+			Notes: []string{noReposNote},
+		}}, nil
+	}
+	opts := search.SearchOptions{
+		Pattern:       r.in.Query,
+		RepoFilter:    lexical.RepoFilter(r.in.Repo),
+		FileFilter:    r.in.File,
+		Lang:          r.in.Lang,
+		CaseSensitive: r.in.CaseSensitive,
+		Limit:         r.limit,
+		Offset:        r.offset,
+		ContextLines:  r.in.ContextLines,
+		OutputMode:    r.mode,
+	}
+	matches, err := e.backend.Search(ctx, opts)
+	if err != nil {
+		return searchOutput{}, err
+	}
+	if out := buildSearchOutput(r.mode, r.limit, r.offset, matches); out.Total > 0 {
+		return out, nil
+	}
+	req := lexical.Request{Options: opts, Repo: r.in.Repo, Repos: e.repos, IndexDir: e.indexDir}
+	return explainZero(ctx, e.backend, req), nil
 }
 
 // mcpSurface points the csl_search hint notes at the MCP tools, and the

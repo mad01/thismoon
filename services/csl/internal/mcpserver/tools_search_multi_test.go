@@ -15,24 +15,32 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
-// multiFake is a searchBackend the concurrent workers can share: results and
-// errors keyed by pattern, per-term file counts for the zero-result
-// diagnosis, and the most searches it saw in flight at once.
+// multiFake is a lexical.Backend the concurrent workers can share: results
+// and errors keyed by pattern, patterns that panic, per-term file counts for
+// the zero-result diagnosis, the searches it ran, and the most it saw in
+// flight at once.
 type multiFake struct {
 	mu       sync.Mutex
 	results  map[string][]search.Match
 	errs     map[string]error
+	panics   map[string]bool
 	files    map[string]int
+	searches int
 	inFlight int
 	peak     int
 }
 
-func (f *multiFake) search(_ context.Context, opts search.SearchOptions) ([]search.Match, error) {
+func (f *multiFake) Search(_ context.Context, opts search.SearchOptions) ([]search.Match, error) {
+	if f.panics[opts.Pattern] {
+		panic("fake backend: " + opts.Pattern)
+	}
 	f.mu.Lock()
+	f.searches++
 	f.inFlight++
 	f.peak = max(f.peak, f.inFlight)
 	f.mu.Unlock()
@@ -46,7 +54,7 @@ func (f *multiFake) search(_ context.Context, opts search.SearchOptions) ([]sear
 	return f.results[opts.Pattern], f.errs[opts.Pattern]
 }
 
-func (f *multiFake) count(
+func (f *multiFake) Count(
 	_ context.Context,
 	opts search.CountOptions,
 ) ([]search.CountResult, int, error) {
@@ -58,9 +66,9 @@ func (f *multiFake) count(
 
 // multiEnv builds the shared call state around a fake backend, with every
 // repo rooted at root.
-func multiEnv(t *testing.T, b searchBackend, root string, names ...string) multiSearchEnv {
+func multiEnv(t *testing.T, b lexical.Backend, root string, names ...string) searchEnv {
 	t.Helper()
-	env := multiSearchEnv{backend: b, repoPaths: map[string]string{}, indexDir: t.TempDir()}
+	env := searchEnv{backend: b, repoPaths: map[string]string{}, indexDir: t.TempDir()}
 	for _, name := range names {
 		env.repos = append(env.repos, finder.Repo{Name: name, Path: root})
 		env.repoPaths[name] = root
@@ -146,8 +154,9 @@ func TestSearchMulti_FailingQueryStaysInItsEntry(t *testing.T) {
 			zero.ZeroHint,
 		)
 	}
-	if got := termCountsLine(zero.ZeroHint.TermCounts); got != "retry=3, backoff=2" {
-		t.Errorf("zero-hit term counts = %q, want retry=3, backoff=2", got)
+	wantCounts := []lexical.TermCount{{Term: "retry", Files: 3}, {Term: "backoff", Files: 2}}
+	if got := zero.ZeroHint.TermCounts; !slices.Equal(got, wantCounts) {
+		t.Errorf("zero-hit term counts = %v, want %v", got, wantCounts)
 	}
 
 	if fine := out.Results[4]; fine.Error != "" || len(fine.Files) != 1 {
@@ -227,7 +236,14 @@ func TestSearchMulti_QueryCapOverMCP(t *testing.T) {
 }
 
 func TestSearchMulti_ReadTopHit(t *testing.T) {
-	root := t.TempDir()
+	base := t.TempDir()
+	root := filepath.Join(base, "repo")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "secret.txt"), []byte("secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	var body strings.Builder
 	for i := range 100 {
 		fmt.Fprintf(&body, "line %d\n", i+1)
@@ -242,6 +258,7 @@ func TestSearchMulti_ReadTopHit(t *testing.T) {
 		},
 		"plain":   makeFileMatches(1, "org/repo"),
 		"missing": {{Repo: "org/repo", File: "gone.go", Line: 1}},
+		"escape":  {{Repo: "org/repo", File: "../secret.txt", Line: 1}},
 	}}
 	env := multiEnv(t, fb, root, "org/repo")
 
@@ -250,6 +267,7 @@ func TestSearchMulti_ReadTopHit(t *testing.T) {
 		{Query: "plain"},
 		{Query: "nothing", ReadTopHit: true},
 		{Query: "missing", ReadTopHit: true},
+		{Query: "escape", ReadTopHit: true},
 	})
 
 	top := out.Results[0].TopHit
@@ -282,6 +300,14 @@ func TestSearchMulti_ReadTopHit(t *testing.T) {
 		t.Errorf(
 			"unreadable top hit: error %q, top_hit_error %q; want the read failure on top_hit_error only",
 			r.Error,
+			r.TopHitError,
+		)
+	}
+	if r := out.Results[4]; r.TopHit != nil ||
+		!strings.Contains(r.TopHitError, "file must stay inside the repo") {
+		t.Errorf(
+			"top hit outside the repo: top_hit %v, top_hit_error %q; want it refused like csl_read",
+			r.TopHit,
 			r.TopHitError,
 		)
 	}
@@ -441,5 +467,201 @@ func TestRenderSearchMultiText(t *testing.T) {
 	}, "\n")
 	if got := renderSearchMultiText(out); got != want {
 		t.Errorf("renderSearchMultiText:\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestSearchMulti_PanicStaysInItsEntry(t *testing.T) {
+	fb := &multiFake{
+		results: map[string][]search.Match{"fine": makeFileMatches(1, "org/repo")},
+		panics:  map[string]bool{"kaboom": true},
+	}
+	env := multiEnv(t, fb, t.TempDir(), "org/repo")
+
+	out := runSearchMulti(context.Background(), env, []searchMultiQuery{
+		{Query: "kaboom"},
+		{Query: "fine"},
+	})
+
+	if r := out.Results[0]; r.Query != "kaboom" || !strings.Contains(r.Error, "internal error") {
+		t.Errorf(
+			"panicking query: query %q error %q, want an internal error entry",
+			r.Query,
+			r.Error,
+		)
+	}
+	if r := out.Results[1]; r.Error != "" || len(r.Files) != 1 {
+		t.Errorf("fine: error %q with %d files, want 1 file", r.Error, len(r.Files))
+	}
+}
+
+func TestSearchMulti_CancelledCallStartsNoQuery(t *testing.T) {
+	fb := &multiFake{results: map[string][]search.Match{"a": makeFileMatches(1, "org/repo")}}
+	env := multiEnv(t, fb, t.TempDir(), "org/repo")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	out := runSearchMulti(ctx, env, []searchMultiQuery{{Query: "a"}, {Query: "b"}})
+
+	for _, r := range out.Results {
+		if !strings.Contains(r.Error, context.Canceled.Error()) {
+			t.Errorf("%s: error %q, want the cancellation", r.Query, r.Error)
+		}
+	}
+	if fb.searches != 0 {
+		t.Errorf("%d searches ran after the call was cancelled, want 0", fb.searches)
+	}
+}
+
+func TestFitLineBudget_TopHitWithNoRoomIsDropped(t *testing.T) {
+	content := buildSearchOutput(contentOutputMode, 50, 0, makeMatches(10, "org/repo", "a.go"))
+	hit := &readOutput{Repo: "org/repo", Path: "a.go", Lines: make([]readLine, topHitLines)}
+	results := []searchMultiResult{{Query: "q", searchOutput: &content, TopHit: hit}}
+
+	out := fitLineBudget(results, 10)
+
+	r := out.Results[0]
+	if len(r.Lines) != 10 || r.TopHit != nil || r.TopHitError != topHitCutNote {
+		t.Errorf("lines=%d top_hit=%v top_hit_error=%q, want 10 lines and the cut note",
+			len(r.Lines), r.TopHit, r.TopHitError)
+	}
+	if text := renderSearchMultiText(out); !strings.Contains(text, "top hit: "+topHitCutNote) {
+		t.Errorf("rendered text lacks the cut note:\n%s", text)
+	}
+}
+
+// stubDaemonStart replaces the up-front daemon start for one test with one
+// that returns err, and counts the calls.
+func stubDaemonStart(t *testing.T, err error) *int {
+	t.Helper()
+	calls := 0
+	prev := ensureDaemon
+	ensureDaemon = func(string, string) error {
+		calls++
+		return err
+	}
+	t.Cleanup(func() { ensureDaemon = prev })
+	return &calls
+}
+
+// setupMultiRepo writes a discoverable repo org/multirepo holding a.go,
+// points csl's config at it under an isolated home, and indexes it into the
+// index dir csl resolves there.
+func setupMultiRepo(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	reposRoot := filepath.Join(home, "workspace")
+	repoDir := filepath.Join(reposRoot, "org", "multirepo")
+	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		filepath.Join(repoDir, ".git", "config"):             "[remote \"origin\"]\n\turl = git@github.com:org/multirepo.git\n",
+		filepath.Join(repoDir, "a.go"):                       "package a\n\nfunc Alpha() {}\n\nfunc Beta() {}\n",
+		filepath.Join(home, ".config", "csl", "config.yaml"): "dirs:\n  - " + reposRoot + "\n",
+	}
+	for path, body := range files {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	isolateConfigEnv(t, home)
+
+	indexDir, err := search.DefaultIndexDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := finder.Repo{Name: "org/multirepo", Path: repoDir}
+	if err := search.IndexRepo(indexDir, repo, nil); err != nil {
+		t.Fatalf("IndexRepo: %v", err)
+	}
+}
+
+func TestNewMultiSearchEnv_FailedDaemonStartSearchesInProcess(t *testing.T) {
+	setupMultiRepo(t)
+	tests := []struct {
+		name     string
+		startErr error
+		wantType string
+	}{
+		{"daemon started", nil, "lexical.Daemon"},
+		{"start failed", errors.New("no daemon"), "lexical.Local"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := stubDaemonStart(t, tt.startErr)
+			env, err := newMultiSearchEnv()
+			if err != nil {
+				t.Fatalf("newMultiSearchEnv: %v", err)
+			}
+			if got := fmt.Sprintf("%T", env.backend); got != tt.wantType || *calls != 1 {
+				t.Errorf("backend %s after %d starts, want %s after 1", got, *calls, tt.wantType)
+			}
+		})
+	}
+}
+
+// TestSearchMulti_MixedBatchOverMCP sends one call through a live server
+// against a real index: a plain query, a malformed one, one relaxed by a
+// dead term, and one with read_top_hit. The daemon start fails, so the call
+// searches in-process.
+func TestSearchMulti_MixedBatchOverMCP(t *testing.T) {
+	setupMultiRepo(t)
+	stubDaemonStart(t, errors.New("no daemon in tests"))
+	ctx, session := connect(t, New("test", Options{}))
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "csl_search_multi",
+		Arguments: map[string]any{
+			"response_format": "json",
+			"queries": []map[string]any{
+				{"query": "Alpha"},
+				{"query": `"`},
+				{"query": "Alpha zzznotaterm"},
+				{"query": "Beta", "read_top_hit": true},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("call csl_search_multi: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("tool error: %s", textOf(t, res))
+	}
+	var got struct {
+		Results []struct {
+			Query        string            `json:"query"`
+			Error        string            `json:"error"`
+			Files        []searchMatchFile `json:"files"`
+			RelaxedQuery string            `json:"relaxed_query"`
+			DroppedTerms []string          `json:"dropped_terms"`
+			TopHit       *readOutput       `json:"top_hit"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(textOf(t, res)), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Results) != 4 {
+		t.Fatalf("got %d entries, want 4", len(got.Results))
+	}
+	wantFile := []searchMatchFile{{Repo: "org/multirepo", Path: "a.go"}}
+
+	if r := got.Results[0]; r.Error != "" || !slices.Equal(r.Files, wantFile) {
+		t.Errorf("plain: error %q files %v, want %v", r.Error, r.Files, wantFile)
+	}
+	if r := got.Results[1]; !strings.Contains(r.Error, "only quote characters") || r.Files != nil {
+		t.Errorf("malformed: error %q files %v, want only the shape refusal", r.Error, r.Files)
+	}
+	if r := got.Results[2]; r.RelaxedQuery != "Alpha" ||
+		!slices.Equal(r.DroppedTerms, []string{"zzznotaterm"}) || !slices.Equal(r.Files, wantFile) {
+		t.Errorf("relaxed: relaxed_query %q dropped %v files %v, want Alpha without zzznotaterm",
+			r.RelaxedQuery, r.DroppedTerms, r.Files)
+	}
+	r := got.Results[3]
+	if r.TopHit == nil || r.TopHit.Path != "a.go" || len(r.TopHit.Lines) != 5 ||
+		r.TopHit.Lines[4].Text != "func Beta() {}" {
+		t.Errorf("read_top_hit: top_hit %+v, want all 5 lines of a.go", r.TopHit)
 	}
 }

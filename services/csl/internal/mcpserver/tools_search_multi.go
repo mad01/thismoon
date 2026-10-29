@@ -3,22 +3,20 @@ package mcpserver
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
-	"github.com/mad01/thismoon/services/csl/internal/repo/config"
-	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
-	"github.com/mad01/thismoon/services/csl/internal/search"
+	"github.com/mad01/thismoon/services/csl/internal/lexical"
+	"github.com/mad01/thismoon/services/csl/internal/repo/repopath"
 )
 
 // csl_search_multi runs several independent csl_search queries in one call.
-// Each query goes through the same steps csl_search takes (shape check,
-// search, page shaping, zero-result diagnosis and relaxation), against one
-// repo discovery and one daemon shared by the whole call.
+// Each query takes csl_search's own path (newSearchRequest, then
+// searchEnv.search), against one repo discovery and one backend shared by
+// the whole call.
 
 const (
 	// maxMultiQueries caps the queries one call may carry.
@@ -33,8 +31,8 @@ const (
 	multiLineBudget = maxContentLines
 )
 
-// noReposNote is csl_search's answer when discovery finds no repos at all.
-const noReposNote = "no git repos discovered under the configured dirs; run 'csl config' to check dirs and index.hosts"
+// topHitCutNote replaces a top hit the line budget left no room for.
+const topHitCutNote = "cut by the shared line budget; read it with csl_read"
 
 // searchMultiQuery is one query of a csl_search_multi call: csl_search's
 // parameters without offset, plus read_top_hit.
@@ -95,7 +93,7 @@ func registerSearchMultiTools(s *mcp.Server) {
 			"Each query takes csl_search's parameters except offset (query, repo, file, lang, output_mode, limit, context_lines, case_sensitive) and gets csl_search's treatment: a malformed query is refused with the fix, a zero-hit query carries zero_result_hint, a relaxed rerun carries relaxed_query and dropped_terms, and a capped one carries truncated and total_available. " +
 			"A query that fails carries its error in its own entry and does not fail the others. " +
 			"Set read_top_hit on a query to inline the first 60 lines of its top-ranked file as top_hit, so a search and the read that follows it take one call. " +
-			"At most 10 queries per call. Content lines and top_hit lines share a 300-line budget per call, split evenly across the queries that need it; to see more of a cut entry, rerun that query alone with csl_search (offset pages past it). " +
+			"At most 10 queries per call. Content lines and top_hit lines share a 300-line budget per call, split evenly across the queries that need it; to see more of a cut entry, rerun that query alone with csl_search. " +
 			"Query syntax and pitfalls are csl_search's: space is AND within one file, a|b is OR, sym:Name finds definitions.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
@@ -137,55 +135,37 @@ func checkMultiQueryCount(n int) error {
 	return nil
 }
 
-// multiSearchEnv is what every query of one call shares: the backend, the
-// discovered repos, their paths by name, and the index they search.
-type multiSearchEnv struct {
-	backend   searchBackend
-	repos     []finder.Repo
-	repoPaths map[string]string
-	indexDir  string
-}
+// ensureDaemon starts the search daemon when nothing answers. Tests replace
+// it, since starting the daemon from a test binary runs the test binary.
+var ensureDaemon = daemon.EnsureDaemon
 
-// newMultiSearchEnv does csl_search's per-call setup once for the batch. It
-// also starts the daemon before the fan-out, so the workers find it running
-// instead of each racing to start one.
-func newMultiSearchEnv() (multiSearchEnv, error) {
-	indexDir, err := search.DefaultIndexDir()
+// newMultiSearchEnv does csl_search's setup once for the batch and starts the
+// daemon before the fan-out, so the workers find it running instead of each
+// racing to start one. When that start fails the whole call searches
+// in-process: the daemon backend would retry the start for every query and
+// every zero-result count, each waiting up to a second.
+func newMultiSearchEnv() (searchEnv, error) {
+	env, err := newSearchEnv()
 	if err != nil {
-		return multiSearchEnv{}, fmt.Errorf("resolve index dir: %w", err)
+		return searchEnv{}, err
 	}
-	cfg, err := config.Load()
-	if err != nil {
-		return multiSearchEnv{}, fmt.Errorf("load csl config: %w", err)
+	if len(env.repos) == 0 {
+		return env, nil
 	}
-	repos, err := cfg.DiscoverRepos()
-	if err != nil {
-		return multiSearchEnv{}, fmt.Errorf("walk repos: %w", err)
+	if err := ensureDaemon(env.indexDir, daemon.DefaultSocketPath()); err != nil {
+		env.backend = lexical.Local{IndexDir: env.indexDir, RepoNames: env.repoPaths}
 	}
-	repoPaths := make(map[string]string, len(repos))
-	for _, r := range repos {
-		repoPaths[r.Name] = r.Path
-	}
-	socketPath := daemon.DefaultSocketPath()
-	if len(repos) > 0 {
-		// A failed start is not an error here: each query falls back to
-		// searching in-process, as csl_search does.
-		_ = daemon.EnsureDaemon(indexDir, socketPath)
-	}
-	return multiSearchEnv{
-		backend:   daemonBackend{indexDir: indexDir, socketPath: socketPath, repoNames: repoPaths},
-		repos:     repos,
-		repoPaths: repoPaths,
-		indexDir:  indexDir,
-	}, nil
+	return env, nil
 }
 
 // runSearchMulti runs the queries on at most multiSearchWorkers goroutines,
 // then fits the results into the call's line budget. A failing query lands
-// in its own entry, so no worker returns an error.
+// in its own entry, so no worker returns an error. A panic does too: errgroup
+// does not recover one and neither does the MCP SDK, so one bad query would
+// otherwise take csl mcp down.
 func runSearchMulti(
 	ctx context.Context,
-	env multiSearchEnv,
+	env searchEnv,
 	queries []searchMultiQuery,
 ) searchMultiOutput {
 	results := make([]searchMultiResult, len(queries))
@@ -193,7 +173,15 @@ func runSearchMulti(
 	g.SetLimit(multiSearchWorkers)
 	for i, q := range queries {
 		g.Go(func() error {
-			results[i] = env.run(ctx, q)
+			defer func() {
+				if p := recover(); p != nil {
+					results[i] = searchMultiResult{
+						Query: q.Query,
+						Error: fmt.Sprintf("internal error: %v", p),
+					}
+				}
+			}()
+			results[i] = answerQuery(ctx, env, q)
 			return nil
 		})
 	}
@@ -201,81 +189,49 @@ func runSearchMulti(
 	return fitLineBudget(results, multiLineBudget)
 }
 
-// run answers one query: the search, then the top-hit read when asked.
-func (e multiSearchEnv) run(ctx context.Context, q searchMultiQuery) searchMultiResult {
+// answerQuery answers one query: the search csl_search runs, then the
+// top-hit read when asked. Every query reads the first page. A query still
+// queued when the call is cancelled does not start.
+func answerQuery(ctx context.Context, env searchEnv, q searchMultiQuery) searchMultiResult {
 	res := searchMultiResult{Query: q.Query}
-	out, err := e.search(ctx, q.searchInput())
+	if err := ctx.Err(); err != nil {
+		res.Error = err.Error()
+		return res
+	}
+	req, err := newSearchRequest(q.searchInput())
+	var out searchOutput
+	if err == nil {
+		out, err = env.search(ctx, req)
+	}
 	if err != nil {
 		res.Error = err.Error()
 		return res
 	}
 	res.searchOutput = &out
 	if q.ReadTopHit {
-		res.TopHit, res.TopHitError = e.readTopHit(out)
+		res.TopHit, res.TopHitError = readTopHit(env.repoPaths, out)
 	}
 	return res
 }
 
-// search is csl_search's per-query path after setup: shape check, defaults,
-// one search, page shaping, and the zero-result diagnosis with its one
-// relaxation. Every query reads the first page.
-func (e multiSearchEnv) search(ctx context.Context, in searchInput) (searchOutput, error) {
-	if m := checkQueryShape(in.Query); m != nil {
-		return searchOutput{}, m
-	}
-	mode := in.OutputMode
-	if mode == "" {
-		mode = defaultSearchOutput
-	}
-	if mode != filesOutputMode && mode != contentOutputMode {
-		return searchOutput{}, fmt.Errorf(
-			"output_mode must be %q or %q, got %q",
-			filesOutputMode, contentOutputMode, mode,
-		)
-	}
-	limit := in.Limit
-	if limit <= 0 {
-		limit = defaultSearchLimit
-	}
-	if len(e.repos) == 0 {
-		return searchOutput{OutputMode: mode, ZeroHint: &searchZeroHint{
-			Notes: []string{noReposNote},
-		}}, nil
-	}
-
-	opts := search.SearchOptions{
-		Pattern:       in.Query,
-		RepoFilter:    insensitiveRepoFilter(in.Repo),
-		FileFilter:    in.File,
-		Lang:          in.Lang,
-		CaseSensitive: in.CaseSensitive,
-		Limit:         limit,
-		ContextLines:  in.ContextLines,
-		OutputMode:    mode,
-	}
-	matches, err := e.backend.search(ctx, opts)
-	if err != nil {
-		return searchOutput{}, err
-	}
-	if out := buildSearchOutput(mode, limit, 0, matches); out.Total > 0 {
-		return out, nil
-	}
-	return explainZero(ctx, e.backend, in, opts, e.repos, e.indexDir), nil
-}
-
 // readTopHit reads the first topHitLines lines of the page's top-ranked
-// file. A page with no file yields nothing; a read failure comes back as
-// text for the entry, since the search itself succeeded.
-func (e multiSearchEnv) readTopHit(out searchOutput) (*readOutput, string) {
+// file, refusing a path that leaves the repo the way csl_read does. A page
+// with no file yields nothing; a read failure comes back as text for the
+// entry, since the search itself succeeded.
+func readTopHit(repoPaths map[string]string, out searchOutput) (*readOutput, string) {
 	repo, file, ok := topHit(out)
 	if !ok {
 		return nil, ""
 	}
-	root, ok := e.repoPaths[repo]
+	root, ok := repoPaths[repo]
 	if !ok {
 		return nil, fmt.Sprintf("repo %s is not among the discovered repos", repo)
 	}
-	lines, total, err := readLines(filepath.Join(root, file), 1, topHitLines)
+	path, err := repopath.Resolve(root, "file", file)
+	if err != nil {
+		return nil, err.Error()
+	}
+	lines, total, err := readLines(path, 1, topHitLines)
 	if err != nil {
 		return nil, err.Error()
 	}
@@ -345,23 +301,31 @@ func entryLines(r searchMultiResult) int {
 	return n
 }
 
-// cutEntry keeps the first allot lines of an entry, content lines first.
+// cutEntry keeps the first allot lines of an entry, content lines first. A
+// top hit with no lines left is dropped and says so, since an empty one
+// would read as an empty file.
 func cutEntry(r *searchMultiResult, allot int) {
-	if r.searchOutput != nil && len(r.Lines) > allot {
-		if !r.Truncated {
-			r.Truncated = true
-			r.TotalAvailable = len(r.Lines)
-		}
-		r.Lines = r.Lines[:allot]
-		r.Total = allot
-	}
 	if r.searchOutput != nil {
+		if len(r.Lines) > allot {
+			if !r.Truncated {
+				r.Truncated = true
+				r.TotalAvailable = len(r.Lines)
+			}
+			r.Lines = r.Lines[:allot]
+			r.Total = allot
+		}
 		allot -= len(r.Lines)
 	}
-	if r.TopHit != nil && len(r.TopHit.Lines) > allot {
-		r.TopHit.Lines = r.TopHit.Lines[:allot]
-		r.TopHit.Truncated = true
+	if r.TopHit == nil || len(r.TopHit.Lines) <= allot {
+		return
 	}
+	if allot <= 0 {
+		r.TopHit = nil
+		r.TopHitError = topHitCutNote
+		return
+	}
+	r.TopHit.Lines = r.TopHit.Lines[:allot]
+	r.TopHit.Truncated = true
 }
 
 // shareLines splits budget across needs so that an entry needing less than
