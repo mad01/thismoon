@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -26,7 +27,10 @@ var historyCmd = &cobra.Command{
 	Long: `List every recorded edit of a file, newest first: when, which tool, which
 agent, which session and turn, and where the before-content came from. The
 list spans every checkout of the repository, since agents edit in worktrees
-while a person reads in the main checkout; --worktree narrows it to one.`,
+while a person reads in the main checkout; --worktree narrows it to one.
+--worktree also lists that checkout's edits stored without a repository
+identity, which an import of a worktree deleted beforehand can leave; give
+such a file as its full path under the root.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runHistory,
 }
@@ -35,7 +39,7 @@ func init() {
 	historyCmd.Flags().
 		StringVar(&historyWorktree, "worktree", "", "checkout root (default: every checkout)")
 	historyCmd.Flags().
-		StringVar(&historyRepo, "repo", "", "repository identity (default: the checkout's origin)")
+		StringVar(&historyRepo, "repo", "", "repository identity (default: the checkout's origin, none with --worktree)")
 	historyCmd.Flags().
 		IntVar(&historyLimit, "limit", 0, "most edits to list (default: the server's)")
 	historyCmd.Flags().BoolVar(&historyJSON, "json", false, "print the API answer as JSON")
@@ -67,13 +71,25 @@ func runHistory(cmd *cobra.Command, args []string) error {
 }
 
 // historyRequest is the query for a located path: the repository and the
-// path inside it, every checkout included, unless --worktree names one. A
-// path outside any repository is keyed by its absolute path alone. The
-// flags stand in for what locate found.
+// path inside it, every checkout included. --worktree names one checkout by
+// its root, which identifies it alone, so the identity locate found is
+// dropped: an edit stored without one, as an import of a deleted worktree
+// can leave it, is listed too. A path locate found in no repository but
+// under that root, as every path of a deleted worktree is, becomes relative
+// to the root. --repo sets the identity either way. Any other path outside
+// a repository is keyed by its absolute path alone.
 func historyRequest(loc located, worktree, repo string, limit int) query.HistoryRequest {
-	req := query.HistoryRequest{Worktree: worktree, Repo: loc.Repo, Path: loc.Path, Limit: limit}
-	if repo != "" {
+	req := query.HistoryRequest{Worktree: worktree, Path: loc.Path, Limit: limit}
+	switch {
+	case repo != "":
 		req.Repo = repo
+	case worktree == "":
+		req.Repo = loc.Repo
+	}
+	if worktree != "" && loc.Worktree == "" {
+		if rel, err := filepath.Rel(worktree, loc.Path); err == nil && filepath.IsLocal(rel) {
+			req.Path = filepath.ToSlash(rel)
+		}
 	}
 	return req
 }

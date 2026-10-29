@@ -73,6 +73,21 @@ capture can be backfilled: `moondb import --dry-run` counts what the
 transcripts still hold, `moondb import` spools it. A `content` answer
 is a text match, not proof: check its candidates before trusting it.
 
+`history` misses edits a session made in a worktree that is gone: they
+carry no repository identity, and the list across checkouts matches on it.
+The hooks record the identity, the origin remote's host/owner/repo, for any
+file in a checkout with an origin. An edit `moondb import` brought in can
+lack it when its worktree was deleted before the import. That happens when
+the worktree's name matched no repository the import knew, or it was a
+temporary clone such as an eval run's. In such a clone the stored root can
+sit below the clone's own root, with the path relative to it.
+
+To list those edits, pass the stored root: `moondb history --worktree <root>
+<root>/<path>` works from any directory. The `moondb_history` tool given only
+`path` lists every edit of that path, in any repository or none, each with
+its stored root. Importing again does not add the identity: a stored edit
+stays as it is.
+
 `moondb trace`, or the `moondb_trace` tool, shows cost `unknown` or names a
 model as unpriced: the built-in price table has no row for that model id.
 Add a `[prices."<model id>"]` table to the config and restart serve. A turn
