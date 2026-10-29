@@ -62,7 +62,8 @@ func registerHybridTools(s *mcp.Server) {
 			"Returns file-level hits ranked by fused score, each carrying its lexical line and/or semantic chunk as evidence. " +
 			"Filter by repo (substring) or lang (single language); tune fusion with rrf_k (default 60, limit default 50). " +
 			"Runs both backends per call, so the semantic cold-start cost (first-ever model download ~90 MB, model load on a cold daemon; see csl_semantic_search) applies here too. " +
-			"If the semantic index isn't built (csl index --semantic-all), results degrade to lexical-only with semantic_available=false.",
+			"If the semantic index isn't built (csl index --semantic-all), results degrade to lexical-only with semantic_available=false. " +
+			"Several independent queries: " + parallelCallsTail,
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),

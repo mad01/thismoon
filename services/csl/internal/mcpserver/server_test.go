@@ -2,9 +2,12 @@ package mcpserver
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/kit/agentdoc"
 	"github.com/mad01/thismoon/kit/mcptest"
+	"github.com/mad01/thismoon/services/csl"
 )
 
 // semanticTools are the two tools gated on semantic.enabled in config.yaml.
@@ -73,6 +76,64 @@ func TestAlwaysLoadMeta(t *testing.T) {
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
 		t.Errorf("tools with _meta[anthropic/alwaysLoad] = %v, want %v", got, want)
+	}
+}
+
+// TestInstructionsNameEveryWriteTool keeps the parallel-calls note honest. The
+// instructions say every tool but the ones they name is read-only, so the
+// named tools must be exactly those registered without ReadOnlyHint, and the
+// note must not push the block past the three-line cap (ADR-0009).
+func TestInstructionsNameEveryWriteTool(t *testing.T) {
+	instructions := agentdoc.Instructions(csl.Facts())
+	if n := len(strings.Split(instructions, "\n")); n > 3 {
+		t.Errorf("instructions have %d lines, want at most 3:\n%s", n, instructions)
+	}
+	_, rest, ok := strings.Cut(instructions, "Every tool but ")
+	exceptions, _, found := strings.Cut(rest, " is read-only")
+	if !ok || !found {
+		t.Fatalf("instructions lack the read-only exception list:\n%s", instructions)
+	}
+	var named []string
+	for _, word := range strings.Fields(exceptions) {
+		if name := strings.TrimSuffix(word, ","); strings.HasPrefix(name, "csl_") {
+			named = append(named, name)
+		}
+	}
+	var writers []string
+	for _, tool := range mcptest.ListTools(t, New("test", Options{SemanticEnabled: true})) {
+		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+			writers = append(writers, tool.Name)
+		}
+	}
+	slices.Sort(named)
+	slices.Sort(writers)
+	if !slices.Equal(named, writers) {
+		t.Errorf(
+			"instructions name %v as not read-only, want the tools without ReadOnlyHint %v",
+			named,
+			writers,
+		)
+	}
+}
+
+// TestParallelCallsNote pins which tools carry the call-site nudge to batch
+// independent calls, and that each of them really is read-only, since the
+// nudge tells the model so.
+func TestParallelCallsNote(t *testing.T) {
+	want := []string{"csl_hybrid_search", "csl_outline", "csl_read", "csl_search"}
+	var got []string
+	for _, tool := range mcptest.ListTools(t, New("test", Options{SemanticEnabled: true})) {
+		if !strings.Contains(tool.Description, "this tool is read-only and runs concurrently") {
+			continue
+		}
+		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+			t.Errorf("%s: description claims read-only but ReadOnlyHint is false", tool.Name)
+		}
+		got = append(got, tool.Name)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("tools with the parallel-calls note = %v, want %v", got, want)
 	}
 }
 

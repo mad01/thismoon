@@ -2,6 +2,13 @@ package csl
 
 import "github.com/mad01/thismoon/kit/agentdoc"
 
+// parallelCallsNote asks clients to batch independent calls into one turn.
+// It names the two tools that write: every other csl tool sets ReadOnlyHint,
+// and clients run read-only calls from one turn concurrently.
+const parallelCallsNote = "Every tool but csl_repo_pull and csl_repo_reindex is read-only and safe to run concurrently: " +
+	"send independent searches and reads as parallel calls in one turn; " +
+	"only a call that needs an earlier result belongs in the next turn."
+
 // Facts returns the mechanical facts rendered into OperatingDoc, the MCP
 // instructions block, and error hints. The paths and the base URL are
 // resolved at call time, not compiled in: where state lives depends on
@@ -19,7 +26,7 @@ func Facts() agentdoc.Facts {
 		StorePath:     state,
 		LogPath:       state + "/" + DaemonLogFile,
 		HasDoctor:     true,
-		MCPNote:       "Tools search the local index via an auto-started daemon with in-process fallback; nothing must be running. The web UI (default " + baseURL + ") is separate.",
+		MCPNote:       "Tools search the local index via an auto-started daemon with in-process fallback; nothing must be running. The web UI (default " + baseURL + ") is separate. " + parallelCallsNote,
 		MCPDoctorTool: "csl_doctor",
 	}
 }

@@ -33,7 +33,8 @@ func registerOutlineTools(s *mcp.Server) {
 			"Fields, enumerators, and markdown headings are out unless kinds names them (symbols_skipped counts them); test files are out unless include_tests is true. " +
 			"Reads the working tree directly (no index needed, always current). " +
 			"Returns files_scanned, symbols_total, truncated, and symbols: [{name, kind, parent, file, line, refs}] ranked by refs desc, then kind (types before functions before constants), then name; " +
-			"the text format groups them by file in rank order like csl_search output. Default limit 100, max 500; narrow with path or kinds when truncated.",
+			"the text format groups them by file in rank order like csl_search output. Default limit 100, max 500; narrow with path or kinds when truncated. " +
+			"Several independent repos or paths: " + parallelCallsTail,
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),
