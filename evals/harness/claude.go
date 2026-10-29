@@ -119,8 +119,12 @@ type invocation struct {
 	Effort          string
 	PermissionMode  string
 	DisallowedTools []string
+	AllowedTools    []string
 	MaxBudgetUSD    float64
 	Prompt          string
+	// Profile adds the flags a non-full profile needs: an appended
+	// system prompt, a strict MCP config, hooks off.
+	Profile profile
 }
 
 // args renders the command line. Settings, hooks, and MCP servers load the
@@ -149,6 +153,11 @@ func (inv invocation) args() []string {
 	if inv.MaxBudgetUSD > 0 {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(inv.MaxBudgetUSD, 'f', -1, 64))
 	}
+	args = append(args, inv.Profile.args()...)
+	if len(inv.AllowedTools) > 0 {
+		args = append(args, "--allowedTools")
+		args = append(args, inv.AllowedTools...)
+	}
 	if len(inv.DisallowedTools) > 0 {
 		args = append(args, "--disallowedTools")
 		args = append(args, inv.DisallowedTools...)
@@ -156,12 +165,31 @@ func (inv invocation) args() []string {
 	return append(args, "--", inv.Prompt)
 }
 
+// args renders the profile's own flags. Allow and Deny are not here: the
+// invocation merges them with the case's lists.
+func (p profile) args() []string {
+	var args []string
+	if p.Steer != "" {
+		args = append(args, "--append-system-prompt", p.Steer)
+	}
+	if p.MCPConfig != "" {
+		args = append(args, "--strict-mcp-config", "--mcp-config", p.MCPConfig)
+	}
+	if p.DisableHooks {
+		args = append(args, "--settings", `{"disableAllHooks":true}`)
+	}
+	return args
+}
+
 // flagTemplate is the command line every case run shares, with the
 // per-case values as placeholders, for run.json.
-func flagTemplate(model, effort string, maxBudgetUSD float64) []string {
+func flagTemplate(model, effort string, maxBudgetUSD float64, p profile) []string {
+	if p.Steer != "" {
+		p.Steer = "<steer>"
+	}
 	args := invocation{
 		SessionID: "<uuid>", Model: model, Effort: effort, MaxBudgetUSD: maxBudgetUSD,
-		Prompt: "<case prompt>",
+		Prompt: "<case prompt>", Profile: p, AllowedTools: p.Allow, DisallowedTools: p.Deny,
 	}.args()
 	for i, a := range args {
 		if a == "--max-turns" {
@@ -183,8 +211,11 @@ type claudeCmd struct {
 // ctx ends first the group gets SIGTERM. On
 // every exit path, timeout or not, whatever is left of the group gets
 // SIGTERM and then SIGKILL after the grace period, so no MCP server or
-// hook outlives the case. The error carries the tail of stderr.
-func (c claudeCmd) run(ctx context.Context, dir string, inv invocation, stream io.Writer) error {
+// hook outlives the case. The error carries the tail of stderr. The CPU
+// time returned is claude's own plus the children it waited for (hooks,
+// and MCP servers it shut down itself); a server the reaper killed is
+// not in it.
+func (c claudeCmd) run(ctx context.Context, dir string, inv invocation, stream io.Writer) (time.Duration, error) {
 	cmd := exec.CommandContext(ctx, c.bin, inv.args()...)
 	cmd.Dir = dir
 	cmd.Env = caseEnv(os.Environ())
@@ -198,13 +229,23 @@ func (c claudeCmd) run(ctx context.Context, dir string, inv invocation, stream i
 	if cmd.Process != nil {
 		reapGroup(cmd.Process.Pid, c.grace)
 	}
+	cpu := cpuTime(cmd.ProcessState)
 	if err != nil {
 		if ctx.Err() != nil {
 			err = fmt.Errorf("%w (%w)", err, ctx.Err())
 		}
-		return fmt.Errorf("claude: %w: %s", err, tail(stderr.String(), stderrTail))
+		return cpu, fmt.Errorf("claude: %w: %s", err, tail(stderr.String(), stderrTail))
 	}
-	return nil
+	return cpu, nil
+}
+
+// cpuTime is the user plus system CPU time of a finished process and the
+// children it waited for.
+func cpuTime(state *os.ProcessState) time.Duration {
+	if state == nil {
+		return 0
+	}
+	return state.UserTime() + state.SystemTime()
 }
 
 // signalGroup sends sig to every process in group pgid. A group that is

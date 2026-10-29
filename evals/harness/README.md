@@ -13,9 +13,23 @@ go run ./evals/harness -case a,b -reps 3          # several cases and reps
 go run ./evals/harness -model haiku -effort low   # override model and effort
 go run ./evals/harness -report 20261026-191500    # re-render a summary
 go run ./evals/harness -compare <runA> <runB>     # per-case deltas
+go run ./evals/harness -profile csl-cli -case fleet-cobra-repos   # a workspace with the csl CLI only
 ```
 
 Each case run is its own session: the runner strips the variables that would nest it in the calling session or set effort behind its back. It passes `--max-turns` from the case and `--max-budget-usd` as a hard cap. The session is kept like any other, so moondb can read its transcript and the row's scorecard has tokens, cost, searches and reads; eval sessions show up in `claude --resume` under the workspace directory. The runner sets `MOONDB_SESSION_TAGS=eval`, so moondb marks every eval session with the `eval` tag. Ctrl-C, SIGTERM and SIGHUP stop the current case, kill claude's whole process group, tear down the workspace and write the rows so far.
+
+## Profiles
+
+`-profile` picks what the runs have for code search, so the same cases measure a workspace with csl against one without it. Every profile but `full` denies the thismoon CLIs (`-deny-clis`, a comma-separated list; add a workspace's own CLI there to keep it out of the measurement).
+
+- `full` (the default) is your session as it is: every MCP server, hook, and CLI.
+- `csl-mcp` registers csl alone through `--strict-mcp-config`, keeps the csl CLI on PATH as a set-up machine has it, keeps your hooks, and appends the steer file to the system prompt.
+- `csl-cli` registers no MCP server, allows `Bash(csl:*)`, keeps your hooks, and appends the steer file.
+- `grep` registers no MCP server, turns every hook off, denies csl, and tells the model it has only the built-in tools: the baseline, where every search is a filesystem walk.
+
+The steer file (`-steer-file`, default `examples/dotfiles/CLAUDE.csl.md`) is the standalone csl rules a workspace CLAUDE.md would carry; the two csl profiles add one line under it saying which form of csl the session has. `-no-grep` also denies Grep and Bash grep, rg, ugrep and find in the two csl profiles, to compare the steered run with the forced one.
+
+Cases grade on outcome whatever the profile. Each row counts `csl` calls (MCP tools and CLI runs, subagents included) and claude's CPU seconds (its own plus the children it waited for), so a summary or compare shows whether the steer took and what the search cost the machine. The `fleet-*` cases ask questions across every checkout under one directory; they are the ones the profiles are for. The profile, steer file and `-no-grep` are recorded in `run.json`.
 
 ## Workspaces
 
@@ -52,6 +66,6 @@ Graders run before teardown. `regex` matches the final answer. `file` checks a w
 
 ## Reading a run
 
-A run writes `runs/<timestamp>/`. `run.json` records the claude version, the model and effort asked for and used, the flags, and the totals. `results.jsonl` has one row per case and rep with the score, each grader's result, usage, main and subagent tool counts, and the session id. `streams/` keeps each transcript, and `summary.md` lists the rows, their tool calls and every failure. The score is the passed share of grader weight. A row passes only when every grader does. An API error result, an unparsed stream line or a changed checkout puts the row in errors. Rows carry the moondb scorecard, or `unavailable`.
+A run writes `runs/<timestamp>/`. `run.json` records the claude version, the model and effort asked for and used, the flags, and the totals. `results.jsonl` has one row per case and rep with the score, each grader's result, usage, main and subagent tool counts, csl calls, CPU seconds, and the session id. `streams/` keeps each transcript, and `summary.md` lists the rows, their tool calls and every failure. The score is the passed share of grader weight. A row passes only when every grader does. An API error result, an unparsed stream line or a changed checkout puts the row in errors. Rows carry the moondb scorecard, or `unavailable`.
 
 Git ignores `runs/`. Copy a settled `summary.md` to `results/<date>-<label>.md` as a baseline. `-compare` totals only the cases both runs have.

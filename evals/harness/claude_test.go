@@ -125,7 +125,7 @@ func TestFetchScorecard(t *testing.T) {
 }
 
 func TestFlagTemplate(t *testing.T) {
-	got := strings.Join(flagTemplate("", "high", 2), " ")
+	got := strings.Join(flagTemplate("", "high", 2, profile{}), " ")
 	for _, want := range []string{
 		"--session-id <uuid>", "--max-turns <case max_turns>", "--effort high",
 		"--max-budget-usd 2", "-- <case prompt>",

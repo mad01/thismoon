@@ -51,6 +51,7 @@ type options struct {
 	reps         int
 	model        string
 	effort       string
+	profile      profileOptions
 	maxBudgetUSD float64
 	maxTotalUSD  float64
 	roots        workspaceRoots
@@ -69,6 +70,14 @@ func main() {
 	flag.StringVar(&o.model, "model", "", "model for the runs (default: the user's setting)")
 	flag.StringVar(&o.effort, "effort", "",
 		"effort level for the runs: "+strings.Join(effortLevels, ", ")+" (default: claude's)")
+	flag.StringVar(&o.profile.Name, "profile", profileFull,
+		"what the runs have for code search: "+strings.Join(profileNames, ", "))
+	flag.StringVar(&o.profile.SteerFile, "steer-file", defaultSteerFile,
+		"csl rules file the csl-mcp and csl-cli profiles append to the system prompt")
+	denyCLIs := flag.String("deny-clis", strings.Join(defaultDenyCLIs, ","),
+		"comma-separated CLIs every profile but full denies through Bash")
+	flag.BoolVar(&o.profile.NoGrep, "no-grep", false,
+		"also deny Grep and Bash grep, rg, ugrep and find in the csl-mcp and csl-cli profiles")
 	flag.Float64Var(&o.maxBudgetUSD, "max-budget-usd", defaultMaxBudgetUSD,
 		"hard cost cap per case run, passed to claude (0 for none)")
 	flag.Float64Var(&o.maxTotalUSD, "max-total-usd", defaultMaxTotalUSD,
@@ -82,6 +91,7 @@ func main() {
 	flag.StringVar(&o.report, "report", "", "re-render summary.md for this run and exit")
 	compareA := flag.String("compare", "", "compare this run to the run named after the flags")
 	flag.Parse()
+	o.profile.DenyCLIs = splitList(*denyCLIs)
 	if *compareA != "" {
 		o.compare = append([]string{*compareA}, flag.Args()...)
 	}
@@ -117,14 +127,18 @@ func run(o options, status *progstatus.Reporter) error {
 	if o.effort != "" && !slices.Contains(effortLevels, o.effort) {
 		return fmt.Errorf("-effort %q: want one of %s", o.effort, strings.Join(effortLevels, ", "))
 	}
-	return runEval(o, cases, status)
+	p, err := loadProfile(o.profile)
+	if err != nil {
+		return err
+	}
+	return runEval(o, p, cases, status)
 }
 
 // runEval runs the cases and writes runs/<id>/: run.json, results.jsonl,
 // summary.md, and the raw transcripts under streams/. SIGINT, SIGTERM, and
 // SIGHUP all stop the current case the same way, so its workspace is torn
 // down and the rows so far are written.
-func runEval(o options, cases []Case, status *progstatus.Reporter) error {
+func runEval(o options, p profile, cases []Case, status *progstatus.Reporter) error {
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
@@ -136,7 +150,10 @@ func runEval(o options, cases []Case, status *progstatus.Reporter) error {
 		ClaudeVersion: claudeVersion(ctx, bin),
 		Model:         o.model,
 		Effort:        o.effort,
-		Flags:         flagTemplate(o.model, o.effort, o.maxBudgetUSD),
+		Profile:       p.Name,
+		SteerFile:     steerFileOf(p, o.profile.SteerFile),
+		NoGrep:        o.profile.NoGrep,
+		Flags:         flagTemplate(o.model, o.effort, o.maxBudgetUSD, p),
 		Reps:          o.reps,
 		MaxBudgetUSD:  o.maxBudgetUSD,
 		MaxTotalUSD:   o.maxTotalUSD,
@@ -153,7 +170,7 @@ func runEval(o options, cases []Case, status *progstatus.Reporter) error {
 		return err
 	}
 	r := &runner{
-		claude: claudeCmd{bin: bin, grace: killGrace}, model: o.model, effort: o.effort,
+		claude: claudeCmd{bin: bin, grace: killGrace}, profile: p, model: o.model, effort: o.effort,
 		maxBudgetUSD: o.maxBudgetUSD, maxTotalUSD: o.maxTotalUSD, roots: o.roots,
 		scorecardURL: o.scorecardURL, client: http.DefaultClient,
 		judge: claudeJudge{bin: bin}, streamDir: streamDir, now: time.Now, log: os.Stderr,
@@ -173,6 +190,15 @@ func runEval(o options, cases []Case, status *progstatus.Reporter) error {
 	status.Done(fmt.Sprintf("%d of %d passed, $%.2f", meta.Totals.Passed, len(rows),
 		meta.Totals.CostUSD+meta.Totals.JudgeCostUSD))
 	return nil
+}
+
+// steerFileOf names the steer file a run used, "" when the profile reads
+// none.
+func steerFileOf(p profile, file string) string {
+	if p.Name == profileCSLMCP || p.Name == profileCSLCLI {
+		return file
+	}
+	return ""
 }
 
 // writeRun writes run.json, results.jsonl, and summary.md, and prints the
