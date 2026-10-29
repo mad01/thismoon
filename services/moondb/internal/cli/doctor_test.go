@@ -27,6 +27,10 @@ func TestBriefsCheck(t *testing.T) {
 			"some missing", http.StatusOK, `{"agents_to_fill":3}`,
 			"3 agents without a spawn brief or later messages; run moondb import --since 30d --force",
 		},
+		{
+			"a serve with only the old key", http.StatusOK, `{"agents_without_brief":2}`,
+			"2 agents without a spawn brief or later messages; run moondb import --since 30d --force",
+		},
 		{"older serve", http.StatusNotFound, `{"error":"moondb: no API route"}`, "version-skew"},
 		{
 			"serve fails",

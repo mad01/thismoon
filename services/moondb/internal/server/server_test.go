@@ -679,7 +679,7 @@ func TestAgentRoute(t *testing.T) {
 
 // TestDoctorCountsAgentsToFill: the fixture agent has its brief; an
 // added agent without one counts, an internal one does not, and the
-// window is the one a default import reads.
+// window is the one a default import reads. The old key repeats the count.
 func TestDoctorCountsAgentsToFill(t *testing.T) {
 	h := newHarness(t)
 	var v DoctorView
@@ -693,8 +693,9 @@ func TestDoctorCountsAgentsToFill(t *testing.T) {
 	h.store.Add(store.Session{ID: "s-doctor", StartedAt: servertest.T0}, nil,
 		[]store.Agent{missing, internal}, nil)
 	h.getJSON(t, "/api/doctor", http.StatusOK, &v)
-	if v.AgentsToFill != 1 {
-		t.Errorf("agents_to_fill = %d, want 1 (a-missing)", v.AgentsToFill)
+	if v.AgentsToFill != 1 || v.AgentsWithoutBrief != 1 {
+		t.Errorf("agents_to_fill = %d, agents_without_brief = %d, want 1 (a-missing) in both",
+			v.AgentsToFill, v.AgentsWithoutBrief)
 	}
 	if want := fixedNow.Add(-30 * 24 * time.Hour); !v.Since.Equal(want) {
 		t.Errorf("since = %v, want %v", v.Since, want)

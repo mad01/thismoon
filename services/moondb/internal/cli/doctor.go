@@ -48,10 +48,10 @@ func briefsCheck(c *client.Client) func(context.Context) error {
 			return doctor.Skip("serve predates this check; see version-skew")
 		case err != nil:
 			return doctor.Skip("serve did not answer; see service-reachable")
-		case v.AgentsToFill > 0:
+		case v.ToFill() > 0:
 			return doctor.Skip(fmt.Sprintf(
 				"%d agents without a spawn brief or later messages; run moondb import --since %s --force",
-				v.AgentsToFill,
+				v.ToFill(),
 				moondb.DefaultImportSince,
 			))
 		}
