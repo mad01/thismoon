@@ -108,3 +108,23 @@ func TestReadFileWholeFileCapped(t *testing.T) {
 		t.Errorf("TotalLines = %d, want %d", res.TotalLines, maxReadLines+50)
 	}
 }
+
+// TestReadFileConfinesToRepo: the file view refuses a path that leaves the
+// repo, by "..", as an absolute path, or through a symlink.
+func TestReadFileConfinesToRepo(t *testing.T) {
+	svc, repoDir := newReadTestService(t, "main.go", 3)
+	secret := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(secret, []byte("secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(repoDir, "escape")); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{"../../x", "/etc/hosts", "escape"} {
+		_, err := svc.ReadFile("testrepo", p, 0, 0)
+		if err == nil || !strings.Contains(err.Error(), "file must stay inside the repo") {
+			t.Errorf("ReadFile(%q): err = %v, want the stay-inside error", p, err)
+		}
+	}
+}

@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
+	"github.com/mad01/thismoon/services/csl/internal/repo/repopath"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/services/csl/internal/symbols"
 )
@@ -378,10 +379,11 @@ func cleanScope(root, path string) (scope, error) {
 	if p == "." || p == "" {
 		return "", nil
 	}
-	if filepath.IsAbs(p) || p == ".." || strings.HasPrefix(p, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("outline: path %q must be relative to the repo root", path)
+	abs, err := repopath.Resolve(root, "path", p)
+	if err != nil {
+		return "", fmt.Errorf("outline: %w", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+	if _, err := os.Stat(abs); err != nil {
 		return "", fmt.Errorf("outline: path %q: %w", p, err)
 	}
 	return scope(p), nil

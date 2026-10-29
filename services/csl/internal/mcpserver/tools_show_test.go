@@ -3,6 +3,8 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -131,5 +133,28 @@ func TestHandleShowFile_Errors(t *testing.T) {
 				t.Errorf("handleShowFile(%+v) succeeded, want error", tt.in)
 			}
 		})
+	}
+}
+
+// TestHandleShowFile_ConfinesFileToRepo: a file outside the repo, reached by
+// ".." or through a symlinked directory, is refused before any browser opens.
+func TestHandleShowFile_ConfinesFileToRepo(t *testing.T) {
+	setupReadTestRepo(t, "main.go", 5)
+	opened := stubOpenURL(t, nil)
+	home := os.Getenv("HOME")
+	repoDir := filepath.Join(home, "workspace", "org", "testrepo")
+	if err := os.Symlink(home, filepath.Join(repoDir, "home")); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, file := range []string{"../../../.config/csl/config.yaml", "home/.config/csl/config.yaml"} {
+		in := showFileInput{Repo: "testrepo", File: file}
+		_, _, err := handleShowFile(context.Background(), nil, in)
+		if err == nil || !strings.Contains(err.Error(), "file must stay inside the repo") {
+			t.Errorf("file %q: err = %v, want the stay-inside error", file, err)
+		}
+	}
+	if *opened != "" {
+		t.Errorf("opened %q for a file outside the repo", *opened)
 	}
 }

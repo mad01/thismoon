@@ -97,8 +97,13 @@ func TestHandleLs_RecursiveFilesOnly(t *testing.T) {
 
 func TestHandleLs_RejectsEscapingPath(t *testing.T) {
 	setupLsTestRepo(t)
+	home := os.Getenv("HOME")
+	repoDir := filepath.Join(home, "workspace", "org", "testrepo")
+	if err := os.Symlink(home, filepath.Join(repoDir, "home")); err != nil {
+		t.Fatal(err)
+	}
 
-	for _, p := range []string{"..", "../other", "/etc", "internal/../.."} {
+	for _, p := range []string{"..", "../other", "/etc", "internal/../..", "home"} {
 		_, _, err := handleLs(context.Background(), nil, lsInput{Repo: "testrepo", Path: p})
 		if err == nil {
 			t.Errorf("path %q: expected error, got nil", p)
