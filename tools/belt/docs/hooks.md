@@ -755,19 +755,37 @@ commit has taken yet.
 ### prefer-csl (bash)
 
 After a Bash command sweeps multiple files inside a repo csl already indexes,
-hands back the equivalent `csl_search` call.
+hands back the equivalent `csl search` command, then the `csl_search` call.
 
-- **Fires when** a `grep`/`rg`/`ag`/`find`/`fd` command recurses or touches
-  multiple files inside an indexed repo (checked against csl's shard listing
-  on disk). No csl process is launched, because this runs on every Bash
-  call.
-- **Deliberately silent** on pipe filters (`cmd | grep x`), single-file
-  greps, and paths outside an indexed repo — those are not what csl replaces.
-- **The advice is runnable**: the pattern arrives translated to zoekt syntax
-  (`--include=*.go` becomes `f:\.go$`), because a bare "use csl" costs a turn
-  while the model guesses the query language.
+- **Fires when** a `grep`/`rg`/`ag`/`git grep`/`find`/`fd` command recurses,
+  or names a glob or more than two files, inside an indexed repo. The index
+  check reads csl's shard listing on disk. No csl process is launched,
+  because this runs on every Bash call.
+- **Names the repo the command searched**, not the session's. Each segment's
+  paths resolve against the directory it runs in. A leading `cd <path> &&`
+  moves that directory for the segments after it, and a `cd` inside a
+  subshell ends with the subshell. `git -C <path>` moves it for that git
+  command, and an absolute path argument names itself. The session's cwd is
+  the fallback. When the directory can't be known without running the shell
+  (`cd -`, a variable, a command substitution, `~user`), the hint stays
+  silent rather than guess.
+- **Deliberately silent** on pipe filters (`cmd | grep x`) and on paths
+  outside an indexed repo. A grep of one or two named files stays silent
+  too, with or without `-r`, since it reads known files. So does `rg` or
+  `ag` with no path, which may be reading stdin. None of those is what csl
+  replaces.
+- **The advice is runnable, CLI first**: `csl search '<query>' --repo
+  '<repo>'` with the pattern translated to zoekt syntax, then a note on how
+  zoekt differs from grep, then the same query as a `csl_search` call. A
+  plain-extension glob from `--include=*.go`, `rg -g`, `find -name` or
+  `fd -e` becomes `f:\.go$`. An fd pattern becomes an `f:` filter, and
+  repeated `-e` patterns join as `a|b`. A file listing with nothing to
+  translate gets a `csl search 'f:<regex>'` template and the `csl_ls` call.
+  The CLI leads because it runs in any session with csl on PATH and has no
+  per-call result cap. A bare "use csl" would cost a turn while the model
+  guesses the query language.
 - **Why**: a transcript audit found 97% of recursive greps ran inside indexed
-  repos. Habit, not ignorance — so the fix is a well-timed reminder with the
+  repos. Habit, not ignorance, so the fix is a well-timed reminder with the
   exact replacement, not a deny.
 
 ### read-size (read)
