@@ -148,8 +148,39 @@ func TestBuild_LimitTruncates(t *testing.T) {
 	if got := names(res.Symbols); got != "Foo Qux" {
 		t.Errorf("ranked names = %q, want %q", got, "Foo Qux")
 	}
-	if !res.Truncated || res.SymbolsTotal != 9 {
-		t.Errorf("Truncated = %v, SymbolsTotal = %d, want true/9", res.Truncated, res.SymbolsTotal)
+	if !res.Truncated || res.SymbolsTotal != 9 || res.NextLimit != 9 {
+		t.Errorf("Truncated = %v, SymbolsTotal = %d, NextLimit = %d, want true/9/9",
+			res.Truncated, res.SymbolsTotal, res.NextLimit)
+	}
+
+	res, err = Build(fixtureRepo(t), Options{})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if res.Truncated || res.NextLimit != 0 {
+		t.Errorf(
+			"uncut: Truncated = %v, NextLimit = %d, want false/0",
+			res.Truncated,
+			res.NextLimit,
+		)
+	}
+}
+
+// TestNextLimit: a cut list names the limit that returns everything, capped
+// at the max; an uncut list, or one cut at the max, names none.
+func TestNextLimit(t *testing.T) {
+	cases := []struct{ total, limit, want int }{
+		{total: 9, limit: 2, want: 9},
+		{total: 9, limit: 9, want: 0},
+		{total: 5, limit: 100, want: 0},
+		{total: MaxLimit, limit: DefaultLimit, want: MaxLimit},
+		{total: 9047, limit: DefaultLimit, want: MaxLimit},
+		{total: 9047, limit: MaxLimit, want: 0},
+	}
+	for _, c := range cases {
+		if got := nextLimit(c.total, c.limit); got != c.want {
+			t.Errorf("nextLimit(%d, %d) = %d, want %d", c.total, c.limit, got, c.want)
+		}
 	}
 }
 

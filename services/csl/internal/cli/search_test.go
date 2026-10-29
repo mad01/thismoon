@@ -2,10 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
@@ -93,5 +95,41 @@ func TestOutputSearchResults_FilesUnchanged(t *testing.T) {
 	}
 	if got, want := buf.String(), "org/repo/a.go\norg/repo/b.go\n"; got != want {
 		t.Errorf("files output = %q, want %q", got, want)
+	}
+}
+
+// TestReposMatching pins the in-process fallback to the daemon's reading of
+// --repo: a case-sensitive regex, so an anchored name finds the one repo and
+// not the repos that share its prefix.
+func TestReposMatching(t *testing.T) {
+	repos := []finder.Repo{
+		{Name: "mad01/thismoon"},
+		{Name: "mad01/thismoon-arcade"},
+		{Name: "mad01/dotfiles"},
+	}
+	tests := []struct {
+		expr string
+		want []string
+	}{
+		{"^mad01/thismoon$", []string{"mad01/thismoon"}},
+		{"thismoon", []string{"mad01/thismoon", "mad01/thismoon-arcade"}},
+		{"dotfiles|arcade", []string{"mad01/thismoon-arcade", "mad01/dotfiles"}},
+		{"^MAD01/", nil},
+	}
+	for _, tc := range tests {
+		got, err := reposMatching(repos, tc.expr)
+		if err != nil {
+			t.Fatalf("reposMatching(%q) error: %v", tc.expr, err)
+		}
+		var names []string
+		for _, r := range got {
+			names = append(names, r.Name)
+		}
+		if !slices.Equal(names, tc.want) {
+			t.Errorf("reposMatching(%q) = %q, want %q", tc.expr, names, tc.want)
+		}
+	}
+	if _, err := reposMatching(repos, "("); err == nil {
+		t.Error(`reposMatching("(") = nil error, want an invalid-regex error`)
 	}
 }

@@ -259,17 +259,17 @@ csl outline [flags] <repo> [path]
 
 ### Description
 
-Prints every definition the tree-sitter extractor finds in `<repo>`, or under `[path]` inside it, grouped by file. Definitions are ranked by the number of other files in the repo that mention the name as a whole identifier. Files appear in the order of their best symbol; each symbol is one line, `LINE kind name (parent)  refs=N`. `<repo>` is a case-insensitive regex that must match exactly one discovered repo. `[path]` narrows which files define; references are always counted across the whole repo. Test files stay out of both sides unless `--include-tests` is set, and fields, enumerators, and markdown headings stay out unless `--kinds` names them. The command reads the working tree directly, so it needs no index. The MCP tool `csl_outline` returns the same object and text; the reference-count rule is in [mcp.md](mcp.md#csl_outline).
+Prints every definition the tree-sitter extractor finds in `<repo>`, or under `[path]` inside it, grouped by file. Definitions are ranked by the number of other files in the repo that mention the name as a whole identifier. Files appear in the order of their best symbol; each symbol is one line, `LINE kind name (parent)  refs=N`. `<repo>` is a case-insensitive regex that must match exactly one discovered repo. `[path]` narrows which files define; references are always counted across the whole repo. Test files stay out of both sides unless `--include-tests` is set, and fields, enumerators, and markdown headings stay out unless `--kinds` names them. The command reads the working tree directly, so it needs no index. When `--limit` cuts the list, the last line says how many symbols exist and the next `--limit` that returns them all, or 500 (the hard cap) when there are more. Past 500, narrow with `[path]` or `--kinds`. The MCP tool `csl_outline` returns the same object and text; the reference-count rule is in [mcp.md](mcp.md#csl_outline).
 
 ### Flags
 
 | Flag | Required | Default | Description |
 |---|---|---|---|
 | `--kinds <list>` | no | all but `field`, `enumerator`, `section` | Keep only these kinds, comma-separated: `interface`, `struct`, `class`, `type`, `typealias`, `enum`, `namespace`, `function`, `method`, `methodSpec`, `const`, `var`, `field`, `enumerator`, `section` |
-| `--limit <n>` | no | `100` | Maximum symbols to print (hard cap 500) |
+| `--limit <n>` | no | `100` | Maximum symbols to print (hard cap 500). When it cuts the list, the last line names the total and the next `--limit` to pass |
 | `--include-tests` | no | `false` | Include test files in definitions and reference counts |
 | `--max-files <n>` | no | `20000` | Stop the walk after this many files and mark the result truncated |
-| `--json` | no | `false` | Emit as JSON: `{repo, path, files_scanned, symbols_total, symbols_skipped, truncated, files_capped, symbols: [{name, kind, parent, file, line, refs}]}` |
+| `--json` | no | `false` | Emit as JSON: `{repo, path, files_scanned, symbols_total, symbols_skipped, truncated, next_limit, files_capped, symbols: [{name, kind, parent, file, line, refs}]}` |
 
 ### Examples
 
@@ -672,13 +672,13 @@ csl docs --claude-md >> ~/.claude/CLAUDE.md
 
 ### Description
 
-Without flags, prints `operating.md` rendered with the paths this install resolves (state directory, daemon log, web base URL): how csl runs, where state lives, failure modes, and first moves. With `--claude-md`, prints the section that teaches Claude Code when to reach for the `csl_*` MCP tools. It covers csl-first for discovery and search, lexical by default with semantic and hybrid gated on the vector index, the repo health flow, and the zoekt query rules. The text is the fenced block under "Add this to your CLAUDE.md" in the README; a test holds the two byte-identical and checks the block names every tool `csl mcp` registers.
+Without flags, prints `operating.md` rendered with the paths this install resolves (state directory, daemon log, web base URL): how csl runs, where state lives, failure modes, and first moves. With `--claude-md`, prints the csl rules fragment (`claude-md.md`, the file the csl recipe links to `~/.claude/CLAUDE.csl.md`). It tells Claude Code to use csl before any filesystem walk, and to pick the MCP tools for answers that fit one call and the CLI for fleet-wide searches. It also covers the repo health flow, the CLI commands, and the zoekt query rules. Tests check that it names every tool `csl mcp` registers, that every command and flag in its CLI block exists, and that the README excerpt under "Add this to your CLAUDE.md" is a verbatim part of it.
 
 ### Flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `--claude-md` | `false` | Print the CLAUDE.md section instead of the operating doc |
+| `--claude-md` | `false` | Print the csl rules fragment instead of the operating doc |
 
 ---
 

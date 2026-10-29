@@ -4,28 +4,32 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
 )
 
-// PreferCSL advises using csl_search after a bash command did a multi-file
-// search inside a repo csl already indexes. It fires after the fact: the grep
-// has run and its output stands, so the cost of a false positive is one line
-// of ignored advice rather than a stalled session (docs/adr/0008).
+// PreferCSL advises the csl CLI command, and the csl_search call after it,
+// when a bash command did a multi-file search inside a repo csl already
+// indexes. It fires after the fact: the grep has run and its output stands,
+// so the cost of a false positive is one line of ignored advice rather than
+// a stalled session (docs/adr/0008).
 type PreferCSL struct {
 	cfg config.Config
 	// resolveRepo maps a swept path to its canonical host/owner/repo
 	// identity via the working tree's origin remote, for exclude_repos
-	// matching — the filesystem-derived shard name is not an identity (a
-	// worktree under any parent dir would dodge a path-based match).
+	// matching. The filesystem-derived shard name is not an identity: a
+	// worktree under any parent dir would dodge a path-based match.
 	// Injectable for tests.
 	resolveRepo func(target string) string
+	// indexed lists the repos csl has a shard for. Injectable for tests.
+	indexed func() map[string]bool
 }
 
 func NewPreferCSL(cfg config.Config) *PreferCSL {
-	return &PreferCSL{cfg: cfg, resolveRepo: repoIdentityForPath}
+	return &PreferCSL{cfg: cfg, resolveRepo: repoIdentityForPath, indexed: indexedRepos}
 }
 
 // repoIdentityForPath resolves a swept path (file, dir, or unexpanded glob)
@@ -41,270 +45,110 @@ func repoIdentityForPath(target string) string {
 func (h *PreferCSL) ID() string    { return "prefer-csl" }
 func (h *PreferCSL) Event() string { return EventBash }
 
-// searchTools are the commands worth advising on. `ls` and `cat` are absent
-// on purpose: they are not searches.
-var searchTools = map[string]bool{"grep": true, "rg": true, "ag": true, "find": true, "fd": true}
-
+// Check advises on the first segment of the command that sweeps an indexed
+// repo. Each segment's paths resolve against the directory it runs in, so a
+// search after `cd <repo> &&` names that repo and not the session's cwd.
 func (h *PreferCSL) Check(in Input) *Advice {
 	if in.Command == "" {
 		return nil
 	}
-	repos := indexedRepos()
+	repos := h.indexed()
 	if len(repos) == 0 {
 		return nil
 	}
+	dirs := workDirs{cur: in.Cwd}
 	for _, seg := range segments(in.Command) {
-		sw := parseSweep(seg, in.Cwd)
+		cmd, dir := dirs.step(seg.cmd)
+		sw := parseSweep(cmd, dir)
 		if sw == nil {
 			continue
 		}
-		repo, ok := isIndexed(sw.target, repos)
-		if !ok {
-			continue
+		sw.takePipe(seg.pipe)
+		if repo, ok := h.firstIndexed(sw.targets, repos); ok {
+			return &Advice{Hint: h.ID(), Text: sw.advice(repo)}
 		}
-		if h.cfg.HintRepoExcluded(h.ID(), h.resolveRepo(sw.target)) {
-			continue
-		}
-		return &Advice{Hint: h.ID(), Text: sw.advice(repo)}
 	}
 	return nil
 }
 
-// sweep is a parsed multi-file search: which tool, what pattern, where, and
-// any file-type filter worth carrying into the zoekt query.
-type sweep struct {
-	tool    string
-	pattern string
-	target  string
-	include string // from --include=GLOB, translated to a zoekt f: filter
-}
-
-// segments splits a command on the separators that start a new command, so a
-// grep after `&&` is seen. Anything after a pipe is skipped: `cmd | grep x`
-// is a filter over another command's output, which csl cannot replace and
-// which the user's conventions explicitly allow.
-//
-// This deliberately does not reuse guard.splitSegments. That one preserves
-// byte offsets and treats `|` exactly like `&&`, which is right for finding
-// a denied command anywhere in a pipeline and wrong here: telling a pipe
-// filter apart from a standalone search is the entire precision requirement
-// of this hint. Quote awareness matters for the same reason — a `|` inside a
-// grep pattern must not read as a pipe.
-func segments(cmd string) []string {
-	var out []string
-	var cur strings.Builder
-	var quote rune
-	skip := false // inside a pipeline's downstream stage
-	flush := func(isPipe bool) {
-		if !skip {
-			out = append(out, cur.String())
-		}
-		cur.Reset()
-		skip = isPipe
-	}
-	runes := []rune(cmd)
-	for i := 0; i < len(runes); i++ {
-		c := runes[i]
-		switch {
-		case quote != 0:
-			if c == quote && (i == 0 || runes[i-1] != '\\') {
-				quote = 0
-			}
-			cur.WriteRune(c)
-		case c == '\'' || c == '"':
-			quote = c
-			cur.WriteRune(c)
-		case c == '|':
-			// `||` starts a new command; a single `|` starts a pipe stage.
-			if i+1 < len(runes) && runes[i+1] == '|' {
-				i++
-				flush(false)
-				continue
-			}
-			flush(true)
-		case c == '&' && i+1 < len(runes) && runes[i+1] == '&':
-			i++
-			flush(false)
-		case c == ';' || c == '\n':
-			flush(false)
-		default:
-			cur.WriteRune(c)
+// firstIndexed names the repo of the first target that sits in a repo csl
+// indexes and the config does not exclude.
+func (h *PreferCSL) firstIndexed(targets []string, repos map[string]bool) (string, bool) {
+	for _, target := range targets {
+		repo, ok := isIndexed(target, repos)
+		if ok && !h.cfg.HintRepoExcluded(h.ID(), h.resolveRepo(target)) {
+			return repo, true
 		}
 	}
-	flush(false)
-	return out
+	return "", false
 }
 
-// splitFields splits a segment into shell words, keeping quoted spans whole
-// so a pattern like "func Foo" stays one field. Quotes are left in place;
-// trimQuotes strips them where the value is used.
-func splitFields(seg string) []string {
-	var out []string
-	var cur strings.Builder
-	var quote rune
-	for _, c := range seg {
-		switch {
-		case quote != 0:
-			cur.WriteRune(c)
-			if c == quote {
-				quote = 0
-			}
-		case c == '\'' || c == '"':
-			quote = c
-			cur.WriteRune(c)
-		case c == ' ' || c == '\t':
-			if cur.Len() > 0 {
-				out = append(out, cur.String())
-				cur.Reset()
-			}
-		default:
-			cur.WriteRune(c)
-		}
-	}
-	if cur.Len() > 0 {
-		out = append(out, cur.String())
-	}
-	return out
-}
-
-// trimQuotes removes one matching pair of surrounding quotes.
-func trimQuotes(s string) string {
-	if len(s) >= 2 {
-		if (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"') {
-			return s[1 : len(s)-1]
-		}
-	}
-	return s
-}
-
-// parseSweep returns a sweep when seg is a multi-file search, or nil when it
-// is anything else — including a single-file grep on a known path, which is a
-// targeted read and exactly what csl is not for.
-func parseSweep(seg, cwd string) *sweep {
-	fields := splitFields(seg)
-	if len(fields) == 0 {
-		return nil
-	}
-	tool := filepath.Base(fields[0])
-	if !searchTools[tool] {
-		return nil
-	}
-
-	sw := &sweep{tool: tool}
-	recursive := tool == "find" || tool == "fd" // both walk trees by definition
-	var operands []string
-	for _, f := range fields[1:] {
-		switch {
-		case strings.HasPrefix(f, "--include="):
-			sw.include = trimQuotes(strings.TrimPrefix(f, "--include="))
-			recursive = true
-		case f == "-r" || f == "-R":
-			recursive = true
-		case strings.HasPrefix(f, "-") && len(f) > 1 && !strings.HasPrefix(f, "--"):
-			// Bundled short flags: -rn, -rln, -ril and friends.
-			if strings.ContainsAny(f[1:], "rR") {
-				recursive = true
-			}
-		case strings.HasPrefix(f, "--"):
-			// Other long flags carry no signal for this decision.
-		default:
-			operands = append(operands, f)
-		}
-	}
-	if len(operands) == 0 {
-		return nil // reading stdin, not the filesystem
-	}
-
-	// grep-likes take the pattern first, then paths. find takes paths first.
-	var paths []string
-	if tool == "find" || tool == "fd" {
-		paths = operands
-	} else {
-		sw.pattern = trimQuotes(operands[0])
-		paths = operands[1:]
-	}
-	if len(paths) == 0 {
-		// A recursive grep with no path argument sweeps the working directory.
-		if !recursive {
-			return nil
-		}
-		paths = []string{cwd}
-	}
-	if !recursive && !multiFile(paths) {
-		return nil // single-file targeted read
-	}
-	sw.target = resolve(paths[0], cwd)
-	if sw.target == "" {
-		return nil
-	}
-	return sw
-}
-
-// multiFile reports whether the path operands span more than one file, either
-// by count or by containing a glob the shell may not have expanded.
-func multiFile(paths []string) bool {
-	if len(paths) > 1 {
-		return true
-	}
-	return strings.ContainsAny(paths[0], "*?[")
-}
-
-func resolve(p, cwd string) string {
-	p = trimQuotes(p)
-	if p == "" {
-		return ""
-	}
-	if strings.HasPrefix(p, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		p = filepath.Join(home, strings.TrimPrefix(p, "~"))
-	}
-	if filepath.IsAbs(p) {
-		return p
-	}
-	if cwd == "" {
-		return ""
-	}
-	return filepath.Join(cwd, p)
-}
-
-// advice renders the replacement call. Handing back a usable query is the
-// whole point: a bare "use csl" costs a turn while the model guesses at zoekt
-// syntax, which is not the same language as grep.
+// advice renders the replacement, the CLI command first and the MCP call
+// after it: the CLI runs in any session with csl on PATH and has no
+// per-call result cap, and the MCP form serves a session that has the
+// tools. Handing back a usable query is the whole point: a bare "use csl"
+// costs a turn while the model guesses at zoekt syntax, which is not the
+// same language as grep. The repo is an anchored regex in both forms, since
+// both read it as one and an unanchored name also matches its prefixes.
 func (s *sweep) advice(repo string) string {
 	var b strings.Builder
-	fmt.Fprintf(
-		&b,
-		"%s is indexed by csl, and a recursive %s re-walks the filesystem for results the index already has.",
-		repo,
-		s.tool,
-	)
-	if s.pattern == "" {
+	what := "a recursive " + s.tool + " re-walks the filesystem"
+	if !s.walks {
+		what = "a " + s.tool + " over several files reads them from disk"
+	}
+	fmt.Fprintf(&b, "%s is indexed by csl, and %s for results the index already has.", repo, what)
+	repoRE := "^" + regexp.QuoteMeta(repo) + "$"
+	query := s.query()
+	if query == "" {
+		// A file listing with no name to translate.
 		fmt.Fprintf(
 			&b,
-			" Prefer csl_ls (repo=%q) for listing files, or csl_search for content.",
-			repo,
+			" Prefer: csl search 'f:<regex>' --repo %s to list files by name (f: takes a regex, not a glob). With the csl MCP tools: csl_ls repo=%q.",
+			shellQuote(repoRE),
+			repoRE,
 		)
 		return b.String()
 	}
-	query := zoektQuery(s.pattern)
-	if f := zoektFileFilter(s.include); f != "" {
-		query += " " + f
-	}
-	fmt.Fprintf(&b, " Prefer: csl_search repo=%q query=%q.", repo, query)
+	fmt.Fprintf(&b, " Prefer: csl search %s --repo %s.", shellQuote(query), shellQuote(repoRE))
 	b.WriteString(
 		" Note zoekt is not grep: OR is `a|b` with no spaces, and two space-separated terms mean AND within one file.",
 	)
+	fmt.Fprintf(&b, " With the csl MCP tools: csl_search repo=%q query=%q.", repoRE, query)
 	return b.String()
 }
 
-// zoektQuery translates the grep dialect belt sees most: escaped alternation
-// becomes plain alternation. Everything else passes through, since zoekt
-// takes regex.
-func zoektQuery(pattern string) string {
-	return strings.ReplaceAll(pattern, `\|`, `|`)
+// query is the zoekt query for the sweep: the content pattern, fd's
+// file-name pattern as an f: filter, and the translated file glob. "" when
+// there is nothing to search for.
+func (s *sweep) query() string {
+	var parts []string
+	if s.pattern != "" {
+		parts = append(parts, zoektTerm(s.pattern))
+	}
+	if s.name != "" {
+		parts = append(parts, "f:"+zoektTerm(s.name))
+	}
+	if f := zoektFileFilter(s.include); f != "" {
+		parts = append(parts, f)
+	}
+	return strings.Join(parts, " ")
+}
+
+// shellQuote single-quotes s for a POSIX shell, so the advised command can
+// be pasted as it is whatever the pattern holds.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// zoektTerm renders an RE2 pattern as one zoekt term. Unquoted, a pattern
+// with a space reads as an AND of several terms, a double quote opens a
+// phrase, and a leading - negates; such a pattern is quoted as a phrase.
+// zoekt unescapes one level of backslashes inside quotes, so they double.
+func zoektTerm(re string) string {
+	if !strings.ContainsAny(re, " \t\"") && !strings.HasPrefix(re, "-") {
+		return re
+	}
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(re) + `"`
 }
 
 // zoektFileFilter turns --include=*.go into the f: regex zoekt wants. Globs

@@ -95,20 +95,16 @@ hint never blocks: the tool has already run and its result stands, so silence
 and advice are the only two outcomes.
 
 The event argument is belt's hint event, not the Claude Code tool name:
-search hints on the csl search tools, bash hints on Bash commands,
-read hints on the Read tool, external-text hints on the MCP tools that publish text off this machine,
-session-start hints once when a session opens (a SessionStart hook),
+bash hints on Bash commands, read hints on the Read tool,
+external-text hints on the MCP tools that publish text off this machine,
+session-start hints once when a session opens (a SessionStart hook), and
 subagent-start hints once per subagent before its first prompt (a
 SubagentStart hook: the advice lands in the subagent's context, and only
-custom hints run there), and prompt hints on each user prompt (a
-UserPromptSubmit hook: advice goes to stdout as plain text, the form that
-event adds to context). Wire them in ~/.claude/settings.json:
+custom hints run there). Wire them in ~/.claude/settings.json:
 
   {
     "hooks": {
       "PostToolUse": [
-        {"matcher": "mcp__csl__csl_(search|semantic_search|hybrid_search)",
-         "hooks": [{"type": "command", "command": "belt hint search"}]},
         {"matcher": "Bash", "hooks": [{"type": "command", "command": "belt hint bash"}]},
         {"matcher": "Read", "hooks": [{"type": "command", "command": "belt hint read"}]},
         {"matcher": "mcp__(github|slack)__.*",
@@ -119,9 +115,6 @@ event adds to context). Wire them in ~/.claude/settings.json:
       ],
       "SubagentStart": [
         {"matcher": "", "hooks": [{"type": "command", "command": "belt hint subagent-start"}]}
-      ],
-      "UserPromptSubmit": [
-        {"matcher": "", "hooks": [{"type": "command", "command": "belt hint prompt"}]}
       ]
     }
   }`,

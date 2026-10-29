@@ -16,9 +16,11 @@ func verifyCmd() *cobra.Command {
 		Short: "Fail when a settings file or expansion layer under a repo is not what its source says",
 		Long: `Check every sandbox artifact under a repo root (default .) without writing
 anything. Every srt manifest must render to an existing settings file with
-the same bytes, every recipes/*/*.srt.json must have a manifest, and every
-*.local.json beside a recipe must only widen the settings file it sits next
-to. One line per check; exit 1 when any fails. generate fixes the renders.`,
+the same bytes, every recipes/*/*.srt.json must have a manifest, every
+component whose recipe launches a process must declare spec.access, and
+every *.local.json beside a recipe must only widen the settings file it sits
+next to. One line per check; exit 1 when any fails. generate fixes the
+renders.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := "."

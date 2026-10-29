@@ -341,7 +341,8 @@ jobs:
 
       # The srt settings files are rendered from the access manifests
       # (docs/adr/0027). srtspec verify fails on a hand edit, a stale render,
-      # a render nobody committed, and an expansion layer that narrows.
+      # a render nobody committed, a component that launches a process
+      # without spec.access, and an expansion layer that narrows.
       - name: Sandbox settings match their manifests
         run: make sandbox-verify
 

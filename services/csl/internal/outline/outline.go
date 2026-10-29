@@ -81,6 +81,7 @@ type Result struct {
 	SymbolsTotal   int     `json:"symbols_total"             jsonschema:"definitions found in scope before the limit"`
 	SymbolsSkipped int     `json:"symbols_skipped,omitempty" jsonschema:"definitions in scope left out by kinds (fields, enumerators, and headings by default)"`
 	Truncated      bool    `json:"truncated"                 jsonschema:"true when symbols_total exceeds the limit, or when the walk stopped at max_files"`
+	NextLimit      int     `json:"next_limit,omitempty"      jsonschema:"set when the limit cut the list and a higher one returns more: symbols_total, or the max limit (500) when the list is longer"`
 	FilesCapped    bool    `json:"files_capped,omitempty"    jsonschema:"true when the walk stopped at max_files, so definitions and counts cover the first files_scanned files in path order only"`
 	Symbols        []Entry `json:"symbols"                   jsonschema:"definitions ranked by refs desc, then kind, then name"`
 }
@@ -148,6 +149,7 @@ func Build(repo finder.Repo, opts Options) (Result, error) {
 		SymbolsTotal:   len(defs),
 		SymbolsSkipped: skipped,
 		Truncated:      len(defs) > limit || capped,
+		NextLimit:      nextLimit(len(defs), limit),
 		FilesCapped:    capped,
 		Symbols:        defs[:min(len(defs), limit)],
 	}
@@ -391,4 +393,14 @@ func clampLimit(n int) int {
 		return DefaultLimit
 	}
 	return min(n, MaxLimit)
+}
+
+// nextLimit is the limit a follow-up call passes to see what limit cut off:
+// total, or MaxLimit when total is larger. It is 0 when nothing was cut or
+// the limit is already the max, so only narrowing shows more.
+func nextLimit(total, limit int) int {
+	if total <= limit || limit >= MaxLimit {
+		return 0
+	}
+	return min(total, MaxLimit)
 }

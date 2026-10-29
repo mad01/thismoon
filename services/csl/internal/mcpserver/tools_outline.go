@@ -16,7 +16,7 @@ type outlineInput struct {
 	Repo         string   `json:"repo"                    jsonschema:"case-insensitive regex or substring matched against the org/repo name; must resolve to exactly one repo"`
 	Path         string   `json:"path,omitempty"          jsonschema:"directory inside the repo whose files contribute definitions (e.g. services/csl/internal); default the whole repo. References are always counted across the whole repo"`
 	Kinds        []string `json:"kinds,omitempty"         jsonschema:"keep only these kinds: interface, struct, class, type, typealias, enum, namespace, function, method, methodSpec, const, var, field, enumerator, section; default all but field, enumerator, and section"`
-	Limit        int      `json:"limit,omitempty"         jsonschema:"maximum symbols to return (default 100, max 500)"`
+	Limit        int      `json:"limit,omitempty"         jsonschema:"maximum symbols to return (default 100, max 500); a cut result's next_limit is the value to pass for more"`
 	IncludeTests bool     `json:"include_tests,omitempty" jsonschema:"include test files (_test.go, test_*.py, *.test.ts, __tests__/, ...); default false leaves them out of both the definitions and the reference counts"`
 	MaxFiles     int      `json:"max_files,omitempty"     jsonschema:"stop the walk after this many files (default 20000) and mark the result truncated with files_capped"`
 	formatParam
@@ -32,8 +32,10 @@ func registerOutlineTools(s *mcp.Server) {
 			"refs counts files holding the name as a whole identifier; a lowercase Go name counts only inside its directory, and a name defined in several files shares its mentions among them, so common names don't crowd the top. " +
 			"Fields, enumerators, and markdown headings are out unless kinds names them (symbols_skipped counts them); test files are out unless include_tests is true. " +
 			"Reads the working tree directly (no index needed, always current). " +
-			"Returns files_scanned, symbols_total, truncated, and symbols: [{name, kind, parent, file, line, refs}] ranked by refs desc, then kind (types before functions before constants), then name; " +
-			"the text format groups them by file in rank order like csl_search output. Default limit 100, max 500; narrow with path or kinds when truncated. " +
+			"Returns files_scanned, symbols_total, truncated, next_limit, and symbols: [{name, kind, parent, file, line, refs}] ranked by refs desc, then kind (types before functions before constants), then name; " +
+			"the text format groups them by file in rank order like csl_search output. Default limit 100, max 500. " +
+			"When the limit cuts the list, truncated is true and symbols_total says how many exist. " +
+			"next_limit is then the limit that returns them all (500 when there are more); past 500, narrow with path or kinds. " +
 			"Several independent repos or paths: " + parallelCallsTail,
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,

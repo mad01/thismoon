@@ -8,7 +8,7 @@ srtspec/
     discover/           finds the manifests in a repo tree and the settings file each renders to
     drift/              compares a settings file to a render by meaning (canonical JSON + diff)
     layers/             base + local + env merge for explain, with srt-run's refusal rules
-    verify/             the repo-wide check behind verify: renders, orphans, layers
+    verify/             the repo-wide check behind verify: renders, orphans, launches, layers
     launch/             what run does: settings path, label, merged copy, runtime, the exec
 kit/access/             (shared) manifest model, strict parsing, validation, Render
 ```
@@ -31,7 +31,12 @@ manifest renders.
 
 verify: the same discovery. `verify.Run` renders each target in memory and
 compares bytes with the committed file; `drift.Diff` only words the failure,
-as a hand-edited layout or real drift. It lists the orphans, then runs
+as a hand-edited layout or real drift. It lists the orphans, then the
+components `discover.Undeclared` finds: a service-info.yaml without
+spec.access whose `recipes/<dir>/` registers a t-man service. The
+registration can sit in a command value of its recipe.toml, a file a build
+runs as `script`, or a `*.sh` or `*.bash` file at any depth that isn't a
+test script. Then it runs
 `layers.CheckLocal` on every `<label>.local.json` beside a recipe against
 the `<label>.srt.json` next to it, or an empty base when the repo ships only
 the layer. Nothing is written; the CLI prints one line per result.

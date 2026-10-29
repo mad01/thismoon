@@ -125,3 +125,36 @@ func TestHookCmdEventValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestHintCmdEventValidation pins the same failure mode for hints, and that
+// the retired search and prompt events stay rejected: a settings file that
+// still wires them gets an error, not a silent no-op spawn.
+func TestHintCmdEventValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		event   string
+		wantErr bool
+	}{
+		{"bash", "bash", false},
+		{"read", "read", false},
+		{"session-start", "session-start", false},
+		{"mixed case", "Read", false},
+		{"retired search", "search", true},
+		{"retired prompt", "prompt", true},
+		{"unknown", "frobnicate", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			root := rootCmd()
+			root.SetArgs([]string{"hint", tt.event})
+			root.SetIn(strings.NewReader("{}"))
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			err := root.Execute()
+			if gotErr := err != nil; gotErr != tt.wantErr {
+				t.Errorf("hint %q error = %v, want error %v", tt.event, err, tt.wantErr)
+			}
+		})
+	}
+}
