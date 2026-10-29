@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.0](https://github.com/mad01/thismoon/compare/present/v1.20.0...present/v1.21.0) (2026-10-29)
+
+
+### Features
+
+* **present:** export a page as one standalone HTML file ([#340](https://github.com/mad01/thismoon/issues/340)) ([542975b](https://github.com/mad01/thismoon/commit/542975b2102f5aa22edf65f9e0f13c9b384d20c0))
+
 ## [1.20.0](https://github.com/mad01/thismoon/compare/present/v1.19.1...present/v1.20.0) (2026-10-25)
 
 

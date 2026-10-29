@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/mad01/thismoon/compare/moondb/v0.6.0...moondb/v0.7.0) (2026-10-29)
+
+
+### Features
+
+* **moondb:** record each subagent's spawn brief and show it in why and turn ([#343](https://github.com/mad01/thismoon/issues/343)) ([1d48426](https://github.com/mad01/thismoon/commit/1d4842638e3fcf6e8252173f66c15f7a55600d19))
+
+
+### Bug Fixes
+
+* **moondb:** history --worktree lists edits stored without a repo ([#334](https://github.com/mad01/thismoon/issues/334)) ([8d30da4](https://github.com/mad01/thismoon/commit/8d30da4c6d5c4ff194f15cb736e64a7a8572d5b6))
+
 ## [0.6.0](https://github.com/mad01/thismoon/compare/moondb/v0.5.0...moondb/v0.6.0) (2026-10-28)
 
 
