@@ -377,8 +377,11 @@ claude mcp add --scope user csl -- csl mcp
 Code registers the tool for the current directory only. Registration alone
 does not change what the agent reaches for: each MCP-bearing component's
 README carries a CLAUDE.md section that tells the agent when to use its
-tools. The csl one keeps the agent on lexical search until the semantic
-index exists (`csl docs --claude-md >> ~/.claude/CLAUDE.md` appends it).
+tools. The csl one also says when to use the CLI instead of the tools, and
+keeps the agent on lexical search until the semantic index exists. The csl
+recipe links it to `~/.claude/CLAUDE.csl.md` for an
+`@~/.claude/CLAUDE.csl.md` import line, and
+`csl docs --claude-md >> ~/.claude/CLAUDE.md` appends it instead.
 
 Registration is deliberately not part of the public recipes. Which agents
 run on a machine, with which servers and which config, is machine-private
@@ -399,7 +402,8 @@ on every `ralph up`.
 [`recipes/claude-hooks/`](../examples/dotfiles/recipes/claude-hooks/) is for
 belt's own config file. The
 `prefer-csl` hint is the one that matters for csl, handing a multi-file
-`grep` in an indexed repo back as the equivalent `csl_search` call.
+`grep` in an indexed repo back as the equivalent `csl search` command, with
+the `csl_search` call after it.
 [`CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example) is for the
 instruction file that teaches the agent when to reach for which tool. The
 seven skills under `skills/` load without registration of their own: their

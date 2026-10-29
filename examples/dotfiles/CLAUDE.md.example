@@ -154,56 +154,12 @@ in a tmp dir.
   `jq` instead of an inline Python program.
 
 ## Local Code Search: Global Default (csl)
-**Use `csl_*` MCP tools for repo discovery AND code search**: repo lookup,
-health checks, file reading, symbol search, and pattern matching. csl
-(`code-search-local`, a thismoon service) indexes your local checkouts with a
-zoekt index that is faster than filesystem grep and returns structured results
-that keep context lean.
+The csl rules live in one file: when to use csl, when to use its MCP tools
+and when its CLI, and the zoekt query rules. thismoon's csl recipe links it
+to `~/.claude/CLAUDE.csl.md`, and this line imports it (`csl docs
+--claude-md` prints the same text):
 
-- Do NOT use the `csl` CLI directly: the MCP tools and CLI share the same
-  foundation, so if one is down the other is too.
-- **Prefer `csl_search`/`csl_read` over Bash grep/find/rg when the repo is
-  indexed.** Check with `csl_repo_info` or `csl_repo_lookup` first. If the repo
-  is not indexed, Bash grep/find/rg is the correct fallback. Bash grep is also
-  fine for non-search uses (piping, filtering command output, one-off checks on
-  a single known file).
-
-Available `csl_*` MCP tools (the canonical section lives in the csl README
-under "Add this to your CLAUDE.md"; `csl docs --claude-md` prints it):
-- **Repo:** `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`,
-  `csl_repo_pull`, `csl_repo_reindex`.
-- **Search (lexical, the default):** `csl_search`, `csl_count`,
-  `csl_query_validate`. Always available; nothing has to be running.
-- **Search (semantic/hybrid):** `csl_semantic_search` (vector, by meaning),
-  `csl_hybrid_search` (RRF fusion of lexical + semantic). Only once the
-  semantic index is built and Ollama is up: `csl_index_info` reports
-  `semantic.built`. Until then semantic answers `available=false` and hybrid
-  degrades to lexical-only, so stay on `csl_search`.
-- **Read and info:** `csl_read`, `csl_ls`, `csl_outline` (a repo's
-  definitions ranked by cross-file references, for "how is this structured"),
-  `csl_show_file` (opens a file section in the web UI for the user),
-  `csl_index_info`.
-- **Diagnosis:** `csl_doctor`. Call it before retrying a failed tool call.
-
-**zoekt query best practices:**
-- Use 1 to 2 search terms max, then narrow with `repo:`/`f:`/`lang:` filters.
-  AND requires all terms in the same file; 3+ terms almost always returns
-  zero.
-- OR syntax: use `|` with no spaces (`foo|bar`). Uppercase `OR` is a literal
-  string. Spaces around `|` break it.
-- Filter prefixes: `repo:` (not `r:`), `f:` (not `file:`). Prefer the dedicated
-  tool params over inline filter syntax.
-- If a query returns zero results, read the `zero_result_hint` in the response
-  before retrying; `csl_query_validate` shows how zoekt parsed a query.
-- Verify the repo is indexed before searching: `csl_repo_lookup` first.
-
-**Grep-to-zoekt translation** (muscle memory is grep):
-- `grep -r "foo"` → `foo`
-- `grep -r "foo bar"` → `foo.*bar` (regex for proximity, not exact-match)
-- `grep --include="*.go"` → `f:.*\.go$` (regex not glob)
-- `grep -v test` → `-test` or `-f:([Tt]est)`
-- `grep -E "foo\|bar"` → `foo|bar` (no spaces around pipe)
-- `find . -name "*.go" | xargs grep foo` → `foo f:.*\.go$`
+@~/.claude/CLAUDE.csl.md
 
 ## Repo Discovery
 - **Use `csl_repo_lookup` or `csl_repo_info` to find repos.** Don't use `find`,

@@ -27,7 +27,7 @@ Each case run is its own session: the runner strips the variables that would nes
 - `csl-cli` registers no MCP server, allows `Bash(csl:*)`, keeps your hooks, and appends the steer file.
 - `grep` registers no MCP server, turns every hook off, denies csl, and tells the model it has only the built-in tools: the baseline, where every search is a filesystem walk.
 
-The steer file (`-steer-file`, default `examples/dotfiles/CLAUDE.csl.md`) is the standalone csl rules a workspace CLAUDE.md would carry; the two csl profiles add one line under it saying which form of csl the session has. `-no-grep` also denies Grep and Bash grep, rg, ugrep and find in the two csl profiles, to compare the steered run with the forced one.
+The steer file (`-steer-file`, default `services/csl/claude-md.md`) is the csl rules fragment a workspace CLAUDE.md imports, the same file the csl recipe links to `~/.claude/CLAUDE.csl.md`; the two csl profiles add one line under it saying which form of csl the session has. `-no-grep` also denies Grep and Bash grep, rg, ugrep and find in the two csl profiles, to compare the steered run with the forced one.
 
 Cases grade on outcome whatever the profile. Each row counts `csl` calls (MCP tools and CLI runs, subagents included) and claude's CPU seconds (its own plus the children it waited for), so a summary or compare shows whether the steer took and what the search cost the machine. The `fleet-*` cases ask questions across every checkout under one directory; they are the ones the profiles are for. The profile, steer file and `-no-grep` are recorded in `run.json`.
 

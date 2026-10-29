@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
+	"regexp"
 	"time"
 
 	"github.com/alpkeskin/gotoon"
@@ -190,11 +190,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	// Fallback: in-process search (handles indexing too).
 	// Filter by --repo if specified.
 	if searchRepoFlag != "" {
-		var filtered []finder.Repo
-		for _, r := range repos {
-			if strings.Contains(r.Name, searchRepoFlag) {
-				filtered = append(filtered, r)
-			}
+		filtered, err := reposMatching(repos, searchRepoFlag)
+		if err != nil {
+			return err
 		}
 		if len(filtered) == 0 {
 			return fmt.Errorf("no repos matching %q found", searchRepoFlag)
@@ -367,4 +365,21 @@ func outputSearchResults(cmd *cobra.Command, matches []search.Match) error {
 	}
 
 	return nil
+}
+
+// reposMatching keeps the repos whose name matches expr. It reads --repo as
+// the case-sensitive regex a daemon search applies as a zoekt repo: filter,
+// so an anchored '^org/repo$' finds the same repo on both paths.
+func reposMatching(repos []finder.Repo, expr string) ([]finder.Repo, error) {
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return nil, fmt.Errorf("--repo %q is not a valid regex: %w", expr, err)
+	}
+	var out []finder.Repo
+	for _, r := range repos {
+		if re.MatchString(r.Name) {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }

@@ -29,8 +29,9 @@ func TestDocsPrintsOperatingDoc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docs: %v", err)
 	}
-	if strings.Contains(out, "## Local Code Search (csl)") {
-		t.Error("docs without --claude-md printed the CLAUDE.md snippet")
+	heading, _, _ := strings.Cut(csl.ClaudeMD, "\n")
+	if strings.Contains(out, heading) {
+		t.Error("docs without --claude-md printed the CLAUDE.md fragment")
 	}
 	if !strings.Contains(out, "csl") {
 		t.Errorf("docs printed no operating doc:\n%s", out)
