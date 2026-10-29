@@ -167,7 +167,7 @@ func handleSearch(
 	_ *mcp.CallToolRequest,
 	in searchInput,
 ) (*mcp.CallToolResult, searchOutput, error) {
-	if m := lexical.CheckShape(in.Query); m != nil {
+	if m := lexical.CheckShape(in.Query, mcpSurface); m != nil {
 		return nil, searchOutput{}, m
 	}
 
@@ -248,8 +248,10 @@ func handleSearch(
 	return nil, explainZero(ctx, backend, req), nil
 }
 
-// mcpSurface points the csl_search hint notes at the MCP tools.
+// mcpSurface points the csl_search hint notes at the MCP tools, and the
+// malformed-query fixes at the query parameter every lexical tool takes.
 var mcpSurface = lexical.Surface{
+	QueryArg:   "query",
 	RepoLookup: "csl_repo_lookup",
 	Reindex:    "csl_repo_reindex",
 	ParamNote:  paramNameNote,
@@ -329,7 +331,7 @@ func handleCount(
 	_ *mcp.CallToolRequest,
 	in countInput,
 ) (*mcp.CallToolResult, countOutput, error) {
-	if m := lexical.CheckShape(in.Query); m != nil {
+	if m := lexical.CheckShape(in.Query, mcpSurface); m != nil {
 		return nil, countOutput{}, m
 	}
 	if in.GroupBy != "" && in.GroupBy != "repo" && in.GroupBy != "language" {
@@ -370,7 +372,7 @@ func handleQueryValidate(
 	_ *mcp.CallToolRequest,
 	in queryValidateInput,
 ) (*mcp.CallToolResult, queryValidateOutput, error) {
-	if m := lexical.CheckShape(in.Query); m != nil {
+	if m := lexical.CheckShape(in.Query, mcpSurface); m != nil {
 		return nil, queryValidateOutput{Error: m.Problem, Hint: m.Fix}, nil
 	}
 	info := search.ValidateQuery(in.Query)

@@ -60,7 +60,7 @@ func TestSearchGolden(t *testing.T) {
 	}
 	for _, q := range goldenShapes {
 		shape := "ok"
-		if m := lexical.CheckShape(q); m != nil {
+		if m := lexical.CheckShape(q, mcpSurface); m != nil {
 			shape = m.Error()
 		}
 		_, v, err := handleQueryValidate(context.Background(), nil, queryValidateInput{Query: q})

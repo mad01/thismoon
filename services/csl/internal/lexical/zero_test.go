@@ -45,7 +45,7 @@ var oneRepo = []finder.Repo{{Name: "org/repo", Path: "/tmp/repo"}}
 
 // testSurface names commands no front end uses, so a test can see which
 // note picked them up.
-var testSurface = Surface{RepoLookup: "lookup-cmd", Reindex: "reindex-cmd"}
+var testSurface = Surface{QueryArg: "query-arg", RepoLookup: "lookup-cmd", Reindex: "reindex-cmd"}
 
 // explain runs ExplainZero for a files-mode query on the first page.
 func explain(t *testing.T, b Backend, query, file string) Result {

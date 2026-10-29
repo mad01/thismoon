@@ -141,7 +141,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		)
 	}
 	pattern := args[0]
-	if m := lexical.CheckShape(pattern); m != nil {
+	if m := lexical.CheckShape(pattern, cliSurface); m != nil {
 		return m
 	}
 
@@ -368,9 +368,11 @@ func indexForSearch(
 	return nil
 }
 
-// cliSurface points the csl search hint notes at CLI commands. The CLI has
-// no parameter names to mistype into the pattern, so it skips that note.
+// cliSurface points the csl search hint notes at CLI commands and the
+// malformed-query fixes at the pattern argument. The CLI has no parameter
+// names to mistype into the pattern, so it skips that note.
 var cliSurface = lexical.Surface{
+	QueryArg:   "the <pattern> argument",
 	RepoLookup: "csl repo --list",
 	Reindex:    "csl index --repo <path>",
 }

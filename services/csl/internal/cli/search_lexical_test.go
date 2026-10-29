@@ -59,12 +59,15 @@ func runReport(t *testing.T, pattern string) (string, string) {
 }
 
 // TestRunSearch_RefusesMalformedQuery: a query zoekt cannot run, or one sent
-// by mistake, fails before any search with the problem and its fix.
+// by mistake, fails before any search with the problem and a fix that names
+// the CLI's pattern argument. The config and state dirs are isolated, so a
+// query the check let through could not read the developer's index.
 func TestRunSearch_RefusesMalformedQuery(t *testing.T) {
 	keepSearchFlags(t)
+	isolateConfigEnv(t, t.TempDir())
 	tests := []struct{ query, want string }{
-		{query: "  ", want: "query is empty; put the text to search for"},
-		{query: `""`, want: "only quote characters; put the search term itself"},
+		{query: "  ", want: "query is empty; put the text to search for in the <pattern> argument"},
+		{query: `""`, want: "only quote characters; put the search term itself in the <pattern> argument;"},
 		{query: `foo "bar`, want: "unbalanced double quote; close the phrase"},
 		{query: `foo\`, want: "lone backslash; double it"},
 	}

@@ -19,9 +19,12 @@ import (
 // uncounted term may be the one that matches nothing.
 const maxDiagnosedTerms = 6
 
-// Surface is the front end a hint is written for, so its notes point the
-// reader at that front end's own commands.
+// Surface is the front end a hint or a malformed-query fix is written for,
+// so its notes point the reader at that front end's own commands.
 type Surface struct {
+	// QueryArg is where the front end takes the search text, e.g. query
+	// for csl_search; a malformed-query fix names it.
+	QueryArg string
 	// RepoLookup checks a repo name, e.g. csl_repo_lookup.
 	RepoLookup string
 	// Reindex indexes the repos a filter matched, e.g. csl_repo_reindex.

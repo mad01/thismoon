@@ -29,7 +29,7 @@ func TestCheckShape(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CheckShape(tt.query)
+			got := CheckShape(tt.query, testSurface)
 			if tt.want == "" {
 				if got != nil {
 					t.Fatalf("CheckShape(%q) = %v, want nil", tt.query, got)
@@ -49,6 +49,18 @@ func TestCheckShape(t *testing.T) {
 				t.Errorf("Error() = %q does not carry the fix", got.Error())
 			}
 		})
+	}
+}
+
+// TestCheckShape_FixNamesQueryArg: a fix that says where the search text
+// goes names the front end's own argument, so each front end gets its own
+// wording.
+func TestCheckShape_FixNamesQueryArg(t *testing.T) {
+	for _, q := range []string{"", `"`} {
+		m := CheckShape(q, testSurface)
+		if m == nil || !strings.Contains(m.Fix, " in query-arg") {
+			t.Errorf("CheckShape(%q).Fix = %v, want it to name query-arg", q, m)
+		}
 	}
 }
 

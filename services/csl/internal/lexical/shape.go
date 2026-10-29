@@ -27,18 +27,19 @@ func (m *Malformed) Error() string { return m.Problem + "; " + m.Fix }
 // CheckShape returns the malformed shape of a query, or nil when the query is
 // worth sending to zoekt. The shapes: empty, made only of quote characters,
 // an unbalanced double quote, a trailing backslash, and an empty "" phrase.
-func CheckShape(q string) *Malformed {
+// A fix that says where the search text goes names s.QueryArg.
+func CheckShape(q string, s Surface) *Malformed {
 	trimmed := strings.TrimSpace(q)
 	if trimmed == "" {
 		return &Malformed{
 			Problem: "query is empty",
-			Fix:     "put the text to search for in query",
+			Fix:     "put the text to search for in " + s.QueryArg,
 		}
 	}
 	if strings.Trim(trimmed, `"`) == "" {
 		return &Malformed{
 			Problem: fmt.Sprintf("query %q is only quote characters", q),
-			Fix: `put the search term itself in query; ` +
+			Fix: "put the search term itself in " + s.QueryArg + "; " +
 				`quotes are only needed around a multi-word phrase, e.g. "retry backoff"`,
 		}
 	}
