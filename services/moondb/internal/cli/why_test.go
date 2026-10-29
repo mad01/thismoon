@@ -24,15 +24,23 @@ func TestPrintWhyShowsTheBrief(t *testing.T) {
 	}{
 		{"recorded with a brief", query.WhyAgent{
 			ID: servertest.AgentID, Type: "general-purpose", Name: servertest.AgentName,
-			BriefChunk: servertest.AgentBriefSHA, Recorded: true,
-		}, []string{"agent:    reviewer (general-purpose)  [agent-rev]", `brief:    "review it"`}},
+			BriefChunk: servertest.AgentBriefSHA, LaterMessages: 2, Recorded: true,
+		}, []string{
+			"agent:    reviewer (general-purpose)  [agent-rev]", `brief:    "review it"`,
+			"later:    2 messages from its parent after the spawn brief",
+		}},
 		{
 			"recorded before briefs",
 			query.WhyAgent{ID: "a-old", Type: "Explore", Recorded: true},
 			[]string{
 				"agent:    Explore  [a-old]",
-				"brief:    unknown, recorded before moondb kept briefs",
+				"brief:    unknown, recorded before moondb kept briefs; moondb import --since 30d --force",
 			},
+		},
+		{
+			"type internal",
+			query.WhyAgent{ID: "a-int", Type: store.InternalAgent, Recorded: true},
+			[]string{"brief:    unknown, type internal, no transcript"},
 		},
 		{
 			"known from its edits",

@@ -72,8 +72,9 @@ const (
 	// Agent record, and the model calls in them add no tokens or cost, as
 	// for a turn's transcript (MaxTranscriptBytes).
 	MaxAgentTranscriptBytes = 8 << 20
-	// MaxBriefBytes caps an Agent's brief, the text of its transcript's
-	// first user line, which is kept whole beside the agent transcript.
+	// MaxBriefBytes caps an Agent's spawn brief, the text of its
+	// transcript's first user line, which is kept whole beside the agent
+	// transcript.
 	// Briefs run to a few KB; a longer one is cut at its end and says how
 	// many bytes it lost.
 	MaxBriefBytes = 64 << 10

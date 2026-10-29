@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 	"github.com/mad01/thismoon/services/moondb/internal/trace"
@@ -88,9 +89,10 @@ type WhyResult struct {
 	Candidates []Candidate       `json:"candidates,omitempty"`
 }
 
-// WhyAgent is the subagent that made an edit: who it was and its brief,
-// the prompt the conversation that spawned it gave it. The brief says why
-// the agent made the edit; the turn's prompt is the person's message to
+// WhyAgent is the subagent that made an edit: who it was and its spawn
+// brief, the prompt it was spawned with, which names the task the edit
+// served. Messages its parent sent it later are not in the brief;
+// LaterMessages counts them. The turn's prompt is the person's message to
 // the main conversation. Recorded is false when the store holds no Agent
 // record, only the edit's agent id and type. BriefChunk is empty then, and
 // on a record stored before briefs were kept: the brief is unknown.
@@ -100,11 +102,29 @@ type WhyAgent struct {
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
 	BriefChunk  string `json:"brief_chunk,omitempty"`
-	Recorded    bool   `json:"recorded"`
+	// LaterMessages counts the messages that reached the agent after its
+	// spawn brief, which the brief does not hold.
+	LaterMessages int  `json:"later_messages,omitempty"`
+	Recorded      bool `json:"recorded"`
 }
 
 // Label names the agent for a person: its name, else its type.
 func (a WhyAgent) Label() string { return cmp.Or(a.Name, a.Type, "subagent") }
+
+// MissingBrief says why an agent of type typ has no spawn brief: one of
+// type internal has no transcript to take one from, a subagent known only
+// from its edits has no record, and any other was recorded before moondb
+// kept briefs, which a forced import fills.
+func MissingBrief(typ string, recorded bool) string {
+	switch {
+	case typ == store.InternalAgent:
+		return "type internal, no transcript to take it from"
+	case !recorded:
+		return "no agent record, only its edits"
+	}
+	return "recorded before moondb kept briefs; moondb import --since " +
+		moondb.DefaultImportSince + " --force fills it"
+}
 
 // Candidate is one Edit that may explain a line, with how well it fits.
 type Candidate struct {
@@ -245,10 +265,16 @@ func (s *Service) whyAgent(ctx context.Context, e store.Edit) (*WhyAgent, error)
 	case err != nil:
 		return nil, fmt.Errorf("query: agent %s: %w", e.AgentID, err)
 	}
-	return &WhyAgent{
+	agent := RecordedWhyAgent(a)
+	return &agent, nil
+}
+
+// RecordedWhyAgent is the WhyAgent of an agent the store holds a record of.
+func RecordedWhyAgent(a store.Agent) WhyAgent {
+	return WhyAgent{
 		ID: a.ID, Type: a.Type, Name: a.Name, Description: a.Description,
-		BriefChunk: a.BriefChunk, Recorded: true,
-	}, nil
+		BriefChunk: a.BriefChunk, LaterMessages: a.LaterMessages, Recorded: true,
+	}
 }
 
 // linkFor picks the commit link of commit at path, or, with no commit, the

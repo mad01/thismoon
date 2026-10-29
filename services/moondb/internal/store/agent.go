@@ -29,10 +29,17 @@ type Agent struct {
 	// its type. A named spawn's hooks report the name as agent_type.
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
-	// BriefChunk holds its brief: the prompt the conversation that spawned
-	// it gave it, the text of its transcript's first user line. Empty on a
-	// record stored before briefs were kept, until an import fills it.
+	// BriefChunk holds its spawn brief: the prompt the conversation that
+	// spawned it gave it, the text of its transcript's first user line.
+	// Empty on a record stored before briefs were kept, until an import
+	// fills it.
 	BriefChunk string `json:"brief_chunk,omitempty"`
+	// LaterMessages counts the messages its transcript shows reaching it
+	// after the spawn brief, such as a lead's follow-ups to a teammate.
+	// The brief holds none of them, so a count above zero says the brief
+	// may be out of date. Zero on a record stored before they were
+	// counted, until an import fills the brief.
+	LaterMessages int `json:"later_messages,omitempty"`
 	// Model is the model of its first model call.
 	Model string `json:"model,omitempty"`
 	// TurnIDs are the main turns it ran under, in the order its lines name
@@ -87,6 +94,16 @@ func (a Agent) IsMainSegment() bool {
 
 // RanIn reports whether the agent ran under the main turn turnID.
 func (a Agent) RanIn(turnID string) bool { return slices.Contains(a.TurnIDs, turnID) }
+
+// NeedsBrief reports whether an import can still give a its brief: the
+// record has none, it read lines of a transcript file to take one from,
+// and it ended at or after since. An InternalAgent has no transcript file,
+// and a record with no line read never read one, so neither gets a brief
+// from an import.
+func NeedsBrief(a Agent, since time.Time) bool {
+	return a.BriefChunk == "" && a.Type != InternalAgent && a.Lines.Read > 0 &&
+		!a.EndedAt.Before(since)
+}
 
 // NeedsAgentTotals reports whether an agent lacks totals from trace
 // version version: it has none, or older ones.

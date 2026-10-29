@@ -676,3 +676,50 @@ func TestAgentRoute(t *testing.T) {
 	}
 	h.wantAPIError(t, "/api/agents/nope", http.StatusNotFound, "not found")
 }
+
+// TestDoctorCountsAgentsWithoutBrief: the fixture agent has its brief; an
+// added agent without one counts, an internal one does not, and the
+// window is the one a default import reads.
+func TestDoctorCountsAgentsWithoutBrief(t *testing.T) {
+	h := newHarness(t)
+	var v DoctorView
+	h.getJSON(t, "/api/doctor", http.StatusOK, &v)
+	if v.AgentsWithoutBrief != 0 {
+		t.Errorf("baseline agents_without_brief = %d, want 0", v.AgentsWithoutBrief)
+	}
+	missing := servertest.PricedAgent("a-missing", "s-doctor", "t-doctor", store.Location{})
+	internal := servertest.PricedAgent("a-internal", "s-doctor", "t-doctor", store.Location{})
+	internal.Type = store.InternalAgent
+	h.store.Add(store.Session{ID: "s-doctor", StartedAt: servertest.T0}, nil,
+		[]store.Agent{missing, internal}, nil)
+	h.getJSON(t, "/api/doctor", http.StatusOK, &v)
+	if v.AgentsWithoutBrief != 1 {
+		t.Errorf("agents_without_brief = %d, want 1 (a-missing)", v.AgentsWithoutBrief)
+	}
+	if want := fixedNow.Add(-30 * 24 * time.Hour); !v.Since.Equal(want) {
+		t.Errorf("since = %v, want %v", v.Since, want)
+	}
+}
+
+// TestWithAgentRecordsMarksRecorded: a turn row built from edits alone,
+// when the turn's agents could not be traced, takes its record's name,
+// spawn brief and count of later messages and is marked recorded; a row
+// with no record stays as it was.
+func TestWithAgentRecordsMarksRecorded(t *testing.T) {
+	st := servertest.NewStore()
+	s := New(st, servertest.NewQuerier(st), testInfo)
+	rows := []AgentRow{
+		{Type: MainAgentType, Recorded: true},
+		{ID: servertest.AgentID, Type: "general-purpose", EditCount: 1},
+		{ID: "a-unknown", Type: "worker", EditCount: 1},
+	}
+	s.withAgentRecords(t.Context(), servertest.OldSession, rows)
+	got := rows[1]
+	if !got.Recorded || got.Name != servertest.AgentName ||
+		got.BriefChunk != servertest.AgentBriefSHA || got.Description == "" {
+		t.Errorf("recorded row = %+v, want the record's name, brief and description", got)
+	}
+	if rows[2].Recorded || rows[2].BriefChunk != "" {
+		t.Errorf("row without a record = %+v, want it unchanged", rows[2])
+	}
+}

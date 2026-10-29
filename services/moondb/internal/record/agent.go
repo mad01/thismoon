@@ -69,6 +69,7 @@ func (rec *recorder) agentClose(c agentfile.Capture, chunks chunkSet) *spool.Age
 	if c.Brief != "" {
 		ac.BriefChunk = chunks.add([]byte(c.Brief))
 	}
+	ac.LaterMessages = c.LaterMessages
 	if c.Cwd != "" {
 		ac.Location = rec.locate(c.Cwd)
 	}

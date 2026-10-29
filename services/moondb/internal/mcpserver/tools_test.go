@@ -201,23 +201,96 @@ func TestTurnSummaryCarriesTraceTotals(t *testing.T) {
 	}
 }
 
-// TestTurnCarriesBriefs: a turn's answer gives each subagent the prompt
-// it was spawned with, beside the person's prompt.
+// TestTurnCarriesBriefs: a turn's answer gives each subagent the spawn
+// brief it was spawned with, beside the person's prompt.
 func TestTurnCarriesBriefs(t *testing.T) {
 	cs := session(t, noChecks)
 	var out turnOutput
 	call(t, cs, "moondb_turn", map[string]any{"id": servertest.OldTurn}, &out)
 	want := []agentBrief{{
 		AgentID: servertest.AgentID, Agent: servertest.AgentName, Brief: servertest.AgentBrief,
+		BriefBytes: len(servertest.AgentBrief), Recorded: true,
 	}}
 	if !slices.Equal(out.Briefs, want) {
 		t.Errorf("briefs = %+v, want %+v", out.Briefs, want)
 	}
 }
 
-// TestWhyCarriesTheBrief: an edit a subagent made answers with its brief
-// beside the turn's prompt, and one by an agent recorded before briefs
-// says the brief is unknown.
+// TestBriefExcerpts: a why answer carries up to briefExcerpt bytes of a
+// long spawn brief, a turn answer its first line up to turnBriefExcerpt
+// bytes with its whole length, and both the count of later messages.
+func TestBriefExcerpts(t *testing.T) {
+	st := servertest.NewStore()
+	first := strings.Repeat("a", turnBriefExcerpt+100)
+	brief := first + "\n" + strings.Repeat("b", briefExcerpt)
+	turn := store.Turn{ID: "turn-l", SessionID: "sess-l", Seq: 1, StartedAt: servertest.T0}
+	agent := store.Agent{
+		ID: "a-long", SessionID: "sess-l", Type: "general-purpose", TurnIDs: []string{"turn-l"},
+		BriefChunk: st.AddChunk([]byte(brief)), LaterMessages: 2,
+	}
+	edit := store.Edit{
+		ID: "a-long:0", SessionID: "sess-l", TurnID: "turn-l", AgentID: agent.ID,
+		AgentType: agent.Type, Tool: "Edit", At: servertest.T0, Path: "long.go",
+		Location: store.Location{Repo: servertest.Repo, Worktree: servertest.Worktree},
+	}
+	st.Add(store.Session{ID: "sess-l", StartedAt: servertest.T0}, []store.Turn{turn},
+		[]store.Agent{agent}, []store.Edit{edit})
+	cs := sessionOn(t, st, noChecks)
+
+	var why whyOutput
+	call(
+		t,
+		cs,
+		"moondb_why",
+		map[string]any{"repo": servertest.Repo, "path": "long.go", "line": 1},
+		&why,
+	)
+	if why.Brief != brief[:briefExcerpt]+"…" || why.LaterMessages != 2 ||
+		!strings.Contains(why.Summary, "2 later messages") {
+		t.Errorf(
+			"why: brief %d bytes, later %d, summary %q",
+			len(why.Brief),
+			why.LaterMessages,
+			why.Summary,
+		)
+	}
+
+	var tu turnOutput
+	call(t, cs, "moondb_turn", map[string]any{"id": "turn-l"}, &tu)
+	want := []agentBrief{{
+		AgentID: "a-long", Agent: "general-purpose", Brief: first[:turnBriefExcerpt] + "…",
+		BriefBytes: len(brief), LaterMessages: 2, Recorded: true,
+	}}
+	if !slices.Equal(tu.Briefs, want) {
+		t.Errorf("turn briefs = %+v, want %+v", tu.Briefs, want)
+	}
+}
+
+// TestBriefHead: a turn's excerpt is the first line that holds text, cut
+// at turnBriefExcerpt bytes.
+func TestBriefHead(t *testing.T) {
+	cases := []struct{ brief, want string }{
+		{"", ""},
+		{"\n\n  Fix the parser.  \nThen land it.", "Fix the parser."},
+		{strings.Repeat("x", turnBriefExcerpt), strings.Repeat("x", turnBriefExcerpt)},
+		{strings.Repeat("x", turnBriefExcerpt+1), strings.Repeat("x", turnBriefExcerpt) + "…"},
+	}
+	for _, c := range cases {
+		if got := briefHead(c.brief); got != c.want {
+			t.Errorf(
+				"briefHead(%.20q) = %.30q (%d bytes), want %.30q",
+				c.brief,
+				got,
+				len(got),
+				c.want,
+			)
+		}
+	}
+}
+
+// TestWhyCarriesTheBrief: an edit a subagent made answers with its spawn
+// brief beside the turn's prompt, and one by an agent recorded before
+// briefs, or by an agent of type internal, says why the brief is unknown.
 func TestWhyCarriesTheBrief(t *testing.T) {
 	st := servertest.NewStore()
 	turn := store.Turn{
@@ -230,6 +303,7 @@ func TestWhyCarriesTheBrief(t *testing.T) {
 			BriefChunk: servertest.AgentBriefSHA, TurnIDs: []string{"turn-b"},
 		},
 		{ID: "a-old", SessionID: "sess-b", Type: "Explore", TurnIDs: []string{"turn-b"}},
+		{ID: "a-int", SessionID: "sess-b", Type: store.InternalAgent, TurnIDs: []string{"turn-b"}},
 	}
 	var edits []store.Edit
 	for _, a := range agents {
@@ -245,9 +319,15 @@ func TestWhyCarriesTheBrief(t *testing.T) {
 		{
 			"a-new.go",
 			servertest.AgentBrief,
-			`subagent builder (general-purpose), brief: "review it"`,
+			`subagent builder (general-purpose), spawn brief: "review it"`,
 		},
-		{"a-old.go", "", "subagent Explore, brief unknown"},
+		{
+			"a-old.go",
+			"",
+			"subagent Explore, spawn brief unknown: recorded before moondb kept briefs; " +
+				"moondb import --since 30d --force fills it",
+		},
+		{"a-int.go", "", "spawn brief unknown: type internal, no transcript"},
 	}
 	for _, tc := range cases {
 		var out whyOutput

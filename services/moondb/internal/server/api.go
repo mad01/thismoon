@@ -83,9 +83,12 @@ func (s *Server) turnRuns(
 	return trace.WithAgents(tt, runs), runs
 }
 
-// withAgentRecords gives each subagent row of a turn the description and
-// brief of its Agent record, which a run does not carry. A listing the
-// store cannot give is logged and leaves the rows as they are.
+// withAgentRecords gives each subagent row of a turn what its Agent record
+// says and a run does not carry: the description, the spawn brief and the
+// count of later messages. A row whose record is found is marked recorded
+// and named from it, which a row built from edits alone, when the turn's
+// agents could not be traced, lacks. A listing the store cannot give is
+// logged and leaves the rows as they are.
 func (s *Server) withAgentRecords(ctx context.Context, sessionID string, rows []AgentRow) {
 	agents, err := s.store.Agents(ctx, sessionID)
 	if err != nil {
@@ -97,9 +100,13 @@ func (s *Server) withAgentRecords(ctx context.Context, sessionID string, rows []
 			agents,
 			func(a store.Agent) bool { return r.ID != "" && a.ID == r.ID },
 		)
-		if j >= 0 {
-			rows[i].Description, rows[i].BriefChunk = agents[j].Description, agents[j].BriefChunk
+		if j < 0 {
+			continue
 		}
+		a := agents[j]
+		rows[i].Type, rows[i].Name, rows[i].Recorded = a.Type, a.Name, true
+		rows[i].Description, rows[i].BriefChunk = a.Description, a.BriefChunk
+		rows[i].LaterMessages = a.LaterMessages
 	}
 }
 

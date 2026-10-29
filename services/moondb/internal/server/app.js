@@ -524,16 +524,19 @@
     return nodes;
   }
 
-  // whyBrief shows the brief of the subagent that made the edit, the prompt
-  // it was spawned with, which says why it made the edit; the turn link
-  // above carries the person's prompt.
+  // whyBrief shows the spawn brief of the subagent that made the edit, the
+  // prompt it was spawned with, which names the task the edit served, and
+  // how many messages its parent sent it after; the turn link above
+  // carries the person's prompt.
   function whyBrief(a) {
-    var label = 'Brief to ' + (a.name || a.type || 'subagent');
-    if (!a.brief_chunk) return el('div', { class: 'muted' }, label + ': ' + briefMissing(a.recorded));
+    var label = 'Spawn brief to ' + (a.name || a.type || 'subagent');
+    if (!a.brief_chunk) return el('div', { class: 'muted' }, label + ': ' + briefMissing(a));
     var line = el('span', {}, '…');
     fill(line, chunk(a.brief_chunk).then(function (text) { return promptText(text, 120); }),
       '(brief unavailable)');
-    return el('details', {}, [el('summary', {}, [label + ': ', line]), prose(a.brief_chunk, '')]);
+    var head = [label + ': ', line];
+    if (a.later_messages) head.push(el('span', { class: 'muted' }, ' · ' + laterNote(a.later_messages)));
+    return el('details', {}, [el('summary', {}, head), prose(a.brief_chunk, '')]);
   }
 
   // ── sessions list ──
@@ -1909,28 +1912,42 @@
   }
 
   // briefsSection sits under the turn's prompt, the person's message to
-  // the main conversation: the brief of each subagent that worked in the
-  // turn, the prompt it was spawned with. null when none ran.
+  // the main conversation: the spawn brief of each subagent that worked in
+  // the turn, the prompt it was spawned with. null when none ran.
   function briefsSection(rows) {
     var subs = rows.filter(function (r) { return r.id; });
     if (!subs.length) return null;
-    return section('Subagent briefs', subs.map(briefPanel));
+    return section('Subagent spawn briefs', subs.map(briefPanel));
   }
 
-  // briefPanel is one subagent's brief in a disclosure headed by the agent,
-  // its kind and its description.
+  // briefPanel is one subagent's spawn brief in a disclosure headed by the
+  // agent, its kind, its description and the messages sent to it after.
   function briefPanel(r) {
     var head = [el('strong', {}, agentLabel(r))];
     if (r.name && r.type && r.name !== r.type) head.push(el('span', { class: 'muted' }, ' ' + r.type));
     if (r.description) head.push(el('span', { class: 'muted' }, ' · ' + r.description));
-    return el('details', {}, [el('summary', {}, head), prose(r.brief_chunk, briefMissing(r.recorded))]);
+    if (r.later_messages) head.push(el('span', { class: 'muted' }, ' · ' + laterNote(r.later_messages)));
+    return el('details', {}, [el('summary', {}, head), prose(r.brief_chunk, briefMissing(r))]);
   }
 
-  // briefMissing says why an agent has no brief to show.
-  function briefMissing(recorded) {
-    return recorded
-      ? 'Brief unknown: the agent was recorded before moondb kept briefs. moondb import --force fills it.'
-      : 'Brief unknown: moondb has no record of this agent, only its edits.';
+  // laterNote says how many messages reached a subagent after its spawn
+  // brief, which the brief does not show.
+  function laterNote(n) {
+    return n + (n === 1 ? ' later message' : ' later messages') + ' from its parent, not shown';
+  }
+
+  // briefMissing says why an agent has no spawn brief to show, as the
+  // server's query.MissingBrief does: an agent of type internal has no transcript,
+  // an agent known from its edits alone has no record, and any other was
+  // recorded before moondb kept briefs.
+  function briefMissing(a) {
+    if (a.type === 'internal') {
+      return 'Spawn brief unknown: an agent of type internal has no transcript to take it from.';
+    }
+    return a.recorded
+      ? 'Spawn brief unknown: the agent was recorded before moondb kept briefs. ' +
+        'moondb import --since 30d --force fills it.'
+      : 'Spawn brief unknown: moondb has no record of this agent, only its edits.';
   }
 
   // editGroups lays the turn's edits out by worktree, then path, each path

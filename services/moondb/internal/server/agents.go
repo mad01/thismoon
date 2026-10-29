@@ -49,9 +49,12 @@ type AgentRow struct {
 	// LinesCut counts the lines the agent transcript's size cap cut, whose
 	// calls the row leaves out.
 	LinesCut int `json:"lines_cut,omitempty"`
-	// BriefChunk is the record's brief (store.Agent.BriefChunk); empty for
-	// the main conversation and for a subagent whose brief is unknown.
-	BriefChunk string `json:"brief_chunk,omitempty"`
+	// BriefChunk is the record's spawn brief (store.Agent.BriefChunk);
+	// empty for the main conversation and for a subagent whose brief is
+	// unknown. LaterMessages counts the messages that reached the subagent
+	// after it (store.Agent.LaterMessages).
+	BriefChunk    string `json:"brief_chunk,omitempty"`
+	LaterMessages int    `json:"later_messages,omitempty"`
 }
 
 // AgentView is one agent as GET /api/agents/{id} answers it: the record,
@@ -133,7 +136,7 @@ func (s *Server) mainRow(d store.SessionDetail, edits []store.Edit) AgentRow {
 func (s *Server) recordedRow(a store.Agent, edits []store.Edit) AgentRow {
 	row := AgentRow{
 		ID: a.ID, Type: a.Type, Name: a.Name, Description: a.Description,
-		BriefChunk: a.BriefChunk, Model: a.Model,
+		BriefChunk: a.BriefChunk, LaterMessages: a.LaterMessages, Model: a.Model,
 		TurnIDs: orEmpty(a.TurnIDs), StartedAt: a.StartedAt, EndedAt: a.EndedAt,
 		DurationMS: a.EndedAt.Sub(a.StartedAt).Milliseconds(),
 		EditCount:  len(edits), Repos: editRepos(edits), Recorded: true, LinesCut: a.Lines.Cut,

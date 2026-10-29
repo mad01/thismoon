@@ -130,6 +130,7 @@ func (em *emitter) agent(path string) (spool.Envelope, chunkSet, bool) {
 	if c.Brief != "" {
 		env.AgentClose.BriefChunk = chunks.add([]byte(c.Brief))
 	}
+	env.AgentClose.LaterMessages = c.LaterMessages
 	if c.Cwd != "" {
 		env.AgentClose.Location = em.places.placeDir(c.Cwd, c.GitBranch)
 	}

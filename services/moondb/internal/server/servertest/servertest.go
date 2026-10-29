@@ -259,6 +259,15 @@ func (s *Store) Add(
 	slices.SortStableFunc(s.edits, func(a, b store.Edit) int { return a.At.Compare(b.At) })
 }
 
+// AddChunk puts data into the fixture's chunks and returns its key, for a
+// case the base fixture lacks. Call it before the first request: reads do
+// not lock.
+func (s *Store) AddChunk(data []byte) string {
+	key := Key(data)
+	s.chunks[key] = data
+	return key
+}
+
 // Edit is an edit of path in session and turn at minute m, made by agent
 // ("" for the main conversation) in loc.
 func Edit(id, session, turn, agent string, m int, loc store.Location, path string) store.Edit {
@@ -326,6 +335,18 @@ func (s *Store) AgentsWithoutTotals(_ context.Context, version, limit int) ([]st
 		}
 	}
 	return out, nil
+}
+
+// CountAgentsWithoutBrief counts the fixture agents store.NeedsBrief keeps
+// for since.
+func (s *Store) CountAgentsWithoutBrief(_ context.Context, since time.Time) (int, error) {
+	n := 0
+	for _, a := range s.agents {
+		if store.NeedsBrief(a, since) {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // sessionAgents lists one session's fixture agents.
@@ -661,10 +682,8 @@ func (q *Querier) Why(ctx context.Context, req query.WhyRequest) (query.WhyResul
 	res.Session = &sess.Session
 	res.Candidates = []query.Candidate{{Edit: edits[0], Score: 1, Reason: "fixture"}}
 	if a, err := q.store.Agent(ctx, edits[0].AgentID); err == nil {
-		res.Agent = &query.WhyAgent{
-			ID: a.ID, Type: a.Type, Name: a.Name, Description: a.Description,
-			BriefChunk: a.BriefChunk, Recorded: true,
-		}
+		agent := query.RecordedWhyAgent(a)
+		res.Agent = &agent
 	}
 	return res, nil
 }

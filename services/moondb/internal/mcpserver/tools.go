@@ -49,8 +49,9 @@ func registerEditTools(s *mcp.Server, h *handlers) {
 			"Returns the edit that produced the line, its turn and session, the commit it landed in when known, and `method`: " +
 			"blame (git blame joined a recorded blob), content (the line's text matched a line an edit added; `candidates` lists matches best first), or none (nothing recorded explains the line). " +
 			"`prompt` is the turn's prompt: the person's message to the main conversation. " +
-			"When a subagent made the edit, `result.agent` names it and `brief` is the prompt it was spawned with, which usually says why the edit was made; " +
-			"`brief` is absent when unknown (an agent recorded before moondb kept briefs, or known only from its edits). " +
+			"When a subagent made the edit, `result.agent` names it and `brief` is its spawn brief: the prompt it was spawned with, which names the task the edit served. " +
+			"Messages its parent sent it later are not in the brief; `later_messages` counts them. " +
+			"`brief` is absent when unknown (an agent recorded before moondb kept briefs, one known only from its edits, or one of type internal, which has no transcript). " +
 			"Follow up with moondb_turn on the returned turn id for everything else that turn changed.",
 		Annotations: readOnly(),
 	}, h.handleWhy)
@@ -72,7 +73,8 @@ func registerEditTools(s *mcp.Server, h *handlers) {
 			"edits, unattributed deltas (changes no tool call explains, such as a formatter or a human between turns), " +
 			"turn-boundary snapshots, and commit links. `turn.agents` lists the agents that worked in the turn: " +
 			"the main conversation first, then each subagent with its model calls, time, edits and cost there. " +
-			"`briefs` gives each subagent's brief, the prompt it was spawned with, beside the turn's `prompt`, which is the person's. " +
+			"`briefs` gives each subagent's spawn brief, the prompt it was spawned with, as its first line with `brief_bytes`, its whole length, and `later_messages`, the messages sent to it after the brief; " +
+			"moondb_why on a line the subagent wrote gives more of the brief. The turn's `prompt` is the person's. " +
 			"`turn.trace_totals.cost` covers them all; `cost_main` and `cost_agents` split it. " +
 			"Turn ids come from moondb_why and moondb_history (`turn_id`).",
 		Annotations: readOnly(),
@@ -181,11 +183,14 @@ type whyInput struct {
 }
 
 type whyOutput struct {
-	Result  query.WhyResult `json:"result"`
-	Prompt  string          `json:"prompt,omitempty" jsonschema:"the turn's prompt, the person's message to the main conversation, cut at 2000 bytes; absent when none was recorded"`
-	Brief   string          `json:"brief,omitempty"  jsonschema:"when a subagent made the edit, the prompt it was spawned with, cut at 8000 bytes; absent when unknown"`
-	Summary string          `json:"summary"`
-	URL     string          `json:"url"              jsonschema:"web page showing the session that made the edit"`
+	Result query.WhyResult `json:"result"`
+	Prompt string          `json:"prompt,omitempty"         jsonschema:"the turn's prompt, the person's message to the main conversation, cut at 2000 bytes; absent when none was recorded"`
+	Brief  string          `json:"brief,omitempty"          jsonschema:"when a subagent made the edit, its spawn brief, the prompt it was spawned with, cut at 8000 bytes; absent when unknown"`
+	// LaterMessages sits beside Brief, though result.agent carries it too,
+	// so a reader of the brief sees that it may be out of date.
+	LaterMessages int    `json:"later_messages,omitempty" jsonschema:"messages the subagent's parent sent it after the spawn brief, which the brief does not hold; absent when none"`
+	Summary       string `json:"summary"`
+	URL           string `json:"url"                      jsonschema:"web page showing the session that made the edit"`
 }
 
 func (h *handlers) handleWhy(
@@ -213,6 +218,7 @@ func (h *handlers) handleWhy(
 	}
 	if res.Agent != nil {
 		out.Brief = h.chunkText(ctx, res.Agent.BriefChunk, briefExcerpt)
+		out.LaterMessages = res.Agent.LaterMessages
 	}
 	out.Summary = whySummary(res, out.Prompt, out.Brief)
 	return nil, out, nil
@@ -296,7 +302,7 @@ type turnInput struct {
 type turnOutput struct {
 	Turn    server.TurnView `json:"turn"`
 	Prompt  string          `json:"prompt,omitempty" jsonschema:"the prompt text, cut at 2000 bytes; absent when no prompt was recorded"`
-	Briefs  []agentBrief    `json:"briefs,omitempty" jsonschema:"each subagent of turn.agents with the prompt it was spawned with"`
+	Briefs  []agentBrief    `json:"briefs,omitempty" jsonschema:"each subagent of turn.agents with the first line of its spawn brief"`
 	Summary string          `json:"summary"`
 	URL     string          `json:"url"              jsonschema:"web page showing the turn's session"`
 }
@@ -369,9 +375,14 @@ func subagentNames(rows []server.AgentRow) string {
 }
 
 // chunkText fetches a prompt or a brief, cut to at most n bytes.
-// Best-effort: a missing or unreadable chunk leaves the text out rather
-// than failing the whole answer.
 func (h *handlers) chunkText(ctx context.Context, sha string, n int) string {
+	return truncate(h.chunk(ctx, sha), n)
+}
+
+// chunk fetches a prompt or a brief whole. Best-effort: a missing or
+// unreadable chunk leaves the text out rather than failing the whole
+// answer.
+func (h *handlers) chunk(ctx context.Context, sha string) string {
 	if sha == "" {
 		return ""
 	}
@@ -379,7 +390,7 @@ func (h *handlers) chunkText(ctx context.Context, sha string, n int) string {
 	if err != nil {
 		return ""
 	}
-	return truncate(string(data), n)
+	return string(data)
 }
 
 // truncate cuts s to at most n bytes without splitting a UTF-8 sequence.

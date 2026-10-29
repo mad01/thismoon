@@ -140,7 +140,8 @@ func printWhy(ctx context.Context, w io.Writer, c *client.Client, res query.WhyR
 }
 
 // printAgent names the subagent that made the edit and the first line of
-// its brief, the prompt it was spawned with, or why the brief is unknown.
+// its spawn brief, the prompt it was spawned with, with the count of
+// messages its parent sent it after, or why the brief is unknown.
 func printAgent(ctx context.Context, w io.Writer, c *client.Client, a query.WhyAgent) {
 	who := a.Label()
 	if a.Name != "" && a.Name != a.Type {
@@ -148,14 +149,14 @@ func printAgent(ctx context.Context, w io.Writer, c *client.Client, a query.WhyA
 	}
 	fmt.Fprintf(w, "  agent:    %s  [%s]\n", who, a.ID)
 	brief := promptOf(ctx, c, a.BriefChunk)
-	switch {
-	case brief != "":
-		fmt.Fprintf(w, "  brief:    %q\n", brief)
-	case !a.Recorded:
-		fmt.Fprintln(w, "  brief:    unknown, no agent record, only its edits")
-	default:
-		fmt.Fprintln(w, "  brief:    unknown, recorded before moondb kept briefs; "+
-			"moondb import --force fills it")
+	if brief == "" {
+		fmt.Fprintf(w, "  brief:    unknown, %s\n", query.MissingBrief(a.Type, a.Recorded))
+		return
+	}
+	fmt.Fprintf(w, "  brief:    %q\n", brief)
+	if a.LaterMessages > 0 {
+		fmt.Fprintf(w, "  later:    %d messages from its parent after the spawn brief, not shown\n",
+			a.LaterMessages)
 	}
 }
 

@@ -306,7 +306,7 @@ func TestWhyNamesTheSubagent(t *testing.T) {
 	brief := f.chunk("Order the lanes by start time.")
 	f.seed(store.Agent{
 		ID: "a-new", SessionID: "s1", Type: "general-purpose", Name: "builder",
-		Description: "trace order", BriefChunk: brief,
+		Description: "trace order", BriefChunk: brief, LaterMessages: 2,
 	}, store.Agent{ID: "a-old", SessionID: "s1", Type: "Explore"})
 	cases := []struct {
 		agentID, agentType string
@@ -314,7 +314,7 @@ func TestWhyNamesTheSubagent(t *testing.T) {
 	}{
 		{"a-new", "builder", &WhyAgent{
 			ID: "a-new", Type: "general-purpose", Name: "builder",
-			Description: "trace order", BriefChunk: brief, Recorded: true,
+			Description: "trace order", BriefChunk: brief, LaterMessages: 2, Recorded: true,
 		}},
 		{"a-old", "Explore", &WhyAgent{ID: "a-old", Type: "Explore", Recorded: true}},
 		{"a-gone", "worker", &WhyAgent{ID: "a-gone", Type: "worker"}},
@@ -333,6 +333,26 @@ func TestWhyNamesTheSubagent(t *testing.T) {
 		if res.Turn == nil || !equalAgent(res.Agent, tc.want) {
 			t.Errorf("agent %q: Agent = %+v with turn %v, want %+v", tc.agentID, res.Agent,
 				res.Turn != nil, tc.want)
+		}
+	}
+}
+
+// TestMissingBrief: an internal agent has no transcript to fill a brief
+// from, an agent with no record has only its edits, and only a recorded
+// one is pointed at the forced import.
+func TestMissingBrief(t *testing.T) {
+	cases := []struct {
+		typ      string
+		recorded bool
+		want     string
+	}{
+		{store.InternalAgent, true, "no transcript"},
+		{"general-purpose", false, "only its edits"},
+		{"general-purpose", true, "moondb import --since 30d --force"},
+	}
+	for _, c := range cases {
+		if got := MissingBrief(c.typ, c.recorded); !strings.Contains(got, c.want) {
+			t.Errorf("MissingBrief(%s, %v) = %q, want it to say %q", c.typ, c.recorded, got, c.want)
 		}
 	}
 }

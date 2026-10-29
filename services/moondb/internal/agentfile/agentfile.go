@@ -53,10 +53,16 @@ type Capture struct {
 	// line carries, the lines the cap cut among them.
 	StartedAt time.Time
 	LastAt    time.Time
-	// Brief is the prompt the agent was spawned with: the text of the
-	// file's first user line (briefOf), whole up to moondb.MaxBriefBytes.
-	// "" when that line holds no text.
+	// Brief is the spawn brief, the prompt the agent was spawned with: the
+	// text of the file's first user line (briefOf), whole up to
+	// moondb.MaxBriefBytes. "" when that line holds no text.
 	Brief string
+	// LaterMessages counts the messages the file shows reaching the agent
+	// after its spawn brief, such as a lead's follow-ups to a teammate:
+	// the envelopes later user lines open with (laterMessages), and any
+	// after the first in the brief's own line. The brief holds none of
+	// them.
+	LaterMessages int
 	// Transcript is the agent transcript, newline-terminated lines.
 	Transcript []byte
 	Lines      store.AgentLines
@@ -136,14 +142,26 @@ func (c *Capture) add(line []byte) ([]byte, bool) {
 	if !timelineTypes[typ] {
 		return nil, false
 	}
-	if typ == "user" && !c.sawUser {
-		c.sawUser = true
-		c.Brief = briefOf(l)
+	if typ == "user" {
+		c.noteUser(l)
 	}
 	slim, model := slimLine(l)
 	c.note(l, model)
 	out, err := json.Marshal(slim)
 	return out, err == nil
+}
+
+// noteUser takes the spawn brief from the first user line and counts the
+// messages every user line delivers after it.
+func (c *Capture) noteUser(l fields) {
+	if c.sawUser {
+		c.LaterMessages += laterMessages(l)
+		return
+	}
+	c.sawUser = true
+	var more int
+	c.Brief, more = briefOf(l)
+	c.LaterMessages += more
 }
 
 // note folds one timeline line's ids, place, time and model into c.
