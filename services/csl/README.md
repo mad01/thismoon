@@ -96,7 +96,7 @@ csl repo --list --skipped                # repos discovery dropped, with the rea
 csl repo --list --system thismoon        # repos in the thismoon catalog system
 csl repo --list --owner platform         # repos the platform team owns
 csl search "func Walk"                   # search all indexed repos
-csl search "TODO" --repo myrepo          # filter to one repo
+csl search "TODO" --repo myrepo          # filter by repo name (case-insensitive)
 csl search "fmt\.Errorf" --lang go --output-mode content -C 3
 csl hybrid "retry failed HTTP requests"  # fuse lexical + semantic (RRF)
 csl semantic "where do we retry failed requests"  # meaning-based search
@@ -105,6 +105,8 @@ csl sync                                 # pull every repo (ff-only), reindex wh
 csl doctor                               # check index + daemon health
 csl config                               # which config file is read, and the settings in effect
 ```
+
+An empty `csl search` explains itself on stderr with the same zero-result hint the `csl_search` tool returns. The hint shows how zoekt parsed the query, how many files each AND term matches on its own, and the repos and index age it covered. When some AND terms match no file and others do, it reruns once without them and names the dropped terms above the results. `--json` carries the same facts as `zero_result_hint`, `relaxed_query`, and `dropped_terms` beside `matches`. A query that is empty, only quotes, or has an unbalanced quote fails with the fix. There is no `--offset`: raise `--limit` and slice with a pipe such as `| sed -n '51,100p'`.
 
 First search in a fresh checkout triggers an initial index build. The daemon serves subsequent searches and returns them in hundreds of milliseconds. Semantic and hybrid search need `csl index --semantic-all` run once first, with Ollama running and the embedding model pulled (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`).
 
@@ -172,8 +174,9 @@ Both forms read the same index and take the same query language.
 - **CLI only** (`csl` on PATH, no `mcp__csl__*` tools): run every csl call through Bash.
 - **MCP only** (`mcp__csl__*` tools, no `csl` on PATH): paging with `offset` is then the only way past the cap. Keep it to a few pages, and say in the answer that a count built from them is partial.
 - **Neither**: say that csl is not available and fall back to `rg` with narrow globs. Prefer `rg --files -g <glob>` over `find`, and scope every search to the smallest directory that can hold the answer.
-- **A CLI miss prints only `no matches`.** The CLI has no zero-result hint yet, so retry once with one term dropped, or run `csl query '<query>'` to see how it parsed.
-- **`--repo` on the CLI is a case-sensitive regex**, unlike the MCP `repo` parameter. Spell the repo the way `csl repo --list` prints it.
+- **A CLI miss explains itself on stderr.** Stdout prints `no matches`, and stderr prints the parsed query, the repos searched, the index age and the files each AND term matches alone. A malformed query, such as a lone quote, exits 1 with the fix.
+- **The CLI drops a term that matches nothing, once.** When some AND terms match no file and others do, `csl search` reruns without them and marks the rerun with a `relaxed:` line on stderr.
+- **`--repo` on the CLI is a case-insensitive regex**, the same match as the MCP `repo` parameter.
 ```
 
 ## Where things live

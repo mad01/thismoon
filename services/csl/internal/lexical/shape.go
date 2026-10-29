@@ -1,4 +1,4 @@
-package mcpserver
+package lexical
 
 import (
 	"fmt"
@@ -8,39 +8,38 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 )
 
-// Query-shape analysis for the search tools: the malformed shapes that can
-// never search, the split of a query into its top-level AND terms and the
-// fixed atoms around them, and the parameter-name trap. Everything here is
-// text work over zoekt's own lexer rules and parser; nothing touches the
-// index.
+// Query-shape analysis for the search front ends: the malformed shapes that
+// can never search, and the split of a query into its top-level AND terms and
+// the fixed atoms around them. Everything here is text work over zoekt's own
+// lexer rules and parser; nothing touches the index.
 
-// malformedQuery names a query shape zoekt would reject, or one that can only
-// have been sent by mistake, together with its fix. csl_search returns it as
-// the error instead of running the search; csl_query_validate reports it as a
-// valid=false diagnosis.
-type malformedQuery struct {
+// Malformed names a query shape zoekt would reject, or one that can only
+// have been sent by mistake, together with its fix. A search front end
+// returns it as the error instead of running the search; a validator reports
+// it as a diagnosis.
+type Malformed struct {
 	Problem string
 	Fix     string
 }
 
-func (m *malformedQuery) Error() string { return m.Problem + "; " + m.Fix }
+func (m *Malformed) Error() string { return m.Problem + "; " + m.Fix }
 
-// checkQueryShape returns the malformed shape of a query, or nil when the
-// query is worth sending to zoekt. The shapes: empty, made only of quote
-// characters, an unbalanced double quote, a trailing backslash, and an empty
-// "" phrase.
-func checkQueryShape(q string) *malformedQuery {
+// CheckShape returns the malformed shape of a query, or nil when the query is
+// worth sending to zoekt. The shapes: empty, made only of quote characters,
+// an unbalanced double quote, a trailing backslash, and an empty "" phrase.
+// A fix that says where the search text goes names s.QueryArg.
+func CheckShape(q string, s Surface) *Malformed {
 	trimmed := strings.TrimSpace(q)
 	if trimmed == "" {
-		return &malformedQuery{
+		return &Malformed{
 			Problem: "query is empty",
-			Fix:     "put the text to search for in query",
+			Fix:     "put the text to search for in " + s.QueryArg,
 		}
 	}
 	if strings.Trim(trimmed, `"`) == "" {
-		return &malformedQuery{
+		return &Malformed{
 			Problem: fmt.Sprintf("query %q is only quote characters", q),
-			Fix: `put the search term itself in query; ` +
+			Fix: "put the search term itself in " + s.QueryArg + "; " +
 				`quotes are only needed around a multi-word phrase, e.g. "retry backoff"`,
 		}
 	}
@@ -50,7 +49,7 @@ func checkQueryShape(q string) *malformedQuery {
 	}
 	for _, tok := range tokens {
 		if strings.Trim(tok, `"`) == "" {
-			return &malformedQuery{
+			return &Malformed{
 				Problem: `query contains an empty quoted phrase ""`,
 				Fix:     "put the phrase text inside the quotes or drop them",
 			}
@@ -65,7 +64,7 @@ func checkQueryShape(q string) *malformedQuery {
 // the token text, so tokens re-join into a query verbatim. The two shapes the
 // lexer rejects, an unterminated quote and a trailing backslash, come back as
 // the malformed shape instead of tokens.
-func splitQuery(q string) ([]string, *malformedQuery) {
+func splitQuery(q string) ([]string, *Malformed) {
 	var (
 		tokens  []string
 		cur     strings.Builder
@@ -84,7 +83,7 @@ func splitQuery(q string) ([]string, *malformedQuery) {
 		switch {
 		case r == '\\':
 			if i+1 == len(runes) {
-				return nil, &malformedQuery{
+				return nil, &Malformed{
 					Problem: "query ends with a lone backslash",
 					Fix:     `double it (\\) to match a literal backslash, or remove it`,
 				}
@@ -112,7 +111,7 @@ func splitQuery(q string) ([]string, *malformedQuery) {
 		}
 	}
 	if inQuote {
-		return nil, &malformedQuery{
+		return nil, &Malformed{
 			Problem: "query has an unbalanced double quote",
 			Fix:     `close the phrase ("exact phrase") or remove the stray quote`,
 		}
@@ -121,33 +120,33 @@ func splitQuery(q string) ([]string, *malformedQuery) {
 	return tokens, nil
 }
 
-// queryParts is a query split into the top-level AND terms zoekt requires in
-// one file and the fixed atoms around them: filters (repo:, f:, lang:, sym:,
+// Parts is a query split into the top-level AND terms zoekt requires in one
+// file and the fixed atoms around them: filters (repo:, f:, lang:, sym:,
 // case:, ...) and negations, which narrow rather than require and so are
 // never counted or dropped.
-type queryParts struct {
+type Parts struct {
 	Terms  []string
 	Fixed  []string
 	tokens []string
 	isTerm []bool
 }
 
-// splitTerms classifies each top-level token by parsing it alone with zoekt's
+// SplitTerms classifies each top-level token by parsing it alone with zoekt's
 // parser: a content substring or regexp (including a "quoted phrase", an a|b
 // alternation, and a parenthesised group) is a term; everything else is
 // fixed. A query the AND model does not describe, one with the or keyword at
 // the top level, a token zoekt rejects, or a malformed shape, yields empty
 // parts, so callers skip the diagnosis rather than misreport it.
-func splitTerms(q string) queryParts {
+func SplitTerms(q string) Parts {
 	tokens, m := splitQuery(q)
 	if m != nil {
-		return queryParts{}
+		return Parts{}
 	}
-	parts := queryParts{tokens: tokens, isTerm: make([]bool, len(tokens))}
+	parts := Parts{tokens: tokens, isTerm: make([]bool, len(tokens))}
 	for i, tok := range tokens {
 		term, ok := classifyToken(tok)
 		if !ok {
-			return queryParts{}
+			return Parts{}
 		}
 		parts.isTerm[i] = term
 		if term {
@@ -183,7 +182,7 @@ func classifyToken(tok string) (term, ok bool) {
 
 // without returns the query with the given terms removed: the remaining
 // tokens in their original order, joined by single spaces.
-func (p queryParts) without(drop []string) string {
+func (p Parts) without(drop []string) string {
 	skip := make(map[string]bool, len(drop))
 	for _, d := range drop {
 		skip[d] = true
@@ -196,46 +195,6 @@ func (p queryParts) without(drop []string) string {
 		kept = append(kept, tok)
 	}
 	return strings.Join(kept, " ")
-}
-
-// searchParamWords are the csl_search parameter names and output_mode values
-// an agent sometimes sends as the query text itself. The test beside this
-// keeps it in step with searchInput's json tags.
-var searchParamWords = map[string]bool{
-	"query":              true,
-	"repo":               true,
-	"lang":               true,
-	"file":               true,
-	"output_mode":        true,
-	"context_lines":      true,
-	"limit":              true,
-	"offset":             true,
-	"case_sensitive":     true,
-	"response_format":    true,
-	"files_with_matches": true,
-	"content":            true,
-}
-
-// paramNameNote flags a query made only of csl_search parameter names: the
-// agent put its arguments in the query text. It is a note rather than an
-// error because content and repo are plausible search terms too, so it
-// fires only once the search has come back empty.
-func paramNameNote(q string) string {
-	fields := strings.Fields(q)
-	if len(fields) == 0 {
-		return ""
-	}
-	for _, f := range fields {
-		if !searchParamWords[f] {
-			return ""
-		}
-	}
-	return fmt.Sprintf(
-		"%q is made of csl_search parameter names, not search terms; "+
-			"pass them as parameters (e.g. output_mode=\"content\") "+
-			"and put the text to find in query",
-		q,
-	)
 }
 
 // quoteList renders terms as 'a', 'b' for notes and the relaxed line.

@@ -37,11 +37,41 @@ The woff2 files come from Google Fonts (`fonts.googleapis.com` and
 - Lexend, OFL 1.1, https://github.com/google/fonts/tree/main/ofl/lexend
 - Work Sans, OFL 1.1, https://github.com/google/fonts/tree/main/ofl/worksans
 
+## In an exported page
+
+`present export` and the `present_export` tool write a page as one HTML
+file ([ADR-0029](../../docs/adr/0029-present-standalone-export.md)). That
+file does not carry the browser libraries. It names the ones the page uses
+by their jsDelivr URL, each pinned by an integrity hash of the cached file,
+and the reader's browser fetches them. Each stays under its licence above.
+elkjs is dual-licensed under EPL-2.0 or GPL-3.0-or-later, and its source
+for version 0.12.0 is at https://github.com/kieler/elkjs/tree/0.12.0.
+
+The file does carry the latin faces of the four font families, as data
+URIs. The OFL 1.1 allows that with the copyright notice and the licence,
+https://openfontlicense.org/open-font-license-official-text/. The comment
+at the head of every exported file gives that link and the copyright line
+of each family, as the first line of its `OFL.txt` in google/fonts reads:
+
+- Fira Code: Copyright 2014-2020 The Fira Code Project Authors (https://github.com/tonsky/FiraCode)
+- Inter: Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)
+- Lexend: Copyright 2018 The Lexend Project Authors (https://github.com/googlefonts/lexend), with Reserved Font Name “RevReading Lexend”.
+- Work Sans: Copyright 2019 The Work Sans Project Authors (https://github.com/weiweihuanghuang/Work-Sans)
+
+The file also inlines webkit's bundle, which includes Prism
+(https://github.com/PrismJS/prism), MIT, Copyright (c) 2012 Lea Verou. The
+head comment carries Prism's licence text in full, from the `LICENSE` file
+of the prismjs npm package. `internal/export/notices.go` holds these
+notices, and a test keeps them in step with this file.
+
 ## Bumping a version
 
-Change the version in `scripts/cache-assets.sh` and the script tag in
-`internal/server/shell.html` together; a test fails when the two disagree.
-A pinned file also takes a new sha256: the sum of that file inside the npm
-package tarball, which jsDelivr serves byte for byte. Update the entry here
-in the same change. The policy behind this layout is
+Change the version in `scripts/cache-assets.sh`, the script tag in
+`internal/server/shell.html`, and the library table in
+`internal/export/libraries.go` together; tests fail when they disagree.
+Every library takes a new sha256 with it. That is the sum of the file
+jsDelivr serves at the URL the script fetches. For an npm file, those are
+the bytes of the file inside the package tarball. Fetch the npm file, never a
+`.min.js` jsDelivr generates, since the export pins its hash. Update the
+entry here in the same change. The policy behind this layout is
 [ADR-0022](../../docs/adr/0022-vendored-browser-assets.md).

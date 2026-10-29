@@ -20,6 +20,7 @@ ELK_SHA256="1222e44f953ce7746af23801e723708f8e6f436b8b377a6a5fc7552f34a307b3"
 CY_ELK_VERSION="2.3.0"
 CY_ELK_SHA256="25acbb9dea9b0dc6fef0e79b697547ee56e579f0e1c22ae4353131e72c7e140a"
 CHART_VERSION="4.4.6"
+CHART_SHA256="3850656abbdc319141e6e8ce8eacde2622fc767c30e20d81704af2bf3159f92d"
 SANKEY_VERSION="0.15.3"
 SANKEY_SHA256="11e725ea2f8b85e804a3b6a53997ff6320f9fe6588793a11fdb1fdfd7068a4fd"
 D3_VERSION="7.9.0"
@@ -37,7 +38,7 @@ dagre_file="$ASSETS/js/dagre-${DAGRE_VERSION}.min.js"
 cy_dagre_file="$ASSETS/js/cytoscape-dagre-${CY_DAGRE_VERSION}.js"
 elk_file="$ASSETS/js/elk-${ELK_VERSION}.bundled.js"
 cy_elk_file="$ASSETS/js/cytoscape-elk-${CY_ELK_VERSION}.js"
-chart_file="$ASSETS/js/chart-${CHART_VERSION}.umd.min.js"
+chart_file="$ASSETS/js/chart-${CHART_VERSION}.umd.js"
 sankey_file="$ASSETS/js/chartjs-chart-sankey-${SANKEY_VERSION}.min.js"
 d3_file="$ASSETS/js/d3-${D3_VERSION}.min.js"
 xterm_file="$ASSETS/js/xterm-${XTERM_VERSION}.js"
@@ -103,9 +104,10 @@ fetch "https://cdn.jsdelivr.net/npm/elkjs@${ELK_VERSION}/lib/elk.bundled.js" "$e
 echo "cytoscape-elk@${CY_ELK_VERSION}"
 fetch "https://cdn.jsdelivr.net/npm/cytoscape-elk@${CY_ELK_VERSION}/dist/cytoscape-elk.js" "$cy_elk_file" "$CY_ELK_SHA256"
 
-# jsdelivr generates chart.umd.min.js itself, so it has no stable sum to pin.
+# The npm file, already minified. jsdelivr generates chart.umd.min.js
+# itself from it, banner first, and warns against pinning that file.
 echo "chart.js@${CHART_VERSION}"
-fetch "https://cdn.jsdelivr.net/npm/chart.js@${CHART_VERSION}/dist/chart.umd.min.js" "$chart_file"
+fetch "https://cdn.jsdelivr.net/npm/chart.js@${CHART_VERSION}/dist/chart.umd.js" "$chart_file" "$CHART_SHA256"
 
 echo "chartjs-chart-sankey@${SANKEY_VERSION}"
 fetch "https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@${SANKEY_VERSION}/dist/chartjs-chart-sankey.min.js" "$sankey_file" "$SANKEY_SHA256"

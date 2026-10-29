@@ -3,6 +3,8 @@ package mcpserver
 import (
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/services/csl/internal/lexical"
 )
 
 // wantLines compares a rendered string against the expected lines and checks
@@ -155,7 +157,7 @@ func TestRenderSearchText_ContentTruncated(t *testing.T) {
 }
 
 func TestRenderSearchText_ZeroResults(t *testing.T) {
-	out := searchOutput{OutputMode: filesOutputMode, ZeroHint: &searchZeroHint{
+	out := searchOutput{OutputMode: filesOutputMode, ZeroHint: &lexical.ZeroHint{
 		ParsedQuery:     `substr:"foo"`,
 		ReposSearched:   2,
 		ReposDiscovered: 5,
@@ -180,7 +182,7 @@ func TestRenderSearchText_ZeroResultsMinimalHint(t *testing.T) {
 
 	out := searchOutput{
 		OutputMode: contentOutputMode,
-		ZeroHint:   &searchZeroHint{Notes: []string{"n"}},
+		ZeroHint:   &lexical.ZeroHint{Notes: []string{"n"}},
 	}
 	wantLines(
 		t, renderSearchText(out),
@@ -432,9 +434,9 @@ func TestRenderSearchText_RelaxedLeadsWithDroppedTerms(t *testing.T) {
 }
 
 func TestRenderSearchText_ZeroResultsTermCounts(t *testing.T) {
-	out := searchOutput{OutputMode: filesOutputMode, ZeroHint: &searchZeroHint{
+	out := searchOutput{OutputMode: filesOutputMode, ZeroHint: &lexical.ZeroHint{
 		ParsedQuery: `(and substr:"retry" substr:"jitter")`,
-		TermCounts:  []termCount{{Term: "retry", Files: 37}, {Term: "jitter", Files: 0}},
+		TermCounts:  []lexical.TermCount{{Term: "retry", Files: 37}, {Term: "jitter", Files: 0}},
 		Notes:       []string{"n"},
 	}}
 	wantLines(

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
@@ -28,20 +29,7 @@ func renderSearchText(out searchOutput) string {
 	if out.RelaxedQuery == "" {
 		return body
 	}
-	return relaxedLine(out) + "\n\n" + body
-}
-
-// relaxedLine leads a relaxed result, so the reader knows which terms were
-// dropped and which query the results answer.
-func relaxedLine(out searchOutput) string {
-	each := ""
-	if len(out.DroppedTerms) > 1 {
-		each = " each"
-	}
-	return fmt.Sprintf(
-		"relaxed: dropped %s (0 files%s); showing results for `%s`",
-		quoteList(out.DroppedTerms), each, out.RelaxedQuery,
-	)
+	return lexical.RelaxedLine(out.DroppedTerms, out.RelaxedQuery) + "\n\n" + body
 }
 
 // renderFileMatches lists one `repo/path` per line. When truncated, the page
@@ -118,41 +106,10 @@ func nextContentOffset(offset, filesShown int) int {
 	return offset + 1
 }
 
-// renderZeroHint explains an empty search: how zoekt parsed the query, how
-// many repos the filters covered, index age, and the targeted notes.
-func renderZeroHint(hint *searchZeroHint) string {
-	lines := []string{"no matches"}
-	if hint == nil {
-		return lines[0]
-	}
-	if hint.ParsedQuery != "" {
-		lines = append(lines, "parsed query: "+hint.ParsedQuery)
-	}
-	if len(hint.TermCounts) > 0 {
-		lines = append(lines, "files per term: "+termCountsLine(hint.TermCounts))
-	}
-	lines = append(lines, fmt.Sprintf(
-		"repos searched: %d (%d indexed, %d discovered)",
-		hint.ReposSearched, hint.ReposIndexed, hint.ReposDiscovered,
-	))
-	if hint.NewestIndexedAt != "" {
-		lines = append(lines, fmt.Sprintf(
-			"index age: newest %s, oldest %s", hint.NewestIndexedAt, hint.OldestIndexedAt,
-		))
-	}
-	for _, n := range hint.Notes {
-		lines = append(lines, "- "+n)
-	}
-	return strings.Join(lines, "\n")
-}
-
-// termCountsLine renders term_counts as `retry=37, backoff=12, jitter=0`.
-func termCountsLine(counts []termCount) string {
-	parts := make([]string, len(counts))
-	for i, c := range counts {
-		parts[i] = fmt.Sprintf("%s=%d", c.Term, c.Files)
-	}
-	return strings.Join(parts, ", ")
+// renderZeroHint explains an empty search: "no matches", then the hint's
+// lines (lexical.ZeroHint.Lines).
+func renderZeroHint(hint *lexical.ZeroHint) string {
+	return strings.Join(append([]string{"no matches"}, hint.Lines()...), "\n")
 }
 
 // renderSemanticText prints one header per hit (`repo/path:START-END

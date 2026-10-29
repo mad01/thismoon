@@ -587,7 +587,8 @@ class WkHeader extends HTMLElement {
     // header actually renders (plus a read-aloud section when speed is present
     // and any consumer <template data-wk-help> sections).
     const controls = this._controls();
-    this.querySelector('#webkit-help')?.addEventListener('click', () => openHelp(controls));
+    const themesLink = this.getAttribute('themes-link') !== 'off';
+    this.querySelector('#webkit-help')?.addEventListener('click', () => openHelp(controls, themesLink));
 
     // ⌘K site picker — the button just asks the global controller to open.
     const cmdkBtn = this.querySelector('#webkit-cmdk');
@@ -875,7 +876,8 @@ const CONTROL_HELP: Partial<Record<Control, ControlHelp>> = {
   theme:    { term: 'Theme',       desc: 'Toggle light and dark. The themes page picks a palette family per mode, or follows the system.' },
 };
 
-/** The themes page link, shown under the control rows when the header has a theme toggle. */
+/** The themes page link, shown under the control rows when the header has a
+ * theme toggle and its themes-link attribute is not "off". */
 function helpThemesHtml(): string {
   return (
     `<div class="wk-help-row"><div class="wk-help-term">Themes</div>` +
@@ -948,14 +950,14 @@ function helpBuild(): void {
   overlay.querySelector('.wk-help-close')?.addEventListener('click', () => closeHelp());
 }
 
-function openHelp(controls: Control[]): void {
+function openHelp(controls: Control[], themesLink = true): void {
   helpBuild();
   if (!helpOverlay || helpIsOpen()) return;
   const body = helpOverlay.querySelector('wk-modal-body');
   if (body) {
     body.innerHTML =
       helpRowsHtml(controls) +
-      (controls.includes('theme') ? helpThemesHtml() : '') +
+      (themesLink && controls.includes('theme') ? helpThemesHtml() : '') +
       (controls.includes('speed') ? helpReadAloudHtml() : '') +
       helpExtraHtml();
   }

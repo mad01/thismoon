@@ -1,4 +1,4 @@
-package mcpserver
+package lexical
 
 import (
 	"context"
@@ -10,43 +10,94 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
-// The zero-result path of csl_search: per-term file counts that name the
-// term that killed the query, the one relaxation the tool applies on its
-// own, and the hint payload that explains an empty page.
+// The zero-result path of a lexical search: per-term file counts that name
+// the term that killed the query, the one relaxation applied without being
+// asked, and the hint payload that explains an empty page.
 
 // maxDiagnosedTerms caps the per-term counts a zero-hit query triggers. Past
 // it the counts cover the first terms only and no relaxation runs, since an
 // uncounted term may be the one that matches nothing.
 const maxDiagnosedTerms = 6
 
+// Surface is the front end a hint or a malformed-query fix is written for,
+// so its notes point the reader at that front end's own commands.
+type Surface struct {
+	// QueryArg is where the front end takes the search text, e.g. query
+	// for csl_search; a malformed-query fix names it.
+	QueryArg string
+	// RepoLookup checks a repo name, e.g. csl_repo_lookup.
+	RepoLookup string
+	// Reindex indexes the repos a filter matched, e.g. csl_repo_reindex.
+	Reindex string
+	// ParamNote flags a query made of the front end's own parameter names;
+	// nil skips the check.
+	ParamNote func(query string) string
+}
+
+// Request is a search that came back empty, as the front end ran it.
+type Request struct {
+	// Options are the options the empty search ran with; Pattern is the
+	// caller's query and FileFilter the caller's file filter.
+	Options search.SearchOptions
+	// Repo is the repo filter as the caller gave it, before RepoFilter
+	// widened it, so the notes quote the caller's own words.
+	Repo string
+	// Repos are the repos discovery found under the configured dirs.
+	Repos    []finder.Repo
+	IndexDir string
+}
+
+// Result is what ExplainZero found: the relaxed rerun's matches, or the hint
+// that explains the empty page. Exactly one of Matches and Hint is set.
+type Result struct {
+	Matches      []search.Match
+	RelaxedQuery string   // the query Matches answer; set with Matches
+	DroppedTerms []string // the AND terms removed to form RelaxedQuery
+	Hint         *ZeroHint
+}
+
+// ZeroHint explains a zero-hit search so a reader can tell a genuinely empty
+// result from a malformed query or a stale index. It appears only when the
+// search returned nothing, and never changes non-empty output.
+type ZeroHint struct {
+	ParsedQuery     string      `json:"parsed_query,omitempty"      jsonschema:"the effective query (filters folded in) as zoekt parsed it; check that terms and operators mean what you intended"`
+	ReposSearched   int         `json:"repos_searched"              jsonschema:"repos the repo filter matched that are also present in the search index (only indexed repos can produce hits); 0 means the filter or index coverage is the problem, not the query"`
+	ReposDiscovered int         `json:"repos_discovered"            jsonschema:"git repos discovered under the configured dirs"`
+	ReposIndexed    int         `json:"repos_indexed,omitempty"     jsonschema:"repos present in the search index; a repo discovered but not indexed is invisible to search until indexed"`
+	NewestIndexedAt string      `json:"newest_indexed_at,omitempty" jsonschema:"most recent per-repo index time (RFC3339)"`
+	OldestIndexedAt string      `json:"oldest_indexed_at,omitempty" jsonschema:"least recent per-repo index time (RFC3339); very old means some repo's index is stale"`
+	TermCounts      []TermCount `json:"term_counts,omitempty"       jsonschema:"files matching each top-level AND term on its own under the same filters, in query order; a 0 names the term that killed the query, and all non-zero means the terms exist but never in one file"`
+	Notes           []string    `json:"notes,omitempty"             jsonschema:"targeted suggestions for this query (known syntax traps, filter mismatches)"`
+}
+
+// TermCount is one entry of ZeroHint.TermCounts.
+type TermCount struct {
+	Term  string `json:"term"`
+	Files int    `json:"files" jsonschema:"files matching this term alone under the query's filters"`
+}
+
 // termDiagnosis is what the per-term file counts say about a zero-hit query.
 type termDiagnosis struct {
-	counts  []termCount
+	counts  []TermCount
 	present []string // terms that match at least one file on their own
 	dropped []string // terms that match no file, when a relaxation applies
 	relaxed string   // the query to rerun without dropped; "" when none
 	notes   []string
 }
 
-// explainZero turns an empty page into either the one relaxation the tool
-// applies on its own or a hint that names the term that killed the query.
+// ExplainZero turns an empty page into either the one relaxation applied
+// without being asked or a hint that names the term that killed the query.
 // The relaxation runs only when its outcome is unambiguous: some AND terms
 // match no file at all while others do, on the first page. The rerun keeps
 // every filter and the limit; when it also finds nothing, the hint says so.
-func explainZero(
-	ctx context.Context,
-	b searchBackend,
-	in searchInput,
-	opts search.SearchOptions,
-	repos []finder.Repo,
-	indexDir string,
-) searchOutput {
-	diag := diagnoseTerms(ctx, b, splitTerms(in.Query), opts)
+func ExplainZero(ctx context.Context, b Backend, s Surface, req Request) Result {
+	opts := req.Options
+	diag := diagnoseTerms(ctx, b, SplitTerms(opts.Pattern), opts)
 	if diag.relaxed != "" {
 		relaxedOpts := opts
 		relaxedOpts.Pattern = diag.relaxed
 		relaxedOpts.Offset = 0
-		matches, err := b.search(ctx, relaxedOpts)
+		matches, err := b.Search(ctx, relaxedOpts)
 		switch {
 		case err != nil:
 			diag.notes = append(diag.notes, fmt.Sprintf(
@@ -54,10 +105,11 @@ func explainZero(
 				quoteList(diag.dropped), diag.relaxed, err,
 			))
 		case len(matches) > 0:
-			out := buildSearchOutput(opts.OutputMode, opts.Limit, 0, matches)
-			out.RelaxedQuery = diag.relaxed
-			out.DroppedTerms = diag.dropped
-			return out
+			return Result{
+				Matches:      matches,
+				RelaxedQuery: diag.relaxed,
+				DroppedTerms: diag.dropped,
+			}
 		default:
 			diag.notes = append(diag.notes, fmt.Sprintf(
 				"dropped %s (0 files) and reran as `%s`: still no file holds the remaining terms together; search %s for files with any of them",
@@ -67,9 +119,7 @@ func explainZero(
 			))
 		}
 	}
-	out := searchOutput{OutputMode: opts.OutputMode, Offset: opts.Offset}
-	out.ZeroHint = buildZeroHint(in, opts, repos, indexDir, diag)
-	return out
+	return Result{Hint: buildZeroHint(s, req, diag)}
 }
 
 // diagnoseTerms counts, for a query with two or more AND terms, the files
@@ -79,8 +129,8 @@ func explainZero(
 // page is not the first, or when the query has more terms than were counted.
 func diagnoseTerms(
 	ctx context.Context,
-	b searchBackend,
-	parts queryParts,
+	b Backend,
+	parts Parts,
 	opts search.SearchOptions,
 ) termDiagnosis {
 	var d termDiagnosis
@@ -93,12 +143,12 @@ func diagnoseTerms(
 	}
 	var zero []string
 	for _, term := range terms {
-		_, n, err := b.count(ctx, termCountOptions(term, parts, opts))
+		_, n, err := b.Count(ctx, termCountOptions(term, parts, opts))
 		if err != nil {
 			d.notes = append(d.notes, "per-term file counts unavailable: "+err.Error())
 			return d
 		}
-		d.counts = append(d.counts, termCount{Term: term, Files: n})
+		d.counts = append(d.counts, TermCount{Term: term, Files: n})
 		if n == 0 {
 			zero = append(zero, term)
 		} else {
@@ -146,11 +196,11 @@ func plural(n int, one, many string) string {
 }
 
 // termCountOptions builds the count that measures one term alone: the term,
-// the query's fixed atoms, and the tool's filters, wrapped in type:filename
+// the query's fixed atoms, and the search's filters, wrapped in type:filename
 // so zoekt returns one match per file and the total is a file count.
 func termCountOptions(
 	term string,
-	parts queryParts,
+	parts Parts,
 	opts search.SearchOptions,
 ) search.CountOptions {
 	single := opts
@@ -158,28 +208,22 @@ func termCountOptions(
 	return search.CountOptions{Pattern: search.BuildQueryString(single)}
 }
 
-// buildZeroHint assembles the zero_result_hint payload for a search that ran
-// cleanly but matched nothing. Best-effort: any piece that cannot be computed
-// is omitted rather than failing the response.
-func buildZeroHint(
-	in searchInput,
-	opts search.SearchOptions,
-	repos []finder.Repo,
-	indexDir string,
-	diag termDiagnosis,
-) *searchZeroHint {
-	hint := &searchZeroHint{
-		ReposDiscovered: len(repos),
+// buildZeroHint assembles the hint for a search that ran cleanly but matched
+// nothing. Best-effort: any piece that cannot be computed is omitted rather
+// than failing the response.
+func buildZeroHint(s Surface, req Request, diag termDiagnosis) *ZeroHint {
+	hint := &ZeroHint{
+		ReposDiscovered: len(req.Repos),
 		TermCounts:      diag.counts,
-		Notes:           zeroNotes(in, diag),
+		Notes:           zeroNotes(s, req.Options, diag),
 	}
 
-	if info := search.ValidateQuery(search.BuildQueryString(opts)); info.Valid {
+	if info := search.ValidateQuery(search.BuildQueryString(req.Options)); info.Valid {
 		hint.ParsedQuery = info.Parsed
 	}
 
 	indexed := make(map[string]struct{})
-	if state, err := search.LoadState(indexDir); err == nil {
+	if state, err := search.LoadState(req.IndexDir); err == nil {
 		hint.ReposIndexed = len(state.Repos)
 		var newest, oldest time.Time
 		for path, rs := range state.Repos {
@@ -200,7 +244,7 @@ func buildZeroHint(
 		}
 	}
 
-	searched, notes := repoFilterHint(in.Repo, repos, indexed)
+	searched, notes := repoFilterHint(s, req.Repo, req.Repos, indexed)
 	hint.ReposSearched = searched
 	hint.Notes = append(hint.Notes, notes...)
 	return hint
@@ -210,16 +254,18 @@ func buildZeroHint(
 // trap, what the per-term counts found, then the over-constraint reminders.
 // The generic AND-terms reminder yields to the counts when they exist, since
 // they say which term is the problem.
-func zeroNotes(in searchInput, diag termDiagnosis) []string {
-	notes := queryTrapNotes(in.Query)
-	if n := paramNameNote(in.Query); n != "" {
-		notes = append(notes, n)
+func zeroNotes(s Surface, opts search.SearchOptions, diag termDiagnosis) []string {
+	notes := queryTrapNotes(opts.Pattern)
+	if s.ParamNote != nil {
+		if n := s.ParamNote(opts.Pattern); n != "" {
+			notes = append(notes, n)
+		}
 	}
 	notes = append(notes, diag.notes...)
 	if len(diag.counts) == 0 {
-		notes = append(notes, andTermsNote(in.Query)...)
+		notes = append(notes, andTermsNote(opts.Pattern)...)
 	}
-	return append(notes, overConstraintNotes(in)...)
+	return append(notes, overConstraintNotes(opts.Pattern, opts.FileFilter)...)
 }
 
 // repoFilterHint reports how many discovered repos the repo filter matches
@@ -229,6 +275,7 @@ func zeroNotes(in searchInput, diag termDiagnosis) []string {
 // diagnosed, because the search itself space-splits the filter into separate
 // zoekt terms and no repo-name count describes what actually ran.
 func repoFilterHint(
+	s Surface,
 	repoFilter string,
 	repos []finder.Repo,
 	indexed map[string]struct{},
@@ -264,17 +311,19 @@ func repoFilterHint(
 	}
 	if len(matched) == 0 {
 		return 0, []string{fmt.Sprintf(
-			"repo filter %q matched none of the %d locally discovered repos; check the name with csl_repo_lookup — if the repo is not checked out locally, csl cannot see it, so search it where it is hosted instead of retrying here",
+			"repo filter %q matched none of the %d locally discovered repos; check the name with %s — if the repo is not checked out locally, csl cannot see it, so search it where it is hosted instead of retrying here",
 			repoFilter,
 			len(repos),
+			s.RepoLookup,
 		)}
 	}
 	searched := countIndexed(matched)
 	if unindexed := len(matched) - searched; unindexed > 0 {
 		return searched, []string{fmt.Sprintf(
-			"%d of the %d repos matching the filter are not in the search index yet and are invisible to search; run csl_repo_reindex on them",
+			"%d of the %d repos matching the filter are not in the search index yet and are invisible to search; run %s on them",
 			unindexed,
 			len(matched),
+			s.Reindex,
 		)}
 	}
 	return searched, nil
@@ -300,7 +349,7 @@ func queryTrapNotes(query string) []string {
 // andTermsNote flags the query shape that most often explains a zero-hit
 // search: 3+ AND terms that must all land in one file.
 func andTermsNote(query string) []string {
-	n := len(splitTerms(query).Terms)
+	n := len(SplitTerms(query).Terms)
 	if n < 3 {
 		return nil
 	}
@@ -314,9 +363,9 @@ func andTermsNote(query string) []string {
 // search: a verbatim-only quoted phrase and a stacked file filter. Sessions
 // loosen these one guess at a time over long refinement chains; naming them
 // up front is what shortens the chain.
-func overConstraintNotes(in searchInput) []string {
+func overConstraintNotes(query, fileFilter string) []string {
 	var notes []string
-	for _, span := range quotedSpans(in.Query) {
+	for _, span := range quotedSpans(query) {
 		if strings.ContainsAny(span, " \t") {
 			notes = append(
 				notes,
@@ -325,7 +374,7 @@ func overConstraintNotes(in searchInput) []string {
 			break
 		}
 	}
-	if in.File != "" {
+	if fileFilter != "" {
 		notes = append(
 			notes,
 			"the file filter is the most common over-constraint — retry without it before loosening the query",

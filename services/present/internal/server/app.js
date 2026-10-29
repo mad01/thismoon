@@ -9,6 +9,19 @@
 // the deck into slides (renderDeck below). webkit.js loads before this file,
 // so Webkit.el/escapeHtml/poll and the wk-* custom elements are available.
 (function () {
+  // standalone is true in an exported page (present export): one file with
+  // no server behind it, whose <html> says data-present-mode="export". It
+  // is the one rule for every control that needs the server, that is one
+  // that calls /api or another served route, or opens a served URL: under
+  // standalone that control is not built and asks nothing. Read-aloud and
+  // its player, share, the version poll, change marks, the deck remote,
+  // terminal sessions, and the links to the other rendition all check it,
+  // and a new control checks it too. The export's fetch guard backs it up:
+  // it answers any root-relative fetch with a 404 and no request. What runs
+  // in the browser alone stays: fixation, the outline, the deck's slide
+  // controls, charts, diagrams, and the graph.
+  var standalone = document.documentElement.getAttribute('data-present-mode') === 'export';
+
   // ── Graph layout engines ──
   // The layout option objects live here rather than in the generated graph
   // script: the ELK ones take the container's aspect ratio at run time (the
@@ -223,6 +236,13 @@
   function showEngine() {
     var btn = document.querySelector('.cy-engine');
     if (btn) btn.textContent = currentEngine();
+  }
+  // availableEngines is the engine control's cycle: every engine, less the
+  // ELK ones when ELK or its adapter did not load. An exported page loads
+  // them only for a graph authored with an ELK engine.
+  function availableEngines() {
+    var elk = !!(window.ELK && window.cytoscapeElk);
+    return GRAPH_ENGINES.filter(function (e) { return elk || e.indexOf('elk') !== 0; });
   }
 
   // Capture the Cytoscape instance the injected graph script creates, give it
@@ -456,6 +476,13 @@
     if (!n) { n = document.createElement('p'); n.className = 'present-chart-note'; block.appendChild(n); }
     n.textContent = text;
   }
+  // needsAsset is the note a block shows when a library it draws with did
+  // not load: a served page names the cache step, an exported one the CDN.
+  function needsAsset(what, asset) {
+    return standalone
+      ? what + ' needs the ' + asset + ' from cdn.jsdelivr.net, which did not load: open this page online.'
+      : what + ' needs the ' + asset + ': run make cache in services/present.';
+  }
   // cutStep applies a step change to an svg renderer with its transitions
   // off for a frame when the deck cuts (block._stepCut) or Reduce Motion
   // is on, so the swap does not fade; otherwise the stylesheet's
@@ -480,7 +507,11 @@
     try { spec = JSON.parse(specEl.textContent); } catch (e) { return; }
     if (spec.kind === 'ribbon') { buildRibbon(block, spec, opts); return; }
     var canvas = block.querySelector('canvas');
-    if (!canvas || typeof Chart === 'undefined') return;
+    if (!canvas) return;
+    if (typeof Chart === 'undefined') {
+      chartNote(block, needsAsset('Chart', 'chart.js asset'));
+      return;
+    }
     if (block._chart) { block._chart.destroy(); block._chart = null; }
     var kind = spec.kind || 'bar';
     block.classList.toggle('is-sparkline', kind === 'sparkline');
@@ -492,7 +523,7 @@
       cfg = doughnutConfig(spec, colors, animate);
     } else if (kind === 'sankey') {
       if (!sankeyAvailable()) {
-        chartNote(block, 'Sankey needs the chartjs-chart-sankey asset: run make cache in services/present.');
+        chartNote(block, needsAsset('Sankey', 'chartjs-chart-sankey asset'));
         return;
       }
       cfg = sankeyConfig(spec, colors, animate);
@@ -772,7 +803,7 @@
   // draws when the observer first sees one.
   function buildRibbon(block, spec, opts) {
     if (typeof d3 === 'undefined') {
-      chartNote(block, 'Ribbon needs the d3 asset: run make cache in services/present.');
+      chartNote(block, needsAsset('Ribbon', 'd3 asset'));
       return;
     }
     var wrap = block.querySelector('.present-chart-canvas');
@@ -1253,7 +1284,7 @@
   // (opts.duration 0).
   function buildDiagram(block, opts) {
     if (typeof d3 === 'undefined' || typeof ELK === 'undefined') {
-      chartNote(block, 'Diagram needs the elk and d3 assets: run make cache in services/present.');
+      chartNote(block, needsAsset('Diagram', 'elk and d3 assets'));
       return;
     }
     if (block._built) { if (block._diagramFit) block._diagramFit(); return; }
@@ -1748,13 +1779,14 @@
   // whose session this tab killed starts held, saying killed, until Run.
   // A block that can never run is inert: on a shared instance (the shell
   // marks its html data-present-mode="shared"), which has no terminal
-  // routes, it says so, hides Run and Kill, and never asks the server
+  // routes, and in an exported page (data-present-mode="export"), which
+  // has no server, it says so, hides Run and Kill, and never asks a server
   // anything; without the xterm asset it says so and only Kill works.
   function upgradeTerminal(block) {
     var canvas = block.querySelector('.present-terminal-canvas');
     if (block._terminal || !canvas) return;
     var rows = parseInt(block.getAttribute('data-rows'), 10);
-    var shared = document.documentElement.getAttribute('data-present-mode') === 'shared';
+    var shared = standalone || document.documentElement.getAttribute('data-present-mode') === 'shared';
     var missing = typeof Terminal !== 'function' || !window.FitAddon;
     var session = block.getAttribute('data-session') || '';
     var ctl = {
@@ -1771,7 +1803,9 @@
     if (shared) {
       [run, kill].forEach(function (b) { if (b) b.hidden = true; });
       terminalStatus(ctl, 'unavailable');
-      terminalNote(ctl, 'Live terminal is not available on a shared instance.');
+      terminalNote(ctl, standalone
+        ? 'Live terminal is not available in an exported page.'
+        : 'Live terminal is not available on a shared instance.');
       return;
     }
     if (ctl.held) terminalStatus(ctl, 'killed');
@@ -1922,7 +1956,8 @@
       }
       if (!c) return;
       if (action === 'engine') {
-        var next = GRAPH_ENGINES[(GRAPH_ENGINES.indexOf(currentEngine()) + 1) % GRAPH_ENGINES.length];
+        var engines = availableEngines();
+        var next = engines[(engines.indexOf(currentEngine()) + 1) % engines.length];
         engineOverride = next;
         showEngine();
         runEngine(c, next);
@@ -1964,13 +1999,14 @@
   var root = document.getElementById('root');
 
   // readAloud builds the page's read-aloud element, or returns null without
-  // a speak URL (a shared instance, say). Any earlier element goes first, so
-  // a re-render never leaves two. The element reads its targets on connect,
-  // so callers create it once the content is mounted.
+  // a speak URL (a shared instance, say) or a server (standalone). Any
+  // earlier element goes first, so a re-render never leaves two. The
+  // element reads its targets on connect, so callers create it once the
+  // content is mounted.
   function readAloud(data) {
     var old = document.querySelector('wk-read-aloud');
     if (old) old.remove();
-    if (!data.speak_url) return null;
+    if (standalone || !data.speak_url) return null;
     var ra = document.createElement('wk-read-aloud');
     ra.setAttribute('targets', '.brief-summary, wk-section');
     ra.setAttribute('prepare', '');
@@ -1982,8 +2018,15 @@
   // The graph is shared by the brief and the deck, and only the rendition
   // that placed a graph block has the container, so a page's graph script is
   // run only where #cy-graph exists (Cytoscape throws on a null container).
+  // Without Cytoscape the block says so instead, and the rest of the page
+  // still builds.
   function initGraphAndFlow() {
-    if (typeof initGraph === 'function' && document.getElementById('cy-graph')) initGraph();
+    var el = document.getElementById('cy-graph');
+    if (el && typeof cytoscape !== 'function') {
+      chartNote(el.parentNode, needsAsset('Graph', 'cytoscape asset'));
+      return;
+    }
+    if (typeof initGraph === 'function' && el) initGraph();
     showEngine();
     startGraphFlow();
   }
@@ -1997,7 +2040,13 @@
     if (refs) brief.appendChild(refs);
     root.innerHTML = '';
     root.appendChild(brief);
+    enhanceBrief(brief, data);
+  }
 
+  // enhanceBrief brings a mounted brief to life: the graph script and its
+  // controls, charts, diagrams, terminals, link targets, read-aloud, and
+  // code highlighting. An exported page runs it on the body it carries.
+  function enhanceBrief(brief, data) {
     // The graph is delivered as the authored Cytoscape init script; executing it
     // (re)defines initGraph(). Drop any prior copy so a re-render stays clean.
     var prev = document.getElementById('present-graph-script');
@@ -2047,6 +2096,7 @@
   // history (a shared instance) answers 404, and nothing is marked; a first
   // visit only records the version.
   function markChangedSections(id, version) {
+    if (standalone) return;
     var key = 'present-seen:' + id;
     var seen = 0;
     try { seen = parseInt(localStorage.getItem(key) || '0', 10) || 0; } catch (e) {}
@@ -2069,6 +2119,7 @@
   // brief offers Slides when the page has a deck, the deck offers Brief when
   // the page has one. Both anchors sit hidden in the shell's header.
   function showViewLink(elID, href) {
+    if (standalone) return;
     var a = document.getElementById(elID);
     if (!a) return;
     a.href = href;
@@ -2081,6 +2132,7 @@
   // it. Confirm posts to /p/{id}/share; the result shows the shared URL and
   // whether it expires. Re-sharing replaces the copy under the same URL.
   function wireShare(share) {
+    if (standalone) return;
     var btn = document.getElementById('shareBtn');
     var modal = document.getElementById('share-modal');
     if (!btn || !modal || !share || !share.enabled) return;
@@ -2146,6 +2198,7 @@
   var STREAM_SILENCE_MS = 60000;
 
   function watchVersion(id, known) {
+    if (standalone) return;
     var base = '/p/' + encodeURIComponent(id);
     var poller = null;
     var stream = null;
@@ -2364,11 +2417,15 @@
   // button that jumps there. Past DOTS_MAX slides the dots give way to a
   // thin bar; progress "bar" asks for it at any length.
   var DOTS_MAX = 24;
+  // deckLogo is the logo a deck shows when its chrome names none: the repo
+  // logo serve answers at /logo.png. An exported page has no such path, so
+  // renderExport clears it and the deck shows none.
+  var deckLogo = '/logo.png';
   function deckChrome(chrome, title, count, goTo) {
     chrome = chrome || {};
     var position = chrome.logo_position || 'bottom-right';
-    var logo = chrome.logo === 'none' ? null
-      : Webkit.el('img', { class: 'deck-logo', src: chrome.logo || '/logo.png', alt: '' });
+    var logoSrc = chrome.logo === 'none' ? '' : (chrome.logo || deckLogo);
+    var logo = logoSrc ? Webkit.el('img', { class: 'deck-logo', src: logoSrc, alt: '' }) : null;
     var corner = logo && position.indexOf('top-') === 0 ? logo : null;
     if (corner) corner.classList.add('deck-logo-corner', 'deck-logo-' + position);
     var stripLogo = corner ? null : logo;
@@ -2875,6 +2932,7 @@
   var COMMAND_POLL_MS = 1000;
   var COMMAND_FRESH_MS = 10000;
   function watchDeckCommands(id, apply, memory) {
+    if (standalone) return;
     var base = '/p/' + encodeURIComponent(id) + '/deck/command';
     var known = memory.seq();
     var timer = null;
@@ -2919,6 +2977,43 @@
     if (!document.hidden) start();
   }
 
+  // followTheme recolours the brief's graph, charts, and diagrams when the
+  // webkit theme toggle fires (the deck view registers its own listener).
+  function followTheme() {
+    document.addEventListener('wk-themechange', function () {
+      initGraphAndFlow();
+      initPresentCharts();
+      initPresentDiagrams();
+    });
+  }
+
+  // renderExport mounts an exported page from what the file carries: the
+  // page data in #present-export and the body already in #root, which a
+  // reader with scripts off sees as it is. The brief keeps that body and
+  // gets its graph, charts, and the rest. The deck is split from it, less
+  // the references block, which the deck makes its last slide. Every
+  // control that needs a server stays out under standalone (top of this
+  // file).
+  function renderExport() {
+    var island = document.getElementById('present-export');
+    var brief = root.querySelector('.brief');
+    var data;
+    try { data = JSON.parse(island.textContent); } catch (e) { return; }
+    if (!brief) return;
+    if (data.view === 'deck') {
+      var refs = brief.querySelector('.refs-section');
+      if (refs) refs.remove();
+      data.deck = brief.innerHTML;
+      deckLogo = '';
+      renderDeck(data);
+      return;
+    }
+    document.title = data.title || 'present';
+    enhanceBrief(brief, data);
+    followTheme();
+  }
+  if (standalone) { renderExport(); return; }
+
   // pageId reads the page id from the URL; deckView says whether this is the
   // /p/{id}/deck rendition of it.
   function pageId() {
@@ -2946,13 +3041,7 @@
         render(data);
         markChangedSections(id, data.version);
         if (data.has_deck) showViewLink('deckLink', base + '/deck');
-        // Recolor the graph + charts when the webkit theme toggle fires
-        // (the deck view registers its own listener).
-        document.addEventListener('wk-themechange', function () {
-          initGraphAndFlow();
-          initPresentCharts();
-          initPresentDiagrams();
-        });
+        followTheme();
       }
       wireShare(data.share);
       watchVersion(id, data.version);

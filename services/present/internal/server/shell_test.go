@@ -228,3 +228,23 @@ func cachedAssets(t *testing.T, script string) map[string]bool {
 	}
 	return files
 }
+
+// An export cuts the shell's stylesheet and header fixation targets out of
+// shell.html; pin that both are there and that the cut is the whole sheet.
+func TestStandaloneAssets(t *testing.T) {
+	a, err := StandaloneAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(a.ShellCSS, ".present-chart-note") ||
+		strings.Contains(a.ShellCSS, "<style") ||
+		strings.Contains(a.ShellCSS, "</style") {
+		t.Error("ShellCSS is not the shell's inline stylesheet")
+	}
+	if !strings.Contains(a.FixationTargets, "[data-fixation]") {
+		t.Errorf("FixationTargets = %q", a.FixationTargets)
+	}
+	if a.AppJS != string(appJS) || a.VizJS != string(vizJS) {
+		t.Error("StandaloneAssets does not return the embedded app.js and viz.js")
+	}
+}
