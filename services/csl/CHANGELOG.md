@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.30.0](https://github.com/mad01/thismoon/compare/csl/v0.29.0...csl/v0.30.0) (2026-10-29)
+
+
+### Features
+
+* **csl:** add csl_search_multi to run independent queries in one call ([#345](https://github.com/mad01/thismoon/issues/345)) ([f22f33c](https://github.com/mad01/thismoon/commit/f22f33c37d274ad492f0302aa38036c001a6514d))
+* **csl:** CLI search gets the zero-result hint, relaxed retry, shape check and case-insensitive --repo ([#342](https://github.com/mad01/thismoon/issues/342)) ([9862985](https://github.com/mad01/thismoon/commit/98629858ae7576217fec1ca8c616ff19e3b978b6))
+* **csl:** nudge parallel calls in the MCP instructions and tool descriptions ([#335](https://github.com/mad01/thismoon/issues/335)) ([170bdc5](https://github.com/mad01/thismoon/commit/170bdc53532ff43b9656d873d6049e6cd1d5d922))
+* **csl:** one CLI-first csl rules fragment, linked to ~/.claude/CLAUDE.csl.md ([b459fde](https://github.com/mad01/thismoon/commit/b459fdefc61862dcbcda18d8aac3ae875d251f98))
+
+
+### Bug Fixes
+
+* **csl:** gate every cheat-sheet block and align the fragment rules ([f5e5dcf](https://github.com/mad01/thismoon/commit/f5e5dcff526897575d2a1f9789bc47dc990c3ff1))
+* **csl:** keep every caller-supplied file path inside the repo ([#346](https://github.com/mad01/thismoon/issues/346)) ([a4f2dca](https://github.com/mad01/thismoon/commit/a4f2dca519eccce2b98477f540fa0b500cecba09))
+* **csl:** outline says when it is cut and the next limit to pass ([#341](https://github.com/mad01/thismoon/issues/341)) ([d6f87f9](https://github.com/mad01/thismoon/commit/d6f87f9547750dc7826da5c5228adf796dad85f3))
+* **csl:** read search --repo as a regex in the in-process fallback ([e20ac18](https://github.com/mad01/thismoon/commit/e20ac1814fff800b390bc953952987921f766bf7))
+
 ## [0.29.0](https://github.com/mad01/thismoon/compare/csl/v0.28.0...csl/v0.29.0) (2026-10-25)
 
 

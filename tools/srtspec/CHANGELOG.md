@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/srtspec/v0.2.0...srtspec/v0.3.0) (2026-10-29)
+
+
+### Features
+
+* **srtspec:** verify fails a t-man service without spec.access ([#336](https://github.com/mad01/thismoon/issues/336)) ([c1657ba](https://github.com/mad01/thismoon/commit/c1657baae951993252d75e13fa7401ac764e1c59))
+
 ## [0.2.0](https://github.com/mad01/thismoon/compare/srtspec/v0.1.0...srtspec/v0.2.0) (2026-10-26)
 
 

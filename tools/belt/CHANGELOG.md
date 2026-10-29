@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.12.1](https://github.com/mad01/thismoon/compare/belt/v2.12.0...belt/v2.12.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **belt:** prefer-csl names the searched repo and renders the CLI form first ([d4a6044](https://github.com/mad01/thismoon/commit/d4a604482b3504fe05d8bc379ec83218f21895b6))
+* **belt:** prefer-csl parses redirects, long flags and regex dialects ([2d948c4](https://github.com/mad01/thismoon/commit/2d948c40db5cb73c8f0354d616b670ac4629c071))
+
 ## [2.12.0](https://github.com/mad01/thismoon/compare/belt/v2.11.1...belt/v2.12.0) (2026-10-26)
 
 
