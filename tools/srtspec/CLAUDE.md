@@ -21,7 +21,7 @@ srtspec/
     discover/       manifest discovery and the recipe-dir mapping
     drift/          canonical JSON and the drift diff
     layers/         the base + local + env merge run and explain share
-    verify/         the repo-wide check: renders, orphans and layers
+    verify/         the repo-wide check: renders, orphans, launches and layers
     launch/         what run does: settings, label, merged copy, runtime, the exec
   Makefile          part of module github.com/mad01/thismoon (no own go.mod)
 ```
@@ -36,7 +36,7 @@ make test     # go test ./...
 
 From the repo root, `make sandbox-settings` runs `generate` over the repo and
 the public example. `make sandbox-verify` runs `verify` over both; CI runs it
-and fails on any stale render, orphan or narrowing layer.
+and fails on any stale render, orphan, undeclared launch or narrowing layer.
 
 ## Commands
 
@@ -44,7 +44,7 @@ and fails on any stale render, orphan or narrowing layer.
 srtspec render <manifest> [-o out.json]
 srtspec check <manifest> <settings.json>   # exit 1 + diff on drift
 srtspec generate [root]                    # every manifest -> recipes/<dir>/<label>.srt.json
-srtspec verify [root]                      # exit 1 + one FAIL line per stale render, orphan or narrowing layer
+srtspec verify [root]                      # exit 1 + one FAIL line per stale render, orphan, undeclared launch or narrowing layer
 srtspec run <settings> [--] <cmd> [args]   # merge ~/.config/srt/<label>.local.json + SRT_RUN_ALLOW_DOMAINS, exec srt
 srtspec explain <label>                    # ~/.config/srt/<label>{,.local}.json + SRT_RUN_ALLOW_DOMAINS
 srtspec docs
@@ -64,6 +64,18 @@ srtspec version [-o json]
   repo, as dotfiles' `speak-web.local.json` does), it checks against an
   empty base. Every rule holds except the one that catches an allow carving
   back a deny, and the ok line says so.
+- The undeclared-launch check reads only commands. In recipe.toml that is
+  every string under a key ralph runs as shell (`commands`, `restart`,
+  `body`, the hook lists and the rest in `commandKeys`), never a
+  description or comment. Every `*.sh` beside it counts line by line. A
+  `t-man add` on a line that isn't a shell comment fails a
+  service-info.yaml with no spec.access. A new ralph key that runs shell
+  needs adding to `commandKeys`. The check only prints FAIL lines, like
+  orphans.
+- `srt-run` isn't a marker. This repo renders settings only from its own
+  manifests, so a wrapper whose settings it renders is backed already. An
+  MCP wrapper whose manifest the consuming repo owns (humanizer's,
+  present's) is outside what verify here can see.
 - `run` and `explain` share `internal/layers`, so a rule change is one
   edit plus a case in `recipes/speak/testdata/srt-local`, which the launch
   and layers tests both run.

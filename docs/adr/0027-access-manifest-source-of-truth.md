@@ -96,3 +96,13 @@ launch path depends on the srtspec binary, which its recipe builds in wave
 0, and every service registration names `packages.srtspec` in `depends_on`
 (ADR-0006, 2026-10-26 amendment). `srtspec verify` is the CI gate that keeps
 the renders honest.
+
+## Amendment (2026-10-29)
+
+`catalog validate` left with the catalog service (MAD-508), so `srtspec
+verify` now decides who must declare a manifest (MAD-509). It looks for
+`t-man add` only, and only in the commands a recipe runs, never in a
+description or a comment. `srt-run` is no longer a marker. This repo renders
+srt settings only from its own manifests, so an `srt-run` exec whose settings
+it renders already has one. An MCP wrapper whose manifest the consuming repo
+owns, as humanizer's and present's do, is outside what this repo can verify.
