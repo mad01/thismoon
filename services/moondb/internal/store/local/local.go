@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/mad01/thismoon/services/moondb"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
@@ -376,6 +377,23 @@ func (s *Store) AgentsWithoutTotals(
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.ix.agentsWithoutTotals(version, limit), nil
+}
+
+// CountAgentsWithoutBrief counts the agents store.NeedsBrief keeps for
+// since.
+func (s *Store) CountAgentsWithoutBrief(ctx context.Context, since time.Time) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for _, a := range s.ix.agents {
+		if store.NeedsBrief(*a, since) {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // Edits lists the edits matching every set field of q, newest first.

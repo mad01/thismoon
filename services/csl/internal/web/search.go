@@ -18,6 +18,7 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
+	"github.com/mad01/thismoon/services/csl/internal/repo/repopath"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/services/csl/internal/syncer"
 )
@@ -214,10 +215,9 @@ func (s *Service) ReadFile(repoName, relPath string, start, end int) (*ReadResul
 	}
 
 	// Resolve and confine the path to the repo root to avoid traversal.
-	clean := filepath.Clean("/" + relPath)
-	absPath := filepath.Join(matched.Path, clean)
-	if !strings.HasPrefix(absPath, matched.Path+string(os.PathSeparator)) {
-		return nil, fmt.Errorf("invalid path %q", relPath)
+	absPath, err := repopath.Resolve(matched.Path, "file", relPath)
+	if err != nil {
+		return nil, err
 	}
 
 	f, err := os.Open(absPath)
@@ -255,7 +255,7 @@ func (s *Service) ReadFile(repoName, relPath string, start, end int) (*ReadResul
 		Repo:       matched.Name,
 		Path:       relPath,
 		LocalPath:  absPath,
-		FileURL:    finder.FileURL(*matched, strings.TrimPrefix(clean, "/"), 0),
+		FileURL:    finder.FileURL(*matched, filepath.ToSlash(filepath.Clean(relPath)), 0),
 		Lines:      lines,
 		TotalLines: lineNum,
 		Truncated:  truncated,

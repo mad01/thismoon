@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
+	"github.com/mad01/thismoon/services/csl/internal/repo/repopath"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/services/csl/internal/semantic"
 )
@@ -177,13 +178,10 @@ func handleLs(
 	}
 
 	relDir := filepath.Clean(in.Path)
-	if relDir == "" || relDir == "." {
-		relDir = "."
+	absDir, err := repopath.Resolve(matched.Path, "path", in.Path)
+	if err != nil {
+		return nil, lsOutput{}, err
 	}
-	if relDir == ".." || strings.HasPrefix(relDir, "../") || filepath.IsAbs(relDir) {
-		return nil, lsOutput{}, fmt.Errorf("path must stay inside the repo, got %q", in.Path)
-	}
-	absDir := filepath.Join(matched.Path, relDir)
 
 	var entries []lsEntry
 	if in.Recursive {

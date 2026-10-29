@@ -88,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/annotate", s.handleAnnotate)
 	mux.HandleFunc("GET /api/inflight", s.handleInflight)
 	mux.HandleFunc("GET /api/chunks/{sha}", s.handleChunk)
+	mux.HandleFunc("GET /api/doctor", s.handleDoctor)
 	mux.HandleFunc("GET /api/", handleNoRoute)
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /version", s.info.Handler())

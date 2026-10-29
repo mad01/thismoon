@@ -2,7 +2,9 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -230,5 +232,46 @@ func TestHandleRead_LineNumbersCorrect(t *testing.T) {
 	}
 	if out.Lines[5].Number != 55 {
 		t.Errorf("last line number = %d, want 55", out.Lines[5].Number)
+	}
+}
+
+// TestHandleRead_ConfinesFileToRepo: csl_read refuses a file that leaves the
+// repo, by "..", as an absolute path, or through a symlink, and still reads a
+// file that stays inside, a link that stays inside, and reports a missing file
+// as not-found.
+func TestHandleRead_ConfinesFileToRepo(t *testing.T) {
+	setupReadTestRepo(t, "main.go", 3)
+	repoDir := filepath.Join(os.Getenv("HOME"), "workspace", "org", "testrepo")
+	secret := filepath.Join(os.Getenv("HOME"), "secret")
+	if err := os.WriteFile(secret, []byte("secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(repoDir, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("main.go", filepath.Join(repoDir, "inside")); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	for _, file := range []string{"../../../secret", secret, "escape"} {
+		_, _, err := handleRead(ctx, nil, readInput{Repo: "testrepo", File: file})
+		if err == nil || !strings.Contains(err.Error(), "file must stay inside the repo") {
+			t.Errorf("file %q: err = %v, want the stay-inside error", file, err)
+		}
+	}
+	for _, file := range []string{"main.go", "inside"} {
+		_, out, err := handleRead(ctx, nil, readInput{Repo: "testrepo", File: file})
+		if err != nil {
+			t.Errorf("file %q: %v", file, err)
+			continue
+		}
+		if out.TotalLines != 3 {
+			t.Errorf("file %q: total_lines = %d, want 3", file, out.TotalLines)
+		}
+	}
+	_, _, err := handleRead(ctx, nil, readInput{Repo: "testrepo", File: "missing.go"})
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing file: err = %v, want not-exist", err)
 	}
 }

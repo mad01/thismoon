@@ -135,10 +135,11 @@ func resultText(raw json.RawMessage) string {
 	return strings.Join(parts, "\n")
 }
 
-// head cuts s to moondb.AgentHeadBytes at a rune boundary and says how
-// many bytes it cut.
-func head(s string) string {
-	n := moondb.AgentHeadBytes
+// head cuts s to moondb.AgentHeadBytes (cut).
+func head(s string) string { return cut(s, moondb.AgentHeadBytes) }
+
+// cut cuts s to n bytes at a rune boundary and says how many bytes it cut.
+func cut(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
