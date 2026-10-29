@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"time"
 
@@ -22,15 +21,9 @@ const (
 	kindAgent      = "agent"
 )
 
-// errUnknownKind marks a log line of a kind this build does not know, left
+// ErrUnknownKind marks a log line of a kind this build does not know, left
 // by a newer build. Replay skips such a line rather than refuse to open.
-var errUnknownKind = errors.New("local: unknown record kind")
-
-// logLine is one line of the log: a record and its kind.
-type logLine struct {
-	T string          `json:"t"`
-	R json.RawMessage `json:"r"`
-}
+var ErrUnknownKind = errors.New("local: unknown record kind")
 
 // index is the in-memory view of the log that every read is served from.
 // It is rebuilt from the log on open and changed only through apply, so a
@@ -95,35 +88,26 @@ func newIndex() *index {
 // go through it.
 func (ix *index) apply(kind string, raw json.RawMessage) error {
 	ix.n++
-	switch kind {
-	case kindSession:
-		return decodeInto(raw, ix.putSession)
-	case kindTurn:
-		return decodeInto(raw, ix.putTurn)
-	case kindEdit:
-		return decodeInto(raw, ix.addEdit)
-	case kindDelta:
-		return decodeInto(raw, func(d store.UnattributedDelta) {
-			ix.deltas.add(d.ID, d.TurnID, newRec(d, d.At, ix.n))
-		})
-	case kindSnapshot:
-		return decodeInto(raw, ix.addSnapshot)
-	case kindCommitLink:
-		return decodeInto(raw, func(l store.CommitLink) {
-			ix.links.add(l.ID, l.TurnID, newRec(l, l.At, ix.n))
-		})
-	case kindAgent:
-		return decodeInto(raw, ix.putAgent)
+	rec, err := Line{Kind: kind, Record: raw}.Decode()
+	if err != nil {
+		return err
 	}
-	return fmt.Errorf("%w %q", errUnknownKind, kind)
-}
-
-func decodeInto[T any](raw json.RawMessage, fn func(T)) error {
-	var v T
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return fmt.Errorf("decode %T: %w", v, err)
+	switch v := rec.(type) {
+	case store.Session:
+		ix.putSession(v)
+	case store.Turn:
+		ix.putTurn(v)
+	case store.Edit:
+		ix.addEdit(v)
+	case store.UnattributedDelta:
+		ix.deltas.add(v.ID, v.TurnID, newRec(v, v.At, ix.n))
+	case store.Snapshot:
+		ix.addSnapshot(v)
+	case store.CommitLink:
+		ix.links.add(v.ID, v.TurnID, newRec(v, v.At, ix.n))
+	case store.Agent:
+		ix.putAgent(v)
 	}
-	fn(v)
 	return nil
 }
 

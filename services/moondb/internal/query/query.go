@@ -38,6 +38,10 @@ type Service struct {
 	// Peers reads the events service for a session's scorecard; nil leaves
 	// it unavailable.
 	Peers scorecard.Peers
+	// NoCheckouts is set on a shared instance, which holds no checkout and
+	// must not read its own disk on behalf of a synced record: Why answers
+	// from the line's text alone, and Annotate is not implemented.
+	NoCheckouts bool
 
 	cacheOnce   sync.Once
 	cache       *traceCache[trace.TurnTrace]
@@ -111,6 +115,7 @@ type HistoryRequest struct {
 // tell edits apart, such as a brace, a lone return or an import, and a
 // line nothing matches, get MethodNone with Text set. A worktree moondb
 // never recorded an edit in is refused before anything is read from it.
+// With NoCheckouts only the content match runs, on the text given.
 func (s *Service) Why(ctx context.Context, req WhyRequest) (WhyResult, error) {
 	if err := req.validate(); err != nil {
 		return WhyResult{}, err
@@ -121,6 +126,13 @@ func (s *Service) Why(ctx context.Context, req WhyRequest) (WhyResult, error) {
 		}
 	}
 	res := WhyResult{Path: req.Path, Line: req.Line, Text: req.Text, Method: MethodNone}
+	if s.NoCheckouts {
+		if req.Text == "" {
+			return WhyResult{}, fmt.Errorf("%w: this instance holds no checkout, "+
+				"so why needs the line's text", ErrInvalidRequest)
+		}
+		return res, s.whyByContent(ctx, req, &res)
+	}
 	found, err := s.whyByBlame(ctx, req, &res)
 	if err != nil || found {
 		return res, err

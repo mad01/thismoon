@@ -39,8 +39,28 @@
 
   // ── fetch helpers ──
 
-  function getJSON(url) {
+  // A shared instance answers 401 until the page holds its key. The first
+  // 401 asks for the key once and keeps it in a same-site cookie, which the
+  // API reads on a GET and the chunk and scorecard links carry too; then
+  // the request is sent again. A local serve never answers 401.
+  var askedForKey = false;
+
+  function fetchWithKey(url) {
     return fetch(url).then(function (r) {
+      if (r.status !== 401) return r;
+      if (!askedForKey) {
+        askedForKey = true;
+        var key = window.prompt('This moondb instance needs a key.');
+        if (!key) return r;
+        document.cookie = 'moondb_key=' + encodeURIComponent(key.trim()) +
+          '; path=/; SameSite=Strict' + (location.protocol === 'https:' ? '; Secure' : '');
+      }
+      return fetch(url);
+    });
+  }
+
+  function getJSON(url) {
+    return fetchWithKey(url).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (body) {
         if (!r.ok) throw new Error(body.error || ('load failed (' + r.status + ')'));
         return body;
@@ -49,7 +69,7 @@
   }
 
   function getText(url) {
-    return fetch(url).then(function (r) {
+    return fetchWithKey(url).then(function (r) {
       if (!r.ok) throw new Error('load failed (' + r.status + ')');
       return r.text();
     });

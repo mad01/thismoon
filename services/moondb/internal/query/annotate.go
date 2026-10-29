@@ -60,6 +60,10 @@ func (l *AnnotatedLine) explain(m Method, e store.Edit) {
 // its text against one scan of the path's recorded edits (MethodContent).
 // Trivial lines and lines nothing matches get MethodNone.
 func (s *Service) Annotate(ctx context.Context, req AnnotateRequest) (AnnotateResult, error) {
+	if s.NoCheckouts {
+		return AnnotateResult{}, fmt.Errorf("%w: annotate reads a checkout, "+
+			"which this instance does not hold", ErrNotImplemented)
+	}
 	if err := s.validateAnnotate(ctx, req); err != nil {
 		return AnnotateResult{}, err
 	}

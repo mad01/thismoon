@@ -104,12 +104,12 @@ func (s *Store) replayLine(path string, lineNo int, line []byte) error {
 	if len(text) == 0 {
 		return nil
 	}
-	var l logLine
+	var l Line
 	if err := json.Unmarshal(text, &l); err != nil {
 		return fmt.Errorf("parse %s:%d: %w", filepath.Base(path), lineNo, err)
 	}
-	err := s.ix.apply(l.T, l.R)
-	if errors.Is(err, errUnknownKind) {
+	err := s.ix.apply(l.Kind, l.Record)
+	if errors.Is(err, ErrUnknownKind) {
 		logf("moondb: skipping %s:%d: %v", filepath.Base(path), lineNo, err)
 		return nil
 	}

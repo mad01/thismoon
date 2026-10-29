@@ -1,8 +1,11 @@
 // Package server exposes a moondb store over HTTP: a webkit-chromed page, the
 // read-only JSON API the CLI and the MCP server call, plus /healthz, /version
-// and /webkit/. There is no write route: `moondb record` writes the spool and
-// serve drains it, so serve stays the store's single writer. Binding to
-// loopback is the caller's concern, not the handler's.
+// and /webkit/. A local serve has no write route: `moondb record` writes the
+// spool and serve drains it, so serve stays the store's single writer. A
+// shared instance (SharedHandler) adds /api/sync, where the replicate loops
+// of local serves send their records, and puts every route that holds a
+// record behind a key. Binding to loopback is the caller's concern, not the
+// handler's.
 package server
 
 import (
@@ -73,6 +76,11 @@ func New(st store.Store, q Querier, info buildinfo.Info) *Server {
 
 // Handler builds the routes, wrapped in request logging.
 func (s *Server) Handler() http.Handler {
+	return logRequests(s.routes())
+}
+
+// routes is the page and the read-only API every serve answers.
+func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /app.js", s.handleAppJS)
@@ -92,7 +100,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /version", s.info.Handler())
 	webkit.Mount(mux)
-	return logRequests(mux)
+	return mux
 }
 
 // handleIndex serves the static chrome-only shell; app.js fetches /api/ and

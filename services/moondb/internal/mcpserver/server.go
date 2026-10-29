@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -26,6 +27,11 @@ type Config struct {
 	Port    int
 	BaseURL string // display/link URL shown to the user; falls back to the API URL
 
+	// API, when set, is the serve's own handler, which the tools call in
+	// process instead of localhost:<Port>: the MCP server a shared
+	// instance mounts at /mcp.
+	API http.Handler
+
 	// Checks builds the diagnostics behind the moondb_doctor tool, against
 	// the same resolved flags the rest of the CLI uses. It is required: the
 	// instructions block advertises moondb_doctor to every client, so a
@@ -33,9 +39,10 @@ type Config struct {
 	Checks func(ctx context.Context) []doctor.Check
 }
 
-// New builds the moondb MCP server. The HTTP client always targets
-// localhost:<Port>, which is reachable without any proxy; BaseURL is used
-// only for the human-facing link returned in tool responses.
+// New builds the moondb MCP server. The HTTP client targets
+// localhost:<Port>, which is reachable without any proxy, or calls cfg.API
+// in process when it is set; BaseURL is used only for the human-facing link
+// returned in tool responses.
 func New(version string, cfg Config) (*mcp.Server, error) {
 	if cfg.Checks == nil {
 		return nil, errors.New(
@@ -47,8 +54,12 @@ func New(version string, cfg Config) (*mcp.Server, error) {
 	if webURL == "" {
 		webURL = apiURL
 	}
+	c := client.New(apiURL)
+	if cfg.API != nil {
+		c = client.NewForHandler(cfg.API)
+	}
 	return newServer(version, &handlers{
-		client: client.New(apiURL),
+		client: c,
 		webURL: webURL,
 		checks: cfg.Checks,
 	}), nil

@@ -32,8 +32,9 @@ out.
 
 - `--port` (int, default `7433`, env `MOONDB_PORT`, config `port`): the port
   `moondb serve` listens on, and the port every other command connects to.
-  `serve` binds `127.0.0.1` only: the store holds prompts and source code and
-  the API has no authentication.
+  A local `serve` binds `127.0.0.1` only: the store holds prompts and source
+  code and its API has no authentication. `--shared` is the one exception
+  (below).
 - `--workdir` (string, default `~/.local/state/moondb`, env
   `MOONDB_WORKDIR`, config `workdir`): the state directory. It holds `log/`,
   `objects/`, `spool/` and `sessions/`. `record`, `import` and `serve` must
@@ -45,6 +46,34 @@ out.
   display-only: the MCP client always calls `localhost:<port>`.
 - `--config` (string, default `~/.config/moondb/config.toml`, env
   `MOONDB_CONFIG`): the config file described above.
+
+`serve` takes eight more flags for the shared instance and for replication
+to it (`docs/adr/0029` at the repo root). Every one is off by default, so a
+plain `moondb serve` stays the loopback serve of one machine. They have no
+config file keys.
+
+- `--replicate-to` (string, env `MOONDB_REPLICATE_TO`): the base URL of a
+  shared instance. A local serve then copies its log and the chunks its
+  records point at there every `ReplicateEvery` (5s), and keeps its cursor in
+  `<workdir>/replicate.json`. Delete that file to send everything again; the
+  record ids make a resend harmless. Needs `--replicate-key-file`.
+- `--replicate-key-file` (string, env `MOONDB_REPLICATE_KEY_FILE`): the file
+  holding the key the instance accepts.
+- `--shared` (bool, env `MOONDB_SHARED`): run as a shared instance. It drains
+  no spool, takes records on `POST /api/sync`, wants a key on every route that
+  holds a record, and serves the MCP tools at `/mcp`.
+- `--bind` (string, env `MOONDB_BIND`): the `host:port` a shared instance
+  listens on. Shared mode refuses to start without it.
+- `--keys-file` (string, env `MOONDB_KEYS_FILE`): the lowercase hex SHA-256 of
+  each key the instance accepts, one per line, `#` comments allowed. Required
+  with `--shared`.
+- `--backend` (string, default `local`, env `MOONDB_BACKEND`): `local` keeps
+  the whole store under `--data-dir`. `cloud` keeps the log there and puts the
+  chunks and a copy of the log in `--gcs-bucket`.
+- `--data-dir` (string, default the workdir, env `MOONDB_DATA_DIR`): where a
+  shared instance keeps its log.
+- `--gcs-bucket` (string, env `MOONDB_GCS_BUCKET`): the Cloud Storage bucket
+  of the cloud backend, reached with application default credentials.
 
 An unparseable `MOONDB_PORT` warns once on stderr and falls back to the next
 source.

@@ -645,6 +645,15 @@ The `local` backend keeps two things under the workdir (default
 The spool sits beside them at `spool/` and the hook state at `sessions/`.
 Files are 0600 and directories 0700.
 
+The `cloud` backend (`internal/store/cloud`, shared instance only) keeps the
+same log and index under its data dir. It puts the chunks in a Cloud Storage
+bucket at `objects/<sha>`, gzipped and created with `ifGenerationMatch=0` so
+an object is never replaced. It copies each closed log segment to
+`log/NNNNNN.jsonl` in the bucket, and the open one hourly and on Close. Its
+bucket client is the JSON API over application default credentials with no
+SDK, and its tests fake the bucket with httptest. `docs/adr/0029` records
+why.
+
 Sessions, turns and agents upsert (the newest record per id wins). Edits, deltas,
 snapshots and commit links are append-only facts, idempotent on their id. A
 snapshot's `MapChunk` is a JSON array of its files sorted by path.
@@ -692,8 +701,8 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 - `GET  /version`               : the four-key build metadata object (`version`, `commit`, `tag`, `build_time`)
 - `GET  /webkit/`               : shared chrome (asset drift checks use `GET /webkit/version`)
 
-There is no write endpoint. The spool is the only way records get in. A
-request the query rejects (a relative worktree, a file outside the worktree)
+A local serve has no write endpoint: the spool is the only way records get
+in. A request the query rejects (a relative worktree, a file outside the worktree)
 answers 400.
 
 A session row comes from the index alone, never a chunk
@@ -935,10 +944,27 @@ request. A trace draws its first 25 turn lanes and the rest on request.
 The transcript shows its first 200 KB beside a download link to
 the chunk.
 
+## Shared instance
+
+`serve --shared` (`internal/server/shared.go`, `internal/cli/serve_shared.go`)
+takes no spool. Local serves started with `--replicate-to` feed it
+(`internal/replicate`), and it adds three routes:
+
+- `POST /api/sync/missing`: `{chunks:[sha]}` in, `{missing:[sha]}` out, the keys the instance lacks
+- `POST /api/sync`: `{chunks:[bytes], records:[{t,r}]}`; chunks are stored first, then the records are applied in order through the store methods ingest uses, and unknown kinds are skipped and counted
+- `/mcp`: the MCP tools as stateless streamable HTTP, calling the API in process
+
+Every route except `/`, `/app.js`, `/healthz`, `/version` and `/webkit/` needs
+`Authorization: Bearer <key>`. The page's `moondb_key` cookie counts on
+`GET /api/*` only, so it can neither write nor reach `/mcp`. The query runs
+with `NoCheckouts`: `why` matches the line text it is sent, and `annotate`
+answers 501, so no synced path reads the pod's disk.
+
 ## Commands
 
 ```bash
-moondb serve [--port 7433] [--workdir ~/.local/state/moondb]
+moondb serve [--port 7433] [--workdir ~/.local/state/moondb] [--replicate-to <url> --replicate-key-file <file>]
+moondb serve --shared --bind <host:port> --keys-file <file> [--backend local|cloud] [--data-dir <dir>] [--gcs-bucket <bucket>]
 moondb record                  # one hook payload on stdin; wired by the hooks, not run by hand
 moondb import [--since 30d] [--dry-run] [--force] [--json]   # import past sessions from their transcripts
 moondb mcp                     # stdio MCP shim over serve

@@ -108,6 +108,58 @@ const (
 	SegmentBytes = 64 << 20
 )
 
+// Shared instance. `moondb serve --shared` serves the sessions of several
+// machines; with `--backend cloud` its chunks live in a Cloud Storage
+// bucket and a copy of its log sits beside them.
+const (
+	// DefaultBackend is the store backend when --backend is unset: the log
+	// and the chunks on local disk. A shared instance may pick cloud.
+	DefaultBackend = "local"
+	// SegmentCopyEvery is how often the cloud backend copies the open log
+	// segment to the bucket. A closed segment is copied once the log has
+	// moved past it, and the open one once more when the store closes.
+	SegmentCopyEvery = time.Hour
+	// SegmentPollEvery is how often the cloud backend looks for closed
+	// segments the bucket does not hold yet.
+	SegmentPollEvery = time.Minute
+	// FinalCopyTimeout bounds the copy of the log the cloud backend makes
+	// when the store closes.
+	FinalCopyTimeout = 20 * time.Second
+	// MaxSyncBodyBytes caps the body of one request to /api/sync. A batch
+	// of records or chunks larger than this is refused with 413.
+	MaxSyncBodyBytes = 64 << 20
+	// KeyCookie is the cookie the web page of a shared instance keeps its
+	// key in, so links to chunks and scorecards open with it. API clients
+	// send the key as a bearer token instead.
+	KeyCookie = "moondb_key"
+	// SyncParallelism is how many chunk lookups or writes one sync request
+	// runs at once: on the cloud backend each is a bucket request.
+	SyncParallelism = 16
+)
+
+// Replication. A local serve given --replicate-to copies its log and the
+// chunks the records point at to a shared instance.
+const (
+	// ReplicateEvery is how often the replicate loop looks for new records
+	// once it has sent everything.
+	ReplicateEvery = 5 * time.Second
+	// ReplicateMaxBackoff caps the wait after a failed round; the wait
+	// doubles from ReplicateEvery up to it.
+	ReplicateMaxBackoff = 5 * time.Minute
+	// ReplicateRecordBytes caps the record lines one sync request carries.
+	// The chunk keys they point at are asked about in one request, so it
+	// also bounds that request.
+	ReplicateRecordBytes = 1 << 20
+	// ReplicateChunkBytes caps the chunk bytes one sync request carries;
+	// a larger chunk travels alone.
+	ReplicateChunkBytes = 8 << 20
+	// ReplicateTimeout bounds one sync request.
+	ReplicateTimeout = 2 * time.Minute
+	// ReplicateCursorFile is the file under the workdir that holds how far
+	// the log has been sent, and to which instance.
+	ReplicateCursorFile = "replicate.json"
+)
+
 // Trace limits. A trace is computed on read from a turn's transcript chunk
 // and kept in memory, so these bound what serve holds and what a summary
 // lists.

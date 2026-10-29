@@ -144,7 +144,7 @@ func (s *Store) commit(kind string, v any) error {
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", kind, err)
 	}
-	line, err := json.Marshal(logLine{T: kind, R: raw})
+	line, err := json.Marshal(Line{Kind: kind, Record: raw})
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", kind, err)
 	}
