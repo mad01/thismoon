@@ -3788,7 +3788,8 @@ var Webkit = (() => {
         location.reload();
       });
       const controls = this._controls();
-      this.querySelector("#webkit-help")?.addEventListener("click", () => openHelp(controls));
+      const themesLink = this.getAttribute("themes-link") !== "off";
+      this.querySelector("#webkit-help")?.addEventListener("click", () => openHelp(controls, themesLink));
       const cmdkBtn = this.querySelector("#webkit-cmdk");
       if (cmdkBtn) {
         const kbd = cmdkBtn.querySelector("[data-cmdk-kbd]");
@@ -4126,12 +4127,12 @@ var Webkit = (() => {
     });
     overlay.querySelector(".wk-help-close")?.addEventListener("click", () => closeHelp());
   }
-  function openHelp(controls) {
+  function openHelp(controls, themesLink = true) {
     helpBuild();
     if (!helpOverlay || helpIsOpen()) return;
     const body = helpOverlay.querySelector("wk-modal-body");
     if (body) {
-      body.innerHTML = helpRowsHtml(controls) + (controls.includes("theme") ? helpThemesHtml() : "") + (controls.includes("speed") ? helpReadAloudHtml() : "") + helpExtraHtml();
+      body.innerHTML = helpRowsHtml(controls) + (themesLink && controls.includes("theme") ? helpThemesHtml() : "") + (controls.includes("speed") ? helpReadAloudHtml() : "") + helpExtraHtml();
     }
     helpPrevFocus = document.activeElement;
     helpOverlay.removeAttribute("hidden");

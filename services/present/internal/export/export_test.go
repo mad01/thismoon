@@ -149,8 +149,9 @@ func TestProsePageCarriesItsBodyAndNoLibrary(t *testing.T) {
 }
 
 // An export names no server for a control to use: its header lists only the
-// controls that run in the browser, and its page data carries no speak URL,
-// share, or deck remote (app.js builds none of them under standalone either).
+// controls that run in the browser and turns off the guide's themes page
+// link, and its page data carries no speak URL, share, or deck remote
+// (app.js builds none of them under standalone either).
 func TestExportNamesNoServer(t *testing.T) {
 	p := store.Page{ID: "prose", Title: "T", Content: compiled(t, proseDoc), HasDeck: true, Deck: "D"}
 	for _, deck := range []bool{false, true} {
@@ -158,6 +159,9 @@ func TestExportNamesNoServer(t *testing.T) {
 		if !strings.Contains(out, `<wk-header title="`) ||
 			!strings.Contains(out, `controls="font,fixation,size,theme,help"`) {
 			t.Errorf("deck=%v: the header lists a control beyond font, fixation, size, theme and help", deck)
+		}
+		if !strings.Contains(out, `themes-link="off"`) {
+			t.Errorf("deck=%v: the feature guide links the themes page, which needs a server", deck)
 		}
 		island := regexp.MustCompile(`id="present-export">([^<]*)</script>`).FindStringSubmatch(out)
 		if island == nil {
