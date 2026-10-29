@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
+	"github.com/mad01/thismoon/services/csl/internal/repo/repopath"
 )
 
 var (
@@ -85,7 +85,10 @@ func runReadfile(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no repo matching %q found", readfileRepoFlag)
 	}
 
-	absPath := filepath.Join(matched.Path, relPath)
+	absPath, err := repopath.Resolve(matched.Path, "file", relPath)
+	if err != nil {
+		return err
+	}
 
 	f, err := os.Open(absPath)
 	if err != nil {
