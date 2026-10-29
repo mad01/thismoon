@@ -149,8 +149,7 @@ func TestHintAdviceFor(t *testing.T) {
 	}{
 		{"session-start", hintAdvice{hookEvent: "SessionStart"}},
 		{"subagent-start", hintAdvice{hookEvent: "SubagentStart"}},
-		{"prompt", hintAdvice{hookEvent: "UserPromptSubmit", plain: true}},
-		{"search", hintAdvice{hookEvent: "PostToolUse"}},
+		{"read", hintAdvice{hookEvent: "PostToolUse"}},
 		{"bash", hintAdvice{hookEvent: "PostToolUse"}},
 		{"external-text", hintAdvice{hookEvent: "PostToolUse"}},
 	}

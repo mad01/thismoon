@@ -66,10 +66,6 @@ complete hooks block looks like this:
     ],
     "PostToolUse": [
       {
-        "matcher": "^mcp__csl__csl_(search|semantic_search|hybrid_search)$",
-        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint search" }]
-      },
-      {
         "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint bash" }]
       },
@@ -96,11 +92,6 @@ complete hooks block looks like this:
           { "type": "command", "command": "~/code/bin/belt hint subagent-start" },
           { "type": "command", "command": "~/code/bin/belt record subagent-start" }
         ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint prompt" }]
       }
     ],
     "Stop": [
@@ -156,13 +147,11 @@ The event-to-subcommand mapping is fixed:
 | `belt hook bash` | PreToolUse | `Bash` |
 | `belt hook write` | PreToolUse | `Write\|Edit` |
 | `belt hook external-text` | PreToolUse | the github.com MCP server's tools, and only that server (see below) |
-| `belt hint search` | PostToolUse | the csl search MCP tools |
 | `belt hint bash` | PostToolUse | `Bash` |
 | `belt hint read` | PostToolUse | `Read` |
 | `belt hint external-text` | PostToolUse | your publishing MCP tools (see below) |
 | `belt hint session-start` | SessionStart | none (fires on every session) |
 | `belt hint subagent-start` | SubagentStart | none, or an agent type to brief only some subagents |
-| `belt hint prompt` | UserPromptSubmit | none (fires on every prompt) |
 | `belt record subagent-start` | SubagentStart | none |
 | `belt record subagent-stop` | SubagentStop | none |
 | `belt record task-completed` | TaskCompleted | none |
@@ -175,18 +164,16 @@ The event-to-subcommand mapping is fixed:
 | `belt record stop-failure` | StopFailure | none, or an error type |
 | `belt watch` (asyncRewake, timeout 590) | Stop and SessionStart | none |
 
-No built-in hint runs on `search` or `prompt` today. Both entrypoints stay
-valid, and a broken config still reaches the model through them as advice.
+There is no `belt hint search` or `belt hint prompt`. No hint ran on either,
+so belt dropped them. A settings entry that still calls one fails as an
+unknown event on every csl search or prompt until you delete it.
 
 The wiring rules that are easy to get wrong:
 
 - **The event must match the subcommand.** belt stamps its JSON output with
   the hook event it was built for (`PreToolUse`, `PostToolUse`,
-  `SessionStart`, `SubagentStart`); register `belt hint search` under the
-  wrong event and Claude Code silently drops the output. The exception is
-  `belt hint prompt`, which emits plain stdout text rather than JSON, because
-  UserPromptSubmit adds stdout to context directly and would drop an
-  envelope.
+  `SessionStart`, `SubagentStart`); register `belt hint read` under the
+  wrong event and Claude Code silently drops the output.
 - **Never register a belt command on WorktreeCreate or WorktreeRemove.**
   Those hooks replace Claude Code's own `git worktree` handling: a
   WorktreeCreate hook must print the path it created, and a WorktreeRemove
@@ -249,9 +236,9 @@ event and reads its stdout can run it. What to expect per harness:
   Code's asyncRewake hooks, so it is Claude-only.
 - **Codex** reads the same hooks schema from `~/.codex/hooks.json`, so the
   entries above work verbatim with the paths adjusted. The reference setup
-  wires the six tool-event entries (`hook bash`, `hook write`,
-  `hook external-text`, `hint search`, `hint bash`, `hint external-text`);
-  the session-boundary and prompt events are not wired there, so the
+  wires the five tool-event entries (`hook bash`, `hook write`,
+  `hook external-text`, `hint bash`, `hint external-text`);
+  the session-boundary events are not wired there, so the
   agent-memory and moondb-inflight injections stay Claude-only. Custom hints
   ride the same `belt hint session-start` entrypoint, so a Codex setup that
   adds the SessionStart entry to its hooks file gets them with no further
