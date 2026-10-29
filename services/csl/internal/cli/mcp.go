@@ -32,6 +32,7 @@ Tools exposed:
   csl_repo_pull         Fast-forward git pull with safety checks
   csl_repo_reindex      Rebuild the zoekt index for a single repo
   csl_search            Search code across locally checked-out repos
+  csl_search_multi      Run up to ten independent searches in one call
   csl_count             Count matches grouped by repo or language
   csl_query_validate    Validate a zoekt query before running it
   csl_semantic_search   Search by meaning over the vector index
@@ -45,7 +46,7 @@ Tools exposed:
 
 csl_semantic_search and csl_hybrid_search are only registered when
 semantic.enabled is true in config.yaml; with it off the server exposes the
-other fourteen tools.
+other fifteen tools.
 
 ` + agentdoc.RegistrationSnippet(csl.Facts()) + `
 
