@@ -621,7 +621,7 @@ Outline a repo or a directory in it: every definition the tree-sitter extractor 
 | `repo` | string | yes | Case-insensitive regex or substring matched against `org/repo`; must resolve to exactly one repo |
 | `path` | string | no | Directory inside the repo whose files contribute definitions, e.g. `services/csl/internal`. Default: the whole repo. References are always counted across the whole repo |
 | `kinds` | array | no | Keep only these kinds: `interface`, `struct`, `class`, `type`, `typealias`, `enum`, `namespace`, `function`, `method`, `methodSpec`, `const`, `var`, `field`, `enumerator`, `section`. Default: all but `field`, `enumerator`, and `section` |
-| `limit` | int | no | Maximum symbols to return. Default 100, hard cap 500 |
+| `limit` | int | no | Maximum symbols to return. Default 100, hard cap 500. A cut result's `next_limit` is the value to pass for more |
 | `include_tests` | bool | no | Include test files (`_test.go`, `test_*.py`, `*.test.ts`, `__tests__/`, and the like). Default `false` leaves them out of both the definitions and the reference counts |
 | `max_files` | int | no | Stop the walk after this many files, in path order, and mark the result truncated. Default 20000 |
 
@@ -635,6 +635,7 @@ Outline a repo or a directory in it: every definition the tree-sitter extractor 
 | `symbols_total` | int | Definitions found in scope before the limit |
 | `symbols_skipped` | int | Definitions in scope left out by `kinds`; present when non-zero |
 | `truncated` | bool | `symbols_total` exceeds the limit, or the walk stopped at `max_files` |
+| `next_limit` | int | The limit that returns every symbol, or 500 when `symbols_total` is larger; present only when the limit cut the list and was below 500 |
 | `files_capped` | bool | The walk stopped at `max_files`, so definitions and counts cover the first `files_scanned` files only; present when true |
 | `symbols` | array | Ranked definitions |
 | `symbols[].name` | string | The defined name |
@@ -647,6 +648,8 @@ Outline a repo or a directory in it: every definition the tree-sitter extractor 
 Ranking is `refs` descending, then kind (containers and types before functions and methods before constants and variables), then name; the sort is stable, so ties keep file order. `refs` is the number of other files holding the name as a whole identifier, counted in one tokenizing pass over the repo (never a search per symbol).
 
 Two adjustments keep common names from crowding the top. A Go name starting lowercase is package-private, so it counts only files in its own directory. A name defined in several files with the same group of kind (types, callables, or members) shares its mentions evenly among them. A `New` defined in twelve packages splits twelve ways, while a type defined once keeps every mention. Names shorter than three characters get 0.
+
+A cut list always says so. `truncated` is true, `symbols_total` gives the full count, and the text format ends with a line such as `truncated: showing 100 of 244 symbols; next limit=244 returns all of them`. Once the limit is 500 the line says to narrow with `path` or `kinds` instead.
 
 Fields, enumerators, and markdown headings say little about structure and carry common names (`name`, `file`, `Overview`), so they stay out unless `kinds` names them; `symbols_skipped` counts what was left out.
 

@@ -49,19 +49,44 @@ func TestRender_GroupsByFileInRankOrder(t *testing.T) {
 	)
 }
 
+// TestRender_TruncatedTrailer: a cut list says how many symbols exist and
+// what to pass next, and stops suggesting a higher limit once it is the max.
 func TestRender_TruncatedTrailer(t *testing.T) {
-	res := Result{
-		Repo: "org/fx", Path: "sub", FilesScanned: 1, SymbolsTotal: 9, Truncated: true,
-		Symbols: []Entry{{Name: "Qux", Kind: "struct", File: "sub/d.go", Line: 3, Refs: 1}},
+	cases := map[string]struct {
+		total, next int
+		want        string
+	}{
+		"all fit under the max": {
+			total: 9, next: 9,
+			want: "truncated: showing 1 of 9 symbols; next limit=9 returns all of them",
+		},
+		"more than the max": {
+			total: 9047, next: MaxLimit,
+			want: "truncated: showing 1 of 9047 symbols; next limit=500 (the max) returns the top 500, " +
+				"narrow with path or kinds for the rest",
+		},
+		"cut at the max": {
+			total: 9047, next: 0,
+			want: "truncated: showing 1 of 9047 symbols at the max limit; narrow with path or kinds for the rest",
+		},
 	}
-	wantLines(
-		t, Render(res),
-		"org/fx/sub/d.go",
-		"3 struct Qux  refs=1",
-		"",
-		"1 symbol in 1 file; 1 file scanned",
-		"truncated: showing 1 of 9 symbols; raise limit or narrow with path/kinds",
-	)
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			res := Result{
+				Repo: "org/fx", Path: "sub", FilesScanned: 1, SymbolsTotal: c.total,
+				Truncated: true, NextLimit: c.next,
+				Symbols: []Entry{{Name: "Qux", Kind: "struct", File: "sub/d.go", Line: 3, Refs: 1}},
+			}
+			wantLines(
+				t, Render(res),
+				"org/fx/sub/d.go",
+				"3 struct Qux  refs=1",
+				"",
+				"1 symbol in 1 file; 1 file scanned",
+				c.want,
+			)
+		})
+	}
 }
 
 func TestRender_Empty(t *testing.T) {

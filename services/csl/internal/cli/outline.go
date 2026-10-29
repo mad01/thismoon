@@ -42,6 +42,9 @@ common names don't crowd the top.
 
 Output groups the ranked symbols by file, one line per symbol:
 LINE kind name (parent)  refs=N. The MCP tool csl_outline prints the same.
+When --limit cuts the list, the last line says how many symbols exist and
+the next --limit that returns them all, or the max of 500 when there are
+more. Past the max, narrow with path or --kinds.
 
 Examples:
   csl outline thismoon

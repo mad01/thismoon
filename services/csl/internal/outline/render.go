@@ -8,9 +8,9 @@ import (
 // Render prints an outline the way csl_search prints matches: a `repo/path`
 // header per file, files in rank order of their best symbol, and under each
 // one line per symbol, `LINE kind name (parent)  refs=N`, in rank order. A
-// trailer carries the counts and, when the list was capped, how to see
-// more. The CLI and the MCP text format print this same text, with no
-// trailing newline.
+// trailer carries the counts and, when the list was capped, the total and
+// the next limit to pass. The CLI and the MCP text format print this same
+// text, with no trailing newline.
 func Render(r Result) string {
 	if len(r.Symbols) == 0 {
 		msg := fmt.Sprintf("no symbols in %s/%s; %s scanned",
@@ -37,10 +37,7 @@ func Render(r Result) string {
 		plural(len(groups), "file", "files"),
 		plural(r.FilesScanned, "file", "files")))
 	if r.SymbolsTotal > len(r.Symbols) {
-		lines = append(lines, fmt.Sprintf(
-			"truncated: showing %d of %d symbols; raise limit or narrow with path/kinds",
-			len(r.Symbols), r.SymbolsTotal,
-		))
+		lines = append(lines, cutLine(r))
 	}
 	if r.FilesCapped {
 		lines = append(lines, fmt.Sprintf(
@@ -49,6 +46,26 @@ func Render(r Result) string {
 		))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// cutLine says the limit cut the list and how many symbols exist. It names
+// what to pass next: the limit that returns them all, the max when there are
+// more, or a narrower path or kinds once the max is reached.
+func cutLine(r Result) string {
+	head := fmt.Sprintf("truncated: showing %d of %d symbols", len(r.Symbols), r.SymbolsTotal)
+	switch {
+	case r.NextLimit == r.SymbolsTotal:
+		return fmt.Sprintf("%s; next limit=%d returns all of them", head, r.NextLimit)
+	case r.NextLimit > 0:
+		return fmt.Sprintf(
+			"%s; next limit=%d (the max) returns the top %d, narrow with path or kinds for the rest",
+			head,
+			r.NextLimit,
+			r.NextLimit,
+		)
+	default:
+		return head + " at the max limit; narrow with path or kinds for the rest"
+	}
 }
 
 // entryLine is `LINE kind name (parent)  refs=N`, the parent only when set.
