@@ -281,7 +281,9 @@ What a transcript gives back:
   2. the worktree its path names by layout: `.worktrees/<repo>/<slug>`,
      `.worktrees/<repo>-<slug>` or `<checkout>/.claude/worktrees/<slug>`.
      The repo is the one a known location gives that name: the store's, or
-     the session's own checkout.
+     the session's own checkout. When none does, the edit keeps the worktree
+     and no repo, so `history` finds it only by `--worktree`. A later import
+     leaves it so: a stored edit is never rewritten.
   3. the session cwd, when it is gone too and holds the file
   4. no worktree and an absolute path, like a file outside any repo
 

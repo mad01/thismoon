@@ -58,6 +58,7 @@ func registerEditTools(s *mcp.Server, h *handlers) {
 			"`path` is REQUIRED (relative to the checkout root). Give `repo` (host/owner/repo as the origin remote names it) to span every checkout of the repository: " +
 			"agents edit in worktrees while a person reads in the main checkout, so a worktree alone misses most edits. " +
 			"`worktree` (absolute checkout root) narrows to that checkout. With neither, the path matches in every repository. " +
+			"An edit imported from a worktree deleted before the import can lack `repo`: `worktree` set to its stored root, or neither, finds it. " +
 			"`limit` caps the list (default 50). Follow up with moondb_turn on an edit's `turn_id` for the prompt and the rest of that turn.",
 		Annotations: readOnly(),
 	}, h.handleHistory)
