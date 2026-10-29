@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-29 csl: `csl search --json` prints an object, not an array
+
+Change: thismoon #342 (MAD-515). `csl search --json` now prints one JSON object instead of a bare array of matches. The matches sit under `matches`. After an empty first search the object also carries `relaxed_query` and `dropped_terms`, or `zero_result_hint`. Text and `--toon` output keep their shape.
+
+Run: `ralph up` to rebuild the binary. A script that decodes the old array reads `.matches[]` now, for example `csl search <q> --json | jq '.matches[]'` in place of `jq '.[]'`.
+
+Verify: `csl search <q> --json | jq '.matches | length'` prints a number. On the old binary, jq fails because an array has no `matches` key.
+
 ## 2026-10-29 csl and belt: one csl rules file, the CLI for fleet search
 
 Change: thismoon #338 (MAD-514, MAD-518). The agent-facing csl rules now live in one file, `services/csl/claude-md.md`. It sends fleet-wide searches and anything that would page to the `csl` CLI, and keeps the MCP tools for answers that fit one call. The csl recipe links the file to `~/.claude/CLAUDE.csl.md`. `examples/dotfiles/CLAUDE.csl.md` is gone, and the eval harness's default `-steer-file` is the new file. belt's `prefer-csl` hint now leads with the `csl search` command. It names the repo the command searched, after a `cd`, a `git -C` or an absolute path, instead of the session's. It stays quiet on a grep of one or two named files.
