@@ -95,9 +95,14 @@ func TestHandleOutline_PassesOptionsThrough(t *testing.T) {
 	if len(out.Symbols) != 1 || out.Symbols[0].Name != "NewFoo" {
 		t.Errorf("symbols = %+v, want just NewFoo", out.Symbols)
 	}
-	if !out.Truncated || out.SymbolsTotal != 2 || out.FilesScanned != 3 {
-		t.Errorf("truncated %v, total %d, scanned %d; want true, 2 (NewFoo, TestFoo), 3",
-			out.Truncated, out.SymbolsTotal, out.FilesScanned)
+	if !out.Truncated || out.SymbolsTotal != 2 || out.FilesScanned != 3 || out.NextLimit != 2 {
+		t.Errorf(
+			"truncated %v, total %d, scanned %d, next limit %d; want true, 2 (NewFoo, TestFoo), 3, 2",
+			out.Truncated,
+			out.SymbolsTotal,
+			out.FilesScanned,
+			out.NextLimit,
+		)
 	}
 }
 

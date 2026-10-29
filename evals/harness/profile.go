@@ -23,10 +23,11 @@ const (
 
 var profileNames = []string{profileFull, profileCSLMCP, profileCSLCLI, profileNone}
 
-// defaultSteerFile is the standalone csl rules file the steered profiles
-// append to the system prompt: the same text a workspace CLAUDE.md would
-// carry.
-const defaultSteerFile = "examples/dotfiles/CLAUDE.csl.md"
+// defaultSteerFile is the csl rules fragment the steered profiles append to
+// the system prompt: the file csl embeds and its recipe links to
+// ~/.claude/CLAUDE.csl.md, so a run carries the text a workspace imports.
+// The path is relative to the repo root, where the harness runs.
+const defaultSteerFile = "services/csl/claude-md.md"
 
 // defaultDenyCLIs are the thismoon CLIs a non-full profile takes away, so
 // a run cannot route around the profile through a tool the workspace

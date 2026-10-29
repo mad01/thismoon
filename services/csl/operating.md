@@ -41,7 +41,10 @@ many were skipped), and test files are out unless include_tests is set. Only
 languages with a grammar (Go, TypeScript, Python, Java, protobuf, bash,
 markdown) contribute definitions, and a `path` narrows the definitions but
 never the reference count. A `files_capped` result stopped at max_files
-(20000) and covers the first files in path order only.
+(20000) and covers the first files in path order only. A list the limit cut
+(default 100, max 500) is marked truncated with the full symbols_total. Its
+next_limit is the limit that returns the rest, up to 500; past that, narrow
+with path or kinds.
 
 ## where state lives
 

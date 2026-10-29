@@ -16,27 +16,33 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/mcpserver"
 )
 
-// claudeMDHeading is the README section the embedded snippet is copied from.
+// claudeMDHeading is the README section that quotes the embedded fragment.
 const claudeMDHeading = "### Add this to your CLAUDE.md"
 
-// TestClaudeMDMatchesREADME is the snippet-can't-drift gate: the fenced block
-// under claudeMDHeading in README.md is the copy users read on GitHub, and
-// claude-md.md is the copy `csl docs --claude-md` prints. They must be the
-// same text.
-func TestClaudeMDMatchesREADME(t *testing.T) {
+// TestREADMEExcerptIsPartOfClaudeMD is the excerpt-can't-drift gate: the
+// fenced block under claudeMDHeading in README.md quotes the routing rule
+// users read on GitHub, and claude-md.md is the fragment `csl docs
+// --claude-md` prints and the csl recipe links into ~/.claude. The quote must
+// appear in the fragment byte for byte.
+func TestREADMEExcerptIsPartOfClaudeMD(t *testing.T) {
 	readme, err := os.ReadFile("README.md")
 	if err != nil {
 		t.Fatalf("read README.md: %v", err)
 	}
 
-	want := fencedBlockAfter(t, string(readme), claudeMDHeading)
-	if got := strings.TrimRight(csl.ClaudeMD, " \t\n"); got != want {
-		t.Errorf("claude-md.md and the README block differ.\n--- claude-md.md ---\n%s\n--- README.md ---\n%s",
-			got, want)
+	excerpt := fencedBlockAfter(t, string(readme), claudeMDHeading)
+	if excerpt == "" {
+		t.Fatal("the README block is empty; the gate would pass vacuously")
+	}
+	if !strings.Contains(csl.ClaudeMD, excerpt) {
+		t.Errorf(
+			"the README block is not a verbatim part of claude-md.md; edit claude-md.md and copy the section.\n--- README.md ---\n%s",
+			excerpt,
+		)
 	}
 }
 
-// TestClaudeMDNamesEveryTool is the tool-list gate: the snippet tells an agent
+// TestClaudeMDNamesEveryTool is the tool-list gate: the fragment tells an agent
 // which tools exist, so it must name every tool `csl mcp` registers, and must
 // not name one that does not exist.
 func TestClaudeMDNamesEveryTool(t *testing.T) {
@@ -45,8 +51,10 @@ func TestClaudeMDNamesEveryTool(t *testing.T) {
 		t.Fatal("no MCP tools registered; the gate would pass vacuously")
 	}
 
+	// A letter must follow csl_, so the mcp__csl__* tool prefix is not read
+	// as a tool name.
 	inSnippet := make(map[string]bool)
-	for _, name := range regexp.MustCompile(`csl_[a-z_]+`).FindAllString(csl.ClaudeMD, -1) {
+	for _, name := range regexp.MustCompile(`csl_[a-z][a-z_]*`).FindAllString(csl.ClaudeMD, -1) {
 		inSnippet[name] = true
 	}
 
@@ -54,13 +62,13 @@ func TestClaudeMDNamesEveryTool(t *testing.T) {
 	for _, name := range registered {
 		isRegistered[name] = true
 		if !inSnippet[name] {
-			t.Errorf("tool %s is registered by csl mcp but missing from the CLAUDE.md snippet", name)
+			t.Errorf("tool %s is registered by csl mcp but missing from claude-md.md", name)
 		}
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(inSnippet)) {
 		if !isRegistered[name] {
-			t.Errorf("the CLAUDE.md snippet names %s, which csl mcp does not register", name)
+			t.Errorf("claude-md.md names %s, which csl mcp does not register", name)
 		}
 	}
 }
@@ -75,7 +83,7 @@ func registeredToolNames(t *testing.T) []string {
 	defer cancel()
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	// Semantic enabled: the snippet documents the full tool set, including the
+	// Semantic enabled: the fragment documents the full tool set, including the
 	// two tools a machine with semantic.enabled off never sees.
 	opts := mcpserver.Options{SemanticEnabled: true}
 	serverSession, err := mcpserver.New("test", opts).Connect(ctx, serverTransport, nil)

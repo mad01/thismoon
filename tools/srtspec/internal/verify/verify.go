@@ -1,8 +1,9 @@
 // Package verify checks a repo's sandbox artifacts against their sources
 // without writing anything: every srt manifest renders to a settings file
 // that exists and holds the same bytes as the render, no settings file is
-// left without a manifest, and every expansion layer kept beside a recipe
-// only widens. It is the gate CI runs; generate is the fix.
+// left without a manifest, every component whose recipe launches a process
+// declares spec.access, and every expansion layer kept beside a recipe only
+// widens. It is the gate CI runs; generate fixes the renders.
 package verify
 
 import (
@@ -32,7 +33,8 @@ type Result struct {
 func (r Result) OK() bool { return r.Reason == "" }
 
 // Run checks every artifact under root and returns one Result per check, in
-// path order within each kind: settings files, then orphans, then layers.
+// path order within each kind: settings files, then orphans, then components
+// that launch a process without spec.access, then layers.
 // home turns absolute paths in a layer back into ~ form, the way srt-run
 // compares them. The error covers what stops the checks from running at
 // all: an invalid manifest, an unreadable tree, or a root with nothing to
@@ -59,6 +61,11 @@ func Run(root, home string) ([]Result, error) {
 			Reason: "no manifest renders it; declare spec.access or an access.yaml, or delete the file",
 		})
 	}
+	undeclared, err := launches(root, targets)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, undeclared...)
 	paths, err := discover.Layers(root)
 	if err != nil {
 		return nil, err
@@ -71,6 +78,28 @@ func Run(root, home string) ([]Result, error) {
 			"verify: nothing under %s to check: no srt manifest, settings file or expansion layer",
 			root,
 		)
+	}
+	return results, nil
+}
+
+// launches fails every component whose recipe registers a t-man service
+// while its service-info.yaml declares no spec.access. An unsandboxed
+// process still declares one, as sandbox none with a reason.
+func launches(root string, targets []discover.Target) ([]Result, error) {
+	found, err := discover.Undeclared(root, targets)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]Result, 0, len(found))
+	for _, l := range found {
+		results = append(results, Result{
+			Path: l.Path,
+			Reason: fmt.Sprintf(
+				"declares no spec.access, but %s runs %q; add one (sandbox none needs a reason)",
+				l.File,
+				l.Marker,
+			),
+		})
 	}
 	return results, nil
 }

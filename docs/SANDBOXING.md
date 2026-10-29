@@ -438,9 +438,15 @@ new sandboxed process, confirm:
   render, committed in the recipe dir that links it to
   `~/.config/srt/<label>.json`. That is the service's recipe here when the
   file is the same on every machine, and the consuming repo's otherwise.
-  `make sandbox-verify` passes. No check catches a component whose recipe
-  registers a t-man service or execs `srt-run` without `spec.access`, so
-  confirm the manifest exists by hand.
+  `make sandbox-verify` passes. Its `srtspec verify` requires `spec.access`
+  on every component whose recipe registers a t-man service. It reads the
+  shell in the recipe directory, so a registration in a Makefile that a
+  `source = "make"` package runs, or behind a `{{vars.*}}` path, needs the
+  manifest confirmed by hand. It doesn't check MCP wrappers that exec `srt-run`. When this repo renders the
+  settings file a wrapper names, a manifest here already backs it, and
+  `verify` checks that render. Otherwise the consuming repo owns the
+  manifest, as it does for the humanizer and present MCP servers, and
+  `srtspec verify` here can't see it.
 - Neither `~/.config/srt` nor the link's target is under any settings
   file's `allowWrite`. This prints every entry that covers the directory,
   and should print nothing:

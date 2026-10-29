@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -210,5 +211,44 @@ func TestSearchOptions_RepoCaseInsensitive(t *testing.T) {
 	}, "THISMOON")
 	if err != nil || len(got) != 1 || got[0].Name != "mad01/thismoon" {
 		t.Errorf("reposMatching(THISMOON) = %+v, %v; want mad01/thismoon", got, err)
+	}
+}
+
+// TestReposMatching pins the repos the in-process path checks and indexes to
+// the zoekt repo: filter the search applies: a case-insensitive regex, where an
+// anchored name finds the one repo and not the repos that share its prefix.
+func TestReposMatching(t *testing.T) {
+	repos := []finder.Repo{
+		{Name: "mad01/thismoon"},
+		{Name: "mad01/thismoon-arcade"},
+		{Name: "mad01/dotfiles"},
+	}
+	tests := []struct {
+		expr string
+		want []string
+	}{
+		{"^mad01/thismoon$", []string{"mad01/thismoon"}},
+		{"thismoon", []string{"mad01/thismoon", "mad01/thismoon-arcade"}},
+		{"dotfiles|arcade", []string{"mad01/thismoon-arcade", "mad01/dotfiles"}},
+		{"^MAD01/", []string{"mad01/thismoon", "mad01/thismoon-arcade", "mad01/dotfiles"}},
+		{"^MAD01/THISMOON$", []string{"mad01/thismoon"}},
+		{"^other/", nil},
+	}
+	for _, tc := range tests {
+		got, err := reposMatching(repos, tc.expr)
+		if err != nil {
+			t.Fatalf("reposMatching(%q) error: %v", tc.expr, err)
+		}
+		var names []string
+		for _, r := range got {
+			names = append(names, r.Name)
+		}
+		if !slices.Equal(names, tc.want) {
+			t.Errorf("reposMatching(%q) = %q, want %q", tc.expr, names, tc.want)
+		}
+	}
+	_, err := reposMatching(repos, "(")
+	if err == nil || !strings.Contains(err.Error(), "--repo") {
+		t.Errorf(`reposMatching("(") error = %v, want an invalid-regex error naming --repo`, err)
 	}
 }

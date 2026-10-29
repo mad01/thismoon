@@ -311,7 +311,7 @@ func searchInProcess(
 func reposMatching(repos []finder.Repo, filter string) ([]finder.Repo, error) {
 	re, err := finder.CompileMatcher(filter)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("--repo: %w", err)
 	}
 	var matched []finder.Repo
 	for _, r := range repos {
