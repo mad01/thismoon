@@ -1,8 +1,9 @@
 // Package discover finds the sandbox artifacts in a repo tree: the access
 // manifests and the srt settings file each one renders to, the settings
-// files nothing renders, and the expansion layers kept beside a recipe. The
-// mapping is the fleet's layout convention, so generate and verify need no
-// per-manifest configuration:
+// files nothing renders, the expansion layers kept beside a recipe, and the
+// components whose recipe launches a process without declaring a manifest.
+// The mapping is the fleet's layout convention, so generate and verify need
+// no per-manifest configuration:
 //
 //   - a component's service-info.yaml (in services/<name>, tools/<name>, or a
 //     top-level <name> directory) renders to recipes/<name>/<label>.srt.json;
@@ -97,7 +98,7 @@ func component(root, path string) (Target, bool, error) {
 	if m.Sandbox != access.SandboxSRT {
 		return t, true, nil
 	}
-	recipe := filepath.Join("recipes", filepath.Base(filepath.Dir(path)))
+	recipe := recipeDir(path)
 	info, err := os.Stat(filepath.Join(root, recipe))
 	if err != nil || !info.IsDir() {
 		return Target{}, false, fmt.Errorf(
@@ -109,6 +110,13 @@ func component(root, path string) (Target, bool, error) {
 	}
 	t.Output = filepath.Join(recipe, m.Label+".srt.json")
 	return t, true, nil
+}
+
+// recipeDir maps the service-info.yaml at path to its component's recipe
+// directory, relative to the root: recipes/<name of the directory holding
+// the file>.
+func recipeDir(path string) string {
+	return filepath.Join("recipes", filepath.Base(filepath.Dir(path)))
 }
 
 func standalone(root, path string) (Target, error) {

@@ -19,8 +19,10 @@ files and exits, except run, which ends by replacing itself with srt:
 - `{{.Bin}} generate [root]` renders every manifest in a repo to its
   recipe's `<label>.srt.json`; `make sandbox-settings` runs it.
 - `{{.Bin}} verify [root]` checks every render, orphan and expansion layer
-  under a repo without writing, one line per check; `make sandbox-verify`
-  runs it in CI and a consuming repo's test calls it directly.
+  under a repo without writing, one line per check, and fails a component
+  whose recipe launches a process without declaring spec.access;
+  `make sandbox-verify` runs it in CI and a consuming repo's test calls it
+  directly.
 - `{{.Bin}} run <settings> [--] <command...>` is what `~/code/bin/srt-run`
   execs for every sandboxed service and MCP server. It merges
   `~/.config/srt/<label>.local.json` and SRT_RUN_ALLOW_DOMAINS into

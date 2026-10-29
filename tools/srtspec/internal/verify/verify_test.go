@@ -96,7 +96,9 @@ func TestRunPasses(t *testing.T) {
 		"services/events/service-info.yaml": eventsInfo,
 		"recipes/events/events.srt.json":    renderInfo(t, eventsInfo),
 		"services/csl/service-info.yaml":    "kind: Component\nmetadata: {name: csl}\nspec:\n  owner: mad01\n  access: {sandbox: none, reason: ssh}\n",
-		"recipes/claude-mcp/access.yaml":    githubManifest,
+		// csl launches a t-man service and declares sandbox none: no finding.
+		"recipes/csl/recipe.toml":        `commands = ["t-man add --name csl-web -- csl web"]`,
+		"recipes/claude-mcp/access.yaml": githubManifest,
 		"recipes/claude-mcp/github-mcp.srt.json": renderStandalone(
 			t,
 			githubManifest,
@@ -201,6 +203,15 @@ func TestRunFindings(t *testing.T) {
 			files: with(map[string]string{"recipes/events/old.srt.json": "{}"}),
 			path:  "recipes/events/old.srt.json",
 			want:  "no manifest renders it",
+		},
+		{
+			name: "component that launches without spec.access",
+			files: with(map[string]string{
+				"services/web/service-info.yaml": "kind: Component\nmetadata: {name: web}\nspec: {owner: mad01}\n",
+				"recipes/web/recipe.toml":        `commands = ["t-man add --name web -- web serve"]`,
+			}),
+			path: "services/web/service-info.yaml",
+			want: `declares no spec.access, but recipes/web/recipe.toml runs "t-man add"`,
 		},
 		{
 			name: "layer that narrows",

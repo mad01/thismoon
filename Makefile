@@ -27,8 +27,9 @@ sandbox-settings:
 	go run ./tools/srtspec/cmd/srtspec generate examples/dotfiles
 
 # Fail when a committed settings file is not its manifest's render or has no
-# manifest, or when an expansion layer beside a recipe does more than widen.
-# Writes nothing; sandbox-settings is the fix.
+# manifest, when a component's recipe launches a process without spec.access,
+# or when an expansion layer beside a recipe does more than widen. Writes
+# nothing; sandbox-settings fixes the renders.
 sandbox-verify:
 	go run ./tools/srtspec/cmd/srtspec verify .
 	go run ./tools/srtspec/cmd/srtspec verify examples/dotfiles
