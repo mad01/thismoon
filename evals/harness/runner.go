@@ -17,9 +17,11 @@ import (
 // Row is one (case, rep) result as results.jsonl stores it. DurationMS is
 // claude's own figure; WallMS is the runner's clock around the process, so
 // it includes MCP server startup and every hook. ToolCalls and Tools count
-// the main session; the Agent fields count subagents. Error collects
-// anything that went wrong around the run, a changed canonical checkout
-// included; the graders still score what there is.
+// the main session; the Agent fields count subagents. CSLCalls counts
+// csl use, MCP or CLI, in the main session and subagents together;
+// CPUSeconds is claude's CPU time plus its waited-for children. Error
+// collects anything that went wrong around the run, a changed canonical
+// checkout included; the graders still score what there is.
 type Row struct {
 	Case                string          `json:"case"`
 	Rep                 int             `json:"rep"`
@@ -38,6 +40,8 @@ type Row struct {
 	CacheCreationTokens int             `json:"cache_creation_tokens"`
 	Tokens              int             `json:"tokens"`
 	ToolCalls           int             `json:"tool_calls"`
+	CSLCalls            int             `json:"csl_calls"`
+	CPUSeconds          float64         `json:"cpu_seconds"`
 	Tools               map[string]int  `json:"tools"`
 	AgentToolCalls      int             `json:"agent_tool_calls"`
 	AgentTools          map[string]int  `json:"agent_tools,omitempty"`
@@ -59,6 +63,7 @@ var errNoResult = errors.New("harness: run ended without a result event")
 // 0 means no run-wide cap.
 type runner struct {
 	claude       claudeCmd
+	profile      profile
 	model        string
 	effort       string
 	maxBudgetUSD float64
@@ -154,10 +159,10 @@ func (r *runner) runIn(ctx context.Context, c Case, rep int, ws *Workspace, row 
 	sessionID := uuid.NewString()
 	streamName := fmt.Sprintf("%s-r%d.jsonl", c.ID, rep)
 	row.Stream = filepath.Join("streams", streamName)
-	t, wall, runErr := r.execute(ctx, c, ws.Dir, sessionID, filepath.Join(r.streamDir, streamName))
+	t, used, runErr := r.execute(ctx, c, ws.Dir, sessionID, filepath.Join(r.streamDir, streamName))
 	commits, commitErr := ws.Commits(ctx)
 	ev := Evidence{Transcript: t, Dir: ws.Dir, Commits: commits, Prompt: c.Prompt}
-	fillRow(row, t, gradeRun(ctx, c, ev, r.judge), wall)
+	fillRow(row, t, gradeRun(ctx, c, ev, r.judge), used)
 	if row.SessionID == "" {
 		row.SessionID = sessionID
 	}
@@ -170,16 +175,23 @@ func (r *runner) runIn(ctx context.Context, c Case, rep int, ws *Workspace, row 
 	return errors.Join(runErr, t.Problems(), commitErr)
 }
 
+// resources is what one run spent outside the transcript: the runner's
+// clock around the process and the CPU time the process reported.
+type resources struct {
+	Wall time.Duration
+	CPU  time.Duration
+}
+
 // execute runs claude for one case under the case timeout, keeps the raw
 // transcript at streamPath, and parses it back.
 func (r *runner) execute(
 	ctx context.Context,
 	c Case,
 	dir, sessionID, streamPath string,
-) (Transcript, time.Duration, error) {
+) (Transcript, resources, error) {
 	f, err := os.Create(streamPath)
 	if err != nil {
-		return Transcript{}, 0, fmt.Errorf("transcript file: %w", err)
+		return Transcript{}, resources{}, fmt.Errorf("transcript file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	runCtx, cancel := context.WithTimeout(ctx, c.Timeout)
@@ -190,29 +202,33 @@ func (r *runner) execute(
 		Model:           r.model,
 		Effort:          r.effort,
 		PermissionMode:  c.PermissionMode,
-		DisallowedTools: c.Disallowed(),
+		DisallowedTools: append(c.Disallowed(), r.profile.Deny...),
+		AllowedTools:    r.profile.Allow,
 		MaxBudgetUSD:    r.maxBudgetUSD,
 		Prompt:          c.Prompt,
+		Profile:         r.profile,
 	}
 	start := r.now()
-	runErr := r.claude.run(runCtx, dir, inv, f)
-	wall := r.now().Sub(start)
+	cpu, runErr := r.claude.run(runCtx, dir, inv, f)
+	used := resources{Wall: r.now().Sub(start), CPU: cpu}
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return Transcript{}, wall, errors.Join(runErr, err)
+		return Transcript{}, used, errors.Join(runErr, err)
 	}
 	t, parseErr := parseStream(f)
 	if !t.HasResult {
 		runErr = errors.Join(runErr, errNoResult)
 	}
-	return t, wall, errors.Join(runErr, parseErr)
+	return t, used, errors.Join(runErr, parseErr)
 }
 
 // fillRow copies the transcript's numbers and the grade onto row.
-func fillRow(row *Row, t Transcript, g Grade, wall time.Duration) {
+func fillRow(row *Row, t Transcript, g Grade, used resources) {
 	row.Score, row.Pass, row.Graders = g.Score, g.Pass, g.Results
 	row.JudgeCostUSD = g.JudgeCostUSD
 	row.Turns, row.CostUSD, row.DurationMS = t.NumTurns, t.CostUSD, t.DurationMS
-	row.WallMS = wall.Milliseconds()
+	row.WallMS = used.Wall.Milliseconds()
+	row.CPUSeconds = used.CPU.Seconds()
+	row.CSLCalls = cslCalls(t)
 	row.InputTokens, row.OutputTokens = t.Usage.InputTokens, t.Usage.OutputTokens
 	row.CacheReadTokens, row.CacheCreationTokens = t.Usage.CacheReadTokens, t.Usage.CacheCreationTokens
 	row.Tokens = t.Usage.Total()

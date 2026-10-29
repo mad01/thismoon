@@ -80,7 +80,7 @@ func TestClaudeCmdTimeoutKillsGroup(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	var out strings.Builder
-	err := claude.run(ctx, t.TempDir(), invocation{Prompt: "p"}, &out)
+	_, err := claude.run(ctx, t.TempDir(), invocation{Prompt: "p"}, &out)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("err = %v, want the deadline", err)
 	}
@@ -99,7 +99,7 @@ func TestClaudeCmdReapsStragglersOnNormalExit(t *testing.T) {
 	t.Setenv("FAKE_CLAUDE_PIDFILE", pidFile)
 	t.Setenv("FAKE_CLAUDE_IGNORE_TERM", "1")
 
-	if err := fakeClaude(t).run(context.Background(), t.TempDir(), invocation{Prompt: "p"}, io.Discard); err != nil {
+	if _, err := fakeClaude(t).run(context.Background(), t.TempDir(), invocation{Prompt: "p"}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	waitGone(t, readPID(t, pidFile))
