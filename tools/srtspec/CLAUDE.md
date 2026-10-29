@@ -64,14 +64,20 @@ srtspec version [-o json]
   repo, as dotfiles' `speak-web.local.json` does), it checks against an
   empty base. Every rule holds except the one that catches an allow carving
   back a deny, and the ok line says so.
-- The undeclared-launch check reads only commands. In recipe.toml that is
-  every string under a key ralph runs as shell (`commands`, `restart`,
-  `body`, the hook lists and the rest in `commandKeys`), never a
-  description or comment. Every `*.sh` beside it counts line by line. A
-  `t-man add` on a line that isn't a shell comment fails a
-  service-info.yaml with no spec.access. A new ralph key that runs shell
-  needs adding to `commandKeys`. The check only prints FAIL lines, like
-  orphans.
+- The undeclared-launch check reads shell, never prose. In recipe.toml
+  that is every string under a key ralph runs as shell (`commands`,
+  `restart`, `body`, the hook lists and the rest in `commandKeys`), never a
+  description or comment. A build's `script` counts when it resolves to a
+  file in the recipe directory, against a `working_dir` in the sources
+  cache or the directory itself. Every `*.sh` and `*.bash` file at any
+  depth counts line by line, except test scripts (`*-test.sh`,
+  `*_test.sh`). The marker is t-man, any root flags such as `--daemon`,
+  then `add`, after an unquoted `#` comment is stripped from the line. It
+  fails a service-info.yaml with no spec.access. A new ralph key that runs
+  shell needs adding to `commandKeys`. The check only prints FAIL lines,
+  like orphans.
+- A registration in a Makefile that a `source = "make"` package runs, or
+  behind a path built from `{{vars.*}}`, is out of the check's reach.
 - `srt-run` isn't a marker. This repo renders settings only from its own
   manifests, so a wrapper whose settings it renders is backed already. An
   MCP wrapper whose manifest the consuming repo owns (humanizer's,

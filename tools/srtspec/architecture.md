@@ -33,8 +33,10 @@ verify: the same discovery. `verify.Run` renders each target in memory and
 compares bytes with the committed file; `drift.Diff` only words the failure,
 as a hand-edited layout or real drift. It lists the orphans, then the
 components `discover.Undeclared` finds: a service-info.yaml without
-spec.access whose `recipes/<dir>/` runs `t-man add`, in a command value of
-its recipe.toml or a `*.sh` beside it. Then it runs
+spec.access whose `recipes/<dir>/` registers a t-man service. The
+registration can sit in a command value of its recipe.toml, a file a build
+runs as `script`, or a `*.sh` or `*.bash` file at any depth that isn't a
+test script. Then it runs
 `layers.CheckLocal` on every `<label>.local.json` beside a recipe against
 the `<label>.srt.json` next to it, or an empty base when the repo ships only
 the layer. Nothing is written; the CLI prints one line per result.
