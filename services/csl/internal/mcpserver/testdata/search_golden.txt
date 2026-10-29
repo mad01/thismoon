@@ -1,0 +1,590 @@
+== relaxed files ==
+-- json --
+{
+  "output_mode": "files_with_matches",
+  "files": [
+    {
+      "repo": "test/repo",
+      "path": "a.go"
+    }
+  ],
+  "total": 1,
+  "truncated": false,
+  "relaxed_query": "IndexRepo symbolSections",
+  "dropped_terms": [
+    "zzznotaterm"
+  ]
+}
+-- text --
+relaxed: dropped 'zzznotaterm' (0 files); showing results for `IndexRepo symbolSections`
+
+test/repo/a.go
+
+1 file
+
+== relaxed content ==
+-- json --
+{
+  "output_mode": "content",
+  "lines": [
+    {
+      "repo": "test/repo",
+      "path": "a.go",
+      "line": 3,
+      "column": 6,
+      "text": "func IndexRepo() {}",
+      "before": "\n",
+      "after": "\n"
+    },
+    {
+      "repo": "test/repo",
+      "path": "a.go",
+      "line": 5,
+      "column": 4,
+      "text": "// IndexRepo is called by symbolSections.",
+      "before": "\n",
+      "after": "func symbolSections() {}\n"
+    }
+  ],
+  "total": 2,
+  "truncated": false,
+  "relaxed_query": "IndexRepo",
+  "dropped_terms": [
+    "zzznotaterm"
+  ]
+}
+-- text --
+relaxed: dropped 'zzznotaterm' (0 files); showing results for `IndexRepo`
+
+test/repo/a.go
+2-
+3:func IndexRepo() {}
+4-
+5:// IndexRepo is called by symbolSections.
+6-func symbolSections() {}
+
+2 lines in 1 file
+
+== never together ==
+-- json --
+{
+  "output_mode": "files_with_matches",
+  "total": 0,
+  "truncated": false,
+  "zero_result_hint": {
+    "parsed_query": "(and (or case_file_substr:\"IndexRepo\" case_content_substr:\"IndexRepo\") (or case_file_substr:\"Blocks\" case_content_substr:\"Blocks\"))",
+    "repos_searched": 0,
+    "repos_discovered": 1,
+    "term_counts": [
+      {
+        "term": "IndexRepo",
+        "files": 1
+      },
+      {
+        "term": "Blocks",
+        "files": 1
+      }
+    ],
+    "notes": [
+      "every term matches files on its own but no file contains all 2; search IndexRepo|Blocks for files with any of them, or one term with a narrower file filter"
+    ]
+  }
+}
+-- text --
+no matches
+parsed query: (and (or case_file_substr:"IndexRepo" case_content_substr:"IndexRepo") (or case_file_substr:"Blocks" case_content_substr:"Blocks"))
+files per term: IndexRepo=1, Blocks=1
+repos searched: 0 (0 indexed, 1 discovered)
+- every term matches files on its own but no file contains all 2; search IndexRepo|Blocks for files with any of them, or one term with a narrower file filter
+
+== parameter names ==
+-- json --
+{
+  "output_mode": "files_with_matches",
+  "total": 0,
+  "truncated": false,
+  "zero_result_hint": {
+    "parsed_query": "(and (or file_substr:\"output_mode\" content_substr:\"output_mode\") (or file_substr:\"context_lines\" content_substr:\"context_lines\"))",
+    "repos_searched": 0,
+    "repos_discovered": 1,
+    "term_counts": [
+      {
+        "term": "output_mode",
+        "files": 0
+      },
+      {
+        "term": "context_lines",
+        "files": 0
+      }
+    ],
+    "notes": [
+      "\"output_mode context_lines\" is made of csl_search parameter names, not search terms; pass them as parameters (e.g. output_mode=\"content\") and put the text to find in query",
+      "no term matches any file under these filters; check each term's spelling and the filters before retrying"
+    ]
+  }
+}
+-- text --
+no matches
+parsed query: (and (or file_substr:"output_mode" content_substr:"output_mode") (or file_substr:"context_lines" content_substr:"context_lines"))
+files per term: output_mode=0, context_lines=0
+repos searched: 0 (0 indexed, 1 discovered)
+- "output_mode context_lines" is made of csl_search parameter names, not search terms; pass them as parameters (e.g. output_mode="content") and put the text to find in query
+- no term matches any file under these filters; check each term's spelling and the filters before retrying
+
+== repo filter matches none ==
+-- json --
+{
+  "output_mode": "files_with_matches",
+  "total": 0,
+  "truncated": false,
+  "zero_result_hint": {
+    "parsed_query": "(and (or file_substr:\"zzznotaterm\" content_substr:\"zzznotaterm\") repo:(?i)nomatch)",
+    "repos_searched": 0,
+    "repos_discovered": 1,
+    "notes": [
+      "repo filter \"nomatch\" matched none of the 1 locally discovered repos; check the name with csl_repo_lookup — if the repo is not checked out locally, csl cannot see it, so search it where it is hosted instead of retrying here"
+    ]
+  }
+}
+-- text --
+no matches
+parsed query: (and (or file_substr:"zzznotaterm" content_substr:"zzznotaterm") repo:(?i)nomatch)
+repos searched: 0 (0 indexed, 1 discovered)
+- repo filter "nomatch" matched none of the 1 locally discovered repos; check the name with csl_repo_lookup — if the repo is not checked out locally, csl cannot see it, so search it where it is hosted instead of retrying here
+
+== repo filter unindexed ==
+-- json --
+{
+  "output_mode": "files_with_matches",
+  "total": 0,
+  "truncated": false,
+  "zero_result_hint": {
+    "parsed_query": "(and (or case_file_substr:\"IndexRepo\" case_content_substr:\"IndexRepo\") (or case_file_substr:\"Blocks\" case_content_substr:\"Blocks\") repo:(?i)TEST/REPO)",
+    "repos_searched": 0,
+    "repos_discovered": 1,
+    "term_counts": [
+      {
+        "term": "IndexRepo",
+        "files": 1
+      },
+      {
+        "term": "Blocks",
+        "files": 1
+      }
+    ],
+    "notes": [
+      "every term matches files on its own but no file contains all 2; search IndexRepo|Blocks for files with any of them, or one term with a narrower file filter",
+      "1 of the 1 repos matching the filter are not in the search index yet and are invisible to search; run csl_repo_reindex on them"
+    ]
+  }
+}
+-- text --
+no matches
+parsed query: (and (or case_file_substr:"IndexRepo" case_content_substr:"IndexRepo") (or case_file_substr:"Blocks" case_content_substr:"Blocks") repo:(?i)TEST/REPO)
+files per term: IndexRepo=1, Blocks=1
+repos searched: 0 (0 indexed, 1 discovered)
+- every term matches files on its own but no file contains all 2; search IndexRepo|Blocks for files with any of them, or one term with a narrower file filter
+- 1 of the 1 repos matching the filter are not in the search index yet and are invisible to search; run csl_repo_reindex on them
+
+== file filter relaxes ==
+-- json --
+{
+  "output_mode": "files_with_matches",
+  "files": [
+    {
+      "repo": "test/repo",
+      "path": "b.go"
+    }
+  ],
+  "total": 1,
+  "truncated": false,
+  "relaxed_query": "Blocks",
+  "dropped_terms": [
+    "IndexRepo",
+    "zzz"
+  ]
+}
+-- text --
+relaxed: dropped 'IndexRepo', 'zzz' (0 files each); showing results for `Blocks`
+
+test/repo/b.go
+
+1 file
+
+== syntax traps ==
+-- json --
+{
+  "output_mode": "files_with_matches",
+  "files": [
+    {
+      "repo": "test/repo",
+      "path": "a.go"
+    }
+  ],
+  "total": 1,
+  "truncated": false,
+  "relaxed_query": "| x",
+  "dropped_terms": [
+    "\"IndexRepo Blocks\"",
+    "OR",
+    "zzz"
+  ]
+}
+-- text --
+relaxed: dropped '"IndexRepo Blocks"', 'OR', 'zzz' (0 files each); showing results for `| x`
+
+test/repo/a.go
+
+1 file
+
+== too many terms ==
+-- json --
+{
+  "output_mode": "files_with_matches",
+  "total": 0,
+  "truncated": false,
+  "zero_result_hint": {
+    "parsed_query": "(and (or file_substr:\"a\" content_substr:\"a\") (or file_substr:\"b\" content_substr:\"b\") (or file_substr:\"c\" content_substr:\"c\") (or file_substr:\"d\" content_substr:\"d\") (or file_substr:\"e\" content_substr:\"e\") (or file_substr:\"f\" content_substr:\"f\") (or file_substr:\"g\" content_substr:\"g\"))",
+    "repos_searched": 0,
+    "repos_discovered": 1,
+    "term_counts": [
+      {
+        "term": "a",
+        "files": 2
+      },
+      {
+        "term": "b",
+        "files": 2
+      },
+      {
+        "term": "c",
+        "files": 2
+      },
+      {
+        "term": "d",
+        "files": 1
+      },
+      {
+        "term": "e",
+        "files": 2
+      },
+      {
+        "term": "f",
+        "files": 2
+      }
+    ],
+    "notes": [
+      "query has 7 AND terms and only the first 6 were counted, so nothing was dropped automatically; remove the terms with 0 files and retry with at most 2 terms"
+    ]
+  }
+}
+-- text --
+no matches
+parsed query: (and (or file_substr:"a" content_substr:"a") (or file_substr:"b" content_substr:"b") (or file_substr:"c" content_substr:"c") (or file_substr:"d" content_substr:"d") (or file_substr:"e" content_substr:"e") (or file_substr:"f" content_substr:"f") (or file_substr:"g" content_substr:"g"))
+files per term: a=2, b=2, c=2, d=1, e=2, f=2
+repos searched: 0 (0 indexed, 1 discovered)
+- query has 7 AND terms and only the first 6 were counted, so nothing was dropped automatically; remove the terms with 0 files and retry with at most 2 terms
+
+== past first page ==
+-- json --
+{
+  "output_mode": "files_with_matches",
+  "total": 0,
+  "offset": 50,
+  "truncated": false,
+  "zero_result_hint": {
+    "parsed_query": "(and (or case_file_substr:\"IndexRepo\" case_content_substr:\"IndexRepo\") (or file_substr:\"zzznotaterm\" content_substr:\"zzznotaterm\"))",
+    "repos_searched": 0,
+    "repos_discovered": 1,
+    "term_counts": [
+      {
+        "term": "IndexRepo",
+        "files": 1
+      },
+      {
+        "term": "zzznotaterm",
+        "files": 0
+      }
+    ],
+    "notes": [
+      "'zzznotaterm' matches no file (0 files); not dropped automatically because offset \u003e 0 — retry with offset 0 or without it"
+    ]
+  }
+}
+-- text --
+no matches
+parsed query: (and (or case_file_substr:"IndexRepo" case_content_substr:"IndexRepo") (or file_substr:"zzznotaterm" content_substr:"zzznotaterm"))
+files per term: IndexRepo=1, zzznotaterm=0
+repos searched: 0 (0 indexed, 1 discovered)
+- 'zzznotaterm' matches no file (0 files); not dropped automatically because offset > 0 — retry with offset 0 or without it
+
+== shape "" ==
+query is empty; put the text to search for in query
+{
+  "valid": false,
+  "error": "query is empty",
+  "hint": "put the text to search for in query"
+}
+
+== shape "   " ==
+query is empty; put the text to search for in query
+{
+  "valid": false,
+  "error": "query is empty",
+  "hint": "put the text to search for in query"
+}
+
+== shape "\"" ==
+query "\"" is only quote characters; put the search term itself in query; quotes are only needed around a multi-word phrase, e.g. "retry backoff"
+{
+  "valid": false,
+  "error": "query \"\\\"\" is only quote characters",
+  "hint": "put the search term itself in query; quotes are only needed around a multi-word phrase, e.g. \"retry backoff\""
+}
+
+== shape "\"\"" ==
+query "\"\"" is only quote characters; put the search term itself in query; quotes are only needed around a multi-word phrase, e.g. "retry backoff"
+{
+  "valid": false,
+  "error": "query \"\\\"\\\"\" is only quote characters",
+  "hint": "put the search term itself in query; quotes are only needed around a multi-word phrase, e.g. \"retry backoff\""
+}
+
+== shape "foo \"bar" ==
+query has an unbalanced double quote; close the phrase ("exact phrase") or remove the stray quote
+{
+  "valid": false,
+  "error": "query has an unbalanced double quote",
+  "hint": "close the phrase (\"exact phrase\") or remove the stray quote"
+}
+
+== shape "foo\\" ==
+query ends with a lone backslash; double it (\\) to match a literal backslash, or remove it
+{
+  "valid": false,
+  "error": "query ends with a lone backslash",
+  "hint": "double it (\\\\) to match a literal backslash, or remove it"
+}
+
+== shape "foo \"\" bar" ==
+query contains an empty quoted phrase ""; put the phrase text inside the quotes or drop them
+{
+  "valid": false,
+  "error": "query contains an empty quoted phrase \"\"",
+  "hint": "put the phrase text inside the quotes or drop them"
+}
+
+== shape "retry f:\\.go$ \"back off\" -test" ==
+ok
+{
+  "valid": true,
+  "parsed": "(and (or file_substr:\"retry\" content_substr:\"retry\") file_regex:\"\\\\.go(?m:$)\" (or file_substr:\"back off\" content_substr:\"back off\") (not (or file_substr:\"test\" content_substr:\"test\")))",
+  "terms": [
+    "retry",
+    "\"back off\""
+  ],
+  "filters": [
+    "f:\\.go$",
+    "-test"
+  ]
+}
+
+== shape "output_mode" ==
+ok
+{
+  "valid": true,
+  "parsed": "(or file_substr:\"output_mode\" content_substr:\"output_mode\")",
+  "hint": "\"output_mode\" is made of csl_search parameter names, not search terms; pass them as parameters (e.g. output_mode=\"content\") and put the text to find in query",
+  "terms": [
+    "output_mode"
+  ]
+}
+
+== shape "sym:(Hello|Point)+" ==
+ok
+{
+  "valid": false,
+  "error": "sym:case_regex:\"(?:Hello|Point)+\" repeats an alternation, which zoekt's symbol matcher cannot run and csl cannot split",
+  "hint": "write one sym: term per alternative joined with lowercase or: (sym:Foo or sym:Bar)"
+}
+
+== schema csl_count ==
+{
+  "additionalProperties": false,
+  "properties": {
+    "group_by": {
+      "description": "group matches by: repo or language; empty returns a single total",
+      "type": "string"
+    },
+    "lang": {
+      "description": "restrict to files of this language",
+      "type": "string"
+    },
+    "query": {
+      "description": "zoekt query (same syntax as csl_search)",
+      "type": "string"
+    },
+    "repo": {
+      "description": "restrict to repo names matching this case-insensitive regex (a plain substring also works)",
+      "type": "string"
+    },
+    "response_format": {
+      "description": "output encoding: text | json | jsonl | toon | csv | markdown-kv | xml; omit to use the configured default (config.yaml mcp.response_format, built-in text)",
+      "enum": [
+        "text",
+        "json",
+        "jsonl",
+        "toon",
+        "csv",
+        "markdown-kv",
+        "xml"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+}
+null
+
+== schema csl_hybrid_search ==
+{
+  "additionalProperties": false,
+  "properties": {
+    "expand": {
+      "description": "extra lines of source context around each semantic chunk snippet (default 0)",
+      "type": "integer"
+    },
+    "lang": {
+      "description": "restrict to a single language (e.g. go, typescript, python)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "maximum number of fused file results to return (default 50)",
+      "type": "integer"
+    },
+    "query": {
+      "description": "what you are looking for; matched both literally (lexical) and by meaning (semantic)",
+      "type": "string"
+    },
+    "repo": {
+      "description": "restrict to a repo: the lexical side treats this as a case-insensitive regex, the semantic side as a case-sensitive substring; a plain repo name like 'mad01/csl' satisfies both",
+      "type": "string"
+    },
+    "response_format": {
+      "description": "output encoding: text | json | jsonl | toon | csv | markdown-kv | xml; omit to use the configured default (config.yaml mcp.response_format, built-in text)",
+      "enum": [
+        "text",
+        "json",
+        "jsonl",
+        "toon",
+        "csv",
+        "markdown-kv",
+        "xml"
+      ],
+      "type": "string"
+    },
+    "rrf_k": {
+      "description": "Reciprocal Rank Fusion smoothing constant (default 60); lower favors top-ranked outliers, higher favors cross-backend consensus",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+}
+null
+
+== schema csl_query_validate ==
+{
+  "additionalProperties": false,
+  "properties": {
+    "query": {
+      "description": "the zoekt query string to validate",
+      "type": "string"
+    },
+    "response_format": {
+      "description": "output encoding: text | json | jsonl | toon | csv | markdown-kv | xml; omit to use the configured default (config.yaml mcp.response_format, built-in text)",
+      "enum": [
+        "text",
+        "json",
+        "jsonl",
+        "toon",
+        "csv",
+        "markdown-kv",
+        "xml"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+}
+null
+
+== schema csl_search ==
+{
+  "additionalProperties": false,
+  "properties": {
+    "case_sensitive": {
+      "description": "force case-sensitive matching; default is smart case (case-insensitive unless the query has uppercase)",
+      "type": "boolean"
+    },
+    "context_lines": {
+      "description": "number of context lines around each match in content mode (default 0); ignored in files_with_matches mode",
+      "type": "integer"
+    },
+    "file": {
+      "description": "restrict to file paths matching this regex (e.g. paths ending in .go)",
+      "type": "string"
+    },
+    "lang": {
+      "description": "restrict to files of this language (e.g. go, swift, python)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "maximum number of file results (default 50)",
+      "type": "integer"
+    },
+    "offset": {
+      "description": "skip this many ranked file results before applying limit, to page past the first limit results (default 0); ranking is stable across calls, so successive pages line up",
+      "type": "integer"
+    },
+    "output_mode": {
+      "description": "files_with_matches (default) returns unique file paths; content returns matching lines with context",
+      "type": "string"
+    },
+    "query": {
+      "description": "zoekt query: literal / regex / 'phrase' / AND (space) / OR (|) / NOT (-) / sym: (definitions only) / repo: / file: / lang: / case:yes",
+      "type": "string"
+    },
+    "repo": {
+      "description": "restrict to repo names matching this case-insensitive regex (a plain substring also works)",
+      "type": "string"
+    },
+    "response_format": {
+      "description": "output encoding: text | json | jsonl | toon | csv | markdown-kv | xml; omit to use the configured default (config.yaml mcp.response_format, built-in text)",
+      "enum": [
+        "text",
+        "json",
+        "jsonl",
+        "toon",
+        "csv",
+        "markdown-kv",
+        "xml"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+}
+null
+

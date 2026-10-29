@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-29 csl: `csl search --json` prints an object, not an array
+
+Change: thismoon #342 (MAD-515). `csl search --json` now prints one JSON object instead of a bare array of matches. The matches sit under `matches`. After an empty first search the object also carries `relaxed_query` and `dropped_terms`, or `zero_result_hint`. Text and `--toon` output keep their shape.
+
+Run: `ralph up` to rebuild the binary. A script that decodes the old array reads `.matches[]` now, for example `csl search <q> --json | jq '.matches[]'` in place of `jq '.[]'`.
+
+Verify: `csl search <q> --json | jq '.matches | length'` prints a number. On the old binary, jq fails because an array has no `matches` key.
+
 ## 2026-10-29 moondb: subagent spawn briefs need a forced import for past agents
 
 Change: thismoon #343 (MAD-496). moondb now keeps each subagent's spawn brief, the prompt it was spawned with, read from the first user line of its own transcript. It also counts the messages its parent sent it after that brief. `why` and a turn show both beside the turn's prompt, in the CLI, in the `moondb_why` and `moondb_turn` tools and on the session page. The SubagentStop hook entry stays as it is: the brief comes from the transcript the hook already reads. `moondb doctor` gains an `agent-briefs` check that counts the agents still without a brief.
