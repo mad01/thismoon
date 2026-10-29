@@ -42,7 +42,8 @@ func registerReadTools(s *mcp.Server) {
 			"Use when you already know which repo holds a file and want to read a specific line range without first resolving the repo's absolute path via csl_repo_lookup. " +
 			"The repo param is a case-insensitive regex (like every csl repo param) and must resolve to exactly one repo; an ambiguous name returns an error listing the candidates. " +
 			"Supply start_line / end_line (1-based inclusive) to slice; omit both to read the whole file (default caps at 500 lines). " +
-			"The output always includes total_lines (the file's full line count). When truncated is true, page through the rest with start_line/end_line.",
+			"The output always includes total_lines (the file's full line count). When truncated is true, page through the rest with start_line/end_line. " +
+			"Several independent files or ranges: " + parallelCallsTail,
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),

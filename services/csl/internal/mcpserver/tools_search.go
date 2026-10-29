@@ -124,6 +124,13 @@ type queryValidateOutput struct {
 	Filters []string `json:"filters,omitempty" jsonschema:"filter atoms and negations (repo:, f:, lang:, sym:, case:, -term) that narrow the search and are never dropped"`
 }
 
+// parallelCallsTail ends the call-site nudge on a read-only tool's
+// description, after a "Several independent <items>: " lead-in naming what
+// the caller has several of. The model reads it while deciding how many calls
+// to send this turn.
+const parallelCallsTail = "send them as parallel calls in one turn, not one per turn; " +
+	"this tool is read-only and runs concurrently."
+
 func registerSearchTools(s *mcp.Server) {
 	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_search",
@@ -141,7 +148,8 @@ func registerSearchTools(s *mcp.Server) {
 			"When some AND terms match no file and others do, the search reruns once without them and the response carries relaxed_query and dropped_terms; do not add a dropped term back. " +
 			"A query that is empty, only quotes, or has an unbalanced quote is rejected with the fix instead of searched. " +
 			"The results come from a persistent in-memory zoekt index maintained by the csl search daemon, so calls are fast across a session. " +
-			"Set response_format to pick the encoding (text, the default, is ripgrep-style: `repo/path` headers, `LINE:match`, `LINE-context`; json restores the structured object); every csl tool accepts it.",
+			"Set response_format to pick the encoding (text, the default, is ripgrep-style: `repo/path` headers, `LINE:match`, `LINE-context`; json restores the structured object); every csl tool accepts it. " +
+			"Several independent queries: " + parallelCallsTail,
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),
