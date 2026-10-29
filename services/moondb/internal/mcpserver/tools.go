@@ -50,7 +50,8 @@ func registerEditTools(s *mcp.Server, h *handlers) {
 			"blame (git blame joined a recorded blob), content (the line's text matched a line an edit added; `candidates` lists matches best first), or none (nothing recorded explains the line). " +
 			"`prompt` is the turn's prompt: the person's message to the main conversation. " +
 			"When a subagent made the edit, `result.agent` names it and `brief` is its spawn brief: the prompt it was spawned with, which names the task the edit served. " +
-			"Messages its parent sent it later are not in the brief; `later_messages` counts them. " +
+			"Messages its parent sent it later are not in the brief; `later_messages` counts them, and `last_message` is the latest that reached it before the edit " +
+			"(`result.agent.last_message` gives its time and sender), often the instruction the edit followed. " +
 			"`brief` is absent when unknown (an agent recorded before moondb kept briefs, one known only from its edits, or one of type internal, which has no transcript). " +
 			"Follow up with moondb_turn on the returned turn id for everything else that turn changed.",
 		Annotations: readOnly(),
@@ -73,8 +74,9 @@ func registerEditTools(s *mcp.Server, h *handlers) {
 			"edits, unattributed deltas (changes no tool call explains, such as a formatter or a human between turns), " +
 			"turn-boundary snapshots, and commit links. `turn.agents` lists the agents that worked in the turn: " +
 			"the main conversation first, then each subagent with its model calls, time, edits and cost there. " +
-			"`briefs` gives each subagent's spawn brief, the prompt it was spawned with, as its first line with `brief_bytes`, its whole length, and `later_messages`, the messages sent to it after the brief; " +
-			"moondb_why on a line the subagent wrote gives more of the brief. The turn's `prompt` is the person's. " +
+			"`briefs` gives each subagent's spawn brief, the prompt it was spawned with, as its first line with `brief_bytes`, its whole length, and `later_messages`, the messages sent to it after the brief, " +
+			"with `last_message`, the latest of them by the end of its work in the turn; " +
+			"moondb_why on a line the subagent wrote gives more of the brief and the message before that edit. The turn's `prompt` is the person's. " +
 			"`turn.trace_totals.cost` covers them all; `cost_main` and `cost_agents` split it. " +
 			"Turn ids come from moondb_why and moondb_history (`turn_id`).",
 		Annotations: readOnly(),
@@ -188,9 +190,12 @@ type whyOutput struct {
 	Brief  string          `json:"brief,omitempty"          jsonschema:"when a subagent made the edit, its spawn brief, the prompt it was spawned with, cut at 8000 bytes; absent when unknown"`
 	// LaterMessages sits beside Brief, though result.agent carries it too,
 	// so a reader of the brief sees that it may be out of date.
-	LaterMessages int    `json:"later_messages,omitempty" jsonschema:"messages the subagent's parent sent it after the spawn brief, which the brief does not hold; absent when none"`
-	Summary       string `json:"summary"`
-	URL           string `json:"url"                      jsonschema:"web page showing the session that made the edit"`
+	LaterMessages int `json:"later_messages,omitempty" jsonschema:"messages the subagent's parent sent it after the spawn brief, which the brief does not hold; absent when none"`
+	// LastMessage is the text of result.agent.last_message, which carries
+	// its time and sender.
+	LastMessage string `json:"last_message,omitempty"   jsonschema:"the latest message the subagent's parent sent it after the spawn brief and before the edit, cut at 8000 bytes; result.agent.last_message gives its time (at) and sender (from); absent when the spawn brief was the last word, or when the record kept no messages (moondb import --since 30d --force fills them)"`
+	Summary     string `json:"summary"`
+	URL         string `json:"url"                      jsonschema:"web page showing the session that made the edit"`
 }
 
 func (h *handlers) handleWhy(
@@ -216,17 +221,21 @@ func (h *handlers) handleWhy(
 	if res.Turn != nil {
 		out.Prompt = h.chunkText(ctx, res.Turn.PromptChunk, promptExcerpt)
 	}
-	if res.Agent != nil {
-		out.Brief = h.chunkText(ctx, res.Agent.BriefChunk, briefExcerpt)
-		out.LaterMessages = res.Agent.LaterMessages
+	if a := res.Agent; a != nil {
+		out.Brief = h.chunkText(ctx, a.BriefChunk, briefExcerpt)
+		out.LaterMessages = a.LaterMessages
+		if a.LastMessage != nil {
+			out.LastMessage = h.chunkText(ctx, a.LastMessage.Chunk, briefExcerpt)
+		}
 	}
-	out.Summary = whySummary(res, out.Prompt, out.Brief)
+	out.Summary = whySummary(res, out.Prompt, out.Brief, out.LastMessage)
 	return nil, out, nil
 }
 
 // whySummary says in one line which edit explains the line and how it was
-// found, and the first lines of the subagent's brief and the turn's prompt.
-func whySummary(r query.WhyResult, prompt, brief string) string {
+// found, and the first lines of the subagent's brief, the last message it
+// got before the edit, and the turn's prompt.
+func whySummary(r query.WhyResult, prompt, brief, last string) string {
 	where := fmt.Sprintf("line %d of %s", r.Line, r.Path)
 	if r.Edit == nil {
 		return fmt.Sprintf("no recorded edit explains %s (method %s)", where, r.Method)
@@ -241,7 +250,7 @@ func whySummary(r query.WhyResult, prompt, brief string) string {
 		s += fmt.Sprintf("; %d candidates, best first", n)
 	}
 	if r.Agent != nil {
-		s += "; " + briefLine(*r.Agent, brief)
+		s += "; " + briefLine(*r.Agent, brief, last)
 	}
 	if line := trace.PromptLine(prompt); line != "" {
 		s += fmt.Sprintf("; turn prompt: %q", line)

@@ -525,8 +525,9 @@
   }
 
   // whyBrief shows the spawn brief of the subagent that made the edit, the
-  // prompt it was spawned with, which names the task the edit served, and
-  // how many messages its parent sent it after; the turn link above
+  // prompt it was spawned with, which names the task the edit served, how
+  // many messages its parent sent it after, and the last of them before
+  // the edit, often the instruction the edit followed; the turn link above
   // carries the person's prompt.
   function whyBrief(a) {
     var label = 'Spawn brief to ' + (a.name || a.type || 'subagent');
@@ -535,8 +536,27 @@
     fill(line, chunk(a.brief_chunk).then(function (text) { return promptText(text, 120); }),
       '(brief unavailable)');
     var head = [label + ': ', line];
-    if (a.later_messages) head.push(el('span', { class: 'muted' }, ' · ' + laterNote(a.later_messages)));
-    return el('details', {}, [el('summary', {}, head), prose(a.brief_chunk, '')]);
+    if (a.later_messages) {
+      head.push(el('span', { class: 'muted' }, ' · ' + laterNote(a.later_messages, !!a.last_message)));
+    }
+    return el('div', {}, [
+      el('details', {}, [el('summary', {}, head), prose(a.brief_chunk, '')]),
+      a.last_message ? lastMessage(a.last_message, 'Last message before the edit') : null
+    ]);
+  }
+
+  // lastMessage shows a later message its parent sent a subagent, headed by
+  // label, when it arrived and who sent it, with its first line and the
+  // whole text behind a disclosure, set in under the brief it follows.
+  function lastMessage(m, label) {
+    var line = el('span', {}, '…');
+    fill(line, chunk(m.chunk).then(function (text) { return promptText(text, 120); }),
+      '(message unavailable)');
+    var when = fmtTime(m.at) + (m.from ? ', from ' + m.from : '');
+    return el('details', { class: 'nested' }, [
+      el('summary', {}, [label + ' ', el('span', { class: 'muted' }, '(' + when + ')'), ': ', line]),
+      prose(m.chunk, '')
+    ]);
   }
 
   // ── sessions list ──
@@ -1921,19 +1941,28 @@
   }
 
   // briefPanel is one subagent's spawn brief in a disclosure headed by the
-  // agent, its kind, its description and the messages sent to it after.
+  // agent, its kind, its description and the messages sent to it after,
+  // and under it the last of those messages by the end of its work in the
+  // turn.
   function briefPanel(r) {
     var head = [el('strong', {}, agentLabel(r))];
     if (r.name && r.type && r.name !== r.type) head.push(el('span', { class: 'muted' }, ' ' + r.type));
     if (r.description) head.push(el('span', { class: 'muted' }, ' · ' + r.description));
-    if (r.later_messages) head.push(el('span', { class: 'muted' }, ' · ' + laterNote(r.later_messages)));
-    return el('details', {}, [el('summary', {}, head), prose(r.brief_chunk, briefMissing(r))]);
+    if (r.later_messages) {
+      head.push(el('span', { class: 'muted' }, ' · ' + laterNote(r.later_messages, !!r.last_message)));
+    }
+    return el('div', {}, [
+      el('details', {}, [el('summary', {}, head), prose(r.brief_chunk, briefMissing(r))]),
+      r.last_message ? lastMessage(r.last_message, 'Last message') : null
+    ]);
   }
 
   // laterNote says how many messages reached a subagent after its spawn
-  // brief, which the brief does not show.
-  function laterNote(n) {
-    return n + (n === 1 ? ' later message' : ' later messages') + ' from its parent, not shown';
+  // brief, which the brief does not show, and whether the last one is
+  // shown beside it.
+  function laterNote(n, lastShown) {
+    return n + (n === 1 ? ' later message' : ' later messages') + ' from its parent' +
+      (lastShown ? ', the last shown below' : ', not shown');
   }
 
   // briefMissing says why an agent has no spawn brief to show, as the

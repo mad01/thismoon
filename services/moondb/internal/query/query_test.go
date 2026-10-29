@@ -361,7 +361,65 @@ func equalAgent(a, b *WhyAgent) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return *a == *b
+	x, y := *a, *b
+	x.LastMessage, y.LastMessage = nil, nil
+	return x == y && equalMessage(a.LastMessage, b.LastMessage)
+}
+
+func equalMessage(a, b *store.AgentMessage) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.At.Equal(b.At) && a.From == b.From && a.Chunk == b.Chunk
+}
+
+// TestWhyLastMessage: an edit's answer names the latest later message
+// that reached its subagent before the edit. Before the first message
+// the spawn brief was the last word, so none is named, and an edit
+// between two messages names the first. A message that came in during
+// the round of tool calls an edit was one of is not before that edit,
+// though the edit's time is later; the next round's edit names it.
+func TestWhyLastMessage(t *testing.T) {
+	f := newFixture(t)
+	goWithC := store.AgentMessage{At: at(2), From: "team-lead", Chunk: f.chunk("Go with C.")}
+	tighten := store.AgentMessage{At: at(5), From: "team-lead", Chunk: f.chunk("Tighten it.")}
+	queued := store.AgentMessage{
+		At: at(8), Chunk: f.chunk("Read main instead."), AfterCalls: []string{"m9"},
+	}
+	f.seed(store.Agent{
+		ID: "a1", SessionID: "s1", Type: "general-purpose", BriefChunk: f.chunk("Build it."),
+		LaterMessages: 3, Messages: []store.AgentMessage{goWithC, tighten, queued},
+	})
+	cases := []struct {
+		minute int
+		want   *store.AgentMessage
+	}{
+		{1, nil},
+		{2, &goWithC},
+		{3, &goWithC},
+		{6, &tighten},
+		{9, &tighten},
+		{10, &queued},
+	}
+	for _, tc := range cases {
+		path := fmt.Sprintf("m%d.go", tc.minute)
+		e := f.adding(
+			edit(fmt.Sprintf("m%d", tc.minute), tc.minute, "/wt/a", path),
+			"x := lastWord()",
+		)
+		e.AgentID, e.AgentType = "a1", "general-purpose"
+		f.seed(e)
+		res, err := f.svc.Why(context.Background(),
+			WhyRequest{Repo: repo, Path: path, Text: "x := lastWord()"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Agent == nil || !equalMessage(res.Agent.LastMessage, tc.want) ||
+			!res.Agent.MessagesKept {
+			t.Errorf("edit at minute %d: agent %+v, want last message %+v", tc.minute, res.Agent,
+				tc.want)
+		}
+	}
 }
 
 func TestWhyNone(t *testing.T) {

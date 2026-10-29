@@ -49,9 +49,9 @@ type Store interface {
 	// session's agents in SortAgents order. serve's totals backfill
 	// computes them.
 	AgentsWithoutTotals(ctx context.Context, version, limit int) ([]Agent, error)
-	// CountAgentsWithoutBrief counts the agents NeedsBrief keeps for
+	// CountAgentsToFill counts the agents NeedsFill keeps for
 	// since: the ones a forced import ending at since would still fill.
-	CountAgentsWithoutBrief(ctx context.Context, since time.Time) (int, error)
+	CountAgentsToFill(ctx context.Context, since time.Time) (int, error)
 	// Edits lists edits newest first, narrowed by q.
 	Edits(ctx context.Context, q EditQuery) ([]Edit, error)
 	// LatestAfter returns the most recent Edit q allows that has an

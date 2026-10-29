@@ -78,6 +78,10 @@ func sessionOutlivesClose(t *testing.T, s store.Store) {
 	if len(d.Agents) != 1 || d.Agents[0].Totals == nil || d.Agents[0].Location.Repo != repoA {
 		t.Errorf("s1 agents after reopen = %+v, want ag1 with its totals and location", d.Agents)
 	}
+	if len(d.Agents) == 1 && !sameMessages(d.Agents[0].Messages, historyMessages()) {
+		t.Errorf("ag1 messages after reopen = %+v, want %+v", d.Agents[0].Messages,
+			historyMessages())
+	}
 }
 
 // history is a small but complete record set: two sessions, open and
@@ -98,6 +102,8 @@ func history() []any {
 	worker.Name, worker.Model, worker.Cwd = "builder", "model-a", "/wt/a"
 	worker.Location, worker.TranscriptChunk = a, "tc1"
 	worker.Totals = totals(1, usage("model-a", 40, 4))
+	worker.BriefChunk, worker.LaterMessages = "br1", 2
+	worker.Messages = historyMessages()
 	return []any{
 		session("s1", at(0)), session("s2", at(30)),
 		closed,
@@ -134,6 +140,25 @@ func historySkipped() []store.SkippedFiles {
 		{Tool: "Bash", ToolUseID: "tu7", At: at(3), Clean: 40, Timeout: 2, Failed: 1},
 		{Tool: "Bash", ToolUseID: "tu8", At: at(4), Clean: 3},
 	}
+}
+
+// historyMessages is the later messages of history's agent: one a lead
+// sent and one with no envelope that came in during a round of two tool
+// calls.
+func historyMessages() []store.AgentMessage {
+	return []store.AgentMessage{
+		{At: at(5), From: "team-lead", Chunk: "m-lead"},
+		{At: at(7), Chunk: "m-queued", AfterCalls: []string{"tu5", "tu6"}},
+	}
+}
+
+// sameMessages reports whether two message lists match, times compared as
+// instants.
+func sameMessages(got, want []store.AgentMessage) bool {
+	return slices.EqualFunc(got, want, func(g, w store.AgentMessage) bool {
+		return g.At.Equal(w.At) && g.From == w.From && g.Chunk == w.Chunk &&
+			slices.Equal(g.AfterCalls, w.AfterCalls)
+	})
 }
 
 // sameSkipped reports whether two skipped lists hold the same counts in the

@@ -166,6 +166,9 @@ type AgentClose struct {
 	// LaterMessages counts the messages its transcript shows reaching it
 	// after the spawn brief.
 	LaterMessages int `json:"later_messages,omitempty"`
+	// Messages are those later messages, oldest first, each one's text a
+	// chunk (moondb.MaxBriefBytes).
+	Messages []store.AgentMessage `json:"messages,omitempty"`
 }
 
 // EditPayload is everything the hook could gather about one file a tool

@@ -84,11 +84,12 @@ func (s *Server) turnRuns(
 }
 
 // withAgentRecords gives each subagent row of a turn what its Agent record
-// says and a run does not carry: the description, the spawn brief and the
-// count of later messages. A row whose record is found is marked recorded
-// and named from it, which a row built from edits alone, when the turn's
-// agents could not be traced, lacks. A listing the store cannot give is
-// logged and leaves the rows as they are.
+// says and a run does not carry: the description, the spawn brief, the
+// count of later messages and the last of them that arrived by the row's
+// end, the end of its work under the turn. A row whose record is found is
+// marked recorded and named from it, which a row built from edits alone,
+// when the turn's agents could not be traced, lacks. A listing the store
+// cannot give is logged and leaves the rows as they are.
 func (s *Server) withAgentRecords(ctx context.Context, sessionID string, rows []AgentRow) {
 	agents, err := s.store.Agents(ctx, sessionID)
 	if err != nil {
@@ -107,6 +108,7 @@ func (s *Server) withAgentRecords(ctx context.Context, sessionID string, rows []
 		rows[i].Type, rows[i].Name, rows[i].Recorded = a.Type, a.Name, true
 		rows[i].Description, rows[i].BriefChunk = a.Description, a.BriefChunk
 		rows[i].LaterMessages = a.LaterMessages
+		rows[i].LastMessage = lastMessage(a, r.EndedAt)
 	}
 }
 

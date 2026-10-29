@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/mad01/thismoon/services/moondb"
@@ -161,6 +162,97 @@ func TestAgentCloseBrief(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAgentCloseMessages: a stop records the agent's later messages. An
+// import that does not replace the record fills messages it counted but
+// did not keep, as a record from before they were kept, and leaves a
+// fuller list alone. A replacing stop with fewer, as an older build's
+// spool carries, keeps the stored ones, and a message whose chunk is gone
+// is left out.
+func TestAgentCloseMessages(t *testing.T) {
+	two := []string{"Go with C.", "Tighten the scan."}
+	cases := []struct {
+		name        string
+		stored      []string // nil: no record before the envelope
+		storedLater int
+		next        []string
+		read        int
+		backfill    bool
+		gone        bool // the envelope's last message has no chunk
+		want        []string
+		wantLater   int
+	}{
+		{name: "first stop", next: two, read: 10, want: two, wantLater: 2},
+		{
+			name: "import fills a record from before messages", stored: []string{},
+			storedLater: 2, next: two, read: 10, backfill: true, want: two, wantLater: 2,
+		},
+		{
+			name: "import keeps a fuller list", stored: two, storedLater: 2,
+			next: two[:1], read: 10, backfill: true, want: two, wantLater: 2,
+		},
+		{
+			name: "replacing stop with fewer keeps them", stored: two, storedLater: 2,
+			read: 11, want: two, wantLater: 2,
+		},
+		{
+			name: "replacing stop with more", stored: two[:1], storedLater: 1,
+			next: append(two, "Land."), read: 11, want: append(two, "Land."), wantLater: 3,
+		},
+		{name: "a gone chunk", next: two, read: 10, gone: true, want: two[:1], wantLater: 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			c := chunkSet{}
+			if tc.stored != nil {
+				first := agentEnv(c, "s1", "a1", 3, 10)
+				first.AgentClose.BriefChunk = c.add("build it")
+				first.AgentClose.Messages = messages(c, tc.stored)
+				first.AgentClose.LaterMessages = tc.storedLater
+				f.write(first, c)
+				f.drain()
+			}
+			env := agentEnv(c, "s1", "a1", 5, tc.read)
+			env.Backfill = tc.backfill
+			env.AgentClose.BriefChunk = c.add("build it")
+			env.AgentClose.Messages = messages(c, tc.next)
+			env.AgentClose.LaterMessages = len(tc.next)
+			if tc.gone {
+				delete(c, env.AgentClose.Messages[len(tc.next)-1].Chunk)
+			}
+			f.write(env, c)
+			f.drain()
+			got := f.agent("a1")
+			if !slices.Equal(chunkKeys(got.Messages), chunkKeys(messages(chunkSet{}, tc.want))) {
+				t.Errorf("messages = %+v, want the chunks of %q", got.Messages, tc.want)
+			}
+			if got.LaterMessages != tc.wantLater ||
+				got.BriefChunk != spool.ChunkKey([]byte("build it")) {
+				t.Errorf("later messages %d, brief %q; want %d and the brief kept",
+					got.LaterMessages, got.BriefChunk, tc.wantLater)
+			}
+		})
+	}
+}
+
+// messages are later messages with texts, a minute apart, their chunks
+// added to c.
+func messages(c chunkSet, texts []string) []store.AgentMessage {
+	var out []store.AgentMessage
+	for i, text := range texts {
+		out = append(out, store.AgentMessage{At: at(2 + i), From: "team-lead", Chunk: c.add(text)})
+	}
+	return out
+}
+
+func chunkKeys(msgs []store.AgentMessage) []string {
+	var out []string
+	for _, m := range msgs {
+		out = append(out, m.Chunk)
+	}
+	return out
 }
 
 // TestAgentCloseMissingChunk records the agent without its transcript and

@@ -50,8 +50,8 @@ because it closes a session's in-flight turn until the live Stop arrives.
 A session with neither a file edit nor a subagent transcript is skipped,
 unless --force is set and the store holds it. Then its turns are imported
 to fill what its session and turns have empty, such as the session's
-location and entrypoint. A forced import also fills the brief of an agent
-recorded before moondb kept briefs.
+location and entrypoint. A forced import also fills the brief and the later
+messages of an agent recorded before moondb kept them.
 
 A transcript records less than the hooks see: no disk read after an edit (so
 no unattributed delta), no HEAD (so no commit link until a later live turn

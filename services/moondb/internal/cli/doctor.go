@@ -34,11 +34,12 @@ func doctorChecks(context.Context) []doctor.Check {
 	}
 }
 
-// briefsCheck warns about agents an import could still give a brief:
-// they were recorded before moondb kept briefs. The check passes with the
-// count and the command that fills them as its note, since the edits and
-// traces of those agents are whole; only the brief is missing. A serve it
-// cannot ask is left to service-reachable and version-skew.
+// briefsCheck warns about agents an import could still give a spawn
+// brief or later messages: they were recorded before moondb kept them.
+// The check passes with the count and the command that fills them as its
+// note, since the edits and traces of those agents are whole; only the
+// brief or the messages are missing. A serve it cannot ask is left to
+// service-reachable and version-skew.
 func briefsCheck(c *client.Client) func(context.Context) error {
 	return func(ctx context.Context) error {
 		v, err := c.Doctor(ctx)
@@ -47,10 +48,11 @@ func briefsCheck(c *client.Client) func(context.Context) error {
 			return doctor.Skip("serve predates this check; see version-skew")
 		case err != nil:
 			return doctor.Skip("serve did not answer; see service-reachable")
-		case v.AgentsWithoutBrief > 0:
+		case v.ToFill() > 0:
 			return doctor.Skip(fmt.Sprintf(
-				"%d agents without a brief; run moondb import --since %s --force",
-				v.AgentsWithoutBrief, moondb.DefaultImportSince,
+				"%d agents without a spawn brief or later messages; run moondb import --since %s --force",
+				v.ToFill(),
+				moondb.DefaultImportSince,
 			))
 		}
 		return nil

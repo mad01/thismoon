@@ -73,8 +73,8 @@ const (
 	// for a turn's transcript (MaxTranscriptBytes).
 	MaxAgentTranscriptBytes = 8 << 20
 	// MaxBriefBytes caps an Agent's spawn brief, the text of its
-	// transcript's first user line, which is kept whole beside the agent
-	// transcript.
+	// transcript's first user line, and each of its later messages, which
+	// are kept whole beside the agent transcript.
 	// Briefs run to a few KB; a longer one is cut at its end and says how
 	// many bytes it lost.
 	MaxBriefBytes = 64 << 10

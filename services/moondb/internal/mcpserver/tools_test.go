@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"slices"
 	"strings"
@@ -349,6 +350,75 @@ func TestWhyCarriesTheBrief(t *testing.T) {
 				out.Summary,
 			)
 		}
+	}
+}
+
+// TestLastMessage: a why answer on a subagent's edit gives the latest
+// message its parent sent it before that edit beside the spawn brief, an
+// edit before the first message gives none, and a turn's brief entry
+// names the latest message by the end of the agent's work there.
+func TestLastMessage(t *testing.T) {
+	st := servertest.NewStore()
+	later := "Tighten the marker scan to command values.\n" + strings.Repeat("x", 600)
+	goWithC := store.AgentMessage{
+		At: servertest.T0.Add(time.Minute), From: "team-lead",
+		Chunk: st.AddChunk([]byte("Go with C.")),
+	}
+	tighten := store.AgentMessage{
+		At: servertest.T0.Add(5 * time.Minute), From: "team-lead",
+		Chunk: st.AddChunk([]byte(later)),
+	}
+	turn := store.Turn{ID: "turn-m", SessionID: "sess-m", Seq: 1, StartedAt: servertest.T0}
+	agent := store.Agent{
+		ID: "a-msg", SessionID: "sess-m", Type: "general-purpose", Name: "fix-509",
+		TurnIDs: []string{"turn-m"}, BriefChunk: servertest.AgentBriefSHA, LaterMessages: 2,
+		Messages: []store.AgentMessage{goWithC, tighten},
+	}
+	var edits []store.Edit
+	for _, m := range []int{0, 3, 6} {
+		edits = append(edits, store.Edit{
+			ID: fmt.Sprintf("a-msg:%d", m), SessionID: "sess-m", TurnID: "turn-m",
+			AgentID: agent.ID, AgentType: agent.Name, Tool: "Edit",
+			At:       servertest.T0.Add(time.Duration(m) * time.Minute),
+			Path:     fmt.Sprintf("m%d.go", m),
+			Location: store.Location{Repo: servertest.Repo, Worktree: servertest.Worktree},
+		})
+	}
+	st.Add(store.Session{ID: "sess-m", StartedAt: servertest.T0}, []store.Turn{turn},
+		[]store.Agent{agent}, edits)
+	cs := sessionOn(t, st, noChecks)
+
+	cases := []struct{ path, last, summary string }{
+		{"m0.go", "", `spawn brief: "review it" (2 later messages from its parent are not in it)`},
+		{"m3.go", "Go with C.", `last message before the edit, from team-lead, at ` +
+			`2026-10-01T09:01:00Z: "Go with C."`},
+		{"m6.go", later, `last message before the edit, from team-lead, at ` +
+			`2026-10-01T09:05:00Z: "Tighten the marker scan to command values."`},
+	}
+	for _, tc := range cases {
+		var why whyOutput
+		call(t, cs, "moondb_why",
+			map[string]any{"repo": servertest.Repo, "path": tc.path, "line": 1}, &why)
+		if why.Brief != servertest.AgentBrief || why.LastMessage != tc.last ||
+			!strings.Contains(why.Summary, tc.summary) {
+			t.Errorf("%s: brief %q, last message %.40q, summary %q", tc.path, why.Brief,
+				why.LastMessage, why.Summary)
+		}
+		if tc.last == "" && strings.Contains(why.Summary, "last message") {
+			t.Errorf("%s: summary names a last message before the first: %q", tc.path,
+				why.Summary)
+		}
+	}
+
+	var tu turnOutput
+	call(t, cs, "moondb_turn", map[string]any{"id": "turn-m"}, &tu)
+	if len(tu.Briefs) != 1 || tu.Briefs[0].LastMessage == nil {
+		t.Fatalf("turn briefs = %+v, want one with its last message", tu.Briefs)
+	}
+	got := *tu.Briefs[0].LastMessage
+	if got.Text != "Tighten the marker scan to command values." || got.Bytes != len(later) ||
+		got.From != "team-lead" || !got.At.Equal(tighten.At) {
+		t.Errorf("turn last message = %+v", got)
 	}
 }
 

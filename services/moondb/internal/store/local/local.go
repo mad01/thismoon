@@ -379,9 +379,9 @@ func (s *Store) AgentsWithoutTotals(
 	return s.ix.agentsWithoutTotals(version, limit), nil
 }
 
-// CountAgentsWithoutBrief counts the agents store.NeedsBrief keeps for
+// CountAgentsToFill counts the agents store.NeedsFill keeps for
 // since.
-func (s *Store) CountAgentsWithoutBrief(ctx context.Context, since time.Time) (int, error) {
+func (s *Store) CountAgentsToFill(ctx context.Context, since time.Time) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -389,7 +389,7 @@ func (s *Store) CountAgentsWithoutBrief(ctx context.Context, since time.Time) (i
 	defer s.mu.RUnlock()
 	n := 0
 	for _, a := range s.ix.agents {
-		if store.NeedsBrief(*a, since) {
+		if store.NeedsFill(*a, since) {
 			n++
 		}
 	}

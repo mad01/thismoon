@@ -18,11 +18,12 @@ import (
 // envelope replaces the stored agent when it read as many lines or more,
 // an import only when it read more. The spawn brief is the agent's first
 // user line, the same in every stop, so a record keeps the one it has when
-// a replacing envelope carries none, and an envelope that does not replace
-// it still fills a record that lacks one (fillBrief). The count of later
-// messages only grows from stop to stop, so the larger one stays. A main segment's
-// stop (store.Agent.IsMainSegment), which a spool written before record
-// skipped them can still hold, records nothing.
+// a replacing envelope carries none. The later messages and their count
+// only grow from stop to stop, so the longer list and the larger count
+// stay. An envelope that does not replace the record still fills a brief
+// it lacks, or messages it counted but did not keep (fill). A main
+// segment's stop (store.Agent.IsMainSegment), which a spool written before
+// record skipped them can still hold, records nothing.
 func (in *Ingester) agentClose(
 	ctx context.Context,
 	env spool.Envelope,
@@ -44,12 +45,14 @@ func (in *Ingester) agentClose(
 	cur, err := in.Store.Agent(ctx, env.Agent.ID)
 	switch {
 	case err == nil && !replaces(env, cur, p):
-		return in.fillBrief(ctx, cur, in.kept(env, missing, p.BriefChunk), p.LaterMessages)
+		return in.fill(ctx, cur, in.kept(env, missing, p.BriefChunk),
+			in.keptMessages(env, missing, p.Messages), p.LaterMessages)
 	case err != nil && !errors.Is(err, store.ErrNotFound):
 		return fmt.Errorf("ingest: load agent %s: %w", env.Agent.ID, err)
 	}
 	a := newAgent(env, in.kept(env, missing, p.TranscriptChunk))
 	a.BriefChunk = cmp.Or(in.kept(env, missing, p.BriefChunk), cur.BriefChunk)
+	a.Messages = longer(in.keptMessages(env, missing, p.Messages), cur.Messages)
 	a.LaterMessages = max(a.LaterMessages, cur.LaterMessages)
 	in.withAgentTotals(ctx, &a)
 	if err := in.Store.PutAgent(ctx, a); err != nil {
@@ -58,19 +61,58 @@ func (in *Ingester) agentClose(
 	return nil
 }
 
-// fillBrief gives a stored agent the spawn brief and the count of later
-// messages of an envelope that does not replace it, when the record has
-// no brief: an agent stored before briefs were kept gets them from a
+// fill gives a stored agent what an envelope that does not replace it
+// carries and the record lacks: the spawn brief when it has none, and the
+// later messages when it kept fewer, with their count. An agent stored
+// before briefs, or before later messages, were kept gets them from a
 // forced import.
-func (in *Ingester) fillBrief(ctx context.Context, a store.Agent, brief string, later int) error {
-	if a.BriefChunk != "" || brief == "" {
+func (in *Ingester) fill(
+	ctx context.Context,
+	a store.Agent,
+	brief string,
+	msgs []store.AgentMessage,
+	later int,
+) error {
+	needBrief := a.BriefChunk == "" && brief != ""
+	needMessages := len(msgs) > len(a.Messages)
+	if !needBrief && !needMessages {
 		return nil
 	}
-	a.BriefChunk, a.LaterMessages = brief, max(a.LaterMessages, later)
+	if needBrief {
+		a.BriefChunk = brief
+	}
+	if needMessages {
+		a.Messages = msgs
+	}
+	a.LaterMessages = max(a.LaterMessages, later)
 	if err := in.Store.PutAgent(ctx, a); err != nil {
 		return fmt.Errorf("ingest: put agent %s: %w", a.ID, err)
 	}
 	return nil
+}
+
+// keptMessages is msgs without the ones whose chunk is in neither spool
+// nor store (kept), so a record never names text it cannot serve.
+func (in *Ingester) keptMessages(
+	env spool.Envelope,
+	missing map[string]bool,
+	msgs []store.AgentMessage,
+) []store.AgentMessage {
+	var out []store.AgentMessage
+	for _, m := range msgs {
+		if in.kept(env, missing, m.Chunk) != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// longer is the longer of two message lists, a when they are as long.
+func longer(a, b []store.AgentMessage) []store.AgentMessage {
+	if len(b) > len(a) {
+		return b
+	}
+	return a
 }
 
 // replaces reports whether the envelope's agent replaces the stored one.

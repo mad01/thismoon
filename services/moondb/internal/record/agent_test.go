@@ -70,6 +70,29 @@ func TestSubagentStop(t *testing.T) {
 	}
 }
 
+// TestSubagentStopMessages records the later messages a teammate's
+// transcript shows after its spawn brief, each with its time and sender,
+// its text a chunk the envelope carries.
+func TestSubagentStopMessages(t *testing.T) {
+	repo := newRepo(t)
+	s := newSession(t, repo)
+	file := agentFile(s)
+	followUp := `{"type":"user","isSidechain":true,"agentId":"agent-7","promptId":"prompt-1",` +
+		`"timestamp":"2026-10-25T11:59:30Z","message":{"content":` +
+		`"<teammate-message teammate_id=\"team-lead\" summary=\"c\">\nGo with C.\n` +
+		`</teammate-message>"}}` + "\n"
+	writeFile(t, file, agentTranscript(repo)+followUp)
+	s.mustRun("subagent_stop.json", "$AGENT_TRANSCRIPT", file)
+
+	ac := s.takeOne(spool.KindAgentClose).AgentClose
+	at := time.Date(2026, 10, 25, 11, 59, 30, 0, time.UTC)
+	if len(ac.Messages) != 1 || ac.LaterMessages != 1 || !ac.Messages[0].At.Equal(at) ||
+		ac.Messages[0].From != "team-lead" || s.chunk(ac.Messages[0].Chunk) != "Go with C." {
+		t.Errorf("messages = %+v (count %d), want the lead's follow-up", ac.Messages,
+			ac.LaterMessages)
+	}
+}
+
 // TestSubagentStopWithoutTranscript still records an agent whose
 // transcript cannot be read, as the payload and the meta file name it,
 // starting and ending when the hook ran, unless that leaves an internal

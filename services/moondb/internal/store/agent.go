@@ -40,6 +40,10 @@ type Agent struct {
 	// may be out of date. Zero on a record stored before they were
 	// counted, until an import fills the brief.
 	LaterMessages int `json:"later_messages,omitempty"`
+	// Messages are those later messages, oldest first, each one's text a
+	// chunk. A record stored before they were kept has none, or fewer
+	// than LaterMessages, until an import fills them.
+	Messages []AgentMessage `json:"messages,omitempty"`
 	// Model is the model of its first model call.
 	Model string `json:"model,omitempty"`
 	// TurnIDs are the main turns it ran under, in the order its lines name
@@ -79,6 +83,26 @@ type AgentLines struct {
 	Partial bool `json:"partial,omitempty"`
 }
 
+// AgentMessage is a later message: one that reached an Agent after its
+// spawn brief, such as a lead's follow-up to a teammate, a parent's
+// SendMessage queued to a running subagent, or a line the person typed
+// into the agent's pane. Its text sits in a chunk, so the record names it
+// and no edit copies it.
+type AgentMessage struct {
+	// At is the time of the transcript line that delivered it.
+	At time.Time `json:"at"`
+	// From is the teammate_id of the envelope it came in; empty for a
+	// line with no envelope.
+	From string `json:"from,omitempty"`
+	// Chunk holds its text, without the envelope.
+	Chunk string `json:"chunk"`
+	// AfterCalls are the tool_use ids of the model response it arrived
+	// after. The agent made those calls before it could read it, so an
+	// edit one of them made came first, even when the edit's hook ran
+	// after the line. Empty on a record stored before they were kept.
+	AfterCalls []string `json:"after_calls,omitempty"`
+}
+
 // Label names an agent for a person: its name, else its type.
 func (a Agent) Label() string { return cmp.Or(a.Name, a.Type, "subagent") }
 
@@ -95,14 +119,37 @@ func (a Agent) IsMainSegment() bool {
 // RanIn reports whether the agent ran under the main turn turnID.
 func (a Agent) RanIn(turnID string) bool { return slices.Contains(a.TurnIDs, turnID) }
 
-// NeedsBrief reports whether an import can still give a its brief: the
-// record has none, it read lines of a transcript file to take one from,
-// and it ended at or after since. An InternalAgent has no transcript file,
-// and a record with no line read never read one, so neither gets a brief
-// from an import.
-func NeedsBrief(a Agent, since time.Time) bool {
-	return a.BriefChunk == "" && a.Type != InternalAgent && a.Lines.Read > 0 &&
-		!a.EndedAt.Before(since)
+// LastMessage is the latest of a's later messages that reached it before
+// it acted at t in the tool call call ("" for none): the last word its
+// parent gave it by then. A message counts when it arrived at or before t
+// and not after call's model response (AfterCalls). The line of a message
+// that comes in during a round of tool calls lands a few milliseconds
+// after the round's results, so an edit hook of that round can run after
+// it. false when none had arrived by then, so the spawn brief was the
+// last.
+func (a Agent) LastMessage(t time.Time, call string) (AgentMessage, bool) {
+	var last AgentMessage
+	found := false
+	for _, m := range a.Messages {
+		if m.At.After(t) || call != "" && slices.Contains(m.AfterCalls, call) {
+			continue
+		}
+		if !found || !m.At.Before(last.At) {
+			last, found = m, true
+		}
+	}
+	return last, found
+}
+
+// NeedsFill reports whether an import can still fill what a's record
+// lacks: its spawn brief, or later messages it counted but did not keep.
+// The record must have read lines of a transcript file to take them from
+// and have ended at or after since. An InternalAgent has no transcript
+// file, and a record with no line read never read one, so an import gives
+// neither anything.
+func NeedsFill(a Agent, since time.Time) bool {
+	lacks := a.BriefChunk == "" || a.LaterMessages > len(a.Messages)
+	return lacks && a.Type != InternalAgent && a.Lines.Read > 0 && !a.EndedAt.Before(since)
 }
 
 // NeedsAgentTotals reports whether an agent lacks totals from trace
