@@ -115,6 +115,20 @@ orphaned URL. On the shared side 401 means no author key arrived and 403 that
 the wrong one did. A failed share reads "Share failed: ..." in the modal and
 answers 502 from POST /p/<id>/share; the failure is the instance's.
 
+## exporting a page
+
+`present export <id> [-o path] [--deck]` writes a page as one HTML file that
+opens with no server: <id>.html in the current directory by default. The
+present_export tool writes the same file to exports/ in the workdir, the one
+place the MCP sandbox may write, and returns its path. Both read the asset
+cache, assets/ in the workdir. A page with a graph, chart, or diagram is
+refused with "not in the asset cache" until `make cache` has run in
+services/present. Missing fonts only add a note: the file then uses system
+fonts. In the file, a graph, chart, or diagram that reads "which did not
+load" means the browser could not reach cdn.jsdelivr.net or got other bytes
+than the pinned hash. Everything else in the file works offline, and a
+terminal block shows a note.
+
 ## live terminal
 
 A terminal block in a brief or deck shows a terminal session: a process
@@ -158,6 +172,8 @@ values mean an old process is still serving: `t-man restart present`.
    comes back from `present_source` with an earlier `version`
 4. Failed share: retry from the Share button or `present share <id>`;
    the MCP sandbox lets present_share reach only hosts on its srt allow-list
-5. Terminal block off or stuck: `present terminal status`, then
+5. Export refused for the asset cache: `make cache` in services/present,
+   then `present export <id>` again
+6. Terminal block off or stuck: `present terminal status`, then
    `present terminal list`; end a stuck session with
    `present terminal kill <page> <session>` and press Run

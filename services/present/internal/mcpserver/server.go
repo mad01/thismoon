@@ -99,8 +99,10 @@ func New(version string, cfg Config) (*mcp.Server, error) {
 	// serve finds it; a shared instance has no workdir of pages and takes
 	// image URLs only.
 	var imgs *images.Store
+	var workdir string
 	if cfg.Mode == ModeLocal && cfg.Workdir != "" {
 		imgs = images.New(cfg.Workdir)
+		workdir = cfg.Workdir
 	}
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: Name, Version: version},
@@ -115,6 +117,7 @@ func New(version string, cfg Config) (*mcp.Server, error) {
 		checks:  cfg.Checks,
 		sharer:  cfg.Sharer,
 		images:  imgs,
+		workdir: workdir,
 	})
 	return s, nil
 }

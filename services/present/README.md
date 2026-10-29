@@ -25,6 +25,7 @@ Typically `present serve` runs as a background launchd agent (via t-man); Claude
 present version           # bare git sha the binary was built from
 present version -o json   # build metadata: version, commit, tag, build_time - probed by `ralph outdated`
 present deck <id> next    # drive the deck open in the browser: start, stop, next, prev, goto <n>
+present export <id>       # write the page as one HTML file that opens without present: <id>.html
 present terminal on       # let terminal blocks run sessions; off, status, list, kill <page> <session>
 ```
 
@@ -86,6 +87,18 @@ present unshare <id>                              # removes the copy
 ```
 
 With both variables set, `present serve` shows a Share button in every page's header (a modal with the expiry checkbox, the link, and a Copy button), and `present mcp` registers a `present_share` tool. The button reads "Shared" once a copy exists. Sharing a page again replaces the copy under the same link. Only your author key can change or remove the copy; if you lose it, mint a new one and share each page again. `present doctor` checks the instance and the key once you have set both variables.
+
+### Exporting a page
+
+When the reader has no access to your machine or a shared instance, export the page as one HTML file and send that:
+
+```bash
+present export <id>                  # writes <id>.html in the current directory
+present export <id> -o brief.html    # or any path
+present export <id> --deck           # the slide deck, as <id>-deck.html
+```
+
+The file opens in any browser with no present server. It carries the page's markup, styles, scripts, and local images, so the prose reads offline and with scripts off. Graphs, charts, and diagrams load their libraries from cdn.jsdelivr.net, each pinned by an integrity hash. They need the network when the file opens. Offline they say so, and the rest of the page reads. The header keeps the theme, font, size, and fixation controls. A terminal block shows a note, since it needs the local serve, and a deck shows no logo unless its chrome names one. A prose page comes to about 0.9 MB, half of it the inlined latin fonts. The `present_export` tool writes the same file to `exports/` in the page store and returns its path. [ADR-0029](../../docs/adr/0029-present-standalone-export.md) records why the file inlines our code and loads the libraries from a CDN.
 
 ### Importing a markdown file
 
@@ -162,6 +175,7 @@ The tools write the page store directly, so they work with `present serve` down;
 | `present_list()` | List all pages, newest first; `has_doc` marks pages with an editable Doc source, `has_brief`/`has_deck` say which renditions exist |
 | `present_open(id, deck?)` | Open a page in the browser (call once per page); `deck: true` opens the slide deck |
 | `present_deck(id, action, slide?)` | Drive the open deck: `start`, `stop`, `next`, `prev`, `goto`. Local instance only |
+| `present_export(id, deck?)` | Write the page (or its deck) as one standalone HTML file under `exports/` in the page store; returns `{path, bytes, rendition, libraries, notes}`. Local instance only |
 | `present_share(id, ephemeral?)` | Push a page to the configured shared instance; returns `{url, ephemeral, expires_at, shared_at}`. Registered only when `--shared-url` and `--author-key` are set |
 | `present_doctor()` | Run the `present doctor` checks and return the report |
 
@@ -207,6 +221,7 @@ make -C services/present kind-test   # build, load, apply deploy/overlays/kind, 
     graph.json           # canonical graph source (when created from graph JSON)
     history/<version>.json  # the newest 20 versions, what present_source returns for each
   images/<sha256>.<ext>  # image files brought in from this machine, served at /img/<name>
+  exports/<id>.html      # files present_export wrote (<id>-deck.html for a deck)
   terminal.enabled       # the live terminal switch, present only while `present terminal on` holds
 ```
 

@@ -34,7 +34,7 @@ it is where pages land.
 ```
 cmd/present/         entrypoint, delegates to internal/cli
 internal/cli/        cobra command tree: serve, mcp, rerender, share, unshare,
-                     key, version; share.go also builds the shared-instance
+                     key, export, version; share.go also builds the shared-instance
                      client from --shared-url/--author-key (nil when either
                      is missing)
 internal/store/      Store interface + FS, the filesystem implementation over
@@ -62,6 +62,9 @@ internal/server/     HTTP handlers per mode (deck.go holds the deck shell and
                      command routes); embeds shell.html, index_shell.html,
                      shared_index_shell.html, app.js, viz.js, index.js
 internal/mcpserver/  MCP wiring and the present_* tools, one tool set per mode
+internal/export/     a page as one standalone HTML file: our assets inlined,
+                     the libraries the page uses from jsDelivr with integrity
+                     hashes of the cached files, local images as data URIs
 kit/notify           best-effort event emit to events.this (shared)
 ```
 
@@ -200,6 +203,21 @@ reports it in a `share` block that the page view reads to label the button
 "Shared" and show the link. `present unshare` sends `DELETE /p/{id}` to the
 instance and clears the record.
 
+The export path reads and never writes the store. `present export` and
+`present_export` call `export.Exporter.Export`, which gets the page, picks the
+brief or the deck, and swaps each `/img/` file for a data URI. It then reads
+the body for the blocks that need a library and builds the file from one
+template. The template takes webkit's files from `webkit.FS()` and the
+shell's stylesheet, app.js, and viz.js from `server.StandaloneAssets`. It adds
+the latin font faces of the cached `fonts.css`, the body, and the page data
+app.js would have fetched.
+
+In the browser, `data-present-mode="export"` sends
+app.js down `renderExport`, which works on the body already in the file and
+asks no server for anything (docs/adr/0029). The CLI writes the file where
+`-o` says; the tool writes it under `exports/` in the workdir, which the MCP
+sandbox may write.
+
 ## Storage
 
 ```
@@ -220,6 +238,9 @@ instance and clears the record.
                  image files the image blocks brought in from this machine
                  (png, jpg, gif, webp), named by content, served at /img/<name>,
                  removed when no page references them any more
+~/.config/present/exports/<id>.html
+                 files present_export wrote (<id>-deck.html for a deck);
+                 nothing reads them, and nothing removes them
 ```
 
 Plain files, one directory per page. Raw HTML/JS input deletes the now-stale
