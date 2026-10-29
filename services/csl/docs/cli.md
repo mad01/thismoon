@@ -672,13 +672,13 @@ csl docs --claude-md >> ~/.claude/CLAUDE.md
 
 ### Description
 
-Without flags, prints `operating.md` rendered with the paths this install resolves (state directory, daemon log, web base URL): how csl runs, where state lives, failure modes, and first moves. With `--claude-md`, prints the section that teaches Claude Code when to reach for the `csl_*` MCP tools. It covers csl-first for discovery and search, lexical by default with semantic and hybrid gated on the vector index, the repo health flow, and the zoekt query rules. The text is the fenced block under "Add this to your CLAUDE.md" in the README; a test holds the two byte-identical and checks the block names every tool `csl mcp` registers.
+Without flags, prints `operating.md` rendered with the paths this install resolves (state directory, daemon log, web base URL): how csl runs, where state lives, failure modes, and first moves. With `--claude-md`, prints the csl rules fragment (`claude-md.md`, the file the csl recipe links to `~/.claude/CLAUDE.csl.md`). It tells Claude Code to use csl before any filesystem walk, and to pick the MCP tools for answers that fit one call and the CLI for fleet-wide searches. It also covers the repo health flow, the CLI commands, and the zoekt query rules. Tests check that it names every tool `csl mcp` registers, that every command and flag in its CLI block exists, and that the README excerpt under "Add this to your CLAUDE.md" is a verbatim part of it.
 
 ### Flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `--claude-md` | `false` | Print the CLAUDE.md section instead of the operating doc |
+| `--claude-md` | `false` | Print the csl rules fragment instead of the operating doc |
 
 ---
 

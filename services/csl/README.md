@@ -155,68 +155,24 @@ The two semantic tools are registered only when `semantic.enabled` is true in `c
 
 See [docs/mcp.md](docs/mcp.md) for the per-tool reference (inputs, return shape, defaults). Every tool takes a `response_format` parameter, `text` by default and `json` for the structured object; the other formats and the precedence rule are in the same document under Response formats.
 
-To skip the per-call permission prompt, add `"mcp__csl__*"` to `permissions.allow` in `~/.claude/settings.json`. If [belt](../../tools/belt/README.md) is registered as well, its `prefer-csl` hint hands a multi-file `grep` or `find` inside an indexed repo back as the equivalent `csl_search` call. So the agent gets steered from both sides (`hints.prefer-csl.enabled`, on by default; details in `tools/belt/docs/hooks.md`).
+To skip the per-call permission prompt, add `"mcp__csl__*"` to `permissions.allow` in `~/.claude/settings.json`. If [belt](../../tools/belt/README.md) is registered as well, its `prefer-csl` hint answers a multi-file `grep` or `find` inside an indexed repo with the equivalent `csl search` command, and the `csl_search` call after it. So the agent gets steered from both sides (`hints.prefer-csl.enabled`, on by default; details in `tools/belt/docs/hooks.md`).
 
 ### Add this to your CLAUDE.md
 
-Registering the MCP server makes the tools available, but Claude will still reach for `find`, `ls`, `Glob`, or raw `grep` by default. Paste the snippet below into `~/.claude/CLAUDE.md` (user-level) or a project `CLAUDE.md` so Claude prefers `csl_*` tools for local repo work, or let the binary do it: `csl docs --claude-md >> ~/.claude/CLAUDE.md` prints the same text. It names all sixteen tools and keeps the agent on lexical search until you have built the semantic index. The binary embeds this block and a test holds the two copies byte-identical and checks every registered tool is named, so this is the copy to edit. The fleet example under `examples/dotfiles/CLAUDE.md.example` restates it.
+Registering the MCP server makes the tools available, but Claude will still reach for `find`, `ls`, `Glob`, or raw `grep` by default. The csl rules fragment, [claude-md.md](claude-md.md), tells it when to use csl and in which form. The MCP tools serve answers that fit in one call, and the CLI through Bash serves fleet-wide searches and anything that would page. Import it from `~/.claude/CLAUDE.md` or a project `CLAUDE.md` with an `@path` line, or append it with `csl docs --claude-md >> ~/.claude/CLAUDE.md`. The ralph recipe links it to `~/.claude/CLAUDE.csl.md`, so a machine it provisions needs only `@~/.claude/CLAUDE.csl.md` in its global file. Tests check the fragment against the tools `csl mcp` registers and the commands and flags the CLI defines. Another test checks that the excerpt below is a verbatim part of it, so edit the fragment, not the excerpt.
 
 ```markdown
-## Local Code Search (csl)
+### MCP tools or CLI: pick by the size of the answer
 
-Use the `csl_*` MCP tools for repo discovery, code search, and file reads across local checkouts. Do not shell out to the `csl` CLI: the MCP tools and the CLI share one foundation, so if one is down the other is too.
+Both forms read the same index and take the same query language.
 
-Tools:
-- Repo: `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`, `csl_repo_pull`, `csl_repo_reindex`
-- Search: `csl_search`, `csl_count`, `csl_query_validate`
-- Semantic and hybrid: `csl_semantic_search`, `csl_hybrid_search` (only once semantic search is set up, see Search)
-- Read and info: `csl_read`, `csl_ls`, `csl_outline`, `csl_show_file`, `csl_index_info`
-- Diagnosis: `csl_doctor`
-
-### Search
-- Default to `csl_search`. Lexical search always works and needs nothing running.
-- `csl_semantic_search` and `csl_hybrid_search` need the semantic index built (`csl index --semantic-all`) and Ollama running. Until then semantic answers `available=false` and hybrid degrades to lexical-only. Reach for them on "where do we handle X" questions only when `csl_index_info` reports `semantic.built: true`; otherwise stay lexical.
-- Use `csl_read` for file contents you need yourself and `csl_show_file` to put a file section in front of the user (it needs `csl web` running).
-- Start with `csl_outline` when the question is how a repo or a package is structured. It lists the definitions ranked by how many other files reference them, so the main types and entry points come first. Narrow with `path`, pass `kinds` for fields or markdown headings (out by default), then read the top hits with `csl_read`.
-- Tools return `text` by default. Set `mcp.response_format` in `config.yaml` to change the default, and pass `response_format: "json"` on a call when you need the structured object.
-- If a tool errors or comes back unexpectedly empty, call `csl_doctor` before retrying.
-- If `csl_repo_lookup` finds no match for the repo you are working in, it sits outside csl's configured `dirs`: use `grep`, `find`, or `Glob` there instead. Plain `grep` is also fine for piping and filtering command output.
-
-### Repo discovery
-- Use `csl_repo_lookup` or `csl_repo_info` to find repos. Do not use `find`, `ls`, `Glob`, or shell to manually search for repo directories.
-- `csl_repo_info` returns git health (branch, dirty files, index staleness, suggested action). Call it before starting work on a repo to decide whether to commit, stash, pull, or reindex.
-- `csl_repo_lookup` returns `remote` and `host` fields; use them to branch behavior per git host when needed. It also returns `component`, `owner`, and `system` when a repo carries a catalog descriptor. It takes `component`/`owner`/`system` filters (case-insensitive regex, same rules as `name`) for "which repos does team X own" or "which repos are in system Y" questions. A repo with no descriptor never matches those filters.
-- If lookup returns empty `matches` and a non-empty `dropped`, csl found the checkout but a config filter (`index.hosts` or the exclude list) removed it; report the `reason` to the user. Empty both means the repo is not checked out locally or not under csl's configured dirs; say so, don't guess paths.
-- Use `csl_repo_pull` before creating branches on repos that may be behind (it has safety checks for dirty state).
-- Use `csl_repo_reindex` after significant changes so `csl_search` results stay current.
-- Use `csl_repo_health` for a fleet-wide sweep of uncommitted or unpushed work, for example before switching machines.
-- Exploring needs no pull. Before changing a repo, or telling the user something about its current state they will act on, run `csl_repo_info` first. On a dirty tree never stash or discard on your own; on a stale index pull only when the tree is clean.
-
-### Query syntax
-
-zoekt queries look like grep but have important differences:
-
-- AND is strict: space-separated terms must ALL appear in the SAME file. Use 1-2 terms and narrow with filters, not 3+ chained terms.
-- OR: use `|` with no spaces (`foo|bar`) or lowercase `or`. Uppercase `OR` is a literal string. Spaces around `|` break it.
-- Filters: `repo:name` (not `r:`), `f:\.go$` (not `file:`), `lang:go`, `-term` (NOT).
-- Definitions only: `sym:Name` matches symbol definitions (function, type, method, class names) and skips call sites and comments; in content mode each hit carries its `kind`. Plain queries already rank the defining file first. For two names write `sym:Foo|Bar` or `sym:Foo or sym:Bar`. `sym:Foo|sym:Bar` is one regexp and is refused with the fix.
-- File filters are regex, not glob: `f:.*\.go$` not `f:*.go`.
-- Exact phrase: `"foo bar"` requires that exact string on one line. For proximity, use regex: `foo.*bar`.
-- Validate: call `csl_query_validate` to see how zoekt parsed your query. This is especially useful when you get zero results.
-- Zero results: read `zero_result_hint`. `term_counts` says how many files each AND term matches on its own; a `0` is the term to drop. When `csl_search` already dropped it and reran, the response carries `relaxed_query` and `dropped_terms`: use those results and do not add the term back. An empty, quote-only, or unbalanced-quote query is refused with the fix.
-
-Common grep-to-zoekt translations:
-
-| grep | zoekt |
-|------|-------|
-| `grep -r "foo"` | `foo` |
-| `grep --include="*.go"` | `f:.*\.go$` |
-| `grep -v test` | `-test` |
-| `grep -E "foo\|bar"` | `foo\|bar` |
-| `find . -name "*.go" \| xargs grep foo` | `foo f:.*\.go$` |
-
-### Multi-repo awareness
-When switching working directory to a different git repo, read that repo's `CLAUDE.md` (and `.claude/CLAUDE.md` if present) before making changes. Per-repo instructions take precedence over this global file for repo-specific concerns (build commands, conventions, test frameworks).
+- **MCP tools for answers that fit in one call**: repo lookups, file reads, `csl_outline` and counts. A search belongs here too when its whole result fits one response, such as a definition, a handful of files or a few hundred lines.
+- **The CLI through Bash for everything bigger**: fleet-wide searches, ranking across many candidates, and any result that would need a second page or spill to a file. Give `csl search` a `--limit` high enough for the whole result and aggregate in the shell pipe (`cut`, `awk`, `sort | uniq -c`), so only the summary reaches the context.
+- **Never page `csl_search` with `offset`.** Each MCP result is capped, and the pages pile up in context. When a first page comes back `truncated`, rerun the query as a CLI pipe.
+- **CLI only** (`csl` on PATH, no `mcp__csl__*` tools): run every csl call through Bash.
+- **Neither**: say that csl is not available and fall back to `rg` with narrow globs. Prefer `rg --files -g <glob>` over `find`, and scope every search to the smallest directory that can hold the answer.
+- **A CLI miss prints only `no matches`.** The CLI has no zero-result hint yet, so retry once with one term dropped, or run `csl query '<query>'` to see how it parsed.
+- **`--repo` on the CLI is a case-sensitive regex**, unlike the MCP `repo` parameter. Spell the repo the way `csl repo --list` prints it.
 ```
 
 ## Where things live

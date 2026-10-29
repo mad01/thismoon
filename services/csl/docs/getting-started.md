@@ -227,24 +227,26 @@ claude mcp add --scope user csl -- "$HOME/.local/share/mise/shims/csl" mcp
 ```
 
 Add `"mcp__csl__*"` to `permissions.allow` in `~/.claude/settings.json` to
-skip the per-call prompt. Then give Claude the CLAUDE.md section that tells it
-when to use the tools:
+skip the per-call prompt. Then give Claude the csl rules fragment that tells it
+when to use csl, and when to use the tools or the CLI:
 
 ```sh
 csl docs --claude-md >> ~/.claude/CLAUDE.md
 ```
 
-The same text sits in the [README](../README.md#add-this-to-your-claudemd) if
-you would rather paste it into a project `CLAUDE.md`. Registering the server
-only makes the tools available. The CLAUDE.md section is what stops Claude
-from reaching for `grep` and `find` first, and it keeps the agent on lexical
-search unless you enable semantic search in step 9.
+The file is [`claude-md.md`](../claude-md.md) if you would rather import it
+into a project `CLAUDE.md`; a machine set up with the ralph recipe has it
+linked at `~/.claude/CLAUDE.csl.md` for an `@~/.claude/CLAUDE.csl.md` import.
+Registering the server only makes the tools available. The fragment is what
+stops Claude from reaching for `grep` and `find` first, and it keeps the
+agent on lexical search unless you enable semantic search in step 9.
 
 If you also run [belt](../../../tools/belt/README.md), the thismoon hook set
 for Claude Code, its `prefer-csl` hint closes the loop from the other side.
 When the agent runs a multi-file `grep` or `find` inside a repo csl indexes,
-the hook hands back the equivalent `csl_search` call with the pattern already
-translated to zoekt syntax. It reads csl's shard listing from disk and
+the hook hands back the equivalent `csl search` command. The `csl_search`
+call follows it, and both carry the pattern already translated to zoekt
+syntax. It reads csl's shard listing from disk and
 launches no csl process. The hint is on by default once belt's hooks are
 registered (`hints.prefer-csl.enabled` in belt's config); the hooks block to
 register is in

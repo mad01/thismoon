@@ -54,6 +54,18 @@ working_dir = "~/.config/ralph/sources/thismoon/recipes/csl"
 run = "always"
 depends_on = ["packages.code_search_local", "packages.t_man"]
 
+# The csl rules fragment: the one file that tells an agent when to reach for
+# csl and in which form, the MCP tools or the CLI. It lands at a fixed path a
+# global CLAUDE.md imports with the line `@~/.claude/CLAUDE.csl.md`. That
+# import line is machine-private and lives in the consuming repo
+# (docs/adr/0006), so the target path is the contract between the two and
+# must not move. Relative sources resolve against the recipe dir, so ../../
+# reaches the source-checkout root.
+[dotfiles.csl_claude_md]
+source = "../../services/csl/claude-md.md"
+target = "~/.claude/CLAUDE.csl.md"
+action = "symlink"
+
 # Shell functions moved here from the dotfiles dev-tools recipe; keys are
 # global across sources, so each must exist in exactly one recipe.
 #
