@@ -79,8 +79,9 @@ The hooks record the identity, the origin remote's host/owner/repo, for any
 file in a checkout with an origin. An edit `moondb import` brought in can
 lack it when its worktree was deleted before the import. That happens when
 the worktree's name matched no repository the import knew, or it was a
-temporary clone such as an eval run's. In such a clone the stored root can
-sit below the clone's own root, with the path relative to it.
+temporary clone such as an eval run's. For any worktree deleted before the
+import, an ordinary one included, the stored root can also sit below the
+checkout's own root, with the path relative to it.
 
 To list those edits, pass the stored root: `moondb history --worktree <root>
 <root>/<path>` works from any directory. The `moondb_history` tool given only
