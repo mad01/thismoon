@@ -84,9 +84,18 @@ func sessionTrace(ctx context.Context, c *client.Client, id string) (trace.Sessi
 	return c.SessionTrace(ctx, full)
 }
 
-// resolveSession finds the one recent session whose id starts with prefix.
+// resolveSession finds the session prefix names: the one whose id it is,
+// else the one recent session, hidden ones included, whose id starts with
+// it.
 func resolveSession(ctx context.Context, c *client.Client, prefix string) (string, error) {
-	list, err := c.Sessions(ctx, client.SessionQuery{Limit: prefixScan})
+	_, err := c.Session(ctx, prefix)
+	if err == nil {
+		return prefix, nil
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return "", err
+	}
+	list, err := c.Sessions(ctx, client.SessionQuery{IncludeHidden: true, Limit: prefixScan})
 	if err != nil {
 		return "", err
 	}

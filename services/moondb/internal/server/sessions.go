@@ -107,6 +107,9 @@ type SessionSummary struct {
 	Entrypoint string `json:"entrypoint,omitempty"      jsonschema:"how the harness was started, as Claude Code names it: cli for an interactive terminal session, sdk-cli for claude -p (headless); absent when not recorded"`
 	// Tags are the session tags its launcher set, such as eval.
 	Tags []string `json:"tags,omitempty"            jsonschema:"short tokens the session's launcher set in MOONDB_SESSION_TAGS, such as eval for an eval run"`
+	// Hidden says a person took the session out of the listings; only a
+	// listing that includes hidden sessions shows it.
+	Hidden bool `json:"hidden,omitempty"          jsonschema:"true when a person hid the session with moondb sessions hide; listings leave it out unless include_hidden is set"`
 	// Days are the local days the session was active on, oldest first,
 	// each with that day's slice of the session, so a listing can show
 	// the session under every day it worked.
@@ -235,7 +238,15 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	all, err := s.store.Sessions(r.Context(), store.SessionFilter{Since: since})
+	includeHidden, err := parseBool(q, "include_hidden")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	all, err := s.store.Sessions(r.Context(), store.SessionFilter{
+		Since:         since,
+		ExcludeHidden: !includeHidden,
+	})
 	if err != nil {
 		writeBackendErr(w, err)
 		return
@@ -336,6 +347,7 @@ func (s *Server) row(sum store.SessionSummary, now time.Time) SessionSummary {
 		CwdName:        cwdName,
 		Entrypoint:     sum.Entrypoint,
 		Tags:           sum.Tags,
+		Hidden:         sum.Hidden,
 		Days:           s.dayRows(sum.Days),
 	}
 }

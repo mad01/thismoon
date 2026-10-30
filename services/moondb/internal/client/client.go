@@ -63,7 +63,10 @@ type SessionQuery struct {
 	Repo string
 	// Since is an RFC 3339 time or a duration before now: 90m, 24h, 7d.
 	Since string
-	Limit int
+	// IncludeHidden lists the hidden sessions too; the server leaves
+	// them out otherwise.
+	IncludeHidden bool
+	Limit         int
 }
 
 // EditQuery narrows an Edits listing. Zero values mean no filter, and a zero
@@ -87,6 +90,9 @@ func (c *Client) Sessions(ctx context.Context, q SessionQuery) ([]server.Session
 	set(v, "repo", q.Repo)
 	set(v, "since", q.Since)
 	setInt(v, "limit", q.Limit)
+	if q.IncludeHidden {
+		v.Set("include_hidden", "true")
+	}
 	var out struct {
 		Sessions []server.SessionSummary `json:"sessions"`
 	}

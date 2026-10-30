@@ -52,6 +52,9 @@ const (
 	// the turns it ran under and its agent transcript. Envelope.Agent
 	// names it.
 	KindAgentClose Kind = "agent-close"
+	// KindVisibility hides a session from the listings or shows it again,
+	// as `moondb sessions hide` and `show` ask. Envelope.Session names it.
+	KindVisibility Kind = "visibility"
 )
 
 // Envelope is one record handed to serve. Exactly one payload field is set,
@@ -81,6 +84,13 @@ type Envelope struct {
 	// the envelope's own At says when the hook began.
 	Skipped    *store.SkippedFiles `json:"skipped,omitempty"`
 	AgentClose *AgentClose         `json:"agent_close,omitempty"`
+	Visibility *Visibility         `json:"visibility,omitempty"`
+}
+
+// Visibility is what a person asked of a session's place in the listings:
+// Hidden true takes it out, false puts it back.
+type Visibility struct {
+	Hidden bool `json:"hidden"`
 }
 
 // SessionRef identifies the session a payload belongs to and carries what

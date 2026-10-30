@@ -19,8 +19,10 @@ const (
 // they started, Since keeps the sessions last active at or after it, and
 // each filter field narrows on its own and together with the others.
 func sessionsFilter(t *testing.T, st store.Store) {
+	hidden := session("s2", at(60))
+	hidden.Hidden = true
 	seed(t, st,
-		session("s1", at(0)), session("s2", at(60)), session("s3", at(120)),
+		session("s1", at(0)), hidden, session("s3", at(120)),
 		session("s4", at(-30)),
 		turn("t4", "s4", store.TurnOpen, at(-20)),
 		edit("e1", "s1", "t1", 1, loc(repoA, "/wt/a"), "x.go"),
@@ -44,6 +46,13 @@ func sessionsFilter(t *testing.T, st store.Store) {
 		{"repo and since", store.SessionFilter{Repo: repoA, Since: at(60)}, "s1"},
 		{"repo and later since", store.SessionFilter{Repo: repoA, Since: at(91)}, ""},
 		{"unknown repo", store.SessionFilter{Repo: "github.com/o/x"}, ""},
+		// s2 is hidden: only ExcludeHidden drops it.
+		{"exclude hidden", store.SessionFilter{ExcludeHidden: true}, "s3 s1 s4"},
+		{
+			"exclude hidden and since",
+			store.SessionFilter{ExcludeHidden: true, Since: at(60)},
+			"s3 s1",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -354,6 +354,8 @@ chunk the store already has.
   `localhost:<port>`. If serve is down, tools return an unreachable error
   that names `moondb doctor`.
 - `moondb why`, `history` and `sessions` are the same thin HTTP client.
+  `moondb sessions hide` and `show` resolve their ids through it too, then
+  write to the spool (Hidden sessions below).
 
 A spool envelope lives until serve has ingested it, so nothing is lost while
 serve is down or restarting. Ingest is idempotent on the envelope id, so a
@@ -663,6 +665,24 @@ turn's start to the first kept line is then harness time, a model span never
 starts before its first kept line, and the calls in the cut head add no
 tokens or cost.
 
+### Hidden sessions
+
+`moondb sessions hide <id>...` takes sessions out of the listings:
+`moondb sessions`, the web page (its rows, totals, and repo and directory
+chips) and `moondb_sessions`. `show` puts them back. `--all`, the API's
+`include_hidden=true`, lists them with `hidden: true`. Nothing is deleted:
+a lookup by id, `trace`, `scorecard`, `why`, `history` and `inflight` still
+reach a hidden session.
+
+The command resolves every id or prefix against serve before it writes
+anything, so a typo changes no session. It then spools one `visibility`
+envelope per session and polls `GET /api/sessions/{id}` until serve
+reports the new state, for at most `visibilityWait` (5 s, in
+`internal/cli/visibility.go`). Ingest sets `Session.Hidden` on a session
+the store holds. An envelope for a session the store lacks is logged and
+dropped, never turned into an empty session. Every other session write
+loads the stored record first, so a later envelope keeps the flag.
+
 ### moondb never writes into the user's `.git`
 
 No shadow commits, refs, notes or trailers. moondb reads git with
@@ -673,7 +693,7 @@ everything it records in its own store.
 
 ```go
 Session{ ID, Harness, Cwd, Title, TitleSource /* named | generated */,
-         PromptLine, Model, TranscriptPath, StartedAt, EndedAt }
+         PromptLine, Model, TranscriptPath, StartedAt, EndedAt, Hidden }
 Turn{ ID, SessionID, Seq, PromptChunk, FinalChunk, TranscriptChunk,
       TranscriptOffset, Status /* open | closed | failed */, StartedAt, EndedAt,
       Origin /* person | task | teammate | subagent | continuation | none */,
@@ -749,7 +769,7 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 
 - `GET  /`                      : webkit-chromed web page, read-only (see Web page below)
 - `GET  /app.js`                : the page's client script
-- `GET  /api/sessions`          : one page of session rows, most recently active first (`sessions`), each with its `days`; the totals of every session the filters keep (`window`); the repositories the time window's sessions edited or sent attributed cost, with their session counts and attributed cost (`repos`); and the directories its sessions outside any repository started in, with their session counts and cost (`dirs`); `since`, `repo`, `cwd` and `limit` filter
+- `GET  /api/sessions`          : one page of session rows, most recently active first (`sessions`), each with its `days`; the totals of every session the filters keep (`window`); the repositories the time window's sessions edited or sent attributed cost, with their session counts and attributed cost (`repos`); and the directories its sessions outside any repository started in, with their session counts and cost (`dirs`); `since`, `repo`, `cwd` and `limit` filter. A hidden session is left out of `sessions`, `window`, `repos` and `dirs` unless `include_hidden=true`, and then its row has `hidden: true`
 - `GET  /api/sessions/{id}`     : one session with its turns and counts, plus `summary`, its listing row, and `agents`, its agent rows (below)
 - `GET  /api/sessions/{id}/trace`: the session's trace: every turn's spans, gaps and totals, the user gaps between turns, the agents' runs, session totals
 - `GET  /api/sessions/{id}/scorecard`: the session's scorecard (Scorecard above): totals, tools, csl searches, reads, hints, agents, flags and the status of each source
@@ -766,7 +786,8 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 - `GET  /version`               : the four-key build metadata object (`version`, `commit`, `tag`, `build_time`)
 - `GET  /webkit/`               : shared chrome (asset drift checks use `GET /webkit/version`)
 
-There is no write endpoint. The spool is the only way records get in. A
+There is no write endpoint. The spool is the only way records get in;
+`moondb sessions hide` and `show` write to it too. A
 request the query rejects (a relative worktree, a file outside the worktree)
 answers 400.
 
@@ -1031,7 +1052,9 @@ moondb mcp                     # stdio MCP shim over serve
 moondb why <path>:<line>       # the Edit, turn, prompt, session, subagent spawn brief, last message before the edit and commit behind one line
 moondb history <path>          # the recorded edits of a path across every checkout, newest first; --worktree narrows to one
 moondb inflight [--worktree <root>] [--exclude-session <id>]   # files in the checkout other sessions edited that no commit has taken yet
-moondb sessions [--repo <repo>]  # recorded sessions, most recently active first, with their title, active time and wall time; --repo adds COST and ATTRIBUTED
+moondb sessions [--repo <repo>] [--all]  # recorded sessions, most recently active first, with their title, active time and wall time; --repo adds COST and ATTRIBUTED, --all lists hidden sessions with a HIDDEN column
+moondb sessions hide <session-id>...   # take sessions out of the listings and the web page; ids or unique prefixes
+moondb sessions show <session-id>...   # put hidden sessions back
 moondb trace <session-id> [--json]   # time and cost totals, the agents, the longest tool calls, the most expensive model calls
 moondb scorecard <session-id> [--json]   # how a session spent its context: searches, reads, hints, agents, flags
 moondb doctor                  # config, hooks wired, serve reachable, store readable, version skew, agents without a brief or later messages
@@ -1053,7 +1076,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 - `moondb_history(path)`: the recorded edits of a path, newest first
 - `moondb_inflight(worktree)`: the files of a checkout with edits no commit has taken yet, with the sessions behind them; `exclude_session` leaves the caller's own out
 - `moondb_turn(id)`: one turn: prompt, final message, edits, unattributed deltas, snapshots, commit links, and the agents that worked in it, with each subagent's spawn brief (`briefs`: its first line up to 500 bytes, `brief_bytes`, `later_messages`, `last_message` with its `at`, `from`, first line up to 500 bytes and `bytes`, `recorded`); the summary names its subagents
-- `moondb_sessions()`: recorded sessions, most recently active first, each with its title, status, times, active and wall time, counts, subagent names, tokens and cost split between the main conversation and the subagents, its attributed cost per repository (`repo_costs`), and its `days`; with `repo`, also `repo_cost` beside the whole `cost`
+- `moondb_sessions()`: recorded sessions, most recently active first, each with its title, status, times, active and wall time, counts, subagent names, tokens and cost split between the main conversation and the subagents, its attributed cost per repository (`repo_costs`), and its `days`; with `repo`, also `repo_cost` beside the whole `cost`. A hidden session is left out; `include_hidden` lists it with `hidden: true`
 - `moondb_trace(id)`: one session's time split (model, tool, harness, user, idle), tokens by kind and cost with its main and agent parts, the subagents costliest first, and the longest tool calls and most expensive model calls of every agent
 - `moondb_scorecard(id)`: the session's scorecard, the same JSON as `GET /api/sessions/{id}/scorecard`, with a one-line summary
 - `moondb_doctor()`: the same checks as `moondb doctor`, returned as JSON, for a client that can call a tool but has no shell

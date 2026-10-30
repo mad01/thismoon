@@ -133,6 +133,7 @@ func (e Envelope) validate() error {
 		KindSnapshot:   e.Snapshot != nil,
 		KindSkipped:    e.Skipped != nil,
 		KindAgentClose: e.AgentClose != nil,
+		KindVisibility: e.Visibility != nil,
 	}
 	if _, known := set[e.Kind]; !known {
 		return fmt.Errorf("spool: unknown envelope kind %q", e.Kind)

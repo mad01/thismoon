@@ -31,6 +31,10 @@ Everything else is a thin HTTP client over the API: the query commands
 (`why`, `history`, `inflight`, `sessions`, `trace`) and the MCP server, a stdio shim spawned as
 `moondb mcp`. The shim being up says nothing about the service: every tool
 call is a live HTTP request to serve, and it fails when serve is down.
+`moondb sessions hide` and `show` ask serve first too, so with serve down
+they fail before writing anything. With serve up they spool a visibility
+envelope and wait up to 5 s for serve to apply it. A request serve has not
+applied by then stays in the spool until serve drains it.
 
 ## where state lives
 

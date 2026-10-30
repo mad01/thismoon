@@ -105,7 +105,9 @@ func registerSessionTools(s *mcp.Server, h *handlers) {
 			"`cwd_name` is the cwd's short name for a session that sits in no repository. " +
 			"Filter by `repo` (host/owner/repo; sessions that have it in `repos` or `cwd_repos`, or attribute a part of their cost to it in `repo_costs`), " +
 			"`since` (sessions active since then, whenever they started: " +
-			"an RFC 3339 time or a duration such as 24h or 7d), and `limit` (default 50).",
+			"an RFC 3339 time or a duration such as 24h or 7d), and `limit` (default 50). " +
+			"A session a person hid with `moondb sessions hide` is left out; `include_hidden` lists it too, with `hidden` true. " +
+			"A hidden session's id still works in moondb_trace, moondb_scorecard and moondb_turn.",
 		Annotations: readOnly(),
 	}, h.handleSessions)
 
@@ -413,9 +415,11 @@ func truncate(s string, n int) string {
 // ── sessions ──
 
 type sessionsInput struct {
-	Repo  string `json:"repo,omitempty"  jsonschema:"repository identity host/owner/repo; keeps sessions that edited it, worked in it without editing it (cwd_repos), or attribute a part of their cost to it in repo_costs"`
-	Since string `json:"since,omitempty" jsonschema:"keeps sessions active since then: an RFC 3339 time, or a duration before now such as 90m, 24h or 7d"`
-	Limit int    `json:"limit,omitempty" jsonschema:"maximum sessions to return, most recently active first (default 50)"`
+	Repo  string `json:"repo,omitempty"           jsonschema:"repository identity host/owner/repo; keeps sessions that edited it, worked in it without editing it (cwd_repos), or attribute a part of their cost to it in repo_costs"`
+	Since string `json:"since,omitempty"          jsonschema:"keeps sessions active since then: an RFC 3339 time, or a duration before now such as 90m, 24h or 7d"`
+	Limit int    `json:"limit,omitempty"          jsonschema:"maximum sessions to return, most recently active first (default 50)"`
+	// IncludeHidden lists the sessions a person hid too.
+	IncludeHidden bool `json:"include_hidden,omitempty" jsonschema:"also list the sessions a person hid with moondb sessions hide, each with hidden true"`
 }
 
 type sessionsOutput struct {
@@ -430,9 +434,10 @@ func (h *handlers) handleSessions(
 	in sessionsInput,
 ) (*mcp.CallToolResult, sessionsOutput, error) {
 	list, err := h.client.Sessions(ctx, client.SessionQuery{
-		Repo:  in.Repo,
-		Since: in.Since,
-		Limit: in.Limit,
+		Repo:          in.Repo,
+		Since:         in.Since,
+		IncludeHidden: in.IncludeHidden,
+		Limit:         in.Limit,
 	})
 	if err != nil {
 		return nil, sessionsOutput{}, err
