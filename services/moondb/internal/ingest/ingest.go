@@ -63,6 +63,8 @@ func (in *Ingester) Ingest(ctx context.Context, env spool.Envelope) error {
 		return in.skipped(ctx, env)
 	case spool.KindAgentClose:
 		return in.agentClose(ctx, env, missing)
+	case spool.KindVisibility:
+		return in.visibility(ctx, env)
 	default:
 		return fmt.Errorf("ingest: envelope %s has unknown kind %q", env.ID, env.Kind)
 	}

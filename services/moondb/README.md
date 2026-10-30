@@ -103,6 +103,7 @@ the main checkout never sees Bash edits in a linked worktree.
 moondb why <path>:<line>     # the edit, turn, prompt, subagent spawn brief, last message before the edit and commit behind one line
 moondb history <path>        # every recorded edit of a file, in any checkout, newest first
 moondb sessions              # recorded sessions, most recently active first, with their titles, active time and wall time
+moondb sessions hide <id>    # take a session out of the listings and the web page; show puts it back, --all lists hidden ones
 moondb trace <session-id>    # where a session's time went and what it cost
 moondb inflight              # files in this checkout other sessions edited that no commit has taken yet
 moondb scorecard <session-id>  # how a session spent its context: searches, reads, hints, flags

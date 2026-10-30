@@ -62,9 +62,9 @@ func sessionOutlivesClose(t *testing.T, s store.Store) {
 	d, err := s.Session(context.Background(), "s1")
 	must(t, err)
 	if d.Title != "renamed" || d.TitleSource != store.TitleNamed ||
-		d.PromptLine != "fix the bug" || d.EndedAt == nil {
-		t.Errorf("s1 after reopen = title %q from %q, prompt line %q, ended %v; "+
-			"want the last put", d.Title, d.TitleSource, d.PromptLine, d.EndedAt)
+		d.PromptLine != "fix the bug" || d.EndedAt == nil || !d.Hidden {
+		t.Errorf("s1 after reopen = title %q from %q, prompt line %q, ended %v, hidden %v; "+
+			"want the last put", d.Title, d.TitleSource, d.PromptLine, d.EndedAt, d.Hidden)
 	}
 	if len(d.Turns) == 0 || d.Turns[0].Totals == nil || len(d.Turns[0].Totals.Usage) != 2 {
 		t.Errorf("t1 after reopen = %+v, want its totals with two usage entries", d.Turns)
@@ -93,6 +93,7 @@ func history() []any {
 	renamed := session("s1", at(0))
 	renamed.Title, renamed.TitleSource = "renamed", store.TitleNamed
 	renamed.PromptLine, renamed.EndedAt = "fix the bug", &ended
+	renamed.Hidden = true
 	closed := turn("t1", "s1", store.TurnClosed, at(1))
 	closed.EndedAt = &ended
 	closed.Totals = totals(1, usage("model-a", 10, 20), usage("model-b", 1, 2))

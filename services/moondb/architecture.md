@@ -262,7 +262,8 @@ HTTP: `GET /` and `/app.js` (read-only web page), `GET /api/sessions`,
 `GET /api/why`, `GET /api/history`, `GET /api/annotate`, `GET /api/inflight`,
 `GET /api/chunks/{sha}`, `GET /healthz`, `GET /version`,
 `GET /webkit/`. There is no write endpoint. CLI: `moondb serve`, `record`,
-`import`, `mcp`, `why <path>:<line>`, `history <path>`, `inflight`, `sessions`,
+`import`, `mcp`, `why <path>:<line>`, `history <path>`, `inflight`, `sessions`
+(with `hide` and `show`),
 `trace <session-id>`, `scorecard <session-id>`, `doctor`, `docs`, `version`. MCP
 tools: `moondb_why`, `moondb_history`, `moondb_inflight`, `moondb_turn`,
 `moondb_sessions`, `moondb_trace`, `moondb_scorecard`, `moondb_doctor`, all

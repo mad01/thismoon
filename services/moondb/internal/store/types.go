@@ -58,6 +58,10 @@ type Session struct {
 	TranscriptPath string     `json:"transcript_path,omitempty"`
 	StartedAt      time.Time  `json:"started_at"`
 	EndedAt        *time.Time `json:"ended_at,omitempty"`
+	// Hidden says a person took the session out of the listings
+	// (`moondb sessions hide`). Its records stay, and a lookup by id
+	// still finds it.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // TitleSource is where a session title came from.
@@ -575,14 +579,17 @@ type SessionFilter struct {
 	// Since keeps sessions last active at or after it
 	// (SessionSummary.LastActivityAt), whenever they started.
 	Since time.Time
-	Limit int
+	// ExcludeHidden drops the hidden sessions (Session.Hidden).
+	ExcludeHidden bool
+	Limit         int
 }
 
-// Keeps reports whether f's Repo and Since keep a summarized session.
-// Limit is the listing's to apply.
+// Keeps reports whether f's Repo, Since and ExcludeHidden keep a
+// summarized session. Limit is the listing's to apply.
 func (f SessionFilter) Keeps(sum SessionSummary) bool {
 	return !sum.LastActivityAt.Before(f.Since) &&
-		(f.Repo == "" || slices.Contains(sum.Repos, f.Repo))
+		(f.Repo == "" || slices.Contains(sum.Repos, f.Repo)) &&
+		(!f.ExcludeHidden || !sum.Hidden)
 }
 
 // EditQuery narrows an Edits listing. Zero values mean no filter; results

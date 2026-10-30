@@ -25,8 +25,8 @@ func TestPrintSessionsByRepo(t *testing.T) {
 		},
 	}
 	var plain, byRepo bytes.Buffer
-	printSessions(&plain, rows, "")
-	printSessions(&byRepo, rows, repo)
+	printSessions(&plain, rows, "", false)
+	printSessions(&byRepo, rows, repo, false)
 	if strings.Contains(plain.String(), "ATTRIBUTED") || strings.Contains(plain.String(), "$") {
 		t.Errorf("plain listing has cost columns:\n%s", plain.String())
 	}

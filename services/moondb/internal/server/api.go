@@ -297,6 +297,20 @@ func parseLimit(raw string) (int, error) {
 	return n, nil
 }
 
+// parseBool reads the query parameter name as a strconv.ParseBool value,
+// false when it is absent.
+func parseBool(q url.Values, name string) (bool, error) {
+	raw := q.Get(name)
+	if raw == "" {
+		return false, nil
+	}
+	b, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("moondb: %s must be true or false, got %q", name, raw)
+	}
+	return b, nil
+}
+
 // ParseSince reads a lower time bound: an RFC 3339 time, or a positive
 // duration before now ("90m", "24h", or whole days as "7d"). Empty means no
 // bound.
