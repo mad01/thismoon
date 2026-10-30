@@ -45,10 +45,12 @@ record of what has stuck on mine.
 > remaining services are easier to leave out. If you take just one thing,
 > csl is the best standalone pick.
 
-Start with one tool:
+Start with one tool, csl for code search over your local checkouts, through
+[mise](https://mise.jdx.dev):
 
 ```sh
-brew install mad01/tap/csl    # code search over your local checkouts
+mise tool-alias set csl github:mad01/thismoon
+mise use -g "csl[version_prefix=csl/]"
 ```
 
 or install the whole fleet with [ralph](https://github.com/mad01/ralph)
@@ -243,23 +245,20 @@ and how to verify the result.
 
 ### One tool
 
-The fastest path is the [Homebrew tap](https://github.com/mad01/homebrew-tap):
-
-```sh
-brew tap mad01/tap
-brew install mad01/tap/csl
-brew services start mad01/tap/csl   # web UI on http://127.0.0.1:7424
-```
-
-Most components have formulas (csl, present, speak, d-man, belt,
-t-man, toss-bin, and ralph itself); the rest follow as they prove useful
-outside the fleet. [mise](https://mise.jdx.dev) reaches the same release
-tarballs, one tool alias per component:
+The fastest path is [mise](https://mise.jdx.dev). It installs the release
+tarballs through its `github` backend, one tool alias per component:
 
 ```sh
 mise tool-alias set csl github:mad01/thismoon
 mise use -g "csl[version_prefix=csl/]"
+csl web --port 7424   # web UI on http://127.0.0.1:7424
 ```
+
+The same two commands with another component's name install it;
+[the getting-started guide](docs/GETTING-STARTED.md#one-tool-with-mise)
+lists every component worth installing on its own. To keep a service
+running, register it as a [t-man](tools/t-man/README.md) agent instead of
+running it in a terminal.
 
 Everything installs from the module path too:
 
@@ -282,7 +281,7 @@ with `checksums.txt` and a cosign keyless signature.
 For the full setup (services as launchd agents, `.this` routing, config
 symlinks) on a fresh machine:
 
-1. Install ralph: `brew install mad01/tap/ralph`
+1. Install ralph: `mise use -g github:mad01/ralph`
    (or `go install github.com/mad01/ralph/cmd/ralph@latest`)
 2. Run `ralph init`, then add the `[[recipe_sources]]` stanza shown above to
    `~/.config/ralph/config.toml` (or to your private config repo)

@@ -4,6 +4,18 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-10-30 standalone installs: the Homebrew tap is gone, mise is the one-tool path
+
+Change: thismoon #351. The `mad01/homebrew-tap` repository is deleted, so `brew tap mad01/tap` and every `mad01/tap/<name>` formula stop working. The install docs now send a one-tool install, and the ralph install, through mise. A fleet machine that never tapped `mad01/tap` needs nothing: `ralph up` builds every component from source as before.
+
+Run, on a machine that ran `brew tap mad01/tap`:
+
+1. `brew list --full-name | grep '^mad01/tap/'` lists the formulas installed from the tap. For each one, run `brew services stop mad01/tap/<name>` if it ran as a service, then `brew uninstall mad01/tap/<name>`.
+2. `brew untap mad01/tap`.
+3. Reinstall each tool through mise: `mise tool-alias set <name> github:mad01/thismoon`, then `mise use -g "<name>[version_prefix=<name>/]"`. ralph installs with `mise use -g github:mad01/ralph`. A service that ran under `brew services` moves to a t-man agent on the mise shim path, for example `t-man add --name csl-web -- "$HOME/.local/share/mise/shims/csl" web --port 7424`.
+
+Verify: `brew tap` no longer lists `mad01/tap`. `<name> version` prints a release version, and `which <name>` points under `~/.local/share/mise`.
+
 ## 2026-10-29 moondb: the last parent message before a subagent's edit needs a forced import for past agents
 
 Change: thismoon #347 (MAD-524). moondb now keeps each message a subagent's parent sent it after its spawn brief, such as a lead's follow-up to a teammate or a SendMessage to a running subagent, with the time it arrived and its sender. `why` shows the last one that arrived before the edit under the spawn brief: in the CLI as a `last message:` line, in the `moondb_why` tool as `last_message`, and on the session page. `moondb_turn` and a turn's page show each subagent's last message there. The SubagentStop hook entry stays as it is: the messages come from the transcript the hook already reads. The `agent-briefs` doctor check now also counts agents that have a brief but lack the later messages their count names, and `GET /api/doctor` reports that count as `agents_to_fill`. For this release it also repeats it under the old key `agents_without_brief`, so a CLI and a serve from different builds agree.

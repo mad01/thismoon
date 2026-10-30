@@ -2,7 +2,7 @@
 
 There are two ways to put thismoon on a Mac:
 
-- **One tool with Homebrew or mise.** A standalone binary with its web UI on
+- **One tool with mise.** A standalone binary with its web UI on
   a localhost port. Right for trying a single tool, for CI, or when you don't
   want a fleet of launchd agents on the machine.
 - **The fleet with [ralph](https://github.com/mad01/ralph).** Every component
@@ -15,13 +15,13 @@ covers both paths, what each one gives you, and how to verify the result.
 
 ## What each path gives you
 
-| | Homebrew or mise | ralph fleet |
+| | mise | ralph fleet |
 |---|---|---|
 | What installs | one binary | every component, built from the repo |
 | Web UI address | `http://127.0.0.1:<port>` | `http://<name>.this/` |
-| Services run as | `brew services` jobs, or a t-man agent you add | launchd agents managed by t-man |
+| Services run as | a t-man agent you add, or a process in your terminal | launchd agents managed by t-man |
 | Fleet wiring (status page, shared event log, agent hints) | no | yes |
-| Updates | `brew upgrade` or `mise upgrade`, per tool, on releases | `ralph up`, whole fleet, on every merge to main |
+| Updates | `mise upgrade`, per tool, on releases | `ralph up`, whole fleet, on every merge to main |
 
 A single tool standalone is fully functional. The fleet makes each tool
 better. [status](../services/status/README.md) watches every service with a
@@ -38,44 +38,8 @@ and other sessions' uncommitted edits into hints inside your agent sessions.
 - **Xcode Command Line Tools** (`xcode-select --install`), for the fleet path
   and `go install`. csl compiles its tree-sitter grammars with cgo, which
   needs a C toolchain; the release tarballs have them compiled in.
-- **Homebrew**, for the tap path and the easiest ralph install.
-- **[mise](https://mise.jdx.dev)**, if you take the mise path instead of the
-  tap. It installs ralph too.
-
-## One tool with Homebrew
-
-The [tap](https://github.com/mad01/homebrew-tap) carries formulas for most
-components (csl, present, speak, d-man, belt, t-man, toss-bin, and
-ralph itself):
-
-```sh
-brew tap mad01/tap
-brew install mad01/tap/csl
-brew services start mad01/tap/csl   # web UI on http://127.0.0.1:7424
-```
-
-You get the binary on your PATH and, for services, a `brew services` launchd
-job. Everything the tool does on its own works. That covers the web UI on
-its localhost port, the CLI, and the MCP stdio server if you register it
-with your agent (see [Wire up your agent](#wire-up-your-agent)).
-
-What this path doesn't set up: no `.this` hostname (that comes from d-man),
-no t-man agent, no status monitoring, no shared event log, and no
-rebuild-on-merge. Each formula updates through `brew upgrade` when a release
-is tagged, independent of the rest.
-
-Everything also installs from the module path:
-
-```sh
-go install github.com/mad01/thismoon/services/present/cmd/present@latest
-```
-
-or from a checkout:
-
-```sh
-make -C services/present install    # one component
-make install-all                    # everything
-```
+- **[mise](https://mise.jdx.dev)**, for the one-tool path and the easiest
+  ralph install.
 
 ## One tool with mise
 
@@ -133,20 +97,46 @@ prefix. Don't skip the alias: `mise use` on the bare `github:mad01/thismoon`
 backend keys every component to the same tool, so a second component
 overwrites the first.
 
-You get the binary and nothing else: there is no `brew services` block, so
-a service runs under [t-man](../tools/t-man/README.md) or straight from
-your shell. Releases are cosign-signed; [RELEASING.md](RELEASING.md) shows
-how to verify a download by hand.
+You get the binary on your PATH and nothing else. Everything the tool does
+on its own works. That covers the web UI on its localhost port, the CLI, and
+the MCP stdio server if you register it with your agent (see
+[Wire up your agent](#wire-up-your-agent)). Releases are cosign-signed;
+[RELEASING.md](RELEASING.md) shows how to verify a download by hand.
+
+What this path doesn't set up: no `.this` hostname (that comes from d-man),
+no t-man agent, no status monitoring, no shared event log, and no
+rebuild-on-merge. Each tool updates through `mise upgrade` when a release is
+tagged, independent of the rest.
+
+A service runs straight from your shell: `csl web --port 7424` serves the
+csl UI until you stop it. To keep it running as a launchd agent, use
+[t-man](../tools/t-man/README.md), which installs from the table above. Give
+t-man the shim path (`$HOME/.local/share/mise/shims/<tool>`). t-man bakes the
+resolved command into the launchd plist, and a versioned install path stays
+on the old build after `mise upgrade`:
+
+```sh
+t-man add --name csl-web -- "$HOME/.local/share/mise/shims/csl" web --port 7424
+```
 
 The binary alone indexes nothing. Each component's README says what to
 configure next. For csl that is a `config.yaml` naming the directories that
 hold your checkouts, and the walkthrough from there to the MCP server and a
 t-man-supervised web UI is
 [services/csl/docs/getting-started.md](../services/csl/docs/getting-started.md).
-When you register a mise-installed tool with t-man, give it the shim path
-(`$HOME/.local/share/mise/shims/<tool>`). t-man bakes the resolved command
-into the launchd plist, and a versioned install path stays on the old build
-after `mise upgrade`.
+
+Without mise, everything also installs from the module path:
+
+```sh
+go install github.com/mad01/thismoon/services/present/cmd/present@latest
+```
+
+or from a checkout:
+
+```sh
+make -C services/present install    # one component
+make install-all                    # everything
+```
 
 ## The fleet with ralph
 
@@ -157,8 +147,6 @@ whole platform and keeps it current.
 ### 1. Install ralph
 
 ```sh
-brew install mad01/tap/ralph
-# or
 mise use -g github:mad01/ralph
 # or
 go install github.com/mad01/ralph/cmd/ralph@latest
@@ -457,14 +445,11 @@ restarts itself when its binary changes, so updates stay sudo-free. If an
 install ever lands without a restart, `status.this` shows the service as
 "Stale binary" and fires a notification; `t-man restart <name>` clears it.
 
-**Homebrew:** `brew upgrade` per formula, then
-`brew services restart <formula>` if it runs as a service. Formulas track
-tagged releases, so you update when a release is cut rather than on every
-merge.
-
 **mise:** `mise upgrade <alias>` re-resolves the newest tag under the
-component's prefix. Restart the t-man agent yourself if the tool runs as a
-service. The restart only helps when the agent was registered with the mise
+component's prefix. Tools track tagged releases, so you update when a
+release is cut rather than on every merge. Restart the t-man agent yourself
+if the tool runs as a service. The restart only helps when the agent was
+registered with the mise
 shim path (`$HOME/.local/share/mise/shims/<tool>`). A plist that names a
 versioned install directory keeps running the old build, and re-adding the
 agent with the shim path is the fix.
