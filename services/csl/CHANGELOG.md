@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/mad01/thismoon/compare/csl/v0.30.0...csl/v0.31.0) (2026-10-30)
+
+
+### Features
+
+* **csl:** count --names lists every matching group, one per line ([#352](https://github.com/mad01/thismoon/issues/352)) ([c91a6f9](https://github.com/mad01/thismoon/commit/c91a6f91864f159826d0bb978ff385c16f1a89ab))
+
 ## [0.30.0](https://github.com/mad01/thismoon/compare/csl/v0.29.0...csl/v0.30.0) (2026-10-29)
 
 
