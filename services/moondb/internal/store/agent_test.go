@@ -87,7 +87,11 @@ func TestLastMessageInTheEditsRound(t *testing.T) {
 	result := time.Date(2026, 10, 21, 12, 22, 49, 791e6, time.UTC)
 	a := store.Agent{Messages: []store.AgentMessage{
 		{At: result.Add(-time.Hour), Chunk: "earlier"},
-		{At: result.Add(3 * time.Millisecond), Chunk: "queued", AfterCalls: []string{"toolu_a", "toolu_b"}},
+		{
+			At:         result.Add(3 * time.Millisecond),
+			Chunk:      "queued",
+			AfterCalls: []string{"toolu_a", "toolu_b"},
+		},
 	}}
 	hook := result.Add(10 * time.Millisecond)
 	cases := []struct {
