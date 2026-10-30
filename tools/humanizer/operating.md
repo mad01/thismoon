@@ -54,8 +54,8 @@ restart the session.
 
 Detect fails while other tools work: the `vale` binary is missing from
 PATH. Detection is the only path that needs it. Confirm with
-`humanizer_status` (MCP) or `which vale`; install with `brew install vale`
-or `go install github.com/errata-ai/vale/v3/cmd/vale@latest`.
+`humanizer_status` (MCP) or `which vale`; install with `mise use -g vale`
+or `go install github.com/vale-cli/vale/v3/cmd/vale@latest`.
 
 `humanizer rewrite` fails while detection works: the `ollama` and
 `openai-compatible` backends are CLI-only and need a reachable model

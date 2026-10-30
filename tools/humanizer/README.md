@@ -65,11 +65,13 @@ make resign BIN=~/code/bin/humanizer
 
 ### Dependencies
 
-`vale` must be on `$PATH`. Install it with:
+`vale` must be on `$PATH`. Install it with [mise](https://mise.jdx.dev):
 
 ```sh
-brew install vale
+mise use -g vale
 ```
+
+Without mise, `go install github.com/vale-cli/vale/v3/cmd/vale@latest` builds it from source (cgo, so it needs a C compiler).
 
 The Humanizer style pack is embedded in the binary and extracted on first use to `~/.cache/humanizer/vale`. No separate `vale` config or style download is needed.
 

@@ -91,7 +91,7 @@ func CheckStatus(ctx context.Context, opts DetectOptions) Status {
 	path, err := exec.LookPath(bin)
 	if err != nil {
 		s.Error = err.Error()
-		s.InstallHint = "brew install vale, or GOBIN=$HOME/code/bin go install github.com/errata-ai/vale/v3/cmd/vale@latest"
+		s.InstallHint = "mise use -g vale, or go install github.com/vale-cli/vale/v3/cmd/vale@latest"
 		return s
 	}
 	s.Binary = path
@@ -378,7 +378,7 @@ type ValeNotInstalledError struct{ Binary string }
 
 func (e *ValeNotInstalledError) Error() string {
 	return fmt.Sprintf(
-		"vale binary %q not found on PATH; install with `brew install vale` or `go install github.com/errata-ai/vale/v3/cmd/vale@latest`",
+		"vale binary %q not found on PATH; install with `mise use -g vale` or `go install github.com/vale-cli/vale/v3/cmd/vale@latest`",
 		e.Binary,
 	)
 }
