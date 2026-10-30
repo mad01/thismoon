@@ -10,7 +10,7 @@ wave = 0
 [[tools]]
 name = "mise"
 check_command = "command -v mise"
-install_hint = "brew install mise"
+install_hint = "curl -fsSL https://mise.run | sh"
 
 [dotfiles.mise_config]
 source = "config.toml"
@@ -20,6 +20,6 @@ target = "~/.config/mise/config.toml"
 # config) does, and ralph hashes only the string.
 [hooks.builds.mise_install]
 commands = [
-  "if command -v mise >/dev/null; then mise install --yes; else echo 'mise: skip install (mise not on PATH; brew install mise)'; fi",
+  "if command -v mise >/dev/null; then mise install --yes; else echo 'mise: skip install (mise not on PATH; install with curl -fsSL https://mise.run | sh)'; fi",
 ]
 run = "always"

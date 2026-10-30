@@ -36,7 +36,7 @@ evals/harness/ harness eval runner (not a component): fixed tasks through
 examples/    worked private-config-repo layout (overlay recipes, example
              global CLAUDE.md) — the reference for the machine-private layer
 docs/adr/    architecture decision records
-docs/GETTING-STARTED.md install guide: one tool via brew vs the fleet via ralph
+docs/GETTING-STARTED.md install guide: one tool via mise vs the fleet via ralph
 docs/HOW-IT-FITS-TOGETHER.md fleet pitch, ralph vocabulary, rollout order
 docs/MEMORY-STACK.md    memory stores (auto memory, agent-memory, worklog,
              handoff, events, moondb) and the belt hooks that surface them

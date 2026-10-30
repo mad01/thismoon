@@ -11,7 +11,7 @@ minutes.
 - `git` on `PATH`. csl reads `.git/config` directly for repo names and uses
   `git` for pull and fingerprinting.
 - At least one local git checkout.
-- [mise](https://mise.jdx.dev) or Homebrew for the install. Building from a
+- [mise](https://mise.jdx.dev) for the install. Building from a
   checkout instead needs Go 1.27.3 or newer and the Xcode Command Line Tools
   (`xcode-select --install`), because csl compiles its tree-sitter grammars
   with cgo. The prebuilt tarball has them compiled in and needs neither.
@@ -29,13 +29,6 @@ mise use -g "csl[version_prefix=csl/]"
 
 While the repository is private, set `MISE_GITHUB_TOKEN` to a token with read
 access first (`gh auth token` works when the GitHub CLI is logged in).
-
-With Homebrew, once the repository is public:
-
-```sh
-brew tap mad01/tap
-brew install mad01/tap/csl
-```
 
 From a checkout, when you want to build it yourself:
 
@@ -281,13 +274,13 @@ t-man status csl-web
 
 Use the shim path. t-man bakes the resolved command path into the launchd
 plist, so the path has to be the right one at add time. A bare `csl` resolves
-to a Homebrew binary first when one exists, and the path `mise which csl` prints
-carries the version number. So an agent registered with either would keep
-running the old build after `mise upgrade csl`. The shim points at whatever
-version mise currently has. After an upgrade, `t-man restart csl-web` picks it
-up, and the web-ui-version-skew check in `csl doctor` tells you when the
-running process is behind the binary on PATH. A Homebrew install can use
-`brew services start mad01/tap/csl` instead of t-man.
+to whatever comes first on PATH, which under `mise activate` is the versioned
+install directory, the same path `mise which csl` prints. So an agent
+registered with either would keep running the old build after
+`mise upgrade csl`. The shim points at whatever version mise currently has.
+After an upgrade, `t-man restart csl-web` picks it up, and the
+web-ui-version-skew check in `csl doctor` tells you when the running process
+is behind the binary on PATH.
 
 `csl web --port` moves one process only. When the UI lives somewhere else for
 good, set `CSL_PORT` or `web.base_url` in the config so the MCP server and
@@ -301,10 +294,14 @@ loop whatever it's named) needs a local [Ollama](https://ollama.com) server
 with an embedding model pulled:
 
 ```sh
-brew install ollama
-brew services start ollama
+mise use -g ollama
+t-man add --name ollama -- "$HOME/.local/share/mise/shims/ollama" serve
 ollama pull unclemusclez/jina-embeddings-v2-base-code:f16
 ```
+
+The t-man agent keeps the Ollama server running across logins, the same way
+as `csl-web` in step 8. For a one-off try, run `ollama serve` in another
+terminal instead.
 
 Enable it and build the vector index:
 

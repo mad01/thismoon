@@ -19,7 +19,7 @@ What stays in the consuming repo (machine wiring, per ADR-0006):
   semantic search needs a running Ollama; lexical search works without it.
 
 Release artifacts exist (`csl/vX.Y.Z` tarballs, built with cgo on a macOS
-arm64 runner in release.yml) and serve the mise and Homebrew paths. The fleet
+arm64 runner in release.yml) and serve the mise install path. The fleet
 ignores them and builds from the sources cache through this recipe.
 
 The `repo` and `repo-sync` functions are written to

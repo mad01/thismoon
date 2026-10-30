@@ -1,6 +1,6 @@
 # How it fits together
 
-Every component in this repo works standalone: `brew install` one and stop
+Every component in this repo works standalone: install one with mise and stop
 reading. This page is for the other path. It covers what the pieces add up to
 when they run as a fleet, the vocabulary the recipes are written in, and the
 order to roll it out. The step-by-step install lives in

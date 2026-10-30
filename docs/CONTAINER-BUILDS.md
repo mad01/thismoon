@@ -84,10 +84,12 @@ The rules baked into that shape:
 No recipe installs the `container` runtime; it is a by-hand step on each
 machine:
 
-- There is no Homebrew cask (the `container` cask is an unrelated project).
-  Install the signed pkg from
+- Install the signed pkg from
   [apple/container releases](https://github.com/apple/container/releases);
-  it lands root-owned at `/usr/local/bin/container`.
+  it lands root-owned under `/usr/local`: the `container` CLI, the
+  `container-apiserver`, and the runtime plugins in `libexec/container`.
+  Don't use mise's `container` entry: it copies the CLI out of that pkg
+  and leaves the apiserver behind.
 - First run needs a Linux kernel:
   `container system start --enable-kernel-install` does it
   non-interactively.
