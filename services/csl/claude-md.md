@@ -63,6 +63,7 @@ csl search '<query>' --repo <re> --file '<re>'    # files that match (default)
 csl search '<query>' -o content -C 2 --limit 100  # matching lines with context
 csl search '<query>' --limit 5000 | cut -d/ -f1-2 | sort | uniq -c | sort -rn  # matching files per repo
 csl count '<query>' --group-by repo               # how many matches per repo
+csl count '<query>' --group-by repo --names       # every matching repo, one per line, no cap
 csl count '<query>' --lang go --repo <re>         # one total, narrowed
 csl read <path> --repo <name> --start-line N --end-line M
 csl outline <repo> [path] --kinds struct,function # definitions ranked by use

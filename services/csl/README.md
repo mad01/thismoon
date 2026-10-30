@@ -101,6 +101,7 @@ csl search "fmt\.Errorf" --lang go --output-mode content -C 3
 csl hybrid "retry failed HTTP requests"  # fuse lexical + semantic (RRF)
 csl semantic "where do we retry failed requests"  # meaning-based search
 csl count "TODO" --group-by repo         # cross-repo tally
+csl count "TODO" --group-by repo --names # every repo that matches, one per line
 csl sync                                 # pull every repo (ff-only), reindex what changed
 csl doctor                               # check index + daemon health
 csl config                               # which config file is read, and the settings in effect

@@ -144,6 +144,7 @@ Takes the same query syntax as `csl search`. Always goes through the daemon firs
 | `-r, --repo <regex>` | `""` | Restrict to repos matching |
 | `-l, --lang <name>` | `""` | Restrict to a language |
 | `--group-by <key>` | `""` | Group counts by `repo` or `language` |
+| `--names` | `false` | With `--group-by`: print only the group names, one per line, no counts and no total |
 | `--json` | `false` | Emit results as JSON |
 
 ### Examples
@@ -174,6 +175,21 @@ total: 142
 ```sh
 csl count "import" --lang go --group-by language
 ```
+
+**Every repo that matches, as a list for the next command:**
+
+```sh
+csl count "uses: .*/deploy" --group-by repo --names
+```
+
+Output:
+
+```
+mad01/thismoon
+myorg/service-a
+```
+
+A count has no result cap, unlike `csl search --limit`, so this is the way to build a complete repo list from a pattern. Pipe it on: `csl count "<pattern>" --group-by repo --names | xargs -n1 ...`.
 
 ---
 
