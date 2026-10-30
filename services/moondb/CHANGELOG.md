@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/mad01/thismoon/compare/moondb/v0.8.0...moondb/v0.9.0) (2026-10-30)
+
+
+### Features
+
+* **moondb:** hide sessions from the listings ([#349](https://github.com/mad01/thismoon/issues/349)) ([b9badd7](https://github.com/mad01/thismoon/commit/b9badd70f052fa1075f01bfd8610a15cec3a57fb))
+
 ## [0.8.0](https://github.com/mad01/thismoon/compare/moondb/v0.7.0...moondb/v0.8.0) (2026-10-29)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/mad01/thismoon/compare/humanizer/v0.19.0...humanizer/v0.19.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **humanizer:** suggest mise for installing vale ([c9a04e3](https://github.com/mad01/thismoon/commit/c9a04e333c07c29cc5723ccf936aab0268203524))
+
 ## [0.19.0](https://github.com/mad01/thismoon/compare/humanizer/v0.18.0...humanizer/v0.19.0) (2026-10-25)
 
 
