@@ -68,7 +68,8 @@ func registerAskTools(s *mcp.Server, alwaysLoad bool) {
 	tool := &mcp.Tool{
 		Name: "csl_ask",
 		Description: fmt.Sprintf(
-			"Pick this over csl_read or Read when a file runs to %d lines or more, or a question spans several files, and you need only the answer, not the lines. ",
+			"Pick this over csl_read or Read when a file runs to %d lines or more, or a question spans several files, and you need only the answer, not the lines. " +
+			"Try it before you read: a thin answer costs one cheap call, and the lines are still there to read after. ",
 			AskMinLines,
 		) +
 			"A cheap hosted worker model reads the files a zoekt search selects, so they never enter your context: only its answer comes back, with a footer giving the corpus size, the backend and model, and the list price. " +
