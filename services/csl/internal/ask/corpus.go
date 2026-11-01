@@ -25,6 +25,13 @@ const (
 // line budget allows, so reading it would only fill memory.
 const maxFileBytes = 4 << 20
 
+// maxSkipped stops a corpus that keeps refusing files. Each refusal reads a
+// file, and a line budget with a few lines left refuses nearly every file
+// after it, so without a stop a long selection would be read whole only to
+// list it as skipped. Past this many skips the rest are not considered and
+// the corpus is marked truncated.
+const maxSkipped = 50
+
 // Hit is one file a search selected: the repo name as discovery reports it
 // (org/repo) and a path relative to that repo's root.
 type Hit struct {
@@ -80,22 +87,27 @@ type CorpusFile struct {
 	bytes int
 }
 
-// Skip is a matching file the corpus left out, and why.
+// Skip is a matching file the corpus considered and left out, and why.
 type Skip struct {
 	Hit
 	Reason string `json:"reason"`
 }
 
-// Corpus is the files a question is answered over, in rank order, with the
-// matching files the caps left out.
+// Corpus is the files a question is answered over, in rank order, and how
+// much of the selection they cover.
 type Corpus struct {
 	Files []CorpusFile `json:"files"`
-	// FilesTotal counts the distinct files the selection offered: the ones
-	// read plus the ones skipped.
-	FilesTotal int    `json:"files_total"`
-	Lines      int    `json:"lines"`
-	Chars      int    `json:"chars"`
-	Skipped    []Skip `json:"skipped,omitempty"`
+	// Matched counts the distinct files the selection offered.
+	Matched int `json:"matched"`
+	// Read counts the files in the worker's message.
+	Read  int `json:"read"`
+	Lines int `json:"lines"`
+	Chars int `json:"chars"`
+	// Skipped lists the files considered and left out, each with a reason.
+	Skipped []Skip `json:"skipped,omitempty"`
+	// Truncated is set when matching files were never considered: the caps
+	// were reached before them, or a query's search stopped at its limit.
+	Truncated bool `json:"truncated"`
 }
 
 // Union merges ranked hit lists into one: every list's first hit, then
@@ -123,24 +135,22 @@ func Union(lists [][]Hit) []Hit {
 	}
 }
 
-// Build reads hits in order into a corpus, each file whole, until the caps
-// stop it. A file that does not fit the lines left is skipped and the next
-// is tried, since a smaller one may still fit; one past max_files is
-// skipped unread. roots maps a repo name to its checkout; a path that
-// leaves its repo is refused the way csl_read refuses it. lim must be
-// resolved.
+// Build reads hits in rank order into a corpus, each file whole, until
+// max_files files are in or the line budget is spent. A file that cannot go
+// in (binary, missing, outside its repo, or longer than the lines left) is
+// skipped with its reason and the next is tried, so a later file fills its
+// place. Once a cap is reached, or maxSkipped files were refused, nothing
+// more is read: the files left are counted in Matched and mark the corpus
+// truncated. A repeated hit counts once. roots maps a repo name to its
+// checkout; a path that leaves its repo is refused the way csl_read refuses
+// it. lim must be resolved.
 func Build(hits []Hit, roots map[string]string, lim Limits) Corpus {
-	var c Corpus
-	seen := map[Hit]bool{}
+	hits = distinct(hits)
+	c := Corpus{Matched: len(hits)}
 	for _, h := range hits {
-		if seen[h] {
-			continue
-		}
-		seen[h] = true
-		c.FilesTotal++
-		if len(c.Files) == lim.MaxFiles {
-			c.skip(h, fmt.Sprintf("over max_files (%d)", lim.MaxFiles))
-			continue
+		if len(c.Files) == lim.MaxFiles || c.Lines >= lim.MaxLines ||
+			len(c.Skipped) == maxSkipped {
+			break
 		}
 		f, err := readCorpusFile(roots, h)
 		if err != nil {
@@ -157,7 +167,22 @@ func Build(hits []Hit, roots map[string]string, lim Limits) Corpus {
 		c.Lines += f.Lines
 		c.Chars += f.bytes
 	}
+	c.Read = len(c.Files)
+	c.Truncated = c.Matched > c.Read+len(c.Skipped)
 	return c
+}
+
+// distinct drops repeated hits, keeping each one's first place.
+func distinct(hits []Hit) []Hit {
+	out := make([]Hit, 0, len(hits))
+	seen := make(map[Hit]bool, len(hits))
+	for _, h := range hits {
+		if !seen[h] {
+			seen[h] = true
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 func (c *Corpus) skip(h Hit, reason string) {

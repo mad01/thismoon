@@ -499,21 +499,25 @@ Answer a question over the files up to ten zoekt queries select. A hosted worker
       {"repo": "mad01/thismoon", "path": "tools/worklog/internal/cli/cli.go", "lines": 441},
       {"repo": "mad01/thismoon", "path": "services/csl/internal/cli/search.go", "lines": 494}
     ],
-    "files_total": 2,
+    "matched": 2,
+    "read": 2,
     "lines": 935,
-    "chars": 27803
+    "chars": 27803,
+    "truncated": false
   },
   "usage": {"prompt_tokens": 16013, "completion_tokens": 726, "cost_usd": 0.0019643}
 }
 ```
 
-The `text` form is the answer, a blank line, and one footer line: `corpus: 2 files, 935 lines; claude/claude-haiku-5-5; $0.002`. The footer adds `, N skipped` after the lines when `corpus.skipped` is not empty, and `skipped` lists each `{repo, path, reason}` left out. With `per_repo` the JSON also carries `per_repo`, one `{repo, answer, usage}` entry per repo in rank order. A repo whose call failed carries `error` instead of `answer`, and the call fails only when every repo failed. The answers are joined as they are, with no second model call to merge them.
+The `text` form is the answer, a blank line, and one footer line: `corpus: 2 files, 935 lines; claude/claude-haiku-5-5; $0.002`. The footer adds `, N skipped` after the lines when `corpus.skipped` is not empty, and `, truncated` when `corpus.truncated` is set. It ends with `; relaxed: <query> -> <relaxed_query>` for each query in `relaxed`. With `per_repo` the JSON also carries `per_repo`, one `{repo, answer, usage}` entry per repo in rank order. A repo whose call failed carries `error` instead of `answer`, and the call fails only when every repo failed. The answers are joined as they are, with no second model call to merge them.
 
-**Corpus.** The queries run the way `csl_search_multi` runs them: one repo discovery, one daemon start, four at a time, each in `files_with_matches` mode with `limit` set to `max_files`. The corpus is the union of their files in rank order, taking turns across queries, so every query's best match goes in before any query's tail. A file is read whole, never cut. One that does not fit the lines left is skipped and the next is tried, since a smaller one may still fit. Every file left out is listed in `corpus.skipped` with the reason: over `max_files`, over `max_lines`, binary, not in the checkout, or outside its repo. `files_total` counts the files read plus the files skipped. The worker sees each file as `org/repo/path` with numbered lines and cites `path:line`, sometimes by the bare file name. `corpus.files` names the repo and full path to read with `csl_read`.
+**Corpus.** The queries run the way `csl_search_multi` runs them: one repo discovery, one daemon start, four at a time, each in `files_with_matches` mode with a limit of 500 files. A query whose AND terms partly match no file gets the rerun `csl_search` makes without those terms. Its files stay in the corpus, and `relaxed` lists it as `{query, relaxed_query, dropped_terms}`. The corpus is the union of the files in rank order, taking turns across queries, so every query's best match goes in before any query's tail. `corpus.matched` counts that union.
+
+A file is read whole, never cut. One that can't go in is listed in `corpus.skipped` with the reason, and the next file takes its place. The reason is one of: more lines than the budget has left, binary, not in the checkout, or outside its repo. Reading stops once `max_files` files are in, the line budget is spent, or 50 files were skipped. `corpus.read` counts the files sent. `corpus.truncated` is true when matching files were never considered, or when a query's search stopped at 500 files. The worker sees each file as `org/repo/path` with numbered lines and cites `path:line`, sometimes by the bare file name. `corpus.files` names the repo and full path to read with `csl_read`.
 
 **Worker.** The `ask` keys of `config.yaml` pick it: `ask.backend` forces `litellm`, `claude` or `openrouter`, and empty auto-selects a LiteLLM proxy when `LITELLM_BASE_URL` is set, then the `claude` CLI on `PATH`, then OpenRouter when `OPENROUTER_API_KEY` is set. `ask.model` defaults to `claude-haiku-5-5` and `ask.effort` to `low`. `cost_usd` is the list price of the reported tokens with no cache discount, and zero for a model the price table does not know.
 
-**Errors, none of which makes a model call:** an empty question, no queries or more than ten, a malformed query, or a cap out of range is refused first. With no worker configured, the error names what to set. When no query matches a file, the error carries each query's zero-result hint, the same diagnosis `csl_search` gives. When every matching file was skipped, the error names the first few and why.
+**Errors, none of which makes a model call:** an empty question, no queries or more than ten, a malformed query, or a cap out of range is refused first. With no worker configured, the error names what to set. When no query matches a file, the error carries each query's zero-result hint, the same diagnosis `csl_search` gives. When no matching file could go into the corpus, the error names the first few skipped and why.
 
 ### `csl_semantic_search`
 

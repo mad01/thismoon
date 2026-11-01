@@ -49,10 +49,13 @@ Selecting the files:
                       csl search prints), or from a file named in place of -.
                       Takes no -q, --repo, --lang or --file.
 
-Each file is read whole. The corpus stops at --max-files (default 20, max 100)
-and --max-lines (default 6000, max 20000); --json lists the files that did not
-fit under corpus.skipped. --per-repo asks once per repo and prints the answers
-under an org/repo heading each.
+Each query selects up to 500 files, and each file is read whole. The corpus
+stops at --max-files (default 20, max 100) and --max-lines (default 6000, max
+20000). A file that can't go in is skipped and the next takes its place;
+--json lists the skipped files under corpus.skipped. The footer says
+truncated when matching files were never read, and names each query rerun
+without its zero-file terms. --per-repo asks once per repo and prints the
+answers under an org/repo heading each.
 
 The worker comes from the ask keys of config.yaml (see 'csl config --help').
 With no ask.backend set it is a LiteLLM proxy when LITELLM_BASE_URL is set,

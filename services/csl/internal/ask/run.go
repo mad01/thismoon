@@ -49,24 +49,43 @@ type RepoAnswer struct {
 	Usage  Usage  `json:"usage"`
 }
 
+// Relaxed is a query that matched no file as sent: its files come from the
+// one rerun without the AND terms that match no file at all, the rerun
+// csl_search makes.
+type Relaxed struct {
+	Query        string   `json:"query"`
+	RelaxedQuery string   `json:"relaxed_query"`
+	DroppedTerms []string `json:"dropped_terms"`
+}
+
 // Result is a question's answer with what it cost and what it read.
 type Result struct {
 	Answer  string       `json:"answer"`
 	Backend string       `json:"backend"`
 	Model   string       `json:"model"`
 	Corpus  Corpus       `json:"corpus"`
+	Relaxed []Relaxed    `json:"relaxed,omitempty"`
 	Usage   Usage        `json:"usage"`
 	PerRepo []RepoAnswer `json:"per_repo,omitempty"`
 }
 
 // Footer is the one line that closes a text answer: the corpus size, the
-// backend and model, and the list price.
+// backend and model, the list price, and each query that was relaxed.
 func (r Result) Footer() string {
 	corpus := fmt.Sprintf("%d files, %d lines", len(r.Corpus.Files), r.Corpus.Lines)
 	if n := len(r.Corpus.Skipped); n > 0 {
 		corpus += fmt.Sprintf(", %d skipped", n)
 	}
-	return fmt.Sprintf("corpus: %s; %s/%s; $%.3f", corpus, r.Backend, r.Model, r.Usage.CostUSD)
+	if r.Corpus.Truncated {
+		corpus += ", truncated"
+	}
+	footer := fmt.Sprintf(
+		"corpus: %s; %s/%s; $%.3f", corpus, r.Backend, r.Model, r.Usage.CostUSD,
+	)
+	for _, q := range r.Relaxed {
+		footer += fmt.Sprintf("; relaxed: %s -> %s", q.Query, q.RelaxedQuery)
+	}
+	return footer
 }
 
 // Text is the answer, a blank line, and the footer.
@@ -74,39 +93,48 @@ func (r Result) Text() string {
 	return r.Answer + "\n\n" + r.Footer()
 }
 
-// WorkerFunc returns a backend whose exchanges go to observe. Every worker
-// call gets its own, so concurrent calls never share an observer.
+// WorkerFunc returns a backend whose exchanges go to observe.
 type WorkerFunc func(observe func(llm.CallInfo)) (llm.Backend, error)
+
+// Worker is the worker a question goes to, resolved once before the corpus
+// is built: its backend name and model, and New, which builds the backend
+// for one call. Every call gets its own backend because the observer that
+// prices a call is fixed when the backend is built, and the calls of a
+// per-repo question run at once.
+type Worker struct {
+	Name  string
+	Model string
+	New   WorkerFunc
+}
 
 // Request is a question over a built corpus.
 type Request struct {
 	Question string
 	Corpus   Corpus
+	// Relaxed names the queries whose files came from a relaxed rerun, so
+	// the result can say so.
+	Relaxed []Relaxed
 	// PerRepo asks once per repo in the corpus, in repo rank order, and
 	// concatenates the answers under a heading per repo.
 	PerRepo bool
 }
 
-// Run answers the question over the corpus. The worker is resolved once
-// before any call, so a missing backend fails fast with nothing spent.
-func Run(ctx context.Context, req Request, newWorker WorkerFunc) (Result, error) {
+// Run answers the question over the corpus with the resolved worker.
+func Run(ctx context.Context, req Request, w Worker) (Result, error) {
 	if len(req.Corpus.Files) == 0 {
 		return Result{}, errors.New("ask: the corpus is empty; nothing to send the worker")
 	}
-	probe, err := newWorker(nil)
-	if err != nil {
-		return Result{}, err
-	}
-	res := Result{Backend: probe.Name(), Model: probe.Model(), Corpus: req.Corpus}
+	res := Result{Backend: w.Name, Model: w.Model, Corpus: req.Corpus, Relaxed: req.Relaxed}
+	var err error
 	if req.PerRepo {
-		res.PerRepo, err = askPerRepo(ctx, req.Question, req.Corpus.Files, newWorker)
+		res.PerRepo, err = askPerRepo(ctx, req.Question, req.Corpus.Files, w.New)
 		if err != nil {
 			return Result{}, err
 		}
 		res.Answer, res.Usage = joinRepoAnswers(res.PerRepo)
 		return res, nil
 	}
-	res.Answer, res.Usage, err = askOnce(ctx, req.Question, req.Corpus.Files, newWorker)
+	res.Answer, res.Usage, err = askOnce(ctx, req.Question, req.Corpus.Files, w.New)
 	if err != nil {
 		return Result{}, err
 	}

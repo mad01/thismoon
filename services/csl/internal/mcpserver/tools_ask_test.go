@@ -96,15 +96,15 @@ func TestSearchAskQueriesBuildsTheCorpusInTurns(t *testing.T) {
 	}}
 	env := multiEnv(t, fb, root, "o/r")
 
-	lists, err := searchAskQueries(
+	sel, err := searchAskQueries(
 		context.Background(), env,
-		AskRequest{Queries: []string{"first", "second"}}, ask.DefaultMaxFiles,
+		AskRequest{Queries: []string{"first", "second"}}, askSearchLimit,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	corpus, err := buildAskCorpus(
-		ask.Union(lists),
+		ask.Union(sel.lists),
 		env.repoPaths,
 		ask.Limits{MaxFiles: 2, MaxLines: 100},
 	)
@@ -118,12 +118,95 @@ func TestSearchAskQueriesBuildsTheCorpusInTurns(t *testing.T) {
 	if want := []string{"a.go", "c.go"}; !slices.Equal(kept, want) {
 		t.Errorf("corpus = %v, want each query's top file first: %v", kept, want)
 	}
-	if corpus.FilesTotal != 3 || len(corpus.Skipped) != 1 || corpus.Skipped[0].Path != "b.go" {
+	if corpus.Matched != 3 || len(corpus.Skipped) != 0 || !corpus.Truncated {
 		t.Errorf(
-			"files_total=%d skipped=%+v, want 3 with b.go skipped",
-			corpus.FilesTotal,
-			corpus.Skipped,
+			"matched=%d skipped=%+v truncated=%v, want 3 matched, b.go never considered",
+			corpus.Matched, corpus.Skipped, corpus.Truncated,
 		)
+	}
+}
+
+func TestSearchAskQueriesBackfillsFromPastTheFileCap(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{"bin.dat": "\x00", "a.go": "a\n", "b.go": "b\n"}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	match := func(file string) search.Match { return search.Match{Repo: "o/r", File: file, Line: 1} }
+	fb := &multiFake{results: map[string][]search.Match{
+		"q": {match("bin.dat"), match("gone.go"), match("a.go"), match("b.go")},
+	}}
+	env := multiEnv(t, fb, root, "o/r")
+
+	sel, err := searchAskQueries(
+		context.Background(), env, AskRequest{Queries: []string{"q"}}, askSearchLimit,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	corpus, err := buildAskCorpus(
+		ask.Union(sel.lists), env.repoPaths, ask.Limits{MaxFiles: 2, MaxLines: 100},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept []string
+	for _, f := range corpus.Files {
+		kept = append(kept, f.Path)
+	}
+	if want := []string{"a.go", "b.go"}; !slices.Equal(kept, want) {
+		t.Errorf("corpus = %v, want the two skipped files replaced by %v", kept, want)
+	}
+	if corpus.Matched != 4 || len(corpus.Skipped) != 2 || corpus.Truncated {
+		t.Errorf(
+			"matched=%d skipped=%d truncated=%v, want 4, 2, false",
+			corpus.Matched, len(corpus.Skipped), corpus.Truncated,
+		)
+	}
+}
+
+func TestSearchAskQueriesMarksASearchCutAtItsLimit(t *testing.T) {
+	fb := &multiFake{results: map[string][]search.Match{"q": makeFileMatches(3, "o/r")}}
+	env := multiEnv(t, fb, t.TempDir(), "o/r")
+	sel, err := searchAskQueries(
+		context.Background(), env, AskRequest{Queries: []string{"q"}}, 2,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sel.truncated || len(sel.lists[0]) != 2 {
+		t.Errorf(
+			"truncated=%v files=%d, want the search cut at 2 and marked",
+			sel.truncated, len(sel.lists[0]),
+		)
+	}
+}
+
+func TestSearchAskQueriesNamesARelaxedQuery(t *testing.T) {
+	fb := &multiFake{
+		results: map[string][]search.Match{"retry": {{Repo: "o/r", File: "a.go", Line: 1}}},
+		files:   map[string]int{"retry": 1, "jitter": 0},
+	}
+	env := multiEnv(t, fb, t.TempDir(), "o/r")
+	sel, err := searchAskQueries(
+		context.Background(), env,
+		AskRequest{Queries: []string{"retry jitter"}}, askSearchLimit,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sel.lists[0]) != 1 {
+		t.Errorf("files = %v, want the relaxed rerun's file kept", sel.lists[0])
+	}
+	want := []ask.Relaxed{
+		{Query: "retry jitter", RelaxedQuery: "retry", DroppedTerms: []string{"jitter"}},
+	}
+	if len(sel.relaxed) != 1 || sel.relaxed[0].Query != want[0].Query ||
+		sel.relaxed[0].RelaxedQuery != want[0].RelaxedQuery ||
+		!slices.Equal(sel.relaxed[0].DroppedTerms, want[0].DroppedTerms) {
+		t.Errorf("relaxed = %+v, want %+v", sel.relaxed, want)
 	}
 }
 
@@ -132,7 +215,7 @@ func TestSearchAskQueriesZeroFilesCarriesEachHint(t *testing.T) {
 	env := multiEnv(t, fb, t.TempDir(), "o/r")
 	_, err := searchAskQueries(
 		context.Background(), env,
-		AskRequest{Queries: []string{"nothing", "neither"}}, ask.DefaultMaxFiles,
+		AskRequest{Queries: []string{"nothing", "neither"}}, askSearchLimit,
 	)
 	if err == nil {
 		t.Fatal("zero files searched fine, want an error carrying the hints")
@@ -157,7 +240,7 @@ func TestSearchAskQueriesFailedQueryFailsTheQuestion(t *testing.T) {
 	env := multiEnv(t, fb, t.TempDir(), "o/r")
 	_, err := searchAskQueries(
 		context.Background(), env,
-		AskRequest{Queries: []string{"good", "bad"}}, ask.DefaultMaxFiles,
+		AskRequest{Queries: []string{"good", "bad"}}, askSearchLimit,
 	)
 	if err == nil || !strings.Contains(err.Error(), `query 2/2 "bad"`) {
 		t.Errorf("err = %v, want the failed query named", err)
@@ -175,20 +258,29 @@ func TestBuildAskCorpusRefusesAllSkipped(t *testing.T) {
 	}
 }
 
-// countingWorker swaps newAskWorker for a fake that counts the calls that
-// would cost money, failing resolution with resolveErr when it is set.
-func countingWorker(t *testing.T, resolveErr error) *atomic.Int32 {
+// workerCounts is what the fake worker saw: backends built and the calls
+// that would cost money.
+type workerCounts struct {
+	built atomic.Int32
+	calls atomic.Int32
+}
+
+// countingWorker swaps newAskWorker for a fake that counts the backends it
+// builds and the calls that would cost money, failing resolution with
+// resolveErr when it is set.
+func countingWorker(t *testing.T, resolveErr error) *workerCounts {
 	t.Helper()
-	var calls atomic.Int32
+	var n workerCounts
 	orig := newAskWorker
 	newAskWorker = func(s ask.Settings, observe func(llm.CallInfo)) (llm.Backend, error) {
+		n.built.Add(1)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
-		return countingBackend{calls: &calls}, nil
+		return countingBackend{calls: &n.calls}, nil
 	}
 	t.Cleanup(func() { newAskWorker = orig })
-	return &calls
+	return &n
 }
 
 type countingBackend struct{ calls *atomic.Int32 }
@@ -222,12 +314,15 @@ func TestAskWithoutBackendFailsBeforeSearching(t *testing.T) {
 
 func TestAskWithNoFilesNeverCallsTheWorker(t *testing.T) {
 	noConfigHome(t)
-	calls := countingWorker(t, nil)
+	counts := countingWorker(t, nil)
 	_, err := Ask(context.Background(), AskRequest{Question: "q", Queries: []string{"x"}})
 	if err == nil || !strings.Contains(err.Error(), noReposNote) {
 		t.Errorf("err = %v, want the zero-file error carrying %q", err, noReposNote)
 	}
-	if n := calls.Load(); n != 0 {
+	if n := counts.calls.Load(); n != 0 {
 		t.Errorf("%d worker calls, want none", n)
+	}
+	if n := counts.built.Load(); n != 1 {
+		t.Errorf("worker resolved %d times before the search, want once", n)
 	}
 }

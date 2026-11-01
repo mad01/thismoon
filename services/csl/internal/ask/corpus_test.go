@@ -1,6 +1,7 @@
 package ask
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -100,7 +101,7 @@ func TestBuildCapsAndSkips(t *testing.T) {
 		{"other/repo", "x.go"},
 		{"o/r", "big.go"}, // 10 lines with 3 left: skipped, the next still fits
 		{"o/r", "tiny.go"},
-		{"o/r", "last.go"}, // past max_files: skipped unread
+		{"o/r", "last.go"}, // past max_files: never considered
 	}
 	c := Build(hits, roots, Limits{MaxFiles: 2, MaxLines: 5})
 
@@ -111,8 +112,14 @@ func TestBuildCapsAndSkips(t *testing.T) {
 	if want := []string{"small.go", "tiny.go"}; !slices.Equal(kept, want) {
 		t.Fatalf("kept %v, want %v", kept, want)
 	}
-	if c.Lines != 3 || c.Chars != len("a\nb\n")+len("z\n") || c.FilesTotal != 8 {
-		t.Errorf("lines=%d chars=%d files_total=%d, want 3, 6, 8", c.Lines, c.Chars, c.FilesTotal)
+	if c.Lines != 3 || c.Chars != len("a\nb\n")+len("z\n") {
+		t.Errorf("lines=%d chars=%d, want 3, 6", c.Lines, c.Chars)
+	}
+	if c.Matched != 8 || c.Read != 2 || len(c.Skipped) != 5 || !c.Truncated {
+		t.Errorf(
+			"matched=%d read=%d skipped=%d truncated=%v, want 8, 2, 5, true",
+			c.Matched, c.Read, len(c.Skipped), c.Truncated,
+		)
 	}
 	reasons := map[string]string{}
 	for _, s := range c.Skipped {
@@ -124,15 +131,90 @@ func TestBuildCapsAndSkips(t *testing.T) {
 		"bin.dat":       "binary",
 		"x.go":          "not among the discovered repos",
 		"big.go":        "10 lines, 3 left under max_lines (5)",
-		"last.go":       "over max_files (2)",
 	} {
 		if !strings.Contains(reasons[path], want) {
 			t.Errorf("skip reason for %s = %q, want it to mention %q", path, reasons[path], want)
 		}
 	}
+	if r, ok := reasons["last.go"]; ok {
+		t.Errorf("last.go skipped with %q, want it never considered", r)
+	}
 	files := workerFiles(c.Files)
 	if files[0].Path != "o/r/small.go" || !slices.Equal(files[0].Lines, []string{"a", "b"}) {
 		t.Errorf("worker file = %+v, want o/r/small.go with its two lines", files[0])
+	}
+}
+
+func TestBuildBackfillsSkipsInRankOrder(t *testing.T) {
+	root := repoTree(t, map[string]string{
+		"a.go":    "a\n",
+		"bin.dat": "\x00",
+		"b.go":    "b\n",
+		"c.go":    "c\n",
+	})
+	hits := []Hit{{"o/r", "a.go"}, {"o/r", "bin.dat"}, {"o/r", "b.go"}, {"o/r", "c.go"}}
+
+	c := Build(hits, map[string]string{"o/r": root}, Limits{MaxFiles: 2, MaxLines: 100})
+	var kept []string
+	for _, f := range c.Files {
+		kept = append(kept, f.Path)
+	}
+	if want := []string{"a.go", "b.go"}; !slices.Equal(kept, want) {
+		t.Errorf("kept %v, want the binary file's place taken by the next: %v", kept, want)
+	}
+	if !c.Truncated || c.Matched != 4 || len(c.Skipped) != 1 {
+		t.Errorf(
+			"truncated=%v matched=%d skipped=%+v, want c.go left unconsidered",
+			c.Truncated, c.Matched, c.Skipped,
+		)
+	}
+
+	all := Build(hits, map[string]string{"o/r": root}, Limits{MaxFiles: 10, MaxLines: 100})
+	if all.Truncated || all.Read != 3 {
+		t.Errorf(
+			"truncated=%v read=%d, want every file considered and 3 read",
+			all.Truncated,
+			all.Read,
+		)
+	}
+}
+
+func TestBuildStopsReadingOnceTheLineBudgetIsSpent(t *testing.T) {
+	root := repoTree(t, map[string]string{
+		"full.go": strings.Repeat("x\n", 4),
+		"bin.dat": "\x00",
+	})
+	hits := []Hit{
+		{"o/r", "full.go"}, // spends the whole budget
+		{"o/r", "bin.dat"}, // would be a skip if it were read
+		{"o/r", "gone.go"},
+	}
+	c := Build(hits, map[string]string{"o/r": root}, Limits{MaxFiles: 10, MaxLines: 4})
+	if c.Read != 1 || c.Lines != 4 {
+		t.Fatalf("read=%d lines=%d, want full.go alone at 4 lines", c.Read, c.Lines)
+	}
+	if len(c.Skipped) != 0 || !c.Truncated || c.Matched != 3 {
+		t.Errorf(
+			"skipped=%+v truncated=%v matched=%d, want nothing read past the budget and truncated",
+			c.Skipped, c.Truncated, c.Matched,
+		)
+	}
+}
+
+func TestBuildStopsAfterMaxSkipped(t *testing.T) {
+	root := repoTree(t, map[string]string{"late.go": "x\n"})
+	var hits []Hit
+	for i := range maxSkipped + 5 {
+		hits = append(hits, Hit{"o/r", fmt.Sprintf("gone%d.go", i)})
+	}
+	hits = append(hits, Hit{"o/r", "late.go"})
+
+	c := Build(hits, map[string]string{"o/r": root}, Limits{MaxFiles: 10, MaxLines: 100})
+	if len(c.Skipped) != maxSkipped || c.Read != 0 || !c.Truncated {
+		t.Errorf(
+			"skipped=%d read=%d truncated=%v, want %d skips, nothing read, truncated",
+			len(c.Skipped), c.Read, c.Truncated, maxSkipped,
+		)
 	}
 }
 

@@ -26,6 +26,12 @@ import (
 // same cap csl_search_multi has.
 const maxAskQueries = maxMultiQueries
 
+// askSearchLimit is how many files each query may select, the csl_ask
+// eval's search limit. It sits well past the corpus caps, so a file the
+// corpus refuses is replaced from further down the ranking, and a query
+// that reaches it marks the corpus truncated.
+const askSearchLimit = 500
+
 // skipReasonsShown is how many skipped files an empty-corpus error names.
 const skipReasonsShown = 5
 
@@ -53,7 +59,8 @@ func registerAskTools(s *mcp.Server) {
 			"Use it for a question over many files, or over one large file, when you need only the answer: 'which flags does each command accept', 'how does each service configure retries', 'what does this 3000-line file do'. " +
 			"Do not use it for lines you will edit: an edit needs the real content through csl_read or a ranged Read. To locate code, csl_search is cheaper. " +
 			"queries takes 1 to 10 zoekt queries in csl_search syntax, and repo, lang and file narrow every one of them. " +
-			"The corpus is the union of the matching files in rank order, taking turns across queries, each file read whole and capped at max_files (default 20, max 100) and max_lines (default 6000, max 20000); files that do not fit are listed in corpus.skipped with the reason. " +
+			"The corpus is the union of the matching files in rank order, taking turns across queries, each file read whole and capped at max_files (default 20, max 100) and max_lines (default 6000, max 20000). A file that cannot go in is listed in corpus.skipped with the reason and the next file takes its place; corpus.truncated is true when matching files were never considered. " +
+			"A query whose AND terms partly match nothing is rerun without them, as csl_search does, and listed in relaxed with relaxed_query and dropped_terms. " +
 			"per_repo asks once per repo and returns the answers under org/repo headings. " +
 			"The worker cites path:line, sometimes by the bare file name; corpus.files names the repo and full path for csl_read. " +
 			"When no query matches a file, the call fails with each query's zero-result hint and no model call is made.",
@@ -108,7 +115,7 @@ type AskRequest struct {
 // Ask answers a question over the files the request selects. It checks the
 // request and resolves the worker before any search runs, so a bad query or
 // a missing backend costs nothing, and it never calls the worker over an
-// empty corpus.
+// empty corpus. The config is loaded once, for the worker and the search.
 func Ask(ctx context.Context, req AskRequest) (ask.Result, error) {
 	if req.Surface.QueryArg == "" {
 		req.Surface = mcpSurface
@@ -121,22 +128,37 @@ func Ask(ctx context.Context, req AskRequest) (ask.Result, error) {
 	if err != nil {
 		return ask.Result{}, fmt.Errorf("load csl config: %w", err)
 	}
-	settings := ask.SettingsFrom(cfg)
-	if _, err := newAskWorker(settings, nil); err != nil {
-		return ask.Result{}, err
-	}
-	corpus, err := askCorpus(ctx, req, lim)
+	worker, err := resolveAskWorker(ask.SettingsFrom(cfg))
 	if err != nil {
 		return ask.Result{}, err
 	}
-	worker := func(observe func(llm.CallInfo)) (llm.Backend, error) {
-		return newAskWorker(settings, observe)
+	corpus, relaxed, err := askCorpus(ctx, cfg, req, lim)
+	if err != nil {
+		return ask.Result{}, err
 	}
-	return ask.Run(
-		ctx,
-		ask.Request{Question: req.Question, Corpus: corpus, PerRepo: req.PerRepo},
-		worker,
-	)
+	return ask.Run(ctx, ask.Request{
+		Question: req.Question,
+		Corpus:   corpus,
+		Relaxed:  relaxed,
+		PerRepo:  req.PerRepo,
+	}, worker)
+}
+
+// resolveAskWorker resolves the worker once, naming its backend and model.
+// Each call still builds its own backend from the same settings, since the
+// observer that prices a call is fixed when the backend is built.
+func resolveAskWorker(settings ask.Settings) (ask.Worker, error) {
+	b, err := newAskWorker(settings, nil)
+	if err != nil {
+		return ask.Worker{}, err
+	}
+	return ask.Worker{
+		Name:  b.Name(),
+		Model: b.Model(),
+		New: func(observe func(llm.CallInfo)) (llm.Backend, error) {
+			return newAskWorker(settings, observe)
+		},
+	}, nil
 }
 
 // checkAskRequest refuses a request no search should run for and resolves
@@ -177,48 +199,74 @@ func checkAskRequest(req AskRequest) (ask.Limits, error) {
 }
 
 // askCorpus selects the files, by search or from the file list, and reads
-// them into a corpus.
-func askCorpus(ctx context.Context, req AskRequest, lim ask.Limits) (ask.Corpus, error) {
+// them into a corpus. It returns the queries whose files came from a
+// relaxed rerun beside it.
+func askCorpus(
+	ctx context.Context,
+	cfg *config.Config,
+	req AskRequest,
+	lim ask.Limits,
+) (ask.Corpus, []ask.Relaxed, error) {
 	if len(req.FileList) > 0 {
-		env, err := newSearchEnv()
-		if err != nil {
-			return ask.Corpus{}, err
-		}
-		names := slices.Collect(maps.Keys(env.repoPaths))
-		hits, err := ask.ParseFileList(req.FileList, names)
-		if err != nil {
-			return ask.Corpus{}, err
-		}
-		if len(hits) == 0 {
-			return ask.Corpus{}, errors.New(
-				"the file list names no file, so nothing was sent to the worker",
-			)
-		}
-		return buildAskCorpus(hits, env.repoPaths, lim)
+		corpus, err := fileListCorpus(cfg, req.FileList, lim)
+		return corpus, nil, err
 	}
-	env, err := newMultiSearchEnv()
+	env, err := newMultiSearchEnvIn(cfg)
 	if err != nil {
-		return ask.Corpus{}, err
+		return ask.Corpus{}, nil, err
 	}
 	env.surface = req.Surface
-	lists, err := searchAskQueries(ctx, env, req, lim.MaxFiles)
+	sel, err := searchAskQueries(ctx, env, req, askSearchLimit)
+	if err != nil {
+		return ask.Corpus{}, nil, err
+	}
+	corpus, err := buildAskCorpus(ask.Union(sel.lists), env.repoPaths, lim)
+	if err != nil {
+		return ask.Corpus{}, nil, err
+	}
+	corpus.Truncated = corpus.Truncated || sel.truncated
+	return corpus, sel.relaxed, nil
+}
+
+// fileListCorpus reads the files a --files-from list names into a corpus.
+func fileListCorpus(cfg *config.Config, list []string, lim ask.Limits) (ask.Corpus, error) {
+	env, err := newSearchEnvIn(cfg)
 	if err != nil {
 		return ask.Corpus{}, err
 	}
-	return buildAskCorpus(ask.Union(lists), env.repoPaths, lim)
+	names := slices.Collect(maps.Keys(env.repoPaths))
+	hits, err := ask.ParseFileList(list, names)
+	if err != nil {
+		return ask.Corpus{}, err
+	}
+	if len(hits) == 0 {
+		return ask.Corpus{}, errors.New(
+			"the file list names no file, so nothing was sent to the worker",
+		)
+	}
+	return buildAskCorpus(hits, env.repoPaths, lim)
+}
+
+// askSelection is what the queries selected: each query's files in rank
+// order, the queries that matched only after a relaxed rerun, and whether
+// any query's search stopped at its limit.
+type askSelection struct {
+	lists     [][]ask.Hit
+	relaxed   []ask.Relaxed
+	truncated bool
 }
 
 // searchAskQueries runs the queries the way csl_search_multi does, each in
-// files mode with limit files, and returns each query's files in rank order.
-// No query can put more than the file cap into the corpus, so limit is that
-// cap. A failed query fails the question: an answer over the files of the
-// queries that worked would read as an answer over all of them.
+// files mode with limit files. A query rerun relaxed keeps its files, as on
+// csl_search, and is named in the selection. A failed query fails the
+// question: an answer over the files of the queries that worked would read
+// as an answer over all of them.
 func searchAskQueries(
 	ctx context.Context,
 	env searchEnv,
 	req AskRequest,
 	limit int,
-) ([][]ask.Hit, error) {
+) (askSelection, error) {
 	queries := make([]searchMultiQuery, len(req.Queries))
 	for i, q := range req.Queries {
 		queries[i] = searchMultiQuery{
@@ -226,21 +274,30 @@ func searchAskQueries(
 		}
 	}
 	out := runSearchMulti(ctx, env, queries)
-	lists := make([][]ask.Hit, len(out.Results))
+	sel := askSelection{lists: make([][]ask.Hit, len(out.Results)), truncated: out.Truncated}
 	found := 0
 	for i, r := range out.Results {
 		if r.Error != "" {
-			return nil, fmt.Errorf("query %d/%d %q: %s", i+1, len(out.Results), r.Query, r.Error)
+			return askSelection{}, fmt.Errorf(
+				"query %d/%d %q: %s", i+1, len(out.Results), r.Query, r.Error,
+			)
 		}
 		for _, f := range r.Files {
-			lists[i] = append(lists[i], ask.Hit{Repo: f.Repo, Path: f.Path})
+			sel.lists[i] = append(sel.lists[i], ask.Hit{Repo: f.Repo, Path: f.Path})
 		}
-		found += len(lists[i])
+		found += len(sel.lists[i])
+		if r.RelaxedQuery != "" {
+			sel.relaxed = append(sel.relaxed, ask.Relaxed{
+				Query:        r.Query,
+				RelaxedQuery: r.RelaxedQuery,
+				DroppedTerms: r.DroppedTerms,
+			})
+		}
 	}
 	if found == 0 {
-		return nil, zeroFilesError(out.Results)
+		return askSelection{}, zeroFilesError(out.Results)
 	}
-	return lists, nil
+	return sel, nil
 }
 
 // zeroFilesError carries each query's zero-result hint, the diagnosis
@@ -259,16 +316,16 @@ func zeroFilesError(results []searchMultiResult) error {
 	return errors.New(strings.Join(lines, "\n"))
 }
 
-// buildAskCorpus reads the hits into a corpus and refuses one the caps left
-// empty, naming why the first files were skipped.
+// buildAskCorpus reads the hits into a corpus and refuses an empty one,
+// naming why the first files were skipped.
 func buildAskCorpus(hits []ask.Hit, roots map[string]string, lim ask.Limits) (ask.Corpus, error) {
 	corpus := ask.Build(hits, roots, lim)
 	if len(corpus.Files) > 0 {
 		return corpus, nil
 	}
 	lines := []string{fmt.Sprintf(
-		"every one of the %d matching files was skipped, so nothing was sent to the worker:",
-		corpus.FilesTotal,
+		"none of the %d matching files could go into the corpus, so nothing was sent to the worker:",
+		corpus.Matched,
 	)}
 	for _, s := range corpus.Skipped[:min(len(corpus.Skipped), skipReasonsShown)] {
 		lines = append(lines, "  "+s.Name()+": "+s.Reason)

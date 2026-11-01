@@ -2,8 +2,8 @@
   "_comment": "The MCP servers Claude Code sees on this machine, applied at user scope by `agent-sync mcp sync` on every ralph up. Each entry mirrors `claude mcp add --scope user <name> -- <command> [args...]`: a stdio entry has `command` and optional `args` and `env`; a remote one has `transport` (http or sse), `url` and optional `headers`. A leading ~ in command and args is expanded. `hosts` and `profiles` gate an entry to those hostnames (lowercased) or ralph profile tags (from ~/.config/ralph/config.local.toml); both gates must pass. Names starting with _ are skipped. Drop-ins (~/.config/claude-mcp/servers.d/*.json) merge over this file by name. A server missing from `claude mcp list` is added; one whose registered spec differs is removed and added again; a remote server is compared by url alone, so an OAuth login survives. A server dropped from here stays registered unless mcp.prune is true in config.yaml.",
   "servers": {
     "csl": {
-      "_comment": "Code search. Pure stdio over the local index; nothing has to be running.",
-      "command": "~/code/bin/csl",
+      "_comment": "Code search. Pure stdio over the local index; nothing has to be running. The launcher ships with the thismoon csl recipe in the ralph sources cache: it pulls the provider variables kit/llm reads from the secrets file so csl_ask reaches a worker, and search works without them.",
+      "command": "~/.config/ralph/sources/thismoon/recipes/csl/csl-env.sh",
       "args": ["mcp"]
     },
     "present": {

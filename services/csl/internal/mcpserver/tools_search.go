@@ -232,17 +232,22 @@ type searchEnv struct {
 	surface lexical.Surface
 }
 
-// newSearchEnv resolves the index, loads the config, and discovers the
-// repos. Its backend asks the daemon first and searches in-process without
-// one.
+// newSearchEnv loads the config and builds the search setup from it.
 func newSearchEnv() (searchEnv, error) {
-	indexDir, err := search.DefaultIndexDir()
-	if err != nil {
-		return searchEnv{}, fmt.Errorf("resolve index dir: %w", err)
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return searchEnv{}, fmt.Errorf("load csl config: %w", err)
+	}
+	return newSearchEnvIn(cfg)
+}
+
+// newSearchEnvIn resolves the index and discovers the repos of an already
+// loaded config, for a caller that needs the config itself as well. Its
+// backend asks the daemon first and searches in-process without one.
+func newSearchEnvIn(cfg *config.Config) (searchEnv, error) {
+	indexDir, err := search.DefaultIndexDir()
+	if err != nil {
+		return searchEnv{}, fmt.Errorf("resolve index dir: %w", err)
 	}
 	repos, err := cfg.DiscoverRepos()
 	if err != nil {

@@ -55,8 +55,11 @@ model reads them, Haiku at low effort by default (`ask.model`,
 `ask.effort`). Only the answer and a footer line come back, so the files
 never enter the caller's context. Each question is one model call, and the
 footer gives its list price. The corpus stops at max_files (default 20, max
-100) and max_lines (default 6000, max 20000); files that do not fit are
-listed under corpus.skipped in the JSON form.
+100) and max_lines (default 6000, max 20000). A file that can't go in is
+listed under corpus.skipped in the JSON form, and the next file takes its
+place. corpus.truncated, or `truncated` in the footer, means matching files
+were never read. A query relaxed the way csl_search relaxes one keeps its
+files and is named under relaxed and in the footer.
 
 The worker is picked the way kit/llm picks one, unless `ask.backend` forces
 it. A LiteLLM proxy comes first when LITELLM_BASE_URL is set (with
@@ -77,7 +80,7 @@ Failure modes, none of which spends a model call:
 - Zero files: no query matched, and the error carries each query's
   zero-result hint, the same diagnosis csl_search gives. Fix the query.
 - Corpus over the caps: a file that does not fit is skipped, not cut, and
-  the rest still go. When every matching file was skipped (one file over
+  the rest still go. When no matching file could go in (one file over
   max_lines, say), the call fails naming the files and why. Raise
   max_lines, narrow the queries, or read the region with csl_read.
 

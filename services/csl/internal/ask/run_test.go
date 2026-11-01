@@ -28,6 +28,12 @@ func (f *fakeLLM) worker(observe func(llm.CallInfo)) (llm.Backend, error) {
 	return &fakeBackend{f: f, observe: observe}, nil
 }
 
+// resolved is the fake as Run receives it: resolved once, building a
+// backend per call.
+func (f *fakeLLM) resolved() Worker {
+	return Worker{Name: "fake", Model: "claude-haiku-5-5", New: f.worker}
+}
+
 func (f *fakeLLM) calls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -66,7 +72,7 @@ func corpusOf(hits ...Hit) Corpus {
 		c.Lines++
 		c.Chars += 2
 	}
-	c.FilesTotal = len(hits)
+	c.Matched, c.Read = len(hits), len(hits)
 	return c
 }
 
@@ -76,7 +82,7 @@ const haikuCost = 0.10 + 0.05
 func TestRunOneCall(t *testing.T) {
 	f := &fakeLLM{}
 	corpus := corpusOf(Hit{"o/a", "x.go"}, Hit{"o/b", "y.go"})
-	res, err := Run(context.Background(), Request{Question: "q?", Corpus: corpus}, f.worker)
+	res, err := Run(context.Background(), Request{Question: "q?", Corpus: corpus}, f.resolved())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +107,43 @@ func TestRunOneCall(t *testing.T) {
 	}
 }
 
+func TestFooterNamesSkipsTruncationAndRelaxedQueries(t *testing.T) {
+	res := Result{
+		Backend: "fake",
+		Model:   "claude-haiku-5-5",
+		Corpus: Corpus{
+			Files:     []CorpusFile{{Hit: Hit{"o/a", "x.go"}, Lines: 9}},
+			Lines:     9,
+			Skipped:   []Skip{{Hit: Hit{"o/a", "y.bin"}, Reason: "binary file"}},
+			Truncated: true,
+		},
+		Relaxed: []Relaxed{
+			{Query: "retry jitter", RelaxedQuery: "retry", DroppedTerms: []string{"jitter"}},
+		},
+	}
+	want := "corpus: 1 files, 9 lines, 1 skipped, truncated; fake/claude-haiku-5-5; $0.000" +
+		"; relaxed: retry jitter -> retry"
+	if got := res.Footer(); got != want {
+		t.Errorf("footer = %q, want %q", got, want)
+	}
+}
+
+func TestRunCarriesRelaxedQueries(t *testing.T) {
+	f := &fakeLLM{}
+	relaxed := []Relaxed{{Query: "a b", RelaxedQuery: "a", DroppedTerms: []string{"b"}}}
+	res, err := Run(
+		context.Background(),
+		Request{Question: "q?", Corpus: corpusOf(Hit{"o/a", "x.go"}), Relaxed: relaxed},
+		f.resolved(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Relaxed) != 1 || res.Relaxed[0].RelaxedQuery != "a" {
+		t.Errorf("relaxed = %+v, want the request's relaxed queries", res.Relaxed)
+	}
+}
+
 func TestRunPerRepo(t *testing.T) {
 	f := &fakeLLM{failRepo: "o/b"}
 	corpus := corpusOf(
@@ -112,7 +155,7 @@ func TestRunPerRepo(t *testing.T) {
 	res, err := Run(
 		context.Background(),
 		Request{Question: "q?", Corpus: corpus, PerRepo: true},
-		f.worker,
+		f.resolved(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +187,7 @@ func TestRunPerRepoAllFail(t *testing.T) {
 	_, err := Run(
 		context.Background(),
 		Request{Question: "q?", Corpus: corpusOf(Hit{"o/a", "x.go"}), PerRepo: true},
-		f.worker,
+		f.resolved(),
 	)
 	if err == nil || !strings.Contains(err.Error(), "every per-repo worker call failed") {
 		t.Errorf("err = %v, want every call failed", err)
@@ -153,14 +196,14 @@ func TestRunPerRepoAllFail(t *testing.T) {
 
 func TestRunRefusesBeforeAnyCall(t *testing.T) {
 	f := &fakeLLM{}
-	if _, err := Run(context.Background(), Request{Question: "q?"}, f.worker); err == nil {
+	if _, err := Run(context.Background(), Request{Question: "q?"}, f.resolved()); err == nil {
 		t.Error("an empty corpus ran, want an error")
 	}
 	f.noWorker = llm.ErrNoBackend
 	_, err := Run(
 		context.Background(),
 		Request{Question: "q?", Corpus: corpusOf(Hit{"o/a", "x"})},
-		f.worker,
+		f.resolved(),
 	)
 	if !errors.Is(err, llm.ErrNoBackend) {
 		t.Errorf("err = %v, want ErrNoBackend", err)
