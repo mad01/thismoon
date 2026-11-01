@@ -56,6 +56,11 @@ var sessionEnv = map[string]bool{
 	"CLAUDE_CODE_EFFORT_LEVEL":             true,
 	"CLAUDE_EFFORT":                        true,
 	"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": true,
+	// The Rex terminal ones make its SessionStart hook tell the run to
+	// rename a pane it does not own: two turns and a denial per case.
+	"REX_SERVER":  true,
+	"REX_SESSION": true,
+	"REX_BLOCK":   true,
 }
 
 // claudeEnv returns environ without the variables in sessionEnv.

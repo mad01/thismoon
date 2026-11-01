@@ -39,6 +39,7 @@ func TestClaudeEnv(t *testing.T) {
 		"HOME=/home/x", "CLAUDECODE=1", "CLAUDE_CODE_SESSION_ID=abc",
 		"CLAUDE_CODE_MESSAGING_SOCKET=/tmp/s", "ANTHROPIC_API_KEY=k", "PATH=/bin",
 		"CLAUDE_CODE_EFFORT_LEVEL=max", "CLAUDE_EFFORT=high", "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1",
+		"REX_SERVER=unix:///s", "REX_SESSION=session:1", "REX_BLOCK=block:1",
 	})
 	want := []string{"HOME=/home/x", "ANTHROPIC_API_KEY=k", "PATH=/bin"}
 	if !slices.Equal(got, want) {
