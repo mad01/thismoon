@@ -3,6 +3,7 @@ package hint
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -32,10 +33,10 @@ var outlineExts = map[string]bool{
 // csl_outline leaves out unless kinds names "section".
 var headingExts = map[string]bool{".md": true, ".markdown": true}
 
-// ReadSize advises csl_outline or a ranged read after a Read pulled a large
-// file in without a range. Like prefer-csl it speaks after the fact: this
-// file's content is already in context, so the advice is for the next read,
-// and a false positive costs one ignored line (docs/adr/0008).
+// ReadSize advises csl_ask, csl_outline or a ranged read after a Read pulled
+// a large file in without a range. Like prefer-csl it speaks after the fact:
+// this file's content is already in context, so the advice is for the next
+// read, and a false positive costs one ignored line (docs/adr/0008).
 type ReadSize struct{}
 
 // NewReadSize returns the read-size hint. It reads no config key besides
@@ -102,20 +103,39 @@ func indexedLocation(file string) (repo, rel string, ok bool) {
 	return repo, filepath.ToSlash(r), true
 }
 
-// readSizeAdvice is the two-line nudge: what was read, then the two cheaper
-// ways in, with the outline call filled in. include_tests is always set:
+// readSizeAdvice is the three-line nudge: what was read, then the cheaper
+// ways in, each call filled in. csl_ask comes first: when only an answer is
+// needed, it returns that answer and the file never enters context.
+// csl_outline orients, and csl_read or a ranged Read fetches a region the
+// agent will edit, which needs the real lines. include_tests is always set:
 // csl leaves test files out of an outline by default, and its test-file
 // rules (per-language name conventions plus test directories) are csl's to
 // change. Setting it costs nothing on a file that is not a test, where a
 // copy of the rules here could drift and hand over a call returning nothing.
 func readSizeAdvice(file string, lines int, repo, rel string) string {
-	call := fmt.Sprintf("csl_outline(repo: %q, path: %q, include_tests: true", repo, rel)
+	outline := fmt.Sprintf("csl_outline(repo: %q, path: %q, include_tests: true", repo, rel)
 	if headingExts[strings.ToLower(filepath.Ext(rel))] {
-		call += `, kinds: ["section"]`
+		outline += `, kinds: ["section"]`
 	}
 	return fmt.Sprintf(
 		"%s is %d lines and was read without a range.\n"+
-			"For orientation use %s); for a known region use csl_read or Read with offset and limit.",
-		file, lines, call,
+			"When you only need an answer from it, use %s, which returns the answer, not the file.\n"+
+			"For orientation use %s); for a region you will edit use csl_read or Read with offset and limit.",
+		file, lines, askCall(repo, rel), outline,
+	)
+}
+
+// askCall is the csl_ask call scoped to the one file just read. zoekt reads
+// f: as a regex over the repo-relative path, and csl reads repo as a regex
+// over repo names, so both are escaped and anchored at both ends: unanchored,
+// the path also matches a same-named file deeper in the tree and the repo
+// also matches every repo its name prefixes. zoektTerm quotes a path holding
+// a space as one term.
+func askCall(repo, rel string) string {
+	query := "f:" + zoektTerm("^"+regexp.QuoteMeta(rel)+"$")
+	repoRE := "^" + regexp.QuoteMeta(repo) + "$"
+	return fmt.Sprintf(
+		`csl_ask(question: "<what you need from it>", queries: [%q], repo: %q)`,
+		query, repoRE,
 	)
 }

@@ -107,6 +107,10 @@ func TestRunHintReadOnCapturedPayloads(t *testing.T) {
 				got,
 			)
 		}
+		wantAsk := `csl_ask(question: "<what you need from it>", queries: ["f:^big\\.go$"], repo: "^acme/widget$")`
+		if !strings.Contains(got.AdditionalContext, wantAsk) {
+			t.Errorf("%s: advice %q does not name %s", s.name, got.AdditionalContext, wantAsk)
+		}
 		if len(a.events) != 1 || a.events[0].Tags["hint"] != "read-size" {
 			t.Errorf("%s: archived %+v, want one event tagged hint read-size", s.name, a.events)
 		}

@@ -802,9 +802,13 @@ ways in.
   shard listing prefer-csl reads. The file must be a type `csl_outline`
   has symbols for: Go, TypeScript, Python, Java, protobuf, shell, or
   markdown.
-- **The advice** names the file and its line count, hands over the
-  `csl_outline` call with repo and path filled in, and names `csl_read` or
-  a ranged Read for a known region. The call always sets
+- **The advice** names the file and its line count. It hands over a
+  `csl_ask` call first, for when only an answer is needed. The question is
+  a placeholder, and the file goes in as an `f:` query on its path. csl
+  reads the path and the repo as regexes, so both are escaped and
+  anchored. Then comes the `csl_outline` call with repo and path filled
+  in, and `csl_read` or a ranged Read for a region the agent will edit,
+  which needs the real lines. The outline call always sets
   `include_tests: true`, because csl leaves test files out of an outline by
   default. For markdown it adds `kinds: ["section"]`, since headings are
   left out otherwise.
@@ -822,8 +826,9 @@ ways in.
   purpose, since `csl_outline` would describe the indexed checkout, not the
   worktree's files.
 - **Why**: a whole-file read of a large file puts every line in context
-  when the task usually needs one region. An outline or a ranged read gets
-  there for a fraction of the tokens.
+  when the task usually needs one region or one answer. A question to
+  `csl_ask`, an outline or a ranged read gets there for a fraction of the
+  tokens.
 
 ### commit-policy (bash)
 

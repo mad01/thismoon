@@ -86,18 +86,29 @@ func TestReadSizeCheck(t *testing.T) {
 	}
 }
 
-func TestReadSizeAdviceNamesTheOutlineCall(t *testing.T) {
+// TestReadSizeAdviceNamesTheCalls pins the advice: csl_ask first, its path
+// and repo escaped and anchored as the regexes csl reads them as, then the
+// outline call, then a ranged read. The %q rendering doubles each backslash, as a JSON string
+// would, so `big\\.go` in the text is the regex big\.go.
+func TestReadSizeAdviceNamesTheCalls(t *testing.T) {
 	file, root := indexedRepoFile(t)
 	tests := []struct {
-		name, path, wantCall string
+		name, path, wantAsk, wantOutline string
 	}{
 		{
 			"code", file,
+			`queries: ["f:^internal/big\\.go$"], repo: "^acme/widget$")`,
 			`csl_outline(repo: "acme/widget", path: "internal/big.go", include_tests: true)`,
 		},
 		{
 			"markdown asks for headings", filepath.Join(root, "docs", "guide.md"),
+			`queries: ["f:^docs/guide\\.md$"], repo: "^acme/widget$")`,
 			`csl_outline(repo: "acme/widget", path: "docs/guide.md", include_tests: true, kinds: ["section"])`,
+		},
+		{
+			"a space quotes the path as one zoekt term", filepath.Join(root, "my dir", "big.go"),
+			`queries: ["f:\"^my dir/big\\\\.go$\""], repo: "^acme/widget$")`,
+			`csl_outline(repo: "acme/widget", path: "my dir/big.go", include_tests: true)`,
 		},
 	}
 	for _, tt := range tests {
@@ -108,13 +119,21 @@ func TestReadSizeAdviceNamesTheOutlineCall(t *testing.T) {
 			if got == nil {
 				t.Fatal("Check = nil, want advice")
 			}
-			for _, want := range []string{tt.path, "412 lines", tt.wantCall, "csl_read", "offset and limit"} {
+			wants := []string{
+				tt.path, "412 lines", `csl_ask(question: "<what you need from it>", `,
+				tt.wantAsk, tt.wantOutline, "csl_read", "offset and limit",
+			}
+			for _, want := range wants {
 				if !strings.Contains(got.Text, want) {
 					t.Errorf("advice %q does not mention %q", got.Text, want)
 				}
 			}
-			if n := strings.Count(got.Text, "\n") + 1; n > 2 {
-				t.Errorf("advice is %d lines, want at most 2: %q", n, got.Text)
+			ask := strings.Index(got.Text, "csl_ask(")
+			if outline := strings.Index(got.Text, "csl_outline("); ask > outline {
+				t.Errorf("advice names csl_outline before csl_ask: %q", got.Text)
+			}
+			if n := strings.Count(got.Text, "\n") + 1; n > 3 {
+				t.Errorf("advice is %d lines, want at most 3: %q", n, got.Text)
 			}
 		})
 	}

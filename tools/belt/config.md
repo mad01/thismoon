@@ -513,7 +513,8 @@ the repo's origin remote.
 - `hints.read-size.enabled` (bool, default `true`): PostToolUse (read),
   fires when a Read with no offset or limit pulls in 300 lines or more from
   an indexed repo, for a file type `csl_outline` has symbols for. It points
-  at `csl_outline` or a ranged read, once per file per agent per session.
+  at `csl_ask`, `csl_outline` or a ranged read, once per file per agent per
+  session.
 - **commit-policy**
   - `hints.commit-policy.enabled` (bool, default `true`): PostToolUse
     (bash), states the branch + PR commit policy after a `git commit` lands
