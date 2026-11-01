@@ -16,7 +16,7 @@ go run ./evals/harness -compare <runA> <runB>     # per-case deltas
 go run ./evals/harness -profile csl-cli -case fleet-cobra-repos   # a workspace with the csl CLI only
 ```
 
-Each case run is its own session: the runner strips the variables that would nest it in the calling session or set effort behind its back. It passes `--max-turns` from the case and `--max-budget-usd` as a hard cap. The session is kept like any other, so moondb can read its transcript and the row's scorecard has tokens, cost, searches and reads; eval sessions show up in `claude --resume` under the workspace directory. The runner sets `MOONDB_SESSION_TAGS=eval`, so moondb marks every eval session with the `eval` tag. Ctrl-C, SIGTERM and SIGHUP stop the current case, kill claude's whole process group, tear down the workspace and write the rows so far.
+Each case run is its own session: the runner strips the variables that would nest it in the calling session or set effort behind its back. It also strips the Rex ones, whose hook would have the run rename the caller's pane. It passes `--max-turns` from the case and `--max-budget-usd` as a hard cap. The session is kept like any other, so moondb can read its transcript and the row's scorecard has tokens, cost, searches and reads; eval sessions show up in `claude --resume` under the workspace directory. The runner sets `MOONDB_SESSION_TAGS=eval`, so moondb marks every eval session with the `eval` tag. Ctrl-C, SIGTERM and SIGHUP stop the current case, kill claude's whole process group, tear down the workspace and write the rows so far.
 
 ## Profiles
 
