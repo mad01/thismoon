@@ -106,7 +106,7 @@ The web server exposes `GET /api/search`, `/api/semantic_search`,
 (service git sha), `/webkit/*` (shared chrome), and `/assets/*` (csl's own).
 The CLI mirrors the same paths: `search`, `count`, `query`, `read`, `outline`, `repo`,
 `doctor`, `index`, `semantic`, `hybrid`, `sync`, plus `web`, `mcp`,
-`version`, and the deprecated `hooks`. `csl mcp` registers seventeen tools:
+`version`, and the deprecated `hooks`. `csl mcp` registers eighteen tools:
 `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`, `csl_repo_pull`,
 `csl_repo_reindex`, `csl_search`, `csl_search_multi`, `csl_count`, `csl_query_validate`,
 `csl_semantic_search`, `csl_hybrid_search`, `csl_read`, `csl_ls`,
