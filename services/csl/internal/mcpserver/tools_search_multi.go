@@ -380,7 +380,8 @@ func shareLines(needs []int, budget int) []int {
 
 // renderSearchMultiText renders each entry under a header that gives its
 // place in the call and its query, with csl_search's text form for the page
-// and csl_read's for the top hit. The budget note, when set, closes it.
+// and csl_read's for the top hit, whose truncated note points at csl_read
+// since this tool takes no line range. The budget note, when set, closes it.
 func renderSearchMultiText(out searchMultiOutput) string {
 	sections := make([]string, 0, len(out.Results)+1)
 	for i, r := range out.Results {
@@ -404,7 +405,7 @@ func renderMultiEntry(n, of int, r searchMultiResult) string {
 	}
 	switch {
 	case r.TopHit != nil:
-		lines = append(lines, "", "top hit: "+renderReadText(*r.TopHit))
+		lines = append(lines, "", "top hit: "+renderFileText(*r.TopHit, topHitTruncatedNote))
 	case r.TopHitError != "":
 		lines = append(lines, "", "top hit: "+r.TopHitError)
 	}

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/mad01/thismoon/kit/agentdoc"
 	"github.com/mad01/thismoon/kit/mcptest"
 	"github.com/mad01/thismoon/services/csl"
@@ -57,26 +59,47 @@ func TestNew_SemanticDisabledHidesOnlySemanticTools(t *testing.T) {
 }
 
 // TestAlwaysLoadMeta pins which tools ask Claude Code to skip tool-search
-// deferral: the four nearly every session calls, plus csl_ask, whose
-// description has to be in view before the model reads a large file whole,
-// carry _meta["anthropic/alwaysLoad"] = true in tools/list. Every other tool
-// leaves the key out so it stays deferred.
+// deferral: the four nearly every session calls carry
+// _meta["anthropic/alwaysLoad"] = true in tools/list, and csl_ask joins them
+// when a worker resolved at startup, since its description has to be in
+// view before the model reads a large file whole. Every other tool leaves
+// the key out so it stays deferred.
 func TestAlwaysLoadMeta(t *testing.T) {
-	want := []string{"csl_ask", "csl_read", "csl_repo_info", "csl_repo_lookup", "csl_search"}
-	var got []string
-	for _, tool := range mcptest.ListTools(t, New("test", Options{SemanticEnabled: true})) {
-		v, ok := tool.Meta["anthropic/alwaysLoad"]
-		if !ok {
-			continue
-		}
-		if v != true {
-			t.Errorf("%s: _meta[anthropic/alwaysLoad] = %v, want true", tool.Name, v)
-		}
-		got = append(got, tool.Name)
+	always := []string{"csl_read", "csl_repo_info", "csl_repo_lookup", "csl_search"}
+	tests := []struct {
+		name   string
+		worker bool
+		want   []string
+	}{
+		{"worker resolved", true, append([]string{"csl_ask"}, always...)},
+		{"no worker", false, always},
 	}
-	slices.Sort(got)
-	if !slices.Equal(got, want) {
-		t.Errorf("tools with _meta[anthropic/alwaysLoad] = %v, want %v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := Options{SemanticEnabled: true, AskWorkerResolved: tt.worker}
+			var got []string
+			tools := mcptest.ListTools(t, New("test", opts))
+			if !slices.ContainsFunc(
+				tools,
+				func(tl *mcp.Tool) bool { return tl.Name == "csl_ask" },
+			) {
+				t.Errorf("csl_ask is not registered; it stays registered, only deferred")
+			}
+			for _, tool := range tools {
+				v, ok := tool.Meta["anthropic/alwaysLoad"]
+				if !ok {
+					continue
+				}
+				if v != true {
+					t.Errorf("%s: _meta[anthropic/alwaysLoad] = %v, want true", tool.Name, v)
+				}
+				got = append(got, tool.Name)
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("tools with _meta[anthropic/alwaysLoad] = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

@@ -23,6 +23,8 @@ The registration stores the command name (not an absolute path), so `csl` must b
 
 Eighteen tools are registered, grouped into five areas. The areas are `csl_repo_*` for repo management, `csl_search` / `csl_search_multi` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, and `csl_ask` for questions over the files a search selects. The last two are `csl_read` / `csl_ls` / `csl_outline` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself. `csl_semantic_search` and `csl_hybrid_search` are registered only when `semantic.enabled` is true in `config.yaml`; with it off the server advertises the other sixteen.
 
+`csl_search`, `csl_read`, `csl_repo_lookup`, and `csl_repo_info` set `_meta["anthropic/alwaysLoad"]: true`, so Claude Code loads their schemas at session start instead of deferring them behind tool search. `csl_ask` sets it too when a worker resolved as `csl mcp` started, so its advice to pick it over a whole-file read is in view before the first read. With no worker configured, or a config that fails to load, `csl_ask` stays registered but deferred, since every call would fail.
+
 | Tool | Purpose |
 |---|---|
 | [`csl_repo_lookup`](#csl_repo_lookup) | Resolve a repo name to its local checkout path |
@@ -473,7 +475,7 @@ Each successful entry carries the `csl_search` output fields for its query, incl
 
 Answer a question over the files up to ten zoekt queries select. A hosted worker model reads the files whole and answers, so the files never enter the caller's context. Only the answer comes back, with what it read and what it cost. It is the bulk reader, and `csl ask` is its CLI form.
 
-**When to call:** a file of 300 lines or more, or a question over several files, when only the answer is needed. Pick it over [`csl_read`](#csl_read) or a whole-file read then. For example, what a long file does, which flags each command accepts, or how each service configures retries. A named file or directory is a query such as `f:path/to/file\.go$` or `f:^path/to/dir/`. Not for lines you will edit: an edit needs the real content, through [`csl_read`](#csl_read) or a ranged read. To locate code, [`csl_search`](#csl_search) is cheaper, since every `csl_ask` call is a model call.
+**When to call:** a file of 300 lines or more, or a question over several files, when only the answer is needed. Pick it over [`csl_read`](#csl_read) or a whole-file read then. For example, what a long file does, which flags each command accepts, or how each service configures retries. A named file or directory is a query such as `f:^path/to/file\.go$` or `f:^path/to/dir/`, with `repo` set to `^org/repo$` to pin the repo. Not for lines you will edit: an edit needs the real content, through [`csl_read`](#csl_read) or a ranged read. To locate code, [`csl_search`](#csl_search) is cheaper, since every `csl_ask` call is a model call.
 
 **Input:**
 
@@ -666,9 +668,13 @@ Read a file from a named local repo by repo name and relative path.
 | `start_line` | int | no | First line to return, 1-based; `0` or omit for start of file |
 | `end_line` | int | no | Last line to return, 1-based inclusive; `0` or omit for end of file |
 
-**Output:**
+**Example** (a one-line range):
 
 ```json
+// request
+{"repo": "thismoon", "file": "internal/mcpserver/server.go", "start_line": 12, "end_line": 12}
+
+// response
 {
   "repo": "mad01/thismoon",
   "path": "internal/mcpserver/server.go",
@@ -680,7 +686,7 @@ Read a file from a named local repo by repo name and relative path.
 }
 ```
 
-A read with no range stops at 500 lines and sets `truncated`, and `total_lines` always gives the file's full length. Page on with `start_line` and `end_line`, or ask [`csl_ask`](#csl_ask) when only an answer is needed. For a file of 300 lines or more, a whole-file read is usually the wrong call for a question. The tool description and the text-form note both say so.
+A read with no range stops at 500 lines and sets `truncated`, and `total_lines` always gives the file's full length. A ranged read returns the range and never sets `truncated`. Page on with `start_line` and `end_line`, or ask [`csl_ask`](#csl_ask) when only an answer is needed. For a file of 300 lines or more, a whole-file read is usually the wrong call for a question. The tool description and the text-form note both say so, and the note carries a `csl_ask` call for the file, ready to copy (see [Response formats](#response-formats)).
 
 The line scanner buffers up to 1 MB per line, so files with very long minified lines still read cleanly.
 
@@ -857,7 +863,7 @@ Every tool accepts a `response_format` parameter. The JSON examples in this docu
 
 Precedence: the `response_format` parameter on the call, then `mcp.response_format` in `config.yaml`, then the built-in default `text`. An unknown value in either place is an error that names where the value came from.
 
-`text` is tool-specific. `csl_search` in `content` mode prints ripgrep `--heading` style: one `repo/path` header per file, `LINE:match` lines, `LINE-context` lines, `--` between non-contiguous groups in a file, a blank line between files, and a trailer `N lines in M files`. When the 300-line cap hits, a second trailer reads `truncated: showing N of M lines; next offset=K`. In `files_with_matches` mode it lists `repo/path` lines with an `N files` trailer. Zero results print `no matches` followed by the hint lines, including `files per term: retry=37, jitter=0` when term counts ran. A relaxed result opens with `relaxed: dropped 'jitter' (0 files); showing results for `retry backoff`` and a blank line, then the normal listing. `csl_search_multi` prints each entry under a `=== query N/M: <query>` header, then `error: ...` or that query's `csl_search` text, then `top hit:` and the `csl_read` text when `read_top_hit` was set; a closing `note:` line appears when the shared line budget cut an entry. `csl_hybrid_search` and `csl_semantic_search` print a header per hit (path, line range, score) and then the raw snippet. `csl_read` prints `LINE:text`, and a capped read ends with `truncated: read more with start_line/end_line, or ask csl_ask when you only need an answer`. `csl_ls`, `csl_count`, and `csl_doctor` print one short line per entry. Every other tool falls back to `markdown-kv`.
+`text` is tool-specific. `csl_search` in `content` mode prints ripgrep `--heading` style: one `repo/path` header per file, `LINE:match` lines, `LINE-context` lines, `--` between non-contiguous groups in a file, a blank line between files, and a trailer `N lines in M files`. When the 300-line cap hits, a second trailer reads `truncated: showing N of M lines; next offset=K`. In `files_with_matches` mode it lists `repo/path` lines with an `N files` trailer. Zero results print `no matches` followed by the hint lines, including `files per term: retry=37, jitter=0` when term counts ran. A relaxed result opens with `relaxed: dropped 'jitter' (0 files); showing results for `retry backoff`` and a blank line, then the normal listing. `csl_search_multi` prints each entry under a `=== query N/M: <query>` header, then `error: ...` or that query's `csl_search` text, then `top hit:` and the `csl_read` text when `read_top_hit` was set. A top hit that stops short of its file ends with `truncated: read the rest with csl_read`, since `csl_search_multi` takes no line range. A closing `note:` line appears when the shared line budget cut an entry. `csl_hybrid_search` and `csl_semantic_search` print a header per hit (path, line range, score) and then the raw snippet. `csl_read` prints `LINE:text`. A capped read ends with a `truncated:` note: page on with `start_line`/`end_line`, or a `csl_ask` call for the file, ready to copy. The call's `f:` query and `repo` are the file's path and repo, escaped and anchored. It adds `max_lines` when the file runs past the default of 6000 lines. A file over the ceiling of 20000 lines gets the paging half only, since `csl_ask` reads a file whole or skips it. `csl_ls`, `csl_count`, and `csl_doctor` print one short line per entry. Every other tool falls back to `markdown-kv`.
 
 `csl_search` with `output_mode: "content"` and `context_lines: 1`:
 
@@ -882,6 +888,13 @@ mad01/thismoon/services/csl/docs/architecture.md
 63-3. A `tools/call` for `csl_search` lands in `handleSearch`, which follows the same daemon-first-then-fallback pattern as the CLI (minus the stderr progress output).
 
 4 lines in 3 files
+```
+
+The last two lines of a `csl_read` with no range on a file of 843 lines:
+
+```
+500:}
+truncated: read more with start_line/end_line, or ask csl_ask(question: "<what you need from it>", queries: ["f:^services/csl/internal/mcpserver/render_text\\.go$"], repo: "^mad01/thismoon$") when you only need an answer
 ```
 
 `json` is the structured object each tool section above documents, byte for byte what the tools returned before `response_format` existed. Ask for it from a client that parses results.
