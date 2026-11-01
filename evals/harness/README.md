@@ -4,7 +4,7 @@ Runs fixed tasks through `claude -p` with your real hooks and MCP servers loaded
 
 ## Running it
 
-Run from the repo root. Every run is paid: a fresh session on the default model costs about a dollar before it does any work. One rep of all seven cases should cost $9 to $13. The worst case is $35, seven cases at the $5 per-run cap, and `-max-total-usd` (default $20) stops the run before the next case once it has spent that much.
+Run from the repo root. Every run is paid: a fresh session on the default model costs about a dollar before it does any work. One rep of all 17 cases should cost $22 to $32. The worst case is $85, 17 cases at the $5 per-run cap. `-max-total-usd` (default $20) stops the run before the next case once it has spent that much, so raise it for a full rep.
 
 ```
 go run ./evals/harness -list                      # the cases, no claude
