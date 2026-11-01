@@ -59,7 +59,9 @@ Arms name models by their canonical id (`claude-haiku-5-5` and so on) and
 `run.go` defines them with their effort. The price table, the worker's
 instructions and the message format are csl_ask's own, in
 `internal/ask`, so a run measures what the tool sends. `haiku55`
-is the candidate worker, `sonnet55` and `opus55-low` the ceilings. No local
+is the candidate worker; `sonnet55`, `opus55-low` and `opus55` are the
+ceilings. `fable51` is the session model reading the corpus on its own: the
+arm that says whether handing the read to a worker loses anything. No local
 model is an arm. The worker is meant to run beside other hosted agents, and
 a local model would measure a machine, not the tool.
 
