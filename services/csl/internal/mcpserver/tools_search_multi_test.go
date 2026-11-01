@@ -68,7 +68,12 @@ func (f *multiFake) Count(
 // repo rooted at root.
 func multiEnv(t *testing.T, b lexical.Backend, root string, names ...string) searchEnv {
 	t.Helper()
-	env := searchEnv{backend: b, repoPaths: map[string]string{}, indexDir: t.TempDir()}
+	env := searchEnv{
+		backend:   b,
+		repoPaths: map[string]string{},
+		indexDir:  t.TempDir(),
+		surface:   mcpSurface,
+	}
 	for _, name := range names {
 		env.repos = append(env.repos, finder.Repo{Name: name, Path: root})
 		env.repoPaths[name] = root

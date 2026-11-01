@@ -46,6 +46,41 @@ never the reference count. A `files_capped` result stopped at max_files
 next_limit is the limit that returns the rest, up to 500; past that, narrow
 with path or kinds.
 
+## asking over many files
+
+csl_ask (and `csl ask` on the CLI) answers a question over the files 1 to 10
+zoekt queries select. It runs the queries the way csl_search_multi does and
+collects the matching files whole, in rank order. A cheap hosted worker
+model reads them, Haiku at low effort by default (`ask.model`,
+`ask.effort`). Only the answer and a footer line come back, so the files
+never enter the caller's context. Each question is one model call, and the
+footer gives its list price. The corpus stops at max_files (default 20, max
+100) and max_lines (default 6000, max 20000); files that do not fit are
+listed under corpus.skipped in the JSON form.
+
+The worker is picked the way kit/llm picks one, unless `ask.backend` forces
+it. A LiteLLM proxy comes first when LITELLM_BASE_URL is set (with
+LITELLM_API_KEY when the proxy wants one). Next is the claude CLI when
+`claude` is on PATH, which needs no variable and answers on whatever account
+it is signed into. OpenRouter comes last when OPENROUTER_API_KEY is set. An
+MCP host passes no login-shell environment, so the csl recipe ships
+`csl-env.sh`, a launcher that pulls exactly those variables from the secrets
+file and execs csl. The `ask-backend` doctor check names the worker that
+resolves.
+
+Failure modes, none of which spends a model call:
+
+- No backend: the call fails naming what to set (LITELLM_BASE_URL, claude
+  on PATH, or OPENROUTER_API_KEY). In `csl doctor`, ask-backend reports ok
+  with that note, since search works without a worker. Only an unknown
+  `ask.backend` or `ask.effort` value fails the check.
+- Zero files: no query matched, and the error carries each query's
+  zero-result hint, the same diagnosis csl_search gives. Fix the query.
+- Corpus over the caps: a file that does not fit is skipped, not cut, and
+  the rest still go. When every matching file was skipped (one file over
+  max_lines, say), the call fails naming the files and why. Raise
+  max_lines, narrow the queries, or read the region with csl_read.
+
 ## where state lives
 
 `config.yaml` sits in the config directory (`--config`, else CSL_CONFIG, else
@@ -66,14 +101,15 @@ does not parse is an error. Everything csl writes sits under {{.StorePath}}:
 
 Start with `csl doctor` (or the csl_doctor tool, same checks as JSON): one
 ok/FAIL line per check. The checks are config, repos discovered, state file,
-index freshness, shard integrity, and search-server responsiveness, plus two
-web-only checks (web-ui-reachable, web-ui-version-skew) that can fail while
-search keeps working. The config check fails on a file that does not parse,
-or one that parses and sets no `dirs` — the usual cause of "csl finds nothing
-at all". repos-discovered fails when a loaded config discovers nothing and,
-when a filter dropped everything, says so with a count per filter. No config
-file at all is not a failure: the check reports ok with the path to create
-beside it. `--repair` resets a corrupt state file; the tool never repairs.
+index freshness, shard integrity, search-server responsiveness, and the
+csl_ask worker (ask-backend), plus two web-only checks (web-ui-reachable,
+web-ui-version-skew) that can fail while search keeps working. The config
+check fails on a file that does not parse, or one that parses and sets no
+`dirs`, the usual cause of "csl finds nothing at all". repos-discovered
+fails when a loaded config discovers nothing and, when a filter dropped
+everything, says so with a count per filter. No config file at all is not a
+failure: the check reports ok with the path to create beside it. `--repair`
+resets a corrupt state file; the tool never repairs.
 
 Empty search result: usually the query, not an error. zoekt AND requires all
 space-separated terms in the SAME file, so 3+ terms almost always return
@@ -126,7 +162,8 @@ query forks a fresh one from the current binary.
 
 ## first moves
 
-1. `csl doctor` (config, state, freshness, shards, search server, web UI)
+1. `csl doctor` (config, state, freshness, shards, search server, ask
+   worker, web UI)
 2. Zero results: `csl query "<pattern>"` to see the parse, then retry with
    1-2 terms and filters
 3. `csl repo <name> --list` to confirm the repo is discovered at all

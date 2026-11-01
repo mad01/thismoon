@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/mad01/thismoon/kit/llm"
 	"github.com/mad01/thismoon/services/csl"
 	"github.com/mad01/thismoon/services/csl/internal/mcpformat"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
@@ -76,6 +77,13 @@ func TestConfigMissingFile(t *testing.T) {
 		t.Errorf("mcp.response_format = %q, want the default %q",
 			got.MCP.ResponseFormat, mcpformat.Default)
 	}
+	if got.Ask.Model != csl.DefaultAskModel || got.Ask.Effort != csl.DefaultAskEffort {
+		t.Errorf("ask model/effort = %q/%q, want the defaults %q/%q",
+			got.Ask.Model, got.Ask.Effort, csl.DefaultAskModel, csl.DefaultAskEffort)
+	}
+	if got.Ask.Backend != "" {
+		t.Errorf("ask.backend = %q, want empty (auto-select)", got.Ask.Backend)
+	}
 }
 
 func TestConfigLoadedFile(t *testing.T) {
@@ -139,11 +147,13 @@ func TestConfigLongDocumentsEveryKey(t *testing.T) {
 		"refresh:",
 		"web:",
 		"mcp:",
+		"ask:",
 		// The settings with no YAML key of their own still have to be findable
 		// here: the reference is what a fresh machine is configured from.
 		"CSL_CONFIG",
 		"CSL_PORT",
 	}
+	keys = append(keys, llm.ProviderEnv...)
 	for _, k := range keys {
 		if !strings.Contains(configCmd.Long, k) {
 			t.Errorf("Long help does not document %q", k)

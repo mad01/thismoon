@@ -102,6 +102,7 @@ csl hybrid "retry failed HTTP requests"  # fuse lexical + semantic (RRF)
 csl semantic "where do we retry failed requests"  # meaning-based search
 csl count "TODO" --group-by repo         # cross-repo tally
 csl count "TODO" --group-by repo --names # every repo that matches, one per line
+csl ask "how is backoff computed" -q 'backoff' --lang go  # a worker model reads the files
 csl sync                                 # pull every repo (ff-only), reindex what changed
 csl doctor                               # check index + daemon health
 csl config                               # which config file is read, and the settings in effect
@@ -146,15 +147,18 @@ claude mcp list   # expect: csl: csl mcp - ✓ Connected
 
 `--scope user` makes the server available in every project; without it Claude Code registers csl for the current directory only. The registration stores the bare command name, so `csl` must be on the PATH of whatever launches Claude Code. A mise user who starts Claude Code from the Dock should register `"$HOME/.local/share/mise/shims/csl" mcp` instead. The ralph recipe does not register the server, because which agents run on a machine is machine-private wiring. Run the command above once, or ship it from your own companion recipe (`docs/adr/0006` at the repo root, worked example under `examples/dotfiles/recipes/agent-config/`, applied by agent-sync). Nothing needs to be running first, since the search daemon auto-starts on the first query and idles out on its own (see How it works). What does need to exist is `dirs` in the config file (see Configuration). Without at least one directory to walk, there's nothing to index. If a tool call comes back empty or erroring, run `csl doctor`.
 
-The MCP server exposes seventeen `csl_*` tools:
+The MCP server exposes eighteen `csl_*` tools:
 
 - Repo: `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`, `csl_repo_pull`, `csl_repo_reindex`
 - Search: `csl_search`, `csl_search_multi` (up to ten independent queries in one call), `csl_count`, `csl_query_validate`
+- Ask: `csl_ask` (a question over the files up to ten queries select, answered by a hosted worker model so the files stay out of the agent's context)
 - Semantic and hybrid: `csl_semantic_search`, `csl_hybrid_search`
 - Read and info: `csl_read`, `csl_ls`, `csl_outline` (a repo's definitions ranked by cross-file references), `csl_show_file`, `csl_index_info`
 - Diagnosis: `csl_doctor`, the `csl doctor` checks as JSON, for a client with no shell
 
-The two semantic tools are registered only when `semantic.enabled` is true in `config.yaml`; with it off, `csl mcp` exposes the other fifteen.
+The two semantic tools are registered only when `semantic.enabled` is true in `config.yaml`; with it off, `csl mcp` exposes the other sixteen.
+
+`csl_ask` and `csl ask` need a worker model and spend a model call per question; the footer of each answer gives the list price. The worker is a LiteLLM proxy when `LITELLM_BASE_URL` is set, else the `claude` CLI when it is on `PATH` (signed in, no key needed), else OpenRouter when `OPENROUTER_API_KEY` is set. `ask.backend`, `ask.model` and `ask.effort` in the config file override the choice ([config.md](config.md)), and `csl doctor` names the worker that resolves. An MCP host starts the server without a login shell's environment. To reach LiteLLM or OpenRouter from there, register `recipes/csl/csl-env.sh mcp` as the command: it pulls exactly those variables from a secrets file and execs csl.
 
 See [docs/mcp.md](docs/mcp.md) for the per-tool reference (inputs, return shape, defaults). Every tool takes a `response_format` parameter, `text` by default and `json` for the structured object; the other formats and the precedence rule are in the same document under Response formats.
 

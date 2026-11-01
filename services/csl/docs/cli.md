@@ -12,6 +12,7 @@ Every command that reads repos loads the config file — `--config`, else `$CSL_
 | [`csl count`](#csl-count) | Count matches, optionally grouped by repo or language |
 | [`csl hybrid`](#csl-hybrid) | Fuse lexical and semantic results with Reciprocal Rank Fusion |
 | [`csl read`](#csl-read) | Read a file from a named repo by relative path |
+| [`csl ask`](#csl-ask) | Answer a question over the files a search selects, with a hosted worker model |
 | [`csl outline`](#csl-outline) | Rank a repo's definitions by how many other files reference them |
 | [`csl repo`](#csl-repo) | List or interactively pick a repo |
 | [`csl index`](#csl-index) | Manage the zoekt index (status, repair, clean) |
@@ -275,6 +276,50 @@ csl read README.md --repo thismoon --json
 
 ---
 
+## `csl ask`
+
+Answer a question over the files a search selects. A hosted worker model reads the files whole and answers, so the files never reach the caller. It is the CLI form of the [`csl_ask`](mcp.md#csl_ask) MCP tool and builds the same corpus.
+
+### Synopsis
+
+```sh
+csl ask <question> -q <query> [-q <query> ...] [flags]
+csl search <query> --limit 5000 | csl ask <question> --files-from - [flags]
+```
+
+### Description
+
+Use it for a question over many files, or over one large file, when only the answer is needed. For lines you will edit, read them with [`csl read`](#csl-read): an edit needs the real content.
+
+With `-q`, the queries run in files mode the way `csl_search_multi` runs them. The corpus is the union of their files in rank order, taking turns across queries. With `--files-from`, the corpus is the `org/repo/path` lines read from stdin (`-`) or a named file, in the order given; that is the format `csl search` prints without `-o content`, and a `no matches` line is ignored. Each file is read whole. The corpus stops at `--max-files` and `--max-lines`; a file that does not fit is skipped, the next is tried, and `--json` lists every skipped file with its reason.
+
+The answer prints on stdout and one footer line on stderr: `corpus: N files, L lines[, S skipped]; <backend>/<model>; $0.000`, the last field being the list price of the call. The worker comes from the `ask` keys of the config file. With no `ask.backend` it is a LiteLLM proxy when `LITELLM_BASE_URL` is set, else the `claude` CLI on `PATH`, else OpenRouter when `OPENROUTER_API_KEY` is set; `csl doctor` names the one that resolves (`ask-backend`). Nothing reaches the worker when no query matches a file, and the error then carries each query's zero-result hint, as `csl search` prints it. A Ctrl-C cancels a running worker call.
+
+### Flags
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `-q, --query <query>` | one of `-q` or `--files-from` | | Zoekt query selecting files; repeat for up to 10 |
+| `-r, --repo <regex>` | no | `""` | Restrict every query to repo names matching this case-insensitive regex |
+| `-l, --lang <lang>` | no | `""` | Restrict every query to files of this language |
+| `-f, --file <regex>` | no | `""` | Restrict every query to file paths matching this regex |
+| `--max-files <n>` | no | `20` | Most files the worker reads, at most 100 |
+| `--max-lines <n>` | no | `6000` | Most lines across those files, at most 20000 |
+| `--per-repo` | no | `false` | Ask once per repo; the answers print under an `## org/repo` heading each |
+| `--files-from <file>` | one of `-q` or `--files-from` | | Read `org/repo/path` lines from this file, or from stdin for `-`. Takes no `-q`, `--repo`, `--lang` or `--file` |
+| `--json` | no | `false` | Print the `csl_ask` JSON object: `{answer, backend, model, corpus, usage, per_repo?}` |
+
+### Examples
+
+```sh
+csl ask "which flags does csl search accept" -q 'sym:searchCmd' --repo thismoon
+csl ask "how does each service resolve its port" -q 'ResolvedPort' -q 'DefaultPort' --per-repo
+csl search 'backoff' --file '\.go$' --limit 5000 | csl ask "how is the backoff computed" --files-from -
+csl ask "what does this file do" -q 'f:internal/cli/search\.go$' --repo thismoon --json
+```
+
+---
+
 ## `csl outline`
 
 Rank a repo's definitions by how many other files reference them.
@@ -508,6 +553,7 @@ csl doctor [--repair]
 | `index-shards-valid` | every `.zoekt` shard opens cleanly |
 | `search-server-responsive` | a running search server answers on its socket (a stopped server passes — it auto-starts) |
 | `catalog-descriptors` | every catalog descriptor discovery found reads cleanly. Passes with a note when no repo carries one (`--owner`/`--system` lookups then match nothing); FAILs naming each repo and descriptor it couldn't read or follow; skipped when `repos-discovered` already failed |
+| `ask-backend` | the worker model `csl ask` and `csl_ask` would use. Passes with a note naming the backend, model and effort, or naming what to set when none resolves (search works without one). FAILs only on an `ask.backend` or `ask.effort` value that does not exist |
 | `web-ui-reachable` | the `csl web` process answers on its effective base URL — `web.base_url`, else `http://127.0.0.1:$CSL_PORT` (web-only; search works without it) |
 | `web-ui-version-skew` | the running web process was built from the same commit as this binary (web-only) |
 
@@ -525,6 +571,7 @@ FAIL index-freshness: 3 of 17 repos stale, dirty, or unindexed; the next sync or
 ok index-shards-valid
 ok search-server-responsive
 ok catalog-descriptors
+ok ask-backend (csl_ask answers with claude/claude-haiku-5-5, effort low)
 ok web-ui-reachable
 ok web-ui-version-skew
 ```

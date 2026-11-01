@@ -14,7 +14,7 @@ What stays in the consuming repo (machine wiring, per ADR-0006):
 - `~/.config/csl/config.yaml` symlink — which directories a machine indexes
   is per-machine, as is the semantic embedding model override
   (`semantic.embed_model` / `semantic.dim`).
-- MCP registration: `csl mcp` in the consuming repo's agent-sync `servers.json` (worked example: `examples/dotfiles/recipes/agent-config/`).
+- MCP registration: `csl-env.sh mcp` (this directory's launcher, by its sources-cache path) in the consuming repo's agent-sync `servers.json` (worked example: `examples/dotfiles/recipes/agent-config/`). The launcher pulls the provider variables csl_ask's worker reads from the secrets file and execs csl; `[hooks.builds.csl_chmod_scripts]` keeps it executable.
 - Ollama and the embedding model pull (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`) —
   semantic search needs a running Ollama; lexical search works without it.
 

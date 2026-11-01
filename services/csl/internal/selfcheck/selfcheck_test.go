@@ -27,6 +27,7 @@ func TestCheckNamesAndOrder(t *testing.T) {
 		"index-freshness",
 		"index-shards-valid",
 		"search-server-responsive",
+		"ask-backend",
 		"web-ui-reachable",
 		"web-ui-version-skew",
 	}

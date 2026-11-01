@@ -173,6 +173,26 @@ zoekt index, which has no disable switch. Embedding goes through a local
   every MCP tool call fail with an error naming `mcp.response_format`. That
   is deliberate: a typo in the file should be loud, not silently ignored.
 
+### `ask`
+
+Picks the worker model `csl_ask` and `csl ask` hand a question to. None of
+these keys is checked when the file loads, so a typo here never takes search
+down. Instead every ask call fails with an error naming the key, and the
+`ask-backend` check in `csl doctor` reports it.
+
+- `ask.backend` (string, default empty): forces one provider, `litellm`,
+  `claude` or `openrouter`. Empty auto-selects in a fixed order: a LiteLLM
+  proxy when `LITELLM_BASE_URL` is set, then the `claude` CLI when it is on
+  `PATH`, then OpenRouter when `OPENROUTER_API_KEY` is set. OpenRouter comes
+  last because it is the one that bills per token outside any plan. No local
+  model is a backend.
+- `ask.model` (string, default `claude-haiku-5-5`): the canonical Anthropic
+  model id. Each backend translates it for its provider (OpenRouter serves
+  `anthropic/claude-haiku-5.5`); a provider-specific id passes through.
+- `ask.effort` (string, default `low`): the worker's reasoning effort, one of
+  `low`, `medium`, `high`, `xhigh` or `max`. The csl_ask eval found `low`
+  finds the same facts as `medium` at the lowest latency.
+
 ## Environment variables
 
 - `CSL_CONFIG`: path to the config file, overriding the default location.
@@ -190,6 +210,13 @@ zoekt index, which has no disable switch. Embedding goes through a local
   The daemon-start helper shells out to the running binary via
   `os.Executable()` rather than `PATH`, so daemon start works from any
   working directory.
+- `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `OPENROUTER_API_KEY`: the
+  providers the `csl_ask` worker can reach (see `ask` above). The key for a
+  LiteLLM proxy is optional, since a proxy may run without one. The `claude`
+  CLI backend reads none of them and needs only `PATH`. An MCP host starts
+  `csl mcp` without a login shell's environment, so the csl recipe ships
+  `recipes/csl/csl-env.sh`, a launcher that pulls exactly these from the
+  secrets file and execs csl.
 - `EVENTS_BASE_URL` (default `http://127.0.0.1:7430`): base URL of the
   local events service that `csl sync` and reindex runs archive activity
   to. The archive call is best-effort and synchronous with a short timeout.
@@ -239,4 +266,9 @@ web:
 
 mcp:
   response_format: text
+
+ask:
+  backend: ""            # empty: LiteLLM, then the claude CLI, then OpenRouter
+  model: claude-haiku-5-5
+  effort: low
 ```
