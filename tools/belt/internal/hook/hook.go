@@ -466,10 +466,10 @@ func hintAdviceFor(event string) hintAdvice {
 }
 
 // toHintInput maps a hint payload onto the shared hint input. A bash
-// command carries only what it ran; a read carries the file, whether it
-// asked for a range, and the file's line count from the response; an
-// external-text call is identified by the tool that made it. A start event
-// carries only the session fields every event has.
+// command carries only what it ran; a read (Read or csl_read) carries the
+// file, whether it asked for a range, and the file's line count from the
+// response; an external-text call is identified by the tool that made it.
+// A start event carries only the session fields every event has.
 func toHintInput(event string, p payload) hint.Input {
 	in := hint.Input{
 		Event:          event,
@@ -485,18 +485,39 @@ func toHintInput(event string, p payload) hint.Input {
 			in.Command = s
 		}
 	case hint.EventRead:
-		if s, ok := p.ToolInput["file_path"].(string); ok {
-			in.FilePath = s
-		}
-		// Any non-null offset or limit counts as a range, a mistyped one
-		// included: reading it as ranged keeps the hint quiet, not wrong.
-		in.Ranged = p.ToolInput["offset"] != nil || p.ToolInput["limit"] != nil
-		in.TotalLines = hint.ReadTotalLines(p.ToolResponse)
+		readHintInput(&in, p)
 	case hint.EventExternalText:
 		in.ToolName = p.ToolName
 		in.ToolInput = p.ToolInput
 	}
 	return in
+}
+
+// readHintInput fills in what a read carries. A Read names its file in
+// tool_input and its line count in the response. A csl_read names its
+// repo as a regex in tool_input, so the file and the line count both come
+// from the response. Any non-null offset or limit counts as a range, a
+// mistyped one included: reading it as ranged keeps the hint quiet, not
+// wrong. csl_read's start_line and end_line follow the same rule, except
+// that csl reads a 0 as omitted, so a 0 counts as no range.
+func readHintInput(in *hint.Input, p payload) {
+	if hint.IsCSLRead(p.ToolName) {
+		in.CSLFile, in.TotalLines = hint.CSLReadFile(p.ToolResponse)
+		in.Ranged = rangeBound(p.ToolInput["start_line"]) || rangeBound(p.ToolInput["end_line"])
+		return
+	}
+	if s, ok := p.ToolInput["file_path"].(string); ok {
+		in.FilePath = s
+	}
+	in.Ranged = p.ToolInput["offset"] != nil || p.ToolInput["limit"] != nil
+	in.TotalLines = hint.ReadTotalLines(p.ToolResponse)
+}
+
+// rangeBound reports whether a csl_read start_line or end_line value names
+// a bound: anything but null and the number 0.
+func rangeBound(v any) bool {
+	n, isNumber := v.(float64)
+	return v != nil && (!isNumber || n != 0)
 }
 
 // toInput maps tool-specific payload fields onto the shared guard input.
