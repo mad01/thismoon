@@ -9,7 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mad01/thismoon/tools/humanizer/internal/backend"
+	"github.com/mad01/thismoon/kit/llm"
 	"github.com/mad01/thismoon/tools/humanizer/internal/judge"
 )
 
@@ -45,9 +45,9 @@ func handleJudge(
 	if strings.TrimSpace(in.Text) == "" {
 		return nil, nil, fmt.Errorf("humanizer_judge: text is required")
 	}
-	b, err := backend.Select(in.Backend, in.Model)
+	b, err := judge.Select(in.Backend, in.Model)
 	if err != nil {
-		if errors.Is(err, backend.ErrNoBackend) {
+		if errors.Is(err, llm.ErrNoBackend) {
 			return nil, nil, fmt.Errorf(
 				"humanizer_judge: %w; the deterministic tools (humanizer_detect, humanizer_detect_statistical) work without one",
 				err,

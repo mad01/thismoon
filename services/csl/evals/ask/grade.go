@@ -9,6 +9,16 @@ import (
 	"strings"
 )
 
+// truncate shortens s to n bytes with an ellipsis for a table cell or a
+// log line.
+func truncate(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
 // Grade is how one answer scored against its case.
 type Grade struct {
 	Found     int      `json:"found"`

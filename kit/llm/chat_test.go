@@ -1,184 +1,14 @@
-package backend
+package llm
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
-
-// selectEnv is every env var Select consults. Tests pin all of them so the
-// host environment (which may carry a real key or proxy URL) can't leak in.
-var selectEnv = []string{
-	"HUMANIZER_BACKEND",
-	"HUMANIZER_MODEL",
-	"OPENROUTER_API_KEY",
-	"LITELLM_BASE_URL",
-	"LITELLM_API_KEY",
-}
-
-func TestSelect(t *testing.T) {
-	cases := []struct {
-		name        string
-		forceName   string
-		forceModel  string
-		env         map[string]string
-		wantName    string
-		wantModel   string
-		wantErr     error
-		wantErrText string
-	}{
-		{
-			name:    "nothing configured",
-			env:     map[string]string{},
-			wantErr: ErrNoBackend,
-		},
-		{
-			name:      "openrouter auto-detected from key",
-			env:       map[string]string{"OPENROUTER_API_KEY": "k"},
-			wantName:  "openrouter",
-			wantModel: "anthropic/claude-haiku-5.5",
-		},
-		{
-			name:      "litellm auto-detected from base url",
-			env:       map[string]string{"LITELLM_BASE_URL": "http://proxy:4000"},
-			wantName:  "litellm",
-			wantModel: "claude-haiku-5-5",
-		},
-		{
-			name: "litellm wins auto-detection when both are configured",
-			env: map[string]string{
-				"LITELLM_BASE_URL":   "http://proxy:4000",
-				"OPENROUTER_API_KEY": "k",
-			},
-			wantName:  "litellm",
-			wantModel: "claude-haiku-5-5",
-		},
-		{
-			name: "HUMANIZER_MODEL overrides default",
-			env: map[string]string{
-				"OPENROUTER_API_KEY": "k",
-				"HUMANIZER_MODEL":    "anthropic/claude-sonnet-5",
-			},
-			wantName:  "openrouter",
-			wantModel: "anthropic/claude-sonnet-5",
-		},
-		{
-			name: "HUMANIZER_MODEL overrides the litellm default",
-			env: map[string]string{
-				"LITELLM_BASE_URL": "http://proxy:4000",
-				"HUMANIZER_MODEL":  "claude-haiku-4-5",
-			},
-			wantName:  "litellm",
-			wantModel: "claude-haiku-4-5",
-		},
-		{
-			name:       "explicit model wins over env",
-			forceModel: "anthropic/claude-opus-5",
-			env: map[string]string{
-				"OPENROUTER_API_KEY": "k",
-				"HUMANIZER_MODEL":    "anthropic/claude-sonnet-5",
-			},
-			wantName:  "openrouter",
-			wantModel: "anthropic/claude-opus-5",
-		},
-		{
-			name: "HUMANIZER_BACKEND env forces openrouter over a litellm url",
-			env: map[string]string{
-				"HUMANIZER_BACKEND":  "openrouter",
-				"OPENROUTER_API_KEY": "k",
-				"LITELLM_BASE_URL":   "http://proxy:4000",
-			},
-			wantName:  "openrouter",
-			wantModel: "anthropic/claude-haiku-5.5",
-		},
-		{
-			name: "HUMANIZER_BACKEND env forces litellm",
-			env: map[string]string{
-				"HUMANIZER_BACKEND": "litellm",
-				"LITELLM_BASE_URL":  "http://proxy:4000",
-			},
-			wantName:  "litellm",
-			wantModel: "claude-haiku-5-5",
-		},
-		{
-			name:      "forced litellm without a key still resolves",
-			forceName: "litellm",
-			env:       map[string]string{"LITELLM_BASE_URL": "http://proxy:4000"},
-			wantName:  "litellm",
-			wantModel: "claude-haiku-5-5",
-		},
-		{
-			name:        "forced openrouter without key fails",
-			forceName:   "openrouter",
-			env:         map[string]string{},
-			wantErrText: "OPENROUTER_API_KEY",
-		},
-		{
-			name:        "forced litellm without base url fails",
-			forceName:   "litellm",
-			env:         map[string]string{"LITELLM_API_KEY": "k"},
-			wantErrText: "LITELLM_BASE_URL",
-		},
-		{
-			name:        "vertex not implemented",
-			forceName:   "vertex",
-			env:         map[string]string{},
-			wantErrText: "not implemented",
-		},
-		{
-			name:        "anthropic not implemented",
-			forceName:   "anthropic",
-			env:         map[string]string{},
-			wantErrText: "not implemented",
-		},
-		{
-			name:        "unknown backend",
-			forceName:   "bogus",
-			env:         map[string]string{},
-			wantErrText: "unknown backend",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			for _, k := range selectEnv {
-				t.Setenv(k, tc.env[k])
-			}
-			b, err := Select(tc.forceName, tc.forceModel)
-			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("Select() error = %v, want %v", err, tc.wantErr)
-				}
-				if b != nil {
-					t.Fatalf("Select() backend = %v, want nil on error", b)
-				}
-				return
-			}
-			if tc.wantErrText != "" {
-				if err == nil || !strings.Contains(err.Error(), tc.wantErrText) {
-					t.Fatalf("Select() error = %v, want containing %q", err, tc.wantErrText)
-				}
-				if b != nil {
-					t.Fatalf("Select() backend = %v, want nil on error", b)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Select() error = %v", err)
-			}
-			if b.Name() != tc.wantName {
-				t.Errorf("Name() = %q, want %q", b.Name(), tc.wantName)
-			}
-			if b.Model() != tc.wantModel {
-				t.Errorf("Model() = %q, want %q", b.Model(), tc.wantModel)
-			}
-		})
-	}
-}
 
 // chatCapture records what one fake chat-completions server received.
 type chatCapture struct {
@@ -234,7 +64,7 @@ func TestChatClientComplete(t *testing.T) {
 		wantModel string
 	}{
 		{
-			name: "openrouter sends bearer key and haiku default",
+			name: "openrouter sends bearer key and the translated haiku id",
 			build: func(base string) (*ChatClient, error) {
 				return NewOpenRouter(ChatConfig{APIKey: "test-key", BaseURL: base})
 			},
@@ -243,13 +73,13 @@ func TestChatClientComplete(t *testing.T) {
 			wantModel: "anthropic/claude-haiku-5.5",
 		},
 		{
-			name: "litellm sends bearer key and anthropic-native haiku id",
+			name: "litellm sends bearer key and the canonical haiku id",
 			build: func(base string) (*ChatClient, error) {
 				return NewLiteLLM(ChatConfig{APIKey: "proxy-key", BaseURL: base})
 			},
 			wantAuth:  "Bearer proxy-key",
 			wantKey:   true,
-			wantModel: "claude-haiku-5-5",
+			wantModel: DefaultModel,
 		},
 		{
 			name: "litellm without a key omits the Authorization header",
@@ -257,7 +87,7 @@ func TestChatClientComplete(t *testing.T) {
 				return NewLiteLLM(ChatConfig{BaseURL: base})
 			},
 			wantKey:   false,
-			wantModel: "claude-haiku-5-5",
+			wantModel: DefaultModel,
 		},
 		{
 			name: "litellm trims a pasted /v1 suffix off the base url",
@@ -266,7 +96,7 @@ func TestChatClientComplete(t *testing.T) {
 			},
 			wantAuth:  "Bearer k",
 			wantKey:   true,
-			wantModel: "claude-haiku-5-5",
+			wantModel: DefaultModel,
 		},
 	}
 	wantMsgs := []chatMessage{
@@ -315,19 +145,19 @@ func TestChatClientComplete(t *testing.T) {
 	}
 }
 
-// TestChatClientOptionalFields covers the eval-harness knobs: a configured
-// temperature and reasoning effort reach the wire, and the observer sees
-// what the provider reported.
+// TestChatClientOptionalFields covers the knobs an eval sets: a configured
+// temperature and effort reach the wire, and the observer sees what the
+// provider reported.
 func TestChatClientOptionalFields(t *testing.T) {
 	srv, got := newChatServer(t)
 	var seen []CallInfo
 	zero := 0.0
 	b, err := NewOpenRouter(ChatConfig{
-		APIKey:          "k",
-		BaseURL:         srv.URL,
-		Temperature:     &zero,
-		ReasoningEffort: "low",
-		Observe:         func(ci CallInfo) { seen = append(seen, ci) },
+		APIKey:      "k",
+		BaseURL:     srv.URL,
+		Temperature: &zero,
+		Effort:      "low",
+		Observe:     func(ci CallInfo) { seen = append(seen, ci) },
 	})
 	if err != nil {
 		t.Fatalf("NewOpenRouter() error = %v", err)

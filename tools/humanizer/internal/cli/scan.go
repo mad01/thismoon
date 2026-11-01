@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/mad01/thismoon/tools/humanizer/internal/backend"
+	"github.com/mad01/thismoon/kit/llm"
 	"github.com/mad01/thismoon/tools/humanizer/internal/goscan"
 	"github.com/mad01/thismoon/tools/humanizer/internal/judge"
 	"github.com/mad01/thismoon/tools/humanizer/internal/rules"
@@ -132,11 +132,11 @@ func printBlocks(w io.Writer, files []goscan.File) {
 // through the document's line index.
 func reportScan(cmd *cobra.Command, files []goscan.File) error {
 	out := cmd.OutOrStdout()
-	llm, err := scanBackend(cmd.ErrOrStderr())
+	b, err := scanBackend(cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
-	if !scanDetect && llm == nil {
+	if !scanDetect && b == nil {
 		printBlocks(out, files) // holistic was skipped: fall back to the dump
 		return nil
 	}
@@ -149,8 +149,8 @@ func reportScan(cmd *cobra.Command, files []goscan.File) error {
 				return err
 			}
 		}
-		if llm != nil {
-			judgeDoc(cmd.Context(), out, llm, doc)
+		if b != nil {
+			judgeDoc(cmd.Context(), out, b, doc)
 		}
 		fmt.Fprintln(out)
 	}
@@ -165,19 +165,19 @@ func reportScan(cmd *cobra.Command, files []goscan.File) error {
 // scanBackend resolves the judge backend once for the whole scan. A missing
 // backend is not fatal: --holistic is the optional pass, so it degrades to
 // a note on stderr.
-func scanBackend(errOut io.Writer) (backend.Backend, error) {
+func scanBackend(errOut io.Writer) (llm.Backend, error) {
 	if !scanHolistic {
 		return nil, nil
 	}
-	llm, err := backend.Select("", "")
+	b, err := judge.Select("", "")
 	if err != nil {
-		if errors.Is(err, backend.ErrNoBackend) {
+		if errors.Is(err, llm.ErrNoBackend) {
 			fmt.Fprintf(errOut, "scan: skipping --holistic, %v\n", err)
 			return nil, nil
 		}
 		return nil, err
 	}
-	return llm, nil
+	return b, nil
 }
 
 // detectDoc runs the span rules over one file's prose document and prints
@@ -207,10 +207,10 @@ func detectDoc(cmd *cobra.Command, path string, doc goscan.Doc, total *rules.Sum
 // judgeDoc prints the LLM verdict for one file's prose. A judge failure is
 // reported and the scan moves on: the deterministic pass is the one that
 // has to complete.
-func judgeDoc(ctx context.Context, out io.Writer, llm backend.Backend, doc goscan.Doc) {
+func judgeDoc(ctx context.Context, out io.Writer, b llm.Backend, doc goscan.Doc) {
 	ctx, cancel := context.WithTimeout(ctx, judgeTimeout)
 	defer cancel()
-	v, err := judge.Run(ctx, llm, doc.Text)
+	v, err := judge.Run(ctx, b, doc.Text)
 	if err != nil {
 		fmt.Fprintf(out, "judge: failed: %v\n", err)
 		return

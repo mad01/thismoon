@@ -32,11 +32,12 @@ corpus. `traces/` keeps every reply with the provider's usage. Git ignores
 `runs/`. When a run settles a decision, copy its `summary.md` into
 `results/` under a dated name.
 
-## Transports
+## Backends
 
-The runner picks where the calls go, in this order, unless `-via` names
-one. A LiteLLM proxy when `LITELLM_BASE_URL` is set (`LITELLM_API_KEY` is
-optional). Then the `claude` CLI when it is on PATH. Then OpenRouter when
+The calls go through the shared `kit/llm` package, and the runner adds no
+transport of its own. `kit/llm` picks the backend in this order unless
+`-via` names one. A LiteLLM proxy when `LITELLM_BASE_URL` is set
+(`LITELLM_API_KEY` is optional). Then the `claude` CLI when it is on PATH. Then OpenRouter when
 `OPENROUTER_API_KEY` is set. OpenRouter is last on purpose: a work machine
 has LiteLLM or Claude Enterprise, a personal one has the Claude
 subscription, and the metered key is the fallback for both. The runner
@@ -44,14 +45,14 @@ reads those variables from its own environment, and the shell does not
 source the secrets file. Run `source ~/.config/ralph/secrets.sh` first to
 reach LiteLLM or OpenRouter. Without it, auto lands on the claude CLI.
 
-The `claude` transport runs `claude -p` headless, with no tools, hooks or
+The `claude` backend runs `claude -p` headless, with no tools, hooks or
 settings, on whatever account the CLI is signed into. On a subscription its
 rows cost nothing extra. The cost column is the list price of the tokens
-from the price table on every transport, with no cache discount, so arms
+from the price table on every backend, with no cache discount, so arms
 compare fairly whatever order they ran in. The CLI caches the prompt, and
 its own cost figure falls for every arm after the first; that figure stays
-in the trace. The summary header names the transport a run used. Its
-latency includes the CLI's startup, so compare p50 within one transport
+in the trace. The summary header names the backend a run used. Its
+latency includes the CLI's startup, so compare p50 within one backend
 only.
 
 Arms name models by their canonical id (`claude-haiku-5-5` and so on) and
@@ -122,7 +123,7 @@ share of the files the caller's context pays for. Line claims count the
 `path:line` references the worker made and how many name an identifier that
 is not on that line. That number is the invented line reference, measured.
 Tokens come from the provider's usage block, and cost from the price table
-on every transport.
+on every backend.
 
 Eight cases at three reps is a small sample, and a difference of one case
 between arms is noise. The per-case grid and the misses section are where

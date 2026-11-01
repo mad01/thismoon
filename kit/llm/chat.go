@@ -1,4 +1,4 @@
-package backend
+package llm
 
 import (
 	"bytes"
@@ -12,73 +12,96 @@ import (
 	"time"
 )
 
-const chatTimeout = 60 * time.Second
+const (
+	// chatTimeout bounds one completion. A 2000-line corpus is about 30k
+	// tokens in, and a slow provider route can take a minute on it. A
+	// caller with a tighter budget bounds the context.
+	chatTimeout  = 180 * time.Second
+	maxBodyBytes = 4 << 20
 
-// errRedirectRefused stops the HTTP client before it can re-send the request
-// (and its Authorization header) to a redirect target.
-var errRedirectRefused = errors.New("backend: HTTP redirect refused")
+	openRouterDefaultBaseURL = "https://openrouter.ai/api"
+)
+
+// errRedirectRefused stops the HTTP client before it can re-send the
+// request, and its bearer key, to a redirect target.
+var errRedirectRefused = errors.New("llm: HTTP redirect refused")
 
 // ChatConfig configures an OpenAI-compatible chat-completions backend. The
-// provider constructors (NewOpenRouter, NewLiteLLM) fill the defaults each
-// provider needs; a zero-value Client gets the shared timeout and redirect
-// refusal. The judge sets only the first four fields. The rest exist for the
-// judge eval harness, which needs to reproduce older request shapes and read
-// what the provider reported; production leaves them at their zero values.
+// provider constructors (NewLiteLLM, NewOpenRouter) fill the defaults each
+// provider needs; a nil Client gets the shared timeout and redirect
+// refusal.
 type ChatConfig struct {
-	APIKey  string
+	APIKey string
+	// Model is the canonical Anthropic id or a provider-specific one; empty
+	// is DefaultModel. NewOpenRouter translates a canonical id.
 	Model   string
 	BaseURL string
 	Client  *http.Client
-
-	// Temperature, when set, is sent as the sampling temperature. The judge
-	// leaves it nil: the Claude 5.5 generation rejects any value other than
-	// the default with a 400, so pinning 0 would break the default model
-	// (MAD-391). The eval harness sets it to run the earlier temperature-0
-	// baseline on models that still accept one.
-	Temperature *float64
-	// ReasoningEffort, when non-empty, is sent as reasoning_effort, the
+	// Effort, when non-empty, is sent as reasoning_effort, the
 	// OpenAI-compatible knob OpenRouter and LiteLLM forward to the model's
-	// effort setting. Empty keeps the provider default.
-	ReasoningEffort string
-	// Observe, when set, receives one CallInfo per HTTP exchange that got a
-	// response, whatever its status. The eval harness reads the served
-	// model, token usage, and latency from it.
+	// effort setting.
+	Effort string
+	// Temperature, when set, is sent as the sampling temperature. The
+	// Claude 5.5 generation rejects any value other than the default with
+	// a 400, so production leaves it nil; an eval that reproduces an older
+	// request shape sets it.
+	Temperature *float64
+	// Observe, when set, receives one CallInfo per HTTP exchange that got
+	// a response, whatever its status.
 	Observe func(CallInfo)
 }
 
-// CallInfo is what the provider reported about one chat-completions
-// exchange: the model that served it, the token usage, the HTTP status, and
-// the latency of the HTTP exchange alone (request sent to body read).
-type CallInfo struct {
-	Model            string
-	PromptTokens     int
-	CompletionTokens int
-	// ReasoningTokens is the thinking share of CompletionTokens when the
-	// provider breaks it out (OpenRouter does); zero otherwise.
-	ReasoningTokens int
-	Status          int
-	Latency         time.Duration
-}
-
 // ChatClient completes against an OpenAI-compatible chat-completions
-// endpoint (POST {base}/v1/chat/completions). OpenRouter and the LiteLLM
+// endpoint (POST {base}/v1/chat/completions). OpenRouter and a LiteLLM
 // proxy both serve that surface, so they share this one client and differ
-// only in name, env, and defaults.
+// only in name, env, and the id they know a model by.
 type ChatClient struct {
-	name            string
-	apiKey          string
-	model           string
-	baseURL         string
-	client          *http.Client
-	temperature     *float64
-	reasoningEffort string
-	observe         func(CallInfo)
+	name        string
+	apiKey      string
+	model       string
+	baseURL     string
+	client      *http.Client
+	effort      string
+	temperature *float64
+	observe     func(CallInfo)
 }
 
-// newChatClient builds the client behind every provider constructor. It
-// trusts cfg: the provider constructor has already validated and defaulted
-// it. A trailing /v1 on BaseURL is trimmed because the endpoint path adds
-// it, and pasting a "…/v1" base is the common mistake.
+// NewLiteLLM returns a backend for a LiteLLM proxy (self-hosted or a
+// company gateway). BaseURL is required, without the /v1 suffix; APIKey is
+// optional because a proxy may run without a master key. The model id goes
+// to the proxy as given: a proxy serves whatever aliases its model_list
+// declares, and the canonical id is the alias to declare.
+func NewLiteLLM(cfg ChatConfig) (*ChatClient, error) {
+	if cfg.BaseURL == "" {
+		return nil, errors.New("llm: LITELLM_BASE_URL is not set")
+	}
+	if cfg.Model == "" {
+		cfg.Model = DefaultModel
+	}
+	return newChatClient(LiteLLM, cfg), nil
+}
+
+// NewOpenRouter returns a backend for the OpenRouter chat-completions API.
+// It fails when APIKey is empty; BaseURL defaults, and a canonical model id
+// is translated to the id OpenRouter serves it under.
+func NewOpenRouter(cfg ChatConfig) (*ChatClient, error) {
+	if cfg.APIKey == "" {
+		return nil, errors.New("llm: OPENROUTER_API_KEY is not set")
+	}
+	if cfg.Model == "" {
+		cfg.Model = DefaultModel
+	}
+	cfg.Model = OpenRouterID(cfg.Model)
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = openRouterDefaultBaseURL
+	}
+	return newChatClient(OpenRouter, cfg), nil
+}
+
+// newChatClient builds the client behind both provider constructors. It
+// trusts cfg: the constructor has validated and defaulted it. A trailing
+// /v1 on BaseURL is trimmed because the endpoint path adds it, and pasting
+// a "…/v1" base is the common mistake.
 func newChatClient(name string, cfg ChatConfig) *ChatClient {
 	if cfg.Client == nil {
 		cfg.Client = &http.Client{
@@ -91,14 +114,14 @@ func newChatClient(name string, cfg ChatConfig) *ChatClient {
 	base := strings.TrimRight(cfg.BaseURL, "/")
 	base = strings.TrimSuffix(base, "/v1")
 	return &ChatClient{
-		name:            name,
-		apiKey:          cfg.APIKey,
-		model:           cfg.Model,
-		baseURL:         base,
-		client:          cfg.Client,
-		temperature:     cfg.Temperature,
-		reasoningEffort: cfg.ReasoningEffort,
-		observe:         cfg.Observe,
+		name:        name,
+		apiKey:      cfg.APIKey,
+		model:       cfg.Model,
+		baseURL:     base,
+		client:      cfg.Client,
+		effort:      cfg.Effort,
+		temperature: cfg.Temperature,
+		observe:     cfg.Observe,
 	}
 }
 
@@ -144,7 +167,9 @@ type chatResponse struct {
 
 // Complete implements Backend with one chat-completions call. The
 // Authorization header is sent only when a key is configured, so a proxy
-// without auth (a local LiteLLM) works too.
+// without auth (a local LiteLLM) works too. The observer sees every
+// exchange that got a response, error or not, so a caller can classify
+// the failure.
 func (c *ChatClient) Complete(ctx context.Context, system, user string) (string, error) {
 	req, err := c.newRequest(ctx, system, user)
 	if err != nil {
@@ -153,29 +178,34 @@ func (c *ChatClient) Complete(ctx context.Context, system, user string) (string,
 	start := time.Now()
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("backend: %s call: %w", c.name, err)
+		return "", fmt.Errorf("llm: %s call: %w", c.name, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
-		return "", fmt.Errorf("backend: read response: %w", err)
+		return "", fmt.Errorf("llm: read response: %w", err)
 	}
 	latency := time.Since(start)
 	var out chatResponse
 	decodeErr := json.Unmarshal(data, &out)
 	c.report(out, resp.StatusCode, latency)
 	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("backend: %s HTTP %d: %s", c.name, resp.StatusCode, snippet(data))
+		return "", fmt.Errorf(
+			"llm: %s HTTP %d: %s",
+			c.name,
+			resp.StatusCode,
+			truncate(string(data), 300),
+		)
 	}
 	if decodeErr != nil {
-		return "", fmt.Errorf("backend: decode response: %w", decodeErr)
+		return "", fmt.Errorf("llm: decode response: %w", decodeErr)
 	}
 	if out.Error != nil {
-		return "", fmt.Errorf("backend: %s error: %s", c.name, out.Error.Message)
+		return "", fmt.Errorf("llm: %s error: %s", c.name, out.Error.Message)
 	}
 	if len(out.Choices) == 0 || strings.TrimSpace(out.Choices[0].Message.Content) == "" {
-		return "", fmt.Errorf("backend: %s returned no content", c.name)
+		return "", fmt.Errorf("llm: %s returned no content", c.name)
 	}
 	return out.Choices[0].Message.Content, nil
 }
@@ -189,15 +219,15 @@ func (c *ChatClient) newRequest(ctx context.Context, system, user string) (*http
 			{Role: "user", Content: user},
 		},
 		Temperature:     c.temperature,
-		ReasoningEffort: c.reasoningEffort,
+		ReasoningEffort: c.effort,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("backend: marshal request: %w", err)
+		return nil, fmt.Errorf("llm: marshal request: %w", err)
 	}
 	endpoint := c.baseURL + "/v1/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("backend: build request: %w", err)
+		return nil, fmt.Errorf("llm: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
@@ -219,13 +249,4 @@ func (c *ChatClient) report(out chatResponse, status int, latency time.Duration)
 		Status:           status,
 		Latency:          latency,
 	})
-}
-
-// snippet trims an error body to something loggable.
-func snippet(data []byte) string {
-	s := strings.TrimSpace(string(data))
-	if len(s) > 300 {
-		s = s[:300] + "..."
-	}
-	return s
 }
