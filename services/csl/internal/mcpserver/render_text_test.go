@@ -284,13 +284,75 @@ func TestRenderReadText(t *testing.T) {
 	)
 
 	out.Truncated = true
-	got := renderReadText(out)
-	if !strings.HasSuffix(got, "\ntruncated: read more with start_line/end_line") {
-		t.Errorf("truncated read lacks the paging hint:\n%s", got)
+	if got := renderReadText(out); !strings.HasSuffix(got, "\n"+readTruncatedNote(out)) {
+		t.Errorf("truncated read lacks the closing note:\n%s", got)
 	}
 
 	empty := readOutput{Repo: "org/repo", Path: "main.go", TotalLines: 3}
 	wantLines(t, renderReadText(empty), "org/repo/main.go no lines in range (3 lines)")
+}
+
+// TestReadTruncatedNote pins the note a capped csl_read closes with: a
+// csl_ask call ready to copy while the file fits csl_ask's line ceiling,
+// with max_lines raised past the default, and paging alone over it.
+func TestReadTruncatedNote(t *testing.T) {
+	const paging = "truncated: read more with start_line/end_line"
+	tests := []struct {
+		name  string
+		repo  string
+		path  string
+		total int
+		want  string
+	}{
+		{
+			name:  "within the default",
+			repo:  "mad01/thismoon",
+			path:  "services/csl/internal/mcpserver/render_text.go",
+			total: 843,
+			want: paging + `, or ask csl_ask(question: "<what you need from it>", ` +
+				`queries: ["f:^services/csl/internal/mcpserver/render_text\\.go$"], ` +
+				`repo: "^mad01/thismoon$") when you only need an answer`,
+		},
+		{
+			name:  "past the default raises max_lines",
+			repo:  "org/repo",
+			path:  "big.go",
+			total: 7421,
+			want: paging + `, or ask csl_ask(question: "<what you need from it>", ` +
+				`queries: ["f:^big\\.go$"], repo: "^org/repo$", max_lines: 7500) when you only need an answer`,
+		},
+		{
+			name:  "at the ceiling",
+			repo:  "org/repo",
+			path:  "big.go",
+			total: 20000,
+			want: paging + `, or ask csl_ask(question: "<what you need from it>", ` +
+				`queries: ["f:^big\\.go$"], repo: "^org/repo$", max_lines: 20000) when you only need an answer`,
+		},
+		{
+			name:  "over the ceiling pages only",
+			repo:  "org/repo",
+			path:  "huge.go",
+			total: 25000,
+			want:  paging,
+		},
+		{
+			name:  "a path with a space is one quoted term",
+			repo:  "org/re.po",
+			path:  "./docs/my notes.md",
+			total: 900,
+			want: paging + `, or ask csl_ask(question: "<what you need from it>", ` +
+				`queries: ["f:\"^docs/my notes\\\\.md$\""], repo: "^org/re\\.po$") when you only need an answer`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := readOutput{Repo: tt.repo, Path: tt.path, TotalLines: tt.total, Truncated: true}
+			if got := readTruncatedNote(out); got != tt.want {
+				t.Errorf("readTruncatedNote:\n got %s\nwant %s", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestRenderLsText(t *testing.T) {

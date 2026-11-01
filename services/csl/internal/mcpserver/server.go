@@ -21,7 +21,8 @@ const Name = "csl"
 // alwaysLoadKey is the tool _meta key Claude Code reads to load a tool's
 // full schema at session start instead of deferring it behind tool search.
 // Only the tools nearly every session calls set it, since each loaded schema
-// costs context in every session whether or not the tool is used.
+// costs context in every session whether or not the tool is used. csl_ask
+// is the one exception (registerAskTools says why).
 const alwaysLoadKey = "anthropic/alwaysLoad"
 
 // Options carries the parts of csl's config the tool set depends on, so the
@@ -32,6 +33,11 @@ type Options struct {
 	// client never sees a tool that would answer available=false on a machine
 	// with no embedding backend. The web UI gates its modes the same way.
 	SemanticEnabled bool
+	// AskWorkerResolved says a csl_ask worker backend resolved from the
+	// ask keys when the server started. Only then is csl_ask alwaysLoad: on a
+	// machine with no backend every call would fail naming what to set, so
+	// the tool stays registered but deferred behind tool search.
+	AskWorkerResolved bool
 }
 
 // New returns a fully wired MCP server with every csl_* tool registered that
@@ -46,7 +52,7 @@ func New(version string, opts Options) *mcp.Server {
 	registerRepoTools(s)
 	registerSearchTools(s)
 	registerSearchMultiTools(s)
-	registerAskTools(s)
+	registerAskTools(s, opts.AskWorkerResolved)
 	if opts.SemanticEnabled {
 		registerSemanticTools(s)
 		registerHybridTools(s)

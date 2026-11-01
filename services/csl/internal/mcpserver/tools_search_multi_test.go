@@ -475,6 +475,34 @@ func TestRenderSearchMultiText(t *testing.T) {
 	}
 }
 
+// TestRenderSearchMultiText_TopHitPointsAtCslRead pins the note a top hit
+// that stops short of its file ends with. csl_search_multi takes no line
+// range, so csl_read's paging note would name parameters the caller cannot
+// pass; the top hit sends the reader to csl_read instead.
+func TestRenderSearchMultiText_TopHitPointsAtCslRead(t *testing.T) {
+	out := searchMultiOutput{Results: []searchMultiResult{{
+		Query: "alpha",
+		TopHit: &readOutput{
+			Repo:       "org/repo",
+			Path:       "a.go",
+			Lines:      []readLine{{Number: 1, Text: "package a"}},
+			TotalLines: 200,
+			Truncated:  true,
+		},
+	}}}
+
+	want := strings.Join([]string{
+		"=== query 1/1: alpha",
+		"",
+		"top hit: org/repo/a.go lines 1-1 of 200",
+		"1:package a",
+		"truncated: read the rest with csl_read",
+	}, "\n")
+	if got := renderSearchMultiText(out); got != want {
+		t.Errorf("renderSearchMultiText:\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
 func TestSearchMulti_PanicStaysInItsEntry(t *testing.T) {
 	fb := &multiFake{
 		results: map[string][]search.Match{"fine": makeFileMatches(1, "org/repo")},

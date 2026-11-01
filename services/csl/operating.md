@@ -49,17 +49,22 @@ with path or kinds.
 ## asking over many files
 
 csl_ask (and `csl ask` on the CLI) answers a question over the files 1 to 10
-zoekt queries select. It runs the queries the way csl_search_multi does and
-collects the matching files whole, in rank order. A cheap hosted worker
-model reads them, Haiku at low effort by default (`ask.model`,
-`ask.effort`). Only the answer and a footer line come back, so the files
-never enter the caller's context. Each question is one model call, and the
-footer gives its list price. The corpus stops at max_files (default 20, max
-100) and max_lines (default 6000, max 20000). A file that can't go in is
-listed under corpus.skipped in the JSON form, and the next file takes its
-place. corpus.truncated, or `truncated` in the footer, means matching files
-were never read. A query relaxed the way csl_search relaxes one keeps its
-files and is named under relaxed and in the footer.
+zoekt queries select. Pick it over csl_read or a whole-file Read when a file
+runs to 300 lines or more, or the question spans several files, and only the
+answer is needed. A named file or directory is a query such as
+`f:^path/to/file\.go$` or `f:^path/to/dir/`, and a capped csl_read ends
+with the csl_ask call for its file, ready to copy. It runs the queries the
+way csl_search_multi does and collects the matching files whole, in rank
+order. A cheap hosted worker model reads them, Haiku at low effort by
+default (`ask.model`, `ask.effort`). Only the answer and a footer line come
+back, so the files never enter the caller's context. Each question is one
+model call, and the footer gives its list price. The corpus stops at
+max_files (default 20, max 100) and max_lines (default 6000, max 20000). A
+file that can't go in is listed under corpus.skipped in the JSON form, and
+the next file takes its place. corpus.truncated, or `truncated` in the
+footer, means matching files were never read. A query relaxed the way
+csl_search relaxes one keeps its files and is named under relaxed and in the
+footer.
 
 The worker is picked the way kit/llm picks one, unless `ask.backend` forces
 it. A LiteLLM proxy comes first when LITELLM_BASE_URL is set (with

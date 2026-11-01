@@ -11,6 +11,7 @@ import (
 	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/kit/agentdoc"
 	"github.com/mad01/thismoon/services/csl"
+	"github.com/mad01/thismoon/services/csl/internal/ask"
 	"github.com/mad01/thismoon/services/csl/internal/mcpserver"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 )
@@ -33,6 +34,7 @@ Tools exposed:
   csl_repo_reindex      Rebuild the zoekt index for a single repo
   csl_search            Search code across locally checked-out repos
   csl_search_multi      Run up to ten independent searches in one call
+  csl_ask               Answer a question over the files a search selects, through a worker model
   csl_count             Count matches grouped by repo or language
   csl_query_validate    Validate a zoekt query before running it
   csl_semantic_search   Search by meaning over the vector index
@@ -63,17 +65,27 @@ func runMCP(_ *cobra.Command, _ []string) error {
 	// An unreadable config is reported on stderr (the stdio transport's log
 	// channel) and leaves semantic search off: the server still serves
 	// lexical search and csl_doctor, which is the tool that diagnoses the
-	// config problem.
+	// config problem. csl_ask loads the config on every call, so it fails too
+	// and is not marked alwaysLoad.
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "csl mcp: load config: %v (semantic tools hidden)\n", err)
 	}
 	server := mcpserver.New(buildinfo.Get().Version, mcpserver.Options{
-		SemanticEnabled: cfg.SemanticEnabled(),
+		SemanticEnabled:   cfg.SemanticEnabled(),
+		AskWorkerResolved: err == nil && askWorkerResolves(cfg),
 	})
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		fmt.Fprintf(os.Stderr, "csl mcp: %v\n", err)
 		return err
 	}
 	return nil
+}
+
+// askWorkerResolves reports whether a csl_ask worker backend resolves from
+// the ask keys, once at startup. A failure is no error here: it means this
+// machine has no backend, and a csl_ask call names what to set.
+func askWorkerResolves(cfg *config.Config) bool {
+	_, err := ask.NewWorker(ask.SettingsFrom(cfg), nil)
+	return err == nil
 }

@@ -31,14 +31,16 @@ var (
 var askCmd = &cobra.Command{
 	Use:   "ask <question>",
 	Short: "Answer a question over the files a search selects, with a hosted worker model",
-	Long: `Answer a question over the files a zoekt search selects. A cheap hosted
+	Long: fmt.Sprintf(`Answer a question over the files a zoekt search selects. A cheap hosted
 worker model reads the files whole and answers, so the files never reach the
 caller: the answer prints on stdout and one footer line on stderr, giving the
 corpus size, the backend and model, and the list price. It is the CLI form of
 the csl_ask MCP tool and builds the same corpus.
 
-Use it for a question over many files, or over one large file, when only the
-answer is needed. For lines you will edit, read them with 'csl read' instead.
+Pick it over a whole-file read when a file runs to %d lines or more, or the
+question spans several files, and only the answer is needed. A named file is
+a query: -q 'f:^path/to/file\.go$', with --repo '^org/repo$' to pin the repo.
+For lines you will edit, read them with 'csl read' instead.
 
 Selecting the files:
   -q <query>          a zoekt query (csl search syntax); repeat for up to 10.
@@ -65,7 +67,9 @@ else the claude CLI on PATH, else OpenRouter when OPENROUTER_API_KEY is set.
 Examples:
   csl ask "which flags does csl search accept" -q 'sym:searchCmd' --repo thismoon
   csl ask "how does each service set its port" -q 'ResolvedPort' -q 'DefaultPort' --per-repo
+  csl ask "what does this file do" -q 'f:^services/csl/internal/cli/search\.go$' --repo '^mad01/thismoon$'
   csl search 'retry' --file '\.go$' --limit 5000 | csl ask "how is backoff computed" --files-from -`,
+		mcpserver.AskMinLines),
 	Args: cobra.ExactArgs(1),
 	RunE: runAsk,
 }

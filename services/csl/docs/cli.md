@@ -289,7 +289,7 @@ csl search <query> --limit 5000 | csl ask <question> --files-from - [flags]
 
 ### Description
 
-Use it for a question over many files, or over one large file, when only the answer is needed. For lines you will edit, read them with [`csl read`](#csl-read): an edit needs the real content.
+Pick it over a whole-file read when a file runs to 300 lines or more, or the question spans several files, and only the answer is needed. A named file is a query: `-q 'f:^path/to/file\.go$'`, with `--repo '^org/repo$'` to pin the repo. For lines you will edit, read them with [`csl read`](#csl-read): an edit needs the real content.
 
 With `-q`, the queries run in files mode the way `csl_search_multi` runs them. The corpus is the union of their files in rank order, taking turns across queries. With `--files-from`, the corpus is the `org/repo/path` lines read from stdin (`-`) or a named file, in the order given; that is the format `csl search` prints without `-o content`, and a `no matches` line is ignored. Each query selects up to 500 files, and each file is read whole. The corpus stops at `--max-files` and `--max-lines`. A file that can't go in is skipped and the next takes its place, and `--json` lists every skipped file with its reason. A query whose AND terms partly match no file is rerun without them, as `csl search` reruns it, and keeps its files.
 
@@ -315,7 +315,7 @@ The answer prints on stdout and one footer line on stderr: `corpus: N files, L l
 csl ask "which flags does csl search accept" -q 'sym:searchCmd' --repo thismoon
 csl ask "how does each service resolve its port" -q 'ResolvedPort' -q 'DefaultPort' --per-repo
 csl search 'backoff' --file '\.go$' --limit 5000 | csl ask "how is the backoff computed" --files-from -
-csl ask "what does this file do" -q 'f:internal/cli/search\.go$' --repo thismoon --json
+csl ask "what does this file do" -q 'f:^services/csl/internal/cli/search\.go$' --repo '^mad01/thismoon$' --json
 ```
 
 ---

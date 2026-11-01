@@ -32,6 +32,13 @@ const maxAskQueries = maxMultiQueries
 // that reaches it marks the corpus truncated.
 const askSearchLimit = 500
 
+// AskMinLines is the file length from which csl_ask beats a whole-file read
+// when only an answer is needed. The csl_ask and csl_read descriptions and
+// `csl ask --help` state it. belt's read-size hint fires at the same length
+// (readSizeMinLines in tools/belt/internal/hint/readsize.go), so the two
+// move together.
+const AskMinLines = 300
+
 // skipReasonsShown is how many skipped files an empty-corpus error names.
 const skipReasonsShown = 5
 
@@ -52,23 +59,37 @@ type askInput struct {
 	formatParam
 }
 
-func registerAskTools(s *mcp.Server) {
-	addFormattedTool(s, &mcp.Tool{
+// registerAskTools registers csl_ask, alwaysLoad when alwaysLoad is set.
+// Deferred, csl_ask was never picked over a whole-file read of a named
+// file, so its description has to be in view from the start. That is worth
+// its schema in every session only where a worker resolves; elsewhere every
+// call fails naming what to set, and the tool stays deferred.
+func registerAskTools(s *mcp.Server, alwaysLoad bool) {
+	tool := &mcp.Tool{
 		Name: "csl_ask",
-		Description: "Answer a question over the files a zoekt search selects. A cheap hosted worker model reads the files, so they never enter your context: only its answer comes back, with a footer giving the corpus size, the backend and model, and the list price. " +
-			"Use it for a question over many files, or over one large file, when you need only the answer: 'which flags does each command accept', 'how does each service configure retries', 'what does this 3000-line file do'. " +
-			"Do not use it for lines you will edit: an edit needs the real content through csl_read or a ranged Read. To locate code, csl_search is cheaper. " +
-			"queries takes 1 to 10 zoekt queries in csl_search syntax, and repo, lang and file narrow every one of them. " +
-			"The corpus is the union of the matching files in rank order, taking turns across queries, each file read whole and capped at max_files (default 20, max 100) and max_lines (default 6000, max 20000). A file that cannot go in is listed in corpus.skipped with the reason and the next file takes its place; corpus.truncated is true when matching files were never considered. " +
-			"A query whose AND terms partly match nothing is rerun without them, as csl_search does, and listed in relaxed with relaxed_query and dropped_terms. " +
+		Description: fmt.Sprintf(
+			"Pick this over csl_read or Read when a file runs to %d lines or more, or a question spans several files, and you need only the answer, not the lines. " +
+			"Try it before you read: a thin answer costs one cheap call, and the lines are still there to read after. ",
+			AskMinLines,
+		) +
+			"A cheap hosted worker model reads the files a zoekt search selects, so they never enter your context: only its answer comes back, with a footer giving the corpus size, the backend and model, and the list price. " +
+			"Examples: 'what does this 3000-line file do', 'which flags does each command accept', 'how does each service configure retries'. " +
+			"Not for lines you will edit: an edit needs the real content through csl_read or a ranged Read. To locate code, csl_search is cheaper. " +
+			"queries takes 1 to 10 zoekt queries in csl_search syntax, and repo, lang and file narrow every one; a named file or directory is a query like f:^path/to/file\\.go$ or f:^path/to/dir/. " +
+			"The corpus is the union of the matching files in rank order, taking turns across queries, each read whole up to max_files (default 20, max 100) and max_lines (default 6000, max 20000). A file that cannot go in is listed in corpus.skipped with the reason and the next takes its place; corpus.truncated is true when matching files were never considered. " +
+			"A query whose AND terms partly match nothing is rerun without them, as csl_search does, and listed in relaxed. " +
 			"per_repo asks once per repo and returns the answers under org/repo headings. " +
 			"The worker cites path:line, sometimes by the bare file name; corpus.files names the repo and full path for csl_read. " +
-			"When no query matches a file, the call fails with each query's zero-result hint and no model call is made.",
+			"When no query matches a file, the call fails with each query's zero-result hint and makes no model call.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(true),
 		},
-	}, handleAsk, ask.Result.Text)
+	}
+	if alwaysLoad {
+		tool.Meta = mcp.Meta{alwaysLoadKey: true}
+	}
+	addFormattedTool(s, tool, handleAsk, ask.Result.Text)
 }
 
 func handleAsk(

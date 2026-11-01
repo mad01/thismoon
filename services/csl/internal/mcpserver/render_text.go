@@ -2,9 +2,12 @@ package mcpserver
 
 import (
 	"fmt"
+	"path"
+	"regexp"
 	"strings"
 
 	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/services/csl/internal/ask"
 	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
@@ -191,8 +194,28 @@ func unavailableNote(note string) string {
 	return note
 }
 
-// renderReadText prints `repo/path lines A-B of TOTAL` then `LINE:text`.
+// readPagingNote closes a capped read whose rest can only be paged through.
+const readPagingNote = "truncated: read more with start_line/end_line"
+
+// topHitTruncatedNote closes a csl_search_multi top hit that stops before
+// the end of its file. That tool takes no line range, so the rest is
+// csl_read's to fetch.
+const topHitTruncatedNote = "truncated: read the rest with csl_read"
+
+// askLinesStep is what the max_lines in a ready csl_ask call rounds up to,
+// so the number reads as a budget rather than a measurement.
+const askLinesStep = 100
+
+// renderReadText prints csl_read's text form; a capped read closes with
+// readTruncatedNote.
 func renderReadText(out readOutput) string {
+	return renderFileText(out, readTruncatedNote(out))
+}
+
+// renderFileText prints `repo/path lines A-B of TOTAL` then `LINE:text`,
+// and truncatedNote last when out is truncated. csl_read and the
+// csl_search_multi top hit share it and differ only in that note.
+func renderFileText(out readOutput, truncatedNote string) string {
 	name := out.Repo + "/" + out.Path
 	lines := make([]string, 0, len(out.Lines)+2)
 	if len(out.Lines) == 0 {
@@ -205,9 +228,50 @@ func renderReadText(out readOutput) string {
 		lines = append(lines, fmt.Sprintf("%d:%s", l.Number, l.Text))
 	}
 	if out.Truncated {
-		lines = append(lines, "truncated: read more with start_line/end_line")
+		lines = append(lines, truncatedNote)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// readTruncatedNote tells a capped csl_read how to get the rest. csl_ask
+// reads a file whole or skips it, so a file over its max_lines ceiling can
+// only be paged through. One within it gets a csl_ask call ready to copy,
+// raising max_lines when the file runs past the default.
+func readTruncatedNote(out readOutput) string {
+	if out.TotalLines > ask.MaxLinesCeiling {
+		return readPagingNote
+	}
+	return readPagingNote + ", or ask " + askFileCall(out) + " when you only need an answer"
+}
+
+// askFileCall is the csl_ask call scoped to the one file out read. zoekt
+// reads f: as a regex over the repo-relative path, and csl reads repo as a
+// regex over repo names, so both are escaped and anchored at both ends:
+// unanchored, the path also matches a same-named file deeper in the tree
+// and the repo every repo its name prefixes. belt's read-size hint builds
+// the same call (askCall in tools/belt/internal/hint/readsize.go).
+func askFileCall(out readOutput) string {
+	query := "f:" + zoektTerm("^"+regexp.QuoteMeta(path.Clean(out.Path))+"$")
+	call := fmt.Sprintf(
+		`csl_ask(question: "<what you need from it>", queries: [%q], repo: %q`,
+		query, "^"+regexp.QuoteMeta(out.Repo)+"$",
+	)
+	if out.TotalLines > ask.DefaultMaxLines {
+		budget := (out.TotalLines + askLinesStep - 1) / askLinesStep * askLinesStep
+		call += fmt.Sprintf(", max_lines: %d", min(budget, ask.MaxLinesCeiling))
+	}
+	return call + ")"
+}
+
+// zoektTerm quotes a query term holding a space, tab or double quote, or
+// starting with a dash, so zoekt reads it as one term rather than splitting
+// it or taking it as a negation. It is belt's rule (zoektTerm in
+// tools/belt/internal/hint/prefercsl.go).
+func zoektTerm(re string) string {
+	if !strings.ContainsAny(re, " \t\"") && !strings.HasPrefix(re, "-") {
+		return re
+	}
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(re) + `"`
 }
 
 // renderLsText prints a header, directories as `path/`, and files as
