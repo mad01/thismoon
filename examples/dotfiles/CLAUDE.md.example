@@ -72,6 +72,11 @@ hundreds of lines into context.
   tracking. Architectural or cross-repo work: plan mode + agents.
 - **Batch related reads into fewer agents.** Don't spawn one agent per file;
   give one agent a broader mandate. 3 focused agents beat 12 narrow ones.
+- **Ask before you delegate a read.** A question over a large file or several
+  files goes to `csl_ask` (CLI: `csl ask`) before a ranged read or an Explore
+  agent. A cheap worker reads the files, and only its answer enters the
+  context. Spawn an agent only when the answer needs tool calls or judgment,
+  and read a region only when you will edit it.
 - **Never run multiple write agents against the same file.** Concurrent edits to
   shared files cause merge conflicts and broken code. Serialize writes.
 - **Include failure history in follow-up agent prompts.** When re-attempting
