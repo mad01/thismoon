@@ -10,7 +10,7 @@ expected:
   - '\bhard\b'
   - '\bsoft\b'
   - '(?i)empty|""'
-  - '\b1044\b'
+  - '\b1093\b'
   - '(?i)\berror\b'
 forbidden:
   - '(?i)\bmedium\b'
