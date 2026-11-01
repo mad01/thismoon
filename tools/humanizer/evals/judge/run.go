@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mad01/thismoon/tools/humanizer/internal/backend"
+	"github.com/mad01/thismoon/kit/llm"
 	"github.com/mad01/thismoon/tools/humanizer/internal/judge"
 )
 
@@ -139,7 +139,7 @@ type job struct {
 // recordingBackend keeps every raw model reply for the trace, including the
 // confidence_basis the judge parser drops.
 type recordingBackend struct {
-	backend.Backend
+	llm.Backend
 	raws []string
 }
 
@@ -152,28 +152,28 @@ func (r *recordingBackend) Complete(ctx context.Context, system, user string) (s
 }
 
 type trace struct {
-	Case    string             `json:"case"`
-	Variant string             `json:"variant"`
-	Rep     int                `json:"rep"`
-	Arm     Arm                `json:"arm"`
-	Text    string             `json:"text"`
-	Replies []string           `json:"replies"`
-	Calls   []backend.CallInfo `json:"calls"`
-	Verdict *judge.Verdict     `json:"verdict,omitempty"`
-	Error   string             `json:"error,omitempty"`
+	Case    string         `json:"case"`
+	Variant string         `json:"variant"`
+	Rep     int            `json:"rep"`
+	Arm     Arm            `json:"arm"`
+	Text    string         `json:"text"`
+	Replies []string       `json:"replies"`
+	Calls   []llm.CallInfo `json:"calls"`
+	Verdict *judge.Verdict `json:"verdict,omitempty"`
+	Error   string         `json:"error,omitempty"`
 }
 
 // runJob judges one case once on one arm through the production path,
 // retrying transient provider failures with jittered backoff. judge.Run's
 // own contract retry stays in: the observer counts every HTTP call.
 func runJob(ctx context.Context, key string, j job, traceDir string) (*Row, *ErrRow) {
-	var calls []backend.CallInfo
-	client, err := backend.NewOpenRouter(backend.ChatConfig{
-		APIKey:          key,
-		Model:           j.arm.Model,
-		Temperature:     j.arm.Temperature,
-		ReasoningEffort: j.arm.Effort,
-		Observe:         func(ci backend.CallInfo) { calls = append(calls, ci) },
+	var calls []llm.CallInfo
+	client, err := llm.NewOpenRouter(llm.ChatConfig{
+		APIKey:      key,
+		Model:       j.arm.Model,
+		Temperature: j.arm.Temperature,
+		Effort:      j.arm.Effort,
+		Observe:     func(ci llm.CallInfo) { calls = append(calls, ci) },
 	})
 	if err != nil {
 		return nil, &ErrRow{
@@ -228,7 +228,7 @@ func runJob(ctx context.Context, key string, j job, traceDir string) (*Row, *Err
 
 // transient reports whether the failure is worth another attempt: a rate
 // limit or server error on the last call, or no response at all.
-func transient(err error, calls []backend.CallInfo) bool {
+func transient(err error, calls []llm.CallInfo) bool {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
@@ -239,7 +239,7 @@ func transient(err error, calls []backend.CallInfo) bool {
 	return status == http.StatusTooManyRequests || status >= 500
 }
 
-func classify(err error, calls []backend.CallInfo) string {
+func classify(err error, calls []llm.CallInfo) string {
 	msg := err.Error()
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
@@ -268,7 +268,7 @@ func servedMatches(asked, served string) bool {
 }
 
 func writeTrace(
-	dir string, j job, raws []string, calls []backend.CallInfo, v *judge.Verdict, err error,
+	dir string, j job, raws []string, calls []llm.CallInfo, v *judge.Verdict, err error,
 ) string {
 	t := trace{
 		Case: j.c.ID, Variant: j.arm.ID, Rep: j.rep, Arm: j.arm, Text: j.c.Text,

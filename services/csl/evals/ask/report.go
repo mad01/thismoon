@@ -74,7 +74,7 @@ func writeSummary(w io.Writer, meta runMeta, rows []Row, errs []ErrRow) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(
 		w,
-		"Pass needs every expected fact, no forbidden match, and an answer inside the budget. Compression is answer chars over corpus chars. Line claims are the path:line references the worker made and how many name an identifier that is not on that line. Cost is the list price of the tokens from the price table, with no cache discount; on the claude transport nothing is charged.",
+		"Pass needs every expected fact, no forbidden match, and an answer inside the budget. Compression is answer chars over corpus chars. Line claims are the path:line references the worker made and how many name an identifier that is not on that line. Cost is the list price of the tokens from the price table, with no cache discount; on the claude backend nothing is charged.",
 	)
 	fmt.Fprintln(w)
 

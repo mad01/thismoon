@@ -6,9 +6,9 @@
 //	cd services/csl
 //	go run ./evals/ask -list                    # the sign-off document, no network
 //	go run ./evals/ask -oracle                  # grading sanity check, no network
-//	go run ./evals/ask -arms haiku55 -reps 1 -filter validmode   # one call on the auto-picked transport
+//	go run ./evals/ask -arms haiku55 -reps 1 -filter validmode   # one call on the auto-picked backend
 //	go run ./evals/ask -via openrouter          # the full matrix, forced onto OpenRouter (paid)
-//	go run ./evals/ask                          # the full matrix on the auto-picked transport
+//	go run ./evals/ask                          # the full matrix on the auto-picked backend
 //	go run ./evals/ask -regrade evals/ask/runs/<ts>   # re-grade a run after a pattern edit, no network
 package main
 
@@ -27,7 +27,7 @@ func main() {
 		via      = flag.String(
 			"via",
 			"auto",
-			"transport: auto (litellm, then claude, then openrouter), litellm, claude, or openrouter",
+			"backend: auto (litellm, then claude, then openrouter), litellm, claude, or openrouter",
 		)
 		reps    = flag.Int("reps", 3, "repetitions per case and arm")
 		outDir  = flag.String("out", "", "run directory (default: evals/ask/runs/<timestamp>)")

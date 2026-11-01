@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/llm"
 	"github.com/mad01/thismoon/kit/progstatus"
-	"github.com/mad01/thismoon/tools/humanizer/internal/backend"
 	"github.com/mad01/thismoon/tools/humanizer/internal/judge"
 )
 
@@ -35,8 +35,10 @@ The backend comes from the environment: HUMANIZER_BACKEND forces one,
 otherwise the first configured provider wins. LITELLM_BASE_URL selects a
 LiteLLM proxy (model claude-haiku-5-5, optional LITELLM_API_KEY);
 else OPENROUTER_API_KEY selects OpenRouter (model anthropic/claude-haiku-5.5).
-Override the model with --model or HUMANIZER_MODEL. Without any provider
-configured the command fails; the deterministic commands keep working offline.
+Override the model with --model or HUMANIZER_MODEL. --backend claude runs the
+claude CLI on PATH as one headless turn; it is opt-in and never auto-picked.
+Without any provider configured the command fails; the deterministic commands
+keep working offline.
 
 Verdicts are advisory. Treat likely_ai sections as rewrite targets alongside
 detect findings, not as ground truth.`,
@@ -46,7 +48,7 @@ detect findings, not as ground truth.`,
 
 func init() {
 	judgeCmd.Flags().
-		StringVar(&judgeBackend, "backend", "", "force an LLM backend (litellm, openrouter); default auto-detects from env")
+		StringVar(&judgeBackend, "backend", "", "force an LLM backend (litellm, openrouter, claude); default auto-detects litellm or openrouter from env")
 	judgeCmd.Flags().
 		StringVar(&judgeModel, "model", "", "override the backend's default model id")
 	judgeCmd.Flags().BoolVar(&judgeJSON, "json", false, "emit the verdict as JSON")
@@ -59,9 +61,9 @@ func runJudge(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	b, err := backend.Select(judgeBackend, judgeModel)
+	b, err := judge.Select(judgeBackend, judgeModel)
 	if err != nil {
-		if errors.Is(err, backend.ErrNoBackend) {
+		if errors.Is(err, llm.ErrNoBackend) {
 			return fmt.Errorf(
 				"%w; the deterministic passes (detect, detect --statistical) work without one",
 				err,

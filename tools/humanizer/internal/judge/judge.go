@@ -11,10 +11,31 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
-	"github.com/mad01/thismoon/tools/humanizer/internal/backend"
+	"github.com/mad01/thismoon/kit/llm"
 )
+
+// Select resolves the judge's backend. name forces one (litellm,
+// openrouter, or claude); empty falls back to HUMANIZER_BACKEND and then
+// kit/llm's auto-detection, where a LiteLLM base URL wins over an
+// OpenRouter key. model overrides the default model id; empty falls back
+// to HUMANIZER_MODEL. The claude CLI stays out of the auto order here: the
+// rubric and its confidence calibration were tuned on direct API calls
+// (MAD-391), the CLI wraps the prompt with context of its own, and the
+// MCP server could not spawn it from inside its sandbox. Forcing it is an
+// opt-in for a shell that has the CLI; moving the default needs the judge
+// eval first.
+func Select(name, model string) (llm.Backend, error) {
+	if name == "" {
+		name = os.Getenv("HUMANIZER_BACKEND")
+	}
+	if model == "" {
+		model = os.Getenv("HUMANIZER_MODEL")
+	}
+	return llm.Select(llm.Options{Backend: name, Model: model})
+}
 
 // SystemPrompt is the static judgment rubric sent with every call. It
 // enforces the JSON-only output contract that Run parses. Whole-passage
@@ -145,7 +166,7 @@ type modelReply struct {
 // Run judges text with one completion against b, retrying once when the
 // model breaks the JSON contract (the MAD-342 fallback ladder; after the
 // second failure the caller falls back to deterministic-only results).
-func Run(ctx context.Context, b backend.Backend, text string) (*Verdict, error) {
+func Run(ctx context.Context, b llm.Backend, text string) (*Verdict, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, errors.New("judge: text is empty")
 	}

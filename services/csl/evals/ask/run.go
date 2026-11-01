@@ -16,15 +16,21 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mad01/thismoon/kit/llm"
 	"github.com/mad01/thismoon/kit/progstatus"
 )
 
-// maxAttempts bounds the retries on a transient provider failure.
-const maxAttempts = 3
+const (
+	// maxAttempts bounds the retries on a transient provider failure.
+	maxAttempts = 3
+	// callTimeout bounds one attempt. A 2000-line corpus is about 30k
+	// tokens in, and a slow provider route can take a minute on it.
+	callTimeout = 180 * time.Second
+)
 
 // Arm is one worker model at one effort. Every arm gets the same prompt and
-// message through the run's transport; Model is the canonical Anthropic id
-// and each transport translates it.
+// message through the run's backend (kit/llm); Model is the canonical
+// Anthropic id and the backend translates it.
 type Arm struct {
 	ID     string `json:"id"`
 	Model  string `json:"model"`
@@ -94,7 +100,7 @@ func selectArms(ids string) ([]Arm, error) {
 // prices is USD per million tokens, input then output, Anthropic's list
 // prices read on 2026-11-01, keyed by the canonical id. Every row is priced
 // from it, with no cache discount, so arms compare on the same footing
-// whatever transport served them and in whatever order they ran: the
+// whatever backend served them and in whatever order they ran: the
 // claude CLI caches the prompt, so its own cost figure falls with each arm
 // that follows the first. That figure stays in the trace. Cost is derived
 // from recorded usage, never estimated from text length.
@@ -104,20 +110,10 @@ var prices = map[string][2]float64{
 	"claude-opus-5-5":   {4.00, 20.00},
 }
 
-// canonicalModel maps an OpenRouter id back to the canonical id the price
-// table and the arms use, so a run recorded before the arms carried
-// canonical ids still prices.
-func canonicalModel(model string) string {
-	for id, or := range openRouterIDs {
-		if or == model {
-			return id
-		}
-	}
-	return model
-}
-
+// costUSD prices one call from the table. The model may arrive as an
+// OpenRouter id from a run recorded before the arms carried canonical ids.
 func costUSD(model string, promptTokens, completionTokens int) float64 {
-	p, ok := prices[canonicalModel(model)]
+	p, ok := prices[llm.CanonicalID(model)]
 	if !ok {
 		return 0
 	}
@@ -166,16 +162,16 @@ type job struct {
 }
 
 type trace struct {
-	Case     string     `json:"case"`
-	Variant  string     `json:"variant"`
-	Rep      int        `json:"rep"`
-	Arm      Arm        `json:"arm"`
-	Question string     `json:"question"`
-	Corpus   Corpus     `json:"corpus"`
-	Reply    string     `json:"reply"`
-	Calls    []CallInfo `json:"calls"`
-	Grade    *Grade     `json:"grade,omitempty"`
-	Error    string     `json:"error,omitempty"`
+	Case     string         `json:"case"`
+	Variant  string         `json:"variant"`
+	Rep      int            `json:"rep"`
+	Arm      Arm            `json:"arm"`
+	Question string         `json:"question"`
+	Corpus   Corpus         `json:"corpus"`
+	Reply    string         `json:"reply"`
+	Calls    []llm.CallInfo `json:"calls"`
+	Grade    *Grade         `json:"grade,omitempty"`
+	Error    string         `json:"error,omitempty"`
 }
 
 // runMeta is run.json: what the run asked for, and each case's corpus as
@@ -266,7 +262,7 @@ func run(opts runOptions, status *progstatus.Reporter) error {
 	if opts.workers < 1 {
 		return errors.New("-workers must be at least 1")
 	}
-	tr, err := pickTransport(opts.via)
+	via, err := resolveVia(opts.via)
 	if err != nil {
 		return err
 	}
@@ -292,7 +288,7 @@ func run(opts runOptions, status *progstatus.Reporter) error {
 		}
 	}
 	meta := runMeta{
-		Started: time.Now(), Via: tr.name(), Arms: arms, Reps: opts.reps, Split: opts.split,
+		Started: time.Now(), Via: via, Arms: arms, Reps: opts.reps, Split: opts.split,
 		Filter: opts.filter, PromptHash: promptHash(),
 	}
 	for _, c := range cases {
@@ -300,8 +296,8 @@ func run(opts runOptions, status *progstatus.Reporter) error {
 			ID: c.ID, Split: c.Split, Budget: c.MaxAnswerChars, Corpus: corpora[c.ID],
 		})
 	}
-	status.Working(fmt.Sprintf("%d jobs on %d arms via %s", len(jobs), len(arms), tr.name()))
-	rows, errs := runAll(ctx, tr, jobs, traceDir, opts.workers)
+	status.Working(fmt.Sprintf("%d jobs on %d arms via %s", len(jobs), len(arms), via))
+	rows, errs := runAll(ctx, via, jobs, traceDir, opts.workers)
 	meta.Finished = time.Now()
 
 	if err := writeJSONL(filepath.Join(outDir, "results.jsonl"), rows); err != nil {
@@ -325,22 +321,49 @@ func run(opts runOptions, status *progstatus.Reporter) error {
 	return nil
 }
 
+// resolveVia turns the -via flag into the backend name the run records.
+// "auto" is kit/llm's empty selector; the probe here fails early on a
+// missing backend instead of once per job.
+func resolveVia(via string) (string, error) {
+	if via == "auto" {
+		via = ""
+	}
+	b, err := llm.Select(llm.Options{Backend: via, AllowCLI: true})
+	if err != nil {
+		return "", err
+	}
+	return b.Name(), nil
+}
+
+// backendFor builds the backend one job calls: the run's backend on the
+// arm's model and effort, reporting every exchange to observe.
+func backendFor(via string, arm Arm, observe func(llm.CallInfo)) (llm.Backend, error) {
+	return llm.Select(llm.Options{
+		Backend: via, Model: arm.Model, Effort: arm.Effort, AllowCLI: true, Observe: observe,
+	})
+}
+
 // runJob asks one case once on one arm, retrying transient provider
 // failures with jittered backoff.
-func runJob(ctx context.Context, tr transport, j job, traceDir string) (*Row, *ErrRow) {
+func runJob(ctx context.Context, via string, j job, traceDir string) (*Row, *ErrRow) {
 	message := buildMessage(j.corpus, j.c.Question)
 	var (
-		calls []CallInfo
+		calls []llm.CallInfo
 		reply string
-		err   error
 	)
+	b, err := backendFor(via, j.arm, func(ci llm.CallInfo) { calls = append(calls, ci) })
+	if err != nil {
+		return nil, &ErrRow{
+			ID: j.c.ID, Variant: j.arm.ID, Rep: j.rep, Class: "backend", Error: err.Error(),
+		}
+	}
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		cctx, cancel := context.WithTimeout(ctx, callTimeout)
-		var info CallInfo
-		reply, info, err = tr.complete(cctx, j.arm.Model, j.arm.Effort, systemPrompt, message)
+		reply, err = b.Complete(cctx, systemPrompt, message)
 		cancel()
-		if info.Status != 0 {
-			calls = append(calls, info)
+		var info llm.CallInfo
+		if len(calls) >= attempt {
+			info = calls[len(calls)-1]
 		}
 		if err == nil || ctx.Err() != nil || !transient(err, info) || attempt == maxAttempts {
 			break
@@ -374,7 +397,7 @@ func runJob(ctx context.Context, tr transport, j job, traceDir string) (*Row, *E
 		reasoning += c.ReasoningTokens
 	}
 	return &Row{
-		ID: j.c.ID, Split: j.c.Split, Variant: j.arm.ID, Via: tr.name(), Rep: j.rep,
+		ID: j.c.ID, Split: j.c.Split, Variant: j.arm.ID, Via: via, Rep: j.rep,
 		Answer: reply, Grade: *g,
 		CorpusFiles: len(
 			j.corpus.Files,
@@ -386,15 +409,15 @@ func runJob(ctx context.Context, tr transport, j job, traceDir string) (*Row, *E
 }
 
 // transient reports whether the failure is worth another attempt: a rate
-// limit or server error, a timeout, or no response at all.
-func transient(err error, info CallInfo) bool {
+// limit or server error, a timeout, or no response at all (a zero info).
+func transient(err error, info llm.CallInfo) bool {
 	if errors.Is(err, context.DeadlineExceeded) || info.Status == 0 {
 		return true
 	}
 	return info.Status == http.StatusTooManyRequests || info.Status >= 500
 }
 
-func classify(err error, calls []CallInfo) string {
+func classify(err error, calls []llm.CallInfo) string {
 	msg := err.Error()
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
@@ -415,20 +438,20 @@ func classify(err error, calls []CallInfo) string {
 }
 
 // servedMatches accepts the model the arm asked for under any id a
-// transport reports it as: the canonical id, OpenRouter's dotted id with
+// backend reports it as: the canonical id, OpenRouter's dotted id with
 // an optional routing suffix, or a dated snapshot of the canonical id.
 // Anything else is a substitution.
 func servedMatches(asked, served string) bool {
 	if served == asked || strings.HasPrefix(served, asked+"-") {
 		return true
 	}
-	if or, ok := openRouterIDs[asked]; ok {
+	if or := llm.OpenRouterID(asked); or != asked {
 		return served == or || strings.HasPrefix(served, or+":")
 	}
 	return false
 }
 
-func writeTrace(dir string, j job, reply string, calls []CallInfo, g *Grade, err error) string {
+func writeTrace(dir string, j job, reply string, calls []llm.CallInfo, g *Grade, err error) string {
 	t := trace{
 		Case: j.c.ID, Variant: j.arm.ID, Rep: j.rep, Arm: j.arm,
 		Question: j.c.Question, Corpus: j.corpus, Reply: reply, Calls: calls, Grade: g,
@@ -447,7 +470,7 @@ func writeTrace(dir string, j job, reply string, calls []CallInfo, g *Grade, err
 // in a stable order.
 func runAll(
 	ctx context.Context,
-	tr transport,
+	via string,
 	jobs []job,
 	traceDir string,
 	workers int,
@@ -465,7 +488,7 @@ func runAll(
 				if ctx.Err() != nil {
 					continue
 				}
-				row, erow := runJob(ctx, tr, j, traceDir)
+				row, erow := runJob(ctx, via, j, traceDir)
 				mu.Lock()
 				if row != nil {
 					rows = append(rows, *row)
