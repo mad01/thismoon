@@ -4,6 +4,30 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-01 belt: read-size also fires on `csl_read`, and its matcher must name the tool
+
+Change: thismoon #363. belt's read-size hint now also fires after a `csl_read` call that reads a file of 300 lines or more with no `start_line` and no `end_line`. The advice is the same as after a Read. belt only sees the calls its PostToolUse matcher routes to `belt hint read`, so the consuming repo's matcher has to name the MCP tool too. A Read and a `csl_read` of one file now share one nudge per agent per session. The seen-file marker now names the file by repo and repo-relative path. A session that spans the upgrade can therefore get the hint once more for a file it already saw it on.
+
+Run, in order:
+
+1. Merge this change, then `ralph up` to rebuild belt.
+2. In the consuming repo's Claude settings template, change the matcher of the `belt hint read` PostToolUse entry from `Read` to `Read|mcp__csl__csl_read`. If the csl MCP server is registered under another name, use that name in the middle segment. Merge that change and run `ralph up` again so agent-sync writes it.
+3. Start a new agent session, so Claude Code loads the new matcher.
+
+A machine that skips step 2 keeps the Read half of the hint and stays silent on `csl_read`. `belt doctor` reports the gap: its hook wiring section prints a `WARNING` line naming the matcher to set. That line leaves the exit status alone, since the hint is advisory.
+
+Verify:
+
+1. `belt version -o json` reports the merged commit.
+2. `belt doctor` lists the `belt hint read` matcher under hook wiring, with no `WARNING` line in that section.
+3. Optionally, hand belt a `csl_read` payload. It fires only where csl indexes `mad01/thismoon`, and only once per file per session, so each run takes a fresh session id. belt then prints a JSON object whose `additionalContext` starts with `belt[read-size]: mad01/thismoon/tools/belt/docs/hooks.md` and says the file "was read without a range through csl_read":
+
+```sh
+printf '{"session_id":"%s","tool_name":"mcp__csl__csl_read","tool_input":{"repo":"thismoon","file":"tools/belt/docs/hooks.md"},"tool_response":[{"type":"text","text":"mad01/thismoon/tools/belt/docs/hooks.md lines 1-500 of 1250"}]}' "$(uuidgen)" | belt hint read
+```
+
+In a new session, a `csl_read` of a file that long with no range carries the same `belt[read-size]:` reminder next to its result.
+
 ## 2026-11-01 csl: `csl_ask` needs the MCP server started through `csl-env.sh`
 
 Change: thismoon #359. csl gains `csl_ask` and `csl ask`, a bulk reader: a question over the files a zoekt search selects, answered by a hosted worker model so the files never enter the agent's context. The worker is a LiteLLM proxy when `LITELLM_BASE_URL` is set, else the `claude` CLI on `PATH`, else OpenRouter when `OPENROUTER_API_KEY` is set. An MCP host starts `csl mcp` without a login shell's environment, so the csl recipe now ships `recipes/csl/csl-env.sh`. It pulls exactly those variables from `~/.config/ralph/secrets.sh` and execs csl. Search works as before without any of it; only `csl_ask` needs a worker.

@@ -95,18 +95,20 @@ hint never blocks: the tool has already run and its result stands, so silence
 and advice are the only two outcomes.
 
 The event argument is belt's hint event, not the Claude Code tool name:
-bash hints on Bash commands, read hints on the Read tool,
-external-text hints on the MCP tools that publish text off this machine,
-session-start hints once when a session opens (a SessionStart hook), and
-subagent-start hints once per subagent before its first prompt (a
-SubagentStart hook: the advice lands in the subagent's context, and only
-custom hints run there). Wire them in ~/.claude/settings.json:
+bash hints on Bash commands, read hints on the Read tool and csl's
+csl_read MCP tool, external-text hints on the MCP tools that publish text
+off this machine, session-start hints once when a session opens (a
+SessionStart hook), and subagent-start hints once per subagent before its
+first prompt (a SubagentStart hook: the advice lands in the subagent's
+context, and only custom hints run there). Wire them in
+~/.claude/settings.json:
 
   {
     "hooks": {
       "PostToolUse": [
         {"matcher": "Bash", "hooks": [{"type": "command", "command": "belt hint bash"}]},
-        {"matcher": "Read", "hooks": [{"type": "command", "command": "belt hint read"}]},
+        {"matcher": "Read|mcp__csl__csl_read",
+         "hooks": [{"type": "command", "command": "belt hint read"}]},
         {"matcher": "mcp__(github|slack)__.*",
          "hooks": [{"type": "command", "command": "belt hint external-text"}]}
       ],

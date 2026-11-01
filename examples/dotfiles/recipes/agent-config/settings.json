@@ -47,7 +47,7 @@
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint bash" }]
       },
       {
-        "matcher": "Read",
+        "matcher": "Read|mcp__csl__csl_read",
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint read" }]
       },
       {

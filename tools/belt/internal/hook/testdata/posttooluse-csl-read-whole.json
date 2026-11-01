@@ -1,0 +1,24 @@
+{
+  "session_id": "99344608-b8fe-4f5a-a4ea-6f355a2e388a",
+  "transcript_path": "/Users/user/.claude/projects/-private-tmp-mad494/99344608-b8fe-4f5a-a4ea-6f355a2e388a.jsonl",
+  "cwd": "/private/tmp/mad494",
+  "prompt_id": "728c033f-8672-49b8-94b7-7666a92fa9d4",
+  "permission_mode": "default",
+  "effort": {
+    "level": "xhigh"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "mcp__csl__csl_read",
+  "tool_input": {
+    "repo": "^acme/widget$",
+    "file": "big.go"
+  },
+  "tool_response": [
+    {
+      "type": "text",
+      "text": "acme/widget/big.go lines 1-500 of 843\n1:package widget\n2:\n3:import \"fmt\"\ntruncated: read more with start_line/end_line"
+    }
+  ],
+  "tool_use_id": "toolu_01PqX4b7NcfR2s8kD3vWm9Jt",
+  "duration_ms": 6
+}

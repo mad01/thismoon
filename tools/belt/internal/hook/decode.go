@@ -29,8 +29,10 @@ var guardInputFields = map[string][]string{
 }
 
 // hintInputFields is the same list for toHintInput. The read event's offset
-// and limit are left out on purpose: they are JSON numbers, and toHintInput
-// reads only whether they are present.
+// and limit, and csl_read's start_line and end_line, are left out on
+// purpose: they are JSON numbers, and toHintInput reads only whether they
+// name a range. csl_read's repo and file are not read at all, since the
+// response names the file.
 var hintInputFields = map[string][]string{
 	hint.EventBash: {"command"},
 	hint.EventRead: {"file_path"},

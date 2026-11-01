@@ -385,9 +385,11 @@ func ReadIncludes(paths []string) ([]Include, error) {
 }
 
 // ClaudeSettings gates belt's read of the Claude Code settings files, the
-// only non-belt config surface belt reads (docs/adr/0010). The only thing read is the permissions.deny Bash
-// entries, which the script-deny-list guard enforces inside scripts so the
-// guard and the permission system share one deny list.
+// only non-belt config surface belt reads (docs/adr/0010). belt's hooks
+// read the permissions.deny Bash entries, which the script-deny-list guard
+// enforces inside scripts so the guard and the permission system share one
+// deny list. belt doctor also reads the PostToolUse hook entries, to check
+// the matcher of the one that runs belt hint read.
 type ClaudeSettings struct {
 	Enabled *bool `toml:"enabled" yaml:"enabled"`
 }
@@ -751,6 +753,53 @@ func LoadClaudeDenyPatterns(paths ...string) []string {
 		}
 	}
 	return patterns
+}
+
+// ClaudeHook is one hook command a Claude settings file registers, with
+// the file it came from and the matcher of the entry it sits in.
+type ClaudeHook struct {
+	File    string
+	Matcher string
+	Command string
+}
+
+// LoadClaudeHooks lists the commands the given Claude settings files
+// register on one hook event (PostToolUse, say), in file order. Each event
+// is decoded on its own, so a malformed entry under another event costs
+// nothing here. Missing or malformed files contribute nothing, as for the
+// deny patterns. belt doctor is the only reader.
+func LoadClaudeHooks(event string, paths ...string) []ClaudeHook {
+	var hooks []ClaudeHook
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var settings struct {
+			Hooks map[string]json.RawMessage `json:"hooks"`
+		}
+		if json.Unmarshal(raw, &settings) != nil {
+			continue
+		}
+		var entries []struct {
+			Matcher string `json:"matcher"`
+			Hooks   []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		}
+		if json.Unmarshal(settings.Hooks[event], &entries) != nil {
+			continue
+		}
+		for _, e := range entries {
+			for _, h := range e.Hooks {
+				hooks = append(
+					hooks,
+					ClaudeHook{File: path, Matcher: e.Matcher, Command: h.Command},
+				)
+			}
+		}
+	}
+	return hooks
 }
 
 // File is the parsed shape of the belt config file in either format. An

@@ -70,7 +70,7 @@ complete hooks block looks like this:
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint bash" }]
       },
       {
-        "matcher": "Read",
+        "matcher": "Read|mcp__csl__csl_read",
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint read" }]
       },
       {
@@ -148,7 +148,7 @@ The event-to-subcommand mapping is fixed:
 | `belt hook write` | PreToolUse | `Write\|Edit` |
 | `belt hook external-text` | PreToolUse | the github.com MCP server's tools, and only that server (see below) |
 | `belt hint bash` | PostToolUse | `Bash` |
-| `belt hint read` | PostToolUse | `Read` |
+| `belt hint read` | PostToolUse | `Read\|mcp__csl__csl_read` |
 | `belt hint external-text` | PostToolUse | your publishing MCP tools (see below) |
 | `belt hint session-start` | SessionStart | none (fires on every session) |
 | `belt hint subagent-start` | SubagentStart | none, or an agent type to brief only some subagents |
@@ -174,6 +174,12 @@ The wiring rules that are easy to get wrong:
   the hook event it was built for (`PreToolUse`, `PostToolUse`,
   `SessionStart`, `SubagentStart`); register `belt hint read` under the
   wrong event and Claude Code silently drops the output.
+- **The read matcher names both tools.** With `Read` alone, read-size never
+  sees a `csl_read`. The matcher is `Read|mcp__csl__csl_read`, with the
+  server segment your csl MCP registration uses. `belt doctor` checks it:
+  its hook wiring section prints a `WARNING` line naming the matcher to set
+  when no `belt hint read` entry lets a `csl_read` through. That line leaves
+  the exit status alone, since read-size is advisory.
 - **Never register a belt command on WorktreeCreate or WorktreeRemove.**
   Those hooks replace Claude Code's own `git worktree` handling: a
   WorktreeCreate hook must print the path it created, and a WorktreeRemove
@@ -220,8 +226,9 @@ The wiring rules that are easy to get wrong:
   PR body that names an internal repo. Either way the matcher names
   github.com tools only.
 
-`belt doctor` verifies the binary and the config, but it does not check
-whether `~/.claude/settings.json` actually points at belt. A correctly
+`belt doctor` verifies the binary and the config. Of the wiring, it checks
+only the matcher of the `belt hint read` entry; it doesn't check whether
+the rest of `~/.claude/settings.json` points at belt. A correctly
 configured belt that is simply not wired up looks identical to a healthy one.
 Run one `git push origin main` dry-run through `belt check bash` and one real
 session if you want proof the wiring is live.
@@ -794,14 +801,31 @@ hands back the equivalent `csl search` command, then the `csl_search` call.
 
 ### read-size (read)
 
-After a Read pulls in a large file without a range, points at the cheaper
-ways in.
+After a Read or a `csl_read` pulls in a large file without a range, points
+at the cheaper ways in.
 
 - **Fires when** a Read with no `offset` and no `limit` returns a file of
   300 lines or more inside a repo csl indexes. The index check is the same
   shard listing prefer-csl reads. The file must be a type `csl_outline`
   has symbols for: Go, TypeScript, Python, Java, protobuf, shell, or
   markdown.
+- **Also fires on `csl_read`** with no `start_line` and no `end_line`,
+  under the same rules. A whole-file `csl_read` returns at most 500 lines,
+  but the hint goes by the file's length, so `lines 1-500 of 843` counts.
+  The call's `repo` is a regex, so the file and its length come from the
+  response. csl writes it in the text form, which opens with the header
+  line `org/repo/path lines A-B of N`, or the json form, an object with
+  `repo`, `path` and `total_lines`. belt reads either form from content
+  blocks (the first text block) or from a JSON string. A text form result
+  arrives as content blocks. A json form result also carries structured
+  content, and Claude Code records such a result as one JSON string. belt
+  also accepts the json object itself. Other response formats stay silent.
+  The json form states the repo and the path apart, and belt keeps them
+  apart. The text header joins them, and csl names a repo after its origin
+  remote, which can hold more than one slash. So belt splits a header's
+  name at the longest repo name it has a shard for. A bound of 0 counts as
+  no range, as csl reads it. The matcher has to name the tool:
+  `Read|mcp__csl__csl_read`.
 - **The advice** names the file and its line count. It hands over a
   `csl_ask` call first, for when only an answer is needed. The question is
   a placeholder, and the file goes in as an `f:` query on its path. csl
@@ -812,10 +836,11 @@ ways in.
   `include_tests: true`, because csl leaves test files out of an outline by
   default. For markdown it adds `kinds: ["section"]`, since headings are
   left out otherwise.
-- **Once per file per agent per session**, through the seen file. A
-  subagent shares its parent's session id, so it gets its own nudge, and
-  its read doesn't use up the main thread's. A ranged read of the file
-  doesn't use one up either.
+- **Once per file per agent per session**, through the seen file. The
+  marker names the file by repo and repo-relative path, so a Read and a
+  `csl_read` of one file share a nudge. A subagent shares its parent's
+  session id, so it gets its own nudge, and its read doesn't use up the
+  main thread's. A ranged read of the file doesn't use one up either.
 - **Silent** without a session id, on a relative path, and outside an
   indexed repo. It's silent on every file type `csl_outline` returns no
   symbols for: JSON, YAML, TOML, plain text, CSV, lock files, JavaScript,
@@ -1196,7 +1221,7 @@ In symptom order:
 
 1. **Nothing ever fires, anywhere.** The wiring is missing or points at the
    wrong path. Check the `hooks` block in `~/.claude/settings.json` against
-   the table above; `belt doctor` cannot see this for you. If belt is wired
+   the table above; `belt doctor` checks only the read matcher. If belt is wired
    but every hint on one event stays silent, look for `warn` events tagged
    `decode_error`: that event's payloads do not decode.
 2. **One guard never denies.** Run the case through `belt check bash "<the
@@ -1229,3 +1254,6 @@ In symptom order:
    posted under the watch source with `tags.to` set to the exact session
    id, and that the Stop entry carries `asyncRewake: true`. The cursor file
    `~/.cache/belt/watch-<session>` must not already name a newer id.
+9. **read-size fires after a Read but never after a `csl_read`.** The
+   `belt hint read` matcher leaves the tool out. `belt doctor` prints a
+   `WARNING` line in its hook wiring section with the matcher to set.

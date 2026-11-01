@@ -14,6 +14,27 @@ import (
 // applies edit to the decoded payload, and returns it re-encoded.
 func readFixture(t *testing.T, name, file string, edit func(p map[string]any)) string {
 	t.Helper()
+	return fixture(t, name, func(p map[string]any) {
+		p["tool_input"].(map[string]any)["file_path"] = file
+		if edit != nil {
+			edit(p)
+		}
+	})
+}
+
+// cslReadFixture loads the csl_read PostToolUse payload: the envelope of the
+// captured Read payload around csl_read's input and its text response as
+// Claude Code hands an MCP tool's response over, a content array. It reads
+// acme/widget/big.go whole, 843 lines capped at 500.
+func cslReadFixture(t *testing.T, edit func(p map[string]any)) string {
+	t.Helper()
+	return fixture(t, "posttooluse-csl-read-whole.json", edit)
+}
+
+// fixture loads a testdata payload, applies edit to it when set, and
+// returns it re-encoded.
+func fixture(t *testing.T, name string, edit func(p map[string]any)) string {
+	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatal(err)
@@ -22,7 +43,6 @@ func readFixture(t *testing.T, name, file string, edit func(p map[string]any)) s
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatal(err)
 	}
-	p["tool_input"].(map[string]any)["file_path"] = file
 	if edit != nil {
 		edit(p)
 	}
@@ -153,6 +173,137 @@ func TestRunHintReadStaysQuietOnShapesItDoesNotKnow(t *testing.T) {
 			var out bytes.Buffer
 			var a archived
 			raw := readFixture(t, "posttooluse-read-whole.json", file, tt.edit)
+			runner{load: defaults, emit: a.emit}.hints("read", strings.NewReader(raw), &out)
+			if out.Len() != 0 || len(a.events) != 0 {
+				t.Errorf("wrote %q and archived %+v, want silence", out.String(), a.events)
+			}
+		})
+	}
+}
+
+// TestRunHintReadOnCSLReadPayloads runs `belt hint read` end to end on
+// csl_read payloads. A ranged read is silent, and a start_line of 0 reads as
+// no range, as csl reads it. The whole read advises once, naming the file
+// as csl does, and a later Read of the same file is silent: both tools key
+// the same marker. A subagent's json-form read gets its own nudge, whether
+// the json arrives in a text block, as a string, or as an object.
+func TestRunHintReadOnCSLReadPayloads(t *testing.T) {
+	file := indexedRepoFile(t)
+	input := func(key string, v any) func(p map[string]any) {
+		return func(p map[string]any) { p["tool_input"].(map[string]any)[key] = v }
+	}
+	ranged := func(p map[string]any) {
+		input("start_line", 1)(p)
+		input("end_line", 80)(p)
+	}
+	jsonInSubagent := func(p map[string]any) {
+		p["agent_id"] = "a-explore"
+		input("response_format", "json")(p)
+		p["tool_response"] = []any{map[string]any{"type": "text", "text": `{"repo":"acme/widget",` +
+			`"path":"big.go","lines":[{"number":1,"text":"package widget"}],"total_lines":843,"truncated":true}`}}
+	}
+	const structured = `{"repo":"acme/widget","path":"big.go",` +
+		`"lines":[{"number":1,"text":"package widget"}],"total_lines":843,"truncated":true}`
+	jsonStringInSubagent := func(p map[string]any) {
+		p["agent_id"] = "a-review"
+		input("response_format", "json")(p)
+		p["tool_response"] = structured
+	}
+	structuredInSubagent := func(p map[string]any) {
+		p["agent_id"] = "a-plan"
+		input("response_format", "json")(p)
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(structured), &obj); err != nil {
+			t.Fatal(err)
+		}
+		p["tool_response"] = obj
+	}
+	steps := []struct {
+		name, raw  string
+		wantAdvice bool
+	}{
+		{"ranged csl_read", cslReadFixture(t, ranged), false},
+		{"start_line 0 reads as no range", cslReadFixture(t, input("start_line", 0)), true},
+		{"whole csl_read again", cslReadFixture(t, nil), false},
+		{"Read of the same file", readFixture(t, "posttooluse-read-whole.json", file, nil), false},
+		{"json form in a subagent", cslReadFixture(t, jsonInSubagent), true},
+		{"json string in another subagent", cslReadFixture(t, jsonStringInSubagent), true},
+		{"json object in a third subagent", cslReadFixture(t, structuredInSubagent), true},
+	}
+	for _, s := range steps {
+		var out bytes.Buffer
+		var a archived
+		runner{load: defaults, emit: a.emit}.hints("read", strings.NewReader(s.raw), &out)
+		if !s.wantAdvice {
+			if out.Len() != 0 || len(a.events) != 0 {
+				t.Errorf(
+					"%s: wrote %q and archived %+v, want silence",
+					s.name,
+					out.String(),
+					a.events,
+				)
+			}
+			continue
+		}
+		var d adviceDecision
+		if err := json.Unmarshal(out.Bytes(), &d); err != nil {
+			t.Fatalf("%s: decode advice from %q: %v", s.name, out.String(), err)
+		}
+		got := d.HookSpecificOutput
+		wantHead := "belt[read-size]: acme/widget/big.go is 843 lines and was read without a range through csl_read."
+		if got.HookEventName != "PostToolUse" ||
+			!strings.HasPrefix(got.AdditionalContext, wantHead) {
+			t.Errorf("%s: advice = %+v, want PostToolUse starting %q", s.name, got, wantHead)
+		}
+		wantAsk := `csl_ask(question: "<what you need from it>", queries: ["f:^big\\.go$"], repo: "^acme/widget$")`
+		if !strings.Contains(got.AdditionalContext, wantAsk) {
+			t.Errorf("%s: advice %q does not name %s", s.name, got.AdditionalContext, wantAsk)
+		}
+		if len(a.events) != 1 || a.events[0].Tags["hint"] != "read-size" {
+			t.Errorf("%s: archived %+v, want one event tagged hint read-size", s.name, a.events)
+		}
+	}
+}
+
+// TestRunHintCSLReadStaysQuietOnShapesItDoesNotKnow: a mistyped bound reads
+// as a range, and a response that is neither a content array nor csl's
+// structured object, or whose text carries no header, reads as an unknown
+// line count. All are silence with
+// no warn event.
+func TestRunHintCSLReadStaysQuietOnShapesItDoesNotKnow(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(p map[string]any)
+	}{
+		{
+			"string end_line",
+			func(p map[string]any) { p["tool_input"].(map[string]any)["end_line"] = "80" },
+		},
+		{"response is an object without repo and path", func(p map[string]any) {
+			p["tool_response"] = map[string]any{
+				"type": "text",
+				"text": "acme/widget/big.go lines 1-500 of 843",
+			}
+		}},
+		{"another response format", func(p map[string]any) {
+			p["tool_response"] = []any{
+				map[string]any{"type": "text", "text": "repo: acme/widget\ntotal_lines: 843"},
+			}
+		}},
+		{"no tool_response", func(p map[string]any) { delete(p, "tool_response") }},
+		{"no session id", func(p map[string]any) { delete(p, "session_id") }},
+		{"repo csl does not index", func(p map[string]any) {
+			p["tool_response"] = []any{
+				map[string]any{"type": "text", "text": "acme/other/big.go lines 1-500 of 843"},
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			indexedRepoFile(t)
+			var out bytes.Buffer
+			var a archived
+			raw := cslReadFixture(t, tt.edit)
 			runner{load: defaults, emit: a.emit}.hints("read", strings.NewReader(raw), &out)
 			if out.Len() != 0 || len(a.events) != 0 {
 				t.Errorf("wrote %q and archived %+v, want silence", out.String(), a.events)

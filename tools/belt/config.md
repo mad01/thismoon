@@ -93,7 +93,9 @@ Code settings. The Bash deny patterns behind `script-deny-list` come from
 the `permissions.deny` entries of `~/.claude/settings.json` and
 `~/.claude/settings.local.json` on every invocation. They are read live,
 never cached and never copied into the belt config, so the guard and the Claude
-Code permission system can never drift apart. This read has its own switch,
+Code permission system can never drift apart. `belt doctor` also reads the
+`hooks.PostToolUse` entries of the same files, to warn when the `belt hint
+read` matcher leaves out `csl_read`. This read has its own switch,
 `claude_settings.enabled` (see Keys); `belt config` shows the patterns as
 `claude_deny` in its output, and `belt config --help` prints the full
 annotated key reference reproduced in the Example section below.
@@ -194,15 +196,17 @@ means an empty name set (see Where config lives).
 ### claude_settings
 
 The switch on belt's read of the Claude Code settings files, the only
-non-belt config surface belt reads (docs/adr/0010). The only thing belt takes from those files is the
-`permissions.deny` Bash entries feeding `script-deny-list`; belt never
-writes them.
+non-belt config surface belt reads (docs/adr/0010). belt's hooks take only the
+`permissions.deny` Bash entries feeding `script-deny-list`, and `belt
+doctor` reads the `hooks.PostToolUse` entries to check the `belt hint read`
+matcher. belt never writes either.
 
 - `claude_settings.enabled` (bool, default `true`): whether belt opens
   `~/.claude/settings.json` and `~/.claude/settings.local.json` at all.
   Disabling it leaves `script-deny-list` matching only its
   `extra_patterns` — the guard stays on, with a smaller pattern set — and
-  both `belt doctor` and `belt config` state that the read is off.
+  both `belt doctor` and `belt config` state that the read is off. The
+  doctor's read matcher check is skipped too.
 
 ### git_identity
 
@@ -511,10 +515,10 @@ the repo's origin remote.
   the swept repo's origin remote — not its checkout path, so a worktree
   under a different parent directory is still covered.
 - `hints.read-size.enabled` (bool, default `true`): PostToolUse (read),
-  fires when a Read with no offset or limit pulls in 300 lines or more from
-  an indexed repo, for a file type `csl_outline` has symbols for. It points
-  at `csl_ask`, `csl_outline` or a ranged read, once per file per agent per
-  session.
+  fires when a Read or a `csl_read` without a range pulls in 300 lines or
+  more from an indexed repo, for a file type `csl_outline` has symbols
+  for. It points at `csl_ask`, `csl_outline` or a ranged read, once per
+  file per agent per session.
 - **commit-policy**
   - `hints.commit-policy.enabled` (bool, default `true`): PostToolUse
     (bash), states the branch + PR commit policy after a `git commit` lands
