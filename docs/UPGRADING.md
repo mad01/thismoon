@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-11-01 csl: `csl_ask` needs the MCP server started through `csl-env.sh`
 
-Change: thismoon #TBD. csl gains `csl_ask` and `csl ask`, a bulk reader: a question over the files a zoekt search selects, answered by a hosted worker model so the files never enter the agent's context. The worker is a LiteLLM proxy when `LITELLM_BASE_URL` is set, else the `claude` CLI on `PATH`, else OpenRouter when `OPENROUTER_API_KEY` is set. An MCP host starts `csl mcp` without a login shell's environment, so the csl recipe now ships `recipes/csl/csl-env.sh`. It pulls exactly those variables from `~/.config/ralph/secrets.sh` and execs csl. Search works as before without any of it; only `csl_ask` needs a worker.
+Change: thismoon #359. csl gains `csl_ask` and `csl ask`, a bulk reader: a question over the files a zoekt search selects, answered by a hosted worker model so the files never enter the agent's context. The worker is a LiteLLM proxy when `LITELLM_BASE_URL` is set, else the `claude` CLI on `PATH`, else OpenRouter when `OPENROUTER_API_KEY` is set. An MCP host starts `csl mcp` without a login shell's environment, so the csl recipe now ships `recipes/csl/csl-env.sh`. It pulls exactly those variables from `~/.config/ralph/secrets.sh` and execs csl. Search works as before without any of it; only `csl_ask` needs a worker.
 
 Run, in order:
 
