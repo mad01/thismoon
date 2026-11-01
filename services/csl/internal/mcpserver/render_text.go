@@ -205,7 +205,10 @@ func renderReadText(out readOutput) string {
 		lines = append(lines, fmt.Sprintf("%d:%s", l.Number, l.Text))
 	}
 	if out.Truncated {
-		lines = append(lines, "truncated: read more with start_line/end_line")
+		lines = append(
+			lines,
+			"truncated: read more with start_line/end_line, or ask csl_ask when you only need an answer",
+		)
 	}
 	return strings.Join(lines, "\n")
 }

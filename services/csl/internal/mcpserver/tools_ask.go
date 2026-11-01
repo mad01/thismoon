@@ -55,19 +55,21 @@ type askInput struct {
 func registerAskTools(s *mcp.Server) {
 	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_ask",
-		Description: "Answer a question over the files a zoekt search selects. A cheap hosted worker model reads the files, so they never enter your context: only its answer comes back, with a footer giving the corpus size, the backend and model, and the list price. " +
-			"Use it for a question over many files, or over one large file, when you need only the answer: 'which flags does each command accept', 'how does each service configure retries', 'what does this 3000-line file do'. " +
-			"Do not use it for lines you will edit: an edit needs the real content through csl_read or a ranged Read. To locate code, csl_search is cheaper. " +
-			"queries takes 1 to 10 zoekt queries in csl_search syntax, and repo, lang and file narrow every one of them. " +
-			"The corpus is the union of the matching files in rank order, taking turns across queries, each file read whole and capped at max_files (default 20, max 100) and max_lines (default 6000, max 20000). A file that cannot go in is listed in corpus.skipped with the reason and the next file takes its place; corpus.truncated is true when matching files were never considered. " +
-			"A query whose AND terms partly match nothing is rerun without them, as csl_search does, and listed in relaxed with relaxed_query and dropped_terms. " +
+		Description: "Pick this over csl_read or Read when a file runs to 300 lines or more, or a question spans several files, and you need only the answer, not the lines. " +
+			"A cheap hosted worker model reads the files a zoekt search selects, so they never enter your context: only its answer comes back, with a footer giving the corpus size, the backend and model, and the list price. " +
+			"Examples: 'what does this 3000-line file do', 'which flags does each command accept', 'how does each service configure retries'. " +
+			"Not for lines you will edit: an edit needs the real content through csl_read or a ranged Read. To locate code, csl_search is cheaper. " +
+			"queries takes 1 to 10 zoekt queries in csl_search syntax, and repo, lang and file narrow every one; a named file or directory is a query like f:path/to/file\\.go$ or f:^path/to/dir/. " +
+			"The corpus is the union of the matching files in rank order, taking turns across queries, each read whole up to max_files (default 20, max 100) and max_lines (default 6000, max 20000). A file that cannot go in is listed in corpus.skipped with the reason and the next takes its place; corpus.truncated is true when matching files were never considered. " +
+			"A query whose AND terms partly match nothing is rerun without them, as csl_search does, and listed in relaxed. " +
 			"per_repo asks once per repo and returns the answers under org/repo headings. " +
 			"The worker cites path:line, sometimes by the bare file name; corpus.files names the repo and full path for csl_read. " +
-			"When no query matches a file, the call fails with each query's zero-result hint and no model call is made.",
+			"When no query matches a file, the call fails with each query's zero-result hint and makes no model call.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(true),
 		},
+		Meta: mcp.Meta{alwaysLoadKey: true},
 	}, handleAsk, ask.Result.Text)
 }
 

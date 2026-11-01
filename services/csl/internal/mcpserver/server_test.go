@@ -57,11 +57,12 @@ func TestNew_SemanticDisabledHidesOnlySemanticTools(t *testing.T) {
 }
 
 // TestAlwaysLoadMeta pins which tools ask Claude Code to skip tool-search
-// deferral: the four nearly every session calls carry
-// _meta["anthropic/alwaysLoad"] = true in tools/list, and every other tool
+// deferral: the four nearly every session calls, plus csl_ask, whose
+// description has to be in view before the model reads a large file whole,
+// carry _meta["anthropic/alwaysLoad"] = true in tools/list. Every other tool
 // leaves the key out so it stays deferred.
 func TestAlwaysLoadMeta(t *testing.T) {
-	want := []string{"csl_read", "csl_repo_info", "csl_repo_lookup", "csl_search"}
+	want := []string{"csl_ask", "csl_read", "csl_repo_info", "csl_repo_lookup", "csl_search"}
 	var got []string
 	for _, tool := range mcptest.ListTools(t, New("test", Options{SemanticEnabled: true})) {
 		v, ok := tool.Meta["anthropic/alwaysLoad"]

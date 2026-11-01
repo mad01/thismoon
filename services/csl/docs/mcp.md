@@ -473,7 +473,7 @@ Each successful entry carries the `csl_search` output fields for its query, incl
 
 Answer a question over the files up to ten zoekt queries select. A hosted worker model reads the files whole and answers, so the files never enter the caller's context. Only the answer comes back, with what it read and what it cost. It is the bulk reader, and `csl ask` is its CLI form.
 
-**When to call:** a question over many files, or over one large file, when only the answer is needed. For example, which flags each command accepts, how each service configures retries, or what a long file does. Not for lines you will edit: an edit needs the real content, through [`csl_read`](#csl_read) or a ranged read. To locate code, [`csl_search`](#csl_search) is cheaper, since every `csl_ask` call is a model call.
+**When to call:** a file of 300 lines or more, or a question over several files, when only the answer is needed. Pick it over [`csl_read`](#csl_read) or a whole-file read then. For example, what a long file does, which flags each command accepts, or how each service configures retries. A named file or directory is a query such as `f:path/to/file\.go$` or `f:^path/to/dir/`. Not for lines you will edit: an edit needs the real content, through [`csl_read`](#csl_read) or a ranged read. To locate code, [`csl_search`](#csl_search) is cheaper, since every `csl_ask` call is a model call.
 
 **Input:**
 
@@ -674,9 +674,13 @@ Read a file from a named local repo by repo name and relative path.
   "path": "internal/mcpserver/server.go",
   "lines": [
     {"number": 12, "text": "func New(version string) *mcp.Server {"}
-  ]
+  ],
+  "total_lines": 412,
+  "truncated": false
 }
 ```
+
+A read with no range stops at 500 lines and sets `truncated`, and `total_lines` always gives the file's full length. Page on with `start_line` and `end_line`, or ask [`csl_ask`](#csl_ask) when only an answer is needed. For a file of 300 lines or more, a whole-file read is usually the wrong call for a question. The tool description and the text-form note both say so.
 
 The line scanner buffers up to 1 MB per line, so files with very long minified lines still read cleanly.
 
@@ -853,7 +857,7 @@ Every tool accepts a `response_format` parameter. The JSON examples in this docu
 
 Precedence: the `response_format` parameter on the call, then `mcp.response_format` in `config.yaml`, then the built-in default `text`. An unknown value in either place is an error that names where the value came from.
 
-`text` is tool-specific. `csl_search` in `content` mode prints ripgrep `--heading` style: one `repo/path` header per file, `LINE:match` lines, `LINE-context` lines, `--` between non-contiguous groups in a file, a blank line between files, and a trailer `N lines in M files`. When the 300-line cap hits, a second trailer reads `truncated: showing N of M lines; next offset=K`. In `files_with_matches` mode it lists `repo/path` lines with an `N files` trailer. Zero results print `no matches` followed by the hint lines, including `files per term: retry=37, jitter=0` when term counts ran. A relaxed result opens with `relaxed: dropped 'jitter' (0 files); showing results for `retry backoff`` and a blank line, then the normal listing. `csl_search_multi` prints each entry under a `=== query N/M: <query>` header, then `error: ...` or that query's `csl_search` text, then `top hit:` and the `csl_read` text when `read_top_hit` was set; a closing `note:` line appears when the shared line budget cut an entry. `csl_hybrid_search` and `csl_semantic_search` print a header per hit (path, line range, score) and then the raw snippet. `csl_read` prints `LINE:text`. `csl_ls`, `csl_count`, and `csl_doctor` print one short line per entry. Every other tool falls back to `markdown-kv`.
+`text` is tool-specific. `csl_search` in `content` mode prints ripgrep `--heading` style: one `repo/path` header per file, `LINE:match` lines, `LINE-context` lines, `--` between non-contiguous groups in a file, a blank line between files, and a trailer `N lines in M files`. When the 300-line cap hits, a second trailer reads `truncated: showing N of M lines; next offset=K`. In `files_with_matches` mode it lists `repo/path` lines with an `N files` trailer. Zero results print `no matches` followed by the hint lines, including `files per term: retry=37, jitter=0` when term counts ran. A relaxed result opens with `relaxed: dropped 'jitter' (0 files); showing results for `retry backoff`` and a blank line, then the normal listing. `csl_search_multi` prints each entry under a `=== query N/M: <query>` header, then `error: ...` or that query's `csl_search` text, then `top hit:` and the `csl_read` text when `read_top_hit` was set; a closing `note:` line appears when the shared line budget cut an entry. `csl_hybrid_search` and `csl_semantic_search` print a header per hit (path, line range, score) and then the raw snippet. `csl_read` prints `LINE:text`, and a capped read ends with `truncated: read more with start_line/end_line, or ask csl_ask when you only need an answer`. `csl_ls`, `csl_count`, and `csl_doctor` print one short line per entry. Every other tool falls back to `markdown-kv`.
 
 `csl_search` with `output_mode: "content"` and `context_lines: 1`:
 

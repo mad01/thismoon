@@ -285,7 +285,10 @@ func TestRenderReadText(t *testing.T) {
 
 	out.Truncated = true
 	got := renderReadText(out)
-	if !strings.HasSuffix(got, "\ntruncated: read more with start_line/end_line") {
+	if !strings.HasSuffix(
+		got,
+		"\ntruncated: read more with start_line/end_line, or ask csl_ask when you only need an answer",
+	) {
 		t.Errorf("truncated read lacks the paging hint:\n%s", got)
 	}
 

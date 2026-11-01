@@ -49,7 +49,10 @@ with path or kinds.
 ## asking over many files
 
 csl_ask (and `csl ask` on the CLI) answers a question over the files 1 to 10
-zoekt queries select. It runs the queries the way csl_search_multi does and
+zoekt queries select. Pick it over csl_read or a whole-file Read when a file
+runs to 300 lines or more, or the question spans several files, and only the
+answer is needed. A named file or directory is a query such as
+`f:path/to/file\.go$` or `f:^path/to/dir/`. It runs the queries the way csl_search_multi does and
 collects the matching files whole, in rank order. A cheap hosted worker
 model reads them, Haiku at low effort by default (`ask.model`,
 `ask.effort`). Only the answer and a footer line come back, so the files
