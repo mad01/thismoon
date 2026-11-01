@@ -79,6 +79,7 @@ var prices = map[string][2]float64{
 	"claude-haiku-5-5":  {0.10, 0.50},
 	"claude-sonnet-5-5": {2.00, 10.00},
 	"claude-opus-5-5":   {4.00, 20.00},
+	"claude-fable-5-1":  {10.00, 50.00},
 }
 
 // CostUSD is the list price of one call's tokens, zero for a model the

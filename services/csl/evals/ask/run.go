@@ -73,6 +73,14 @@ func allArms() []Arm {
 			ID: "opus55-low", Model: "claude-opus-5-5", Effort: "low",
 			Notes: "Opus 5.5 at low effort: the strongest reader with the thinking turned down",
 		},
+		{
+			ID: "opus55", Model: "claude-opus-5-5",
+			Notes: "Opus 5.5 at the default effort: the strongest reader as a session runs it",
+		},
+		{
+			ID: "fable51", Model: "claude-fable-5-1",
+			Notes: "Fable 5.1 at the default effort: the session model reading the corpus on its own",
+		},
 	}
 }
 
@@ -417,10 +425,12 @@ func classify(err error, calls []llm.CallInfo) string {
 
 // servedMatches accepts the model the arm asked for under any id a
 // backend reports it as: the canonical id, OpenRouter's dotted id with
-// an optional routing suffix, or a dated snapshot of the canonical id.
-// Anything else is a substitution.
+// an optional routing suffix, a dated snapshot of the canonical id, or
+// the canonical id with a context marker ("[1m]"), which the claude CLI
+// reports for the long-context models. Anything else is a substitution.
 func servedMatches(asked, served string) bool {
-	if served == asked || strings.HasPrefix(served, asked+"-") {
+	if served == asked || strings.HasPrefix(served, asked+"-") ||
+		strings.HasPrefix(served, asked+"[") {
 		return true
 	}
 	if or := llm.OpenRouterID(asked); or != asked {

@@ -255,6 +255,9 @@ func TestCostUSD(t *testing.T) {
 	if got := CostUSD("claude-sonnet-5-5", 1_000_000, 1_000_000); math.Abs(got-12) > 1e-9 {
 		t.Errorf("sonnet 1M/1M = %f, want 12", got)
 	}
+	if got := CostUSD("claude-fable-5-1", 1_000_000, 1_000_000); math.Abs(got-60) > 1e-9 {
+		t.Errorf("fable 1M/1M = %f, want 60", got)
+	}
 	if got := CostUSD("anthropic/claude-haiku-5.5", 1_000_000, 0); math.Abs(got-0.10) > 1e-9 {
 		t.Errorf("OpenRouter haiku id = %f, want it priced as claude-haiku-5-5", got)
 	}
