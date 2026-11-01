@@ -14,12 +14,16 @@ Run, in order:
 2. In the consuming repo's Claude settings template, change the matcher of the `belt hint read` PostToolUse entry from `Read` to `Read|mcp__csl__csl_read`. If the csl MCP server is registered under another name, use that name in the middle segment. Merge that change and run `ralph up` again so agent-sync writes it.
 3. Start a new agent session, so Claude Code loads the new matcher.
 
-A machine that skips step 2 keeps the Read half of the hint and stays silent on `csl_read`. `belt doctor` doesn't read the hooks block, so nothing reports the gap.
+A machine that skips step 2 keeps the Read half of the hint and stays silent on `csl_read`. `belt doctor` reports the gap: its hook wiring section prints a `WARNING` line naming the matcher to set. That line leaves the exit status alone, since the hint is advisory.
 
-Verify: `belt version -o json` reports the merged commit. This payload makes belt print a JSON object whose `additionalContext` starts with `belt[read-size]: mad01/thismoon/tools/belt/docs/hooks.md` and says the file "was read without a range through csl_read":
+Verify:
+
+1. `belt version -o json` reports the merged commit.
+2. `belt doctor` lists the `belt hint read` matcher under hook wiring, with no `WARNING` line in that section.
+3. Optionally, hand belt a `csl_read` payload. It fires only where csl indexes `mad01/thismoon`, and only once per file per session, so each run takes a fresh session id. belt then prints a JSON object whose `additionalContext` starts with `belt[read-size]: mad01/thismoon/tools/belt/docs/hooks.md` and says the file "was read without a range through csl_read":
 
 ```sh
-printf '%s' '{"session_id":"upgrade-check","tool_name":"mcp__csl__csl_read","tool_input":{"repo":"thismoon","file":"tools/belt/docs/hooks.md"},"tool_response":[{"type":"text","text":"mad01/thismoon/tools/belt/docs/hooks.md lines 1-500 of 1250"}]}' | belt hint read
+printf '{"session_id":"%s","tool_name":"mcp__csl__csl_read","tool_input":{"repo":"thismoon","file":"tools/belt/docs/hooks.md"},"tool_response":[{"type":"text","text":"mad01/thismoon/tools/belt/docs/hooks.md lines 1-500 of 1250"}]}' "$(uuidgen)" | belt hint read
 ```
 
 In a new session, a `csl_read` of a file that long with no range carries the same `belt[read-size]:` reminder next to its result.

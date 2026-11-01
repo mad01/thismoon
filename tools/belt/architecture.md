@@ -139,7 +139,7 @@ every hook denies on:
 
 - `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns, `claude_settings`, guard rules, the `internal_names` section, and the two purpose-named repo lists `direct_main_repos` and `public_repos` (legacy `config.toml` read when the YAML file is absent)
 - the shared names files `internal_names.include` lists (`~`-expanded paths belt's own config names, docs/adr/0016): `blocked_words`, `allowlist`, and `allow_phrases` only, decoded strictly so a stray key is an error. The lists are appended to the section's own, and a listed file that is missing denies exactly like a broken config.yaml
-- `~/.claude/settings.json` + `settings.local.json`: the `permissions.deny` Bash entries for script-deny-list, read live on every invocation unless `claude_settings.enabled: false` turns the read off
+- `~/.claude/settings.json` + `settings.local.json`: the `permissions.deny` Bash entries for script-deny-list, read live on every invocation, and the `hooks.PostToolUse` entries, which only `belt doctor` reads to check the `belt hint read` matcher. `claude_settings.enabled: false` turns both reads off
 
 No other tool's config is read. Neither the suspenders config nor the
 ralph machine config is a fallback for anything, and belt has no

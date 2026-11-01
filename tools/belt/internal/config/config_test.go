@@ -82,6 +82,47 @@ func TestLoadClaudeDenyPatternsMalformed(t *testing.T) {
 	}
 }
 
+// TestLoadClaudeHooks: one event's commands across files in file order,
+// with a malformed entry under another event and a broken file costing
+// nothing.
+func TestLoadClaudeHooks(t *testing.T) {
+	dir := t.TempDir()
+	settings := writeFile(t, dir, "settings.json", `{"hooks": {
+  "PreToolUse": "not a list",
+  "PostToolUse": [
+    {"matcher": "Bash", "hooks": [{"type": "command", "command": "belt hint bash"}]},
+    {"matcher": "Read", "hooks": [{"type": "command", "command": "belt hint read"}]}
+  ]
+}}`)
+	local := writeFile(t, dir, "settings.local.json", `{"hooks": {"PostToolUse": [
+  {"hooks": [{"type": "command", "command": "other read"}]}
+]}}`)
+	broken := writeFile(t, dir, "broken.json", `{not json`)
+	got := LoadClaudeHooks(
+		"PostToolUse",
+		settings,
+		broken,
+		local,
+		filepath.Join(dir, "missing.json"),
+	)
+	want := []ClaudeHook{
+		{File: settings, Matcher: "Bash", Command: "belt hint bash"},
+		{File: settings, Matcher: "Read", Command: "belt hint read"},
+		{File: local, Matcher: "", Command: "other read"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("hook %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	if got := LoadClaudeHooks("PreToolUse", settings); got != nil {
+		t.Errorf("malformed event: got %+v, want nil", got)
+	}
+}
+
 // missingYAML returns a config.yaml path that does not exist in dir, so
 // ReadFile exercises its legacy-TOML fallback.
 func missingYAML(dir string) string {

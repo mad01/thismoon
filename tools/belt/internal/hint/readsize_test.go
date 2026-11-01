@@ -217,14 +217,19 @@ func TestReadSizeIsSilentInALinkedWorktree(t *testing.T) {
 	}
 }
 
-// TestReadSizeCheckOnCSLRead covers the csl_read path: the file arrives as
-// org/repo/path, split at a csl-indexed repo name, with the same threshold,
-// range and file-type rules as a Read.
+// TestReadSizeCheckOnCSLRead covers the csl_read path, with the same
+// threshold, range and file-type rules as a Read. The text form's
+// org/repo/path is split at a csl-indexed repo name; the json forms' repo
+// and path arrive apart, and the repo must still be indexed.
 func TestReadSizeCheckOnCSLRead(t *testing.T) {
 	_, _ = indexedRepoFile(t)
 	index := filepath.Join(os.Getenv("HOME"), ".config", "csl", "search-index")
 	writeEmpty(t, filepath.Join(index, "group%2Fsub%2Ftool_v16.00000.zoekt"))
-	in := func(name string) Input { return Input{CSLFile: name, TotalLines: 843} }
+	in := func(name string) Input { return Input{CSLFile: CSLFile{Name: name}, TotalLines: 843} }
+	inJSON := func(repo, path string) Input {
+		return Input{CSLFile: CSLFile{Repo: repo, Path: path}, TotalLines: 843}
+	}
+	big := CSLFile{Name: "acme/widget/internal/big.go"}
 	tests := []struct {
 		name string
 		in   Input
@@ -233,20 +238,20 @@ func TestReadSizeCheckOnCSLRead(t *testing.T) {
 		{"large whole read", in("acme/widget/internal/big.go"), true},
 		{
 			"exactly the threshold",
-			Input{CSLFile: "acme/widget/internal/big.go", TotalLines: readSizeMinLines},
+			Input{CSLFile: big, TotalLines: readSizeMinLines},
 			true,
 		},
 		{
 			"below the threshold",
-			Input{CSLFile: "acme/widget/internal/big.go", TotalLines: readSizeMinLines - 1},
+			Input{CSLFile: big, TotalLines: readSizeMinLines - 1},
 			false,
 		},
 		{
 			"ranged read",
-			Input{CSLFile: "acme/widget/internal/big.go", TotalLines: 843, Ranged: true},
+			Input{CSLFile: big, TotalLines: 843, Ranged: true},
 			false,
 		},
-		{"unknown line count", Input{CSLFile: "acme/widget/internal/big.go"}, false},
+		{"unknown line count", Input{CSLFile: big}, false},
 		{"repo name in another case", in("Acme/Widget/internal/big.go"), true},
 		{"repo name with a subgroup", in("group/sub/tool/cmd/main.go"), true},
 		{"repo csl does not index", in("acme/other/big.go"), false},
@@ -254,6 +259,12 @@ func TestReadSizeCheckOnCSLRead(t *testing.T) {
 		{"repo name alone", in("acme/widget.go"), false},
 		{"markdown", in("acme/widget/docs/guide.md"), true},
 		{"json", in("acme/widget/data.json"), false},
+		{"json form", inJSON("acme/widget", "internal/big.go"), true},
+		{"json form, repo in another case", inJSON("Acme/Widget", "internal/big.go"), true},
+		{"json form, repo csl does not index", inJSON("acme/other", "big.go"), false},
+		{"json form, path escaping the repo", inJSON("acme/widget", "../other/big.go"), false},
+		{"json form, absolute path", inJSON("acme/widget", "/internal/big.go"), false},
+		{"json form, file type without symbols", inJSON("acme/widget", "data.json"), false},
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -275,7 +286,7 @@ func TestReadSizeAdviceOnCSLRead(t *testing.T) {
 	_, _ = indexedRepoFile(t)
 	got := NewReadSize().Check(Input{
 		Event:      EventRead,
-		CSLFile:    "acme/widget/./internal/big.go",
+		CSLFile:    CSLFile{Name: "acme/widget/./internal/big.go"},
 		TotalLines: 843,
 		SessionID:  "s1",
 	})
@@ -303,26 +314,32 @@ func TestReadSizeAdviceOnCSLRead(t *testing.T) {
 // comes first, and a differently cased repo name is the same file.
 func TestReadSizeSharesTheNudgeAcrossReadAndCSLRead(t *testing.T) {
 	file, _ := indexedRepoFile(t)
-	const name = "acme/widget/internal/big.go"
+	text := CSLFile{Name: "acme/widget/internal/big.go"}
+	structured := CSLFile{Repo: "acme/widget", Path: "internal/big.go"}
 	h := NewReadSize()
 	steps := []struct {
-		name, agent, cslFile, path string
-		ranged, want               bool
+		name, agent string
+		cslFile     CSLFile
+		path        string
+		ranged      bool
+		want        bool
 	}{
-		{"ranged csl_read first", "", name, "", true, false},
-		{"whole csl_read", "", name, "", false, true},
-		{"csl_read again", "", name, "", false, false},
-		{"Read of the same file", "", "", file, false, false},
+		{"ranged csl_read first", "", text, "", true, false},
+		{"whole csl_read", "", text, "", false, true},
+		{"csl_read again", "", text, "", false, false},
+		{"json-form csl_read again", "", structured, "", false, false},
+		{"Read of the same file", "", CSLFile{}, file, false, false},
 		{
 			"csl_read with the repo in another case",
 			"",
-			"ACME/widget/internal/big.go",
+			CSLFile{Name: "ACME/widget/internal/big.go"},
 			"",
 			false,
 			false,
 		},
-		{"subagent Read first", "a-explore", "", file, false, true},
-		{"that subagent's csl_read", "a-explore", name, "", false, false},
+		{"subagent Read first", "a-explore", CSLFile{}, file, false, true},
+		{"that subagent's csl_read", "a-explore", text, "", false, false},
+		{"another subagent's json-form csl_read", "a-plan", structured, "", false, true},
 	}
 	for _, s := range steps {
 		in := Input{
@@ -332,6 +349,60 @@ func TestReadSizeSharesTheNudgeAcrossReadAndCSLRead(t *testing.T) {
 		if got := h.Check(in) != nil; got != s.want {
 			t.Errorf("%s: advised = %v, want %v", s.name, got, s.want)
 		}
+	}
+}
+
+// TestReadSizeKeepsTheJSONRepoBoundary: with shards for both group/sub and
+// group/sub/tool, the json forms' repo "group/sub" and path
+// "tool/cmd/main.go" stay as csl stated them. Only the text header's joined
+// name goes through splitIndexed, which picks the longest indexed name.
+func TestReadSizeKeepsTheJSONRepoBoundary(t *testing.T) {
+	_, _ = indexedRepoFile(t)
+	index := filepath.Join(os.Getenv("HOME"), ".config", "csl", "search-index")
+	writeEmpty(
+		t,
+		filepath.Join(index, "group%2Fsub_v16.00000.zoekt"),
+		filepath.Join(index, "group%2Fsub%2Ftool_v16.00000.zoekt"),
+	)
+	tests := []struct {
+		name string
+		file CSLFile
+		want []string
+	}{
+		{
+			"json form",
+			CSLFile{Repo: "group/sub", Path: "tool/cmd/main.go"},
+			[]string{
+				"group/sub/tool/cmd/main.go is 412 lines",
+				`queries: ["f:^tool/cmd/main\\.go$"], repo: "^group/sub$")`,
+				`csl_outline(repo: "group/sub", path: "tool/cmd/main.go", include_tests: true)`,
+			},
+		},
+		{
+			"text form",
+			CSLFile{Name: "group/sub/tool/cmd/main.go"},
+			[]string{
+				`csl_outline(repo: "group/sub/tool", path: "cmd/main.go", include_tests: true)`,
+			},
+		},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewReadSize().Check(Input{
+				Event:      EventRead,
+				CSLFile:    tt.file,
+				TotalLines: 412,
+				SessionID:  "b" + string(rune('a'+i)),
+			})
+			if got == nil {
+				t.Fatal("Check = nil, want advice")
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(got.Text, want) {
+					t.Errorf("advice %q does not mention %q", got.Text, want)
+				}
+			}
+		})
 	}
 }
 

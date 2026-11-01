@@ -44,6 +44,7 @@ func doctorCmdWith(paths pathsFunc, probes doctorProbes) *cobra.Command {
 		Short: "Show the build and resolved config: surfaces loaded, guard/hint state, moondb reachability, blocked names",
 		Long: `Show what belt is actually running with: which build is installed, which
 config surface loaded (or didn't), which guards and hints are enabled,
+the matcher of the Claude settings entry that runs belt hint read,
 whether the moondb serve instance the moondb-inflight hint queries is
 reachable, the ledger and watch settings with the events service they
 depend on, and the resolved blocked-name set the write-internal-names
@@ -56,7 +57,11 @@ with no deny patterns to enforce, an internal-name guard with no names to
 match, a toggle no registered guard or hint answers to, or an enabled
 watcher that cannot work (events service unreachable, or a max wait at or
 past the hook timeout). A machine with no belt config at all warns about
-the internal-name, script and toggle cases by design.`,
+the internal-name, script and toggle cases by design.
+
+A belt hint read matcher that lets no csl_read through gets a WARNING line
+in the hook wiring section instead. It leaves the exit status alone:
+read-size is advisory, so the gap costs a nudge, not a guard.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := paths()
@@ -178,6 +183,7 @@ func runDoctor(w io.Writer, p config.Paths, probes doctorProbes) []string {
 	}
 
 	printCustomHints(w, cfg, customHints)
+	printHookWiring(w, cfg, p)
 
 	printMoondb(w, probes.moondb)
 	// A broken config leaves watch at its disabled default, so this section

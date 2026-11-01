@@ -93,7 +93,9 @@ Code settings. The Bash deny patterns behind `script-deny-list` come from
 the `permissions.deny` entries of `~/.claude/settings.json` and
 `~/.claude/settings.local.json` on every invocation. They are read live,
 never cached and never copied into the belt config, so the guard and the Claude
-Code permission system can never drift apart. This read has its own switch,
+Code permission system can never drift apart. `belt doctor` also reads the
+`hooks.PostToolUse` entries of the same files, to warn when the `belt hint
+read` matcher leaves out `csl_read`. This read has its own switch,
 `claude_settings.enabled` (see Keys); `belt config` shows the patterns as
 `claude_deny` in its output, and `belt config --help` prints the full
 annotated key reference reproduced in the Example section below.
@@ -194,15 +196,17 @@ means an empty name set (see Where config lives).
 ### claude_settings
 
 The switch on belt's read of the Claude Code settings files, the only
-non-belt config surface belt reads (docs/adr/0010). The only thing belt takes from those files is the
-`permissions.deny` Bash entries feeding `script-deny-list`; belt never
-writes them.
+non-belt config surface belt reads (docs/adr/0010). belt's hooks take only the
+`permissions.deny` Bash entries feeding `script-deny-list`, and `belt
+doctor` reads the `hooks.PostToolUse` entries to check the `belt hint read`
+matcher. belt never writes either.
 
 - `claude_settings.enabled` (bool, default `true`): whether belt opens
   `~/.claude/settings.json` and `~/.claude/settings.local.json` at all.
   Disabling it leaves `script-deny-list` matching only its
   `extra_patterns` — the guard stays on, with a smaller pattern set — and
-  both `belt doctor` and `belt config` state that the read is off.
+  both `belt doctor` and `belt config` state that the read is off. The
+  doctor's read matcher check is skipped too.
 
 ### git_identity
 

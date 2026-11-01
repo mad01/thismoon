@@ -60,12 +60,11 @@ type Input struct {
 	FilePath   string
 	Ranged     bool
 	TotalLines int
-	// CSLFile names the file a csl_read returned, as csl names it
-	// (org/repo/path), taken from the response because the call's repo
-	// input is a regex. It is empty for a Read. On a csl_read, Ranged says
-	// whether the call named a start_line or an end_line, and TotalLines is
-	// the count the response states.
-	CSLFile string
+	// CSLFile names the file a csl_read returned, taken from the response
+	// because the call's repo input is a regex. It is zero for a Read. On a
+	// csl_read, Ranged says whether the call named a start_line or an
+	// end_line, and TotalLines is the count the response states.
+	CSLFile CSLFile
 	// AgentID and AgentType name the subagent the hook fired in, and are
 	// empty in the main session. read-size keys its dedupe on AgentID;
 	// otherwise they reach custom hints.

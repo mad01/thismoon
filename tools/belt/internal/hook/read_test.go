@@ -185,7 +185,8 @@ func TestRunHintReadStaysQuietOnShapesItDoesNotKnow(t *testing.T) {
 // csl_read payloads. A ranged read is silent, and a start_line of 0 reads as
 // no range, as csl reads it. The whole read advises once, naming the file
 // as csl does, and a later Read of the same file is silent: both tools key
-// the same marker. A subagent's json-form read gets its own nudge.
+// the same marker. A subagent's json-form read gets its own nudge, whether
+// the json arrives in a text block, as a string, or as an object.
 func TestRunHintReadOnCSLReadPayloads(t *testing.T) {
 	file := indexedRepoFile(t)
 	input := func(key string, v any) func(p map[string]any) {
@@ -201,6 +202,22 @@ func TestRunHintReadOnCSLReadPayloads(t *testing.T) {
 		p["tool_response"] = []any{map[string]any{"type": "text", "text": `{"repo":"acme/widget",` +
 			`"path":"big.go","lines":[{"number":1,"text":"package widget"}],"total_lines":843,"truncated":true}`}}
 	}
+	const structured = `{"repo":"acme/widget","path":"big.go",` +
+		`"lines":[{"number":1,"text":"package widget"}],"total_lines":843,"truncated":true}`
+	jsonStringInSubagent := func(p map[string]any) {
+		p["agent_id"] = "a-review"
+		input("response_format", "json")(p)
+		p["tool_response"] = structured
+	}
+	structuredInSubagent := func(p map[string]any) {
+		p["agent_id"] = "a-plan"
+		input("response_format", "json")(p)
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(structured), &obj); err != nil {
+			t.Fatal(err)
+		}
+		p["tool_response"] = obj
+	}
 	steps := []struct {
 		name, raw  string
 		wantAdvice bool
@@ -210,6 +227,8 @@ func TestRunHintReadOnCSLReadPayloads(t *testing.T) {
 		{"whole csl_read again", cslReadFixture(t, nil), false},
 		{"Read of the same file", readFixture(t, "posttooluse-read-whole.json", file, nil), false},
 		{"json form in a subagent", cslReadFixture(t, jsonInSubagent), true},
+		{"json string in another subagent", cslReadFixture(t, jsonStringInSubagent), true},
+		{"json object in a third subagent", cslReadFixture(t, structuredInSubagent), true},
 	}
 	for _, s := range steps {
 		var out bytes.Buffer
@@ -247,8 +266,9 @@ func TestRunHintReadOnCSLReadPayloads(t *testing.T) {
 }
 
 // TestRunHintCSLReadStaysQuietOnShapesItDoesNotKnow: a mistyped bound reads
-// as a range, and a response that is not a content array, or whose text
-// carries no header, reads as an unknown line count. All are silence with
+// as a range, and a response that is neither a content array nor csl's
+// structured object, or whose text carries no header, reads as an unknown
+// line count. All are silence with
 // no warn event.
 func TestRunHintCSLReadStaysQuietOnShapesItDoesNotKnow(t *testing.T) {
 	tests := []struct {
@@ -259,7 +279,7 @@ func TestRunHintCSLReadStaysQuietOnShapesItDoesNotKnow(t *testing.T) {
 			"string end_line",
 			func(p map[string]any) { p["tool_input"].(map[string]any)["end_line"] = "80" },
 		},
-		{"response is an object", func(p map[string]any) {
+		{"response is an object without repo and path", func(p map[string]any) {
 			p["tool_response"] = map[string]any{
 				"type": "text",
 				"text": "acme/widget/big.go lines 1-500 of 843",

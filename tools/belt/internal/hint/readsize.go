@@ -52,7 +52,7 @@ func (h *ReadSize) Event() string { return EventRead }
 // Check fires once per file per agent per session, for a read with no range
 // of a file of readSizeMinLines or more that csl can outline, inside a
 // csl-indexed repo. A Read names the file by absolute path and a csl_read by
-// org/repo/path; both resolve to the repo and repo-relative path csl knows
+// repo and path as csl names them; both resolve to the repo and path csl knows
 // the file by, and that pair keys the marker, so a Read and a csl_read of
 // one file share one nudge. Every field it cannot trust (a relative path, an
 // unknown line count, no session id) means silence: csl_outline needs a
@@ -86,7 +86,7 @@ type readFile struct {
 // has symbols for, inside a csl-indexed repo. The type is checked first
 // because it needs no filesystem access.
 func locateRead(in Input) (readFile, bool) {
-	if in.CSLFile != "" {
+	if in.CSLFile.Known() {
 		return locateCSLRead(in.CSLFile)
 	}
 	if !filepath.IsAbs(in.FilePath) {
@@ -100,14 +100,15 @@ func locateRead(in Input) (readFile, bool) {
 	return readFile{name: file, how: "without a range", repo: repo, rel: rel}, ok
 }
 
-// locateCSLRead resolves a csl_read's org/repo/path. The path must stay
+// locateCSLRead resolves the file a csl_read returned. The path must stay
 // inside the repo, as csl_read itself requires, and is cleaned so an
-// unclean spelling of a file keys the same marker.
-func locateCSLRead(name string) (readFile, bool) {
-	if !outlineable(name) {
+// unclean spelling of a file keys the same marker. The type check reads
+// whichever of Name and Path the response set.
+func locateCSLRead(f CSLFile) (readFile, bool) {
+	if !outlineable(f.Name) && !outlineable(f.Path) {
 		return readFile{}, false
 	}
-	repo, rel, ok := splitIndexed(name, indexedRepos())
+	repo, rel, ok := cslRepoPath(f, indexedRepos())
 	if !ok || !filepath.IsLocal(rel) {
 		return readFile{}, false
 	}
@@ -159,6 +160,17 @@ func indexedLocation(file string) (repo, rel string, ok bool) {
 		return "", "", false
 	}
 	return repo, filepath.ToSlash(r), true
+}
+
+// cslRepoPath resolves a csl_read's file to the repo and repo-relative path
+// csl knows it by, ok only when csl has a shard for that repo. The json
+// forms state both, so only the shard is checked. The text header joins
+// them, so its name is split at the longest indexed repo name.
+func cslRepoPath(f CSLFile, repos map[string]bool) (repo, rel string, ok bool) {
+	if f.Name == "" {
+		return f.Repo, f.Path, repos[strings.ToLower(f.Repo)]
+	}
+	return splitIndexed(f.Name, repos)
 }
 
 // splitIndexed splits a csl file name, org/repo/path, at the longest prefix
