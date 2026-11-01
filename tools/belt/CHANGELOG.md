@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.13.0](https://github.com/mad01/thismoon/compare/belt/v2.12.1...belt/v2.13.0) (2026-11-01)
+
+
+### Features
+
+* **belt:** fire read-size after a whole-file csl_read ([#363](https://github.com/mad01/thismoon/issues/363)) ([d2952c2](https://github.com/mad01/thismoon/commit/d2952c2afe785ad7bda11b4d4b847161671107de))
+* **belt:** read-size hint names csl_ask first ([#357](https://github.com/mad01/thismoon/issues/357)) ([08ba27c](https://github.com/mad01/thismoon/commit/08ba27cf70e30278e64fb76518cc81a844155395))
+
 ## [2.12.1](https://github.com/mad01/thismoon/compare/belt/v2.12.0...belt/v2.12.1) (2026-10-29)
 
 

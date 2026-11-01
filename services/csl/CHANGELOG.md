@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.32.0](https://github.com/mad01/thismoon/compare/csl/v0.31.0...csl/v0.32.0) (2026-11-01)
+
+
+### Features
+
+* **belt:** fire read-size after a whole-file csl_read ([#363](https://github.com/mad01/thismoon/issues/363)) ([d2952c2](https://github.com/mad01/thismoon/commit/d2952c2afe785ad7bda11b4d4b847161671107de))
+* **csl:** add csl_ask, a bulk reader over search-selected files ([#359](https://github.com/mad01/thismoon/issues/359)) ([49440b3](https://github.com/mad01/thismoon/commit/49440b3114c5c8e4616fca21141a88499656abf1))
+* **csl:** add opus55 and fable51 arms to the ask eval ([#367](https://github.com/mad01/thismoon/issues/367)) ([06213c9](https://github.com/mad01/thismoon/commit/06213c90ad6a5da388c462925e46a09e6161eca3))
+* **csl:** add the csl_ask worker-quality eval ([#354](https://github.com/mad01/thismoon/issues/354)) ([51c75ab](https://github.com/mad01/thismoon/commit/51c75ab097c251c60ddc9056fca822361d8889d4))
+* **csl:** make csl_ask alwaysLoad and name it in csl_read ([#362](https://github.com/mad01/thismoon/issues/362)) ([96061c2](https://github.com/mad01/thismoon/commit/96061c2d27337d2603620d6111620322328dfeb1))
+* **kit:** add kit/llm, the shared hosted-model backend ([#355](https://github.com/mad01/thismoon/issues/355)) ([1f46d58](https://github.com/mad01/thismoon/commit/1f46d580d4813346d8ff1008feab78b14fbb71df))
+
 ## [0.31.0](https://github.com/mad01/thismoon/compare/csl/v0.30.0...csl/v0.31.0) (2026-10-30)
 
 
