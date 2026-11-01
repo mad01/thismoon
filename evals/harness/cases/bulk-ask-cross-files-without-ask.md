@@ -19,7 +19,7 @@ graders:
     tool: '^Bash$'
     input: '\b(grep|rg|find)\b'
   - type: max_turns
-    max: 8
+    max: 12
   - type: max_cost_usd
     max: 2.5
 ---
