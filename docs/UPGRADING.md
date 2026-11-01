@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-11-01 belt: read-size also fires on `csl_read`, and its matcher must name the tool
 
-Change: thismoon #<PR>. belt's read-size hint now also fires after a `csl_read` call that reads a file of 300 lines or more with no `start_line` and no `end_line`. The advice is the same as after a Read. belt only sees the calls its PostToolUse matcher routes to `belt hint read`, so the consuming repo's matcher has to name the MCP tool too. A Read and a `csl_read` of one file now share one nudge per agent per session. The seen-file marker now names the file by repo and repo-relative path. A session that spans the upgrade can therefore get the hint once more for a file it already saw it on.
+Change: thismoon #363. belt's read-size hint now also fires after a `csl_read` call that reads a file of 300 lines or more with no `start_line` and no `end_line`. The advice is the same as after a Read. belt only sees the calls its PostToolUse matcher routes to `belt hint read`, so the consuming repo's matcher has to name the MCP tool too. A Read and a `csl_read` of one file now share one nudge per agent per session. The seen-file marker now names the file by repo and repo-relative path. A session that spans the upgrade can therefore get the hint once more for a file it already saw it on.
 
 Run, in order:
 
