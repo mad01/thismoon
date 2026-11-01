@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/mad01/thismoon/compare/humanizer/v0.19.1...humanizer/v0.20.0) (2026-11-01)
+
+
+### Features
+
+* **kit:** add kit/llm, the shared hosted-model backend ([#355](https://github.com/mad01/thismoon/issues/355)) ([1f46d58](https://github.com/mad01/thismoon/commit/1f46d580d4813346d8ff1008feab78b14fbb71df))
+
 ## [0.19.1](https://github.com/mad01/thismoon/compare/humanizer/v0.19.0...humanizer/v0.19.1) (2026-10-30)
 
 
