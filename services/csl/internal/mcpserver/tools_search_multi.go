@@ -12,6 +12,7 @@ import (
 
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
 	"github.com/mad01/thismoon/services/csl/internal/lexical"
+	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/repopath"
 )
 
@@ -141,13 +142,23 @@ func checkMultiQueryCount(n int) error {
 // it, since starting the daemon from a test binary runs the test binary.
 var ensureDaemon = daemon.EnsureDaemon
 
-// newMultiSearchEnv does csl_search's setup once for the batch and starts the
-// daemon before the fan-out, so the workers find it running instead of each
-// racing to start one. When that start fails the whole call searches
-// in-process: the daemon backend would retry the start for every query and
-// every zero-result count, each waiting up to a second.
+// newMultiSearchEnv loads the config and builds the batch setup from it.
 func newMultiSearchEnv() (searchEnv, error) {
-	env, err := newSearchEnv()
+	cfg, err := config.Load()
+	if err != nil {
+		return searchEnv{}, fmt.Errorf("load csl config: %w", err)
+	}
+	return newMultiSearchEnvIn(cfg)
+}
+
+// newMultiSearchEnvIn does csl_search's setup once for the batch, from an
+// already loaded config, and starts the daemon before the fan-out, so the
+// workers find it running instead of each racing to start one. When that
+// start fails the whole call searches in-process: the daemon backend would
+// retry the start for every query and every zero-result count, each
+// waiting up to a second.
+func newMultiSearchEnvIn(cfg *config.Config) (searchEnv, error) {
+	env, err := newSearchEnvIn(cfg)
 	if err != nil {
 		return searchEnv{}, err
 	}
@@ -179,7 +190,13 @@ func runSearchMulti(
 				if p := recover(); p != nil {
 					// The entry carries the value; the stack goes to stderr, the
 					// only place a stdio MCP server can leave it.
-					fmt.Fprintf(os.Stderr, "csl_search_multi: panic in query %q: %v\n%s", q.Query, p, debug.Stack())
+					fmt.Fprintf(
+						os.Stderr,
+						"csl_search_multi: panic in query %q: %v\n%s",
+						q.Query,
+						p,
+						debug.Stack(),
+					)
 					results[i] = searchMultiResult{
 						Query: q.Query,
 						Error: fmt.Sprintf("internal error: %v", p),

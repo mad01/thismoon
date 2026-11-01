@@ -102,7 +102,7 @@ func goldenExplain(
 		OutputMode:   mode,
 	}
 	req := lexical.Request{Options: opts, Repo: in.Repo, Repos: repos, IndexDir: b.IndexDir}
-	return explainZero(context.Background(), b, req)
+	return explainZero(context.Background(), b, mcpSurface, req)
 }
 
 func mustJSON(t *testing.T, v any) string {

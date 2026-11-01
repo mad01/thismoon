@@ -84,6 +84,16 @@ mcp:
                              # most others); json is the structured object for
                              # clients that parse results.
 
+ask:                         # the worker model csl_ask and 'csl ask' hand a
+  backend: ""                # question to. backend forces litellm, claude or
+                             # openrouter; empty auto-selects a LiteLLM proxy
+                             # (LITELLM_BASE_URL), then the claude CLI on PATH,
+                             # then OpenRouter (OPENROUTER_API_KEY). An unknown
+                             # name fails every ask call naming this key, and
+                             # 'csl doctor' reports it (ask-backend).
+  model: claude-haiku-5-5    # canonical model id; each backend translates it
+  effort: low                # reasoning effort: low, medium, high, xhigh, max
+
 hooks:
   post_merge:                # DEPRECATED installer: suspenders owns git hooks
     enabled: false           # now and feeds the reindex queue, which csl still
@@ -98,6 +108,8 @@ hooks:
 #   CSL_PORT     the port csl assumes the web UI listens on: 'csl web' binds
 #                it and every other surface links to it. web.base_url wins.
 #   EVENTS_BASE_URL  the events service sync runs archive to; best-effort.
+#   LITELLM_BASE_URL, LITELLM_API_KEY, OPENROUTER_API_KEY  the providers the
+#                ask worker reaches; the claude CLI needs only PATH.
 #
 # A repo can also carry a .cslignore at its root (one glob per line) which
 # filters both indexes. That file is per-repo, not part of this config.`
@@ -165,6 +177,10 @@ func effectiveConfig(cfg *config.Config) config.Config {
 	// The format default lives in mcpformat, beside the validation that
 	// rejects unknown names at tool-call time.
 	eff.MCP.ResponseFormat = cmp.Or(cfg.MCPResponseFormat(), mcpformat.Default)
+	// An empty ask.backend stays empty: it means auto-select, which depends on
+	// the environment of the process that asks, not on this file.
+	eff.Ask.Model = cfg.AskModel()
+	eff.Ask.Effort = cfg.AskEffort()
 
 	// The embedding defaults live in the embedder, not in the config package;
 	// building one is the only way to read them without duplicating them here.

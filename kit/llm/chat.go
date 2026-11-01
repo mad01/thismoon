@@ -13,10 +13,13 @@ import (
 )
 
 const (
-	// chatTimeout bounds one completion. A 2000-line corpus is about 30k
-	// tokens in, and a slow provider route can take a minute on it. A
-	// caller with a tighter budget bounds the context.
-	chatTimeout  = 180 * time.Second
+	// chatTimeout is the HTTP client's safety ceiling on one exchange, a
+	// guard against a connection that never answers, not the per-call
+	// bound. Callers bound a call with their context: the csl_ask eval gives
+	// each attempt 180 s, and csl_ask gives a call its callTimeout. A full
+	// corpus through a slow route can take minutes, so the ceiling sits
+	// above every caller's own bound.
+	chatTimeout  = 10 * time.Minute
 	maxBodyBytes = 4 << 20
 
 	openRouterDefaultBaseURL = "https://openrouter.ai/api"

@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/mad01/thismoon/services/csl/internal/ask"
 )
 
 // searchLimit is how many matches one csl search may return. Files are
@@ -85,20 +87,16 @@ func (c Corpus) dump() string {
 	return b.String()
 }
 
-// buildMessage is what the worker reads: each file inside a tag naming its
-// path and length, every line prefixed with its number, then the question.
-// The prefix is what makes a line claim checkable.
+// buildMessage is what the worker reads, in csl_ask's own format
+// (ask.Message): each file inside a tag naming its path and length, every
+// line prefixed with its number, then the question. A case covers one repo,
+// so files are named by their repo-relative path.
 func buildMessage(corpus Corpus, question string) string {
-	var b strings.Builder
-	for _, f := range corpus.Files {
-		fmt.Fprintf(&b, "<file path=%q lines=\"%d\">\n", f.Path, f.Lines)
-		for i, line := range f.lines {
-			fmt.Fprintf(&b, "%d: %s\n", i+1, line)
-		}
-		b.WriteString("</file>\n\n")
+	files := make([]ask.File, len(corpus.Files))
+	for i, f := range corpus.Files {
+		files[i] = ask.File{Path: f.Path, Lines: f.lines}
 	}
-	fmt.Fprintf(&b, "Question: %s\n", question)
-	return b.String()
+	return ask.Message(question, files)
 }
 
 type searchMatch struct {
@@ -231,6 +229,6 @@ func readCorpusFile(root, rel string) (CorpusFile, error) {
 	if err != nil {
 		return CorpusFile{}, err
 	}
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	lines := ask.SplitLines(data)
 	return CorpusFile{Path: rel, Lines: len(lines), Bytes: len(data), lines: lines}, nil
 }

@@ -4,6 +4,20 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-01 csl: `csl_ask` needs the MCP server started through `csl-env.sh`
+
+Change: thismoon #359. csl gains `csl_ask` and `csl ask`, a bulk reader: a question over the files a zoekt search selects, answered by a hosted worker model so the files never enter the agent's context. The worker is a LiteLLM proxy when `LITELLM_BASE_URL` is set, else the `claude` CLI on `PATH`, else OpenRouter when `OPENROUTER_API_KEY` is set. An MCP host starts `csl mcp` without a login shell's environment, so the csl recipe now ships `recipes/csl/csl-env.sh`. It pulls exactly those variables from `~/.config/ralph/secrets.sh` and execs csl. Search works as before without any of it; only `csl_ask` needs a worker.
+
+Run, in order:
+
+1. Merge this change, then `ralph up`. It rebuilds csl and keeps `csl-env.sh` executable in the sources cache.
+2. Point the consuming repo's MCP registration for `csl` at the launcher: the command becomes `~/.config/ralph/sources/thismoon/recipes/csl/csl-env.sh` with the argument `mcp`, in place of `csl mcp`. Merge that change and run `ralph up` again so agent-sync writes it.
+3. Start a new agent session, so the client spawns the server through the launcher.
+
+A machine that skips step 2 keeps a working csl server. There `csl_ask` reaches the `claude` CLI when it is on the host's `PATH`, and otherwise fails naming what to set.
+
+Verify: `csl doctor` prints an `ask-backend` line naming the backend and model. The `csl_doctor` tool lists `ask-backend` among its checks. `csl ask "which flags does csl search accept" -q 'sym:searchCmd' --repo thismoon --max-files 2` prints an answer on stdout and a `corpus:` footer on stderr.
+
 ## 2026-10-30 standalone installs: the Homebrew tap is gone, mise is the one-tool path
 
 Change: thismoon #351. The `mad01/homebrew-tap` repository is deleted, so `brew tap mad01/tap` and every `mad01/tap/<name>` formula stop working. The install docs now send a one-tool install, and the ralph install, through mise. A fleet machine that never tapped `mad01/tap` needs nothing: `ralph up` builds every component from source as before.

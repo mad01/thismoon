@@ -21,7 +21,7 @@ The registration stores the command name (not an absolute path), so `csl` must b
 
 ## Tools
 
-Seventeen tools are registered, grouped into four areas. The areas are `csl_repo_*` for repo management, `csl_search` / `csl_search_multi` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, `csl_read` / `csl_ls` / `csl_outline` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself. `csl_semantic_search` and `csl_hybrid_search` are registered only when `semantic.enabled` is true in `config.yaml`; with it off the server advertises the other fifteen.
+Eighteen tools are registered, grouped into five areas. The areas are `csl_repo_*` for repo management, `csl_search` / `csl_search_multi` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, and `csl_ask` for questions over the files a search selects. The last two are `csl_read` / `csl_ls` / `csl_outline` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself. `csl_semantic_search` and `csl_hybrid_search` are registered only when `semantic.enabled` is true in `config.yaml`; with it off the server advertises the other sixteen.
 
 | Tool | Purpose |
 |---|---|
@@ -32,6 +32,7 @@ Seventeen tools are registered, grouped into four areas. The areas are `csl_repo
 | [`csl_repo_reindex`](#csl_repo_reindex) | Rebuild the zoekt index for a single repo |
 | [`csl_search`](#csl_search) | Search code by exact text or regex (lexical) |
 | [`csl_search_multi`](#csl_search_multi) | Run up to ten independent `csl_search` queries in one call |
+| [`csl_ask`](#csl_ask) | Answer a question over the files a search selects, with a hosted worker model |
 | [`csl_semantic_search`](#csl_semantic_search) | Search code by meaning (vector embeddings) |
 | [`csl_hybrid_search`](#csl_hybrid_search) | Fuse lexical and semantic results with Reciprocal Rank Fusion |
 | [`csl_count`](#csl_count) | Count matches, optionally grouped by repo or language |
@@ -468,6 +469,56 @@ Each successful entry carries the `csl_search` output fields for its query, incl
 
 **Limits.** Queries run four at a time, after one repo discovery and one daemon start shared by the whole call. When the daemon does not start, every query in the call searches in-process. Content lines and `top_hit` lines share one 300-line budget per call, the same cap one `csl_search` call has. The budget is split evenly across the entries that need lines, and what an entry leaves unused goes to the others. Within an entry the search lines come first and `top_hit` gets the rest. A `top_hit` left with no lines is dropped, and `top_hit_error` says to read the file with `csl_read`. A cut entry is marked `truncated` with `total_available`, the top-level `truncated` is set, and `note` says to rerun that query alone with `csl_search` for its full page. In `files_with_matches` mode each query's `limit` caps the file paths, and the budget does not apply.
 
+### `csl_ask`
+
+Answer a question over the files up to ten zoekt queries select. A hosted worker model reads the files whole and answers, so the files never enter the caller's context. Only the answer comes back, with what it read and what it cost. It is the bulk reader, and `csl ask` is its CLI form.
+
+**When to call:** a question over many files, or over one large file, when only the answer is needed. For example, which flags each command accepts, how each service configures retries, or what a long file does. Not for lines you will edit: an edit needs the real content, through [`csl_read`](#csl_read) or a ranged read. To locate code, [`csl_search`](#csl_search) is cheaper, since every `csl_ask` call is a model call.
+
+**Input:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `question` | string | (required) | The question to answer from the files |
+| `queries` | array of string | (required) | 1 to 10 zoekt queries, `csl_search` syntax; a malformed one refuses the call with the fix |
+| `repo`, `lang`, `file` | string | `""` | Narrow every query, as on `csl_search` |
+| `max_files` | int | `20` | Most files the worker reads; at most 100 |
+| `max_lines` | int | `6000` | Most lines across those files; at most 20000 |
+| `per_repo` | bool | `false` | Ask once per repo and join the answers under an `## org/repo` heading each |
+| `response_format` | string | `text` | See [Response formats](#response-formats) |
+
+**Output:**
+
+```json
+{
+  "answer": "- `--json` (bool, default false): output as JSON. `search.go:81`\n- `--limit` (int, default 50): maximum number of file results. `search.go:89`\n...",
+  "backend": "claude",
+  "model": "claude-haiku-5-5",
+  "corpus": {
+    "files": [
+      {"repo": "mad01/thismoon", "path": "tools/worklog/internal/cli/cli.go", "lines": 441},
+      {"repo": "mad01/thismoon", "path": "services/csl/internal/cli/search.go", "lines": 494}
+    ],
+    "matched": 2,
+    "read": 2,
+    "lines": 935,
+    "chars": 27803,
+    "truncated": false
+  },
+  "usage": {"prompt_tokens": 16013, "completion_tokens": 726, "cost_usd": 0.0019643}
+}
+```
+
+The `text` form is the answer, a blank line, and one footer line: `corpus: 2 files, 935 lines; claude/claude-haiku-5-5; $0.002`. The footer adds `, N skipped` after the lines when `corpus.skipped` is not empty, and `, truncated` when `corpus.truncated` is set. It ends with `; relaxed: <query> -> <relaxed_query>` for each query in `relaxed`. With `per_repo` the JSON also carries `per_repo`, one `{repo, answer, usage}` entry per repo in rank order. A repo whose call failed carries `error` instead of `answer`, and the call fails only when every repo failed. The answers are joined as they are, with no second model call to merge them.
+
+**Corpus.** The queries run the way `csl_search_multi` runs them: one repo discovery, one daemon start, four at a time, each in `files_with_matches` mode with a limit of 500 files. A query whose AND terms partly match no file gets the rerun `csl_search` makes without those terms. Its files stay in the corpus, and `relaxed` lists it as `{query, relaxed_query, dropped_terms}`. The corpus is the union of the files in rank order, taking turns across queries, so every query's best match goes in before any query's tail. `corpus.matched` counts that union.
+
+A file is read whole, never cut. One that can't go in is listed in `corpus.skipped` with the reason, and the next file takes its place. The reason is one of: more lines than the budget has left, binary, not in the checkout, or outside its repo. Reading stops once `max_files` files are in, the line budget is spent, or 50 files were skipped. `corpus.read` counts the files sent. `corpus.truncated` is true when matching files were never considered, or when a query's search stopped at 500 files. The worker sees each file as `org/repo/path` with numbered lines and cites `path:line`, sometimes by the bare file name. `corpus.files` names the repo and full path to read with `csl_read`.
+
+**Worker.** The `ask` keys of `config.yaml` pick it: `ask.backend` forces `litellm`, `claude` or `openrouter`, and empty auto-selects a LiteLLM proxy when `LITELLM_BASE_URL` is set, then the `claude` CLI on `PATH`, then OpenRouter when `OPENROUTER_API_KEY` is set. `ask.model` defaults to `claude-haiku-5-5` and `ask.effort` to `low`. `cost_usd` is the list price of the reported tokens with no cache discount, and zero for a model the price table does not know.
+
+**Errors, none of which makes a model call:** an empty question, no queries or more than ten, a malformed query, or a cap out of range is refused first. With no worker configured, the error names what to set. When no query matches a file, the error carries each query's zero-result hint, the same diagnosis `csl_search` gives. When no matching file could go into the corpus, the error names the first few skipped and why.
+
 ### `csl_semantic_search`
 
 Find code by meaning across locally checked-out repos using vector embeddings. This is the counterpart to [`csl_search`](#csl_search): lexical search matches exact text and regex, semantic search matches intent. So it finds synonyms and paraphrases of a description even when the words don't appear in the code.
@@ -763,7 +814,7 @@ The malformed shapes (empty, only quotes, unbalanced double quote, empty `""` ph
 
 ### `csl_doctor`
 
-Run csl's self-checks and return the report as JSON: config, repos discovered, state file, index freshness, shard integrity, the search server, catalog descriptors, and two web-UI probes.
+Run csl's self-checks and return the report as JSON: config, repos discovered, state file, index freshness, shard integrity, the search server, catalog descriptors, the `csl_ask` worker, and two web-UI probes.
 
 **When to call:** when a csl tool errors or comes back empty and you have no shell to run `csl doctor` in. It is the first thing to try before concluding that a repo or a query is at fault.
 
@@ -784,6 +835,8 @@ Run csl's self-checks and return the report as JSON: config, repos discovered, s
     {"name": "index-shards-valid", "status": "ok"},
     {"name": "search-server-responsive", "status": "ok"},
     {"name": "catalog-descriptors", "status": "ok"},
+    {"name": "ask-backend", "status": "skipped",
+     "detail": "csl_ask answers with claude/claude-haiku-5-5, effort low"},
     {"name": "web-ui-reachable", "status": "ok"},
     {"name": "web-ui-version-skew", "status": "ok"}
   ]
@@ -791,6 +844,8 @@ Run csl's self-checks and return the report as JSON: config, repos discovered, s
 ```
 
 A check can also come back `skipped`, which counts as a pass with something to report. A machine with no config file yet gets `config-loads` as `skipped` with the path to create in `detail`. `repos-discovered` is `skipped` with the dropped counts when `index.hosts` or the exclude list removed repos (plain `ok` when nothing was dropped, `fail` naming the filter when a loaded config discovers nothing). `index-freshness` is `skipped` on a machine with repos but no index yet. `catalog-descriptors` is `ok` with a note when no repo carries a descriptor, and `skipped` when `repos-discovered` already failed. When a repo the user expects is missing, the CLI has the detail this tool does not: `csl repo --list --skipped` lists each dropped repo with its reason. Read-only: unlike `csl doctor --repair`, the tool never rewrites state. The web-UI checks failing means `csl web` is down or out of date, not that search is broken. For the git health of the repos csl indexes, use [`csl_repo_health`](#csl_repo_health) instead.
+
+`ask-backend` is `skipped` with the worker `csl_ask` would use in `detail`, or with what to set when none resolves, since search works without one. It fails only on an `ask.backend` or `ask.effort` value that does not exist.
 
 ## Response formats
 

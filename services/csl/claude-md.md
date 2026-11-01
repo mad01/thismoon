@@ -24,7 +24,7 @@ Both forms read the same index and take the same query language.
 4. **Check the repo is indexed when in doubt.** `csl_repo_lookup` (or `csl repo <name>`) resolves a name to a checkout. An empty result means csl does not index it, and plain `grep` is then correct. Say so in the answer.
 5. **Plain `grep` stays fine for filtering.** Piping another command's output through `grep`, `awk` or `jq`, or checking a line in one or two known files, is filtering and needs no csl.
 6. **A `belt[prefer-csl]` hint is a directive.** When a hook answers a `grep` or `find` with a ready csl command (the CLI form first, the `csl_search` call after it), run one of them next instead of another filesystem search. The hint already translated the pattern into zoekt syntax.
-7. **Read large files in ranges.** `csl_outline` (or `csl outline`) for "how is this structured", then `csl_read` or `Read` with a line range for the region you need. A `belt[read-size]` hint names the outline call to use.
+7. **Ask about large files; read only what you will edit.** A question over a big file or many files goes to `csl_ask` first (`csl ask` on the CLI). A cheap worker model reads the files a search selects, and only its answer reaches your context. A ranged read is for a region you will edit, since an edit needs the real lines: `csl_outline` (or `csl outline`) for the structure, then `csl_read` or `Read` with a line range. A `belt[read-size]` hint hands over the `csl_ask` call to use, then the outline call.
 
 ### Repo discovery and freshness
 
@@ -46,6 +46,7 @@ Both forms read the same index and take the same query language.
 - Search: `csl_search` (`output_mode: content` for lines, `file` and `lang` to narrow), `csl_search_multi` (several independent queries in one call, one entry each; `read_top_hit` inlines the top file), `csl_count` (totals, or per repo with `group_by: repo`), `csl_query_validate`.
 - Semantic: `csl_semantic_search`, `csl_hybrid_search`. They need the semantic index (`csl index --semantic-all`) and Ollama running, so reach for them only when `csl_index_info` reports `semantic.built: true`. Otherwise stay on `csl_search`.
 - Read and orient: `csl_read` (file by repo and path, with `start_line` and `end_line`), `csl_ls`, `csl_outline`, `csl_show_file` (opens a section in the csl web UI for the user, so `csl web` must be running), `csl_index_info`.
+- Ask: `csl_ask`, a question over the files 1 to 10 queries select. A hosted worker model reads them whole and returns only its answer, plus a footer with the corpus size and the list price. The footer also names any query it relaxed. `per_repo` answers once per repo.
 - Diagnosis: `csl_doctor`. Call it before retrying a failed call.
 - Tools answer in `text`. Pass `response_format: "json"` when you need the structured object.
 
@@ -66,6 +67,9 @@ csl count '<query>' --group-by repo               # how many matches per repo
 csl count '<query>' --group-by repo --names       # every matching repo, one per line, no cap
 csl count '<query>' --lang go --repo <re>         # one total, narrowed
 csl read <path> --repo <name> --start-line N --end-line M
+csl ask '<question>' -q '<query>' --repo <re>     # a worker model answers over the matching files
+csl ask '<question>' -q '<q1>' -q '<q2>' --per-repo # one answer per repo
+csl search '<query>' --limit 5000 | csl ask '<question>' --files-from -
 csl outline <repo> [path] --kinds struct,function # definitions ranked by use
 csl query '<query>'                               # how zoekt parsed it
 csl doctor                                        # when a call errors or comes back empty
@@ -90,6 +94,7 @@ Every search flag is a regex, including `--repo` and `--file`. A file result pri
 - Where a symbol is defined across the fleet: `csl_search` with `sym:Name` and `lang` set. The answer fits one call.
 - Who owns which repos: `csl_repo_lookup` with `owner`; it reads each repo's catalog descriptor.
 - A value per repo (a version, an option): `csl search '<key>' -o content --file '<re>' --limit 5000`, then pull the value out in the pipe with `grep -o` or `awk`. Do not open the files one by one.
+- What many files say, not where they are (how each service sets its timeouts, what every caller passes): `csl ask '<question>' -q '<query>' --per-repo`. The answer cites `path:line`, sometimes by the bare file name; find the full path in the corpus list and read those lines before editing them.
 - Ranking many candidates (every workflow, every library, every option value): one search over the common pattern, aggregated in the pipe: `csl search '<pattern>' -o content --file '<re>' --limit 5000 | grep -o '<value-re>' | sort | uniq -c | sort -rn`. Never loop one `csl_count` or `csl_search` per candidate; a hundred small calls cost more turns and tokens than one wide one.
 
 Report fleet counts as distinct repositories, not matching files or lines, unless asked otherwise.

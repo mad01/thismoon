@@ -16,6 +16,8 @@ import (
 	"sync"
 
 	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/kit/llm"
+	"github.com/mad01/thismoon/services/csl/internal/ask"
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
 	"github.com/mad01/thismoon/services/csl/internal/repo/catalogspec"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
@@ -23,12 +25,13 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
-// Checks returns the csl check list. The first six cover what csl needs to
-// answer a query at all: config, what the config discovered, state file,
-// index freshness, shard integrity, and the search server. The last two are
-// the kit's web probes renamed to say which process they are about — `csl
-// web` is the one long-lived process, and search works without it, so a web
-// FAIL must not read as "csl is down".
+// Checks returns the csl check list. The first seven cover what csl needs to
+// answer a query at all: config, what the config discovered, catalog
+// descriptors, state file, index freshness, shard integrity, and the search
+// server. ask-backend says whether csl_ask has a worker model; search works
+// without one. The last two are the kit's web probes renamed to say which
+// process they are about: `csl web` is the one long-lived process, and
+// search works without it, so a web FAIL must not read as "csl is down".
 //
 // repair lets the state-file check reset a corrupt file; pass false from any
 // read-only surface. The web probes target the base URL csl resolves
@@ -56,6 +59,7 @@ func Checks(repair bool) []doctor.Check {
 		indexFreshness(indexDir, s),
 		indexShardsValid(indexDir),
 		searchServerResponsive(daemon.DefaultPIDPath(), daemon.DefaultSocketPath()),
+		askBackend(s, ask.NewWorker),
 		webReachable,
 		webSkew,
 	}
@@ -360,6 +364,42 @@ func searchServerResponsive(pidPath, socketPath string) doctor.Check {
 				)
 			}
 			return nil
+		},
+	}
+}
+
+// askBackend reports the worker csl_ask would answer with. Only a config
+// value kit/llm cannot run fails it: a backend or effort name that does not
+// exist. No backend at all is a note, not a failure, because search works
+// without one; so is a forced backend whose environment is missing, which
+// the note names. newWorker is ask.NewWorker outside tests.
+func askBackend(
+	s shared,
+	newWorker func(ask.Settings, func(llm.CallInfo)) (llm.Backend, error),
+) doctor.Check {
+	return doctor.Check{
+		Name: "ask-backend",
+		Run: func(context.Context) error {
+			cfg, err := s.config()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			settings := ask.SettingsFrom(cfg)
+			if err := settings.Validate(); err != nil {
+				return err
+			}
+			w, err := newWorker(settings, nil)
+			switch {
+			case errors.Is(err, llm.ErrNoBackend):
+				return doctor.Skip(
+					"no worker model for csl_ask; search works without one: " + err.Error(),
+				)
+			case err != nil:
+				return doctor.Skip("csl_ask fails until this is fixed: " + err.Error())
+			}
+			return doctor.Skip(fmt.Sprintf(
+				"csl_ask answers with %s/%s, effort %s", w.Name(), w.Model(), settings.Effort,
+			))
 		},
 	}
 }

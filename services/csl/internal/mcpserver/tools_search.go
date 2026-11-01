@@ -227,19 +227,27 @@ type searchEnv struct {
 	repos     []finder.Repo
 	repoPaths map[string]string
 	indexDir  string
+	// surface words the zero-result hint for the front end that asked:
+	// mcpSurface for the tools, the CLI's own for `csl ask`.
+	surface lexical.Surface
 }
 
-// newSearchEnv resolves the index, loads the config, and discovers the
-// repos. Its backend asks the daemon first and searches in-process without
-// one.
+// newSearchEnv loads the config and builds the search setup from it.
 func newSearchEnv() (searchEnv, error) {
-	indexDir, err := search.DefaultIndexDir()
-	if err != nil {
-		return searchEnv{}, fmt.Errorf("resolve index dir: %w", err)
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return searchEnv{}, fmt.Errorf("load csl config: %w", err)
+	}
+	return newSearchEnvIn(cfg)
+}
+
+// newSearchEnvIn resolves the index and discovers the repos of an already
+// loaded config, for a caller that needs the config itself as well. Its
+// backend asks the daemon first and searches in-process without one.
+func newSearchEnvIn(cfg *config.Config) (searchEnv, error) {
+	indexDir, err := search.DefaultIndexDir()
+	if err != nil {
+		return searchEnv{}, fmt.Errorf("resolve index dir: %w", err)
 	}
 	repos, err := cfg.DiscoverRepos()
 	if err != nil {
@@ -257,6 +265,7 @@ func newSearchEnv() (searchEnv, error) {
 		repos:     repos,
 		repoPaths: repoPaths,
 		indexDir:  indexDir,
+		surface:   mcpSurface,
 	}, nil
 }
 
@@ -288,7 +297,7 @@ func (e searchEnv) search(ctx context.Context, r searchRequest) (searchOutput, e
 		return out, nil
 	}
 	req := lexical.Request{Options: opts, Repo: r.in.Repo, Repos: e.repos, IndexDir: e.indexDir}
-	return explainZero(ctx, e.backend, req), nil
+	return explainZero(ctx, e.backend, e.surface, req), nil
 }
 
 // mcpSurface points the csl_search hint notes at the MCP tools, and the
@@ -302,10 +311,15 @@ var mcpSurface = lexical.Surface{
 
 // explainZero shapes the outcome of an empty first page as csl_search output:
 // the relaxed rerun's page when lexical.ExplainZero found one, else an empty
-// page carrying the zero-result hint.
-func explainZero(ctx context.Context, b lexical.Backend, req lexical.Request) searchOutput {
+// page carrying the zero-result hint, worded for surface.
+func explainZero(
+	ctx context.Context,
+	b lexical.Backend,
+	surface lexical.Surface,
+	req lexical.Request,
+) searchOutput {
 	opts := req.Options
-	res := lexical.ExplainZero(ctx, b, mcpSurface, req)
+	res := lexical.ExplainZero(ctx, b, surface, req)
 	if res.Hint != nil {
 		return searchOutput{OutputMode: opts.OutputMode, Offset: opts.Offset, ZeroHint: res.Hint}
 	}

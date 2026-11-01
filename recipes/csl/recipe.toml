@@ -54,6 +54,18 @@ working_dir = "~/.config/ralph/sources/thismoon/recipes/csl"
 run = "always"
 depends_on = ["packages.code_search_local", "packages.t_man"]
 
+# Keep csl-env.sh executable in the sources cache. It is the MCP server's
+# launcher: `csl mcp` runs unwrapped and unsandboxed, and an MCP host carries
+# no login shell's env, so the script pulls the provider variables csl_ask's
+# worker reads from the secrets file and execs csl. The consuming repo's
+# agent-sync servers.json registers `csl-env.sh mcp` as the csl server's
+# command, by its path in the sources cache (docs/adr/0006).
+[hooks.builds.csl_chmod_scripts]
+commands = ["chmod +x csl-env.sh"]
+working_dir = "~/.config/ralph/sources/thismoon/recipes/csl"
+run = "always"
+idempotent = true
+
 # The csl rules fragment: the one file that tells an agent when to reach for
 # csl and in which form, the MCP tools or the CLI. It lands at a fixed path a
 # global CLAUDE.md imports with the line `@~/.claude/CLAUDE.csl.md`. That

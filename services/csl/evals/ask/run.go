@@ -18,6 +18,7 @@ import (
 
 	"github.com/mad01/thismoon/kit/llm"
 	"github.com/mad01/thismoon/kit/progstatus"
+	"github.com/mad01/thismoon/services/csl/internal/ask"
 )
 
 const (
@@ -95,29 +96,6 @@ func selectArms(ids string) ([]Arm, error) {
 		out = append(out, all[i])
 	}
 	return out, nil
-}
-
-// prices is USD per million tokens, input then output, Anthropic's list
-// prices read on 2026-11-01, keyed by the canonical id. Every row is priced
-// from it, with no cache discount, so arms compare on the same footing
-// whatever backend served them and in whatever order they ran: the
-// claude CLI caches the prompt, so its own cost figure falls with each arm
-// that follows the first. That figure stays in the trace. Cost is derived
-// from recorded usage, never estimated from text length.
-var prices = map[string][2]float64{
-	"claude-haiku-5-5":  {0.10, 0.50},
-	"claude-sonnet-5-5": {2.00, 10.00},
-	"claude-opus-5-5":   {4.00, 20.00},
-}
-
-// costUSD prices one call from the table. The model may arrive as an
-// OpenRouter id from a run recorded before the arms carried canonical ids.
-func costUSD(model string, promptTokens, completionTokens int) float64 {
-	p, ok := prices[llm.CanonicalID(model)]
-	if !ok {
-		return 0
-	}
-	return (float64(promptTokens)*p[0] + float64(completionTokens)*p[1]) / 1e6
 }
 
 // Row is one scored (case, arm, rep) result.
@@ -359,7 +337,7 @@ func runJob(ctx context.Context, via string, j job, traceDir string) (*Row, *Err
 	}
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		cctx, cancel := context.WithTimeout(ctx, callTimeout)
-		reply, err = b.Complete(cctx, systemPrompt, message)
+		reply, err = b.Complete(cctx, ask.SystemPrompt, message)
 		cancel()
 		var info llm.CallInfo
 		if len(calls) >= attempt {
@@ -403,7 +381,7 @@ func runJob(ctx context.Context, via string, j job, traceDir string) (*Row, *Err
 			j.corpus.Files,
 		), CorpusLines: j.corpus.Lines(), CorpusChars: j.corpus.Bytes(),
 		Model: last.Model, PromptTokens: in, CompletionTokens: out, ReasoningTokens: reasoning,
-		CostUSD:   costUSD(j.arm.Model, in, out),
+		CostUSD:   ask.CostUSD(j.arm.Model, in, out),
 		LatencyMS: last.Latency.Milliseconds(), Attempts: len(calls), Trace: tracePath,
 	}, nil
 }
@@ -755,7 +733,7 @@ func regrade(dir, casesDir string) error {
 			return fmt.Errorf("row for case %s has no case file", rows[i].ID)
 		}
 		rows[i].Grade = grade(c, corpora[rows[i].ID], rows[i].Answer)
-		rows[i].CostUSD = costUSD(
+		rows[i].CostUSD = ask.CostUSD(
 			armModel[rows[i].Variant],
 			rows[i].PromptTokens,
 			rows[i].CompletionTokens,

@@ -41,6 +41,7 @@ type Config struct {
 	Web      WebConfig      `yaml:"web"`
 	Refresh  RefreshConfig  `yaml:"refresh"`
 	MCP      MCPConfig      `yaml:"mcp"`
+	Ask      AskConfig      `yaml:"ask"`
 
 	// Loaded reports whether a config file was read. False means csl is
 	// running on defaults because no file exists at Path.
@@ -79,6 +80,23 @@ type MCPConfig struct {
 	// Empty means the built-in default (text). A tool call's response_format
 	// parameter always wins over this key.
 	ResponseFormat string `yaml:"response_format"`
+}
+
+// AskConfig picks the worker model csl_ask and `csl ask` hand a question
+// to. None of it is validated at load: a typo here must not take search
+// down, so an ask call fails naming the key instead, and `csl doctor`
+// reports it (the same posture as mcp.response_format).
+type AskConfig struct {
+	// Backend forces one provider: litellm, claude, or openrouter. Empty
+	// auto-selects in kit/llm's order: a LiteLLM proxy, then the claude CLI
+	// on PATH, then OpenRouter.
+	Backend string `yaml:"backend"`
+	// Model is the canonical Anthropic model id, which each backend
+	// translates for its provider. Empty means csl.DefaultAskModel.
+	Model string `yaml:"model"`
+	// Effort is the worker's reasoning effort: low, medium, high, xhigh, or
+	// max. Empty means csl.DefaultAskEffort.
+	Effort string `yaml:"effort"`
 }
 
 // DaemonConfig controls the background search daemon.
@@ -373,6 +391,33 @@ func (c *Config) MCPResponseFormat() string {
 		return ""
 	}
 	return c.MCP.ResponseFormat
+}
+
+// AskBackend returns the configured worker backend, or "" to auto-select.
+// Safe to call on a nil receiver.
+func (c *Config) AskBackend() string {
+	if c == nil {
+		return ""
+	}
+	return c.Ask.Backend
+}
+
+// AskModel returns the configured worker model, defaulting to
+// csl.DefaultAskModel. Safe to call on a nil receiver.
+func (c *Config) AskModel() string {
+	if c != nil && c.Ask.Model != "" {
+		return c.Ask.Model
+	}
+	return csl.DefaultAskModel
+}
+
+// AskEffort returns the configured worker reasoning effort, defaulting to
+// csl.DefaultAskEffort. Safe to call on a nil receiver.
+func (c *Config) AskEffort() string {
+	if c != nil && c.Ask.Effort != "" {
+		return c.Ask.Effort
+	}
+	return csl.DefaultAskEffort
 }
 
 // DaemonIdleTimeout returns the configured daemon idle timeout, defaulting to

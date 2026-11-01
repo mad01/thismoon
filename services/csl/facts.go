@@ -1,6 +1,20 @@
 package csl
 
-import "github.com/mad01/thismoon/kit/agentdoc"
+import (
+	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/kit/llm"
+)
+
+// DefaultAskModel is the worker model csl_ask and `csl ask` answer with when
+// ask.model is unset: kit/llm's default, the cheapest current Claude. The
+// csl_ask eval found it gets the facts right where larger models only add
+// tokens.
+const DefaultAskModel = llm.DefaultModel
+
+// DefaultAskEffort is the worker's reasoning effort when ask.effort is
+// unset. The csl_ask eval settled it: low finds the same facts as medium
+// at the lowest latency.
+const DefaultAskEffort = "low"
 
 // parallelCallsNote asks clients to batch independent calls into one turn,
 // or independent searches into one csl_search_multi call, which clients that

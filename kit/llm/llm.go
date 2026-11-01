@@ -54,6 +54,21 @@ const DefaultModel = "claude-haiku-5-5"
 // that treats the model call as optional matches on it and skips.
 var ErrNoBackend = errors.New("llm: no backend configured")
 
+// The environment variables selection and the chat backends read. The
+// values are variable names, not secrets, so the key lines carry the secret
+// scanner's ignore marker.
+const (
+	envLiteLLMBaseURL   = "LITELLM_BASE_URL"
+	envLiteLLMAPIKey    = "LITELLM_API_KEY"    // suspenders:ignore
+	envOpenRouterAPIKey = "OPENROUTER_API_KEY" // suspenders:ignore
+)
+
+// ProviderEnv names every environment variable the package reads to pick
+// and reach a provider. A wrapper that starts a caller under a stripped
+// environment, such as an MCP host's, passes exactly these through. The
+// claude CLI backend reads none of them: it needs only PATH.
+var ProviderEnv = []string{envLiteLLMBaseURL, envLiteLLMAPIKey, envOpenRouterAPIKey}
+
 // CallInfo is what a backend reported about one exchange: the model that
 // served it, the token usage, the status, and the latency of the exchange
 // alone. Status is the HTTP status for the chat backends; the claude CLI
@@ -123,7 +138,7 @@ func Select(opts Options) (Backend, error) {
 // auto takes the first backend present in the fixed order the package doc
 // gives.
 func auto(opts Options) (Backend, error) {
-	if os.Getenv("LITELLM_BASE_URL") != "" {
+	if os.Getenv(envLiteLLMBaseURL) != "" {
 		return liteLLMFromEnv(opts)
 	}
 	if opts.AllowCLI {
@@ -131,7 +146,7 @@ func auto(opts Options) (Backend, error) {
 			return claudeFromPath(opts)
 		}
 	}
-	if os.Getenv("OPENROUTER_API_KEY") != "" {
+	if os.Getenv(envOpenRouterAPIKey) != "" {
 		return openRouterFromEnv(opts)
 	}
 	hint := "set LITELLM_BASE_URL or OPENROUTER_API_KEY"
@@ -143,8 +158,8 @@ func auto(opts Options) (Backend, error) {
 
 func liteLLMFromEnv(opts Options) (Backend, error) {
 	c, err := NewLiteLLM(ChatConfig{
-		APIKey:      os.Getenv("LITELLM_API_KEY"),
-		BaseURL:     os.Getenv("LITELLM_BASE_URL"),
+		APIKey:      os.Getenv(envLiteLLMAPIKey),
+		BaseURL:     os.Getenv(envLiteLLMBaseURL),
 		Model:       opts.Model,
 		Effort:      opts.Effort,
 		Temperature: opts.Temperature,
@@ -158,7 +173,7 @@ func liteLLMFromEnv(opts Options) (Backend, error) {
 
 func openRouterFromEnv(opts Options) (Backend, error) {
 	c, err := NewOpenRouter(ChatConfig{
-		APIKey:      os.Getenv("OPENROUTER_API_KEY"),
+		APIKey:      os.Getenv(envOpenRouterAPIKey),
 		Model:       opts.Model,
 		Effort:      opts.Effort,
 		Temperature: opts.Temperature,
