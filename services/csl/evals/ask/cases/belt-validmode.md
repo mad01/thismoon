@@ -16,7 +16,7 @@ forbidden:
   - '(?i)\bmedium\b'
   - '(?i)\bstrict\b'
 oracle: |
-  - validMode (tools/belt/internal/config/config.go:1044) accepts "" (the empty per-rule default), "hard" and "soft".
+  - validMode (tools/belt/internal/config/config.go:1093) accepts "" (the empty per-rule default), "hard" and "soft".
   - Any other value returns an error: mode is %q (must be "hard" or "soft").
 notes: >-
   One large file (1091 lines) and a question with a small answer: the
