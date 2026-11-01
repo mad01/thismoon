@@ -96,8 +96,8 @@ package so their behavior cannot drift apart again.
 belt doctor also reads `hooks.PostToolUse` from the same Claude settings
 files, to check that the entry running `belt hint read` has a matcher that
 lets `mcp__csl__csl_read` through (thismoon #363). The read is doctor-only:
-no guard or hint decision depends on it, it sits behind the same
-`claude_settings.enabled` switch, the files are the ones already named in
-`Paths`, and doctor reports what it found. The surface stays the Claude
+no guard or hint decision depends on it. It sits behind the same
+`claude_settings.enabled` switch, in the files already named in `Paths`,
+and doctor reports what it found. The surface stays the Claude
 settings files; this names a second key in them. Any further key or file
 still needs a new decision here.
