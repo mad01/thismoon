@@ -36,6 +36,7 @@ moondb/
     server/            - HTTP API + webkit web page
     client/            - HTTP client shared by the CLI and mcpserver
     mcpserver/         - MCP tools
+  pi/                  - pi package: an extension that feeds pi's events to `moondb record` as Claude hook payloads (node tests, no Go)
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
@@ -230,6 +231,49 @@ back only by later hooks of the same session:
 - `<sid>.snap`: per worktree, the last snapshot's state hash, the size,
   mtime and chunk of each file it read, and the chunk of each HEAD blob it
   shipped
+
+### pi capture: the same payloads from a pi package
+
+`pi/` is a pi package whose one extension, `extensions/moondb-record.ts`,
+plays the five hook lines for the pi coding agent. It builds the payloads
+`record` reads and pipes each into a `moondb record` child, so nothing on
+the Go side knows pi exists. `pi/README.md` has the event table, the input
+mapping and the limits. What holds the two sides together:
+
+- `before_agent_start` opens a turn under a fresh uuid `prompt_id`, also
+  for a run an extension started with a custom message (empty prompt, no
+  origin). `agent_settled` closes it, since `agent_end` can be followed
+  by a retry. `session_shutdown` closes a turn still open and waits for
+  the records in flight, so print mode loses no `Stop`.
+- pi's `edit` becomes `Edit` (one replacement) or `MultiEdit`, with
+  `structuredPatch` parsed from pi's `details.patch`. `write` becomes
+  `Write`: create or update comes from a stat in `tool_call`, and an
+  update carries the original read there and hunks computed in the
+  extension (`pi/lib/patch.ts`). Without hunks, `why` never names an
+  update's lines.
+- `bash` gets a synthesized `bashEditDiff`. `git status` runs in
+  `tool_call` and again in `tool_result`, and each listed file is stamped
+  by status, size and times. Every file whose stamp changed lands in
+  `changedFiles`. The first five also get hunks in `files` when their
+  before is known: a new file is all added lines, and a file clean before
+  gets `git diff HEAD`. Files pi's edit and write tools wrote during the
+  command are left out.
+- Edit and write records are waited for, up to 3 s, for the same reason
+  the Claude Edit hook is synchronous. The rest start and run on their
+  own. Children are detached into their own process group but stay
+  referenced: an awaited record must keep print mode's event loop alive.
+- `transcript_path` is pi's session file. `record` spools its tail
+  unparsed, and the trace parser skips pi's lines, so a pi turn has no
+  trace or cost yet. `Session.Harness` stays `claude-code`, because
+  `record.Harness` is a constant. The entrypoint is the one thing the
+  environment can say: the child gets `CLAUDE_CODE_ENTRYPOINT=pi-<mode>`
+  (`pi-tui`, `pi-print`, `pi-json`, `pi-rpc`), replacing any value
+  inherited from a Claude Code shell.
+
+Enabling it is a `packages[]` entry in pi's `settings.json`
+(`~/.config/ralph/sources/thismoon/services/moondb/pi`), which the
+consuming repo owns. Phase B (`pi/README.md`, last section) is moondb
+reading pi's session JSONL in Go, for traces, costs and a `pi` harness.
 
 ### Snapshots: the worktree at each turn edge
 
@@ -756,7 +800,8 @@ never the JSON. Authoring guide: `docs/SANDBOXING.md`, "Declaring access".
 ```bash
 make build    # ./moondb binary (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/moondb + codesign
-make test     # go test ./...  (hermetic: t.TempDir + throwaway git repos, never touches real $HOME)
+make test     # go test ./... then test-js  (hermetic: t.TempDir + throwaway git repos, never touches real $HOME)
+make test-js  # node --test pi/test/*.test.mjs: the pi package against a fake pi and a fake moondb on PATH
 make lint     # golangci-lint run ./...
 ```
 

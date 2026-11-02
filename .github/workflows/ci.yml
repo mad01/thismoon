@@ -148,10 +148,10 @@ jobs:
           COMPONENT: ${{ matrix.component }}
         run: go test "./${COMPONENT}/..."
 
-      # present's viz.js helpers and belt's pi package run under node's test
-      # runner.
+      # present's viz.js helpers and the pi packages of belt and moondb run
+      # under node's test runner.
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        if: matrix.component == 'services/present' || matrix.component == 'tools/belt'
+        if: matrix.component == 'services/present' || matrix.component == 'tools/belt' || matrix.component == 'services/moondb'
         with:
           node-version: 24
 
@@ -162,6 +162,10 @@ jobs:
       - name: pi package tests
         if: matrix.component == 'tools/belt'
         run: make -C tools/belt test-js
+
+      - name: moondb pi package tests
+        if: matrix.component == 'services/moondb'
+        run: make -C services/moondb test-js
 
       - name: Build
         env:
