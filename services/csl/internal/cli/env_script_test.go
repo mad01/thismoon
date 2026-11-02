@@ -12,9 +12,9 @@ import (
 	"github.com/mad01/thismoon/kit/llm"
 )
 
-// envLoop matches the loop in csl-env.sh that names the variables it pulls
-// from the secrets file.
-var envLoop = regexp.MustCompile(`(?m)^for _v in ([A-Z_ ]+); do$`)
+// envCall matches the line in csl-env.sh that hands the shared helper
+// (recipes/lib/provider-env.sh) the variables to pull from the secrets file.
+var envCall = regexp.MustCompile(`(?m)^export_provider_env ([A-Z_ ]+)$`)
 
 // TestEnvScriptPullsProviderEnv keeps recipes/csl/csl-env.sh, the launcher an
 // MCP host starts csl through, in step with kit/llm: the script must pull
@@ -22,9 +22,9 @@ var envLoop = regexp.MustCompile(`(?m)^for _v in ([A-Z_ ]+); do$`)
 // finds no backend that a shell finds.
 func TestEnvScriptPullsProviderEnv(t *testing.T) {
 	script := readRepoFile(t, filepath.Join("recipes", "csl", "csl-env.sh"))
-	m := envLoop.FindStringSubmatch(script)
+	m := envCall.FindStringSubmatch(script)
 	if m == nil {
-		t.Fatal("csl-env.sh has no `for _v in ...; do` loop naming the variables")
+		t.Fatal("csl-env.sh has no `export_provider_env NAME...` line naming the variables")
 	}
 	got := strings.Fields(m[1])
 	want := slices.Clone(llm.ProviderEnv)

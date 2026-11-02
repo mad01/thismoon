@@ -24,28 +24,25 @@ set -eu
 
 # humanizer_judge needs an LLM backend, and MCP hosts launched outside a login
 # shell don't carry the env. Pull only the backend vars from the ralph-managed
-# secrets file (legacy ~/.secrets.sh as a fallback) in a subshell; never source
-# the whole file into the sandboxed server's env. The personal profile provides
-# OPENROUTER_API_KEY; the work profile provides LITELLM_BASE_URL, LITELLM_API_KEY
-# and HUMANIZER_MODEL. humanizer selects the backend from whichever is set, so
-# generic var names only: the proxy host and token stay in that gitignored file.
-for _sf in "$HOME/.config/ralph/secrets.sh" "$HOME/.secrets.sh"; do
-  [ -f "$_sf" ] || continue
-  for _v in OPENROUTER_API_KEY LITELLM_BASE_URL LITELLM_API_KEY HUMANIZER_MODEL; do
-    eval "_cur=\${$_v:-}"
-    [ -n "$_cur" ] && continue
-    # secrets file path is runtime-selected and read only in this subshell.
-    # shellcheck disable=SC1090
-    _val="$(set +eu; . "$_sf" >/dev/null 2>&1; eval "printf '%s' \"\${$_v:-}\"")"
-    [ -n "$_val" ] && eval "export $_v=\"\$_val\""
-  done
-done
+# secrets file (legacy ~/.secrets.sh as a fallback) through the shared helper
+# in ../lib/provider-env.sh; never source the whole file into the sandboxed
+# server's env. The personal profile provides OPENROUTER_API_KEY; the work
+# profile provides LITELLM_BASE_URL, LITELLM_API_KEY and HUMANIZER_MODEL.
+# humanizer selects the backend from whichever is set, so generic var names
+# only: the proxy host and token stay in that gitignored file. A test in
+# tools/humanizer keeps judge_vars in step with kit/llm's llm.ProviderEnv.
+judge_vars="OPENROUTER_API_KEY LITELLM_BASE_URL LITELLM_API_KEY HUMANIZER_MODEL"
+# shellcheck source=../lib/provider-env.sh
+. "$(dirname "$(realpath "$0")")/../lib/provider-env.sh"
+# One variable name per word: the split is the point.
+# shellcheck disable=SC2086
+export_provider_env $judge_vars
 
 # The env allow-list: HOME, PATH, TMPDIR (srt-run hands it to the child), and
 # the four backend vars when set.
 set -- HOME="$HOME" PATH="${PATH:-/usr/bin:/bin}"
 [ -n "${TMPDIR:-}" ] && set -- "$@" TMPDIR="$TMPDIR"
-for _v in OPENROUTER_API_KEY LITELLM_BASE_URL LITELLM_API_KEY HUMANIZER_MODEL; do
+for _v in $judge_vars; do
   eval "_cur=\${$_v:-}"
   [ -n "$_cur" ] && set -- "$@" "$_v=$_cur"
 done
@@ -65,7 +62,7 @@ elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
   _host=openrouter.ai
 fi
 [ -n "$_host" ] && set -- "$@" SRT_RUN_ALLOW_DOMAINS="$_host"
-unset _sf _v _cur _val _host 2>/dev/null || true
+unset judge_vars _v _cur _host 2>/dev/null || true
 
 cd /
 exec /usr/bin/env -i "$@" \
