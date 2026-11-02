@@ -30,6 +30,7 @@ import type {
 import type { BeltPiConfig, LoadedConfig } from "../lib/config.ts";
 import { directToolServer, envIs, loadConfig } from "../lib/config.ts";
 import {
+	DENIED_BY_USER,
 	markPermissionApproved,
 	requestPermission,
 } from "./permission-broker.ts";
@@ -611,15 +612,35 @@ export default function (pi: ExtensionAPI) {
 		return command.trimStart().startsWith(pattern);
 	}
 
+	// Every denial the ledger records (belt-hooks.ts) is announced on the
+	// extension bus as belt:permission-denied, naming who denied it. It stays
+	// apart from belt:deny, so a settings rule or the user never counts as a
+	// belt denial. A block nobody decided, such as a missing broker, is not
+	// announced.
+	const announceDenial = (
+		call: { toolName: string; toolCallId?: string },
+		source: "belt guard" | "settings deny rule" | "user",
+		reason: string,
+	) => {
+		pi.events?.emit?.("belt:permission-denied", {
+			source,
+			reason,
+			toolName: call.toolName,
+			toolCallId: call.toolCallId,
+		});
+		return { block: true, reason };
+	};
+
 	// A belt denial blocks the call and is announced on the extension bus so a
 	// mod (session-band) can count it; pi has no decision chain to read it from.
 	const beltDenied = (
+		call: { toolName: string; toolCallId?: string },
 		kind: "bash" | "write" | "external-text",
 		target: string,
 		res: { reason: string },
 	) => {
 		pi.events?.emit?.("belt:deny", { kind, target, reason: res.reason });
-		return { block: true, reason: res.reason };
+		return announceDenial(call, "belt guard", res.reason);
 	};
 
 	// Main permission gate
@@ -643,6 +664,9 @@ export default function (pi: ExtensionAPI) {
 		const permissionNames =
 			readings.length > 0 ? readings.map((reading) => reading.name) : [toolName];
 		const permissionName = permissionNames[0];
+		// The call as the ledger names it: the permission name an MCP call
+		// resolves to, not the proxy it went through.
+		const call = { toolName: permissionName, toolCallId: event.toolCallId };
 		// Deny and ask rules also match the tool's own name, so a rule on a
 		// proxy (mcp, mcp__linear) still covers every call through it. Allow
 		// rules do not: an allowed proxy name must not allow every tool behind
@@ -669,7 +693,7 @@ export default function (pi: ExtensionAPI) {
 		// aliases must not become guard bypasses.
 		if (kind === "bash" && typeof input.command === "string") {
 			const res = beltCheck(["bash", input.command, "--cwd", ctx.cwd]);
-			if (res.denied) return beltDenied("bash", input.command, res);
+			if (res.denied) return beltDenied(call, "bash", input.command, res);
 		}
 		for (const target of targets) {
 			if (!target.path) continue;
@@ -681,7 +705,7 @@ export default function (pi: ExtensionAPI) {
 				"--content",
 				target.content,
 			]);
-			if (res.denied) return beltDenied("write", filePath, res);
+			if (res.denied) return beltDenied(call, "write", filePath, res);
 		}
 		// MCP calls that publish text off this machine: belt scans the call's
 		// string fields for internal names (publish-internal-names), whether
@@ -705,7 +729,7 @@ export default function (pi: ExtensionAPI) {
 				"--input",
 				JSON.stringify(reading.args),
 			]);
-			if (res.denied) return beltDenied("external-text", reading.name, res);
+			if (res.denied) return beltDenied(call, "external-text", reading.name, res);
 		}
 
 		// 2. Claude settings: deny. A multi-file mutation is denied when any
@@ -713,10 +737,11 @@ export default function (pi: ExtensionAPI) {
 		// own tool name does.
 		const denied = matchAny(claude.deny);
 		if (denied) {
-			return {
-				block: true,
-				reason: `Denied by Claude settings: ${denied.tool}(${denied.spec ?? ""})`,
-			};
+			return announceDenial(
+				call,
+				"settings deny rule",
+				`Denied by Claude settings: ${denied.tool}(${denied.spec ?? ""})`,
+			);
 		}
 
 		const confirm = async (label: string, reason = "Requires confirmation") => {
@@ -729,8 +754,9 @@ export default function (pi: ExtensionAPI) {
 				reason,
 				tool: toolName,
 			});
-			return decision.allowed
-				? undefined
+			if (decision.allowed) return undefined;
+			return decision.reason === DENIED_BY_USER
+				? announceDenial(call, "user", decision.reason)
 				: { block: true, reason: decision.reason };
 		};
 
@@ -841,7 +867,7 @@ export default function (pi: ExtensionAPI) {
 			for (const rule of rules) {
 				if (rule.toolName === "bash" && matchesPattern(command, rule.pattern)) {
 					if (rule.action === "deny") {
-						return { block: true, reason: `Denied by rule: ${rule.pattern}` };
+						return announceDenial(call, "user", `Denied by rule: ${rule.pattern}`);
 					}
 					return undefined;
 				}
@@ -874,7 +900,7 @@ export default function (pi: ExtensionAPI) {
 					persistRules();
 					ctx.ui.notify(`Rule: always deny "${pattern}"`, "success");
 				}
-				return { block: true, reason: "Denied by user" };
+				return announceDenial(call, "user", DENIED_BY_USER);
 			}
 
 			return undefined;
@@ -947,7 +973,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (choice === "Deny" || !choice) {
-				return { block: true, reason: "Denied by user" };
+				return announceDenial(call, "user", DENIED_BY_USER);
 			}
 
 			return undefined;

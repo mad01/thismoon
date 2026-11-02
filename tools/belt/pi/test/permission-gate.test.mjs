@@ -15,6 +15,10 @@ function load() {
 
 const DENY = (sub) => `DENY  fake-${sub}  denied by the fake`
 
+// The belt:deny events alone. session-band counts them as belt denials, so
+// the ledger's own denial event must never be among them.
+const beltDenies = (emitted) => emitted.filter(([name]) => name === 'belt:deny')
+
 test('a belt bash denial blocks the call and announces belt:deny', async (t) => {
   const env = scratch(t)
   process.env.FAKE_BELT_DENY = 'bash'
@@ -22,7 +26,7 @@ test('a belt bash denial blocks the call and announces belt:deny', async (t) => 
   const res = await call('tool_call', { toolName: 'bash', input: { command: 'git push origin main' } }, headlessCtx(env.dir))
   assert.deepEqual(res, { block: true, reason: DENY('bash') })
   assert.deepEqual(env.argv(), ['check', 'bash', 'git push origin main', '--cwd', env.dir])
-  assert.deepEqual(emitted, [['belt:deny', { kind: 'bash', target: 'git push origin main', reason: DENY('bash') }]])
+  assert.deepEqual(beltDenies(emitted), [['belt:deny', { kind: 'bash', target: 'git push origin main', reason: DENY('bash') }]])
 })
 
 test('a belt write denial names the resolved file', async (t) => {
@@ -33,7 +37,7 @@ test('a belt write denial names the resolved file', async (t) => {
   const res = await call('tool_call', { toolName: 'write', input: { path: 'notes.md', content: 'text' } }, headlessCtx(env.dir))
   assert.deepEqual(res, { block: true, reason: DENY('write') })
   assert.deepEqual(env.argv(), ['check', 'write', '--file', file, '--content', 'text'])
-  assert.deepEqual(emitted, [['belt:deny', { kind: 'write', target: file, reason: DENY('write') }]])
+  assert.deepEqual(beltDenies(emitted), [['belt:deny', { kind: 'write', target: file, reason: DENY('write') }]])
 })
 
 test('github.com MCP calls go through belt external-text, proxied or direct', async (t) => {
@@ -52,7 +56,7 @@ test('github.com MCP calls go through belt external-text, proxied or direct', as
   const direct = await call('tool_call', { toolName: 'mcp__gh_com__add_issue_comment', input: { body: 'b' } }, ctx)
   assert.equal(direct.block, true)
   assert.equal(env.argv()[3], 'mcp__gh_com__add_issue_comment')
-  assert.deepEqual(emitted.map(([name, data]) => [name, data.kind]), [
+  assert.deepEqual(beltDenies(emitted).map(([name, data]) => [name, data.kind]), [
     ['belt:deny', 'external-text'],
     ['belt:deny', 'external-text'],
   ])
@@ -216,7 +220,7 @@ test('a server-less proxy call by original tool name still goes through belt', a
   assert.deepEqual(got.res, { block: true, reason: DENY('external-text') })
   assert.equal(got.tool, 'mcp__mcp__create_pull_request')
   assert.deepEqual(got.input, ARGS)
-  assert.deepEqual(emitted, [
+  assert.deepEqual(beltDenies(emitted), [
     ['belt:deny', { kind: 'external-text', target: 'mcp__mcp__create_pull_request', reason: DENY('external-text') }],
   ])
 })

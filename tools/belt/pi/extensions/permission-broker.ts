@@ -89,7 +89,7 @@ async function askInRoot(
 	const allowed = await ctx.ui.confirm(title, `${message}\n\nAllow once?`);
 	return {
 		allowed,
-		reason: allowed ? "Approved by user" : "Denied by user",
+		reason: allowed ? "Approved by user" : DENIED_BY_USER,
 	};
 }
 
@@ -215,6 +215,10 @@ async function askParent(request: PermissionRequest): Promise<PermissionDecision
 		socket.on("error", (error) => finish({ allowed: false, reason: error.message }));
 	});
 }
+
+// The reason a decision carries when a person answered no. The gate tells a
+// user's rejection from a broker failure by it, so keep the two in step.
+export const DENIED_BY_USER = "Denied by user";
 
 export async function requestPermission(
 	ctx: ExtensionContext,

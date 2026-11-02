@@ -273,7 +273,11 @@ event and reads its stdout can run it. What to expect per harness:
   exec `belt check bash <command>`, `belt check write --file … --content …`,
   and `belt check external-text --tool <name> --input <json>` per tool
   call and block on exit code 1. The guards are the same, the verdict
-  travels as the exit code and the `DENY` line instead of hook JSON.
+  travels as the exit code and the `DENY` line instead of hook JSON. The
+  pi package in `pi/` also runs the session-start, bash, read and
+  external-text hints. It records pre-compact, post-compact, session-end,
+  permission-denied and stop-failure in the ledger, adapting pi's events
+  to the Claude payloads; the README's pi section maps them.
 - **opencode** is not wired today: opencode has no Claude-style hooks schema,
   so belt does not run there. Its native `permission` config covers the
   allow/deny surface instead.
