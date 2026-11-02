@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.0](https://github.com/mad01/thismoon/compare/belt/v2.13.0...belt/v2.14.0) (2026-11-02)
+
+
+### Features
+
+* **belt:** record pi's lifecycle ledger and run the read-size hint ([#378](https://github.com/mad01/thismoon/issues/378)) ([993c7d0](https://github.com/mad01/thismoon/commit/993c7d0e8d3944191a1d47dbde12b7361a110054))
+
 ## [2.13.0](https://github.com/mad01/thismoon/compare/belt/v2.12.1...belt/v2.13.0) (2026-11-01)
 
 

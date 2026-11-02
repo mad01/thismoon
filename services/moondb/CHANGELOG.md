@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/mad01/thismoon/compare/moondb/v0.9.0...moondb/v0.10.0) (2026-11-02)
+
+
+### Features
+
+* **moondb:** record pi edits through a pi package ([#377](https://github.com/mad01/thismoon/issues/377)) ([27f54cc](https://github.com/mad01/thismoon/commit/27f54cc079386b88ba875840c039057bf7f5b934))
+
 ## [0.9.0](https://github.com/mad01/thismoon/compare/moondb/v0.8.0...moondb/v0.9.0) (2026-10-30)
 
 
