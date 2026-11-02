@@ -1,0 +1,14 @@
+{
+  "name": "moondb-pi",
+  "private": true,
+  "type": "module",
+  "description": "moondb capture as a pi package: pi loads extensions/*.ts in place from this directory (the ralph sources cache on a machine). moondb-record.ts turns pi's prompt, tool and settle events into the Claude Code hook payloads `moondb record` reads, so moondb why and history cover edits pi makes.",
+  "pi": {
+    "extensions": [
+      "./extensions/*.ts"
+    ],
+    "skills": [],
+    "prompts": [],
+    "themes": []
+  }
+}

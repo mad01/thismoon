@@ -97,6 +97,23 @@ afterwards and gets no edit either; `git blame` names that commit. The diff cove
 the repository of the session's working directory, so a session started in
 the main checkout never sees Bash edits in a linked worktree.
 
+## pi capture
+
+The [pi](https://github.com/earendil-works/pi) coding agent gets the same
+capture from a pi package in [`pi/`](pi/README.md). Its extension turns
+pi's prompts, edits, writes, bash calls and settles into the payloads the
+Claude Code hooks send, and pipes them into `moondb record`. `moondb why`
+and `moondb history` then cover pi's edits too. To enable it, add this
+entry to `packages` in pi's `settings.json`, then start a new pi session:
+
+```json
+{ "source": "~/.config/ralph/sources/thismoon/services/moondb/pi" }
+```
+
+pi sessions show the entrypoint `pi-tui` or `pi-print`. They have no trace
+or cost yet: that needs moondb to read pi's session files, which is the
+package README's last section.
+
 ## Usage
 
 ```bash
@@ -263,6 +280,8 @@ doesn't delete the store.
 
 Later releases add:
 
+- traces, costs and a `pi` harness for pi sessions, read from pi's session
+  files
 - the Bash diffs a transcript keeps, read by `moondb import`
 - a cloud backend: the log on a Kubernetes StatefulSet, file contents in
   object storage
