@@ -3,6 +3,7 @@ package semantic
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -120,5 +121,67 @@ func TestExpandHitMissingFile(t *testing.T) {
 	h := Hit{RepoPath: t.TempDir(), Path: "nope.txt", StartLine: 1, EndLine: 1}
 	if _, err := ExpandHit(h, 0); err == nil {
 		t.Fatalf("expected error for missing file")
+	}
+}
+
+// TestExpandHitSymlinks covers a stale index: the walker indexed a regular
+// file that was later swapped for a symlink. A link that stays inside the repo
+// still reads; one that leaves it is refused before the open.
+func TestExpandHitSymlinks(t *testing.T) {
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "repo")
+	outside := filepath.Join(tmp, "outside")
+	for _, d := range []string{repo, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		filepath.Join(repo, "f.txt"):         "inside\n",
+		filepath.Join(outside, "secret.txt"): "secret\n",
+	}
+	for p, body := range files {
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	links := map[string]string{
+		"inner-link":  "f.txt",
+		"escape-file": filepath.Join(outside, "secret.txt"),
+		"escape-dir":  outside,
+	}
+	for name, target := range links {
+		if err := os.Symlink(target, filepath.Join(repo, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name    string
+		path    string
+		want    string
+		wantErr bool
+	}{
+		{name: "link to a file inside", path: "inner-link", want: "inside"},
+		{name: "link to a file outside", path: "escape-file", wantErr: true},
+		{name: "file under a link to a dir outside", path: "escape-dir/secret.txt", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := Hit{RepoPath: repo, Path: tt.path, StartLine: 1, EndLine: 1}
+			got, err := ExpandHit(h, 0)
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "path must stay inside the repo") {
+					t.Fatalf("ExpandHit(%q) = %q, %v; want a refusal", tt.path, got, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ExpandHit(%q): %v", tt.path, err)
+			}
+			if got != tt.want {
+				t.Fatalf("ExpandHit(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
 	}
 }

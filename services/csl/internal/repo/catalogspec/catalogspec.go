@@ -28,6 +28,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/mad01/thismoon/services/csl/internal/repo/repopath"
 )
 
 // PointerFile is the csl-only file at a repo root that names the descriptor
@@ -164,11 +166,12 @@ type pointer struct {
 }
 
 // followPointer resolves a PointerFile's descriptor key to an absolute path
-// under dir. The path must be relative and, once every symlink on it is
-// resolved, still inside the repo: the file is committed and shared, so it
-// must not be able to read an arbitrary path on whoever checks the repo out,
-// and git checks symlinks out as symlinks, so a lexical check alone would
-// let a committed link reach past the root.
+// under dir. repopath.Resolve keeps that path inside the repo, symlinks
+// included: the file is committed and shared, so it must not be able to read
+// an arbitrary path on whoever checks the repo out, and git checks symlinks out
+// as symlinks, so a lexical check alone would let a committed link reach past
+// the root. A missing target passes here and fails at the read in Read, which
+// names the pointer file and the target.
 func followPointer(dir string, data []byte) (string, error) {
 	var p pointer
 	if err := yaml.Unmarshal(data, &p); err != nil {
@@ -178,37 +181,9 @@ func followPointer(dir string, data []byte) (string, error) {
 	if rel == "" {
 		return "", errors.New("missing the descriptor key naming the file to read")
 	}
-	clean := filepath.Clean(rel)
-	escapes := clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator))
-	if filepath.IsAbs(clean) || escapes {
-		return "", fmt.Errorf("descriptor %q must be a relative path inside the repo", rel)
-	}
-	target := filepath.Join(dir, clean)
-	if err := insideRepo(dir, target); err != nil {
-		return "", fmt.Errorf("descriptor %s: %w", rel, err)
-	}
 	// The path handed back is the lexical one under the repo, not the
 	// resolved one, so Component.File reads like Repo.Path does.
-	return target, nil
-}
-
-// insideRepo resolves target's symlinks and errors when the real path lands
-// outside the real root. The root is resolved too, since a checkout can
-// itself sit behind a symlink (macOS keeps /var behind /private/var, say).
-func insideRepo(root, target string) error {
-	realRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return err
-	}
-	realTarget, err := filepath.EvalSymlinks(target)
-	if err != nil {
-		return err
-	}
-	sep := string(filepath.Separator)
-	if realTarget != realRoot && !strings.HasPrefix(realTarget, realRoot+sep) {
-		return fmt.Errorf("resolves to %s, outside the repo", realTarget)
-	}
-	return nil
+	return repopath.Resolve(dir, "descriptor", rel)
 }
 
 // Parse returns the first Component entity in data, which may hold several
