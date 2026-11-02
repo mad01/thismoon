@@ -1,7 +1,8 @@
 #!/bin/sh
 # Sourced (not run) by the launchers that hand a process its provider
-# credentials: csl/csl-env.sh, humanizer/humanizer-mcp-sandbox.sh and
-# speak/speak-provider-env.sh. It defines one function and runs nothing.
+# credentials: csl/csl-env.sh, humanizer/humanizer-mcp-sandbox.sh,
+# present/present-shared-env.sh and speak/speak-provider-env.sh. It defines
+# one function and runs nothing.
 #
 #   export_provider_env NAME...
 #
