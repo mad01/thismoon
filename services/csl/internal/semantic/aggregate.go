@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/mad01/thismoon/services/csl/internal/repo/repopath"
 )
 
 // Index is an aggregate, read-only view over every per-repo vector Store under
@@ -88,11 +90,18 @@ func (ix *Index) Stores() int {
 // [StartLine-padLines .. EndLine+padLines] (1-based, inclusive, clamped to the
 // file's bounds). This is the parent-child retrieval step: a chunk hit is
 // widened back to readable context. Best-effort; errors are wrapped with %w.
+//
+// The path goes through repopath.Resolve before the open. The walker indexes
+// regular files only, but the index can be stale: a file swapped for a symlink
+// out of the repo after indexing must not be followed.
 func ExpandHit(h Hit, padLines int) (string, error) {
 	if padLines < 0 {
 		padLines = 0
 	}
-	path := filepath.Join(h.RepoPath, h.Path)
+	path, err := repopath.Resolve(h.RepoPath, "path", h.Path)
+	if err != nil {
+		return "", err
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("open source %s: %w", path, err)

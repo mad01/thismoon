@@ -257,6 +257,8 @@ csl read --repo <name> [flags] <path>
 
 Resolves `--repo` against every configured repo using substring match (not regex). The file path is relative to the repo root. Lines are 1-based; `--start-line 0` or `--end-line 0` means open-ended.
 
+`<path>` must stay inside the repo: an absolute path, a `..` escape, or a symlink that resolves outside the checkout is refused.
+
 ### Flags
 
 | Flag | Required | Default | Description |

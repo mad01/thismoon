@@ -1,6 +1,8 @@
 package catalogspec
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -213,17 +215,48 @@ func TestRead(t *testing.T) {
 		}
 	})
 
-	t.Run("pointer through a symlink out of the repo is refused", func(t *testing.T) {
-		outside := t.TempDir()
-		writeFile(t, filepath.Join(outside, "secret.yaml"), component("leaked"))
+	t.Run("missing pointer target fails as not found", func(t *testing.T) {
+		// repopath.Resolve passes a missing path through, so the refusal comes
+		// from the read in Read; it must still name the target and wrap
+		// not-found.
 		dir := t.TempDir()
-		if err := os.Symlink(outside, filepath.Join(dir, "vendor")); err != nil {
-			t.Fatal(err)
-		}
-		writeFile(t, filepath.Join(dir, PointerFile), "descriptor: vendor/secret.yaml\n")
+		writeFile(t, filepath.Join(dir, PointerFile), "descriptor: nope/catalog-info.yaml\n")
 		_, _, err := Read(dir)
-		if err == nil || !strings.Contains(err.Error(), "outside the repo") {
-			t.Fatalf("Read() error = %v, want a refusal naming the escape", err)
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("Read() error = %v, want not-exist", err)
+		}
+		if !strings.Contains(err.Error(), "nope/catalog-info.yaml") {
+			t.Errorf("error %q does not name the missing target", err)
+		}
+	})
+
+	t.Run("pointer through a symlink out of the repo is refused", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			link       string // link name inside the repo
+			target     string // link target, relative to the outside dir
+			descriptor string
+		}{
+			{"link to a dir outside", "vendor", ".", "vendor/secret.yaml"},
+			{"link to a file outside", "leak.yaml", "secret.yaml", "leak.yaml"},
+			{"missing file under a link outside", "vendor", ".", "vendor/nope.yaml"},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				outside := t.TempDir()
+				writeFile(t, filepath.Join(outside, "secret.yaml"), component("leaked"))
+				dir := t.TempDir()
+				target := filepath.Join(outside, tc.target)
+				if err := os.Symlink(target, filepath.Join(dir, tc.link)); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, filepath.Join(dir, PointerFile), "descriptor: "+tc.descriptor+"\n")
+				c, _, err := Read(dir)
+				if err == nil ||
+					!strings.Contains(err.Error(), "descriptor must stay inside the repo") {
+					t.Fatalf("Read() = %+v, %v; want a refusal naming the escape", c, err)
+				}
+			})
 		}
 	})
 
