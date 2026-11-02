@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.32.1](https://github.com/mad01/thismoon/compare/csl/v0.32.0...csl/v0.32.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **csl:** re-oracle the belt-sweep-readsize-cross ask case ([#370](https://github.com/mad01/thismoon/issues/370)) ([8af920d](https://github.com/mad01/thismoon/commit/8af920de0bed0934cdc99bdc4942b893d64442f2))
+* **csl:** route catalogspec and semantic file opens through repopath.Resolve ([#374](https://github.com/mad01/thismoon/issues/374)) ([0285053](https://github.com/mad01/thismoon/commit/0285053354808bd8960df76b161c2f68c4224fe2))
+
 ## [0.32.0](https://github.com/mad01/thismoon/compare/csl/v0.31.0...csl/v0.32.0) (2026-11-01)
 
 
