@@ -4,12 +4,12 @@ title: Edit inside a large Go file with csl_ask denied
 notes: >-
   Budgets are estimates; no run of this case has been measured yet.
   The without-ask arm of no-delegate-edit: same prompt and graders,
-  csl_ask denied.
+  csl_ask and the csl ask CLI denied.
 workspace: worktree:thismoon
 timeout: 600
 max_turns: 20
 permission_mode: acceptEdits
-disallowed_tools: ["Bash(git push:*)", mcp__csl__csl_ask]
+disallowed_tools: ["Bash(git push:*)", mcp__csl__csl_ask, "Bash(csl ask:*)"]
 graders:
   - type: file
     path: services/speak/internal/playback/engine.go
