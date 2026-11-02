@@ -1,13 +1,13 @@
 ---
 id: bulk-ask-large-file-without-ask
-title: Answer from a large file with csl_ask denied
+title: Answer from a large file with csl_ask and the csl ask CLI denied
 notes: >-
   The without-ask arm of bulk-ask-large-file: same prompt and graders,
-  csl_ask denied and its tool_used grader dropped.
+  csl_ask and the csl ask CLI denied and its tool_used grader dropped.
 workspace: repo:thismoon
 timeout: 300
 max_turns: 12
-disallowed_tools: [Edit, Write, NotebookEdit, "Bash(git push:*)", mcp__csl__csl_ask]
+disallowed_tools: [Edit, Write, NotebookEdit, "Bash(git push:*)", mcp__csl__csl_ask, "Bash(csl ask:*)"]
 graders:
   - type: regex
     pattern: '(?i)ErrNotFlowchart|not a flowchart'
