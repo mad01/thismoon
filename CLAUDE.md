@@ -24,7 +24,9 @@ kit/         shared Go packages for cross-tool functionality (one subpackage
              per concern, e.g. kit/repofind for git repo discovery)
 buildinfo/   shared build-metadata package (ldflags targets, /version handler)
 buildinfo.mk Makefile fragment every component includes to inject it
-recipes/     ralph recipes, consumed remotely via [[recipe_sources]]
+recipes/     ralph recipes, consumed remotely via [[recipe_sources]];
+             recipes/lib holds shell helpers the launchers source (no
+             recipe.toml, so ralph never loads it as a recipe)
 mods/        Claude Code mods (in-process plugin modules), one directory per
              mod, listed by the root .claude-plugin/marketplace.json
 skills/      agent skills (Claude + Codex), one directory per skill; each is

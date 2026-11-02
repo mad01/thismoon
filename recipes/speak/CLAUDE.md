@@ -43,10 +43,11 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   `~/code/bin/speak` with its arguments, unsandboxed.
 - **`speak-provider-env.sh`**: sourced by both launchers, never run. It runs
   `speak config env` (the names of the variables the active provider reads;
-  nothing for the local engine), pulls exactly those from
-  `~/.config/ralph/secrets.sh` (legacy `~/.secrets.sh`) in a subshell, and
-  exports them; a variable already set wins. This is the same
-  one-variable-at-a-time pattern as present's `present-shared-env.sh`. Select
+  nothing for the local engine) and hands those names to the shared
+  `recipes/lib/provider-env.sh` helper. The helper pulls exactly those
+  variables from `~/.config/ralph/secrets.sh` (legacy `~/.secrets.sh`) in a
+  subshell and exports them; a variable already set wins. The csl and
+  humanizer launchers pull their variables through the same helper. Select
   the provider with the config file or `SPEAK_PROVIDER`: a `--provider` flag
   after the subcommand is invisible to the query.
 - **`speak-serve-test.sh`**: run by `make test-recipes`, it runs both
