@@ -87,6 +87,14 @@ Every search flag is a regex, including `--repo` and `--file`. A file result pri
 - A search with zero results carries a hint: how the query parsed, how many files each term matches alone, and the term to drop. Read it before retrying. A query refused with a fix means apply the fix, not resend it.
 - Translation: `grep -r foo` is `foo`; `grep --include='*.go' foo` is `foo f:\.go$`; `grep -v test` is `foo -test` or `-f:_test\.go`; `grep -E 'a|b'` is `a|b`; `find . -name '*.yaml' | xargs grep foo` is `foo f:\.ya?ml$`.
 
+Before the first query:
+
+- Start with one distinctive term plus the filter that scopes it (`--repo`, `--file`, `--lang`). Add a second AND term only to cut noise; a third must also sit in the same file and usually returns nothing. Join alternatives as `a|b` instead.
+- Pick the form by the question: a plain term for usages, `sym:Name` for where a thing is defined, `f:<name>$` for a file by name, `csl ask` for what the files say rather than where they are.
+- Every term is a regex, so escape a metacharacter you mean literally: `fmt\.Errorf`, `Greet\(`, `\[\]byte`.
+- A `"quoted phrase"` matches only that exact text; drop the quotes to match the words as separate AND terms.
+- On a miss, the file filter is the most common over-constraint: drop it before loosening the query. Then read the hint, fix the trap it names, and `csl query '<query>'` to see the parse.
+
 ### Fleet questions, worked
 
 - Which repos use a reusable workflow: `csl search 'uses:.*<workflow-file>' --file '\.github/workflows/' --limit 5000 | cut -d/ -f1-2 | sort -u`. The line count is the repo count.
