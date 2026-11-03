@@ -25,3 +25,12 @@ var OperatingDoc string
 //
 //go:embed claude-md.md
 var ClaudeMD string
+
+// ClaudeMDCLI is the CLI-only form of the fragment (claude-md-cli.md) for a
+// machine where csl is on PATH but `csl mcp` is not registered, so every
+// call is a shell command. `csl docs --claude-md --cli` prints it. Its CLI
+// and query-syntax sections are byte for byte those of ClaudeMD, gated by
+// TestClaudeMDCLISharesSections, and it names no csl_* tool at all.
+//
+//go:embed claude-md-cli.md
+var ClaudeMDCLI string

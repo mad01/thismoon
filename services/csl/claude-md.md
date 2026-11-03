@@ -84,7 +84,7 @@ Every search flag is a regex, including `--repo` and `--file`. A file result pri
 - Filters: `repo:<re>` (not `r:`), `f:<re>` (not `file:`; regex, not glob, so `f:\.go$`), `lang:go`, `-term` to exclude, `case:yes`.
 - `sym:Name` matches definitions only (functions, types, methods, classes) and skips call sites. Use it for "where is X defined". Two names: `sym:Foo|Bar`.
 - Exact phrase: `"foo bar"` on one line. Proximity: `foo.*bar`.
-- A `csl_search` with zero results carries a hint: how the query parsed, how many files each term matches alone, and the term to drop. Read it before retrying. A query refused with a fix means apply the fix, not resend it.
+- A search with zero results carries a hint: how the query parsed, how many files each term matches alone, and the term to drop. Read it before retrying. A query refused with a fix means apply the fix, not resend it.
 - Translation: `grep -r foo` is `foo`; `grep --include='*.go' foo` is `foo f:\.go$`; `grep -v test` is `foo -test` or `-f:_test\.go`; `grep -E 'a|b'` is `a|b`; `find . -name '*.yaml' | xargs grep foo` is `foo f:\.ya?ml$`.
 
 ### Fleet questions, worked

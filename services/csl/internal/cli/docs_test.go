@@ -24,6 +24,27 @@ func TestDocsClaudeMDPrintsSnippet(t *testing.T) {
 	}
 }
 
+func TestDocsClaudeMDCLIPrintsCLISnippet(t *testing.T) {
+	t.Cleanup(func() { docsClaudeMDFlag, docsCLIFlag = false, false })
+
+	out, err := runCLI(t, "docs", "--claude-md", "--cli")
+	if err != nil {
+		t.Fatalf("docs --claude-md --cli: %v", err)
+	}
+	if out != "\n"+csl.ClaudeMDCLI {
+		t.Errorf("docs --claude-md --cli printed %d bytes, want a newline plus the CLI snippet (%d bytes)",
+			len(out), len(csl.ClaudeMDCLI)+1)
+	}
+}
+
+func TestDocsCLIWithoutClaudeMDIsRefused(t *testing.T) {
+	t.Cleanup(func() { docsClaudeMDFlag, docsCLIFlag = false, false })
+
+	if _, err := runCLI(t, "docs", "--cli"); err == nil || !strings.Contains(err.Error(), "--claude-md") {
+		t.Errorf("docs --cli: err = %v, want a refusal naming --claude-md", err)
+	}
+}
+
 func TestDocsPrintsOperatingDoc(t *testing.T) {
 	out, err := runCLI(t, "docs")
 	if err != nil {

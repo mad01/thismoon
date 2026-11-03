@@ -18,8 +18,17 @@ import (
 // a turn on --help, so every subcommand and flag they name must exist in the
 // cobra tree. Inline `csl ...` spans in the prose are held to the same rule.
 func TestClaudeMDCLIBlockMatchesCommands(t *testing.T) {
+	for name, md := range map[string]string{"claude-md.md": csl.ClaudeMD, "claude-md-cli.md": csl.ClaudeMDCLI} {
+		t.Run(name, func(t *testing.T) { checkFragmentInvocations(t, name, md) })
+	}
+}
+
+// checkFragmentInvocations runs the cheat-sheet gate over one fragment.
+func checkFragmentInvocations(t *testing.T, name, md string) {
+	t.Helper()
+
 	var invocations []string
-	for _, block := range fencedShellBlocks(t, csl.ClaudeMD) {
+	for _, block := range fencedShellBlocks(t, md) {
 		for line := range strings.SplitSeq(block, "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), "csl ") {
 				invocations = append(invocations, strings.TrimSpace(line))
@@ -32,13 +41,13 @@ func TestClaudeMDCLIBlockMatchesCommands(t *testing.T) {
 			len(invocations),
 		)
 	}
-	for _, span := range inlineCSLSpan.FindAllStringSubmatch(csl.ClaudeMD, -1) {
+	for _, span := range inlineCSLSpan.FindAllStringSubmatch(md, -1) {
 		invocations = append(invocations, span[1])
 	}
 
 	for _, inv := range invocations {
 		if err := checkInvocation(rootCmd, inv); err != nil {
-			t.Errorf("claude-md.md runs %q: %v", inv, err)
+			t.Errorf("%s runs %q: %v", name, inv, err)
 		}
 	}
 }
