@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/mad01/thismoon/compare/opener/v0.3.0...opener/v0.3.1) (2026-11-03)
+
+
+### Documentation
+
+* **opener:** config.md missed the version -o json flag ([ec0243e](https://github.com/mad01/thismoon/commit/ec0243eeed585eba79411bfaefcf60e2e88316a6))
+
 ## [0.3.0](https://github.com/mad01/thismoon/compare/opener/v0.2.0...opener/v0.3.0) (2026-09-12)
 
 

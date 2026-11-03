@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/mad01/thismoon/compare/toss-bin/v1.3.0...toss-bin/v1.3.1) (2026-11-03)
+
+
+### Documentation
+
+* **toss-bin:** say which protected entries block their subtrees ([680e7be](https://github.com/mad01/thismoon/commit/680e7bef8bf0c3092751c1b6d2e891ee251ea5b2))
+
 ## [1.3.0](https://github.com/mad01/thismoon/compare/toss-bin/v1.2.0...toss-bin/v1.3.0) (2026-08-22)
 
 
