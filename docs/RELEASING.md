@@ -33,6 +33,10 @@ hand, release-please owns it.
 Release PRs pile up harmlessly; merge them when you want the release, not
 before.
 
+### How far back release-please looks
+
+On every run release-please walks main backwards from the head, fetching each commit's file list to map it to a component, and stops once it has passed every component's last release tag or reaches `commit-search-depth` (set to 200 in `release-please-config.json`; the tool's default is 500). A component whose last tag is deeper than that gets only the commits inside the window, which is also what happens to it today past 500: nothing is lost unless an unreleased change sits beyond the window. The window exists because the walk is hundreds of GitHub API calls, each of which can time out, and a release run was failing on that alone. If a component you expect to release does not show up in the release PR, check that its last tag is within the window; `commit-batch-size` (default 10 commits per request) is the other knob the tool offers.
+
 ## Artifacts
 
 Each released component gets, on its GitHub Release:
