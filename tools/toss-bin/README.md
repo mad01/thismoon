@@ -65,7 +65,7 @@ toss-bin -r ./old-build
 
 ### Protected paths
 
-When `--safe-mode` is active, the following paths are blocked. Files *inside* a protected directory are still allowed (e.g. `~/Documents/myfile.txt` passes).
+When `--safe-mode` is active, the following paths are blocked. Files *inside* an exact-match entry are still allowed (e.g. `~/Documents/myfile.txt` passes); a subtree entry blocks everything beneath it.
 
 System paths (blocked on exact match):
 `/`, `/Library`, `/Applications`, `/Users`, `/Volumes`, `/etc`, `/var`, `/tmp`, `/opt`, `/Developer`
