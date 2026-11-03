@@ -31,7 +31,7 @@ Files land in `~/.Trash/my-trash/<YYYY-MM-DD>/`, so recovery is a Finder trip aw
 
 ### Safe mode
 
-`--safe-mode` runs every path through `PathSafety.validate()` before touching it. The deny-list blocks system roots (`/`, `/System`, `/usr`, ...), macOS metadata paths, and the home directory plus its standard folders (`~/Documents`, `~/Desktop`, ...). Files *inside* a protected directory still pass. `/usr/local` is exempt from the `/usr` tree block for Homebrew. The `rm` shell function always passes `--safe-mode`.
+`--safe-mode` runs every path through `PathSafety.validate()` before touching it. The deny-list blocks system roots (`/`, `/System`, `/usr`, ...), macOS metadata paths, and the home directory plus its standard folders (`~/Documents`, `~/Desktop`, ...). Files *inside* an exact-match entry still pass; a subtree entry blocks everything beneath it. `/usr/local` is exempt from the `/usr` tree block for Homebrew. The `rm` shell function always passes `--safe-mode`.
 
 `~/.config/toss-bin/config.yaml` (override with `$TOSS_BIN_CONFIG`) can add machine-local protected paths on top of the built-ins — see Configuration. Extend-only by construction: `PathSafety.ExtraProtections` is additive and nothing in the config can unblock a built-in entry.
 

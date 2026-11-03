@@ -13,7 +13,7 @@ Services owns everything after that.
 ```
 cmd/opener/          entrypoint
 internal/cli/        cobra command tree, including the mcp subcommand
-internal/sysopen/    open core: Opener.URL / File / App / With / Reveal
+internal/sysopen/    open core: Opener.URL / URLs / File / App / With / Reveal
                      over exec of /usr/bin/open, plus path and URL
                      validation (resolvePath, scheme check)
 internal/mcpserver/  MCP wiring (server.go, tools.go)

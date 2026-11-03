@@ -13,8 +13,9 @@ checks and no on-disk settings to override.
 
 Each subcommand (`copy`, `paste`, `mcp`, `version`, `docs`) takes only
 positional arguments or stdin, documented in the
-[README](README.md#usage) and [CLAUDE.md](CLAUDE.md#commands). None of them
-expose a flag of their own.
+[README](README.md#usage) and [CLAUDE.md](CLAUDE.md#commands). The one
+subcommand flag is `version -o json`, which prints the build metadata
+object instead of the bare version token.
 
 ## Environment variables
 
