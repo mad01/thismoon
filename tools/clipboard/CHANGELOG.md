@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/mad01/thismoon/compare/clipboard/v0.2.0...clipboard/v0.2.1) (2026-11-03)
+
+
+### Documentation
+
+* **clipboard:** config.md missed the version -o json flag ([c6c624b](https://github.com/mad01/thismoon/commit/c6c624bff5337302157234e65134e07e287a5bd0))
+
 ## [0.2.0](https://github.com/mad01/thismoon/compare/clipboard/v0.1.0...clipboard/v0.2.0) (2026-09-12)
 
 

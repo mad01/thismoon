@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/mad01/thismoon/compare/suspenders/v0.11.1...suspenders/v0.11.2) (2026-11-03)
+
+
+### Documentation
+
+* **suspenders:** README rule count is 85 after the OpenRouter rule ([eb11e87](https://github.com/mad01/thismoon/commit/eb11e87d651117fabb8bf843dc8c91673c2210cd))
+
 ## [0.11.1](https://github.com/mad01/thismoon/compare/suspenders/v0.11.0...suspenders/v0.11.1) (2026-09-23)
 
 
