@@ -87,7 +87,7 @@ and disabling".
 
 ## Features
 
-- 84 built-in detection rules covering AWS, GitHub, GitLab, Google, Slack, Stripe, OpenAI, Anthropic, HuggingFace, and dozens more
+- 85 built-in detection rules covering AWS, GitHub, GitLab, Google, Slack, Stripe, OpenAI, Anthropic, HuggingFace, and dozens more
 - 7 filename rules that flag sensitive files (`id_rsa`, `*.p12`, `.env`, `*.tfstate`, ...) even when the content is binary
 - Shannon-entropy gating on generic rules, plus a standalone high-entropy string detector
 - Staged scans read content from the git index, so the scan sees exactly what would be committed
