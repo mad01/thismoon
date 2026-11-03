@@ -5,6 +5,7 @@
   "include-v-in-tag": true,
   "tag-separator": "/",
   "initial-version": "0.1.0",
+  "commit-search-depth": 200,
   "packages": {
     "services/csl": { "component": "csl" },
     "services/d-man": { "component": "d-man" },
