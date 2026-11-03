@@ -230,6 +230,9 @@ csl docs --claude-md >> ~/.claude/CLAUDE.md
 The file is [`claude-md.md`](../claude-md.md) if you would rather import it
 into a project `CLAUDE.md`; a machine set up with the ralph recipe has it
 linked at `~/.claude/CLAUDE.csl.md` for an `@~/.claude/CLAUDE.csl.md` import.
+On a machine that has csl on PATH but no MCP server registered, append the
+CLI-only form instead, `csl docs --claude-md --cli`: every call is a shell
+command and no tool is named.
 Registering the server only makes the tools available. The fragment is what
 stops Claude from reaching for `grep` and `find` first, and it keeps the
 agent on lexical search unless you enable semantic search in step 9.

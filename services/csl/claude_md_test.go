@@ -73,6 +73,46 @@ func TestClaudeMDNamesEveryTool(t *testing.T) {
 	}
 }
 
+// TestClaudeMDCLINamesNoTool: the CLI-only fragment is for a machine where
+// csl mcp is not registered, so a csl_* name in it would send the agent to
+// a tool it does not have.
+func TestClaudeMDCLINamesNoTool(t *testing.T) {
+	if names := regexp.MustCompile(`csl_[a-z][a-z_]*`).FindAllString(csl.ClaudeMDCLI, -1); len(names) > 0 {
+		t.Errorf("claude-md-cli.md names MCP tools: %v", names)
+	}
+}
+
+// TestClaudeMDCLISharesSections is the two-fragments-can't-drift gate: the
+// CLI cheat sheet and the query-syntax rules are written once, in
+// claude-md.md, and claude-md-cli.md carries those two sections byte for
+// byte. The routing prose around them differs on purpose.
+func TestClaudeMDCLISharesSections(t *testing.T) {
+	for _, name := range []string{"### CLI", "### Query syntax"} {
+		want := sectionOf(t, csl.ClaudeMD, name)
+		if !strings.Contains(csl.ClaudeMDCLI, want) {
+			t.Errorf("the %q section of claude-md-cli.md differs from claude-md.md; edit claude-md.md and copy it", name)
+		}
+	}
+}
+
+// sectionOf returns the section of md that starts at heading and runs to
+// the next heading of the same level, trailing whitespace trimmed.
+func sectionOf(t *testing.T, md, heading string) string {
+	t.Helper()
+
+	_, body, found := strings.Cut(md, heading)
+	if !found {
+		t.Fatalf("claude-md.md has no %q section", heading)
+	}
+	level := heading[:strings.Index(heading, " ")+1]
+	section, _, _ := strings.Cut(body, "\n"+level)
+	section = heading + strings.TrimRight(section, " \t\n")
+	if strings.Count(section, "\n") < 3 {
+		t.Fatalf("the %q section is too short to gate: %q", heading, section)
+	}
+	return section
+}
+
 // registeredToolNames asks a live MCP server for its tools over an in-memory
 // transport, so the expected list is the registration itself rather than a
 // second hand-typed copy of it.

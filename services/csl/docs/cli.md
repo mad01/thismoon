@@ -21,7 +21,7 @@ Every command that reads repos loads the config file — `--config`, else `$CSL_
 | [`csl config`](#csl-config) | Show which config file is read and the settings in effect |
 | [`csl query`](#csl-query) | Validate a zoekt query without running it |
 | [`csl mcp`](#csl-mcp) | Start the MCP stdio server (for Claude Code) |
-| [`csl docs`](#csl-docs) | Print the operating doc, or the CLAUDE.md section with `--claude-md` |
+| [`csl docs`](#csl-docs) | Print the operating doc, or the CLAUDE.md section with `--claude-md` (`--cli` for the CLI-only form) |
 | [`csl shell-init`](#csl-shell-init) | Print the `repo` and `repo-sync` shell functions for `eval` |
 | [`csl version`](#csl-version) | Print the build version |
 
@@ -745,17 +745,21 @@ Print the operating doc embedded in the binary, or the CLAUDE.md section.
 csl docs
 csl docs --claude-md
 csl docs --claude-md >> ~/.claude/CLAUDE.md
+csl docs --claude-md --cli
 ```
 
 ### Description
 
 Without flags, prints `operating.md` rendered with the paths this install resolves (state directory, daemon log, web base URL): how csl runs, where state lives, failure modes, and first moves. With `--claude-md`, prints the csl rules fragment (`claude-md.md`, the file the csl recipe links to `~/.claude/CLAUDE.csl.md`). It tells Claude Code to use csl before any filesystem walk, and to pick the MCP tools for answers that fit one call and the CLI for fleet-wide searches. It also covers the repo health flow, the CLI commands, and the zoekt query rules. Tests check that it names every tool `csl mcp` registers, that every command and flag in its CLI block exists, and that the README excerpt under "Add this to your CLAUDE.md" is a verbatim part of it.
 
+With `--claude-md --cli`, prints the CLI-only fragment (`claude-md-cli.md`) for a machine where csl is on PATH but `csl mcp` is not registered: the same rules, repo discovery flow, query syntax and worked fleet questions, with every call as a shell command and no MCP tool named. Its CLI and query-syntax sections are byte for byte those of the full fragment, and a test keeps them that way. `--cli` without `--claude-md` is an error.
+
 ### Flags
 
 | Flag | Default | Description |
 |---|---|---|
 | `--claude-md` | `false` | Print the csl rules fragment instead of the operating doc |
+| `--cli` | `false` | With `--claude-md`: print the CLI-only fragment, for a machine without the csl MCP server |
 
 ---
 

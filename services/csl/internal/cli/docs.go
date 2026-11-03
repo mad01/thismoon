@@ -9,8 +9,12 @@ import (
 	"github.com/mad01/thismoon/services/csl"
 )
 
-// docsClaudeMDFlag holds --claude-md on the `docs` command.
-var docsClaudeMDFlag bool
+// docsClaudeMDFlag and docsCLIFlag hold --claude-md and --cli on the
+// `docs` command.
+var (
+	docsClaudeMDFlag bool
+	docsCLIFlag      bool
+)
 
 func init() {
 	rootCmd.AddCommand(docsCommand())
@@ -25,6 +29,8 @@ func docsCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&docsClaudeMDFlag, "claude-md", false,
 		"print the CLAUDE.md fragment that tells an agent when to use csl, as MCP tools or CLI")
+	cmd.Flags().BoolVar(&docsCLIFlag, "cli", false,
+		"with --claude-md: the CLI-only fragment, for a machine without the csl MCP server")
 
 	cmd.Long += `
 
@@ -35,15 +41,26 @@ Append it to ~/.claude/CLAUDE.md or a project CLAUDE.md:
   csl docs --claude-md >> ~/.claude/CLAUDE.md
 
 The csl ralph recipe links the same file to ~/.claude/CLAUDE.csl.md, which a
-CLAUDE.md can import with the line @~/.claude/CLAUDE.csl.md.`
+CLAUDE.md can import with the line @~/.claude/CLAUDE.csl.md.
+
+With --claude-md --cli, print the CLI-only fragment instead, for a machine
+where csl is on PATH but 'csl mcp' is not registered: the same rules, query
+syntax and worked fleet questions, with every call as a shell command and no
+MCP tool named.`
 
 	operatingDoc := cmd.RunE
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if docsClaudeMDFlag {
+		switch {
+		case docsClaudeMDFlag && docsCLIFlag:
+			fmt.Fprint(cmd.OutOrStdout(), "\n"+csl.ClaudeMDCLI)
+			return nil
+		case docsClaudeMDFlag:
 			// The leading newline keeps the `>>` append from gluing the
 			// heading onto a file whose last line has no trailing newline.
 			fmt.Fprint(cmd.OutOrStdout(), "\n"+csl.ClaudeMD)
 			return nil
+		case docsCLIFlag:
+			return fmt.Errorf("--cli needs --claude-md: the operating doc has no CLI-only form")
 		}
 		return operatingDoc(cmd, args)
 	}
