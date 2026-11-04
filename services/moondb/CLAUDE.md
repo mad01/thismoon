@@ -926,7 +926,10 @@ cuts that order, so a session that worked today is on the first page
 however long ago it started; the page groups the rows by `days`, not by
 this order. `window` adds up every session the filters keep, past the limit,
 whole: sessions, active time, turns, edits, distinct files, tokens and cost, with
-`cost_main`, `cost_agents` and `repo_costs`. `repos` ignores the `repo`
+`cost_main`, `cost_agents` and `repo_costs`. Its `models` splits the tokens
+and cost by model, most tokens first: each entry has `model`, `tokens`,
+`cost` and `unpriced`, and adds the model's fast-mode, US-only and
+long-prompt buckets together. `repos` ignores the `repo`
 filter, so a page can offer every repo of the time window. A repository
 there counts each session that has it in `repos` or `cwd_repos`, once
 even when both hold. Every repository `repo_costs` names is one of those
@@ -1011,9 +1014,9 @@ return, so keep it stable.
   Its hover title names the entrypoint. Each tag gets a badge too. Then
   come the day's turn, edit, file and agent counts and its cost, the main
   conversation's and its subagents'. A window switch and the chips sit
-  above a strip that adds the window up, active time included, with the
-  subagents' part of the cost beside the total. A cost's hover title
-  splits it. Each repo chip (`repo`) counts the sessions its filter lists,
+  above a strip that adds the window up, active time and tokens included,
+  with the subagents' part of the cost beside the total. The tokens'
+  hover title splits them by kind, and a cost's splits it. Each repo chip (`repo`) counts the sessions its filter lists,
   the ones that edited its repo, worked in it or sent it cost, and shows
   the cost they attribute to it. After them, dashed chips (`dirs`) group
   the sessions that count toward no repo by the directory they started
@@ -1023,9 +1026,15 @@ return, so keep it stable.
   orchestration and "no repo (cwd)", the page's name for `no_repo`. A
   row's "no repo" text stays apart: that session counts toward no repo.
   A label under it gives each part's amount, and a hover title its share
-  and the attribution rule. Filtered to a repo, the cost column turns into
+  and the attribution rule. A second bar under it stacks the window's
+  tokens by model (`models`), most first. The first four models take the
+  series hues and any later ones the neutral. Each label gives the model's
+  tokens and cost, and its hover title the share and the tokens by kind.
+  A day's heading row adds up its rows: sessions, tokens and cost.
+  Filtered to a repo, the cost column turns into
   "Attributed": the part each session day gives that repo, with the
-  session total in the hover title. The day rows then add those parts.
+  session total in the hover title. The day rows then add those parts,
+  and the heading leaves the tokens out, since they have no such split.
   `Show more` grows `limit`. The filters stay in the URL.
 - `/?session=<id>`: the title, a badge for every repo (the edited ones
   solid, then the `cwd_repos` hollow), the entrypoint and tag badges,

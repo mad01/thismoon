@@ -849,3 +849,58 @@ func TestUntotalledAgentCountsItsRepo(t *testing.T) {
 			chip.Cost, chip.Unpriced)
 	}
 }
+
+// TestWindowModels: the window splits its tokens and cost by model, and
+// the parts add up to the window's own.
+func TestWindowModels(t *testing.T) {
+	h := newHarness(t)
+	w := h.sessionList(t, "").Window
+	if len(w.Models) != 1 {
+		t.Fatalf("models = %+v, want the fixture's one", w.Models)
+	}
+	m := w.Models[0]
+	if m.Model != "claude-opus-5-5" || m.Tokens != w.Tokens || m.Cost == nil || w.Cost == nil ||
+		!near(*m.Cost, *w.Cost) {
+		t.Errorf("model %+v, want claude-opus-5-5 with the window's tokens %+v and cost %v",
+			m, w.Tokens, w.Cost)
+	}
+	if got := h.sessionList(t, "?since=45m").Window.Models; got == nil || len(got) != 0 {
+		t.Errorf("models with no tokens in the window = %#v, want an empty list", got)
+	}
+}
+
+// TestModelTotals: a model's rate buckets add up to one entry priced as
+// a whole, a model no price covers keeps its tokens and no cost, a model
+// without tokens is left out, and the most tokens come first.
+func TestModelTotals(t *testing.T) {
+	st := servertest.NewStore()
+	q := servertest.NewQuerier(st)
+	s := New(st, q, testInfo)
+	opus := []store.ModelUsage{
+		{Model: "claude-opus-5-5", Tokens: store.Tokens{Input: 100, Output: 50}},
+		{Model: "claude-opus-5-5", Speed: "fast", Tokens: store.Tokens{CacheRead: 1000}},
+	}
+	usage := append(slices.Clone(opus),
+		store.ModelUsage{Model: "claude-haiku-5-5", Tokens: store.Tokens{Input: 10}},
+		store.ModelUsage{Model: "made-up-model", Tokens: store.Tokens{Output: 400}},
+		store.ModelUsage{Model: "claude-sonnet-5-5"},
+	)
+	got := s.modelTotals(usage)
+	names := make([]string, 0, len(got))
+	for _, m := range got {
+		names = append(names, m.Model)
+	}
+	want := []string{"claude-opus-5-5", "made-up-model", "claude-haiku-5-5"}
+	if !slices.Equal(names, want) {
+		t.Fatalf("models = %v, want %v", names, want)
+	}
+	wantCost, _ := q.UsageCost(opus)
+	if got[0].Tokens.Total() != 1150 || got[0].Cost == nil || wantCost == nil ||
+		!near(*got[0].Cost, *wantCost) {
+		t.Errorf("opus = %+v, want 1150 tokens priced as both buckets (%v)", got[0], wantCost)
+	}
+	if got[1].Cost != nil || !slices.Equal(got[1].Unpriced, []string{"made-up-model"}) ||
+		got[1].Tokens.Output != 400 {
+		t.Errorf("unknown model = %+v, want its tokens, no cost, and itself unpriced", got[1])
+	}
+}
