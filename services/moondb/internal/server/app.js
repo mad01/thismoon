@@ -745,12 +745,52 @@
       figure(w.files, 'file'),
       el('span', { class: 'ls-fig', title: 'Time inside the sessions\' turns, less waiting for input and idle time' },
         [el('b', {}, fmtSpan(w.active_ms || 0)), 'active']),
+      el('span', { class: 'ls-fig', title: 'Billed tokens: ' + tokenKinds(w.tokens) },
+        [el('b', {}, fmtTokens(tokenTotal(w.tokens))), 'tokens']),
       el('span', { class: 'ls-fig', title: costTitle(w) }, [el('b', {}, money(w.cost, w.unpriced)), 'cost']),
       w.cost_agents != null ? el('span', { class: 'ls-fig ls-sub', title: costTitle(w) },
         [el('b', {}, money(w.cost_agents)), 'of it by subagents']) : null,
       el('span', { class: 'ls-scope' }, scope),
-      repoCostBar(w.repo_costs || [])
+      repoCostBar(w.repo_costs || []),
+      modelBar(w.models || [])
     ];
+  }
+
+  // modelBar is the window's tokens as one bar stacked by model, most
+  // tokens first, with each model's tokens and cost below it. A segment
+  // grows by its share of the tokens. The models take the series hues in
+  // that order, and any past the last hue the neutral, so no two models
+  // share a series hue.
+  function modelBar(models) {
+    var total = models.reduce(function (sum, m) { return sum + tokenTotal(m.tokens); }, 0);
+    if (!total) return null;
+    var bar = el('div', { class: 'ls-bar', role: 'img', 'aria-label': 'Tokens by model' });
+    var labels = models.map(function (m, i) {
+      var hue = '--hue:var(' + (i < REPO_HUES.length ? REPO_HUES[i] : '--text-3') + ')';
+      var title = modelTitle(m, total);
+      bar.appendChild(el('span', {
+        class: 'ls-seg', title: title, style: hue + ';flex-grow:' + (tokenTotal(m.tokens) / total * 100)
+      }));
+      return el('span', { class: 'ls-split-label', title: title }, [
+        el('span', { class: 'ls-swatch', style: hue }),
+        el('span', {}, m.model),
+        el('b', {}, fmtTokens(tokenTotal(m.tokens))),
+        el('span', { class: 'ls-n' }, m.cost == null ? 'not priced' : money(m.cost, m.unpriced))
+      ]);
+    });
+    return el('div', { class: 'ls-split' }, [bar, el('div', { class: 'ls-split-labels' }, labels)]);
+  }
+
+  // modelTitle says what one model's part holds: its tokens and their
+  // share, the tokens by kind, its cost and any rate no price covers.
+  function modelTitle(m, total) {
+    var tokens = tokenTotal(m.tokens);
+    return [
+      m.model + ': ' + fmtTokens(tokens) + ' tokens (' + Math.round(tokens / total * 100) + '%)',
+      tokenKinds(m.tokens),
+      m.cost == null ? 'not priced' : fmtCost(m.cost) + ' at list prices',
+      unpricedText(m)
+    ].filter(Boolean).join('\n');
   }
 
   // repoCostBar is the window's cost as one bar stacked by repo, then
@@ -894,18 +934,21 @@
     return new Date(+p[0], +p[1] - 1, +p[2]);
   }
 
-  // dayRow heads one day: its session count and the sum of the cost its
-  // rows show, with the plus they show when any of them leaves a model
-  // unpriced. Each row's cost is its day's slice, so a session active on
-  // several days adds each day's own cost to that day. Filtered to a repo,
-  // that is the cost attributed to it and the models its attributed parts
-  // leave unpriced. It adds up the sessions on this page, so a page that
-  // cuts a day short sums only the part of the day it holds.
+  // dayRow heads one day: its session count, the tokens its rows used and
+  // the sum of the cost they show, with the plus they show when any of
+  // them leaves a model unpriced. Each row's tokens and cost are its day's
+  // slice, so a session active on several days adds each day's own to that
+  // day. Filtered to a repo, the cost is the part attributed to it and the
+  // models its attributed parts leave unpriced, and the tokens are left
+  // out: they have no such split. It adds up the sessions on this page,
+  // so a page that cuts a day short sums only the part of the day it holds.
   function dayRow(day, now, state) {
     var cost = 0;
     var priced = false;
     var unpriced = [];
+    var tokens = 0;
     day.rows.forEach(function (r) {
+      tokens += tokenTotal(r.d.tokens);
       var shown = state.repo ? r.d.repo_cost : r.d.cost;
       if (shown != null) {
         cost += shown;
@@ -921,7 +964,9 @@
       el('span', { class: 'ls-day-name' }, name || date),
       name ? el('span', { class: 'ls-day-date' }, date) : null,
       el('span', { class: 'ls-day-sum' },
-        plural(day.rows.length, 'session') + (priced ? ' · ' + money(cost, unpriced) : ''))
+        plural(day.rows.length, 'session') +
+        (!state.repo && tokens ? ' · ' + fmtTokens(tokens) + ' tokens' : '') +
+        (priced ? ' · ' + money(cost, unpriced) : ''))
     ])));
   }
 
@@ -1554,7 +1599,8 @@
   function fmtTokens(n) {
     if (n < 1000) return String(n);
     if (n < 1e6) return (n / 1000).toFixed(1) + 'k';
-    return (n / 1e6).toFixed(1) + 'M';
+    if (n < 1e9) return (n / 1e6).toFixed(1) + 'M';
+    return (n / 1e9).toFixed(2) + 'B';
   }
 
   // fmtCost renders USD with the precision its size needs; a cost no price
@@ -1565,6 +1611,15 @@
     if (usd < 0.01) return '$' + usd.toFixed(4);
     if (usd < 1) return '$' + usd.toFixed(3);
     return '$' + usd.toFixed(2);
+  }
+
+  // tokenKinds splits a token count by kind, the cache writes of both
+  // lifetimes together.
+  function tokenKinds(t) {
+    var k = t || {};
+    return 'input ' + fmtTokens(k.input || 0) +
+      ', cache write ' + fmtTokens((k.cache_write_5m || 0) + (k.cache_write_1h || 0)) +
+      ', cache read ' + fmtTokens(k.cache_read || 0) + ', output ' + fmtTokens(k.output || 0);
   }
 
   function tokenTotal(t) {
@@ -1797,10 +1852,7 @@
   function spanTitle(s) {
     var parts = [s.name || s.kind, fmtDuration(s.duration_ms)];
     if (s.kind === 'model') {
-      var k = s.tokens || {};
-      parts.push(fmtTokens(tokenTotal(k)) + ' tokens (input ' + fmtTokens(k.input || 0) +
-        ', cache write ' + fmtTokens((k.cache_write_5m || 0) + (k.cache_write_1h || 0)) +
-        ', cache read ' + fmtTokens(k.cache_read || 0) + ', output ' + fmtTokens(k.output || 0) + ')');
+      parts.push(fmtTokens(tokenTotal(s.tokens)) + ' tokens (' + tokenKinds(s.tokens) + ')');
       parts.push(fmtCost(s.cost) + (s.speed ? ' at ' + s.speed + ' speed' : ''));
     }
     if (s.kind === 'tool') {

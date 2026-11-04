@@ -182,6 +182,19 @@ type WindowTotals struct {
 	CostAgents *float64   `json:"cost_agents,omitempty"`
 	Unpriced   []string   `json:"unpriced,omitempty"`
 	RepoCosts  []RepoCost `json:"repo_costs"`
+	// Models splits Tokens and Cost by model, most tokens first.
+	Models []ModelTotal `json:"models"`
+}
+
+// ModelTotal is one model's part of a window: the tokens of its calls at
+// every rate (fast mode, US-only inference and the long-prompt tier
+// together) and their cost. Cost is absent when no price covers the
+// model, and Unpriced names it when a price covers only some of its rates.
+type ModelTotal struct {
+	Model    string       `json:"model"`
+	Tokens   store.Tokens `json:"tokens"`
+	Cost     *float64     `json:"cost,omitempty"`
+	Unpriced []string     `json:"unpriced,omitempty"`
 }
 
 // RepoCount is one repository with how many sessions count toward it
@@ -398,7 +411,30 @@ func (s *Server) window(sessions []store.SessionSummary) WindowTotals {
 		t.CostAgents, _ = s.query.UsageCost(agentUsage)
 	}
 	t.RepoCosts = s.repoCosts(store.MergeRepoUsage(parts...))
+	t.Models = s.modelTotals(merged)
 	return t
+}
+
+// modelTotals splits usage by model, most tokens first, then by name. A
+// model's rate buckets add up to one entry, and a model without tokens
+// gets none.
+func (s *Server) modelTotals(usage []store.ModelUsage) []ModelTotal {
+	byModel := map[string][]store.ModelUsage{}
+	for _, u := range usage {
+		if u.Tokens.Total() > 0 {
+			byModel[u.Model] = append(byModel[u.Model], u)
+		}
+	}
+	out := make([]ModelTotal, 0, len(byModel))
+	for model, parts := range byModel {
+		m := ModelTotal{Model: model, Tokens: tokensOf(parts)}
+		m.Cost, m.Unpriced = s.query.UsageCost(parts)
+		out = append(out, m)
+	}
+	slices.SortFunc(out, func(a, b ModelTotal) int {
+		return cmp.Or(cmp.Compare(b.Tokens.Total(), a.Tokens.Total()), cmp.Compare(a.Model, b.Model))
+	})
+	return out
 }
 
 // repoCounts lists the repositories of the sessions' chipRepos, most
