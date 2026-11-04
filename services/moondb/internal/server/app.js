@@ -622,7 +622,7 @@
           var win = data.window || {};
           controls.replaceChildren(sinceControl(state, set),
             repoChips(data.repos || [], data.dirs || [], state, set));
-          strip.replaceChildren.apply(strip, windowStrip(win, state, data.dirs || []));
+          strip.replaceChildren.apply(strip, windowStrip(win));
           list.replaceChildren.apply(list, sessionDays(sessions, state,
             (win.sessions || 0) > sessions.length ? more : null, data.dirs || []));
         })
@@ -730,11 +730,9 @@
     return hit ? hit.name : repoName(cwd);
   }
 
-  // windowStrip is one line adding up every session the filters keep.
-  function windowStrip(w, state, dirs) {
-    var scope = SINCE_PHRASE[state.since] || 'active since ' + state.since;
-    if (state.repo) scope += ', in ' + repoName(state.repo);
-    if (state.cwd) scope += ', started in ' + cwdLabel(state.cwd, dirs);
+  // windowStrip is one line adding up every session the filters keep. The
+  // window switch and the chips above it already say which ones those are.
+  function windowStrip(w) {
     function figure(n, word) {
       return el('span', { class: 'ls-fig' }, [el('b', {}, fmtCount(n)), plural(n || 0, word).replace(/^\d+ /, '')]);
     }
@@ -750,7 +748,6 @@
       el('span', { class: 'ls-fig', title: costTitle(w) }, [el('b', {}, money(w.cost, w.unpriced)), 'cost']),
       w.cost_agents != null ? el('span', { class: 'ls-fig ls-sub', title: costTitle(w) },
         [el('b', {}, money(w.cost_agents)), 'of it by subagents']) : null,
-      el('span', { class: 'ls-scope' }, scope),
       repoCostBar(w.repo_costs || []),
       modelBar(w.models || [])
     ];
