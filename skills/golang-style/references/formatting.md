@@ -26,6 +26,12 @@ go install mvdan.cc/gofumpt@latest
 
 There is no hard line-length rule in Go itself; `golines -m 100` is this repo's chosen soft limit. Break long expressions by meaning, not by column count.
 
+### golines rewrites backslashes inside raw-string struct tags
+
+`golines` collapses `\\.go$` back to `\.go$` inside a raw-string struct tag on every run, which re-breaks `go vet`'s structtag check and silently truncates a jsonschema description exposed through `reflect.StructTag`. Double-escaping isn't stable: the next format undoes it. Reword the tag text to avoid the backslash ("paths ending in .go" instead of a regex); backslashes in ordinary string literals are untouched.
+
+Related: golangci-lint's default `max-same-issues: 3` hides the true issue count. Verify a clean run with `golangci-lint run --max-same-issues=0 --max-issues-per-linter=0 ./...`.
+
 ## Lint: golangci-lint is house standard
 
 `golangci-lint` (installed at `~/code/bin/golangci-lint`) is the house linter. The `ralph` repo runs it across everything:
