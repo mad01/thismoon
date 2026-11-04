@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/mad01/thismoon/compare/moondb/v0.10.0...moondb/v0.11.0) (2026-11-04)
+
+
+### Features
+
+* **moondb:** show tokens and tokens per model on the sessions page ([#386](https://github.com/mad01/thismoon/issues/386)) ([0ed5ffa](https://github.com/mad01/thismoon/commit/0ed5ffad7c523086e6f4170f12246f8cdfa86bd0))
+
+
+### Bug Fixes
+
+* **moondb:** drop the window label from the sessions totals row ([#388](https://github.com/mad01/thismoon/issues/388)) ([d00ef64](https://github.com/mad01/thismoon/commit/d00ef6441916f2f8e5f00bfe2cbedd4ccdd4b11f))
+
 ## [0.10.0](https://github.com/mad01/thismoon/compare/moondb/v0.9.0...moondb/v0.10.0) (2026-11-02)
 
 
