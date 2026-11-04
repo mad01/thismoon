@@ -432,7 +432,10 @@ func (s *Server) modelTotals(usage []store.ModelUsage) []ModelTotal {
 		out = append(out, m)
 	}
 	slices.SortFunc(out, func(a, b ModelTotal) int {
-		return cmp.Or(cmp.Compare(b.Tokens.Total(), a.Tokens.Total()), cmp.Compare(a.Model, b.Model))
+		return cmp.Or(
+			cmp.Compare(b.Tokens.Total(), a.Tokens.Total()),
+			cmp.Compare(a.Model, b.Model),
+		)
 	})
 	return out
 }

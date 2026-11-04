@@ -890,7 +890,8 @@ func TestModelTotals(t *testing.T) {
 	for _, m := range got {
 		names = append(names, m.Model)
 	}
-	if want := []string{"claude-opus-5-5", "made-up-model", "claude-haiku-5-5"}; !slices.Equal(names, want) {
+	want := []string{"claude-opus-5-5", "made-up-model", "claude-haiku-5-5"}
+	if !slices.Equal(names, want) {
 		t.Fatalf("models = %v, want %v", names, want)
 	}
 	wantCost, _ := q.UsageCost(opus)
