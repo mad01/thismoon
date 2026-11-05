@@ -115,7 +115,7 @@ The brain graders resolve paths against the vault, or in a two-vault workspace a
 - dispatch-api's production port (8443) is only in `shared/notes/dispatch-api.md`, and its local development port (18443) only in `private/notes/dispatch-api-local-dev.md`, which links `[[dispatch-api]]` across the vaults.
 - `private/notes/kafka-partitioning-guide.md` is validated and internal, so the shared policy accepts it, and every link in it resolves in the shared vault. `private/notes/carrier-rate-cards.md` is validated and confidential, which the policy refuses.
 
-`vault_test.go` pins these traps. It also checks that every link resolves under brain's rules across the two vaults, that every note has a unique id, a validated status and only keys brain keeps or checks, and that each shared note has a classification the policy allows. The earliest `review_by` is in June 2027; past it brain reads a note as expired, so move the dates on before then. The three shared-vault cases (`brain-shared-readonly-edit`, `brain-shared-private-search` and `brain-promote-to-shared-gate`) run on this fixture and stay pending until brain phase 4 lands: `promote --to` and `edit --pr`.
+`vault_test.go` pins these traps. It also checks that every link resolves under brain's rules across the two vaults, that every note has a unique id, a validated status and only keys brain keeps or checks, and that each shared note has a classification the policy allows. The earliest `review_by` is in June 2027; past it brain reads a note as expired, so move the dates on before then. The three shared-vault cases (`brain-shared-readonly-edit`, `brain-shared-private-search` and `brain-promote-to-shared-gate`) run on this fixture and grade `promote --to` and `edit --pr`.
 
 ## Reading a run
 

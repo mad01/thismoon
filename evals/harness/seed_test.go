@@ -193,8 +193,8 @@ func TestBrainCasesLoad(t *testing.T) {
 			active++
 		}
 	}
-	if active != 12 || pending != 3 {
-		t.Errorf("brain cases: %d active, %d pending; want 12 and 3", active, pending)
+	if active != 15 || pending != 0 {
+		t.Errorf("brain cases: %d active, %d pending; want 15 and 0", active, pending)
 	}
 }
 

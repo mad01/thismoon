@@ -1,7 +1,6 @@
 ---
 id: brain-promote-to-shared-gate
 title: Share only the private note whose classification allows it
-pending: needs brain phase 4 (promote --to, edit --pr)
 notes: >-
   private/notes/kafka-partitioning-guide.md is validated and internal;
   private/notes/carrier-rate-cards.md is validated and confidential. The

@@ -1,7 +1,6 @@
 ---
 id: brain-shared-readonly-edit
 title: Fix a shared note through a PR instead of editing it in place
-pending: needs brain phase 4 (promote --to, edit --pr)
 notes: >-
   shared/notes/parcel-tracker.md says the HTTP API is on port 7070, and 7071
   is nowhere in the fixture. brain refuses a direct edit of a shared note

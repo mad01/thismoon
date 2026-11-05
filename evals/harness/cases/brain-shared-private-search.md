@@ -1,7 +1,6 @@
 ---
 id: brain-shared-private-search
 title: Answer from a shared and a private note and name each vault
-pending: needs brain phase 4 (promote --to, edit --pr)
 notes: >-
   The production port (8443) is only in shared/notes/dispatch-api.md and the
   local development port (18443) only in
