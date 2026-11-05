@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/mad01/thismoon/services/brain/internal/check"
 )
@@ -179,5 +180,31 @@ func TestNULBytesAreRefusedAndChecked(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("check findings %+v, want a nul-byte error on line 4", report.Findings)
+	}
+}
+
+func TestListAndPeekEscapeControlCharacters(t *testing.T) {
+	root := setupCLI(t, "")
+	note := "---\ntitle: \"red \\e[31m\\ntwo\"\nstatus: disputed\nstatus_reason: \"bad\\rreason\"\n---\nbody \x1b[2J line\n"
+	if err := os.WriteFile(filepath.Join(root, "notes", "ansi.md"), []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"list", "notes"}, {"peek", "notes/ansi.md"}} {
+		got := runBrain(t, "", args...)
+		if got.code != exitOK {
+			t.Fatalf("%v exit = %d; stderr %q", args, got.code, got.stderr)
+		}
+		for _, r := range got.stdout {
+			if r != '\n' && r != '\t' && unicode.IsControl(r) {
+				t.Errorf("%v printed control character %U in %q", args, r, got.stdout)
+				break
+			}
+		}
+		if args[0] == "list" && !strings.Contains(got.stdout, `red \x1b[31m\ntwo`) {
+			t.Errorf("list = %q, want the title with its control characters escaped", got.stdout)
+		}
+		if args[0] == "peek" && !strings.Contains(got.stdout, `body \x1b[2J line`) {
+			t.Errorf("peek = %q, want the body line escaped", got.stdout)
+		}
 	}
 }
