@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -146,7 +145,7 @@ func (v *Vault) MigrateIDs(dryRun bool, now time.Time) (report MigrateReport, er
 		if dryRun {
 			return nil
 		}
-		content, err := addID(data, fm, body)
+		content, err := addID(fm, body)
 		if err != nil {
 			return fmt.Errorf("%s: %w", rel, err)
 		}
@@ -162,40 +161,12 @@ func (v *Vault) MigrateIDs(dryRun bool, now time.Time) (report MigrateReport, er
 	return report, v.commit(subjectOf(VerbMigrate, rels), rels, "")
 }
 
-// addID returns the note data with an id line for fm.ID added as the last
-// frontmatter key, every other byte kept. A note without frontmatter gets a
-// block holding the id alone. When the added line would not parse back to
-// the id (an empty id key already there, say), the note is rendered from fm
-// and body instead.
-func addID(data []byte, fm markdown.Frontmatter, body []byte) ([]byte, error) {
-	out := insertIDLine(data, fm.ID)
-	if got, _, err := markdown.ParseFrontmatter(out); err == nil && got.ID == fm.ID {
-		return out, nil
-	}
+// addID returns the note with an id line for fm.ID added as the last
+// frontmatter key, every other byte kept: Render patches the frontmatter it
+// was parsed from. A note without frontmatter gets a block holding the id
+// alone.
+func addID(fm markdown.Frontmatter, body []byte) ([]byte, error) {
 	return markdown.Render(fm, body)
-}
-
-// insertIDLine adds "id: <id>" before the closing frontmatter fence, or
-// prepends a frontmatter block when data has no terminated one.
-func insertIDLine(data []byte, id string) []byte {
-	eol := "\n"
-	if bytes.HasPrefix(data, []byte("---\r\n")) {
-		eol = "\r\n"
-	}
-	line := []byte("id: " + id + eol)
-	if bytes.HasPrefix(data, []byte("---"+eol)) {
-		for i := len("---" + eol); i < len(data); {
-			end := len(data)
-			if nl := bytes.IndexByte(data[i:], '\n'); nl >= 0 {
-				end = i + nl
-			}
-			if string(bytes.TrimRight(data[i:end], "\r")) == "---" {
-				return slices.Concat(data[:i], line, data[i:])
-			}
-			i = end + 1
-		}
-	}
-	return slices.Concat([]byte("---\n"), line[:len(line)-len(eol)], []byte("\n---\n"), data)
 }
 
 // IDReport counts the note ids across a set and lists the ids more than one

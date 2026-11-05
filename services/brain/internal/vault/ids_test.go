@@ -261,7 +261,7 @@ func TestLocateByID(t *testing.T) {
 	}
 }
 
-func TestInsertIDLine(t *testing.T) {
+func TestAddID(t *testing.T) {
 	tests := []struct {
 		name, in, want string
 	}{
@@ -274,12 +274,26 @@ func TestInsertIDLine(t *testing.T) {
 		},
 		{"fence at end of file", "---\ntitle: A\n---", "---\ntitle: A\nid: X\n---"},
 		{"no frontmatter", "body\n", "---\nid: X\n---\nbody\n"},
-		{"unterminated", "---\ntitle: A\n", "---\nid: X\n---\n---\ntitle: A\n"},
+		{"empty id", "---\nid:\ntitle: A\n---\n", "---\nid: X\ntitle: A\n---\n"},
+		{
+			"byte order mark and loose fences",
+			"\xEF\xBB\xBF--- \ntitle: A\n...\nbody\n",
+			"\xEF\xBB\xBF--- \ntitle: A\nid: X\n...\nbody\n",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := string(insertIDLine([]byte(tc.in), "X")); got != tc.want {
-				t.Errorf("insertIDLine(%q) = %q, want %q", tc.in, got, tc.want)
+			fm, body, err := markdown.ParseFrontmatter([]byte(tc.in))
+			if err != nil {
+				t.Fatal(err)
+			}
+			fm.ID = "X"
+			got, err := addID(fm, body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("addID(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
 	}
