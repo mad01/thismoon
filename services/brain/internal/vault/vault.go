@@ -158,7 +158,7 @@ type WriteOptions struct {
 	Status   string // a lifecycle status; defaults based on tier
 	Source   string // optional URL
 	Evidence string // optional trust tier: A | B | C | D | mixed — empty for non-empirical
-	Filename string // optional; defaults to Slug(Title) + ".md" (YYYY-MM-DD- prefix for outputs)
+	Filename string // optional; defaults to Slug(Title) + ".md", the id when that is empty (YYYY-MM-DD- prefix for outputs)
 	// Verb names the change in its commit: VerbWrite when empty,
 	// VerbCapture for brain capture.
 	Verb string
@@ -222,7 +222,7 @@ func (v *Vault) Draft(opts WriteOptions) (Draft, error) {
 	if err := CheckTitle(fm.Title); err != nil {
 		return Draft{}, err
 	}
-	path, err := v.notePath(opts)
+	path, err := v.notePath(opts, fm.ID)
 	if err != nil {
 		return Draft{}, err
 	}
@@ -306,12 +306,12 @@ func newFrontmatter(opts WriteOptions) (markdown.Frontmatter, error) {
 // notePath is the absolute path a new note gets: its file name under its
 // tier directory. A --filename that names a path, rather than a file in the
 // tier, is ErrInvalidPath.
-func (v *Vault) notePath(opts WriteOptions) (string, error) {
+func (v *Vault) notePath(opts WriteOptions, id string) (string, error) {
 	if err := validFilename(opts.Filename); err != nil {
 		return "", err
 	}
 	dir := v.TierDir(opts.Tier)
-	path := filepath.Join(dir, noteFilename(opts))
+	path := filepath.Join(dir, noteFilename(opts, id))
 	if filepath.Dir(path) != filepath.Clean(dir) {
 		return "", fmt.Errorf("%w: filename %q leaves the %s tier", ErrInvalidPath, opts.Filename, opts.Tier)
 	}
@@ -336,11 +336,12 @@ func validFilename(name string) error {
 }
 
 // noteFilename is the file a new note gets: opts.Filename, else the title's
-// slug, date-prefixed in outputs.
-func noteFilename(opts WriteOptions) string {
+// slug (the note id when the title has no letter or digit), date-prefixed
+// in outputs.
+func noteFilename(opts WriteOptions, id string) string {
 	filename := opts.Filename
 	if filename == "" {
-		slug := Slug(opts.Title)
+		slug := stemFor(opts.Title, id)
 		if opts.Tier == TierOutputs {
 			slug = opts.Now.UTC().Format("2006-01-02") + "-" + slug
 		}
@@ -663,7 +664,10 @@ func (v *Vault) promote(path string, opts PromoteOptions, write noteWriter) (res
 			return PromoteResult{}, err
 		}
 	}
-	newStem := Slug(title)
+	if fm.ID == "" {
+		fm.ID = noteid.New(opts.Now)
+	}
+	newStem := stemFor(title, fm.ID)
 	newPath := filepath.Join(v.TierDir(target), newStem+".md")
 	if err := v.contained(newPath); err != nil {
 		return PromoteResult{}, err
@@ -676,9 +680,6 @@ func (v *Vault) promote(path string, opts PromoteOptions, write noteWriter) (res
 	fm.Status = lifecycle.Validated
 	lifecycle.Transition(&fm, from, opts.Now)
 	fm.Touch(opts.Now)
-	if fm.ID == "" {
-		fm.ID = noteid.New(opts.Now)
-	}
 
 	edits, err := v.promoteEdits(path, linkRetarget{
 		oldTitle: oldTitle,
