@@ -335,7 +335,12 @@ hook calls `prompt_id`; a transcript without one keys the turn by the prompt
 entry's uuid. An edit is `<tool_use_id>:<index>`. Every import envelope is
 marked `backfill`, so importing a session again, or one partly captured live,
 only fills: a stored edit stays, and a session or turn keeps its values and
-gets its empty fields filled, an open turn closed. An earlier imported
+gets its empty fields filled, an open turn closed. A turn's transcript
+chunk is the exception: the import's replaces it when the two hold other
+model calls (`ingest.importedTranscript`). The Stop hook reads the
+transcript as it stands, which can miss the turn's head or hold a call of
+the turn before. The import reads each turn's lines from its prompt to the
+next. An earlier imported
 prompt still moves a start time back. A subagent's edits come from
 `<session>/subagents/agent-<id>.jsonl`, carry its id and type, and belong
 to the main turn its entries name. Each subagent file also gives one

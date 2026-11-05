@@ -111,7 +111,9 @@ Import: `moondb import` reads the session transcripts under
 It uses the hooks' ids and marks every envelope `backfill`, so a re-run or
 an overlap with live capture only fills: a stored edit stays, and a session
 or turn keeps its values and gets its empty fields filled, an open turn
-closed. An earlier imported prompt still moves a start time back. A
+closed. A turn's transcript chunk is the exception: the import's replaces
+it when the two hold other model calls. An earlier imported prompt still
+moves a start time back. A
 transcript has no disk read and no HEAD, so imported edits
 carry neither and the import writes no head-moved envelope. Most imported
 files sat in worktrees deleted since. The import places those by the
