@@ -43,6 +43,15 @@ const (
 	// the budget does not reach are skipped: counted on the turn as
 	// timeout, with no edit.
 	BashBudget = 2 * time.Second
+	// FlushWait is how long the Stop hook waits for the transcript to
+	// hold the turn's final message before it reads the turn's lines.
+	// Claude Code writes the transcript asynchronously, and at Stop the
+	// file usually still lacks the turn's last response, which landed
+	// about 140 ms later when watched; 1 s leaves room for a busy machine.
+	// The hook is async, so no session waits on it; its budget is
+	// RecordBudget plus this wait, and when the wait runs out it records
+	// the lines there are.
+	FlushWait = 1 * time.Second
 	// GitBudget bounds every git call a hook makes.
 	GitBudget = 1 * time.Second
 	// SnapshotBudget is how long the turn-edge hooks (UserPromptSubmit and

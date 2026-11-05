@@ -4,6 +4,20 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-05 moondb: Stop waits for the turn's last lines, and a turn keeps up to 15 MiB
+
+Change: thismoon #TBD. Claude Code writes the transcript asynchronously, so at Stop the file usually still lacked the turn's last response, and `moondb record` stored the turn without it. The Stop hook now waits up to 1 s for the transcript to hold the payload's final message before it reads the turn's lines. A turn's transcript chunk now keeps up to 15 MiB instead of 4 MiB, so a long turn keeps its head. An agent transcript keeps up to 15 MiB instead of 8 MiB.
+
+Run, in order:
+
+1. Merge thismoon #394 first, then this change, then `ralph up`. The hooks run the new `moondb record` from their next call.
+2. With no Claude Code session active, run `moondb import --since 30d --force`. Run it again on a machine that already ran it for #394: that build kept at most 4 MiB of each turn.
+
+Verify:
+
+1. `moondb version -o json` and serve's `/version` report the merged commit.
+2. For a session with a turn over 4 MiB of transcript, `moondb trace <id> --json | jq .totals.model_calls` matches the transcript's main-thread calls, counted with the `jq` line in the #394 entry below.
+
 ## 2026-11-05 moondb: a forced import repairs turns that kept too few model calls
 
 Change: thismoon #394. A prompt typed while a turn runs fires UserPromptSubmit under the running turn's prompt id. `moondb record` moved the turn's transcript offset to that point. The Stop then kept only the lines after the queued prompt, and the trace lost the turn's earlier model calls and their cost. record now keeps the turn's first offset. A forced import now also replaces a turn's transcript chunk when the transcript holds other model calls for that turn. That repairs the turns recorded before this change, and turns whose Stop read the transcript before the harness wrote its last lines.

@@ -151,12 +151,14 @@ forced import above fills.
 
 A session shows fewer model calls, and a lower cost, than its transcript
 holds. Before 2026-11-05 a prompt typed while a turn ran moved the turn's
-start, so its Stop kept only the lines after that prompt. A Stop can also
-read the transcript before the harness writes the turn's last lines, and
-miss its last call. Run `moondb import --since 30d --force` while no session is
+start, so its Stop kept only the lines after that prompt. Older builds also
+read the transcript at Stop before Claude Code wrote the turn's last
+response, and kept at most 4 MiB of a turn's lines. The Stop hook now waits
+up to 1 s for the final message to reach the transcript and keeps up to
+15 MiB. Run `moondb import --since 30d --force` while no session is
 active: it replaces a turn's lines wherever the transcript holds other
-model calls for it. A turn over 15 MiB of transcript still loses its head
-to the cap.
+model calls for it. That also repairs a turn whose last lines took longer
+than the wait.
 
 A repo's cost looks wrong: the page, `moondb sessions --repo` and the
 `moondb_sessions` tool split a session's cost by agent, since model calls

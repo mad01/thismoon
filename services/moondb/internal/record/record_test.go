@@ -92,6 +92,9 @@ type testSession struct {
 	transcript string
 	excludes   []string
 	budget     time.Duration
+	// flushWait is how long a Stop waits for its final message; short, so
+	// a test whose transcript never holds it does not wait long.
+	flushWait time.Duration
 	// env is the environment Run reads, so a test never sees the one it
 	// runs in; empty unless a test sets it.
 	env map[string]string
@@ -110,6 +113,7 @@ func newSession(tb testing.TB, cwd string) *testSession {
 		cwd:        cwd,
 		transcript: filepath.Join(root, "transcript.jsonl"),
 		budget:     10 * time.Second,
+		flushWait:  20 * time.Millisecond,
 	}
 }
 
@@ -137,6 +141,7 @@ func (s *testSession) runRaw(body string) error {
 		Excludes:   s.excludes,
 		Budget:     s.budget,
 		BashBudget: s.budget,
+		FlushWait:  s.flushWait,
 		Logf: func(format string, args ...any) {
 			s.logs = append(s.logs, fmt.Sprintf(format, args...))
 		},

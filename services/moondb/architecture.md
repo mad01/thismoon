@@ -82,9 +82,10 @@ patch and no tool input, and one per other changed path without hunks. One
 reports clean gets no envelope: a pull or checkout put it back to its
 committed state. A skipped envelope counts those, the files the 2 s Bash
 budget did not reach, and the ones whose status git could not give, for
-the turn. On
-Stop it spools a turn-close envelope with the
-final message and the transcript tail. For each touched worktree whose HEAD
+the turn. On Stop it spools a turn-close envelope with the final message
+and the transcript tail. Claude Code writes the transcript asynchronously,
+so the hook first waits up to 1 s for the tail to hold the final message.
+For each touched worktree whose HEAD
 moved since the hook last looked, it adds a head-moved envelope listing the
 new commits' (path, blob id) pairs. On SubagentStop it reads the agent's
 own transcript file and spools an agent-close envelope: the agent's type,
