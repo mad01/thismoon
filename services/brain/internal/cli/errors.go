@@ -26,6 +26,7 @@ const (
 	exitReadOnly     = 6
 	exitConflict     = 7
 	exitSecretFound  = 8
+	exitDuplicate    = 9
 )
 
 // usageError marks a bad flag or argument (exit code 2).
@@ -82,6 +83,8 @@ func classify(err error) (int, string) {
 		return exitConflict, "conflict"
 	case errors.Is(err, vault.ErrSecretFound):
 		return exitSecretFound, "secret_found"
+	case errors.Is(err, vault.ErrPossibleDuplicate):
+		return exitDuplicate, "possible_duplicate"
 	}
 	return exitError, "error"
 }

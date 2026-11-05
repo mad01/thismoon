@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -18,6 +19,7 @@ func newWriteCmd(a *app) *cobra.Command {
 		body     string
 		bodyFile string
 		fields   fieldFlags
+		distinct []string
 	)
 	c := &cobra.Command{
 		Use:   "write",
@@ -32,7 +34,14 @@ frontmatter key (the value is YAML, so --set 'sources=[{url: https://x}]'
 stores a list); --set and --unset apply after the tier defaults. The note
 goes to the default vault, or the one --vault names; a shared vault refuses
 it with exit code 6. Fails with exit code 4 when the note already exists.
-With -o json, prints {"vault": ..., "path": ...}.`,
+
+Before writing, brain looks for a note the new one likely duplicates, in the
+target vault and in every shared vault: the same title or alias once case
+and punctuation are ignored, or, when a semantic index exists, content at
+least 0.92 alike. A hit refuses the write with exit code 9 and names the
+candidates; extend one with brain edit, or name each with --distinct-from
+<note> (repeatable), which stores it in distinct_from and lets the write
+through. With -o json, prints {"vault": ..., "path": ...}.`,
 		Args: exactArgs(0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if strings.TrimSpace(opts.Title) == "" {
@@ -65,12 +74,13 @@ With -o json, prints {"vault": ..., "path": ...}.`,
 			}
 			opts.Tier = t
 			opts.Evidence = fields.evidence
-			abs, err := v.Write(opts)
+			abs, warnings, err := lib.Write(context.Background(), v, opts, distinct)
 			if err != nil {
 				return err
 			}
 			res := vault.PathResult{Vault: v.Name, Path: v.Rel(abs)}
-			res.Warnings = lib.CitationWarnings(vault.Ref{Vault: v, Path: res.Path}, time.Now())
+			res.Warnings = append(warnings,
+				lib.CitationWarnings(vault.Ref{Vault: v, Path: res.Path}, time.Now())...)
 			warn(cmd, res.Warnings)
 			return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
 				fmt.Fprintln(w, a.show(res.Vault, res.Path))
@@ -94,6 +104,8 @@ With -o json, prints {"vault": ..., "path": ...}.`,
 	)
 	f.StringVar(&opts.Source, "source", "", "source URL")
 	f.StringVar(&opts.Filename, "filename", "", "override filename (without .md)")
+	f.StringArrayVar(&distinct, "distinct-from", nil,
+		"a note the new one is distinct from, though alike (repeatable); stored in distinct_from")
 	fields.register(c)
 	return c
 }

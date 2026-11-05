@@ -55,6 +55,27 @@ A raw capture expires 30 days after it was written unless someone keeps it.
   `-2` suffix. Restore a note by moving it back under `inbox/`, then keep it.
   Shared vaults are skipped unless `--vault` names one (exit 6).
 
+## Duplicates at write
+
+Before `brain write` creates a note, brain looks for a
+note it likely duplicates in the target vault and in every shared vault:
+
+- a title or alias equal to the new title once lowercased and with
+  punctuation folded to spaces (`Kubernetes: Upgrades` matches
+  `kubernetes-upgrades`; `+` and `#` count, so `C++` and `C#` differ);
+- when the semantic layer is on and the vault already has an index, a chunk
+  with a cosine similarity of 0.92 or more to the new note's first chunk.
+  The index is used as it is, never refreshed for the check. With Ollama
+  down the check is skipped with a `warning:` line.
+
+Superseded, retracted and withdrawn notes are never candidates. A hit
+refuses the write with exit 9 (`possible_duplicate`), names the candidates
+and suggests `brain edit` on the first private one. `--distinct-from <note>`
+(repeatable) stores the note in `distinct_from`, as `id:<ulid>` when it has
+one, and removes it from the candidates; the write goes through once every
+candidate is named. `brain edit` never runs the check. The exists check
+(exit 4) and the secret scan (exit 8) run first.
+
 ## brain check
 
 `brain check` exits 1 on an error: a citation of a retracted or withdrawn

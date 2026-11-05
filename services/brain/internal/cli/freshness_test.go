@@ -125,3 +125,35 @@ func writeNote(t *testing.T, root, rel, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestWriteRefusesAPossibleDuplicate(t *testing.T) {
+	root := setupCLI(t, "")
+	got := runBrain(t, "", "write", "--title", "ALPHA", "--body", "again")
+	if got.code != exitDuplicate {
+		t.Fatalf("write: exit %d, want %d; stderr %q", got.code, exitDuplicate, got.stderr)
+	}
+	for _, want := range []string{
+		"default:notes/alpha.md (same title), default:inbox/dup.md (same title)",
+		"brain edit default:notes/alpha.md",
+	} {
+		if !strings.Contains(got.stderr, want) {
+			t.Errorf("stderr %q lacks %q", got.stderr, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "inbox", "alpha.md")); err == nil {
+		t.Error("a refused write left a file")
+	}
+	ok := runBrain(t, "", "write", "--title", "ALPHA", "--body", "again",
+		"--distinct-from", "notes/alpha.md", "--distinct-from", "inbox/dup.md", "-o", "json")
+	if ok.code != exitOK {
+		t.Fatalf("write --distinct-from: exit %d, stderr %q", ok.code, ok.stderr)
+	}
+	read := runBrain(t, "", "read", "inbox/alpha.md")
+	if !strings.Contains(read.stdout,
+		"distinct_from:\n  - default:notes/alpha.md\n  - default:inbox/dup.md\n") {
+		t.Errorf("read after write --distinct-from:\n%s", read.stdout)
+	}
+	if got := runBrain(t, "", "edit", "notes/alpha.md", "--title", "Beta"); got.code != exitOK {
+		t.Errorf("edit to another note's title: exit %d, want 0 (edit never checks)", got.code)
+	}
+}

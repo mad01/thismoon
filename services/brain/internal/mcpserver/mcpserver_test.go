@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/mad01/thismoon/services/brain"
 	"github.com/mad01/thismoon/services/brain/internal/testhome"
+	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
 // setupFixtureVault creates a temp vault, isolates HOME and the XDG and brain
@@ -579,6 +581,24 @@ func TestBrainWrite(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("error should mention already exists, got %v", err)
+	}
+}
+
+// TestBrainWriteDistinctFrom pins the CLI's duplicate refusal on brain_write
+// and the distinct_from input that lets the write through.
+func TestBrainWriteDistinctFrom(t *testing.T) {
+	setupFixtureVault(t)
+	ctx := context.Background()
+	in := writeInput{Tier: "inbox", Title: "concept beta", Body: "a second take"}
+	_, _, err := testServer(t).handleWrite(ctx, nil, in)
+	if !errors.Is(err, vault.ErrPossibleDuplicate) ||
+		!strings.Contains(err.Error(), "notes/concept-beta.md (same title)") {
+		t.Fatalf("brain_write of a taken title = %v, want a possible duplicate", err)
+	}
+	in.DistinctFrom = []string{"notes/concept-beta.md"}
+	_, out, err := testServer(t).handleWrite(ctx, nil, in)
+	if err != nil || out.Path != "inbox/concept-beta.md" {
+		t.Fatalf("brain_write with distinct_from = %+v, %v", out, err)
 	}
 }
 

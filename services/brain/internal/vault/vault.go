@@ -104,17 +104,85 @@ type WriteOptions struct {
 // writer creates it first. Outputs always carry the meta/output tag,
 // whatever Set and Unset say. A note without an id after Set and Unset gets
 // a fresh one, and its status gets its lifecycle defaults (expires_at for
-// raw, review_by for validated) unless Set gave them.
-func (v *Vault) Write(opts WriteOptions) (path string, err error) {
-	if err := v.writable(); err != nil {
+// raw, review_by for validated) unless Set gave them. Write is Draft then
+// Create; a caller that checks the draft first (library.Write looks for
+// duplicates) calls the two itself.
+func (v *Vault) Write(opts WriteOptions) (string, error) {
+	d, err := v.Draft(opts)
+	if err != nil {
 		return "", err
 	}
+	return v.Create(d)
+}
+
+// Draft is a new note rendered and checked, not yet on disk.
+type Draft struct {
+	// Path is the absolute path the note goes to.
+	Path        string
+	Frontmatter markdown.Frontmatter
+	Body        []byte
+	content     []byte
+}
+
+// Content returns the note's bytes as Create writes them.
+func (d Draft) Content() []byte { return d.content }
+
+// Draft renders the note opts describes and runs every check Write makes
+// before it touches disk: a shared vault is ErrReadOnly, a taken path
+// ErrExists and a secret ErrSecretFound. Nothing is written.
+func (v *Vault) Draft(opts WriteOptions) (Draft, error) {
+	if err := v.writable(); err != nil {
+		return Draft{}, err
+	}
 	if opts.Title == "" {
-		return "", fmt.Errorf("title is required")
+		return Draft{}, fmt.Errorf("title is required")
 	}
 	if opts.Now.IsZero() {
 		opts.Now = time.Now()
 	}
+	fm, err := newFrontmatter(opts)
+	if err != nil {
+		return Draft{}, err
+	}
+	path := filepath.Join(v.TierDir(opts.Tier), noteFilename(opts))
+	if _, err := os.Stat(path); err == nil {
+		return Draft{}, fmt.Errorf("%w: %s", ErrExists, v.Rel(path))
+	}
+	body := []byte(ensureTrailingNewline(opts.Body))
+	content, err := markdown.Render(fm, body)
+	if err != nil {
+		return Draft{}, err
+	}
+	if err := v.refuseSecrets(path, content); err != nil {
+		return Draft{}, err
+	}
+	return Draft{Path: path, Frontmatter: fm, Body: body, content: content}, nil
+}
+
+// Create writes a draft under the vault's write lock and returns its path.
+// It never replaces a note: one created since the draft is ErrExists.
+func (v *Vault) Create(d Draft) (path string, err error) {
+	if err := v.writable(); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(d.Path), 0o755); err != nil {
+		return "", fmt.Errorf("mkdir tier %s: %w", filepath.Dir(d.Path), err)
+	}
+	release, err := v.lockWrites()
+	if err != nil {
+		return "", err
+	}
+	defer func() { err = errors.Join(err, release()) }()
+	if err := v.create(d.Path, d.content); err != nil {
+		return "", err
+	}
+	return d.Path, nil
+}
+
+// newFrontmatter builds a new note's frontmatter: the fields opts names,
+// the tier's type and status defaults, Set and Unset, an id and the
+// lifecycle defaults.
+func newFrontmatter(opts WriteOptions) (markdown.Frontmatter, error) {
 	fm := markdown.Frontmatter{
 		Title:    opts.Title,
 		Aliases:  opts.Aliases,
@@ -133,20 +201,25 @@ func (v *Vault) Write(opts WriteOptions) (path string, err error) {
 		fm.Status = defaultStatus(opts.Tier)
 	}
 	if err := applyFields(&fm, opts.Set, opts.Unset); err != nil {
-		return "", err
+		return markdown.Frontmatter{}, err
 	}
 	if fm.ID == "" {
 		fm.ID = noteid.New(opts.Now)
 	}
 	lifecycle.ApplyDefaults(&fm, opts.Now)
-	// Outputs are synthesis artifacts that cite many notes — including them
-	// as graph nodes turns every output into a hub by audit-trail design.
-	// Tag them meta/output so the user can filter outputs out of the graph
-	// while preserving the wikilink-based audit trail.
+	// Outputs are synthesis artifacts that cite many notes; as graph nodes
+	// every output would be a hub by audit-trail design. Tag them
+	// meta/output so the graph can filter them out while the wikilink
+	// audit trail stays.
 	if opts.Tier == TierOutputs && !fm.HasTag("meta/output") {
 		fm.Tags = append([]string{"meta/output"}, fm.Tags...)
 	}
+	return fm, nil
+}
 
+// noteFilename is the file a new note gets: opts.Filename, else the title's
+// slug, date-prefixed in outputs.
+func noteFilename(opts WriteOptions) string {
 	filename := opts.Filename
 	if filename == "" {
 		slug := Slug(opts.Title)
@@ -158,28 +231,7 @@ func (v *Vault) Write(opts WriteOptions) (path string, err error) {
 	if !strings.HasSuffix(filename, ".md") {
 		filename += ".md"
 	}
-
-	dir := v.TierDir(opts.Tier)
-	path = filepath.Join(dir, filename)
-	content, err := markdown.Render(fm, []byte(ensureTrailingNewline(opts.Body)))
-	if err != nil {
-		return "", err
-	}
-	if err := v.refuseSecrets(path, content); err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("mkdir tier %s: %w", dir, err)
-	}
-	release, err := v.lockWrites()
-	if err != nil {
-		return "", err
-	}
-	defer func() { err = errors.Join(err, release()) }()
-	if err := v.create(path, content); err != nil {
-		return "", err
-	}
-	return path, nil
+	return filename
 }
 
 // create writes a new note at path, failing with ErrExists when one is

@@ -96,7 +96,8 @@ to restrict it to configured vaults. A note is named by vault:path or by a
 bare path found in one vault. Exit codes: 0 ok, 1 error, 2 usage (and an
 ambiguous note), 3 not found, 4 already exists, 5 invalid query, 6 read-only
 vault, 7 the note changed since it was read (edit --if-match), 8 the note
-holds a secret (nothing was written).
+holds a secret, 9 the note likely duplicates another (nothing was written
+on 8 or 9).
 
 The config file is --config, else $BRAIN_CONFIG, else config.yaml under
 $XDG_CONFIG_HOME/brain or ~/.config/brain. Indexes live under

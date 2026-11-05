@@ -528,6 +528,7 @@ Create a new note in a tier with frontmatter.
 | `evidence` | string | no | Trust tier (A/B/C/D/mixed) for empirical notes |
 | `filename` | string | no | Override filename (without `.md`); default is `slug(title)` |
 | `vault` | string | no | Configured vault to write to; defaults to the default vault. A shared vault refuses the write |
+| `distinct_from` | array[string] | no | Note refs the new note is distinct from although alike; each is stored in `distinct_from` (as `id:<ulid>` when it has one) and no longer refuses the write |
 
 **Output:**
 
@@ -535,7 +536,7 @@ Create a new note in a tier with frontmatter.
 |---|---|---|
 | `vault` | string | Name of the vault holding the note |
 | `path` | string | Vault-relative path of the created note |
-| `warnings` | array[string] | One per body link to a note that is not validated or is expired, such as `line 7 links [[draft]] (personal:inbox/draft.md), which is raw`; omitted when none |
+| `warnings` | array[string] | One per body link to a note that is not validated or is expired, such as `line 7 links [[draft]] (personal:inbox/draft.md), which is raw`, and one when the semantic duplicate check could not run; omitted when none |
 
 **Example:**
 
@@ -552,6 +553,7 @@ Create a new note in a tier with frontmatter.
 - Errors if a note with the same filename already exists in the target tier.
 - Fails with a read-only error when the target is a shared vault.
 - Refuses a note that holds a secret and writes nothing (see Note lifecycle).
+- Refuses a possible duplicate and writes nothing. A candidate is a note in the target vault or a shared vault whose title or an alias matches the new title once case and punctuation are ignored, or, when that vault has a semantic index, a note whose content scores a cosine similarity of 0.92 or more against the new note's first chunk. Revoked notes are never candidates. The error names each candidate; extend one with `brain_edit`, or list each in `distinct_from`. The CLI exits 9 (`possible_duplicate`) on the same refusal. `brain_edit` never runs the check.
 - Outputs are filename-prefixed `YYYY-MM-DD-<slug>.md` automatically.
 - Tier defaults: `inbox` → `type=note,status=raw`; `notes` → `type=note,status=validated`; MOCs → `type=moc,status=validated`; outputs → `type=output,status=validated`.
 

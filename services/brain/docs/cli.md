@@ -57,7 +57,7 @@ prints `vault:path`.
 | `peek <note>` | backlink count, frontmatter, first lines | `--lines N` (default 20) |
 | `backlinks [note]` | inbound and outbound wikilinks | `--title <title or alias>` instead of a note |
 | `graph` | wikilink graph as nodes and edges | `--center <note> --depth N --tags-as-nodes` |
-| `write` | create a note | `--title` (required), `--tier --body --body-file --tag --alias --type --status --source --evidence --filename --set --unset`; no `--body` reads stdin |
+| `write` | create a note, unless it likely duplicates one (exit 9) | `--title` (required), `--tier --body --body-file --tag --alias --type --status --source --evidence --filename --distinct-from --set --unset`; no `--body` reads stdin |
 | `edit <note>` | change body or frontmatter | one of `--body --append` (`-` reads stdin) `--body-file --append-file`, plus `--title --status --type --source --tag --alias --evidence --set --unset --if-match <sha>` |
 | `promote <note>` | move an inbox note to notes/ | `--title` (rename) `--tier` `--moc <MOC path>` |
 | `supersede <note>` | mark it superseded; `superseded_by` stores the replacement's `id:` | `--by <note>` (required) |
@@ -124,6 +124,7 @@ and keeping notes fresh (`docs/lifecycle.md`).
 | 6 | `read_only` | write, edit, promote, migrate, flag or a revocation in a shared vault | change it through a PR (or, for flag, an issue) on its repo |
 | 7 | `conflict` | `edit --if-match` sha no longer matches the note | read the note again, then edit |
 | 8 | `secret_found` | the note would hold a secret; nothing was written | remove it, or mark a false positive `suspenders:ignore` |
+| 9 | `possible_duplicate` | write: a note with the same title or near-identical content exists; nothing was written | `brain edit` a candidate, or `--distinct-from <candidate>` |
 
 Errors print one line on stderr: `brain <cmd>: <message>`. With `-o json`
 the same failure also prints on stdout:
@@ -176,7 +177,7 @@ updated id`, plus `extra` with every other key (the lifecycle fields too).
 
 1. Search before writing: `brain search '<topic>' -o json`, then `brain peek`
    or `brain read` the hits. Extend an existing note with `brain edit --append`
-   rather than duplicating it.
+   rather than duplicating it; write refuses a likely duplicate (exit 9).
 2. Capture new material to the inbox:
    `brain write --title 'Topic' --source <url> < notes.md` (body from stdin).
    It lands in `inbox/` with `status: raw`.

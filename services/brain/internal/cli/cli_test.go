@@ -210,6 +210,12 @@ func TestExitCodes(t *testing.T) {
 			"brain write: vault: note already exists",
 		},
 		{
+			"write likely duplicate",
+			[]string{"write", "--title", "First", "--body", "x"},
+			exitDuplicate,
+			"brain write: vault: possible duplicate",
+		},
+		{
 			"promote onto existing",
 			[]string{"promote", "inbox/dup.md"},
 			exitExists,
@@ -290,6 +296,7 @@ func TestJSONErrorEnvelope(t *testing.T) {
 		{[]string{"search", "--tier", "bogus", "x"}, "usage"},
 		{[]string{"read", "--bogus"}, "usage"},
 		{[]string{"write", "--tier", "notes", "--title", "Alpha", "--body", "x"}, "already_exists"},
+		{[]string{"write", "--title", "alpha!", "--body", "x"}, "possible_duplicate"},
 		{[]string{"query", "foo("}, "invalid_query"},
 		{[]string{"semantic-search", "x"}, "error"},
 	}

@@ -13,17 +13,19 @@ import (
 )
 
 type writeInput struct {
-	Tier     string   `json:"tier"               jsonschema:"target tier: inbox, notes, outputs, or MOCs"`
-	Title    string   `json:"title"              jsonschema:"human-readable note title; becomes frontmatter.title and the filename slug"`
-	Body     string   `json:"body,omitempty"     jsonschema:"markdown body; can be empty for a stub note"`
-	Tags     []string `json:"tags,omitempty"     jsonschema:"frontmatter tags list"`
-	Aliases  []string `json:"aliases,omitempty"  jsonschema:"frontmatter aliases — alternate titles that backlinks should resolve to"`
-	Type     string   `json:"type,omitempty"     jsonschema:"frontmatter type (note | source | moc | output); defaults based on tier"`
-	Status   string   `json:"status,omitempty"   jsonschema:"frontmatter status (raw | validated | archived); defaults based on tier"`
-	Source   string   `json:"source,omitempty"   jsonschema:"optional source URL"`
-	Evidence string   `json:"evidence,omitempty" jsonschema:"trust tier for empirical notes: A (replicated RCT / meta-analysis), B (single well-designed study), C (preliminary / survey / mechanism-plausible), D (refuted / apocryphal), or mixed. Omit for non-empirical notes."`
-	Filename string   `json:"filename,omitempty" jsonschema:"override filename (without .md); defaults to slug(title)"`
-	Vault    string   `json:"vault,omitempty"    jsonschema:"configured vault to write to; defaults to the default vault. A shared vault refuses writes."`
+	Tier     string   `json:"tier"                    jsonschema:"target tier: inbox, notes, outputs, or MOCs"`
+	Title    string   `json:"title"                   jsonschema:"human-readable note title; becomes frontmatter.title and the filename slug"`
+	Body     string   `json:"body,omitempty"          jsonschema:"markdown body; can be empty for a stub note"`
+	Tags     []string `json:"tags,omitempty"          jsonschema:"frontmatter tags list"`
+	Aliases  []string `json:"aliases,omitempty"       jsonschema:"frontmatter aliases: alternate titles that backlinks should resolve to"`
+	Type     string   `json:"type,omitempty"          jsonschema:"frontmatter type (note | source | moc | output); defaults based on tier"`
+	Status   string   `json:"status,omitempty"        jsonschema:"frontmatter status (raw | validated | archived); defaults based on tier"`
+	Source   string   `json:"source,omitempty"        jsonschema:"optional source URL"`
+	Evidence string   `json:"evidence,omitempty"      jsonschema:"trust tier for empirical notes: A (replicated RCT / meta-analysis), B (single well-designed study), C (preliminary / survey / mechanism-plausible), D (refuted / apocryphal), or mixed. Omit for non-empirical notes."`
+	Filename string   `json:"filename,omitempty"      jsonschema:"override filename (without .md); defaults to slug(title)"`
+	Vault    string   `json:"vault,omitempty"         jsonschema:"configured vault to write to; defaults to the default vault. A shared vault refuses writes."`
+	// DistinctFrom names notes the new one is distinct from, though alike.
+	DistinctFrom []string `json:"distinct_from,omitempty" jsonschema:"note refs the new note is distinct from although alike; each is stored in distinct_from and no longer refuses the write as a possible duplicate"`
 }
 
 type editInput struct {
@@ -57,8 +59,10 @@ func registerWriteTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_write",
 		Description: "Create a new note in a tier (inbox, notes, outputs, or MOCs) with frontmatter (title, tags, aliases, type, status, source). " +
-			"Use to capture new material — 'save this as an inbox note', 'write a validated note on X', 'create an output'. " +
+			"Use to capture new material: 'save this as an inbox note', 'write a validated note on X', 'create an output'. " +
 			"Filename defaults to slug(title); outputs are prefixed with YYYY-MM-DD. Errors if a note with the same filename already exists. " +
+			"Refuses a possible duplicate, naming the candidates: a note in the target or a shared vault with the same title or alias, or semantically near-identical content. " +
+			"Extend a candidate with brain_edit instead, or list it in distinct_from when the new note is distinct. " +
 			"Writes go to the default vault unless vault names another; a shared vault is read-only (its notes change through a pull request).",
 	}, h.handleWrite)
 
@@ -80,7 +84,7 @@ func registerWriteTools(s *mcp.Server, h *handlers) {
 }
 
 func (h *handlers) handleWrite(
-	_ context.Context,
+	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in writeInput,
 ) (*mcp.CallToolResult, vault.PathResult, error) {
@@ -103,7 +107,7 @@ func (h *handlers) handleWrite(
 	if err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
 	}
-	abs, err := v.Write(vault.WriteOptions{
+	abs, warnings, err := lib.Write(ctx, v, vault.WriteOptions{
 		Tier:     tier,
 		Title:    in.Title,
 		Body:     in.Body,
@@ -114,12 +118,13 @@ func (h *handlers) handleWrite(
 		Source:   in.Source,
 		Evidence: in.Evidence,
 		Filename: in.Filename,
-	})
+	}, in.DistinctFrom)
 	if err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
 	}
 	res := vault.PathResult{Vault: v.Name, Path: v.Rel(abs)}
-	res.Warnings = lib.CitationWarnings(vault.Ref{Vault: v, Path: res.Path}, time.Now())
+	res.Warnings = append(warnings,
+		lib.CitationWarnings(vault.Ref{Vault: v, Path: res.Path}, time.Now())...)
 	return nil, res, nil
 }
 

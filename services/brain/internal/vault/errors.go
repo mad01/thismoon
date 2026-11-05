@@ -32,4 +32,8 @@ var (
 	// ErrSecretFound means a write, edit, promote or status change would put
 	// a secret in a note; the message names the rule and the redacted value.
 	ErrSecretFound = errors.New("vault: secret found")
+	// ErrPossibleDuplicate means a write would create a note an existing one
+	// likely covers already; the message names the candidates. Nothing was
+	// written.
+	ErrPossibleDuplicate = errors.New("vault: possible duplicate")
 )
