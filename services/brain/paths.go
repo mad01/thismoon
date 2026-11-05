@@ -31,6 +31,7 @@ const (
 	indexSubdir    = "index"
 	semanticSubdir = "semantic"
 	lockSubdir     = "locks"
+	worktreeSubdir = "worktrees"
 )
 
 // DefaultConfigPath returns config.yaml inside brain's config directory:
@@ -83,6 +84,13 @@ func SemanticDir(vault string) (string, error) {
 // the same time.
 func LockDir() (string, error) {
 	return stateSubdir(lockSubdir)
+}
+
+// WorktreeRoot returns the directory inside StateDir that holds the
+// temporary git worktrees brain prepares a shared vault's pull request in.
+// Each lives only as long as the command that made it.
+func WorktreeRoot() (string, error) {
+	return stateSubdir(worktreeSubdir)
 }
 
 func stateSubdir(names ...string) (string, error) {

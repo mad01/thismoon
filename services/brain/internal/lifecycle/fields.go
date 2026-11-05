@@ -30,7 +30,9 @@ type Fields struct {
 	Classification  string
 	ValidFrom       string
 	InvalidAt       string
+	SharedPR        string
 	DistinctFrom    []string
+	MOCs            []string
 	Sources         []Source
 }
 
@@ -82,6 +84,7 @@ var stringKeys = []struct {
 	{KeyClassification, func(f *Fields) *string { return &f.Classification }},
 	{KeyValidFrom, func(f *Fields) *string { return &f.ValidFrom }},
 	{KeyInvalidAt, func(f *Fields) *string { return &f.InvalidAt }},
+	{KeySharedPR, func(f *Fields) *string { return &f.SharedPR }},
 }
 
 // dateKeys are the lifecycle keys that hold a date.
@@ -260,6 +263,9 @@ func parse(fm markdown.Frontmatter) (Fields, []Problem) {
 	var err error
 	if f.DistinctFrom, err = stringList(extra(fm, KeyDistinctFrom)); err != nil {
 		problems = append(problems, Problem{KeyDistinctFrom, err.Error()})
+	}
+	if f.MOCs, err = stringList(extra(fm, KeyMOCs)); err != nil {
+		problems = append(problems, Problem{KeyMOCs, err.Error()})
 	}
 	var sourceProblems []Problem
 	f.Sources, sourceProblems = sources(extra(fm, KeySources))

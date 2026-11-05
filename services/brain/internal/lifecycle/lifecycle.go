@@ -90,7 +90,21 @@ const (
 	KeyValidFrom       = "valid_from"
 	KeyInvalidAt       = "invalid_at"
 	KeyClassification  = "classification"
+	// KeySharedPR is the pull request a promoting note is on its way into
+	// a shared vault through.
+	KeySharedPR = "shared_pr"
+	// KeyMOCs lists the MOCs a note should appear in. brain never edits a
+	// shared MOC, so a promotion's pull request names them instead.
+	KeyMOCs = "mocs"
 )
+
+// PrivateOnlyKeys are the fields a note keeps in its private vault and
+// loses on its way into a shared one: why it was flagged, the pull request
+// it travels in, who captured it, the notes it was told apart from, and an
+// inbox expiry.
+var PrivateOnlyKeys = []string{
+	KeyStatusReason, KeySharedPR, KeyCapturedBy, KeyDistinctFrom, KeyExpiresAt,
+}
 
 // DateLayout is the layout lifecycle dates are written in.
 const DateLayout = "2006-01-02"

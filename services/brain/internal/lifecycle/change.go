@@ -53,6 +53,35 @@ func Dispute(fm *markdown.Frontmatter, reason string, now time.Time) {
 	setString(fm, KeyStatusReason, strings.TrimSpace(reason))
 }
 
+// StartPromotion marks fm promoting into a shared vault through the pull
+// request at url, which shared_pr records.
+func StartPromotion(fm *markdown.Frontmatter, url string, now time.Time) {
+	from := fm.Status
+	fm.Status = Promoting
+	Transition(fm, from, now)
+	setString(fm, KeySharedPR, url)
+}
+
+// EndPromotion returns a promoting note to validated, its pull request
+// closed without a merge: shared_pr goes, status_at records the day.
+func EndPromotion(fm *markdown.Frontmatter, now time.Time) {
+	from := fm.Status
+	fm.Status = Validated
+	Transition(fm, from, now)
+	fm.Unset(KeySharedPR)
+}
+
+// ForShared returns fm as a shared vault keeps it: every key of
+// PrivateOnlyKeys removed, everything else as it was.
+func ForShared(fm markdown.Frontmatter) markdown.Frontmatter {
+	out := fm
+	out.Extra = slices.Clone(fm.Extra)
+	for _, key := range PrivateOnlyKeys {
+		out.Unset(key)
+	}
+	return out
+}
+
 // Keep moves a raw note's expires_at to days after now, unless it already
 // expires later, and returns the date it now expires on.
 func Keep(fm *markdown.Frontmatter, days int, now time.Time) string {
