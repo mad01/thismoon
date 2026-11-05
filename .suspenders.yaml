@@ -2,17 +2,20 @@
 # `tokens: '...'` lines pattern-match as secret assignments. Suppress scan
 # findings from the style pack instead of mangling the rules.
 #
-# tools/suspenders is full of secret-shaped fixtures by design: detection
-# rules, test inputs, and README examples. Suppress scan findings from those
-# paths instead of obfuscating the fixtures into dummy values that no longer
-# exercise the rules (carried over from the standalone repo's own
-# .suspenders.yaml, scoped to the component).
+# tools/suspenders and its scanner in kit/secretscan are full of
+# secret-shaped fixtures by design: detection rules, test inputs, and README
+# examples. Suppress scan findings from those paths instead of obfuscating
+# the fixtures into dummy values that no longer exercise the rules (carried
+# over from the standalone repo's own .suspenders.yaml, scoped to the
+# component).
 paths:
   - "**/tools/humanizer/internal/rules/vale/**"
   - "**/tools/suspenders/**/*_test.go"
   - "**/tools/suspenders/**/rules.go"
   - "**/tools/suspenders/tests/integration/**"
   - "**/tools/suspenders/README.md"
+  - "**/kit/secretscan/*_test.go"
+  - "**/kit/secretscan/rules.go"
 
 # Go struct literals like `apiKey: cfg.APIKey` read as YAML-style secret
 # assignments to the unquoted-secret-assignment rule; the right-hand side is

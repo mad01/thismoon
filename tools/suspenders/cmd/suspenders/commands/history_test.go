@@ -3,8 +3,8 @@ package commands
 import (
 	"testing"
 
+	"github.com/mad01/thismoon/kit/secretscan"
 	"github.com/mad01/thismoon/tools/suspenders/internal/history"
-	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
 )
 
 // TestAddBlocked_keepsDistinctCasings pins the collection rule for the
@@ -12,7 +12,7 @@ import (
 // a blocked name must be collected as its own replacement string.
 func TestAddBlocked_keepsDistinctCasings(t *testing.T) {
 	h := &historyFindings{
-		secrets: make(map[string][]scanner.Finding),
+		secrets: make(map[string][]secretscan.Finding),
 		blocked: make(map[string][]string),
 	}
 	c := history.Commit{Hash: "abc123"}

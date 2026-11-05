@@ -1,4 +1,4 @@
-package scanner
+package secretscan
 
 import (
 	"path/filepath"

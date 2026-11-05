@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mad01/thismoon/kit/secretscan"
 	"github.com/mad01/thismoon/tools/suspenders/internal/config"
-	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
 )
 
 // initTestRepo creates a git repo at path so rev-parse resolves a top-level.
@@ -164,7 +164,7 @@ func TestGuardExempt(t *testing.T) {
 }
 
 func TestApplyExcludeRules(t *testing.T) {
-	rules := []scanner.Rule{
+	rules := []secretscan.Rule{
 		{ID: "alpha"},
 		{ID: "beta"},
 		{ID: "gamma"},
@@ -188,7 +188,7 @@ func TestApplyExcludeRules(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Copy so the in-place filter never mutates the shared fixture.
-			in := append([]scanner.Rule{}, rules...)
+			in := append([]secretscan.Rule{}, rules...)
 			got := applyExcludeRules(in, tt.exclude)
 			if len(got) != len(tt.want) {
 				t.Fatalf("got %d rules, want %d (%v)", len(got), len(tt.want), tt.want)

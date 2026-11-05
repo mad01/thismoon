@@ -735,14 +735,19 @@ cmd/suspenders/
 internal/
   config/config.go              # global config (~/.config/suspenders/config.yaml)
   guard/guard.go                # internal-reference guard (workspace name scanning)
-  scanner/
-    rules.go                    # built-in detection rules
-    scanner.go                  # file/directory/staged scanning, allowlist
-    ignore.go                   # per-repo .suspenders.yaml suppression
-    result.go                   # Finding type and Redact function
   hook/hook.go                  # hook script generation, install/update/uninstall
   repo/finder.go                # concurrent repository discovery
 tests/integration/              # Docker-based integration test scripts
+```
+
+The scanner itself is the shared [`kit/secretscan`](../../kit/secretscan/README.md) package at the repo root:
+
+```
+kit/secretscan/
+  rules.go                      # built-in detection rules
+  scanner.go                    # file/directory/staged scanning, allowlist
+  ignore.go                     # per-repo .suspenders.yaml suppression
+  result.go                     # Finding type and Redact function
 ```
 
 ### Integration tests
