@@ -29,7 +29,9 @@ func registerGraphTools(s *mcp.Server, h *handlers) {
 		Name: "brain_graph",
 		Description: "Return the wikilink graph of the configured vaults as nodes and edges, resolved like brain_backlinks. " +
 			"Nodes: notes (id is id:<note id>, or vault:path for a note without one), dangling link targets (dangling: true) and, with tags_as_nodes, tags (tag:<name>). " +
-			"Edges: {source, target, kind: link or tag, resolved}. degree counts the edges of the returned graph. " +
+			"Edges: {source, target, kind, resolved}; kind is link (a wikilink), moc (a wikilink out of a MOC), " +
+			"supersedes (to the note superseded_by names), source (to a note a sources[] ref names) or tag. " +
+			"degree counts the edges of the returned graph. " +
 			"Pass center (a note ref) and depth to get the neighbourhood of one note; pass vault to walk one vault's notes.",
 	}, h.handleGraph)
 }

@@ -24,7 +24,10 @@ another vault still appears. --center keeps the notes within --depth hops of
 one note, links followed in either direction. With -o json, prints {nodes,
 edges}: a node is {id, vault, path, stem, title, tier, type, status, tags,
 evidence, review_by, degree, dangling} and an edge is {source, target, kind,
-resolved}. A note's id is id:<note id>, or vault:path when it has none.`,
+resolved}. kind is link (a wikilink), moc (a wikilink out of a MOC),
+supersedes (to the note superseded_by names), source (to a note a sources[]
+ref names) or tag. A note's id is id:<note id>, or vault:path when it has
+none.`,
 		Args: exactArgs(0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if opts.Depth < 0 {
