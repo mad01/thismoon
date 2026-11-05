@@ -3,6 +3,7 @@ package hint
 import (
 	"bytes"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -40,6 +41,12 @@ func (h *Humanizer) Event() string { return EventExternalText }
 
 func (h *Humanizer) Check(in Input) *Advice {
 	if !publishesText(in.ToolName) {
+		return nil
+	}
+	// A tool the consuming repo listed is covered by another check (the
+	// humanizer-gate mod scans PR bodies before they are sent), so it
+	// neither nudges nor spends the session's one nudge.
+	if slices.Contains(h.cfg.Hints[h.ID()].ExcludeTools, in.ToolName) {
 		return nil
 	}
 	// Without a session id the once-per-session guarantee is impossible, and

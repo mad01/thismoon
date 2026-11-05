@@ -278,6 +278,11 @@ type Toggle struct {
 	// wrong kind — the panel review found exclude-on-a-deny-guard reads
 	// inverted, so the split stays (docs/adr/0013).
 	ExcludeRepos []string `toml:"exclude_repos"  yaml:"exclude_repos,omitempty"`
+	// ExcludeTools names tool calls a hint ignores, by exact tool name. Only
+	// humanizer-check reads it: a consuming repo lists the publishing tools
+	// another check already covers, so the once-per-session nudge is kept
+	// for text nothing else scanned.
+	ExcludeTools []string `toml:"exclude_tools"  yaml:"exclude_tools,omitempty"`
 }
 
 // Soft reports whether the toggle downgrades denials to warn events instead
@@ -1027,7 +1032,7 @@ var (
 		"lint-policy":     {"exclude_repos"},
 		"prefer-csl":      {"exclude_repos"},
 		"read-size":       {},
-		"humanizer-check": {},
+		"humanizer-check": {"exclude_tools"},
 		"em-dash":         {},
 	}
 )
@@ -1047,8 +1052,9 @@ func toggleFieldErrors(kind string, toggles map[string]Toggle, schema map[string
 			"extra_patterns": len(t.ExtraPatterns) > 0,
 			"allow_repos":    len(t.AllowRepos) > 0,
 			"exclude_repos":  len(t.ExcludeRepos) > 0,
+			"exclude_tools":  len(t.ExcludeTools) > 0,
 		}
-		for _, field := range []string{"exclude_paths", "extra_patterns", "allow_repos", "exclude_repos"} {
+		for _, field := range []string{"exclude_paths", "extra_patterns", "allow_repos", "exclude_repos", "exclude_tools"} {
 			if !set[field] || slices.Contains(allowed, field) {
 				continue
 			}

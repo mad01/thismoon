@@ -272,6 +272,10 @@ hints:
     # edited and no commit has taken yet, when git status shows them dirty.
   humanizer-check:
     enabled: true
+    # Publishing tools another check already scans (exact names): they
+    # neither fire the nudge nor spend it.
+    exclude_tools:
+      - mcp__gh_com__create_pull_request
   em-dash:
     enabled: true`
 
