@@ -218,6 +218,9 @@ func (v *Vault) Draft(opts WriteOptions) (Draft, error) {
 	if err != nil {
 		return Draft{}, err
 	}
+	if err := CheckTitle(fm.Title); err != nil {
+		return Draft{}, err
+	}
 	path, err := v.notePath(opts)
 	if err != nil {
 		return Draft{}, err
@@ -431,12 +434,17 @@ func (v *Vault) Edit(path string, opts EditOptions) (sha string, err error) {
 		opts.IfMatch,
 		VerbEdit,
 		func(fm *markdown.Frontmatter, body []byte) ([]byte, error) {
-			id, status := fm.ID, fm.Status
+			id, status, title := fm.ID, fm.Status, fm.Title
 			if opts.FrontmatterPatch != nil {
 				*fm = mergeFrontmatter(*fm, *opts.FrontmatterPatch)
 			}
 			if err := applyFields(fm, opts.Set, opts.Unset); err != nil {
 				return nil, err
+			}
+			if fm.Title != title {
+				if err := CheckTitle(fm.Title); err != nil {
+					return nil, err
+				}
 			}
 			if id != "" && fm.ID != id {
 				return nil, fmt.Errorf("%w: %s keeps id %s", ErrImmutableID, v.Rel(path), id)
@@ -573,21 +581,24 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 		return PromoteResult{}, fmt.Errorf("promote: source must be in inbox/, got %s", fromTier)
 	}
 
-	// Validate moc target up front so a bad target (batch-provenance index)
-	// rejects the call before any move happens — no half-done state.
+	if err := CheckTitle(opts.NewTitle); err != nil {
+		return PromoteResult{}, err
+	}
+	// Validate moc target up front so a bad target (outside MOCs/, or a
+	// batch-provenance index) rejects the call before any move happens.
+	var mocPath string
 	if opts.MOC != "" {
-		mocAbs := opts.MOC
-		if !filepath.IsAbs(mocAbs) {
-			mocAbs = filepath.Join(v.Root, mocAbs)
+		if mocPath, err = v.mocPath(opts.MOC); err != nil {
+			return PromoteResult{}, err
 		}
-		isBatch, err := isBatchIndexMOC(mocAbs)
+		isBatch, err := isBatchIndexMOC(mocPath)
 		if err != nil {
-			return PromoteResult{}, fmt.Errorf("check moc target %s: %w", mocAbs, err)
+			return PromoteResult{}, fmt.Errorf("check moc target %s: %w", v.Rel(mocPath), err)
 		}
 		if isBatch {
 			return PromoteResult{}, fmt.Errorf(
 				"moc target %s is a batch-provenance index (filename matches research-index-* / kickoff-*, or has tag meta/index); pass a topical MOC or omit moc",
-				mocAbs,
+				v.Rel(mocPath),
 			)
 		}
 	}
@@ -602,6 +613,12 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 	}
 	if title == "" {
 		title = oldStem
+	}
+	if mocPath != "" {
+		// The title goes into the MOC's bullet line.
+		if err := CheckTitle(title); err != nil {
+			return PromoteResult{}, err
+		}
 	}
 	newStem := Slug(title)
 	newPath := filepath.Join(v.TierDir(target), newStem+".md")
@@ -676,19 +693,55 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 	}
 
 	var mocErr error
-	if opts.MOC != "" {
-		mocPath := opts.MOC
-		if !filepath.IsAbs(mocPath) {
-			mocPath = filepath.Join(v.Root, mocPath)
-		}
+	if mocPath != "" {
 		if err := appendMOCBullet(mocPath, title, newStem, opts.Now); err != nil {
-			mocErr = fmt.Errorf("append to MOC %s: %w", mocPath, err)
+			mocErr = fmt.Errorf("append to MOC %s: %w", v.Rel(mocPath), err)
 		} else {
 			res.MOCAppended = mocPath
 		}
 	}
 	return res, errors.Join(mocErr, v.commitPromote(res))
 }
+
+// mocPath resolves promote's moc target to a note in this vault's MOCs
+// tier: a vault-relative path, or an absolute one inside the vault, with
+// ".md" added when it has none. Anything else is ErrInvalidPath.
+func (v *Vault) mocPath(moc string) (string, error) {
+	rel := moc
+	if filepath.IsAbs(moc) {
+		rel = v.Rel(filepath.Clean(moc))
+		if filepath.IsAbs(rel) {
+			return "", fmt.Errorf("%w: moc %s is outside vault %s", ErrInvalidPath, moc, v.Name)
+		}
+	}
+	if !strings.EqualFold(filepath.Ext(rel), ".md") {
+		rel += ".md"
+	}
+	abs, err := v.Resolve(rel)
+	if err != nil {
+		return "", fmt.Errorf("moc: %w", err)
+	}
+	if tier, err := TierOf(v.Root, abs); err != nil || tier != TierMOCs {
+		return "", fmt.Errorf("%w: moc %s is not a note in the vault's %s/ tier",
+			ErrInvalidPath, moc, TierMOCs.Dir())
+	}
+	return abs, nil
+}
+
+// CheckTitle refuses a title holding a control character other than tab
+// with ErrInvalidContent. A newline or an escape sequence in a title would
+// break the lines it is printed on and the MOC bullet promote writes.
+func CheckTitle(title string) error {
+	if strings.ContainsFunc(title, isTitleControl) {
+		return fmt.Errorf(
+			"%w: title %q holds a control character; a title is one line of text",
+			ErrInvalidContent, title,
+		)
+	}
+	return nil
+}
+
+func isTitleControl(r rune) bool { return r != '\t' && unicode.IsControl(r) }
 
 // commitPromote commits a promote: the new note first, then the inbox file
 // it left, the notes whose links it rewrote and the MOC it appended to.

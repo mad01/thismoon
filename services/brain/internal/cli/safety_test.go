@@ -40,6 +40,37 @@ func TestRefusedWritesExitUsage(t *testing.T) {
 			args:       []string{"write", "--tier", "notes", "--title", "Esc", "--filename", "../inbox/esc"},
 			wantStderr: "vault: invalid path",
 		},
+		{
+			name:       "promote moc outside the vault",
+			args:       []string{"promote", "inbox/raw.md", "--moc", "../../outside.md"},
+			wantStderr: "vault: invalid path",
+			outside:    []string{"outside.md"},
+		},
+		{
+			name:       "promote moc in another tier",
+			args:       []string{"promote", "inbox/raw.md", "--moc", "notes/beta.md"},
+			wantStderr: "is not a note in the vault's MOCs/ tier",
+		},
+		{
+			name:       "write title with a newline",
+			args:       []string{"write", "--title", "two\nlines", "--body", "x"},
+			wantStderr: "holds a control character",
+		},
+		{
+			name:       "capture title with an escape",
+			args:       []string{"capture", "--title", "red \x1b[31m", "--body", "x"},
+			wantStderr: "holds a control character",
+		},
+		{
+			name:       "edit --set title with a newline",
+			args:       []string{"edit", "notes/beta.md", "--set", `title="two\nlines"`},
+			wantStderr: "holds a control character",
+		},
+		{
+			name:       "promote --title with a newline",
+			args:       []string{"promote", "inbox/raw.md", "--title", "two\nlines"},
+			wantStderr: "holds a control character",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -61,11 +92,23 @@ func TestRefusedWritesExitUsage(t *testing.T) {
 					t.Errorf("%s changed to %q", rel, data)
 				}
 			}
+			if _, err := os.Stat(filepath.Join(root, "inbox", "raw.md")); err != nil {
+				t.Errorf("inbox/raw.md moved: %v", err)
+			}
 			for _, rel := range tc.outside {
 				if _, err := os.Stat(filepath.Join(filepath.Dir(root), rel)); err == nil {
 					t.Errorf("%s was created outside the vault", rel)
 				}
 			}
 		})
+	}
+}
+
+func TestCaptureTitleDropsControlCharacters(t *testing.T) {
+	if got := captureTitle("", "# Red \x1b[31mtitle\x07\nrest", ""); got != "Red [31mtitle" {
+		t.Errorf("captureTitle = %q, want the first line without control characters", got)
+	}
+	if got := captureTitle("", "\x1b\x07\nSecond line", ""); got != "Second line" {
+		t.Errorf("captureTitle = %q, want the first line with text", got)
 	}
 }

@@ -56,3 +56,34 @@ func TestBrainWriteRefusesAFilenameOutsideTheTier(t *testing.T) {
 		t.Error("brain_write created a file outside the vault")
 	}
 }
+
+// TestWriteToolsRefuseUnsafeTitlesAndMOCs pins that the MCP write tools
+// share the vault's title and MOC checks.
+func TestWriteToolsRefuseUnsafeTitlesAndMOCs(t *testing.T) {
+	root := setupFixtureVault(t)
+	ctx := context.Background()
+	h := testServer(t)
+	if _, _, err := h.handleWrite(ctx, nil, writeInput{
+		Tier: "inbox", Title: "two\nlines",
+	}); err == nil || !strings.Contains(err.Error(), "control character") {
+		t.Errorf("brain_write = %v, want a control character refusal", err)
+	}
+	if _, _, err := h.handleEdit(ctx, nil, editInput{
+		Path: "notes/concept-alpha.md", FrontmatterPatch: &frontmatterIn{Title: "red \x1b[31m"},
+	}); err == nil || !strings.Contains(err.Error(), "control character") {
+		t.Errorf("brain_edit = %v, want a control character refusal", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, "inbox"))
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("fixture inbox: %v", err)
+	}
+	inbox := "inbox/" + entries[0].Name()
+	if _, _, err := h.handlePromote(ctx, nil, promoteInput{
+		Path: inbox, MOC: filepath.Join(filepath.Dir(root), "outside.md"),
+	}); err == nil || !strings.Contains(err.Error(), "invalid path") {
+		t.Errorf("brain_promote = %v, want an invalid path refusal", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(filepath.Dir(root), "outside.md")); statErr == nil {
+		t.Error("brain_promote appended to a file outside the vault")
+	}
+}

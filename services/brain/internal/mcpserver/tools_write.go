@@ -14,7 +14,7 @@ import (
 
 type writeInput struct {
 	Tier     string   `json:"tier"                    jsonschema:"target tier: inbox, notes, outputs, or MOCs"`
-	Title    string   `json:"title"                   jsonschema:"human-readable note title; becomes frontmatter.title and the filename slug"`
+	Title    string   `json:"title"                   jsonschema:"human-readable note title, one line with no control characters; becomes frontmatter.title and the filename slug"`
 	Body     string   `json:"body,omitempty"          jsonschema:"markdown body; can be empty for a stub note"`
 	Tags     []string `json:"tags,omitempty"          jsonschema:"frontmatter tags list"`
 	Aliases  []string `json:"aliases,omitempty"       jsonschema:"frontmatter aliases: alternate titles that backlinks should resolve to"`
@@ -22,7 +22,7 @@ type writeInput struct {
 	Status   string   `json:"status,omitempty"        jsonschema:"frontmatter status (raw | validated | promoting | disputed); defaults based on tier. Revoke a note with brain supersede, retract or withdraw instead."`
 	Source   string   `json:"source,omitempty"        jsonschema:"optional source URL"`
 	Evidence string   `json:"evidence,omitempty"      jsonschema:"trust tier for empirical notes: A (replicated RCT / meta-analysis), B (single well-designed study), C (preliminary / survey / mechanism-plausible), D (refuted / apocryphal), or mixed. Omit for non-empirical notes."`
-	Filename string   `json:"filename,omitempty"      jsonschema:"override filename (without .md); defaults to slug(title)"`
+	Filename string   `json:"filename,omitempty"      jsonschema:"override filename (without .md), a plain name with no path separator or ..; defaults to slug(title)"`
 	Vault    string   `json:"vault,omitempty"         jsonschema:"configured vault to write to; defaults to the default vault. A shared vault refuses writes."`
 	// DistinctFrom names notes the new one is distinct from, though alike.
 	DistinctFrom []string `json:"distinct_from,omitempty" jsonschema:"note refs the new note is distinct from although alike; each is stored in distinct_from and no longer refuses the write as a possible duplicate"`
@@ -52,7 +52,7 @@ type promoteInput struct {
 	Path       string `json:"path"                  jsonschema:"inbox note ref: vault:path, or a vault-relative path found in exactly one vault"`
 	NewTitle   string `json:"new_title,omitempty"   jsonschema:"optional new title (and re-slug) for the promoted note"`
 	TargetTier string `json:"target_tier,omitempty" jsonschema:"destination tier; defaults to notes"`
-	MOC        string `json:"moc,omitempty"         jsonschema:"optional topical MOC path (vault-relative or absolute) to append a bullet to. Must be a semantic MOC; batch-provenance indexes (research-index-* / kickoff-* filenames, or tags including meta/index) are rejected."`
+	MOC        string `json:"moc,omitempty"         jsonschema:"optional topical MOC to append a bullet to: a note in the vault's MOCs/ tier, vault-relative (or absolute inside the vault). Must be a semantic MOC; batch-provenance indexes (research-index-* / kickoff-* filenames, or tags including meta/index) are rejected."`
 }
 
 func registerWriteTools(s *mcp.Server, h *handlers) {
