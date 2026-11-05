@@ -553,7 +553,7 @@ Create a new note in a tier with frontmatter.
 - Fails with a read-only error when the target is a shared vault.
 - Refuses a note that holds a secret and writes nothing (see Note lifecycle).
 - Outputs are filename-prefixed `YYYY-MM-DD-<slug>.md` automatically.
-- Tier defaults: `inbox` → `type=source,status=raw`; `notes` → `type=note,status=validated`; MOCs → `type=moc`; outputs → `type=output`.
+- Tier defaults: `inbox` → `type=note,status=raw`; `notes` → `type=note,status=validated`; MOCs → `type=moc,status=validated`; outputs → `type=output,status=validated`.
 
 ### `brain_edit`
 
