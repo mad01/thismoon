@@ -115,6 +115,14 @@ func (v *Vault) lockWrites() (func() error, error) {
 	return lockfile.Hold(v.WriteLock)
 }
 
+// LockWrites takes the vault's write lock and returns its release, for a
+// change brain makes outside the note methods, such as the pull and push
+// of brain sync. The note methods take it themselves; holding it around
+// one of them deadlocks.
+func (v *Vault) LockWrites() (func() error, error) {
+	return v.lockWrites()
+}
+
 // Open returns a Vault rooted at the given directory. Errors if the directory
 // does not exist.
 func Open(root string) (*Vault, error) {

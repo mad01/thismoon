@@ -79,7 +79,8 @@ Subcommands:
   write             Create a new note in a tier (inbox/notes/outputs/MOCs).
   capture           Capture a raw note into the inbox (agents and quick notes).
   edit              Edit body or frontmatter of an existing note.
-  promote           Move an inbox note into notes/, rewriting backlinks.
+  promote           Move an inbox note into notes/, or open a pull request into a shared vault.
+  sync              Pull and push each vault, and settle promotions into shared vaults.
   check             Check notes against the lifecycle model and the vault policy.
   supersede         Mark a note superseded by another.
   retract           Mark a note retracted, keeping its body under a banner.
@@ -146,6 +147,7 @@ brain doctor prints the paths in effect.`,
 		newCaptureCmd(a),
 		newEditCmd(a),
 		newPromoteCmd(a),
+		newSyncCmd(a),
 		newCheckCmd(a),
 		newSupersedeCmd(a),
 		newRetractCmd(a),

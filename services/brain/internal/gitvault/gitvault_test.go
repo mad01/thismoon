@@ -83,6 +83,11 @@ func TestCommitTakesOnlyItsPaths(t *testing.T) {
 		}
 	}
 
+	dirty, err := repo.Dirty()
+	if err != nil || !slices.Equal(dirty, []string{"notes/b.md", "notes/staged.md"}) {
+		t.Errorf("Dirty() = %q, %v; want the hand edits, untracked files left out", dirty, err)
+	}
+
 	// Nothing changed: no empty commit.
 	if err := repo.Commit("brain: edit notes/a.md", []string{"notes/a.md"}); err != nil {
 		t.Fatal(err)

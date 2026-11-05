@@ -162,13 +162,15 @@ func (r *Repo) Upstream() (remote, branch string, err error) {
 // Dirty returns the tracked files with uncommitted changes, staged or not.
 // Untracked files do not count: a pull never touches them.
 func (r *Repo) Dirty() ([]string, error) {
-	out, err := r.output(context.Background(), localTimeout,
+	var out bytes.Buffer
+	err := r.run(context.Background(), localTimeout, &out,
 		"status", "--porcelain", "--untracked-files=no")
-	if err != nil || out == "" {
+	if err != nil {
 		return nil, err
 	}
 	var files []string
-	for line := range strings.SplitSeq(out, "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(out.String(), "\n"), "\n") {
+		// A porcelain line is two status letters, a space, then the path.
 		if len(line) > 3 {
 			files = append(files, line[3:])
 		}
