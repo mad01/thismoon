@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mad01/thismoon/services/brain/internal/drift"
 	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
 	"github.com/mad01/thismoon/services/brain/internal/testgit"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
@@ -175,7 +176,8 @@ func TestCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := lifecycle.Read(fm)
-	if fm.Status != lifecycle.Raw || fm.Type != "source" || fm.Source != "https://example.com/zonal" ||
+	if fm.Status != lifecycle.Raw || fm.Type != "source" ||
+		fm.Source != "https://example.com/zonal" ||
 		f.CapturedBy != "agent:s-42" ||
 		f.ExpiresAt != lifecycle.Date(time.Now().AddDate(0, 0, 30)) {
 		t.Errorf("capture frontmatter = %+v, lifecycle %+v", fm, f)
@@ -211,5 +213,52 @@ func TestCapture(t *testing.T) {
 			ok.stdout,
 			ok.stderr,
 		)
+	}
+}
+
+func TestDrift(t *testing.T) {
+	code := t.TempDir()
+	repo := filepath.Join(code, "github.com", "acme", "app")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	testgit.Init(t, repo)
+	first := testgit.Commit(t, repo, "first", map[string]string{"main.go": "func Serve() {}\n"})
+	root := setupCLI(t, "code_roots: ["+code+"]\n")
+	writeNote(
+		t,
+		root,
+		"notes/serving.md",
+		"---\ntitle: Serving\nsources:\n  - ref: acme/app:main.go@"+
+			first+"#Serve\n  - url: https://example.invalid/never-fetched\n---\nServe handles it.\n",
+	)
+
+	clean := runBrain(t, "", "drift", "-o", "json")
+	if clean.code != exitOK {
+		t.Fatalf("drift before a change: exit %d, stderr %q", clean.code, clean.stderr)
+	}
+	// Offline counts this note's url and the one inbox/raw.md cites.
+	if r := decodeStrict[drift.Report](t, clean.stdout); !r.OK || r.Offline != 2 ||
+		len(r.Notes) != 0 {
+		t.Errorf("clean report = %+v", r)
+	}
+
+	testgit.Commit(t, repo, "second", map[string]string{"main.go": "func Listen() {}\n"})
+	got := runBrain(t, "", "drift", "notes/serving.md")
+	if got.code != exitError {
+		t.Fatalf(
+			"drift after a change: exit %d, want %d; stderr %q",
+			got.code,
+			exitError,
+			got.stderr,
+		)
+	}
+	for _, want := range []string{"notes/serving.md", "changed", "symbol-missing", "1 of 1 note(s) drifted"} {
+		if !strings.Contains(got.stdout, want) {
+			t.Errorf("drift text lacks %q:\n%s", want, got.stdout)
+		}
+	}
+	if !strings.HasPrefix(got.stderr, "brain drift: 1 of 1 note(s) drifted") {
+		t.Errorf("stderr = %q", got.stderr)
 	}
 }

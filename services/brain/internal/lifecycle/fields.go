@@ -84,9 +84,36 @@ var enumKeys = map[string][]string{
 	KeyClassification:  Classifications,
 }
 
-// codeRef matches a sources[].ref: repo:path@commit with an optional
-// #symbol. The commit is a hex object name of 7 to 64 characters.
-var codeRef = regexp.MustCompile(`^[^\s:@#]+:[^\s@#]+@[0-9a-fA-F]{7,64}(#\S+)?$`)
+// codeRef matches a sources[].ref that pins code: repo:path@commit with an
+// optional #symbol. The commit is a hex object name of 7 to 64 characters.
+var codeRef = regexp.MustCompile(`^([^\s:@#]+):([^\s@#]+)@([0-9a-fA-F]{7,64})(?:#(\S+))?$`)
+
+// CodeRef is a parsed sources[].ref that pins code.
+type CodeRef struct {
+	// Repo is host/owner/name, or owner/name on github.com.
+	Repo   string
+	Path   string
+	Commit string
+	// Symbol is the name after #, empty when the ref names a whole file.
+	Symbol string
+}
+
+func (r CodeRef) String() string {
+	s := r.Repo + ":" + r.Path + "@" + r.Commit
+	if r.Symbol != "" {
+		s += "#" + r.Symbol
+	}
+	return s
+}
+
+// ParseCodeRef parses a code ref, repo:path@commit[#symbol].
+func ParseCodeRef(ref string) (CodeRef, bool) {
+	m := codeRef.FindStringSubmatch(strings.TrimSpace(ref))
+	if m == nil {
+		return CodeRef{}, false
+	}
+	return CodeRef{Repo: m[1], Path: m[2], Commit: m[3], Symbol: m[4]}, true
+}
 
 // contentHash matches a sources[].content_hash: hex, optionally prefixed
 // with its algorithm, such as sha256:.

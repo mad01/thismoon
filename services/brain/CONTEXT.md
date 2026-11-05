@@ -89,6 +89,10 @@ _Avoid_: report, challenge, mark (on its own)
 The vault's `.brain/archive/`, where `brain inbox archive --expired` moves raw Notes past their `expires_at`, each under the path it had. The walk skips `.brain`, so an archived note is out of search, Check and the link graph, yet the file and its git history stay in the vault; moving it back under `inbox/` restores it. Keeping a note (`brain inbox keep`) is the one action that extends a raw note's expiry; an edit never does.
 _Avoid_: trash, deleted notes, expired folder
 
+**Drift**:
+A pinned source of a Note that no longer matches what it points at, as `brain drift` finds it: a code ref (`repo:path@commit#symbol` in `sources[].ref`) whose path moved, whose content changed since the commit, or whose symbol is gone, looked up in a local checkout under a configured code root; or an external `url` that is gone or no longer matches its `content_hash`. A source drift cannot check is unresolved, which is not drift.
+_Avoid_: staleness (that is review_by), rot, breakage
+
 **Tombstone**:
 What `brain withdraw` leaves of a Note: frontmatter of only `id`, `status: withdrawn` and `status_at`, and no body. The note's chunks leave both indexes when the command returns. Its old text survives in the vault's git history.
 _Avoid_: stub, placeholder

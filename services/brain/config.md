@@ -116,6 +116,12 @@ found in its own vault resolves in the shared vaults in this order.
 - `semantic.rerank_default` (bool, default `false`): rerank hybrid results
   when a call does not say.
 
+- `code_roots` (list of paths, default none): where `brain drift` finds the
+  local checkout behind a code ref. A ref's repo `host/owner/name` (or
+  `owner/name`, meaning github.com) is `<root>/<host>/<owner>/<name>` under
+  the first root that has it as a git checkout. A leading `~` is expanded.
+  Without it every code ref reports `unresolved`.
+
 The defaults are the constants in `facts.go`. Unknown keys are ignored.
 
 ## Environment variables
@@ -146,4 +152,6 @@ semantic:
   enabled: true
   ollama_url: http://localhost:11434
   embed_model: nomic-embed-text
+code_roots:
+  - ~/code/src
 ```

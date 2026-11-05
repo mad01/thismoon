@@ -10,10 +10,11 @@ brain/
   config.md           - config file, precedence, paths, env vars, parse-failure posture
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
-    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, capture, edit, promote, supersede, retract, withdraw, flag, inbox, check, list, migrate, docs, doctor, mcp, version
+    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, capture, edit, promote, supersede, retract, withdraw, flag, inbox, drift, check, list, migrate, docs, doctor, mcp, version
     check/            - brain check: the rules, the vault's .brain/policy.yaml, the report
+    drift/            - brain drift: code refs checked in local checkouts (git), external sources fetched (--online)
     lifecycle/        - the status model: statuses, lifecycle fields, dates a write fills, revocation, banners
-    config/           - loads the config file (vaults, semantic settings)
+    config/           - loads the config file (vaults, semantic settings, code_roots)
     doctor/           - the checks `brain doctor` and `brain_doctor` share
     library/          - the vaults opened together: ref lookup, per-vault index refresh under a lock, cross-vault search, count, semantic and hybrid queries
     lockfile/         - cross-process flock on the files under the state dir's locks/

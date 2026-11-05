@@ -190,3 +190,27 @@ func TestSemanticIndexDirOverride(t *testing.T) {
 		t.Errorf("semantic dir = %q, want %q", dir, want)
 	}
 }
+
+func TestCodeRoots(t *testing.T) {
+	home := testhome.Isolate(t)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	cfg := "vault: /v\ncode_roots: [~/code/src, /srv/repos/]\n"
+	if err := os.WriteFile(path, []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(home, "code", "src"), "/srv/repos"}
+	if len(loaded.CodeRoots) != 2 || loaded.CodeRoots[0] != want[0] ||
+		loaded.CodeRoots[1] != want[1] {
+		t.Errorf("code_roots = %v, want %v", loaded.CodeRoots, want)
+	}
+	if err := os.WriteFile(path, []byte("vault: /v\ncode_roots: ['']\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); !errors.Is(err, ErrInvalid) {
+		t.Errorf("an empty code root = %v, want ErrInvalid", err)
+	}
+}

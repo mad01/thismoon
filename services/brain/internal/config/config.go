@@ -30,6 +30,11 @@ type Config struct {
 	// brain_hybrid_search MCP tools and matching CLI commands return a clear
 	// "semantic disabled" error; the literal flow is unaffected.
 	Semantic SemanticConfig
+	// CodeRoots are the directories brain drift finds local checkouts in:
+	// a code ref's repo host/owner/name is <root>/<host>/<owner>/<name>.
+	// Each is cleaned with a leading ~ expanded; empty leaves every code
+	// ref unresolved.
+	CodeRoots []string
 }
 
 // Vault is one configured vault.
@@ -49,9 +54,10 @@ type Vault struct {
 // file is the config file as written: either the legacy single vault path
 // or a vaults list, plus the semantic block.
 type file struct {
-	Vault    string         `yaml:"vault"`
-	Vaults   []Vault        `yaml:"vaults"`
-	Semantic SemanticConfig `yaml:"semantic,omitempty"`
+	Vault     string         `yaml:"vault"`
+	Vaults    []Vault        `yaml:"vaults"`
+	Semantic  SemanticConfig `yaml:"semantic,omitempty"`
+	CodeRoots []string       `yaml:"code_roots,omitempty"`
 }
 
 // SemanticConfig configures the optional semantic search layer (Ollama
@@ -117,11 +123,32 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w %s: %w", ErrInvalid, path, err)
 	}
-	cfg := &Config{Vaults: vaults, Semantic: raw.Semantic}
+	roots, err := expandPaths(raw.CodeRoots)
+	if err != nil {
+		return nil, fmt.Errorf("%w %s: code_roots: %w", ErrInvalid, path, err)
+	}
+	cfg := &Config{Vaults: vaults, Semantic: raw.Semantic, CodeRoots: roots}
 	if err := applySemanticDefaults(&cfg.Semantic); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// expandPaths cleans each path with a leading ~ expanded. An empty entry
+// is an error.
+func expandPaths(paths []string) ([]string, error) {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if strings.TrimSpace(p) == "" {
+			return nil, errors.New("an entry is empty")
+		}
+		expanded, err := confdir.Expand(p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, filepath.Clean(expanded))
+	}
+	return out, nil
 }
 
 // parseVaults turns the legacy vault key or the vaults list into validated

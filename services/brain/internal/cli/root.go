@@ -86,6 +86,7 @@ Subcommands:
   withdraw          Replace a note with a tombstone and purge it from the indexes.
   flag              Mark a note disputed, with the reason.
   inbox             List raw captures, keep them, or archive the expired ones.
+  drift             Check the sources notes pin against what they are now.
   list              List notes in a tier, optionally filtered.
   migrate           Backfill note ids (--ids).
   docs              Print the agent-facing CLI guide.
@@ -150,6 +151,7 @@ brain doctor prints the paths in effect.`,
 		newWithdrawCmd(a),
 		newFlagCmd(a),
 		newInboxCmd(a),
+		newDriftCmd(a),
 		newListCmd(a),
 		newMigrateCmd(a),
 		newDocsCmd(),

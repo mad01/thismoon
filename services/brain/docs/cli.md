@@ -65,6 +65,7 @@ prints `vault:path`.
 | `retract <note>` | mark it retracted; the body stays under a banner | `--reason error\|source-retracted\|unverifiable`, `--note <text>` |
 | `withdraw <note>` | leave a tombstone and purge the note from both indexes | |
 | `flag <note>` | mark it disputed, the reason in `status_reason`; a shared vault refuses | `--reason <text>` (required) |
+| `drift [notes...]` | check pinned sources: code refs in local checkouts, urls with `--online`; exits 1 on drift | `--online` |
 | `inbox list\|keep\|archive` | raw captures: list them, extend one's expiry, archive the expired | `--expired`, `keep <note> --days N`, `archive --expired --dry-run` |
 | `check [paths...]` | check notes (all of them with no paths) against the status rules, links and vault policy | `-o text\|json\|github` |
 | `index` | refresh indexes; semantic re-embeds changed notes only (queries refresh too) | `--force --literal-only` |

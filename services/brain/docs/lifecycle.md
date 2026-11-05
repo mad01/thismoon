@@ -86,6 +86,31 @@ one, and removes it from the candidates; the write goes through once every
 candidate is named. `brain edit` never runs the check. The exists check
 (exit 4) and the secret scan (exit 8) run first.
 
+## Drift
+
+`brain drift [notes...]` checks the `sources[]` a note pins. A code ref,
+`ref: repo:path@commit#symbol`, is looked up in a local checkout: the repo
+(`host/owner/name`, or `owner/name` on github.com) resolves to
+`<root>/<host>/<owner>/<name>` under each `code_roots:` entry of the config.
+
+```yaml
+sources:
+  - ref: github.com/acme/app:pkg/serve.go@4f2a9c1#Serve
+  - url: https://example.com/spec
+    content_hash: sha256:9f86d081884c7d65
+    archive: https://web.archive.org/web/2026/https://example.com/spec
+```
+
+Findings: `moved` (the path is gone at HEAD; `moved_to` when git sees a
+rename), `changed` (its content differs from the pinned commit),
+`symbol-missing` (the symbol no longer appears as a whole word), `gone` (a
+url answers 404 or 410, with the `archive` url), `hash-changed` (a url no
+longer matches `content_hash`, sha256 unless prefixed `sha512:` or `sha1:`; a
+prefix of the hex digest is enough) and `unresolved` (a repo not checked out,
+a commit not fetched, a failed fetch). Urls are fetched only with
+`--online`. drift exits 1 when a note drifted; `unresolved` alone is not
+drift. With no arguments it checks every note that is not revoked.
+
 ## brain check
 
 `brain check` exits 1 on an error: a citation of a retracted or withdrawn
@@ -99,6 +124,7 @@ note. `.brain/policy.yaml` in the vault sets `classifications:
 |---|---|
 | `capture` | `vault`, `path`, `warnings[]` (as write) |
 | `flag` | `vault`, `path`, `sha` |
+| `drift` | `ok`, `online`, `checked`, `drifted`, `offline_skipped`, `notes[] {vault, path, findings[] {kind, source, message, moved_to, archive}}` |
 | `inbox list` | `total`, `notes[] {vault, path, title, captured_by, expires_at, expired}` |
 | `inbox keep` | `vault`, `path`, `sha`, `expires_at` |
 | `inbox archive` | `dry_run`, `archived[] {vault, path, archived_to}`, `skipped[] {vault, reason}` |
