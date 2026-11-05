@@ -30,5 +30,7 @@ When you write:
   to check it is gone. Record where the secret lives, not its value.
 
 When you answer from the vault, cite every note you used by wikilink
-(`[[stem]]`) or vault path (`notes/stem.md`). If the vault does not hold the
+(`[[stem]]`) or vault path (`notes/stem.md`). With more than one vault,
+cite the `vault:path` brain prints (`shared:notes/stem.md`), so the answer
+says which vault each fact came from. If the vault does not hold the
 answer, say so instead of guessing.
