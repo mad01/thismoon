@@ -31,6 +31,10 @@ const (
 // repo, so global hooks, signing and templates do not run in it.
 var vaultGitEnv = []string{"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1"}
 
+// baselineTag names the fixture commit. brain commits its own changes to
+// the vault, so HEAD moves during a run; the tag does not.
+const baselineTag = "harness-baseline"
+
 // brainHome is a brain workspace's scratch directory:
 //
 //	<Root>/vault        the fixture copy, committed as the git baseline
@@ -115,6 +119,7 @@ func (h brainHome) populate(ctx context.Context, fixture string) error {
 			"-c", "user.name=harness-eval", "-c", "user.email=harness-eval@example.invalid",
 			"commit", "-q", "--no-verify", "--no-gpg-sign", "-m", "baseline",
 		},
+		{"tag", baselineTag},
 	} {
 		if _, err := runGit(ctx, vaultGitEnv, h.vaultDir(), args...); err != nil {
 			return err
@@ -162,7 +167,8 @@ func (h brainHome) environ(base []string) []string {
 
 // capture stages everything in the vault and reads back how it differs
 // from the baseline, untracked files included and renames split into a
-// delete and an add.
+// delete and an add. It diffs against the baseline tag, not HEAD, so the
+// commits brain made during the run count as changes.
 func (h brainHome) capture(ctx context.Context) (vaultState, error) {
 	vault := h.vaultDir()
 	if _, err := runGit(ctx, vaultGitEnv, vault, "add", "-A"); err != nil {
@@ -176,12 +182,12 @@ func (h brainHome) capture(ctx context.Context) (vaultState, error) {
 		"--cached",
 		"--no-renames",
 		"--name-status",
-		"HEAD",
+		baselineTag,
 	)
 	if err != nil {
 		return vaultState{}, err
 	}
-	diff, err := runGit(ctx, vaultGitEnv, vault, "diff", "--cached", "--no-renames", "HEAD")
+	diff, err := runGit(ctx, vaultGitEnv, vault, "diff", "--cached", "--no-renames", baselineTag)
 	if err != nil {
 		return vaultState{}, err
 	}

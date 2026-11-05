@@ -100,6 +100,18 @@ func TestBrainWorkspace(t *testing.T) {
 	if err := os.Remove(filepath.Join(h.vaultDir(), "inbox", "move.md")); err != nil {
 		t.Fatal(err)
 	}
+	// brain commits what it changes, so a committed edit must still count.
+	for _, args := range [][]string{
+		{"add", "--", "notes/edit.md"},
+		{
+			"-c", "user.name=brain", "-c", "user.email=brain@example.invalid",
+			"commit", "-q", "--no-verify", "--no-gpg-sign", "-m", "brain: edit notes/edit.md",
+		},
+	} {
+		if _, err := runGit(ctx, vaultGitEnv, h.vaultDir(), args...); err != nil {
+			t.Fatal(err)
+		}
+	}
 	vault, err = ws.Vault(ctx)
 	if err != nil {
 		t.Fatal(err)
