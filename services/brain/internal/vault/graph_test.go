@@ -247,7 +247,8 @@ func TestSnapshotLinks(t *testing.T) {
 	if len(got) != 1 || got[0].Resolved || got[0].Target != "dangling:a" {
 		t.Errorf("shared links = %+v, want [[a]] dangling", got)
 	}
-	if got := sn.Links(&Vault{Name: "elsewhere"}, []byte("[[b]]")); len(got) != 1 || got[0].Resolved {
+	if got := sn.Links(&Vault{Name: "elsewhere"}, []byte("[[b]]")); len(got) != 1 ||
+		got[0].Resolved {
 		t.Errorf("links from a vault outside the snapshot = %+v, want dangling", got)
 	}
 }

@@ -95,6 +95,7 @@ Subcommands:
   docs              Print the agent-facing CLI guide.
   doctor            Check config, vault, index and Ollama.
   mcp               Start the MCP stdio server for Claude Code.
+  serve             Serve the read-only web view of the vaults on localhost.
 
 Every command takes -o json for machine-readable output and --vault <name>
 to restrict it to configured vaults. A note is named by vault:path or by a
@@ -163,6 +164,7 @@ brain doctor prints the paths in effect.`,
 		newDocsCmd(),
 		newDoctorCmd(a),
 		newMCPCmd(a),
+		newServeCmd(a),
 		newVersionCmd(a),
 	)
 	return root
