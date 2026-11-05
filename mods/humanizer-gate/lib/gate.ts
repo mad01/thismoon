@@ -1,5 +1,5 @@
 // Pure helpers behind the humanizer-gate mod: no `$`, no I/O, so `node --test`
-// covers them without the engine. register.ts is the only caller.
+// covers them without the engine. hooks/register.ts and pi/index.ts call them.
 
 export type Severity = 'suggestion' | 'warning' | 'error'
 
@@ -11,6 +11,15 @@ export const DETECT_BUDGET_MS = 5_000
 /** How many matched texts a question quotes. */
 const QUOTED_MATCHES = 3
 
+/** How many findings a feedback deny lists; the rest are counted. */
+const LISTED_FINDINGS = 20
+
+/** How long a matched text a feedback deny quotes before it is clipped. */
+const QUOTED_MATCH_CHARS = 60
+
+/** How many denied texts a session remembers, so an unchanged resubmission passes. */
+const REMEMBERED_DENIALS = 32
+
 /** The labels of the hold dialog; only the second one stops the call. */
 export const HOLD_OPTIONS = ['Proceed', 'Cancel'] as const
 
@@ -20,14 +29,18 @@ export const CANCELLED_REASON = 'humanizer-gate: cancelled by user'
 export type GateConfig = {
   holdOnError: boolean
   holdOnCommitError: boolean
+  feedbackWarnings: boolean
   minSeverity: Severity
 }
 
 export const DEFAULT_CONFIG: GateConfig = {
   holdOnError: true,
   holdOnCommitError: false,
+  feedbackWarnings: true,
   minSeverity: 'warning',
 }
+
+type ConfigFlag = 'holdOnError' | 'holdOnCommitError' | 'feedbackWarnings'
 
 function isSeverity(value: unknown): value is Severity {
   return typeof value === 'string' && (SEVERITIES as readonly string[]).includes(value)
@@ -35,13 +48,14 @@ function isSeverity(value: unknown): value is Severity {
 
 /** The mod's userConfig with defaults filled in; a value of the wrong kind falls back. */
 export function readConfig(options: Readonly<Record<string, unknown>>): GateConfig {
-  const flag = (key: 'holdOnError' | 'holdOnCommitError'): boolean => {
+  const flag = (key: ConfigFlag): boolean => {
     const value = options[key]
     return typeof value === 'boolean' ? value : DEFAULT_CONFIG[key]
   }
   return {
     holdOnError: flag('holdOnError'),
     holdOnCommitError: flag('holdOnCommitError'),
+    feedbackWarnings: flag('feedbackWarnings'),
     minSeverity: isSeverity(options.minSeverity) ? options.minSeverity : DEFAULT_CONFIG.minSeverity,
   }
 }
@@ -214,6 +228,16 @@ export function extractCommitMessage(command: string): string | null {
   return parts.length === 0 ? null : parts.join('\n\n')
 }
 
+/** One detect finding, as a feedback deny lists it. Line and column are 1-based; 0 when detect gave none. */
+export type Finding = {
+  ruleId: string
+  severity: Severity | null
+  line: number
+  column: number
+  match: string
+  message: string
+}
+
 export type FindingsSummary = {
   total: number
   errors: number
@@ -221,9 +245,18 @@ export type FindingsSummary = {
   suggestions: number
   /** The first three distinct matched texts, errors first. */
   matches: string[]
+  /** Every finding, in text order. */
+  findings: Finding[]
 }
 
-type FindingLike = { severity?: unknown; match?: unknown }
+type FindingLike = {
+  rule_id?: unknown
+  severity?: unknown
+  line?: unknown
+  column?: unknown
+  match?: unknown
+  message?: unknown
+}
 
 function orderedBySeverity(findings: FindingLike[]): FindingLike[] {
   const rank = (finding: FindingLike): number =>
@@ -231,9 +264,27 @@ function orderedBySeverity(findings: FindingLike[]): FindingLike[] {
   return [...findings].sort((a, b) => rank(b) - rank(a))
 }
 
-/** Counts a detect payload's findings by severity and quotes the first few. */
+const stringOf = (value: unknown): string => (typeof value === 'string' ? value : '')
+const positionOf = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
+
+function toFinding(item: FindingLike): Finding {
+  return {
+    ruleId: stringOf(item.rule_id),
+    severity: isSeverity(item.severity) ? item.severity : null,
+    line: positionOf(item.line),
+    column: positionOf(item.column),
+    match: stringOf(item.match),
+    message: stringOf(item.message),
+  }
+}
+
+function inTextOrder(a: Finding, b: Finding): number {
+  return a.line - b.line || a.column - b.column
+}
+
+/** Counts a detect payload's findings by severity, quotes the first few, and keeps them all in text order. */
 export function summarizeFindings(payload: unknown): FindingsSummary {
-  const summary: FindingsSummary = { total: 0, errors: 0, warnings: 0, suggestions: 0, matches: [] }
+  const summary: FindingsSummary = { total: 0, errors: 0, warnings: 0, suggestions: 0, matches: [], findings: [] }
   const findings = (payload as { findings?: unknown } | null)?.findings
   if (!Array.isArray(findings)) return summary
   const objects = findings.filter((f): f is FindingLike => f !== null && typeof f === 'object')
@@ -249,6 +300,7 @@ export function summarizeFindings(payload: unknown): FindingsSummary {
       summary.matches.push(match)
     }
   }
+  summary.findings = objects.map(toFinding).sort(inTextOrder)
   return summary
 }
 
@@ -286,4 +338,103 @@ export function holdQuestion(summary: FindingsSummary, target: string): string {
   const quoted = summary.matches.map(match => `"${match}"`).join(', ')
   const detail = quoted === '' ? '' : ` (${quoted})`
   return `humanizer found ${count(summary.errors, 'error-level finding')} in the ${target}${detail}. Send it anyway?`
+}
+
+const isWarningOrAbove = (finding: Finding): boolean => finding.severity === 'warning' || finding.severity === 'error'
+
+// A matched text on one line, clipped: a finding may match a newline or a
+// whole sentence.
+function clip(match: string): string {
+  const flat = match.replace(/\s+/g, ' ').trim()
+  return flat.length <= QUOTED_MATCH_CHARS ? flat : `${flat.slice(0, QUOTED_MATCH_CHARS - 3)}...`
+}
+
+function findingLine(finding: Finding): string {
+  const quoted = clip(finding.match)
+  const match = quoted === '' ? '' : ` "${quoted}"`
+  return `- ${finding.ruleId} ${finding.line}:${finding.column}${match}: ${finding.message}`
+}
+
+/**
+ * The deny text that hands warning-level and error-level findings back to
+ * the model: one line per finding (rule id, line:column in the text, the
+ * matched text, the message), at most LISTED_FINDINGS of them, then what to
+ * do next.
+ */
+export function feedbackReason(summary: FindingsSummary, target: string): string {
+  const due = summary.findings.filter(isWarningOrAbove)
+  const lines = due.slice(0, LISTED_FINDINGS).map(findingLine)
+  if (due.length > LISTED_FINDINGS) lines.push(`- and ${due.length - LISTED_FINDINGS} more`)
+  const found = `humanizer detect found ${count(due.length, 'finding')} in the ${target}`
+  return [
+    `humanizer-gate: not sent. ${found} (line:column in that text):`,
+    ...lines,
+    `Fix them and send the call again. If they are false positives, send the same ${target} unchanged and it goes through.`,
+  ].join('\n')
+}
+
+/**
+ * A short key for a scanned text, so the session can remember which texts
+ * it denied without keeping them. cyrb53, a 53-bit non-cryptographic hash:
+ * a collision only lets a changed text through unchecked, which fails open.
+ */
+export function textKey(target: string, text: string): string {
+  const input = `${target}\u0000${text}`
+  let h1 = 0xdeadbeef
+  let h2 = 0x41c6ce57
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input.charCodeAt(i)
+    h1 = Math.imul(h1 ^ ch, 2654435761)
+    h2 = Math.imul(h2 ^ ch, 1597334677)
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)
+}
+
+/** `keys` with `key` added last, dropping the oldest past REMEMBERED_DENIALS. */
+export function rememberDenial(keys: readonly string[], key: string): string[] {
+  return [...keys.filter(k => k !== key), key].slice(-REMEMBERED_DENIALS)
+}
+
+/** What the gate does with a scanned PR body or commit message. */
+export type GateVerdict =
+  /** No finding to act on, a failed scan, or the feature off: send it. */
+  | { kind: 'pass' }
+  /** Error-level findings with the hold on: ask Proceed / Cancel. */
+  | { kind: 'hold'; summary: FindingsSummary }
+  /** The same text was denied before in this session: send it. */
+  | { kind: 'resubmitted' }
+  /** Deny with `reason` and remember `key`, so the same text passes next time. */
+  | { kind: 'feedback'; reason: string; key: string }
+
+export type GateInput = {
+  /** The detect summary; null when the scan failed. */
+  summary: FindingsSummary | null
+  /** `PR body` or `commit message`. */
+  target: string
+  text: string
+  /** holdOnError for a PR body, holdOnCommitError for a commit message. */
+  isHolding: boolean
+  /** feedbackWarnings. */
+  isFeedback: boolean
+  /** The keys of the texts this session already denied. */
+  denied: readonly string[]
+}
+
+/**
+ * Decides what happens to a scanned text. Error-level findings with the
+ * hold on go to the dialog, as they always have. Otherwise a text with a
+ * finding at warning or above is denied once with the findings as the
+ * reason; the same text sent again passes, and a changed text is judged
+ * afresh.
+ */
+export function judge(input: GateInput): GateVerdict {
+  const { summary, target, text } = input
+  if (summary === null) return { kind: 'pass' }
+  if (summary.errors > 0 && input.isHolding) return { kind: 'hold', summary }
+  if (!input.isFeedback || !summary.findings.some(isWarningOrAbove)) return { kind: 'pass' }
+  const key = textKey(target, text)
+  if (input.denied.includes(key)) return { kind: 'resubmitted' }
+  return { kind: 'feedback', reason: feedbackReason(summary, target), key }
 }
