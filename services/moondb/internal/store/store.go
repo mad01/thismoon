@@ -52,6 +52,11 @@ type Store interface {
 	// CountAgentsToFill counts the agents NeedsFill keeps for
 	// since: the ones a forced import ending at since would still fill.
 	CountAgentsToFill(ctx context.Context, since time.Time) (int, error)
+	// TranscriptCuts lists, oldest session first, the sessions in which
+	// CapCheck finds turns a cap of capBytes cut, from the sizes of their
+	// stored transcript chunks. A chunk with no stored bytes leaves its
+	// turn unjudged.
+	TranscriptCuts(ctx context.Context, capBytes int64) ([]CutSession, error)
 	// Edits lists edits newest first, narrowed by q.
 	Edits(ctx context.Context, q EditQuery) ([]Edit, error)
 	// LatestAfter returns the most recent Edit q allows that has an
