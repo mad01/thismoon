@@ -151,10 +151,11 @@ func (w *Workspace) Commits(ctx context.Context) ([]string, error) {
 }
 
 // ContentDir is the directory graders resolve paths against: the vault for
-// a brain workspace, the workspace directory otherwise.
+// a brain workspace, the directory that holds private/ and shared/ for a
+// two-vault one, and the workspace directory otherwise.
 func (w *Workspace) ContentDir() string {
 	if w.brain != nil {
-		return w.brain.vaultDir()
+		return w.brain.contentDir()
 	}
 	return w.Dir
 }

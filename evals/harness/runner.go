@@ -21,8 +21,9 @@ import (
 // csl use, MCP or CLI, in the main session and subagents together, and
 // BrainCalls and BrainCommands the brain CLI runs that were allowed, by
 // subcommand; CPUSeconds is claude's CPU time plus its waited-for
-// children. A brain workspace's row lists the vault paths the run changed
-// and names the diff file under the run directory. Error collects anything
+// children. A brain workspace's row lists the vault paths the run changed,
+// the shared origin's branches it pushed and the gh calls brain made, and
+// names the diff file under the run directory. Error collects anything
 // that went wrong around the run, a changed canonical checkout included;
 // the graders still score what there is.
 type Row struct {
@@ -57,6 +58,8 @@ type Row struct {
 	Stream              string          `json:"stream"`
 	Diff                string          `json:"diff,omitempty"`
 	Changes             []Change        `json:"changes,omitempty"`
+	OriginBranches      []OriginBranch  `json:"origin_branches,omitempty"`
+	GHCalls             []string        `json:"gh_calls,omitempty"`
 	Scorecard           json.RawMessage `json:"scorecard,omitempty"`
 	ScorecardStatus     string          `json:"scorecard_status"`
 	Error               string          `json:"error,omitempty"`
@@ -174,6 +177,7 @@ func (r *runner) runIn(ctx context.Context, c Case, rep int, ws *Workspace, row 
 	ev := Evidence{
 		Transcript: t, Dir: ws.ContentDir(), Commits: commits, Prompt: c.Prompt,
 		Files: vault.Files, Changes: vault.Changes, Diff: vault.Diff,
+		TwoVault: vault.TwoVault, Branches: vault.Branches, GHCalls: vault.GHCalls,
 	}
 	fillRow(row, t, gradeRun(ctx, c, ev, r.judge), used)
 	if row.SessionID == "" {
@@ -188,9 +192,10 @@ func (r *runner) runIn(ctx context.Context, c Case, rep int, ws *Workspace, row 
 	return errors.Join(runErr, t.Problems(), commitErr, vaultErr)
 }
 
-// keepVault reads back what the run left in a brain workspace's vault,
-// writes its diff to diffs/<name>.patch and records the changes on row.
-// Other workspaces have no vault and keep nothing.
+// keepVault reads back what the run left in a brain workspace's vaults,
+// writes its diff to diffs/<name>.patch and records the changes, the
+// pushed origin branches and the gh calls on row. Other workspaces have no
+// vault and keep nothing.
 func (r *runner) keepVault(
 	ctx context.Context,
 	ws *Workspace,
@@ -204,7 +209,7 @@ func (r *runner) keepVault(
 	if err != nil {
 		return vaultState{}, fmt.Errorf("vault diff: %w", err)
 	}
-	row.Changes = vault.Changes
+	row.Changes, row.OriginBranches, row.GHCalls = vault.Changes, vault.Branches, vault.GHCalls
 	row.Diff = filepath.Join("diffs", name+".patch")
 	diff := vault.Diff
 	if diff != "" {

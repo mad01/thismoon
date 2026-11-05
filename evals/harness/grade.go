@@ -18,9 +18,11 @@ import (
 // Evidence is what graders read: the run's transcript, the directory its
 // paths resolve against (the vault in a brain workspace), the subjects of
 // the commits it made in a worktree, and the prompt the llm grader shows
-// its judge. Files, Changes and Diff describe a brain workspace's vault
+// its judge. Files, Changes and Diff describe a brain workspace's vaults
 // after the run: every file, and how the run changed it from the baseline.
-// They are empty for other workspaces.
+// TwoVault marks a two-vault workspace, whose paths start with private/ or
+// shared/; Branches are the shared origin's branches the run pushed, and
+// GHCalls the fake gh's calls. They are empty for other workspaces.
 type Evidence struct {
 	Transcript Transcript
 	Dir        string
@@ -29,6 +31,9 @@ type Evidence struct {
 	Files      []string
 	Changes    []Change
 	Diff       string
+	TwoVault   bool
+	Branches   []OriginBranch
+	GHCalls    []string
 }
 
 // added reports whether p is a file the run created.
@@ -331,7 +336,7 @@ func checkWikilinks(g Grader, ev Evidence) (bool, string) {
 	if err != nil {
 		return false, err.Error()
 	}
-	notes := noteIndex(all)
+	links := newLinkIndex(all, ev.TwoVault)
 	minLinks := 0
 	if g.Min != nil {
 		minLinks = *g.Min
@@ -344,7 +349,7 @@ func checkWikilinks(g Grader, ev Evidence) (bool, string) {
 		}
 		resolved := map[string]bool{}
 		for _, target := range wikilinkTargets(string(data)) {
-			if note, ok := notes[strings.ToLower(target)]; ok {
+			if note, ok := links.resolve(f, target); ok {
 				resolved[note] = true
 			} else {
 				problems = append(problems, fmt.Sprintf("%s: [[%s]] does not resolve", f, target))

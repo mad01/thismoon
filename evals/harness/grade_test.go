@@ -505,6 +505,31 @@ func TestWikilinksGrader(t *testing.T) {
 	})
 }
 
+// TestWikilinksTwoVault: a private note's link resolves in its own vault,
+// then in the shared one, and a shared note's link never in the private.
+func TestWikilinksTwoVault(t *testing.T) {
+	dir := t.TempDir()
+	writeTree(t, dir, map[string]string{
+		"private/notes/local.md":    "[[team-note]], [[notes/mine]] and [[mine|me]]\n",
+		"private/notes/mine.md":     "mine\n",
+		"shared/notes/team-note.md": "[[notes/team-note]]\n",
+		"shared/notes/leak.md":      "[[mine]]\n",
+	})
+	files, err := listFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := Evidence{Dir: dir, Files: files, TwoVault: true}
+	wl := func(p string, minLinks int) Grader {
+		return Grader{Type: gradeWikilinks, Path: p, Min: num(minLinks)}
+	}
+	gradeVault(t, ev, []vaultTest{
+		{"private reaches shared", wl("private/notes/local.md", 2), true},
+		{"vault-relative path link", wl("shared/notes/team-note.md", 1), true},
+		{"shared never reaches private", wl("shared/notes/leak.md", 0), false},
+	})
+}
+
 // TestFileGlobOutsideBrain: a glob walks a non-brain workspace, and a
 // literal path does not need the walk.
 func TestFileGlobOutsideBrain(t *testing.T) {

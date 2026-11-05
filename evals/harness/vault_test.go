@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"reflect"
@@ -141,6 +143,122 @@ func TestBrainWorkspace(t *testing.T) {
 	}
 }
 
+// gitIn runs one git command in dir with the vaults' git environment.
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := runGit(context.Background(), vaultGitEnv, dir, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// TestBrainTwoVaultWorkspace: a fixture with private/ and shared/ makes a
+// local-only private repo and a shared clone of a bare origin, and capture
+// reports both vaults, the branches pushed to the origin and the gh calls.
+func TestBrainTwoVaultWorkspace(t *testing.T) {
+	ctx := context.Background()
+	roots := brainRoots(t, map[string]string{
+		"private/notes/mine.md":     "mine\n",
+		"private/notes/other.md":    "other\n",
+		"shared/notes/team.md":      "team\n",
+		"shared/.brain/policy.yaml": "classifications: [public, internal]\n",
+	})
+	if err := writeFakeGH(roots.BrainBinDir); err != nil {
+		t.Fatal(err)
+	}
+	spec := WorkspaceSpec{Kind: workspaceBrain, Fixture: "team"}
+	ws, err := prepareWorkspace(ctx, spec, roots, "two", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ws.Cleanup() })
+	h := ws.brain
+	private, shared := filepath.Join(h.vaultsDir(), "private"), filepath.Join(h.vaultsDir(), "shared")
+
+	if !h.TwoVault || ws.ContentDir() != h.vaultsDir() {
+		t.Fatalf("two-vault %v, content dir %s", h.TwoVault, ws.ContentDir())
+	}
+	cfg, err := os.ReadFile(h.configPath())
+	wantCfg := fmt.Sprintf("vaults:\n  - name: private\n    path: %q\n  - name: shared\n"+
+		"    path: %q\n    shared: true\nsemantic:\n  enabled: false\n", private, shared)
+	if err != nil || string(cfg) != wantCfg {
+		t.Errorf("config.yaml = %q (%v), want %q", cfg, err, wantCfg)
+	}
+	if remotes := gitIn(t, private, "remote"); remotes != "" {
+		t.Errorf("the private vault has remotes %q", remotes)
+	}
+	if origin := gitIn(t, shared, "remote", "get-url", "origin"); origin != h.originDir() {
+		t.Errorf("shared origin = %q, want %s", origin, h.originDir())
+	}
+	if gitIn(t, h.originDir(), "rev-parse", "main") !=
+		gitIn(t, shared, "rev-parse", baselineTag+"^{commit}") {
+		t.Error("the origin's main is not the shared baseline")
+	}
+	if vault, err := ws.Vault(ctx); err != nil || vault.Changes != nil ||
+		vault.Branches != nil || vault.GHCalls != nil || vault.Diff != "" {
+		t.Fatalf("baseline should be clean: %+v %v", vault, err)
+	}
+
+	// What brain does for a promote: commit the private copy's new status,
+	// push a branch cut in a worktree outside the shared clone, open a PR.
+	writeTree(t, private, map[string]string{"notes/mine.md": "mine, promoting\n"})
+	gitIn(t, private, "commit", "-q", "-am", "brain: promote notes/mine.md")
+	wt := filepath.Join(h.stateDir(), "brain", "worktrees", "promote")
+	gitIn(t, shared, "worktree", "add", "-q", "-b", "brain/promote/mine-01ab", wt)
+	writeTree(t, wt, map[string]string{"notes/mine.md": "mine\n"})
+	gitIn(t, wt, "add", "-A")
+	gitIn(t, wt, "commit", "-q", "-m", "brain: promote notes/mine.md")
+	gitIn(t, wt, "push", "-q", "origin", "brain/promote/mine-01ab", "HEAD:main")
+	gh := exec.Command(
+		filepath.Join(roots.BrainBinDir, "gh"),
+		"pr", "create", "--title", "Promote mine", "--body", "one\ntwo",
+	)
+	gh.Env = ws.Environ(os.Environ())
+	if out, err := gh.Output(); err != nil || string(out) != fakeGHRepo+"/pull/101\n" {
+		t.Errorf("gh pr create = %q, %v", out, err)
+	}
+
+	vault, err := ws.Vault(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []Change{{Status: "M", Path: "private/notes/mine.md"}}; !reflect.DeepEqual(
+		vault.Changes, want) {
+		t.Errorf("changes = %v, want %v", vault.Changes, want)
+	}
+	pushed := []Change{{Status: "A", Path: "shared/notes/mine.md"}}
+	var names []string
+	for _, b := range vault.Branches {
+		names = append(names, b.Name)
+		if !reflect.DeepEqual(b.Changes, pushed) || b.content["shared/notes/mine.md"] != "mine" {
+			t.Errorf("branch %s: changes %v, content %q", b.Name, b.Changes, b.content)
+		}
+	}
+	if want := []string{"brain/promote/mine-01ab", "main"}; !slices.Equal(names, want) {
+		t.Errorf("origin branches = %v, want %v", names, want)
+	}
+	if want := []string{"pr create --title Promote mine --body one\ntwo"}; !slices.Equal(
+		vault.GHCalls, want) {
+		t.Errorf("gh calls = %q, want %q", vault.GHCalls, want)
+	}
+	wantFiles := []string{
+		"private/notes/mine.md", "private/notes/other.md",
+		"shared/.brain/policy.yaml", "shared/notes/team.md",
+	}
+	if !slices.Equal(vault.Files, wantFiles) {
+		t.Errorf("files = %v, want %v", vault.Files, wantFiles)
+	}
+	for _, want := range []string{
+		"a/private/notes/mine.md", "+mine, promoting",
+		"# origin branch brain/promote/mine-01ab\n", "b/shared/notes/mine.md",
+	} {
+		if !strings.Contains(vault.Diff, want) {
+			t.Errorf("diff misses %q:\n%s", want, vault.Diff)
+		}
+	}
+}
+
 func TestBrainWorkspaceNeedsBinary(t *testing.T) {
 	roots := brainRoots(t, map[string]string{"notes/a.md": "a\n"})
 	roots.BrainBinDir = ""
@@ -155,12 +273,14 @@ func TestBrainEnviron(t *testing.T) {
 	h := brainHome{Root: "/tmp/ws", BinDir: "/tmp/bin"}
 	got := h.environ([]string{
 		"HOME=/home/u", "PATH=/usr/bin", "BRAIN_CONFIG=/real/config.yaml", "BRAIN_VAULT=/real",
-		"XDG_STATE_HOME=/home/u/.local/state", "TERM=x",
+		"XDG_STATE_HOME=/home/u/.local/state", "TERM=x", "GIT_CONFIG_GLOBAL=/home/u/.gitconfig",
+		"GIT_AUTHOR_NAME=Real Person", "GIT_DIR=/elsewhere/.git", "HARNESS_EVAL_GH_LOG=/other.log",
 	})
-	want := []string{
+	want := append([]string{
 		"HOME=/home/u", "TERM=x", "PATH=/tmp/bin:/usr/bin",
 		"BRAIN_CONFIG=/tmp/ws/config.yaml", "XDG_STATE_HOME=/tmp/ws/state",
-	}
+		"HARNESS_EVAL_GH_LOG=/tmp/ws/gh.log",
+	}, vaultGitEnv...)
 	if !slices.Equal(got, want) {
 		t.Errorf("environ = %v, want %v", got, want)
 	}

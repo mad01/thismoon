@@ -239,8 +239,9 @@ func newRunMeta(o options, p profile, cases []Case, claudeVersion string) runMet
 }
 
 // brainBinary builds brain from the working tree into a temp directory
-// when a case runs in a brain workspace, and returns the directory and its
-// cleanup. With no brain case it builds nothing and returns "".
+// when a case runs in a brain workspace, writes the fake gh beside it, and
+// returns the directory and its cleanup. With no brain case it builds
+// nothing and returns "".
 func brainBinary(ctx context.Context, cases []Case) (string, func(), error) {
 	noop := func() {}
 	if !slices.ContainsFunc(
@@ -254,7 +255,7 @@ func brainBinary(ctx context.Context, cases []Case) (string, func(), error) {
 		return "", noop, err
 	}
 	cleanup := func() { _ = os.RemoveAll(dir) }
-	if err := buildBrain(ctx, dir); err != nil {
+	if err := errors.Join(buildBrain(ctx, dir), writeFakeGH(dir)); err != nil {
 		cleanup()
 		return "", noop, err
 	}
