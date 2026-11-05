@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-11-05 moondb: Stop waits for the turn's last lines, and a turn keeps up to 15 MiB
 
-Change: thismoon #TBD. Claude Code writes the transcript asynchronously, so at Stop the file usually still lacked the turn's last response, and `moondb record` stored the turn without it. The Stop hook now waits up to 1 s for the transcript to hold the payload's final message before it reads the turn's lines. A turn's transcript chunk now keeps up to 15 MiB instead of 4 MiB, so a long turn keeps its head. An agent transcript keeps up to 15 MiB instead of 8 MiB.
+Change: thismoon #395. Claude Code writes the transcript asynchronously, so at Stop the file usually still lacked the turn's last response, and `moondb record` stored the turn without it. The Stop hook now waits up to 1 s for the transcript to hold the payload's final message before it reads the turn's lines. A turn's transcript chunk now keeps up to 15 MiB instead of 4 MiB, so a long turn keeps its head. An agent transcript keeps up to 15 MiB instead of 8 MiB.
 
 Run, in order:
 
