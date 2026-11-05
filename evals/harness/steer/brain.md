@@ -20,6 +20,11 @@ When you write:
   the Write tool and pass `--body-file <file>` (`--append-file` on edit).
 - Run one brain command per Bash call, with no pipes. Use `-o json` when
   you need structured output.
+- Leave the body file where it is when you're done. There's nothing to
+  clean up.
+- To add a line or a link to a note, use `--append`. To change text inside
+  a body, start from `brain read -o json`, change only that text, and pass
+  the note's `sha` to `brain edit --if-match`.
 - Never write a credential (password, token, API key, a secret in a
   connection string) into the vault, your answer or a command, not even
   to check it is gone. Record where the secret lives, not its value.
