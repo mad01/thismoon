@@ -9,6 +9,8 @@ package drift
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -83,27 +85,47 @@ type Options struct {
 	CodeRoots []string
 	// Online allows the network checks of external sources.
 	Online bool
-	// Client fetches external sources; nil uses one with FetchTimeout.
+	// AllowLocal lets online fetches reach loopback, link-local and private
+	// addresses, which are refused by default so that a shared vault's
+	// sources cannot point drift at services on this machine or network.
+	AllowLocal bool
+	// Budget bounds all the fetches of one Checker together; zero means
+	// DefaultBudget. A source not fetched in time is unresolved.
+	Budget time.Duration
+	// Client fetches external sources; nil uses one with FetchTimeout that
+	// enforces AllowLocal. A caller's own client is used as given.
 	Client *http.Client
 }
 
 // FetchTimeout bounds one fetch of an external source.
 const FetchTimeout = 20 * time.Second
 
+// DefaultBudget bounds all the fetches of one online run together.
+const DefaultBudget = 2 * time.Minute
+
 // Checker checks sources, each distinct one once.
 type Checker struct {
-	opts    Options
-	git     *gitChecker
-	fetched map[string][]Finding
-	offline int
+	opts     Options
+	git      *gitChecker
+	fetched  map[string][]Finding
+	offline  int
+	deadline time.Time // when the online budget runs out
 }
 
-// New returns a Checker for opts.
+// New returns a Checker for opts. Its online budget starts now.
 func New(opts Options) *Checker {
 	if opts.Client == nil {
-		opts.Client = &http.Client{Timeout: FetchTimeout}
+		opts.Client = newClient(opts.AllowLocal)
 	}
-	return &Checker{opts: opts, git: newGitChecker(opts.CodeRoots), fetched: map[string][]Finding{}}
+	if opts.Budget <= 0 {
+		opts.Budget = DefaultBudget
+	}
+	return &Checker{
+		opts:     opts,
+		git:      newGitChecker(opts.CodeRoots),
+		fetched:  map[string][]Finding{},
+		deadline: time.Now().Add(opts.Budget),
+	}
 }
 
 // Sources returns the findings for one note's sources. Entries that are
@@ -139,9 +161,34 @@ func (c *Checker) external(ctx context.Context, s lifecycle.Source) []Finding {
 	if got, ok := c.fetched[key]; ok {
 		return got
 	}
-	got := fetch(ctx, c.opts.Client, s)
+	got := c.fetchInBudget(ctx, s)
 	c.fetched[key] = got
 	return got
+}
+
+// fetchInBudget fetches one source within what is left of the online
+// budget. A source the budget does not reach, or one cut off by it, is
+// unresolved with a message that says so.
+func (c *Checker) fetchInBudget(ctx context.Context, s lifecycle.Source) []Finding {
+	spent := []Finding{{
+		Kind:    KindUnresolved,
+		Source:  s.URL,
+		Message: fmt.Sprintf("not fetched: the online budget of %s ran out", c.opts.Budget),
+	}}
+	if !time.Now().Before(c.deadline) {
+		return spent
+	}
+	fctx, cancel := context.WithDeadline(ctx, c.deadline)
+	defer cancel()
+	got := fetch(fctx, c.opts.Client, s)
+	if errors.Is(fctx.Err(), context.DeadlineExceeded) && ctx.Err() == nil && unresolved(got) {
+		return spent
+	}
+	return got
+}
+
+func unresolved(findings []Finding) bool {
+	return len(findings) == 1 && findings[0].Kind == KindUnresolved
 }
 
 // Run checks the sources of every note and reports the notes with findings,

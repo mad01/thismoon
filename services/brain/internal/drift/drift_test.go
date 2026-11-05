@@ -134,7 +134,7 @@ func TestExternalSources(t *testing.T) {
 		offline.offline != len(sources) {
 		t.Fatalf("offline = %+v (skipped %d), want no fetch", got, offline.offline)
 	}
-	got := New(Options{Online: true}).Sources(context.Background(), sources)
+	got := New(Options{Online: true, AllowLocal: true}).Sources(context.Background(), sources)
 	want := []string{KindHashChanged, KindGone, KindGone, KindUnresolved}
 	if kinds := kindsOf(got); strings.Join(kinds, ",") != strings.Join(want, ",") {
 		t.Fatalf("kinds = %v, want %v (%+v)", kinds, want, got)
@@ -263,7 +263,7 @@ func TestContentHashIsComparedInFull(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			source := lifecycle.Source{URL: srv.URL + "/page", ContentHash: tt.contentHash}
-			got := New(Options{Online: true}).Sources(context.Background(), []lifecycle.Source{source})
+			got := New(Options{Online: true, AllowLocal: true}).Sources(context.Background(), []lifecycle.Source{source})
 			if kinds := strings.Join(kindsOf(got), ","); kinds != tt.want {
 				t.Errorf("kinds = %q, want %q (%+v)", kinds, tt.want, got)
 			}
@@ -281,5 +281,97 @@ func TestBadContentHashNeedsNoFetch(t *testing.T) {
 	})
 	if len(got) != 1 || got[0].Kind != KindBadHash || !got[0].Drifted() || c.offline != 1 {
 		t.Errorf("findings = %+v (skipped %d), want one bad-hash and one skipped", got, c.offline)
+	}
+}
+
+func TestOnlineRefusesLocalAddressesUnlessAllowed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("internal admin page"))
+	}))
+	defer srv.Close()
+	source := []lifecycle.Source{{URL: srv.URL + "/admin"}}
+	got := New(Options{Online: true}).Sources(context.Background(), source)
+	if len(got) != 1 || got[0].Kind != KindUnresolved ||
+		!strings.Contains(got[0].Message, "private address") {
+		t.Errorf("findings = %+v, want unresolved: a local address is refused", got)
+	}
+	if got := New(Options{Online: true, AllowLocal: true}).Sources(context.Background(), source); len(got) != 0 {
+		t.Errorf("findings with AllowLocal = %+v, want none", got)
+	}
+}
+
+func TestOnlineFollowsOnlyWebRedirects(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "file:///etc/hosts", http.StatusFound)
+	}))
+	defer srv.Close()
+	got := New(Options{Online: true, AllowLocal: true}).Sources(context.Background(),
+		[]lifecycle.Source{{URL: srv.URL + "/hop"}})
+	if len(got) != 1 || got[0].Kind != KindUnresolved ||
+		!strings.Contains(got[0].Message, "only http and https") {
+		t.Errorf("findings = %+v, want unresolved: a file redirect is refused", got)
+	}
+}
+
+func TestRefuseLocal(t *testing.T) {
+	tests := []struct {
+		address string
+		refused bool
+	}{
+		{"127.0.0.1:80", true},
+		{"127.10.0.1:80", true},
+		{"[::1]:80", true},
+		{"0.0.0.0:80", true},
+		{"[::]:80", true},
+		{"10.1.2.3:443", true},
+		{"172.16.0.1:443", true},
+		{"192.168.1.1:443", true},
+		{"169.254.169.254:80", true},
+		{"[fe80::1%en0]:80", true},
+		{"[fd00::1]:80", true},
+		{"[::ffff:127.0.0.1]:80", true},
+		{"[::ffff:10.0.0.1]:80", true},
+		{"100.64.0.1:80", true},
+		{"224.0.0.1:80", true},
+		{"93.184.216.34:443", false},
+		{"[2606:2800:220:1:248:1893:25c8:1946]:443", false},
+		{"100.128.0.1:80", false},
+	}
+	for _, tt := range tests {
+		err := refuseLocal("tcp", tt.address, nil)
+		if (err != nil) != tt.refused {
+			t.Errorf("refuseLocal(%s) = %v, want refused %v", tt.address, err, tt.refused)
+		}
+	}
+}
+
+// TestOnlineBudgetBoundsEveryFetch runs fetches against a server that
+// never answers: the run stops at the budget, not at one fetch timeout per
+// source.
+func TestOnlineBudgetBoundsEveryFetch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(10 * time.Second):
+		}
+	}))
+	defer srv.Close()
+	var sources []lifecycle.Source
+	for _, p := range []string{"/a", "/b", "/c", "/d"} {
+		sources = append(sources, lifecycle.Source{URL: srv.URL + p})
+	}
+	c := New(Options{Online: true, AllowLocal: true, Budget: 300 * time.Millisecond})
+	start := time.Now()
+	got := c.Sources(context.Background(), sources)
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("the run took %s, want it bounded by the 300ms budget", elapsed)
+	}
+	if len(got) != len(sources) {
+		t.Fatalf("findings = %+v, want one per source", got)
+	}
+	for _, f := range got {
+		if f.Kind != KindUnresolved || !strings.Contains(f.Message, "budget") {
+			t.Errorf("finding = %+v, want unresolved: the budget ran out", f)
+		}
 	}
 }
