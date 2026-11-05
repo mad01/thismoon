@@ -149,6 +149,15 @@ before this edit` means none had arrived yet. One that ends in `none
 shown` means the agent was recorded before moondb kept them, which the
 forced import above fills.
 
+A session shows fewer model calls, and a lower cost, than its transcript
+holds. Before 2026-11-05 a prompt typed while a turn ran moved the turn's
+start, so its Stop kept only the lines after that prompt. A Stop can also
+read the transcript before the harness writes the turn's last lines, and
+miss its last call. Run `moondb import --since 30d --force` while no session is
+active: it replaces a turn's lines wherever the transcript holds other
+model calls for it. A turn over 4 MiB of transcript still loses its head
+to the cap.
+
 A repo's cost looks wrong: the page, `moondb sessions --repo` and the
 `moondb_sessions` tool split a session's cost by agent, since model calls
 carry no repo. A subagent's cost goes to the repo most of its edits

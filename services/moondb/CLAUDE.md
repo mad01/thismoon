@@ -224,7 +224,11 @@ as many lines or more, an import only when it read more.
 `record` keeps a little state per session under `<workdir>/sessions/`, read
 back only by later hooks of the same session:
 
-- `<sid>.turn`: the open turn's prompt id and the transcript offset it opened at
+- `<sid>.turn`: the open turn's prompt id and the transcript offset it opened at.
+  A prompt typed while the turn runs is queued, and its UserPromptSubmit
+  carries the running turn's prompt id. That second open keeps the first
+  offset, so the Stop still tails the whole turn. An offset past the
+  transcript's end (the file was replaced) gives way to the current size.
 - `<sid>.paths`: the files the session edited, which its snapshots cover
 - `<sid>.touched`: one worktree per line, where the session edited
 - `<sid>.heads`: the HEAD last seen in each touched worktree
@@ -331,7 +335,12 @@ hook calls `prompt_id`; a transcript without one keys the turn by the prompt
 entry's uuid. An edit is `<tool_use_id>:<index>`. Every import envelope is
 marked `backfill`, so importing a session again, or one partly captured live,
 only fills: a stored edit stays, and a session or turn keeps its values and
-gets its empty fields filled, an open turn closed. An earlier imported
+gets its empty fields filled, an open turn closed. A turn's transcript
+chunk is the exception: the import's replaces it when the two hold other
+model calls (`ingest.importedTranscript`). The Stop hook reads the
+transcript as it stands, which can miss the turn's head or hold a call of
+the turn before. The import reads each turn's lines from its prompt to the
+next. An earlier imported
 prompt still moves a start time back. A subagent's edits come from
 `<session>/subagents/agent-<id>.jsonl`, carry its id and type, and belong
 to the main turn its entries name. Each subagent file also gives one

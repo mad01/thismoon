@@ -11,7 +11,8 @@
 // by later events of the same session and by nothing else:
 //
 //	<session>.turn     "<prompt_id> <offset>": the open turn and the
-//	                   transcript size when it opened
+//	                   transcript size when it first opened; a queued
+//	                   prompt opens the same prompt id again and keeps it
 //	<session>.paths    "<worktree>\t<path>" per line: the files the session
 //	                   edited, which every snapshot of the worktree covers
 //	<session>.touched  one worktree per line: where the session edited

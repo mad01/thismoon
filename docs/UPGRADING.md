@@ -4,6 +4,20 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-05 moondb: a forced import repairs turns that kept too few model calls
+
+Change: thismoon #394. A prompt typed while a turn runs fires UserPromptSubmit under the running turn's prompt id. `moondb record` moved the turn's transcript offset to that point. The Stop then kept only the lines after the queued prompt, and the trace lost the turn's earlier model calls and their cost. record now keeps the turn's first offset. A forced import now also replaces a turn's transcript chunk when the transcript holds other model calls for that turn. That repairs the turns recorded before this change, and turns whose Stop read the transcript before the harness wrote its last lines.
+
+Run, in order:
+
+1. Merge this change, then `ralph up`. The hooks run the new `moondb record` from their next call, and the import repair needs the new serve.
+2. With no Claude Code session active, run `moondb import --since 30d --force`. A forced import closes in-flight turns, so the machine must be quiet. Sessions older than 30 days need a wider `--since`.
+
+Verify:
+
+1. `moondb version -o json` and serve's `/version` report the merged commit.
+2. For a session from before the change whose transcript holds `queue-operation` lines, `moondb trace <id> --json | jq .totals.model_calls` matches the transcript's main-thread calls: `jq -r 'select(.type=="assistant" and (.isSidechain|not)) | .message.id' <transcript> | sort -u | wc -l`. A turn that ran past 4 MiB of transcript still loses its head to the cap, so such a session stays lower.
+
 ## 2026-11-01 belt: read-size also fires on `csl_read`, and its matcher must name the tool
 
 Change: thismoon #363. belt's read-size hint now also fires after a `csl_read` call that reads a file of 300 lines or more with no `start_line` and no `end_line`. The advice is the same as after a Read. belt only sees the calls its PostToolUse matcher routes to `belt hint read`, so the consuming repo's matcher has to name the MCP tool too. A Read and a `csl_read` of one file now share one nudge per agent per session. The seen-file marker now names the file by repo and repo-relative path. A session that spans the upgrade can therefore get the hint once more for a file it already saw it on.
