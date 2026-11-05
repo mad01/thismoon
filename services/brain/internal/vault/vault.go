@@ -22,9 +22,9 @@ import (
 
 // Vault is a handle to a brain vault on disk. A single-file write is atomic
 // (a uniquely named temporary file, renamed or linked into place), a new
-// note never replaces an existing one, and a multi-file operation like
-// Promote rolls back on a best-effort basis. Every change holds the vault's
-// write lock when WriteLock is set.
+// note never replaces an existing one, and Promote, which writes many
+// files, puts every one back when a write fails. Every change holds the
+// vault's write lock when WriteLock is set.
 type Vault struct {
 	// Root is the absolute vault directory.
 	Root string
@@ -581,9 +581,15 @@ type PromoteResult struct {
 // TargetTier (default TierNotes). Updates frontmatter.Status to "validated"
 // with its lifecycle defaults (status_at, review_by, no expires_at),
 // points every wikilink in the vault that resolves to the note at its new
-// stem or path (see linkRetarget), optionally appends to a MOC. The note keeps its id, or gets one when it
-// has none. Best-effort rollback on failure.
-func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, err error) {
+// stem or path (see linkRetarget), optionally appends to a MOC. The note
+// keeps its id, or gets one when it has none. It is all or nothing: when a
+// write fails, every note it rewrote gets its old bytes back.
+func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error) {
+	return v.promote(path, opts, writeNoteFile)
+}
+
+// promote is Promote writing each rewritten note through write.
+func (v *Vault) promote(path string, opts PromoteOptions, write noteWriter) (res PromoteResult, err error) {
 	if err := v.writable(); err != nil {
 		return PromoteResult{}, err
 	}
@@ -697,50 +703,19 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 	if err := v.refuseContent(newPath, content); err != nil {
 		return PromoteResult{}, err
 	}
-
-	if err := os.MkdirAll(filepath.Dir(newPath), 0o755); err != nil {
-		return PromoteResult{}, err
+	p := promotion{oldPath: path, newPath: newPath, content: content}
+	if p.rewrites, err = linkChanges(edits); err != nil {
+		return PromoteResult{}, fmt.Errorf("rewrite backlinks: %w", err)
 	}
-	// Write new file, delete old only after success.
-	if err := v.create(newPath, content); err != nil {
-		return PromoteResult{}, err
-	}
-
-	rewrites, rewriteErr := v.writeEdits(edits)
-	if rewriteErr != nil {
-		// Roll back the new file; a failed rollback is reported with the cause.
-		rollbackErr := os.Remove(newPath)
-		return PromoteResult{}, errors.Join(
-			fmt.Errorf("rewrite backlinks: %w", rewriteErr),
-			rollbackErr,
-		)
-	}
-
-	if err := os.Remove(path); err != nil {
-		// Try to roll back rewrites? Not worth it for best-effort; leave a warning.
-		return PromoteResult{}, fmt.Errorf(
-			"remove old path %s after writing %s: %w",
-			path,
-			newPath,
-			err,
-		)
-	}
-
-	res = PromoteResult{
-		OldPath:          path,
-		NewPath:          newPath,
-		BacklinkRewrites: rewrites,
-	}
-
-	var mocErr error
 	if mocPath != "" {
-		if err := appendMOCBullet(mocPath, title, newStem, opts.Now); err != nil {
-			mocErr = fmt.Errorf("append to MOC %s: %w", v.Rel(mocPath), err)
-		} else {
-			res.MOCAppended = mocPath
+		if p.moc, err = mocChange(mocPath, title, newStem, opts.Now); err != nil {
+			return PromoteResult{}, fmt.Errorf("read MOC %s: %w", v.Rel(mocPath), err)
 		}
 	}
-	return res, errors.Join(mocErr, v.commitPromote(res))
+	if res, err = v.apply(p, write); err != nil {
+		return PromoteResult{}, err
+	}
+	return res, v.commitPromote(res)
 }
 
 // mocPath resolves promote's moc target to a note in this vault's MOCs
