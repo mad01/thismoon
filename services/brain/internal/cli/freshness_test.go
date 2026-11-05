@@ -74,7 +74,8 @@ func TestFlag(t *testing.T) {
 		t.Fatalf("flag --dry-run on a shared note: exit %d, stderr %q", dry.code, dry.stderr)
 	}
 	issue := decodeStrict[sharing.IssueResult](t, dry.stdout)
-	if !issue.DryRun || issue.Repo != "example.com/team/notes" || issue.Title != "Disputed: Team Guide" ||
+	if !issue.DryRun || issue.Repo != "example.com/team/notes" ||
+		issue.Title != "Disputed: Team Guide" ||
 		!strings.Contains(issue.Body, "team:notes/team-guide.md") ||
 		!strings.Contains(issue.Body, "outdated") {
 		t.Errorf("dry-run issue = %+v", issue)

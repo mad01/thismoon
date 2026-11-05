@@ -82,6 +82,7 @@ Subcommands:
   promote           Move an inbox note into notes/, or open a pull request into a shared vault.
   sync              Pull and push each vault, and settle promotions into shared vaults.
   check             Check notes against the lifecycle model and the vault policy.
+  similar           List notes alike to a note, across every vault.
   supersede         Mark a note superseded by another.
   retract           Mark a note retracted, keeping its body under a banner.
   withdraw          Replace a note with a tombstone and purge it from the indexes.
@@ -149,6 +150,7 @@ brain doctor prints the paths in effect.`,
 		newPromoteCmd(a),
 		newSyncCmd(a),
 		newCheckCmd(a),
+		newSimilarCmd(a),
 		newSupersedeCmd(a),
 		newRetractCmd(a),
 		newWithdrawCmd(a),
@@ -167,15 +169,15 @@ brain doctor prints the paths in effect.`,
 }
 
 // checkOutput validates -o: text or json everywhere, and github for brain
-// check, the one command whose output a CI job annotates.
+// check and brain similar, the commands whose output a CI job annotates.
 func checkOutput(cmd *cobra.Command, output string) error {
 	switch {
 	case output == outputText, output == outputJSON:
 		return nil
-	case output == outputGitHub && cmd.Name() == "check":
+	case output == outputGitHub && (cmd.Name() == "check" || cmd.Name() == "similar"):
 		return nil
 	}
-	return usageErrorf("-o must be %s or %s (brain check also takes %s), got %q",
+	return usageErrorf("-o must be %s or %s (brain check and similar also take %s), got %q",
 		outputText, outputJSON, outputGitHub, output)
 }
 

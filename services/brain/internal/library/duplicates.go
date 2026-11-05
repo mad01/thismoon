@@ -185,7 +185,9 @@ func (l *Library) Duplicates(
 		out = append(out, Duplicate{Ref: m.Ref, Title: m.Title, Match: match})
 		seen[m.Ref.String()] = true
 	}
-	similar, warnings := l.similarNotes(ctx, scope, draft)
+	similar, warnings := l.similarNotes(
+		ctx, scope, firstChunk(draft.Content(), l.chunkOptions()),
+		DuplicateSimilarity, duplicateNeighbours)
 	for _, d := range similar {
 		if !seen[d.Ref.String()] {
 			out = append(out, d)
@@ -208,19 +210,18 @@ func (l *Library) duplicateScope(v *vault.Vault) []*vault.Vault {
 }
 
 // similarNotes asks each vault's semantic index, when the layer is on and
-// the vault has one, for chunks like the draft's first chunk. The index is
-// used as it is, never refreshed: a write does not wait for embeddings. A
-// check that cannot run (the embedder is down) is a warning, not a refusal.
+// the vault has one, for the k chunks most like text, and keeps the notes
+// at least threshold alike. The index is used as it is, never refreshed: a write
+// does not wait for embeddings. A check that cannot run (the embedder is
+// down) is a warning, not a refusal.
 func (l *Library) similarNotes(
 	ctx context.Context,
 	scope []*vault.Vault,
-	draft vault.Draft,
+	text string,
+	threshold float32,
+	k int,
 ) ([]Duplicate, []string) {
-	if !l.cfg.Semantic.Enabled {
-		return nil, nil
-	}
-	text := firstChunk(draft, l.chunkOptions())
-	if text == "" {
+	if !l.cfg.Semantic.Enabled || text == "" {
 		return nil, nil
 	}
 	var (
@@ -238,11 +239,11 @@ func (l *Library) similarNotes(
 			}
 			probed = true
 		}
-		hits, err := idx.Query(ctx, text, semantic.QueryOptions{K: duplicateNeighbours})
+		hits, err := idx.Query(ctx, text, semantic.QueryOptions{K: k})
 		if err != nil {
 			return out, []string{"the semantic duplicate check did not run: " + err.Error()}
 		}
-		out = append(out, similarHits(v, hits)...)
+		out = append(out, similarHits(v, hits, threshold)...)
 	}
 	return out, nil
 }
@@ -264,13 +265,13 @@ func (l *Library) existingSemantic(v *vault.Vault) (*semantic.Index, bool) {
 	return idx, true
 }
 
-// similarHits keeps the hits at or above DuplicateSimilarity whose note
-// still exists and is not revoked, one per note.
-func similarHits(v *vault.Vault, hits []semantic.Hit) []Duplicate {
+// similarHits keeps the hits at or above threshold whose note still exists
+// and is not revoked, one per note.
+func similarHits(v *vault.Vault, hits []semantic.Hit, threshold float32) []Duplicate {
 	var out []Duplicate
 	seen := map[string]bool{}
 	for _, h := range hits {
-		if h.Score < DuplicateSimilarity || seen[h.Path] {
+		if h.Score < threshold || seen[h.Path] {
 			continue
 		}
 		seen[h.Path] = true
@@ -287,10 +288,10 @@ func similarHits(v *vault.Vault, hits []semantic.Hit) []Duplicate {
 	return out
 }
 
-// firstChunk returns the text of the draft's first chunk, the way the
+// firstChunk returns the text of a note's first chunk, the way the
 // semantic index would embed it, or "" for a note without a body.
-func firstChunk(draft vault.Draft, opts chunk.Options) string {
-	chunks, err := chunk.Split("draft.md", "", draft.Content(), opts)
+func firstChunk(content []byte, opts chunk.Options) string {
+	chunks, err := chunk.Split("draft.md", "", content, opts)
 	if err != nil || len(chunks) == 0 {
 		return ""
 	}
