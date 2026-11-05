@@ -129,6 +129,16 @@ func TestValidate(t *testing.T) {
 			wantKeys: []string{"sources[0].content_hash", "sources[0].ref"},
 		},
 		{
+			name: "note refs as sources",
+			yml: "sources:\n  - ref: id:01JC0000000000000000000000\n" +
+				"  - ref: team:notes/x.md\n  - ref: notes/y.md\n",
+		},
+		{
+			name:     "a bad id ref",
+			yml:      "sources:\n  - ref: id:nope\n",
+			wantKeys: []string{"sources[0].ref"},
+		},
+		{
 			name:     "validity window reversed",
 			yml:      "valid_from: 2026-02-01\ninvalid_at: 2026-01-01\n",
 			wantKeys: []string{KeyInvalidAt},

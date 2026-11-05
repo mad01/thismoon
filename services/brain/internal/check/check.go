@@ -279,7 +279,8 @@ func (c *checker) duplicates(n *vault.NoteView) {
 	}
 }
 
-// links checks every wikilink and distinct_from ref of a checked note.
+// links checks every wikilink of a checked note, and every note its
+// distinct_from and sources refs name.
 func (c *checker) links(n *vault.NoteView) {
 	for _, cite := range c.sn.Citations(n) {
 		switch cite.To {
@@ -291,9 +292,17 @@ func (c *checker) links(n *vault.NoteView) {
 			c.citation(n, cite, false)
 		}
 	}
-	for _, ref := range lifecycle.Read(n.Frontmatter).DistinctFrom {
+	f := lifecycle.Read(n.Frontmatter)
+	for _, ref := range f.DistinctFrom {
 		if _, ok := c.sn.Resolve(ref); !ok {
 			c.add(n, 0, RuleLinkDangling, "distinct_from %q names no single note", ref)
+		}
+	}
+	for _, s := range f.Sources {
+		if ref := s.NoteRef(); ref != "" {
+			if _, ok := c.sn.Resolve(ref); !ok {
+				c.add(n, 0, RuleLinkDangling, "sources ref %q names no single note", ref)
+			}
 		}
 	}
 }

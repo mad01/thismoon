@@ -106,6 +106,16 @@ func TestRunFindings(t *testing.T) {
 			},
 		},
 		{
+			name: "sources refs to notes",
+			files: map[string]string{
+				"notes/a.md": note(validated(idA)+"sources:\n  - ref: id:"+idB+
+					"\n  - ref: notes/nowhere.md\n", "A.\n"),
+				"notes/b.md": note(validated(idB), "B.\n"),
+			},
+			targets: []string{"notes/a.md"},
+			want:    []string{"notes/a.md:0 link-dangling warning"},
+		},
+		{
 			name: "a link to a note past its review_by",
 			files: map[string]string{
 				"notes/a.md": note(validated(idA), "Cites [[stale]].\n"),

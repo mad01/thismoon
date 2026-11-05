@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
+	"github.com/mad01/thismoon/services/brain/internal/noteid"
 )
 
 // Fields is the lifecycle view of one note's frontmatter. Read fills it
@@ -34,14 +35,25 @@ type Fields struct {
 }
 
 // Source is one entry of the sources list. A bare string entry is its URL.
+// Every entry is load-bearing: the note's claims rest on it.
 type Source struct {
 	URL         string
 	Note        string
 	ContentHash string
 	Archive     string
-	// Ref pins code a claim rests on: repo:path@commit, optionally
-	// followed by #symbol.
+	// Ref names what a claim rests on: code, as repo:path@commit optionally
+	// followed by #symbol, or another note, as a note ref (id:<ulid>,
+	// vault:path or a vault-relative path).
 	Ref string
+}
+
+// NoteRef returns the note ref the entry rests on, or "" when its ref
+// pins code or is empty.
+func (s Source) NoteRef() string {
+	if s.Ref == "" || codeRef.MatchString(s.Ref) {
+		return ""
+	}
+	return strings.TrimSpace(s.Ref)
 }
 
 // Problem is one lifecycle field with the wrong shape or value.
@@ -115,6 +127,19 @@ func ParseCodeRef(ref string) (CodeRef, bool) {
 	return CodeRef{Repo: m[1], Path: m[2], Commit: m[3], Symbol: m[4]}, true
 }
 
+// noteRefShape matches a sources[].ref that names a note: id:<ulid>, or a
+// path to a markdown file, bare or qualified by a vault name.
+var noteRefShape = regexp.MustCompile(`^(id:\S+|([a-z0-9]+(-[a-z0-9]+)*:)?[^\s:@#]+\.md)$`)
+
+// isNoteRef reports whether ref has the shape of a note ref, with a valid
+// ULID after id:.
+func isNoteRef(ref string) bool {
+	if id, ok := strings.CutPrefix(ref, "id:"); ok {
+		return noteid.Valid(id)
+	}
+	return noteRefShape.MatchString(ref)
+}
+
 // contentHash matches a sources[].content_hash: hex, optionally prefixed
 // with its algorithm, such as sha256:.
 var contentHash = regexp.MustCompile(`^([a-z0-9-]+:)?[0-9a-fA-F]{16,128}$`)
@@ -166,10 +191,11 @@ func Validate(fm markdown.Frontmatter) []Problem {
 		}
 	}
 	for i, s := range f.Sources {
-		if s.Ref != "" && !codeRef.MatchString(s.Ref) {
+		if s.Ref != "" && !codeRef.MatchString(s.Ref) && !isNoteRef(s.Ref) {
 			problems = append(problems, Problem{
 				fmt.Sprintf("%s[%d].ref", KeySources, i),
-				fmt.Sprintf("%q is not repo:path@commit or repo:path@commit#symbol", s.Ref),
+				fmt.Sprintf("%q is neither repo:path@commit[#symbol] nor a note ref "+
+					"(id:<ulid>, vault:path.md or path.md)", s.Ref),
 			})
 		}
 		if s.ContentHash != "" && !contentHash.MatchString(s.ContentHash) {
