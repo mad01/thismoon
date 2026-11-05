@@ -33,25 +33,6 @@ type semanticSearchInput struct {
 	OutputMode string `json:"output_mode,omitempty" jsonschema:"snippets (default) returns one result per chunk with body excerpt; paths returns unique note paths"`
 }
 
-type semanticSearchHit struct {
-	Path        string   `json:"path"                   jsonschema:"vault-relative note path"`
-	Title       string   `json:"title,omitempty"        jsonschema:"note title (frontmatter or filename stem)"`
-	HeadingPath string   `json:"heading_path,omitempty" jsonschema:"' › '-joined heading hierarchy above this chunk"`
-	Score       float32  `json:"score"                  jsonschema:"cosine similarity in [-1,1]; higher is better"`
-	Snippet     string   `json:"snippet,omitempty"      jsonschema:"chunk body excerpt; only set in snippets mode"`
-	Tier        string   `json:"tier,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Type        string   `json:"type,omitempty"`
-	Status      string   `json:"status,omitempty"`
-	Evidence    string   `json:"evidence,omitempty"     jsonschema:"trust tier of the source note (A/B/C/D/mixed)"`
-}
-
-type semanticSearchOutput struct {
-	OutputMode string              `json:"output_mode"`
-	Hits       []semanticSearchHit `json:"hits"`
-	Total      int                 `json:"total"`
-}
-
 // ---------------------------------------------------------------------------
 // brain_hybrid_search
 // ---------------------------------------------------------------------------
@@ -67,25 +48,6 @@ type hybridSearchInput struct {
 	Status   string `json:"status,omitempty"   jsonschema:"restrict by frontmatter status"`
 	Evidence string `json:"evidence,omitempty" jsonschema:"restrict by evidence tier (A/B/C/D/mixed)"`
 	Rerank   *bool  `json:"rerank,omitempty"   jsonschema:"opt-in LLM reranker (slower; defaults to semantic.rerank_default in config)"`
-}
-
-type hybridSearchHit struct {
-	Path        string   `json:"path"`
-	Title       string   `json:"title,omitempty"`
-	HeadingPath string   `json:"heading_path,omitempty"`
-	Score       float64  `json:"score"                  jsonschema:"post-fusion (and post-rerank when enabled) score; higher is better"`
-	Sources     []string `json:"sources"                jsonschema:"which retrievers found this hit: zoekt, vector, or both"`
-	Snippet     string   `json:"snippet,omitempty"`
-	Tier        string   `json:"tier,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Type        string   `json:"type,omitempty"`
-	Status      string   `json:"status,omitempty"`
-	Evidence    string   `json:"evidence,omitempty"`
-}
-
-type hybridSearchOutput struct {
-	Hits  []hybridSearchHit `json:"hits"`
-	Total int               `json:"total"`
 }
 
 // ---------------------------------------------------------------------------
@@ -116,35 +78,35 @@ func handleSemanticSearch(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in semanticSearchInput,
-) (*mcp.CallToolResult, semanticSearchOutput, error) {
+) (*mcp.CallToolResult, semantic.SearchResult, error) {
 	if strings.TrimSpace(in.Query) == "" {
-		return nil, semanticSearchOutput{}, fmt.Errorf("brain_semantic_search: query is required")
+		return nil, semantic.SearchResult{}, fmt.Errorf("brain_semantic_search: query is required")
 	}
 	mode := in.OutputMode
 	if mode == "" {
-		mode = "snippets"
+		mode = semantic.ModeSnippets
 	}
-	if mode != "snippets" && mode != "paths" {
-		return nil, semanticSearchOutput{}, fmt.Errorf(
+	if mode != semantic.ModeSnippets && mode != semantic.ModePaths {
+		return nil, semantic.SearchResult{}, fmt.Errorf(
 			"brain_semantic_search: output_mode must be 'snippets' or 'paths', got %q",
 			mode,
 		)
 	}
 	cfg, err := config.Load()
 	if err != nil {
-		return nil, semanticSearchOutput{}, fmt.Errorf("brain_semantic_search: %w", err)
+		return nil, semantic.SearchResult{}, fmt.Errorf("brain_semantic_search: %w", err)
 	}
 	if !cfg.Semantic.Enabled {
-		return nil, semanticSearchOutput{}, fmt.Errorf(
+		return nil, semantic.SearchResult{}, fmt.Errorf(
 			"brain_semantic_search: semantic layer is disabled (set semantic.enabled=true in ~/.config/brain/config.yaml)",
 		)
 	}
 	if err := ensureSemanticIndex(ctx, cfg); err != nil {
-		return nil, semanticSearchOutput{}, fmt.Errorf("brain_semantic_search: %w", err)
+		return nil, semantic.SearchResult{}, fmt.Errorf("brain_semantic_search: %w", err)
 	}
 	idx, err := openSemanticForMCP(cfg)
 	if err != nil {
-		return nil, semanticSearchOutput{}, fmt.Errorf("brain_semantic_search: %w", err)
+		return nil, semantic.SearchResult{}, fmt.Errorf("brain_semantic_search: %w", err)
 	}
 	k := in.K
 	if k <= 0 {
@@ -159,67 +121,31 @@ func handleSemanticSearch(
 		Evidence: in.Evidence,
 	})
 	if err != nil {
-		return nil, semanticSearchOutput{}, fmt.Errorf("brain_semantic_search: %w", err)
+		return nil, semantic.SearchResult{}, fmt.Errorf("brain_semantic_search: %w", err)
 	}
 
-	out := semanticSearchOutput{OutputMode: mode}
-	if mode == "paths" {
-		seen := make(map[string]struct{})
-		for _, h := range hits {
-			if _, ok := seen[h.Path]; ok {
-				continue
-			}
-			seen[h.Path] = struct{}{}
-			out.Hits = append(out.Hits, semanticSearchHit{
-				Path:     h.Path,
-				Title:    h.Title,
-				Score:    h.Score,
-				Tier:     h.Tier,
-				Tags:     h.Tags,
-				Type:     h.Type,
-				Status:   h.Status,
-				Evidence: h.Evidence,
-			})
-		}
-	} else {
-		for _, h := range hits {
-			out.Hits = append(out.Hits, semanticSearchHit{
-				Path:        h.Path,
-				Title:       h.Title,
-				HeadingPath: h.HeadingPath,
-				Score:       h.Score,
-				Snippet:     h.Snippet,
-				Tier:        h.Tier,
-				Tags:        h.Tags,
-				Type:        h.Type,
-				Status:      h.Status,
-				Evidence:    h.Evidence,
-			})
-		}
-	}
-	out.Total = len(out.Hits)
-	return nil, out, nil
+	return nil, semantic.NewSearchResult(mode, hits), nil
 }
 
 func handleHybridSearch(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in hybridSearchInput,
-) (*mcp.CallToolResult, hybridSearchOutput, error) {
+) (*mcp.CallToolResult, hybrid.Result, error) {
 	if strings.TrimSpace(in.Query) == "" {
-		return nil, hybridSearchOutput{}, fmt.Errorf("brain_hybrid_search: query is required")
+		return nil, hybrid.Result{}, fmt.Errorf("brain_hybrid_search: query is required")
 	}
 	cfg, err := config.Load()
 	if err != nil {
-		return nil, hybridSearchOutput{}, fmt.Errorf("brain_hybrid_search: %w", err)
+		return nil, hybrid.Result{}, fmt.Errorf("brain_hybrid_search: %w", err)
 	}
 	if !cfg.Semantic.Enabled {
-		return nil, hybridSearchOutput{}, fmt.Errorf(
+		return nil, hybrid.Result{}, fmt.Errorf(
 			"brain_hybrid_search: semantic layer is disabled (set semantic.enabled=true in ~/.config/brain/config.yaml)",
 		)
 	}
 	if err := ensureSemanticIndex(ctx, cfg); err != nil {
-		return nil, hybridSearchOutput{}, fmt.Errorf("brain_hybrid_search: %w", err)
+		return nil, hybrid.Result{}, fmt.Errorf("brain_hybrid_search: %w", err)
 	}
 
 	rerankFlag := cfg.Semantic.RerankDefault
@@ -239,26 +165,9 @@ func handleHybridSearch(
 		Rerank:   rerankFlag,
 	})
 	if err != nil {
-		return nil, hybridSearchOutput{}, fmt.Errorf("brain_hybrid_search: %w", err)
+		return nil, hybrid.Result{}, fmt.Errorf("brain_hybrid_search: %w", err)
 	}
-	resp := hybridSearchOutput{Hits: make([]hybridSearchHit, 0, len(out))}
-	for _, h := range out {
-		resp.Hits = append(resp.Hits, hybridSearchHit{
-			Path:        h.Path,
-			Title:       h.Title,
-			HeadingPath: h.HeadingPath,
-			Score:       h.Score,
-			Sources:     h.Sources,
-			Snippet:     h.Snippet,
-			Tier:        h.Tier,
-			Tags:        h.Tags,
-			Type:        h.Type,
-			Status:      h.Status,
-			Evidence:    h.Evidence,
-		})
-	}
-	resp.Total = len(resp.Hits)
-	return nil, resp, nil
+	return nil, hybrid.NewResult(out), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -279,25 +188,11 @@ type hybridMCPOptions struct {
 	Rerank   bool
 }
 
-type hybridMCPHit struct {
-	Path        string
-	Title       string
-	HeadingPath string
-	Snippet     string
-	Score       float64
-	Sources     []string
-	Tier        string
-	Tags        []string
-	Type        string
-	Status      string
-	Evidence    string
-}
-
 func runHybridForMCP(
 	ctx context.Context,
 	cfg *config.Config,
 	in hybridMCPOptions,
-) ([]hybridMCPHit, error) {
+) ([]hybrid.ResultHit, error) {
 	idx, err := openSemanticForMCP(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("semantic open: %w", err)
@@ -361,12 +256,12 @@ func runHybridForMCP(
 		{Source: "vector", IDs: semOrder},
 	}, hybrid.DefaultK)
 
-	out := make([]hybridMCPHit, 0, in.K)
+	out := make([]hybrid.ResultHit, 0, in.K)
 	for _, f := range fused {
 		if len(out) >= in.K {
 			break
 		}
-		hh := hybridMCPHit{Path: f.ID, Score: f.Score, Sources: f.Sources}
+		hh := hybrid.ResultHit{Path: f.ID, Score: f.Score, Sources: f.Sources}
 		if sh, ok := semByPath[f.ID]; ok {
 			hh.Title = sh.Title
 			hh.HeadingPath = sh.HeadingPath
@@ -399,11 +294,11 @@ func runHybridForMCP(
 		if err != nil {
 			return out, nil //nolint:nilerr // preserve fused list on rerank failure
 		}
-		byID := make(map[string]hybridMCPHit, len(out))
+		byID := make(map[string]hybrid.ResultHit, len(out))
 		for _, h := range out {
 			byID[h.Path] = h
 		}
-		reordered := make([]hybridMCPHit, 0, len(scored))
+		reordered := make([]hybrid.ResultHit, 0, len(scored))
 		for _, s := range scored {
 			if h, ok := byID[s.ID]; ok {
 				h.Score = s.Final

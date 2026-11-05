@@ -2,8 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -12,10 +10,11 @@ import (
 	"github.com/mad01/thismoon/services/brain/internal/mcpserver"
 )
 
-var mcpCmd = &cobra.Command{
-	Use:   "mcp",
-	Short: "Start the brain MCP stdio server for Claude Code",
-	Long: `Start an MCP (Model Context Protocol) stdio server that exposes brain
+func newMCPCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mcp",
+		Short: "Start the brain MCP stdio server for Claude Code",
+		Long: `Start an MCP (Model Context Protocol) stdio server that exposes brain
 functionality as native tools for Claude Code and other MCP clients.
 
 Reads JSON-RPC from stdin, writes responses to stdout, exits when stdin closes.
@@ -35,18 +34,10 @@ Tools exposed:
 
 Register with Claude Code:
   claude mcp add --scope user brain -- brain mcp`,
-	RunE: runMCP,
-}
-
-func init() {
-	rootCmd.AddCommand(mcpCmd)
-}
-
-func runMCP(_ *cobra.Command, _ []string) error {
-	server := mcpserver.New(buildinfo.Get().Version)
-	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-		fmt.Fprintf(os.Stderr, "brain mcp: %v\n", err)
-		return err
+		Args: exactArgs(0),
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return mcpserver.New(buildinfo.Get().Version).
+				Run(context.Background(), &mcp.StdioTransport{})
+		},
 	}
-	return nil
 }

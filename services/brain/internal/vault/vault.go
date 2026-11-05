@@ -3,6 +3,7 @@ package vault
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,11 +53,18 @@ type WriteOptions struct {
 	Source   string // optional URL
 	Evidence string // optional trust tier: A | B | C | D | mixed — empty for non-empirical
 	Filename string // optional; defaults to Slug(Title) + ".md" (YYYY-MM-DD- prefix for outputs)
-	Now      time.Time
+	// Set assigns frontmatter keys after the tier defaults, so it can
+	// override them. Typed keys decode into their fields; any other key is
+	// stored as is (see markdown.Frontmatter.Set).
+	Set []markdown.Field
+	// Unset removes frontmatter keys after Set is applied.
+	Unset []string
+	Now   time.Time
 }
 
 // Write creates a new note. Returns the absolute path of the created file.
-// Errors if the target already exists.
+// Errors with ErrExists if the target already exists. Outputs always carry
+// the meta/output tag, whatever Set and Unset say.
 func (v *Vault) Write(opts WriteOptions) (string, error) {
 	if opts.Title == "" {
 		return "", fmt.Errorf("title is required")
@@ -80,6 +88,9 @@ func (v *Vault) Write(opts WriteOptions) (string, error) {
 	}
 	if fm.Status == "" {
 		fm.Status = defaultStatus(opts.Tier)
+	}
+	if err := applyFields(&fm, opts.Set, opts.Unset); err != nil {
+		return "", err
 	}
 	// Outputs are synthesis artifacts that cite many notes — including them
 	// as graph nodes turns every output into a hub by audit-trail design.
@@ -107,7 +118,7 @@ func (v *Vault) Write(opts WriteOptions) (string, error) {
 	}
 	path := filepath.Join(dir, filename)
 	if _, err := os.Stat(path); err == nil {
-		return "", fmt.Errorf("note already exists: %s", path)
+		return "", fmt.Errorf("%w: %s", ErrExists, v.Rel(path))
 	}
 
 	content, err := markdown.Render(fm, []byte(ensureTrailingNewline(opts.Body)))
@@ -120,23 +131,33 @@ func (v *Vault) Write(opts WriteOptions) (string, error) {
 	return path, nil
 }
 
-// ReadFrontmatter is a convenience that reads a file and parses its
-// frontmatter + body.
+// ReadFrontmatter reads the note at the absolute path and parses its
+// frontmatter and body. A missing note is ErrNotFound.
 func (v *Vault) ReadFrontmatter(path string) (markdown.Frontmatter, []byte, error) {
 	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return markdown.Frontmatter{}, nil, fmt.Errorf("%w: %s", ErrNotFound, v.Rel(path))
+	}
 	if err != nil {
 		return markdown.Frontmatter{}, nil, err
 	}
-	return markdown.ParseFrontmatter(data)
+	fm, body, err := markdown.ParseFrontmatter(data)
+	if err != nil {
+		return markdown.Frontmatter{}, nil, fmt.Errorf("%s: %w", v.Rel(path), err)
+	}
+	return fm, body, nil
 }
 
-// EditOptions replaces the body and/or merges frontmatter fields. Exactly one
-// of Body / Append must be set. FrontmatterPatch is a partial Frontmatter that
-// overlays the existing one (non-zero fields win).
+// EditOptions replaces the body and/or merges frontmatter fields. At most one
+// of Body / Append may be set. FrontmatterPatch is a partial Frontmatter that
+// overlays the existing one (non-zero fields win). Set and Unset then assign
+// and remove individual keys, in that order.
 type EditOptions struct {
 	Body             string
 	Append           string
 	FrontmatterPatch *markdown.Frontmatter
+	Set              []markdown.Field
+	Unset            []string
 	Now              time.Time
 }
 
@@ -152,10 +173,13 @@ func (v *Vault) Edit(path string, opts EditOptions) error {
 	}
 	fm, body, err := v.ReadFrontmatter(path)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
+		return err
 	}
 	if opts.FrontmatterPatch != nil {
 		fm = mergeFrontmatter(fm, *opts.FrontmatterPatch)
+	}
+	if err := applyFields(&fm, opts.Set, opts.Unset); err != nil {
+		return err
 	}
 	switch {
 	case opts.Body != "":
@@ -206,6 +230,11 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error)
 		target = TierNotes
 	}
 
+	fm, body, err := v.ReadFrontmatter(path)
+	if err != nil {
+		return PromoteResult{}, err
+	}
+
 	fromTier, err := TierOf(v.Root, path)
 	if err != nil {
 		return PromoteResult{}, err
@@ -233,11 +262,6 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error)
 		}
 	}
 
-	fm, body, err := v.ReadFrontmatter(path)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("read %s: %w", path, err)
-	}
-
 	oldStem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 
 	title := fm.Title
@@ -251,7 +275,7 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error)
 	newStem := Slug(title)
 	newPath := filepath.Join(v.TierDir(target), newStem+".md")
 	if _, err := os.Stat(newPath); err == nil {
-		return PromoteResult{}, fmt.Errorf("promote: target already exists: %s", newPath)
+		return PromoteResult{}, fmt.Errorf("%w: promote target %s", ErrExists, v.Rel(newPath))
 	}
 
 	fm.Status = "validated"
@@ -358,6 +382,19 @@ func mergeFrontmatter(base, patch markdown.Frontmatter) markdown.Frontmatter {
 		base.ID = patch.ID
 	}
 	return base
+}
+
+// applyFields assigns set, then removes unset, on fm.
+func applyFields(fm *markdown.Frontmatter, set []markdown.Field, unset []string) error {
+	for _, f := range set {
+		if err := fm.Set(f.Key, f.Value); err != nil {
+			return err
+		}
+	}
+	for _, key := range unset {
+		fm.Unset(key)
+	}
+	return nil
 }
 
 func ensureTrailingNewline(s string) string {

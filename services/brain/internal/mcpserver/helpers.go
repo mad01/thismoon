@@ -2,8 +2,6 @@ package mcpserver
 
 import (
 	"fmt"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/mad01/thismoon/services/brain/internal/config"
@@ -55,33 +53,4 @@ func ensureIndex(cfg *config.Config) (string, error) {
 		_ = state.Save(indexDir)
 	}
 	return indexDir, nil
-}
-
-// resolveVaultPath joins a vault-relative path with the vault root and
-// rejects anything that tries to escape the vault via .. or absolute paths.
-func resolveVaultPath(cfg *config.Config, rel string) (string, error) {
-	if rel == "" {
-		return "", fmt.Errorf("path is required")
-	}
-	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("path must be vault-relative, got absolute: %s", rel)
-	}
-	cleaned := filepath.Clean(rel)
-	if strings.HasPrefix(cleaned, "..") ||
-		strings.Contains(cleaned, string(filepath.Separator)+".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path escapes vault: %s", rel)
-	}
-	full := filepath.Join(cfg.Vault, cleaned)
-	absVault, err := filepath.Abs(cfg.Vault)
-	if err != nil {
-		return "", err
-	}
-	absFull, err := filepath.Abs(full)
-	if err != nil {
-		return "", err
-	}
-	if !strings.HasPrefix(absFull, absVault+string(filepath.Separator)) && absFull != absVault {
-		return "", fmt.Errorf("path escapes vault: %s", rel)
-	}
-	return full, nil
 }

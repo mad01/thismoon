@@ -106,11 +106,7 @@ func IndexVault(vaultRoot, indexDir string, progress func(path string)) error {
 func Search(ctx context.Context, indexDir string, opts SearchOptions) ([]Match, error) {
 	searcher, err := zoektsearch.NewDirectorySearcher(indexDir)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"open index at %s: %w\n\nHint: run 'brain index' to build the search index",
-			indexDir,
-			err,
-		)
+		return nil, fmt.Errorf("open index at %s: %w (build it with: brain index)", indexDir, err)
 	}
 	defer searcher.Close()
 	return SearchWith(ctx, searcher, opts)
@@ -122,11 +118,7 @@ func SearchWith(ctx context.Context, searcher zoekt.Searcher, opts SearchOptions
 	qStr := buildQueryString(opts)
 	q, err := query.Parse(qStr)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"query parse error: %w\n\nHint: run 'brain query %q' to validate your query",
-			err,
-			opts.Pattern,
-		)
+		return nil, invalidQuery(err, opts.Pattern)
 	}
 	q = query.Map(q, query.ExpandFileContent)
 	q = query.Simplify(q)
@@ -165,7 +157,7 @@ func Count(ctx context.Context, indexDir string, opts CountOptions) ([]CountResu
 	searcher, err := zoektsearch.NewDirectorySearcher(indexDir)
 	if err != nil {
 		return nil, 0, fmt.Errorf(
-			"open index at %s: %w\n\nHint: run 'brain index' to build the search index",
+			"open index at %s: %w (build it with: brain index)",
 			indexDir,
 			err,
 		)
@@ -187,7 +179,7 @@ func CountWith(
 
 	q, err := query.Parse(qStr)
 	if err != nil {
-		return nil, 0, fmt.Errorf("query parse error: %w", err)
+		return nil, 0, invalidQuery(err, opts.Pattern)
 	}
 	q = query.Map(q, query.ExpandFileContent)
 	q = query.Simplify(q)
@@ -225,6 +217,11 @@ func CountWith(
 		results = append(results, CountResult{Group: group, Count: count})
 	}
 	return results, total, nil
+}
+
+// invalidQuery wraps a zoekt parse error in ErrInvalidQuery.
+func invalidQuery(err error, pattern string) error {
+	return fmt.Errorf("%w: %w (check it with: brain query %q)", ErrInvalidQuery, err, pattern)
 }
 
 // ValidateQuery parses a query and returns information about it.

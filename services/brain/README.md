@@ -21,7 +21,9 @@ brain mcp                  # MCP stdio server exposing the brain_* tools
 brain version -o json      # build metadata: version, commit, tag, build_time
 ```
 
-`brain --help` lists the rest (read, write, edit, promote, list, count, query).
+`brain --help` lists the rest (read, peek, backlinks, write, edit, promote, list, count, query).
+
+Agents: run `brain docs` for the guide and `brain doctor` to check setup.
 
 ## Vault tiers
 

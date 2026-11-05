@@ -63,7 +63,7 @@ type CountOptions struct {
 // CountResult holds one bucket of a grouped count query.
 type CountResult struct {
 	// Group is the tier name or tag, depending on GroupBy.
-	Group string `json:"group"`
+	Group string `json:"group" jsonschema:"the tier name or tag, depending on group_by"`
 	// Count is the number of matches in this group.
 	Count int `json:"count"`
 }
@@ -73,9 +73,9 @@ type QueryInfo struct {
 	// Valid indicates whether the query parsed successfully.
 	Valid bool `json:"valid"`
 	// Parsed is the string representation of the parsed query tree.
-	Parsed string `json:"parsed,omitempty"`
+	Parsed string `json:"parsed,omitempty" jsonschema:"string representation of the parsed query tree when valid"`
 	// Error is the parse error message, if any.
-	Error string `json:"error,omitempty"`
+	Error string `json:"error,omitempty"  jsonschema:"parse error message when not valid"`
 	// Hint is a suggestion for fixing the query.
-	Hint string `json:"hint,omitempty"`
+	Hint string `json:"hint,omitempty"   jsonschema:"suggestion for fixing the query when not valid"`
 }

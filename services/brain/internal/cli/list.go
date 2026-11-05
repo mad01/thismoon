@@ -2,131 +2,79 @@ package cli
 
 import (
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
+	"io"
 
 	"github.com/spf13/cobra"
 
-	"github.com/mad01/thismoon/services/brain/internal/config"
-	"github.com/mad01/thismoon/services/brain/internal/markdown"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
-var (
-	listTagFlag    string
-	listStatusFlag string
-	listTypeFlag   string
-	listLimitFlag  int
-)
+func newListCmd(a *app) *cobra.Command {
+	var (
+		opts vault.ListOptions
+		tier string
+	)
+	c := &cobra.Command{
+		Use:   "list [tier]",
+		Short: "List notes in a tier with optional filters",
+		Long: `List notes in a single vault tier (inbox, notes, outputs, or MOCs), named
+as the argument or with --tier.
 
-var listCmd = &cobra.Command{
-	Use:   "list <tier>",
-	Short: "List notes in a tier with optional filters",
-	Long: `List notes in a single vault tier (inbox, notes, outputs, or MOCs).
-
-Prints a simple table: updated | tier/path | title. Optionally filter by
-frontmatter tag, status, or type.`,
-	Args: cobra.ExactArgs(1),
-	RunE: runListCmd,
-}
-
-func init() {
-	listCmd.Flags().StringVar(&listTagFlag, "tag", "", "filter by frontmatter tag")
-	listCmd.Flags().StringVar(&listStatusFlag, "status", "", "filter by frontmatter status")
-	listCmd.Flags().StringVar(&listTypeFlag, "type", "", "filter by frontmatter type")
-	listCmd.Flags().IntVar(&listLimitFlag, "limit", 100, "maximum number of notes to print")
-	rootCmd.AddCommand(listCmd)
-}
-
-type listRow struct {
-	Path    string
-	Title   string
-	Updated string
-}
-
-func runListCmd(cmd *cobra.Command, args []string) error {
-	tier, err := vault.ParseTier(args[0])
-	if err != nil {
-		return fmt.Errorf("brain list: %w", err)
-	}
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("brain list: %w", err)
-	}
-
-	dir := filepath.Join(cfg.Vault, tier.Dir())
-	var rows []listRow
-	walkErr := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if os.IsNotExist(err) {
+Prints a simple table: updated | tier/path | title, newest first. Optionally
+filter by frontmatter tag, status, or type. With -o json, prints the
+brain_list_tier document.`,
+		Args: maxArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name, err := listTierName(args, tier)
+			if err != nil {
+				return err
+			}
+			if opts.Limit <= 0 {
+				return usageErrorf("--limit must be > 0")
+			}
+			if opts.Tier, err = vault.ParseTier(name); err != nil {
+				return err
+			}
+			_, v, err := openVault()
+			if err != nil {
+				return err
+			}
+			listing, err := v.List(opts)
+			if err != nil {
+				return err
+			}
+			return a.emit(cmd.OutOrStdout(), listing, func(w io.Writer) error {
+				for _, n := range listing.Notes {
+					updated := n.Updated
+					if updated == "" {
+						updated = "-"
+					}
+					fmt.Fprintf(w, "%s  %s  %s\n", updated, n.Path, n.Title)
+				}
 				return nil
-			}
-			return err
-		}
-		if d.IsDir() {
-			name := d.Name()
-			if name == ".git" || name == ".obsidian" || name == ".trash" || name == "attachments" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(strings.ToLower(path), ".md") {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		fm, _, err := markdown.ParseFrontmatter(data)
-		if err != nil {
-			return nil
-		}
-		if listTagFlag != "" && !fm.HasTag(listTagFlag) {
-			return nil
-		}
-		if listStatusFlag != "" && !strings.EqualFold(fm.Status, listStatusFlag) {
-			return nil
-		}
-		if listTypeFlag != "" && !strings.EqualFold(fm.Type, listTypeFlag) {
-			return nil
-		}
-		rel, err := filepath.Rel(cfg.Vault, path)
-		if err != nil {
-			return nil
-		}
-		rows = append(rows, listRow{
-			Path:    filepath.ToSlash(rel),
-			Title:   fm.Title,
-			Updated: fm.Updated,
-		})
-		return nil
-	})
-	if walkErr != nil {
-		if !os.IsNotExist(walkErr) {
-			return fmt.Errorf("brain list: %w", walkErr)
-		}
+			})
+		},
 	}
+	c.Flags().StringVar(&tier, "tier", "", "tier to list (inbox, notes, outputs, MOCs)")
+	c.Flags().StringVar(&opts.Tag, "tag", "", "filter by frontmatter tag")
+	c.Flags().StringVar(&opts.Status, "status", "", "filter by frontmatter status")
+	c.Flags().StringVar(&opts.Type, "type", "", "filter by frontmatter type")
+	c.Flags().IntVar(&opts.Limit, "limit", 100, "maximum number of notes to print")
+	return c
+}
 
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].Updated != rows[j].Updated {
-			return rows[i].Updated > rows[j].Updated
-		}
-		return rows[i].Path < rows[j].Path
-	})
-	if len(rows) > listLimitFlag {
-		rows = rows[:listLimitFlag]
+// listTierName returns the tier named by the argument or --tier; exactly one
+// of the two must be given, or both must agree.
+func listTierName(args []string, flag string) (string, error) {
+	switch {
+	case len(args) == 0 && flag == "":
+		return "", usageErrorf(
+			"name a tier: brain list <inbox|notes|outputs|MOCs> or --tier <tier>",
+		)
+	case len(args) == 0:
+		return flag, nil
+	case flag != "" && flag != args[0]:
+		return "", usageErrorf("tier given twice: %q and --tier %q", args[0], flag)
 	}
-
-	w := cmd.OutOrStdout()
-	for _, r := range rows {
-		upd := r.Updated
-		if upd == "" {
-			upd = "-"
-		}
-		fmt.Fprintf(w, "%s  %s  %s\n", upd, r.Path, r.Title)
-	}
-	return nil
+	return args[0], nil
 }

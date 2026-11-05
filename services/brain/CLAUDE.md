@@ -8,10 +8,10 @@ Go CLI and MCP stdio server over an Obsidian-style markdown vault. It indexes th
 brain/
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
-    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, write, edit, promote, list, mcp, version
+    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, write, edit, promote, list, docs, doctor, mcp, version
     config/           - ~/.config/brain/config.yaml (vault path, semantic settings)
-    vault/            - note read, write, edit, promote; tiers and stems; wikilink rewrites
-    markdown/         - frontmatter parse and render, wikilink parsing
+    vault/            - note read, write, edit, promote, peek, backlinks; the logic CLI and MCP share
+    markdown/         - frontmatter parse and render (unknown keys kept), wikilink parsing
     search/           - zoekt index build, staleness fingerprint, query
     chunk/            - splits notes into chunks for embedding
     embedding/        - Ollama embeddings client
@@ -19,6 +19,7 @@ brain/
     hybrid/           - reciprocal rank fusion of literal and semantic results
     rerank/           - optional LLM rerank of fused results
     mcpserver/        - MCP tool handlers, thin adapters over the packages above
+  docs/cli.md         - agent CLI guide, embedded and printed by `brain docs`
   docs/mcp.md         - full MCP tool reference (inputs, outputs, evidence scheme)
 ```
 
@@ -34,6 +35,25 @@ make install    # copies to ~/code/bin/brain and re-signs on macOS
 `brain version` prints the bare version token; `brain version -o json` prints the shared four-key build object (`version`, `commit`, `tag`, `build_time`) from the `buildinfo` package.
 
 Tests never read or write `~/.config/brain`: tests that load the config point `HOME` at a temp dir with `t.Setenv`, and everything else takes explicit temp paths. Keep it that way; a test that falls through to the real config indexes the real vault.
+
+## CLI contract
+
+Agents drive brain from the shell, so the CLI keeps a stable contract:
+
+- Every command takes `-o text|json`. Under `-o json` stdout is one JSON document with the same shape the matching MCP tool returns, and a failure prints `{"error":{"code","message"}}` there.
+- Errors print once on stderr as `brain <cmd>: <message>` and exit with a documented code:
+
+| Code | JSON `code` | Meaning |
+|---|---|---|
+| 0 | | success |
+| 1 | `error` | anything else (config, I/O, Ollama) |
+| 2 | `usage` | bad flag, argument, path or tier |
+| 3 | `not_found` | note or title does not exist |
+| 4 | `already_exists` | write or promote target exists |
+| 5 | `invalid_query` | zoekt query does not parse |
+
+- `docs/cli.md` is the agent guide `brain docs` prints. Keep it under 200 lines and in step with `internal/cli/errors.go`: a new exit code or error class changes both.
+- Frontmatter keys brain does not model survive write, edit and promote in source order, nested values included (`internal/markdown/fields.go`). `--set key=<yaml>` and `--unset key` reach any key; typed keys are shape-checked. Rendering writes 2-space YAML, so an edit to one key leaves the other lines of the frontmatter byte-identical.
 
 ## Tier model
 

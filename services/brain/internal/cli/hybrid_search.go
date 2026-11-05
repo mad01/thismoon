@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,98 +16,75 @@ import (
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
-var (
-	hybridTierFlag     string
-	hybridTagFlag      string
-	hybridTypeFlag     string
-	hybridStatusFlag   string
-	hybridEvidenceFlag string
-	hybridKFlag        int
-	hybridKZoektFlag   int
-	hybridKVectorFlag  int
-	hybridRerankFlag   bool
-)
-
-var hybridSearchCmd = &cobra.Command{
-	Use:   "hybrid-search <query>",
-	Short: "Hybrid (literal + semantic) search with RRF fusion",
-	Long: `Hybrid search combining the literal (zoekt) and semantic (vector) layers
+func newHybridSearchCmd(a *app) *cobra.Command {
+	var (
+		opts   hybridQueryOptions
+		rerank bool
+	)
+	c := &cobra.Command{
+		Use:   "hybrid-search <query>",
+		Short: "Hybrid (literal + semantic) search with RRF fusion",
+		Long: `Hybrid search combining the literal (zoekt) and semantic (vector) layers
 via Reciprocal Rank Fusion (RRF, k=60). Use --rerank to additionally pass the
 top candidates through a local LLM scorer (slower; default off).
 
-Requires semantic.enabled=true in config.yaml and a running Ollama instance.`,
-	Args: cobra.ExactArgs(1),
-	RunE: runHybridSearch,
-}
-
-func init() {
-	hybridSearchCmd.Flags().
-		StringVar(&hybridTierFlag, "tier", "", "restrict to a tier (inbox, notes, outputs, MOCs)")
-	hybridSearchCmd.Flags().
-		StringVar(&hybridTagFlag, "tag", "", "restrict to notes with this frontmatter tag")
-	hybridSearchCmd.Flags().
-		StringVar(&hybridTypeFlag, "type", "", "restrict to notes with this frontmatter type")
-	hybridSearchCmd.Flags().
-		StringVar(&hybridStatusFlag, "status", "", "restrict to notes with this frontmatter status")
-	hybridSearchCmd.Flags().
-		StringVar(&hybridEvidenceFlag, "evidence", "", "restrict to notes with this evidence tier (A/B/C/D/mixed)")
-	hybridSearchCmd.Flags().IntVarP(&hybridKFlag, "k", "k", 20, "final number of results to return")
-	hybridSearchCmd.Flags().
-		IntVar(&hybridKZoektFlag, "k-zoekt", 30, "candidates pulled from the literal index before fusion")
-	hybridSearchCmd.Flags().
-		IntVar(&hybridKVectorFlag, "k-vector", 30, "candidates pulled from the semantic index before fusion")
-	hybridSearchCmd.Flags().
-		BoolVar(&hybridRerankFlag, "rerank", false, "rerank fused candidates with the LLM (slower)")
-	rootCmd.AddCommand(hybridSearchCmd)
-}
-
-func runHybridSearch(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("brain hybrid-search: %w", err)
+Requires semantic.enabled=true in config.yaml and a running Ollama instance.
+With -o json, prints the brain_hybrid_search document.`,
+		Args: exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			if !cfg.Semantic.Enabled {
+				return errSemanticDisabled
+			}
+			opts.Query = args[0]
+			opts.Rerank = rerank || cfg.Semantic.RerankDefault
+			hits, err := runHybridQuery(context.Background(), cfg, opts)
+			if err != nil {
+				return err
+			}
+			res := hybrid.NewResult(hits)
+			return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
+				if res.Total == 0 {
+					fmt.Fprintln(w, "no matches")
+				}
+				for _, h := range res.Hits {
+					fmt.Fprintf(
+						w,
+						"%.4f  [%s]  %s  %s\n",
+						h.Score,
+						strings.Join(h.Sources, "+"),
+						h.Path,
+						headingOrPrelude(h.HeadingPath),
+					)
+				}
+				return nil
+			})
+		},
 	}
-	if !cfg.Semantic.Enabled {
-		return fmt.Errorf(
-			"brain hybrid-search: semantic.enabled is false in ~/.config/brain/config.yaml",
-		)
-	}
-
-	out, err := runHybridQuery(context.Background(), cfg, hybridQueryOptions{
-		Query:    args[0],
-		K:        hybridKFlag,
-		KZoekt:   hybridKZoektFlag,
-		KVector:  hybridKVectorFlag,
-		Tier:     hybridTierFlag,
-		Tag:      hybridTagFlag,
-		Type:     hybridTypeFlag,
-		Status:   hybridStatusFlag,
-		Evidence: hybridEvidenceFlag,
-		Rerank:   hybridRerankFlag || cfg.Semantic.RerankDefault,
-	})
-	if err != nil {
-		return fmt.Errorf("brain hybrid-search: %w", err)
-	}
-
-	w := cmd.OutOrStdout()
-	if len(out) == 0 {
-		fmt.Fprintln(w, "no matches")
-		return nil
-	}
-	for _, h := range out {
-		head := h.HeadingPath
-		if head == "" {
-			head = "(prelude)"
-		}
-		fmt.Fprintf(
-			w,
-			"%.4f  [%s]  %s  %s\n",
-			h.Score,
-			strings.Join(h.Sources, "+"),
-			h.Path,
-			head,
-		)
-	}
-	return nil
+	f := c.Flags()
+	f.StringVar(&opts.Tier, "tier", "", "restrict to a tier (inbox, notes, outputs, MOCs)")
+	f.StringVar(&opts.Tag, "tag", "", "restrict to notes with this frontmatter tag")
+	f.StringVar(&opts.Type, "type", "", "restrict to notes with this frontmatter type")
+	f.StringVar(&opts.Status, "status", "", "restrict to notes with this frontmatter status")
+	f.StringVar(
+		&opts.Evidence,
+		"evidence",
+		"",
+		"restrict to notes with this evidence tier (A/B/C/D/mixed)",
+	)
+	f.IntVarP(&opts.K, "k", "k", 20, "final number of results to return")
+	f.IntVar(&opts.KZoekt, "k-zoekt", 30, "candidates pulled from the literal index before fusion")
+	f.IntVar(
+		&opts.KVector,
+		"k-vector",
+		30,
+		"candidates pulled from the semantic index before fusion",
+	)
+	f.BoolVar(&rerank, "rerank", false, "rerank fused candidates with the LLM (slower)")
+	return c
 }
 
 // hybridQueryOptions is the shared input shape for both the CLI and the MCP
@@ -124,30 +102,13 @@ type hybridQueryOptions struct {
 	Rerank   bool
 }
 
-// HybridHit is the post-fusion (and optionally post-rerank) shape returned to
-// CLI / MCP callers.
-type HybridHit struct {
-	Path        string
-	Title       string
-	HeadingPath string
-	Snippet     string
-	Score       float64
-	Sources     []string
-	Tier        string
-	Tags        []string
-	Type        string
-	Status      string
-	Evidence    string
-}
-
 // runHybridQuery executes the literal + semantic pull, RRF-fuses them, and
-// optionally reranks. Exposed here so the MCP handler can call it without
-// duplicating the orchestration.
+// optionally reranks.
 func runHybridQuery(
 	ctx context.Context,
 	cfg *config.Config,
 	in hybridQueryOptions,
-) ([]HybridHit, error) {
+) ([]hybrid.ResultHit, error) {
 	if strings.TrimSpace(in.Query) == "" {
 		return nil, fmt.Errorf("query is required")
 	}
@@ -232,14 +193,14 @@ func runHybridQuery(
 		{Source: "vector", IDs: rebuiltOrder},
 	}, hybrid.DefaultK)
 
-	// Walk fused list; emit HybridHit per path with semantic metadata when
+	// Walk fused list; emit hybrid.ResultHit per path with semantic metadata when
 	// available, falling back to literal-only paths.
-	out := make([]HybridHit, 0, in.K)
+	out := make([]hybrid.ResultHit, 0, in.K)
 	for _, f := range fused {
 		if len(out) >= in.K {
 			break
 		}
-		hh := HybridHit{
+		hh := hybrid.ResultHit{
 			Path:    f.ID,
 			Score:   f.Score,
 			Sources: f.Sources,
@@ -279,11 +240,11 @@ func runHybridQuery(
 			return out, nil //nolint:nilerr // preserve fused list on rerank failure
 		}
 		// Reorder out by scored order.
-		byID := make(map[string]HybridHit, len(out))
+		byID := make(map[string]hybrid.ResultHit, len(out))
 		for _, h := range out {
 			byID[h.Path] = h
 		}
-		reordered := make([]HybridHit, 0, len(scored))
+		reordered := make([]hybrid.ResultHit, 0, len(scored))
 		for _, s := range scored {
 			if h, ok := byID[s.ID]; ok {
 				h.Score = s.Final

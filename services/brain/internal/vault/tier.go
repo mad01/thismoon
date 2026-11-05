@@ -24,7 +24,8 @@ const (
 var AllTiers = []Tier{TierInbox, TierNotes, TierOutputs, TierMOCs}
 
 // ParseTier normalizes a tier name. Case-insensitive. Accepts "moc" / "mocs"
-// as aliases for MOCs. Returns an error for unknown tiers.
+// as aliases for MOCs. Returns an error wrapping ErrUnknownTier for unknown
+// tiers.
 func ParseTier(name string) (Tier, error) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "inbox":
@@ -36,7 +37,7 @@ func ParseTier(name string) (Tier, error) {
 	case "mocs", "moc":
 		return TierMOCs, nil
 	}
-	return "", fmt.Errorf("unknown tier %q (expected inbox, notes, outputs, or MOCs)", name)
+	return "", fmt.Errorf("%w %q (expected inbox, notes, outputs, or MOCs)", ErrUnknownTier, name)
 }
 
 // Dir returns the tier's directory name relative to the vault root.

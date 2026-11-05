@@ -14,16 +14,19 @@ import (
 	"github.com/mad01/thismoon/services/brain/internal/semantic"
 )
 
-var (
-	indexForceFlag          bool
-	indexLiteralOnlyFlag    bool
-	indexStrictSemanticFlag bool
-)
+// indexFlags are the brain index options.
+type indexFlags struct {
+	force          bool
+	literalOnly    bool
+	strictSemantic bool
+}
 
-var indexCmd = &cobra.Command{
-	Use:   "index",
-	Short: "Build or refresh the zoekt and (optional) semantic indexes",
-	Long: `Build or refresh the indexes over the vault.
+func newIndexCmd() *cobra.Command {
+	var flags indexFlags
+	c := &cobra.Command{
+		Use:   "index",
+		Short: "Build or refresh the zoekt and (optional) semantic indexes",
+		Long: `Build or refresh the indexes over the vault.
 
 The literal (zoekt) index always runs; the semantic (vector) index runs only
 when semantic.enabled=true in config.yaml. Both are skipped when the vault's
@@ -33,41 +36,40 @@ or --literal-only to skip the semantic pass.
 Ollama health is probed before the semantic pass. When ollama is unreachable
 the semantic pass is skipped with a warning and the literal pass still runs;
 brain index exits 0. Pass --strict-semantic to fail the command instead.`,
-	RunE: runIndex,
+		Args: exactArgs(0),
+		RunE: func(cmd *cobra.Command, _ []string) error { return runIndex(cmd, flags) },
+	}
+	c.Flags().
+		BoolVar(&flags.force, "force", false, "force re-index even if fingerprint is unchanged")
+	c.Flags().
+		BoolVar(&flags.literalOnly, "literal-only", false, "skip the semantic index pass even when enabled")
+	c.Flags().
+		BoolVar(&flags.strictSemantic, "strict-semantic", false, "fail when ollama is unreachable (default: skip semantic with a warning)")
+	return c
 }
 
-func init() {
-	indexCmd.Flags().
-		BoolVar(&indexForceFlag, "force", false, "force re-index even if fingerprint is unchanged")
-	indexCmd.Flags().
-		BoolVar(&indexLiteralOnlyFlag, "literal-only", false, "skip the semantic index pass even when enabled")
-	indexCmd.Flags().
-		BoolVar(&indexStrictSemanticFlag, "strict-semantic", false, "fail when ollama is unreachable (default: skip semantic with a warning)")
-	rootCmd.AddCommand(indexCmd)
-}
-
-func runIndex(cmd *cobra.Command, _ []string) error {
+func runIndex(cmd *cobra.Command, flags indexFlags) error {
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("brain index: %w", err)
+		return err
 	}
 	indexDir, err := search.DefaultIndexDir()
 	if err != nil {
-		return fmt.Errorf("brain index: %w", err)
+		return err
 	}
 
 	fingerprint, files, err := search.ComputeFingerprint(cfg.Vault)
 	if err != nil {
-		return fmt.Errorf("brain index: fingerprint: %w", err)
+		return fmt.Errorf("fingerprint: %w", err)
 	}
 	state, err := search.LoadState(indexDir)
 	if err != nil {
-		return fmt.Errorf("brain index: load state: %w", err)
+		return fmt.Errorf("load state: %w", err)
 	}
 
-	literalStale := indexForceFlag || search.IsStale(state, fingerprint)
-	semanticEnabled := cfg.Semantic.Enabled && !indexLiteralOnlyFlag
-	semanticStale := semanticEnabled && (indexForceFlag || state.IsSemanticStale(fingerprint))
+	literalStale := flags.force || search.IsStale(state, fingerprint)
+	semanticEnabled := cfg.Semantic.Enabled && !flags.literalOnly
+	semanticStale := semanticEnabled && (flags.force || state.IsSemanticStale(fingerprint))
 
 	w := cmd.ErrOrStderr()
 
@@ -78,9 +80,9 @@ func runIndex(cmd *cobra.Command, _ []string) error {
 		probeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		healthErr := embedding.New(cfg.Semantic.OllamaURL, cfg.Semantic.EmbedModel).Health(probeCtx)
 		cancel()
-		skip, err := decideSemantic(healthErr, indexStrictSemanticFlag)
+		skip, err := decideSemantic(healthErr, flags.strictSemantic)
 		if err != nil {
-			return fmt.Errorf("brain index: %w", err)
+			return err
 		}
 		if skip {
 			fmt.Fprintf(
@@ -105,7 +107,7 @@ func runIndex(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintln(w, "  "+path)
 		})
 		if err != nil {
-			return fmt.Errorf("brain index: %w", err)
+			return err
 		}
 		state.SetFingerprint(fingerprint, files, time.Now().UTC())
 	}
@@ -121,7 +123,7 @@ func runIndex(cmd *cobra.Command, _ []string) error {
 		)
 		idx, err := openSemanticIndex(cfg)
 		if err != nil {
-			return fmt.Errorf("brain index: semantic open: %w", err)
+			return fmt.Errorf("semantic open: %w", err)
 		}
 		opts := chunk.FromTokens(cfg.Semantic.ChunkSize, cfg.Semantic.ChunkOverlap)
 		err = semantic.IndexVault(
@@ -136,7 +138,7 @@ func runIndex(cmd *cobra.Command, _ []string) error {
 			},
 		)
 		if err != nil {
-			return fmt.Errorf("brain index: semantic: %w", err)
+			return fmt.Errorf("semantic: %w", err)
 		}
 		state.SetSemanticFingerprint(fingerprint, time.Now().UTC())
 	}

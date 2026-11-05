@@ -13,8 +13,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Frontmatter is the canonical brain-note frontmatter shape. Parsers preserve
-// extra fields in Extra so round-tripping doesn't drop unknown keys.
+// Frontmatter is the canonical brain-note frontmatter shape. The typed fields
+// cover the keys brain reads; every other key is kept in Extra so a
+// ParseFrontmatter then Render round trip writes it back, nested values
+// included. Render keeps the source key order.
 //
 // Evidence is the trust/correctness tier for an empirical note (typically
 // "A" | "B" | "C" | "D" | "mixed"). Empty for non-empirical notes (personal
@@ -22,17 +24,28 @@ import (
 // EvidenceOf() to read — it falls back to parsing "evidence/<tier>" tags
 // when the explicit field is absent.
 type Frontmatter struct {
-	Title    string    `yaml:"title,omitempty"`
-	Aliases  []string  `yaml:"aliases,omitempty"`
-	Tags     []string  `yaml:"tags,omitempty"`
-	Type     string    `yaml:"type,omitempty"`
-	Status   string    `yaml:"status,omitempty"`
-	Source   string    `yaml:"source,omitempty"`
-	Evidence string    `yaml:"evidence,omitempty"`
-	Created  string    `yaml:"created,omitempty"`
-	Updated  string    `yaml:"updated,omitempty"`
-	ID       string    `yaml:"id,omitempty"`
-	Extra    yaml.Node `yaml:"-"`
+	Title    string   `yaml:"title,omitempty"`
+	Aliases  []string `yaml:"aliases,omitempty"`
+	Tags     []string `yaml:"tags,omitempty"`
+	Type     string   `yaml:"type,omitempty"`
+	Status   string   `yaml:"status,omitempty"`
+	Source   string   `yaml:"source,omitempty"`
+	Evidence string   `yaml:"evidence,omitempty"`
+	Created  string   `yaml:"created,omitempty"`
+	Updated  string   `yaml:"updated,omitempty"`
+	ID       string   `yaml:"id,omitempty"`
+	// Extra holds the keys no typed field models, in source order, each with
+	// its YAML value node.
+	Extra []Field `yaml:"-"`
+
+	// order is the key order of the parsed source; Render follows it.
+	order []string
+}
+
+// Field is one frontmatter key with its YAML value.
+type Field struct {
+	Key   string
+	Value *yaml.Node
 }
 
 // EvidenceOf returns the note's evidence tier. Prefers the explicit
@@ -119,12 +132,31 @@ func ParseFrontmatter(content []byte) (Frontmatter, []byte, error) {
 	return fm, body, nil
 }
 
+// yamlIndent is the indentation Encode writes. Two spaces is the width
+// hand-written frontmatter uses, so an edit to one key leaves the lines of
+// every other key as they were; yaml.v3 would otherwise write four.
+const yamlIndent = 2
+
+// Encode returns fm as the YAML that goes between the --- fences.
+func Encode(fm Frontmatter) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(yamlIndent)
+	if err := enc.Encode(&fm); err != nil {
+		return nil, fmt.Errorf("marshal frontmatter: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return nil, fmt.Errorf("marshal frontmatter: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
 // Render returns bytes in the form "---\n<yaml>\n---\n<body>". If body is
 // empty, only the frontmatter fence block is emitted.
 func Render(fm Frontmatter, body []byte) ([]byte, error) {
-	yml, err := yaml.Marshal(&fm)
+	yml, err := Encode(fm)
 	if err != nil {
-		return nil, fmt.Errorf("marshal frontmatter: %w", err)
+		return nil, err
 	}
 	var out bytes.Buffer
 	out.WriteString("---\n")

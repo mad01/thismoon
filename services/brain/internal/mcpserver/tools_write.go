@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -25,10 +24,6 @@ type writeInput struct {
 	Filename string   `json:"filename,omitempty" jsonschema:"override filename (without .md); defaults to slug(title)"`
 }
 
-type writeOutput struct {
-	Path string `json:"path" jsonschema:"vault-relative path of the created note"`
-}
-
 type editInput struct {
 	Path             string         `json:"path"                        jsonschema:"vault-relative note path"`
 	Body             string         `json:"body,omitempty"              jsonschema:"replace the body entirely with this string; mutually exclusive with append"`
@@ -47,22 +42,11 @@ type frontmatterIn struct {
 	ID       string   `json:"id,omitempty"`
 }
 
-type editOutput struct {
-	Path string `json:"path"`
-}
-
 type promoteInput struct {
 	Path       string `json:"path"                  jsonschema:"vault-relative inbox note path"`
 	NewTitle   string `json:"new_title,omitempty"   jsonschema:"optional new title (and re-slug) for the promoted note"`
 	TargetTier string `json:"target_tier,omitempty" jsonschema:"destination tier; defaults to notes"`
 	MOC        string `json:"moc,omitempty"         jsonschema:"optional topical MOC path (vault-relative or absolute) to append a bullet to. Must be a semantic MOC; batch-provenance indexes (research-index-* / kickoff-* filenames, or tags including meta/index) are rejected."`
-}
-
-type promoteOutput struct {
-	OldPath          string   `json:"old_path"`
-	NewPath          string   `json:"new_path"`
-	BacklinkRewrites []string `json:"backlink_rewrites"`
-	MOCAppended      string   `json:"moc_appended,omitempty"`
 }
 
 func registerWriteTools(s *mcp.Server) {
@@ -92,21 +76,21 @@ func handleWrite(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in writeInput,
-) (*mcp.CallToolResult, writeOutput, error) {
+) (*mcp.CallToolResult, vault.PathResult, error) {
 	if strings.TrimSpace(in.Tier) == "" {
-		return nil, writeOutput{}, fmt.Errorf("brain_write: tier is required")
+		return nil, vault.PathResult{}, fmt.Errorf("brain_write: tier is required")
 	}
 	if strings.TrimSpace(in.Title) == "" {
-		return nil, writeOutput{}, fmt.Errorf("brain_write: title is required")
+		return nil, vault.PathResult{}, fmt.Errorf("brain_write: title is required")
 	}
 	tier, err := vault.ParseTier(in.Tier)
 	if err != nil {
-		return nil, writeOutput{}, fmt.Errorf("brain_write: %w", err)
+		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
 	}
 
-	cfg, v, err := loadVault()
+	_, v, err := loadVault()
 	if err != nil {
-		return nil, writeOutput{}, fmt.Errorf("brain_write: %w", err)
+		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
 	}
 
 	abs, err := v.Write(vault.WriteOptions{
@@ -122,39 +106,37 @@ func handleWrite(
 		Filename: in.Filename,
 	})
 	if err != nil {
-		return nil, writeOutput{}, fmt.Errorf("brain_write: %w", err)
+		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
 	}
-	rel, err := filepath.Rel(cfg.Vault, abs)
-	if err != nil {
-		rel = abs
-	}
-	return nil, writeOutput{Path: filepath.ToSlash(rel)}, nil
+	return nil, vault.PathResult{Path: v.Rel(abs)}, nil
 }
 
 func handleEdit(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in editInput,
-) (*mcp.CallToolResult, editOutput, error) {
+) (*mcp.CallToolResult, vault.PathResult, error) {
 	if strings.TrimSpace(in.Path) == "" {
-		return nil, editOutput{}, fmt.Errorf("brain_edit: path is required")
+		return nil, vault.PathResult{}, fmt.Errorf("brain_edit: path is required")
 	}
 	if in.Body != "" && in.Append != "" {
-		return nil, editOutput{}, fmt.Errorf("brain_edit: body and append are mutually exclusive")
+		return nil, vault.PathResult{}, fmt.Errorf(
+			"brain_edit: body and append are mutually exclusive",
+		)
 	}
 	if in.Body == "" && in.Append == "" && in.FrontmatterPatch == nil {
-		return nil, editOutput{}, fmt.Errorf(
+		return nil, vault.PathResult{}, fmt.Errorf(
 			"brain_edit: one of body, append, or frontmatter_patch must be set",
 		)
 	}
 
-	cfg, v, err := loadVault()
+	_, v, err := loadVault()
 	if err != nil {
-		return nil, editOutput{}, fmt.Errorf("brain_edit: %w", err)
+		return nil, vault.PathResult{}, fmt.Errorf("brain_edit: %w", err)
 	}
-	abs, err := resolveVaultPath(cfg, in.Path)
+	abs, err := v.Resolve(in.Path)
 	if err != nil {
-		return nil, editOutput{}, fmt.Errorf("brain_edit: %w", err)
+		return nil, vault.PathResult{}, fmt.Errorf("brain_edit: %w", err)
 	}
 
 	opts := vault.EditOptions{
@@ -176,27 +158,27 @@ func handleEdit(
 	}
 
 	if err := v.Edit(abs, opts); err != nil {
-		return nil, editOutput{}, fmt.Errorf("brain_edit: %w", err)
+		return nil, vault.PathResult{}, fmt.Errorf("brain_edit: %w", err)
 	}
-	return nil, editOutput{Path: in.Path}, nil
+	return nil, vault.PathResult{Path: in.Path}, nil
 }
 
 func handlePromote(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in promoteInput,
-) (*mcp.CallToolResult, promoteOutput, error) {
+) (*mcp.CallToolResult, vault.PromoteReport, error) {
 	if strings.TrimSpace(in.Path) == "" {
-		return nil, promoteOutput{}, fmt.Errorf("brain_promote: path is required")
+		return nil, vault.PromoteReport{}, fmt.Errorf("brain_promote: path is required")
 	}
 
-	cfg, v, err := loadVault()
+	_, v, err := loadVault()
 	if err != nil {
-		return nil, promoteOutput{}, fmt.Errorf("brain_promote: %w", err)
+		return nil, vault.PromoteReport{}, fmt.Errorf("brain_promote: %w", err)
 	}
-	abs, err := resolveVaultPath(cfg, in.Path)
+	abs, err := v.Resolve(in.Path)
 	if err != nil {
-		return nil, promoteOutput{}, fmt.Errorf("brain_promote: %w", err)
+		return nil, vault.PromoteReport{}, fmt.Errorf("brain_promote: %w", err)
 	}
 
 	opts := vault.PromoteOptions{
@@ -206,38 +188,15 @@ func handlePromote(
 	if in.TargetTier != "" {
 		t, err := vault.ParseTier(in.TargetTier)
 		if err != nil {
-			return nil, promoteOutput{}, fmt.Errorf("brain_promote: %w", err)
+			return nil, vault.PromoteReport{}, fmt.Errorf("brain_promote: %w", err)
 		}
 		opts.TargetTier = t
 	}
 
 	res, err := v.Promote(abs, opts)
 	if err != nil {
-		return nil, promoteOutput{}, fmt.Errorf("brain_promote: %w", err)
+		return nil, vault.PromoteReport{}, fmt.Errorf("brain_promote: %w", err)
 	}
 
-	oldRel, _ := filepath.Rel(cfg.Vault, res.OldPath)
-	newRel, _ := filepath.Rel(cfg.Vault, res.NewPath)
-	rewrites := make([]string, 0, len(res.BacklinkRewrites))
-	for _, r := range res.BacklinkRewrites {
-		if rel, err := filepath.Rel(cfg.Vault, r); err == nil {
-			rewrites = append(rewrites, filepath.ToSlash(rel))
-		} else {
-			rewrites = append(rewrites, r)
-		}
-	}
-	moc := ""
-	if res.MOCAppended != "" {
-		if rel, err := filepath.Rel(cfg.Vault, res.MOCAppended); err == nil {
-			moc = filepath.ToSlash(rel)
-		} else {
-			moc = res.MOCAppended
-		}
-	}
-	return nil, promoteOutput{
-		OldPath:          filepath.ToSlash(oldRel),
-		NewPath:          filepath.ToSlash(newRel),
-		BacklinkRewrites: rewrites,
-		MOCAppended:      moc,
-	}, nil
+	return nil, v.Report(res), nil
 }
