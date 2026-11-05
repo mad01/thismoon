@@ -93,6 +93,18 @@ _Avoid_: trash, deleted notes, expired folder
 A pinned source of a Note that no longer matches what it points at, as `brain drift` finds it: a code ref (`repo:path@commit#symbol` in `sources[].ref`) whose path moved, whose content changed since the commit, or whose symbol is gone, looked up in a local checkout under a configured code root; or an external `url` that is gone or no longer matches its `content_hash`. A source drift cannot check is unresolved, which is not drift.
 _Avoid_: staleness (that is review_by), rot, breakage
 
+**Stale queue**:
+The Notes that need a human look, as `brain stale` computes them on each run; nothing stores it. A note is in it when its `review_by` (for a raw note, its `expires_at`) has passed or it is disputed. A Dependent is in it too, and so is a note with Drift when the caller asks. Revoked notes never are.
+_Avoid_: review list, backlog, todo
+
+**Dependent**:
+A Note whose `sources[]` names a revoked Note by its Note ref. Only `sources` makes one: a Wikilink is a mention, and a dependent's own dependents are not queued.
+_Avoid_: child, downstream, citing note (that is a Citation)
+
+**Domain**:
+Who a Stale queue group belongs to: the owners the vault's `CODEOWNERS` gives the note's path (last matching rule wins), else the note's `steward`, else `unowned`.
+_Avoid_: team, area, owner group
+
 **Tombstone**:
 What `brain withdraw` leaves of a Note: frontmatter of only `id`, `status: withdrawn` and `status_at`, and no body. The note's chunks leave both indexes when the command returns. Its old text survives in the vault's git history.
 _Avoid_: stub, placeholder

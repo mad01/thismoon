@@ -38,7 +38,7 @@ note of the --vault vaults that is not revoked is checked. -o json prints
 [{vault, path, findings: [{kind, source, message, moved_to, archive}]}]}.
 Exits 0 when no note drifted (unresolved alone is not drift), 1 when one did.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			lib, notes, err := a.freshnessTargets(args)
+			lib, _, notes, err := a.freshnessTargets(args)
 			if err != nil {
 				return err
 			}
@@ -64,31 +64,34 @@ func driftOptions(lib *library.Library, online bool) drift.Options {
 	return drift.Options{CodeRoots: lib.Config().CodeRoots, Online: online}
 }
 
-// freshnessTargets resolves the notes drift and stale look at: the notes
-// args name, or every tier note of the --vault vaults that is not revoked.
-func (a *app) freshnessTargets(args []string) (*library.Library, []*vault.NoteView, error) {
+// freshnessTargets snapshots every vault and resolves the notes drift and
+// stale look at: the notes args name, or every tier note of the --vault
+// vaults that is not revoked.
+func (a *app) freshnessTargets(
+	args []string,
+) (*library.Library, *vault.Snapshot, []*vault.NoteView, error) {
 	lib, scope, err := a.openVaults()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	sn, err := lib.Set().Snapshot()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var notes []*vault.NoteView
 	if len(args) > 0 {
 		for _, arg := range args {
 			ref, err := lib.Locate(a.vaults, arg)
 			if err != nil {
-				return nil, nil, withNoteHint(err, refPath(arg))
+				return nil, nil, nil, withNoteHint(err, refPath(arg))
 			}
 			n, err := sn.Note(ref)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			notes = append(notes, n)
 		}
-		return lib, notes, nil
+		return lib, sn, notes, nil
 	}
 	in := map[*vault.Vault]bool{}
 	for _, v := range scope.Vaults() {
@@ -99,7 +102,7 @@ func (a *app) freshnessTargets(args []string) (*library.Library, []*vault.NoteVi
 			notes = append(notes, n)
 		}
 	}
-	return lib, notes, nil
+	return lib, sn, notes, nil
 }
 
 func (a *app) writeDriftText(w io.Writer, r drift.Report) error {

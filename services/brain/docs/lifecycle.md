@@ -111,6 +111,27 @@ a commit not fetched, a failed fetch). Urls are fetched only with
 `--online`. drift exits 1 when a note drifted; `unresolved` alone is not
 drift. With no arguments it checks every note that is not revoked.
 
+A `sources[]` `ref` may also name a note: `id:<ulid>`, `vault:path.md` or
+`path.md`. drift skips it, `brain stale` reads it, and `brain check` reports
+one that names no single note.
+
+## Stale queue
+
+`brain stale` lists the notes that need a human look. It is computed on each
+run and never stored. A note is queued when its `review_by` has passed (on
+any status in circulation) or, for a raw note, its `expires_at`. A disputed
+note is queued. So is a dependent: a note with a `sources[]` ref resting on a
+superseded, retracted or withdrawn note. With `--drift`, so is a note whose
+pinned sources drift found changed. A wikilink is a mention, not a
+dependency, and a dependent's own dependents are not queued. Revoked notes
+never are.
+
+The queue is grouped by domain: the owners the vault's `CODEOWNERS` (or
+`.github/CODEOWNERS`, last matching rule wins) gives the note's path, else
+its `steward`, else `unowned`. Larger groups come first, `unowned` last.
+Each group shows its first `--limit` notes (10), oldest reason first. Add
+`--online` to `--drift` to fetch urls too. stale exits 0 whatever it lists.
+
 ## brain check
 
 `brain check` exits 1 on an error: a citation of a retracted or withdrawn
@@ -125,6 +146,7 @@ note. `.brain/policy.yaml` in the vault sets `classifications:
 | `capture` | `vault`, `path`, `warnings[]` (as write) |
 | `flag` | `vault`, `path`, `sha` |
 | `drift` | `ok`, `online`, `checked`, `drifted`, `offline_skipped`, `notes[] {vault, path, findings[] {kind, source, message, moved_to, archive}}` |
+| `stale` | `total`, `drift`, `groups[] {domain, from, total, notes[] {vault, path, title, status, reasons[] {kind, detail, since}}}` |
 | `inbox list` | `total`, `notes[] {vault, path, title, captured_by, expires_at, expired}` |
 | `inbox keep` | `vault`, `path`, `sha`, `expires_at` |
 | `inbox archive` | `dry_run`, `archived[] {vault, path, archived_to}`, `skipped[] {vault, reason}` |

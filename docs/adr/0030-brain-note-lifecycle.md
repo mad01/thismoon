@@ -48,3 +48,18 @@ an old vault checks clean of errors.
   place.
 - `brain count` still counts every status, so a count can be higher than
   the hits a default search returns.
+
+## Amendment (2026-11-05): freshness
+
+The review queue (`brain stale`) is computed on each run and never stored,
+like `expired`. It counts `review_by` on any status still in circulation,
+not only `validated`, so a disputed note past its date is queued twice
+over. A `sources[]` `ref` may name a note as well as code. Only those refs
+make a dependent of a revoked note: a wikilink is a mention, and the queue
+does not cascade to a dependent's dependents.
+
+Expiry follows the same rule as revocation: `brain inbox archive` moves an
+expired raw note under `.brain/archive/` and never deletes it. brain refuses
+a write that likely duplicates a note with exit 9: the same normalized title
+or alias, or a cosine similarity of at least 0.92. The writer lists the notes
+it differs from in `distinct_from`, which brain stores on the new note.

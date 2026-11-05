@@ -9,6 +9,7 @@ import (
 
 	"github.com/mad01/thismoon/services/brain/internal/drift"
 	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
+	"github.com/mad01/thismoon/services/brain/internal/stale"
 	"github.com/mad01/thismoon/services/brain/internal/testgit"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
@@ -260,5 +261,71 @@ func TestDrift(t *testing.T) {
 	}
 	if !strings.HasPrefix(got.stderr, "brain drift: 1 of 1 note(s) drifted") {
 		t.Errorf("stderr = %q", got.stderr)
+	}
+}
+
+func TestStale(t *testing.T) {
+	code := t.TempDir()
+	repo := filepath.Join(code, "github.com", "acme", "app")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	testgit.Init(t, repo)
+	first := testgit.Commit(t, repo, "first", map[string]string{"main.go": "func Serve() {}\n"})
+	root := setupCLI(t, "code_roots: ["+code+"]\n")
+	writeNote(t, root, "CODEOWNERS", "notes/infra/ @team/infra\n")
+	writeNote(t, root, "notes/infra/dns.md",
+		"---\ntitle: DNS\nreview_by: 2020-01-01\n---\nResolvers.\n")
+	writeNote(t, root, "notes/infra/ntp.md",
+		"---\ntitle: NTP\nreview_by: 2020-02-01\n---\nClocks.\n")
+	writeNote(t, root, "notes/claim.md",
+		"---\ntitle: Claim\nsteward: '@kim'\nstatus: disputed\nstatus_reason: one machine only\n"+
+			"status_at: 2026-10-20\n---\nA claim.\n")
+	writeNote(t, root, "notes/serving.md",
+		"---\ntitle: Serving\nsources:\n  - ref: acme/app:main.go@"+first+"#Serve\n---\nServe.\n")
+
+	got := runBrain(t, "", "stale", "-o", "json")
+	if got.code != exitOK {
+		t.Fatalf("stale: exit %d, stderr %q", got.code, got.stderr)
+	}
+	q := decodeStrict[stale.Queue](t, got.stdout)
+	if len(q.Groups) < 2 || q.Groups[0].Domain != "@team/infra" || q.Groups[0].Total != 2 ||
+		q.Groups[0].From != stale.FromCodeowners || q.Groups[1].Domain != "@kim" || q.Drift {
+		t.Fatalf("stale queue = %+v", q)
+	}
+	if first := q.Groups[0].Notes[0]; first.Path != "notes/infra/dns.md" ||
+		first.Reasons[0].Kind != stale.ReasonExpired {
+		t.Errorf("oldest infra note = %+v, want dns.md expired", first)
+	}
+
+	limited := decodeStrict[stale.Queue](
+		t,
+		runBrain(t, "", "stale", "--limit", "1", "-o", "json").stdout,
+	)
+	if g := limited.Groups[0]; g.Total != 2 || len(g.Notes) != 1 {
+		t.Errorf("--limit 1 infra group = %+v", g)
+	}
+	text := runBrain(t, "", "stale", "--limit", "1").stdout
+	for _, want := range []string{"@team/infra (codeowners, 2 note(s), showing 1)", "notes/infra/dns.md  expired: review_by 2020-01-01"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("stale text lacks %q:\n%s", want, text)
+		}
+	}
+
+	testgit.Commit(t, repo, "second", map[string]string{"main.go": "func Listen() {}\n"})
+	if strings.Contains(runBrain(t, "", "stale").stdout, "serving") {
+		t.Error("stale without --drift queued the drifted note")
+	}
+	if withDrift := runBrain(t, "", "stale", "--drift").stdout; !strings.Contains(
+		withDrift,
+		"notes/serving.md  drift: changed acme/app:main.go@",
+	) {
+		t.Errorf("stale --drift misses the drifted note:\n%s", withDrift)
+	}
+
+	for _, args := range [][]string{{"stale", "--online"}, {"stale", "--limit", "0"}, {"stale", "x"}} {
+		if got := runBrain(t, "", args...); got.code != exitUsage {
+			t.Errorf("%v: exit %d, want %d", args, got.code, exitUsage)
+		}
 	}
 }
