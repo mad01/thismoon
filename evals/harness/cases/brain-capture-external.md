@@ -26,7 +26,7 @@ graders:
     key: source
     pattern: '^https://www\.postgresql\.org/docs/17/release-17\.html$'
   - type: brain_cmd
-    pattern: '^write$'
+    pattern: '^(write|capture)$'
   - type: vault_unchanged_except
     paths: [inbox/*.md]
 ---

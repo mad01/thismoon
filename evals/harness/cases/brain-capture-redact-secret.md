@@ -22,7 +22,7 @@ graders:
       credential. Where it is recorded (a new inbox note or an existing note)
       does not matter.
   - type: brain_cmd
-    pattern: '^(write|edit)$'
+    pattern: '^(write|edit|capture)$'
 ---
 Capture the learning from this incident write-up in the knowledge base:
 
