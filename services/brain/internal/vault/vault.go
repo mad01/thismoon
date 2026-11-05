@@ -98,6 +98,8 @@ type WriteOptions struct {
 }
 
 // Write creates a new note. Returns the absolute path of the created file.
+// Content holding a secret fails with ErrSecretFound before anything is
+// written; Edit, Promote and the status changes refuse it the same way.
 // Errors with ErrExists if the target already exists, also when another
 // writer creates it first. Outputs always carry the meta/output tag,
 // whatever Set and Unset say. A note without an id after Set and Unset gets
@@ -158,13 +160,16 @@ func (v *Vault) Write(opts WriteOptions) (path string, err error) {
 	}
 
 	dir := v.TierDir(opts.Tier)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("mkdir tier %s: %w", dir, err)
-	}
 	path = filepath.Join(dir, filename)
 	content, err := markdown.Render(fm, []byte(ensureTrailingNewline(opts.Body)))
 	if err != nil {
 		return "", err
+	}
+	if err := v.refuseSecrets(path, content); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir tier %s: %w", dir, err)
 	}
 	release, err := v.lockWrites()
 	if err != nil {
@@ -312,6 +317,9 @@ func (v *Vault) rewrite(
 	if err != nil {
 		return "", err
 	}
+	if err := v.refuseSecrets(path, content); err != nil {
+		return "", err
+	}
 	if err := atomicWrite(path, content, 0o644); err != nil {
 		return "", err
 	}
@@ -434,6 +442,9 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 	}
 	content, err := markdown.Render(fm, body)
 	if err != nil {
+		return PromoteResult{}, err
+	}
+	if err := v.refuseSecrets(newPath, content); err != nil {
 		return PromoteResult{}, err
 	}
 

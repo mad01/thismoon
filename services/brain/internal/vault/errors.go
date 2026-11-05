@@ -29,4 +29,7 @@ var (
 	// apply to the note as named: a withdrawn note, a note superseding
 	// itself, an unknown retract reason.
 	ErrInvalidStatusChange = errors.New("vault: invalid status change")
+	// ErrSecretFound means a write, edit, promote or status change would put
+	// a secret in a note; the message names the rule and the redacted value.
+	ErrSecretFound = errors.New("vault: secret found")
 )

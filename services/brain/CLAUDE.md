@@ -68,6 +68,7 @@ Agents drive brain from the shell, so the CLI keeps a stable contract:
 | 5 | `invalid_query` | zoekt query does not parse |
 | 6 | `read_only` | write, edit, promote or migrate in a shared vault |
 | 7 | `conflict` | `edit --if-match` sha no longer matches the note |
+| 8 | `secret_found` | the note would hold a secret (kit/secretscan); nothing was written |
 
 - `docs/cli.md` is the agent guide `brain docs` prints. Keep it under 200 lines and in step with `internal/cli/errors.go`: a new exit code or error class changes both.
 - Writes are safe against each other: a new note is created exclusively (a temporary file hard-linked into place), every rewrite renames a uniquely named temporary file, and write, edit, promote and migrate hold the vault's `locks/<vault>.write.lock`. `read -o json` returns the note's `sha`; `edit --if-match <sha>` refuses with exit 7 when the note changed since.

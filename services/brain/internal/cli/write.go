@@ -12,17 +12,20 @@ import (
 
 func newWriteCmd(a *app) *cobra.Command {
 	var (
-		opts   vault.WriteOptions
-		tier   string
-		body   string
-		fields fieldFlags
+		opts     vault.WriteOptions
+		tier     string
+		body     string
+		bodyFile string
+		fields   fieldFlags
 	)
 	c := &cobra.Command{
 		Use:   "write",
 		Short: "Create a new note in a tier",
 		Long: `Create a new note in a tier (inbox, notes, outputs, or MOCs).
 
-If --body is "-" or omitted, the body is read from stdin. Use --tag and
+If --body is "-" or omitted, the body is read from stdin; --body-file reads
+it from a file instead. The note, frontmatter and body, is scanned for
+secrets first, and one found refuses the write with exit code 8. Use --tag and
 --alias multiple times to add tags/aliases. --set key=value sets any
 frontmatter key (the value is YAML, so --set 'sources=[{url: https://x}]'
 stores a list); --set and --unset apply after the tier defaults. The note
@@ -41,8 +44,11 @@ With -o json, prints {"vault": ..., "path": ...}.`,
 			if opts.Set, opts.Unset, err = fields.parse(); err != nil {
 				return err
 			}
-			if opts.Body, err = readMaybeStdin(cmd.InOrStdin(), body); err != nil {
-				return fmt.Errorf("read stdin: %w", err)
+			if bodyFile != "" && cmd.Flags().Changed("body") {
+				return usageErrorf("--body and --body-file are mutually exclusive")
+			}
+			if opts.Body, err = readBody(cmd.InOrStdin(), body, bodyFile); err != nil {
+				return err
 			}
 			name, err := a.writeVault()
 			if err != nil {
@@ -73,6 +79,7 @@ With -o json, prints {"vault": ..., "path": ...}.`,
 	f.StringVar(&tier, "tier", "inbox", "target tier (inbox, notes, outputs, MOCs)")
 	f.StringVar(&opts.Title, "title", "", "note title (required)")
 	f.StringVar(&body, "body", "-", `markdown body; "-" reads stdin`)
+	f.StringVar(&bodyFile, "body-file", "", "read the markdown body from this file")
 	f.StringSliceVar(&opts.Tags, "tag", nil, "frontmatter tag (repeatable)")
 	f.StringSliceVar(&opts.Aliases, "alias", nil, "frontmatter alias (repeatable)")
 	f.StringVar(&opts.Type, "type", "", "frontmatter type (note | source | moc | output)")

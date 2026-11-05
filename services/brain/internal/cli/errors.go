@@ -25,6 +25,7 @@ const (
 	exitInvalidQuery = 5
 	exitReadOnly     = 6
 	exitConflict     = 7
+	exitSecretFound  = 8
 )
 
 // usageError marks a bad flag or argument (exit code 2).
@@ -79,6 +80,8 @@ func classify(err error) (int, string) {
 		return exitReadOnly, "read_only"
 	case errors.Is(err, vault.ErrConflict):
 		return exitConflict, "conflict"
+	case errors.Is(err, vault.ErrSecretFound):
+		return exitSecretFound, "secret_found"
 	}
 	return exitError, "error"
 }

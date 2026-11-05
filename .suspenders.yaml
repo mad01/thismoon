@@ -16,6 +16,9 @@ paths:
   - "**/tools/suspenders/README.md"
   - "**/kit/secretscan/*_test.go"
   - "**/kit/secretscan/rules.go"
+  # brain refuses to write a note that holds a secret; the tests proving it
+  # keep AWS's documented example key id in their secrets_test.go files.
+  - "**/services/brain/internal/*/secrets_test.go"
 
 # Go struct literals like `apiKey: cfg.APIKey` read as YAML-style secret
 # assignments to the unquoted-secret-assignment rule; the right-hand side is

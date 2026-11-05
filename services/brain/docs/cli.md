@@ -57,8 +57,8 @@ prints `vault:path`.
 | `peek <note>` | backlink count, frontmatter, first lines | `--lines N` (default 20) |
 | `backlinks [note]` | inbound and outbound wikilinks | `--title <title or alias>` instead of a note |
 | `graph` | wikilink graph as nodes and edges | `--center <note> --depth N --tags-as-nodes` |
-| `write` | create a note | `--title` (required), `--tier --body --tag --alias --type --status --source --evidence --filename --set --unset`; no `--body` reads stdin |
-| `edit <note>` | change body or frontmatter | `--body` or `--append` (`-` reads stdin), `--title --status --type --source --tag --alias --evidence --set --unset --if-match <sha>` |
+| `write` | create a note | `--title` (required), `--tier --body --body-file --tag --alias --type --status --source --evidence --filename --set --unset`; no `--body` reads stdin |
+| `edit <note>` | change body or frontmatter | one of `--body --append` (`-` reads stdin) `--body-file --append-file`, plus `--title --status --type --source --tag --alias --evidence --set --unset --if-match <sha>` |
 | `promote <note>` | move an inbox note to notes/ | `--title` (rename) `--tier` `--moc <MOC path>` |
 | `index` | refresh indexes; semantic re-embeds changed notes only (queries refresh too) | `--force --literal-only` |
 | `migrate --ids` | give every note without an id one; skips shared vaults unless named | `--dry-run` |
@@ -112,6 +112,7 @@ edit; `updated` is always refreshed on edit.
 | 5 | `invalid_query` | zoekt query does not parse | `brain query '<query>'` |
 | 6 | `read_only` | write, edit, promote or migrate in a shared vault | change it through a PR to its repo |
 | 7 | `conflict` | `edit --if-match` sha no longer matches the note | read the note again, then edit |
+| 8 | `secret_found` | the note would hold a secret; nothing was written | remove it, or mark a false positive `suspenders:ignore` |
 
 Errors print one line on stderr: `brain <cmd>: <message>`. With `-o json`
 the same failure also prints on stdout:
