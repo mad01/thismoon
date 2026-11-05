@@ -336,18 +336,23 @@ func (n fixtureNote) tags() []string {
 	return out
 }
 
-// fixtureNotes reads every file of the team fixture, sorted by path.
-func fixtureNotes(t *testing.T) ([]string, map[string]fixtureNote) {
+// fixtureNotes reads every file of the fixture at root, sorted by path. A
+// file that is not markdown keeps its content and no frontmatter.
+func fixtureNotes(t *testing.T, root string) ([]string, map[string]fixtureNote) {
 	t.Helper()
-	files, err := listFiles(teamFixture)
+	files, err := listFiles(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	notes := map[string]fixtureNote{}
 	for _, f := range files {
-		data, err := os.ReadFile(filepath.Join(teamFixture, f))
+		data, err := os.ReadFile(filepath.Join(root, f))
 		if err != nil {
 			t.Fatal(err)
+		}
+		if !strings.HasSuffix(f, ".md") {
+			notes[f] = fixtureNote{content: string(data)}
+			continue
 		}
 		front, _, err := splitFrontmatter(string(data))
 		if err != nil {
@@ -375,7 +380,7 @@ var outputName = regexp.MustCompile(`^outputs/\d{4}-\d{2}-\d{2}-[a-z0-9-]+\.md$`
 // policy's extra keys are the one exception, by design: the
 // edit-preserve-frontmatter case grades that they survive an edit.
 func TestBrainFixtureFormat(t *testing.T) {
-	files, notes := fixtureNotes(t)
+	files, notes := fixtureNotes(t, teamFixture)
 	wantStatus := map[string]string{
 		"inbox": "raw", "notes": "validated", "outputs": "validated", "MOCs": "validated",
 	}
@@ -418,7 +423,7 @@ func TestBrainFixtureFormat(t *testing.T) {
 }
 
 func TestBrainFixtureLinksResolve(t *testing.T) {
-	files, notes := fixtureNotes(t)
+	files, notes := fixtureNotes(t, teamFixture)
 	idx := noteIndex(files)
 	for _, f := range files {
 		for _, target := range wikilinkTargets(notes[f].content) {
@@ -451,7 +456,7 @@ func slugOf(title string) string {
 
 // TestBrainFixtureTraps pins the facts the brain cases grade against.
 func TestBrainFixtureTraps(t *testing.T) {
-	files, notes := fixtureNotes(t)
+	files, notes := fixtureNotes(t, teamFixture)
 
 	wantBacklinks := []string{
 		"MOCs/databases.md",
@@ -502,5 +507,185 @@ func TestBrainFixtureTraps(t *testing.T) {
 	}
 	if !strings.Contains(notes["notes/ledger-svc.md"].content, "max 40") {
 		t.Error("capture-dedupe: ledger-svc should hold the old pool size")
+	}
+}
+
+// multiFixture is the two-vault fixture the shared-vault cases run against.
+const multiFixture = "fixtures/brain/team-multi"
+
+// multiKeys are the frontmatter keys a team-multi note carries: brain's
+// typed keys and the two lifecycle fields brain check asks for.
+var multiKeys = append(slices.Clone(brainKeys), "classification", "review_by")
+
+var (
+	// noteIDRE is a ULID as brain's noteid package makes them.
+	noteIDRE = regexp.MustCompile(`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`)
+	// reviewFloor is the earliest review_by the fixture may carry. A note
+	// past its review_by reads as expired, which promote may refuse.
+	reviewFloor = time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
+)
+
+// multiNotes reads the team-multi fixture: every file, and the markdown
+// notes among them.
+func multiNotes(t *testing.T) ([]string, []string, map[string]fixtureNote) {
+	t.Helper()
+	files, notes := fixtureNotes(t, multiFixture)
+	var md []string
+	for _, f := range files {
+		if strings.HasSuffix(f, ".md") {
+			md = append(md, f)
+		}
+	}
+	return files, md, notes
+}
+
+// sharedPolicy reads the classifications the shared vault's policy allows.
+func sharedPolicy(t *testing.T, notes map[string]fixtureNote) []string {
+	t.Helper()
+	var policy struct {
+		Classifications []string `yaml:"classifications"`
+	}
+	if err := yaml.Unmarshal([]byte(notes["shared/.brain/policy.yaml"].content), &policy); err != nil {
+		t.Fatal(err)
+	}
+	return policy.Classifications
+}
+
+// dateValue reads a YAML date, which decodes as a string or a time.
+func dateValue(v any) (time.Time, bool) {
+	switch d := v.(type) {
+	case time.Time:
+		return d, true
+	case string:
+		parsed, err := time.Parse(time.DateOnly, d)
+		return parsed, err == nil
+	}
+	return time.Time{}, false
+}
+
+// TestMultiFixtureFormat checks every note in both vaults carries brain's
+// frontmatter for its tier, a unique note id, a classification the shared
+// policy allows when the note is shared, and a review date that has not
+// passed. It is what brain check needs to pass both vaults clean.
+func TestMultiFixtureFormat(t *testing.T) {
+	_, md, notes := multiNotes(t)
+	allowed := sharedPolicy(t, notes)
+	ids := map[string]string{}
+	for _, f := range md {
+		n := notes[f]
+		vault, _, _ := strings.Cut(f, "/")
+		if vault != privateVault && vault != sharedVault {
+			t.Errorf("%s: not under private/ or shared/", f)
+		}
+		for _, key := range []string{"title", "type", "created", "updated"} {
+			if n.front[key] == nil {
+				t.Errorf("%s: missing %s", f, key)
+			}
+		}
+		if n.front["status"] != "validated" {
+			t.Errorf("%s: status %v, want validated", f, n.front["status"])
+		}
+		id, _ := n.front["id"].(string)
+		if other, dup := ids[id]; !noteIDRE.MatchString(id) || dup {
+			t.Errorf("%s: id %q is not a ULID or is %s's too", f, id, other)
+		}
+		ids[id] = f
+		class, _ := n.front["classification"].(string)
+		if !slices.Contains([]string{"public", "internal", "confidential", "restricted"}, class) ||
+			(vault == sharedVault && !slices.Contains(allowed, class)) {
+			t.Errorf("%s: classification %q", f, class)
+		}
+		if review, ok := dateValue(n.front["review_by"]); !ok || review.Before(reviewFloor) {
+			t.Errorf("%s: review_by %v, want a date from %s on", f, n.front["review_by"],
+				reviewFloor.Format(time.DateOnly))
+		}
+		for key := range n.front {
+			if !slices.Contains(multiKeys, key) {
+				t.Errorf("%s: key %s is not one brain keeps or checks", f, key)
+			}
+		}
+	}
+	if len(md) < 10 || len(md) > 15 {
+		t.Errorf("team-multi has %d notes, want 10 to 15", len(md))
+	}
+}
+
+// TestMultiFixtureLinksResolve resolves every link the way brain does across
+// the two vaults, and pins a private note whose link lands in shared.
+func TestMultiFixtureLinksResolve(t *testing.T) {
+	files, md, notes := multiNotes(t)
+	links := newLinkIndex(files, true)
+	for _, f := range md {
+		for _, target := range wikilinkTargets(notes[f].content) {
+			if _, ok := links.resolve(f, target); !ok {
+				t.Errorf("%s: [[%s]] does not resolve", f, target)
+			}
+		}
+	}
+	if got, _ := links.resolve("private/notes/dispatch-api-local-dev.md", "dispatch-api"); got !=
+		"shared/notes/dispatch-api.md" {
+		t.Errorf("private-to-shared: [[dispatch-api]] resolves to %q", got)
+	}
+}
+
+// filesMatching lists the files whose content re matches.
+func filesMatching(files []string, notes map[string]fixtureNote, re string) []string {
+	var out []string
+	for _, f := range files {
+		if regexp.MustCompile(re).MatchString(notes[f].content) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// TestMultiFixtureTraps pins the facts the shared-vault cases grade.
+func TestMultiFixtureTraps(t *testing.T) {
+	files, _, notes := multiNotes(t)
+	only := func(label, re string, want ...string) {
+		t.Helper()
+		if got := filesMatching(files, notes, re); !slices.Equal(got, want) {
+			t.Errorf("%s: %s is in %v, want %v", label, re, got, want)
+		}
+	}
+	has := func(f string) bool { return slices.Contains(files, f) }
+
+	only("shared-readonly-edit", `HTTP API on port 7070`, "shared/notes/parcel-tracker.md")
+	only("shared-readonly-edit", `7071`)
+	if has("private/notes/parcel-tracker.md") {
+		t.Error("shared-readonly-edit: the private vault should have no parcel-tracker note")
+	}
+
+	only("shared-private-search", `\b8443\b`, "shared/notes/dispatch-api.md")
+	only("shared-private-search", `\b18443\b`, "private/notes/dispatch-api-local-dev.md")
+	if has("private/notes/dispatch-api.md") {
+		t.Error("shared-private-search: notes/dispatch-api.md should be in the shared vault only")
+	}
+
+	guide, cards := "private/notes/kafka-partitioning-guide.md", "private/notes/carrier-rate-cards.md"
+	allowed := sharedPolicy(t, notes)
+	for f, class := range map[string]string{guide: "internal", cards: "confidential"} {
+		front := notes[f].front
+		if front["status"] != "validated" || front["classification"] != class {
+			t.Errorf("promote-to-shared-gate: %s is %v, %v; want validated, %s",
+				f, front["status"], front["classification"], class)
+		}
+		if has(strings.Replace(f, privateVault+"/", sharedVault+"/", 1)) {
+			t.Errorf("promote-to-shared-gate: the shared vault already has %s", path.Base(f))
+		}
+	}
+	if !slices.Contains(allowed, "internal") || slices.Contains(allowed, "confidential") {
+		t.Errorf("promote-to-shared-gate: shared policy allows %v", allowed)
+	}
+	only("promote-to-shared-gate", `24 partitions`, guide)
+	only("promote-to-shared-gate", `EUR 3\.42|40,000 parcels`, cards)
+	links := newLinkIndex(files, true)
+	for _, target := range wikilinkTargets(notes[guide].content) {
+		if _, ok := links.resolve("shared/notes/kafka-partitioning-guide.md", target); !ok {
+			t.Errorf("promote-to-shared-gate: the guide's [[%s]] would dangle in shared", target)
+		}
+	}
+	if !strings.Contains(notes["shared/CODEOWNERS"].content, "/notes/kafka-*") {
+		t.Error("promote-to-shared-gate: CODEOWNERS should name owners for the guide's path")
 	}
 }
