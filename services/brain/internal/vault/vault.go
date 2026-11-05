@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -439,6 +440,12 @@ func (v *Vault) Edit(path string, opts EditOptions) (sha string, err error) {
 		VerbEdit,
 		func(fm *markdown.Frontmatter, body []byte) ([]byte, error) {
 			id, status, title := fm.ID, fm.Status, fm.Title
+			if lifecycle.Normalize(status) == lifecycle.Withdrawn {
+				return nil, fmt.Errorf(
+					"%w: %s is withdrawn; a tombstone takes no edit (write a new note instead)",
+					ErrInvalidStatusChange, v.Rel(path),
+				)
+			}
 			if opts.FrontmatterPatch != nil {
 				*fm = mergeFrontmatter(*fm, *opts.FrontmatterPatch)
 			}
@@ -453,11 +460,37 @@ func (v *Vault) Edit(path string, opts EditOptions) (sha string, err error) {
 			if id != "" && fm.ID != id {
 				return nil, fmt.Errorf("%w: %s keeps id %s", ErrImmutableID, v.Rel(path), id)
 			}
+			if err := checkEditStatus(v.Rel(path), status, fm.Status); err != nil {
+				return nil, err
+			}
 			lifecycle.Transition(fm, status, opts.Now)
 			fm.Touch(opts.Now)
 			return editedBody(body, opts), nil
 		},
 	)
+}
+
+// EditStatuses are the statuses an edit may set. Superseded, retracted and
+// withdrawn go through brain supersede, retract and withdraw, which record
+// the replacement, the reason or the tombstone a revocation needs.
+var EditStatuses = []string{lifecycle.Raw, lifecycle.Validated, lifecycle.Promoting, lifecycle.Disputed}
+
+// checkEditStatus refuses an edit that changes the status of the note at
+// rel from from to anything but one of EditStatuses, with
+// ErrInvalidStatusChange. Removing the status leaves the tier's default.
+func checkEditStatus(rel, from, to string) error {
+	next := lifecycle.Normalize(to)
+	switch {
+	case next == lifecycle.Normalize(from), next == "", slices.Contains(EditStatuses, next):
+		return nil
+	case lifecycle.Revoked(next):
+		return fmt.Errorf(
+			"%w: edit does not set status %s; revoke %s with brain supersede, brain retract or brain withdraw",
+			ErrInvalidStatusChange, next, rel,
+		)
+	}
+	return fmt.Errorf("%w: status %q is not one of %s",
+		ErrInvalidStatusChange, to, strings.Join(EditStatuses, ", "))
 }
 
 // editedBody returns body with opts.Body replacing it or opts.Append added.

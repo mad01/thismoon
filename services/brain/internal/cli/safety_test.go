@@ -73,6 +73,16 @@ func TestRefusedWritesExitUsage(t *testing.T) {
 			args:       []string{"promote", "inbox/raw.md", "--title", "two\nlines"},
 			wantStderr: "holds a control character",
 		},
+		{
+			name:       "edit --status superseded",
+			args:       []string{"edit", "notes/beta.md", "--status", "superseded"},
+			wantStderr: "brain supersede",
+		},
+		{
+			name:       "edit --set status unknown",
+			args:       []string{"edit", "notes/beta.md", "--set", "status=finished"},
+			wantStderr: "is not one of raw, validated, promoting, disputed",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

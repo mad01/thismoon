@@ -87,3 +87,26 @@ func TestWriteToolsRefuseUnsafeTitlesAndMOCs(t *testing.T) {
 		t.Error("brain_promote appended to a file outside the vault")
 	}
 }
+
+// TestBrainEditRefusesARevocation pins that brain_edit cannot revoke a note
+// or revive a tombstone: those go through the CLI's revocation commands.
+func TestBrainEditRefusesARevocation(t *testing.T) {
+	root := setupFixtureVault(t)
+	h := testServer(t)
+	path := filepath.Join(root, "notes", "concept-alpha.md")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, status := range []string{"superseded", "withdrawn", "bogus"} {
+		_, _, err := h.handleEdit(context.Background(), nil, editInput{
+			Path: "notes/concept-alpha.md", FrontmatterPatch: &frontmatterIn{Status: status},
+		})
+		if err == nil || !strings.Contains(err.Error(), "invalid status change") {
+			t.Errorf("brain_edit status %s = %v, want an invalid status change", status, err)
+		}
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Errorf("note changed to %q", after)
+	}
+}

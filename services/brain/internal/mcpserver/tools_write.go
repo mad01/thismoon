@@ -42,7 +42,7 @@ type frontmatterIn struct {
 	Aliases  []string `json:"aliases,omitempty"`
 	Tags     []string `json:"tags,omitempty"`
 	Type     string   `json:"type,omitempty"`
-	Status   string   `json:"status,omitempty"`
+	Status   string   `json:"status,omitempty"   jsonschema:"raw, validated, promoting or disputed; superseded, retracted and withdrawn are refused (revoke with brain supersede, retract or withdraw), as is any edit of a withdrawn note"`
 	Source   string   `json:"source,omitempty"`
 	Evidence string   `json:"evidence,omitempty" jsonschema:"trust tier (A/B/C/D/mixed); set to empty string to clear"`
 	ID       string   `json:"id,omitempty"`
