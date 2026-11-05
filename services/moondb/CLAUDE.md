@@ -224,7 +224,11 @@ as many lines or more, an import only when it read more.
 `record` keeps a little state per session under `<workdir>/sessions/`, read
 back only by later hooks of the same session:
 
-- `<sid>.turn`: the open turn's prompt id and the transcript offset it opened at
+- `<sid>.turn`: the open turn's prompt id and the transcript offset it opened at.
+  A prompt typed while the turn runs is queued, and its UserPromptSubmit
+  carries the running turn's prompt id. That second open keeps the first
+  offset, so the Stop still tails the whole turn. An offset past the
+  transcript's end (the file was replaced) gives way to the current size.
 - `<sid>.paths`: the files the session edited, which its snapshots cover
 - `<sid>.touched`: one worktree per line, where the session edited
 - `<sid>.heads`: the HEAD last seen in each touched worktree
