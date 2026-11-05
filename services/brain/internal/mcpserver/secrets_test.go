@@ -110,3 +110,30 @@ func TestBrainEditRefusesARevocation(t *testing.T) {
 		t.Errorf("note changed to %q", after)
 	}
 }
+
+// TestBrainEditClearsEvidence pins that an empty evidence in the patch
+// removes the field, as the schema says.
+func TestBrainEditClearsEvidence(t *testing.T) {
+	setupFixtureVault(t)
+	h := testServer(t)
+	ctx := context.Background()
+	const path = "notes/concept-alpha.md"
+	for _, step := range []struct {
+		evidence, want string
+	}{{"B", "B"}, {"", ""}} {
+		if _, _, err := h.handleEdit(ctx, nil, editInput{
+			Path: path, FrontmatterPatch: &frontmatterIn{Evidence: ptr(step.evidence)},
+		}); err != nil {
+			t.Fatalf("evidence %q: %v", step.evidence, err)
+		}
+		_, out, err := h.handleRead(ctx, nil, readInput{Path: path})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Frontmatter.Evidence != step.want {
+			t.Errorf("after evidence %q, evidence = %q, want %q", step.evidence, out.Frontmatter.Evidence, step.want)
+		}
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

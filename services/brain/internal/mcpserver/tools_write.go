@@ -44,7 +44,7 @@ type frontmatterIn struct {
 	Type     string   `json:"type,omitempty"`
 	Status   string   `json:"status,omitempty"   jsonschema:"raw, validated, promoting or disputed; superseded, retracted and withdrawn are refused (revoke with brain supersede, retract or withdraw), as is any edit of a withdrawn note"`
 	Source   string   `json:"source,omitempty"`
-	Evidence string   `json:"evidence,omitempty" jsonschema:"trust tier (A/B/C/D/mixed); set to empty string to clear"`
+	Evidence *string  `json:"evidence,omitempty" jsonschema:"trust tier (A/B/C/D/mixed); an empty string removes the evidence field"`
 	ID       string   `json:"id,omitempty"`
 }
 
@@ -159,14 +159,20 @@ func (h *handlers) handleEdit(
 	}
 	if in.FrontmatterPatch != nil {
 		patch := markdown.Frontmatter{
-			Title:    in.FrontmatterPatch.Title,
-			Aliases:  in.FrontmatterPatch.Aliases,
-			Tags:     in.FrontmatterPatch.Tags,
-			Type:     in.FrontmatterPatch.Type,
-			Status:   in.FrontmatterPatch.Status,
-			Source:   in.FrontmatterPatch.Source,
-			Evidence: in.FrontmatterPatch.Evidence,
-			ID:       in.FrontmatterPatch.ID,
+			Title:   in.FrontmatterPatch.Title,
+			Aliases: in.FrontmatterPatch.Aliases,
+			Tags:    in.FrontmatterPatch.Tags,
+			Type:    in.FrontmatterPatch.Type,
+			Status:  in.FrontmatterPatch.Status,
+			Source:  in.FrontmatterPatch.Source,
+			ID:      in.FrontmatterPatch.ID,
+		}
+		if e := in.FrontmatterPatch.Evidence; e != nil {
+			if strings.TrimSpace(*e) == "" {
+				opts.Unset = append(opts.Unset, "evidence")
+			} else {
+				patch.Evidence = *e
+			}
 		}
 		opts.FrontmatterPatch = &patch
 	}
