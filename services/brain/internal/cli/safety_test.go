@@ -29,6 +29,17 @@ func TestRefusedWritesExitUsage(t *testing.T) {
 			args:       []string{"edit", "inbox/open.md", "--append", "x"},
 			wantStderr: "frontmatter is not closed",
 		},
+		{
+			name:       "write filename outside the vault",
+			args:       []string{"write", "--title", "Esc", "--filename", "../../escaped", "--body", "x"},
+			wantStderr: "vault: invalid path",
+			outside:    []string{"escaped.md", "../escaped.md"},
+		},
+		{
+			name:       "write filename into another tier",
+			args:       []string{"write", "--tier", "notes", "--title", "Esc", "--filename", "../inbox/esc"},
+			wantStderr: "vault: invalid path",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

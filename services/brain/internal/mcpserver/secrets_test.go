@@ -40,3 +40,19 @@ func TestWriteToolsRefuseASecret(t *testing.T) {
 		t.Fatalf("brain_edit = %v, want a secret refusal", err)
 	}
 }
+
+// TestBrainWriteRefusesAFilenameOutsideTheTier pins that brain_write takes a
+// file name, never a path out of its tier.
+func TestBrainWriteRefusesAFilenameOutsideTheTier(t *testing.T) {
+	root := setupFixtureVault(t)
+	h := testServer(t)
+	_, _, err := h.handleWrite(context.Background(), nil, writeInput{
+		Tier: "inbox", Title: "Esc", Filename: "../../escaped",
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid path") {
+		t.Fatalf("brain_write = %v, want an invalid path refusal", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(filepath.Dir(root), "escaped.md")); statErr == nil {
+		t.Error("brain_write created a file outside the vault")
+	}
+}

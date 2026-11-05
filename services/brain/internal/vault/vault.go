@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/mad01/thismoon/services/brain/internal/atomicfile"
 	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
@@ -217,7 +218,10 @@ func (v *Vault) Draft(opts WriteOptions) (Draft, error) {
 	if err != nil {
 		return Draft{}, err
 	}
-	path := filepath.Join(v.TierDir(opts.Tier), noteFilename(opts))
+	path, err := v.notePath(opts)
+	if err != nil {
+		return Draft{}, err
+	}
 	if _, err := os.Stat(path); err == nil {
 		return Draft{}, fmt.Errorf("%w: %s", ErrExists, v.Rel(path))
 	}
@@ -293,6 +297,38 @@ func newFrontmatter(opts WriteOptions) (markdown.Frontmatter, error) {
 		fm.Tags = append([]string{"meta/output"}, fm.Tags...)
 	}
 	return fm, nil
+}
+
+// notePath is the absolute path a new note gets: its file name under its
+// tier directory. A --filename that names a path, rather than a file in the
+// tier, is ErrInvalidPath.
+func (v *Vault) notePath(opts WriteOptions) (string, error) {
+	if err := validFilename(opts.Filename); err != nil {
+		return "", err
+	}
+	dir := v.TierDir(opts.Tier)
+	path := filepath.Join(dir, noteFilename(opts))
+	if filepath.Dir(path) != filepath.Clean(dir) {
+		return "", fmt.Errorf("%w: filename %q leaves the %s tier", ErrInvalidPath, opts.Filename, opts.Tier)
+	}
+	return path, nil
+}
+
+// validFilename refuses a --filename holding a path separator, "..", or a
+// control character: a note's file name stays inside its tier directory.
+// An empty name is the default, the title's slug.
+func validFilename(name string) error {
+	if name == "" {
+		return nil
+	}
+	if strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") ||
+		strings.ContainsFunc(name, unicode.IsControl) {
+		return fmt.Errorf(
+			"%w: filename %q must be a plain file name, with no path separator, .. or control character",
+			ErrInvalidPath, name,
+		)
+	}
+	return nil
 }
 
 // noteFilename is the file a new note gets: opts.Filename, else the title's
