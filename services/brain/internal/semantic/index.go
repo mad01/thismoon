@@ -142,6 +142,8 @@ type Hit struct {
 	Vault string
 	// Path is the vault-relative note path.
 	Path string
+	// NoteID is the note's frontmatter id, empty when the note had none.
+	NoteID string
 	// Title is the note title (frontmatter.title or filename stem).
 	Title string
 	// HeadingPath joins the headings above this chunk with " › ".
@@ -235,6 +237,7 @@ func hitFromResult(r chromem.Result) Hit {
 	return Hit{
 		ID:          r.ID,
 		Path:        r.Metadata["path"],
+		NoteID:      r.Metadata["note_id"],
 		Title:       r.Metadata["title"],
 		HeadingPath: r.Metadata["heading_path"],
 		Snippet:     r.Content,
@@ -256,6 +259,7 @@ func hitFromResult(r chromem.Result) Hit {
 func chunkMetadata(c chunk.Chunk) map[string]string {
 	m := map[string]string{
 		"path":         c.Path,
+		"note_id":      c.NoteID,
 		"title":        c.Title,
 		"heading_path": c.HeadingPath,
 		"tier":         c.Tier,

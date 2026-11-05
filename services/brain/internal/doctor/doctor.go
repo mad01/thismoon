@@ -1,6 +1,7 @@
 // Package doctor runs brain's self-checks: the config resolves, every vault
 // exists, the index directory is writable, each vault's literal index is
-// fresh and, when the semantic layer is on, Ollama answers. `brain doctor` prints the
+// fresh, no two notes share an id and, when the semantic layer is on, Ollama
+// answers. `brain doctor` prints the
 // report and the brain_doctor MCP tool returns it, so both read the same
 // checks in the same shape.
 package doctor
@@ -68,6 +69,7 @@ func Run(ctx context.Context, configPath string) Report {
 			skipped("vault", "needs a config"),
 			skipped("index-dir", "needs a config"),
 			skipped("index", "needs a config"),
+			skipped("ids", "needs a config"),
 			skipped("ollama", "needs a config"),
 		)
 		return newReport(checks)
@@ -82,6 +84,11 @@ func Run(ctx context.Context, configPath string) Report {
 		checks = append(checks, skipped("index", "needs the index directory"))
 	default:
 		checks = append(checks, checkIndexFresh(cfg))
+	}
+	if vaultCheck.Status == StatusOK {
+		checks = append(checks, checkIDs(cfg))
+	} else {
+		checks = append(checks, skipped("ids", "needs every vault"))
 	}
 	checks = append(checks, checkOllama(ctx, cfg))
 	return newReport(checks)
@@ -229,6 +236,48 @@ func checkIndexFresh(cfg *config.Config) Check {
 		}
 	}
 	return Check{Name: "index", Status: StatusOK, Detail: strings.Join(fresh, "; ")}
+}
+
+// checkIDs fails when two notes across the configured vaults share an id,
+// naming them. Notes without an id are counted, not failed.
+func checkIDs(cfg *config.Config) Check {
+	vaults := make([]*vault.Vault, 0, len(cfg.Vaults))
+	for _, c := range cfg.Vaults {
+		v, err := vault.Open(c.Path)
+		if err != nil {
+			return Check{Name: "ids", Status: StatusFail, Detail: c.Name + ": " + err.Error()}
+		}
+		v.Name = c.Name
+		vaults = append(vaults, v)
+	}
+	report, err := vault.NewSet(vaults...).IDs()
+	if err != nil {
+		return Check{Name: "ids", Status: StatusFail, Detail: err.Error()}
+	}
+	if dups := report.DuplicateIDs(); len(dups) > 0 {
+		lines := make([]string, 0, len(dups))
+		for _, id := range dups {
+			refs := make([]string, 0, len(report.Duplicates[id]))
+			for _, r := range report.Duplicates[id] {
+				refs = append(refs, r.String())
+			}
+			lines = append(lines, id+" is on "+strings.Join(refs, ", "))
+		}
+		return Check{
+			Name:   "ids",
+			Status: StatusFail,
+			Detail: strings.Join(lines, "; "),
+			Fix:    "keep each id on one note: delete the id line from the copies, then run brain migrate --ids",
+		}
+	}
+	detail := fmt.Sprintf("%d note(s), no id on two notes", report.Notes)
+	if report.Missing > 0 {
+		detail += fmt.Sprintf(
+			"; %d without an id (add them with: brain migrate --ids)",
+			report.Missing,
+		)
+	}
+	return Check{Name: "ids", Status: StatusOK, Detail: detail}
 }
 
 // indexStatus describes one vault's literal index, and whether it is fresh.

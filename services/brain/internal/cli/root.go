@@ -74,6 +74,7 @@ Subcommands:
   edit              Edit body or frontmatter of an existing note.
   promote           Move an inbox note into notes/, rewriting backlinks.
   list              List notes in a tier, optionally filtered.
+  migrate           Backfill note ids (--ids).
   docs              Print the agent-facing CLI guide.
   doctor            Check config, vault, index and Ollama.
   mcp               Start the MCP stdio server for Claude Code.
@@ -127,6 +128,7 @@ brain doctor prints the paths in effect.`,
 		newEditCmd(a),
 		newPromoteCmd(a),
 		newListCmd(a),
+		newMigrateCmd(a),
 		newDocsCmd(),
 		newDoctorCmd(a),
 		newMCPCmd(a),

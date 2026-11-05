@@ -272,6 +272,7 @@ func fuse(literal []search.FileHit, semHits []semantic.Hit, k int) []hybrid.Resu
 		notes[key] = hybrid.ResultHit{
 			Vault:       h.Vault,
 			Path:        h.Path,
+			ID:          h.NoteID,
 			Title:       h.Title,
 			HeadingPath: h.HeadingPath,
 			Snippet:     h.Snippet,

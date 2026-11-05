@@ -1,6 +1,6 @@
 # brain, local markdown knowledge base (CLI + MCP)
 
-Go CLI and MCP stdio server over Obsidian-style markdown vaults. It indexes each vault with zoekt for literal search and chromem-go for semantic search on Ollama embeddings, and fuses the two for hybrid search. brain is the tool only: the content lives in vault repos checked out wherever the config points, typically one private vault plus a shared team vault that is read-only here. Terms (vault, private, shared and default vault, note ref, tier, note, stem, wikilink, backlink, MOC, evidence tier, promotion) are defined in `CONTEXT.md` beside this file.
+Go CLI and MCP stdio server over Obsidian-style markdown vaults. It indexes each vault with zoekt for literal search and chromem-go for semantic search on Ollama embeddings, and fuses the two for hybrid search. brain is the tool only: the content lives in vault repos checked out wherever the config points, typically one private vault plus a shared team vault that is read-only here. Terms (vault, private, shared and default vault, note ref, note id, tier, note, stem, wikilink, backlink, MOC, evidence tier, promotion) are defined in `CONTEXT.md` beside this file.
 
 ## Module layout
 
@@ -10,12 +10,13 @@ brain/
   config.md           - config file, precedence, paths, env vars, parse-failure posture
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
-    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, write, edit, promote, list, docs, doctor, mcp, version
+    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, write, edit, promote, list, migrate, docs, doctor, mcp, version
     config/           - loads the config file (vaults, semantic settings)
     doctor/           - the checks `brain doctor` and `brain_doctor` share
     library/          - the vaults opened together: ref lookup, per-vault index refresh under a lock, cross-vault search, count, semantic and hybrid queries
     lockfile/         - cross-process flock on the files under the state dir's locks/
-    vault/            - note read, write, edit, promote, peek, backlinks, the vault Set and note refs; the logic CLI and MCP share
+    vault/            - note read, write, edit, promote, peek, backlinks, id migration, the vault Set and note refs; the logic CLI and MCP share
+    noteid/           - ULID note ids
     markdown/         - frontmatter parse and render (unknown keys kept), wikilink parsing
     search/           - zoekt index build, staleness fingerprint, query
     chunk/            - splits notes into chunks for embedding

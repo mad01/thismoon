@@ -15,6 +15,7 @@ const (
 type ResultHit struct {
 	Vault       string   `json:"vault"                  jsonschema:"name of the vault holding the note"`
 	Path        string   `json:"path"                   jsonschema:"vault-relative note path"`
+	ID          string   `json:"id,omitempty"           jsonschema:"the note's id, when it has one"`
 	Title       string   `json:"title,omitempty"        jsonschema:"note title (frontmatter or filename stem)"`
 	HeadingPath string   `json:"heading_path,omitempty" jsonschema:"' › '-joined heading hierarchy above this chunk"`
 	Score       float32  `json:"score"                  jsonschema:"cosine similarity in [-1,1]; higher is better"`
@@ -45,6 +46,7 @@ func NewSearchResult(mode string, hits []Hit) SearchResult {
 		r := ResultHit{
 			Vault:    h.Vault,
 			Path:     h.Path,
+			ID:       h.NoteID,
 			Title:    h.Title,
 			Score:    h.Score,
 			Tier:     h.Tier,

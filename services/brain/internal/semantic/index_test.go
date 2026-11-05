@@ -78,6 +78,7 @@ func TestIndex_UpsertQuery(t *testing.T) {
 		{
 			ID:       "b-0002",
 			Path:     "notes/b.md",
+			NoteID:   "01JABCDEFGHJKMNPQRSTVWXYZ0",
 			Title:    "B",
 			Body:     "concept alpha builds on foundational ideas",
 			Tier:     "notes",
@@ -155,6 +156,9 @@ func TestIndex_UpsertQuery(t *testing.T) {
 	for _, h := range hits {
 		if h.Evidence != "A" {
 			t.Errorf("evidence filter leaked: %+v", h)
+		}
+		if h.NoteID != "01JABCDEFGHJKMNPQRSTVWXYZ0" {
+			t.Errorf("hit NoteID = %q, want the note id stored with the chunk", h.NoteID)
 		}
 	}
 }

@@ -32,6 +32,8 @@ type Chunk struct {
 	ID string
 	// Path is the vault-relative note path (e.g. "notes/topic/foo.md").
 	Path string
+	// NoteID is the note's frontmatter id, empty when the note has none.
+	NoteID string
 	// Title is the note's frontmatter.title (or the filename stem if missing).
 	Title string
 	// HeadingPath joins the headings above this chunk with " › ", e.g.
@@ -151,6 +153,7 @@ func Split(path, tier string, content []byte, opts Options) ([]Chunk, error) {
 			chunks = append(chunks, Chunk{
 				ID:          fmt.Sprintf("%s-%04d", idPrefix, seq),
 				Path:        path,
+				NoteID:      fm.ID,
 				Title:       title,
 				HeadingPath: sec.headingPath,
 				Body:        body.text,

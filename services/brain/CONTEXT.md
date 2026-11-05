@@ -22,8 +22,12 @@ The Private vault a write targets when no `--vault` names one: the vault marked 
 _Avoid_: main vault, primary vault
 
 **Note ref**:
-How a command names one Note: `vault:path` (qualified), or a bare vault-relative path that must exist in exactly one vault. A bare path found in more than one vault is `ambiguous`, never guessed.
-_Avoid_: note id (the frontmatter field), slug
+How a command names one Note: `vault:path` (qualified), `id:<ulid>` (by Note id), or a bare vault-relative path that must exist in exactly one vault. A bare path found in more than one vault is `ambiguous`, never guessed.
+_Avoid_: slug
+
+**Note id**:
+The Universally Unique Lexicographically Sortable Identifier (ULID) in a Note's `id` frontmatter field. A write assigns one when the note has none, `brain migrate --ids` backfills older notes, and no edit, promote or rename changes it, so it names the note when its path does not. Two notes holding one id (a copied file) is a fault `brain doctor` reports.
+_Avoid_: uuid, note key, stem
 
 **Tier**:
 One of the four top-level vault directories a Note lives in: `inbox`, `notes`, `outputs` and `MOCs`. A note's tier is the first component of its vault-relative path, and it sets the default `type` and `status` a new note gets: `raw` in `inbox`, `validated` everywhere else. Not the same thing as an Evidence tier.

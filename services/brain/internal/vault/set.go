@@ -94,12 +94,16 @@ func (r Ref) String() string { return r.Vault.Name + ":" + r.Path }
 // Abs returns the note's absolute path.
 func (r Ref) Abs() string { return filepath.Join(r.Vault.Root, filepath.FromSlash(r.Path)) }
 
-// Locate resolves a note reference to an existing note: vault:path names
-// the vault, and a bare path is looked up in every vault of the set. A bare
-// path found in more than one vault is ErrAmbiguous, listing the qualified
-// candidates; one found nowhere is ErrNotFound.
+// Locate resolves a note reference to an existing note: id:<ulid> names the
+// note by its id, vault:path names the vault, and a bare path is looked up
+// in every vault of the set. A bare path found in more than one vault is
+// ErrAmbiguous, listing the qualified candidates; one found nowhere is
+// ErrNotFound.
 func (s *Set) Locate(ref string) (Ref, error) {
 	name, rel, qualified := splitRef(ref)
+	if qualified && name == idRefPrefix {
+		return s.locateID(rel)
+	}
 	if qualified {
 		v, err := s.Get(name)
 		if err != nil {

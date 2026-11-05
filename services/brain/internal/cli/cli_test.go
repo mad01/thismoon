@@ -677,7 +677,7 @@ func TestDoctor(t *testing.T) {
 			},
 			wantCode: exitOK,
 			wantStatus: map[string]string{
-				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusOK, "ollama": doctor.StatusSkip,
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusOK, "ids": doctor.StatusOK, "ollama": doctor.StatusSkip,
 			},
 		},
 		{
@@ -685,7 +685,7 @@ func TestDoctor(t *testing.T) {
 			setup:    func(t *testing.T) { setupCLI(t, "") },
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusFail, "ollama": doctor.StatusSkip,
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusFail, "ids": doctor.StatusOK, "ollama": doctor.StatusSkip,
 			},
 		},
 		{
@@ -698,7 +698,7 @@ func TestDoctor(t *testing.T) {
 			},
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": doctor.StatusOK, "vault": doctor.StatusFail, "index-dir": doctor.StatusOK, "index": doctor.StatusSkip, "ollama": doctor.StatusSkip,
+				"config": doctor.StatusOK, "vault": doctor.StatusFail, "index-dir": doctor.StatusOK, "index": doctor.StatusSkip, "ids": doctor.StatusSkip, "ollama": doctor.StatusSkip,
 			},
 		},
 		{
@@ -706,7 +706,27 @@ func TestDoctor(t *testing.T) {
 			setup:    func(t *testing.T) { testhome.Isolate(t) },
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": doctor.StatusFail, "vault": doctor.StatusSkip, "index-dir": doctor.StatusSkip, "index": doctor.StatusSkip, "ollama": doctor.StatusSkip,
+				"config": doctor.StatusFail, "vault": doctor.StatusSkip, "index-dir": doctor.StatusSkip, "index": doctor.StatusSkip, "ids": doctor.StatusSkip, "ollama": doctor.StatusSkip,
+			},
+		},
+		{
+			name: "duplicate ids",
+			setup: func(t *testing.T) {
+				root := setupCLI(t, "")
+				for _, name := range []string{"one", "two"} {
+					note := "---\ntitle: " + name + "\nid: 01JDUPDUPDUPDUPDUPDUPDUPDU\n---\nbody\n"
+					path := filepath.Join(root, "notes", name+".md")
+					if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if got := runBrain(t, "", "index"); got.code != exitOK {
+					t.Fatalf("index: %q", got.stderr)
+				}
+			},
+			wantCode: exitError,
+			wantStatus: map[string]string{
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusOK, "ids": doctor.StatusFail, "ollama": doctor.StatusSkip,
 			},
 		},
 		{
@@ -714,7 +734,7 @@ func TestDoctor(t *testing.T) {
 			setup:    func(t *testing.T) { setupCLI(t, "semantic:\n  enabled: true\n  ollama_url: "+dead.URL+"\n") },
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusFail, "ollama": doctor.StatusFail,
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusFail, "ids": doctor.StatusOK, "ollama": doctor.StatusFail,
 			},
 		},
 	}

@@ -293,3 +293,53 @@ func assertVaultUnchanged(t *testing.T, root string, notes map[string]string) {
 		t.Errorf("shared vault holds %d files, want %d", seen, len(notes))
 	}
 }
+
+func TestVaultsMigrateIDs(t *testing.T) {
+	roots := setupVaults(t)
+	if got := runBrain(t, "", "migrate"); got.code != exitUsage {
+		t.Errorf("migrate without --ids: exit %d, want %d", got.code, exitUsage)
+	}
+
+	dry := decodeStrict[migrateResult](
+		t,
+		runBrain(t, "", "migrate", "--ids", "--dry-run", "-o", "json").stdout,
+	)
+	run := decodeStrict[migrateResult](t, runBrain(t, "", "migrate", "--ids", "-o", "json").stdout)
+	if !dry.DryRun || len(dry.Changed) != 3 || len(run.Changed) != 3 {
+		t.Fatalf("dry run %+v, run %+v; want three personal notes each", dry, run)
+	}
+	if len(run.Skipped) != 1 || run.Skipped[0].Vault != "team" || run.Skipped[0].Path != "" {
+		t.Errorf("skipped = %+v, want the team vault", run.Skipped)
+	}
+	assertVaultUnchanged(t, roots["team"], twoVaults["team"])
+
+	got := runBrain(t, "", "read", "id:"+run.Changed[0].ID)
+	if got.code != exitOK || !strings.Contains(got.stdout, "id: "+run.Changed[0].ID) {
+		t.Errorf("read by id: exit %d, stdout %q, stderr %q", got.code, got.stdout, got.stderr)
+	}
+
+	again := runBrain(t, "", "migrate", "--ids")
+	if again.code != exitOK || !strings.HasSuffix(again.stdout, "assigned 0 id(s)\n") {
+		t.Errorf("second run: exit %d, stdout %q", again.code, again.stdout)
+	}
+	if got := runBrain(t, "", "migrate", "--ids", "--vault", "team"); got.code != exitReadOnly {
+		t.Errorf("migrate a shared vault: exit %d, want %d", got.code, exitReadOnly)
+	}
+	if got := runBrain(t, "", "migrate", "--ids", "--vault", "team", "--dry-run"); got.code != exitOK ||
+		!strings.Contains(got.stdout, "would assign 3 id(s)") {
+		t.Errorf("dry run on a shared vault: exit %d, stdout %q", got.code, got.stdout)
+	}
+	assertVaultUnchanged(t, roots["team"], twoVaults["team"])
+}
+
+func TestVaultsEditKeepsTheNoteID(t *testing.T) {
+	setupVaults(t)
+	const ref = "personal:notes/mine.md"
+	if got := runBrain(t, "", "edit", ref, "--set", "id=01JFIRSTFIRSTFIRSTFIRSTFIR"); got.code != exitOK {
+		t.Fatalf("giving a note its first id: exit %d, stderr %q", got.code, got.stderr)
+	}
+	got := runBrain(t, "", "edit", ref, "--set", "id=01JOTHEROTHEROTHEROTHEROTH")
+	if got.code != exitUsage || !strings.Contains(got.stderr, "keeps id 01JFIRSTFIRSTFIRSTFIRSTFIR") {
+		t.Errorf("changing the id: exit %d, stderr %q", got.code, got.stderr)
+	}
+}

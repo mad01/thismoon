@@ -15,12 +15,15 @@ request. Search, count, list, semantic-search and hybrid-search cover every
 vault, and every hit names its `vault`. A command that takes a note accepts:
 
 - `vault:path`, such as `team:notes/topic.md`;
+- `id:<ulid>`, the note's id, which survives a rename or promote;
 - a bare vault-relative path, `notes/topic.md` (not `topic.md`), when exactly
   one vault has it. Found in two vaults it fails as `ambiguous` and lists the
   qualified candidates.
 
-`write` goes to the default vault. With more than one vault configured, text
-output prints `vault:path`.
+`write` goes to the default vault and gives the note an id (a Universally
+Unique Lexicographically Sortable Identifier, ULID, in the `id` field); edit
+and promote never change it. With more than one vault configured, text output
+prints `vault:path`.
 
 ## Tiers
 
@@ -57,7 +60,8 @@ output prints `vault:path`.
 | `edit <note>` | change body or frontmatter | `--body` or `--append` (`-` reads stdin), `--title --status --type --source --tag --alias --evidence --set --unset` |
 | `promote <note>` | move an inbox note to notes/ | `--title` (rename) `--tier` `--moc <MOC path>` |
 | `index` | rebuild indexes (search does this when stale) | `--force --literal-only` |
-| `doctor` | check config, vault, index, Ollama; prints the paths in effect | |
+| `migrate --ids` | give every note without an id one; skips shared vaults unless named | `--dry-run` |
+| `doctor` | check config, vaults, index, duplicate ids, Ollama; prints the paths in effect | |
 | `docs` | print this guide | |
 
 Search output is one note path per line; `-m content` prints
@@ -119,8 +123,9 @@ an error envelope and exits 1 when a check fails.
 | `backlinks` | `vault`, `note_path`, `evidence`, `inbound[] {vault, path, line, excerpt, evidence}`, `outbound[] {target, vault, path, line, evidence}` |
 | `write`, `edit` | `vault`, `path` |
 | `promote` | `vault`, `old_path`, `new_path`, `backlink_rewrites[]`, `moc_appended` |
-| `semantic-search` | `output_mode`, `hits[] {vault, path, title, heading_path, score, snippet, tier, tags, type, status, evidence}`, `total`, `warnings[]` |
-| `hybrid-search` | `hits[] {vault, path, title, heading_path, score, sources, snippet, ...}`, `total`, `warnings[]` |
+| `migrate` | `dry_run`, `changed[] {vault, path, id}`, `skipped[] {vault, path, reason}` |
+| `semantic-search` | `output_mode`, `hits[] {vault, path, id, title, heading_path, score, snippet, tier, tags, type, status, evidence}`, `total`, `warnings[]` |
+| `hybrid-search` | `hits[] {vault, path, id, title, heading_path, score, sources, snippet, ...}`, `total`, `warnings[]` |
 | `doctor` | `ok`, `checks[] {name, status, detail, fix}`; status is `ok`, `fail` or `skip` |
 
 `frontmatter` holds `title aliases tags type status source evidence created

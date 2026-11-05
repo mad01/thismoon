@@ -5,6 +5,7 @@ package hybrid
 type ResultHit struct {
 	Vault       string   `json:"vault"`
 	Path        string   `json:"path"`
+	ID          string   `json:"id,omitempty"           jsonschema:"the note's id, when the semantic side found it"`
 	Title       string   `json:"title,omitempty"`
 	HeadingPath string   `json:"heading_path,omitempty"`
 	Score       float64  `json:"score"                  jsonschema:"post-fusion (and post-rerank when enabled) score; higher is better"`

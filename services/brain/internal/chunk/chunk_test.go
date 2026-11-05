@@ -8,6 +8,7 @@ import (
 func TestChunk_SmallNote_OneChunk(t *testing.T) {
 	note := []byte(`---
 title: Tiny
+id: 01JABCDEFGHJKMNPQRSTVWXYZ0
 tags: [a/b]
 type: note
 status: validated
@@ -32,6 +33,9 @@ Two lines.
 	}
 	if c.Path != "notes/tiny.md" {
 		t.Errorf("Path = %q", c.Path)
+	}
+	if c.NoteID != "01JABCDEFGHJKMNPQRSTVWXYZ0" {
+		t.Errorf("NoteID = %q, want the frontmatter id", c.NoteID)
 	}
 	if !strings.Contains(c.Body, "short body") {
 		t.Errorf("Body missing content: %q", c.Body)

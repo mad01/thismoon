@@ -21,4 +21,6 @@ var (
 	// ErrReadOnly means a write, edit or promote targets a shared vault, or
 	// no writable vault is configured.
 	ErrReadOnly = errors.New("vault: read-only")
+	// ErrImmutableID means an edit would change or remove a note's id.
+	ErrImmutableID = errors.New("vault: note id is immutable")
 )

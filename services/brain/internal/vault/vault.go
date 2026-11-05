@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
+	"github.com/mad01/thismoon/services/brain/internal/noteid"
 )
 
 // Vault is a handle to a brain vault on disk. Operations preserve atomicity
@@ -72,7 +73,8 @@ type WriteOptions struct {
 
 // Write creates a new note. Returns the absolute path of the created file.
 // Errors with ErrExists if the target already exists. Outputs always carry
-// the meta/output tag, whatever Set and Unset say.
+// the meta/output tag, whatever Set and Unset say. A note without an id
+// after Set and Unset gets a fresh one.
 func (v *Vault) Write(opts WriteOptions) (string, error) {
 	if err := v.writable(); err != nil {
 		return "", err
@@ -102,6 +104,9 @@ func (v *Vault) Write(opts WriteOptions) (string, error) {
 	}
 	if err := applyFields(&fm, opts.Set, opts.Unset); err != nil {
 		return "", err
+	}
+	if fm.ID == "" {
+		fm.ID = noteid.New(opts.Now)
 	}
 	// Outputs are synthesis artifacts that cite many notes — including them
 	// as graph nodes turns every output into a hub by audit-trail design.
@@ -174,7 +179,8 @@ type EditOptions struct {
 
 // Edit modifies an existing note. Body, Append, and FrontmatterPatch can each
 // be set independently. Updates frontmatter.Updated to Now (defaults to
-// time.Now()).
+// time.Now()). An edit that would change or remove the note's id fails with
+// ErrImmutableID; a note without an id may be given one.
 func (v *Vault) Edit(path string, opts EditOptions) error {
 	if err := v.writable(); err != nil {
 		return err
@@ -189,11 +195,15 @@ func (v *Vault) Edit(path string, opts EditOptions) error {
 	if err != nil {
 		return err
 	}
+	id := fm.ID
 	if opts.FrontmatterPatch != nil {
 		fm = mergeFrontmatter(fm, *opts.FrontmatterPatch)
 	}
 	if err := applyFields(&fm, opts.Set, opts.Unset); err != nil {
 		return err
+	}
+	if id != "" && fm.ID != id {
+		return fmt.Errorf("%w: %s keeps id %s", ErrImmutableID, v.Rel(path), id)
 	}
 	switch {
 	case opts.Body != "":
@@ -234,7 +244,8 @@ type PromoteResult struct {
 // Promote moves a note from its current tier (must be TierInbox) to
 // TargetTier (default TierNotes). Updates frontmatter.Status to "validated",
 // rewrites [[oldStem]] wikilinks across the vault to point at the new stem,
-// optionally appends to a MOC. Best-effort rollback on failure.
+// optionally appends to a MOC. The note keeps its id, or gets one when it
+// has none. Best-effort rollback on failure.
 func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error) {
 	if err := v.writable(); err != nil {
 		return PromoteResult{}, err
@@ -297,6 +308,9 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error)
 
 	fm.Status = "validated"
 	fm.Touch(opts.Now)
+	if fm.ID == "" {
+		fm.ID = noteid.New(opts.Now)
+	}
 	content, err := markdown.Render(fm, body)
 	if err != nil {
 		return PromoteResult{}, err
