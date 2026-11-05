@@ -5,7 +5,7 @@ DEST     := $(PREFIX)/$(BIN)
 COMPONENT := brain
 include ../../buildinfo.mk
 
-.PHONY: build install resign clean test tidy fmt lint bundle bundle-local
+.PHONY: build install resign clean test tidy fmt lint bundle bundle-local test-js
 
 # The graph bundle the UI embeds: web/ builds it, the ui package serves it.
 WEB    := web
@@ -58,6 +58,9 @@ bundle-local: ## fallback: build on the host (only if the container runtime is u
 	cp $(WEB)/dist/$(BUNDLE)  $(ASSETS)/$(BUNDLE)
 	cp $(WEB)/dist/SHA256SUMS $(ASSETS)/SHA256SUMS
 	@cat $(ASSETS)/SHA256SUMS
+
+test-js: ## node tests over the UI's pure helpers
+	node --test internal/server/ui/test/*.test.mjs
 
 clean:
 	rm -f $(BIN)
