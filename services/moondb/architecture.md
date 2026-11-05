@@ -162,7 +162,7 @@ harness. A model, tool or harness stretch longer than 30 minutes
 (`IdleGapAfter`) keeps its first 30 minutes, and the rest is idle time. The
 transcript gets no line while a laptop sleeps or a request hangs. The gaps
 add up to the wall time, and so do the totals by kind, to the millisecond.
-A turn longer than the 4 MiB transcript tail keeps only its tail; when the
+A turn longer than the 15 MiB transcript tail keeps only its tail; when the
 first kept line is an assistant line or a tool result, the stretch before
 it counts as harness time.
 

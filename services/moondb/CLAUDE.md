@@ -148,7 +148,7 @@ cuts each text, thinking
 block, tool input and tool result to `AgentHeadBytes` (240). The usage, ids
 and times survive, so the cut transcript prices the same as the file: an
 11 MB transcript keeps about 0.5 MB. Past `MaxAgentTranscriptBytes`
-(8 MiB) whole lines go from the head and are counted on the record. Their
+(15 MiB) whole lines go from the head and are counted on the record. Their
 calls add no tokens or cost. The work fits in `AgentBudget` (2 s); a file
 the budget does not reach the end of, or whose read fails partway, is
 recorded up to there and marked partial.
@@ -710,10 +710,10 @@ so a replayed close makes up a lost fill. The totals backfill offers the
 title of older turns, and an import offers the transcript's own pick by the
 same rule.
 
-A turn's transcript chunk keeps the last `MaxTranscriptBytes` of its lines,
-cut at a line boundary, so a longer turn loses its head. A turn opens on its
-prompt, so a timeline whose first line is an assistant line or a tool result
-lost its head, and the trace's lines say `cut_head`. The stretch from the
+A turn's transcript chunk keeps the last `MaxTranscriptBytes` (15 MiB) of
+its lines, cut at a line boundary, so a longer turn loses its head. A turn
+opens on its prompt, so a timeline whose first line is an assistant line or
+a tool result lost its head, and the trace's lines say `cut_head`. The stretch from the
 turn's start to the first kept line is then harness time, a model span never
 starts before its first kept line, and the calls in the cut head add no
 tokens or cost.

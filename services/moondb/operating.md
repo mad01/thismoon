@@ -104,7 +104,7 @@ inside a turn: from the model stopping to a new input such as a teammate
 message. The trace walks turns in the order they started, so a turn an
 import added sits where it ran, under a higher number than the live turns
 after it. Harness time far above a few minutes usually means a turn longer
-than the 4 MiB transcript tail, whose cut head counts as harness; its
+than the 15 MiB transcript tail, whose cut head counts as harness; its
 trace's lines then say `cut_head`.
 
 A session shows two times in `moondb sessions`, on the web page and in
@@ -125,7 +125,7 @@ before it was. `moondb import --force` brings their transcripts in, also
 for a session where no file was edited. Subagents "not priced yet" have no
 priced model, or their totals wait for the totals backfill, which runs
 while the spool is empty. An agent with `lines_cut` had a transcript over
-8 MiB after the cut to heads; the calls in its cut head add no cost. One
+15 MiB after the cut to heads; the calls in its cut head add no cost. One
 marked `partial` ran out of the hook's 2 s budget before the file's end.
 
 `why` or a turn shows a subagent's spawn brief as unknown, or `moondb
@@ -155,7 +155,7 @@ start, so its Stop kept only the lines after that prompt. A Stop can also
 read the transcript before the harness writes the turn's last lines, and
 miss its last call. Run `moondb import --since 30d --force` while no session is
 active: it replaces a turn's lines wherever the transcript holds other
-model calls for it. A turn over 4 MiB of transcript still loses its head
+model calls for it. A turn over 15 MiB of transcript still loses its head
 to the cap.
 
 A repo's cost looks wrong: the page, `moondb sessions --repo` and the

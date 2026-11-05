@@ -132,7 +132,8 @@ These are compiled into the binary (`facts.go`) and not configurable:
 | snapshot file cap | 1000 | paths one snapshot lists, the session's touched paths first; the rest count as over the file cap |
 | status cap | 4 MiB | `git status` output a snapshot or the Bash clean check reads; a worktree with more gets no snapshot, and its Bash files are skipped as `failed` |
 | largest chunk | 1 MiB | a larger file is recorded by path and patch, without content; a snapshot lists it by size |
-| transcript tail | 4 MiB | the most transcript a turn keeps; a trace of a longer turn sees only its tail |
+| transcript tail | 15 MiB | the most transcript a turn keeps; a trace of a longer turn sees only its tail |
+| agent transcript cap | 15 MiB | the most of a subagent's transcript kept after the cut to heads; a longer one loses whole lines from its head |
 | log segment | 64 MiB | the size at which `log/` rolls to a new file |
 | trace cache | 512 turns | turn traces serve keeps in memory, the least recently read dropped first |
 | trace rankings | 10 | spans `moondb trace` and `moondb_trace` list as the longest tool calls and the most expensive model calls |
