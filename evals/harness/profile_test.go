@@ -227,8 +227,8 @@ func TestBrainCaseArgv(t *testing.T) {
 		"--strict-mcp-config --mcp-config {\"mcpServers\":{}}",
 		`--settings {"autoMemoryEnabled":false,"disableAllHooks":true}`,
 		"--no-session-persistence",
-		"--tools Bash,Read,Glob,Grep",
-		"--allowedTools Bash(brain:*) Read Glob Grep --disallowedTools",
+		"--tools Bash,Read,Glob,Grep,Edit,Write",
+		"--allowedTools Bash(brain:*) Read Glob Grep Edit(./**) --disallowedTools",
 		"Bash(csl:*)",
 		"-- What port does ledger-svc",
 	} {

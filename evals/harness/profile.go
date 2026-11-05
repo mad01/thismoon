@@ -52,8 +52,9 @@ var grepTools = []string{"Grep", "Bash(grep:*)", "Bash(rg:*)", "Bash(ugrep:*)", 
 const cslCLIDeny = "Bash(csl:*)"
 
 // brainAllow is what the brain-cli profile allows: Bash for the brain CLI
-// alone, and the read-only file tools.
-var brainAllow = []string{"Bash(brain:*)", "Read", "Glob", "Grep"}
+// alone, the read-only file tools, and file writes under the work directory
+// so the agent can hand brain a body file. The vault sits outside it.
+var brainAllow = []string{"Bash(brain:*)", "Read", "Glob", "Grep", "Edit(./**)"}
 
 // permissionDontAsk denies every tool call the allow list does not cover,
 // instead of asking.
@@ -188,8 +189,10 @@ func readSteer(file, def string) (string, string, error) {
 
 // tools is the --tools list for a run whose allow list is allowed. An
 // isolated profile gets the tool names in the permission rules, so
-// "Bash(brain:*)" makes Bash available and the rule limits it; any other
-// profile gets nil, which leaves every built-in tool in.
+// "Bash(brain:*)" makes Bash available and the rule limits it. Claude Code
+// checks every file-writing tool against Edit rules, so an Edit rule brings
+// in Write as well. Any other profile gets nil, which leaves every built-in
+// tool in.
 func (p profile) tools(allowed []string) []string {
 	if !p.Isolated {
 		return nil
@@ -197,8 +200,15 @@ func (p profile) tools(allowed []string) []string {
 	var out []string
 	for _, rule := range allowed {
 		name, _, _ := strings.Cut(rule, "(")
-		if name = strings.TrimSpace(name); name != "" && !slices.Contains(out, name) {
-			out = append(out, name)
+		name = strings.TrimSpace(name)
+		names := []string{name}
+		if name == "Edit" {
+			names = append(names, "Write")
+		}
+		for _, n := range names {
+			if n != "" && !slices.Contains(out, n) {
+				out = append(out, n)
+			}
 		}
 	}
 	return out

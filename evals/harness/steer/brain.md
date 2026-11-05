@@ -16,6 +16,10 @@ When you write:
 - Search first. If a note on the subject exists, update it with
   `brain edit` instead of adding a second note.
 - A capture of external material is `--type source` with `--source <url>`.
+- For a multi-line body, write it to a file in the current directory with
+  the Write tool and pass `--body-file <file>` (`--append-file` on edit).
+- Run one brain command per Bash call, with no pipes. Use `-o json` when
+  you need structured output.
 - Never write a credential (password, token, API key, a secret in a
   connection string) into the vault, your answer or a command, not even
   to check it is gone. Record where the secret lives, not its value.

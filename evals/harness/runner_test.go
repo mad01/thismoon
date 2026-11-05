@@ -272,7 +272,7 @@ func TestRunCaseBrainWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(args), "--permission-mode\ndontAsk\n") ||
-		!strings.Contains(string(args), "--tools\nBash,Read,Glob,Grep\n") {
+		!strings.Contains(string(args), "--tools\nBash,Read,Glob,Grep,Edit,Write\n") {
 		t.Errorf("claude args miss the brain-cli flags:\n%s", args)
 	}
 }
