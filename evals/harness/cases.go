@@ -31,6 +31,8 @@ const (
 	gradeVaultUnchangedExcept = "vault_unchanged_except"
 	gradeWikilinks            = "wikilinks"
 	gradeBrainCmd             = "brain_cmd"
+	gradeGHCall               = "gh_call"
+	gradeOriginBranch         = "origin_branch"
 	gradeCommit               = "commit"
 	gradeToolUsed             = "tool_used"
 	gradeToolNotUsed          = "tool_not_used"
@@ -89,6 +91,8 @@ func (w WorkspaceSpec) String() string {
 //	vault_unchanged_except  every path the run changed in the vault matches one of Paths
 //	wikilinks               every wikilink in the files matching Path resolves, Min per file
 //	brain_cmd               Min to Max brain calls have a subcommand matching Pattern
+//	gh_call                 Min to Max of the fake gh's calls match Pattern
+//	origin_branch           Min to Max pushed origin branches match Pattern, Path and ContentRegex
 //	commit                  the run made at least one commit and every subject matches Pattern
 //	tool_used               some tool call matches Tool, every Input, and not InputWithout
 //	tool_not_used           no tool call matches Tool, every Input, and not InputWithout
@@ -103,9 +107,11 @@ func (w WorkspaceSpec) String() string {
 // resolved against the vault in a brain workspace and against the workspace
 // directory otherwise. NewOnly narrows file, frontmatter and wikilinks to
 // the files the run added; it, new_notes and vault_unchanged_except read the
-// vault's diff from its baseline, so they need a brain workspace. brain_cmd
-// defaults Min to 1, or to 0 when Max is set, and skips help lookups and
-// denied calls.
+// vault's diff from its baseline, so they need a brain workspace, as do
+// gh_call and origin_branch. brain_cmd, gh_call and origin_branch default
+// Min to 1, or to 0 when Max is set; brain_cmd skips help lookups and
+// denied calls. origin_branch's Pattern, Path and ContentRegex each apply
+// only when set.
 //
 // Input (one regex or a list) and InputWithout are regexes on the call's
 // input as compact JSON with sorted keys, so {"file_path":"x.go"} is a Read
@@ -445,8 +451,10 @@ func requireFields(g Grader, ws WorkspaceSpec) error {
 			return errors.New("new_notes needs min, max or both")
 		}
 		return needBrain(g.Type, ws)
-	case gradeVaultUnchangedExcept:
+	case gradeVaultUnchangedExcept, gradeOriginBranch:
 		return needBrain(g.Type, ws)
+	case gradeGHCall:
+		return errors.Join(need("pattern", g.Pattern), needBrain(g.Type, ws))
 	case gradeCommit:
 		if ws.Kind != workspaceWorktree {
 			return errors.New("commit needs a worktree workspace")

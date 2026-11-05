@@ -530,6 +530,78 @@ func TestWikilinksTwoVault(t *testing.T) {
 	})
 }
 
+func TestGHCallGrader(t *testing.T) {
+	ev := Evidence{GHCalls: []string{
+		"pr create --title Fix the port --body line one\nline two",
+		"pr view https://example.invalid/pull/1 --json state,mergedAt",
+	}}
+	gh := func(pattern string, minCalls *int, maxCalls *float64) Grader {
+		return Grader{Type: gradeGHCall, Pattern: pattern, Min: minCalls, Max: maxCalls}
+	}
+	gradeVault(t, ev, []vaultTest{
+		{"one pr create", gh(`^pr create\b`, nil, nil), true},
+		{"exactly one", gh(`^pr create\b`, num(1), num(1.0)), true},
+		{"body lines match", gh(`(?m)^line two$`, nil, nil), true},
+		{"no issue", gh(`^issue create\b`, nil, num(0.0)), true},
+		{"issue missing", gh(`^issue create\b`, nil, nil), false},
+		{"too many", gh(`^pr `, nil, num(1.0)), false},
+	})
+	gradeVault(t, Evidence{}, []vaultTest{
+		{"gh never ran", gh(`.`, nil, num(0.0)), true},
+		{"gh never ran, one wanted", gh(`^pr create`, nil, nil), false},
+	})
+}
+
+func TestOriginBranchGrader(t *testing.T) {
+	ev := Evidence{Branches: []OriginBranch{
+		{
+			Name:    "brain/promote/kafka-guide-01ky4m",
+			Changes: []Change{{Status: "A", Path: "shared/notes/kafka-guide.md"}},
+			content: map[string]string{"shared/notes/kafka-guide.md": "24 partitions"},
+		},
+		{
+			Name:    "brain/edit/old-note-01jq",
+			Changes: []Change{{Status: "D", Path: "shared/notes/old-note.md"}},
+			content: map[string]string{},
+		},
+	}}
+	branch := func(pattern, p, content string, maxBranches *float64) Grader {
+		return Grader{
+			Type: gradeOriginBranch, Pattern: pattern, Path: p, ContentRegex: content, Max: maxBranches,
+		}
+	}
+	gradeVault(t, ev, []vaultTest{
+		{"by name", branch(`^brain/promote/kafka-guide-`, "", "", nil), true},
+		{"by path", branch("", "shared/notes/kafka-*.md", "", nil), true},
+		{"by content", branch("", "", `24 partitions`, nil), true},
+		{"name and content", branch(`^brain/promote/`, "shared/**", `\b24\b`, nil), true},
+		{"a deletion matches its path", branch(`^brain/edit/`, "shared/notes/old-note.md", "", nil), true},
+		{"a deletion has no content", branch(`^brain/edit/`, "", `.`, nil), false},
+		{"content elsewhere", branch(`^brain/edit/`, "", `24 partitions`, nil), false},
+		{"nothing forbidden pushed", branch("", "", `rate card`, num(0.0)), true},
+		{"main untouched", branch(`^main$`, "", "", num(0.0)), true},
+		{"something pushed", branch("", "", "", num(0.0)), false},
+		{"wrong name", branch(`carrier`, "", "", nil), false},
+	})
+}
+
+func TestVaultGradersNeedBrain(t *testing.T) {
+	for _, g := range []Grader{
+		{Type: gradeGHCall, Pattern: "^pr create"},
+		{Type: gradeOriginBranch},
+	} {
+		if err := compileGrader(&g, WorkspaceSpec{Kind: workspaceTmpdir}); err == nil ||
+			!strings.Contains(err.Error(), "brain workspace") {
+			t.Errorf("%s outside a brain workspace: %v", g.Type, err)
+		}
+	}
+	g := Grader{Type: gradeGHCall}
+	if err := compileGrader(&g, WorkspaceSpec{Kind: workspaceBrain}); err == nil ||
+		!strings.Contains(err.Error(), "missing pattern") {
+		t.Errorf("gh_call without a pattern: %v", err)
+	}
+}
+
 // TestFileGlobOutsideBrain: a glob walks a non-brain workspace, and a
 // literal path does not need the walk.
 func TestFileGlobOutsideBrain(t *testing.T) {

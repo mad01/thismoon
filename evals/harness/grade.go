@@ -133,6 +133,10 @@ func evaluate(ctx context.Context, g Grader, ev Evidence, j judge) (GraderResult
 		res.Pass, res.Detail = checkWikilinks(g, ev)
 	case gradeBrainCmd:
 		res.Pass, res.Detail = checkBrainCmd(g, brainCallsIn(calls))
+	case gradeGHCall:
+		res.Pass, res.Detail = checkGHCalls(g, ev.GHCalls)
+	case gradeOriginBranch:
+		res.Pass, res.Detail = checkOriginBranches(g, ev.Branches)
 	case gradeCommit:
 		res.Pass, res.Detail = checkCommits(g, ev.Commits)
 	case gradeToolUsed, gradeToolNotUsed:
@@ -369,9 +373,8 @@ func checkWikilinks(g Grader, ev Evidence) (bool, string) {
 }
 
 // checkBrainCmd counts the brain calls whose subcommand label matches the
-// pattern, help lookups left out. It passes when the count is at least min
-// and at most max; min defaults to 1, or to 0 when max is set, so max: 0
-// alone forbids the subcommand.
+// pattern, help lookups left out, and passes when the count is within g's
+// bounds (withinBounds).
 func checkBrainCmd(g Grader, calls []BrainCall) (bool, string) {
 	n := 0
 	for _, c := range calls {
@@ -379,14 +382,7 @@ func checkBrainCmd(g Grader, calls []BrainCall) (bool, string) {
 			n++
 		}
 	}
-	minCalls := 1
-	if g.Max != nil {
-		minCalls = 0
-	}
-	if g.Min != nil {
-		minCalls = *g.Min
-	}
-	if n >= minCalls && (g.Max == nil || float64(n) <= *g.Max) {
+	if withinBounds(g, n) {
 		return true, ""
 	}
 	ran := "none"
@@ -394,6 +390,75 @@ func checkBrainCmd(g Grader, calls []BrainCall) (bool, string) {
 		ran = formatCounts(brainCommandCounts(calls))
 	}
 	return false, fmt.Sprintf("%d matching brain calls; ran: %s", n, ran)
+}
+
+// withinBounds reports whether a count is at least g's min and at most its
+// max. Min defaults to 1, or to 0 when max is set, so max: 0 alone forbids
+// what is counted.
+func withinBounds(g Grader, n int) bool {
+	least := 1
+	if g.Max != nil {
+		least = 0
+	}
+	if g.Min != nil {
+		least = *g.Min
+	}
+	return n >= least && (g.Max == nil || float64(n) <= *g.Max)
+}
+
+// checkGHCalls counts the fake gh's calls the pattern matches, each as its
+// arguments joined by spaces, and passes when the count is within g's
+// bounds.
+func checkGHCalls(g Grader, calls []string) (bool, string) {
+	n := 0
+	for _, c := range calls {
+		if g.patternRE.MatchString(c) {
+			n++
+		}
+	}
+	if withinBounds(g, n) {
+		return true, ""
+	}
+	ran := make([]string, len(calls))
+	for i, c := range calls {
+		ran[i] = clip(strings.ReplaceAll(c, "\n", " "), 60)
+	}
+	return false, fmt.Sprintf("%d matching gh calls; ran: %s", n, listSome(ran))
+}
+
+// checkOriginBranches counts the shared origin's pushed branches that
+// match g and passes when the count is within g's bounds. A branch matches
+// when its name matches the pattern and, with a path or content_regex, it
+// changes a file matching the path whose content on the branch matches
+// content_regex. Each part applies only when set.
+func checkOriginBranches(g Grader, branches []OriginBranch) (bool, string) {
+	var matched, pushed []string
+	for _, b := range branches {
+		pushed = append(pushed, b.Name)
+		if branchMatches(g, b) {
+			matched = append(matched, b.Name)
+		}
+	}
+	if withinBounds(g, len(matched)) {
+		return true, ""
+	}
+	return false, fmt.Sprintf("%d matching origin branches: %s; pushed: %s",
+		len(matched), listSome(matched), listSome(pushed))
+}
+
+func branchMatches(g Grader, b OriginBranch) bool {
+	if g.patternRE != nil && !g.patternRE.MatchString(b.Name) {
+		return false
+	}
+	if g.Path == "" && g.contentRE == nil {
+		return true
+	}
+	return slices.ContainsFunc(b.Changes, func(c Change) bool {
+		if g.Path != "" && !matchGlob(g.Path, c.Path) {
+			return false
+		}
+		return g.contentRE == nil || (c.Status != "D" && g.contentRE.MatchString(b.content[c.Path]))
+	})
 }
 
 func checkCommits(g Grader, subjects []string) (bool, string) {
