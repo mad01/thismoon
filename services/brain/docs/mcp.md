@@ -1,4 +1,4 @@
-# `brain mcp` — MCP stdio server reference
+# `brain mcp`: MCP stdio server reference
 
 `brain mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) stdio server bundled into the `brain` binary. It exposes your vaults (search, read, list, backlinks, graph, write, edit, promote) as native MCP tools so Claude Code can operate on your notes without shelling out through `Bash()`. The config names one vault with `vault:`, or several private and shared vaults with a `vaults:` list.
 
@@ -27,10 +27,10 @@ Each vault is a directory with four top-level tiers:
 
 | Tier | Directory | Default `type` | Default `status` | Purpose |
 |---|---|---|---|---|
-| inbox | `inbox/` | `source` | `raw` | Raw captures, unprocessed |
+| inbox | `inbox/` | `note` | `raw` | Raw captures, unprocessed |
 | notes | `notes/` | `note` | `validated` | First-class knowledge |
-| outputs | `outputs/` | `output` | — | Finished artifacts (filenames are date-prefixed `YYYY-MM-DD-…`) |
-| MOCs | `MOCs/` | `moc` | — | Maps of Content (curated indexes) |
+| outputs | `outputs/` | `output` | `validated` | Finished artifacts (filenames are date-prefixed `YYYY-MM-DD-…`) |
+| MOCs | `MOCs/` | `moc` | `validated` | Maps of Content (curated indexes) |
 
 Every note is a markdown file with YAML frontmatter:
 
@@ -79,7 +79,7 @@ Read-side tools (`brain_search`, `brain_read`, `brain_peek`, `brain_list_tier`, 
 | `A` | Replicated RCT / meta-analysis with named effect size + CI |
 | `B` | Single well-designed peer-reviewed study, reasonable N |
 | `C` | Preprint, survey, mechanism-plausible, category-evidence extended |
-| `D` | Refuted / apocryphal / null under blinding — kept as do-not-cite record |
+| `D` | Refuted, apocryphal or null under blinding, kept as a do-not-cite record |
 | `mixed` | Composite note; inline per-claim grades in body |
 | (empty) | Non-empirical note (profile, MOC, tool reference) |
 
