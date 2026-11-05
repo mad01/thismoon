@@ -1,0 +1,23 @@
+{
+  "filesystem": {
+    "allowRead": [
+      "~/.config/brain",
+      "~/code/bin",
+      "~/.local/state/brain"
+    ],
+    "allowWrite": [
+      "~/.local/state/brain",
+      "/private/tmp",
+      "/private/var/folders"
+    ],
+    "denyRead": [
+      "~"
+    ],
+    "denyWrite": []
+  },
+  "network": {
+    "allowLocalBinding": true,
+    "allowedDomains": [],
+    "deniedDomains": []
+  }
+}
