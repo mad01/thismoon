@@ -28,6 +28,16 @@ replacement as `superseded_by: id:<ulid>`. retract keeps the body under a
 banner with `retracted_reason`. withdraw leaves a tombstone of `id`, `status`
 and `status_at` and purges the note from both indexes at once.
 
+## Flagging a note
+
+`brain flag <note> --reason <text>` marks a note whose claims you doubt:
+status `disputed`, the reason in `status_reason`, the day in `status_at`. read
+and peek show a DISPUTED banner until someone settles the note with
+`brain edit --status validated` or a retraction. A second flag
+replaces the reason. A revoked note refuses (exit 2). A shared vault refuses
+with exit 6: open an issue on its repo naming the note and the reason; the
+message names the repo's origin remote when it has one.
+
 ## brain check
 
 `brain check` exits 1 on an error: a citation of a retracted or withdrawn

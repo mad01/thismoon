@@ -63,6 +63,7 @@ prints `vault:path`.
 | `supersede <note>` | mark it superseded; `superseded_by` stores the replacement's `id:` | `--by <note>` (required) |
 | `retract <note>` | mark it retracted; the body stays under a banner | `--reason error\|source-retracted\|unverifiable`, `--note <text>` |
 | `withdraw <note>` | leave a tombstone and purge the note from both indexes | |
+| `flag <note>` | mark it disputed, the reason in `status_reason`; a shared vault refuses | `--reason <text>` (required) |
 | `check [paths...]` | check notes (all of them with no paths) against the status rules, links and vault policy | `-o text\|json\|github` |
 | `index` | refresh indexes; semantic re-embeds changed notes only (queries refresh too) | `--force --literal-only` |
 | `migrate --ids` | give every note without an id one; skips shared vaults unless named | `--dry-run` |
@@ -119,7 +120,7 @@ and keeping notes fresh (`docs/lifecycle.md`).
 | 3 | `not_found` | note or title does not exist | `brain list --tier <t>`, `brain search 'f:<name>'` |
 | 4 | `already_exists` | write or promote target exists, also when another writer created it first | pick another `--title` or `--filename` |
 | 5 | `invalid_query` | zoekt query does not parse | `brain query '<query>'` |
-| 6 | `read_only` | write, edit, promote, migrate or a revocation in a shared vault | change it through a PR to its repo |
+| 6 | `read_only` | write, edit, promote, migrate, flag or a revocation in a shared vault | change it through a PR (or, for flag, an issue) on its repo |
 | 7 | `conflict` | `edit --if-match` sha no longer matches the note | read the note again, then edit |
 | 8 | `secret_found` | the note would hold a secret; nothing was written | remove it, or mark a false positive `suspenders:ignore` |
 
@@ -146,7 +147,7 @@ instead of an error envelope and exit 1 when it fails.
 | `backlinks` | `vault`, `note_path`, `evidence`, `inbound[] {vault, path, line, excerpt, evidence}`, `outbound[] {target, vault, path, line, evidence, dangling}` |
 | `graph` | `nodes[] {id, vault, path, stem, title, tier, type, status, tags, evidence, review_by, degree, dangling}`, `edges[] {source, target, kind, resolved}` |
 | `write`, `edit` | `vault`, `path`, `warnings[]`; edit adds `sha`, the new content's |
-| `supersede`, `retract`, `withdraw` | `vault`, `path`, `sha` |
+| `supersede`, `retract`, `withdraw`, `flag` | `vault`, `path`, `sha` |
 | `check` | `ok`, `checked`, `errors`, `warnings`, `findings[] {vault, path, line, rule, level, message}`, `skipped[] {path, reason}` |
 | `promote` | `vault`, `old_path`, `new_path`, `backlink_rewrites[]`, `moc_appended` |
 | `migrate` | `dry_run`, `changed[] {vault, path, id}`, `skipped[] {vault, path, reason}` |

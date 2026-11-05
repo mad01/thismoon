@@ -2,6 +2,7 @@ package vault
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
@@ -76,6 +77,34 @@ func (v *Vault) Withdraw(path string, now time.Time) (string, error) {
 		}
 		*fm = lifecycle.Tombstone(id, when)
 		return nil, nil
+	})
+}
+
+// Flag marks the note at path disputed for reason: status disputed,
+// status_reason and status_at. A shared vault refuses with ErrReadOnly, since
+// a flag on a shared note is an issue on the vault's repo. A revoked note is
+// out of circulation already and refuses with ErrInvalidStatusChange.
+func (v *Vault) Flag(path, reason string, now time.Time) (string, error) {
+	if v.Shared {
+		return "", fmt.Errorf(
+			"%w: %s is a shared vault; flag %s by opening an issue on the vault's repo "+
+				"with the reason (a brain command that opens one is planned)",
+			ErrReadOnly, v.Name, v.Name+":"+v.Rel(path),
+		)
+	}
+	if strings.TrimSpace(reason) == "" {
+		return "", fmt.Errorf("%w: a flag needs a reason", ErrInvalidStatusChange)
+	}
+	return v.rewrite(path, "", func(fm *markdown.Frontmatter, body []byte) ([]byte, error) {
+		if lifecycle.Revoked(fm.Status) {
+			return nil, fmt.Errorf(
+				"%w: %s is %s and out of circulation already; flag a note that is in use",
+				ErrInvalidStatusChange, v.Rel(path), lifecycle.Normalize(fm.Status),
+			)
+		}
+		lifecycle.Dispute(fm, reason, now)
+		fm.Touch(now)
+		return body, nil
 	})
 }
 

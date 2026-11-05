@@ -42,6 +42,17 @@ func Transition(fm *markdown.Frontmatter, from string, now time.Time) {
 	ApplyDefaults(fm, now)
 }
 
+// Dispute marks fm disputed for reason, which becomes status_reason. A
+// note that was not disputed yet changes status the way any status change
+// does (see Transition); one already disputed keeps its status_at and takes
+// the new reason.
+func Dispute(fm *markdown.Frontmatter, reason string, now time.Time) {
+	from := fm.Status
+	fm.Status = Disputed
+	Transition(fm, from, now)
+	setString(fm, KeyStatusReason, strings.TrimSpace(reason))
+}
+
 // Supersede marks fm superseded by the note ref by.
 func Supersede(fm *markdown.Frontmatter, by string, now time.Time) {
 	fm.Status = Superseded

@@ -10,7 +10,7 @@ brain/
   config.md           - config file, precedence, paths, env vars, parse-failure posture
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
-    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, edit, promote, supersede, retract, withdraw, check, list, migrate, docs, doctor, mcp, version
+    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, edit, promote, supersede, retract, withdraw, flag, check, list, migrate, docs, doctor, mcp, version
     check/            - brain check: the rules, the vault's .brain/policy.yaml, the report
     lifecycle/        - the status model: statuses, lifecycle fields, dates a write fills, revocation, banners
     config/           - loads the config file (vaults, semantic settings)
@@ -28,6 +28,7 @@ brain/
     rerank/           - optional LLM rerank of fused results
     mcpserver/        - MCP tool handlers, thin adapters over the packages above
     testhome/         - test helper isolating HOME, XDG and BRAIN_CONFIG
+    testgit/          - test helper running git in a test's own temp repos
   docs/cli.md         - agent CLI guide, embedded and printed by `brain docs`
   docs/lifecycle.md   - statuses, revocation, check and freshness, printed by `brain docs lifecycle`
   docs/mcp.md         - full MCP tool reference (inputs, outputs, evidence scheme)
@@ -69,7 +70,7 @@ Agents drive brain from the shell, so the CLI keeps a stable contract:
 | 3 | `not_found` | note or title does not exist |
 | 4 | `already_exists` | write or promote target exists, also when another writer created it first |
 | 5 | `invalid_query` | zoekt query does not parse |
-| 6 | `read_only` | write, edit, promote or migrate in a shared vault |
+| 6 | `read_only` | write, edit, promote, migrate, flag or a revocation in a shared vault |
 | 7 | `conflict` | `edit --if-match` sha no longer matches the note |
 | 8 | `secret_found` | the note would hold a secret (kit/secretscan); nothing was written |
 

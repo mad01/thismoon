@@ -83,6 +83,7 @@ Subcommands:
   supersede         Mark a note superseded by another.
   retract           Mark a note retracted, keeping its body under a banner.
   withdraw          Replace a note with a tombstone and purge it from the indexes.
+  flag              Mark a note disputed, with the reason.
   list              List notes in a tier, optionally filtered.
   migrate           Backfill note ids (--ids).
   docs              Print the agent-facing CLI guide.
@@ -143,6 +144,7 @@ brain doctor prints the paths in effect.`,
 		newSupersedeCmd(a),
 		newRetractCmd(a),
 		newWithdrawCmd(a),
+		newFlagCmd(a),
 		newListCmd(a),
 		newMigrateCmd(a),
 		newDocsCmd(),

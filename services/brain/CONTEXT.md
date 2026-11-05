@@ -73,6 +73,10 @@ _Avoid_: state, stage, lifecycle stage
 A Note that is superseded, retracted or withdrawn. Default search hides it, `--include-revoked` (or `include_revoked`) shows it, and read and peek print a banner above it. Revoking never deletes the file, so links to it still resolve. Superseded points `superseded_by` at its replacement's Note id; retracted keeps its body with `retracted_reason` (`error`, `source-retracted` or `unverifiable`) and `retracted_at`; withdrawn leaves a Tombstone.
 _Avoid_: deleted note, archived note
 
+**Flag**:
+Marking a Note `disputed` with `brain flag`, which stores the reason in `status_reason`. A flag is a doubt, not a verdict: the note stays in search under a DISPUTED banner until someone validates it again or revokes it. A Shared vault takes no direct flag; there a flag is an issue on the vault's repo.
+_Avoid_: report, challenge, mark (on its own)
+
 **Tombstone**:
 What `brain withdraw` leaves of a Note: frontmatter of only `id`, `status: withdrawn` and `status_at`, and no body. The note's chunks leave both indexes when the command returns. Its old text survives in the vault's git history.
 _Avoid_: stub, placeholder
