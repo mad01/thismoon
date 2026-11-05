@@ -1,6 +1,6 @@
 // Package semantic wraps chromem-go to provide a vault-aware vector index
-// over note chunks. The Index persists at ~/.config/brain/semantic/ (or a
-// configured path) and is keyed by chunk ID; metadata carries the path,
+// over note chunks. The Index persists at semantic/ in brain's state
+// directory (or a configured path) and is keyed by chunk ID; metadata carries the path,
 // tier, tags (flattened as t_<name>=1), evidence, type, status, and the
 // content hash so we can run incremental upserts without re-embedding
 // unchanged chunks.

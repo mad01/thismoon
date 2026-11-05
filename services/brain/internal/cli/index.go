@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/services/brain"
 	"github.com/mad01/thismoon/services/brain/internal/chunk"
 	"github.com/mad01/thismoon/services/brain/internal/config"
 	"github.com/mad01/thismoon/services/brain/internal/embedding"
@@ -21,7 +22,7 @@ type indexFlags struct {
 	strictSemantic bool
 }
 
-func newIndexCmd() *cobra.Command {
+func newIndexCmd(a *app) *cobra.Command {
 	var flags indexFlags
 	c := &cobra.Command{
 		Use:   "index",
@@ -37,7 +38,7 @@ Ollama health is probed before the semantic pass. When ollama is unreachable
 the semantic pass is skipped with a warning and the literal pass still runs;
 brain index exits 0. Pass --strict-semantic to fail the command instead.`,
 		Args: exactArgs(0),
-		RunE: func(cmd *cobra.Command, _ []string) error { return runIndex(cmd, flags) },
+		RunE: func(cmd *cobra.Command, _ []string) error { return a.runIndex(cmd, flags) },
 	}
 	c.Flags().
 		BoolVar(&flags.force, "force", false, "force re-index even if fingerprint is unchanged")
@@ -48,12 +49,12 @@ brain index exits 0. Pass --strict-semantic to fail the command instead.`,
 	return c
 }
 
-func runIndex(cmd *cobra.Command, flags indexFlags) error {
-	cfg, err := config.Load()
+func (a *app) runIndex(cmd *cobra.Command, flags indexFlags) error {
+	cfg, err := a.loadConfig()
 	if err != nil {
 		return err
 	}
-	indexDir, err := search.DefaultIndexDir()
+	indexDir, err := brain.IndexDir()
 	if err != nil {
 		return err
 	}
@@ -186,7 +187,7 @@ func openSemanticIndex(cfg *config.Config) (*semantic.Index, error) {
 // build or refresh the index only when stale. Progress is silent so search
 // output stays clean.
 func ensureIndexCLI(cfg *config.Config) (string, error) {
-	indexDir, err := search.DefaultIndexDir()
+	indexDir, err := brain.IndexDir()
 	if err != nil {
 		return "", err
 	}

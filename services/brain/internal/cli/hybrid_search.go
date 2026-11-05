@@ -32,7 +32,7 @@ Requires semantic.enabled=true in config.yaml and a running Ollama instance.
 With -o json, prints the brain_hybrid_search document.`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := a.loadConfig()
 			if err != nil {
 				return err
 			}

@@ -38,7 +38,7 @@ type queryValidateInput struct {
 	Query string `json:"query" jsonschema:"the zoekt query string to validate"`
 }
 
-func registerSearchTools(s *mcp.Server) {
+func registerSearchTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_search",
 		Description: "Search across your personal knowledge vault (markdown notes) using zoekt query syntax. " +
@@ -47,23 +47,23 @@ func registerSearchTools(s *mcp.Server) {
 			"Defaults to files_with_matches (unique note paths); set output_mode=content to get matching lines with optional context_lines. " +
 			"Query syntax: literal, regex, \"phrase\", AND (space), OR (|), NOT (-), file:regex, lang:markdown, case:yes. " +
 			"The index auto-refreshes when the vault has changed since the last call.",
-	}, handleSearch)
+	}, h.handleSearch)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_count",
 		Description: "Count matches of a zoekt query across the vault. " +
 			"Use for tallies like 'how many notes mention kubernetes', 'which tag has the most matches', or summaries across tiers. " +
 			"Set group_by to 'tier' or 'tag' for a breakdown; leave empty for a single total.",
-	}, handleCount)
+	}, h.handleCount)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_query_validate",
 		Description: "Validate a zoekt query and return its parsed tree or a parse error with a fixing hint. " +
 			"Use to debug a complex query before invoking brain_search, especially when dealing with escaped regex metacharacters like \\.md$.",
-	}, handleQueryValidate)
+	}, h.handleQueryValidate)
 }
 
-func handleSearch(
+func (h *handlers) handleSearch(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in searchInput,
@@ -97,7 +97,7 @@ func handleSearch(
 		tier = t
 	}
 
-	cfg, _, err := loadVault()
+	cfg, _, err := h.loadVault()
 	if err != nil {
 		return nil, search.Result{}, fmt.Errorf("brain_search: %w", err)
 	}
@@ -128,7 +128,7 @@ func handleSearch(
 	return nil, search.NewResult(cfg.Vault, outputMode, matches), nil
 }
 
-func handleCount(
+func (h *handlers) handleCount(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in countInput,
@@ -152,7 +152,7 @@ func handleCount(
 		tier = t
 	}
 
-	cfg, _, err := loadVault()
+	cfg, _, err := h.loadVault()
 	if err != nil {
 		return nil, search.Counts{}, fmt.Errorf("brain_count: %w", err)
 	}
@@ -174,7 +174,7 @@ func handleCount(
 	return nil, search.Counts{Total: total, Groups: results}, nil
 }
 
-func handleQueryValidate(
+func (h *handlers) handleQueryValidate(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in queryValidateInput,

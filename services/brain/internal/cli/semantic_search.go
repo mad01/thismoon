@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/mad01/thismoon/services/brain/internal/config"
 	"github.com/mad01/thismoon/services/brain/internal/semantic"
 )
 
@@ -27,7 +26,7 @@ Requires semantic.enabled=true in config.yaml and a running Ollama instance.
 With -o json, prints the brain_semantic_search document (snippets mode).`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := a.loadConfig()
 			if err != nil {
 				return err
 			}
@@ -78,7 +77,7 @@ With -o json, prints the brain_semantic_search document (snippets mode).`,
 // errSemanticDisabled is returned by the semantic commands when the config
 // leaves the semantic layer off.
 var errSemanticDisabled = errors.New(
-	"semantic.enabled is false in ~/.config/brain/config.yaml (check with: brain doctor)",
+	"semantic.enabled is false in the brain config (check with: brain doctor)",
 )
 
 func headingOrPrelude(heading string) string {

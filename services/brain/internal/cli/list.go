@@ -35,7 +35,7 @@ brain_list_tier document.`,
 			if opts.Tier, err = vault.ParseTier(name); err != nil {
 				return err
 			}
-			_, v, err := openVault()
+			_, v, err := a.openVault()
 			if err != nil {
 				return err
 			}

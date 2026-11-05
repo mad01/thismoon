@@ -1,18 +1,20 @@
-// Package config loads the brain configuration from ~/.config/brain/config.yaml.
-//
-// Ported from kitty-session's internal/repo/config with a single-vault shape.
+// Package config loads the brain configuration file. Which file is the
+// caller's choice (--config, BRAIN_CONFIG, or the default under the config
+// directory); config.md beside the service documents the keys and the
+// parse-failure posture.
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"gopkg.in/yaml.v3"
-)
 
-const configFileName = "config.yaml"
+	"github.com/mad01/thismoon/kit/confdir"
+	"github.com/mad01/thismoon/services/brain"
+)
 
 // Config holds the brain vault configuration.
 type Config struct {
@@ -28,7 +30,8 @@ type Config struct {
 // SemanticConfig configures the optional semantic search layer (Ollama
 // embeddings + chromem-go vector store + RRF hybrid + optional reranker).
 //
-// All fields are optional. Defaults are applied in LoadFrom when empty.
+// All fields are optional. Load fills empty ones from the defaults in the
+// brain package.
 type SemanticConfig struct {
 	// Enabled turns the semantic layer on. When false (default), the tools are
 	// still registered but return a typed "disabled" error so agents know.
@@ -42,7 +45,7 @@ type SemanticConfig struct {
 	// Default: llama3.2:3b.
 	ChatModel string `yaml:"chat_model,omitempty"`
 	// IndexDir is the on-disk location of the chromem-go collection. Default:
-	// ~/.config/brain/semantic. Tilde is expanded.
+	// the semantic directory under brain's state directory. Tilde is expanded.
 	IndexDir string `yaml:"index_dir,omitempty"`
 	// ChunkSize is the target token count per chunk. Default: 800.
 	ChunkSize int `yaml:"chunk_size,omitempty"`
@@ -53,119 +56,67 @@ type SemanticConfig struct {
 	RerankDefault bool `yaml:"rerank_default,omitempty"`
 }
 
-// Defaults applied in LoadFrom when fields are empty.
-const (
-	defaultOllamaURL    = "http://localhost:11434"
-	defaultEmbedModel   = "nomic-embed-text"
-	defaultChatModel    = "llama3.2:3b"
-	defaultChunkSize    = 800
-	defaultChunkOverlap = 100
-)
+// ErrInvalid marks a config file that exists but cannot be used: it does not
+// parse, or it leaves out the vault. The CLI exits 2 on it rather than run
+// on defaults, because a machine with a config file was configured on
+// purpose.
+var ErrInvalid = errors.New("invalid config")
 
-// Load reads config.yaml from ~/.config/brain/config.yaml.
-func Load() (*Config, error) {
-	path, err := DefaultPath()
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := LoadFrom(path)
-	if err != nil {
-		return nil, fmt.Errorf("no config found (checked %s): %w", path, err)
-	}
-	return cfg, nil
-}
-
-// LoadFrom reads config from a specific path.
-func LoadFrom(path string) (*Config, error) {
+// Load reads the config file at path. A missing file wraps fs.ErrNotExist;
+// a present file that does not parse or names no vault wraps ErrInvalid.
+func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("no config at %s: %w", path, fs.ErrNotExist)
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read config: %w", err)
 	}
 
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
+		return nil, fmt.Errorf("%w %s: %w", ErrInvalid, path, err)
 	}
-
-	cfg.Vault = expandTilde(cfg.Vault)
 	if cfg.Vault == "" {
-		return nil, fmt.Errorf("parsing %s: vault field is required", path)
+		return nil, fmt.Errorf("%w %s: vault is required", ErrInvalid, path)
 	}
-
-	applySemanticDefaults(&cfg.Semantic)
-
+	if cfg.Vault, err = confdir.Expand(cfg.Vault); err != nil {
+		return nil, err
+	}
+	if err := applySemanticDefaults(&cfg.Semantic); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
 }
 
-// applySemanticDefaults fills empty SemanticConfig fields with sensible
-// defaults. Called from LoadFrom so callers always observe a well-formed
-// SemanticConfig regardless of which fields the user specified.
-func applySemanticDefaults(s *SemanticConfig) {
+// applySemanticDefaults fills empty SemanticConfig fields from the brain
+// package defaults, so callers always see a well-formed SemanticConfig.
+func applySemanticDefaults(s *SemanticConfig) error {
 	if s.OllamaURL == "" {
-		s.OllamaURL = defaultOllamaURL
+		s.OllamaURL = brain.DefaultOllamaURL
 	}
 	if s.EmbedModel == "" {
-		s.EmbedModel = defaultEmbedModel
+		s.EmbedModel = brain.DefaultEmbedModel
 	}
 	if s.ChatModel == "" {
-		s.ChatModel = defaultChatModel
+		s.ChatModel = brain.DefaultChatModel
 	}
 	if s.ChunkSize <= 0 {
-		s.ChunkSize = defaultChunkSize
+		s.ChunkSize = brain.DefaultChunkSize
 	}
-	if s.ChunkOverlap < 0 {
-		s.ChunkOverlap = defaultChunkOverlap
+	if s.ChunkOverlap <= 0 {
+		s.ChunkOverlap = brain.DefaultChunkOverlap
 	}
-	if s.ChunkOverlap == 0 {
-		s.ChunkOverlap = defaultChunkOverlap
-	}
-	s.IndexDir = expandTilde(s.IndexDir)
+	var err error
+	s.IndexDir, err = confdir.Expand(s.IndexDir)
+	return err
 }
 
-// DefaultSemanticDir returns the canonical semantic index directory at
-// ~/.config/brain/semantic/. Used when SemanticConfig.IndexDir is empty.
-func DefaultSemanticDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("cannot determine home directory: %w", err)
-	}
-	return filepath.Join(home, ".config", "brain", "semantic"), nil
-}
-
-// SemanticIndexDir returns the configured semantic index directory, or the
-// default when unset.
+// ResolvedIndexDir returns the configured semantic index directory, or the
+// default under brain's state directory when unset.
 func (s SemanticConfig) ResolvedIndexDir() (string, error) {
 	if s.IndexDir != "" {
 		return s.IndexDir, nil
 	}
-	return DefaultSemanticDir()
-}
-
-// DefaultPath returns the canonical config path at ~/.config/brain/config.yaml.
-func DefaultPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("cannot determine home directory: %w", err)
-	}
-	return filepath.Join(home, ".config", "brain", configFileName), nil
-}
-
-// DefaultStateDir returns the canonical state directory at ~/.config/brain.
-func DefaultStateDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("cannot determine home directory: %w", err)
-	}
-	return filepath.Join(home, ".config", "brain"), nil
-}
-
-func expandTilde(p string) string {
-	if strings.HasPrefix(p, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return p
-		}
-		return filepath.Join(home, p[2:])
-	}
-	return p
+	return brain.SemanticDir()
 }

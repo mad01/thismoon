@@ -22,7 +22,7 @@ brain_backlinks document.`,
 			if (len(args) == 1) == (title != "") {
 				return usageErrorf("name the note by <path> or by --title, not both or neither")
 			}
-			_, v, err := openVault()
+			_, v, err := a.openVault()
 			if err != nil {
 				return err
 			}

@@ -23,7 +23,7 @@ inclusive over the body). With -o json, prints the brain_read document.`,
 			if start > 0 && end > 0 && start > end {
 				return usageErrorf("--start (%d) must be <= --end (%d)", start, end)
 			}
-			_, v, err := openVault()
+			_, v, err := a.openVault()
 			if err != nil {
 				return err
 			}
@@ -60,7 +60,7 @@ is worth a full read. With -o json, prints the brain_peek document.`,
 			if lines < 0 {
 				return usageErrorf("--lines must be >= 0")
 			}
-			_, v, err := openVault()
+			_, v, err := a.openVault()
 			if err != nil {
 				return err
 			}

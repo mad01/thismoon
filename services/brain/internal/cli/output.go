@@ -44,12 +44,21 @@ func writeFrontmatter(w io.Writer, fm markdown.Frontmatter) error {
 	return nil
 }
 
-// openVault loads the brain config and opens its vault. Errors point at
+// loadConfig loads the config file chosen with --config. Errors point at
 // brain doctor, which names the broken piece.
-func openVault() (*config.Config, *vault.Vault, error) {
-	cfg, err := config.Load()
+func (a *app) loadConfig() (*config.Config, error) {
+	cfg, err := config.Load(a.configPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w (diagnose with: brain doctor)", err)
+		return nil, fmt.Errorf("%w (diagnose with: brain doctor)", err)
+	}
+	return cfg, nil
+}
+
+// openVault loads the config and opens its vault.
+func (a *app) openVault() (*config.Config, *vault.Vault, error) {
+	cfg, err := a.loadConfig()
+	if err != nil {
+		return nil, nil, err
 	}
 	v, err := vault.Open(cfg.Vault)
 	if err != nil {

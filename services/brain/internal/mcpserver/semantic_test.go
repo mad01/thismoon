@@ -74,7 +74,7 @@ func TestBrainSemanticSearch_HappyPath(t *testing.T) {
 	setupSemanticFixture(t)
 	ctx := context.Background()
 
-	_, out, err := handleSemanticSearch(ctx, nil, semanticSearchInput{
+	_, out, err := testServer(t).handleSemanticSearch(ctx, nil, semanticSearchInput{
 		Query: "concept alpha foundational ideas",
 		K:     5,
 	})
@@ -99,7 +99,9 @@ func TestBrainSemanticSearch_HappyPath(t *testing.T) {
 
 func TestBrainSemanticSearch_RequiresEnabled(t *testing.T) {
 	setupFixtureVault(t) // semantic NOT enabled in this fixture
-	_, _, err := handleSemanticSearch(context.Background(), nil, semanticSearchInput{Query: "x"})
+	_, _, err := testServer(
+		t,
+	).handleSemanticSearch(context.Background(), nil, semanticSearchInput{Query: "x"})
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Errorf("want disabled error, got %v", err)
 	}
@@ -107,7 +109,9 @@ func TestBrainSemanticSearch_RequiresEnabled(t *testing.T) {
 
 func TestBrainSemanticSearch_TierFilter(t *testing.T) {
 	setupSemanticFixture(t)
-	_, out, err := handleSemanticSearch(context.Background(), nil, semanticSearchInput{
+	_, out, err := testServer(
+		t,
+	).handleSemanticSearch(context.Background(), nil, semanticSearchInput{
 		Query: "alpha",
 		Tier:  "outputs",
 		K:     5,
@@ -124,7 +128,9 @@ func TestBrainSemanticSearch_TierFilter(t *testing.T) {
 
 func TestBrainSemanticSearch_PathsMode(t *testing.T) {
 	setupSemanticFixture(t)
-	_, out, err := handleSemanticSearch(context.Background(), nil, semanticSearchInput{
+	_, out, err := testServer(
+		t,
+	).handleSemanticSearch(context.Background(), nil, semanticSearchInput{
 		Query:      "concept",
 		OutputMode: "paths",
 		K:          10,
@@ -147,7 +153,7 @@ func TestBrainSemanticSearch_PathsMode(t *testing.T) {
 
 func TestBrainHybridSearch_FusesBothSources(t *testing.T) {
 	setupSemanticFixture(t)
-	_, out, err := handleHybridSearch(context.Background(), nil, hybridSearchInput{
+	_, out, err := testServer(t).handleHybridSearch(context.Background(), nil, hybridSearchInput{
 		Query: "concept alpha",
 		K:     5,
 	})
@@ -171,7 +177,9 @@ func TestBrainHybridSearch_FusesBothSources(t *testing.T) {
 
 func TestBrainHybridSearch_RequiresEnabled(t *testing.T) {
 	setupFixtureVault(t)
-	_, _, err := handleHybridSearch(context.Background(), nil, hybridSearchInput{Query: "x"})
+	_, _, err := testServer(
+		t,
+	).handleHybridSearch(context.Background(), nil, hybridSearchInput{Query: "x"})
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Errorf("want disabled error, got %v", err)
 	}
@@ -179,7 +187,9 @@ func TestBrainHybridSearch_RequiresEnabled(t *testing.T) {
 
 func TestBrainSemanticSearch_EmptyQueryRejected(t *testing.T) {
 	setupSemanticFixture(t)
-	_, _, err := handleSemanticSearch(context.Background(), nil, semanticSearchInput{Query: "  "})
+	_, _, err := testServer(
+		t,
+	).handleSemanticSearch(context.Background(), nil, semanticSearchInput{Query: "  "})
 	if err == nil {
 		t.Error("want error for empty query")
 	}

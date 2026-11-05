@@ -28,7 +28,7 @@ single total. With -o json, prints the brain_count document.`,
 			if err != nil {
 				return err
 			}
-			cfg, _, err := openVault()
+			cfg, _, err := a.openVault()
 			if err != nil {
 				return err
 			}

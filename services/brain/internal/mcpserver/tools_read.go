@@ -20,22 +20,22 @@ type peekInput struct {
 	MaxBodyLines int    `json:"max_body_lines,omitempty" jsonschema:"number of body lines to include in preview (default 20)"`
 }
 
-func registerReadTools(s *mcp.Server) {
+func registerReadTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_read",
 		Description: "Read a note's frontmatter and body (optionally a line slice). " +
 			"Use after brain_search finds a relevant note and you need the full text, or when you already know a vault-relative path. " +
 			"start_line / end_line are 1-based inclusive over the body (frontmatter excluded); omit both to read the whole body.",
-	}, handleRead)
+	}, h.handleRead)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_peek",
 		Description: "Cheap overview of a note: frontmatter, the first N body lines (default 20), and a count of inbound backlinks. " +
 			"Use to decide whether a note is worth reading in full or to check its connectivity before diving in.",
-	}, handlePeek)
+	}, h.handlePeek)
 }
 
-func handleRead(
+func (h *handlers) handleRead(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in readInput,
@@ -51,7 +51,7 @@ func handleRead(
 		)
 	}
 
-	_, v, err := loadVault()
+	_, v, err := h.loadVault()
 	if err != nil {
 		return nil, vault.Note{}, fmt.Errorf("brain_read: %w", err)
 	}
@@ -62,12 +62,12 @@ func handleRead(
 	return nil, note, nil
 }
 
-func handlePeek(
+func (h *handlers) handlePeek(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in peekInput,
 ) (*mcp.CallToolResult, vault.Peek, error) {
-	_, v, err := loadVault()
+	_, v, err := h.loadVault()
 	if err != nil {
 		return nil, vault.Peek{}, fmt.Errorf("brain_peek: %w", err)
 	}

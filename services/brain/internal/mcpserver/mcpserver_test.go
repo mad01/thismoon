@@ -6,22 +6,21 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/services/brain"
+	"github.com/mad01/thismoon/services/brain/internal/testhome"
 )
 
-// setupFixtureVault creates a temp vault, points HOME at a fresh temp dir so
-// config.Load() finds <tmpHome>/.config/brain/config.yaml, and seeds the vault
+// setupFixtureVault creates a temp vault, isolates HOME and the XDG and brain
+// variables so testServer's config is <tmpHome>/.config/brain/config.yaml and
+// the indexes land under <tmpHome>/.local/state/brain, and seeds the vault
 // with a handful of markdown notes across tiers (with realistic frontmatter
 // and [[wikilinks]] between them).
 func setupFixtureVault(t *testing.T) string {
 	t.Helper()
 
 	vaultRoot := t.TempDir()
-	tmpHome := t.TempDir()
-
-	// Make HOME point at tmpHome — config.Load() & DefaultIndexDir both read
-	// os.UserHomeDir(), which on darwin/linux consults HOME. t.Setenv restores
-	// the previous value at the end of the test and also forbids t.Parallel().
-	t.Setenv("HOME", tmpHome)
+	tmpHome := testhome.Isolate(t)
 
 	// Write the brain config so loadVault() resolves the vault to vaultRoot.
 	cfgDir := filepath.Join(tmpHome, ".config", "brain")
@@ -147,6 +146,17 @@ Refuted claim; kept as do-not-cite record.
 	return vaultRoot
 }
 
+// testServer returns handlers loading the default config path, the one
+// setupFixtureVault writes.
+func testServer(t *testing.T) *handlers {
+	t.Helper()
+	path, err := brain.DefaultConfigPath()
+	if err != nil {
+		t.Fatalf("config path: %v", err)
+	}
+	return &handlers{configPath: path}
+}
+
 // ---------------------------------------------------------------------------
 // brain_search
 // ---------------------------------------------------------------------------
@@ -155,7 +165,7 @@ func TestBrainSearch_FilesMode(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
 
-	_, out, err := handleSearch(ctx, nil, searchInput{
+	_, out, err := testServer(t).handleSearch(ctx, nil, searchInput{
 		Query:      "concept",
 		OutputMode: "files_with_matches",
 	})
@@ -182,7 +192,7 @@ func TestBrainSearch_ContentMode(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
 
-	_, out, err := handleSearch(ctx, nil, searchInput{
+	_, out, err := testServer(t).handleSearch(ctx, nil, searchInput{
 		Query:      "kubernetes",
 		OutputMode: "content",
 	})
@@ -210,7 +220,7 @@ func TestBrainSearch_TierFilter(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
 
-	_, out, err := handleSearch(ctx, nil, searchInput{
+	_, out, err := testServer(t).handleSearch(ctx, nil, searchInput{
 		Query:      "concept",
 		Tier:       "inbox",
 		OutputMode: "files_with_matches",
@@ -231,7 +241,7 @@ func TestBrainSearch_TagFilter(t *testing.T) {
 
 	// Search for a term that appears across many notes, then filter by tag.
 	// Only notes whose frontmatter tags contain ai/research should remain.
-	_, out, err := handleSearch(ctx, nil, searchInput{
+	_, out, err := testServer(t).handleSearch(ctx, nil, searchInput{
 		Query:      "concept",
 		Tag:        "ai/research",
 		OutputMode: "files_with_matches",
@@ -258,7 +268,7 @@ func TestBrainCount_GroupByTier(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
 
-	_, out, err := handleCount(ctx, nil, countInput{
+	_, out, err := testServer(t).handleCount(ctx, nil, countInput{
 		Query:   "concept",
 		GroupBy: "tier",
 	})
@@ -289,7 +299,9 @@ func TestBrainQueryValidate(t *testing.T) {
 	ctx := context.Background()
 
 	// Valid.
-	_, ok, err := handleQueryValidate(ctx, nil, queryValidateInput{Query: "hello world"})
+	_, ok, err := testServer(
+		t,
+	).handleQueryValidate(ctx, nil, queryValidateInput{Query: "hello world"})
 	if err != nil {
 		t.Fatalf("handleQueryValidate: %v", err)
 	}
@@ -298,7 +310,7 @@ func TestBrainQueryValidate(t *testing.T) {
 	}
 
 	// Invalid regex — an unterminated character class fails the parser.
-	_, bad, err := handleQueryValidate(ctx, nil, queryValidateInput{Query: "foo[bar"})
+	_, bad, err := testServer(t).handleQueryValidate(ctx, nil, queryValidateInput{Query: "foo[bar"})
 	if err != nil {
 		t.Fatalf("handleQueryValidate invalid: %v", err)
 	}
@@ -321,7 +333,7 @@ func TestBrainRead_Full(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
 
-	_, out, err := handleRead(ctx, nil, readInput{Path: "notes/concept-alpha.md"})
+	_, out, err := testServer(t).handleRead(ctx, nil, readInput{Path: "notes/concept-alpha.md"})
 	if err != nil {
 		t.Fatalf("handleRead: %v", err)
 	}
@@ -340,7 +352,7 @@ func TestBrainRead_LineRange(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
 
-	_, out, err := handleRead(ctx, nil, readInput{
+	_, out, err := testServer(t).handleRead(ctx, nil, readInput{
 		Path:      "notes/concept-alpha.md",
 		StartLine: 2,
 		EndLine:   3,
@@ -360,7 +372,7 @@ func TestBrainRead_EscapeAttempt(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
 
-	_, _, err := handleRead(ctx, nil, readInput{Path: "../etc/passwd"})
+	_, _, err := testServer(t).handleRead(ctx, nil, readInput{Path: "../etc/passwd"})
 	if err == nil {
 		t.Fatal("expected error for path escape attempt")
 	}
@@ -378,7 +390,7 @@ func TestBrainPeek(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
 
-	_, out, err := handlePeek(ctx, nil, peekInput{
+	_, out, err := testServer(t).handlePeek(ctx, nil, peekInput{
 		Path:         "notes/concept-alpha.md",
 		MaxBodyLines: 10,
 	})
@@ -406,7 +418,7 @@ func TestBrainListTier(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
 
-	_, out, err := handleListTier(ctx, nil, listInput{Tier: "notes"})
+	_, out, err := testServer(t).handleListTier(ctx, nil, listInput{Tier: "notes"})
 	if err != nil {
 		t.Fatalf("handleListTier: %v", err)
 	}
@@ -414,7 +426,9 @@ func TestBrainListTier(t *testing.T) {
 		t.Errorf("Total = %d, want 4 (concept-alpha/beta + graded-field/tag)", out.Total)
 	}
 	// Tag filter should narrow to the four notes sharing ai/research.
-	_, tagOut, err := handleListTier(ctx, nil, listInput{Tier: "notes", Tag: "ai/research"})
+	_, tagOut, err := testServer(
+		t,
+	).handleListTier(ctx, nil, listInput{Tier: "notes", Tag: "ai/research"})
 	if err != nil {
 		t.Fatalf("handleListTier tag: %v", err)
 	}
@@ -422,7 +436,9 @@ func TestBrainListTier(t *testing.T) {
 		t.Errorf("tag-filtered total = %d, want 4", tagOut.Total)
 	}
 	// Tag filter for a non-matching tag → 0.
-	_, emptyOut, err := handleListTier(ctx, nil, listInput{Tier: "notes", Tag: "nonexistent"})
+	_, emptyOut, err := testServer(
+		t,
+	).handleListTier(ctx, nil, listInput{Tier: "notes", Tag: "nonexistent"})
 	if err != nil {
 		t.Fatalf("handleListTier empty: %v", err)
 	}
@@ -439,7 +455,9 @@ func TestBrainBacklinks_ByPath(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
 
-	_, out, err := handleBacklinks(ctx, nil, backlinksInput{Path: "notes/concept-alpha.md"})
+	_, out, err := testServer(
+		t,
+	).handleBacklinks(ctx, nil, backlinksInput{Path: "notes/concept-alpha.md"})
 	if err != nil {
 		t.Fatalf("handleBacklinks: %v", err)
 	}
@@ -468,7 +486,7 @@ func TestBrainBacklinks_ByTitle(t *testing.T) {
 	ctx := context.Background()
 
 	// Lookup by frontmatter.title (exact, case-insensitive).
-	_, out, err := handleBacklinks(ctx, nil, backlinksInput{Title: "Concept Beta"})
+	_, out, err := testServer(t).handleBacklinks(ctx, nil, backlinksInput{Title: "Concept Beta"})
 	if err != nil {
 		t.Fatalf("handleBacklinks title: %v", err)
 	}
@@ -490,7 +508,9 @@ func TestBrainBacklinks_ByTitle(t *testing.T) {
 	}
 
 	// Lookup by alias.
-	_, aliasOut, err := handleBacklinks(ctx, nil, backlinksInput{Title: "Alpha Concept"})
+	_, aliasOut, err := testServer(
+		t,
+	).handleBacklinks(ctx, nil, backlinksInput{Title: "Alpha Concept"})
 	if err != nil {
 		t.Fatalf("handleBacklinks alias: %v", err)
 	}
@@ -507,7 +527,7 @@ func TestBrainWrite(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
 
-	_, out, err := handleWrite(ctx, nil, writeInput{
+	_, out, err := testServer(t).handleWrite(ctx, nil, writeInput{
 		Tier:  "inbox",
 		Title: "Brand New Thought",
 		Body:  "Fresh capture content.",
@@ -521,7 +541,7 @@ func TestBrainWrite(t *testing.T) {
 	}
 
 	// Collision — writing the same title again must error.
-	_, _, err = handleWrite(ctx, nil, writeInput{
+	_, _, err = testServer(t).handleWrite(ctx, nil, writeInput{
 		Tier:  "inbox",
 		Title: "Brand New Thought",
 		Body:  "second",
@@ -549,7 +569,7 @@ func TestBrainEdit_Append(t *testing.T) {
 		t.Fatalf("read before: %v", err)
 	}
 
-	_, editOut, err := handleEdit(ctx, nil, editInput{
+	_, editOut, err := testServer(t).handleEdit(ctx, nil, editInput{
 		Path:   path,
 		Append: "\nA new paragraph appended by test.\n",
 	})
@@ -560,7 +580,7 @@ func TestBrainEdit_Append(t *testing.T) {
 		t.Errorf("Path = %q", editOut.Path)
 	}
 
-	_, readOut, err := handleRead(ctx, nil, readInput{Path: path})
+	_, readOut, err := testServer(t).handleRead(ctx, nil, readInput{Path: path})
 	if err != nil {
 		t.Fatalf("handleRead after edit: %v", err)
 	}
@@ -599,7 +619,7 @@ func TestBrainEdit_FrontmatterPatch(t *testing.T) {
 	beforeBytes, _ := os.ReadFile(full)
 	beforeBody := extractBody(beforeBytes)
 
-	_, _, err := handleEdit(ctx, nil, editInput{
+	_, _, err := testServer(t).handleEdit(ctx, nil, editInput{
 		Path: path,
 		FrontmatterPatch: &frontmatterIn{
 			Status: "validated",
@@ -610,7 +630,7 @@ func TestBrainEdit_FrontmatterPatch(t *testing.T) {
 		t.Fatalf("handleEdit patch: %v", err)
 	}
 
-	_, readOut, err := handleRead(ctx, nil, readInput{Path: path})
+	_, readOut, err := testServer(t).handleRead(ctx, nil, readInput{Path: path})
 	if err != nil {
 		t.Fatalf("handleRead: %v", err)
 	}
@@ -662,7 +682,7 @@ func TestBrainPromote(t *testing.T) {
 	ctx := context.Background()
 
 	mocRel := "MOCs/ai-topics.md"
-	_, out, err := handlePromote(ctx, nil, promoteInput{
+	_, out, err := testServer(t).handlePromote(ctx, nil, promoteInput{
 		Path: "inbox/raw-thought.md",
 		MOC:  mocRel,
 	})
@@ -682,7 +702,7 @@ func TestBrainPromote(t *testing.T) {
 	}
 
 	// New note has status=validated.
-	_, readOut, err := handleRead(ctx, nil, readInput{Path: out.NewPath})
+	_, readOut, err := testServer(t).handleRead(ctx, nil, readInput{Path: out.NewPath})
 	if err != nil {
 		t.Fatalf("handleRead promoted: %v", err)
 	}
@@ -731,7 +751,7 @@ This links [[raw-thought]] and [[raw-thought|alias display]].
 		t.Fatalf("seed ref: %v", err)
 	}
 
-	_, out, err := handlePromote(ctx, nil, promoteInput{
+	_, out, err := testServer(t).handlePromote(ctx, nil, promoteInput{
 		Path:     "inbox/raw-thought.md",
 		NewTitle: "Refined Thought",
 	})
@@ -776,7 +796,7 @@ This links [[raw-thought]] and [[raw-thought|alias display]].
 
 func TestEvidence_ListTier(t *testing.T) {
 	setupFixtureVault(t)
-	_, out, err := handleListTier(context.Background(), nil, listInput{Tier: "notes"})
+	_, out, err := testServer(t).handleListTier(context.Background(), nil, listInput{Tier: "notes"})
 	if err != nil {
 		t.Fatalf("handleListTier: %v", err)
 	}
@@ -797,7 +817,9 @@ func TestEvidence_ListTier(t *testing.T) {
 
 func TestEvidence_Read(t *testing.T) {
 	setupFixtureVault(t)
-	_, out, err := handleRead(context.Background(), nil, readInput{Path: "notes/graded-field.md"})
+	_, out, err := testServer(
+		t,
+	).handleRead(context.Background(), nil, readInput{Path: "notes/graded-field.md"})
 	if err != nil {
 		t.Fatalf("handleRead: %v", err)
 	}
@@ -808,7 +830,9 @@ func TestEvidence_Read(t *testing.T) {
 
 func TestEvidence_Peek(t *testing.T) {
 	setupFixtureVault(t)
-	_, out, err := handlePeek(context.Background(), nil, peekInput{Path: "notes/graded-tag.md"})
+	_, out, err := testServer(
+		t,
+	).handlePeek(context.Background(), nil, peekInput{Path: "notes/graded-tag.md"})
 	if err != nil {
 		t.Fatalf("handlePeek: %v", err)
 	}
@@ -819,7 +843,7 @@ func TestEvidence_Peek(t *testing.T) {
 
 func TestEvidence_Search_FilesMode(t *testing.T) {
 	setupFixtureVault(t)
-	_, out, err := handleSearch(context.Background(), nil, searchInput{
+	_, out, err := testServer(t).handleSearch(context.Background(), nil, searchInput{
 		Query:      "graded",
 		OutputMode: "files_with_matches",
 	})
@@ -840,7 +864,7 @@ func TestEvidence_Search_FilesMode(t *testing.T) {
 
 func TestEvidence_Search_ContentMode(t *testing.T) {
 	setupFixtureVault(t)
-	_, out, err := handleSearch(context.Background(), nil, searchInput{
+	_, out, err := testServer(t).handleSearch(context.Background(), nil, searchInput{
 		Query:      "effect size",
 		OutputMode: "content",
 	})
@@ -861,7 +885,7 @@ func TestEvidence_Backlinks(t *testing.T) {
 	setupFixtureVault(t)
 	// graded-field.md links to [[concept-alpha]]. Ask for backlinks of
 	// concept-alpha; inbound should include graded-field with Evidence=A.
-	_, out, err := handleBacklinks(context.Background(), nil, backlinksInput{
+	_, out, err := testServer(t).handleBacklinks(context.Background(), nil, backlinksInput{
 		Path: "notes/concept-alpha.md",
 	})
 	if err != nil {
@@ -887,7 +911,7 @@ func TestEvidence_Backlinks(t *testing.T) {
 
 func TestEvidence_Write_Field(t *testing.T) {
 	setupFixtureVault(t)
-	_, wOut, err := handleWrite(context.Background(), nil, writeInput{
+	_, wOut, err := testServer(t).handleWrite(context.Background(), nil, writeInput{
 		Tier:     "notes",
 		Title:    "Direct Field",
 		Body:     "Body here.",
@@ -897,7 +921,7 @@ func TestEvidence_Write_Field(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleWrite: %v", err)
 	}
-	_, rOut, err := handleRead(context.Background(), nil, readInput{Path: wOut.Path})
+	_, rOut, err := testServer(t).handleRead(context.Background(), nil, readInput{Path: wOut.Path})
 	if err != nil {
 		t.Fatalf("handleRead: %v", err)
 	}
@@ -909,7 +933,7 @@ func TestEvidence_Write_Field(t *testing.T) {
 func TestEvidence_Edit_FrontmatterPatch(t *testing.T) {
 	setupFixtureVault(t)
 	// Patch the evidence field on concept-alpha (which had none).
-	_, _, err := handleEdit(context.Background(), nil, editInput{
+	_, _, err := testServer(t).handleEdit(context.Background(), nil, editInput{
 		Path: "notes/concept-alpha.md",
 		FrontmatterPatch: &frontmatterIn{
 			Evidence: "C",
@@ -918,7 +942,9 @@ func TestEvidence_Edit_FrontmatterPatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleEdit: %v", err)
 	}
-	_, rOut, err := handleRead(context.Background(), nil, readInput{Path: "notes/concept-alpha.md"})
+	_, rOut, err := testServer(
+		t,
+	).handleRead(context.Background(), nil, readInput{Path: "notes/concept-alpha.md"})
 	if err != nil {
 		t.Fatalf("handleRead: %v", err)
 	}
@@ -930,7 +956,7 @@ func TestEvidence_Edit_FrontmatterPatch(t *testing.T) {
 func TestEvidence_Promote_Preserves(t *testing.T) {
 	setupFixtureVault(t)
 	// Create an inbox note with evidence, promote it, assert evidence survives.
-	_, wOut, err := handleWrite(context.Background(), nil, writeInput{
+	_, wOut, err := testServer(t).handleWrite(context.Background(), nil, writeInput{
 		Tier:     "inbox",
 		Title:    "Inbox With Evidence",
 		Body:     "Captured body.",
@@ -939,14 +965,18 @@ func TestEvidence_Promote_Preserves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleWrite: %v", err)
 	}
-	_, pOut, err := handlePromote(context.Background(), nil, promoteInput{Path: wOut.Path})
+	_, pOut, err := testServer(
+		t,
+	).handlePromote(context.Background(), nil, promoteInput{Path: wOut.Path})
 	if err != nil {
 		t.Fatalf("handlePromote: %v", err)
 	}
 	if !strings.HasPrefix(pOut.NewPath, "notes/") {
 		t.Fatalf("promoted path = %q, want under notes/", pOut.NewPath)
 	}
-	_, rOut, err := handleRead(context.Background(), nil, readInput{Path: pOut.NewPath})
+	_, rOut, err := testServer(
+		t,
+	).handleRead(context.Background(), nil, readInput{Path: pOut.NewPath})
 	if err != nil {
 		t.Fatalf("handleRead: %v", err)
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/services/brain"
 	"github.com/mad01/thismoon/services/brain/internal/chunk"
 	"github.com/mad01/thismoon/services/brain/internal/config"
 	"github.com/mad01/thismoon/services/brain/internal/embedding"
@@ -54,16 +55,16 @@ type hybridSearchInput struct {
 // registration
 // ---------------------------------------------------------------------------
 
-func registerSemanticTools(s *mcp.Server) {
+func registerSemanticTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_semantic_search",
 		Description: "Vector (semantic) search across the vault. " +
 			"Use whenever the task is conceptual rather than exact-string — 'notes that argue against X', " +
 			"'anything about graceful shutdown patterns', 'what have I written that resembles this passage'. " +
 			"Filters: tier (inbox/notes/outputs/MOCs), tag, type, status, evidence (A/B/C/D/mixed). " +
-			"Requires semantic.enabled=true in ~/.config/brain/config.yaml and a running local Ollama. " +
+			"Requires semantic.enabled=true in the brain config and a running local Ollama. " +
 			"Prefer brain_search for exact-string lookups, brain_hybrid_search when you want both signals fused.",
-	}, handleSemanticSearch)
+	}, h.handleSemanticSearch)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_hybrid_search",
@@ -71,10 +72,10 @@ func registerSemanticTools(s *mcp.Server) {
 			"Use as the default 'find notes about X' tool when both keywords and concepts matter — usually the right pick over brain_search alone. " +
 			"Set rerank=true to additionally pass the top candidates through a local LLM scorer (1–5s slower). " +
 			"Same filter vocabulary as brain_semantic_search. Requires semantic.enabled=true and a running Ollama.",
-	}, handleHybridSearch)
+	}, h.handleHybridSearch)
 }
 
-func handleSemanticSearch(
+func (h *handlers) handleSemanticSearch(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in semanticSearchInput,
@@ -92,13 +93,13 @@ func handleSemanticSearch(
 			mode,
 		)
 	}
-	cfg, err := config.Load()
+	cfg, err := h.loadConfig()
 	if err != nil {
 		return nil, semantic.SearchResult{}, fmt.Errorf("brain_semantic_search: %w", err)
 	}
 	if !cfg.Semantic.Enabled {
 		return nil, semantic.SearchResult{}, fmt.Errorf(
-			"brain_semantic_search: semantic layer is disabled (set semantic.enabled=true in ~/.config/brain/config.yaml)",
+			"brain_semantic_search: semantic layer is disabled (set semantic.enabled: true in the brain config)",
 		)
 	}
 	if err := ensureSemanticIndex(ctx, cfg); err != nil {
@@ -127,7 +128,7 @@ func handleSemanticSearch(
 	return nil, semantic.NewSearchResult(mode, hits), nil
 }
 
-func handleHybridSearch(
+func (h *handlers) handleHybridSearch(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in hybridSearchInput,
@@ -135,13 +136,13 @@ func handleHybridSearch(
 	if strings.TrimSpace(in.Query) == "" {
 		return nil, hybrid.Result{}, fmt.Errorf("brain_hybrid_search: query is required")
 	}
-	cfg, err := config.Load()
+	cfg, err := h.loadConfig()
 	if err != nil {
 		return nil, hybrid.Result{}, fmt.Errorf("brain_hybrid_search: %w", err)
 	}
 	if !cfg.Semantic.Enabled {
 		return nil, hybrid.Result{}, fmt.Errorf(
-			"brain_hybrid_search: semantic layer is disabled (set semantic.enabled=true in ~/.config/brain/config.yaml)",
+			"brain_hybrid_search: semantic layer is disabled (set semantic.enabled: true in the brain config)",
 		)
 	}
 	if err := ensureSemanticIndex(ctx, cfg); err != nil {
@@ -347,7 +348,7 @@ func openSemanticForMCP(cfg *config.Config) (*semantic.Index, error) {
 // the vault before each MCP query. Mirrors ensureIndex's pattern: compare
 // fingerprints, run an incremental upsert when stale, persist new state.
 func ensureSemanticIndex(ctx context.Context, cfg *config.Config) error {
-	indexDir, err := search.DefaultIndexDir()
+	indexDir, err := brain.IndexDir()
 	if err != nil {
 		return fmt.Errorf("resolve index dir: %w", err)
 	}

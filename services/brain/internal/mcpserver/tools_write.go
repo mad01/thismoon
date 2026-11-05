@@ -49,30 +49,30 @@ type promoteInput struct {
 	MOC        string `json:"moc,omitempty"         jsonschema:"optional topical MOC path (vault-relative or absolute) to append a bullet to. Must be a semantic MOC; batch-provenance indexes (research-index-* / kickoff-* filenames, or tags including meta/index) are rejected."`
 }
 
-func registerWriteTools(s *mcp.Server) {
+func registerWriteTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_write",
 		Description: "Create a new note in a tier (inbox, notes, outputs, or MOCs) with frontmatter (title, tags, aliases, type, status, source). " +
 			"Use to capture new material — 'save this as an inbox note', 'write a validated note on X', 'create an output'. " +
 			"Filename defaults to slug(title); outputs are prefixed with YYYY-MM-DD. Errors if a note with the same filename already exists.",
-	}, handleWrite)
+	}, h.handleWrite)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_edit",
 		Description: "Modify an existing note — replace body, append to body, and/or merge a frontmatter patch. " +
 			"Exactly one of body/append is allowed; frontmatter_patch is optional. Updates frontmatter.updated. " +
 			"Use to extend a note, update status (e.g. raw → validated), add tags, or rewrite the body.",
-	}, handleEdit)
+	}, h.handleEdit)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_promote",
 		Description: "Promote an inbox note into notes/ (or another tier): atomic move, status → validated, backlinks across the vault rewritten to the new filename, optional bullet appended to a MOC. " +
 			"Use when an inbox capture is ready to become a first-class note. " +
 			"The moc target must be a topical MOC (semantic grouping); batch-provenance indexes (filenames matching research-index-* / kickoff-*, or tagged meta/index) are rejected to keep the graph centered on real semantic groupings.",
-	}, handlePromote)
+	}, h.handlePromote)
 }
 
-func handleWrite(
+func (h *handlers) handleWrite(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in writeInput,
@@ -88,7 +88,7 @@ func handleWrite(
 		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
 	}
 
-	_, v, err := loadVault()
+	_, v, err := h.loadVault()
 	if err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
 	}
@@ -111,7 +111,7 @@ func handleWrite(
 	return nil, vault.PathResult{Path: v.Rel(abs)}, nil
 }
 
-func handleEdit(
+func (h *handlers) handleEdit(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in editInput,
@@ -130,7 +130,7 @@ func handleEdit(
 		)
 	}
 
-	_, v, err := loadVault()
+	_, v, err := h.loadVault()
 	if err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_edit: %w", err)
 	}
@@ -163,7 +163,7 @@ func handleEdit(
 	return nil, vault.PathResult{Path: in.Path}, nil
 }
 
-func handlePromote(
+func (h *handlers) handlePromote(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in promoteInput,
@@ -172,7 +172,7 @@ func handlePromote(
 		return nil, vault.PromoteReport{}, fmt.Errorf("brain_promote: path is required")
 	}
 
-	_, v, err := loadVault()
+	_, v, err := h.loadVault()
 	if err != nil {
 		return nil, vault.PromoteReport{}, fmt.Errorf("brain_promote: %w", err)
 	}

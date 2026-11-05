@@ -18,16 +18,16 @@ type listInput struct {
 	Limit  int    `json:"limit,omitempty"  jsonschema:"maximum number of notes to return (default 100)"`
 }
 
-func registerListTools(s *mcp.Server) {
+func registerListTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_list_tier",
 		Description: "List notes in a single vault tier (inbox, notes, outputs, or MOCs). " +
 			"Use to survey what's in a tier — 'what's in my inbox', 'list validated notes tagged kubernetes', 'show MOCs'. " +
 			"Optionally filter by tag, status, or type. Returns notes sorted by frontmatter.updated descending, then path. Default limit 100.",
-	}, handleListTier)
+	}, h.handleListTier)
 }
 
-func handleListTier(
+func (h *handlers) handleListTier(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in listInput,
@@ -39,7 +39,7 @@ func handleListTier(
 	if err != nil {
 		return nil, vault.Listing{}, fmt.Errorf("brain_list_tier: %w", err)
 	}
-	_, v, err := loadVault()
+	_, v, err := h.loadVault()
 	if err != nil {
 		return nil, vault.Listing{}, fmt.Errorf("brain_list_tier: %w", err)
 	}

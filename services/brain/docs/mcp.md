@@ -19,7 +19,7 @@ claude mcp list
 # expect: brain: brain mcp - ✓ Connected
 ```
 
-Vault location and index directory come from `~/.config/brain/config.yaml` (`cfg.Vault`) and `~/.config/brain/index/` respectively. The vault is your own vault repo, checked out wherever `vault:` points. Keeping it outside thismoon means the tool's history stays clean of personal-knowledge churn.
+The vault location comes from `vault:` in the config file `brain mcp` resolved at startup (`--config`, then `BRAIN_CONFIG`, then `config.yaml` under `$XDG_CONFIG_HOME/brain` or `~/.config/brain`). The indexes live in the state directory, `$XDG_STATE_HOME/brain` or `~/.local/state/brain`; an install that already built an index under `~/.config/brain` keeps it there. `config.md` beside the service has the full rules. The vault is your own vault repo, checked out wherever `vault:` points. Keeping it outside thismoon means the tool's history stays clean of personal-knowledge churn.
 
 ## Vault model
 
@@ -69,7 +69,7 @@ A `tier` input on search / count / list tools translates into a `file:^<tier>/` 
 
 ## Tools
 
-Registered tools: `brain_search`, `brain_count`, `brain_query_validate`, `brain_read`, `brain_peek`, `brain_list_tier`, `brain_backlinks`, `brain_write`, `brain_edit`, `brain_promote`.
+Registered tools: `brain_search`, `brain_semantic_search`, `brain_hybrid_search`, `brain_count`, `brain_query_validate`, `brain_read`, `brain_peek`, `brain_list_tier`, `brain_backlinks`, `brain_write`, `brain_edit`, `brain_promote`, `brain_doctor`.
 
 ### `brain_search`
 
@@ -500,6 +500,14 @@ Promote an inbox note into another tier (default `notes`): atomic file move, sta
 - Backlink rewriting matches by file stem (`[[<oldstem>]]` → `[[<newstem>]]`) and scans every `.md` under the vault, not just the target tier.
 - The MOC bullet is appended only if `moc` is set and the MOC file exists.
 
+### `brain_doctor`
+
+Run the checks `brain doctor` runs and return the same report. Read-only: it creates no directory and leaves no file behind. Call it when another tool errors or comes back empty, since a client without a shell cannot run `brain doctor`.
+
+**Input:** none.
+
+**Output:** `ok` (false when any check failed) and `checks[] {name, status, detail, fix}`. `name` is `config`, `vault`, `index-dir`, `index` or `ollama`; `status` is `ok`, `fail` or `skip`, where `skip` means an earlier failure left the check nothing to examine; `fix` names the next step for a failure. A failing check is a result, never a tool error.
+
 ## Zoekt query syntax
 
 `brain_search` and `brain_count` use [zoekt](https://github.com/sourcegraph/zoekt) query syntax:
@@ -521,7 +529,7 @@ Run `brain_query_validate` to parse-check complex queries before invoking search
 
 ## Indexing
 
-The zoekt index lives at `~/.config/brain/index/` (resolved via `search.DefaultIndexDir()`). The MCP `brain_search` and `brain_count` handlers call `ensureIndex` before every call:
+The zoekt index lives at `index/` in the state directory (resolved via `brain.IndexDir()`). The MCP `brain_search` and `brain_count` handlers call `ensureIndex` before every call:
 
 1. Compute a fingerprint of the vault (mtimes of every `.md` / `.mdx` file under the vault root).
 2. Compare to the stored state in the index directory.
@@ -543,4 +551,4 @@ To verify `brain mcp` speaks JSON-RPC correctly without involving Claude Code:
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}\n{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 1 ) | brain mcp
 ```
 
-Expected: one `initialize` response followed by a `tools/list` response listing all ten `brain_*` tools with their input and output schemas. The `sleep 1` keeps stdin open long enough for the server to flush responses before exit.
+Expected: one `initialize` response followed by a `tools/list` response listing all thirteen `brain_*` tools with their input and output schemas. The `sleep 1` keeps stdin open long enough for the server to flush responses before exit.

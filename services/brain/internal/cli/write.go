@@ -42,7 +42,7 @@ exit code 4 when the note already exists. With -o json, prints {"path": ...}.`,
 			if opts.Body, err = readMaybeStdin(cmd.InOrStdin(), body); err != nil {
 				return fmt.Errorf("read stdin: %w", err)
 			}
-			_, v, err := openVault()
+			_, v, err := a.openVault()
 			if err != nil {
 				return err
 			}

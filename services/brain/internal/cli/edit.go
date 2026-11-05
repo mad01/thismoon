@@ -62,7 +62,7 @@ At least one body or frontmatter flag must be provided. With -o json, prints
 			if opts.Append, err = readMaybeStdin(cmd.InOrStdin(), appendBody); err != nil {
 				return fmt.Errorf("read append: %w", err)
 			}
-			_, v, err := openVault()
+			_, v, err := a.openVault()
 			if err != nil {
 				return err
 			}

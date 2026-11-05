@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/services/brain/internal/config"
 	"github.com/mad01/thismoon/services/brain/internal/search"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
@@ -59,6 +60,8 @@ func classify(err error) (int, string) {
 		errors.Is(err, vault.ErrInvalidPath),
 		errors.Is(err, vault.ErrUnknownTier):
 		return exitUsage, "usage"
+	case errors.Is(err, config.ErrInvalid):
+		return exitUsage, "invalid_config"
 	case errors.Is(err, vault.ErrNotFound):
 		return exitNotFound, "not_found"
 	case errors.Is(err, vault.ErrExists):

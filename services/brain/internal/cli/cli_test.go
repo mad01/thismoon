@@ -13,10 +13,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/services/brain/internal/doctor"
 	"github.com/mad01/thismoon/services/brain/internal/hybrid"
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
 	"github.com/mad01/thismoon/services/brain/internal/search"
 	"github.com/mad01/thismoon/services/brain/internal/semantic"
+	"github.com/mad01/thismoon/services/brain/internal/testhome"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
@@ -58,14 +60,13 @@ Collides with notes/alpha.md on promote.
 `,
 }
 
-// setupCLI points HOME at a temp dir, writes a brain config for a fresh
-// fixture vault and returns the vault root. extraConfig is appended to the
-// config file.
+// setupCLI isolates HOME and the XDG and brain variables, writes a brain
+// config at the default path for a fresh fixture vault and returns the vault
+// root. extraConfig is appended to the config file.
 func setupCLI(t *testing.T, extraConfig string) string {
 	t.Helper()
-	home := t.TempDir()
+	home := testhome.Isolate(t)
 	root := t.TempDir()
-	t.Setenv("HOME", home)
 	cfgDir := filepath.Join(home, ".config", "brain")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -74,6 +75,13 @@ func setupCLI(t *testing.T, extraConfig string) string {
 	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	seedVault(t, root)
+	return root
+}
+
+// seedVault creates the tier directories under root and writes fixtureNotes.
+func seedVault(t *testing.T, root string) {
+	t.Helper()
 	for _, tier := range vault.AllTiers {
 		if err := os.MkdirAll(filepath.Join(root, tier.Dir()), 0o755); err != nil {
 			t.Fatal(err)
@@ -84,7 +92,6 @@ func setupCLI(t *testing.T, extraConfig string) string {
 			t.Fatal(err)
 		}
 	}
-	return root
 }
 
 type result struct {
@@ -92,7 +99,7 @@ type result struct {
 	code           int
 }
 
-func brain(t *testing.T, stdin string, args ...string) result {
+func runBrain(t *testing.T, stdin string, args ...string) result {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	code := run(args, strings.NewReader(stdin), &stdout, &stderr)
@@ -235,7 +242,7 @@ func TestExitCodes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			setupCLI(t, "")
-			got := brain(t, "", tc.args...)
+			got := runBrain(t, "", tc.args...)
 			if got.code != tc.wantCode {
 				t.Fatalf("exit = %d, want %d; stderr %q", got.code, tc.wantCode, got.stderr)
 			}
@@ -257,8 +264,8 @@ func TestExitCodes(t *testing.T) {
 }
 
 func TestMissingConfigIsGenericError(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	got := brain(t, "", "read", "notes/alpha.md")
+	testhome.Isolate(t)
+	got := runBrain(t, "", "read", "notes/alpha.md")
 	if got.code != exitError || !strings.Contains(got.stderr, "brain doctor") {
 		t.Errorf("exit %d, stderr %q; want 1 pointing at brain doctor", got.code, got.stderr)
 	}
@@ -266,7 +273,7 @@ func TestMissingConfigIsGenericError(t *testing.T) {
 
 func TestNotFoundHintNamesTier(t *testing.T) {
 	setupCLI(t, "")
-	got := brain(t, "", "read", "notes/nope.md")
+	got := runBrain(t, "", "read", "notes/nope.md")
 	want := "(find it with: brain list --tier notes, or brain search 'f:nope')"
 	if !strings.Contains(got.stderr, want) {
 		t.Errorf("stderr = %q, want hint %q", got.stderr, want)
@@ -288,7 +295,7 @@ func TestJSONErrorEnvelope(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.wantCode, func(t *testing.T) {
 			setupCLI(t, "")
-			got := brain(t, "", append(tc.args, "-o", "json")...)
+			got := runBrain(t, "", append(tc.args, "-o", "json")...)
 			env := decodeStrict[errorEnvelope](t, got.stdout)
 			if env.Error.Code != tc.wantCode {
 				t.Errorf("code = %q, want %q", env.Error.Code, tc.wantCode)
@@ -451,7 +458,7 @@ func TestJSONOutput(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			setupCLI(t, "")
-			got := brain(t, tc.stdin, append(tc.args, "-o", "json")...)
+			got := runBrain(t, tc.stdin, append(tc.args, "-o", "json")...)
 			if got.code != exitOK {
 				t.Fatalf("exit %d, stderr %q", got.code, got.stderr)
 			}
@@ -510,11 +517,11 @@ func hashVector(text string) []float32 {
 func TestSemanticJSONOutput(t *testing.T) {
 	srv := fakeOllama(t)
 	setupCLI(t, "semantic:\n  enabled: true\n  ollama_url: "+srv.URL+"\n")
-	if got := brain(t, "", "index"); got.code != exitOK {
+	if got := runBrain(t, "", "index"); got.code != exitOK {
 		t.Fatalf("index: exit %d, stderr %q", got.code, got.stderr)
 	}
 
-	got := brain(t, "", "semantic-search", "kubernetes capture", "-o", "json")
+	got := runBrain(t, "", "semantic-search", "kubernetes capture", "-o", "json")
 	if got.code != exitOK {
 		t.Fatalf("semantic-search: exit %d, stderr %q", got.code, got.stderr)
 	}
@@ -523,7 +530,7 @@ func TestSemanticJSONOutput(t *testing.T) {
 		t.Errorf("semantic result = %+v", sem)
 	}
 
-	got = brain(t, "", "hybrid-search", "kubernetes", "-o", "json")
+	got = runBrain(t, "", "hybrid-search", "kubernetes", "-o", "json")
 	if got.code != exitOK {
 		t.Fatalf("hybrid-search: exit %d, stderr %q", got.code, got.stderr)
 	}
@@ -535,7 +542,7 @@ func TestSemanticJSONOutput(t *testing.T) {
 
 func TestTextOutputBacklinksAndPeek(t *testing.T) {
 	setupCLI(t, "")
-	got := brain(t, "", "backlinks", "notes/alpha.md")
+	got := runBrain(t, "", "backlinks", "notes/alpha.md")
 	for _, want := range []string{
 		"inbound (2):",
 		"  inbox/raw.md:10: A kubernetes capture, see [[alpha]].",
@@ -547,7 +554,7 @@ func TestTextOutputBacklinksAndPeek(t *testing.T) {
 			t.Errorf("backlinks text missing %q:\n%s", want, got.stdout)
 		}
 	}
-	got = brain(t, "", "peek", "notes/alpha.md", "--lines", "1")
+	got = runBrain(t, "", "peek", "notes/alpha.md", "--lines", "1")
 	want := "backlinks: 2\n---\n"
 	if !strings.HasPrefix(got.stdout, want) ||
 		!strings.HasSuffix(got.stdout, "---\nAlpha body about kubernetes.\n") {
@@ -607,7 +614,7 @@ func TestParseSets(t *testing.T) {
 
 func TestEditAndPromoteKeepUnknownKeys(t *testing.T) {
 	root := setupCLI(t, "")
-	got := brain(
+	got := runBrain(
 		t,
 		"",
 		"edit",
@@ -624,7 +631,7 @@ func TestEditAndPromoteKeepUnknownKeys(t *testing.T) {
 	if got.code != exitOK {
 		t.Fatalf("edit: exit %d, stderr %q", got.code, got.stderr)
 	}
-	if got = brain(t, "", "promote", "inbox/raw.md"); got.code != exitOK {
+	if got = runBrain(t, "", "promote", "inbox/raw.md"); got.code != exitOK {
 		t.Fatalf("promote: exit %d, stderr %q", got.code, got.stderr)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "notes", "raw-capture.md"))
@@ -664,13 +671,13 @@ func TestDoctor(t *testing.T) {
 			name: "healthy",
 			setup: func(t *testing.T) {
 				setupCLI(t, "")
-				if got := brain(t, "", "index"); got.code != exitOK {
+				if got := runBrain(t, "", "index"); got.code != exitOK {
 					t.Fatalf("index: %q", got.stderr)
 				}
 			},
 			wantCode: exitOK,
 			wantStatus: map[string]string{
-				"config": statusOK, "vault": statusOK, "index-dir": statusOK, "index": statusOK, "ollama": statusSkip,
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusOK, "ollama": doctor.StatusSkip,
 			},
 		},
 		{
@@ -678,7 +685,7 @@ func TestDoctor(t *testing.T) {
 			setup:    func(t *testing.T) { setupCLI(t, "") },
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": statusOK, "vault": statusOK, "index-dir": statusOK, "index": statusFail, "ollama": statusSkip,
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusFail, "ollama": doctor.StatusSkip,
 			},
 		},
 		{
@@ -691,15 +698,15 @@ func TestDoctor(t *testing.T) {
 			},
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": statusOK, "vault": statusFail, "index-dir": statusOK, "index": statusSkip, "ollama": statusSkip,
+				"config": doctor.StatusOK, "vault": doctor.StatusFail, "index-dir": doctor.StatusOK, "index": doctor.StatusSkip, "ollama": doctor.StatusSkip,
 			},
 		},
 		{
 			name:     "no config",
-			setup:    func(t *testing.T) { t.Setenv("HOME", t.TempDir()) },
+			setup:    func(t *testing.T) { testhome.Isolate(t) },
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": statusFail, "vault": statusSkip, "index-dir": statusSkip, "index": statusSkip, "ollama": statusSkip,
+				"config": doctor.StatusFail, "vault": doctor.StatusSkip, "index-dir": doctor.StatusSkip, "index": doctor.StatusSkip, "ollama": doctor.StatusSkip,
 			},
 		},
 		{
@@ -707,32 +714,32 @@ func TestDoctor(t *testing.T) {
 			setup:    func(t *testing.T) { setupCLI(t, "semantic:\n  enabled: true\n  ollama_url: "+dead.URL+"\n") },
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": statusOK, "vault": statusOK, "index-dir": statusOK, "index": statusFail, "ollama": statusFail,
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusFail, "ollama": doctor.StatusFail,
 			},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.setup(t)
-			got := brain(t, "", "doctor", "-o", "json")
+			got := runBrain(t, "", "doctor", "-o", "json")
 			if got.code != tc.wantCode {
 				t.Fatalf("exit %d, want %d; stderr %q", got.code, tc.wantCode, got.stderr)
 			}
-			report := decodeStrict[doctorReport](t, got.stdout)
+			report := decodeStrict[doctor.Report](t, got.stdout)
 			if report.OK != (tc.wantCode == exitOK) {
 				t.Errorf("ok = %v", report.OK)
 			}
 			status := map[string]string{}
 			for _, c := range report.Checks {
 				status[c.Name] = c.Status
-				if c.Status == statusFail && c.Fix == "" && c.Name != "index" {
+				if c.Status == doctor.StatusFail && c.Fix == "" && c.Name != "index" {
 					t.Errorf("check %s failed without a fix", c.Name)
 				}
 			}
 			if !mapsEqual(status, tc.wantStatus) {
 				t.Errorf("statuses = %v, want %v", status, tc.wantStatus)
 			}
-			text := brain(t, "", "doctor")
+			text := runBrain(t, "", "doctor")
 			if lines := strings.Count(text.stdout, "\n"); lines != len(tc.wantStatus) {
 				t.Errorf(
 					"text doctor printed %d lines, want one per check:\n%s",
@@ -757,7 +764,7 @@ func mapsEqual(a, b map[string]string) bool {
 }
 
 func TestDocs(t *testing.T) {
-	got := brain(t, "", "docs")
+	got := runBrain(t, "", "docs")
 	if got.code != exitOK {
 		t.Fatalf("exit %d", got.code)
 	}

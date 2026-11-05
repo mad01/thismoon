@@ -30,7 +30,7 @@ brain_promote document.`,
 				return err
 			}
 			opts.TargetTier = t
-			_, v, err := openVault()
+			_, v, err := a.openVault()
 			if err != nil {
 				return err
 			}

@@ -1,7 +1,10 @@
 # brain CLI guide for agents
 
 brain searches and edits a local markdown vault (Obsidian-style notes with YAML
-frontmatter). Every command reads `~/.config/brain/config.yaml` (`vault: <path>`).
+frontmatter). Every command reads one config file (`vault: <path>`): `--config`,
+else `$BRAIN_CONFIG`, else `config.yaml` in `$XDG_CONFIG_HOME/brain` or
+`~/.config/brain`. Indexes live in `$XDG_STATE_HOME/brain` or
+`~/.local/state/brain`.
 Paths are vault-relative and include the tier directory: `notes/topic.md`, not
 `topic.md`. Run `brain doctor` first when anything fails.
 
@@ -18,6 +21,8 @@ Paths are vault-relative and include the tier directory: `notes/topic.md`, not
 
 - `-o, --output text|json`: text (default) or one JSON document on stdout.
   JSON shapes match the brain MCP tools.
+- `--config <path>`: the config file (env `BRAIN_CONFIG`). A file that exists
+  but does not parse or names no vault fails every command with exit 2.
 
 ## Commands
 
@@ -36,7 +41,7 @@ Paths are vault-relative and include the tier directory: `notes/topic.md`, not
 | `edit <path>` | change body or frontmatter | `--body` or `--append` (`-` reads stdin), `--title --status --type --source --tag --alias --evidence --set --unset` |
 | `promote <path>` | move an inbox note to notes/ | `--title` (rename) `--tier` `--moc <MOC path>` |
 | `index` | rebuild indexes (search does this when stale) | `--force --literal-only` |
-| `doctor` | check config, vault, index, Ollama | |
+| `doctor` | check config, vault, index, Ollama; prints the paths in effect | |
 | `docs` | print this guide | |
 
 Search output is one note path per line; `-m content` prints
@@ -68,6 +73,7 @@ edit; `updated` is always refreshed on edit.
 | 0 | | success | |
 | 1 | `error` | anything else (config, I/O, Ollama) | `brain doctor` |
 | 2 | `usage` | bad flag, argument, path or tier | `brain <cmd> --help` |
+| 2 | `invalid_config` | config file does not parse or names no vault | fix the file the message names |
 | 3 | `not_found` | note or title does not exist | `brain list --tier <t>`, `brain search 'f:<name>'` |
 | 4 | `already_exists` | write or promote target exists | pick another `--title` or `--filename` |
 | 5 | `invalid_query` | zoekt query does not parse | `brain query '<query>'` |

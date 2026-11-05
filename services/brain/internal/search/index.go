@@ -210,16 +210,6 @@ func IsStale(state *IndexState, fingerprint string) bool {
 	return state.Fingerprint == "" || state.Fingerprint != fingerprint
 }
 
-// DefaultIndexDir returns the default index directory path at
-// ~/.config/brain/index/.
-func DefaultIndexDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("cannot determine home directory: %w", err)
-	}
-	return filepath.Join(home, ".config", "brain", "index"), nil
-}
-
 // IndexDirSize returns the total size of files in the index directory.
 func IndexDirSize(indexDir string) (int64, error) {
 	var size int64

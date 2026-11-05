@@ -11,12 +11,17 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mad01/thismoon/kit/confdir"
+	"github.com/mad01/thismoon/kit/envdefault"
+	"github.com/mad01/thismoon/services/brain"
 )
 
 // app holds what every subcommand shares: the output format chosen with the
-// persistent -o flag.
+// persistent -o flag and the config file chosen with --config.
 type app struct {
-	output string
+	output     string
+	configPath string
 }
 
 // Execute runs the brain CLI on os.Args and returns the process exit code.
@@ -70,8 +75,11 @@ Subcommands:
 Every command takes -o json for machine-readable output. Exit codes: 0 ok,
 1 error, 2 usage, 3 not found, 4 already exists, 5 invalid query.
 
-Config lives at ~/.config/brain/config.yaml. Indexes live at ~/.config/brain/index/
-(literal) and ~/.config/brain/semantic/ (when semantic.enabled=true).`,
+The config file is --config, else $BRAIN_CONFIG, else config.yaml under
+$XDG_CONFIG_HOME/brain or ~/.config/brain. Indexes live under
+$XDG_STATE_HOME/brain or ~/.local/state/brain (index/ and semantic/); an
+install that already indexed under ~/.config/brain keeps using it.
+brain doctor prints the paths in effect.`,
 		Args:          rootArgs,
 		RunE:          func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 		SilenceUsage:  true,
@@ -80,16 +88,22 @@ Config lives at ~/.config/brain/config.yaml. Indexes live at ~/.config/brain/ind
 			if a.output != outputText && a.output != outputJSON {
 				return usageErrorf("-o must be %s or %s, got %q", outputText, outputJSON, a.output)
 			}
-			return nil
+			// Env values reach Go without shell expansion, so expand ~ here.
+			var err error
+			a.configPath, err = confdir.Expand(a.configPath)
+			return err
 		},
 	}
 	root.PersistentFlags().
 		StringVarP(&a.output, "output", "o", outputText, "output format: text or json")
+	root.PersistentFlags().StringVar(&a.configPath, "config",
+		envdefault.String(brain.ConfigEnv, defaultConfigPath()),
+		"config file (env "+brain.ConfigEnv+")")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &usageError{err: err}
 	})
 	root.AddCommand(
-		newIndexCmd(),
+		newIndexCmd(a),
 		newSearchCmd(a),
 		newSemanticSearchCmd(a),
 		newHybridSearchCmd(a),
@@ -104,7 +118,7 @@ Config lives at ~/.config/brain/config.yaml. Indexes live at ~/.config/brain/ind
 		newListCmd(a),
 		newDocsCmd(),
 		newDoctorCmd(a),
-		newMCPCmd(),
+		newMCPCmd(a),
 		newVersionCmd(a),
 	)
 	return root
@@ -151,4 +165,14 @@ func maxArgs(n int) cobra.PositionalArgs {
 		}
 		return nil
 	}
+}
+
+// defaultConfigPath resolves config.yaml in brain's config directory. When the
+// home directory cannot be resolved it returns the ~-prefixed form, so the
+// failure surfaces in PersistentPreRunE, which can return an error.
+func defaultConfigPath() string {
+	if path, err := brain.DefaultConfigPath(); err == nil {
+		return path
+	}
+	return "~/.config/" + brain.Component + "/" + brain.ConfigFile
 }

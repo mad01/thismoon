@@ -6,7 +6,7 @@ The vault brain indexes and serves. These terms apply to the files under
 ## Language
 
 **Vault**:
-The directory of markdown notes brain indexes and serves, named by `vault:` in `~/.config/brain/config.yaml`. It holds the four Tier directories, and the walk skips `.git`, `.obsidian`, `.trash` and `attachments`. The vault is its own repo, kept apart from the tool.
+The directory of markdown notes brain indexes and serves, named by `vault:` in the brain config file (`config.md` says where it lives). It holds the four Tier directories, and the walk skips `.git`, `.obsidian`, `.trash` and `attachments`. The vault is its own repo, kept apart from the tool.
 _Avoid_: brain (that is the tool), data repo
 
 **Tier**:

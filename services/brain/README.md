@@ -38,12 +38,12 @@ The research loop: capture a finding to `inbox/` and check its empirical claims 
 
 ## Configuration
 
-`~/.config/brain/config.yaml`:
+`~/.config/brain/config.yaml` (or `$XDG_CONFIG_HOME/brain/config.yaml`; `--config` and `BRAIN_CONFIG` point elsewhere):
 
 ```yaml
 vault: ~/path/to/your/vault
 ```
 
-The literal index lives at `~/.config/brain/index/` and the semantic index at `~/.config/brain/semantic/`. Semantic indexing needs a local Ollama with `nomic-embed-text` pulled; without it, `brain index` falls back to the literal index alone.
+The indexes live in `~/.local/state/brain` (or `$XDG_STATE_HOME/brain`). Semantic indexing needs a local Ollama with `nomic-embed-text` pulled; without it, `brain index` falls back to the literal index alone. [config.md](config.md) has every key, path and environment variable.
 
 Full tool reference: [docs/mcp.md](docs/mcp.md).
