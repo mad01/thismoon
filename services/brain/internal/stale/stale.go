@@ -165,9 +165,9 @@ func (b *builder) reasons(n *vault.NoteView) []Reason {
 		)
 	}
 	if status == lifecycle.Disputed {
-		detail := "disputed"
-		if f.StatusReason != "" {
-			detail += ": " + f.StatusReason
+		detail := f.StatusReason
+		if detail == "" {
+			detail = "no reason recorded"
 		}
 		out = append(out, Reason{ReasonDisputed, detail, f.StatusAt})
 	}

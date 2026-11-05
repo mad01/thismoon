@@ -144,8 +144,8 @@ func duplicateError(title string, dups []Duplicate) error {
 		names = append(names, d.String())
 	}
 	return fmt.Errorf(
-		"%w: %q looks like %s; nothing was written (%s, or name each in distinct_from, "+
-			"--distinct-from on the CLI, to write it anyway)",
+		"%w: %q looks like %s; nothing was written (%s, or list each in distinct_from "+
+			"(--distinct-from on the CLI) to write it anyway)",
 		vault.ErrPossibleDuplicate, title, strings.Join(names, ", "), extendHint(dups),
 	)
 }

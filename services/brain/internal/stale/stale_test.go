@@ -99,6 +99,10 @@ func TestBuildGroupsTheQueueByOwner(t *testing.T) {
 	if q.Total != 4 || q.Drift {
 		t.Errorf("total %d drift %v, want 4 and false", q.Total, q.Drift)
 	}
+	if r := q.Groups[0].Notes[0].Reasons[0]; r.Detail != "one machine only" ||
+		r.Since != "2026-10-20" {
+		t.Errorf("disputed reason = %+v, want the status_reason and status_at", r)
+	}
 	dep := q.Groups[2].Notes[1].Reasons[0]
 	if !strings.Contains(dep.Detail, "main:notes/retracted.md") || dep.Since != "2026-10-01" {
 		t.Errorf("dependent reason = %+v", dep)
