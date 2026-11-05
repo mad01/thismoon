@@ -30,6 +30,9 @@ const (
 	// KindHashChanged is an external source whose content no longer
 	// matches its content_hash.
 	KindHashChanged = "hash-changed"
+	// KindBadHash is a content_hash that is not a full digest of an
+	// algorithm drift computes, so no fetch could ever match or miss it.
+	KindBadHash = "bad-hash"
 	// KindUnresolved is a source drift could not check: its repo is not
 	// checked out, its commit is not there, the fetch failed. It is not
 	// drift.
@@ -119,8 +122,15 @@ func (c *Checker) Sources(ctx context.Context, sources []lifecycle.Source) []Fin
 	return out
 }
 
-// external checks one URL source online, or counts it as skipped.
+// external checks one URL source online, or counts it as skipped. A
+// malformed content_hash is a finding either way, since no fetch is needed
+// to see it.
 func (c *Checker) external(ctx context.Context, s lifecycle.Source) []Finding {
+	if s.ContentHash != "" {
+		if _, err := parseContentHash(s.ContentHash); err != nil {
+			return []Finding{{Kind: KindBadHash, Source: s.URL, Message: err.Error()}}
+		}
+	}
 	if !c.opts.Online {
 		c.offline++
 		return nil

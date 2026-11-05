@@ -124,12 +124,10 @@ func TestExternalSources(t *testing.T) {
 	defer srv.Close()
 	sources := []lifecycle.Source{
 		{URL: srv.URL + "/stable", ContentHash: "sha256:" + pinned},
-		{URL: srv.URL + "/stable", ContentHash: pinned[:16]},
 		{URL: srv.URL + "/edited", ContentHash: "sha256:" + pinned},
 		{URL: srv.URL + "/gone", Archive: "https://archive.example/gone"},
 		{URL: srv.URL + "/missing"},
 		{URL: srv.URL + "/down"},
-		{URL: srv.URL + "/stable", ContentHash: "md5:0123456789abcdef"},
 	}
 	offline := New(Options{})
 	if got := offline.Sources(context.Background(), sources); len(got) != 0 ||
@@ -137,7 +135,7 @@ func TestExternalSources(t *testing.T) {
 		t.Fatalf("offline = %+v (skipped %d), want no fetch", got, offline.offline)
 	}
 	got := New(Options{Online: true}).Sources(context.Background(), sources)
-	want := []string{KindHashChanged, KindGone, KindGone, KindUnresolved, KindUnresolved}
+	want := []string{KindHashChanged, KindGone, KindGone, KindUnresolved}
 	if kinds := kindsOf(got); strings.Join(kinds, ",") != strings.Join(want, ",") {
 		t.Fatalf("kinds = %v, want %v (%+v)", kinds, want, got)
 	}
@@ -237,5 +235,51 @@ func TestGitCallsAreBoundedAndPromptless(t *testing.T) {
 		if !strings.Contains(string(env), want+"\n") {
 			t.Errorf("git ran without %s", want)
 		}
+	}
+}
+
+func TestContentHashIsComparedInFull(t *testing.T) {
+	sum := sha256.Sum256([]byte("stable page"))
+	pinned := hex.EncodeToString(sum[:])
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("stable page"))
+	}))
+	defer srv.Close()
+	tests := []struct {
+		name, contentHash, want string
+	}{
+		{"full digest", "sha256:" + pinned, ""},
+		{"no prefix means sha256", pinned, ""},
+		{"case and hyphen ignored", "SHA-256:" + strings.ToUpper(pinned), ""},
+		{"empty digest", "sha256:", KindBadHash},
+		{"one character", "sha256:" + pinned[:1], KindBadHash},
+		{"a prefix of the digest", pinned[:16], KindBadHash},
+		{"too long", pinned + "00", KindBadHash},
+		{"not hex", "sha256:" + strings.Repeat("z", 64), KindBadHash},
+		{"sha512 length for sha256", "sha256:" + strings.Repeat("0", 128), KindBadHash},
+		{"unknown algorithm", "md5:0123456789abcdef0123456789abcdef", KindBadHash},
+		{"other full digest", "sha256:" + strings.Repeat("0", 64), KindHashChanged},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := lifecycle.Source{URL: srv.URL + "/page", ContentHash: tt.contentHash}
+			got := New(Options{Online: true}).Sources(context.Background(), []lifecycle.Source{source})
+			if kinds := strings.Join(kindsOf(got), ","); kinds != tt.want {
+				t.Errorf("kinds = %q, want %q (%+v)", kinds, tt.want, got)
+			}
+		})
+	}
+}
+
+// TestBadContentHashNeedsNoFetch pins that a malformed content_hash is a
+// finding offline too, since it says nothing about the source itself.
+func TestBadContentHashNeedsNoFetch(t *testing.T) {
+	c := New(Options{})
+	got := c.Sources(context.Background(), []lifecycle.Source{
+		{URL: "https://example.invalid/a", ContentHash: "sha256:"},
+		{URL: "https://example.invalid/b", ContentHash: "sha256:" + strings.Repeat("0", 64)},
+	})
+	if len(got) != 1 || got[0].Kind != KindBadHash || !got[0].Drifted() || c.offline != 1 {
+		t.Errorf("findings = %+v (skipped %d), want one bad-hash and one skipped", got, c.offline)
 	}
 }
