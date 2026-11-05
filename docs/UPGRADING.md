@@ -4,6 +4,33 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-05 brain: `brain serve` runs sandboxed, so legacy indexes move out of `~/.config/brain`
+
+Change: thismoon #NNN. brain gains `brain serve`, the read-only web view at brain.this on port 7427. The new `recipes/brain/` builds brain as `packages.brain` and registers the t-man agent `brain-serve`, which runs serve under srt. The sandbox writes only `~/.local/state/brain`. brain keeps its state in `~/.config/brain` while `~/.config/brain/index/state.json` exists, so an install that still has its indexes there moves them first.
+
+Run, in order:
+
+1. End the agent sessions that run the brain MCP server. An MCP server on the old binary rebuilds `~/.config/brain/index/state.json` on its next search, which sends brain back to the old state directory.
+2. Merge this change, then the consuming repo's brain change right after it, with no `ralph up` in between: until both are in, both repos declare `packages.brain`. The consuming repo's change stops building brain itself and ships the srt expansion layer `~/.config/srt/brain-serve.local.json`, which grants the vault and the target of the `config.yaml` link.
+3. Move the indexes. Check first that `~/.local/state/brain` holds no `index` or `semantic` directory, since `mv` would nest them. Skip the second `mv` when the semantic layer is off.
+
+   ```sh
+   mkdir -p ~/.local/state/brain
+   mv ~/.config/brain/index ~/.local/state/brain/index
+   mv ~/.config/brain/semantic ~/.local/state/brain/semantic
+   ```
+
+   The probe file moves with `index`. A per-vault store, `semantic/<vault>/` with a `manifest.json` in it, keeps its embeddings. A store without a manifest sits at the root of `semantic/`, and the next `brain index` embeds that vault again from scratch. Files left at the root of `index/` and `semantic/` are unused after that and can be deleted. If the config sets `semantic.index_dir` under `~/.config/brain`, move that directory's `<vault>/` stores into `~/.local/state/brain/semantic/` and drop the key.
+4. `ralph up`, then `t-man restart brain-serve`, so serve starts on the moved state.
+5. Start new agent sessions, so the MCP server runs the new binary.
+
+brain now commits each change it makes to a vault that is a git repo, staging only the paths it touched. It never pushes. `autocommit: false` on a vault entry turns the commits off.
+
+Verify:
+
+1. `curl -s 127.0.0.1:7427/version` reports the merged commit.
+2. `brain doctor` exits 0. Its `index-dir` line names `~/.local/state/brain/index`, and `serve-reachable`, `version-skew`, `serve-vaults` and `serve-state-dir` are ok. A `serve-vaults` failure on an unreadable vault means the expansion layer lacks that path; `srtspec explain brain-serve` prints what serve may read.
+
 ## 2026-11-01 belt: read-size also fires on `csl_read`, and its matcher must name the tool
 
 Change: thismoon #363. belt's read-size hint now also fires after a `csl_read` call that reads a file of 300 lines or more with no `start_line` and no `end_line`. The advice is the same as after a Read. belt only sees the calls its PostToolUse matcher routes to `belt hint read`, so the consuming repo's matcher has to name the MCP tool too. A Read and a `csl_read` of one file now share one nudge per agent per session. The seen-file marker now names the file by repo and repo-relative path. A session that spans the upgrade can therefore get the hint once more for a file it already saw it on.

@@ -53,6 +53,10 @@ _Avoid_: link (on its own), reference
 A Wikilink no note resolves to. Its target exists nowhere the resolver looks, or only in a vault it may not look in, such as a private note named from a shared vault. A target is never matched by prefix, so `[[team]]` does not reach `team-guide`. The graph shows one dangling node per target.
 _Avoid_: broken link, orphan (a note nothing links to)
 
+**Topic node**:
+A graph node that stands for a tag instead of a Note, with the id `tag:<name>`. The graph has them only when asked (`--tags-as-nodes` on the CLI, `topics=1` from `brain serve`), and then a `tag` edge joins each note to the topic node of every tag it carries. A topic node has no file, so no Note ref names it.
+_Avoid_: tag node, category, cluster
+
 **Backlink**:
 A line in another Note with a Wikilink that resolves to this note: an inbound link. `brain_backlinks` reports a note's backlinks alongside its own outbound wikilinks, each with the note it resolves to or marked dangling.
 _Avoid_: mention, reference
@@ -72,6 +76,10 @@ _Avoid_: move, publish, graduate
 **Shared promotion**:
 Sharing a validated Note of a Private vault through `brain promote <note> --to <shared vault>`. brain checks a copy against the shared vault's Vault policy and the secret scan, and opens a pull request that adds it under the same tier, path and Note id. The copy drops the private-only fields (`status_reason`, `shared_pr`, `captured_by`, `distinct_from`, `expires_at`). The private note goes to status `promoting` with `shared_pr` naming the pull request until Sync settles it: merged, the private copy is deleted and its links resolve to the shared one; closed, it is `validated` again. brain never edits a shared MOC; the note's `mocs` field lists the MOCs it belongs in.
 _Avoid_: publish, upload, export, share (on its own)
+
+**Promotion queue**:
+The Notes of the Private vaults with a Shared promotion still open: status `promoting`, with `shared_pr` naming the pull request. `brain serve` lists them with their `status_at`. Nothing stores the queue; it is read from the notes, and a note leaves it when Sync finds its pull request merged or closed.
+_Avoid_: pending promotions, outbox, pull request list
 
 **Status**:
 Where a Note stands in its lifecycle, held in the `status` field: `raw`, `validated`, `promoting`, `disputed`, `superseded`, `retracted` or `withdrawn`. An empty field means the default of the note's Tier. A write dates a raw note with `expires_at` (30 days) and a validated one with `review_by` (from its `volatility`: 90 days when `high`, 365 otherwise), and every change of status records `status_at`. `expired` is computed, never stored: a raw note past `expires_at`, or a validated note past `review_by`.
@@ -106,7 +114,7 @@ A pinned source of a Note that no longer matches what it points at, as `brain dr
 _Avoid_: staleness (that is review_by), rot, breakage
 
 **Stale queue**:
-The Notes that need a human look, as `brain stale` computes them on each run; nothing stores it. A note is in it when its `review_by` (for a raw note, its `expires_at`) has passed or it is disputed. A Dependent is in it too, and so is a note with Drift when the caller asks. Revoked notes never are.
+The Notes that need a human look, as `brain stale` computes them on each run; nothing stores it. A note is in it when its `review_by` (for a raw note, its `expires_at`) has passed or it is disputed. A Dependent is in it too, and so is a note with Drift when the caller asks. Revoked notes never are. `brain serve` shows the queue without Drift and marks each note in it `stale` in the graph.
 _Avoid_: review list, backlog, todo
 
 **Dependent**:
@@ -144,3 +152,7 @@ _Avoid_: auto-save, snapshot, sync (that is Sync)
 **Sync**:
 `brain sync`: per Vault with a remote, a fast-forward pull, then the settling of each `promoting` note through its pull request's state, then a push of each Private vault that is ahead. A dirty or diverged vault is refused with a hint, never stashed, reset or merged.
 _Avoid_: refresh (an index refresh), pull or push (each one step of it)
+
+**Layout key**:
+The sha256 that names one computed graph layout: the layout version, each Vault's `name|fingerprint` and the topics flag. A change to any vault makes a new key. `brain serve` caches the node positions the browser computed under their key in the state directory's `layout/`, keeping the newest three. It refuses positions posted under a key that is no longer current. The browser polls the key and redraws when it changes.
+_Avoid_: cache key (on its own), layout id, graph version

@@ -1,6 +1,6 @@
-# brain, local markdown knowledge base (CLI + MCP)
+# brain, local markdown knowledge base (CLI + MCP + web)
 
-Go CLI and MCP stdio server over Obsidian-style markdown vaults. It indexes each vault with zoekt for literal search and chromem-go for semantic search on Ollama embeddings, and fuses the two for hybrid search. brain is the tool only: the content lives in vault repos checked out wherever the config points, typically one private vault plus a shared team vault that is read-only here. Terms (vault, private, local-only, shared and default vault, note ref, note id, tier, note, stem, wikilink, backlink, MOC, evidence tier, promotion, shared promotion, status, revoked note, tombstone, citation, classification, vault policy, check, similar note, autocommit, sync) are defined in `CONTEXT.md` beside this file. The note lifecycle, git vaults and shared promotion are ADR-0030.
+Go CLI, MCP stdio server and `brain serve` web view over Obsidian-style markdown vaults. It indexes each vault with zoekt for literal search and chromem-go for semantic search on Ollama embeddings, and fuses the two for hybrid search. brain is the tool only: the content lives in vault repos checked out wherever the config points, typically one private vault plus a shared team vault that is read-only here. Terms (vault, private, local-only, shared and default vault, note ref, note id, tier, note, stem, wikilink, backlink, MOC, evidence tier, promotion, shared promotion, status, revoked note, tombstone, citation, classification, vault policy, check, similar note, autocommit, sync, stale queue, promotion queue, topic node, layout key) are defined in `CONTEXT.md` beside this file. The note lifecycle, git vaults and shared promotion are ADR-0030.
 
 ## Module layout
 
@@ -10,7 +10,7 @@ brain/
   config.md           - config file, precedence, paths, env vars, parse-failure posture
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
-    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, capture, edit, promote, supersede, retract, withdraw, flag, inbox, drift, stale, check, similar, sync, list, migrate, docs, doctor, mcp, version
+    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, capture, edit, promote, supersede, retract, withdraw, flag, inbox, drift, stale, check, similar, sync, list, migrate, docs, doctor, mcp, serve, version
     check/            - brain check: the rules, the vault's .brain/policy.yaml, the report
     drift/            - brain drift: code refs checked in local checkouts (git), external sources fetched (--online)
     stale/            - brain stale: the computed review queue, grouped by CODEOWNERS owner, steward or unowned
@@ -32,12 +32,15 @@ brain/
     hybrid/           - reciprocal rank fusion of literal and semantic results
     rerank/           - optional LLM rerank of fused results
     mcpserver/        - MCP tool handlers, thin adapters over the packages above
+    server/           - brain serve: the HTTP API of docs/serve.md over library and vault, the layout cache in the state dir's layout/
+    server/ui/        - the brain.this UI embedded in the binary: shell.html, app.js, graph.js, the graph bundle and its SHA256SUMS in assets/
     testhome/         - test helper isolating HOME, XDG and BRAIN_CONFIG
     testgit/          - test helper running git in a test's own temp repos and bare remotes
     testgh/           - test helper putting a fake gh on PATH that records its argv
   docs/cli.md         - agent CLI guide, embedded and printed by `brain docs`
   docs/lifecycle.md   - statuses, revocation, check and freshness, printed by `brain docs lifecycle`
   docs/sharing.md     - git vaults, sync, promote --to, edit --pr, similar, printed by `brain docs sharing`
+  docs/serve.md       - the brain serve HTTP API and UI contract: routes, JSON shapes, layout, browser globals
   examples/shared-vault/ - a shared vault's repo to copy: policy, CODEOWNERS, CI workflow; a test keeps it passing check
   docs/mcp.md         - full MCP tool reference (inputs, outputs, evidence scheme)
 ```
@@ -48,6 +51,7 @@ brain/
 make build      # ./brain, linked with $(BUILDINFO_LDFLAGS)
 make test       # go test ./...
 make lint       # golangci-lint, using the repo-root .golangci.yml
+make test-js    # the UI's JavaScript tests under node's test runner (CI runs them too)
 make install    # copies to ~/code/bin/brain and re-signs on macOS
 ```
 
@@ -59,7 +63,7 @@ Tests never reach the network, the real `gh` or a real checkout. A git test call
 
 ## Config and state
 
-`config.md` is the reference. In short: the config file is `--config`, then `BRAIN_CONFIG`, then `config.yaml` in `confdir.Dir("brain")`. It names one vault (`vault: <path>`, loaded as the vault `default`) or a `vaults:` list with `name`, `path`, `default` and `shared`. State lives in `brain.StateDir()`, `$XDG_STATE_HOME/brain` or `~/.local/state/brain`, with one `index/<vault>/` (shards and `state.json`) and `semantic/<vault>/` per vault, the lock files in `locks/` and the temporary pull request worktrees in `worktrees/`. A vault entry may set `autocommit: false`. Every index refresh goes through `library`, which takes the vault's literal or semantic lock, so the CLI and the MCP server never build one index at once. The semantic store keeps a `manifest.json` (settings, fingerprint, a content hash per note), so a sync re-embeds only changed notes and purges deleted ones. An install whose `~/.config/brain/index/state.json` exists keeps `~/.config/brain`, unless `XDG_STATE_HOME` is set. The probe is that file because only a finished `brain index` writes it, while provisioning links `config.yaml` into `~/.config/brain` on every machine. A present but invalid config fails every command with exit 2.
+`config.md` is the reference. In short: the config file is `--config`, then `BRAIN_CONFIG`, then `config.yaml` in `confdir.Dir("brain")`. It names one vault (`vault: <path>`, loaded as the vault `default`) or a `vaults:` list with `name`, `path`, `default` and `shared`. State lives in `brain.StateDir()`, `$XDG_STATE_HOME/brain` or `~/.local/state/brain`, with one `index/<vault>/` (shards and `state.json`) and `semantic/<vault>/` per vault, the lock files in `locks/`, the temporary pull request worktrees in `worktrees/` and serve's layout cache in `layout/`. A vault entry may set `autocommit: false`. Every index refresh goes through `library`, which takes the vault's literal or semantic lock, so the CLI and the MCP server never build one index at once. The semantic store keeps a `manifest.json` (settings, fingerprint, a content hash per note), so a sync re-embeds only changed notes and purges deleted ones. An install whose `~/.config/brain/index/state.json` exists keeps `~/.config/brain`, unless `XDG_STATE_HOME` is set. The probe is that file because only a finished `brain index` writes it, while provisioning links `config.yaml` into `~/.config/brain` on every machine. A present but invalid config fails every command with exit 2.
 
 Evals isolate brain with exactly `BRAIN_CONFIG=<tmp>/config.yaml` and `XDG_STATE_HOME=<tmp>/state`; `TestIsolatedByConfigAndStateHome` pins that nothing else is written. User-facing defaults are constants in `facts.go`; don't add a bare literal default elsewhere.
 
@@ -134,6 +138,11 @@ Expect the `initialize` response, then `tools/list` naming all fourteen `brain_*
 
 ## Serve, recipe, sandbox
 
-- Port 7427 is reserved for a future `brain serve` web UI as `brain.DefaultPort` in `facts.go`. When serve lands, add brain to the CI list of serve-bearing components that must ship a doctor.
-- A ralph recipe under `recipes/brain/` is coming with `brain serve`.
-- No srt sandbox yet. brain reads the vault and writes its indexes outside any single workdir. The recipe needs a `spec.access` block in `service-info.yaml` (docs/SANDBOXING.md), since `make sandbox-verify` fails a recipe that launches a process without one.
+- `brain serve` is the read-only web view at brain.this, on `127.0.0.1:7427`: `--port`, then `BRAIN_PORT`, then `brain.DefaultPort` in `facts.go`. `docs/serve.md` is the contract the server, the UI and the docs build against; change it there first.
+- serve never writes a vault and runs no git or gh. Its one write is the layout cache in the state dir's `layout/`. A config with no usable vault does not stop it: `/api/doctor` and the UI report the problem, so t-man does not restart it in a loop.
+- `brain doctor` checks a running serve (`serve-reachable`, `version-skew`, `serve-vaults`, `serve-state-dir`). CI lists brain among the serve-bearing components that must ship a doctor, and runs `make test-js`.
+- Recipe: `recipes/brain/` builds the binary as `packages.brain` (wave 0) and registers the t-man agent `brain-serve`, which runs `srt-run ~/.config/srt/brain-serve.json brain serve --port 7427`. The consuming repo's overlay keys its edges on `packages.brain`; keep the key, the wave and the name. `recipes/brain/CLAUDE.md` lists the items.
+- Sandbox: srt under the label `brain-serve`, rendered from `spec.access` in `service-info.yaml` to `recipes/brain/brain-serve.srt.json` by `make sandbox-settings`. It denies `~`, reads `~/.config/brain`, `~/code/bin` and the state dir, writes the state dir and the temp dirs, binds 7427 and calls Ollama on loopback. Three things follow from it:
+  - **Machine layer.** The vault roots are machine paths, and so is `semantic.index_dir` when it points outside the state dir. Each machine grants them in `~/.config/srt/brain-serve.local.json`, which may only widen. The shipped settings never grant `~`.
+  - **Symlink target.** srt matches resolved paths. A `config.yaml` linked into `~/.config/brain` needs its target in that layer too, or serve starts and reports the config as unreadable.
+  - **Directory read.** The grant is all of `~/.config/brain`, not just the config file, because the legacy probe `index/state.json` sits there; serve and the CLI then resolve the same state dir, which `serve-state-dir` checks. While the probe exists the state dir is `~/.config/brain`, where serve cannot write, so `docs/UPGRADING.md` moves those indexes to `~/.local/state/brain`.

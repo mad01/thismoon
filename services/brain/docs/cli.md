@@ -74,7 +74,8 @@ prints `vault:path`.
 | `sync` | pull each git vault (fast-forward only), settle promotions, push private vaults | `--vault` |
 | `index` | refresh indexes; semantic re-embeds changed notes only (queries refresh too) | `--force --literal-only` |
 | `migrate --ids` | give every note without an id one; skips shared vaults unless named | `--dry-run` |
-| `doctor` | check config, vaults, index, duplicate ids, Ollama; prints the paths in effect | |
+| `doctor` | check config, vaults, index, duplicate ids, Ollama and a running serve; prints the paths in effect | |
+| `serve` | read-only web view of every vault (graph, notes, search, review queues) on 127.0.0.1; API in `docs/serve.md` of the source | `--port` (else `BRAIN_PORT`, else 7427) |
 | `docs [topic]` | print this guide, or `lifecycle` or `sharing` | |
 
 Search output is one note path per line; `-m content` prints
@@ -163,8 +164,7 @@ instead of an error envelope and exit 1 when it fails.
 | `hybrid-search` | `hits[] {vault, path, id, title, heading_path, score, sources, snippet, ...}`, `total`, `warnings[]` |
 | `doctor` | `ok`, `checks[] {name, status, detail, fix}`; status is `ok`, `fail` or `skip` |
 
-The freshness and sharing commands' shapes are in `brain docs lifecycle` and
-`brain docs sharing`.
+Freshness and sharing shapes: `brain docs lifecycle`, `brain docs sharing`.
 `frontmatter` holds `title aliases tags type status source evidence created
 updated id`, plus `extra` with every other key (the lifecycle fields too).
 `evidence` is the trust tier (A, B, C, D or mixed), from the field or an

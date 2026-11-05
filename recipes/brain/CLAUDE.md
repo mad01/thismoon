@@ -7,8 +7,8 @@ Builds and installs the `brain` CLI, MCP server and web view, and registers
 
 This recipe is consumed remotely: a machine's ralph config declares a
 `[[recipe_sources]]` stanza pointing at this repo (source name `thismoon`),
-and ralph merges the recipe with the identity `thismoon/brain`. The package
-`working_dir` therefore names the source cache
+and ralph merges the recipe with the identity `thismoon/brain`. So the
+package `working_dir` names the source cache
 (`~/.config/ralph/sources/thismoon/services/brain`), not a dev checkout.
 
 ## What this recipe does
@@ -16,24 +16,24 @@ and ralph merges the recipe with the identity `thismoon/brain`. The package
 - `wave = 0`: builds `~/code/bin/brain` like the other Go tools, before the
   consuming repo's brain overlay (wave 1) links the config and warms the
   indexes.
-- **`packages.brain`**: `make build` and `make install` in the source cache.
+- `packages.brain`: `make build` and `make install` in the source cache.
   The consuming repo's overlay names this key in its `depends_on`, so keep
   it.
-- **`packages.brain.service`**: restarts the agent only when the installed
+- `packages.brain.service`: restarts the agent only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install, before registration.
-- **`hooks.builds.brain_service`**: `t-man add --name brain-serve --path
+- `hooks.builds.brain_service`: `t-man add --name brain-serve --path
   /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --extra-log sandbox=… --
   srt-run ~/.config/srt/brain-serve.json brain serve --port 7427`.
   Idempotent; `run = "always"` self-heals if the agent was removed. Guarded
   on t-man being on PATH. `depends_on` is `packages.brain`, `packages.t_man`,
   `builds.speak_chmod_scripts` (keeps srt-run executable) and
   `packages.srtspec` (the launcher srt-run execs).
-- **`dotfiles.brain_serve_srt_settings`**: links `brain-serve.srt.json` to
+- `dotfiles.brain_serve_srt_settings`: links `brain-serve.srt.json` to
   `~/.config/srt/brain-serve.json`. The file is rendered from `spec.access`
   in `services/brain/service-info.yaml` by `make sandbox-settings`; edit the
   manifest, not the JSON.
-- **`pre_uninstall`**: removes the t-man agent before cleanup deletes the
+- `pre_uninstall`: removes the t-man agent before cleanup deletes the
   binary.
 
 ## Sandbox
