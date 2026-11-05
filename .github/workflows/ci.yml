@@ -41,6 +41,7 @@ jobs:
         run: |
           required='
             services/moondb
+            services/brain
             services/events
             services/deps
             services/present
@@ -148,16 +149,20 @@ jobs:
           COMPONENT: ${{ matrix.component }}
         run: go test "./${COMPONENT}/..."
 
-      # present's viz.js helpers and the pi packages of belt and moondb run
-      # under node's test runner.
+      # present's viz.js helpers, brain serve's UI helpers and the pi packages
+      # of belt and moondb run under node's test runner.
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        if: matrix.component == 'services/present' || matrix.component == 'tools/belt' || matrix.component == 'services/moondb'
+        if: matrix.component == 'services/present' || matrix.component == 'services/brain' || matrix.component == 'tools/belt' || matrix.component == 'services/moondb'
         with:
           node-version: 24
 
       - name: JS tests
         if: matrix.component == 'services/present'
         run: node --test services/present/internal/server/test/*.test.mjs
+
+      - name: brain UI tests
+        if: matrix.component == 'services/brain'
+        run: make -C services/brain test-js
 
       - name: pi package tests
         if: matrix.component == 'tools/belt'
