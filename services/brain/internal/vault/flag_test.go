@@ -53,7 +53,7 @@ func TestFlagRefusals(t *testing.T) {
 	}
 	v.Shared = true
 	_, err := v.Flag(path, "late", revokeDay)
-	if !errors.Is(err, ErrReadOnly) || !strings.Contains(err.Error(), "opening an issue") {
+	if !errors.Is(err, ErrReadOnly) || !strings.Contains(err.Error(), "brain flag opens one") {
 		t.Errorf("shared flag = %v, want ErrReadOnly pointing at an issue", err)
 	}
 }

@@ -152,7 +152,14 @@ func (v *Vault) MigrateIDs(dryRun bool, now time.Time) (report MigrateReport, er
 		}
 		return atomicWrite(path, content, 0o644)
 	})
-	return report, err
+	if err != nil || dryRun {
+		return report, err
+	}
+	rels := make([]string, 0, len(report.Changed))
+	for _, c := range report.Changed {
+		rels = append(rels, c.Path)
+	}
+	return report, v.commit(subjectOf(VerbMigrate, rels), rels, "")
 }
 
 // addID returns the note data with an id line for fm.ID added as the last

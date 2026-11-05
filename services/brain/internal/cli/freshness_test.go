@@ -49,7 +49,7 @@ func TestFlag(t *testing.T) {
 	if shared.code != exitReadOnly {
 		t.Fatalf("flag in a shared vault: exit %d, want %d", shared.code, exitReadOnly)
 	}
-	for _, want := range []string{"opening an issue", "team:notes/team-guide.md", "https://example.com/team/notes.git"} {
+	for _, want := range []string{"brain flag opens one", "team:notes/team-guide.md", "https://example.com/team/notes.git"} {
 		if !strings.Contains(shared.stderr, want) {
 			t.Errorf("shared flag stderr %q lacks %q", shared.stderr, want)
 		}

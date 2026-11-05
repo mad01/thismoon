@@ -91,6 +91,12 @@ list; setting both is invalid. The single-path form loads as one vault named
   it with exit code 6 (`read_only`): shared notes change through a pull
   request, which a later brain release opens for you. A shared vault cannot
   be the default.
+- `autocommit` (bool, default `true`): when the vault root is the top level
+  of a git repo, brain commits every change it makes there right away, as
+  `brain: <verb> <path>`, staging and committing only the paths it changed.
+  Your own uncommitted edits stay as they were, and brain never pushes on
+  its own. `false` turns the commits off. A vault that is not a git repo, or
+  sits inside another repo's work tree, gets no commits either way.
 
 List order matters: search lists vaults in it, and a wikilink that is not
 found in its own vault resolves in the shared vaults in this order.

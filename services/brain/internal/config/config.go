@@ -49,6 +49,15 @@ type Vault struct {
 	// Shared marks a team vault: readable and searchable, but write, edit
 	// and promote refuse it, because shared notes change through a PR.
 	Shared bool `yaml:"shared,omitempty"`
+	// AutoCommit, when false, stops brain committing its changes in a vault
+	// that is a git repo. Unset means true.
+	AutoCommit *bool `yaml:"autocommit,omitempty"`
+}
+
+// Commits reports whether brain commits its changes to the vault: true
+// unless autocommit is false.
+func (v Vault) Commits() bool {
+	return v.AutoCommit == nil || *v.AutoCommit
 }
 
 // file is the config file as written: either the legacy single vault path

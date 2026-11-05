@@ -55,7 +55,7 @@ taken filename with 4, a shared vault with 6. With -o json, prints {"vault",
 			if opts.Title = captureTitle(opts.Title, opts.Body, opts.Source); opts.Title == "" {
 				return usageErrorf("give --title, a body or --source to title the capture")
 			}
-			opts.Tier, opts.Status = vault.TierInbox, lifecycle.Raw
+			opts.Tier, opts.Status, opts.Verb = vault.TierInbox, lifecycle.Raw, vault.VerbCapture
 			if opts.Source != "" {
 				opts.Type = "source"
 			}

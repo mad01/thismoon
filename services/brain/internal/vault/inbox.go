@@ -139,15 +139,20 @@ func (v *Vault) Keep(p string, days int, now time.Time) (KeepResult, error) {
 			ErrInvalidStatusChange, days)
 	}
 	res := KeepResult{Vault: v.Name, Path: v.Rel(p)}
-	sha, err := v.rewrite(p, "", func(fm *markdown.Frontmatter, body []byte) ([]byte, error) {
-		if status := StatusOf(res.Path, *fm); status != lifecycle.Raw {
-			return nil, fmt.Errorf("%w: only a raw note expires, and %s is %s",
-				ErrInvalidStatusChange, res.Path, status)
-		}
-		res.ExpiresAt = lifecycle.Keep(fm, days, now)
-		fm.Touch(now)
-		return body, nil
-	})
+	sha, err := v.rewrite(
+		p,
+		"",
+		VerbKeep,
+		func(fm *markdown.Frontmatter, body []byte) ([]byte, error) {
+			if status := StatusOf(res.Path, *fm); status != lifecycle.Raw {
+				return nil, fmt.Errorf("%w: only a raw note expires, and %s is %s",
+					ErrInvalidStatusChange, res.Path, status)
+			}
+			res.ExpiresAt = lifecycle.Keep(fm, days, now)
+			fm.Touch(now)
+			return body, nil
+		},
+	)
 	res.SHA = sha
 	return res, err
 }
@@ -185,12 +190,26 @@ func (v *Vault) ArchiveExpired(now time.Time, dryRun bool) (moved []Archived, er
 		to := path.Join(ArchiveDir, n.Path)
 		if !dryRun {
 			if to, err = v.archive(n.Path, to); err != nil {
-				return moved, err
+				return moved, errors.Join(err, v.commitArchive(moved))
 			}
 		}
 		moved = append(moved, Archived{Vault: v.Name, Path: n.Path, ArchivedTo: to})
 	}
-	return moved, nil
+	if dryRun {
+		return moved, nil
+	}
+	return moved, v.commitArchive(moved)
+}
+
+// commitArchive commits the moves of one archive run as a single change.
+func (v *Vault) commitArchive(moved []Archived) error {
+	rels := make([]string, 0, len(moved))
+	paths := make([]string, 0, 2*len(moved))
+	for _, m := range moved {
+		rels = append(rels, m.Path)
+		paths = append(paths, m.Path, m.ArchivedTo)
+	}
+	return v.commit(subjectOf(VerbArchive, rels), paths, "")
 }
 
 // archive moves the note at rel to the vault-relative path to, or to the

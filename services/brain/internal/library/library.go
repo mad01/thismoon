@@ -15,6 +15,7 @@ import (
 	"github.com/mad01/thismoon/services/brain"
 	"github.com/mad01/thismoon/services/brain/internal/config"
 	"github.com/mad01/thismoon/services/brain/internal/embedding"
+	"github.com/mad01/thismoon/services/brain/internal/gitvault"
 	"github.com/mad01/thismoon/services/brain/internal/search"
 	"github.com/mad01/thismoon/services/brain/internal/semantic"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
@@ -43,15 +44,19 @@ type Options struct {
 type Library struct {
 	cfg    *config.Config
 	set    *vault.Set
+	repos  map[string]*gitvault.Repo
 	embed  semantic.EmbedFunc
 	health func(context.Context) error
 }
 
 // Open opens every configured vault. A vault directory that does not exist
 // fails the call, naming the vault, so a broken config is never half used.
+// A vault whose root is a git repo commits each change brain makes to it,
+// unless its config sets autocommit: false.
 func Open(opts Options) (*Library, error) {
 	cfg := opts.Config
 	vaults := make([]*vault.Vault, 0, len(cfg.Vaults))
+	repos := make(map[string]*gitvault.Repo, len(cfg.Vaults))
 	for _, c := range cfg.Vaults {
 		v, err := vault.Open(c.Path)
 		if err != nil {
@@ -61,11 +66,17 @@ func Open(opts Options) (*Library, error) {
 		if v.WriteLock, err = lockPath(v, "write"); err != nil {
 			return nil, err
 		}
+		repo := gitvault.New(v.Root)
+		repos[v.Name] = repo
+		if c.Commits() {
+			v.Committer = repo
+		}
 		vaults = append(vaults, v)
 	}
 	l := &Library{
 		cfg:    cfg,
 		set:    vault.NewSet(vaults...),
+		repos:  repos,
 		embed:  opts.Embed,
 		health: opts.Health,
 	}
@@ -77,6 +88,15 @@ func Open(opts Options) (*Library, error) {
 		}
 	}
 	return l, nil
+}
+
+// Git returns the git checkout of the vault v. Whether it is a repo at all
+// is gitvault.Repo.IsRepo's answer.
+func (l *Library) Git(v *vault.Vault) *gitvault.Repo {
+	if r, ok := l.repos[v.Name]; ok {
+		return r
+	}
+	return gitvault.New(v.Root)
 }
 
 // Config returns the config the library was opened with.

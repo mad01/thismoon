@@ -37,6 +37,67 @@ type Vault struct {
 	// so two brain processes never change the vault at once. Empty takes
 	// no lock.
 	WriteLock string
+	// Committer records each change brain makes, under the write lock,
+	// with the paths it touched: a git commit when the vault is a repo.
+	// Nil records nothing.
+	Committer Committer
+}
+
+// Committer records the files one brain change touched. gitvault.Repo is
+// the one implementation: it commits exactly those paths and never pushes.
+type Committer interface {
+	Commit(message string, paths []string) error
+}
+
+// Change verbs: the word after "brain:" in the commit a change makes.
+const (
+	VerbWrite     = "write"
+	VerbCapture   = "capture"
+	VerbEdit      = "edit"
+	VerbPromote   = "promote"
+	VerbSupersede = "supersede"
+	VerbRetract   = "retract"
+	VerbWithdraw  = "withdraw"
+	VerbFlag      = "flag"
+	VerbKeep      = "keep"
+	VerbArchive   = "archive"
+	VerbMigrate   = "migrate"
+	VerbShare     = "share"
+	VerbUnshare   = "unshare"
+	VerbRemove    = "remove"
+)
+
+// commit records a change through the Committer: the message is
+// "brain: <subject>", then body when it is set. paths are vault-relative.
+// A failed commit leaves the change on disk and says so.
+func (v *Vault) commit(subject string, paths []string, body string) error {
+	if v.Committer == nil || len(paths) == 0 {
+		return nil
+	}
+	msg := "brain: " + subject
+	if body != "" {
+		msg += "\n\n" + body
+	}
+	if err := v.Committer.Commit(msg, paths); err != nil {
+		return fmt.Errorf(
+			"%s is changed on disk, but the git commit failed: %w "+
+				"(commit it by hand, or set autocommit: false on vault %s)",
+			paths[0], err, v.Name,
+		)
+	}
+	return nil
+}
+
+// subjectOf is the commit subject of a change to rels: the verb and the
+// first path, and how many more there are.
+func subjectOf(verb string, rels []string) string {
+	switch len(rels) {
+	case 0:
+		return verb
+	case 1:
+		return verb + " " + rels[0]
+	}
+	return fmt.Sprintf("%s %s and %d more", verb, rels[0], len(rels)-1)
 }
 
 // ContentSHA returns the hex sha256 of a note's bytes: the sha read reports
@@ -88,6 +149,9 @@ type WriteOptions struct {
 	Source   string // optional URL
 	Evidence string // optional trust tier: A | B | C | D | mixed — empty for non-empirical
 	Filename string // optional; defaults to Slug(Title) + ".md" (YYYY-MM-DD- prefix for outputs)
+	// Verb names the change in its commit: VerbWrite when empty,
+	// VerbCapture for brain capture.
+	Verb string
 	// Set assigns frontmatter keys after the tier defaults, so it can
 	// override them. Typed keys decode into their fields; any other key is
 	// stored as is (see markdown.Frontmatter.Set).
@@ -122,6 +186,7 @@ type Draft struct {
 	Frontmatter markdown.Frontmatter
 	Body        []byte
 	content     []byte
+	verb        string
 }
 
 // Content returns the note's bytes as Create writes them.
@@ -156,7 +221,11 @@ func (v *Vault) Draft(opts WriteOptions) (Draft, error) {
 	if err := v.refuseSecrets(path, content); err != nil {
 		return Draft{}, err
 	}
-	return Draft{Path: path, Frontmatter: fm, Body: body, content: content}, nil
+	verb := opts.Verb
+	if verb == "" {
+		verb = VerbWrite
+	}
+	return Draft{Path: path, Frontmatter: fm, Body: body, content: content, verb: verb}, nil
 }
 
 // Create writes a draft under the vault's write lock and returns its path.
@@ -176,7 +245,8 @@ func (v *Vault) Create(d Draft) (path string, err error) {
 	if err := v.create(d.Path, d.content); err != nil {
 		return "", err
 	}
-	return d.Path, nil
+	rel := v.Rel(d.Path)
+	return d.Path, v.commit(subjectOf(d.verb, []string{rel}), []string{rel}, "")
 }
 
 // newFrontmatter builds a new note's frontmatter: the fields opts names,
@@ -304,6 +374,7 @@ func (v *Vault) Edit(path string, opts EditOptions) (sha string, err error) {
 	return v.rewrite(
 		path,
 		opts.IfMatch,
+		VerbEdit,
 		func(fm *markdown.Frontmatter, body []byte) ([]byte, error) {
 			id, status := fm.ID, fm.Status
 			if opts.FrontmatterPatch != nil {
@@ -341,10 +412,18 @@ func editedBody(body []byte, opts EditOptions) []byte {
 // rewrite changes the note at path in place under the write lock. It
 // refuses a note whose sha is no longer ifMatch (when set) with
 // ErrConflict, lets change edit the frontmatter and return the new body,
-// and replaces the file atomically. It returns the sha of what it wrote.
-// The caller checks that the vault is writable.
+// replaces the file atomically and commits it as verb. It returns the sha
+// of what it wrote. The caller checks that the vault is writable.
 func (v *Vault) rewrite(
-	path, ifMatch string,
+	path, ifMatch, verb string,
+	change func(fm *markdown.Frontmatter, body []byte) ([]byte, error),
+) (sha string, err error) {
+	return v.rewriteWith(path, ifMatch, verb, "", change)
+}
+
+// rewriteWith is rewrite with a body for the commit message.
+func (v *Vault) rewriteWith(
+	path, ifMatch, verb, commitBody string,
 	change func(fm *markdown.Frontmatter, body []byte) ([]byte, error),
 ) (sha string, err error) {
 	release, err := v.lockWrites()
@@ -375,7 +454,8 @@ func (v *Vault) rewrite(
 	if err := atomicWrite(path, content, 0o644); err != nil {
 		return "", err
 	}
-	return ContentSHA(content), nil
+	rel := v.Rel(path)
+	return ContentSHA(content), v.commit(subjectOf(verb, []string{rel}), []string{rel}, commitBody)
 }
 
 // PromoteOptions controls a raw→validated move.
@@ -534,17 +614,33 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 		BacklinkRewrites: rewrites,
 	}
 
+	var mocErr error
 	if opts.MOC != "" {
 		mocPath := opts.MOC
 		if !filepath.IsAbs(mocPath) {
 			mocPath = filepath.Join(v.Root, mocPath)
 		}
 		if err := appendMOCBullet(mocPath, title, newStem, opts.Now); err != nil {
-			return res, fmt.Errorf("append to MOC %s: %w", mocPath, err)
+			mocErr = fmt.Errorf("append to MOC %s: %w", mocPath, err)
+		} else {
+			res.MOCAppended = mocPath
 		}
-		res.MOCAppended = mocPath
 	}
-	return res, nil
+	return res, errors.Join(mocErr, v.commitPromote(res))
+}
+
+// commitPromote commits a promote: the new note first, then the inbox file
+// it left, the notes whose links it rewrote and the MOC it appended to.
+func (v *Vault) commitPromote(res PromoteResult) error {
+	rel := v.Rel(res.NewPath)
+	paths := []string{rel, v.Rel(res.OldPath)}
+	for _, p := range res.BacklinkRewrites {
+		paths = append(paths, v.Rel(p))
+	}
+	if res.MOCAppended != "" {
+		paths = append(paths, v.Rel(res.MOCAppended))
+	}
+	return v.commit(subjectOf(VerbPromote, []string{rel}), paths, "")
 }
 
 // writable refuses a shared vault. Shared notes change through a pull
@@ -553,8 +649,8 @@ func (v *Vault) writable() error {
 	if v.Shared {
 		return fmt.Errorf(
 			"%w: %s is a shared vault; shared notes change through a pull request "+
-				"(a brain command that opens one is planned)",
-			ErrReadOnly, v.Name,
+				"(brain edit --pr opens one for an edit, brain promote --to %s shares a private note)",
+			ErrReadOnly, v.Name, v.Name,
 		)
 	}
 	return nil
