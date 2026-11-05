@@ -56,6 +56,9 @@ func Open(opts Options) (*Library, error) {
 			return nil, fmt.Errorf("vault %s: %w", c.Name, err)
 		}
 		v.Name, v.Shared, v.Default = c.Name, c.Shared, c.Default
+		if v.WriteLock, err = lockPath(v, "write"); err != nil {
+			return nil, err
+		}
 		vaults = append(vaults, v)
 	}
 	l := &Library{

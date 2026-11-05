@@ -31,6 +31,7 @@ type editInput struct {
 	Body             string         `json:"body,omitempty"              jsonschema:"replace the body entirely with this string; mutually exclusive with append"`
 	Append           string         `json:"append,omitempty"            jsonschema:"append this string to the existing body; mutually exclusive with body"`
 	FrontmatterPatch *frontmatterIn `json:"frontmatter_patch,omitempty" jsonschema:"partial frontmatter to merge into the existing one (non-empty fields win)"`
+	IfMatch          string         `json:"if_match,omitempty"          jsonschema:"sha from brain_read; the edit fails when the note changed since that read"`
 }
 
 type frontmatterIn struct {
@@ -64,12 +65,14 @@ func registerWriteTools(s *mcp.Server, h *handlers) {
 		Name: "brain_edit",
 		Description: "Modify an existing note — replace body, append to body, and/or merge a frontmatter patch. " +
 			"Exactly one of body/append is allowed; frontmatter_patch is optional. Updates frontmatter.updated. " +
-			"Use to extend a note, update status (e.g. raw → validated), add tags, or rewrite the body.",
+			"Use to extend a note, update status (e.g. raw → validated), add tags, or rewrite the body. " +
+			"Pass if_match (the sha brain_read returned) to refuse the edit when the note changed since that read; the result carries the new sha.",
 	}, h.handleEdit)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_promote",
 		Description: "Promote an inbox note into notes/ (or another tier): atomic move, status → validated, backlinks across the vault rewritten to the new filename, optional bullet appended to a MOC. " +
+			"Every wikilink that resolves to the note is pointed at its new stem or path (links in code are left alone). " +
 			"Use when an inbox capture is ready to become a first-class note. " +
 			"The moc target must be a topical MOC (semantic grouping); batch-provenance indexes (filenames matching research-index-* / kickoff-*, or tagged meta/index) are rejected to keep the graph centered on real semantic groupings.",
 	}, h.handlePromote)
@@ -142,8 +145,9 @@ func (h *handlers) handleEdit(
 	}
 
 	opts := vault.EditOptions{
-		Body:   in.Body,
-		Append: in.Append,
+		Body:    in.Body,
+		Append:  in.Append,
+		IfMatch: in.IfMatch,
 	}
 	if in.FrontmatterPatch != nil {
 		patch := markdown.Frontmatter{
@@ -159,10 +163,11 @@ func (h *handlers) handleEdit(
 		opts.FrontmatterPatch = &patch
 	}
 
-	if err := ref.Vault.Edit(ref.Abs(), opts); err != nil {
+	sha, err := ref.Vault.Edit(ref.Abs(), opts)
+	if err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_edit: %w", err)
 	}
-	return nil, vault.PathResult{Vault: ref.Vault.Name, Path: ref.Path}, nil
+	return nil, vault.PathResult{Vault: ref.Vault.Name, Path: ref.Path, SHA: sha}, nil
 }
 
 func (h *handlers) handlePromote(

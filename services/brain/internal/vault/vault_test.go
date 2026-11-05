@@ -126,7 +126,7 @@ func TestEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	later := now.Add(24 * time.Hour)
-	if err := v.Edit(path, EditOptions{Append: "appended", Now: later}); err != nil {
+	if _, err := v.Edit(path, EditOptions{Append: "appended", Now: later}); err != nil {
 		t.Fatal(err)
 	}
 	fm, body, err := v.ReadFrontmatter(path)

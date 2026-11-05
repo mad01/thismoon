@@ -368,3 +368,48 @@ func TestVaultsGraph(t *testing.T) {
 		t.Errorf("graph --center: exit %d, stdout %q, want %q", text.code, text.stdout, wantText)
 	}
 }
+
+func TestVaultsEditIfMatch(t *testing.T) {
+	setupVaults(t)
+	const ref = "personal:notes/mine.md"
+	read := decodeStrict[vault.Note](t, runBrain(t, "", "read", ref, "-o", "json").stdout)
+	if len(read.SHA) != 64 {
+		t.Fatalf("read sha = %q, want a sha256", read.SHA)
+	}
+	got := runBrain(t, "", "edit", ref, "--append", "one", "--if-match", read.SHA, "-o", "json")
+	edited := decodeStrict[vault.PathResult](t, got.stdout)
+	if got.code != exitOK || edited.SHA == "" || edited.SHA == read.SHA {
+		t.Fatalf(
+			"edit with the read sha: exit %d, result %+v, stderr %q",
+			got.code,
+			edited,
+			got.stderr,
+		)
+	}
+
+	got = runBrain(t, "", "edit", ref, "--append", "two", "--if-match", read.SHA)
+	if got.code != exitConflict || !strings.Contains(got.stderr, "read it again") {
+		t.Errorf("stale edit: exit %d, stderr %q; want %d", got.code, got.stderr, exitConflict)
+	}
+	env := decodeStrict[errorEnvelope](
+		t,
+		runBrain(
+			t,
+			"",
+			"edit",
+			ref,
+			"--append",
+			"two",
+			"--if-match",
+			read.SHA,
+			"-o",
+			"json",
+		).stdout,
+	)
+	if env.Error.Code != "conflict" {
+		t.Errorf("code = %q, want conflict", env.Error.Code)
+	}
+	if after := decodeStrict[vault.Note](t, runBrain(t, "", "read", ref, "-o", "json").stdout); after.SHA != edited.SHA {
+		t.Errorf("refused edits changed the note: sha %s, want %s", after.SHA, edited.SHA)
+	}
+}

@@ -100,7 +100,7 @@ func TestEditAndPromoteKeepUnknownKeys(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			v := newTestVault(t, map[string]string{"inbox/capture.md": provenanceNote})
 			src := filepath.Join(v.Root, "inbox", "capture.md")
-			if err := v.Edit(src, tc.edit(t)); err != nil {
+			if _, err := v.Edit(src, tc.edit(t)); err != nil {
 				t.Fatalf("Edit: %v", err)
 			}
 			res, err := v.Promote(src, PromoteOptions{Now: now})
@@ -188,7 +188,10 @@ func TestSentinelErrors(t *testing.T) {
 		},
 		{
 			"edit missing",
-			func() error { return v.Edit(filepath.Join(v.Root, "notes/nope.md"), EditOptions{Body: "x"}) },
+			func() error {
+				_, err := v.Edit(filepath.Join(v.Root, "notes/nope.md"), EditOptions{Body: "x"})
+				return err
+			},
 			ErrNotFound,
 		},
 		{

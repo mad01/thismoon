@@ -23,4 +23,6 @@ var (
 	ErrReadOnly = errors.New("vault: read-only")
 	// ErrImmutableID means an edit would change or remove a note's id.
 	ErrImmutableID = errors.New("vault: note id is immutable")
+	// ErrConflict means an edit's IfMatch sha no longer matches the note.
+	ErrConflict = errors.New("vault: note changed since it was read")
 )

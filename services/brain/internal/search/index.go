@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mad01/thismoon/services/brain/internal/atomicfile"
 )
 
 const stateFileName = "state.json"
@@ -81,12 +83,8 @@ func (s *IndexState) Save(indexDir string) error {
 	}
 
 	path := filepath.Join(indexDir, stateFileName)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("write index state %s: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("rename index state %s -> %s: %w", tmp, path, err)
+	if err := atomicfile.Write(path, data, 0o644); err != nil {
+		return fmt.Errorf("write index state %s: %w", path, err)
 	}
 	return nil
 }

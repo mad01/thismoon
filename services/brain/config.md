@@ -49,7 +49,8 @@ indexes there, named after the vault:
   `<vault>.literal.lock` and a semantic sync holds `<vault>.semantic.lock`,
   so two brain processes (the CLI, the MCP server) never build the same
   index at once; the one that waited finds the index fresh and skips the
-  build.
+  build. Write, edit, promote and migrate hold `<vault>.write.lock`, so
+  promote's link rewrite never races an edit of a linking note.
 
 Because every vault keeps its own fingerprint, a pull in one vault
 re-indexes only that vault. Every file there is rebuilt from the vaults, so

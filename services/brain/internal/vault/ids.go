@@ -113,17 +113,22 @@ type MigrateReport struct {
 // would assign and writes nothing. A shared vault refuses a real run with
 // ErrReadOnly. A note whose frontmatter does not parse is skipped and
 // reported.
-func (v *Vault) MigrateIDs(dryRun bool, now time.Time) (MigrateReport, error) {
-	report := MigrateReport{DryRun: dryRun, Changed: []IDChange{}}
+func (v *Vault) MigrateIDs(dryRun bool, now time.Time) (report MigrateReport, err error) {
+	report = MigrateReport{DryRun: dryRun, Changed: []IDChange{}}
 	if !dryRun {
 		if err := v.writable(); err != nil {
 			return report, err
 		}
+		release, err := v.lockWrites()
+		if err != nil {
+			return report, err
+		}
+		defer func() { err = errors.Join(err, release()) }()
 	}
 	if now.IsZero() {
 		now = time.Now()
 	}
-	err := v.walkTierNotes(func(path string, data []byte) error {
+	err = v.walkTierNotes(func(path string, data []byte) error {
 		rel := v.Rel(path)
 		fm, body, err := markdown.ParseFrontmatter(data)
 		if err != nil {

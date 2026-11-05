@@ -90,7 +90,7 @@ func TestSharedVaultIsReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := team.Edit(ref.Abs(), EditOptions{Append: "y"}); !errors.Is(err, ErrReadOnly) {
+	if _, err := team.Edit(ref.Abs(), EditOptions{Append: "y"}); !errors.Is(err, ErrReadOnly) {
 		t.Errorf("Edit = %v, want ErrReadOnly", err)
 	}
 	if _, err := team.Promote(ref.Abs(), PromoteOptions{}); !errors.Is(err, ErrReadOnly) {

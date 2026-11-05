@@ -96,7 +96,7 @@ func TestEditNeverChangesAnID(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			v := newTestVault(t, map[string]string{"notes/a.md": tc.note})
 			full := filepath.Join(v.Root, "notes", "a.md")
-			err := v.Edit(full, tc.opts)
+			_, err := v.Edit(full, tc.opts)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tc.wantErr)
 			}

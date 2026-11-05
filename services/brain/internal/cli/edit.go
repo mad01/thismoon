@@ -13,6 +13,7 @@ import (
 func newEditCmd(a *app) *cobra.Command {
 	var (
 		body, appendBody string
+		ifMatch          string
 		patch            markdown.Frontmatter
 		fields           fieldFlags
 	)
@@ -35,8 +36,12 @@ Frontmatter patch flags merge into the existing frontmatter (non-empty wins):
 --set key=value (YAML value) and --unset key then change single keys; keys
 brain does not model are kept as written.
 
+--if-match <sha> refuses the edit with exit code 7 when the note's bytes no
+longer have that sha (read -o json prints it), so an edit never overwrites
+a change made since the read.
+
 At least one body or frontmatter flag must be provided. With -o json, prints
-{"vault": ..., "path": ...}.`,
+{"vault": ..., "path": ..., "sha": ...}, sha being the new content's.`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rel := args[0]
@@ -54,7 +59,7 @@ At least one body or frontmatter flag must be provided. With -o json, prints
 			if err != nil {
 				return err
 			}
-			opts := vault.EditOptions{Set: set, Unset: unset}
+			opts := vault.EditOptions{Set: set, Unset: unset, IfMatch: ifMatch}
 			if hasPatch {
 				opts.FrontmatterPatch = &patch
 			}
@@ -68,10 +73,11 @@ At least one body or frontmatter flag must be provided. With -o json, prints
 			if err != nil {
 				return err
 			}
-			if err := ref.Vault.Edit(ref.Abs(), opts); err != nil {
+			sha, err := ref.Vault.Edit(ref.Abs(), opts)
+			if err != nil {
 				return withNoteHint(err, ref.Path)
 			}
-			res := vault.PathResult{Vault: ref.Vault.Name, Path: ref.Path}
+			res := vault.PathResult{Vault: ref.Vault.Name, Path: ref.Path, SHA: sha}
 			return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
 				fmt.Fprintln(w, a.show(res.Vault, res.Path))
 				return nil
@@ -81,6 +87,7 @@ At least one body or frontmatter flag must be provided. With -o json, prints
 	f := c.Flags()
 	f.StringVar(&body, "body", "", `replace body ("-" for stdin)`)
 	f.StringVar(&appendBody, "append", "", `append to body ("-" for stdin)`)
+	f.StringVar(&ifMatch, "if-match", "", "refuse the edit unless the note still has this sha")
 	f.StringVar(&patch.Status, "status", "", "set frontmatter status")
 	f.StringVar(&patch.Type, "type", "", "set frontmatter type")
 	f.StringVar(&patch.Title, "title", "", "set frontmatter title")

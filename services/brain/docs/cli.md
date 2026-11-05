@@ -58,7 +58,7 @@ prints `vault:path`.
 | `backlinks [note]` | inbound and outbound wikilinks | `--title <title or alias>` instead of a note |
 | `graph` | wikilink graph as nodes and edges | `--center <note> --depth N --tags-as-nodes` |
 | `write` | create a note | `--title` (required), `--tier --body --tag --alias --type --status --source --evidence --filename --set --unset`; no `--body` reads stdin |
-| `edit <note>` | change body or frontmatter | `--body` or `--append` (`-` reads stdin), `--title --status --type --source --tag --alias --evidence --set --unset` |
+| `edit <note>` | change body or frontmatter | `--body` or `--append` (`-` reads stdin), `--title --status --type --source --tag --alias --evidence --set --unset --if-match <sha>` |
 | `promote <note>` | move an inbox note to notes/ | `--title` (rename) `--tier` `--moc <MOC path>` |
 | `index` | refresh indexes; semantic re-embeds changed notes only (queries refresh too) | `--force --literal-only` |
 | `migrate --ids` | give every note without an id one; skips shared vaults unless named | `--dry-run` |
@@ -108,9 +108,10 @@ edit; `updated` is always refreshed on edit.
 | 2 | `ambiguous` | a bare path is in more than one vault | use a candidate the message lists |
 | 2 | `invalid_config` | config file does not parse or names no vault | fix the file the message names |
 | 3 | `not_found` | note or title does not exist | `brain list --tier <t>`, `brain search 'f:<name>'` |
-| 4 | `already_exists` | write or promote target exists | pick another `--title` or `--filename` |
+| 4 | `already_exists` | write or promote target exists, also when another writer created it first | pick another `--title` or `--filename` |
 | 5 | `invalid_query` | zoekt query does not parse | `brain query '<query>'` |
-| 6 | `read_only` | write, edit or promote in a shared vault | change it through a PR to its repo |
+| 6 | `read_only` | write, edit, promote or migrate in a shared vault | change it through a PR to its repo |
+| 7 | `conflict` | `edit --if-match` sha no longer matches the note | read the note again, then edit |
 
 Errors print one line on stderr: `brain <cmd>: <message>`. With `-o json`
 the same failure also prints on stdout:
@@ -130,11 +131,11 @@ an error envelope and exits 1 when a check fails.
 | `count` | `total`, `groups[] {group, count}` |
 | `query` | `valid`, `parsed` |
 | `list` | `tier`, `total` (before `--limit`), `notes[] {vault, path, title, status, type, tags, aliases, evidence, updated}` |
-| `read` | `vault`, `path`, `frontmatter`, `body_lines[] {line, text}` |
+| `read` | `vault`, `path`, `sha`, `frontmatter`, `body_lines[] {line, text}` |
 | `peek` | `vault`, `path`, `frontmatter`, `preview[]`, `backlink_count` |
 | `backlinks` | `vault`, `note_path`, `evidence`, `inbound[] {vault, path, line, excerpt, evidence}`, `outbound[] {target, vault, path, line, evidence, dangling}` |
 | `graph` | `nodes[] {id, vault, path, stem, title, tier, type, status, tags, evidence, review_by, degree, dangling}`, `edges[] {source, target, kind, resolved}` |
-| `write`, `edit` | `vault`, `path` |
+| `write`, `edit` | `vault`, `path`; edit adds `sha`, the new content's |
 | `promote` | `vault`, `old_path`, `new_path`, `backlink_rewrites[]`, `moc_appended` |
 | `migrate` | `dry_run`, `changed[] {vault, path, id}`, `skipped[] {vault, path, reason}` |
 | `semantic-search` | `output_mode`, `hits[] {vault, path, id, title, heading_path, score, snippet, tier, tags, type, status, evidence}`, `total`, `warnings[]` |

@@ -28,6 +28,7 @@ type BodyLine struct {
 type Note struct {
 	Vault       string          `json:"vault"`
 	Path        string          `json:"path"`
+	SHA         string          `json:"sha"         jsonschema:"sha256 of the note's bytes; pass it to edit as if_match to refuse an edit when the note changed since"`
 	Frontmatter FrontmatterView `json:"frontmatter"`
 	BodyLines   []BodyLine      `json:"body_lines"`
 
@@ -60,7 +61,7 @@ func (v *Vault) Read(rel string, start, end int) (Note, error) {
 	if err != nil {
 		return Note{}, err
 	}
-	fm, body, err := v.ReadFrontmatter(full)
+	data, fm, body, err := v.readNote(full)
 	if err != nil {
 		return Note{}, err
 	}
@@ -71,6 +72,7 @@ func (v *Vault) Read(rel string, start, end int) (Note, error) {
 	return Note{
 		Vault:       v.Name,
 		Path:        v.Rel(full),
+		SHA:         ContentSHA(data),
 		Frontmatter: view,
 		BodyLines:   sliceBodyLines(body, start, end),
 		fm:          fm,

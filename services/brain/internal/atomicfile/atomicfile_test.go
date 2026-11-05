@@ -1,7 +1,9 @@
 package atomicfile
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -62,5 +64,38 @@ func TestWriteIntoMissingDirectoryFails(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing", "x")
 	if err := Write(path, []byte("x"), 0o644); err == nil {
 		t.Error("Write into a missing directory succeeded")
+	}
+}
+
+func TestCreateIsExclusive(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "note.md")
+	const writers = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, writers)
+	for i := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- Create(path, []byte(fmt.Sprintf("writer %02d\n", i)), 0o644)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	won := 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			won++
+		case !errors.Is(err, fs.ErrExist):
+			t.Errorf("Create: %v, want success or fs.ErrExist", err)
+		}
+	}
+	if won != 1 {
+		t.Errorf("%d writers created the file, want exactly 1", won)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Errorf("dir holds %v, want the note alone", entries)
 	}
 }

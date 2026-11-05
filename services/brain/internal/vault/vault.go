@@ -1,6 +1,8 @@
 package vault
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,13 +11,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mad01/thismoon/services/brain/internal/atomicfile"
+	"github.com/mad01/thismoon/services/brain/internal/lockfile"
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
 	"github.com/mad01/thismoon/services/brain/internal/noteid"
 )
 
-// Vault is a handle to a brain vault on disk. Operations preserve atomicity
-// for single-file writes (tmp + rename) and best-effort rollback for
-// multi-file operations like Promote.
+// Vault is a handle to a brain vault on disk. A single-file write is atomic
+// (a uniquely named temporary file, renamed or linked into place), a new
+// note never replaces an existing one, and a multi-file operation like
+// Promote rolls back on a best-effort basis. Every change holds the vault's
+// write lock when WriteLock is set.
 type Vault struct {
 	// Root is the absolute vault directory.
 	Root string
@@ -26,6 +32,25 @@ type Vault struct {
 	Shared bool
 	// Default marks the vault a write targets when no vault is named.
 	Default bool
+	// WriteLock is the lock file Write, Edit, Promote and MigrateIDs hold,
+	// so two brain processes never change the vault at once. Empty takes
+	// no lock.
+	WriteLock string
+}
+
+// ContentSHA returns the hex sha256 of a note's bytes: the sha read reports
+// and EditOptions.IfMatch compares.
+func ContentSHA(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// lockWrites takes the vault's write lock and returns its release.
+func (v *Vault) lockWrites() (func() error, error) {
+	if v.WriteLock == "" {
+		return func() error { return nil }, nil
+	}
+	return lockfile.Hold(v.WriteLock)
 }
 
 // Open returns a Vault rooted at the given directory. Errors if the directory
@@ -72,10 +97,11 @@ type WriteOptions struct {
 }
 
 // Write creates a new note. Returns the absolute path of the created file.
-// Errors with ErrExists if the target already exists. Outputs always carry
-// the meta/output tag, whatever Set and Unset say. A note without an id
-// after Set and Unset gets a fresh one.
-func (v *Vault) Write(opts WriteOptions) (string, error) {
+// Errors with ErrExists if the target already exists, also when another
+// writer creates it first. Outputs always carry the meta/output tag,
+// whatever Set and Unset say. A note without an id after Set and Unset gets
+// a fresh one.
+func (v *Vault) Write(opts WriteOptions) (path string, err error) {
 	if err := v.writable(); err != nil {
 		return "", err
 	}
@@ -132,36 +158,54 @@ func (v *Vault) Write(opts WriteOptions) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir tier %s: %w", dir, err)
 	}
-	path := filepath.Join(dir, filename)
-	if _, err := os.Stat(path); err == nil {
-		return "", fmt.Errorf("%w: %s", ErrExists, v.Rel(path))
-	}
-
+	path = filepath.Join(dir, filename)
 	content, err := markdown.Render(fm, []byte(ensureTrailingNewline(opts.Body)))
 	if err != nil {
 		return "", err
 	}
-	if err := atomicWrite(path, content, 0o644); err != nil {
+	release, err := v.lockWrites()
+	if err != nil {
+		return "", err
+	}
+	defer func() { err = errors.Join(err, release()) }()
+	if err := v.create(path, content); err != nil {
 		return "", err
 	}
 	return path, nil
 }
 
+// create writes a new note at path, failing with ErrExists when one is
+// there already.
+func (v *Vault) create(path string, content []byte) error {
+	err := atomicfile.Create(path, content, 0o644)
+	if errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("%w: %s", ErrExists, v.Rel(path))
+	}
+	return err
+}
+
 // ReadFrontmatter reads the note at the absolute path and parses its
 // frontmatter and body. A missing note is ErrNotFound.
 func (v *Vault) ReadFrontmatter(path string) (markdown.Frontmatter, []byte, error) {
+	_, fm, body, err := v.readNote(path)
+	return fm, body, err
+}
+
+// readNote reads the note at the absolute path: its bytes, frontmatter and
+// body. A missing note is ErrNotFound.
+func (v *Vault) readNote(path string) ([]byte, markdown.Frontmatter, []byte, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return markdown.Frontmatter{}, nil, fmt.Errorf("%w: %s", ErrNotFound, v.Rel(path))
+		return nil, markdown.Frontmatter{}, nil, fmt.Errorf("%w: %s", ErrNotFound, v.Rel(path))
 	}
 	if err != nil {
-		return markdown.Frontmatter{}, nil, err
+		return nil, markdown.Frontmatter{}, nil, err
 	}
 	fm, body, err := markdown.ParseFrontmatter(data)
 	if err != nil {
-		return markdown.Frontmatter{}, nil, fmt.Errorf("%s: %w", v.Rel(path), err)
+		return nil, markdown.Frontmatter{}, nil, fmt.Errorf("%s: %w", v.Rel(path), err)
 	}
-	return fm, body, nil
+	return data, fm, body, nil
 }
 
 // EditOptions replaces the body and/or merges frontmatter fields. At most one
@@ -174,36 +218,52 @@ type EditOptions struct {
 	FrontmatterPatch *markdown.Frontmatter
 	Set              []markdown.Field
 	Unset            []string
-	Now              time.Time
+	// IfMatch, when set, is the sha the note had when the caller read it;
+	// a note whose bytes changed since fails with ErrConflict.
+	IfMatch string
+	Now     time.Time
 }
 
-// Edit modifies an existing note. Body, Append, and FrontmatterPatch can each
-// be set independently. Updates frontmatter.Updated to Now (defaults to
-// time.Now()). An edit that would change or remove the note's id fails with
-// ErrImmutableID; a note without an id may be given one.
-func (v *Vault) Edit(path string, opts EditOptions) error {
+// Edit modifies an existing note and returns the sha of what it wrote.
+// Body, Append, and FrontmatterPatch can each be set independently. Updates
+// frontmatter.Updated to Now (defaults to time.Now()). An edit that would
+// change or remove the note's id fails with ErrImmutableID; a note without
+// an id may be given one. With IfMatch set, a note that changed since the
+// caller read it fails with ErrConflict and is left as it is.
+func (v *Vault) Edit(path string, opts EditOptions) (sha string, err error) {
 	if err := v.writable(); err != nil {
-		return err
+		return "", err
 	}
 	if opts.Body != "" && opts.Append != "" {
-		return fmt.Errorf("edit: body and append are mutually exclusive")
+		return "", fmt.Errorf("edit: body and append are mutually exclusive")
 	}
 	if opts.Now.IsZero() {
 		opts.Now = time.Now()
 	}
-	fm, body, err := v.ReadFrontmatter(path)
+	release, err := v.lockWrites()
 	if err != nil {
-		return err
+		return "", err
+	}
+	defer func() { err = errors.Join(err, release()) }()
+	data, fm, body, err := v.readNote(path)
+	if err != nil {
+		return "", err
+	}
+	if got := ContentSHA(data); opts.IfMatch != "" && got != opts.IfMatch {
+		return "", fmt.Errorf(
+			"%w: %s has sha %s, not %s; read it again before editing",
+			ErrConflict, v.Rel(path), got, opts.IfMatch,
+		)
 	}
 	id := fm.ID
 	if opts.FrontmatterPatch != nil {
 		fm = mergeFrontmatter(fm, *opts.FrontmatterPatch)
 	}
 	if err := applyFields(&fm, opts.Set, opts.Unset); err != nil {
-		return err
+		return "", err
 	}
 	if id != "" && fm.ID != id {
-		return fmt.Errorf("%w: %s keeps id %s", ErrImmutableID, v.Rel(path), id)
+		return "", fmt.Errorf("%w: %s keeps id %s", ErrImmutableID, v.Rel(path), id)
 	}
 	switch {
 	case opts.Body != "":
@@ -220,9 +280,12 @@ func (v *Vault) Edit(path string, opts EditOptions) error {
 	fm.Touch(opts.Now)
 	content, err := markdown.Render(fm, body)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return atomicWrite(path, content, 0o644)
+	if err := atomicWrite(path, content, 0o644); err != nil {
+		return "", err
+	}
+	return ContentSHA(content), nil
 }
 
 // PromoteOptions controls a raw→validated move.
@@ -246,10 +309,17 @@ type PromoteResult struct {
 // points every wikilink in the vault that resolves to the note at its new
 // stem or path (see linkRetarget), optionally appends to a MOC. The note keeps its id, or gets one when it
 // has none. Best-effort rollback on failure.
-func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error) {
+func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, err error) {
 	if err := v.writable(); err != nil {
 		return PromoteResult{}, err
 	}
+	// The lock spans the link rewrite too: no other brain write changes a
+	// linking note between the read of its links and the rewrite.
+	release, err := v.lockWrites()
+	if err != nil {
+		return PromoteResult{}, err
+	}
+	defer func() { err = errors.Join(err, release()) }()
 	if opts.Now.IsZero() {
 		opts.Now = time.Now()
 	}
@@ -338,7 +408,7 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error)
 		return PromoteResult{}, err
 	}
 	// Write new file, delete old only after success.
-	if err := atomicWrite(newPath, content, 0o644); err != nil {
+	if err := v.create(newPath, content); err != nil {
 		return PromoteResult{}, err
 	}
 
@@ -362,7 +432,7 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error)
 		)
 	}
 
-	res := PromoteResult{
+	res = PromoteResult{
 		OldPath:          path,
 		NewPath:          newPath,
 		BacklinkRewrites: rewrites,
@@ -468,13 +538,10 @@ func ensureTrailingNewline(s string) string {
 	return s + "\n"
 }
 
+// atomicWrite replaces the file at path with data, creating its directory.
 func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return atomicfile.Write(path, data, mode)
 }

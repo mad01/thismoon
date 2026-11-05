@@ -64,11 +64,13 @@ Agents drive brain from the shell, so the CLI keeps a stable contract:
 | 2 | `ambiguous` | a bare path or title names notes in more than one vault |
 | 2 | `invalid_config` | config file does not parse or describes no usable vault |
 | 3 | `not_found` | note or title does not exist |
-| 4 | `already_exists` | write or promote target exists |
+| 4 | `already_exists` | write or promote target exists, also when another writer created it first |
 | 5 | `invalid_query` | zoekt query does not parse |
-| 6 | `read_only` | write, edit or promote in a shared vault |
+| 6 | `read_only` | write, edit, promote or migrate in a shared vault |
+| 7 | `conflict` | `edit --if-match` sha no longer matches the note |
 
 - `docs/cli.md` is the agent guide `brain docs` prints. Keep it under 200 lines and in step with `internal/cli/errors.go`: a new exit code or error class changes both.
+- Writes are safe against each other: a new note is created exclusively (a temporary file hard-linked into place), every rewrite renames a uniquely named temporary file, and write, edit, promote and migrate hold the vault's `locks/<vault>.write.lock`. `read -o json` returns the note's `sha`; `edit --if-match <sha>` refuses with exit 7 when the note changed since.
 - Frontmatter keys brain does not model survive write, edit and promote in source order, nested values included (`internal/markdown/fields.go`). `--set key=<yaml>` and `--unset key` reach any key; typed keys are shape-checked. Rendering writes 2-space YAML, so an edit to one key leaves the other lines of the frontmatter byte-identical.
 
 ## Tier model
