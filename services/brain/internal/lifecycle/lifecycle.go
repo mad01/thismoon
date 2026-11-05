@@ -134,11 +134,7 @@ func ParseDate(s string) (time.Time, bool) {
 // PastReview reports whether the note's review_by date is before now's day.
 // A note without a readable review_by is never past review.
 func PastReview(f Fields, now time.Time) bool {
-	due, ok := ParseDate(f.ReviewBy)
-	if !ok {
-		return false
-	}
-	return Date(due) < Date(now)
+	return pastDate(f.ReviewBy, now)
 }
 
 // ReviewDays returns the review window of a volatility; an unknown or empty
@@ -152,15 +148,22 @@ func ReviewDays(volatility string) int {
 
 // Standing describes how a note stands as a citation target: "" when it is
 // validated and not past review, otherwise the reason a citation of it
-// deserves a second look ("raw", "retracted", "expired", ...). status is
+// deserves a second look ("raw", "retracted", "expired", ...). A validated
+// note past review_by and a raw note past expires_at are expired. status is
 // the note's effective status, its tier default when the field is empty.
 func Standing(status string, f Fields, now time.Time) string {
-	s := Normalize(status)
-	if s != Validated {
+	switch s := Normalize(status); {
+	case s == Validated && PastReview(f, now), s == Raw && pastDate(f.ExpiresAt, now):
+		return Expired
+	case s == Validated:
+		return ""
+	default:
 		return s
 	}
-	if PastReview(f, now) {
-		return Expired
-	}
-	return ""
+}
+
+// pastDate reports whether the date value lies before now's day.
+func pastDate(value string, now time.Time) bool {
+	t, ok := ParseDate(value)
+	return ok && Date(t) < Date(now)
 }

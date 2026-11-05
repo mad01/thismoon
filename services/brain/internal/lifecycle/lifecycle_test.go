@@ -231,6 +231,8 @@ func TestStanding(t *testing.T) {
 		{Validated, past, Expired},
 		{"Retracted", Fields{}, Retracted},
 		{Raw, Fields{}, Raw},
+		{Raw, Fields{ExpiresAt: "2026-11-05"}, Raw},
+		{Raw, Fields{ExpiresAt: "2026-11-04"}, Expired},
 	}
 	for _, tt := range tests {
 		if got := Standing(tt.status, tt.f, day); got != tt.want {
