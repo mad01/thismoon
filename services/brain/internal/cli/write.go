@@ -60,32 +60,9 @@ through. With -o json, prints {"vault": ..., "path": ...}.`,
 			if opts.Body, err = readBody(cmd.InOrStdin(), body, bodyFile); err != nil {
 				return err
 			}
-			name, err := a.writeVault()
-			if err != nil {
-				return err
-			}
-			lib, err := a.open()
-			if err != nil {
-				return err
-			}
-			v, err := lib.WriteTarget(name)
-			if err != nil {
-				return err
-			}
 			opts.Tier = t
 			opts.Evidence = fields.evidence
-			abs, warnings, err := lib.Write(context.Background(), v, opts, distinct)
-			if err != nil {
-				return err
-			}
-			res := vault.PathResult{Vault: v.Name, Path: v.Rel(abs)}
-			res.Warnings = append(warnings,
-				lib.CitationWarnings(vault.Ref{Vault: v, Path: res.Path}, time.Now())...)
-			warn(cmd, res.Warnings)
-			return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
-				fmt.Fprintln(w, a.show(res.Vault, res.Path))
-				return nil
-			})
+			return a.createNote(cmd, opts, distinct)
 		},
 	}
 	f := c.Flags()
@@ -108,4 +85,33 @@ through. With -o json, prints {"vault": ..., "path": ...}.`,
 		"a note the new one is distinct from, though alike (repeatable); stored in distinct_from")
 	fields.register(c)
 	return c
+}
+
+// createNote writes a new note to the --vault vault (or the default one)
+// through the duplicate check, prints its warnings on stderr and its path.
+func (a *app) createNote(cmd *cobra.Command, opts vault.WriteOptions, distinct []string) error {
+	name, err := a.writeVault()
+	if err != nil {
+		return err
+	}
+	lib, err := a.open()
+	if err != nil {
+		return err
+	}
+	v, err := lib.WriteTarget(name)
+	if err != nil {
+		return err
+	}
+	abs, warnings, err := lib.Write(context.Background(), v, opts, distinct)
+	if err != nil {
+		return err
+	}
+	res := vault.PathResult{Vault: v.Name, Path: v.Rel(abs)}
+	res.Warnings = append(warnings,
+		lib.CitationWarnings(vault.Ref{Vault: v, Path: res.Path}, time.Now())...)
+	warn(cmd, res.Warnings)
+	return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
+		fmt.Fprintln(w, a.show(res.Vault, res.Path))
+		return nil
+	})
 }

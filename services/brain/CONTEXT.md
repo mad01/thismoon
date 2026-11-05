@@ -73,6 +73,10 @@ _Avoid_: state, stage, lifecycle stage
 A Note that is superseded, retracted or withdrawn. Default search hides it, `--include-revoked` (or `include_revoked`) shows it, and read and peek print a banner above it. Revoking never deletes the file, so links to it still resolve. Superseded points `superseded_by` at its replacement's Note id; retracted keeps its body with `retracted_reason` (`error`, `source-retracted` or `unverifiable`) and `retracted_at`; withdrawn leaves a Tombstone.
 _Avoid_: deleted note, archived note
 
+**Capture**:
+A raw Note `brain capture` writes into `inbox/`, for an agent or a quick human note: status `raw`, `captured_by` naming who captured it (`user` or `agent:<session>`) and `expires_at` 30 days out. A capture expires unless it is promoted or kept (see Inbox archive).
+_Avoid_: draft, clip, scrap
+
 **Possible duplicate**:
 An existing Note a new one likely repeats, found before a write: one in the target Vault or a Shared vault whose title or an alias equals the new title once case and punctuation are folded, or, where a semantic index exists, one at least 0.92 alike in content. Revoked notes are never one. A possible duplicate refuses the write (exit 9) until the writer names it in `distinct_from`, the list of notes the new one is distinct from although alike.
 _Avoid_: duplicate (on its own: the check only says likely), conflict, collision (a taken filename, exit 4)

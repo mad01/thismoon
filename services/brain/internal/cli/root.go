@@ -77,6 +77,7 @@ Subcommands:
   backlinks         Inbound and outbound wikilinks of a note.
   graph             The wikilink graph as nodes and edges.
   write             Create a new note in a tier (inbox/notes/outputs/MOCs).
+  capture           Capture a raw note into the inbox (agents and quick notes).
   edit              Edit body or frontmatter of an existing note.
   promote           Move an inbox note into notes/, rewriting backlinks.
   check             Check notes against the lifecycle model and the vault policy.
@@ -140,6 +141,7 @@ brain doctor prints the paths in effect.`,
 		newBacklinksCmd(a),
 		newGraphCmd(a),
 		newWriteCmd(a),
+		newCaptureCmd(a),
 		newEditCmd(a),
 		newPromoteCmd(a),
 		newCheckCmd(a),

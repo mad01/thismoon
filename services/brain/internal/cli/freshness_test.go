@@ -157,3 +157,59 @@ func TestWriteRefusesAPossibleDuplicate(t *testing.T) {
 		t.Errorf("edit to another note's title: exit %d, want 0 (edit never checks)", got.code)
 	}
 }
+
+func TestCapture(t *testing.T) {
+	root := setupCLI(t, "")
+	got := runBrain(t, "# Zonal rollouts\nDrain one zone at a time.\n", "capture",
+		"--by", "agent:s-42", "--source", "https://example.com/zonal", "-o", "json")
+	if got.code != exitOK {
+		t.Fatalf("capture: exit %d, stderr %q", got.code, got.stderr)
+	}
+	res := decodeStrict[vault.PathResult](t, got.stdout)
+	if res.Path != "inbox/zonal-rollouts.md" {
+		t.Errorf("capture path = %q", res.Path)
+	}
+	v := &vault.Vault{Root: root}
+	fm, _, err := v.ReadFrontmatter(filepath.Join(root, "inbox", "zonal-rollouts.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := lifecycle.Read(fm)
+	if fm.Status != lifecycle.Raw || fm.Type != "source" || fm.Source != "https://example.com/zonal" ||
+		f.CapturedBy != "agent:s-42" ||
+		f.ExpiresAt != lifecycle.Date(time.Now().AddDate(0, 0, 30)) {
+		t.Errorf("capture frontmatter = %+v, lifecycle %+v", fm, f)
+	}
+
+	tests := []struct {
+		name  string
+		stdin string
+		args  []string
+		code  int
+	}{
+		{"bad capturer", "x", []string{"capture", "--title", "X", "--by", "bot"}, exitUsage},
+		{"no title", "", []string{"capture", "--body", ""}, exitUsage},
+		{
+			"secret",
+			"key " + fixtureKey + "\n",
+			[]string{"capture", "--title", "Leak"},
+			exitSecretFound,
+		},
+		{"duplicate", "again", []string{"capture", "--title", "Alpha"}, exitDuplicate},
+	}
+	for _, tt := range tests {
+		if got := runBrain(t, tt.stdin, tt.args...); got.code != tt.code {
+			t.Errorf("%s: exit %d, want %d; stderr %q", tt.name, got.code, tt.code, got.stderr)
+		}
+	}
+	ok := runBrain(t, "again", "capture", "--title", "Alpha",
+		"--distinct-from", "notes/alpha.md", "--distinct-from", "inbox/dup.md")
+	if ok.code != exitOK || strings.TrimSpace(ok.stdout) != "inbox/alpha.md" {
+		t.Errorf(
+			"capture --distinct-from: exit %d, stdout %q, stderr %q",
+			ok.code,
+			ok.stdout,
+			ok.stderr,
+		)
+	}
+}

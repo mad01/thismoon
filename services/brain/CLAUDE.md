@@ -10,7 +10,7 @@ brain/
   config.md           - config file, precedence, paths, env vars, parse-failure posture
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
-    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, edit, promote, supersede, retract, withdraw, flag, inbox, check, list, migrate, docs, doctor, mcp, version
+    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, capture, edit, promote, supersede, retract, withdraw, flag, inbox, check, list, migrate, docs, doctor, mcp, version
     check/            - brain check: the rules, the vault's .brain/policy.yaml, the report
     lifecycle/        - the status model: statuses, lifecycle fields, dates a write fills, revocation, banners
     config/           - loads the config file (vaults, semantic settings)
@@ -73,7 +73,7 @@ Agents drive brain from the shell, so the CLI keeps a stable contract:
 | 6 | `read_only` | write, edit, promote, migrate, flag or a revocation in a shared vault |
 | 7 | `conflict` | `edit --if-match` sha no longer matches the note |
 | 8 | `secret_found` | the note would hold a secret (kit/secretscan); nothing was written |
-| 9 | `possible_duplicate` | write: a note likely duplicates an existing one (same normalized title or alias, or semantic similarity of at least `library.DuplicateSimilarity`); nothing was written |
+| 9 | `possible_duplicate` | write or capture: a note likely duplicates an existing one (same normalized title or alias, or semantic similarity of at least `library.DuplicateSimilarity`); nothing was written |
 
 - `docs/cli.md` is the agent guide `brain docs` prints. Keep it under 200 lines and in step with `internal/cli/errors.go`: a new exit code or error class changes both. Lifecycle and freshness detail goes in `docs/lifecycle.md` (`brain docs lifecycle`), under the same cap.
 - Writes are safe against each other: a new note is created exclusively (a temporary file hard-linked into place), every rewrite renames a uniquely named temporary file, and write, edit, promote and migrate hold the vault's `locks/<vault>.write.lock`. `read -o json` returns the note's `sha`; `edit --if-match <sha>` refuses with exit 7 when the note changed since.

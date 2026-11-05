@@ -39,6 +39,16 @@ replaces the reason. A revoked note refuses (exit 2). A shared vault refuses
 with exit 6: open an issue on its repo naming the note and the reason; the
 message names the repo's origin remote when it has one.
 
+## Capture
+
+`brain capture` writes a raw note into `inbox/` for an agent or a quick
+human note: `status: raw`, `captured_by` from `--by` (`user` by default, or
+`agent:<session>`), and `expires_at` 30 days out. `--source <url>` sets
+`source` and makes the note type `source`. The body comes from `--body`,
+`--body-file` or stdin; without `--title` the body's first line (or the
+source) titles it. It runs write's checks: exists (4), secret (8) and
+duplicate (9). An agent's later edits never move `expires_at`.
+
 ## Inbox expiry
 
 A raw capture expires 30 days after it was written unless someone keeps it.
@@ -57,7 +67,7 @@ A raw capture expires 30 days after it was written unless someone keeps it.
 
 ## Duplicates at write
 
-Before `brain write` creates a note, brain looks for a
+Before `brain write` or `brain capture` creates a note, brain looks for a
 note it likely duplicates in the target vault and in every shared vault:
 
 - a title or alias equal to the new title once lowercased and with
@@ -87,6 +97,7 @@ note. `.brain/policy.yaml` in the vault sets `classifications:
 
 | Command | Top-level keys |
 |---|---|
+| `capture` | `vault`, `path`, `warnings[]` (as write) |
 | `flag` | `vault`, `path`, `sha` |
 | `inbox list` | `total`, `notes[] {vault, path, title, captured_by, expires_at, expired}` |
 | `inbox keep` | `vault`, `path`, `sha`, `expires_at` |
