@@ -63,3 +63,25 @@ expired raw note under `.brain/archive/` and never deletes it. brain refuses
 a write that likely duplicates a note with exit 9: the same normalized title
 or alias, or a cosine similarity of at least 0.92. The writer lists the notes
 it differs from in `distinct_from`, which brain stores on the new note.
+
+## Amendment (2026-11-05): git vaults and shared promotion
+
+brain commits every change it makes to a vault that is its own git repo
+right away, so the vault's history records each change. It stages only the
+paths it changed, and the user's own edits stay theirs to commit. A
+commit never pushes. `brain sync` pushes a private vault and only ever
+fast-forwards, so it cannot lose local work. `autocommit: false` turns the
+commits off and a vault outside git works as before, which keeps the choice
+easy to reverse.
+
+A note reaches a shared vault only through a pull request on its repo.
+`brain promote --to` copies a validated note under the same id and path,
+checked against the shared vault's policy before anything is pushed, and
+the shared repo's review and CI decide. While the pull request is open the
+private note is `promoting`. Once it merges, `brain sync` deletes the
+private copy. This is the one place brain deletes a note's file, and it is
+not a revocation. The note goes on under the same id in the shared vault,
+where `id:` refs and wikilinks now resolve. A closed pull request returns
+the note to `validated`. brain never edits a shared MOC: the shared vault's
+maintainers own its maps, and the note's `mocs:` field lists the ones it
+belongs in.

@@ -16,6 +16,7 @@ var docTopics = map[string]string{
 	"":          docs.CLI,
 	"cli":       docs.CLI,
 	"lifecycle": docs.Lifecycle,
+	"sharing":   docs.Sharing,
 }
 
 func newDocsCmd() *cobra.Command {
@@ -27,7 +28,8 @@ shapes, zoekt query tips and the capture-then-promote workflow.
 
 Topics:
   cli        the CLI guide (the default)
-  lifecycle  statuses, revocation, brain check and keeping notes fresh`,
+  lifecycle  statuses, revocation, brain check and keeping notes fresh
+  sharing    git vaults, brain sync, promote --to, edit --pr, similar`,
 		Args: maxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			topic := ""

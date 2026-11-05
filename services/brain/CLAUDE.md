@@ -1,6 +1,6 @@
 # brain, local markdown knowledge base (CLI + MCP)
 
-Go CLI and MCP stdio server over Obsidian-style markdown vaults. It indexes each vault with zoekt for literal search and chromem-go for semantic search on Ollama embeddings, and fuses the two for hybrid search. brain is the tool only: the content lives in vault repos checked out wherever the config points, typically one private vault plus a shared team vault that is read-only here. Terms (vault, private, shared and default vault, note ref, note id, tier, note, stem, wikilink, backlink, MOC, evidence tier, promotion, status, revoked note, tombstone, citation, classification, vault policy, check) are defined in `CONTEXT.md` beside this file. The note lifecycle is ADR-0030.
+Go CLI and MCP stdio server over Obsidian-style markdown vaults. It indexes each vault with zoekt for literal search and chromem-go for semantic search on Ollama embeddings, and fuses the two for hybrid search. brain is the tool only: the content lives in vault repos checked out wherever the config points, typically one private vault plus a shared team vault that is read-only here. Terms (vault, private, local-only, shared and default vault, note ref, note id, tier, note, stem, wikilink, backlink, MOC, evidence tier, promotion, shared promotion, status, revoked note, tombstone, citation, classification, vault policy, check, similar note, autocommit, sync) are defined in `CONTEXT.md` beside this file. The note lifecycle, git vaults and shared promotion are ADR-0030.
 
 ## Module layout
 
@@ -10,7 +10,7 @@ brain/
   config.md           - config file, precedence, paths, env vars, parse-failure posture
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
-    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, capture, edit, promote, supersede, retract, withdraw, flag, inbox, drift, stale, check, list, migrate, docs, doctor, mcp, version
+    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, capture, edit, promote, supersede, retract, withdraw, flag, inbox, drift, stale, check, similar, sync, list, migrate, docs, doctor, mcp, version
     check/            - brain check: the rules, the vault's .brain/policy.yaml, the report
     drift/            - brain drift: code refs checked in local checkouts (git), external sources fetched (--online)
     stale/            - brain stale: the computed review queue, grouped by CODEOWNERS owner, steward or unowned
@@ -19,6 +19,9 @@ brain/
     doctor/           - the checks `brain doctor` and `brain_doctor` share
     library/          - the vaults opened together: ref lookup, per-vault index refresh under a lock, cross-vault search, count, semantic and hybrid queries
     lockfile/         - cross-process flock on the files under the state dir's locks/
+    gitvault/         - git for one vault: the autocommit of changed paths, upstream, fetch, ff-only pull, push, worktrees
+    ghcli/            - gh for a shared vault's repo: pr create, pr view, issue create
+    sharing/          - promote --to, edit --pr, a shared flag's issue and brain sync, over library, gitvault and ghcli
     vault/            - note read, write, edit, promote, revocation, peek, id migration, the secret scan before a write, the vault Set and note refs, the one wikilink resolver behind backlinks, promote, the graph and check; the logic CLI and MCP share
     noteid/           - ULID note ids
     markdown/         - frontmatter parse and render (unknown keys kept), wikilink parsing
@@ -30,9 +33,12 @@ brain/
     rerank/           - optional LLM rerank of fused results
     mcpserver/        - MCP tool handlers, thin adapters over the packages above
     testhome/         - test helper isolating HOME, XDG and BRAIN_CONFIG
-    testgit/          - test helper running git in a test's own temp repos
+    testgit/          - test helper running git in a test's own temp repos and bare remotes
+    testgh/           - test helper putting a fake gh on PATH that records its argv
   docs/cli.md         - agent CLI guide, embedded and printed by `brain docs`
   docs/lifecycle.md   - statuses, revocation, check and freshness, printed by `brain docs lifecycle`
+  docs/sharing.md     - git vaults, sync, promote --to, edit --pr, similar, printed by `brain docs sharing`
+  examples/shared-vault/ - a shared vault's repo to copy: policy, CODEOWNERS, CI workflow; a test keeps it passing check
   docs/mcp.md         - full MCP tool reference (inputs, outputs, evidence scheme)
 ```
 
@@ -49,9 +55,11 @@ make install    # copies to ~/code/bin/brain and re-signs on macOS
 
 Tests never read or write the real config or state. A test that resolves a default path calls `testhome.Isolate(t)` first. It points `HOME` at a temp dir and clears `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and `BRAIN_CONFIG`. Everything else takes explicit temp paths. Keep it that way; a test that falls through to the real config indexes the real vault.
 
+Tests never reach the network, the real `gh` or a real checkout. A git test calls `testgit.Isolate(t)`, which points `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` at `/dev/null` and sets an explicit author, and its remotes are bare repos from `testgit.Bare(t)` in `t.TempDir()`. A test that runs `gh` calls `testgh.Install(t, ...)` first: a fake script on `PATH` that records each call's argv and prints canned URLs or `pr view` JSON.
+
 ## Config and state
 
-`config.md` is the reference. In short: the config file is `--config`, then `BRAIN_CONFIG`, then `config.yaml` in `confdir.Dir("brain")`. It names one vault (`vault: <path>`, loaded as the vault `default`) or a `vaults:` list with `name`, `path`, `default` and `shared`. State lives in `brain.StateDir()`, `$XDG_STATE_HOME/brain` or `~/.local/state/brain`, with one `index/<vault>/` (shards and `state.json`) and `semantic/<vault>/` per vault and the lock files in `locks/`. Every index refresh goes through `library`, which takes the vault's literal or semantic lock, so the CLI and the MCP server never build one index at once. The semantic store keeps a `manifest.json` (settings, fingerprint, a content hash per note), so a sync re-embeds only changed notes and purges deleted ones. An install whose `~/.config/brain/index/state.json` exists keeps `~/.config/brain`, unless `XDG_STATE_HOME` is set. The probe is that file because only a finished `brain index` writes it, while provisioning links `config.yaml` into `~/.config/brain` on every machine. A present but invalid config fails every command with exit 2.
+`config.md` is the reference. In short: the config file is `--config`, then `BRAIN_CONFIG`, then `config.yaml` in `confdir.Dir("brain")`. It names one vault (`vault: <path>`, loaded as the vault `default`) or a `vaults:` list with `name`, `path`, `default` and `shared`. State lives in `brain.StateDir()`, `$XDG_STATE_HOME/brain` or `~/.local/state/brain`, with one `index/<vault>/` (shards and `state.json`) and `semantic/<vault>/` per vault, the lock files in `locks/` and the temporary pull request worktrees in `worktrees/`. A vault entry may set `autocommit: false`. Every index refresh goes through `library`, which takes the vault's literal or semantic lock, so the CLI and the MCP server never build one index at once. The semantic store keeps a `manifest.json` (settings, fingerprint, a content hash per note), so a sync re-embeds only changed notes and purges deleted ones. An install whose `~/.config/brain/index/state.json` exists keeps `~/.config/brain`, unless `XDG_STATE_HOME` is set. The probe is that file because only a finished `brain index` writes it, while provisioning links `config.yaml` into `~/.config/brain` on every machine. A present but invalid config fails every command with exit 2.
 
 Evals isolate brain with exactly `BRAIN_CONFIG=<tmp>/config.yaml` and `XDG_STATE_HOME=<tmp>/state`; `TestIsolatedByConfigAndStateHome` pins that nothing else is written. User-facing defaults are constants in `facts.go`; don't add a bare literal default elsewhere.
 
@@ -59,7 +67,7 @@ Evals isolate brain with exactly `BRAIN_CONFIG=<tmp>/config.yaml` and `XDG_STATE
 
 Agents drive brain from the shell, so the CLI keeps a stable contract:
 
-- Every command takes `-o text|json`, and `check` also takes `-o github` (workflow annotations). Under `-o json` stdout is one JSON document with the same shape the matching MCP tool returns, and a failure prints `{"error":{"code","message"}}` there.
+- Every command takes `-o text|json`, and `check` and `similar` also take `-o github` (workflow annotations). Under `-o json` stdout is one JSON document with the same shape the matching MCP tool returns, and a failure prints `{"error":{"code","message"}}` there.
 - Errors print once on stderr as `brain <cmd>: <message>` and exit with a documented code:
 
 | Code | JSON `code` | Meaning |
@@ -72,12 +80,12 @@ Agents drive brain from the shell, so the CLI keeps a stable contract:
 | 3 | `not_found` | note or title does not exist |
 | 4 | `already_exists` | write or promote target exists, also when another writer created it first |
 | 5 | `invalid_query` | zoekt query does not parse |
-| 6 | `read_only` | write, edit, promote, migrate, flag or a revocation in a shared vault |
+| 6 | `read_only` | write, edit, promote, migrate or a revocation in a shared vault (the message names `edit --pr` and `promote --to`); `promote --to` a vault that is not shared; a shared flag on a clone with no remote |
 | 7 | `conflict` | `edit --if-match` sha no longer matches the note |
 | 8 | `secret_found` | the note would hold a secret (kit/secretscan); nothing was written |
 | 9 | `possible_duplicate` | write or capture: a note likely duplicates an existing one (same normalized title or alias, or semantic similarity of at least `library.DuplicateSimilarity`); nothing was written |
 
-- `docs/cli.md` is the agent guide `brain docs` prints. Keep it under 200 lines and in step with `internal/cli/errors.go`: a new exit code or error class changes both. Lifecycle and freshness detail goes in `docs/lifecycle.md` (`brain docs lifecycle`), under the same cap.
+- `docs/cli.md` is the agent guide `brain docs` prints. Keep it under 200 lines and in step with `internal/cli/errors.go`: a new exit code or error class changes both. Lifecycle and freshness detail goes in `docs/lifecycle.md` (`brain docs lifecycle`), git vaults and sharing in `docs/sharing.md` (`brain docs sharing`), each under the same cap.
 - Writes are safe against each other: a new note is created exclusively (a temporary file hard-linked into place), every rewrite renames a uniquely named temporary file, and write, edit, promote and migrate hold the vault's `locks/<vault>.write.lock`. `read -o json` returns the note's `sha`; `edit --if-match <sha>` refuses with exit 7 when the note changed since.
 - Frontmatter keys brain does not model survive write, edit and promote in source order, nested values included (`internal/markdown/fields.go`). `--set key=<yaml>` and `--unset key` reach any key; typed keys are shape-checked. Rendering writes 2-space YAML, so an edit to one key leaves the other lines of the frontmatter byte-identical.
 
@@ -113,6 +121,7 @@ Fourteen tools: `brain_search`, `brain_semantic_search`, `brain_hybrid_search`, 
 - `brain_promote` writes the note under the target tier, sets `status: validated`, rewrites every `[[oldstem]]` wikilink across the vault, then deletes the inbox file.
 - `brain_edit` takes `body` (replace) or `append`, which are mutually exclusive, plus a `frontmatter_patch`.
 - `brain_doctor` is read-only and returns the `brain doctor -o json` report; a failing check is a result, not a tool error.
+- Write, edit and promote autocommit in a git vault through the same `library` and `vault` path as the CLI. Sync, `promote --to`, `edit --pr` and `similar` are CLI only; `brain_promote` takes no `to`.
 - Revocation and `brain check` are CLI only. Search tools hide revoked notes unless `include_revoked`; write tools return `warnings` for citations of notes that are not validated and refuse a secret through the same `vault` path as the CLI.
 
 Smoke test:

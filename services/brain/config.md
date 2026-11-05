@@ -51,6 +51,9 @@ indexes there, named after the vault:
   index at once; the one that waited finds the index fresh and skips the
   build. Write, edit, promote and migrate hold `<vault>.write.lock`, so
   promote's link rewrite never races an edit of a linking note.
+- `worktrees/`: the temporary git worktrees of a shared vault's clone that
+  `promote --to` and `edit --pr` prepare a pull request in. Each is removed
+  when its command ends.
 
 Because every vault keeps its own fingerprint, a pull in one vault
 re-indexes only that vault. Every file there is rebuilt from the vaults, so
@@ -89,8 +92,9 @@ list; setting both is invalid. The single-path form loads as one vault named
 - `shared` (bool): a team vault, kept in its own repo. It is searched,
   listed and read like any vault, but `write`, `edit` and `promote` refuse
   it with exit code 6 (`read_only`): shared notes change through a pull
-  request, which a later brain release opens for you. A shared vault cannot
-  be the default.
+  request on the vault's repo, which `brain promote --to` and
+  `brain edit --pr` open with `gh` (`brain docs sharing`). A shared vault
+  cannot be the default.
 - `autocommit` (bool, default `true`): when the vault root is the top level
   of a git repo, brain commits every change it makes there right away, as
   `brain: <verb> <path>`, staging and committing only the paths it changed.

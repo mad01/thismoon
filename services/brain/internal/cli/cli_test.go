@@ -885,3 +885,24 @@ func TestDocsLifecycle(t *testing.T) {
 		t.Errorf("docs bogus: exit %d, want %d", got.code, exitUsage)
 	}
 }
+
+func TestDocsSharing(t *testing.T) {
+	got := runBrain(t, "", "docs", "sharing")
+	if got.code != exitOK {
+		t.Fatalf("exit %d, stderr %q", got.code, got.stderr)
+	}
+	for _, want := range []string{
+		"## Git per vault", "## brain sync", "## brain promote --to", "autocommit: false",
+		"brain/promote/<stem>-<short id>", "local-only", "## JSON shapes",
+	} {
+		if !strings.Contains(got.stdout, want) {
+			t.Errorf("docs sharing missing %q", want)
+		}
+	}
+	if n := strings.Count(got.stdout, "\n"); n >= 200 {
+		t.Errorf("docs sharing is %d lines, keep it under 200", n)
+	}
+	if !strings.Contains(runBrain(t, "", "docs").stdout, "brain docs sharing") {
+		t.Error("docs does not point at brain docs sharing")
+	}
+}

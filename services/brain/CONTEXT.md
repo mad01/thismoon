@@ -13,8 +13,12 @@ _Avoid_: brain (that is the tool), data repo
 A Vault one person writes directly: write, edit and promote change its files in place. Any vault the config does not mark `shared` is private.
 _Avoid_: personal vault (a name a config may give one), local vault
 
+**Local-only vault**:
+A Private vault in a git repo with no remote. brain still makes its Autocommits, but never pulls or pushes it, and Sync says so in one line.
+_Avoid_: offline vault, unsynced vault
+
 **Shared vault**:
-A Vault a team keeps in a shared repo, marked `shared: true` in the config. brain searches, lists and reads it like any vault, but refuses a direct write, edit or promote with `read_only`: shared notes change through a pull request.
+A Vault a team keeps in a shared repo, marked `shared: true` in the config. brain searches, lists and reads it like any vault, but refuses a direct write, edit or promote with `read_only`: shared notes change through a pull request. brain opens one for a Shared promotion and for `brain edit --pr`, without touching the clone's checkout.
 _Avoid_: team vault (a name a config may give one), remote vault, public vault
 
 **Default vault**:
@@ -62,8 +66,12 @@ The trust grade of an empirical Note, held in the `evidence` frontmatter field. 
 _Avoid_: confidence, rating, score
 
 **Promotion**:
-Moving an `inbox` Note into another tier, `notes` by default, through `brain promote` or `brain_promote`. It writes the note under the target tier with status `validated` and a Stem made from its title. It then points every Wikilink that resolved to the note at its new stem, or its new path for a path link, and deletes the inbox file. A link by an old title keeps that title as display text. Links inside code are left alone. If the rewrite fails, the new file is removed again; rewrites that already landed stay.
+Moving an `inbox` Note into another tier of its Vault, `notes` by default, through `brain promote` or `brain_promote`. Copying a note into a Shared vault is a Shared promotion. It writes the note under the target tier with status `validated` and a Stem made from its title. It then points every Wikilink that resolved to the note at its new stem, or its new path for a path link, and deletes the inbox file. A link by an old title keeps that title as display text. Links inside code are left alone. If the rewrite fails, the new file is removed again; rewrites that already landed stay.
 _Avoid_: move, publish, graduate
+
+**Shared promotion**:
+Sharing a validated Note of a Private vault through `brain promote <note> --to <shared vault>`. brain checks a copy against the shared vault's Vault policy and the secret scan, and opens a pull request that adds it under the same tier, path and Note id. The copy drops the private-only fields (`status_reason`, `shared_pr`, `captured_by`, `distinct_from`, `expires_at`). The private note goes to status `promoting` with `shared_pr` naming the pull request until Sync settles it: merged, the private copy is deleted and its links resolve to the shared one; closed, it is `validated` again. brain never edits a shared MOC; the note's `mocs` field lists the MOCs it belongs in.
+_Avoid_: publish, upload, export, share (on its own)
 
 **Status**:
 Where a Note stands in its lifecycle, held in the `status` field: `raw`, `validated`, `promoting`, `disputed`, `superseded`, `retracted` or `withdrawn`. An empty field means the default of the note's Tier. A write dates a raw note with `expires_at` (30 days) and a validated one with `review_by` (from its `volatility`: 90 days when `high`, 365 otherwise), and every change of status records `status_at`. `expired` is computed, never stored: a raw note past `expires_at`, or a validated note past `review_by`.
@@ -81,8 +89,12 @@ _Avoid_: draft, clip, scrap
 An existing Note a new one likely repeats, found before a write: one in the target Vault or a Shared vault whose title or an alias equals the new title once case and punctuation are folded, or, where a semantic index exists, one at least 0.92 alike in content. Revoked notes are never one. A possible duplicate refuses the write (exit 9) until the writer names it in `distinct_from`, the list of notes the new one is distinct from although alike.
 _Avoid_: duplicate (on its own: the check only says likely), conflict, collision (a taken filename, exit 4)
 
+**Similar note**:
+A Note `brain similar` lists as alike to another, in any Vault: the same title-and-alias rule as a Possible duplicate, or, where a semantic index exists, content at least 0.85 alike. It is a warning for a reviewer and never refuses anything, so a Shared vault's CI can report it on a pull request.
+_Avoid_: duplicate, related note, near-duplicate
+
 **Flag**:
-Marking a Note `disputed` with `brain flag`, which stores the reason in `status_reason`. A flag is a doubt, not a verdict: the note stays in search under a DISPUTED banner until someone validates it again or revokes it. A Shared vault takes no direct flag; there a flag is an issue on the vault's repo.
+Marking a Note `disputed` with `brain flag`, which stores the reason in `status_reason`. A flag is a doubt, not a verdict: the note stays in search under a DISPUTED banner until someone validates it again or revokes it. A Shared vault takes no direct flag: there `brain flag` opens an issue on the vault's repo instead.
 _Avoid_: report, challenge, mark (on its own)
 
 **Inbox archive**:
@@ -124,3 +136,11 @@ _Avoid_: config (that is the brain config file), rules file
 **Check**:
 `brain check`, which judges notes against the Status rules, their Citations, unique ids and stems, the Vault policy and the secret scan. It is the gate a Shared vault's CI runs on the notes a pull request changes, and exits 1 when a finding is at error level.
 _Avoid_: lint, validate (the status), doctor (which checks the install)
+
+**Autocommit**:
+The git commit brain makes right after each change to a Vault whose root is the top level of a git repo: `brain: <verb> <path>`, staging and committing only the paths it changed, so the user's own edits stay uncommitted. It never pushes. `autocommit: false` on the vault's config entry turns it off; a vault outside git gets none.
+_Avoid_: auto-save, snapshot, sync (that is Sync)
+
+**Sync**:
+`brain sync`: per Vault with a remote, a fast-forward pull, then the settling of each `promoting` note through its pull request's state, then a push of each Private vault that is ahead. A dirty or diverged vault is refused with a hint, never stashed, reset or merged.
+_Avoid_: refresh (an index refresh), pull or push (each one step of it)

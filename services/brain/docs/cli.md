@@ -10,9 +10,10 @@ Run `brain doctor` first when anything fails.
 ## Vaults and note refs
 
 A config can name several vaults: private ones you write, and shared (team)
-ones that are read-only here because their notes change through a pull
-request. Search, count, list, semantic-search and hybrid-search cover every
-vault, and every hit names its `vault`. A command that takes a note accepts:
+ones that are read-only here: their notes change through a pull request,
+which `promote --to` and `edit --pr` open. brain commits each change to a git
+vault. Search, count, list and both vector searches cover every vault, and
+every hit names its `vault`. A command that takes a note accepts:
 
 - `vault:path`, such as `team:notes/topic.md`;
 - `id:<ulid>`, the note's id, which survives a rename or promote;
@@ -37,7 +38,7 @@ prints `vault:path`.
 ## Global flags
 
 - `-o, --output text|json`: text (default) or one JSON document on stdout.
-  JSON shapes match the brain MCP tools. `check` also takes `github`.
+  JSON shapes match the brain MCP tools. `check` and `similar` take `github`.
 - `--config <path>`: the config file (env `BRAIN_CONFIG`). A file that exists
   but does not parse or names no vault fails every command with exit 2.
 - `--vault <name>` (repeatable): restrict to these vaults; `write` takes one
@@ -59,20 +60,22 @@ prints `vault:path`.
 | `graph` | wikilink graph as nodes and edges | `--center <note> --depth N --tags-as-nodes` |
 | `write` | create a note, unless it likely duplicates one (exit 9) | `--title` (required), `--tier --body --body-file --tag --alias --type --status --source --evidence --filename --distinct-from --set --unset`; no `--body` reads stdin |
 | `capture` | raw inbox note with `captured_by` and `expires_at`; write's checks | `--title` (else the body's first line) `--body --body-file --source <url> --by user\|agent:<session> --tag --distinct-from` |
-| `edit <note>` | change body or frontmatter | one of `--body --append` (`-` reads stdin) `--body-file --append-file`, plus `--title --status --type --source --tag --alias --evidence --set --unset --if-match <sha>` |
-| `promote <note>` | move an inbox note to notes/ | `--title` (rename) `--tier` `--moc <MOC path>` |
+| `edit <note>` | change body or frontmatter; with `--pr`, a shared note's through a pull request | one of `--body --append` (`-` reads stdin) `--body-file --append-file`, plus `--title --status --type --source --tag --alias --evidence --set --unset --if-match <sha> --pr` |
+| `promote <note>` | move an inbox note to notes/; with `--to`, open a pull request adding a validated note to a shared vault | `--title` (rename) `--tier` `--moc <MOC path>`, or `--to <vault> --force` |
 | `supersede <note>` | mark it superseded; `superseded_by` stores the replacement's `id:` | `--by <note>` (required) |
 | `retract <note>` | mark it retracted; the body stays under a banner | `--reason error\|source-retracted\|unverifiable`, `--note <text>` |
 | `withdraw <note>` | leave a tombstone and purge the note from both indexes | |
-| `flag <note>` | mark it disputed, the reason in `status_reason`; a shared vault refuses | `--reason <text>` (required) |
+| `flag <note>` | mark it disputed, the reason in `status_reason`; a shared note gets an issue on its repo | `--reason <text>` (required), `--dry-run` |
 | `drift [notes...]` | check pinned sources: code refs in local checkouts, urls with `--online`; exits 1 on drift | `--online` |
 | `stale` | notes that need review: past `review_by`, disputed, resting on a revoked source, drifted; grouped by owner | `--drift --online --limit N` |
 | `inbox list\|keep\|archive` | raw captures: list them, extend one's expiry, archive the expired | `--expired`, `keep <note> --days N`, `archive --expired --dry-run` |
 | `check [paths...]` | check notes (all of them with no paths) against the status rules, links and vault policy | `-o text\|json\|github` |
+| `similar <note>` | notes alike to one in any vault; a warning, always exits 0 | `-o text\|json\|github` |
+| `sync` | pull each git vault (fast-forward only), settle promotions, push private vaults | `--vault` |
 | `index` | refresh indexes; semantic re-embeds changed notes only (queries refresh too) | `--force --literal-only` |
 | `migrate --ids` | give every note without an id one; skips shared vaults unless named | `--dry-run` |
 | `doctor` | check config, vaults, index, duplicate ids, Ollama; prints the paths in effect | |
-| `docs` | print this guide | |
+| `docs [topic]` | print this guide, or `lifecycle` or `sharing` | |
 
 Search output is one note path per line; `-m content` prints
 `path:line:col: text`. `--tag` and `--alias` on write and edit are repeatable
@@ -107,10 +110,10 @@ survive write, edit and promote unchanged, in their original order. `--set` and
 `--unset` apply after the tier defaults on write and after the patch flags on
 edit; `updated` is always refreshed on edit.
 
-## Lifecycle and freshness
+## Lifecycle, freshness and sharing
 
-`brain docs lifecycle` prints the guide to statuses, revocation, `brain check`
-and keeping notes fresh (`docs/lifecycle.md`).
+`brain docs lifecycle` covers statuses, revocation, `brain check` and keeping
+notes fresh. `brain docs sharing` covers git vaults, sync and shared vaults.
 
 ## Exit codes
 
@@ -124,7 +127,7 @@ and keeping notes fresh (`docs/lifecycle.md`).
 | 3 | `not_found` | note or title does not exist | `brain list --tier <t>`, `brain search 'f:<name>'` |
 | 4 | `already_exists` | write or promote target exists, also when another writer created it first | pick another `--title` or `--filename` |
 | 5 | `invalid_query` | zoekt query does not parse | `brain query '<query>'` |
-| 6 | `read_only` | write, edit, promote, migrate, flag or a revocation in a shared vault | change it through a PR (or, for flag, an issue) on its repo |
+| 6 | `read_only` | write, edit, promote, migrate or a revocation in a shared vault; `promote --to` a private vault | `edit --pr`, `promote --to <shared vault>`, `flag` |
 | 7 | `conflict` | `edit --if-match` sha no longer matches the note | read the note again, then edit |
 | 8 | `secret_found` | the note would hold a secret; nothing was written | remove it, or mark a false positive `suspenders:ignore` |
 | 9 | `possible_duplicate` | write or capture: a note with the same title or near-identical content exists; nothing was written | `brain edit` a candidate, or `--distinct-from <candidate>` |
@@ -160,8 +163,8 @@ instead of an error envelope and exit 1 when it fails.
 | `hybrid-search` | `hits[] {vault, path, id, title, heading_path, score, sources, snippet, ...}`, `total`, `warnings[]` |
 | `doctor` | `ok`, `checks[] {name, status, detail, fix}`; status is `ok`, `fail` or `skip` |
 
-The freshness commands' shapes (`inbox` and the rest) are in `brain docs
-lifecycle`.
+The freshness and sharing commands' shapes are in `brain docs lifecycle` and
+`brain docs sharing`.
 `frontmatter` holds `title aliases tags type status source evidence created
 updated id`, plus `extra` with every other key (the lifecycle fields too).
 `evidence` is the trust tier (A, B, C, D or mixed), from the field or an

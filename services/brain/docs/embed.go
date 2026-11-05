@@ -14,3 +14,9 @@ var CLI string
 //
 //go:embed lifecycle.md
 var Lifecycle string
+
+// Sharing is docs/sharing.md: git per vault, brain sync and the commands that
+// change a shared vault through its repo, printed by `brain docs sharing`.
+//
+//go:embed sharing.md
+var Sharing string

@@ -14,6 +14,8 @@ write sets `expires_at` on a raw note (30 days) and `review_by` on a validated
 one (90 days with `volatility: high`, else 365). Every status change sets
 `status_at`. An edit leaves `expires_at` alone, whoever makes it; only
 `brain inbox keep` moves it (or an explicit `--set expires_at=...`).
+`promoting` is a private note with an open pull request into a shared vault,
+named in `shared_pr`; `brain sync` settles it (`brain docs sharing`).
 
 Search hides a superseded, retracted or withdrawn note without
 `--include-revoked`; read and peek print its banner first. Hits carry
@@ -35,9 +37,10 @@ and `status_at` and purges the note from both indexes at once.
 status `disputed`, the reason in `status_reason`, the day in `status_at`. read
 and peek show a DISPUTED banner until someone settles the note with
 `brain edit --status validated` or a retraction. A second flag
-replaces the reason. A revoked note refuses (exit 2). A shared vault refuses
-with exit 6: open an issue on its repo naming the note and the reason; the
-message names the repo's origin remote when it has one.
+replaces the reason. A revoked note refuses (exit 2). A shared note is not
+flagged in place: flag opens an issue on its repo (`gh issue create`) naming
+the note, its id and the reason, and `--dry-run` prints the issue instead. A
+shared clone with no remote refuses with exit 6.
 
 ## Capture
 
@@ -138,13 +141,15 @@ Each group shows its first `--limit` notes (10), oldest reason first. Add
 note, bad status fields, a shared id, a secret. It skips a path that names no
 note. `.brain/policy.yaml` in the vault sets `classifications:
 [public, internal]` and `rules: {provenance: error, missing-field: off}`.
+`brain promote --to` runs the same check against the shared vault's policy
+before it pushes anything.
 
 ## JSON shapes
 
 | Command | Top-level keys |
 |---|---|
 | `capture` | `vault`, `path`, `warnings[]` (as write) |
-| `flag` | `vault`, `path`, `sha` |
+| `flag` | `vault`, `path`, `sha`; on a shared note the issue (`brain docs sharing`) |
 | `drift` | `ok`, `online`, `checked`, `drifted`, `offline_skipped`, `notes[] {vault, path, findings[] {kind, source, message, moved_to, archive}}` |
 | `stale` | `total`, `drift`, `groups[] {domain, from, total, notes[] {vault, path, title, status, reasons[] {kind, detail, since}}}` |
 | `inbox list` | `total`, `notes[] {vault, path, title, captured_by, expires_at, expired}` |
