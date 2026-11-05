@@ -10,6 +10,7 @@ Monorepo for the `*.this` platform: local web services, CLI tools, the shared we
 | Test everything | `make test` |
 | Install all components | `make install-all` |
 | List components | `make components` |
+| Format only the Go files changed against origin/main | `make fmt-changed` |
 | Render sandbox settings from the access manifests | `make sandbox-settings` |
 | Check the renders and expansion layers the way CI does | `make sandbox-verify` |
 
