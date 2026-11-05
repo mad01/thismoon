@@ -54,11 +54,13 @@ type nameTable struct {
 
 // indexedNote is one note as the link index sees it.
 type indexedNote struct {
-	ref   Ref
-	stem  string
-	fm    markdown.Frontmatter
-	data  []byte
-	links []noteLink
+	ref      Ref
+	stem     string
+	fm       markdown.Frontmatter
+	parseErr error
+	body     []byte
+	data     []byte
+	links    []noteLink
 }
 
 // noteLink is one wikilink in a note's body and where it resolved.
@@ -130,6 +132,7 @@ func readIndexedNote(v *Vault, path string, data []byte) *indexedNote {
 	if err == nil {
 		n.fm = fm
 	}
+	n.parseErr, n.body = err, body
 	n.links = extractLinks(data, body)
 	return n
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -69,6 +70,8 @@ With -o json, prints {"vault": ..., "path": ...}.`,
 				return err
 			}
 			res := vault.PathResult{Vault: v.Name, Path: v.Rel(abs)}
+			res.Warnings = lib.CitationWarnings(vault.Ref{Vault: v, Path: res.Path}, time.Now())
+			warn(cmd, res.Warnings)
 			return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
 				fmt.Fprintln(w, a.show(res.Vault, res.Path))
 				return nil

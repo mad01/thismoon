@@ -48,9 +48,12 @@ func viewOf(fm markdown.Frontmatter) (FrontmatterView, error) {
 
 // PathResult is the JSON result of write and edit.
 type PathResult struct {
-	Vault string `json:"vault"         jsonschema:"name of the vault holding the note"`
-	Path  string `json:"path"          jsonschema:"vault-relative path of the note"`
-	SHA   string `json:"sha,omitempty" jsonschema:"edit only: sha256 of the bytes written, the if_match for a next edit"`
+	Vault string `json:"vault"              jsonschema:"name of the vault holding the note"`
+	Path  string `json:"path"               jsonschema:"vault-relative path of the note"`
+	SHA   string `json:"sha,omitempty"      jsonschema:"edit only: sha256 of the bytes written, the if_match for a next edit"`
+	// Warnings name the links in a written body that cite a note that is
+	// not validated.
+	Warnings []string `json:"warnings,omitempty" jsonschema:"write and edit: each link in the body to a note that is not validated, or is past its review_by"`
 }
 
 // PromoteReport is the JSON view of a PromoteResult, with vault-relative paths.

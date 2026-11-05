@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -79,7 +80,7 @@ At least one body or frontmatter flag must be provided. With -o json, prints
 			if opts.Append, err = readBody(cmd.InOrStdin(), appendBody, appendFile); err != nil {
 				return err
 			}
-			_, ref, err := a.locate(rel)
+			lib, ref, err := a.locate(rel)
 			if err != nil {
 				return err
 			}
@@ -88,6 +89,10 @@ At least one body or frontmatter flag must be provided. With -o json, prints
 				return withNoteHint(err, ref.Path)
 			}
 			res := vault.PathResult{Vault: ref.Vault.Name, Path: ref.Path, SHA: sha}
+			if opts.Body != "" || opts.Append != "" {
+				res.Warnings = lib.CitationWarnings(ref, time.Now())
+				warn(cmd, res.Warnings)
+			}
 			return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
 				fmt.Fprintln(w, a.show(res.Vault, res.Path))
 				return nil

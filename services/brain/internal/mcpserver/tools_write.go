@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -117,7 +118,9 @@ func (h *handlers) handleWrite(
 	if err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
 	}
-	return nil, vault.PathResult{Vault: v.Name, Path: v.Rel(abs)}, nil
+	res := vault.PathResult{Vault: v.Name, Path: v.Rel(abs)}
+	res.Warnings = lib.CitationWarnings(vault.Ref{Vault: v, Path: res.Path}, time.Now())
+	return nil, res, nil
 }
 
 func (h *handlers) handleEdit(
@@ -139,7 +142,7 @@ func (h *handlers) handleEdit(
 		)
 	}
 
-	_, ref, err := h.locate(in.Vault, in.Path)
+	lib, ref, err := h.locate(in.Vault, in.Path)
 	if err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_edit: %w", err)
 	}
@@ -167,7 +170,11 @@ func (h *handlers) handleEdit(
 	if err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_edit: %w", err)
 	}
-	return nil, vault.PathResult{Vault: ref.Vault.Name, Path: ref.Path, SHA: sha}, nil
+	res := vault.PathResult{Vault: ref.Vault.Name, Path: ref.Path, SHA: sha}
+	if in.Body != "" || in.Append != "" {
+		res.Warnings = lib.CitationWarnings(ref, time.Now())
+	}
+	return nil, res, nil
 }
 
 func (h *handlers) handlePromote(

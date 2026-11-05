@@ -38,9 +38,10 @@ func (v *Vault) Rel(abs string) string {
 }
 
 // skipDir reports whether a vault walk should skip a directory by name.
+// .brain holds the vault's policy, not notes.
 func skipDir(name string) bool {
 	switch name {
-	case ".git", ".obsidian", ".trash", "attachments":
+	case ".git", ".obsidian", ".trash", ".brain", "attachments":
 		return true
 	}
 	return false

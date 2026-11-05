@@ -74,6 +74,7 @@ Subcommands:
   write             Create a new note in a tier (inbox/notes/outputs/MOCs).
   edit              Edit body or frontmatter of an existing note.
   promote           Move an inbox note into notes/, rewriting backlinks.
+  check             Check notes against the lifecycle model and the vault policy.
   supersede         Mark a note superseded by another.
   retract           Mark a note retracted, keeping its body under a banner.
   withdraw          Replace a note with a tombstone and purge it from the indexes.
@@ -99,9 +100,9 @@ brain doctor prints the paths in effect.`,
 		RunE:          func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			if a.output != outputText && a.output != outputJSON {
-				return usageErrorf("-o must be %s or %s, got %q", outputText, outputJSON, a.output)
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if err := checkOutput(cmd, a.output); err != nil {
+				return err
 			}
 			// Env values reach Go without shell expansion, so expand ~ here.
 			var err error
@@ -133,6 +134,7 @@ brain doctor prints the paths in effect.`,
 		newWriteCmd(a),
 		newEditCmd(a),
 		newPromoteCmd(a),
+		newCheckCmd(a),
 		newSupersedeCmd(a),
 		newRetractCmd(a),
 		newWithdrawCmd(a),
@@ -144,6 +146,19 @@ brain doctor prints the paths in effect.`,
 		newVersionCmd(a),
 	)
 	return root
+}
+
+// checkOutput validates -o: text or json everywhere, and github for brain
+// check, the one command whose output a CI job annotates.
+func checkOutput(cmd *cobra.Command, output string) error {
+	switch {
+	case output == outputText, output == outputJSON:
+		return nil
+	case output == outputGitHub && cmd.Name() == "check":
+		return nil
+	}
+	return usageErrorf("-o must be %s or %s (brain check also takes %s), got %q",
+		outputText, outputJSON, outputGitHub, output)
 }
 
 // rootArgs rejects an unknown subcommand as a usage error. Cobra would
