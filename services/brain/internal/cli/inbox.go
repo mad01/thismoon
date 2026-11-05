@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -112,6 +113,8 @@ type ArchiveReport struct {
 	DryRun   bool             `json:"dry_run"`
 	Archived []vault.Archived `json:"archived"`
 	Skipped  []vault.IDSkip   `json:"skipped,omitempty"`
+	// Error is the failure that stopped the run, after the moves above.
+	Error *errorBody `json:"error,omitempty"`
 }
 
 func newInboxArchiveCmd(a *app) *cobra.Command {
@@ -124,10 +127,12 @@ func newInboxArchiveCmd(a *app) *cobra.Command {
 seeing it; the indexes drop it at once. Nothing is deleted, and a name an
 earlier archive took gets a -2, -3, ... suffix. Restore a note by moving it
 back under inbox/, then brain inbox keep it. --expired is required, so the
-command says what it moves. Shared vaults are skipped unless --vault names
-one, which then refuses with exit code 6. --dry-run reports the moves and
-makes none. With -o json, prints {"dry_run", "archived": [{vault, path,
-archived_to}], "skipped"}.`,
+command says what it moves. Shared vaults are read-only here: they are
+skipped, and one --vault names refuses with exit code 6. --dry-run reports
+the moves and makes none. With -o json, prints {"dry_run", "archived":
+[{vault, path, archived_to}], "skipped", "error"}. A run that fails partway
+still lists and purges the notes it moved, then exits with the error, which
+-o json carries as error {code, message}.`,
 		Args: exactArgs(0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !expired {
@@ -139,33 +144,57 @@ archived_to}], "skipped"}.`,
 			if err != nil {
 				return err
 			}
-			report := ArchiveReport{DryRun: dryRun, Archived: []vault.Archived{}}
-			now := time.Now()
-			for _, v := range set.Vaults() {
-				if v.Shared && len(a.vaults) == 0 {
-					report.Skipped = append(report.Skipped, vault.IDSkip{
-						Vault: v.Name, Reason: "shared vault; name it with --vault to archive there",
-					})
-					continue
-				}
-				moved, err := v.ArchiveExpired(now, dryRun)
-				report.Archived = append(report.Archived, moved...)
-				if err != nil {
-					return err
-				}
-				if err := purgeArchived(lib, v, moved, dryRun); err != nil {
-					return err
-				}
+			report, runErr := archiveExpired(lib, set, len(a.vaults) > 0, dryRun, time.Now())
+			if runErr != nil {
+				_, code := classify(runErr)
+				report.Error = &errorBody{Code: code, Message: oneLine(runErr.Error())}
 			}
-			return a.emit(cmd.OutOrStdout(), report, func(w io.Writer) error {
+			if err := a.emit(cmd.OutOrStdout(), report, func(w io.Writer) error {
 				return writeArchiveText(w, a, report)
-			})
+			}); err != nil {
+				return errors.Join(runErr, err)
+			}
+			if runErr != nil {
+				return &reportedError{err: runErr}
+			}
+			return nil
 		},
 	}
 	c.Flags().
 		BoolVar(&expired, "expired", false, "archive the raw notes past expires_at (required)")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "report the moves without making them")
 	return c
+}
+
+// sharedSkipReason is why archive passes over a shared vault no --vault
+// names.
+const sharedSkipReason = "shared vault; read-only here, its notes change through pull requests"
+
+// archiveExpired archives the expired raw notes of every vault in set,
+// skipping the shared ones unless named is set. A vault that fails partway
+// still has the notes it moved purged from its indexes and listed in the
+// report, which stops at that vault and comes back with the error.
+func archiveExpired(
+	lib *library.Library,
+	set *vault.Set,
+	named, dryRun bool,
+	now time.Time,
+) (ArchiveReport, error) {
+	report := ArchiveReport{DryRun: dryRun, Archived: []vault.Archived{}}
+	for _, v := range set.Vaults() {
+		if v.Shared && !named {
+			report.Skipped = append(report.Skipped, vault.IDSkip{
+				Vault: v.Name, Reason: sharedSkipReason,
+			})
+			continue
+		}
+		moved, err := v.ArchiveExpired(now, dryRun)
+		report.Archived = append(report.Archived, moved...)
+		if err := errors.Join(err, purgeArchived(lib, v, moved, dryRun)); err != nil {
+			return report, err
+		}
+	}
+	return report, nil
 }
 
 // purgeArchived drops the archived notes from the vault's indexes.
