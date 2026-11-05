@@ -64,6 +64,7 @@ prints `vault:path`.
 | `retract <note>` | mark it retracted; the body stays under a banner | `--reason error\|source-retracted\|unverifiable`, `--note <text>` |
 | `withdraw <note>` | leave a tombstone and purge the note from both indexes | |
 | `flag <note>` | mark it disputed, the reason in `status_reason`; a shared vault refuses | `--reason <text>` (required) |
+| `inbox list\|keep\|archive` | raw captures: list them, extend one's expiry, archive the expired | `--expired`, `keep <note> --days N`, `archive --expired --dry-run` |
 | `check [paths...]` | check notes (all of them with no paths) against the status rules, links and vault policy | `-o text\|json\|github` |
 | `index` | refresh indexes; semantic re-embeds changed notes only (queries refresh too) | `--force --literal-only` |
 | `migrate --ids` | give every note without an id one; skips shared vaults unless named | `--dry-run` |
@@ -155,6 +156,8 @@ instead of an error envelope and exit 1 when it fails.
 | `hybrid-search` | `hits[] {vault, path, id, title, heading_path, score, sources, snippet, ...}`, `total`, `warnings[]` |
 | `doctor` | `ok`, `checks[] {name, status, detail, fix}`; status is `ok`, `fail` or `skip` |
 
+The freshness commands' shapes (`inbox` and the rest) are in `brain docs
+lifecycle`.
 `frontmatter` holds `title aliases tags type status source evidence created
 updated id`, plus `extra` with every other key (the lifecycle fields too).
 `evidence` is the trust tier (A, B, C, D or mixed), from the field or an

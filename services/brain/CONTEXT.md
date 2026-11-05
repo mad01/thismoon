@@ -6,7 +6,7 @@ The vault brain indexes and serves. These terms apply to the files under
 ## Language
 
 **Vault**:
-A directory of markdown notes brain indexes and serves, named in the brain config file (`config.md` says where it lives) by a lowercase slug. It holds the four Tier directories, and the walk skips `.git`, `.obsidian`, `.trash`, `.brain` (where the Vault policy lives) and `attachments`. A vault is its own repo, kept apart from the tool. One config can name several vaults; each is a Private vault or a Shared vault.
+A directory of markdown notes brain indexes and serves, named in the brain config file (`config.md` says where it lives) by a lowercase slug. It holds the four Tier directories, and the walk skips `.git`, `.obsidian`, `.trash`, `.brain` (where the Vault policy and the Inbox archive live) and `attachments`. A vault is its own repo, kept apart from the tool. One config can name several vaults; each is a Private vault or a Shared vault.
 _Avoid_: brain (that is the tool), data repo
 
 **Private vault**:
@@ -76,6 +76,10 @@ _Avoid_: deleted note, archived note
 **Flag**:
 Marking a Note `disputed` with `brain flag`, which stores the reason in `status_reason`. A flag is a doubt, not a verdict: the note stays in search under a DISPUTED banner until someone validates it again or revokes it. A Shared vault takes no direct flag; there a flag is an issue on the vault's repo.
 _Avoid_: report, challenge, mark (on its own)
+
+**Inbox archive**:
+The vault's `.brain/archive/`, where `brain inbox archive --expired` moves raw Notes past their `expires_at`, each under the path it had. The walk skips `.brain`, so an archived note is out of search, Check and the link graph, yet the file and its git history stay in the vault; moving it back under `inbox/` restores it. Keeping a note (`brain inbox keep`) is the one action that extends a raw note's expiry; an edit never does.
+_Avoid_: trash, deleted notes, expired folder
 
 **Tombstone**:
 What `brain withdraw` leaves of a Note: frontmatter of only `id`, `status: withdrawn` and `status_at`, and no body. The note's chunks leave both indexes when the command returns. Its old text survives in the vault's git history.

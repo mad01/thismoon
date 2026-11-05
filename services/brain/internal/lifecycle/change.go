@@ -53,6 +53,17 @@ func Dispute(fm *markdown.Frontmatter, reason string, now time.Time) {
 	setString(fm, KeyStatusReason, strings.TrimSpace(reason))
 }
 
+// Keep moves a raw note's expires_at to days after now, unless it already
+// expires later, and returns the date it now expires on.
+func Keep(fm *markdown.Frontmatter, days int, now time.Time) string {
+	until := now.AddDate(0, 0, days)
+	if current, ok := ParseDate(Read(*fm).ExpiresAt); ok && Date(current) > Date(until) {
+		return Date(current)
+	}
+	setDate(fm, KeyExpiresAt, until)
+	return Date(until)
+}
+
 // Supersede marks fm superseded by the note ref by.
 func Supersede(fm *markdown.Frontmatter, by string, now time.Time) {
 	fm.Status = Superseded

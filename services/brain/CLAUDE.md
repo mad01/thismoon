@@ -10,7 +10,7 @@ brain/
   config.md           - config file, precedence, paths, env vars, parse-failure posture
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
-    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, edit, promote, supersede, retract, withdraw, flag, check, list, migrate, docs, doctor, mcp, version
+    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, edit, promote, supersede, retract, withdraw, flag, inbox, check, list, migrate, docs, doctor, mcp, version
     check/            - brain check: the rules, the vault's .brain/policy.yaml, the report
     lifecycle/        - the status model: statuses, lifecycle fields, dates a write fills, revocation, banners
     config/           - loads the config file (vaults, semantic settings)
