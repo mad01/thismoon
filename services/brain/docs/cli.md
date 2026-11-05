@@ -102,22 +102,10 @@ survive write, edit and promote unchanged, in their original order. `--set` and
 `--unset` apply after the tier defaults on write and after the patch flags on
 edit; `updated` is always refreshed on edit.
 
-## Note lifecycle
+## Lifecycle and freshness
 
-`status` is `raw`, `validated`, `promoting`, `disputed`, `superseded`,
-`retracted` or `withdrawn`; `expired` is computed (raw past `expires_at`,
-validated past `review_by`). write sets `expires_at` on a raw note (30 days)
-and `review_by` on a validated one (90 days with `volatility: high`, else 365);
-a status change sets `status_at`. Search hides a superseded, retracted or
-withdrawn note without `--include-revoked`; read and peek print its banner
-first. Hits carry `status`, `review_by` and `stale` (past `review_by`). write
-and edit warn on stderr, and in `warnings[]`, for each body link to a note
-that is not validated or is expired.
-
-`brain check` exits 1 on an error: a citation of a retracted or withdrawn
-note, bad status fields, a shared id, a secret. It skips a path that names no
-note. `.brain/policy.yaml` in the vault sets `classifications:
-[public, internal]` and `rules: {provenance: error, missing-field: off}`.
+`brain docs lifecycle` prints the guide to statuses, revocation, `brain check`
+and keeping notes fresh (`docs/lifecycle.md`).
 
 ## Exit codes
 

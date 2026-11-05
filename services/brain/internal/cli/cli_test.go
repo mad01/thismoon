@@ -856,4 +856,25 @@ func TestDocs(t *testing.T) {
 	if n := strings.Count(got.stdout, "\n"); n >= 200 {
 		t.Errorf("docs is %d lines, keep it under 200", n)
 	}
+	if !strings.Contains(got.stdout, "brain docs lifecycle") {
+		t.Error("docs does not point at brain docs lifecycle")
+	}
+}
+
+func TestDocsLifecycle(t *testing.T) {
+	got := runBrain(t, "", "docs", "lifecycle")
+	if got.code != exitOK {
+		t.Fatalf("exit %d, stderr %q", got.code, got.stderr)
+	}
+	for _, want := range []string{"## Statuses", "## brain check", "expires_at"} {
+		if !strings.Contains(got.stdout, want) {
+			t.Errorf("docs lifecycle missing %q", want)
+		}
+	}
+	if n := strings.Count(got.stdout, "\n"); n >= 200 {
+		t.Errorf("docs lifecycle is %d lines, keep it under 200", n)
+	}
+	if got := runBrain(t, "", "docs", "bogus"); got.code != exitUsage {
+		t.Errorf("docs bogus: exit %d, want %d", got.code, exitUsage)
+	}
 }

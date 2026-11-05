@@ -29,6 +29,7 @@ brain/
     mcpserver/        - MCP tool handlers, thin adapters over the packages above
     testhome/         - test helper isolating HOME, XDG and BRAIN_CONFIG
   docs/cli.md         - agent CLI guide, embedded and printed by `brain docs`
+  docs/lifecycle.md   - statuses, revocation, check and freshness, printed by `brain docs lifecycle`
   docs/mcp.md         - full MCP tool reference (inputs, outputs, evidence scheme)
 ```
 
@@ -72,7 +73,7 @@ Agents drive brain from the shell, so the CLI keeps a stable contract:
 | 7 | `conflict` | `edit --if-match` sha no longer matches the note |
 | 8 | `secret_found` | the note would hold a secret (kit/secretscan); nothing was written |
 
-- `docs/cli.md` is the agent guide `brain docs` prints. Keep it under 200 lines and in step with `internal/cli/errors.go`: a new exit code or error class changes both.
+- `docs/cli.md` is the agent guide `brain docs` prints. Keep it under 200 lines and in step with `internal/cli/errors.go`: a new exit code or error class changes both. Lifecycle and freshness detail goes in `docs/lifecycle.md` (`brain docs lifecycle`), under the same cap.
 - Writes are safe against each other: a new note is created exclusively (a temporary file hard-linked into place), every rewrite renames a uniquely named temporary file, and write, edit, promote and migrate hold the vault's `locks/<vault>.write.lock`. `read -o json` returns the note's `sha`; `edit --if-match <sha>` refuses with exit 7 when the note changed since.
 - Frontmatter keys brain does not model survive write, edit and promote in source order, nested values included (`internal/markdown/fields.go`). `--set key=<yaml>` and `--unset key` reach any key; typed keys are shape-checked. Rendering writes 2-space YAML, so an edit to one key leaves the other lines of the frontmatter byte-identical.
 
