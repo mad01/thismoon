@@ -1,0 +1,22 @@
+{
+  "name": "@mad01/brain-graph",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The graph bundle the brain.this UI loads: sigma, graphology and markdown-it as one IIFE",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "graphology": "0.26.0",
+    "graphology-layout": "0.6.1",
+    "graphology-layout-forceatlas2": "0.10.1",
+    "graphology-types": "0.24.8",
+    "graphology-utils": "2.5.2",
+    "markdown-it": "15.0.3",
+    "sigma": "4.0.4"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
