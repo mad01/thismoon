@@ -130,7 +130,7 @@ func TestTextValue(t *testing.T) {
 		{"plain", "Done.", `"text":"Done."`},
 		{"quotes and controls", "a \"b\"\n\tc\\", `"text":"a \"b\"\n\tc\\"`},
 		{"html stays raw", "<a href=x>&</a>", `"text":"<a href=x>&</a>"`},
-		{"line separators stay raw", "one two ", "\"text\":\"one two \""},
+		{"line separators stay raw", "one\u2028two\u2029", "\"text\":\"one\u2028two\u2029\""},
 		{"unicode", "ok ✓ 🚀", `"text":"ok ✓ 🚀"`},
 	}
 	for _, tc := range cases {

@@ -102,7 +102,7 @@ func textValue(text string) []byte {
 	out := []byte(`"text":"`)
 	start := 0
 	for i, r := range text {
-		if r == ' ' || r == ' ' {
+		if r == '\u2028' || r == '\u2029' {
 			out = append(append(out, jsonBody(text[start:i])...), text[i:i+utf8.RuneLen(r)]...)
 			start = i + utf8.RuneLen(r)
 		}
