@@ -10,12 +10,12 @@ brain/
   config.md           - config file, precedence, paths, env vars, parse-failure posture
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
-    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, write, edit, promote, list, migrate, docs, doctor, mcp, version
+    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, edit, promote, list, migrate, docs, doctor, mcp, version
     config/           - loads the config file (vaults, semantic settings)
     doctor/           - the checks `brain doctor` and `brain_doctor` share
     library/          - the vaults opened together: ref lookup, per-vault index refresh under a lock, cross-vault search, count, semantic and hybrid queries
     lockfile/         - cross-process flock on the files under the state dir's locks/
-    vault/            - note read, write, edit, promote, peek, backlinks, id migration, the vault Set and note refs; the logic CLI and MCP share
+    vault/            - note read, write, edit, promote, peek, id migration, the vault Set and note refs, the one wikilink resolver behind backlinks, promote and the graph; the logic CLI and MCP share
     noteid/           - ULID note ids
     markdown/         - frontmatter parse and render (unknown keys kept), wikilink parsing
     search/           - zoekt index build, staleness fingerprint, query
@@ -96,7 +96,7 @@ Semantic indexing needs Ollama running locally with `nomic-embed-text` pulled; t
 
 ## MCP tools
 
-Thirteen tools: `brain_search`, `brain_semantic_search`, `brain_hybrid_search`, `brain_count`, `brain_query_validate`, `brain_read`, `brain_peek`, `brain_list_tier`, `brain_backlinks`, `brain_write`, `brain_edit`, `brain_promote`, `brain_doctor`. Schemas: `docs/mcp.md`. The server instructions come from `agentdoc.Instructions(brain.Facts())`, and `brain mcp --help` ends with `agentdoc.RegistrationSnippet`.
+Fourteen tools: `brain_search`, `brain_semantic_search`, `brain_hybrid_search`, `brain_count`, `brain_query_validate`, `brain_read`, `brain_peek`, `brain_list_tier`, `brain_backlinks`, `brain_graph`, `brain_write`, `brain_edit`, `brain_promote`, `brain_doctor`. Schemas: `docs/mcp.md`. The server instructions come from `agentdoc.Instructions(brain.Facts())`, and `brain mcp --help` ends with `agentdoc.RegistrationSnippet`.
 
 - `brain_search` and `brain_count` take zoekt query syntax; `brain_query_validate` checks a query before running it.
 - A `tier` input on search, list and count expands to `file:^<tier>/`, so don't add a `file:` prefix yourself when passing `tier`.
@@ -110,7 +110,7 @@ Smoke test:
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}\n{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 1 ) | brain mcp
 ```
 
-Expect the `initialize` response, then `tools/list` naming all thirteen `brain_*` tools.
+Expect the `initialize` response, then `tools/list` naming all fourteen `brain_*` tools.
 
 ## Serve, recipe, sandbox
 

@@ -548,7 +548,7 @@ func TestTextOutputBacklinksAndPeek(t *testing.T) {
 		"  inbox/raw.md:10: A kubernetes capture, see [[alpha]].",
 		"  notes/beta.md:6: Beta extends [[alpha]].",
 		"outbound (1):",
-		"  2: [[beta]] -> notes/beta.md",
+		"  10: [[beta]] -> notes/beta.md",
 	} {
 		if !strings.Contains(got.stdout, want+"\n") {
 			t.Errorf("backlinks text missing %q:\n%s", want, got.stdout)

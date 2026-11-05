@@ -6,6 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/services/brain/internal/library"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
@@ -19,10 +20,53 @@ func registerGraphTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_backlinks",
 		Description: "Return inbound and outbound wikilinks for a note. " +
-			"Inbound: every note that contains [[stem]] or [[title]] pointing at this note (with the matching line and excerpt). " +
-			"Outbound: every [[...]] wikilink in the note itself, resolved to a vault-relative path when the target matches an existing note. " +
+			"A link resolves case-insensitively by stem (or path), then by title or alias; a private vault's links look in that vault first, then in the shared vaults, and a shared vault's links only in shared vaults. " +
+			"Inbound: every line in another note with a link that resolves to this note, with its excerpt. " +
+			"Outbound: every [[...]] wikilink in the note, with the vault and path it resolves to, or dangling: true. " +
 			"Supply either path (preferred) or title; title is matched against frontmatter.title and aliases.",
 	}, h.handleBacklinks)
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "brain_graph",
+		Description: "Return the wikilink graph of the configured vaults as nodes and edges, resolved like brain_backlinks. " +
+			"Nodes: notes (id is id:<note id>, or vault:path for a note without one), dangling link targets (dangling: true) and, with tags_as_nodes, tags (tag:<name>). " +
+			"Edges: {source, target, kind: link or tag, resolved}. degree counts the edges of the returned graph. " +
+			"Pass center (a note ref) and depth to get the neighbourhood of one note; pass vault to walk one vault's notes.",
+	}, h.handleGraph)
+}
+
+type graphInput struct {
+	Vault       string `json:"vault,omitempty"         jsonschema:"walk only this vault's notes; notes they link to in other vaults still appear"`
+	Center      string `json:"center,omitempty"        jsonschema:"note ref (vault:path, id:<ulid> or a bare path); keep the notes within depth hops of it"`
+	Depth       int    `json:"depth,omitempty"         jsonschema:"hops from center, either link direction; default 1"`
+	TagsAsNodes bool   `json:"tags_as_nodes,omitempty" jsonschema:"add a node per tag and a tag edge from each note to it"`
+}
+
+func (h *handlers) handleGraph(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in graphInput,
+) (*mcp.CallToolResult, vault.Graph, error) {
+	lib, err := h.open()
+	if err != nil {
+		return nil, vault.Graph{}, fmt.Errorf("brain_graph: %w", err)
+	}
+	opts := vault.GraphOptions{
+		Sources:     names(in.Vault),
+		Depth:       in.Depth,
+		TagsAsNodes: in.TagsAsNodes,
+	}
+	if in.Center != "" {
+		ref, err := lib.Locate(names(in.Vault), in.Center)
+		if err != nil {
+			return nil, vault.Graph{}, fmt.Errorf("brain_graph: %w", err)
+		}
+		opts.Center = &ref
+	}
+	g, err := lib.Set().Graph(opts)
+	if err != nil {
+		return nil, vault.Graph{}, fmt.Errorf("brain_graph: %w", err)
+	}
+	return nil, g, nil
 }
 
 func (h *handlers) handleBacklinks(
@@ -35,11 +79,11 @@ func (h *handlers) handleBacklinks(
 			"brain_backlinks: one of path or title is required",
 		)
 	}
-	ref, err := h.backlinksTarget(in)
+	lib, ref, err := h.backlinksTarget(in)
 	if err != nil {
 		return nil, vault.Backlinks{}, fmt.Errorf("brain_backlinks: %w", err)
 	}
-	links, err := ref.Vault.Backlinks(ref.Path)
+	links, err := lib.Set().Backlinks(ref)
 	if err != nil {
 		return nil, vault.Backlinks{}, fmt.Errorf("brain_backlinks: %w", err)
 	}
@@ -47,14 +91,14 @@ func (h *handlers) handleBacklinks(
 }
 
 // backlinksTarget locates the note named by path, else by title.
-func (h *handlers) backlinksTarget(in backlinksInput) (vault.Ref, error) {
+func (h *handlers) backlinksTarget(in backlinksInput) (*library.Library, vault.Ref, error) {
 	if in.Path != "" {
-		_, ref, err := h.locate(in.Vault, in.Path)
-		return ref, err
+		return h.locate(in.Vault, in.Path)
 	}
-	_, set, err := h.vaults(in.Vault)
+	lib, set, err := h.vaults(in.Vault)
 	if err != nil {
-		return vault.Ref{}, err
+		return nil, vault.Ref{}, err
 	}
-	return set.FindByTitle(in.Title)
+	ref, err := set.FindByTitle(in.Title)
+	return lib, ref, err
 }

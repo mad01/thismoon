@@ -269,10 +269,11 @@ func TestReadPeekBacklinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Backlinks beta: %v", err)
 	}
+	// Lines count from the top of the file; an alias resolves like a stem.
 	want := []Outbound{
-		{Target: "alpha", Path: "notes/alpha.md", Line: 1, Evidence: "A"},
-		{Target: "First", Line: 1},
-		{Target: "missing", Line: 2},
+		{Target: "alpha", Path: "notes/alpha.md", Line: 5, Evidence: "A"},
+		{Target: "First", Path: "notes/alpha.md", Line: 5, Evidence: "A"},
+		{Target: "missing", Line: 6, Dangling: true},
 	}
 	if !reflect.DeepEqual(beta.Outbound, want) {
 		t.Errorf("outbound = %+v, want %+v", beta.Outbound, want)

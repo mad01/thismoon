@@ -14,6 +14,7 @@ type Wikilink struct {
 	Raw     string // the full matched "[[...]]" substring
 	Line    int    // 1-based line number in the source
 	Column  int    // 1-based column
+	Offset  int    // byte offset of the opening [[ in the source
 }
 
 // MDLink is a standard [text](url) markdown link.
@@ -44,6 +45,7 @@ func ExtractWikilinks(content []byte) []Wikilink {
 			line, col := offsetToLineCol(content, seg.offset+m[0])
 			wl.Line = line
 			wl.Column = col
+			wl.Offset = seg.offset + m[0]
 			out = append(out, wl)
 		}
 	}

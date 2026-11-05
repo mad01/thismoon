@@ -78,31 +78,37 @@ func (v *Vault) Read(rel string, start, end int) (Note, error) {
 }
 
 // Peek returns the frontmatter, the first maxLines body lines (20 when zero)
-// and the inbound backlink count of the note at rel.
+// and the inbound backlink count of the note at the vault-relative path rel,
+// with links resolved within this vault alone.
 func (v *Vault) Peek(rel string, maxLines int) (Peek, error) {
-	if maxLines <= 0 {
-		maxLines = defaultPeekLines
-	}
-	full, err := v.Resolve(rel)
+	ref, err := v.locate(rel)
 	if err != nil {
 		return Peek{}, err
 	}
-	fm, body, err := v.ReadFrontmatter(full)
+	return NewSet(v).Peek(ref, maxLines)
+}
+
+// Peek returns the frontmatter, the first maxLines body lines (20 when zero)
+// and the number of other notes in the set that link to the note at ref.
+func (s *Set) Peek(ref Ref, maxLines int) (Peek, error) {
+	if maxLines <= 0 {
+		maxLines = defaultPeekLines
+	}
+	fm, body, err := ref.Vault.ReadFrontmatter(ref.Abs())
 	if err != nil {
 		return Peek{}, err
 	}
 	view, err := viewOf(fm)
 	if err != nil {
-		return Peek{}, fmt.Errorf("%s: %w", rel, err)
+		return Peek{}, fmt.Errorf("%s: %w", ref.Path, err)
 	}
-	stem := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
-	count, err := countBacklinks(v.Root, stem, full)
+	count, err := s.backlinkCount(ref)
 	if err != nil {
 		return Peek{}, fmt.Errorf("count backlinks: %w", err)
 	}
 	return Peek{
-		Vault:         v.Name,
-		Path:          v.Rel(full),
+		Vault:         ref.Vault.Name,
+		Path:          ref.Path,
 		Frontmatter:   view,
 		Preview:       firstBodyLines(body, maxLines),
 		BacklinkCount: count,

@@ -29,10 +29,11 @@ Tools exposed:
   brain_hybrid_search    Literal and semantic results fused by reciprocal rank.
   brain_read             Read a note's frontmatter + body (sliced by line range).
   brain_peek             Frontmatter + first N lines + backlink count, a cheap overview.
-  brain_count            Count matches, optionally grouped by tier or tag.
+  brain_count            Count matches, optionally grouped by tier, tag or vault.
   brain_query_validate   Validate a zoekt query before running it.
   brain_list_tier        List notes in a tier with optional tag/status filter.
   brain_backlinks        Inbound + outbound wikilinks for a note.
+  brain_graph            The wikilink graph as nodes and edges, optionally around one note.
   brain_write            Create a new note in a tier with frontmatter.
   brain_edit             Edit body or frontmatter of an existing note.
   brain_promote          Move an inbox note into notes/, rewriting backlinks.

@@ -61,11 +61,11 @@ is worth a full read. With -o json, prints the brain_peek document.`,
 			if lines < 0 {
 				return usageErrorf("--lines must be >= 0")
 			}
-			_, ref, err := a.locate(args[0])
+			lib, ref, err := a.locate(args[0])
 			if err != nil {
 				return err
 			}
-			peek, err := ref.Vault.Peek(ref.Path, lines)
+			peek, err := lib.Set().Peek(ref, lines)
 			if err != nil {
 				return withNoteHint(err, ref.Path)
 			}

@@ -56,6 +56,7 @@ prints `vault:path`.
 | `read <note>` | frontmatter and body | `--start N --end M` (body lines, 1-based) |
 | `peek <note>` | backlink count, frontmatter, first lines | `--lines N` (default 20) |
 | `backlinks [note]` | inbound and outbound wikilinks | `--title <title or alias>` instead of a note |
+| `graph` | wikilink graph as nodes and edges | `--center <note> --depth N --tags-as-nodes` |
 | `write` | create a note | `--title` (required), `--tier --body --tag --alias --type --status --source --evidence --filename --set --unset`; no `--body` reads stdin |
 | `edit <note>` | change body or frontmatter | `--body` or `--append` (`-` reads stdin), `--title --status --type --source --tag --alias --evidence --set --unset` |
 | `promote <note>` | move an inbox note to notes/ | `--title` (rename) `--tier` `--moc <MOC path>` |
@@ -67,6 +68,12 @@ prints `vault:path`.
 Search output is one note path per line; `-m content` prints
 `path:line:col: text`. `--tag` and `--alias` on write and edit are repeatable
 and replace the whole list on edit.
+
+A wikilink resolves by stem or path, then by title or alias, ignoring case
+and never by prefix. A private vault's links look in that vault first, then in
+the shared vaults; a shared vault's links look only in shared vaults. A link
+that resolves nowhere is dangling. backlinks, peek, promote and graph all use
+this one resolver; backlink lines count from the top of the file.
 
 ## Frontmatter: --set and --unset
 
@@ -120,7 +127,8 @@ an error envelope and exits 1 when a check fails.
 | `list` | `tier`, `total` (before `--limit`), `notes[] {vault, path, title, status, type, tags, aliases, evidence, updated}` |
 | `read` | `vault`, `path`, `frontmatter`, `body_lines[] {line, text}` |
 | `peek` | `vault`, `path`, `frontmatter`, `preview[]`, `backlink_count` |
-| `backlinks` | `vault`, `note_path`, `evidence`, `inbound[] {vault, path, line, excerpt, evidence}`, `outbound[] {target, vault, path, line, evidence}` |
+| `backlinks` | `vault`, `note_path`, `evidence`, `inbound[] {vault, path, line, excerpt, evidence}`, `outbound[] {target, vault, path, line, evidence, dangling}` |
+| `graph` | `nodes[] {id, vault, path, stem, title, tier, type, status, tags, evidence, review_by, degree, dangling}`, `edges[] {source, target, kind, resolved}` |
 | `write`, `edit` | `vault`, `path` |
 | `promote` | `vault`, `old_path`, `new_path`, `backlink_rewrites[]`, `moc_appended` |
 | `migrate` | `dry_run`, `changed[] {vault, path, id}`, `skipped[] {vault, path, reason}` |

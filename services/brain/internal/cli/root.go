@@ -70,6 +70,7 @@ Subcommands:
   read              Read a note (optionally a slice of lines).
   peek              Frontmatter, first body lines and backlink count of a note.
   backlinks         Inbound and outbound wikilinks of a note.
+  graph             The wikilink graph as nodes and edges.
   write             Create a new note in a tier (inbox/notes/outputs/MOCs).
   edit              Edit body or frontmatter of an existing note.
   promote           Move an inbox note into notes/, rewriting backlinks.
@@ -124,6 +125,7 @@ brain doctor prints the paths in effect.`,
 		newReadCmd(a),
 		newPeekCmd(a),
 		newBacklinksCmd(a),
+		newGraphCmd(a),
 		newWriteCmd(a),
 		newEditCmd(a),
 		newPromoteCmd(a),

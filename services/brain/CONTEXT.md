@@ -42,11 +42,15 @@ A Note's filename without the `.md` extension, and the name a Wikilink uses for 
 _Avoid_: slug (the function that makes one), id (a frontmatter field)
 
 **Wikilink**:
-An Obsidian-style `[[stem]]` link in a note body, optionally carrying `|alias`, `#heading` or `^block`. It names its target by Stem.
+An Obsidian-style `[[stem]]` link in a note body, optionally carrying `|alias`, `#heading` or `^block`; an embed, `![[stem]]`, counts as one. It names its target by Stem, by a path ending in the target's path, or by the target's title or an alias, all without regard to case. One resolver decides every link's target, for backlinks and the graph alike. It tries stems (or paths) before titles and aliases. It looks in the linking note's own Vault first, then in the Shared vaults in config order. A link in a shared vault never resolves into a Private vault. Within a vault, a name two notes share goes to the one in `notes`, then `MOCs`, `outputs`, `inbox`.
 _Avoid_: link (on its own), reference
 
+**Dangling link**:
+A Wikilink no note resolves to. Its target exists nowhere the resolver looks, or only in a vault it may not look in, such as a private note named from a shared vault. A target is never matched by prefix, so `[[team]]` does not reach `team-guide`. The graph shows one dangling node per target.
+_Avoid_: broken link, orphan (a note nothing links to)
+
 **Backlink**:
-A line in another Note whose Wikilink names this note: an inbound link. `brain_backlinks` reports a note's backlinks alongside its own outbound wikilinks, each resolved to a path where the target stem exists.
+A line in another Note with a Wikilink that resolves to this note: an inbound link. `brain_backlinks` reports a note's backlinks alongside its own outbound wikilinks, each with the note it resolves to or marked dangling.
 _Avoid_: mention, reference
 
 **MOC**:
@@ -58,5 +62,5 @@ The trust grade of an empirical Note, held in the `evidence` frontmatter field. 
 _Avoid_: confidence, rating, score
 
 **Promotion**:
-Moving an `inbox` Note into another tier, `notes` by default, through `brain promote` or `brain_promote`. It writes the note under the target tier with status `validated` and a Stem made from its title. It then rewrites every Wikilink to the old stem across the vault and deletes the inbox file. If the rewrite fails, the new file is removed again; rewrites that already landed stay.
+Moving an `inbox` Note into another tier, `notes` by default, through `brain promote` or `brain_promote`. It writes the note under the target tier with status `validated` and a Stem made from its title. It then points every Wikilink that resolved to the note at its new stem, or its new path for a path link, and deletes the inbox file. A link by an old title keeps that title as display text. Links inside code are left alone. If the rewrite fails, the new file is removed again; rewrites that already landed stay.
 _Avoid_: move, publish, graduate

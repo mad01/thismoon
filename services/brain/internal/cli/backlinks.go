@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/services/brain/internal/library"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
@@ -24,11 +25,11 @@ brain_backlinks document.`,
 			if (len(args) == 1) == (title != "") {
 				return usageErrorf("name the note by <path> or by --title, not both or neither")
 			}
-			ref, err := a.backlinksTarget(args, title)
+			lib, ref, err := a.backlinksTarget(args, title)
 			if err != nil {
 				return err
 			}
-			links, err := ref.Vault.Backlinks(ref.Path)
+			links, err := lib.Set().Backlinks(ref)
 			if err != nil {
 				return withNoteHint(err, ref.Path)
 			}
@@ -40,7 +41,7 @@ brain_backlinks document.`,
 				fmt.Fprintf(w, "outbound (%d):\n", len(links.Outbound))
 				for _, out := range links.Outbound {
 					target := a.show(out.Vault, out.Path)
-					if out.Path == "" {
+					if out.Dangling {
 						target = "(dangling)"
 					}
 					fmt.Fprintf(w, "  %d: [[%s]] -> %s\n", out.Line, out.Target, target)
@@ -54,14 +55,17 @@ brain_backlinks document.`,
 }
 
 // backlinksTarget locates the note named by the argument or by --title.
-func (a *app) backlinksTarget(args []string, title string) (vault.Ref, error) {
+func (a *app) backlinksTarget(
+	args []string,
+	title string,
+) (*library.Library, vault.Ref, error) {
 	if len(args) == 1 {
-		_, ref, err := a.locate(args[0])
-		return ref, err
+		return a.locate(args[0])
 	}
-	_, set, err := a.openVaults()
+	lib, set, err := a.openVaults()
 	if err != nil {
-		return vault.Ref{}, err
+		return nil, vault.Ref{}, err
 	}
-	return set.FindByTitle(title)
+	ref, err := set.FindByTitle(title)
+	return lib, ref, err
 }

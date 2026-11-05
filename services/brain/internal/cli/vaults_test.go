@@ -339,7 +339,32 @@ func TestVaultsEditKeepsTheNoteID(t *testing.T) {
 		t.Fatalf("giving a note its first id: exit %d, stderr %q", got.code, got.stderr)
 	}
 	got := runBrain(t, "", "edit", ref, "--set", "id=01JOTHEROTHEROTHEROTHEROTH")
-	if got.code != exitUsage || !strings.Contains(got.stderr, "keeps id 01JFIRSTFIRSTFIRSTFIRSTFIR") {
+	if got.code != exitUsage ||
+		!strings.Contains(got.stderr, "keeps id 01JFIRSTFIRSTFIRSTFIRSTFIR") {
 		t.Errorf("changing the id: exit %d, stderr %q", got.code, got.stderr)
+	}
+}
+
+func TestVaultsGraph(t *testing.T) {
+	setupVaults(t)
+	got := runBrain(t, "", "graph", "-o", "json")
+	if got.code != exitOK {
+		t.Fatalf("exit %d, stderr %q", got.code, got.stderr)
+	}
+	g := decodeStrict[vault.Graph](t, got.stdout)
+	want := vault.GraphEdge{
+		Source:   "personal:notes/mine.md",
+		Target:   "team:notes/team-guide.md",
+		Kind:     vault.EdgeLink,
+		Resolved: true,
+	}
+	if len(g.Edges) != 1 || g.Edges[0] != want || len(g.Nodes) != 6 {
+		t.Errorf("graph = %+v, want six notes and the one cross-vault link", g)
+	}
+
+	text := runBrain(t, "", "graph", "--center", "notes/team-guide.md")
+	wantText := "personal:notes/mine.md -> team:notes/team-guide.md\n2 node(s), 1 edge(s)\n"
+	if text.code != exitOK || text.stdout != wantText {
+		t.Errorf("graph --center: exit %d, stdout %q, want %q", text.code, text.stdout, wantText)
 	}
 }

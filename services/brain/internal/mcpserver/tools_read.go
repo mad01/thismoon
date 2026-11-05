@@ -70,11 +70,11 @@ func (h *handlers) handlePeek(
 	_ *mcp.CallToolRequest,
 	in peekInput,
 ) (*mcp.CallToolResult, vault.Peek, error) {
-	_, ref, err := h.locate(in.Vault, in.Path)
+	lib, ref, err := h.locate(in.Vault, in.Path)
 	if err != nil {
 		return nil, vault.Peek{}, fmt.Errorf("brain_peek: %w", err)
 	}
-	peek, err := ref.Vault.Peek(ref.Path, in.MaxBodyLines)
+	peek, err := lib.Set().Peek(ref, in.MaxBodyLines)
 	if err != nil {
 		return nil, vault.Peek{}, fmt.Errorf("brain_peek: %w", err)
 	}

@@ -243,8 +243,8 @@ type PromoteResult struct {
 
 // Promote moves a note from its current tier (must be TierInbox) to
 // TargetTier (default TierNotes). Updates frontmatter.Status to "validated",
-// rewrites [[oldStem]] wikilinks across the vault to point at the new stem,
-// optionally appends to a MOC. The note keeps its id, or gets one when it
+// points every wikilink in the vault that resolves to the note at its new
+// stem or path (see linkRetarget), optionally appends to a MOC. The note keeps its id, or gets one when it
 // has none. Best-effort rollback on failure.
 func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error) {
 	if err := v.writable(); err != nil {
@@ -291,6 +291,7 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error)
 	}
 
 	oldStem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	oldTitle := fm.Title
 
 	title := fm.Title
 	if opts.NewTitle != "" {
@@ -311,6 +312,23 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error)
 	if fm.ID == "" {
 		fm.ID = noteid.New(opts.Now)
 	}
+
+	edits, err := v.promoteEdits(path, linkRetarget{
+		oldTitle: oldTitle,
+		newTitle: opts.NewTitle,
+		aliases:  fm.Aliases,
+		newStem:  newStem,
+		newPath:  strings.TrimSuffix(v.Rel(newPath), ".md"),
+	})
+	if err != nil {
+		return PromoteResult{}, err
+	}
+	if self, ok := edits[v.Rel(path)]; ok {
+		if body, err = self.body(); err != nil {
+			return PromoteResult{}, err
+		}
+		delete(edits, v.Rel(path))
+	}
 	content, err := markdown.Render(fm, body)
 	if err != nil {
 		return PromoteResult{}, err
@@ -324,8 +342,7 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error)
 		return PromoteResult{}, err
 	}
 
-	// Rewrite backlinks across the vault.
-	rewrites, rewriteErr := rewriteWikilinkTarget(v.Root, oldStem, newStem)
+	rewrites, rewriteErr := v.writeEdits(edits)
 	if rewriteErr != nil {
 		// Roll back the new file; a failed rollback is reported with the cause.
 		rollbackErr := os.Remove(newPath)

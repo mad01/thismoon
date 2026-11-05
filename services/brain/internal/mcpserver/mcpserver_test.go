@@ -481,6 +481,34 @@ func TestBrainBacklinks_ByPath(t *testing.T) {
 	}
 }
 
+func TestBrainGraphAroundANote(t *testing.T) {
+	setupFixtureVault(t)
+	_, g, err := testServer(t).handleGraph(context.Background(), nil, graphInput{
+		Center: "notes/concept-beta.md",
+	})
+	if err != nil {
+		t.Fatalf("handleGraph: %v", err)
+	}
+	// concept-beta links to concept-alpha; the output and the MOC link to it.
+	want := map[string]bool{
+		"default:notes/concept-beta.md -> default:notes/concept-alpha.md":         true,
+		"default:outputs/2026-04-14-analysis.md -> default:notes/concept-beta.md": true,
+		"default:MOCs/ai-topics.md -> default:notes/concept-beta.md":              true,
+	}
+	got := map[string]bool{}
+	for _, e := range g.Edges {
+		got[e.Source+" -> "+e.Target] = true
+	}
+	for edge := range want {
+		if !got[edge] {
+			t.Errorf("edges %v lack %s", got, edge)
+		}
+	}
+	if len(g.Nodes) != 4 {
+		t.Errorf("nodes = %+v, want concept-beta and its three neighbours", g.Nodes)
+	}
+}
+
 func TestBrainBacklinks_ByTitle(t *testing.T) {
 	setupFixtureVault(t)
 	ctx := context.Background()
