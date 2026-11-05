@@ -39,6 +39,10 @@ Filters:
   --status         Frontmatter status filter
   --mode           files_with_matches (default) | content
 
+Superseded, retracted and withdrawn notes are left out unless
+--include-revoked is set or --status names their status. Each hit carries
+its note's status, review_by and stale (review_by has passed).
+
 Searches every vault unless --vault narrows it; each hit names its vault.
 Each vault's index is built/refreshed automatically if stale. With -o json,
 prints the brain_search document.`,
@@ -93,6 +97,7 @@ prints the brain_search document.`,
 		"context lines around each match (content mode only)",
 	)
 	f.BoolVar(&opts.CaseSensitive, "case-sensitive", false, "force case-sensitive matching")
+	f.BoolVar(&opts.IncludeRevoked, "include-revoked", false, includeRevokedHelp)
 	return c
 }
 

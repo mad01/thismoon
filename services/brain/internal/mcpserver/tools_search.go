@@ -13,18 +13,20 @@ import (
 
 // searchInput is the typed input for the brain_search tool.
 type searchInput struct {
-	Query         string `json:"query"                    jsonschema:"zoekt query — literal / regex / 'phrase' / AND (space) / OR (|) / NOT (-) / file: / lang: / case:yes"`
-	Tier          string `json:"tier,omitempty"           jsonschema:"restrict to a single vault tier: inbox, notes, outputs, or MOCs"`
-	Tag           string `json:"tag,omitempty"            jsonschema:"restrict to notes whose frontmatter tags list contains this tag"`
-	Type          string `json:"type,omitempty"           jsonschema:"restrict to notes with this frontmatter type (e.g. note, source, moc, output)"`
-	Status        string `json:"status,omitempty"         jsonschema:"restrict to notes with this frontmatter status (e.g. raw, validated, archived)"`
-	Lang          string `json:"lang,omitempty"           jsonschema:"restrict to files of this language (usually markdown)"`
-	File          string `json:"file,omitempty"           jsonschema:"restrict to vault-relative file paths matching this regex"`
-	CaseSensitive bool   `json:"case_sensitive,omitempty" jsonschema:"force case-sensitive matching; default is smart case"`
-	Limit         int    `json:"limit,omitempty"          jsonschema:"maximum number of file results (default 50)"`
-	OutputMode    string `json:"output_mode,omitempty"    jsonschema:"files_with_matches (default) returns unique file paths; content returns matching lines with optional context"`
-	ContextLines  int    `json:"context_lines,omitempty"  jsonschema:"number of context lines around each match in content mode; ignored in files_with_matches mode"`
-	Vault         string `json:"vault,omitempty"          jsonschema:"restrict to this configured vault; default searches every vault"`
+	Query         string `json:"query"                     jsonschema:"zoekt query — literal / regex / 'phrase' / AND (space) / OR (|) / NOT (-) / file: / lang: / case:yes"`
+	Tier          string `json:"tier,omitempty"            jsonschema:"restrict to a single vault tier: inbox, notes, outputs, or MOCs"`
+	Tag           string `json:"tag,omitempty"             jsonschema:"restrict to notes whose frontmatter tags list contains this tag"`
+	Type          string `json:"type,omitempty"            jsonschema:"restrict to notes with this frontmatter type (e.g. note, source, moc, output)"`
+	Status        string `json:"status,omitempty"          jsonschema:"restrict to notes with this frontmatter status (raw, validated, disputed, superseded, ...)"`
+	Lang          string `json:"lang,omitempty"            jsonschema:"restrict to files of this language (usually markdown)"`
+	File          string `json:"file,omitempty"            jsonschema:"restrict to vault-relative file paths matching this regex"`
+	CaseSensitive bool   `json:"case_sensitive,omitempty"  jsonschema:"force case-sensitive matching; default is smart case"`
+	Limit         int    `json:"limit,omitempty"           jsonschema:"maximum number of file results (default 50)"`
+	OutputMode    string `json:"output_mode,omitempty"     jsonschema:"files_with_matches (default) returns unique file paths; content returns matching lines with optional context"`
+	ContextLines  int    `json:"context_lines,omitempty"   jsonschema:"number of context lines around each match in content mode; ignored in files_with_matches mode"`
+	Vault         string `json:"vault,omitempty"           jsonschema:"restrict to this configured vault; default searches every vault"`
+	// IncludeRevoked keeps notes default search hides.
+	IncludeRevoked bool `json:"include_revoked,omitempty" jsonschema:"include superseded, retracted and withdrawn notes, which are hidden by default"`
 }
 
 type countInput struct {
@@ -43,7 +45,8 @@ func registerSearchTools(s *mcp.Server, h *handlers) {
 		Name: "brain_search",
 		Description: "Search across your personal knowledge vault (markdown notes) using zoekt query syntax. " +
 			"Use whenever the task involves finding notes by text — 'where did I write about X', 'find every note mentioning Y', 'what have I captured on Z'. " +
-			"Filter with tier (inbox/notes/outputs/MOCs), tag, type, status, or vault; every hit names its vault. " +
+			"Filter with tier (inbox/notes/outputs/MOCs), tag, type, status, or vault; every hit names its vault and carries its note's status, review_by and stale (past review_by). " +
+			"Superseded, retracted and withdrawn notes are hidden unless include_revoked is set or status names them. " +
 			"Defaults to files_with_matches (unique note paths); set output_mode=content to get matching lines with optional context_lines. " +
 			"Query syntax: literal, regex, \"phrase\", AND (space), OR (|), NOT (-), file:regex, lang:markdown, case:yes. " +
 			"The index auto-refreshes when the vault has changed since the last call.",
@@ -108,6 +111,8 @@ func (h *handlers) handleSearch(
 		Limit:         in.Limit,
 		ContextLines:  in.ContextLines,
 		OutputMode:    outputMode,
+
+		IncludeRevoked: in.IncludeRevoked,
 	}
 	res, err := lib.Search(ctx, set, opts)
 	if err != nil {

@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/mad01/thismoon/services/brain"
 	"github.com/mad01/thismoon/services/brain/internal/config"
 	"github.com/mad01/thismoon/services/brain/internal/embedding"
+	"github.com/mad01/thismoon/services/brain/internal/search"
 	"github.com/mad01/thismoon/services/brain/internal/semantic"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
@@ -114,6 +116,12 @@ func (l *Library) roots() map[string]string {
 		out[v.Name] = v.Root
 	}
 	return out
+}
+
+// meta returns a reader of hit metadata from every vault's notes, judging
+// staleness against today.
+func (l *Library) meta() *search.MetaReader {
+	return search.NewMetaReader(l.roots(), time.Now())
 }
 
 // lockPath returns the lock file guarding one kind of work on a vault.

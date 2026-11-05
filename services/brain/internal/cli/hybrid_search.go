@@ -68,6 +68,7 @@ With -o json, prints the brain_hybrid_search document.`,
 		"candidates pulled from the semantic index before fusion",
 	)
 	f.BoolVar(&rerank, "rerank", false, "rerank fused candidates with the LLM (slower)")
+	f.BoolVar(&q.IncludeRevoked, "include-revoked", false, includeRevokedHelp)
 	return c
 }
 

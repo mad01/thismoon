@@ -23,8 +23,10 @@ type ResultHit struct {
 	Tier        string   `json:"tier,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 	Type        string   `json:"type,omitempty"`
-	Status      string   `json:"status,omitempty"`
+	Status      string   `json:"status,omitempty"       jsonschema:"the note's lifecycle status as stored, read from the note now"`
 	Evidence    string   `json:"evidence,omitempty"     jsonschema:"trust tier of the source note (A/B/C/D/mixed)"`
+	ReviewBy    string   `json:"review_by,omitempty"    jsonschema:"the date the note is due for review, when set"`
+	Stale       bool     `json:"stale,omitempty"        jsonschema:"true when review_by has passed"`
 }
 
 // SearchResult is the JSON result of a semantic search.
@@ -54,6 +56,8 @@ func NewSearchResult(mode string, hits []Hit) SearchResult {
 			Type:     h.Type,
 			Status:   h.Status,
 			Evidence: h.Evidence,
+			ReviewBy: h.ReviewBy,
+			Stale:    h.Stale,
 		}
 		if mode == ModePaths {
 			key := h.Vault + ":" + h.Path

@@ -20,6 +20,9 @@ const (
 	defaultKCandidates = 30
 	// minRerank is the fewest fused hits worth an LLM rerank.
 	minRerank = 4
+	// revokedOverfetch multiplies K for a semantic query whose revoked
+	// hits are dropped afterwards.
+	revokedOverfetch = 2
 )
 
 // Search runs a zoekt query against each vault's literal index, refreshing
@@ -52,7 +55,7 @@ func (l *Library) Search(
 		lists = append(lists, matches)
 	}
 	merged := search.MergeMatches(lists, opts.Limit)
-	return search.NewResult(l.roots(), opts.OutputMode, merged), nil
+	return search.NewResult(l.meta(), opts.OutputMode, merged), nil
 }
 
 // Count totals a zoekt query across vaults. GroupBy may be tier, tag or
@@ -97,6 +100,9 @@ type SemanticQuery struct {
 	Mode string
 	// Filter narrows the hits; Filter.K caps them (default 20).
 	Filter semantic.QueryOptions
+	// IncludeRevoked keeps hits from superseded, retracted and withdrawn
+	// notes, which a search leaves out by default.
+	IncludeRevoked bool
 }
 
 // SemanticSearch runs a vector query against each vault's semantic index,
@@ -122,7 +128,7 @@ func (l *Library) SemanticSearch(
 	if err != nil {
 		return semantic.SearchResult{}, err
 	}
-	hits, err := l.semanticHits(ctx, vaults, q.Text, q.Filter)
+	hits, err := l.semanticHits(ctx, vaults, q.Text, q.Filter, q.IncludeRevoked)
 	if err != nil {
 		return semantic.SearchResult{}, err
 	}
@@ -132,12 +138,21 @@ func (l *Library) SemanticSearch(
 }
 
 // semanticHits queries each vault's semantic index and merges the hits.
+// Each hit takes its note's current status, review_by and staleness from
+// disk, and a revoked note's hits are dropped unless includeRevoked is set;
+// the index is asked for twice filter.K so the drop leaves enough.
 func (l *Library) semanticHits(
 	ctx context.Context,
 	vaults *vault.Set,
 	text string,
 	filter semantic.QueryOptions,
+	includeRevoked bool,
 ) ([]semantic.Hit, error) {
+	k := filter.K
+	if !includeRevoked {
+		filter.K *= revokedOverfetch
+	}
+	meta := l.meta()
 	lists := make([][]semantic.Hit, 0, len(vaults.Vaults()))
 	for _, v := range vaults.Vaults() {
 		idx, err := l.openSemantic(v)
@@ -148,12 +163,18 @@ func (l *Library) semanticHits(
 		if err != nil {
 			return nil, err
 		}
-		for i := range hits {
-			hits[i].Vault = v.Name
+		kept := hits[:0]
+		for _, h := range hits {
+			h.Vault = v.Name
+			n := meta.Meta(v.Name, h.Path)
+			h.Status, h.ReviewBy, h.Stale = n.Status, n.ReviewBy, n.Stale
+			if !search.Hidden(h.Status, includeRevoked, filter.Status) {
+				kept = append(kept, h)
+			}
 		}
-		lists = append(lists, hits)
+		lists = append(lists, kept)
 	}
-	return semantic.MergeHits(lists, filter.K), nil
+	return semantic.MergeHits(lists, k), nil
 }
 
 // HybridQuery is one hybrid (literal + semantic) search across vaults.
@@ -168,6 +189,8 @@ type HybridQuery struct {
 	Status   string
 	Evidence string
 	Rerank   bool
+	// IncludeRevoked keeps superseded, retracted and withdrawn notes.
+	IncludeRevoked bool
 }
 
 func (q *HybridQuery) applyDefaults() {
@@ -218,7 +241,7 @@ func (l *Library) HybridSearch(
 		Type:     q.Type,
 		Status:   q.Status,
 		Evidence: q.Evidence,
-	})
+	}, q.IncludeRevoked)
 	if err != nil {
 		warnings = append(
 			warnings,
@@ -228,12 +251,13 @@ func (l *Library) HybridSearch(
 	}
 
 	literal, err := l.Search(ctx, vaults, search.SearchOptions{
-		Pattern: q.Text,
-		Tag:     q.Tag,
-		Type:    q.Type,
-		Status:  q.Status,
-		Tier:    tier,
-		Limit:   q.KZoekt,
+		Pattern:        q.Text,
+		Tag:            q.Tag,
+		Type:           q.Type,
+		Status:         q.Status,
+		Tier:           tier,
+		Limit:          q.KZoekt,
+		IncludeRevoked: q.IncludeRevoked,
 	})
 	if err != nil {
 		return hybrid.Result{}, fmt.Errorf("literal query: %w", err)
@@ -257,7 +281,10 @@ func fuse(literal []search.FileHit, semHits []semantic.Hit, k int) []hybrid.Resu
 	for _, f := range literal {
 		key := hitKey(f.Vault, f.Path)
 		literalIDs = append(literalIDs, key)
-		notes[key] = hybrid.ResultHit{Vault: f.Vault, Path: f.Path, Evidence: f.Evidence}
+		notes[key] = hybrid.ResultHit{
+			Vault: f.Vault, Path: f.Path, Evidence: f.Evidence,
+			Status: f.Status, ReviewBy: f.ReviewBy, Stale: f.Stale,
+		}
 	}
 	// semHits arrive best first, so the first chunk of a note is its best.
 	best := make(map[string]bool)
@@ -281,6 +308,8 @@ func fuse(literal []search.FileHit, semHits []semantic.Hit, k int) []hybrid.Resu
 			Type:        h.Type,
 			Status:      h.Status,
 			Evidence:    h.Evidence,
+			ReviewBy:    h.ReviewBy,
+			Stale:       h.Stale,
 		}
 	}
 	fused := hybrid.Fuse([]hybrid.Input{

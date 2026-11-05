@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestInvalidQueryIsSentinel(t *testing.T) {
@@ -28,7 +29,7 @@ func TestNewResult(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "notes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	note := "---\nevidence: B\n---\nbody\n"
+	note := "---\nevidence: B\nstatus: validated\nreview_by: 2026-01-01\n---\nbody\n"
 	if err := os.WriteFile(filepath.Join(root, "notes", "a.md"), []byte(note), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -47,18 +48,30 @@ func TestNewResult(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.mode, func(t *testing.T) {
-			res := NewResult(map[string]string{"v": root}, tc.mode, matches)
+			meta := NewMetaReader(
+				map[string]string{"v": root},
+				time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+			)
+			res := NewResult(meta, tc.mode, matches)
 			if res.OutputMode != tc.mode || res.Total != tc.wantTotal {
 				t.Fatalf("result = %+v", res)
 			}
-			first := ""
+			var got NoteMeta
 			if tc.mode == ModeFiles {
-				first = res.Files[0].Evidence
+				h := res.Files[0]
+				got = NoteMeta{h.Evidence, h.Status, h.ReviewBy, h.Stale}
 			} else {
-				first = res.Lines[0].Evidence
+				h := res.Lines[0]
+				got = NoteMeta{h.Evidence, h.Status, h.ReviewBy, h.Stale}
 			}
-			if first != "B" {
-				t.Errorf("evidence = %q, want B", first)
+			want := NoteMeta{
+				Evidence: "B",
+				Status:   "validated",
+				ReviewBy: "2026-01-01",
+				Stale:    true,
+			}
+			if got != want {
+				t.Errorf("hit metadata = %+v, want %+v", got, want)
 			}
 		})
 	}

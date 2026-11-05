@@ -17,15 +17,17 @@ import (
 // ---------------------------------------------------------------------------
 
 type semanticSearchInput struct {
-	Query      string `json:"query"                 jsonschema:"natural-language query — vector search returns conceptually similar passages, not just exact-string matches"`
-	K          int    `json:"k,omitempty"           jsonschema:"number of results to return (default 20)"`
-	Tier       string `json:"tier,omitempty"        jsonschema:"restrict to a single vault tier: inbox, notes, outputs, or MOCs"`
-	Tag        string `json:"tag,omitempty"         jsonschema:"restrict to notes whose frontmatter tags list contains this tag"`
-	Type       string `json:"type,omitempty"        jsonschema:"restrict to notes with this frontmatter type"`
-	Status     string `json:"status,omitempty"      jsonschema:"restrict to notes with this frontmatter status"`
-	Evidence   string `json:"evidence,omitempty"    jsonschema:"restrict to notes with this evidence tier (A/B/C/D/mixed)"`
-	OutputMode string `json:"output_mode,omitempty" jsonschema:"snippets (default) returns one result per chunk with body excerpt; paths returns unique note paths"`
-	Vault      string `json:"vault,omitempty"       jsonschema:"restrict to this configured vault; default searches every vault"`
+	Query      string `json:"query"                     jsonschema:"natural-language query — vector search returns conceptually similar passages, not just exact-string matches"`
+	K          int    `json:"k,omitempty"               jsonschema:"number of results to return (default 20)"`
+	Tier       string `json:"tier,omitempty"            jsonschema:"restrict to a single vault tier: inbox, notes, outputs, or MOCs"`
+	Tag        string `json:"tag,omitempty"             jsonschema:"restrict to notes whose frontmatter tags list contains this tag"`
+	Type       string `json:"type,omitempty"            jsonschema:"restrict to notes with this frontmatter type"`
+	Status     string `json:"status,omitempty"          jsonschema:"restrict to notes with this frontmatter status"`
+	Evidence   string `json:"evidence,omitempty"        jsonschema:"restrict to notes with this evidence tier (A/B/C/D/mixed)"`
+	OutputMode string `json:"output_mode,omitempty"     jsonschema:"snippets (default) returns one result per chunk with body excerpt; paths returns unique note paths"`
+	Vault      string `json:"vault,omitempty"           jsonschema:"restrict to this configured vault; default searches every vault"`
+	// IncludeRevoked keeps notes default search hides.
+	IncludeRevoked bool `json:"include_revoked,omitempty" jsonschema:"include superseded, retracted and withdrawn notes, which are hidden by default"`
 }
 
 // ---------------------------------------------------------------------------
@@ -33,17 +35,19 @@ type semanticSearchInput struct {
 // ---------------------------------------------------------------------------
 
 type hybridSearchInput struct {
-	Query    string `json:"query"              jsonschema:"natural-language query — fused literal (zoekt) + semantic (vector) results via RRF"`
-	K        int    `json:"k,omitempty"        jsonschema:"final number of results to return after fusion (default 20)"`
-	KZoekt   int    `json:"k_zoekt,omitempty"  jsonschema:"candidates pulled from the literal index before fusion (default 30)"`
-	KVector  int    `json:"k_vector,omitempty" jsonschema:"candidates pulled from the semantic index before fusion (default 30)"`
-	Tier     string `json:"tier,omitempty"     jsonschema:"restrict to a single vault tier"`
-	Tag      string `json:"tag,omitempty"      jsonschema:"restrict by frontmatter tag"`
-	Type     string `json:"type,omitempty"     jsonschema:"restrict by frontmatter type"`
-	Status   string `json:"status,omitempty"   jsonschema:"restrict by frontmatter status"`
-	Evidence string `json:"evidence,omitempty" jsonschema:"restrict by evidence tier (A/B/C/D/mixed)"`
-	Rerank   *bool  `json:"rerank,omitempty"   jsonschema:"opt-in LLM reranker (slower; defaults to semantic.rerank_default in config)"`
-	Vault    string `json:"vault,omitempty"    jsonschema:"restrict to this configured vault; default searches every vault"`
+	Query    string `json:"query"                     jsonschema:"natural-language query — fused literal (zoekt) + semantic (vector) results via RRF"`
+	K        int    `json:"k,omitempty"               jsonschema:"final number of results to return after fusion (default 20)"`
+	KZoekt   int    `json:"k_zoekt,omitempty"         jsonschema:"candidates pulled from the literal index before fusion (default 30)"`
+	KVector  int    `json:"k_vector,omitempty"        jsonschema:"candidates pulled from the semantic index before fusion (default 30)"`
+	Tier     string `json:"tier,omitempty"            jsonschema:"restrict to a single vault tier"`
+	Tag      string `json:"tag,omitempty"             jsonschema:"restrict by frontmatter tag"`
+	Type     string `json:"type,omitempty"            jsonschema:"restrict by frontmatter type"`
+	Status   string `json:"status,omitempty"          jsonschema:"restrict by frontmatter status"`
+	Evidence string `json:"evidence,omitempty"        jsonschema:"restrict by evidence tier (A/B/C/D/mixed)"`
+	Rerank   *bool  `json:"rerank,omitempty"          jsonschema:"opt-in LLM reranker (slower; defaults to semantic.rerank_default in config)"`
+	Vault    string `json:"vault,omitempty"           jsonschema:"restrict to this configured vault; default searches every vault"`
+	// IncludeRevoked keeps notes default search hides.
+	IncludeRevoked bool `json:"include_revoked,omitempty" jsonschema:"include superseded, retracted and withdrawn notes, which are hidden by default"`
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +61,7 @@ func registerSemanticTools(s *mcp.Server, h *handlers) {
 			"Use whenever the task is conceptual rather than exact-string — 'notes that argue against X', " +
 			"'anything about graceful shutdown patterns', 'what have I written that resembles this passage'. " +
 			"Filters: tier (inbox/notes/outputs/MOCs), tag, type, status, evidence (A/B/C/D/mixed). " +
+			"Superseded, retracted and withdrawn notes are hidden unless include_revoked is set or status names them. " +
 			"Requires semantic.enabled=true in the brain config and a running local Ollama; a stale index is refreshed first, and warnings say when it could not be. " +
 			"Prefer brain_search for exact-string lookups, brain_hybrid_search when you want both signals fused.",
 	}, h.handleSemanticSearch)
@@ -103,6 +108,7 @@ func (h *handlers) handleSemanticSearch(
 			Status:   in.Status,
 			Evidence: in.Evidence,
 		},
+		IncludeRevoked: in.IncludeRevoked,
 	})
 	if err != nil {
 		return nil, semantic.SearchResult{}, fmt.Errorf("brain_semantic_search: %w", err)
@@ -137,6 +143,8 @@ func (h *handlers) handleHybridSearch(
 		Status:   in.Status,
 		Evidence: in.Evidence,
 		Rerank:   rerankFlag,
+
+		IncludeRevoked: in.IncludeRevoked,
 	})
 	if err != nil {
 		return nil, hybrid.Result{}, fmt.Errorf("brain_hybrid_search: %w", err)

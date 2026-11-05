@@ -13,7 +13,10 @@ import (
 )
 
 func newSemanticSearchCmd(a *app) *cobra.Command {
-	var opts semantic.QueryOptions
+	var (
+		opts           semantic.QueryOptions
+		includeRevoked bool
+	)
 	c := &cobra.Command{
 		Use:   "semantic-search <query>",
 		Short: "Vector search across the vault (semantic; requires Ollama)",
@@ -35,9 +38,10 @@ With -o json, prints the brain_semantic_search document (snippets mode).`,
 				return err
 			}
 			res, err := lib.SemanticSearch(context.Background(), set, library.SemanticQuery{
-				Text:   args[0],
-				Mode:   semantic.ModeSnippets,
-				Filter: opts,
+				Text:           args[0],
+				Mode:           semantic.ModeSnippets,
+				Filter:         opts,
+				IncludeRevoked: includeRevoked,
 			})
 			if err != nil {
 				return semanticErr(err)
@@ -72,6 +76,7 @@ With -o json, prints the brain_semantic_search document (snippets mode).`,
 		"restrict to notes with this evidence tier (A/B/C/D/mixed)",
 	)
 	f.IntVarP(&opts.K, "k", "k", 20, "number of results to return")
+	f.BoolVar(&includeRevoked, "include-revoked", false, includeRevokedHelp)
 	return c
 }
 

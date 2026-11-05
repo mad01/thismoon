@@ -2,11 +2,7 @@ package search
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"sort"
-
-	"github.com/mad01/thismoon/services/brain/internal/markdown"
 )
 
 // ErrInvalidQuery means a zoekt query failed to parse.
@@ -22,9 +18,12 @@ const (
 
 // FileHit is one matching note in files_with_matches mode.
 type FileHit struct {
-	Vault    string `json:"vault"              jsonschema:"name of the vault holding the note"`
-	Path     string `json:"path"               jsonschema:"vault-relative note path, e.g. notes/topic/foo.md"`
-	Evidence string `json:"evidence,omitempty" jsonschema:"trust tier of the matching note (A/B/C/D/mixed) if set"`
+	Vault    string `json:"vault"               jsonschema:"name of the vault holding the note"`
+	Path     string `json:"path"                jsonschema:"vault-relative note path, e.g. notes/topic/foo.md"`
+	Evidence string `json:"evidence,omitempty"  jsonschema:"trust tier of the matching note (A/B/C/D/mixed) if set"`
+	Status   string `json:"status,omitempty"    jsonschema:"the note's lifecycle status as stored (raw, validated, disputed, ...)"`
+	ReviewBy string `json:"review_by,omitempty" jsonschema:"the date the note is due for review, when set"`
+	Stale    bool   `json:"stale,omitempty"     jsonschema:"true when review_by has passed: re-check the note before relying on it"`
 }
 
 // LineHit is one matching line in content mode.
@@ -36,7 +35,10 @@ type LineHit struct {
 	Text     string `json:"text"`
 	Before   string `json:"before,omitempty"`
 	After    string `json:"after,omitempty"`
-	Evidence string `json:"evidence,omitempty" jsonschema:"trust tier of the matching note (A/B/C/D/mixed) if set"`
+	Evidence string `json:"evidence,omitempty"  jsonschema:"trust tier of the matching note (A/B/C/D/mixed) if set"`
+	Status   string `json:"status,omitempty"    jsonschema:"the note's lifecycle status as stored"`
+	ReviewBy string `json:"review_by,omitempty" jsonschema:"the date the note is due for review, when set"`
+	Stale    bool   `json:"stale,omitempty"     jsonschema:"true when review_by has passed"`
 }
 
 // Result is the JSON result of a search, shared by the CLI and brain_search.
@@ -54,17 +56,17 @@ type Counts struct {
 }
 
 // NewResult shapes matches for output in mode (ModeFiles or ModeContent),
-// annotating each hit with its note's evidence tier. roots maps each vault
-// name to its root, where the notes are read.
-func NewResult(roots map[string]string, mode string, matches []Match) Result {
+// annotating each hit with its note's evidence tier, status, review_by and
+// staleness, which meta reads from disk.
+func NewResult(meta *MetaReader, mode string, matches []Match) Result {
 	out := Result{OutputMode: mode}
 	if len(matches) == 0 {
 		return out
 	}
-	evidence := make(map[string]string)
 	if mode == ModeContent {
 		out.Lines = make([]LineHit, 0, len(matches))
 		for _, m := range matches {
+			n := meta.Meta(m.Vault, m.Path)
 			out.Lines = append(out.Lines, LineHit{
 				Vault:    m.Vault,
 				Path:     m.Path,
@@ -73,7 +75,10 @@ func NewResult(roots map[string]string, mode string, matches []Match) Result {
 				Text:     m.Text,
 				Before:   m.Before,
 				After:    m.After,
-				Evidence: evidenceForPath(roots[m.Vault], evidence, m.Path),
+				Evidence: n.Evidence,
+				Status:   n.Status,
+				ReviewBy: n.ReviewBy,
+				Stale:    n.Stale,
 			})
 		}
 		out.Total = len(out.Lines)
@@ -87,10 +92,14 @@ func NewResult(roots map[string]string, mode string, matches []Match) Result {
 			continue
 		}
 		seen[key] = true
+		n := meta.Meta(m.Vault, m.Path)
 		out.Files = append(out.Files, FileHit{
 			Vault:    m.Vault,
 			Path:     m.Path,
-			Evidence: evidenceForPath(roots[m.Vault], evidence, m.Path),
+			Evidence: n.Evidence,
+			Status:   n.Status,
+			ReviewBy: n.ReviewBy,
+			Stale:    n.Stale,
 		})
 	}
 	out.Total = len(out.Files)
@@ -150,26 +159,4 @@ func MergeCounts(lists ...[]CountResult) []CountResult {
 		return out[i].Group < out[j].Group
 	})
 	return out
-}
-
-// evidenceForPath returns the evidence tier of a vault-relative note,
-// parsing each note at most once per call. Evidence is best-effort metadata:
-// a note that cannot be read or parsed has none.
-func evidenceForPath(vaultRoot string, cache map[string]string, relPath string) string {
-	if vaultRoot == "" {
-		return ""
-	}
-	full := filepath.Join(vaultRoot, filepath.FromSlash(relPath))
-	if ev, ok := cache[full]; ok {
-		return ev
-	}
-	ev := ""
-	data, err := os.ReadFile(full)
-	if err == nil {
-		if fm, _, perr := markdown.ParseFrontmatter(data); perr == nil {
-			ev = markdown.EvidenceOf(fm)
-		}
-	}
-	cache[full] = ev
-	return ev
 }

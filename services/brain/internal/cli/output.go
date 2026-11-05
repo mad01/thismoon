@@ -14,6 +14,9 @@ import (
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
+// includeRevokedHelp is the help of every search command's --include-revoked.
+const includeRevokedHelp = "include superseded, retracted and withdrawn notes, hidden by default"
+
 // Output formats for the persistent -o flag.
 const (
 	outputText = "text"

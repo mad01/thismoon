@@ -145,21 +145,13 @@ func SearchWith(ctx context.Context, searcher zoekt.Searcher, opts SearchOptions
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
-	matches := convertResults(result.Files, limit)
-	if name, _ := searcherRepo(searcher); name != "" {
+	name, root := searcherRepo(searcher)
+	matches := convertResults(result.Files, limit, noteFilter(root, opts))
+	if name != "" {
 		for i := range matches {
 			matches[i].Vault = name
 		}
 	}
-
-	// Frontmatter-backed filters (tag/type/status) can't be expressed in the
-	// zoekt query without risking false positives on body text that happens to
-	// mention the word — re-read the frontmatter to confirm.
-	if opts.Tag != "" || opts.Type != "" || opts.Status != "" {
-		_, root := searcherRepo(searcher)
-		matches = filterByFrontmatter(root, matches, opts)
-	}
-
 	return matches, nil
 }
 
@@ -282,13 +274,18 @@ func buildQueryString(opts SearchOptions) string {
 	return strings.Join(parts, " ")
 }
 
-// convertResults transforms zoekt FileMatches into our Match type.
-func convertResults(files []zoekt.FileMatch, limit int) []Match {
+// convertResults transforms zoekt FileMatches into our Match type, keeping
+// at most limit files that keep accepts (every file when keep is nil). The
+// filter runs before the limit, so a hidden note never takes a slot.
+func convertResults(files []zoekt.FileMatch, limit int, keep func(path string) bool) []Match {
 	var matches []Match
 	fileCount := 0
 	for _, f := range files {
 		if fileCount >= limit {
 			break
+		}
+		if keep != nil && !keep(f.FileName) {
+			continue
 		}
 		fileCount++
 
@@ -370,32 +367,23 @@ func tagsForPath(vaultRoot, relPath string) []string {
 	return fm.Tags
 }
 
-// filterByFrontmatter drops matches whose note frontmatter doesn't satisfy the
-// tag/type/status filters. Matches for the same Path are evaluated once.
-func filterByFrontmatter(vaultRoot string, matches []Match, opts SearchOptions) []Match {
-	if vaultRoot == "" {
-		return matches
+// noteFilter returns the frontmatter check a hit's note must pass, or nil
+// when there is none. The tag, type and status filters, and the default
+// that hides revoked notes, can't be expressed in the zoekt query without
+// false positives on body text that mentions the word, so each note's
+// frontmatter is read to confirm. A note that cannot be read is dropped.
+func noteFilter(vaultRoot string, opts SearchOptions) func(path string) bool {
+	if vaultRoot == "" ||
+		(opts.IncludeRevoked && opts.Tag == "" && opts.Type == "" && opts.Status == "") {
+		return nil
 	}
-
-	type decision struct{ keep bool }
-	seen := make(map[string]decision)
-
-	out := matches[:0]
-	for _, m := range matches {
-		dec, ok := seen[m.Path]
-		if !ok {
-			dec = decision{keep: noteMatchesFrontmatter(vaultRoot, m.Path, opts)}
-			seen[m.Path] = dec
-		}
-		if dec.keep {
-			out = append(out, m)
-		}
+	return func(relPath string) bool {
+		return noteMatchesFrontmatter(vaultRoot, relPath, opts)
 	}
-	return out
 }
 
 // noteMatchesFrontmatter returns true when the note's frontmatter satisfies
-// every non-empty filter in opts.
+// every non-empty filter in opts and the note is not hidden by its status.
 func noteMatchesFrontmatter(vaultRoot, relPath string, opts SearchOptions) bool {
 	data, err := os.ReadFile(filepath.Join(vaultRoot, relPath))
 	if err != nil {
@@ -414,7 +402,7 @@ func noteMatchesFrontmatter(vaultRoot, relPath string, opts SearchOptions) bool 
 	if opts.Status != "" && !strings.EqualFold(fm.Status, opts.Status) {
 		return false
 	}
-	return true
+	return !Hidden(fm.Status, opts.IncludeRevoked, opts.Status)
 }
 
 // searcherRepo returns the name and filesystem source (the vault root) of

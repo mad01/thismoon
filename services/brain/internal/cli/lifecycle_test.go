@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/services/brain/internal/search"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
@@ -75,10 +76,35 @@ func TestRevocationCommands(t *testing.T) {
 			t.Errorf("%s: read starts %q, want the banner %q", tc.name, first, tc.banner)
 		}
 	}
+	assertSearchHidesRevoked(t)
 	got := runBrain(t, "", "read", "notes/beta.md", "-o", "json")
 	note := decodeStrict[vault.Note](t, got.stdout)
 	by, _ := note.Frontmatter.Extra["superseded_by"].(string)
 	if !strings.HasPrefix(by, "id:") || !strings.Contains(note.Banner, by) {
 		t.Errorf("superseded_by %q, banner %q: want an id ref named in the banner", by, note.Banner)
+	}
+}
+
+// assertSearchHidesRevoked runs after TestRevocationCommands superseded
+// notes/beta.md, the only note saying "extends".
+func assertSearchHidesRevoked(t *testing.T) {
+	t.Helper()
+	got := runBrain(t, "", "search", "extends", "-o", "json")
+	if res := decodeStrict[search.Result](t, got.stdout); got.code != exitOK || res.Total != 0 {
+		t.Errorf(
+			"default search: exit %d, hits %+v, want the superseded note hidden",
+			got.code,
+			res.Files,
+		)
+	}
+	got = runBrain(t, "", "search", "extends", "--include-revoked", "-o", "json")
+	res := decodeStrict[search.Result](t, got.stdout)
+	if got.code != exitOK || res.Total != 1 || res.Files[0].Status != "superseded" ||
+		res.Files[0].ReviewBy != "" || res.Files[0].Stale {
+		t.Errorf(
+			"--include-revoked: exit %d, hits %+v, want beta as superseded",
+			got.code,
+			res.Files,
+		)
 	}
 }

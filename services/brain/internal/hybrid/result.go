@@ -14,8 +14,10 @@ type ResultHit struct {
 	Tier        string   `json:"tier,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 	Type        string   `json:"type,omitempty"`
-	Status      string   `json:"status,omitempty"`
+	Status      string   `json:"status,omitempty"       jsonschema:"the note's lifecycle status as stored"`
 	Evidence    string   `json:"evidence,omitempty"`
+	ReviewBy    string   `json:"review_by,omitempty"    jsonschema:"the date the note is due for review, when set"`
+	Stale       bool     `json:"stale,omitempty"        jsonschema:"true when review_by has passed"`
 }
 
 // Result is the JSON result of a hybrid search.

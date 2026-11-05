@@ -162,6 +162,11 @@ type Hit struct {
 	Status string
 	// Evidence tier of the source note ("" if unset).
 	Evidence string
+	// ReviewBy and Stale are the note's review date and whether it has
+	// passed. The index does not store them; the library reads them from
+	// the note, along with its current Status.
+	ReviewBy string
+	Stale    bool
 	// Seq is the chunk's sequence number within the note.
 	Seq int
 }

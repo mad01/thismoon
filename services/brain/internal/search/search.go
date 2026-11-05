@@ -53,6 +53,10 @@ type SearchOptions struct {
 	ContextLines int
 	// OutputMode controls output verbosity: "files_with_matches" or "content".
 	OutputMode string
+	// IncludeRevoked keeps superseded, retracted and withdrawn notes, which
+	// a search leaves out by default. A Status filter naming one of those
+	// statuses keeps its notes too.
+	IncludeRevoked bool
 }
 
 // Count groupings.
