@@ -28,12 +28,12 @@ Keep two binaries straight, because mixing them up is the usual reason a change 
 
 | You want to change... | File |
 |---|---|
-| Content detection rules | `internal/scanner/rules.go` — `DefaultRules` |
-| Filename rules (flag by name, e.g. `id_rsa`, `*.p12`) | `internal/scanner/rules.go` — `DefaultFileRules` |
-| How a rule is applied to a line (the gate order) | `internal/scanner/scanner.go` — `scanContent` |
-| Entropy scoring | `internal/scanner/entropy.go` — `shannonEntropy` |
-| Per-repo `.suspenders.yaml` handling | `internal/scanner/ignore.go` |
-| Redaction of matched secrets | `internal/scanner/result.go` — `Redact` |
+| Content detection rules | `kit/secretscan/rules.go` — `DefaultRules` |
+| Filename rules (flag by name, e.g. `id_rsa`, `*.p12`) | `kit/secretscan/rules.go` — `DefaultFileRules` |
+| How a rule is applied to a line (the gate order) | `kit/secretscan/scanner.go` — `scanContent` |
+| Entropy scoring | `kit/secretscan/entropy.go` — `shannonEntropy` |
+| Per-repo `.suspenders.yaml` handling | `kit/secretscan/ignore.go` |
+| Redaction of matched secrets | `kit/secretscan/result.go` — `Redact` |
 | The internal-reference guard | `internal/guard/guard.go` |
 | Hook script generation and install/update | `internal/hook/hook.go` |
 | Repo discovery for `--all` | `kit/repofind/finder.go` (shared package at the repo root) |
@@ -61,7 +61,7 @@ One detail decides how you write a pattern: **capture group 1 is the secret.** I
 
 ## Add a detection rule
 
-1. Add the rule to `DefaultRules` in `internal/scanner/rules.go`. Place specific rules above the generic catch-alls (`url-basic-auth`, `high-entropy-string`) at the end of the slice, so `SkipOverlapping` lets the broad rules defer to yours:
+1. Add the rule to `DefaultRules` in `kit/secretscan/rules.go`. Place specific rules above the generic catch-alls (`url-basic-auth`, `high-entropy-string`) at the end of the slice, so `SkipOverlapping` lets the broad rules defer to yours:
 
    ```go
    {
@@ -72,7 +72,7 @@ One detail decides how you write a pattern: **capture group 1 is the secret.** I
    },
    ```
 
-2. Test the regex. Add a positive and a negative case to `TestDefaultRulesDetection` in `internal/scanner/scanner_test.go` (or `TestNewRulePatterns` in `scanner_v2_test.go`). These cases assert `rule.Pattern.MatchString` and nothing else, so they cover the regex but not the entropy or filter gates:
+2. Test the regex. Add a positive and a negative case to `TestDefaultRulesDetection` in `kit/secretscan/scanner_test.go` (or `TestNewRulePatterns` in `scanner_v2_test.go`). These cases assert `rule.Pattern.MatchString` and nothing else, so they cover the regex but not the entropy or filter gates:
 
    ```go
    {name: "acme-api-key matches", ruleID: "acme-api-key",
@@ -144,7 +144,7 @@ A false positive is a finding on something that is not a secret. Walk it down in
 A false negative is a real secret the scan missed. The gate order is the checklist — the match died at one of these steps:
 
 1. Is the file even scanned? `ScanDir` and `ScanStaged` only see git-tracked or staged files. Binary files (a null byte in the first 512 bytes) and files over 1 MB are skipped. A secret in an untracked file will not be caught until it is staged.
-2. Does the regex match at all? Test it directly: `grep -nE 'your-pattern' file`, or add a `wantMatch: true` case and run `go test ./internal/scanner -run TestDefaultRulesDetection`. If the regex misses, the rest is moot.
+2. Does the regex match at all? Test it directly: `grep -nE 'your-pattern' file`, or add a `wantMatch: true` case and run `go test ./kit/secretscan -run TestDefaultRulesDetection` from the repo root. If the regex misses, the rest is moot.
 3. Did a gate drop it? In `scanContent` order: an `ExcludeFiles` glob removed the rule for this filename; `SkipOverlapping` deferred to another rule that then got filtered. Later gates: `MinEntropy` rejected the token as too low-entropy; a `Filter` vetoed it; or an allowlist / `.suspenders.yaml` ignore is suppressing it. Add a print or a focused test through `ScanFile` to see which.
 4. Is it a brand-new secret shape? If no rule covers it, that is an "add a detection rule" task, not a bug. See above.
 
@@ -170,4 +170,4 @@ make lint               # golangci-lint
 make test-integration   # Docker; run when hook behaviour changed
 ```
 
-`make test` and `make lint` are the floor for any change. Add `make test-integration` when you touched hook generation or install. This repo's own `.suspenders.yaml` suppresses findings from its fixture-bearing files (the tests, `rules.go`, the README). Keep those fixtures real example tokens, do not swap them for dummies, or the rule tests lose their teeth.
+`make test` and `make lint` are the floor for any change. A change under `kit/secretscan/` also needs `go test ./kit/secretscan/` from the repo root, which `make test` here does not cover. Add `make test-integration` when you touched hook generation or install. This repo's own `.suspenders.yaml` suppresses findings from its fixture-bearing files (the tests, `rules.go`, the README). Keep those fixtures real example tokens, do not swap them for dummies, or the rule tests lose their teeth.

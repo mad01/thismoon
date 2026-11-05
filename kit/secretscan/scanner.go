@@ -1,4 +1,17 @@
-package scanner
+// Package secretscan detects secrets in files, lines, and the git index. It
+// is the scanning engine behind the suspenders pre-commit hook and its scan
+// and history commands, kept in kit so other components scan with the same
+// rules.
+//
+// DefaultRules and DefaultFileRules are the built-in rule sets, and New
+// builds a Scanner over a rule slice. A Finding keeps the unredacted match in
+// RawMatch, so print Match or Context, or pass the text through Redact. A
+// file the scanner skips (too large, unreadable) goes to OnSkip, or stderr
+// when OnSkip is nil, and a line over the size cap fails the scan instead of
+// passing it. Per-repo suppression comes
+// from a .suspenders.yaml read by LoadIgnoreConfig and from the inline
+// suspenders:ignore marker.
+package secretscan
 
 import (
 	"bufio"

@@ -13,10 +13,10 @@ import (
 
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/kit/repofind"
+	"github.com/mad01/thismoon/kit/secretscan"
 	"github.com/mad01/thismoon/tools/suspenders/internal/config"
 	"github.com/mad01/thismoon/tools/suspenders/internal/guard"
 	"github.com/mad01/thismoon/tools/suspenders/internal/hook"
-	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
 )
 
 var hookAll bool
@@ -327,7 +327,7 @@ func runPreCommit(root string, cfg *config.Config) error {
 			notify.EmitEventSync("suspenders", "warn",
 				fmt.Sprintf("commit blocked: %d internal reference(s)", len(findings)),
 				"", map[string]string{"repo": repoName, "check": "guard"})
-			return scanner.ErrFindingsFound
+			return secretscan.ErrFindingsFound
 		}
 	}
 
@@ -408,7 +408,7 @@ func runBuiltinScan(root string, cfg *config.Config, skips *skipCollector) error
 	notify.EmitEventSync("suspenders", "warn",
 		fmt.Sprintf("commit blocked: %d secret finding(s)", len(findings)),
 		"", map[string]string{"repo": repoNameFromPath(root), "check": "scan"})
-	return scanner.ErrFindingsFound
+	return secretscan.ErrFindingsFound
 }
 
 func printGuardFindings(findings []guard.Finding) {

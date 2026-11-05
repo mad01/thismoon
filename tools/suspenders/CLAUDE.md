@@ -39,14 +39,6 @@ internal/
     guard.go                 Internal-reference guard: CollectNames, Check (staged diff),
                              CheckDir (tracked working-tree files), StagedFiles
                              Walks workspace dirs via kit/repofind, regex match on content
-  scanner/
-    rules.go                 84 content rules (DefaultRules) + 7 filename rules (DefaultFileRules)
-                             Rule fields: MinEntropy, ExcludeFiles, SkipOverlapping, Filter
-    scanner.go                New, ScanDir, ScanStaged (reads index via git show :<path>),
-                             AddAllowance; inline `suspenders:ignore` marker; fail-closed errors
-    entropy.go                shannonEntropy: entropy gating for generic rules
-    ignore.go                 Per-repo .suspenders.yaml suppression
-    result.go                 Finding type, Redact function, ErrFindingsFound
   history/
     walk.go                   Commit walker: streams one `git log -p` over the whole
                              history, attributes added lines/new files to their commit
@@ -62,7 +54,21 @@ internal/
                              Event type: PreCommit, PostMerge
 
 Makefile                     part of module github.com/mad01/thismoon (no own go.mod)
+
+kit/secretscan/              the scanner, at the repo root (shared package)
+  rules.go                   84 content rules (DefaultRules) + 7 filename rules (DefaultFileRules)
+                             Rule fields: MinEntropy, ExcludeFiles, SkipOverlapping, Filter
+  scanner.go                 New, ScanDir, ScanStaged (reads index via git show :<path>),
+                             AddAllowance; inline `suspenders:ignore` marker; fail-closed errors
+  entropy.go                 shannonEntropy: entropy gating for generic rules
+  ignore.go                  Per-repo .suspenders.yaml suppression
+  result.go                  Finding type, Redact function, ErrFindingsFound
 ```
+
+The secret scanner lives in the shared
+`github.com/mad01/thismoon/kit/secretscan` package so other components can
+scan with the same rules. Its tests run with `go test ./kit/secretscan/`
+from the repo root; `make test` here does not reach them.
 
 Repository discovery and remote parsing live in the shared
 `github.com/mad01/thismoon/kit/repofind` package (Find with 32 concurrent
@@ -190,7 +196,7 @@ Build metadata is embedded via `-ldflags` into the shared `github.com/mad01/this
   modes, the overrides that exist, and version-skew checks. Keep those facts
   there, not here.
 - **Version probe convention.** `suspenders version -o json` returns the shared four-key build metadata object (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`. Plain `suspenders version` stays a bare token — status parses it as one; it used to print `suspenders <sha>` (two tokens), which broke that convention, so anything still parsing the old two-token line needs updating.
-- **Keep the fixture-bearing paths in this component real.** The monorepo root `.suspenders.yaml` suppresses scan findings under `tools/suspenders/` (`*_test.go`, `rules.go`, `tests/integration/**`, `README.md`). These are secret-shaped fixtures by design; don't replace them with dummy values, or the tests stop exercising real detection.
+- **Keep the fixture-bearing paths in this component real.** The monorepo root `.suspenders.yaml` suppresses scan findings under `tools/suspenders/` (`*_test.go`, `rules.go`, `tests/integration/**`, `README.md`) and `kit/secretscan/` (`*_test.go`, `rules.go`). These are secret-shaped fixtures by design; don't replace them with dummy values, or the tests stop exercising real detection.
 
 ## See also
 

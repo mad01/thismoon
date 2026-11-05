@@ -11,10 +11,10 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/secretscan"
 	"github.com/mad01/thismoon/tools/suspenders/internal/config"
 	"github.com/mad01/thismoon/tools/suspenders/internal/guard"
 	"github.com/mad01/thismoon/tools/suspenders/internal/history"
-	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
 )
 
 // commitMessagePath is the pseudo-path findings in commit messages carry.
@@ -92,9 +92,9 @@ var historyCleanCmd = &cobra.Command{
 
 // historyFindings aggregates scan results grouped per introducing commit.
 type historyFindings struct {
-	commits []history.Commit             // commits with findings, oldest first
-	secrets map[string][]scanner.Finding // commit hash -> findings
-	blocked map[string][]string          // commit hash -> blocked-name matches
+	commits []history.Commit                // commits with findings, oldest first
+	secrets map[string][]secretscan.Finding // commit hash -> findings
+	blocked map[string][]string             // commit hash -> blocked-name matches
 }
 
 func (h *historyFindings) empty() bool { return len(h.commits) == 0 }
@@ -105,7 +105,7 @@ func (h *historyFindings) forCommit(c history.Commit) {
 	}
 }
 
-func (h *historyFindings) addSecrets(c history.Commit, ff []scanner.Finding) {
+func (h *historyFindings) addSecrets(c history.Commit, ff []secretscan.Finding) {
 	if len(ff) == 0 {
 		return
 	}
@@ -151,7 +151,7 @@ func scanHistory(root string, cfg *config.Config, ref string) (*historyFindings,
 	}
 
 	results := &historyFindings{
-		secrets: make(map[string][]scanner.Finding),
+		secrets: make(map[string][]secretscan.Finding),
 		blocked: make(map[string][]string),
 	}
 
@@ -223,7 +223,7 @@ func runHistoryScan(cmd *cobra.Command, args []string) error {
 	printHistoryFindings(results, ref)
 
 	if historyFailOnFindings {
-		return scanner.ErrFindingsFound
+		return secretscan.ErrFindingsFound
 	}
 	return nil
 }
@@ -443,7 +443,7 @@ func confirmClean(rw *history.Rewriter, refs []string) bool {
 		sort.Strings(tableKeys)
 		fmt.Printf("\nMapped replacements (%d):\n", len(rw.ReplaceTable))
 		for _, k := range tableKeys {
-			fmt.Printf("  %s -> %s\n", scanner.Redact(k), rw.ReplaceTable[k])
+			fmt.Printf("  %s -> %s\n", secretscan.Redact(k), rw.ReplaceTable[k])
 		}
 	}
 	if len(rw.Replacements) > 0 {
@@ -453,7 +453,7 @@ func confirmClean(rw *history.Rewriter, refs []string) bool {
 			len(rw.Replacements),
 		)
 		for _, s := range rw.Replacements {
-			fmt.Printf("  %s\n", scanner.Redact(s))
+			fmt.Printf("  %s\n", secretscan.Redact(s))
 		}
 	}
 	if len(rw.RedactPaths) > 0 {
@@ -483,7 +483,7 @@ func printCleanStats(stats history.Stats) {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		fmt.Printf("  %-40s %d occurrence(s)\n", scanner.Redact(k), stats.Replacements[k])
+		fmt.Printf("  %-40s %d occurrence(s)\n", secretscan.Redact(k), stats.Replacements[k])
 	}
 	if stats.BlobsRedacted > 0 {
 		fmt.Printf("File blobs redacted wholesale: %d\n", stats.BlobsRedacted)

@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/secretscan"
 	"github.com/mad01/thismoon/tools/suspenders/internal/config"
-	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
 )
 
 var rootCmd = &cobra.Command{
@@ -50,5 +50,5 @@ func Execute() error {
 
 // IsFindingsError reports whether err is the sentinel for detected secrets.
 func IsFindingsError(err error) bool {
-	return errors.Is(err, scanner.ErrFindingsFound)
+	return errors.Is(err, secretscan.ErrFindingsFound)
 }
