@@ -206,6 +206,32 @@ func TestComputeFingerprint_ChangesOnMtime(t *testing.T) {
 	}
 }
 
+// TestComputeFingerprint_ChangesOnSubsecondMtime pins nanosecond mtimes:
+// a same-size edit within the second of the last one changes the
+// fingerprint.
+func TestComputeFingerprint_ChangesOnSubsecondMtime(t *testing.T) {
+	vaultRoot := fixtureVault(t)
+	target := filepath.Join(vaultRoot, "notes/topic/goroutines.md")
+	second := time.Unix(1_700_000_000, 0)
+	if err := os.Chtimes(target, second, second.Add(100*time.Millisecond)); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	fp1, _, err := ComputeFingerprint(vaultRoot)
+	if err != nil {
+		t.Fatalf("ComputeFingerprint: %v", err)
+	}
+	if err := os.Chtimes(target, second, second.Add(600*time.Millisecond)); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	fp2, _, err := ComputeFingerprint(vaultRoot)
+	if err != nil {
+		t.Fatalf("ComputeFingerprint 2nd: %v", err)
+	}
+	if fp1 == fp2 {
+		t.Errorf("fingerprint unchanged after a sub-second mtime change: %q", fp1)
+	}
+}
+
 func TestIsStale(t *testing.T) {
 	state := &IndexState{Fingerprint: "abc", Files: map[string]FileState{}}
 	if IsStale(state, "abc") {

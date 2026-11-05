@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/services/brain/internal/config"
 	"github.com/mad01/thismoon/services/brain/internal/semantic"
@@ -195,5 +196,38 @@ func TestRefreshSemanticRebuilds(t *testing.T) {
 				t.Errorf("index holds %d chunks after the rebuild, want 3 (no duplicates)", n)
 			}
 		})
+	}
+}
+
+// TestRefreshSeesASameSizeEditWithinASecond edits a note to new text of the
+// same size within the second of its last write: both indexes refresh, and
+// the semantic sync re-embeds that note alone by its content hash.
+func TestRefreshSeesASameSizeEditWithinASecond(t *testing.T) {
+	f := newSemanticFixture(t, semanticNotes)
+	second := time.Unix(1_700_000_000, 0)
+	target := filepath.Join(f.root, "notes", "a.md")
+	setMtime := func(at time.Time) {
+		t.Helper()
+		if err := os.Chtimes(target, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setMtime(second.Add(100 * time.Millisecond))
+	lib, v := f.open("model-a")
+	if res, err := lib.RefreshLiteral(v, false, nil); err != nil || !res.Built {
+		t.Fatalf("first literal refresh = %+v, %v", res, err)
+	}
+	f.refresh(lib, v, false)
+
+	f.write("notes/a.md", "---\ntitle: A\n---\nalpha apple orchids\n")
+	setMtime(second.Add(600 * time.Millisecond))
+	if res, err := lib.RefreshLiteral(v, false, nil); err != nil || !res.Built {
+		t.Errorf("literal refresh after the edit = %+v, %v; want a rebuild", res, err)
+	}
+	if res := f.refresh(lib, v, false); !res.Built || res.Notes != 1 {
+		t.Errorf("semantic refresh after the edit = %+v, want one note re-embedded", res)
+	}
+	if got := f.paths(lib, "orchids"); !got["notes/a.md"] {
+		t.Errorf("hits = %v, want the edited note", got)
 	}
 }

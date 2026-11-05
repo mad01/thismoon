@@ -105,7 +105,8 @@ func (s *IndexState) SetFingerprint(
 // ComputeFingerprint walks the vault and returns a sha256 hex fingerprint plus
 // the per-file state map. Skips hidden dirs, attachments, and non-markdown files.
 // Any change to the set of files, their sizes, or their mtimes yields a new
-// fingerprint.
+// fingerprint. Mtimes count in nanoseconds, so a same-size edit within the
+// second of the last one is seen on a filesystem that keeps them.
 func ComputeFingerprint(vaultRoot string) (string, map[string]FileState, error) {
 	files := make(map[string]FileState)
 
@@ -157,7 +158,7 @@ func ComputeFingerprint(vaultRoot string) (string, map[string]FileState, error) 
 	h := sha256.New()
 	for _, k := range keys {
 		f := files[k]
-		fmt.Fprintf(h, "%s|%d|%d\n", k, f.Size, f.ModTime.Unix())
+		fmt.Fprintf(h, "%s|%d|%d\n", k, f.Size, f.ModTime.UnixNano())
 	}
 	fingerprint := fmt.Sprintf("%x", h.Sum(nil))
 
