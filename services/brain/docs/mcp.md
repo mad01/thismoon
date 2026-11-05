@@ -87,11 +87,21 @@ The field is read with a two-step precedence: the explicit `evidence:` frontmatt
 
 A `tier` input on search / count / list tools translates into a `file:^<tier>/` regex prefix against the zoekt index (e.g. `tier: "notes"` becomes `file:^notes/`). `ParseTier` accepts `inbox`, `notes`, `outputs`, and `moc`/`mocs`/`MOCs` (case-insensitive).
 
+### Note lifecycle
+
+`status` is one of `raw`, `validated`, `promoting`, `disputed`, `superseded`, `retracted` and `withdrawn`. `expired` is computed and never stored: a raw note past `expires_at`, or a validated note past `review_by`. `brain_write` dates a raw note with `expires_at` (30 days out) and a validated one with `review_by` (90 days with `volatility: high`, 365 otherwise). `brain_promote` and a status change through `brain_edit` record `status_at`. The lifecycle fields sit in `frontmatter.extra`.
+
+Superseded, retracted and withdrawn notes are revoked. The CLI revokes a note (`brain supersede`, `brain retract`, `brain withdraw`); there is no MCP tool for it. Every search tool leaves revoked notes out unless `include_revoked` is true or `status` names a revoked status, and the filter runs before `limit`. `brain_read` and `brain_peek` return a `banner` for a revoked or disputed note; show it before quoting the note. A withdrawn note is a tombstone with no body.
+
+`brain_write`, `brain_edit` and `brain_promote` scan the note they would write with the suspenders rules and refuse it, writing nothing, when it holds a secret. The error names the rule and the line and shows the value redacted. A false positive passes with `suspenders:ignore` on its line or an entry in the vault's `.suspenders.yaml`. The CLI exits 8 (`secret_found`) on the same refusal.
+
+`brain check` (CLI only) checks notes against these rules and the vault's `.brain/policy.yaml`; see `brain docs`.
+
 ## Tools
 
 Registered tools (fourteen): `brain_search`, `brain_semantic_search`, `brain_hybrid_search`, `brain_count`, `brain_query_validate`, `brain_read`, `brain_peek`, `brain_list_tier`, `brain_backlinks`, `brain_graph`, `brain_write`, `brain_edit`, `brain_promote`, `brain_doctor`.
 
-`brain_semantic_search` and `brain_hybrid_search` take a `vault` input like `brain_search`. Their hits carry `vault` and the note's `id` when it has one, and their results carry `warnings[]` (see Indexing).
+`brain_semantic_search` and `brain_hybrid_search` take `vault` and `include_revoked` inputs like `brain_search`. Their hits carry `vault`, the note's `id` when it has one, and its `status`, `review_by` and `stale` as the note says now, and their results carry `warnings[]` (see Indexing).
 
 ### `brain_search`
 
@@ -113,6 +123,7 @@ Search notes by text with zoekt query syntax, optionally filtered by vault / tie
 | `output_mode` | string | no | `files_with_matches` (default) or `content` |
 | `context_lines` | int | no | Context lines around each match; content mode only |
 | `vault` | string | no | Restrict to this configured vault; default searches every vault |
+| `include_revoked` | bool | no | Include superseded, retracted and withdrawn notes, left out by default |
 
 **Output:**
 
@@ -123,6 +134,9 @@ Search notes by text with zoekt query syntax, optionally filtered by vault / tie
 | `files[].vault` | string | Name of the vault holding the note |
 | `files[].path` | string | Vault-relative path |
 | `files[].evidence` | string | Trust tier of the note (A/B/C/D/mixed), omitted when empty |
+| `files[].status` | string | The note's `status` field, omitted when empty |
+| `files[].review_by` | string | The note's `review_by` date, omitted when empty |
+| `files[].stale` | bool | True when `review_by` has passed |
 | `lines` | array | Matching lines; set when `output_mode=content` |
 | `lines[].vault` | string | Name of the vault holding the note |
 | `lines[].path` | string | Vault-relative path |
@@ -132,6 +146,7 @@ Search notes by text with zoekt query syntax, optionally filtered by vault / tie
 | `lines[].before` | string | Context before, if `context_lines>0` |
 | `lines[].after` | string | Context after, if `context_lines>0` |
 | `lines[].evidence` | string | Trust tier of the matching note, omitted when empty |
+| `lines[].status`, `lines[].review_by`, `lines[].stale` | | As on `files[]` |
 | `total` | int | Number of records returned |
 
 **Example:**
@@ -245,6 +260,7 @@ Read a note's frontmatter and a slice of its body.
 | `vault` | string | Name of the vault holding the note |
 | `path` | string | Vault-relative path |
 | `sha` | string | sha256 of the note's bytes; pass it to `brain_edit` as `if_match` |
+| `banner` | string | One line for a superseded, retracted, withdrawn or disputed note, such as `RETRACTED on 2026-11-05 (error): ... Do not cite this note.`; omitted otherwise |
 | `frontmatter` | object | `title`, `aliases`, `tags`, `type`, `status`, `source`, `evidence`, `created`, `updated`, `id`, plus `extra` with every frontmatter key brain does not model (each omitted when empty) |
 | `body_lines` | array | `{line: int, text: string}` entries |
 
@@ -295,6 +311,7 @@ Cheap overview of a note: frontmatter, first N body lines, and inbound-backlink 
 |---|---|---|
 | `vault` | string | Name of the vault holding the note |
 | `path` | string | Vault-relative path |
+| `banner` | string | Same as `brain_read` |
 | `frontmatter` | object | Same shape as `brain_read` |
 | `preview` | array[string] | First `max_body_lines` of the body |
 | `backlink_count` | int | Number of other notes with a link that resolves to this note |
@@ -315,7 +332,7 @@ Cheap overview of a note: frontmatter, first N body lines, and inbound-backlink 
 }
 ```
 
-**Notes:** `backlink_count` uses the same link resolver as `brain_backlinks` (stem, path, title and alias, across the configured vaults) and counts each linking note once. Use `brain_backlinks` for the actual list of linking lines. `.git`, `.obsidian`, `.trash`, and `attachments` are skipped.
+**Notes:** `backlink_count` uses the same link resolver as `brain_backlinks` (stem, path, title and alias, across the configured vaults) and counts each linking note once. Use `brain_backlinks` for the actual list of linking lines. `.git`, `.obsidian`, `.trash`, `.brain`, and `attachments` are skipped.
 
 ### `brain_list_tier`
 
@@ -518,6 +535,7 @@ Create a new note in a tier with frontmatter.
 |---|---|---|
 | `vault` | string | Name of the vault holding the note |
 | `path` | string | Vault-relative path of the created note |
+| `warnings` | array[string] | One per body link to a note that is not validated or is expired, such as `line 7 links [[draft]] (personal:inbox/draft.md), which is raw`; omitted when none |
 
 **Example:**
 
@@ -533,6 +551,7 @@ Create a new note in a tier with frontmatter.
 - The note gets a fresh note id in `id`.
 - Errors if a note with the same filename already exists in the target tier.
 - Fails with a read-only error when the target is a shared vault.
+- Refuses a note that holds a secret and writes nothing (see Note lifecycle).
 - Outputs are filename-prefixed `YYYY-MM-DD-<slug>.md` automatically.
 - Tier defaults: `inbox` → `type=source,status=raw`; `notes` → `type=note,status=validated`; MOCs → `type=moc`; outputs → `type=output`.
 
@@ -566,6 +585,7 @@ Modify an existing note: replace the body, append to the body, and/or merge a fr
 | `vault` | string | Name of the vault holding the note |
 | `path` | string | Vault-relative path of the edited note |
 | `sha` | string | sha256 of the bytes written; the `if_match` for a next edit |
+| `warnings` | array[string] | As on `brain_write`, when `body` or `append` is set |
 
 **Example:**
 
@@ -581,6 +601,7 @@ Modify an existing note: replace the body, append to the body, and/or merge a fr
 - Errors if `body` and `append` are both set, or if none of `body`/`append`/`frontmatter_patch` is set.
 - With `if_match` set, a note whose sha no longer matches is left as it is and the error says to read it again before editing.
 - Fails with a read-only error on a note in a shared vault.
+- Refuses an edit whose result holds a secret, leaving the note as it was.
 
 ### `brain_promote`
 

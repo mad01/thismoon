@@ -1,6 +1,6 @@
 # brain, local markdown knowledge base (CLI + MCP)
 
-Go CLI and MCP stdio server over Obsidian-style markdown vaults. It indexes each vault with zoekt for literal search and chromem-go for semantic search on Ollama embeddings, and fuses the two for hybrid search. brain is the tool only: the content lives in vault repos checked out wherever the config points, typically one private vault plus a shared team vault that is read-only here. Terms (vault, private, shared and default vault, note ref, note id, tier, note, stem, wikilink, backlink, MOC, evidence tier, promotion) are defined in `CONTEXT.md` beside this file.
+Go CLI and MCP stdio server over Obsidian-style markdown vaults. It indexes each vault with zoekt for literal search and chromem-go for semantic search on Ollama embeddings, and fuses the two for hybrid search. brain is the tool only: the content lives in vault repos checked out wherever the config points, typically one private vault plus a shared team vault that is read-only here. Terms (vault, private, shared and default vault, note ref, note id, tier, note, stem, wikilink, backlink, MOC, evidence tier, promotion, status, revoked note, tombstone, citation, classification, vault policy, check) are defined in `CONTEXT.md` beside this file. The note lifecycle is ADR-0030.
 
 ## Module layout
 
@@ -10,12 +10,14 @@ brain/
   config.md           - config file, precedence, paths, env vars, parse-failure posture
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
-    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, edit, promote, list, migrate, docs, doctor, mcp, version
+    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, edit, promote, supersede, retract, withdraw, check, list, migrate, docs, doctor, mcp, version
+    check/            - brain check: the rules, the vault's .brain/policy.yaml, the report
+    lifecycle/        - the status model: statuses, lifecycle fields, dates a write fills, revocation, banners
     config/           - loads the config file (vaults, semantic settings)
     doctor/           - the checks `brain doctor` and `brain_doctor` share
     library/          - the vaults opened together: ref lookup, per-vault index refresh under a lock, cross-vault search, count, semantic and hybrid queries
     lockfile/         - cross-process flock on the files under the state dir's locks/
-    vault/            - note read, write, edit, promote, peek, id migration, the vault Set and note refs, the one wikilink resolver behind backlinks, promote and the graph; the logic CLI and MCP share
+    vault/            - note read, write, edit, promote, revocation, peek, id migration, the secret scan before a write, the vault Set and note refs, the one wikilink resolver behind backlinks, promote, the graph and check; the logic CLI and MCP share
     noteid/           - ULID note ids
     markdown/         - frontmatter parse and render (unknown keys kept), wikilink parsing
     search/           - zoekt index build, staleness fingerprint, query
@@ -53,7 +55,7 @@ Evals isolate brain with exactly `BRAIN_CONFIG=<tmp>/config.yaml` and `XDG_STATE
 
 Agents drive brain from the shell, so the CLI keeps a stable contract:
 
-- Every command takes `-o text|json`. Under `-o json` stdout is one JSON document with the same shape the matching MCP tool returns, and a failure prints `{"error":{"code","message"}}` there.
+- Every command takes `-o text|json`, and `check` also takes `-o github` (workflow annotations). Under `-o json` stdout is one JSON document with the same shape the matching MCP tool returns, and a failure prints `{"error":{"code","message"}}` there.
 - Errors print once on stderr as `brain <cmd>: <message>` and exit with a documented code:
 
 | Code | JSON `code` | Meaning |
@@ -106,6 +108,7 @@ Fourteen tools: `brain_search`, `brain_semantic_search`, `brain_hybrid_search`, 
 - `brain_promote` writes the note under the target tier, sets `status: validated`, rewrites every `[[oldstem]]` wikilink across the vault, then deletes the inbox file.
 - `brain_edit` takes `body` (replace) or `append`, which are mutually exclusive, plus a `frontmatter_patch`.
 - `brain_doctor` is read-only and returns the `brain doctor -o json` report; a failing check is a result, not a tool error.
+- Revocation and `brain check` are CLI only. Search tools hide revoked notes unless `include_revoked`; write tools return `warnings` for citations of notes that are not validated and refuse a secret through the same `vault` path as the CLI.
 
 Smoke test:
 

@@ -39,7 +39,16 @@ skipped with a stderr line. Links resolve across every configured vault.
 
 The vault's .brain/policy.yaml sets the allowed classifications and the
 level of each rule (error, warning or off); without the file every missing
-optional field is a warning. -o text prints one line per finding, -o json
+optional field is a warning:
+
+  classifications: [public, internal]
+  rules:
+    provenance: error
+    missing-field: off
+
+Rules: schema, status-unknown, status-fields, missing-field, provenance,
+link-dangling, link-revoked, link-unvalidated, id-duplicate, stem-duplicate,
+classification, secret. -o text prints one line per finding, -o json
 the report {"ok", "checked", "errors", "warnings", "findings", "skipped"},
 -o github one workflow annotation per finding. Exits 0 when no finding is
 an error, 1 when one is, 2 on a usage error.`,

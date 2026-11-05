@@ -118,3 +118,14 @@ func TestWriteAndEditWarnAboutCitations(t *testing.T) {
 		t.Errorf("write without links: exit %d, stderr %q", plain.code, plain.stderr)
 	}
 }
+
+// TestCheckHelpNamesEveryRule keeps the rule list in brain check --help in
+// step with the rules a policy may set.
+func TestCheckHelpNamesEveryRule(t *testing.T) {
+	help := runBrain(t, "", "check", "--help").stdout
+	for rule := range check.DefaultLevels {
+		if !strings.Contains(help, rule) {
+			t.Errorf("brain check --help does not name rule %q", rule)
+		}
+	}
+}

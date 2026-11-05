@@ -37,7 +37,7 @@ prints `vault:path`.
 ## Global flags
 
 - `-o, --output text|json`: text (default) or one JSON document on stdout.
-  JSON shapes match the brain MCP tools.
+  JSON shapes match the brain MCP tools. `check` also takes `github`.
 - `--config <path>`: the config file (env `BRAIN_CONFIG`). A file that exists
   but does not parse or names no vault fails every command with exit 2.
 - `--vault <name>` (repeatable): restrict to these vaults; `write` takes one
@@ -47,10 +47,10 @@ prints `vault:path`.
 
 | Command | Does | Key flags |
 |---|---|---|
-| `search <query>` | zoekt search, one path per note | `--tier --tag --type --status -f/--file --limit -m content -C N` |
+| `search <query>` | zoekt search, one path per note | `--tier --tag --type --status -f/--file --limit -m content -C N --include-revoked` |
 | `count <query>` | match totals | `--tier`, `--group-by` (`tier`, `tag` or `vault`) |
 | `query <query>` | validate a query, print its parse | |
-| `semantic-search <query>` | vector search (needs Ollama) | `--tier --tag --type --status --evidence -k` |
+| `semantic-search <query>` | vector search (needs Ollama) | `--tier --tag --type --status --evidence -k --include-revoked` |
 | `hybrid-search <query>` | literal + vector, fused by Reciprocal Rank Fusion | same plus `--k-zoekt --k-vector --rerank` |
 | `list [tier]` | notes in a tier, newest first | `--tier --tag --status --type --limit` |
 | `read <note>` | frontmatter and body | `--start N --end M` (body lines, 1-based) |
@@ -60,6 +60,10 @@ prints `vault:path`.
 | `write` | create a note | `--title` (required), `--tier --body --body-file --tag --alias --type --status --source --evidence --filename --set --unset`; no `--body` reads stdin |
 | `edit <note>` | change body or frontmatter | one of `--body --append` (`-` reads stdin) `--body-file --append-file`, plus `--title --status --type --source --tag --alias --evidence --set --unset --if-match <sha>` |
 | `promote <note>` | move an inbox note to notes/ | `--title` (rename) `--tier` `--moc <MOC path>` |
+| `supersede <note>` | mark it superseded; `superseded_by` stores the replacement's `id:` | `--by <note>` (required) |
+| `retract <note>` | mark it retracted; the body stays under a banner | `--reason error\|source-retracted\|unverifiable`, `--note <text>` |
+| `withdraw <note>` | leave a tombstone and purge the note from both indexes | |
+| `check [paths...]` | check notes (all of them with no paths) against the status rules, links and vault policy | `-o text\|json\|github` |
 | `index` | refresh indexes; semantic re-embeds changed notes only (queries refresh too) | `--force --literal-only` |
 | `migrate --ids` | give every note without an id one; skips shared vaults unless named | `--dry-run` |
 | `doctor` | check config, vaults, index, duplicate ids, Ollama; prints the paths in effect | |
@@ -98,6 +102,23 @@ survive write, edit and promote unchanged, in their original order. `--set` and
 `--unset` apply after the tier defaults on write and after the patch flags on
 edit; `updated` is always refreshed on edit.
 
+## Note lifecycle
+
+`status` is `raw`, `validated`, `promoting`, `disputed`, `superseded`,
+`retracted` or `withdrawn`; `expired` is computed (raw past `expires_at`,
+validated past `review_by`). write sets `expires_at` on a raw note (30 days)
+and `review_by` on a validated one (90 days with `volatility: high`, else 365);
+a status change sets `status_at`. Search hides a superseded, retracted or
+withdrawn note without `--include-revoked`; read and peek print its banner
+first. Hits carry `status`, `review_by` and `stale` (past `review_by`). write
+and edit warn on stderr, and in `warnings[]`, for each body link to a note
+that is not validated or is expired.
+
+`brain check` exits 1 on an error: a citation of a retracted or withdrawn
+note, bad status fields, a shared id, a secret. It skips a path that names no
+note. `.brain/policy.yaml` in the vault sets `classifications:
+[public, internal]` and `rules: {provenance: error, missing-field: off}`.
+
 ## Exit codes
 
 | Code | JSON `code` | Meaning | Typical fix |
@@ -110,7 +131,7 @@ edit; `updated` is always refreshed on edit.
 | 3 | `not_found` | note or title does not exist | `brain list --tier <t>`, `brain search 'f:<name>'` |
 | 4 | `already_exists` | write or promote target exists, also when another writer created it first | pick another `--title` or `--filename` |
 | 5 | `invalid_query` | zoekt query does not parse | `brain query '<query>'` |
-| 6 | `read_only` | write, edit, promote or migrate in a shared vault | change it through a PR to its repo |
+| 6 | `read_only` | write, edit, promote, migrate or a revocation in a shared vault | change it through a PR to its repo |
 | 7 | `conflict` | `edit --if-match` sha no longer matches the note | read the note again, then edit |
 | 8 | `secret_found` | the note would hold a secret; nothing was written | remove it, or mark a false positive `suspenders:ignore` |
 
@@ -121,40 +142,42 @@ the same failure also prints on stdout:
 {"error": {"code": "not_found", "message": "vault: note not found: notes/x.md (find it with: ...)"}}
 ```
 
-`brain doctor` prints its report (`{"ok": false, "checks": [...]}`) instead of
-an error envelope and exits 1 when a check fails.
+`brain doctor` and `brain check` print their report (`{"ok": false, ...}`)
+instead of an error envelope and exit 1 when it fails.
 
 ## JSON shapes
 
 | Command | Top-level keys |
 |---|---|
-| `search` | `output_mode`, `files[] {vault, path, evidence}` or `lines[] {vault, path, line, column, text, before, after, evidence}`, `total` |
+| `search` | `output_mode`, `files[] {vault, path, evidence, status, review_by, stale}` or `lines[]` (the same plus `line, column, text, before, after`), `total` |
 | `count` | `total`, `groups[] {group, count}` |
 | `query` | `valid`, `parsed` |
 | `list` | `tier`, `total` (before `--limit`), `notes[] {vault, path, title, status, type, tags, aliases, evidence, updated}` |
-| `read` | `vault`, `path`, `sha`, `frontmatter`, `body_lines[] {line, text}` |
-| `peek` | `vault`, `path`, `frontmatter`, `preview[]`, `backlink_count` |
+| `read` | `vault`, `path`, `sha`, `banner`, `frontmatter`, `body_lines[] {line, text}` |
+| `peek` | `vault`, `path`, `banner`, `frontmatter`, `preview[]`, `backlink_count` |
 | `backlinks` | `vault`, `note_path`, `evidence`, `inbound[] {vault, path, line, excerpt, evidence}`, `outbound[] {target, vault, path, line, evidence, dangling}` |
 | `graph` | `nodes[] {id, vault, path, stem, title, tier, type, status, tags, evidence, review_by, degree, dangling}`, `edges[] {source, target, kind, resolved}` |
-| `write`, `edit` | `vault`, `path`; edit adds `sha`, the new content's |
+| `write`, `edit` | `vault`, `path`, `warnings[]`; edit adds `sha`, the new content's |
+| `supersede`, `retract`, `withdraw` | `vault`, `path`, `sha` |
+| `check` | `ok`, `checked`, `errors`, `warnings`, `findings[] {vault, path, line, rule, level, message}`, `skipped[] {path, reason}` |
 | `promote` | `vault`, `old_path`, `new_path`, `backlink_rewrites[]`, `moc_appended` |
 | `migrate` | `dry_run`, `changed[] {vault, path, id}`, `skipped[] {vault, path, reason}` |
-| `semantic-search` | `output_mode`, `hits[] {vault, path, id, title, heading_path, score, snippet, tier, tags, type, status, evidence}`, `total`, `warnings[]` |
+| `semantic-search` | `output_mode`, `hits[] {vault, path, id, title, heading_path, score, snippet, tier, tags, type, status, review_by, stale, evidence}`, `total`, `warnings[]` |
 | `hybrid-search` | `hits[] {vault, path, id, title, heading_path, score, sources, snippet, ...}`, `total`, `warnings[]` |
 | `doctor` | `ok`, `checks[] {name, status, detail, fix}`; status is `ok`, `fail` or `skip` |
 
 `frontmatter` holds `title aliases tags type status source evidence created
-updated id`, plus `extra` with every other key. `evidence` is the trust tier
-(A, B, C, D or mixed), taken from the field or an `evidence/<tier>` tag.
-Empty fields are omitted.
+updated id`, plus `extra` with every other key (the lifecycle fields too).
+`evidence` is the trust tier (A, B, C, D or mixed), from the field or an
+`evidence/<tier>` tag. Empty fields are omitted.
 
 ## Zoekt query tips
 
 - Space is AND within one file: `kubernetes upgrade`. OR is `a|b` with no spaces.
-- `"exact phrase"`, `-word` excludes, `case:yes` forces case.
+- `"exact phrase"`, `-word` excludes, `case:yes` forces case; lowercase terms
+  match any case.
 - `f:<regex>` filters paths: `f:^notes/`, `f:alpha` (prefer `--tier` for tiers).
 - Terms are regexes: escape metacharacters, `foo\.bar`, `func\(`.
-- Smart case: lowercase terms match any case.
 - Not sure? `brain query '<query>'` shows the parse or the error with a hint.
 
 ## Workflow: capture, verify, promote
@@ -167,12 +190,10 @@ Empty fields are omitted.
    It lands in `inbox/` with `status: raw`.
 3. Verify empirical claims against primary sources. Record the result:
    `brain edit inbox/topic.md --evidence B --append -`.
-4. Promote when the note stands on its own:
-   `brain promote inbox/topic.md --moc MOCs/<topic>.md`. The note moves to
-   `notes/` under the slug of its title (`--title` changes it), `status`
-   becomes `validated`, and `[[wikilinks]]` across the vault follow the new
-   name. MOC targets must be topical maps, not `research-index-*` or
-   `kickoff-*` files.
+4. Promote when the note stands on its own: `brain promote inbox/topic.md
+   --moc MOCs/<topic>.md` moves it to `notes/` under its title's slug, sets
+   `status: validated`, and points `[[wikilinks]]` at the new name. A MOC
+   target is a topical map, not a `research-index-*` or `kickoff-*` file.
 5. Finished artifacts go to outputs: `brain write --tier outputs --title '...'`.
 
 Check links before moving or renaming: `brain backlinks <path>`.

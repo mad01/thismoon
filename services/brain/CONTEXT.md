@@ -6,7 +6,7 @@ The vault brain indexes and serves. These terms apply to the files under
 ## Language
 
 **Vault**:
-A directory of markdown notes brain indexes and serves, named in the brain config file (`config.md` says where it lives) by a lowercase slug. It holds the four Tier directories, and the walk skips `.git`, `.obsidian`, `.trash` and `attachments`. A vault is its own repo, kept apart from the tool. One config can name several vaults; each is a Private vault or a Shared vault.
+A directory of markdown notes brain indexes and serves, named in the brain config file (`config.md` says where it lives) by a lowercase slug. It holds the four Tier directories, and the walk skips `.git`, `.obsidian`, `.trash`, `.brain` (where the Vault policy lives) and `attachments`. A vault is its own repo, kept apart from the tool. One config can name several vaults; each is a Private vault or a Shared vault.
 _Avoid_: brain (that is the tool), data repo
 
 **Private vault**:
@@ -34,7 +34,7 @@ One of the four top-level vault directories a Note lives in: `inbox`, `notes`, `
 _Avoid_: folder, stage, category
 
 **Note**:
-One markdown file in the Vault with YAML frontmatter between `---` fences. The known fields are `title`, `aliases`, `tags`, `type`, `status`, `source`, `evidence`, `created`, `updated` and `id`; a write requires only `title`.
+One markdown file in the Vault with YAML frontmatter between `---` fences. The known fields are `title`, `aliases`, `tags`, `type`, `status`, `source`, `evidence`, `created`, `updated` and `id`; a write requires only `title`. The fields of its Status (`expires_at`, `review_by`, `status_at` and the rest) are kept with the keys brain does not model, so a note written before them still reads.
 _Avoid_: document, page, entry
 
 **Stem**:
@@ -64,3 +64,31 @@ _Avoid_: confidence, rating, score
 **Promotion**:
 Moving an `inbox` Note into another tier, `notes` by default, through `brain promote` or `brain_promote`. It writes the note under the target tier with status `validated` and a Stem made from its title. It then points every Wikilink that resolved to the note at its new stem, or its new path for a path link, and deletes the inbox file. A link by an old title keeps that title as display text. Links inside code are left alone. If the rewrite fails, the new file is removed again; rewrites that already landed stay.
 _Avoid_: move, publish, graduate
+
+**Status**:
+Where a Note stands in its lifecycle, held in the `status` field: `raw`, `validated`, `promoting`, `disputed`, `superseded`, `retracted` or `withdrawn`. An empty field means the default of the note's Tier. A write dates a raw note with `expires_at` (30 days) and a validated one with `review_by` (from its `volatility`: 90 days when `high`, 365 otherwise), and every change of status records `status_at`. `expired` is computed, never stored: a raw note past `expires_at`, or a validated note past `review_by`.
+_Avoid_: state, stage, lifecycle stage
+
+**Revoked note**:
+A Note that is superseded, retracted or withdrawn. Default search hides it, `--include-revoked` (or `include_revoked`) shows it, and read and peek print a banner above it. Revoking never deletes the file, so links to it still resolve. Superseded points `superseded_by` at its replacement's Note id; retracted keeps its body with `retracted_reason` (`error`, `source-retracted` or `unverifiable`) and `retracted_at`; withdrawn leaves a Tombstone.
+_Avoid_: deleted note, archived note
+
+**Tombstone**:
+What `brain withdraw` leaves of a Note: frontmatter of only `id`, `status: withdrawn` and `status_at`, and no body. The note's chunks leave both indexes when the command returns. Its old text survives in the vault's git history.
+_Avoid_: stub, placeholder
+
+**Citation**:
+A Wikilink from one Note to another, judged by the target's Status. A citation of a note that is not validated, or is expired, is worth a warning; a new citation of a retracted or withdrawn note is an error in Check.
+_Avoid_: reference, source (a `sources` entry)
+
+**Classification**:
+How widely a Note may travel, held in `classification`: `public`, `internal`, `confidential` or `restricted`. The Vault policy says which values a vault accepts.
+_Avoid_: sensitivity, visibility, label
+
+**Vault policy**:
+The vault's `.brain/policy.yaml`: the Classifications it accepts and the level (`error`, `warning` or `off`) of each Check rule. A vault without the file gets the lenient default, where a missing optional field is a warning.
+_Avoid_: config (that is the brain config file), rules file
+
+**Check**:
+`brain check`, which judges notes against the Status rules, their Citations, unique ids and stems, the Vault policy and the secret scan. It is the gate a Shared vault's CI runs on the notes a pull request changes, and exits 1 when a finding is at error level.
+_Avoid_: lint, validate (the status), doctor (which checks the install)
