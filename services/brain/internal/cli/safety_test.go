@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"unicode"
 
@@ -205,6 +208,50 @@ func TestListAndPeekEscapeControlCharacters(t *testing.T) {
 		}
 		if args[0] == "peek" && !strings.Contains(got.stdout, `body \x1b[2J line`) {
 			t.Errorf("peek = %q, want the body line escaped", got.stdout)
+		}
+	}
+}
+
+// TestConcurrentWritesOfOneTitle races two writes of one title under
+// different file names: the duplicate check runs under the write lock, so
+// exactly one lands and the other exits 9.
+func TestConcurrentWritesOfOneTitle(t *testing.T) {
+	for round := range 5 {
+		root := setupCLI(t, "")
+		start := make(chan struct{})
+		results := make([]result, 2)
+		var wg sync.WaitGroup
+		for i, name := range []string{"one", "two"} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				var stdout, stderr bytes.Buffer
+				code := run([]string{"write", "--title", "Same Race", "--filename", name, "--body", "x"},
+					strings.NewReader(""), &stdout, &stderr)
+				results[i] = result{stdout: stdout.String(), stderr: stderr.String(), code: code}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		codes := []int{results[0].code, results[1].code}
+		slices.Sort(codes)
+		if codes[0] != exitOK || codes[1] != exitDuplicate {
+			t.Fatalf("round %d: exits %v (%q, %q), want one success and one possible duplicate",
+				round, codes, results[0].stderr, results[1].stderr)
+		}
+		entries, err := os.ReadDir(filepath.Join(root, "inbox"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		landed := 0
+		for _, e := range entries {
+			if e.Name() == "one.md" || e.Name() == "two.md" {
+				landed++
+			}
+		}
+		if landed != 1 {
+			t.Fatalf("round %d: %d notes landed, want 1", round, landed)
 		}
 	}
 }

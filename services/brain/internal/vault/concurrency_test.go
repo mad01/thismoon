@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestWriteRaceHasOneWinner is two writers creating one note at once: one
@@ -87,5 +88,47 @@ func TestEditIfMatch(t *testing.T) {
 	}
 	if _, err := v.Edit(full, EditOptions{Append: "second", IfMatch: sha}); err != nil {
 		t.Errorf("edit with the sha the last edit returned: %v", err)
+	}
+}
+
+// TestCreateCheckedRunsTheCheckUnderTheLock is two writers of one title
+// under different file names: the second writer's check waits for the
+// first note, sees it, and writes nothing.
+func TestCreateCheckedRunsTheCheckUnderTheLock(t *testing.T) {
+	v := newTestVault(t, nil)
+	v.WriteLock = filepath.Join(t.TempDir(), "locks", "v.write.lock")
+	draft := func(name string) Draft {
+		d, err := v.Draft(WriteOptions{Tier: TierInbox, Title: "Same", Filename: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	first, second := draft("one"), draft("two")
+	sameTitle := func() error {
+		if found, err := NewSet(v).SameTitle("Same"); err != nil || len(found) > 0 {
+			return errors.Join(ErrPossibleDuplicate, err)
+		}
+		return nil
+	}
+	var secondErr error
+	done := make(chan struct{})
+	_, err := v.CreateChecked(first, func() error {
+		go func() {
+			defer close(done)
+			_, secondErr = v.CreateChecked(second, sameTitle)
+		}()
+		time.Sleep(50 * time.Millisecond) // the second writer reaches the lock meanwhile
+		return sameTitle()
+	})
+	<-done
+	if err != nil {
+		t.Fatalf("first writer: %v", err)
+	}
+	if !errors.Is(secondErr, ErrPossibleDuplicate) {
+		t.Errorf("second writer: %v, want ErrPossibleDuplicate", secondErr)
+	}
+	if _, err := os.Stat(filepath.Join(v.Root, "inbox", "two.md")); err == nil {
+		t.Error("the second note landed")
 	}
 }

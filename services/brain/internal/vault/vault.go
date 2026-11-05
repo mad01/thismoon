@@ -246,7 +246,15 @@ func (v *Vault) Draft(opts WriteOptions) (Draft, error) {
 
 // Create writes a draft under the vault's write lock and returns its path.
 // It never replaces a note: one created since the draft is ErrExists.
-func (v *Vault) Create(d Draft) (path string, err error) {
+func (v *Vault) Create(d Draft) (string, error) {
+	return v.CreateChecked(d, nil)
+}
+
+// CreateChecked is Create with check run under the write lock, right
+// before the note is written. A failing check writes nothing, and no other
+// brain write lands between the check and the note, so two writers of the
+// same title cannot both pass a duplicate check. A nil check is Create.
+func (v *Vault) CreateChecked(d Draft, check func() error) (path string, err error) {
 	if err := v.writable(); err != nil {
 		return "", err
 	}
@@ -258,6 +266,11 @@ func (v *Vault) Create(d Draft) (path string, err error) {
 		return "", err
 	}
 	defer func() { err = errors.Join(err, release()) }()
+	if check != nil {
+		if err := check(); err != nil {
+			return "", err
+		}
+	}
 	if err := v.create(d.Path, d.content); err != nil {
 		return "", err
 	}

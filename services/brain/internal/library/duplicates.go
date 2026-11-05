@@ -81,14 +81,20 @@ func (l *Library) Write(
 	if err != nil {
 		return "", nil, err
 	}
-	dups, warnings, err := l.Duplicates(ctx, v, draft)
-	if err != nil {
-		return "", nil, err
-	}
-	if dups = withoutDistinct(dups, distinct); len(dups) > 0 {
-		return "", warnings, duplicateError(draft.Frontmatter.Title, dups)
-	}
-	path, err := v.Create(draft)
+	// The check runs under the vault's write lock, so a note another writer
+	// creates with the same title is seen before this one lands.
+	var warnings []string
+	path, err := v.CreateChecked(draft, func() error {
+		dups, found, err := l.Duplicates(ctx, v, draft)
+		if err != nil {
+			return err
+		}
+		warnings = found
+		if dups = withoutDistinct(dups, distinct); len(dups) > 0 {
+			return duplicateError(draft.Frontmatter.Title, dups)
+		}
+		return nil
+	})
 	return path, warnings, err
 }
 
