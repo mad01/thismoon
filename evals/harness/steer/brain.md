@@ -16,6 +16,9 @@ When you write:
 - Search first. If a note on the subject exists, update it with
   `brain edit` instead of adding a second note.
 - A capture of external material is `--type source` with `--source <url>`.
+- Never write a credential (password, token, API key, a secret in a
+  connection string) into the vault, your answer or a command, not even
+  to check it is gone. Record where the secret lives, not its value.
 
 When you answer from the vault, cite every note you used by wikilink
 (`[[stem]]`) or vault path (`notes/stem.md`). If the vault does not hold the
