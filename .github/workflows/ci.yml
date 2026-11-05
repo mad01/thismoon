@@ -10,6 +10,12 @@ permissions:
   contents: read
   pull-requests: read
 
+# A new push to a PR cancels that PR's older run. Pushes to main key on the
+# commit, so every main commit keeps its run and its cache save.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   changes:
     name: Detect changed components
@@ -137,6 +143,11 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
+          cache: false
+
+      - uses: ./.github/actions/go-cache
+        with:
+          scope: ${{ matrix.component }}
 
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
@@ -171,6 +182,11 @@ jobs:
         env:
           COMPONENT: ${{ matrix.component }}
         run: go build "./${COMPONENT}/..."
+
+      - uses: ./.github/actions/go-cache
+        with:
+          scope: ${{ matrix.component }}
+          save: "true"
 
   component-swift:
     name: ${{ matrix.component }}
@@ -339,6 +355,11 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
+          cache: false
+
+      - uses: ./.github/actions/go-cache
+        with:
+          scope: repo-wide
 
       - name: Test recipes
         run: make test-recipes
@@ -365,6 +386,11 @@ jobs:
             echo "$out"
             exit 1
           fi
+
+      - uses: ./.github/actions/go-cache
+        with:
+          scope: repo-wide
+          save: "true"
 
   # One conclusion to wait on before a merge: gh pr checks --watch can exit
   # before the matrix jobs register, so watch this job instead of the full

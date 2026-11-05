@@ -1,0 +1,61 @@
+name: go cache
+description: >-
+  Restore or save the Go build and module caches under one scope per job.
+  setup-go's own cache keys on go.sum alone and is never saved again once
+  that key exists, so every run compiled nearly from scratch. This key also
+  carries the UTC day: a run restores the newest entry for its scope, and
+  the first push to main each day saves a fresh one. Call it once after
+  setup-go (with cache false) and once with save "true" as the job's last
+  step.
+inputs:
+  scope:
+    description: cache scope, one per job or matrix entry
+    required: true
+  save:
+    description: '"true" saves the caches (pushes to main only); anything else restores them'
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        SCOPE: ${{ inputs.scope }}
+        SUM: ${{ hashFiles('go.sum') }}
+      run: |
+        scope=${SCOPE//\//_}
+        {
+          echo "gocache=$(go env GOCACHE)"
+          echo "modcache=$(go env GOMODCACHE)"
+          echo "scope_prefix=go-${scope}-"
+          echo "sum_prefix=go-${scope}-${SUM}-"
+          echo "day=$(date -u +%F)"
+        } >> "$GITHUB_OUTPUT"
+
+    - id: restore
+      if: inputs.save != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.key.outputs.gocache }}
+          ${{ steps.key.outputs.modcache }}
+        key: ${{ steps.key.outputs.sum_prefix }}${{ steps.key.outputs.day }}
+        restore-keys: |
+          ${{ steps.key.outputs.sum_prefix }}
+          ${{ steps.key.outputs.scope_prefix }}
+
+    # An exact hit means today's entry exists already; a cache key can't be
+    # saved twice, so the save step skips instead of warning.
+    - if: inputs.save != 'true' && steps.restore.outputs.cache-hit == 'true'
+      shell: bash
+      run: echo "GO_CACHE_EXACT_HIT=true" >> "$GITHUB_ENV"
+
+    - if: >-
+        inputs.save == 'true' && env.GO_CACHE_EXACT_HIT != 'true' &&
+        github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.key.outputs.gocache }}
+          ${{ steps.key.outputs.modcache }}
+        key: ${{ steps.key.outputs.sum_prefix }}${{ steps.key.outputs.day }}
