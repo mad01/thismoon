@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -823,11 +824,18 @@ func TestDoctor(t *testing.T) {
 					t.Errorf("check %s failed without a fix", c.Name)
 				}
 			}
-			if !mapsEqual(status, tc.wantStatus) {
-				t.Errorf("statuses = %v, want %v", status, tc.wantStatus)
+			// testhome points the serve checks at a port nothing listens on.
+			want := maps.Clone(tc.wantStatus)
+			for _, name := range []string{
+				"serve-reachable", "version-skew", "serve-vaults", "serve-state-dir",
+			} {
+				want[name] = doctor.StatusSkip
+			}
+			if !mapsEqual(status, want) {
+				t.Errorf("statuses = %v, want %v", status, want)
 			}
 			text := runBrain(t, "", "doctor")
-			if lines := strings.Count(text.stdout, "\n"); lines != len(tc.wantStatus) {
+			if lines := strings.Count(text.stdout, "\n"); lines != len(want) {
 				t.Errorf(
 					"text doctor printed %d lines, want one per check:\n%s",
 					lines,

@@ -1,9 +1,10 @@
 // Package doctor runs brain's self-checks: the config resolves, every vault
 // exists, the index directory is writable, each vault's literal index is
 // fresh, no two notes share an id and, when the semantic layer is on, Ollama
-// answers. `brain doctor` prints the
-// report and the brain_doctor MCP tool returns it, so both read the same
-// checks in the same shape.
+// answers. When brain serve listens, it also checks that serve runs this
+// build, reads every configured vault and shares the CLI's state
+// directory. `brain doctor` prints the report and the brain_doctor MCP tool
+// returns it, so both read the same checks in the same shape.
 package doctor
 
 import (
@@ -58,21 +59,28 @@ func (r Report) Failed() int {
 	return n
 }
 
-// Run runs every check against the config at configPath. A check whose
-// input an earlier check failed to produce is skipped, not failed, so one
-// root cause reads as one failure. Run writes nothing that outlives it.
+// Run runs every check against the config at configPath, and the serve
+// checks against brain serve at ServeURL. A check whose input an earlier
+// check failed to produce is skipped, not failed, so one root cause reads
+// as one failure. Run writes nothing that outlives it.
 func Run(ctx context.Context, configPath string) Report {
+	cfg, checks := localChecks(ctx, configPath)
+	return newReport(append(checks, checkServe(ctx, ServeURL(), cfg)...))
+}
+
+// localChecks runs the checks of the CLI's own config, vaults and indexes,
+// and returns the config when it loaded.
+func localChecks(ctx context.Context, configPath string) (*config.Config, []Check) {
 	cfg, cfgCheck := checkConfig(configPath)
 	checks := []Check{cfgCheck}
 	if cfg == nil {
-		checks = append(checks,
+		return nil, append(checks,
 			skipped("vault", "needs a config"),
 			skipped("index-dir", "needs a config"),
 			skipped("index", "needs a config"),
 			skipped("ids", "needs a config"),
 			skipped("ollama", "needs a config"),
 		)
-		return newReport(checks)
 	}
 	vaultCheck := checkVaults(cfg)
 	dirCheck := checkIndexDir()
@@ -90,8 +98,7 @@ func Run(ctx context.Context, configPath string) Report {
 	} else {
 		checks = append(checks, skipped("ids", "needs every vault"))
 	}
-	checks = append(checks, checkOllama(ctx, cfg))
-	return newReport(checks)
+	return cfg, append(checks, checkOllama(ctx, cfg))
 }
 
 func newReport(checks []Check) Report {
