@@ -17,10 +17,7 @@ import (
 
 // fixtureKey is AWS's documented example access key id: shaped like a real
 // one so the scanner fires, and valid nowhere.
-const (
-	fixtureKey      = "AKIAIOSFODNN7EXAMPLE"
-	fixtureRedacted = "AKIA************MPLE"
-)
+const fixtureKey = "AKIAIOSFODNN7EXAMPLE"
 
 func TestWriteRefusesASecret(t *testing.T) {
 	tests := []struct {
@@ -137,9 +134,13 @@ func assertSecretRefused(t *testing.T, err error) {
 		t.Fatalf("err = %v, want ErrSecretFound", err)
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "aws-access-key-id") || !strings.Contains(msg, fixtureRedacted) ||
-		strings.Contains(msg, fixtureKey) {
-		t.Errorf("message %q should name the rule and show only the redacted value", msg)
+	if !strings.Contains(msg, "aws-access-key-id (20 characters)") {
+		t.Errorf("message %q should name the rule and the match length", msg)
+	}
+	for _, leak := range []string{fixtureKey, fixtureKey[:4], fixtureKey[len(fixtureKey)-4:]} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("message %q shows %q of the secret", msg, leak)
+		}
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mad01/thismoon/kit/secretscan"
 )
@@ -72,8 +73,10 @@ func (v *Vault) refuseContent(path string, content []byte) error {
 }
 
 // refuseSecrets fails with ErrSecretFound when content bound for path holds
-// a secret, naming each rule with the value redacted. It runs before a
-// write touches disk, so a refused note is never written.
+// a secret, naming each finding by its rule, line and length alone: no
+// character of the value, since the message lands in terminals, logs and
+// agent context. It runs before a write touches disk, so a refused note is
+// never written.
 func (v *Vault) refuseSecrets(path string, content []byte) error {
 	rel := v.Rel(path)
 	findings, err := v.Secrets(rel, content)
@@ -85,7 +88,8 @@ func (v *Vault) refuseSecrets(path string, content []byte) error {
 	}
 	parts := make([]string, 0, maxReportedSecrets+1)
 	for _, f := range findings[:min(len(findings), maxReportedSecrets)] {
-		parts = append(parts, fmt.Sprintf("line %d: %s %s", f.Line, f.Rule.ID, f.Match))
+		parts = append(parts, fmt.Sprintf("line %d: %s (%d characters)",
+			f.Line, f.Rule.ID, utf8.RuneCountInString(f.RawMatch)))
 	}
 	if extra := len(findings) - maxReportedSecrets; extra > 0 {
 		parts = append(parts, fmt.Sprintf("and %d more", extra))
