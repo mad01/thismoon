@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
 // humanizerTranscript writes a transcript holding the given content and points
@@ -42,6 +44,30 @@ func TestHumanizerNudgesOncePerSession(t *testing.T) {
 	}
 	if again := h.Check(in); again != nil {
 		t.Errorf("second Check = %+v, want nil: the nudge must fire once per session", again)
+	}
+}
+
+// TestHumanizerExcludedToolKeepsTheNudge pins that a tool on
+// hints.humanizer-check.exclude_tools is silent without spending the
+// session's nudge, so a later publish through another tool still gets it.
+func TestHumanizerExcludedToolKeepsTheNudge(t *testing.T) {
+	path := humanizerTranscript(t, "")
+	h := NewHumanizer(config.Config{Hints: map[string]config.Toggle{
+		"humanizer-check": {ExcludeTools: []string{"mcp__gh_com__create_pull_request"}},
+	}})
+	in := Input{
+		Event:          EventExternalText,
+		ToolName:       "mcp__gh_com__create_pull_request",
+		SessionID:      "excluded",
+		TranscriptPath: path,
+		ToolInput:      map[string]any{"body": "Adds the thing."},
+	}
+	if got := h.Check(in); got != nil {
+		t.Errorf("Check on an excluded tool = %+v, want nil", got)
+	}
+	in.ToolName = "mcp__gh_com__add_issue_comment"
+	if got := h.Check(in); got == nil {
+		t.Error("Check on another publishing tool after an excluded one = nil, want the nudge")
 	}
 }
 

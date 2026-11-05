@@ -523,6 +523,9 @@ func toggleNote(t config.Toggle) string {
 	if n := len(t.ExcludeRepos); n > 0 {
 		parts = append(parts, fmt.Sprintf("exclude_repos: %d", n))
 	}
+	if n := len(t.ExcludeTools); n > 0 {
+		parts = append(parts, fmt.Sprintf("exclude_tools: %d", n))
+	}
 	if n := len(t.ExcludePaths); n > 0 {
 		parts = append(parts, fmt.Sprintf("exclude_paths: %d", n))
 	}

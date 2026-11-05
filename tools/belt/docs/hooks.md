@@ -684,7 +684,7 @@ skimmed.
 Configuration-wise almost every hint is one switch: `hints.<id>.enabled` in
 the belt config, default on. The repo-aware hints (commit-policy,
 lint-policy, prefer-csl, moondb-inflight) also read an
-`exclude_repos` list. Hints opt repos out with `exclude_repos`;
+`exclude_repos` list, and humanizer-check reads an `exclude_tools` list. Hints opt repos out with `exclude_repos`;
 `allow_repos` belongs to guards, and each key on the wrong kind is a
 validation error. commit-policy additionally honors the shared
 `direct_main_repos` list. Everything else
@@ -936,7 +936,10 @@ read, points at `humanizer_detect` while the wording is still editable.
 - **Fires when** a matched MCP tool call publishes (the matcher is the
   consuming repo's choice; belt drops read-verb operations itself). It fires
   only if the session has not already run any humanizer tool and the nudge
-  has not fired before.
+  has not fired before. A tool named in `hints.humanizer-check.exclude_tools`
+  is skipped without spending the nudge: the consuming repo lists there the
+  tools another check already scans, such as the PR tools the
+  humanizer-gate mod covers.
 - **The advice quotes** the opening of the just-published text, so the
   instruction cannot read as generic boilerplate.
 - **Why**: instruction prose covers PR descriptions and docs, so those get

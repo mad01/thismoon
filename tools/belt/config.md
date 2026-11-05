@@ -501,7 +501,8 @@ entries match the same way as `git_identity[].repos` and
 A map keyed by built-in hint id or a `custom_hints` name. All
 built-in hints default to enabled when the file or their entry is missing. The repo-aware hints (`commit-policy`,
 `lint-policy`, `prefer-csl`, `moondb-inflight`) also read
-`exclude_repos`. The rest take only `enabled`. Any other key on a known id
+`exclude_repos`, and `humanizer-check` reads `exclude_tools`. The rest take
+only `enabled`. Any other key on a known id
 is a validation error (guards exempt repos with `allow_repos`, hints opt
 them out with `exclude_repos`, so each key on the wrong kind is rejected).
 Exclusion matches the canonical `host/owner/repo` identity resolved from
@@ -558,6 +559,11 @@ the repo's origin remote.
 - `hints.humanizer-check.enabled` (bool, default `true`): fires after an MCP
   call publishes text off the machine, pointing at `humanizer_detect` while
   the wording is still editable.
+  - `hints.humanizer-check.exclude_tools` (list of string, default: empty):
+    tool names, matched exactly, that neither fire the nudge nor spend it.
+    List the publishing tools another check already scans, such as the PR
+    tools the humanizer-gate mod covers, so the one nudge a session gets
+    goes to text nothing else checked.
 - `hints.em-dash.enabled` (bool, default `true`): one toggle for both of
   the hint's events (`external-text` and `bash`). Flags em dashes in text a
   publishing MCP call or gh command just sent.
