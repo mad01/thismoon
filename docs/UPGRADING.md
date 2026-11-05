@@ -17,6 +17,7 @@ Verify:
 
 1. `moondb version -o json` and serve's `/version` report the merged commit.
 2. For a session with a turn over 4 MiB of transcript, `moondb trace <id> --json | jq .totals.model_calls` matches the transcript's main-thread calls, counted with the `jq` line in the #394 entry below.
+3. On a build with the `cut-turns` doctor check, `moondb doctor` prints `ok cut-turns` with no note. A note counts the turns the old cap still cuts and names the import that repairs the ones whose transcript is still on disk.
 
 ## 2026-11-05 moondb: a forced import repairs turns that kept too few model calls
 

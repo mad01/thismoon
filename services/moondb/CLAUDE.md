@@ -27,7 +27,7 @@ moondb/
     derive/            - before and after content per Edit, snapshot records, unattributed deltas
     patch/             - forward and reverse patch apply, hunk context checks, line endings
     gitlink/           - git blob ids and commit links
-    store/             - Store and Chunks interfaces and record types (store.go, types.go), session summaries and the cost attribution rule (summary.go, attribution.go), the in-flight rule (inflight.go)
+    store/             - Store and Chunks interfaces and record types (store.go, types.go), session summaries and the cost attribution rule (summary.go, attribution.go), the in-flight rule (inflight.go), the transcript cap-cut rule (cut.go)
       local/           - the local disk backend: JSONL log, gzip chunks, in-memory index
       storetest/       - conformance suite every backend must pass
     query/             - why, history and annotate answers over the store and git; traces with their cache; session scorecards
@@ -376,6 +376,34 @@ either (`agent-briefs`, from `GET /api/doctor`, `store.NeedsFill`): no
 brief or fewer messages kept than counted, not of type `internal`, a line
 read, and ended inside the window a default import reads
 (`DefaultImportSince`).
+
+Before moondb 0.11.1 a turn kept at most its last 4 MiB of transcript
+lines (`OldMaxTranscriptBytes`), and a longer turn lost its head and the
+model calls in it. `moondb doctor` finds those turns from the store alone
+(`cut-turns`, from `GET /api/doctor`, `store.CapCheck`). A turn was cut
+when its stored lines fit within 4 MiB while its range ran past 4 MiB.
+The range runs from its offset to the next offset above it in the
+session. serve reads each chunk's size from its gzip trailer and reads no
+transcript. A session's last turn has no next offset. serve lists it as
+the session's tail, and the doctor judges it by how far the transcript
+file runs past its offset.
+
+Only a session's first turn trusts an offset of zero. An open turn bounds
+the turns below it and leaves its session without a tail. A turn whose
+chunk is not stored is not judged. The range ends where the next turn's
+lines start, so it also holds the lines between a Stop and the next
+prompt. A turn the store lacks widens the range before it until an import
+adds that turn.
+
+The doctor stats each listed session's transcript file and reads none. A
+cut turn whose file exists is repairable. The note names `moondb import
+--since <n>d --force` with a window that reaches the oldest such file,
+since the import picks files by their last write. A cut turn whose file
+is gone is counted as staying cut, and a tail whose file is gone is not
+counted. Agents are not judged. An agent transcript counts the lines its
+cap cut (`Lines.Cut`). The 2026-11 survey's largest agent transcript was
+1.3 MiB, far under the old 8 MiB cap. A forced import also could not
+repair one: it replaces an agent only when it reads more lines of its file.
 
 What a transcript gives back:
 
@@ -854,7 +882,7 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 - `GET  /api/inflight`          : the files of one checkout (`worktree`, required) with edits no commit has taken yet, newest edit first, each with `path`, `last_edit_at`, `linked_commit` (or null) and `sessions` (`id`, `title`, `last_edit_at`, `edits`); `exclude_session` leaves one session's edits out, `since` (default `InflightWindow`, 72h) and `limit` (default `InflightLimit`, 20) bound it
 - `GET  /api/annotate`          : every line of one file on disk (`worktree`, `path`, optional `repo`), each with the edit, turn, session, agent and commit behind it
 - `GET  /api/chunks/{sha}`      : one chunk's uncompressed bytes
-- `GET  /api/doctor`            : the counts `moondb doctor` reads from serve: `agents_to_fill`, the agents a forced import could still give a spawn brief or later messages (`store.NeedsFill`), and `since`, the start of the window it counts
+- `GET  /api/doctor`            : the counts `moondb doctor` reads from serve: `agents_to_fill`, the agents a forced import could still give a spawn brief or later messages (`store.NeedsFill`), `since`, the start of the window it counts, and `transcript_cuts`: the old cap (`cap`) and, per session, its transcript path, the turns that cap cut and its tail turn (`store.CapCheck`)
 - `GET  /healthz`               : 204
 - `GET  /version`               : the four-key build metadata object (`version`, `commit`, `tag`, `build_time`)
 - `GET  /webkit/`               : shared chrome (asset drift checks use `GET /webkit/version`)
@@ -1139,7 +1167,7 @@ moondb sessions hide <session-id>...   # take sessions out of the listings and t
 moondb sessions show <session-id>...   # put hidden sessions back
 moondb trace <session-id> [--json]   # time and cost totals, the agents, the longest tool calls, the most expensive model calls
 moondb scorecard <session-id> [--json]   # how a session spent its context: searches, reads, hints, agents, flags
-moondb doctor                  # config, hooks wired, serve reachable, store readable, version skew, agents without a brief or later messages
+moondb doctor                  # config, hooks wired, serve reachable, store readable, version skew, agents without a brief or later messages, turns the old transcript cap cut
 moondb docs                    # print the operating doc
 moondb version [-o json]
 ```
