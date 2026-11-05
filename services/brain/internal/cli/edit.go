@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -8,7 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/services/brain/internal/library"
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
+	"github.com/mad01/thismoon/services/brain/internal/sharing"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
@@ -19,13 +22,21 @@ func newEditCmd(a *app) *cobra.Command {
 		ifMatch              string
 		patch                markdown.Frontmatter
 		fields               fieldFlags
+		pr                   bool
 	)
 	c := &cobra.Command{
 		Use:   "edit <note>",
 		Short: "Edit body or frontmatter of an existing note",
 		Long: `Edit an existing note, named by vault:path or by a vault-relative path
 found in exactly one vault. A note in a shared vault is refused with exit
-code 6.
+code 6 unless --pr is given.
+
+--pr edits a shared note through its repo: the edit is applied, with every
+flag below, on a branch of the remote's tip in a temporary worktree, pushed
+as brain/edit/<stem>-<short id>, and opened as a pull request with gh. It
+prints the pull request's URL; the shared clone's checkout is untouched.
+--if-match then compares against the note as the remote has it. With -o
+json, prints {"vault", "path", "branch", "pr", "sha"}.
 
 Body handling (mutually exclusive):
   --body "..."          Replace the body entirely.
@@ -84,6 +95,9 @@ At least one body or frontmatter flag must be provided. With -o json, prints
 			if err != nil {
 				return err
 			}
+			if pr {
+				return a.editPR(cmd, lib, ref, opts)
+			}
 			sha, err := ref.Vault.Edit(ref.Abs(), opts)
 			if err != nil {
 				return withNoteHint(err, ref.Path)
@@ -105,6 +119,7 @@ At least one body or frontmatter flag must be provided. With -o json, prints
 	f.StringVar(&bodyFile, "body-file", "", "replace the body with this file's contents")
 	f.StringVar(&appendFile, "append-file", "", "append this file's contents to the body")
 	f.StringVar(&ifMatch, "if-match", "", "refuse the edit unless the note still has this sha")
+	f.BoolVar(&pr, "pr", false, "edit a shared note through a pull request on its repo")
 	f.StringVar(&patch.Status, "status", "", "set frontmatter status")
 	f.StringVar(&patch.Type, "type", "", "set frontmatter type")
 	f.StringVar(&patch.Title, "title", "", "set frontmatter title")
@@ -118,6 +133,23 @@ At least one body or frontmatter flag must be provided. With -o json, prints
 	)
 	fields.register(c)
 	return c
+}
+
+// editPR runs brain edit --pr on a shared note.
+func (a *app) editPR(
+	cmd *cobra.Command,
+	lib *library.Library,
+	ref vault.Ref,
+	opts vault.EditOptions,
+) error {
+	res, err := sharing.EditPR(context.Background(), lib, ref, opts)
+	if err != nil {
+		return withNoteHint(err, ref.Path)
+	}
+	return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
+		fmt.Fprintln(w, res.PR)
+		return nil
+	})
 }
 
 // readBody returns the body a flag pair names: the file's contents when

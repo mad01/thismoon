@@ -9,7 +9,9 @@ import (
 
 	"github.com/mad01/thismoon/services/brain/internal/drift"
 	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
+	"github.com/mad01/thismoon/services/brain/internal/sharing"
 	"github.com/mad01/thismoon/services/brain/internal/stale"
+	"github.com/mad01/thismoon/services/brain/internal/testgh"
 	"github.com/mad01/thismoon/services/brain/internal/testgit"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
@@ -43,16 +45,60 @@ func TestFlag(t *testing.T) {
 		t.Errorf("flag without --reason: exit %d, want %d", got.code, exitUsage)
 	}
 
+	// A shared note: an issue on the vault's repo, never a direct flag.
+	fake := testgh.Install(t, prURL, issueURL)
+	if got := runBrain(t, "", "flag", "team:notes/team-guide.md", "--reason", "outdated"); got.code != exitReadOnly {
+		t.Errorf(
+			"flag in a shared vault that is no clone: exit %d, want %d",
+			got.code,
+			exitReadOnly,
+		)
+	}
+	if got := runBrain(t, "", "flag", "notes/mine.md", "--reason", "x", "--dry-run"); got.code != exitUsage {
+		t.Errorf("--dry-run on a private note: exit %d, want %d", got.code, exitUsage)
+	}
 	testgit.Init(t, roots["team"])
 	testgit.Run(t, roots["team"], "remote", "add", "origin", "https://example.com/team/notes.git")
-	shared := runBrain(t, "", "flag", "team:notes/team-guide.md", "--reason", "outdated")
-	if shared.code != exitReadOnly {
-		t.Fatalf("flag in a shared vault: exit %d, want %d", shared.code, exitReadOnly)
+	dry := runBrain(
+		t,
+		"",
+		"flag",
+		"team:notes/team-guide.md",
+		"--reason",
+		"outdated",
+		"--dry-run",
+		"-o",
+		"json",
+	)
+	if dry.code != exitOK {
+		t.Fatalf("flag --dry-run on a shared note: exit %d, stderr %q", dry.code, dry.stderr)
 	}
-	for _, want := range []string{"brain flag opens one", "team:notes/team-guide.md", "https://example.com/team/notes.git"} {
-		if !strings.Contains(shared.stderr, want) {
-			t.Errorf("shared flag stderr %q lacks %q", shared.stderr, want)
-		}
+	issue := decodeStrict[sharing.IssueResult](t, dry.stdout)
+	if !issue.DryRun || issue.Repo != "example.com/team/notes" || issue.Title != "Disputed: Team Guide" ||
+		!strings.Contains(issue.Body, "team:notes/team-guide.md") ||
+		!strings.Contains(issue.Body, "outdated") {
+		t.Errorf("dry-run issue = %+v", issue)
+	}
+	if calls := fake.Calls(); len(calls) != 0 {
+		t.Errorf("--dry-run called gh: %q", calls)
+	}
+	opened := runBrain(t, "", "flag", "team:notes/team-guide.md", "--reason", "outdated")
+	if opened.code != exitOK || opened.stdout != "opened "+issueURL+"\n" {
+		t.Errorf(
+			"flag on a shared note: exit %d, stdout %q, stderr %q",
+			opened.code,
+			opened.stdout,
+			opened.stderr,
+		)
+	}
+	calls := fake.Calls()
+	if len(calls) != 1 || calls[0][0] != "issue" ||
+		testgh.Flag(calls[0], "--repo") != "example.com/team/notes" ||
+		testgh.Flag(calls[0], "--title") != "Disputed: Team Guide" {
+		t.Errorf("gh calls = %q", calls)
+	}
+	if status := testgit.Status(t, roots["team"]); strings.Contains(status, "team-guide") {
+		t.Errorf("a shared flag changed the note: %q", status)
 	}
 }
 

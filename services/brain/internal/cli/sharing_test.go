@@ -261,3 +261,86 @@ func TestPromoteToRefusals(t *testing.T) {
 	}
 	assertWorktreesGone(t, env)
 }
+
+func TestEditPROpensAPullRequest(t *testing.T) {
+	env := setupSharing(t, false)
+	direct := runBrain(t, "", "edit", "team:notes/team-guide.md", "--append", "More.")
+	if direct.code != exitReadOnly || !strings.Contains(direct.stderr, "brain edit --pr") {
+		t.Errorf("direct shared edit: exit %d, stderr %q", direct.code, direct.stderr)
+	}
+
+	got := runBrain(t, "", "edit", "team:notes/team-guide.md", "--pr",
+		"--append", "Check the dashboard first.", "--set", "steward=sam", "-o", "json")
+	if got.code != exitOK {
+		t.Fatalf("edit --pr: exit %d, stderr %q", got.code, got.stderr)
+	}
+	res := decodeStrict[sharing.EditResult](t, got.stdout)
+	branch := "brain/edit/team-guide-00000gd1"
+	if res.PR != prURL || res.Branch != branch || res.Vault != "team" || res.SHA == "" {
+		t.Errorf("result = %+v", res)
+	}
+	if s := testgit.Run(t, env.sharedRemote, "log", "-1", "--format=%s", branch); s != "brain: edit notes/team-guide.md" {
+		t.Errorf("branch head = %q", s)
+	}
+	edited := testgit.Run(t, env.sharedRemote, "show", branch+":notes/team-guide.md")
+	if !strings.Contains(edited, "Check the dashboard first.") ||
+		!strings.Contains(edited, "steward: sam") {
+		t.Errorf("edited note on the branch:\n%s", edited)
+	}
+	if local, _ := os.ReadFile(filepath.Join(env.shared, "notes", "team-guide.md")); strings.Contains(
+		string(local),
+		"dashboard",
+	) {
+		t.Error("edit --pr changed the shared clone's checkout")
+	}
+	calls := env.gh.Calls()
+	if len(calls) != 1 || testgh.Flag(calls[0], "--title") != "Edit note: Team Guide" ||
+		!strings.Contains(testgh.Flag(calls[0], "--body"), "Appends to the body") ||
+		!strings.Contains(testgh.Flag(calls[0], "--body"), "Sets steward") {
+		t.Errorf("gh calls = %q", calls)
+	}
+	assertWorktreesGone(t, env)
+
+	text := runBrain(t, "", "edit", "team:notes/team-guide.md", "--pr", "--append", "Again.")
+	if text.code != exitOK || text.stdout != prURL+"\n" {
+		t.Errorf(
+			"text edit --pr: exit %d, stdout %q, stderr %q",
+			text.code,
+			text.stdout,
+			text.stderr,
+		)
+	}
+	if b := testgh.Flag(env.gh.Calls()[1], "--head"); b != branch+"-2" {
+		t.Errorf("second edit's branch = %q, want %s-2", b, branch)
+	}
+
+	cases := []struct {
+		args []string
+		code int
+	}{
+		{[]string{"notes/rollout.md", "--pr", "--append", "x"}, exitUsage},
+		{
+			[]string{"team:notes/team-guide.md", "--pr", "--append", "x", "--if-match", "abc"},
+			exitConflict,
+		},
+		{
+			[]string{
+				"team:notes/team-guide.md",
+				"--pr",
+				"--append",
+				"ghp_" + strings.Repeat("a1B2", 9),
+			},
+			exitSecretFound,
+		},
+		{[]string{"team:notes/nope.md", "--pr", "--append", "x"}, exitNotFound},
+	}
+	for _, tc := range cases {
+		if got := runBrain(t, "", append([]string{"edit"}, tc.args...)...); got.code != tc.code {
+			t.Errorf("edit %v: exit %d, want %d; stderr %q", tc.args, got.code, tc.code, got.stderr)
+		}
+	}
+	if n := len(env.gh.Calls()); n != 2 {
+		t.Errorf("a refused edit called gh: %d calls", n)
+	}
+	assertWorktreesGone(t, env)
+}
