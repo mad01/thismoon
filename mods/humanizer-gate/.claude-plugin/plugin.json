@@ -1,7 +1,7 @@
 {
   "name": "humanizer-gate",
-  "version": "0.1.0",
-  "description": "Runs humanizer detection on prose as it leaves the session: markdown writes get a status line, PR bodies and commit messages can be held for a yes/no when an error-level pattern shows up.",
+  "version": "0.2.0",
+  "description": "Runs humanizer detection on prose as it leaves the session: markdown writes get a status line; a PR body or commit message with a warning-level finding goes back to the model once with the findings, and an error-level one can be held for a yes/no.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "mad01"
@@ -18,6 +18,12 @@
       "title": "Hold commits on errors",
       "description": "Ask before a git commit whose message has an error-level finding. Off by default: commit bodies are short and belt already guards commits.",
       "default": false
+    },
+    "feedbackWarnings": {
+      "type": "boolean",
+      "title": "Hand findings back to the model",
+      "description": "Deny the first send of a PR body or commit message that has a finding at warning or above and is not held for errors, with the findings as the reason. The same text sent again goes through. Off reports in the status line only.",
+      "default": true
     },
     "minSeverity": {
       "type": "string",
