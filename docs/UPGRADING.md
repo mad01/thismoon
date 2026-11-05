@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-11-05 moondb: a forced import repairs turns that kept too few model calls
 
-Change: thismoon #TBD. A prompt typed while a turn runs fires UserPromptSubmit under the running turn's prompt id. `moondb record` moved the turn's transcript offset to that point. The Stop then kept only the lines after the queued prompt, and the trace lost the turn's earlier model calls and their cost. record now keeps the turn's first offset. A forced import now also replaces a turn's transcript chunk when the transcript holds other model calls for that turn. That repairs the turns recorded before this change, and turns whose Stop read the transcript before the harness wrote its last lines.
+Change: thismoon #394. A prompt typed while a turn runs fires UserPromptSubmit under the running turn's prompt id. `moondb record` moved the turn's transcript offset to that point. The Stop then kept only the lines after the queued prompt, and the trace lost the turn's earlier model calls and their cost. record now keeps the turn's first offset. A forced import now also replaces a turn's transcript chunk when the transcript holds other model calls for that turn. That repairs the turns recorded before this change, and turns whose Stop read the transcript before the harness wrote its last lines.
 
 Run, in order:
 
