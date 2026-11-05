@@ -31,6 +31,11 @@ const (
 	// longest main-thread turn in a 2026-11 survey of ~/.claude/projects
 	// was 10.4 MiB, so 15 MiB keeps every turn whole with room to spare.
 	MaxTranscriptBytes = 15 << 20
+	// OldMaxTranscriptBytes is the cap MaxTranscriptBytes held before
+	// moondb 0.11.1: a longer turn kept only its last 4 MiB of lines. The
+	// cut-turns doctor check finds the turns it cut; a forced import
+	// stores them again under the new cap.
+	OldMaxTranscriptBytes = 4 << 20
 	// RecordBudget is how long `moondb record` works before it writes what
 	// it has and returns. The Edit/Write hook is synchronous, so this is
 	// latency the session feels on every edit.

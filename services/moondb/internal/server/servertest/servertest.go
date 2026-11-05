@@ -349,6 +349,22 @@ func (s *Store) CountAgentsToFill(_ context.Context, since time.Time) (int, erro
 	return n, nil
 }
 
+// TranscriptCuts lists the fixture sessions in which store.CapCheck finds
+// turns a cap of capBytes cut, oldest session first.
+func (s *Store) TranscriptCuts(_ context.Context, capBytes int64) ([]store.CutSession, error) {
+	check := store.CapCheck{Cap: capBytes, Kept: func(chunk string) (int64, bool) {
+		data, ok := s.chunks[chunk]
+		return int64(len(data)), ok
+	}}
+	out := []store.CutSession{}
+	for _, v := range s.sessions {
+		if cut, ok := check.Cuts(v, s.sessionTurns(v.ID)); ok {
+			out = append(out, cut)
+		}
+	}
+	return out, nil
+}
+
 // sessionAgents lists one session's fixture agents.
 func (s *Store) sessionAgents(id string) []store.Agent {
 	out := []store.Agent{}

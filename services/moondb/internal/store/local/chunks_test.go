@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/services/moondb/internal/store"
 )
 
 func gzipped(t *testing.T, data string) []byte {
@@ -65,5 +67,36 @@ func TestChunkKeysAreChecked(t *testing.T) {
 		if _, err := c.Has(ctx, key); err == nil {
 			t.Errorf("Has(%q) succeeded, want an invalid-key error", key)
 		}
+	}
+}
+
+// TestChunkSizeReadsTheTrailer: size gives the length Put stored, read
+// from the gzip trailer; a key with no object is not found, and an object
+// too short to be gzip is damaged.
+func TestChunkSizeReadsTheTrailer(t *testing.T) {
+	ctx := context.Background()
+	c := &chunkStore{dir: t.TempDir()}
+	for _, data := range [][]byte{{}, []byte("hello"), bytes.Repeat([]byte("line\n"), 300_000)} {
+		sha, err := c.Put(ctx, data)
+		if err != nil {
+			t.Fatalf("Put: %v", err)
+		}
+		if n, err := c.size(sha); err != nil || n != int64(len(data)) {
+			t.Errorf("size of %d bytes = %d, %v", len(data), n, err)
+		}
+	}
+	missing := strings.Repeat("0", 64)
+	if _, err := c.size(missing); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("size of a missing object: err = %v, want ErrNotFound", err)
+	}
+	sha, err := c.Put(ctx, []byte("hello"))
+	if err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := os.WriteFile(c.path(sha), []byte("short"), filePerm); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.size(sha); !errors.Is(err, errCorruptChunk) {
+		t.Errorf("size of a short object: err = %v, want errCorruptChunk", err)
 	}
 }

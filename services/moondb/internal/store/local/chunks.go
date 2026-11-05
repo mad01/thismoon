@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -118,6 +119,42 @@ func gunzip(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	return data, zr.Close()
+}
+
+// gzipMinBytes is the smallest gzip member: a 10-byte header and an 8-byte
+// trailer, the CRC-32 and then ISIZE, the length of the uncompressed bytes
+// mod 2^32, both little-endian.
+const gzipMinBytes = 18
+
+// size returns the length of the bytes stored under sha, read from ISIZE
+// in the object's gzip trailer without inflating it. writeObject writes
+// one gzip member, and no chunk nears 4 GiB, where ISIZE wraps. A key with
+// no object wraps store.ErrNotFound, and an object too short to be gzip
+// wraps errCorruptChunk.
+func (c *chunkStore) size(sha string) (int64, error) {
+	if err := checkKey(sha); err != nil {
+		return 0, err
+	}
+	f, err := os.Open(c.path(sha))
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, fmt.Errorf("chunk %s: %w", sha, store.ErrNotFound)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("open chunk %s: %w", sha, err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("stat chunk %s: %w", sha, err)
+	}
+	if info.Size() < gzipMinBytes {
+		return 0, fmt.Errorf("chunk %s: %w", sha, errCorruptChunk)
+	}
+	var isize [4]byte
+	if _, err := f.ReadAt(isize[:], info.Size()-int64(len(isize))); err != nil {
+		return 0, fmt.Errorf("read chunk %s: %w", sha, err)
+	}
+	return int64(binary.LittleEndian.Uint32(isize[:])), nil
 }
 
 // Has reports whether an object is stored under sha, without reading it.

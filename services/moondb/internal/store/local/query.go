@@ -59,6 +59,21 @@ func (ix *index) summary(s *store.Session) store.SessionSummary {
 	})
 }
 
+// sessionWithTurns is a session copied out with its turns in Seq order.
+type sessionWithTurns struct {
+	session store.Session
+	turns   []store.Turn
+}
+
+// everySession copies every session out, oldest first, with its turns.
+func (ix *index) everySession() []sessionWithTurns {
+	out := make([]sessionWithTurns, 0, len(ix.sessionOrder))
+	for _, s := range ix.sessionOrder {
+		out = append(out, sessionWithTurns{session: *s, turns: ix.sessionTurns(s.ID)})
+	}
+	return out
+}
+
 // sessionTurns copies a session's turns out in Seq order.
 func (ix *index) sessionTurns(id string) []store.Turn {
 	turns := ix.turnsBySession[id]

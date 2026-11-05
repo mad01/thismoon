@@ -396,6 +396,59 @@ func (s *Store) CountAgentsToFill(ctx context.Context, since time.Time) (int, er
 	return n, nil
 }
 
+// TranscriptCuts lists the sessions in which store.CapCheck finds turns a
+// cap of capBytes cut, oldest session first. It copies the sessions and
+// turns under the read lock and sizes the chunks after releasing it, from
+// each object's gzip trailer, so ingest never waits on those reads. A
+// chunk with no object, or a damaged one, leaves its turn unjudged.
+func (s *Store) TranscriptCuts(ctx context.Context, capBytes int64) ([]store.CutSession, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	all := s.ix.everySession()
+	s.mu.RUnlock()
+	kept := map[string]int64{}
+	for _, st := range all {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err := s.sizeTranscripts(st.turns, kept); err != nil {
+			return nil, err
+		}
+	}
+	check := store.CapCheck{Cap: capBytes, Kept: func(chunk string) (int64, bool) {
+		n, ok := kept[chunk]
+		return n, ok
+	}}
+	out := []store.CutSession{}
+	for _, st := range all {
+		if cut, ok := check.Cuts(st.session, st.turns); ok {
+			out = append(out, cut)
+		}
+	}
+	return out, nil
+}
+
+// sizeTranscripts adds the size of each closed turn's transcript chunk to
+// kept.
+func (s *Store) sizeTranscripts(turns []store.Turn, kept map[string]int64) error {
+	for _, t := range turns {
+		if t.Status == store.TurnOpen || t.TranscriptChunk == "" {
+			continue
+		}
+		n, err := s.chunks.size(t.TranscriptChunk)
+		switch {
+		case errors.Is(err, store.ErrNotFound), errors.Is(err, errCorruptChunk):
+			continue
+		case err != nil:
+			return err
+		}
+		kept[t.TranscriptChunk] = n
+	}
+	return nil
+}
+
 // Edits lists the edits matching every set field of q, newest first.
 func (s *Store) Edits(ctx context.Context, q store.EditQuery) ([]store.Edit, error) {
 	if err := ctx.Err(); err != nil {

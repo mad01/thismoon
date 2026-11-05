@@ -35,6 +35,7 @@ func Run(t *testing.T, open func(t *testing.T, dir string) store.Store) {
 		{"TurnsWithoutTotals", turnsWithoutTotals},
 		{"AgentsWithoutTotals", agentsWithoutTotals},
 		{"CountAgentsToFill", countAgentsToFill},
+		{"TranscriptCuts", transcriptCuts},
 		{"TurnDetail", turnDetail},
 		{"EditsQuery", editsQuery},
 		{"LatestAfter", latestAfter},
