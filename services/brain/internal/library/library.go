@@ -16,6 +16,7 @@ import (
 	"github.com/mad01/thismoon/services/brain/internal/config"
 	"github.com/mad01/thismoon/services/brain/internal/embedding"
 	"github.com/mad01/thismoon/services/brain/internal/gitvault"
+	"github.com/mad01/thismoon/services/brain/internal/lockfile"
 	"github.com/mad01/thismoon/services/brain/internal/search"
 	"github.com/mad01/thismoon/services/brain/internal/semantic"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
@@ -38,15 +39,19 @@ type Options struct {
 	// configured Ollama when Embed is nil too, and skips the probe when a
 	// custom Embed is given.
 	Health func(context.Context) error
+	// LockTimeout bounds the wait for a vault's index lock while another
+	// brain process builds that index; zero means lockfile.DefaultTimeout.
+	LockTimeout time.Duration
 }
 
 // Library is the configured vaults, opened, with their index locations.
 type Library struct {
-	cfg    *config.Config
-	set    *vault.Set
-	repos  map[string]*gitvault.Repo
-	embed  semantic.EmbedFunc
-	health func(context.Context) error
+	cfg         *config.Config
+	set         *vault.Set
+	repos       map[string]*gitvault.Repo
+	embed       semantic.EmbedFunc
+	health      func(context.Context) error
+	lockTimeout time.Duration
 }
 
 // Open opens every configured vault. A vault directory that does not exist
@@ -74,11 +79,15 @@ func Open(opts Options) (*Library, error) {
 		vaults = append(vaults, v)
 	}
 	l := &Library{
-		cfg:    cfg,
-		set:    vault.NewSet(vaults...),
-		repos:  repos,
-		embed:  opts.Embed,
-		health: opts.Health,
+		cfg:         cfg,
+		set:         vault.NewSet(vaults...),
+		repos:       repos,
+		embed:       opts.Embed,
+		health:      opts.Health,
+		lockTimeout: opts.LockTimeout,
+	}
+	if l.lockTimeout <= 0 {
+		l.lockTimeout = lockfile.DefaultTimeout
 	}
 	if l.embed == nil {
 		client := embedding.New(cfg.Semantic.OllamaURL, cfg.Semantic.EmbedModel)
