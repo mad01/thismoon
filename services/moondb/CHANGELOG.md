@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/mad01/thismoon/compare/moondb/v0.11.1...moondb/v0.12.0) (2026-11-05)
+
+
+### Features
+
+* **moondb:** doctor check for turns the old 4 MiB transcript cap cut ([#399](https://github.com/mad01/thismoon/issues/399)) ([1382acc](https://github.com/mad01/thismoon/commit/1382acc4378485e5168ee844a7472ae67fcefaa3))
+
 ## [0.11.1](https://github.com/mad01/thismoon/compare/moondb/v0.11.0...moondb/v0.11.1) (2026-11-05)
 
 
