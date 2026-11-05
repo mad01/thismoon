@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"log"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -579,6 +580,23 @@ func TestSemanticRefreshesAStaleIndex(t *testing.T) {
 	}
 	if got.code != exitOK || !strings.Contains(got.stdout, "notes/later.md") {
 		t.Errorf("hybrid-search without Ollama: exit %d, stdout %q", got.code, got.stdout)
+	}
+}
+
+// TestSearchLeavesZoektSilent pins that the zoekt index build and shard load,
+// which log through the standard logger, print nothing: stderr carries only
+// brain's own messages.
+func TestSearchLeavesZoektSilent(t *testing.T) {
+	setupCLI(t, "")
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	got := runBrain(t, "", "search", "kubernetes")
+	if got.code != exitOK || got.stderr != "" {
+		t.Fatalf("exit %d, stderr %q; want 0 and empty", got.code, got.stderr)
+	}
+	if logged.Len() != 0 {
+		t.Errorf("the standard logger got %q, want nothing", logged.String())
 	}
 }
 

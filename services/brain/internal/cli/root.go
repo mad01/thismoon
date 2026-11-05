@@ -7,6 +7,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
@@ -38,6 +39,10 @@ func Execute() int {
 // run executes one CLI invocation against the given streams and returns its
 // exit code. Tests call it directly.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	// zoekt reports shard builds and loads through the standard logger.
+	// brain itself never uses it, so discarding it leaves stderr to brain's
+	// own messages.
+	log.SetOutput(io.Discard)
 	a := &app{output: outputText}
 	root := newRootCmd(a)
 	root.SetArgs(args)
