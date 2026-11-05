@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1](https://github.com/mad01/thismoon/compare/moondb/v0.11.0...moondb/v0.11.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **moondb:** keep a turn's model calls when a prompt is queued mid-turn ([#394](https://github.com/mad01/thismoon/issues/394)) ([dc45a51](https://github.com/mad01/thismoon/commit/dc45a51b819c4ce74e09836ed8d1e29e35ce15d1))
+* **moondb:** wait at Stop for the final message and keep up to 15 MiB per turn ([#395](https://github.com/mad01/thismoon/issues/395)) ([d9306ae](https://github.com/mad01/thismoon/commit/d9306aed0c51282a18d39a4c1075094f5450a66b))
+
 ## [0.11.0](https://github.com/mad01/thismoon/compare/moondb/v0.10.0...moondb/v0.11.0) (2026-11-04)
 
 
