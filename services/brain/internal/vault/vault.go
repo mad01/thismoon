@@ -346,6 +346,17 @@ func (v *Vault) readNote(path string) ([]byte, markdown.Frontmatter, []byte, err
 	return data, fm, body, nil
 }
 
+// refuseUnclosed fails with ErrInvalidContent when data opens a
+// frontmatter fence it never closes: rendering it would stack a second
+// frontmatter block on top of the first.
+func (v *Vault) refuseUnclosed(path string, data []byte) error {
+	if markdown.Unclosed(data) {
+		return fmt.Errorf("%w: %s: %w (add the closing --- line)",
+			ErrInvalidContent, v.Rel(path), markdown.ErrUnclosed)
+	}
+	return nil
+}
+
 // EditOptions replaces the body and/or merges frontmatter fields. At most one
 // of Body / Append may be set. FrontmatterPatch is a partial Frontmatter that
 // overlays the existing one (non-zero fields win). Set and Unset then assign
@@ -443,6 +454,9 @@ func (v *Vault) rewriteWith(
 	if err != nil {
 		return "", err
 	}
+	if err := v.refuseUnclosed(path, data); err != nil {
+		return "", err
+	}
 	if got := ContentSHA(data); ifMatch != "" && got != ifMatch {
 		return "", fmt.Errorf(
 			"%w: %s has sha %s, not %s; read it again before editing",
@@ -507,8 +521,11 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 		target = TierNotes
 	}
 
-	fm, body, err := v.ReadFrontmatter(path)
+	data, fm, body, err := v.readNote(path)
 	if err != nil {
+		return PromoteResult{}, err
+	}
+	if err := v.refuseUnclosed(path, data); err != nil {
 		return PromoteResult{}, err
 	}
 

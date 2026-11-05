@@ -32,6 +32,10 @@ var (
 	// ErrSecretFound means a write, edit, promote or status change would put
 	// a secret in a note; the message names the rule and the redacted value.
 	ErrSecretFound = errors.New("vault: secret found")
+	// ErrInvalidContent means a change would leave a note brain cannot keep
+	// as a text note: a title with a control character, a NUL byte, or
+	// frontmatter whose fence is not closed. Nothing was written.
+	ErrInvalidContent = errors.New("vault: invalid note content")
 	// ErrPossibleDuplicate means a write would create a note an existing one
 	// likely covers already; the message names the candidates. Nothing was
 	// written.

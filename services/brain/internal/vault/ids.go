@@ -130,6 +130,9 @@ func (v *Vault) MigrateIDs(dryRun bool, now time.Time) (report MigrateReport, er
 	err = v.walkTierNotes(func(path string, data []byte) error {
 		rel := v.Rel(path)
 		fm, body, err := markdown.ParseFrontmatter(data)
+		if err == nil && markdown.Unclosed(data) {
+			err = markdown.ErrUnclosed
+		}
 		if err != nil {
 			report.Skipped = append(
 				report.Skipped,
