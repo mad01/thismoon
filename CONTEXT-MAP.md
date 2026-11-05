@@ -6,6 +6,7 @@ directory and everything below it; the root one applies to the whole repo.
 | Context | Glossary | Covers |
 |---------|----------|--------|
 | thismoon | [CONTEXT.md](CONTEXT.md) | Repo-wide terms: component, service, tool, recipe, mod, release tags |
+| brain | [services/brain/CONTEXT.md](services/brain/CONTEXT.md) | Vault, tiers, notes, stems, wikilinks, backlinks, MOCs, evidence tiers, promotion |
 | moondb | [services/moondb/CONTEXT.md](services/moondb/CONTEXT.md) | Sessions, turns, edits, observed content, unattributed deltas, chunks, commit links, the spool |
 | present | [services/present/CONTEXT.md](services/present/CONTEXT.md) | Briefs, decks, slides, steps, charts and diagrams, the shared instance |
 | loom | [skills/loom/CONTEXT.md](skills/loom/CONTEXT.md) | Claimed worktrees and the weaver |

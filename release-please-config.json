@@ -7,6 +7,7 @@
   "initial-version": "0.1.0",
   "commit-search-depth": 200,
   "packages": {
+    "services/brain": { "component": "brain" },
     "services/csl": { "component": "csl" },
     "services/d-man": { "component": "d-man" },
     "services/deps": { "component": "deps" },

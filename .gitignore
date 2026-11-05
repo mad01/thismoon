@@ -14,6 +14,7 @@
 .github/filters.generated.yml
 
 # per-component build artifacts (binary name matches directory name)
+services/brain/brain
 services/csl/csl
 services/d-man/d-man
 services/deps/deps

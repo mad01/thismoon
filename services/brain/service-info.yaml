@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: brain
+  description: Local markdown knowledge base over an Obsidian-style vault; CLI + MCP stdio server, zoekt literal and chromem-go semantic search
+  tags: [go, cli, mcp, knowledge-base]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon
