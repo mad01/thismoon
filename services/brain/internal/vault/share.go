@@ -80,7 +80,7 @@ func (v *Vault) CreateAt(rel string, fm markdown.Frontmatter, body []byte) (stri
 	if err != nil {
 		return "", err
 	}
-	if err := v.refuseSecrets(path, content); err != nil {
+	if err := v.refuseContent(path, content); err != nil {
 		return "", err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

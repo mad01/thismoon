@@ -144,3 +144,30 @@ func TestLinkedNotesAreRefusedAndChecked(t *testing.T) {
 		t.Errorf("check findings %+v, want an error for notes/leak.md and no content", report.Findings)
 	}
 }
+
+func TestNULBytesAreRefusedAndChecked(t *testing.T) {
+	root := setupCLI(t, "")
+	got := runBrain(t, "x\x00y\n", "write", "--title", "Nul")
+	if got.code != exitUsage || !strings.Contains(got.stderr, "NUL byte") {
+		t.Errorf("write = %d %q, want exit 2 naming the NUL byte", got.code, got.stderr)
+	}
+	if _, err := os.Stat(filepath.Join(root, "inbox", "nul.md")); err == nil {
+		t.Error("inbox/nul.md was written")
+	}
+	held := "---\ntitle: Held\n---\nx\x00y\n"
+	if err := os.WriteFile(filepath.Join(root, "notes", "held.md"), []byte(held), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got = runBrain(t, "", "check", "-o", "json", "notes/held.md")
+	if got.code != exitError {
+		t.Fatalf("check exit = %d, want 1; stdout %s", got.code, got.stdout)
+	}
+	report := decodeStrict[check.Report](t, got.stdout)
+	found := false
+	for _, f := range report.Findings {
+		found = found || (f.Level == check.Error && f.Line == 4 && strings.HasPrefix(f.Message, "nul-byte: "))
+	}
+	if !found {
+		t.Errorf("check findings %+v, want a nul-byte error on line 4", report.Findings)
+	}
+}

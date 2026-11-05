@@ -233,7 +233,7 @@ func (v *Vault) Draft(opts WriteOptions) (Draft, error) {
 	if err != nil {
 		return Draft{}, err
 	}
-	if err := v.refuseSecrets(path, content); err != nil {
+	if err := v.refuseContent(path, content); err != nil {
 		return Draft{}, err
 	}
 	verb := opts.Verb
@@ -518,7 +518,7 @@ func (v *Vault) rewriteWith(
 	if err != nil {
 		return "", err
 	}
-	if err := v.refuseSecrets(path, content); err != nil {
+	if err := v.refuseContent(path, content); err != nil {
 		return "", err
 	}
 	if err := atomicWrite(path, content, 0o644); err != nil {
@@ -661,7 +661,7 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 	if err != nil {
 		return PromoteResult{}, err
 	}
-	if err := v.refuseSecrets(newPath, content); err != nil {
+	if err := v.refuseContent(newPath, content); err != nil {
 		return PromoteResult{}, err
 	}
 
