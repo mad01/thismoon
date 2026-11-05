@@ -324,14 +324,17 @@ func tail(s string, n int) string {
 // judgeSystem frames the llm grader. The rubric comes in the user prompt.
 const judgeSystem = `You grade one answer from a coding agent against a rubric.
 Read the task, the rubric, and the answer. Decide whether the answer meets
-the rubric. Reply with a single JSON object and nothing else:
-{"pass": true or false, "reason": "one sentence"}`
+the rubric. Judge only what the rubric asks, and count different wording
+with the same meaning as meeting it. Write the reason first, then set pass
+so it agrees with the reason. Reply with a single JSON object and nothing
+else:
+{"reason": "one sentence", "pass": true or false}`
 
 // claudeJudge is the production judge: a one-shot haiku call with no
-// tools, no MCP servers, no session, and a small spend cap. User settings
-// still load, so their hooks would fire; the flag settings turn every hook
-// off (disableAllHooks), and the run starts in the temp directory so no
-// repo's project settings or CLAUDE.md apply.
+// tools, no MCP servers, no session, and a small spend cap. No setting
+// sources load, so the user's CLAUDE.md, output style and hooks stay out
+// of the verdict; the run starts in the temp directory so no repo's
+// project settings apply either.
 type claudeJudge struct {
 	bin string
 }
@@ -347,7 +350,8 @@ func (j claudeJudge) Judge(ctx context.Context, in JudgeInput) (Verdict, error) 
 		"--model", "haiku",
 		"--tools", "",
 		"--strict-mcp-config",
-		"--settings", `{"disableAllHooks":true}`,
+		"--settings", `{"disableAllHooks":true,"autoMemoryEnabled":false}`,
+		"--setting-sources", "",
 		"--no-session-persistence",
 		"--max-budget-usd", judgeMaxBudgetUSD,
 		"--output-format", "json",
