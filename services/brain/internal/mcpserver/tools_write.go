@@ -19,7 +19,7 @@ type writeInput struct {
 	Tags     []string `json:"tags,omitempty"          jsonschema:"frontmatter tags list"`
 	Aliases  []string `json:"aliases,omitempty"       jsonschema:"frontmatter aliases: alternate titles that backlinks should resolve to"`
 	Type     string   `json:"type,omitempty"          jsonschema:"frontmatter type (note | source | moc | output); defaults based on tier"`
-	Status   string   `json:"status,omitempty"        jsonschema:"frontmatter status (raw | validated | archived); defaults based on tier"`
+	Status   string   `json:"status,omitempty"        jsonschema:"frontmatter status (raw | validated | promoting | disputed); defaults based on tier. Revoke a note with brain supersede, retract or withdraw instead."`
 	Source   string   `json:"source,omitempty"        jsonschema:"optional source URL"`
 	Evidence string   `json:"evidence,omitempty"      jsonschema:"trust tier for empirical notes: A (replicated RCT / meta-analysis), B (single well-designed study), C (preliminary / survey / mechanism-plausible), D (refuted / apocryphal), or mixed. Omit for non-empirical notes."`
 	Filename string   `json:"filename,omitempty"      jsonschema:"override filename (without .md); defaults to slug(title)"`
