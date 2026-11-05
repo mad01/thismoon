@@ -10,6 +10,8 @@ hook.
   a user pattern into a `Rule`.
 - `ScanDir` scans git-tracked files, `ScanStaged` reads content from the
   index, and `ScanFile`, `ScanLine` and `CheckFileName` scan one input.
+  `ScanContent` scans bytes that have not reached disk, under the path they
+  are bound for.
 - A `Finding` keeps the unredacted match in `RawMatch`. Print `Match` or
   `Context`, or pass the text through `Redact`.
 - Skipped files (too large, unreadable) go to `Scanner.OnSkip`, or stderr when

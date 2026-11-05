@@ -191,6 +191,18 @@ func (s *Scanner) ScanFile(path string) ([]Finding, error) {
 	return s.scanContent(path, content, ic)
 }
 
+// ScanContent scans content as if it were the file at path, for content that
+// has not reached disk yet, such as a note about to be written. path decides
+// which rules apply and what the ignore config's path globs match against.
+// It applies the same binary skip, line cap and suppression as ScanFile.
+func (s *Scanner) ScanContent(path string, content []byte) ([]Finding, error) {
+	ic, err := s.loadIgnoreOnce()
+	if err != nil {
+		return nil, err
+	}
+	return s.scanContent(path, content, ic)
+}
+
 func isBinary(content []byte) bool {
 	header := content
 	if len(header) > 512 {
