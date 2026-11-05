@@ -20,6 +20,14 @@ Versions come from conventional commits, scoped by path. A commit touching
 Current versions live in `.release-please-manifest.json`; don't edit it by
 hand, release-please owns it.
 
+### Merge methods
+
+Squash is the default: the PR title becomes the one commit release-please
+reads. A PR whose commits bump different components by different types (a
+`fix` in one component, a `feat` in another) lands with a rebase merge
+instead. Squashed, it would be one commit touching every component, and each
+would get the same bump. Merge commits are turned off.
+
 ## The release PR
 
 1. A releasable commit merges to main.
@@ -30,8 +38,10 @@ hand, release-please owns it.
 4. The `artifacts` job fans out over every path released in that run and
    uploads the tarballs.
 
-Release PRs pile up harmlessly; merge them when you want the release, not
-before.
+The release PR merges itself: the `release-pr-automerge` job turns on
+auto-merge, so the PR lands once its required checks pass. Turning auto-merge
+off on the PR holds the release until the next push to main updates the PR
+and turns it back on.
 
 ### How far back release-please looks
 
@@ -155,6 +165,10 @@ Two pieces of repo configuration the workflow depends on:
   short-lived installation token each run. The private key itself doesn't
   expire, but it can be regenerated from the App's settings without touching
   the workflow.
+- **Auto-merge and merge methods**: the repo setting "Allow auto-merge" must
+  stay on, or the `release-pr-automerge` job fails. Squash and rebase merges
+  are allowed and merge commits are off, both in the repo settings and in the
+  `main` ruleset.
 - **Concurrency group `release`**: two merges to main racing release-please
   can double-process the release PR, so runs queue instead of overlapping
   (`cancel-in-progress: false`).

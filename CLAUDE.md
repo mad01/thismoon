@@ -92,7 +92,8 @@ Prerequisites: `golang-pro`, `golang-style`, `handoff`, and `loom` need nothing 
 Full reference: `docs/RELEASING.md`. The short version for working here:
 
 - release-please (manifest mode) runs on merge to main, keyed by the `packages` map in `release-please-config.json`. Conventional commits scoped by path drive per-component bumps. Merging a release PR cuts the `name/vX.Y.Z` tag + GitHub Release. The artifacts matrix builds darwin/arm64 tarballs with checksums.txt + cosign keyless bundle, natively on a macOS arm64 runner. csl builds with cgo for its tree-sitter grammars; everything else stays CGO_ENABLED=0.
-- Release PRs can sit unmerged; merge = release. Never hand-edit `.release-please-manifest.json`.
+- Release PRs merge themselves: release.yml turns on auto-merge, so one lands once its required checks pass, and merge = release. Never hand-edit `.release-please-manifest.json`.
+- Merge with squash. A PR whose commits bump different components by different types lands with a rebase merge, so release-please reads each commit with its own files; merge commits are off.
 - The workflow authenticates with a token minted from the `mad01-release-please` GitHub App (secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`, via actions/create-github-app-token). "Error adding to tree" or a missing release PR usually means the App lost Contents or Pull requests write access on this repo. Or the private-key secret no longer matches the App.
 - New component → must be added to `release-please-config.json`; CI fails the PR otherwise.
 
