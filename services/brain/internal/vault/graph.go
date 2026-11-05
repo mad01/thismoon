@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
 )
 
@@ -249,12 +250,7 @@ func tierDir(rel string) string {
 
 // reviewBy returns the review_by frontmatter value as written, or "".
 func reviewBy(fm markdown.Frontmatter) string {
-	for _, f := range fm.Extra {
-		if f.Key == "review_by" && f.Value != nil {
-			return f.Value.Value
-		}
-	}
-	return ""
+	return lifecycle.Read(fm).ReviewBy
 }
 
 // String renders a node for a text listing: vault:path for a note, the

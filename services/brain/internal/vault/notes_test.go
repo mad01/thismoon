@@ -67,6 +67,7 @@ func TestEditAndPromoteKeepUnknownKeys(t *testing.T) {
 			edit: func(*testing.T) EditOptions { return EditOptions{Append: "more", Now: now} },
 			wantExtra: map[string]any{
 				"owner": "alex", "classification": "internal", "sources": wantSources,
+				"review_by": "2027-04-02", "status_at": "2026-04-02",
 			},
 		},
 		{
@@ -76,6 +77,7 @@ func TestEditAndPromoteKeepUnknownKeys(t *testing.T) {
 			},
 			wantExtra: map[string]any{
 				"owner": "alex", "classification": "internal", "sources": wantSources,
+				"review_by": "2027-04-02", "status_at": "2026-04-02",
 			},
 			wantEvid: "B",
 		},
@@ -93,6 +95,7 @@ func TestEditAndPromoteKeepUnknownKeys(t *testing.T) {
 			},
 			wantExtra: map[string]any{
 				"owner": "sam", "sources": wantSources, "review": map[string]any{"by": "kim"},
+				"review_by": "2027-04-02", "status_at": "2026-04-02",
 			},
 		},
 	}

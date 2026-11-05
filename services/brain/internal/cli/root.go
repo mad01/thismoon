@@ -74,6 +74,9 @@ Subcommands:
   write             Create a new note in a tier (inbox/notes/outputs/MOCs).
   edit              Edit body or frontmatter of an existing note.
   promote           Move an inbox note into notes/, rewriting backlinks.
+  supersede         Mark a note superseded by another.
+  retract           Mark a note retracted, keeping its body under a banner.
+  withdraw          Replace a note with a tombstone and purge it from the indexes.
   list              List notes in a tier, optionally filtered.
   migrate           Backfill note ids (--ids).
   docs              Print the agent-facing CLI guide.
@@ -129,6 +132,9 @@ brain doctor prints the paths in effect.`,
 		newWriteCmd(a),
 		newEditCmd(a),
 		newPromoteCmd(a),
+		newSupersedeCmd(a),
+		newRetractCmd(a),
+		newWithdrawCmd(a),
 		newListCmd(a),
 		newMigrateCmd(a),
 		newDocsCmd(),

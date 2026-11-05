@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
 )
 
@@ -28,9 +29,12 @@ type BodyLine struct {
 type Note struct {
 	Vault       string          `json:"vault"`
 	Path        string          `json:"path"`
-	SHA         string          `json:"sha"         jsonschema:"sha256 of the note's bytes; pass it to edit as if_match to refuse an edit when the note changed since"`
+	SHA         string          `json:"sha"              jsonschema:"sha256 of the note's bytes; pass it to edit as if_match to refuse an edit when the note changed since"`
 	Frontmatter FrontmatterView `json:"frontmatter"`
-	BodyLines   []BodyLine      `json:"body_lines"`
+	// Banner warns that the note should not be cited as it stands: it is
+	// retracted, superseded, withdrawn or disputed.
+	Banner    string     `json:"banner,omitempty" jsonschema:"set when the note is retracted, superseded, withdrawn or disputed: one line saying so, to show above the body"`
+	BodyLines []BodyLine `json:"body_lines"`
 
 	fm markdown.Frontmatter
 }
@@ -44,8 +48,9 @@ type Peek struct {
 	Vault         string          `json:"vault"`
 	Path          string          `json:"path"`
 	Frontmatter   FrontmatterView `json:"frontmatter"`
+	Banner        string          `json:"banner,omitempty" jsonschema:"set when the note is retracted, superseded, withdrawn or disputed"`
 	Preview       []string        `json:"preview"`
-	BacklinkCount int             `json:"backlink_count" jsonschema:"number of notes in the vault that contain a [[stem]] wikilink to this note"`
+	BacklinkCount int             `json:"backlink_count"   jsonschema:"number of notes in the vault that contain a [[stem]] wikilink to this note"`
 
 	fm markdown.Frontmatter
 }
@@ -74,6 +79,7 @@ func (v *Vault) Read(rel string, start, end int) (Note, error) {
 		Path:        v.Rel(full),
 		SHA:         ContentSHA(data),
 		Frontmatter: view,
+		Banner:      lifecycle.Banner(lifecycle.Read(fm)),
 		BodyLines:   sliceBodyLines(body, start, end),
 		fm:          fm,
 	}, nil
@@ -112,6 +118,7 @@ func (s *Set) Peek(ref Ref, maxLines int) (Peek, error) {
 		Vault:         ref.Vault.Name,
 		Path:          ref.Path,
 		Frontmatter:   view,
+		Banner:        lifecycle.Banner(lifecycle.Read(fm)),
 		Preview:       firstBodyLines(body, maxLines),
 		BacklinkCount: count,
 		fm:            fm,

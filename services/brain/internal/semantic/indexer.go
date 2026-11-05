@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/mad01/thismoon/services/brain/internal/chunk"
+	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
+	"github.com/mad01/thismoon/services/brain/internal/markdown"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
@@ -37,7 +39,8 @@ type SyncReport struct {
 
 // Sync brings idx in line with the notes under vaultRoot's tiers. A note
 // whose content hash matches opts.Held keeps its chunks; a new or changed
-// note is re-chunked and re-embedded; a note in opts.Held that no longer
+// note is re-chunked and re-embedded, except a withdrawn note's tombstone,
+// which keeps none; a note in opts.Held that no longer
 // exists has its chunks purged, so no ghost hits remain. Notes outside the
 // four tiers, hidden directories, .git, .obsidian, .trash, attachments and
 // node_modules are never read.
@@ -68,6 +71,12 @@ func Sync(ctx context.Context, idx *Index, vaultRoot string, opts SyncOptions) (
 		if opts.Held[rel] == hash {
 			return nil
 		}
+		if withdrawn(content) {
+			if err := idx.DeleteByPath(ctx, rel); err != nil {
+				return fmt.Errorf("semantic.Sync: purge %s: %w", rel, err)
+			}
+			return nil
+		}
 		n, err := embedNote(ctx, idx, rel, content, opts.Chunk)
 		if err != nil {
 			return err
@@ -96,6 +105,13 @@ func Sync(ctx context.Context, idx *Index, vaultRoot string, opts SyncOptions) (
 		report.Removed++
 	}
 	return report, nil
+}
+
+// withdrawn reports whether content is a withdrawn note's tombstone, which
+// keeps no chunks.
+func withdrawn(content []byte) bool {
+	fm, _, err := markdown.ParseFrontmatter(content)
+	return err == nil && lifecycle.Normalize(fm.Status) == lifecycle.Withdrawn
 }
 
 // noteRel returns the vault-relative path of a markdown note in a tier, or

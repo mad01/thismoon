@@ -76,7 +76,12 @@ With -o json, prints {"vault": ..., "path": ...}.`,
 	f.StringSliceVar(&opts.Tags, "tag", nil, "frontmatter tag (repeatable)")
 	f.StringSliceVar(&opts.Aliases, "alias", nil, "frontmatter alias (repeatable)")
 	f.StringVar(&opts.Type, "type", "", "frontmatter type (note | source | moc | output)")
-	f.StringVar(&opts.Status, "status", "", "frontmatter status (raw | validated | archived)")
+	f.StringVar(
+		&opts.Status,
+		"status",
+		"",
+		"frontmatter status (raw, validated, promoting, disputed, ...); defaults by tier",
+	)
 	f.StringVar(&opts.Source, "source", "", "source URL")
 	f.StringVar(&opts.Filename, "filename", "", "override filename (without .md)")
 	fields.register(c)

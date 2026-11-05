@@ -15,7 +15,8 @@ func newReadCmd(a *app) *cobra.Command {
 		Long: `Read a note and print its frontmatter block followed by the requested body
 lines. Name the note by vault:path, or by a vault-relative path found in
 exactly one vault. Use --start / --end to slice (1-based inclusive over the
-body). With -o json, prints the brain_read document.`,
+body). A retracted, superseded, withdrawn or disputed note prints a banner
+line first (banner in JSON). With -o json, prints the brain_read document.`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if start < 0 || end < 0 {
@@ -33,6 +34,9 @@ body). With -o json, prints the brain_read document.`,
 				return withNoteHint(err, ref.Path)
 			}
 			return a.emit(cmd.OutOrStdout(), note, func(w io.Writer) error {
+				if note.Banner != "" {
+					fmt.Fprintln(w, note.Banner)
+				}
 				if err := writeFrontmatter(w, note.Raw()); err != nil {
 					return err
 				}
@@ -70,6 +74,9 @@ is worth a full read. With -o json, prints the brain_peek document.`,
 				return withNoteHint(err, ref.Path)
 			}
 			return a.emit(cmd.OutOrStdout(), peek, func(w io.Writer) error {
+				if peek.Banner != "" {
+					fmt.Fprintln(w, peek.Banner)
+				}
 				fmt.Fprintf(w, "backlinks: %d\n", peek.BacklinkCount)
 				if err := writeFrontmatter(w, peek.Raw()); err != nil {
 					return err

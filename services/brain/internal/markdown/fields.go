@@ -94,6 +94,24 @@ func (f Frontmatter) MarshalYAML() (any, error) {
 	return out, nil
 }
 
+// Keys returns the keys fm holds a value for, in the order Render writes
+// them.
+func (f Frontmatter) Keys() []string {
+	out, err := f.MarshalYAML()
+	if err != nil {
+		return nil
+	}
+	n, ok := out.(*yaml.Node)
+	if !ok {
+		return nil
+	}
+	keys := make([]string, 0, len(n.Content)/2)
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		keys = append(keys, n.Content[i].Value)
+	}
+	return keys
+}
+
 // Set assigns a YAML value to key. A typed key decodes into its field and
 // fails when the value has the wrong shape (a list for title, say); any
 // other key goes to Extra, replacing an earlier value. A null value unsets.

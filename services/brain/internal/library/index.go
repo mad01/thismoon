@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"time"
 
 	"github.com/mad01/thismoon/services/brain"
@@ -246,6 +248,48 @@ func (l *Library) refreshSemantic(ctx context.Context, vaults *vault.Set) ([]str
 		}
 	}
 	return warnings, nil
+}
+
+// Purge drops a withdrawn note from the vault's indexes now instead of at
+// the next query: the literal index is rebuilt from the vault, and the
+// note's chunks leave the semantic index. The semantic purge needs no
+// embedder, so it works with Ollama down, and the next sync skips the
+// tombstone (see semantic.Sync).
+func (l *Library) Purge(ctx context.Context, v *vault.Vault, rel string) error {
+	if _, err := l.RefreshLiteral(v, false, nil); err != nil {
+		return err
+	}
+	return l.purgeSemantic(ctx, v, rel)
+}
+
+// purgeSemantic deletes the note's chunks and its manifest entry, under the
+// vault's semantic lock. A vault with no semantic index has nothing to purge.
+func (l *Library) purgeSemantic(ctx context.Context, v *vault.Vault, rel string) (err error) {
+	dir, err := l.cfg.Semantic.ResolvedIndexDir(v.Name)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	release, err := l.lock(v, lockSemantic)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, release()) }()
+	idx, err := l.openSemantic(v)
+	if err != nil {
+		return fmt.Errorf("open semantic index of %s: %w", v.Name, err)
+	}
+	if err := idx.DeleteByPath(ctx, rel); err != nil {
+		return err
+	}
+	m, found, err := semantic.LoadManifest(dir)
+	if err != nil || !found {
+		return err
+	}
+	delete(m.Notes, rel)
+	return m.Save(dir)
 }
 
 // Lock kinds. The literal and semantic indexes of a vault build under

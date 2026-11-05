@@ -25,4 +25,8 @@ var (
 	ErrImmutableID = errors.New("vault: note id is immutable")
 	// ErrConflict means an edit's IfMatch sha no longer matches the note.
 	ErrConflict = errors.New("vault: note changed since it was read")
+	// ErrInvalidStatusChange means a supersede, retract or withdraw cannot
+	// apply to the note as named: a withdrawn note, a note superseding
+	// itself, an unknown retract reason.
+	ErrInvalidStatusChange = errors.New("vault: invalid status change")
 )

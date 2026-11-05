@@ -64,7 +64,8 @@ func classify(err error) (int, string) {
 		errors.Is(err, vault.ErrInvalidPath),
 		errors.Is(err, vault.ErrUnknownTier),
 		errors.Is(err, vault.ErrUnknownVault),
-		errors.Is(err, vault.ErrImmutableID):
+		errors.Is(err, vault.ErrImmutableID),
+		errors.Is(err, vault.ErrInvalidStatusChange):
 		return exitUsage, "usage"
 	case errors.Is(err, config.ErrInvalid):
 		return exitUsage, "invalid_config"

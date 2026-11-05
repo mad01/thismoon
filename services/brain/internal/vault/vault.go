@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/services/brain/internal/atomicfile"
+	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
 	"github.com/mad01/thismoon/services/brain/internal/lockfile"
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
 	"github.com/mad01/thismoon/services/brain/internal/noteid"
@@ -83,7 +84,7 @@ type WriteOptions struct {
 	Tags     []string
 	Aliases  []string
 	Type     string // note | source | moc | output (defaults based on tier)
-	Status   string // raw | validated | archived (defaults based on tier)
+	Status   string // a lifecycle status; defaults based on tier
 	Source   string // optional URL
 	Evidence string // optional trust tier: A | B | C | D | mixed — empty for non-empirical
 	Filename string // optional; defaults to Slug(Title) + ".md" (YYYY-MM-DD- prefix for outputs)
@@ -100,7 +101,8 @@ type WriteOptions struct {
 // Errors with ErrExists if the target already exists, also when another
 // writer creates it first. Outputs always carry the meta/output tag,
 // whatever Set and Unset say. A note without an id after Set and Unset gets
-// a fresh one.
+// a fresh one, and its status gets its lifecycle defaults (expires_at for
+// raw, review_by for validated) unless Set gave them.
 func (v *Vault) Write(opts WriteOptions) (path string, err error) {
 	if err := v.writable(); err != nil {
 		return "", err
@@ -134,6 +136,7 @@ func (v *Vault) Write(opts WriteOptions) (path string, err error) {
 	if fm.ID == "" {
 		fm.ID = noteid.New(opts.Now)
 	}
+	lifecycle.ApplyDefaults(&fm, opts.Now)
 	// Outputs are synthesis artifacts that cite many notes — including them
 	// as graph nodes turns every output into a hub by audit-trail design.
 	// Tag them meta/output so the user can filter outputs out of the graph
@@ -226,10 +229,11 @@ type EditOptions struct {
 
 // Edit modifies an existing note and returns the sha of what it wrote.
 // Body, Append, and FrontmatterPatch can each be set independently. Updates
-// frontmatter.Updated to Now (defaults to time.Now()). An edit that would
-// change or remove the note's id fails with ErrImmutableID; a note without
-// an id may be given one. With IfMatch set, a note that changed since the
-// caller read it fails with ErrConflict and is left as it is.
+// frontmatter.Updated to Now (defaults to time.Now()). An edit that changes
+// the status records status_at and the new status's defaults. An edit that
+// would change or remove the note's id fails with ErrImmutableID; a note
+// without an id may be given one. With IfMatch set, a note that changed
+// since the caller read it fails with ErrConflict and is left as it is.
 func (v *Vault) Edit(path string, opts EditOptions) (sha string, err error) {
 	if err := v.writable(); err != nil {
 		return "", err
@@ -240,6 +244,52 @@ func (v *Vault) Edit(path string, opts EditOptions) (sha string, err error) {
 	if opts.Now.IsZero() {
 		opts.Now = time.Now()
 	}
+	return v.rewrite(
+		path,
+		opts.IfMatch,
+		func(fm *markdown.Frontmatter, body []byte) ([]byte, error) {
+			id, status := fm.ID, fm.Status
+			if opts.FrontmatterPatch != nil {
+				*fm = mergeFrontmatter(*fm, *opts.FrontmatterPatch)
+			}
+			if err := applyFields(fm, opts.Set, opts.Unset); err != nil {
+				return nil, err
+			}
+			if id != "" && fm.ID != id {
+				return nil, fmt.Errorf("%w: %s keeps id %s", ErrImmutableID, v.Rel(path), id)
+			}
+			lifecycle.Transition(fm, status, opts.Now)
+			fm.Touch(opts.Now)
+			return editedBody(body, opts), nil
+		},
+	)
+}
+
+// editedBody returns body with opts.Body replacing it or opts.Append added.
+func editedBody(body []byte, opts EditOptions) []byte {
+	switch {
+	case opts.Body != "":
+		return []byte(ensureTrailingNewline(opts.Body))
+	case opts.Append != "":
+		buf := make([]byte, 0, len(body)+len(opts.Append)+1)
+		buf = append(buf, body...)
+		if len(buf) > 0 && buf[len(buf)-1] != '\n' {
+			buf = append(buf, '\n')
+		}
+		return append(buf, []byte(ensureTrailingNewline(opts.Append))...)
+	}
+	return body
+}
+
+// rewrite changes the note at path in place under the write lock. It
+// refuses a note whose sha is no longer ifMatch (when set) with
+// ErrConflict, lets change edit the frontmatter and return the new body,
+// and replaces the file atomically. It returns the sha of what it wrote.
+// The caller checks that the vault is writable.
+func (v *Vault) rewrite(
+	path, ifMatch string,
+	change func(fm *markdown.Frontmatter, body []byte) ([]byte, error),
+) (sha string, err error) {
 	release, err := v.lockWrites()
 	if err != nil {
 		return "", err
@@ -249,35 +299,15 @@ func (v *Vault) Edit(path string, opts EditOptions) (sha string, err error) {
 	if err != nil {
 		return "", err
 	}
-	if got := ContentSHA(data); opts.IfMatch != "" && got != opts.IfMatch {
+	if got := ContentSHA(data); ifMatch != "" && got != ifMatch {
 		return "", fmt.Errorf(
 			"%w: %s has sha %s, not %s; read it again before editing",
-			ErrConflict, v.Rel(path), got, opts.IfMatch,
+			ErrConflict, v.Rel(path), got, ifMatch,
 		)
 	}
-	id := fm.ID
-	if opts.FrontmatterPatch != nil {
-		fm = mergeFrontmatter(fm, *opts.FrontmatterPatch)
-	}
-	if err := applyFields(&fm, opts.Set, opts.Unset); err != nil {
+	if body, err = change(&fm, body); err != nil {
 		return "", err
 	}
-	if id != "" && fm.ID != id {
-		return "", fmt.Errorf("%w: %s keeps id %s", ErrImmutableID, v.Rel(path), id)
-	}
-	switch {
-	case opts.Body != "":
-		body = []byte(ensureTrailingNewline(opts.Body))
-	case opts.Append != "":
-		buf := make([]byte, 0, len(body)+len(opts.Append)+1)
-		buf = append(buf, body...)
-		if len(buf) > 0 && buf[len(buf)-1] != '\n' {
-			buf = append(buf, '\n')
-		}
-		buf = append(buf, []byte(ensureTrailingNewline(opts.Append))...)
-		body = buf
-	}
-	fm.Touch(opts.Now)
 	content, err := markdown.Render(fm, body)
 	if err != nil {
 		return "", err
@@ -305,7 +335,8 @@ type PromoteResult struct {
 }
 
 // Promote moves a note from its current tier (must be TierInbox) to
-// TargetTier (default TierNotes). Updates frontmatter.Status to "validated",
+// TargetTier (default TierNotes). Updates frontmatter.Status to "validated"
+// with its lifecycle defaults (status_at, review_by, no expires_at),
 // points every wikilink in the vault that resolves to the note at its new
 // stem or path (see linkRetarget), optionally appends to a MOC. The note keeps its id, or gets one when it
 // has none. Best-effort rollback on failure.
@@ -377,7 +408,9 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 		return PromoteResult{}, fmt.Errorf("%w: promote target %s", ErrExists, v.Rel(newPath))
 	}
 
-	fm.Status = "validated"
+	from := fm.Status
+	fm.Status = lifecycle.Validated
+	lifecycle.Transition(&fm, from, opts.Now)
 	fm.Touch(opts.Now)
 	if fm.ID == "" {
 		fm.ID = noteid.New(opts.Now)
@@ -476,15 +509,24 @@ func defaultType(t Tier) string {
 }
 
 func defaultStatus(t Tier) string {
-	switch t {
-	case TierInbox:
-		return "raw"
-	case TierNotes, TierMOCs:
-		return "validated"
-	case TierOutputs:
-		return "validated"
+	if t == TierInbox || t == "" {
+		return lifecycle.Raw
 	}
-	return "raw"
+	return lifecycle.Validated
+}
+
+// StatusOf returns the effective status of the note at the vault-relative
+// path rel: its status field, else the default of its tier.
+func StatusOf(rel string, fm markdown.Frontmatter) string {
+	if fm.Status != "" {
+		return lifecycle.Normalize(fm.Status)
+	}
+	first, _, _ := strings.Cut(rel, "/")
+	t, err := ParseTier(first)
+	if err != nil {
+		return ""
+	}
+	return defaultStatus(t)
 }
 
 func mergeFrontmatter(base, patch markdown.Frontmatter) markdown.Frontmatter {
