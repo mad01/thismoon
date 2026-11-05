@@ -34,6 +34,9 @@ const (
 	// checked out, its commit is not there, the fetch failed. It is not
 	// drift.
 	KindUnresolved = "unresolved"
+	// KindTooLarge is a pinned file over MaxBlobBytes at HEAD, whose symbol
+	// drift did not read the file to look for. It is not drift.
+	KindTooLarge = "too-large"
 )
 
 // Finding is one problem with one source of a note.
@@ -48,8 +51,9 @@ type Finding struct {
 	Archive string `json:"archive,omitempty"`
 }
 
-// Drifted reports whether the finding is drift: anything but unresolved.
-func (f Finding) Drifted() bool { return f.Kind != KindUnresolved }
+// Drifted reports whether the finding is drift: anything but a source
+// drift could not check (unresolved, too-large).
+func (f Finding) Drifted() bool { return f.Kind != KindUnresolved && f.Kind != KindTooLarge }
 
 // NoteReport is the findings of one note.
 type NoteReport struct {

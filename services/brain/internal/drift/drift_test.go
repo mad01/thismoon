@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
 	"github.com/mad01/thismoon/services/brain/internal/testgit"
@@ -25,7 +27,8 @@ type codeFixture struct {
 
 func newCodeFixture(t *testing.T) codeFixture {
 	t.Helper()
-	testhome.Isolate(t) // git reads no global config of the machine's
+	testhome.Isolate(t)
+	testgit.Isolate(t) // drift's own git calls read no global or system config
 	root := t.TempDir()
 	dir := filepath.Join(root, "github.com", "acme", "app")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -150,4 +153,89 @@ func kindsOf(findings []Finding) []string {
 		out = append(out, f.Kind)
 	}
 	return out
+}
+
+func TestCodeRefOverTheBlobCapIsNotRead(t *testing.T) {
+	f := newCodeFixture(t)
+	c := New(Options{CodeRoots: []string{f.root}})
+	c.git.maxBlob = 8
+	got := c.Sources(context.Background(), []lifecycle.Source{f.ref("acme/app", "pkg/same.go", "Same")})
+	if kinds := kindsOf(got); strings.Join(kinds, ",") != KindTooLarge {
+		t.Fatalf("kinds = %v, want %s (%+v)", kinds, KindTooLarge, got)
+	}
+	if got[0].Drifted() {
+		t.Errorf("a blob over the cap counts as drift: %+v", got[0])
+	}
+	// Without a symbol nothing reads the blob, so the cap does not apply.
+	if got := c.Sources(context.Background(), []lifecycle.Source{f.ref("acme/app", "pkg/same.go", "")}); len(got) != 0 {
+		t.Errorf("findings without a symbol = %+v, want none", got)
+	}
+}
+
+// TestCodeRefInAPartialCloneFetchesNothing pins GIT_NO_LAZY_FETCH: in a
+// blobless clone with no checkout the file's blob is not local, and drift
+// reports that instead of fetching it from the promisor remote.
+func TestCodeRefInAPartialCloneFetchesNothing(t *testing.T) {
+	testhome.Isolate(t)
+	testgit.Isolate(t)
+	src := t.TempDir()
+	testgit.Init(t, src)
+	pinned := testgit.Commit(t, src, "first", map[string]string{"main.go": "func Serve() {}\n"})
+	testgit.Run(t, src, "config", "uploadpack.allowFilter", "true")
+	root := t.TempDir()
+	dir := filepath.Join(root, "github.com", "acme", "app")
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	testgit.Run(t, filepath.Dir(dir), "clone", "-q", "--filter=blob:none", "--no-checkout",
+		"file://"+src, dir)
+	blob := testgit.Run(t, dir, "rev-parse", "HEAD:main.go")
+
+	got := New(Options{CodeRoots: []string{root}}).Sources(context.Background(),
+		[]lifecycle.Source{{Ref: "acme/app:main.go@" + pinned + "#Serve"}})
+	if len(got) != 1 || got[0].Kind != KindUnresolved ||
+		!strings.Contains(got[0].Message, "not in the checkout") {
+		t.Fatalf("findings = %+v, want unresolved: blob not local", got)
+	}
+	probe := exec.Command("git", "-C", dir, "cat-file", "-e", blob)
+	probe.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1")
+	if probe.Run() == nil {
+		t.Error("drift fetched the blob from the promisor remote")
+	}
+}
+
+// TestGitCallsAreBoundedAndPromptless runs drift against a git that
+// records its environment and hangs.
+func TestGitCallsAreBoundedAndPromptless(t *testing.T) {
+	bin := t.TempDir()
+	envFile := filepath.Join(t.TempDir(), "env")
+	script := "#!/bin/sh\nenv > \"$FAKE_GIT_ENV\"\nexec sleep 10\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_GIT_ENV", envFile)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "github.com", "acme", "app", ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := New(Options{CodeRoots: []string{root}})
+	c.git.timeout = 2 * time.Second // room for a first exec of a new script
+	start := time.Now()
+	got := c.Sources(context.Background(), []lifecycle.Source{{Ref: "acme/app:a.go@abcdef1"}})
+	if elapsed := time.Since(start); elapsed > 8*time.Second {
+		t.Errorf("drift waited %s on a hung git", elapsed)
+	}
+	if len(got) != 1 || got[0].Kind != KindUnresolved || !strings.Contains(got[0].Message, "timed out") {
+		t.Errorf("findings = %+v, want unresolved: timed out", got)
+	}
+	env, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"GIT_TERMINAL_PROMPT=0", "GIT_NO_LAZY_FETCH=1"} {
+		if !strings.Contains(string(env), want+"\n") {
+			t.Errorf("git ran without %s", want)
+		}
+	}
 }
