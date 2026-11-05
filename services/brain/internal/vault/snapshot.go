@@ -68,10 +68,14 @@ func (sn *Snapshot) view(n *indexedNote) *NoteView {
 
 // Notes returns every note the walk visited, vault by vault in config order.
 // Files outside the tiers (a root README) are included; Tier tells them
-// apart.
+// apart. A note path that is a symbolic link comes last, unread, with a
+// ParseErr saying so.
 func (sn *Snapshot) Notes() []*NoteView {
-	out := make([]*NoteView, 0, len(sn.idx.notes))
+	out := make([]*NoteView, 0, len(sn.idx.notes)+len(sn.idx.linked))
 	for _, n := range sn.idx.notes {
+		out = append(out, sn.view(n))
+	}
+	for _, n := range sn.idx.linked {
 		out = append(out, sn.view(n))
 	}
 	return out

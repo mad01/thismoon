@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/services/brain/internal/check"
 )
 
 // safetyCase is one command the vault must refuse with a usage error,
@@ -110,5 +112,35 @@ func TestCaptureTitleDropsControlCharacters(t *testing.T) {
 	}
 	if got := captureTitle("", "\x1b\x07\nSecond line", ""); got != "Second line" {
 		t.Errorf("captureTitle = %q, want the first line with text", got)
+	}
+}
+
+func TestLinkedNotesAreRefusedAndChecked(t *testing.T) {
+	root := setupCLI(t, "")
+	secret := filepath.Join(t.TempDir(), "credentials")
+	if err := os.WriteFile(secret, []byte("aws_secret=hunter2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(root, "notes", "leak.md")); err != nil {
+		t.Fatal(err)
+	}
+	got := runBrain(t, "", "read", "notes/leak.md")
+	if got.code != exitUsage || strings.Contains(got.stdout+got.stderr, "hunter2") ||
+		!strings.Contains(got.stderr, "symbolic link") {
+		t.Errorf("read = %d %q %q, want exit 2 naming the link, no content", got.code, got.stdout, got.stderr)
+	}
+	got = runBrain(t, "", "check", "-o", "json")
+	if got.code != exitError {
+		t.Fatalf("check exit = %d, want 1; stdout %s", got.code, got.stdout)
+	}
+	report := decodeStrict[check.Report](t, got.stdout)
+	found := false
+	for _, f := range report.Findings {
+		if f.Path == "notes/leak.md" && f.Level == check.Error && strings.Contains(f.Message, "symbolic link") {
+			found = true
+		}
+	}
+	if !found || strings.Contains(got.stdout, "hunter2") {
+		t.Errorf("check findings %+v, want an error for notes/leak.md and no content", report.Findings)
 	}
 }

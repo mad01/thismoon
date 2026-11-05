@@ -52,7 +52,7 @@ func (s *Set) locateID(id string) (Ref, error) {
 // walkTierNotes calls visit with the path and content of every markdown
 // note under the vault's tier directories. Files outside the tiers (a
 // README at the root, say) are not notes and are not visited; unreadable
-// files are skipped.
+// files and symbolic links are skipped.
 func (v *Vault) walkTierNotes(visit func(path string, data []byte) error) error {
 	for _, t := range AllTiers {
 		err := filepath.WalkDir(v.TierDir(t), func(path string, d fs.DirEntry, err error) error {
@@ -68,7 +68,7 @@ func (v *Vault) walkTierNotes(visit func(path string, data []byte) error) error 
 				}
 				return nil
 			}
-			if !strings.HasSuffix(strings.ToLower(path), ".md") {
+			if isLink(d) || !strings.HasSuffix(strings.ToLower(path), ".md") {
 				return nil
 			}
 			data, err := os.ReadFile(path)

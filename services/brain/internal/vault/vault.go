@@ -314,7 +314,7 @@ func (v *Vault) notePath(opts WriteOptions) (string, error) {
 	if filepath.Dir(path) != filepath.Clean(dir) {
 		return "", fmt.Errorf("%w: filename %q leaves the %s tier", ErrInvalidPath, opts.Filename, opts.Tier)
 	}
-	return path, nil
+	return path, v.contained(path)
 }
 
 // validFilename refuses a --filename holding a path separator, "..", or a
@@ -369,8 +369,12 @@ func (v *Vault) ReadFrontmatter(path string) (markdown.Frontmatter, []byte, erro
 }
 
 // readNote reads the note at the absolute path: its bytes, frontmatter and
-// body. A missing note is ErrNotFound.
+// body. A missing note is ErrNotFound, a symbolic link or a path that
+// resolves outside the vault ErrInvalidPath.
 func (v *Vault) readNote(path string) ([]byte, markdown.Frontmatter, []byte, error) {
+	if err := v.contained(path); err != nil {
+		return nil, markdown.Frontmatter{}, nil, err
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, markdown.Frontmatter{}, nil, fmt.Errorf("%w: %s", ErrNotFound, v.Rel(path))
@@ -622,6 +626,9 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 	}
 	newStem := Slug(title)
 	newPath := filepath.Join(v.TierDir(target), newStem+".md")
+	if err := v.contained(newPath); err != nil {
+		return PromoteResult{}, err
+	}
 	if _, err := os.Stat(newPath); err == nil {
 		return PromoteResult{}, fmt.Errorf("%w: promote target %s", ErrExists, v.Rel(newPath))
 	}
