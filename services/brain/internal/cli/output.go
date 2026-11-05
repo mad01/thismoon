@@ -6,7 +6,10 @@ import (
 	"io"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/mad01/thismoon/services/brain/internal/config"
+	"github.com/mad01/thismoon/services/brain/internal/library"
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
@@ -54,17 +57,75 @@ func (a *app) loadConfig() (*config.Config, error) {
 	return cfg, nil
 }
 
-// openVault loads the config and opens its vault.
-func (a *app) openVault() (*config.Config, *vault.Vault, error) {
+// open loads the config and opens every vault it names. It also decides
+// whether text output qualifies paths with their vault: it does when more
+// than one vault is configured.
+func (a *app) open() (*library.Library, error) {
 	cfg, err := a.loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	lib, err := library.Open(library.Options{Config: cfg})
+	if err != nil {
+		return nil, fmt.Errorf("%w (diagnose with: brain doctor)", err)
+	}
+	a.multiVault = len(cfg.Vaults) > 1
+	return lib, nil
+}
+
+// openVaults opens the library and returns it with the vaults --vault
+// names, or every vault when the flag is absent.
+func (a *app) openVaults() (*library.Library, *vault.Set, error) {
+	lib, err := a.open()
 	if err != nil {
 		return nil, nil, err
 	}
-	v, err := vault.Open(cfg.Vault)
+	set, err := lib.Vaults(a.vaults)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w (diagnose with: brain doctor)", err)
+		return nil, nil, err
 	}
-	return cfg, v, nil
+	return lib, set, nil
+}
+
+// locate opens the library and resolves a note ref within the --vault
+// vaults. A not-found error carries a hint for finding the right path.
+func (a *app) locate(ref string) (*library.Library, vault.Ref, error) {
+	lib, err := a.open()
+	if err != nil {
+		return nil, vault.Ref{}, err
+	}
+	r, err := lib.Locate(a.vaults, ref)
+	if err != nil {
+		return nil, vault.Ref{}, withNoteHint(err, refPath(ref))
+	}
+	return lib, r, nil
+}
+
+// writeVault returns the one vault --vault names, or "" for the default.
+func (a *app) writeVault() (string, error) {
+	switch len(a.vaults) {
+	case 0:
+		return "", nil
+	case 1:
+		return a.vaults[0], nil
+	}
+	return "", usageErrorf("name at most one --vault to write to, got %d", len(a.vaults))
+}
+
+// show returns how text output prints a note: vault:path when more than one
+// vault is configured, the bare path otherwise.
+func (a *app) show(vaultName, path string) string {
+	if a.multiVault && vaultName != "" {
+		return vaultName + ":" + path
+	}
+	return path
+}
+
+// warn prints each warning as one stderr line.
+func warn(cmd *cobra.Command, warnings []string) {
+	for _, w := range warnings {
+		fmt.Fprintf(cmd.ErrOrStderr(), "%s: warning: %s\n", cmd.CommandPath(), w)
+	}
 }
 
 // parseTierFlag parses an optional tier flag; empty means all tiers.

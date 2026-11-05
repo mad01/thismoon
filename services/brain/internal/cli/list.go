@@ -20,9 +20,9 @@ func newListCmd(a *app) *cobra.Command {
 		Long: `List notes in a single vault tier (inbox, notes, outputs, or MOCs), named
 as the argument or with --tier.
 
-Prints a simple table: updated | tier/path | title, newest first. Optionally
-filter by frontmatter tag, status, or type. With -o json, prints the
-brain_list_tier document.`,
+Prints a simple table: updated | tier/path | title, newest first, across
+every vault unless --vault narrows it. Optionally filter by frontmatter tag,
+status, or type. With -o json, prints the brain_list_tier document.`,
 		Args: maxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, err := listTierName(args, tier)
@@ -35,11 +35,11 @@ brain_list_tier document.`,
 			if opts.Tier, err = vault.ParseTier(name); err != nil {
 				return err
 			}
-			_, v, err := a.openVault()
+			_, set, err := a.openVaults()
 			if err != nil {
 				return err
 			}
-			listing, err := v.List(opts)
+			listing, err := set.List(opts)
 			if err != nil {
 				return err
 			}
@@ -49,7 +49,7 @@ brain_list_tier document.`,
 					if updated == "" {
 						updated = "-"
 					}
-					fmt.Fprintf(w, "%s  %s  %s\n", updated, n.Path, n.Title)
+					fmt.Fprintf(w, "%s  %s  %s\n", updated, a.show(n.Vault, n.Path), n.Title)
 				}
 				return nil
 			})

@@ -100,7 +100,7 @@ func indexFixture(t *testing.T) (string, string) {
 	t.Helper()
 	vaultRoot := fixtureVault(t)
 	indexDir := t.TempDir()
-	if err := IndexVault(vaultRoot, indexDir, nil); err != nil {
+	if err := IndexVault(Target{Name: "v", Root: vaultRoot, IndexDir: indexDir}, nil); err != nil {
 		t.Fatalf("IndexVault: %v", err)
 	}
 	return vaultRoot, indexDir

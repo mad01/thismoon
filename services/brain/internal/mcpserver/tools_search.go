@@ -11,8 +11,6 @@ import (
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
-const defaultSearchLimit = 50
-
 // searchInput is the typed input for the brain_search tool.
 type searchInput struct {
 	Query         string `json:"query"                    jsonschema:"zoekt query — literal / regex / 'phrase' / AND (space) / OR (|) / NOT (-) / file: / lang: / case:yes"`
@@ -26,12 +24,14 @@ type searchInput struct {
 	Limit         int    `json:"limit,omitempty"          jsonschema:"maximum number of file results (default 50)"`
 	OutputMode    string `json:"output_mode,omitempty"    jsonschema:"files_with_matches (default) returns unique file paths; content returns matching lines with optional context"`
 	ContextLines  int    `json:"context_lines,omitempty"  jsonschema:"number of context lines around each match in content mode; ignored in files_with_matches mode"`
+	Vault         string `json:"vault,omitempty"          jsonschema:"restrict to this configured vault; default searches every vault"`
 }
 
 type countInput struct {
 	Query   string `json:"query"              jsonschema:"zoekt query (same syntax as brain_search)"`
 	Tier    string `json:"tier,omitempty"     jsonschema:"restrict to a single vault tier"`
-	GroupBy string `json:"group_by,omitempty" jsonschema:"group matches by: tier or tag; empty returns a single total"`
+	GroupBy string `json:"group_by,omitempty" jsonschema:"group matches by: tier, tag or vault; empty returns a single total"`
+	Vault   string `json:"vault,omitempty"    jsonschema:"restrict to this configured vault; default counts every vault"`
 }
 
 type queryValidateInput struct {
@@ -43,7 +43,7 @@ func registerSearchTools(s *mcp.Server, h *handlers) {
 		Name: "brain_search",
 		Description: "Search across your personal knowledge vault (markdown notes) using zoekt query syntax. " +
 			"Use whenever the task involves finding notes by text — 'where did I write about X', 'find every note mentioning Y', 'what have I captured on Z'. " +
-			"Filter with tier (inbox/notes/outputs/MOCs), tag, type, or status. " +
+			"Filter with tier (inbox/notes/outputs/MOCs), tag, type, status, or vault; every hit names its vault. " +
 			"Defaults to files_with_matches (unique note paths); set output_mode=content to get matching lines with optional context_lines. " +
 			"Query syntax: literal, regex, \"phrase\", AND (space), OR (|), NOT (-), file:regex, lang:markdown, case:yes. " +
 			"The index auto-refreshes when the vault has changed since the last call.",
@@ -53,7 +53,7 @@ func registerSearchTools(s *mcp.Server, h *handlers) {
 		Name: "brain_count",
 		Description: "Count matches of a zoekt query across the vault. " +
 			"Use for tallies like 'how many notes mention kubernetes', 'which tag has the most matches', or summaries across tiers. " +
-			"Set group_by to 'tier' or 'tag' for a breakdown; leave empty for a single total.",
+			"Set group_by to 'tier', 'tag' or 'vault' for a breakdown; leave empty for a single total.",
 	}, h.handleCount)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -83,11 +83,6 @@ func (h *handlers) handleSearch(
 		)
 	}
 
-	limit := in.Limit
-	if limit <= 0 {
-		limit = defaultSearchLimit
-	}
-
 	var tier vault.Tier
 	if in.Tier != "" {
 		t, err := vault.ParseTier(in.Tier)
@@ -97,15 +92,10 @@ func (h *handlers) handleSearch(
 		tier = t
 	}
 
-	cfg, _, err := h.loadVault()
+	lib, set, err := h.vaults(in.Vault)
 	if err != nil {
 		return nil, search.Result{}, fmt.Errorf("brain_search: %w", err)
 	}
-	indexDir, err := ensureIndex(cfg)
-	if err != nil {
-		return nil, search.Result{}, fmt.Errorf("brain_search: %w", err)
-	}
-
 	opts := search.SearchOptions{
 		Pattern:       in.Query,
 		File:          in.File,
@@ -115,17 +105,15 @@ func (h *handlers) handleSearch(
 		Tier:          tier,
 		Lang:          in.Lang,
 		CaseSensitive: in.CaseSensitive,
-		Limit:         limit,
+		Limit:         in.Limit,
 		ContextLines:  in.ContextLines,
 		OutputMode:    outputMode,
 	}
-
-	matches, err := search.Search(ctx, indexDir, opts)
+	res, err := lib.Search(ctx, set, opts)
 	if err != nil {
 		return nil, search.Result{}, fmt.Errorf("brain_search: %w", err)
 	}
-
-	return nil, search.NewResult(cfg.Vault, outputMode, matches), nil
+	return nil, res, nil
 }
 
 func (h *handlers) handleCount(
@@ -136,9 +124,11 @@ func (h *handlers) handleCount(
 	if strings.TrimSpace(in.Query) == "" {
 		return nil, search.Counts{}, fmt.Errorf("brain_count: query is required")
 	}
-	if in.GroupBy != "" && in.GroupBy != "tier" && in.GroupBy != "tag" {
+	switch in.GroupBy {
+	case "", search.GroupTier, search.GroupTag, search.GroupVault:
+	default:
 		return nil, search.Counts{}, fmt.Errorf(
-			"brain_count: group_by must be 'tier', 'tag', or empty, got %q",
+			"brain_count: group_by must be 'tier', 'tag', 'vault', or empty, got %q",
 			in.GroupBy,
 		)
 	}
@@ -152,26 +142,19 @@ func (h *handlers) handleCount(
 		tier = t
 	}
 
-	cfg, _, err := h.loadVault()
+	lib, set, err := h.vaults(in.Vault)
 	if err != nil {
 		return nil, search.Counts{}, fmt.Errorf("brain_count: %w", err)
 	}
-	indexDir, err := ensureIndex(cfg)
-	if err != nil {
-		return nil, search.Counts{}, fmt.Errorf("brain_count: %w", err)
-	}
-
-	opts := search.CountOptions{
+	res, err := lib.Count(ctx, set, search.CountOptions{
 		Pattern: in.Query,
 		Tier:    tier,
 		GroupBy: in.GroupBy,
-	}
-	results, total, err := search.Count(ctx, indexDir, opts)
+	})
 	if err != nil {
 		return nil, search.Counts{}, fmt.Errorf("brain_count: %w", err)
 	}
-
-	return nil, search.Counts{Total: total, Groups: results}, nil
+	return nil, res, nil
 }
 
 func (h *handlers) handleQueryValidate(

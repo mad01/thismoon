@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mad01/thismoon/services/brain/internal/config"
 	"github.com/mad01/thismoon/services/brain/internal/semantic"
 )
 
@@ -63,18 +62,23 @@ func setupSemanticFixture(t *testing.T) string {
 		t.Fatalf("rewrite config: %v", err)
 	}
 
-	prev := semanticEmbedFn
-	semanticEmbedFn = func(_ *config.Config) semantic.EmbedFunc { return hashEmbed }
-	t.Cleanup(func() { semanticEmbedFn = prev })
-
 	return root
+}
+
+// semanticServer returns handlers whose semantic layer embeds with
+// hashEmbed instead of calling Ollama.
+func semanticServer(t *testing.T) *handlers {
+	t.Helper()
+	h := testServer(t)
+	h.embed = semantic.EmbedFunc(hashEmbed)
+	return h
 }
 
 func TestBrainSemanticSearch_HappyPath(t *testing.T) {
 	setupSemanticFixture(t)
 	ctx := context.Background()
 
-	_, out, err := testServer(t).handleSemanticSearch(ctx, nil, semanticSearchInput{
+	_, out, err := semanticServer(t).handleSemanticSearch(ctx, nil, semanticSearchInput{
 		Query: "concept alpha foundational ideas",
 		K:     5,
 	})
@@ -109,7 +113,7 @@ func TestBrainSemanticSearch_RequiresEnabled(t *testing.T) {
 
 func TestBrainSemanticSearch_TierFilter(t *testing.T) {
 	setupSemanticFixture(t)
-	_, out, err := testServer(
+	_, out, err := semanticServer(
 		t,
 	).handleSemanticSearch(context.Background(), nil, semanticSearchInput{
 		Query: "alpha",
@@ -128,7 +132,7 @@ func TestBrainSemanticSearch_TierFilter(t *testing.T) {
 
 func TestBrainSemanticSearch_PathsMode(t *testing.T) {
 	setupSemanticFixture(t)
-	_, out, err := testServer(
+	_, out, err := semanticServer(
 		t,
 	).handleSemanticSearch(context.Background(), nil, semanticSearchInput{
 		Query:      "concept",
@@ -153,7 +157,9 @@ func TestBrainSemanticSearch_PathsMode(t *testing.T) {
 
 func TestBrainHybridSearch_FusesBothSources(t *testing.T) {
 	setupSemanticFixture(t)
-	_, out, err := testServer(t).handleHybridSearch(context.Background(), nil, hybridSearchInput{
+	_, out, err := semanticServer(
+		t,
+	).handleHybridSearch(context.Background(), nil, hybridSearchInput{
 		Query: "concept alpha",
 		K:     5,
 	})
@@ -187,7 +193,7 @@ func TestBrainHybridSearch_RequiresEnabled(t *testing.T) {
 
 func TestBrainSemanticSearch_EmptyQueryRejected(t *testing.T) {
 	setupSemanticFixture(t)
-	_, _, err := testServer(
+	_, _, err := semanticServer(
 		t,
 	).handleSemanticSearch(context.Background(), nil, semanticSearchInput{Query: "  "})
 	if err == nil {

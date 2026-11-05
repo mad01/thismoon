@@ -73,12 +73,19 @@ func TestStateDir(t *testing.T) {
 			if got != want {
 				t.Errorf("StateDir = %q, want %q", got, want)
 			}
-			index, err := brain.IndexDir()
+			index, err := brain.IndexDir("team")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if index != filepath.Join(want, "index") {
+			if index != filepath.Join(want, "index", "team") {
 				t.Errorf("IndexDir = %q, want it under %q", index, want)
+			}
+			sem, err := brain.SemanticDir("team")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sem != filepath.Join(want, "semantic", "team") {
+				t.Errorf("SemanticDir = %q, want it under %q", sem, want)
 			}
 		})
 	}

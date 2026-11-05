@@ -1,6 +1,6 @@
 # brain, local markdown knowledge base (CLI + MCP)
 
-Go CLI and MCP stdio server over an Obsidian-style markdown vault. It indexes the vault with zoekt for literal search and chromem-go for semantic search on Ollama embeddings, and fuses the two for hybrid search. brain is the tool only: the vault content lives in your own vault repo, checked out wherever `vault:` in the config points. Terms (vault, tier, note, stem, wikilink, backlink, MOC, evidence tier, promotion) are defined in `CONTEXT.md` beside this file.
+Go CLI and MCP stdio server over Obsidian-style markdown vaults. It indexes each vault with zoekt for literal search and chromem-go for semantic search on Ollama embeddings, and fuses the two for hybrid search. brain is the tool only: the content lives in vault repos checked out wherever the config points, typically one private vault plus a shared team vault that is read-only here. Terms (vault, private, shared and default vault, note ref, tier, note, stem, wikilink, backlink, MOC, evidence tier, promotion) are defined in `CONTEXT.md` beside this file.
 
 ## Module layout
 
@@ -11,9 +11,11 @@ brain/
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
     cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, write, edit, promote, list, docs, doctor, mcp, version
-    config/           - loads the config file (vault path, semantic settings)
+    config/           - loads the config file (vaults, semantic settings)
     doctor/           - the checks `brain doctor` and `brain_doctor` share
-    vault/            - note read, write, edit, promote, peek, backlinks; the logic CLI and MCP share
+    library/          - the vaults opened together: ref lookup, per-vault index refresh under a lock, cross-vault search, count, semantic and hybrid queries
+    lockfile/         - cross-process flock on the files under the state dir's locks/
+    vault/            - note read, write, edit, promote, peek, backlinks, the vault Set and note refs; the logic CLI and MCP share
     markdown/         - frontmatter parse and render (unknown keys kept), wikilink parsing
     search/           - zoekt index build, staleness fingerprint, query
     chunk/            - splits notes into chunks for embedding
@@ -42,7 +44,7 @@ Tests never read or write the real config or state. A test that resolves a defau
 
 ## Config and state
 
-`config.md` is the reference. In short: the config file is `--config`, then `BRAIN_CONFIG`, then `config.yaml` in `confdir.Dir("brain")`. State (`index/` with `state.json`, and `semantic/`) lives in `brain.StateDir()`: `$XDG_STATE_HOME/brain` or `~/.local/state/brain`. An install whose `~/.config/brain/index/state.json` exists keeps `~/.config/brain`, unless `XDG_STATE_HOME` is set. The probe is that file because only a finished `brain index` writes it, while provisioning links `config.yaml` into `~/.config/brain` on every machine. A present but invalid config fails every command with exit 2.
+`config.md` is the reference. In short: the config file is `--config`, then `BRAIN_CONFIG`, then `config.yaml` in `confdir.Dir("brain")`. It names one vault (`vault: <path>`, loaded as the vault `default`) or a `vaults:` list with `name`, `path`, `default` and `shared`. State lives in `brain.StateDir()`, `$XDG_STATE_HOME/brain` or `~/.local/state/brain`, with one `index/<vault>/` (shards and `state.json`) and `semantic/<vault>/` per vault and the lock files in `locks/`. Every index refresh goes through `library`, which takes the vault's lock, so the CLI and the MCP server never build one index at once. An install whose `~/.config/brain/index/state.json` exists keeps `~/.config/brain`, unless `XDG_STATE_HOME` is set. The probe is that file because only a finished `brain index` writes it, while provisioning links `config.yaml` into `~/.config/brain` on every machine. A present but invalid config fails every command with exit 2.
 
 Evals isolate brain with exactly `BRAIN_CONFIG=<tmp>/config.yaml` and `XDG_STATE_HOME=<tmp>/state`; `TestIsolatedByConfigAndStateHome` pins that nothing else is written. User-facing defaults are constants in `facts.go`; don't add a bare literal default elsewhere.
 
@@ -57,11 +59,13 @@ Agents drive brain from the shell, so the CLI keeps a stable contract:
 |---|---|---|
 | 0 | | success |
 | 1 | `error` | anything else (config, I/O, Ollama) |
-| 2 | `usage` | bad flag, argument, path or tier |
-| 2 | `invalid_config` | config file does not parse or names no vault |
+| 2 | `usage` | bad flag, argument, path, tier or vault |
+| 2 | `ambiguous` | a bare path or title names notes in more than one vault |
+| 2 | `invalid_config` | config file does not parse or describes no usable vault |
 | 3 | `not_found` | note or title does not exist |
 | 4 | `already_exists` | write or promote target exists |
 | 5 | `invalid_query` | zoekt query does not parse |
+| 6 | `read_only` | write, edit or promote in a shared vault |
 
 - `docs/cli.md` is the agent guide `brain docs` prints. Keep it under 200 lines and in step with `internal/cli/errors.go`: a new exit code or error class changes both.
 - Frontmatter keys brain does not model survive write, edit and promote in source order, nested values included (`internal/markdown/fields.go`). `--set key=<yaml>` and `--unset key` reach any key; typed keys are shape-checked. Rendering writes 2-space YAML, so an edit to one key leaves the other lines of the frontmatter byte-identical.
@@ -85,7 +89,7 @@ brain index --force         # unconditional rebuild
 brain index --literal-only  # skip semantic (no Ollama needed)
 ```
 
-The literal index lives at `index/` and the semantic index at `semantic/` in the state directory (above). The MCP handlers call `ensureIndex` before every search: a vault mtime fingerprint check, then a re-index when stale. A manual `brain index` is only needed after a config change or to force a rebuild.
+Each vault's literal index lives at `index/<vault>/` and its semantic index at `semantic/<vault>/` in the state directory (above). Every search, from the CLI or MCP, refreshes the indexes of the vaults it covers first: a vault mtime fingerprint check, then a re-index of that vault alone when stale. A manual `brain index` is only needed after a config change or to force a rebuild.
 
 Semantic indexing needs Ollama running locally with `nomic-embed-text` pulled; the rerank pass uses `llama3.2:3b`. When Ollama isn't reachable, `brain index` falls back to the literal index alone.
 

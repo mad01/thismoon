@@ -10,13 +10,15 @@ import (
 )
 
 type readInput struct {
-	Path      string `json:"path"                 jsonschema:"vault-relative note path, e.g. notes/topic/foo.md"`
+	Path      string `json:"path"                 jsonschema:"note ref: vault:path, or a vault-relative path such as notes/topic/foo.md found in exactly one vault"`
+	Vault     string `json:"vault,omitempty"      jsonschema:"look the path up in this configured vault only"`
 	StartLine int    `json:"start_line,omitempty" jsonschema:"first body line to return, 1-based; 0 or omit for start of body"`
 	EndLine   int    `json:"end_line,omitempty"   jsonschema:"last body line to return, 1-based inclusive; 0 or omit for end of body"`
 }
 
 type peekInput struct {
-	Path         string `json:"path"                     jsonschema:"vault-relative note path"`
+	Path         string `json:"path"                     jsonschema:"note ref: vault:path, or a vault-relative path found in exactly one vault"`
+	Vault        string `json:"vault,omitempty"          jsonschema:"look the path up in this configured vault only"`
 	MaxBodyLines int    `json:"max_body_lines,omitempty" jsonschema:"number of body lines to include in preview (default 20)"`
 }
 
@@ -24,7 +26,8 @@ func registerReadTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_read",
 		Description: "Read a note's frontmatter and body (optionally a line slice). " +
-			"Use after brain_search finds a relevant note and you need the full text, or when you already know a vault-relative path. " +
+			"Use after brain_search finds a relevant note and you need the full text, or when you already know its path. " +
+			"Name the note as vault:path (search hits carry both), or by a bare path when it is in one vault only. " +
 			"start_line / end_line are 1-based inclusive over the body (frontmatter excluded); omit both to read the whole body.",
 	}, h.handleRead)
 
@@ -51,11 +54,11 @@ func (h *handlers) handleRead(
 		)
 	}
 
-	_, v, err := h.loadVault()
+	_, ref, err := h.locate(in.Vault, in.Path)
 	if err != nil {
 		return nil, vault.Note{}, fmt.Errorf("brain_read: %w", err)
 	}
-	note, err := v.Read(in.Path, in.StartLine, in.EndLine)
+	note, err := ref.Vault.Read(ref.Path, in.StartLine, in.EndLine)
 	if err != nil {
 		return nil, vault.Note{}, fmt.Errorf("brain_read: %w", err)
 	}
@@ -67,11 +70,11 @@ func (h *handlers) handlePeek(
 	_ *mcp.CallToolRequest,
 	in peekInput,
 ) (*mcp.CallToolResult, vault.Peek, error) {
-	_, v, err := h.loadVault()
+	_, ref, err := h.locate(in.Vault, in.Path)
 	if err != nil {
 		return nil, vault.Peek{}, fmt.Errorf("brain_peek: %w", err)
 	}
-	peek, err := v.Peek(in.Path, in.MaxBodyLines)
+	peek, err := ref.Vault.Peek(ref.Path, in.MaxBodyLines)
 	if err != nil {
 		return nil, vault.Peek{}, fmt.Errorf("brain_peek: %w", err)
 	}

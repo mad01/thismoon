@@ -1,6 +1,6 @@
-// Package doctor runs brain's self-checks: the config resolves, the vault
-// exists, the index directory is writable, the literal index is fresh and,
-// when the semantic layer is on, Ollama answers. `brain doctor` prints the
+// Package doctor runs brain's self-checks: the config resolves, every vault
+// exists, the index directory is writable, each vault's literal index is
+// fresh and, when the semantic layer is on, Ollama answers. `brain doctor` prints the
 // report and the brain_doctor MCP tool returns it, so both read the same
 // checks in the same shape.
 package doctor
@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mad01/thismoon/services/brain"
@@ -71,16 +72,16 @@ func Run(ctx context.Context, configPath string) Report {
 		)
 		return newReport(checks)
 	}
-	vaultCheck := checkVault(cfg)
-	dirCheck, indexDir := checkIndexDir()
+	vaultCheck := checkVaults(cfg)
+	dirCheck := checkIndexDir()
 	checks = append(checks, vaultCheck, dirCheck)
 	switch {
 	case vaultCheck.Status != StatusOK:
-		checks = append(checks, skipped("index", "needs the vault"))
+		checks = append(checks, skipped("index", "needs every vault"))
 	case dirCheck.Status != StatusOK:
 		checks = append(checks, skipped("index", "needs the index directory"))
 	default:
-		checks = append(checks, checkIndexFresh(cfg, indexDir))
+		checks = append(checks, checkIndexFresh(cfg))
 	}
 	checks = append(checks, checkOllama(ctx, cfg))
 	return newReport(checks)
@@ -112,29 +113,49 @@ func checkConfig(path string) (*config.Config, Check) {
 	return nil, Check{Name: "config", Status: StatusFail, Detail: err.Error(), Fix: fix}
 }
 
-func checkVault(cfg *config.Config) Check {
-	if _, err := vault.Open(cfg.Vault); err != nil {
+// checkVaults opens every configured vault. The detail names each vault,
+// marking the default and the shared ones.
+func checkVaults(cfg *config.Config) Check {
+	var ok, failed []string
+	for _, v := range cfg.Vaults {
+		if _, err := vault.Open(v.Path); err != nil {
+			failed = append(failed, v.Name+": "+err.Error())
+			continue
+		}
+		ok = append(ok, v.Name+describeVault(v)+": "+v.Path)
+	}
+	if len(failed) > 0 {
 		return Check{
 			Name:   "vault",
 			Status: StatusFail,
-			Detail: err.Error(),
-			Fix:    "create the directory or point vault: in the config at an existing one",
+			Detail: strings.Join(failed, "; "),
+			Fix:    "create the directory, or point the vault's path in the config at an existing one",
 		}
 	}
-	return Check{Name: "vault", Status: StatusOK, Detail: cfg.Vault}
+	return Check{Name: "vault", Status: StatusOK, Detail: strings.Join(ok, "; ")}
 }
 
-// checkIndexDir proves brain can write its literal index, without creating
-// the directory when it does not exist yet.
-func checkIndexDir() (Check, string) {
-	dir, err := brain.IndexDir()
+func describeVault(v config.Vault) string {
+	switch {
+	case v.Default:
+		return " (default)"
+	case v.Shared:
+		return " (shared)"
+	}
+	return ""
+}
+
+// checkIndexDir proves brain can write its literal indexes, without
+// creating the directory when it does not exist yet.
+func checkIndexDir() Check {
+	dir, err := brain.IndexRoot()
 	if err != nil {
 		return Check{
 			Name:   "index-dir",
 			Status: StatusFail,
 			Detail: err.Error(),
 			Fix:    "set HOME, or XDG_STATE_HOME to an absolute path",
-		}, ""
+		}
 	}
 	probed, err := probeWritable(dir)
 	if err != nil {
@@ -143,13 +164,13 @@ func checkIndexDir() (Check, string) {
 			Status: StatusFail,
 			Detail: err.Error(),
 			Fix:    "make " + probed + " writable",
-		}, dir
+		}
 	}
 	detail := dir + " is writable"
 	if probed != dir {
 		detail = dir + " does not exist yet; brain index creates it under " + probed + ", which is writable"
 	}
-	return Check{Name: "index-dir", Status: StatusOK, Detail: detail}, dir
+	return Check{Name: "index-dir", Status: StatusOK, Detail: detail}
 }
 
 // probeWritable creates and removes a file in dir, or in its nearest
@@ -187,36 +208,50 @@ func nearestExisting(dir string) (string, error) {
 	}
 }
 
-func checkIndexFresh(cfg *config.Config, indexDir string) Check {
-	fingerprint, _, err := search.ComputeFingerprint(cfg.Vault)
-	if err != nil {
-		return Check{Name: "index", Status: StatusFail, Detail: err.Error()}
-	}
-	state, err := search.LoadState(indexDir)
-	if err != nil {
-		return Check{
-			Name:   "index",
-			Status: StatusFail,
-			Detail: err.Error(),
-			Fix:    "brain index --force",
+// checkIndexFresh checks each vault's literal index against its vault. It
+// fails when any index is missing or stale, naming the vaults.
+func checkIndexFresh(cfg *config.Config) Check {
+	var fresh, failed []string
+	for _, v := range cfg.Vaults {
+		status, ok := indexStatus(v)
+		if ok {
+			fresh = append(fresh, v.Name+": "+status)
+		} else {
+			failed = append(failed, v.Name+": "+status)
 		}
 	}
-	if state.Fingerprint == "" {
-		return Check{Name: "index", Status: StatusFail, Detail: "never built", Fix: "brain index"}
-	}
-	if search.IsStale(state, fingerprint) {
+	if len(failed) > 0 {
 		return Check{
 			Name:   "index",
 			Status: StatusFail,
-			Detail: "stale: the vault changed since " + state.IndexedAt.Format(time.RFC3339),
+			Detail: strings.Join(failed, "; "),
 			Fix:    "brain index",
 		}
 	}
-	return Check{
-		Name:   "index",
-		Status: StatusOK,
-		Detail: "fresh, built " + state.IndexedAt.Format(time.RFC3339),
+	return Check{Name: "index", Status: StatusOK, Detail: strings.Join(fresh, "; ")}
+}
+
+// indexStatus describes one vault's literal index, and whether it is fresh.
+func indexStatus(v config.Vault) (string, bool) {
+	dir, err := brain.IndexDir(v.Name)
+	if err != nil {
+		return err.Error(), false
 	}
+	fingerprint, _, err := search.ComputeFingerprint(v.Path)
+	if err != nil {
+		return err.Error(), false
+	}
+	state, err := search.LoadState(dir)
+	if err != nil {
+		return err.Error() + " (rebuild with: brain index --force)", false
+	}
+	switch {
+	case state.Fingerprint == "":
+		return "never built", false
+	case search.IsStale(state, fingerprint):
+		return "stale: the vault changed since " + state.IndexedAt.Format(time.RFC3339), false
+	}
+	return "fresh, built " + state.IndexedAt.Format(time.RFC3339), true
 }
 
 func checkOllama(ctx context.Context, cfg *config.Config) Check {

@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -16,14 +19,38 @@ import (
 	"github.com/mad01/thismoon/services/brain"
 )
 
-// Config holds the brain vault configuration.
+// Config holds the brain vaults and the semantic-layer settings.
 type Config struct {
-	// Vault is the absolute path to the Obsidian-style markdown vault.
-	Vault string `yaml:"vault"`
+	// Vaults are the configured vaults in config order, which is also the
+	// order shared vaults resolve wikilinks in. Load guarantees at least one,
+	// unique names and paths, and at most one Default.
+	Vaults []Vault
 	// Semantic enables and tunes the optional vector-search layer over Ollama.
 	// When Semantic.Enabled is false, the brain_semantic_search and
 	// brain_hybrid_search MCP tools and matching CLI commands return a clear
 	// "semantic disabled" error; the literal flow is unaffected.
+	Semantic SemanticConfig
+}
+
+// Vault is one configured vault.
+type Vault struct {
+	// Name is the vault's lowercase slug: the prefix of a qualified ref
+	// (name:path) and the name of its index directories.
+	Name string `yaml:"name"`
+	// Path is the vault root, cleaned, with a leading ~ expanded.
+	Path string `yaml:"path"`
+	// Default marks the vault writes target when no vault is named.
+	Default bool `yaml:"default,omitempty"`
+	// Shared marks a team vault: readable and searchable, but write, edit
+	// and promote refuse it, because shared notes change through a PR.
+	Shared bool `yaml:"shared,omitempty"`
+}
+
+// file is the config file as written: either the legacy single vault path
+// or a vaults list, plus the semantic block.
+type file struct {
+	Vault    string         `yaml:"vault"`
+	Vaults   []Vault        `yaml:"vaults"`
 	Semantic SemanticConfig `yaml:"semantic,omitempty"`
 }
 
@@ -44,7 +71,7 @@ type SemanticConfig struct {
 	// ChatModel is the Ollama chat model used by the optional reranker.
 	// Default: llama3.2:3b.
 	ChatModel string `yaml:"chat_model,omitempty"`
-	// IndexDir is the on-disk location of the chromem-go collection. Default:
+	// IndexDir is the parent of every vault's chromem-go directory. Default:
 	// the semantic directory under brain's state directory. Tilde is expanded.
 	IndexDir string `yaml:"index_dir,omitempty"`
 	// ChunkSize is the target token count per chunk. Default: 800.
@@ -57,13 +84,22 @@ type SemanticConfig struct {
 }
 
 // ErrInvalid marks a config file that exists but cannot be used: it does not
-// parse, or it leaves out the vault. The CLI exits 2 on it rather than run
-// on defaults, because a machine with a config file was configured on
-// purpose.
+// parse, names no vault, or describes its vaults inconsistently. The CLI
+// exits 2 on it rather than run on defaults, because a machine with a config
+// file was configured on purpose.
 var ErrInvalid = errors.New("invalid config")
 
+// vaultName is the shape of a vault name: a lowercase slug.
+var vaultName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// reservedNames are the ref prefixes brain gives a meaning of its own
+// (id:<ulid>, and the graph's tag: and dangling: node ids), so no vault may
+// take them.
+var reservedNames = map[string]bool{"id": true, "tag": true, "dangling": true}
+
 // Load reads the config file at path. A missing file wraps fs.ErrNotExist;
-// a present file that does not parse or names no vault wraps ErrInvalid.
+// a present file that does not parse or describes no usable vault wraps
+// ErrInvalid.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -73,20 +109,101 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	var raw file
+	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("%w %s: %w", ErrInvalid, path, err)
 	}
-	if cfg.Vault == "" {
-		return nil, fmt.Errorf("%w %s: vault is required", ErrInvalid, path)
+	vaults, err := parseVaults(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%w %s: %w", ErrInvalid, path, err)
 	}
-	if cfg.Vault, err = confdir.Expand(cfg.Vault); err != nil {
-		return nil, err
-	}
+	cfg := &Config{Vaults: vaults, Semantic: raw.Semantic}
 	if err := applySemanticDefaults(&cfg.Semantic); err != nil {
 		return nil, err
 	}
-	return &cfg, nil
+	return cfg, nil
+}
+
+// parseVaults turns the legacy vault key or the vaults list into validated
+// vaults with the default resolved.
+func parseVaults(raw file) ([]Vault, error) {
+	vaults := raw.Vaults
+	switch {
+	case raw.Vault != "" && len(raw.Vaults) > 0:
+		return nil, errors.New("set vault or vaults, not both")
+	case raw.Vault != "":
+		vaults = []Vault{{Name: brain.LegacyVaultName, Path: raw.Vault}}
+	case len(vaults) == 0:
+		return nil, errors.New("vault is required (a path, or a vaults list)")
+	}
+	names := make(map[string]bool, len(vaults))
+	paths := make(map[string]string, len(vaults))
+	for i := range vaults {
+		v := &vaults[i]
+		if err := checkName(v.Name, names); err != nil {
+			return nil, err
+		}
+		names[v.Name] = true
+		if strings.TrimSpace(v.Path) == "" {
+			return nil, fmt.Errorf("vault %s: path is required", v.Name)
+		}
+		expanded, err := confdir.Expand(v.Path)
+		if err != nil {
+			return nil, fmt.Errorf("vault %s: %w", v.Name, err)
+		}
+		v.Path = filepath.Clean(expanded)
+		if other, ok := paths[v.Path]; ok {
+			return nil, fmt.Errorf("vaults %s and %s share the path %s", other, v.Name, v.Path)
+		}
+		paths[v.Path] = v.Name
+	}
+	return vaults, resolveDefault(vaults)
+}
+
+func checkName(name string, seen map[string]bool) error {
+	switch {
+	case name == "":
+		return errors.New("every vault needs a name")
+	case !vaultName.MatchString(name):
+		return fmt.Errorf(
+			"vault name %q must be a lowercase slug (a-z, 0-9, single hyphens)",
+			name,
+		)
+	case reservedNames[name]:
+		return fmt.Errorf("vault name %q is reserved", name)
+	case seen[name]:
+		return fmt.Errorf("vault name %q is used twice", name)
+	}
+	return nil
+}
+
+// resolveDefault checks the default marks and, when none is set, makes the
+// first non-shared vault the default. A config of shared vaults alone has no
+// default and refuses every write.
+func resolveDefault(vaults []Vault) error {
+	marked := -1
+	for i, v := range vaults {
+		if !v.Default {
+			continue
+		}
+		if v.Shared {
+			return fmt.Errorf("vault %s is shared and cannot be the default", v.Name)
+		}
+		if marked >= 0 {
+			return fmt.Errorf("vaults %s and %s are both default", vaults[marked].Name, v.Name)
+		}
+		marked = i
+	}
+	if marked >= 0 {
+		return nil
+	}
+	for i := range vaults {
+		if !vaults[i].Shared {
+			vaults[i].Default = true
+			return nil
+		}
+	}
+	return nil
 }
 
 // applySemanticDefaults fills empty SemanticConfig fields from the brain
@@ -112,11 +229,12 @@ func applySemanticDefaults(s *SemanticConfig) error {
 	return err
 }
 
-// ResolvedIndexDir returns the configured semantic index directory, or the
-// default under brain's state directory when unset.
-func (s SemanticConfig) ResolvedIndexDir() (string, error) {
+// ResolvedIndexDir returns the semantic index directory of the named vault:
+// <index_dir>/<vault> when index_dir is set, else the default under brain's
+// state directory.
+func (s SemanticConfig) ResolvedIndexDir(vault string) (string, error) {
 	if s.IndexDir != "" {
-		return s.IndexDir, nil
+		return filepath.Join(s.IndexDir, vault), nil
 	}
-	return brain.SemanticDir()
+	return brain.SemanticDir(vault)
 }

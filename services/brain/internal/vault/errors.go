@@ -13,4 +13,12 @@ var (
 	ErrInvalidPath = errors.New("vault: invalid path")
 	// ErrUnknownTier means a tier name is not inbox, notes, outputs, or MOCs.
 	ErrUnknownTier = errors.New("vault: unknown tier")
+	// ErrUnknownVault means a vault name is not in the config.
+	ErrUnknownVault = errors.New("vault: unknown vault")
+	// ErrAmbiguous means a bare path or title names notes in more than one
+	// vault; the message lists the qualified candidates.
+	ErrAmbiguous = errors.New("vault: ambiguous note")
+	// ErrReadOnly means a write, edit or promote targets a shared vault, or
+	// no writable vault is configured.
+	ErrReadOnly = errors.New("vault: read-only")
 )

@@ -17,9 +17,11 @@ func newEditCmd(a *app) *cobra.Command {
 		fields           fieldFlags
 	)
 	c := &cobra.Command{
-		Use:   "edit <path>",
+		Use:   "edit <note>",
 		Short: "Edit body or frontmatter of an existing note",
-		Long: `Edit an existing note by vault-relative path.
+		Long: `Edit an existing note, named by vault:path or by a vault-relative path
+found in exactly one vault. A note in a shared vault is refused with exit
+code 6.
 
 Body handling (mutually exclusive):
   --body "..."      Replace the body entirely.
@@ -34,7 +36,7 @@ Frontmatter patch flags merge into the existing frontmatter (non-empty wins):
 brain does not model are kept as written.
 
 At least one body or frontmatter flag must be provided. With -o json, prints
-{"path": ...}.`,
+{"vault": ..., "path": ...}.`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rel := args[0]
@@ -62,20 +64,16 @@ At least one body or frontmatter flag must be provided. With -o json, prints
 			if opts.Append, err = readMaybeStdin(cmd.InOrStdin(), appendBody); err != nil {
 				return fmt.Errorf("read append: %w", err)
 			}
-			_, v, err := a.openVault()
+			_, ref, err := a.locate(rel)
 			if err != nil {
 				return err
 			}
-			full, err := v.Resolve(rel)
-			if err != nil {
-				return err
+			if err := ref.Vault.Edit(ref.Abs(), opts); err != nil {
+				return withNoteHint(err, ref.Path)
 			}
-			if err := v.Edit(full, opts); err != nil {
-				return withNoteHint(err, rel)
-			}
-			res := vault.PathResult{Path: rel}
+			res := vault.PathResult{Vault: ref.Vault.Name, Path: ref.Path}
 			return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
-				fmt.Fprintln(w, res.Path)
+				fmt.Fprintln(w, a.show(res.Vault, res.Path))
 				return nil
 			})
 		},

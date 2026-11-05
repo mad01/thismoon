@@ -16,12 +16,13 @@ type listInput struct {
 	Status string `json:"status,omitempty" jsonschema:"filter by frontmatter status"`
 	Type   string `json:"type,omitempty"   jsonschema:"filter by frontmatter type"`
 	Limit  int    `json:"limit,omitempty"  jsonschema:"maximum number of notes to return (default 100)"`
+	Vault  string `json:"vault,omitempty"  jsonschema:"list this configured vault only; default lists every vault"`
 }
 
 func registerListTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "brain_list_tier",
-		Description: "List notes in a single vault tier (inbox, notes, outputs, or MOCs). " +
+		Description: "List notes in a single vault tier (inbox, notes, outputs, or MOCs), across every vault unless vault narrows it. " +
 			"Use to survey what's in a tier — 'what's in my inbox', 'list validated notes tagged kubernetes', 'show MOCs'. " +
 			"Optionally filter by tag, status, or type. Returns notes sorted by frontmatter.updated descending, then path. Default limit 100.",
 	}, h.handleListTier)
@@ -39,11 +40,11 @@ func (h *handlers) handleListTier(
 	if err != nil {
 		return nil, vault.Listing{}, fmt.Errorf("brain_list_tier: %w", err)
 	}
-	_, v, err := h.loadVault()
+	_, set, err := h.vaults(in.Vault)
 	if err != nil {
 		return nil, vault.Listing{}, fmt.Errorf("brain_list_tier: %w", err)
 	}
-	listing, err := v.List(vault.ListOptions{
+	listing, err := set.List(vault.ListOptions{
 		Tier:   tier,
 		Tag:    in.Tag,
 		Status: in.Status,

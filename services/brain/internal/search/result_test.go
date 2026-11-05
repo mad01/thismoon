@@ -3,8 +3,10 @@ package search
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -31,20 +33,21 @@ func TestNewResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	matches := []Match{
-		{Path: "notes/a.md", Line: 1, Column: 1, Text: "x"},
-		{Path: "notes/a.md", Line: 2, Column: 1, Text: "y"},
-		{Path: "notes/missing.md", Line: 1, Column: 1, Text: "z"},
+		{Vault: "v", Path: "notes/a.md", Line: 1, Column: 1, Text: "x"},
+		{Vault: "v", Path: "notes/a.md", Line: 2, Column: 1, Text: "y"},
+		{Vault: "v", Path: "notes/missing.md", Line: 1, Column: 1, Text: "z"},
+		{Vault: "w", Path: "notes/a.md", Line: 1, Column: 1, Text: "x"},
 	}
 	tests := []struct {
 		mode      string
 		wantTotal int
 	}{
-		{ModeFiles, 2},
-		{ModeContent, 3},
+		{ModeFiles, 3},
+		{ModeContent, 4},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mode, func(t *testing.T) {
-			res := NewResult(root, tc.mode, matches)
+			res := NewResult(map[string]string{"v": root}, tc.mode, matches)
 			if res.OutputMode != tc.mode || res.Total != tc.wantTotal {
 				t.Fatalf("result = %+v", res)
 			}
@@ -58,5 +61,51 @@ func TestNewResult(t *testing.T) {
 				t.Errorf("evidence = %q, want B", first)
 			}
 		})
+	}
+}
+
+func TestMergeMatches(t *testing.T) {
+	personal := []Match{
+		{Vault: "personal", Path: "a.md", Score: 9, Line: 1},
+		{Vault: "personal", Path: "a.md", Score: 9, Line: 2},
+		{Vault: "personal", Path: "b.md", Score: 3, Line: 1},
+	}
+	team := []Match{
+		{Vault: "team", Path: "a.md", Score: 5, Line: 1},
+		{Vault: "team", Path: "c.md", Score: 3, Line: 1},
+	}
+	tests := []struct {
+		name  string
+		limit int
+		want  []string
+	}{
+		{"all, by score, ties in list order", 0, []string{
+			"personal:a.md:1", "personal:a.md:2", "team:a.md:1", "personal:b.md:1", "team:c.md:1",
+		}},
+		{"limit counts notes, not lines", 2, []string{
+			"personal:a.md:1", "personal:a.md:2", "team:a.md:1",
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			for _, m := range MergeMatches([][]Match{personal, team}, tc.limit) {
+				got = append(got, fmt.Sprintf("%s:%s:%d", m.Vault, m.Path, m.Line))
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("merged = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMergeCounts(t *testing.T) {
+	got := MergeCounts(
+		[]CountResult{{Group: "notes", Count: 2}, {Group: "inbox", Count: 1}},
+		[]CountResult{{Group: "inbox", Count: 4}},
+	)
+	want := []CountResult{{Group: "inbox", Count: 5}, {Group: "notes", Count: 2}}
+	if !slices.Equal(got, want) {
+		t.Errorf("MergeCounts = %+v, want %+v", got, want)
 	}
 }

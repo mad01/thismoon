@@ -16,7 +16,15 @@ import (
 // for single-file writes (tmp + rename) and best-effort rollback for
 // multi-file operations like Promote.
 type Vault struct {
+	// Root is the absolute vault directory.
 	Root string
+	// Name is the vault's config name, the prefix of a qualified ref.
+	Name string
+	// Shared marks a team vault: Write, Edit and Promote refuse it with
+	// ErrReadOnly.
+	Shared bool
+	// Default marks the vault a write targets when no vault is named.
+	Default bool
 }
 
 // Open returns a Vault rooted at the given directory. Errors if the directory
@@ -66,6 +74,9 @@ type WriteOptions struct {
 // Errors with ErrExists if the target already exists. Outputs always carry
 // the meta/output tag, whatever Set and Unset say.
 func (v *Vault) Write(opts WriteOptions) (string, error) {
+	if err := v.writable(); err != nil {
+		return "", err
+	}
 	if opts.Title == "" {
 		return "", fmt.Errorf("title is required")
 	}
@@ -165,6 +176,9 @@ type EditOptions struct {
 // be set independently. Updates frontmatter.Updated to Now (defaults to
 // time.Now()).
 func (v *Vault) Edit(path string, opts EditOptions) error {
+	if err := v.writable(); err != nil {
+		return err
+	}
 	if opts.Body != "" && opts.Append != "" {
 		return fmt.Errorf("edit: body and append are mutually exclusive")
 	}
@@ -222,6 +236,9 @@ type PromoteResult struct {
 // rewrites [[oldStem]] wikilinks across the vault to point at the new stem,
 // optionally appends to a MOC. Best-effort rollback on failure.
 func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error) {
+	if err := v.writable(); err != nil {
+		return PromoteResult{}, err
+	}
 	if opts.Now.IsZero() {
 		opts.Now = time.Now()
 	}
@@ -331,6 +348,19 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error)
 		res.MOCAppended = mocPath
 	}
 	return res, nil
+}
+
+// writable refuses a shared vault. Shared notes change through a pull
+// request against the vault's repo, never by a direct write.
+func (v *Vault) writable() error {
+	if v.Shared {
+		return fmt.Errorf(
+			"%w: %s is a shared vault; shared notes change through a pull request "+
+				"(a brain command that opens one is planned)",
+			ErrReadOnly, v.Name,
+		)
+	}
+	return nil
 }
 
 func defaultType(t Tier) string {

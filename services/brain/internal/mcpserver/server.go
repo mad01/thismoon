@@ -5,10 +5,13 @@
 package mcpserver
 
 import (
+	"context"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mad01/thismoon/kit/agentdoc"
 	"github.com/mad01/thismoon/services/brain"
+	"github.com/mad01/thismoon/services/brain/internal/semantic"
 )
 
 // Name is the MCP server name advertised during the initialize handshake.
@@ -24,6 +27,10 @@ type Options struct {
 // handlers carries what the tool handlers share.
 type handlers struct {
 	configPath string
+	// embed and health replace the configured Ollama when set; tests set
+	// them so the suite never touches the network.
+	embed  semantic.EmbedFunc
+	health func(context.Context) error
 }
 
 // New returns a fully wired MCP server with every brain_* tool registered.

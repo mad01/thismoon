@@ -25,8 +25,10 @@ func newWriteCmd(a *app) *cobra.Command {
 If --body is "-" or omitted, the body is read from stdin. Use --tag and
 --alias multiple times to add tags/aliases. --set key=value sets any
 frontmatter key (the value is YAML, so --set 'sources=[{url: https://x}]'
-stores a list); --set and --unset apply after the tier defaults. Fails with
-exit code 4 when the note already exists. With -o json, prints {"path": ...}.`,
+stores a list); --set and --unset apply after the tier defaults. The note
+goes to the default vault, or the one --vault names; a shared vault refuses
+it with exit code 6. Fails with exit code 4 when the note already exists.
+With -o json, prints {"vault": ..., "path": ...}.`,
 		Args: exactArgs(0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if strings.TrimSpace(opts.Title) == "" {
@@ -42,7 +44,15 @@ exit code 4 when the note already exists. With -o json, prints {"path": ...}.`,
 			if opts.Body, err = readMaybeStdin(cmd.InOrStdin(), body); err != nil {
 				return fmt.Errorf("read stdin: %w", err)
 			}
-			_, v, err := a.openVault()
+			name, err := a.writeVault()
+			if err != nil {
+				return err
+			}
+			lib, err := a.open()
+			if err != nil {
+				return err
+			}
+			v, err := lib.WriteTarget(name)
 			if err != nil {
 				return err
 			}
@@ -52,9 +62,9 @@ exit code 4 when the note already exists. With -o json, prints {"path": ...}.`,
 			if err != nil {
 				return err
 			}
-			res := vault.PathResult{Path: v.Rel(abs)}
+			res := vault.PathResult{Vault: v.Name, Path: v.Rel(abs)}
 			return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
-				fmt.Fprintln(w, res.Path)
+				fmt.Fprintln(w, a.show(res.Vault, res.Path))
 				return nil
 			})
 		},

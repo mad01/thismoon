@@ -16,6 +16,7 @@ const maxExcerpt = 200
 
 // Inbound is a line in another note that links to the analyzed note.
 type Inbound struct {
+	Vault    string `json:"vault"              jsonschema:"vault of the linking note"`
 	Path     string `json:"path"               jsonschema:"vault-relative path of the linking note"`
 	Line     int    `json:"line"               jsonschema:"1-based line number where the wikilink appears"`
 	Excerpt  string `json:"excerpt"            jsonschema:"the matching line trimmed to ~200 chars"`
@@ -25,6 +26,7 @@ type Inbound struct {
 // Outbound is a wikilink in the analyzed note.
 type Outbound struct {
 	Target   string `json:"target"             jsonschema:"wikilink target as written, e.g. [[Target]]"`
+	Vault    string `json:"vault,omitempty"    jsonschema:"vault of the resolved target"`
 	Path     string `json:"path,omitempty"     jsonschema:"resolved vault-relative path if the target matches a note in the vault"`
 	Line     int    `json:"line"`
 	Evidence string `json:"evidence,omitempty" jsonschema:"trust tier of the target note, if resolved and set"`
@@ -32,6 +34,7 @@ type Outbound struct {
 
 // Backlinks is the link neighbourhood of one note.
 type Backlinks struct {
+	Vault    string     `json:"vault"              jsonschema:"vault of the note whose links were analyzed"`
 	NotePath string     `json:"note_path"          jsonschema:"vault-relative path of the note whose links were analyzed"`
 	Evidence string     `json:"evidence,omitempty" jsonschema:"trust tier of the analyzed note, if set"`
 	Inbound  []Inbound  `json:"inbound"`
@@ -81,7 +84,16 @@ func (v *Vault) Backlinks(rel string) (Backlinks, error) {
 		outbound = append(outbound, entry)
 	}
 
+	for i := range inbound {
+		inbound[i].Vault = v.Name
+	}
+	for i := range outbound {
+		if outbound[i].Path != "" {
+			outbound[i].Vault = v.Name
+		}
+	}
 	return Backlinks{
+		Vault:    v.Name,
 		NotePath: v.Rel(absNote),
 		Evidence: markdown.EvidenceOf(fm),
 		Inbound:  inbound,

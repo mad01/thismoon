@@ -3,6 +3,7 @@ package hybrid
 // ResultHit is one post-fusion (and optionally post-rerank) hybrid search
 // result, the JSON shape the CLI and brain_hybrid_search share.
 type ResultHit struct {
+	Vault       string   `json:"vault"`
 	Path        string   `json:"path"`
 	Title       string   `json:"title,omitempty"`
 	HeadingPath string   `json:"heading_path,omitempty"`
@@ -18,14 +19,16 @@ type ResultHit struct {
 
 // Result is the JSON result of a hybrid search.
 type Result struct {
-	Hits  []ResultHit `json:"hits"`
-	Total int         `json:"total"`
+	Hits     []ResultHit `json:"hits"`
+	Total    int         `json:"total"`
+	Warnings []string    `json:"warnings,omitempty" jsonschema:"why results may be partial, e.g. Ollama was unreachable and only literal hits are fused"`
 }
 
-// NewResult wraps hits with their count; nil hits become an empty list.
-func NewResult(hits []ResultHit) Result {
+// NewResult wraps hits with their count and warnings; nil hits become an
+// empty list.
+func NewResult(hits []ResultHit, warnings []string) Result {
 	if hits == nil {
 		hits = []ResultHit{}
 	}
-	return Result{Hits: hits, Total: len(hits)}
+	return Result{Hits: hits, Total: len(hits), Warnings: warnings}
 }

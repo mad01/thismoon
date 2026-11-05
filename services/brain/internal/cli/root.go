@@ -22,6 +22,12 @@ import (
 type app struct {
 	output     string
 	configPath string
+	// vaults are the --vault names; empty means every vault (or the default
+	// vault, for write).
+	vaults []string
+	// multiVault is set once the config is loaded: text output then
+	// qualifies paths as vault:path.
+	multiVault bool
 }
 
 // Execute runs the brain CLI on os.Args and returns the process exit code.
@@ -72,8 +78,11 @@ Subcommands:
   doctor            Check config, vault, index and Ollama.
   mcp               Start the MCP stdio server for Claude Code.
 
-Every command takes -o json for machine-readable output. Exit codes: 0 ok,
-1 error, 2 usage, 3 not found, 4 already exists, 5 invalid query.
+Every command takes -o json for machine-readable output and --vault <name>
+to restrict it to configured vaults. A note is named by vault:path or by a
+bare path found in one vault. Exit codes: 0 ok, 1 error, 2 usage (and an
+ambiguous note), 3 not found, 4 already exists, 5 invalid query, 6 read-only
+vault.
 
 The config file is --config, else $BRAIN_CONFIG, else config.yaml under
 $XDG_CONFIG_HOME/brain or ~/.config/brain. Indexes live under
@@ -99,6 +108,8 @@ brain doctor prints the paths in effect.`,
 	root.PersistentFlags().StringVar(&a.configPath, "config",
 		envdefault.String(brain.ConfigEnv, defaultConfigPath()),
 		"config file (env "+brain.ConfigEnv+")")
+	root.PersistentFlags().StringArrayVar(&a.vaults, "vault", nil,
+		"restrict to this vault (repeatable); write targets it instead of the default vault")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &usageError{err: err}
 	})

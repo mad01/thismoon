@@ -46,20 +46,22 @@ func TestBrainDoctorReport(t *testing.T) {
 		t.Fatalf("before indexing: ok=%v index=%q, want the index check to fail",
 			report.OK, statusOf(report, "index"))
 	}
-	indexDir, err := brain.IndexDir()
+	stateDir, err := brain.StateDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(indexDir); !os.IsNotExist(err) {
-		t.Errorf("doctor created %s; it must leave nothing behind", indexDir)
+	if _, err := os.Stat(stateDir); !os.IsNotExist(err) {
+		t.Errorf("doctor created %s; it must leave nothing behind", stateDir)
 	}
 
-	cfg, err := h.loadConfig()
+	lib, err := h.open()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ensureIndex(cfg); err != nil {
-		t.Fatal(err)
+	for _, v := range lib.Set().Vaults() {
+		if _, err := lib.RefreshLiteral(v, false, nil); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, report, _ = h.handleDoctor(ctx, nil, struct{}{}); !report.OK {
 		t.Errorf("after indexing: %+v, want every check to pass", report.Checks)

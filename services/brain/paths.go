@@ -30,6 +30,7 @@ const envStateHome = "XDG_STATE_HOME"
 const (
 	indexSubdir    = "index"
 	semanticSubdir = "semantic"
+	lockSubdir     = "locks"
 )
 
 // DefaultConfigPath returns config.yaml inside brain's config directory:
@@ -58,22 +59,36 @@ func StateDir() (string, error) {
 	return confdir.Expand(dir)
 }
 
-// IndexDir returns the literal (zoekt) index directory inside StateDir. It
-// also holds state.json, the fingerprints of both indexes.
-func IndexDir() (string, error) {
+// IndexRoot returns the directory inside StateDir that holds one literal
+// (zoekt) index directory per vault.
+func IndexRoot() (string, error) {
 	return stateSubdir(indexSubdir)
 }
 
-// SemanticDir returns the default semantic (chromem-go) index directory
-// inside StateDir. semantic.index_dir in the config overrides it.
-func SemanticDir() (string, error) {
-	return stateSubdir(semanticSubdir)
+// IndexDir returns the literal index directory of the named vault: its
+// shards and state.json, the fingerprint of the vault it was built from.
+func IndexDir(vault string) (string, error) {
+	return stateSubdir(indexSubdir, vault)
 }
 
-func stateSubdir(name string) (string, error) {
+// SemanticDir returns the default semantic (chromem-go) index directory of
+// the named vault inside StateDir. semantic.index_dir in the config moves
+// the parent of every vault's directory.
+func SemanticDir(vault string) (string, error) {
+	return stateSubdir(semanticSubdir, vault)
+}
+
+// LockDir returns the directory of the lock files that keep two brain
+// processes from building one vault's index, or rewriting its notes, at
+// the same time.
+func LockDir() (string, error) {
+	return stateSubdir(lockSubdir)
+}
+
+func stateSubdir(names ...string) (string, error) {
 	dir, err := StateDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, name), nil
+	return filepath.Join(append([]string{dir}, names...)...), nil
 }

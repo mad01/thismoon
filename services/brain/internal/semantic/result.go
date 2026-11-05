@@ -1,5 +1,7 @@
 package semantic
 
+import "sort"
+
 // Output modes for NewSearchResult.
 const (
 	// ModeSnippets returns one hit per chunk, with heading path and snippet.
@@ -11,6 +13,7 @@ const (
 // ResultHit is one semantic search hit, the JSON shape the CLI and
 // brain_semantic_search share.
 type ResultHit struct {
+	Vault       string   `json:"vault"                  jsonschema:"name of the vault holding the note"`
 	Path        string   `json:"path"                   jsonschema:"vault-relative note path"`
 	Title       string   `json:"title,omitempty"        jsonschema:"note title (frontmatter or filename stem)"`
 	HeadingPath string   `json:"heading_path,omitempty" jsonschema:"' › '-joined heading hierarchy above this chunk"`
@@ -28,15 +31,19 @@ type SearchResult struct {
 	OutputMode string      `json:"output_mode"`
 	Hits       []ResultHit `json:"hits"`
 	Total      int         `json:"total"`
+	Warnings   []string    `json:"warnings,omitempty" jsonschema:"why part of the index may be stale, e.g. Ollama was unreachable for a refresh"`
 }
 
 // NewSearchResult shapes ranked hits for output in mode. ModePaths keeps the
 // first (best) hit per note and drops heading path and snippet.
+//
+// Hits from several vaults are merged by MergeHits first.
 func NewSearchResult(mode string, hits []Hit) SearchResult {
 	out := SearchResult{OutputMode: mode}
 	seen := make(map[string]bool)
 	for _, h := range hits {
 		r := ResultHit{
+			Vault:    h.Vault,
 			Path:     h.Path,
 			Title:    h.Title,
 			Score:    h.Score,
@@ -47,10 +54,11 @@ func NewSearchResult(mode string, hits []Hit) SearchResult {
 			Evidence: h.Evidence,
 		}
 		if mode == ModePaths {
-			if seen[h.Path] {
+			key := h.Vault + ":" + h.Path
+			if seen[key] {
 				continue
 			}
-			seen[h.Path] = true
+			seen[key] = true
 		} else {
 			r.HeadingPath = h.HeadingPath
 			r.Snippet = h.Snippet
@@ -58,5 +66,19 @@ func NewSearchResult(mode string, hits []Hit) SearchResult {
 		out.Hits = append(out.Hits, r)
 	}
 	out.Total = len(out.Hits)
+	return out
+}
+
+// MergeHits merges the ranked hits of several vaults into one list of at
+// most k, by score, best first; a tie keeps the order of lists.
+func MergeHits(lists [][]Hit, k int) []Hit {
+	var out []Hit
+	for _, l := range lists {
+		out = append(out, l...)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	if k > 0 && len(out) > k {
+		out = out[:k]
+	}
 	return out
 }

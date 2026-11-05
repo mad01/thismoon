@@ -16,14 +16,20 @@ import (
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
-// repoName is the single logical "repo" that zoekt uses to label every file
-// indexed from the vault. Callers filter by tier via the file: prefix query.
-const repoName = "brain"
+// Target names one vault's literal index: the zoekt repo name (the vault
+// name), the vault root it reads, and the directory its shards live in.
+type Target struct {
+	Name     string
+	Root     string
+	IndexDir string
+}
 
-// IndexVault walks the vault, indexes each markdown/MDX note into zoekt, and
-// returns after the shard is flushed to disk. progress (if non-nil) is called
-// for each indexed file with its vault-relative path.
-func IndexVault(vaultRoot, indexDir string, progress func(path string)) error {
+// IndexVault walks the target vault, indexes each markdown/MDX note into
+// zoekt under the target's name, and returns after the shard is flushed to
+// disk. progress (if non-nil) is called for each indexed file with its
+// vault-relative path.
+func IndexVault(t Target, progress func(path string)) error {
+	vaultRoot, indexDir := t.Root, t.IndexDir
 	if err := os.MkdirAll(indexDir, 0o755); err != nil {
 		return fmt.Errorf("create index dir %s: %w", indexDir, err)
 	}
@@ -32,7 +38,7 @@ func IndexVault(vaultRoot, indexDir string, progress func(path string)) error {
 		IndexDir:     indexDir,
 		DisableCTags: true,
 		RepositoryDescription: zoekt.Repository{
-			Name:   repoName,
+			Name:   t.Name,
 			Source: vaultRoot,
 		},
 	}
@@ -140,12 +146,18 @@ func SearchWith(ctx context.Context, searcher zoekt.Searcher, opts SearchOptions
 	}
 
 	matches := convertResults(result.Files, limit)
+	if name, _ := searcherRepo(searcher); name != "" {
+		for i := range matches {
+			matches[i].Vault = name
+		}
+	}
 
 	// Frontmatter-backed filters (tag/type/status) can't be expressed in the
 	// zoekt query without risking false positives on body text that happens to
 	// mention the word — re-read the frontmatter to confirm.
 	if opts.Tag != "" || opts.Type != "" || opts.Status != "" {
-		matches = filterByFrontmatter(searcherSource(searcher), matches, opts)
+		_, root := searcherRepo(searcher)
+		matches = filterByFrontmatter(root, matches, opts)
 	}
 
 	return matches, nil
@@ -199,10 +211,11 @@ func CountWith(
 		total += count
 
 		switch opts.GroupBy {
-		case "tier":
+		case GroupTier:
 			groups[tierOfPath(f.FileName)] += count
-		case "tag":
-			for _, tag := range tagsForPath(searcherSource(searcher), f.FileName) {
+		case GroupTag:
+			_, root := searcherRepo(searcher)
+			for _, tag := range tagsForPath(root, f.FileName) {
 				groups[tag] += count
 			}
 		case "":
@@ -287,6 +300,7 @@ func convertResults(files []zoekt.FileMatch, limit int) []Match {
 				}
 				m := Match{
 					Path:   f.FileName,
+					Score:  f.Score,
 					Line:   lm.LineNumber,
 					Column: col,
 					Text:   strings.TrimSuffix(string(lm.Line), "\n"),
@@ -304,6 +318,7 @@ func convertResults(files []zoekt.FileMatch, limit int) []Match {
 				for _, r := range cm.Ranges {
 					matches = append(matches, Match{
 						Path:   f.FileName,
+						Score:  f.Score,
 						Line:   int(r.Start.LineNumber),
 						Column: int(r.Start.Column),
 						Text:   strings.TrimSuffix(string(cm.Content), "\n"),
@@ -313,6 +328,7 @@ func convertResults(files []zoekt.FileMatch, limit int) []Match {
 		} else {
 			matches = append(matches, Match{
 				Path:   f.FileName,
+				Score:  f.Score,
 				Line:   1,
 				Column: 1,
 			})
@@ -401,19 +417,16 @@ func noteMatchesFrontmatter(vaultRoot, relPath string, opts SearchOptions) bool 
 	return true
 }
 
-// searcherSource returns the filesystem path the searcher was built against,
-// i.e. the vault root. Returns "" when it can't be determined.
-func searcherSource(searcher zoekt.Searcher) string {
+// searcherRepo returns the name and filesystem source (the vault root) of
+// the one repo a vault's index holds, or empty strings when it can't be
+// determined.
+func searcherRepo(searcher zoekt.Searcher) (name, root string) {
 	list, err := searcher.List(context.Background(), &query.Const{Value: true}, nil)
-	if err != nil || list == nil {
-		return ""
+	if err != nil || list == nil || len(list.Repos) == 0 {
+		return "", ""
 	}
-	for _, r := range list.Repos {
-		if r.Repository.Name == repoName {
-			return r.Repository.Source
-		}
-	}
-	return ""
+	r := list.Repos[0].Repository
+	return r.Name, r.Source
 }
 
 // regexpQuote escapes regex metacharacters in s so it matches literally. Tier

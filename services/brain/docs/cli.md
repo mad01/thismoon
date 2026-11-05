@@ -1,12 +1,26 @@
 # brain CLI guide for agents
 
-brain searches and edits a local markdown vault (Obsidian-style notes with YAML
-frontmatter). Every command reads one config file (`vault: <path>`): `--config`,
-else `$BRAIN_CONFIG`, else `config.yaml` in `$XDG_CONFIG_HOME/brain` or
-`~/.config/brain`. Indexes live in `$XDG_STATE_HOME/brain` or
-`~/.local/state/brain`.
-Paths are vault-relative and include the tier directory: `notes/topic.md`, not
-`topic.md`. Run `brain doctor` first when anything fails.
+brain searches and edits local markdown vaults (Obsidian-style notes with YAML
+frontmatter). Every command reads one config file (`vault: <path>`, or a
+`vaults:` list): `--config`, else `$BRAIN_CONFIG`, else `config.yaml` in
+`$XDG_CONFIG_HOME/brain` or `~/.config/brain`. Indexes live in
+`$XDG_STATE_HOME/brain` or `~/.local/state/brain`, one set per vault.
+Run `brain doctor` first when anything fails.
+
+## Vaults and note refs
+
+A config can name several vaults: private ones you write, and shared (team)
+ones that are read-only here because their notes change through a pull
+request. Search, count, list, semantic-search and hybrid-search cover every
+vault, and every hit names its `vault`. A command that takes a note accepts:
+
+- `vault:path`, such as `team:notes/topic.md`;
+- a bare vault-relative path, `notes/topic.md` (not `topic.md`), when exactly
+  one vault has it. Found in two vaults it fails as `ambiguous` and lists the
+  qualified candidates.
+
+`write` goes to the default vault. With more than one vault configured, text
+output prints `vault:path`.
 
 ## Tiers
 
@@ -23,23 +37,25 @@ Paths are vault-relative and include the tier directory: `notes/topic.md`, not
   JSON shapes match the brain MCP tools.
 - `--config <path>`: the config file (env `BRAIN_CONFIG`). A file that exists
   but does not parse or names no vault fails every command with exit 2.
+- `--vault <name>` (repeatable): restrict to these vaults; `write` takes one
+  and targets it instead of the default vault.
 
 ## Commands
 
 | Command | Does | Key flags |
 |---|---|---|
 | `search <query>` | zoekt search, one path per note | `--tier --tag --type --status -f/--file --limit -m content -C N` |
-| `count <query>` | match totals | `--tier`, `--group-by` (`tier` or `tag`) |
+| `count <query>` | match totals | `--tier`, `--group-by` (`tier`, `tag` or `vault`) |
 | `query <query>` | validate a query, print its parse | |
 | `semantic-search <query>` | vector search (needs Ollama) | `--tier --tag --type --status --evidence -k` |
 | `hybrid-search <query>` | literal + vector, fused by Reciprocal Rank Fusion | same plus `--k-zoekt --k-vector --rerank` |
 | `list [tier]` | notes in a tier, newest first | `--tier --tag --status --type --limit` |
-| `read <path>` | frontmatter and body | `--start N --end M` (body lines, 1-based) |
-| `peek <path>` | backlink count, frontmatter, first lines | `--lines N` (default 20) |
-| `backlinks [path]` | inbound and outbound wikilinks | `--title <title or alias>` instead of a path |
+| `read <note>` | frontmatter and body | `--start N --end M` (body lines, 1-based) |
+| `peek <note>` | backlink count, frontmatter, first lines | `--lines N` (default 20) |
+| `backlinks [note]` | inbound and outbound wikilinks | `--title <title or alias>` instead of a note |
 | `write` | create a note | `--title` (required), `--tier --body --tag --alias --type --status --source --evidence --filename --set --unset`; no `--body` reads stdin |
-| `edit <path>` | change body or frontmatter | `--body` or `--append` (`-` reads stdin), `--title --status --type --source --tag --alias --evidence --set --unset` |
-| `promote <path>` | move an inbox note to notes/ | `--title` (rename) `--tier` `--moc <MOC path>` |
+| `edit <note>` | change body or frontmatter | `--body` or `--append` (`-` reads stdin), `--title --status --type --source --tag --alias --evidence --set --unset` |
+| `promote <note>` | move an inbox note to notes/ | `--title` (rename) `--tier` `--moc <MOC path>` |
 | `index` | rebuild indexes (search does this when stale) | `--force --literal-only` |
 | `doctor` | check config, vault, index, Ollama; prints the paths in effect | |
 | `docs` | print this guide | |
@@ -72,11 +88,13 @@ edit; `updated` is always refreshed on edit.
 |---|---|---|---|
 | 0 | | success | |
 | 1 | `error` | anything else (config, I/O, Ollama) | `brain doctor` |
-| 2 | `usage` | bad flag, argument, path or tier | `brain <cmd> --help` |
+| 2 | `usage` | bad flag, argument, path, tier or vault | `brain <cmd> --help` |
+| 2 | `ambiguous` | a bare path is in more than one vault | use a candidate the message lists |
 | 2 | `invalid_config` | config file does not parse or names no vault | fix the file the message names |
 | 3 | `not_found` | note or title does not exist | `brain list --tier <t>`, `brain search 'f:<name>'` |
 | 4 | `already_exists` | write or promote target exists | pick another `--title` or `--filename` |
 | 5 | `invalid_query` | zoekt query does not parse | `brain query '<query>'` |
+| 6 | `read_only` | write, edit or promote in a shared vault | change it through a PR to its repo |
 
 Errors print one line on stderr: `brain <cmd>: <message>`. With `-o json`
 the same failure also prints on stdout:
@@ -92,17 +110,17 @@ an error envelope and exits 1 when a check fails.
 
 | Command | Top-level keys |
 |---|---|
-| `search` | `output_mode`, `files[] {path, evidence}` or `lines[] {path, line, column, text, before, after, evidence}`, `total` |
+| `search` | `output_mode`, `files[] {vault, path, evidence}` or `lines[] {vault, path, line, column, text, before, after, evidence}`, `total` |
 | `count` | `total`, `groups[] {group, count}` |
 | `query` | `valid`, `parsed` |
-| `list` | `tier`, `total` (before `--limit`), `notes[] {path, title, status, type, tags, aliases, evidence, updated}` |
-| `read` | `path`, `frontmatter`, `body_lines[] {line, text}` |
-| `peek` | `path`, `frontmatter`, `preview[]`, `backlink_count` |
-| `backlinks` | `note_path`, `evidence`, `inbound[] {path, line, excerpt, evidence}`, `outbound[] {target, path, line, evidence}` |
-| `write`, `edit` | `path` |
-| `promote` | `old_path`, `new_path`, `backlink_rewrites[]`, `moc_appended` |
-| `semantic-search` | `output_mode`, `hits[] {path, title, heading_path, score, snippet, tier, tags, type, status, evidence}`, `total` |
-| `hybrid-search` | `hits[] {path, title, heading_path, score, sources, snippet, ...}`, `total` |
+| `list` | `tier`, `total` (before `--limit`), `notes[] {vault, path, title, status, type, tags, aliases, evidence, updated}` |
+| `read` | `vault`, `path`, `frontmatter`, `body_lines[] {line, text}` |
+| `peek` | `vault`, `path`, `frontmatter`, `preview[]`, `backlink_count` |
+| `backlinks` | `vault`, `note_path`, `evidence`, `inbound[] {vault, path, line, excerpt, evidence}`, `outbound[] {target, vault, path, line, evidence}` |
+| `write`, `edit` | `vault`, `path` |
+| `promote` | `vault`, `old_path`, `new_path`, `backlink_rewrites[]`, `moc_appended` |
+| `semantic-search` | `output_mode`, `hits[] {vault, path, title, heading_path, score, snippet, tier, tags, type, status, evidence}`, `total`, `warnings[]` |
+| `hybrid-search` | `hits[] {vault, path, title, heading_path, score, sources, snippet, ...}`, `total`, `warnings[]` |
 | `doctor` | `ok`, `checks[] {name, status, detail, fix}`; status is `ok`, `fail` or `skip` |
 
 `frontmatter` holds `title aliases tags type status source evidence created

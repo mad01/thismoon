@@ -48,11 +48,13 @@ func viewOf(fm markdown.Frontmatter) (FrontmatterView, error) {
 
 // PathResult is the JSON result of write and edit.
 type PathResult struct {
-	Path string `json:"path" jsonschema:"vault-relative path of the note"`
+	Vault string `json:"vault" jsonschema:"name of the vault holding the note"`
+	Path  string `json:"path"  jsonschema:"vault-relative path of the note"`
 }
 
 // PromoteReport is the JSON view of a PromoteResult, with vault-relative paths.
 type PromoteReport struct {
+	Vault            string   `json:"vault"`
 	OldPath          string   `json:"old_path"`
 	NewPath          string   `json:"new_path"`
 	BacklinkRewrites []string `json:"backlink_rewrites"`
@@ -70,6 +72,7 @@ func (v *Vault) Report(res PromoteResult) PromoteReport {
 		moc = v.Rel(res.MOCAppended)
 	}
 	return PromoteReport{
+		Vault:            v.Name,
 		OldPath:          v.Rel(res.OldPath),
 		NewPath:          v.Rel(res.NewPath),
 		BacklinkRewrites: rewrites,

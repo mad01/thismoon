@@ -137,6 +137,9 @@ type QueryOptions struct {
 type Hit struct {
 	// ID is the chunk ID.
 	ID string
+	// Vault is the name of the vault the note is in. The index does not
+	// store it; the caller that queried a vault's index sets it.
+	Vault string
 	// Path is the vault-relative note path.
 	Path string
 	// Title is the note title (frontmatter.title or filename stem).

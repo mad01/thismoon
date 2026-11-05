@@ -23,6 +23,7 @@ const (
 	exitNotFound     = 3
 	exitExists       = 4
 	exitInvalidQuery = 5
+	exitReadOnly     = 6
 )
 
 // usageError marks a bad flag or argument (exit code 2).
@@ -56,9 +57,12 @@ type errorBody struct {
 func classify(err error) (int, string) {
 	var usage *usageError
 	switch {
+	case errors.Is(err, vault.ErrAmbiguous):
+		return exitUsage, "ambiguous"
 	case errors.As(err, &usage),
 		errors.Is(err, vault.ErrInvalidPath),
-		errors.Is(err, vault.ErrUnknownTier):
+		errors.Is(err, vault.ErrUnknownTier),
+		errors.Is(err, vault.ErrUnknownVault):
 		return exitUsage, "usage"
 	case errors.Is(err, config.ErrInvalid):
 		return exitUsage, "invalid_config"
@@ -68,6 +72,8 @@ func classify(err error) (int, string) {
 		return exitExists, "already_exists"
 	case errors.Is(err, search.ErrInvalidQuery):
 		return exitInvalidQuery, "invalid_query"
+	case errors.Is(err, vault.ErrReadOnly):
+		return exitReadOnly, "read_only"
 	}
 	return exitError, "error"
 }
@@ -123,6 +129,16 @@ func outputFromArgs(args []string) string {
 		}
 	}
 	return out
+}
+
+// refPath returns the path part of a note ref: rel for vault:rel, the ref
+// itself for a bare path.
+func refPath(ref string) string {
+	if before, after, ok := strings.Cut(ref, ":"); ok && before != "" &&
+		!strings.ContainsAny(before, `/\.`) {
+		return after
+	}
+	return ref
 }
 
 // withNoteHint appends a way to find the right path to a not-found error for

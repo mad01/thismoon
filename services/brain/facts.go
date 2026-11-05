@@ -19,6 +19,10 @@ const ConfigEnv = "BRAIN_CONFIG"
 // ConfigFile is the config file's name inside brain's config directory.
 const ConfigFile = "config.yaml"
 
+// LegacyVaultName names the one vault a config with the single-path
+// `vault:` key describes.
+const LegacyVaultName = "default"
+
 // Semantic-layer defaults, applied when the config leaves a key empty.
 const (
 	DefaultOllamaURL  = "http://localhost:11434"

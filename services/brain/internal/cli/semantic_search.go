@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/services/brain/internal/library"
 	"github.com/mad01/thismoon/services/brain/internal/semantic"
 )
 
@@ -19,29 +20,29 @@ func newSemanticSearchCmd(a *app) *cobra.Command {
 		Long: `Vector search using Ollama embeddings + chromem-go.
 
 Query is converted to an embedding and compared against every chunk in the
-semantic index. Results are ranked by cosine similarity. Use brain search for
-exact-string lookups; use brain hybrid-search to combine literal + semantic.
+semantic index of each vault (every vault unless --vault narrows it). Results
+are ranked by cosine similarity. A stale semantic index is refreshed first;
+when Ollama does not answer, the refresh is skipped with a warning on stderr.
+Use brain search for exact-string lookups; use brain hybrid-search to combine
+literal + semantic.
 
 Requires semantic.enabled=true in config.yaml and a running Ollama instance.
 With -o json, prints the brain_semantic_search document (snippets mode).`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
+			lib, set, err := a.openVaults()
 			if err != nil {
 				return err
 			}
-			if !cfg.Semantic.Enabled {
-				return errSemanticDisabled
-			}
-			idx, err := openSemanticIndex(cfg)
+			res, err := lib.SemanticSearch(context.Background(), set, library.SemanticQuery{
+				Text:   args[0],
+				Mode:   semantic.ModeSnippets,
+				Filter: opts,
+			})
 			if err != nil {
-				return err
+				return semanticErr(err)
 			}
-			hits, err := idx.Query(context.Background(), args[0], opts)
-			if err != nil {
-				return err
-			}
-			res := semantic.NewSearchResult(semantic.ModeSnippets, hits)
+			warn(cmd, res.Warnings)
 			return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
 				if res.Total == 0 {
 					fmt.Fprintln(w, "no matches")
@@ -51,7 +52,7 @@ With -o json, prints the brain_semantic_search document (snippets mode).`,
 						w,
 						"%.4f  %s  %s\n",
 						h.Score,
-						h.Path,
+						a.show(h.Vault, h.Path),
 						headingOrPrelude(h.HeadingPath),
 					)
 				}
@@ -74,11 +75,13 @@ With -o json, prints the brain_semantic_search document (snippets mode).`,
 	return c
 }
 
-// errSemanticDisabled is returned by the semantic commands when the config
-// leaves the semantic layer off.
-var errSemanticDisabled = errors.New(
-	"semantic.enabled is false in the brain config (check with: brain doctor)",
-)
+// semanticErr points a disabled semantic layer at brain doctor.
+func semanticErr(err error) error {
+	if errors.Is(err, library.ErrSemanticDisabled) {
+		return fmt.Errorf("%w (check with: brain doctor)", err)
+	}
+	return err
+}
 
 func headingOrPrelude(heading string) string {
 	if heading == "" {

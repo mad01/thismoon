@@ -6,8 +6,24 @@ The vault brain indexes and serves. These terms apply to the files under
 ## Language
 
 **Vault**:
-The directory of markdown notes brain indexes and serves, named by `vault:` in the brain config file (`config.md` says where it lives). It holds the four Tier directories, and the walk skips `.git`, `.obsidian`, `.trash` and `attachments`. The vault is its own repo, kept apart from the tool.
+A directory of markdown notes brain indexes and serves, named in the brain config file (`config.md` says where it lives) by a lowercase slug. It holds the four Tier directories, and the walk skips `.git`, `.obsidian`, `.trash` and `attachments`. A vault is its own repo, kept apart from the tool. One config can name several vaults; each is a Private vault or a Shared vault.
 _Avoid_: brain (that is the tool), data repo
+
+**Private vault**:
+A Vault one person writes directly: write, edit and promote change its files in place. Any vault the config does not mark `shared` is private.
+_Avoid_: personal vault (a name a config may give one), local vault
+
+**Shared vault**:
+A Vault a team keeps in a shared repo, marked `shared: true` in the config. brain searches, lists and reads it like any vault, but refuses a direct write, edit or promote with `read_only`: shared notes change through a pull request.
+_Avoid_: team vault (a name a config may give one), remote vault, public vault
+
+**Default vault**:
+The Private vault a write targets when no `--vault` names one: the vault marked `default: true`, else the first private vault in config order. A config of shared vaults alone has none.
+_Avoid_: main vault, primary vault
+
+**Note ref**:
+How a command names one Note: `vault:path` (qualified), or a bare vault-relative path that must exist in exactly one vault. A bare path found in more than one vault is `ambiguous`, never guessed.
+_Avoid_: note id (the frontmatter field), slug
 
 **Tier**:
 One of the four top-level vault directories a Note lives in: `inbox`, `notes`, `outputs` and `MOCs`. A note's tier is the first component of its vault-relative path, and it sets the default `type` and `status` a new note gets: `raw` in `inbox`, `validated` everywhere else. Not the same thing as an Evidence tier.

@@ -39,8 +39,9 @@ Filters:
   --status         Frontmatter status filter
   --mode           files_with_matches (default) | content
 
-Index is built/refreshed automatically if stale. With -o json, prints the
-brain_search document.`,
+Searches every vault unless --vault narrows it; each hit names its vault.
+Each vault's index is built/refreshed automatically if stale. With -o json,
+prints the brain_search document.`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if mode == "files" {
@@ -58,24 +59,19 @@ brain_search document.`,
 			if err != nil {
 				return err
 			}
-			cfg, _, err := a.openVault()
-			if err != nil {
-				return err
-			}
-			indexDir, err := ensureIndexCLI(cfg)
+			lib, set, err := a.openVaults()
 			if err != nil {
 				return err
 			}
 			opts.Pattern = args[0]
 			opts.Tier = t
 			opts.OutputMode = mode
-			matches, err := search.Search(context.Background(), indexDir, opts)
+			res, err := lib.Search(context.Background(), set, opts)
 			if err != nil {
 				return err
 			}
-			res := search.NewResult(cfg.Vault, mode, matches)
 			return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
-				writeSearchText(w, res)
+				a.writeSearchText(w, res)
 				return nil
 			})
 		},
@@ -100,17 +96,17 @@ brain_search document.`,
 	return c
 }
 
-func writeSearchText(w io.Writer, res search.Result) {
+func (a *app) writeSearchText(w io.Writer, res search.Result) {
 	if res.Total == 0 {
 		fmt.Fprintln(w, "no matches")
 		return
 	}
 	for _, l := range res.Lines {
 		fmt.Fprint(w, l.Before)
-		fmt.Fprintf(w, "%s:%d:%d: %s\n", l.Path, l.Line, l.Column, l.Text)
+		fmt.Fprintf(w, "%s:%d:%d: %s\n", a.show(l.Vault, l.Path), l.Line, l.Column, l.Text)
 		fmt.Fprint(w, l.After)
 	}
 	for _, f := range res.Files {
-		fmt.Fprintln(w, f.Path)
+		fmt.Fprintln(w, a.show(f.Vault, f.Path))
 	}
 }

@@ -2,11 +2,9 @@ package mcpserver
 
 import (
 	"fmt"
-	"time"
 
-	"github.com/mad01/thismoon/services/brain"
 	"github.com/mad01/thismoon/services/brain/internal/config"
-	"github.com/mad01/thismoon/services/brain/internal/search"
+	"github.com/mad01/thismoon/services/brain/internal/library"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
@@ -19,48 +17,51 @@ func (h *handlers) loadConfig() (*config.Config, error) {
 	return cfg, nil
 }
 
-// loadVault reads the brain config and opens the vault. Returned together so
-// handlers that both inspect config (e.g. for paths) and call vault operations
-// don't duplicate the Load/Open dance.
-func (h *handlers) loadVault() (*config.Config, *vault.Vault, error) {
+// open loads the config and opens every vault it names. Each call reads the
+// config afresh, so an edit to it applies to the next tool call.
+func (h *handlers) open() (*library.Library, error) {
 	cfg, err := h.loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	lib, err := library.Open(library.Options{Config: cfg, Embed: h.embed, Health: h.health})
+	if err != nil {
+		return nil, fmt.Errorf("%w (diagnose with: brain_doctor)", err)
+	}
+	return lib, nil
+}
+
+// vaults opens the library and returns the vault the vault input names, or
+// every vault when it is empty.
+func (h *handlers) vaults(name string) (*library.Library, *vault.Set, error) {
+	lib, err := h.open()
 	if err != nil {
 		return nil, nil, err
 	}
-	v, err := vault.Open(cfg.Vault)
+	set, err := lib.Vaults(names(name))
 	if err != nil {
-		return nil, nil, fmt.Errorf("open vault: %w", err)
+		return nil, nil, err
 	}
-	return cfg, v, nil
+	return lib, set, nil
 }
 
-// ensureIndex makes sure the zoekt index in brain's state directory is
-// current before a search/count call. It compares the vault fingerprint to the
-// stored state and re-indexes if stale (or if no index exists yet). Progress
-// is intentionally silent — MCP handlers shouldn't spam stderr mid-RPC.
-func ensureIndex(cfg *config.Config) (string, error) {
-	indexDir, err := brain.IndexDir()
+// locate opens the library and resolves a note ref within the named vault,
+// or within every vault when name is empty.
+func (h *handlers) locate(name, ref string) (*library.Library, vault.Ref, error) {
+	lib, err := h.open()
 	if err != nil {
-		return "", fmt.Errorf("resolve index dir: %w", err)
+		return nil, vault.Ref{}, err
 	}
-	fingerprint, _, err := search.ComputeFingerprint(cfg.Vault)
+	r, err := lib.Locate(names(name), ref)
 	if err != nil {
-		return "", fmt.Errorf("fingerprint vault: %w", err)
+		return nil, vault.Ref{}, err
 	}
-	state, err := search.LoadState(indexDir)
-	if err != nil {
-		return "", fmt.Errorf("load index state: %w", err)
+	return lib, r, nil
+}
+
+func names(name string) []string {
+	if name == "" {
+		return nil
 	}
-	if !search.IsStale(state, fingerprint) {
-		return indexDir, nil
-	}
-	if err := search.IndexVault(cfg.Vault, indexDir, nil); err != nil {
-		return "", fmt.Errorf("index vault: %w", err)
-	}
-	_, files, err := search.ComputeFingerprint(cfg.Vault)
-	if err == nil {
-		state.SetFingerprint(fingerprint, files, time.Now().UTC())
-		_ = state.Save(indexDir)
-	}
-	return indexDir, nil
+	return []string{name}
 }

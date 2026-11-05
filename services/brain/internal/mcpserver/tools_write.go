@@ -22,10 +22,12 @@ type writeInput struct {
 	Source   string   `json:"source,omitempty"   jsonschema:"optional source URL"`
 	Evidence string   `json:"evidence,omitempty" jsonschema:"trust tier for empirical notes: A (replicated RCT / meta-analysis), B (single well-designed study), C (preliminary / survey / mechanism-plausible), D (refuted / apocryphal), or mixed. Omit for non-empirical notes."`
 	Filename string   `json:"filename,omitempty" jsonschema:"override filename (without .md); defaults to slug(title)"`
+	Vault    string   `json:"vault,omitempty"    jsonschema:"configured vault to write to; defaults to the default vault. A shared vault refuses writes."`
 }
 
 type editInput struct {
-	Path             string         `json:"path"                        jsonschema:"vault-relative note path"`
+	Path             string         `json:"path"                        jsonschema:"note ref: vault:path, or a vault-relative path found in exactly one vault"`
+	Vault            string         `json:"vault,omitempty"             jsonschema:"look the path up in this configured vault only"`
 	Body             string         `json:"body,omitempty"              jsonschema:"replace the body entirely with this string; mutually exclusive with append"`
 	Append           string         `json:"append,omitempty"            jsonschema:"append this string to the existing body; mutually exclusive with body"`
 	FrontmatterPatch *frontmatterIn `json:"frontmatter_patch,omitempty" jsonschema:"partial frontmatter to merge into the existing one (non-empty fields win)"`
@@ -43,7 +45,7 @@ type frontmatterIn struct {
 }
 
 type promoteInput struct {
-	Path       string `json:"path"                  jsonschema:"vault-relative inbox note path"`
+	Path       string `json:"path"                  jsonschema:"inbox note ref: vault:path, or a vault-relative path found in exactly one vault"`
 	NewTitle   string `json:"new_title,omitempty"   jsonschema:"optional new title (and re-slug) for the promoted note"`
 	TargetTier string `json:"target_tier,omitempty" jsonschema:"destination tier; defaults to notes"`
 	MOC        string `json:"moc,omitempty"         jsonschema:"optional topical MOC path (vault-relative or absolute) to append a bullet to. Must be a semantic MOC; batch-provenance indexes (research-index-* / kickoff-* filenames, or tags including meta/index) are rejected."`
@@ -54,7 +56,8 @@ func registerWriteTools(s *mcp.Server, h *handlers) {
 		Name: "brain_write",
 		Description: "Create a new note in a tier (inbox, notes, outputs, or MOCs) with frontmatter (title, tags, aliases, type, status, source). " +
 			"Use to capture new material — 'save this as an inbox note', 'write a validated note on X', 'create an output'. " +
-			"Filename defaults to slug(title); outputs are prefixed with YYYY-MM-DD. Errors if a note with the same filename already exists.",
+			"Filename defaults to slug(title); outputs are prefixed with YYYY-MM-DD. Errors if a note with the same filename already exists. " +
+			"Writes go to the default vault unless vault names another; a shared vault is read-only (its notes change through a pull request).",
 	}, h.handleWrite)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -88,11 +91,14 @@ func (h *handlers) handleWrite(
 		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
 	}
 
-	_, v, err := h.loadVault()
+	lib, err := h.open()
 	if err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
 	}
-
+	v, err := lib.WriteTarget(in.Vault)
+	if err != nil {
+		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
+	}
 	abs, err := v.Write(vault.WriteOptions{
 		Tier:     tier,
 		Title:    in.Title,
@@ -108,7 +114,7 @@ func (h *handlers) handleWrite(
 	if err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_write: %w", err)
 	}
-	return nil, vault.PathResult{Path: v.Rel(abs)}, nil
+	return nil, vault.PathResult{Vault: v.Name, Path: v.Rel(abs)}, nil
 }
 
 func (h *handlers) handleEdit(
@@ -130,11 +136,7 @@ func (h *handlers) handleEdit(
 		)
 	}
 
-	_, v, err := h.loadVault()
-	if err != nil {
-		return nil, vault.PathResult{}, fmt.Errorf("brain_edit: %w", err)
-	}
-	abs, err := v.Resolve(in.Path)
+	_, ref, err := h.locate(in.Vault, in.Path)
 	if err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_edit: %w", err)
 	}
@@ -157,10 +159,10 @@ func (h *handlers) handleEdit(
 		opts.FrontmatterPatch = &patch
 	}
 
-	if err := v.Edit(abs, opts); err != nil {
+	if err := ref.Vault.Edit(ref.Abs(), opts); err != nil {
 		return nil, vault.PathResult{}, fmt.Errorf("brain_edit: %w", err)
 	}
-	return nil, vault.PathResult{Path: in.Path}, nil
+	return nil, vault.PathResult{Vault: ref.Vault.Name, Path: ref.Path}, nil
 }
 
 func (h *handlers) handlePromote(
@@ -172,11 +174,7 @@ func (h *handlers) handlePromote(
 		return nil, vault.PromoteReport{}, fmt.Errorf("brain_promote: path is required")
 	}
 
-	_, v, err := h.loadVault()
-	if err != nil {
-		return nil, vault.PromoteReport{}, fmt.Errorf("brain_promote: %w", err)
-	}
-	abs, err := v.Resolve(in.Path)
+	_, ref, err := h.locate("", in.Path)
 	if err != nil {
 		return nil, vault.PromoteReport{}, fmt.Errorf("brain_promote: %w", err)
 	}
@@ -193,10 +191,9 @@ func (h *handlers) handlePromote(
 		opts.TargetTier = t
 	}
 
-	res, err := v.Promote(abs, opts)
+	res, err := ref.Vault.Promote(ref.Abs(), opts)
 	if err != nil {
 		return nil, vault.PromoteReport{}, fmt.Errorf("brain_promote: %w", err)
 	}
-
-	return nil, v.Report(res), nil
+	return nil, ref.Vault.Report(res), nil
 }

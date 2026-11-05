@@ -10,11 +10,12 @@ import (
 func newReadCmd(a *app) *cobra.Command {
 	var start, end int
 	c := &cobra.Command{
-		Use:   "read <path>",
+		Use:   "read <note>",
 		Short: "Read a note (frontmatter + optional body slice)",
-		Long: `Read a note by vault-relative path and print its frontmatter block
-followed by the requested body lines. Use --start / --end to slice (1-based
-inclusive over the body). With -o json, prints the brain_read document.`,
+		Long: `Read a note and print its frontmatter block followed by the requested body
+lines. Name the note by vault:path, or by a vault-relative path found in
+exactly one vault. Use --start / --end to slice (1-based inclusive over the
+body). With -o json, prints the brain_read document.`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if start < 0 || end < 0 {
@@ -23,13 +24,13 @@ inclusive over the body). With -o json, prints the brain_read document.`,
 			if start > 0 && end > 0 && start > end {
 				return usageErrorf("--start (%d) must be <= --end (%d)", start, end)
 			}
-			_, v, err := a.openVault()
+			_, ref, err := a.locate(args[0])
 			if err != nil {
 				return err
 			}
-			note, err := v.Read(args[0], start, end)
+			note, err := ref.Vault.Read(ref.Path, start, end)
 			if err != nil {
-				return withNoteHint(err, args[0])
+				return withNoteHint(err, ref.Path)
 			}
 			return a.emit(cmd.OutOrStdout(), note, func(w io.Writer) error {
 				if err := writeFrontmatter(w, note.Raw()); err != nil {
@@ -50,7 +51,7 @@ inclusive over the body). With -o json, prints the brain_read document.`,
 func newPeekCmd(a *app) *cobra.Command {
 	var lines int
 	c := &cobra.Command{
-		Use:   "peek <path>",
+		Use:   "peek <note>",
 		Short: "Frontmatter, first body lines and backlink count of a note",
 		Long: `Cheap overview of a note: its inbound backlink count, its frontmatter
 and the first --lines body lines (default 20). Use it to decide whether a note
@@ -60,13 +61,13 @@ is worth a full read. With -o json, prints the brain_peek document.`,
 			if lines < 0 {
 				return usageErrorf("--lines must be >= 0")
 			}
-			_, v, err := a.openVault()
+			_, ref, err := a.locate(args[0])
 			if err != nil {
 				return err
 			}
-			peek, err := v.Peek(args[0], lines)
+			peek, err := ref.Vault.Peek(ref.Path, lines)
 			if err != nil {
-				return withNoteHint(err, args[0])
+				return withNoteHint(err, ref.Path)
 			}
 			return a.emit(cmd.OutOrStdout(), peek, func(w io.Writer) error {
 				fmt.Fprintf(w, "backlinks: %d\n", peek.BacklinkCount)

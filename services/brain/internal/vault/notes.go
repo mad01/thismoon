@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
@@ -27,6 +26,7 @@ type BodyLine struct {
 
 // Note is a note's frontmatter plus a slice of its body, as read returns it.
 type Note struct {
+	Vault       string          `json:"vault"`
 	Path        string          `json:"path"`
 	Frontmatter FrontmatterView `json:"frontmatter"`
 	BodyLines   []BodyLine      `json:"body_lines"`
@@ -40,6 +40,7 @@ func (n Note) Raw() markdown.Frontmatter { return n.fm }
 // Peek is a cheap overview of a note: frontmatter, the first body lines and
 // the number of notes linking to it.
 type Peek struct {
+	Vault         string          `json:"vault"`
 	Path          string          `json:"path"`
 	Frontmatter   FrontmatterView `json:"frontmatter"`
 	Preview       []string        `json:"preview"`
@@ -68,7 +69,8 @@ func (v *Vault) Read(rel string, start, end int) (Note, error) {
 		return Note{}, fmt.Errorf("%s: %w", rel, err)
 	}
 	return Note{
-		Path:        rel,
+		Vault:       v.Name,
+		Path:        v.Rel(full),
 		Frontmatter: view,
 		BodyLines:   sliceBodyLines(body, start, end),
 		fm:          fm,
@@ -99,7 +101,8 @@ func (v *Vault) Peek(rel string, maxLines int) (Peek, error) {
 		return Peek{}, fmt.Errorf("count backlinks: %w", err)
 	}
 	return Peek{
-		Path:          rel,
+		Vault:         v.Name,
+		Path:          v.Rel(full),
 		Frontmatter:   view,
 		Preview:       firstBodyLines(body, maxLines),
 		BacklinkCount: count,
@@ -118,6 +121,7 @@ type ListOptions struct {
 
 // ListedNote is one row of a tier listing.
 type ListedNote struct {
+	Vault    string   `json:"vault"              jsonschema:"name of the vault holding the note"`
 	Path     string   `json:"path"               jsonschema:"vault-relative note path"`
 	Title    string   `json:"title,omitempty"`
 	Status   string   `json:"status,omitempty"`
@@ -136,29 +140,11 @@ type Listing struct {
 	Notes []ListedNote `json:"notes"`
 }
 
-// List returns the notes in one tier that match the filters, sorted by
-// frontmatter.updated descending, then path. A missing tier directory is an
-// empty listing; unreadable or unparsable notes are skipped.
+// List returns the notes in one tier of this vault that match the filters,
+// sorted by frontmatter.updated descending, then path. A missing tier
+// directory is an empty listing; unreadable or unparsable notes are skipped.
 func (v *Vault) List(opts ListOptions) (Listing, error) {
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = defaultListLimit
-	}
-	notes, err := v.collectTier(opts)
-	if err != nil {
-		return Listing{}, err
-	}
-	sort.SliceStable(notes, func(i, j int) bool {
-		if notes[i].Updated != notes[j].Updated {
-			return notes[i].Updated > notes[j].Updated
-		}
-		return notes[i].Path < notes[j].Path
-	})
-	total := len(notes)
-	if len(notes) > limit {
-		notes = notes[:limit]
-	}
-	return Listing{Tier: opts.Tier.Dir(), Total: total, Notes: notes}, nil
+	return NewSet(v).List(opts)
 }
 
 func (v *Vault) collectTier(opts ListOptions) ([]ListedNote, error) {
@@ -196,6 +182,7 @@ func (v *Vault) collectTier(opts ListOptions) ([]ListedNote, error) {
 			return nil
 		}
 		out = append(out, ListedNote{
+			Vault:    v.Name,
 			Path:     v.Rel(path),
 			Title:    fm.Title,
 			Status:   fm.Status,

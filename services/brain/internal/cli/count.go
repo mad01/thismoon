@@ -17,26 +17,25 @@ func newCountCmd(a *app) *cobra.Command {
 		Short: "Count matches of a zoekt query across the vault",
 		Long: `Count matches of a zoekt query across the vault.
 
-Use --group-by=tier or --group-by=tag for a per-group breakdown; omit for a
-single total. With -o json, prints the brain_count document.`,
+Use --group-by tier, tag or vault for a per-group breakdown; omit for a
+single total. Counts every vault unless --vault narrows it. With -o json,
+prints the brain_count document.`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if groupBy != "" && groupBy != "tier" && groupBy != "tag" {
-				return usageErrorf("--group-by must be tier, tag, or empty, got %q", groupBy)
+			switch groupBy {
+			case "", search.GroupTier, search.GroupTag, search.GroupVault:
+			default:
+				return usageErrorf("--group-by must be tier, tag, vault or empty, got %q", groupBy)
 			}
 			t, err := parseTierFlag(tier)
 			if err != nil {
 				return err
 			}
-			cfg, _, err := a.openVault()
+			lib, set, err := a.openVaults()
 			if err != nil {
 				return err
 			}
-			indexDir, err := ensureIndexCLI(cfg)
-			if err != nil {
-				return err
-			}
-			groups, total, err := search.Count(context.Background(), indexDir, search.CountOptions{
+			res, err := lib.Count(context.Background(), set, search.CountOptions{
 				Pattern: args[0],
 				Tier:    t,
 				GroupBy: groupBy,
@@ -44,7 +43,6 @@ single total. With -o json, prints the brain_count document.`,
 			if err != nil {
 				return err
 			}
-			res := search.Counts{Total: total, Groups: groups}
 			return a.emit(cmd.OutOrStdout(), res, func(w io.Writer) error {
 				fmt.Fprintf(w, "total: %d\n", res.Total)
 				for _, g := range res.Groups {
@@ -55,6 +53,6 @@ single total. With -o json, prints the brain_count document.`,
 		},
 	}
 	c.Flags().StringVar(&tier, "tier", "", "restrict to a tier (inbox, notes, outputs, MOCs)")
-	c.Flags().StringVar(&groupBy, "group-by", "", "group counts by: tier or tag")
+	c.Flags().StringVar(&groupBy, "group-by", "", "group counts by: tier, tag or vault")
 	return c
 }

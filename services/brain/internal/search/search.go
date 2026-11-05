@@ -8,8 +8,13 @@ import "github.com/mad01/thismoon/services/brain/internal/vault"
 
 // Match represents a single search hit in a note.
 type Match struct {
+	// Vault is the name of the vault the note is in.
+	Vault string `json:"vault"`
 	// Path is the vault-relative path to the note (e.g. "notes/topic/foo.md").
 	Path string `json:"path"`
+	// Score is zoekt's rank of the note; higher is better. It orders hits
+	// from several vaults.
+	Score float64 `json:"-"`
 	// Line is the 1-based line number of the match.
 	Line int `json:"line"`
 	// Column is the 1-based column of the match start.
@@ -50,20 +55,29 @@ type SearchOptions struct {
 	OutputMode string
 }
 
+// Count groupings.
+const (
+	GroupTier  = "tier"
+	GroupTag   = "tag"
+	GroupVault = "vault"
+)
+
 // CountOptions configures a count query.
 type CountOptions struct {
 	// Pattern is the zoekt query string.
 	Pattern string
 	// Tier restricts to a single vault tier. Empty means all tiers.
 	Tier vault.Tier
-	// GroupBy groups counts by "tier" or "tag". Empty means no grouping.
+	// GroupBy groups counts by GroupTier or GroupTag within one index.
+	// Empty means no grouping. GroupVault is the caller's to apply across
+	// indexes.
 	GroupBy string
 }
 
 // CountResult holds one bucket of a grouped count query.
 type CountResult struct {
-	// Group is the tier name or tag, depending on GroupBy.
-	Group string `json:"group" jsonschema:"the tier name or tag, depending on group_by"`
+	// Group is the tier name, tag or vault, depending on GroupBy.
+	Group string `json:"group" jsonschema:"the tier name, tag or vault, depending on group_by"`
 	// Count is the number of matches in this group.
 	Count int `json:"count"`
 }
