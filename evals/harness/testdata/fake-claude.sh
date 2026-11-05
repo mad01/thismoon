@@ -4,11 +4,13 @@
 # FAKE_CLAUDE_* variables ask:
 #   FAKE_CLAUDE_STREAM       transcript to print (required)
 #   FAKE_CLAUDE_ARGS         file to write the arguments to, one per line
+#   FAKE_CLAUDE_ENV          file to write the environment to
 #   FAKE_CLAUDE_TOUCH        file to append a line to, relative to the cwd
 #   FAKE_CLAUDE_IGNORE_TERM  ignore SIGTERM, here and in children
 #   FAKE_CLAUDE_PIDFILE      start a background sleep and write its pid here
 #   FAKE_CLAUDE_SLEEP        seconds to sleep after printing
 if [ -n "$FAKE_CLAUDE_ARGS" ]; then printf '%s\n' "$@" > "$FAKE_CLAUDE_ARGS"; fi
+if [ -n "$FAKE_CLAUDE_ENV" ]; then env > "$FAKE_CLAUDE_ENV"; fi
 if [ -n "$FAKE_CLAUDE_TOUCH" ]; then echo touched >> "$FAKE_CLAUDE_TOUCH"; fi
 if [ -n "$FAKE_CLAUDE_IGNORE_TERM" ]; then trap '' TERM; fi
 if [ -n "$FAKE_CLAUDE_PIDFILE" ]; then

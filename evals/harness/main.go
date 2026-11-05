@@ -9,6 +9,7 @@
 //	go run ./evals/harness                             # every case
 //	go run ./evals/harness -report <run>               # re-render summary.md
 //	go run ./evals/harness -compare <runA> <runB>      # per-case deltas
+//	go run ./evals/harness -profile brain-cli          # the brain cases
 //
 // Run it from the repo root; <run> is a run directory or its id under
 // evals/harness/runs.
@@ -44,40 +45,63 @@ const defaultMaxBudgetUSD = 5.0
 const defaultMaxTotalUSD = 20.0
 
 type options struct {
-	casesDir     string
-	runsDir      string
-	list         bool
-	caseIDs      string
-	reps         int
-	model        string
-	effort       string
-	profile      profileOptions
-	maxBudgetUSD float64
-	maxTotalUSD  float64
-	roots        workspaceRoots
-	scorecardURL string
-	report       string
-	compare      []string
+	casesDir       string
+	runsDir        string
+	list           bool
+	caseIDs        string
+	includePending bool
+	reps           int
+	model          string
+	effort         string
+	profile        profileOptions
+	maxBudgetUSD   float64
+	maxTotalUSD    float64
+	roots          workspaceRoots
+	scorecardURL   string
+	report         string
+	compare        []string
 }
 
 func main() {
+	o := parseOptions()
+	status := progstatus.New("harness-eval")
+	if err := run(o, status); err != nil {
+		status.Error(err.Error())
+		fmt.Fprintln(os.Stderr, "harness eval:", err)
+		os.Exit(1)
+	}
+}
+
+// parseOptions reads the command line.
+func parseOptions() options {
 	var o options
 	flag.StringVar(&o.casesDir, "cases", "evals/harness/cases", "directory of case files")
 	flag.StringVar(&o.runsDir, "runs", "evals/harness/runs", "directory runs are written to")
 	flag.BoolVar(&o.list, "list", false, "print the cases and exit")
-	flag.StringVar(&o.caseIDs, "case", "", "comma-separated case ids (default: all)")
+	flag.StringVar(
+		&o.caseIDs,
+		"case",
+		"",
+		"comma-separated case ids (default: all the profile runs)",
+	)
+	flag.BoolVar(&o.includePending, "include-pending", false, "also run cases marked pending")
 	flag.IntVar(&o.reps, "reps", 1, "repetitions per case")
 	flag.StringVar(&o.model, "model", "", "model for the runs (default: the user's setting)")
 	flag.StringVar(&o.effort, "effort", "",
 		"effort level for the runs: "+strings.Join(effortLevels, ", ")+" (default: claude's)")
 	flag.StringVar(&o.profile.Name, "profile", profileFull,
 		"what the runs have for code search: "+strings.Join(profileNames, ", "))
-	flag.StringVar(&o.profile.SteerFile, "steer-file", defaultSteerFile,
-		"csl rules file the csl-mcp and csl-cli profiles append to the system prompt")
+	flag.StringVar(&o.profile.SteerFile, "steer-file", "",
+		"file the steered profiles append to the system prompt (default: "+defaultSteerFile+
+			" for csl-mcp and csl-cli, "+defaultBrainSteerFile+" for brain-cli)")
 	denyCLIs := flag.String("deny-clis", strings.Join(defaultDenyCLIs, ","),
 		"comma-separated CLIs every profile but full denies through Bash")
-	flag.BoolVar(&o.profile.NoGrep, "no-grep", false,
-		"also deny Grep and Bash grep, rg, ugrep and find in the csl-mcp and csl-cli profiles")
+	flag.BoolVar(
+		&o.profile.NoGrep,
+		"no-grep",
+		false,
+		"also deny Grep and Bash grep, rg, ugrep and find in the csl-mcp, csl-cli and brain-cli profiles",
+	)
 	flag.Float64Var(&o.maxBudgetUSD, "max-budget-usd", defaultMaxBudgetUSD,
 		"hard cost cap per case run, passed to claude (0 for none)")
 	flag.Float64Var(&o.maxTotalUSD, "max-total-usd", defaultMaxTotalUSD,
@@ -86,6 +110,8 @@ func main() {
 		"directory that bare repo names in workspaces resolve under")
 	flag.StringVar(&o.roots.WorktreeRoot, "worktrees", "~/.cache/harness-eval/worktrees",
 		"directory worktree workspaces are created under")
+	flag.StringVar(&o.roots.FixtureRoot, "fixtures", "evals/harness/fixtures/brain",
+		"directory brain workspaces copy their fixture vault from")
 	flag.StringVar(&o.scorecardURL, "scorecard-url", "http://127.0.0.1:7433",
 		"moondb base URL for session scorecards (empty to skip)")
 	flag.StringVar(&o.report, "report", "", "re-render summary.md for this run and exit")
@@ -95,12 +121,7 @@ func main() {
 	if *compareA != "" {
 		o.compare = append([]string{*compareA}, flag.Args()...)
 	}
-	status := progstatus.New("harness-eval")
-	if err := run(o, status); err != nil {
-		status.Error(err.Error())
-		fmt.Fprintln(os.Stderr, "harness eval:", err)
-		os.Exit(1)
-	}
+	return o
 }
 
 func run(o options, status *progstatus.Reporter) error {
@@ -114,11 +135,17 @@ func run(o options, status *progstatus.Reporter) error {
 	if err != nil {
 		return err
 	}
+	if err := checkFixtures(cases, o.roots.FixtureRoot); err != nil {
+		return err
+	}
 	if o.list {
 		writeList(os.Stdout, cases)
 		return nil
 	}
-	if cases, err = selectCases(cases, o.caseIDs); err != nil {
+	cases, err = selectCases(cases, selection{
+		IDs: o.caseIDs, Profile: o.profile.Name, IncludePending: o.includePending,
+	})
+	if err != nil {
 		return err
 	}
 	if o.reps < 1 {
@@ -135,36 +162,33 @@ func run(o options, status *progstatus.Reporter) error {
 }
 
 // runEval runs the cases and writes runs/<id>/: run.json, results.jsonl,
-// summary.md, and the raw transcripts under streams/. SIGINT, SIGTERM, and
-// SIGHUP all stop the current case the same way, so its workspace is torn
-// down and the rows so far are written.
+// summary.md, the raw transcripts under streams/ and the brain workspaces'
+// vault diffs under diffs/. SIGINT, SIGTERM, and SIGHUP all stop the
+// current case the same way, so its workspace is torn down and the rows so
+// far are written.
 func runEval(o options, p profile, cases []Case, status *progstatus.Reporter) error {
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 	sweepWorktreeRepos(ctx, cases, o.roots, os.Stderr)
-	bin := claudeBin()
-	meta := runMeta{
-		RunID:         time.Now().Format("20060102-150405"),
-		StartedAt:     time.Now(),
-		ClaudeVersion: claudeVersion(ctx, bin),
-		Model:         o.model,
-		Effort:        o.effort,
-		Profile:       p.Name,
-		SteerFile:     steerFileOf(p, o.profile.SteerFile),
-		NoGrep:        o.profile.NoGrep,
-		Flags:         flagTemplate(o.model, o.effort, o.maxBudgetUSD, p),
-		Reps:          o.reps,
-		MaxBudgetUSD:  o.maxBudgetUSD,
-		MaxTotalUSD:   o.maxTotalUSD,
-	}
-	for _, c := range cases {
-		meta.Cases = append(meta.Cases, c.ID)
-	}
-	dir := filepath.Join(o.runsDir, meta.RunID)
-	streamDir := filepath.Join(dir, "streams")
-	if err := os.MkdirAll(streamDir, 0o755); err != nil {
+	binDir, cleanupBin, err := brainBinary(ctx, cases)
+	if err != nil {
 		return err
+	}
+	defer cleanupBin()
+	o.roots.BrainBinDir = binDir
+	bin := claudeBin()
+	meta := newRunMeta(o, p, cases, claudeVersion(ctx, bin))
+	dir := filepath.Join(o.runsDir, meta.RunID)
+	streamDir, diffDir := filepath.Join(dir, "streams"), filepath.Join(dir, "diffs")
+	dirs := []string{streamDir}
+	if binDir != "" {
+		dirs = append(dirs, diffDir)
+	}
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return err
+		}
 	}
 	if err := writeJSON(filepath.Join(dir, "run.json"), meta); err != nil {
 		return err
@@ -172,8 +196,8 @@ func runEval(o options, p profile, cases []Case, status *progstatus.Reporter) er
 	r := &runner{
 		claude: claudeCmd{bin: bin, grace: killGrace}, profile: p, model: o.model, effort: o.effort,
 		maxBudgetUSD: o.maxBudgetUSD, maxTotalUSD: o.maxTotalUSD, roots: o.roots,
-		scorecardURL: o.scorecardURL, client: http.DefaultClient,
-		judge: claudeJudge{bin: bin}, streamDir: streamDir, now: time.Now, log: os.Stderr,
+		scorecardURL: o.scorecardURL, client: http.DefaultClient, judge: claudeJudge{bin: bin},
+		streamDir: streamDir, diffDir: diffDir, now: time.Now, log: os.Stderr,
 	}
 	status.Working(fmt.Sprintf("running %d cases, %d reps", len(cases), o.reps))
 	rows, stopped := r.runAll(ctx, cases, o.reps)
@@ -192,13 +216,49 @@ func runEval(o options, p profile, cases []Case, status *progstatus.Reporter) er
 	return nil
 }
 
-// steerFileOf names the steer file a run used, "" when the profile reads
-// none.
-func steerFileOf(p profile, file string) string {
-	if p.Name == profileCSLMCP || p.Name == profileCSLCLI {
-		return file
+// newRunMeta is run.json as a run starts.
+func newRunMeta(o options, p profile, cases []Case, claudeVersion string) runMeta {
+	meta := runMeta{
+		RunID:         time.Now().Format("20060102-150405"),
+		StartedAt:     time.Now(),
+		ClaudeVersion: claudeVersion,
+		Model:         o.model,
+		Effort:        o.effort,
+		Profile:       p.Name,
+		SteerFile:     p.SteerFile,
+		NoGrep:        o.profile.NoGrep,
+		Flags:         flagTemplate(o.model, o.effort, o.maxBudgetUSD, p),
+		Reps:          o.reps,
+		MaxBudgetUSD:  o.maxBudgetUSD,
+		MaxTotalUSD:   o.maxTotalUSD,
 	}
-	return ""
+	for _, c := range cases {
+		meta.Cases = append(meta.Cases, c.ID)
+	}
+	return meta
+}
+
+// brainBinary builds brain from the working tree into a temp directory
+// when a case runs in a brain workspace, and returns the directory and its
+// cleanup. With no brain case it builds nothing and returns "".
+func brainBinary(ctx context.Context, cases []Case) (string, func(), error) {
+	noop := func() {}
+	if !slices.ContainsFunc(
+		cases,
+		func(c Case) bool { return c.Workspace.Kind == workspaceBrain },
+	) {
+		return "", noop, nil
+	}
+	dir, err := os.MkdirTemp("", "harness-eval-bin-")
+	if err != nil {
+		return "", noop, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	if err := buildBrain(ctx, dir); err != nil {
+		cleanup()
+		return "", noop, err
+	}
+	return dir, cleanup, nil
 }
 
 // writeRun writes run.json, results.jsonl, and summary.md, and prints the

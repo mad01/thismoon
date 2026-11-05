@@ -21,6 +21,36 @@ func TestSeedCasesLoad(t *testing.T) {
 			t.Errorf("%s: file name does not match id %q", c.Path, c.ID)
 		}
 	}
+	if err := checkFixtures(cases, "fixtures/brain"); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestBrainCasesLoad keeps the brain cases in step with the brain-cli
+// profile: every one is named brain-<id>, runs in a brain workspace, and
+// the parked multi-vault ones stay pending.
+func TestBrainCasesLoad(t *testing.T) {
+	cases, err := loadCases("cases")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var active, pending int
+	for _, c := range cases {
+		isBrain := c.Workspace.Kind == workspaceBrain
+		if isBrain != strings.HasPrefix(c.ID, "brain-") {
+			t.Errorf("%s: a brain case is named brain-<id> and runs in a brain workspace", c.ID)
+		}
+		switch {
+		case !isBrain:
+		case c.Pending != "":
+			pending++
+		default:
+			active++
+		}
+	}
+	if active != 12 || pending != 3 {
+		t.Errorf("brain cases: %d active, %d pending; want 12 and 3", active, pending)
+	}
 }
 
 // TestLargeFileGraders pins the ranged-read case to the exact file: a ranged
@@ -31,7 +61,7 @@ func TestLargeFileGraders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := selectCases(cases, "large-file-ranged-read")
+	c, err := selectCases(cases, selection{IDs: "large-file-ranged-read", Profile: profileFull})
 	if err != nil {
 		t.Fatal(err)
 	}

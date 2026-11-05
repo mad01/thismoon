@@ -42,7 +42,8 @@ func TestLoadProfileCSLCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(p.Steer, "# csl rules\n") || !strings.Contains(p.Steer, "csl CLI is on PATH") {
+	if !strings.HasPrefix(p.Steer, "# csl rules\n") ||
+		!strings.Contains(p.Steer, "csl CLI is on PATH") {
 		t.Errorf("steer = %q", p.Steer)
 	}
 	if p.MCPConfig != emptyMCPConfig || p.DisableHooks {
@@ -64,11 +65,14 @@ func TestLoadProfileCSLMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", filepath.Dir(bin))
-	p, err := loadProfile(profileOptions{Name: profileCSLMCP, SteerFile: writeSteer(t), NoGrep: true})
+	p, err := loadProfile(
+		profileOptions{Name: profileCSLMCP, SteerFile: writeSteer(t), NoGrep: true},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(p.MCPConfig, `"command":"`+bin+`"`) || !strings.Contains(p.MCPConfig, `"args":["mcp"]`) {
+	if !strings.Contains(p.MCPConfig, `"command":"`+bin+`"`) ||
+		!strings.Contains(p.MCPConfig, `"args":["mcp"]`) {
 		t.Errorf("mcp config = %s", p.MCPConfig)
 	}
 	if !strings.Contains(p.Steer, "mcp__csl__") {
@@ -105,7 +109,11 @@ func TestLoadProfileNone(t *testing.T) {
 func TestInvocationProfileArgs(t *testing.T) {
 	inv := invocation{
 		SessionID: "sid", MaxTurns: 3, Prompt: "hi",
-		Profile:      profile{Steer: "rules\nmore", MCPConfig: `{"mcpServers":{}}`, DisableHooks: true},
+		Profile: profile{
+			Steer:        "rules\nmore",
+			MCPConfig:    `{"mcpServers":{}}`,
+			DisableHooks: true,
+		},
 		AllowedTools: []string{"Bash(csl:*)"}, DisallowedTools: []string{"Grep"},
 	}
 	got := strings.Join(inv.args(), " ")
@@ -116,7 +124,8 @@ func TestInvocationProfileArgs(t *testing.T) {
 		t.Errorf("args =\n%s\nwant\n%s", got, want)
 	}
 	tmpl := strings.Join(flagTemplate("", "", 0, inv.Profile), " ")
-	if !strings.Contains(tmpl, "--append-system-prompt <steer>") || strings.Contains(tmpl, "rules") {
+	if !strings.Contains(tmpl, "--append-system-prompt <steer>") ||
+		strings.Contains(tmpl, "rules") {
 		t.Errorf("template keeps the steer text: %s", tmpl)
 	}
 }
@@ -125,10 +134,22 @@ func TestCSLCalls(t *testing.T) {
 	tr := Transcript{ToolCalls: []ToolCall{
 		{Name: "mcp__csl__csl_search", Input: `{"query":"x"}`, Origin: originMain},
 		{Name: "mcp__csl__csl_count", Input: `{"query":"x"}`, Origin: originAgent},
-		{Name: "Bash", Input: `{"command":"csl search foo --repo bar","description":"d"}`, Origin: originMain},
-		{Name: "Bash", Input: `{"command":"cd /x && csl count foo | head","description":"d"}`, Origin: originMain},
+		{
+			Name:   "Bash",
+			Input:  `{"command":"csl search foo --repo bar","description":"d"}`,
+			Origin: originMain,
+		},
+		{
+			Name:   "Bash",
+			Input:  `{"command":"cd /x && csl count foo | head","description":"d"}`,
+			Origin: originMain,
+		},
 		{Name: "Bash", Input: `{"command":"grep -r csl .","description":"d"}`, Origin: originMain},
-		{Name: "Bash", Input: `{"command":"go test ./services/csl/...","description":"d"}`, Origin: originMain},
+		{
+			Name:   "Bash",
+			Input:  `{"command":"go test ./services/csl/...","description":"d"}`,
+			Origin: originMain,
+		},
 		{Name: "Grep", Input: `{"pattern":"csl search"}`, Origin: originMain},
 	}}
 	if got := cslCalls(tr); got != 4 {
@@ -144,4 +165,97 @@ func TestSplitList(t *testing.T) {
 	if got := splitList(""); got != nil {
 		t.Errorf("splitList(\"\") = %v", got)
 	}
+}
+
+// TestLoadProfileBrainCLI: brain-cli shuts the user's setup out, allows
+// brain and the read tools, and denies the other thismoon CLIs, csl
+// included, but not brain.
+func TestLoadProfileBrainCLI(t *testing.T) {
+	p, err := loadProfile(profileOptions{
+		Name: profileBrainCLI, SteerFile: writeSteer(t), DenyCLIs: defaultDenyCLIs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Isolated || !p.DisableHooks || p.MCPConfig != emptyMCPConfig ||
+		p.PermissionMode != permissionDontAsk {
+		t.Errorf("brain-cli is not isolated: %+v", p)
+	}
+	if p.Steer != "# csl rules\n" {
+		t.Errorf("steer = %q, want the file as it is", p.Steer)
+	}
+	if !slices.Equal(p.Allow, brainAllow) {
+		t.Errorf("allow = %v", p.Allow)
+	}
+	if slices.Contains(p.Deny, "Bash(brain:*)") || !slices.Contains(p.Deny, cslCLIDeny) ||
+		!slices.Contains(p.Deny, "Bash(worklog:*)") {
+		t.Errorf("deny = %v", p.Deny)
+	}
+	def, err := loadProfile(profileOptions{Name: profileBrainCLI})
+	if err == nil || !strings.Contains(err.Error(), defaultBrainSteerFile) {
+		t.Errorf(
+			"default steer file: %+v %v, want it read from %s",
+			def,
+			err,
+			defaultBrainSteerFile,
+		)
+	}
+}
+
+// TestBrainCaseArgv builds the command line of a committed brain case
+// without running claude, and logs it (go test -v -run TestBrainCaseArgv).
+func TestBrainCaseArgv(t *testing.T) {
+	cases, err := loadCases("cases")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := selectCases(cases, selection{IDs: "brain-find-fact", Profile: profileBrainCLI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := loadProfile(profileOptions{
+		Name: profileBrainCLI, SteerFile: "steer/brain.md", DenyCLIs: defaultDenyCLIs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &runner{profile: p, maxBudgetUSD: defaultMaxBudgetUSD}
+	args := r.invocation(c[0], "00000000-0000-0000-0000-000000000000").args()
+	joined := strings.Join(args, " ")
+	for _, want := range []string{
+		"--permission-mode dontAsk",
+		"--strict-mcp-config --mcp-config {\"mcpServers\":{}}",
+		`--settings {"autoMemoryEnabled":false,"disableAllHooks":true}`,
+		"--no-session-persistence",
+		"--tools Bash,Read,Glob,Grep",
+		"--allowedTools Bash(brain:*) Read Glob Grep --disallowedTools",
+		"Bash(csl:*)",
+		"-- What port does ledger-svc",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("argv misses %q", want)
+		}
+	}
+	if i := slices.Index(args, "--setting-sources"); i < 0 || args[i+1] != "" {
+		t.Error(`argv misses --setting-sources ""`)
+	}
+	if deny := args[slices.Index(args, "--disallowedTools"):]; slices.Contains(
+		deny,
+		"Bash(brain:*)",
+	) {
+		t.Error("brain is denied")
+	}
+	quoted := make([]string, len(args))
+	for i, a := range args {
+		quoted[i] = shellQuote(a)
+	}
+	t.Log("claude " + strings.Join(quoted, " "))
+}
+
+// shellQuote quotes a for a readable shell command line.
+func shellQuote(a string) string {
+	if a != "" && !strings.ContainsAny(a, " \t\n'\"{}()*|&;$`\\") {
+		return a
+	}
+	return "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
 }
