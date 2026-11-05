@@ -38,7 +38,8 @@ func (rec *recorder) openTurn() error {
 // closeTurn records the end of a turn: the last assistant message, the
 // transcript lines written since the turn opened when the open was seen,
 // a head-moved report for every touched worktree whose HEAD changed, and
-// the turn's post snapshots.
+// the turn's post snapshots. The lines are read once the transcript holds
+// the final message, or once the flush wait runs out (awaitFinal).
 func (rec *recorder) closeTurn() error {
 	env := rec.envelope(spool.KindTurnClose, rec.p.promptID+":close")
 	chunks := chunkSet{}
@@ -48,6 +49,7 @@ func (rec *recorder) closeTurn() error {
 	}
 	if offset, ok := rec.state.turnOffset(rec.p.promptID); ok {
 		env.Turn.TranscriptOffset = offset
+		rec.awaitFinal(offset)
 		var tail []byte
 		tail, tc.TranscriptEnd = readTail(rec.p.transcriptPath, offset, moondb.MaxTranscriptBytes)
 		if len(tail) > 0 {

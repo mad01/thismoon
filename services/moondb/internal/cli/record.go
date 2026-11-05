@@ -15,7 +15,9 @@ import (
 // recordCeiling bounds the whole record run, budget overruns included. It
 // sits under the 3 s timeout the Edit/Write hook is registered with, so the
 // hook never reports moondb as hung, and it holds the turn-edge snapshot
-// budget, the Bash budget and the agent budget with room to spare.
+// budget, the Bash budget, the agent budget and the Stop's flush wait with
+// room to spare. A Stop whose wait runs out leaves its post snapshots
+// what is left under the ceiling.
 const recordCeiling = 2500 * time.Millisecond
 
 var recordCmd = &cobra.Command{
@@ -75,6 +77,7 @@ func runRecord(cmd *cobra.Command, _ []string) error {
 		BashBudget:     moondb.BashBudget,
 		SnapshotBudget: moondb.SnapshotBudget,
 		AgentBudget:    moondb.AgentBudget,
+		FlushWait:      moondb.FlushWait,
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(os.Stderr, "moondb record: "+format+"\n", args...)
 		},

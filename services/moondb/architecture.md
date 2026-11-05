@@ -82,9 +82,10 @@ patch and no tool input, and one per other changed path without hunks. One
 reports clean gets no envelope: a pull or checkout put it back to its
 committed state. A skipped envelope counts those, the files the 2 s Bash
 budget did not reach, and the ones whose status git could not give, for
-the turn. On
-Stop it spools a turn-close envelope with the
-final message and the transcript tail. For each touched worktree whose HEAD
+the turn. On Stop it spools a turn-close envelope with the final message
+and the transcript tail. Claude Code writes the transcript asynchronously,
+so the hook first waits up to 1 s for the tail to hold the final message.
+For each touched worktree whose HEAD
 moved since the hook last looked, it adds a head-moved envelope listing the
 new commits' (path, blob id) pairs. On SubagentStop it reads the agent's
 own transcript file and spools an agent-close envelope: the agent's type,
@@ -162,7 +163,7 @@ harness. A model, tool or harness stretch longer than 30 minutes
 (`IdleGapAfter`) keeps its first 30 minutes, and the rest is idle time. The
 transcript gets no line while a laptop sleeps or a request hangs. The gaps
 add up to the wall time, and so do the totals by kind, to the millisecond.
-A turn longer than the 4 MiB transcript tail keeps only its tail; when the
+A turn longer than the 15 MiB transcript tail keeps only its tail; when the
 first kept line is an assistant line or a tool result, the stretch before
 it counts as harness time.
 

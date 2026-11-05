@@ -19,7 +19,7 @@ moondb/
   embed.go             - embeds operating.md for `moondb docs`
   internal/
     cli/               - cobra: root, serve, record, import, mcp, why, history, inflight, sessions, trace, scorecard, doctor, docs, version
-    record/            - the capture hook: payload decode, envelopes, observed read, HEAD blob, transcript tail, Bash diffs, turn-edge snapshots, subagent stops, per-session state
+    record/            - the capture hook: payload decode, envelopes, observed read, HEAD blob, transcript tail and the Stop's flush wait, Bash diffs, turn-edge snapshots, subagent stops, per-session state
     agentfile/         - one subagent's transcript file read and cut to its agent transcript, its spawn brief and later messages, its meta file, the type and name rule
     importer/          - the transcript import: transcript parse, turns, edits and agents as envelopes, file-history originals
     spool/             - envelope format, atomic writer, drain reader
@@ -52,7 +52,7 @@ one pipes its JSON payload on stdin:
 | UserPromptSubmit | async | turn-open: `prompt_id`, the prompt text as a chunk, `session_id`, cwd and its location, the transcript byte offset. Then a `pre` snapshot of each worktree in play. |
 | PostToolUse on `Edit\|Write\|MultiEdit\|NotebookEdit` | sync, 3 s timeout | one edit envelope per file. It holds `tool_use_id`, the tool input and patch, the location (repo, worktree, branch, HEAD), the observed bytes with their blob id, and the path's HEAD blob id and content. |
 | PostToolUse on `Bash` | async | one edit envelope per file in the payload's `bashEditDiff.files`: its hunks as the patch, the observed bytes and blob id, and the HEAD blob id and content, with no tool input. One more per other `changedFiles` path, with no hunks. A file `git status` reports clean after the command gets none, and neither does one whose status git cannot give or one the budget does not reach; a `skipped` envelope counts them. Nothing when the payload has no `bashEditDiff`. |
-| Stop | async | turn-close: the final assistant message, the transcript tail from the turn's offset, and a head-moved report for each touched worktree whose HEAD changed. Then a `post` snapshot of each worktree in play. |
+| Stop | async | turn-close: the final assistant message, the transcript tail from the turn's offset once it holds that message (or after `FlushWait`), and a head-moved report for each touched worktree whose HEAD changed. Then a `post` snapshot of each worktree in play. |
 | SubagentStop | async | agent-close: the agent's type, name, description and model, the turns it ran under, its start and stop, its cwd and location, its agent transcript as a chunk, its spawn brief as a chunk, and the messages that reached it after the brief, each with its time, its sender and its text as a chunk. |
 
 The Edit hook is synchronous on purpose. Edits in one assistant message land
@@ -130,6 +130,24 @@ exit 0 always, panics recovered. It works within `RecordBudget` (200 ms, in
 `facts.go`) and spools whatever it has gathered when the budget runs out.
 The async Bash hook, which nobody waits on, gets `BashBudget` (2 s) instead:
 one command can change hundreds of files.
+
+The Stop hook waits for the transcript first. Claude Code writes the
+transcript asynchronously: the hooks docs say it may lag the conversation,
+and at Stop it usually lacks the turn's last response. A 2026-11 survey of
+the store found 721 of 748 live Stops read a transcript without the final
+message. The main transcript got the turn's last lines about 140 ms after
+the final text's timestamp.
+
+So before it reads the turn's lines, `record` polls the transcript every
+20 ms until the lines from the turn's offset hold the payload's
+`last_assistant_message`, for at most `FlushWait` (1 s). The check is a
+byte search for the text as a content block's value, encoded as
+`JSON.stringify` writes it (`record.textValue`): no HTML escapes, U+2028
+and U+2029 raw. A Stop with no final message does not wait. When the wait
+runs out, `record` records the lines there are, as it did before the wait.
+The Stop's budget is `RecordBudget` plus `FlushWait`, so the head-moved
+reports after the wait keep their 200 ms. The post snapshots take what is
+left under the CLI's 2.5 s ceiling.
 Files matching a `capture.exclude` glob are recorded by path only. Files over
 `MaxChunkBytes` (1 MiB) are recorded by path and patch. HEAD content is read
 on every edit of a tracked file, and the spool writer leaves it out while the
@@ -148,7 +166,7 @@ cuts each text, thinking
 block, tool input and tool result to `AgentHeadBytes` (240). The usage, ids
 and times survive, so the cut transcript prices the same as the file: an
 11 MB transcript keeps about 0.5 MB. Past `MaxAgentTranscriptBytes`
-(8 MiB) whole lines go from the head and are counted on the record. Their
+(15 MiB) whole lines go from the head and are counted on the record. Their
 calls add no tokens or cost. The work fits in `AgentBudget` (2 s); a file
 the budget does not reach the end of, or whose read fails partway, is
 recorded up to there and marked partial.
@@ -338,7 +356,8 @@ only fills: a stored edit stays, and a session or turn keeps its values and
 gets its empty fields filled, an open turn closed. A turn's transcript
 chunk is the exception: the import's replaces it when the two hold other
 model calls (`ingest.importedTranscript`). The Stop hook reads the
-transcript as it stands, which can miss the turn's head or hold a call of
+transcript as it stands once the final message is in it or `FlushWait` has
+run out, which can miss the turn's head or last lines, or hold a call of
 the turn before. The import reads each turn's lines from its prompt to the
 next. An earlier imported
 prompt still moves a start time back. A subagent's edits come from
@@ -710,10 +729,10 @@ so a replayed close makes up a lost fill. The totals backfill offers the
 title of older turns, and an import offers the transcript's own pick by the
 same rule.
 
-A turn's transcript chunk keeps the last `MaxTranscriptBytes` of its lines,
-cut at a line boundary, so a longer turn loses its head. A turn opens on its
-prompt, so a timeline whose first line is an assistant line or a tool result
-lost its head, and the trace's lines say `cut_head`. The stretch from the
+A turn's transcript chunk keeps the last `MaxTranscriptBytes` (15 MiB) of
+its lines, cut at a line boundary, so a longer turn loses its head. A turn
+opens on its prompt, so a timeline whose first line is an assistant line or
+a tool result lost its head, and the trace's lines say `cut_head`. The stretch from the
 turn's start to the first kept line is then harness time, a model span never
 starts before its first kept line, and the calls in the cut head add no
 tokens or cost.
