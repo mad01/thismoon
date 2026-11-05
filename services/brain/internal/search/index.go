@@ -31,28 +31,17 @@ type FileState struct {
 	ModTime time.Time `json:"mtime"`
 }
 
-// IndexState holds the indexed state of the vault.
-//
-// Two fingerprints are tracked so the literal (zoekt) and semantic
-// (chromem-go) indexes can be re-checked independently against the same
-// vault walk: editing one note may need a zoekt rebuild and a re-embed of
-// just that note, but zoekt's coarse-grained shard rebuild and chromem's
-// per-chunk upsert run on different schedules.
+// IndexState holds the state of a vault's literal (zoekt) index. The
+// semantic index keeps its own state in a manifest beside its store (see
+// semantic.Manifest); state files from before that split may still carry
+// semantic fields, which are ignored.
 type IndexState struct {
 	mu sync.RWMutex
 	// Fingerprint is the literal-index fingerprint. Mismatch → zoekt rebuild.
 	Fingerprint string `json:"fingerprint"`
-	// SemanticFingerprint is the semantic-index fingerprint. Mismatch → re-embed.
-	// Empty (default) means the semantic index has never been built; the next
-	// `brain index` run with semantic enabled will populate it.
-	SemanticFingerprint string `json:"semantic_fingerprint,omitempty"`
 	// IndexedAt is the wall-clock time of the most recent literal-index build.
 	IndexedAt time.Time `json:"indexed_at"`
-	// SemanticIndexedAt is the wall-clock time of the most recent semantic
-	// build. Zero when the semantic layer has never run.
-	SemanticIndexedAt time.Time `json:"semantic_indexed_at,omitempty"`
-	// Files is the per-file state map captured during the most recent walk;
-	// shared by both indexers.
+	// Files is the per-file state map captured during the most recent walk.
 	Files map[string]FileState `json:"files"` // key: vault-relative path
 }
 
@@ -113,28 +102,6 @@ func (s *IndexState) SetFingerprint(
 	s.Fingerprint = fingerprint
 	s.Files = files
 	s.IndexedAt = indexedAt
-}
-
-// SetSemanticFingerprint updates the semantic-index fingerprint and timestamp
-// (thread-safe). The file map is intentionally not touched here — callers
-// invariably update both fingerprints in lockstep against the same walk.
-func (s *IndexState) SetSemanticFingerprint(fingerprint string, indexedAt time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.SemanticFingerprint = fingerprint
-	s.SemanticIndexedAt = indexedAt
-}
-
-// IsSemanticStale reports whether the stored semantic fingerprint differs
-// from the current vault fingerprint. An empty stored semantic fingerprint
-// is always stale.
-func (s *IndexState) IsSemanticStale(fingerprint string) bool {
-	if s == nil {
-		return true
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.SemanticFingerprint == "" || s.SemanticFingerprint != fingerprint
 }
 
 // ComputeFingerprint walks the vault and returns a sha256 hex fingerprint plus

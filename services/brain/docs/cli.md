@@ -60,7 +60,7 @@ prints `vault:path`.
 | `write` | create a note | `--title` (required), `--tier --body --tag --alias --type --status --source --evidence --filename --set --unset`; no `--body` reads stdin |
 | `edit <note>` | change body or frontmatter | `--body` or `--append` (`-` reads stdin), `--title --status --type --source --tag --alias --evidence --set --unset` |
 | `promote <note>` | move an inbox note to notes/ | `--title` (rename) `--tier` `--moc <MOC path>` |
-| `index` | rebuild indexes (search does this when stale) | `--force --literal-only` |
+| `index` | refresh indexes; semantic re-embeds changed notes only (queries refresh too) | `--force --literal-only` |
 | `migrate --ids` | give every note without an id one; skips shared vaults unless named | `--dry-run` |
 | `doctor` | check config, vaults, index, duplicate ids, Ollama; prints the paths in effect | |
 | `docs` | print this guide | |
@@ -68,6 +68,11 @@ prints `vault:path`.
 Search output is one note path per line; `-m content` prints
 `path:line:col: text`. `--tag` and `--alias` on write and edit are repeatable
 and replace the whole list on edit.
+
+semantic-search and hybrid-search sync a stale semantic index first. When
+Ollama does not answer, the index stays as it was and a `warning:` line on
+stderr (and `warnings[]` in JSON) says so; hybrid-search then fuses the
+literal hits alone.
 
 A wikilink resolves by stem or path, then by title or alias, ignoring case
 and never by prefix. A private vault's links look in that vault first, then in

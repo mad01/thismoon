@@ -37,13 +37,19 @@ an absolute path, otherwise `~/.local/state/brain`. Each vault has its own
 indexes there, named after the vault:
 
 - `index/<vault>/`: the literal (zoekt) index shards and `state.json`, the
-  fingerprints of the vault's indexes.
+  fingerprint the literal index was built against.
 - `semantic/<vault>/`: the chromem-go vector store, unless
-  `semantic.index_dir` moves the parent.
-- `locks/`: lock files. A build of one vault's index holds
-  `<vault>.index.lock`, so two brain processes (the CLI, the MCP server)
-  never build the same index at once; the one that waited finds the index
-  fresh and skips the build.
+  `semantic.index_dir` moves the parent, and `manifest.json`: the embed
+  model and chunk sizes the store was made with, the fingerprint it was
+  synced against, and a content hash per note. A sync re-embeds only the
+  notes whose hash changed and drops the chunks of deleted notes. A store
+  made with another model or chunk size, or one without a manifest, is
+  rebuilt.
+- `locks/`: lock files. A build of one vault's literal index holds
+  `<vault>.literal.lock` and a semantic sync holds `<vault>.semantic.lock`,
+  so two brain processes (the CLI, the MCP server) never build the same
+  index at once; the one that waited finds the index fresh and skips the
+  build.
 
 Because every vault keeps its own fingerprint, a pull in one vault
 re-indexes only that vault. Every file there is rebuilt from the vaults, so
@@ -61,7 +67,8 @@ machine's real indexes. `brain doctor` names the index directory in effect.
 Indexes from before per-vault state sit at the root of `index/` and
 `semantic/`; brain no longer reads them and builds `index/default/` and
 `semantic/default/` afresh, which costs one re-embed. The old
-`index/state.json` stays, because it is the legacy probe.
+`index/state.json` stays, because it is the legacy probe. A semantic store
+from before manifests is rebuilt once, on its first sync.
 
 ## Vaults
 

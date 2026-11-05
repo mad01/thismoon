@@ -216,3 +216,32 @@ func TestIndex_QueryOnEmptyIndex(t *testing.T) {
 		t.Errorf("hits = %d, want 0", len(hits))
 	}
 }
+
+func TestIndex_ResetEmptiesThePersistedIndex(t *testing.T) {
+	dir := t.TempDir()
+	idx, err := Open(dir, hashEmbed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	chunks := []chunk.Chunk{{ID: "a-0000", Path: "notes/a.md", Body: "alpha"}}
+	if err := idx.Upsert(ctx, chunks, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.Reset(ctx); err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	if n := idx.Count(); n != 0 {
+		t.Errorf("Count after Reset = %d, want 0", n)
+	}
+	if err := idx.Upsert(ctx, chunks, 1); err != nil {
+		t.Fatalf("Upsert after Reset: %v", err)
+	}
+	reopened, err := Open(dir, hashEmbed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := reopened.Count(); n != 1 {
+		t.Errorf("reopened Count = %d, want the one chunk added after Reset", n)
+	}
+}

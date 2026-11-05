@@ -27,11 +27,13 @@ type Refresh struct {
 	Notes int
 	// Chunks counts the chunks embedded by a semantic refresh.
 	Chunks int
+	// Removed counts the vanished notes a semantic refresh purged.
+	Removed int
 }
 
 // RefreshLiteral rebuilds the vault's literal index when the vault changed
 // since it was built, or always when force is set. The build holds the
-// vault's index lock, so two brain processes never build one index at once;
+// vault's literal lock, so two brain processes never build one index at once;
 // a process that waited re-checks and skips a build the other just did.
 // progress, when set, sees each indexed note's path.
 func (l *Library) RefreshLiteral(
@@ -47,7 +49,7 @@ func (l *Library) RefreshLiteral(
 	if fresh, err := literalFresh(v, dir); err != nil || (fresh && !force) {
 		return res, err
 	}
-	release, err := l.lock(v)
+	release, err := l.lock(v, lockLiteral)
 	if err != nil {
 		return res, err
 	}
@@ -105,9 +107,9 @@ func (l *Library) literalDir(v *vault.Vault) (string, error) {
 }
 
 // SemanticStale reports whether the vault changed since its semantic index
-// was built.
+// was synced, or the index was made with other settings.
 func (l *Library) SemanticStale(v *vault.Vault) (bool, error) {
-	dir, err := brain.IndexDir(v.Name)
+	dir, err := l.cfg.Semantic.ResolvedIndexDir(v.Name)
 	if err != nil {
 		return false, err
 	}
@@ -115,16 +117,19 @@ func (l *Library) SemanticStale(v *vault.Vault) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("fingerprint %s: %w", v.Name, err)
 	}
-	state, err := search.LoadState(dir)
+	m, _, err := semantic.LoadManifest(dir)
 	if err != nil {
 		return false, err
 	}
-	return state.IsSemanticStale(fingerprint), nil
+	return !m.Fresh(fingerprint, l.semanticSettings()), nil
 }
 
-// RefreshSemantic re-embeds the vault into its semantic index when the
-// vault changed since the last build, or always when force is set, under the
-// vault's index lock. progress, when set, sees each note and its chunk count.
+// RefreshSemantic syncs the vault's semantic index when the vault changed
+// since the last sync, or rebuilds it when force is set, under the vault's
+// semantic lock. A sync re-embeds only new and changed notes and purges the
+// chunks of vanished ones. An index made with other settings, or one with
+// chunks and no manifest (built before manifests existed), is rebuilt.
+// progress, when set, sees each re-embedded note and its chunk count.
 func (l *Library) RefreshSemantic(
 	ctx context.Context,
 	v *vault.Vault,
@@ -136,13 +141,13 @@ func (l *Library) RefreshSemantic(
 	if err != nil || (!stale && !force) {
 		return res, err
 	}
-	release, err := l.lock(v)
+	release, err := l.lock(v, lockSemantic)
 	if err != nil {
 		return res, err
 	}
 	defer func() { err = errors.Join(err, release()) }()
 
-	dir, err := brain.IndexDir(v.Name)
+	dir, err := l.cfg.Semantic.ResolvedIndexDir(v.Name)
 	if err != nil {
 		return res, err
 	}
@@ -150,39 +155,53 @@ func (l *Library) RefreshSemantic(
 	if err != nil {
 		return res, fmt.Errorf("fingerprint %s: %w", v.Name, err)
 	}
-	state, err := search.LoadState(dir)
+	m, found, err := semantic.LoadManifest(dir)
 	if err != nil {
 		return res, err
 	}
-	if !force && !state.IsSemanticStale(fingerprint) {
+	settings := l.semanticSettings()
+	if !force && m.Fresh(fingerprint, settings) {
 		return res, nil
 	}
 	idx, err := l.openSemantic(v)
 	if err != nil {
 		return res, fmt.Errorf("open semantic index of %s: %w", v.Name, err)
 	}
-	if force {
+	held := m.Notes
+	if force || (found && !m.Compatible(settings)) || (!found && idx.Count() > 0) {
 		if err := idx.Reset(ctx); err != nil {
 			return res, err
 		}
+		held = nil
 	}
-	opts := chunk.FromTokens(l.cfg.Semantic.ChunkSize, l.cfg.Semantic.ChunkOverlap)
-	err = semantic.IndexVault(ctx, idx, v.Root, opts, func(path string, n int) {
-		res.Notes++
-		res.Chunks += n
-		if progress != nil {
-			progress(path, n)
-		}
+	report, err := semantic.Sync(ctx, idx, v.Root, semantic.SyncOptions{
+		Chunk:    l.chunkOptions(),
+		Held:     held,
+		Progress: progress,
 	})
 	if err != nil {
 		return res, fmt.Errorf("semantic index of %s: %w", v.Name, err)
 	}
-	state.SetSemanticFingerprint(fingerprint, time.Now().UTC())
-	if err := state.Save(dir); err != nil {
+	m = semantic.Manifest{
+		Version:     semantic.ManifestVersion,
+		Settings:    settings,
+		Fingerprint: fingerprint,
+		IndexedAt:   time.Now().UTC(),
+		Notes:       report.Notes,
+	}
+	if err := m.Save(dir); err != nil {
 		return res, err
 	}
-	res.Built = true
+	res.Built, res.Notes, res.Chunks, res.Removed = true, report.Embedded, report.Chunks, report.Removed
 	return res, nil
+}
+
+func (l *Library) chunkOptions() chunk.Options {
+	return chunk.FromTokens(l.cfg.Semantic.ChunkSize, l.cfg.Semantic.ChunkOverlap)
+}
+
+func (l *Library) semanticSettings() semantic.Settings {
+	return semantic.SettingsFor(l.cfg.Semantic.EmbedModel, l.chunkOptions())
 }
 
 // Health probes the embedder the semantic layer uses. A library opened with
@@ -229,9 +248,16 @@ func (l *Library) refreshSemantic(ctx context.Context, vaults *vault.Set) ([]str
 	return warnings, nil
 }
 
-// lock takes the vault's index lock.
-func (l *Library) lock(v *vault.Vault) (func() error, error) {
-	path, err := lockPath(v, "index")
+// Lock kinds. The literal and semantic indexes of a vault build under
+// separate locks, so a long embedding run never holds up a search.
+const (
+	lockLiteral  = "literal"
+	lockSemantic = "semantic"
+)
+
+// lock takes one of the vault's index locks.
+func (l *Library) lock(v *vault.Vault, kind string) (func() error, error) {
+	path, err := lockPath(v, kind)
 	if err != nil {
 		return nil, err
 	}

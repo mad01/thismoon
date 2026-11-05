@@ -1,16 +1,16 @@
 // Package semantic wraps chromem-go to provide a vault-aware vector index
-// over note chunks. The Index persists at semantic/ in brain's state
-// directory (or a configured path) and is keyed by chunk ID; metadata carries the path,
-// tier, tags (flattened as t_<name>=1), evidence, type, status, and the
-// content hash so we can run incremental upserts without re-embedding
-// unchanged chunks.
+// over note chunks. Each vault's Index persists at semantic/<vault>/ in
+// brain's state directory (or a configured path) and is keyed by chunk ID;
+// metadata carries the path, note id, tier, tags (flattened as t_<name>=1),
+// evidence, type and status. A Manifest beside it records each embedded
+// note's content hash, so Sync re-embeds only the notes that changed and
+// purges the chunks of notes that vanished.
 package semantic
 
 import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -294,30 +294,17 @@ func unmarshalTags(s string) []string {
 	return out
 }
 
-// PathFromID returns the metadata.path for a given chunk ID, or "" if the
-// chunk isn't in the index. Used during incremental indexing to detect
-// which chunks belong to which file.
-func (i *Index) PathFromID(ctx context.Context, id string) string {
-	doc, err := i.col.GetByID(ctx, id)
+// Reset empties the index by dropping its collection and creating it again.
+// chromem-go refuses a Delete without a filter, so this is the way to clear
+// every document.
+func (i *Index) Reset(_ context.Context) error {
+	if err := i.db.DeleteCollection(CollectionName); err != nil {
+		return fmt.Errorf("semantic.Reset: drop collection: %w", err)
+	}
+	col, err := i.db.GetOrCreateCollection(CollectionName, nil, i.embed)
 	if err != nil {
-		return ""
+		return fmt.Errorf("semantic.Reset: collection: %w", err)
 	}
-	return doc.Metadata["path"]
-}
-
-// PurgePath wipes a single note's chunks before re-chunking. Equivalent to
-// DeleteByPath but exposed under a name that matches the indexer's intent.
-func (i *Index) PurgePath(ctx context.Context, path string) error {
-	return i.DeleteByPath(ctx, path)
-}
-
-// Reset deletes every document in the collection. Used by `brain index --force`.
-func (i *Index) Reset(ctx context.Context) error {
-	if err := i.col.Delete(ctx, nil, nil, nil...); err != nil {
-		return fmt.Errorf("semantic.Reset: %w", err)
-	}
+	i.col = col
 	return nil
 }
-
-// PathOf is a small helper used by the indexer.
-func PathOf(dir string) string { return filepath.Clean(dir) }

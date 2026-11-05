@@ -540,6 +540,48 @@ func TestSemanticJSONOutput(t *testing.T) {
 	}
 }
 
+// TestSemanticRefreshesAStaleIndex covers the CLI query path: a stale
+// semantic index is synced before the query, and with Ollama gone the
+// hybrid search still answers from the literal side and says why on stderr.
+func TestSemanticRefreshesAStaleIndex(t *testing.T) {
+	srv := fakeOllama(t)
+	root := setupCLI(t, "semantic:\n  enabled: true\n  ollama_url: "+srv.URL+"\n")
+	if got := runBrain(t, "", "index"); got.code != exitOK {
+		t.Fatalf("index: exit %d, stderr %q", got.code, got.stderr)
+	}
+	note := "---\ntitle: Late\n---\nlatecomer walrus\n"
+	if err := os.WriteFile(filepath.Join(root, "notes", "late.md"), []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := runBrain(t, "", "semantic-search", "latecomer walrus", "-o", "json")
+	sem := decodeStrict[semantic.SearchResult](t, got.stdout)
+	if got.code != exitOK || sem.Total == 0 || sem.Hits[0].Path != "notes/late.md" {
+		t.Errorf(
+			"semantic-search after an edit: exit %d, hits %+v, stderr %q",
+			got.code,
+			sem.Hits,
+			got.stderr,
+		)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "notes", "later.md"), []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv.Close()
+	got = runBrain(t, "", "hybrid-search", "walrus")
+	for _, want := range []string{
+		"warning: default: semantic index is stale and was not refreshed",
+		"warning: semantic search failed, hits are literal only",
+	} {
+		if !strings.Contains(got.stderr, want) {
+			t.Errorf("stderr %q lacks %q", got.stderr, want)
+		}
+	}
+	if got.code != exitOK || !strings.Contains(got.stdout, "notes/later.md") {
+		t.Errorf("hybrid-search without Ollama: exit %d, stdout %q", got.code, got.stdout)
+	}
+}
+
 func TestTextOutputBacklinksAndPeek(t *testing.T) {
 	setupCLI(t, "")
 	got := runBrain(t, "", "backlinks", "notes/alpha.md")
