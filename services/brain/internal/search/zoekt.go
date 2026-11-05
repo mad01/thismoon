@@ -12,6 +12,7 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 	zoektsearch "github.com/sourcegraph/zoekt/search"
 
+	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
@@ -384,6 +385,8 @@ func noteFilter(vaultRoot string, opts SearchOptions) func(path string) bool {
 
 // noteMatchesFrontmatter returns true when the note's frontmatter satisfies
 // every non-empty filter in opts and the note is not hidden by its status.
+// The status compared is the effective one (vault.StatusOf): the stored
+// value, else the default of the note's tier.
 func noteMatchesFrontmatter(vaultRoot, relPath string, opts SearchOptions) bool {
 	data, err := os.ReadFile(filepath.Join(vaultRoot, relPath))
 	if err != nil {
@@ -399,10 +402,11 @@ func noteMatchesFrontmatter(vaultRoot, relPath string, opts SearchOptions) bool 
 	if opts.Type != "" && !strings.EqualFold(fm.Type, opts.Type) {
 		return false
 	}
-	if opts.Status != "" && !strings.EqualFold(fm.Status, opts.Status) {
+	status := vault.StatusOf(relPath, fm)
+	if opts.Status != "" && status != lifecycle.Normalize(opts.Status) {
 		return false
 	}
-	return !Hidden(fm.Status, opts.IncludeRevoked, opts.Status)
+	return !Hidden(status, opts.IncludeRevoked, opts.Status)
 }
 
 // searcherRepo returns the name and filesystem source (the vault root) of
