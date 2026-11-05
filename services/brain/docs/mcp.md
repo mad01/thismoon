@@ -1,8 +1,8 @@
 # `brain mcp` — MCP stdio server reference
 
-`brain mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) stdio server bundled into the `brain` binary. It exposes the vault (search, read, list, backlinks, write, edit, promote) as native MCP tools so Claude Code can operate on your notes without shelling out through `Bash()`.
+`brain mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) stdio server bundled into the `brain` binary. It exposes your vaults (search, read, list, backlinks, graph, write, edit, promote) as native MCP tools so Claude Code can operate on your notes without shelling out through `Bash()`. The config names one vault with `vault:`, or several private and shared vaults with a `vaults:` list.
 
-There is no long-running server. The MCP client spawns `brain mcp` as a subprocess per session, pipes JSON-RPC 2.0 over stdin/stdout, and the process exits when stdin closes. Each tool handler is a thin adapter over the internal `search`, `vault`, and `markdown` packages that back the cobra commands.
+There is no long-running server. The MCP client spawns `brain mcp` as a subprocess per session, pipes JSON-RPC 2.0 over stdin/stdout, and the process exits when stdin closes. Each tool handler is a thin adapter over the internal `library`, `search`, `vault`, and `markdown` packages that back the cobra commands.
 
 ## Registration
 
@@ -19,11 +19,11 @@ claude mcp list
 # expect: brain: brain mcp - ✓ Connected
 ```
 
-The vault location comes from `vault:` in the config file `brain mcp` resolved at startup (`--config`, then `BRAIN_CONFIG`, then `config.yaml` under `$XDG_CONFIG_HOME/brain` or `~/.config/brain`). The indexes live in the state directory, `$XDG_STATE_HOME/brain` or `~/.local/state/brain`; an install that already built an index under `~/.config/brain` keeps it there. `config.md` beside the service has the full rules. The vault is your own vault repo, checked out wherever `vault:` points. Keeping it outside thismoon means the tool's history stays clean of personal-knowledge churn.
+The vaults come from the config file `brain mcp` resolved at startup (`--config`, then `BRAIN_CONFIG`, then `config.yaml` under `$XDG_CONFIG_HOME/brain` or `~/.config/brain`): one `vault: <path>`, or a `vaults:` list of private and shared vaults. Every tool call reads that file again, so a config edit applies to the next call. Each vault has its own indexes in the state directory, `$XDG_STATE_HOME/brain` or `~/.local/state/brain`, under `index/<vault>/` and `semantic/<vault>/`; an install that already built an index under `~/.config/brain` keeps it there. `config.md` beside the service has the full rules. Each vault is its own repo, checked out wherever its path points. Keeping vaults outside thismoon means the tool's history stays clean of personal-knowledge churn.
 
 ## Vault model
 
-The vault is a single directory with four top-level tiers:
+Each vault is a directory with four top-level tiers:
 
 | Tier | Directory | Default `type` | Default `status` | Purpose |
 |---|---|---|---|---|
@@ -45,14 +45,34 @@ source: https://example.com
 evidence: B           # optional; trust tier for empirical notes (A/B/C/D/mixed)
 created: 2025-01-02T03:04:05Z
 updated: 2025-01-02T03:04:05Z
-id: 01ABCDEF
+id: 01JABCDEFGHJKMNPQRSTVWXYZ0
 ---
 body text with [[wikilinks]]
 ```
 
+### Vaults, note ids and note refs
+
+Several vaults can be configured. A private vault is one you write directly. A shared vault (`shared: true`) is one a team keeps in its own repo.
+
+- A shared vault is read-only here: `brain_write`, `brain_edit` and `brain_promote` fail on it with a read-only error. Its notes change through a pull request.
+- Writes go to the default vault (the one marked `default: true`, else the first private vault) unless the `vault` input names another.
+- Search (literal, semantic and hybrid), count, list and graph cover every vault unless the `vault` input narrows them. Every hit and note result names its `vault`.
+
+A note id is the Universally Unique Lexicographically Sortable Identifier (ULID) in the `id` frontmatter field. `brain_write` assigns one, and `brain_promote` gives one to a note that has none. Neither edit nor promote ever changes an id, so it names the note when its path changes. `brain migrate --ids` backfills notes written before ids existed.
+
+A note ref names one note in a `path` or `center` input:
+
+| Form | Example | Names |
+|---|---|---|
+| `vault:path` | `team:notes/topic.md` | The note at that path in that vault |
+| `id:<ulid>` | `id:01JABCDEFGHJKMNPQRSTVWXYZ0` | The note whose `id` is that ULID |
+| bare path | `notes/topic.md` | The note at that vault-relative path, when exactly one vault has it |
+
+A bare path found in more than one vault fails as ambiguous, and the error lists the qualified `vault:path` candidates. An id two notes share (a copied file) is ambiguous too. On a tool with a `vault` input, setting it limits the lookup to that vault.
+
 ### Evidence (trust tier)
 
-Read-side tools (`brain_search`, `brain_read`, `brain_peek`, `brain_list_tier`, `brain_backlinks`) all surface an `evidence` field so callers can reason about a note's correctness level without string-matching tags.
+Read-side tools (`brain_search`, `brain_read`, `brain_peek`, `brain_list_tier`, `brain_backlinks`, `brain_graph`) all surface an `evidence` field so callers can reason about a note's correctness level without string-matching tags.
 
 | Value | Meaning |
 |---|---|
@@ -69,11 +89,13 @@ A `tier` input on search / count / list tools translates into a `file:^<tier>/` 
 
 ## Tools
 
-Registered tools: `brain_search`, `brain_semantic_search`, `brain_hybrid_search`, `brain_count`, `brain_query_validate`, `brain_read`, `brain_peek`, `brain_list_tier`, `brain_backlinks`, `brain_write`, `brain_edit`, `brain_promote`, `brain_doctor`.
+Registered tools (fourteen): `brain_search`, `brain_semantic_search`, `brain_hybrid_search`, `brain_count`, `brain_query_validate`, `brain_read`, `brain_peek`, `brain_list_tier`, `brain_backlinks`, `brain_graph`, `brain_write`, `brain_edit`, `brain_promote`, `brain_doctor`.
+
+`brain_semantic_search` and `brain_hybrid_search` take a `vault` input like `brain_search`. Their hits carry `vault` and the note's `id` when it has one, and their results carry `warnings[]` (see Indexing).
 
 ### `brain_search`
 
-Search notes by text with zoekt query syntax, optionally filtered by tier / tag / type / status.
+Search notes by text with zoekt query syntax, optionally filtered by vault / tier / tag / type / status.
 
 **Input:**
 
@@ -90,6 +112,7 @@ Search notes by text with zoekt query syntax, optionally filtered by tier / tag 
 | `limit` | int | no | Max file results (default `50`) |
 | `output_mode` | string | no | `files_with_matches` (default) or `content` |
 | `context_lines` | int | no | Context lines around each match; content mode only |
+| `vault` | string | no | Restrict to this configured vault; default searches every vault |
 
 **Output:**
 
@@ -97,9 +120,11 @@ Search notes by text with zoekt query syntax, optionally filtered by tier / tag 
 |---|---|---|
 | `output_mode` | string | Echoes the mode actually used |
 | `files` | array | Unique file paths; set when `output_mode=files_with_matches` |
+| `files[].vault` | string | Name of the vault holding the note |
 | `files[].path` | string | Vault-relative path |
 | `files[].evidence` | string | Trust tier of the note (A/B/C/D/mixed), omitted when empty |
 | `lines` | array | Matching lines; set when `output_mode=content` |
+| `lines[].vault` | string | Name of the vault holding the note |
 | `lines[].path` | string | Vault-relative path |
 | `lines[].line` | int | 1-based line number |
 | `lines[].column` | int | 1-based column |
@@ -119,15 +144,16 @@ Search notes by text with zoekt query syntax, optionally filtered by tier / tag 
 {
   "output_mode": "files_with_matches",
   "files": [
-    {"path": "notes/ops/k8s-upgrades.md"},
-    {"path": "notes/ops/k8s-networking.md"}
+    {"vault": "personal", "path": "notes/ops/k8s-upgrades.md"},
+    {"vault": "team", "path": "notes/ops/k8s-networking.md"}
   ],
   "total": 2
 }
 ```
 
 **Notes:**
-- The index auto-refreshes before the search if the vault fingerprint has changed since the last call. The first call after a large edit may take a second or two; subsequent calls are fast.
+- Each vault's index auto-refreshes before the search if that vault's fingerprint has changed since the last call. The first call after a large edit may take a second or two; subsequent calls are fast.
+- Hits from several vaults are merged by zoekt score, best first, and `limit` caps the notes across all of them.
 - Frontmatter-field filters (`tag`, `type`, `status`) are applied by the search layer against frontmatter parsed into the index, not by walking files at query time.
 
 ### `brain_count`
@@ -140,7 +166,8 @@ Count matches of a zoekt query across the vault, optionally grouped.
 |---|---|---|---|
 | `query` | string | yes | Zoekt query (same syntax as `brain_search`) |
 | `tier` | string | no | Restrict to a single tier |
-| `group_by` | string | no | `tier` or `tag`; empty for a single total |
+| `group_by` | string | no | `tier`, `tag` or `vault`; empty for a single total |
+| `vault` | string | no | Restrict to this configured vault; default counts every vault |
 
 **Output:**
 
@@ -148,7 +175,7 @@ Count matches of a zoekt query across the vault, optionally grouped.
 |---|---|---|
 | `total` | int | Total match count |
 | `groups` | array | Per-group counts; empty when `group_by` is unset |
-| `groups[].group` | string | Tier name or tag |
+| `groups[].group` | string | Tier name, tag or vault name |
 | `groups[].count` | int | Matches in that group |
 
 **Example:**
@@ -167,7 +194,7 @@ Count matches of a zoekt query across the vault, optionally grouped.
 }
 ```
 
-**Notes:** `group_by` must be exactly `""`, `tier`, or `tag` — anything else errors.
+**Notes:** `group_by` must be exactly `""`, `tier`, `tag`, or `vault`. Anything else errors.
 
 ### `brain_query_validate`
 
@@ -206,7 +233,8 @@ Read a note's frontmatter and a slice of its body.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `path` | string | yes | Vault-relative note path |
+| `path` | string | yes | Note ref: `vault:path`, `id:<ulid>`, or a vault-relative path found in exactly one vault |
+| `vault` | string | no | Look the path up in this configured vault only |
 | `start_line` | int | no | First body line, 1-based; `0`/omit for start |
 | `end_line` | int | no | Last body line, 1-based inclusive; `0`/omit for end |
 
@@ -214,19 +242,23 @@ Read a note's frontmatter and a slice of its body.
 
 | Field | Type | Description |
 |---|---|---|
+| `vault` | string | Name of the vault holding the note |
 | `path` | string | Vault-relative path |
-| `frontmatter` | object | `title`, `aliases`, `tags`, `type`, `status`, `source`, `evidence`, `created`, `updated`, `id` (omitted when empty) |
+| `sha` | string | sha256 of the note's bytes; pass it to `brain_edit` as `if_match` |
+| `frontmatter` | object | `title`, `aliases`, `tags`, `type`, `status`, `source`, `evidence`, `created`, `updated`, `id`, plus `extra` with every frontmatter key brain does not model (each omitted when empty) |
 | `body_lines` | array | `{line: int, text: string}` entries |
 
 **Example:**
 
 ```json
 // request
-{"path": "notes/ops/k8s-upgrades.md", "start_line": 1, "end_line": 5}
+{"path": "personal:notes/ops/k8s-upgrades.md", "start_line": 1, "end_line": 5}
 
 // response
 {
+  "vault": "personal",
   "path": "notes/ops/k8s-upgrades.md",
+  "sha": "3b6f0e1a9c4d2b7e8f5a1c0d9e2b4a6f7c8d1e3f5a7b9c0d2e4f6a8b0c1d3e5f",
   "frontmatter": {
     "title": "Kubernetes upgrades",
     "tags": ["kubernetes", "ops"],
@@ -253,17 +285,19 @@ Cheap overview of a note: frontmatter, first N body lines, and inbound-backlink 
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `path` | string | yes | Vault-relative note path |
+| `path` | string | yes | Note ref: `vault:path`, `id:<ulid>`, or a vault-relative path found in exactly one vault |
+| `vault` | string | no | Look the path up in this configured vault only |
 | `max_body_lines` | int | no | Preview length (default `20`) |
 
 **Output:**
 
 | Field | Type | Description |
 |---|---|---|
+| `vault` | string | Name of the vault holding the note |
 | `path` | string | Vault-relative path |
 | `frontmatter` | object | Same shape as `brain_read` |
 | `preview` | array[string] | First `max_body_lines` of the body |
-| `backlink_count` | int | Count of other notes containing `[[<stem>` for this note |
+| `backlink_count` | int | Number of other notes with a link that resolves to this note |
 
 **Example:**
 
@@ -273,6 +307,7 @@ Cheap overview of a note: frontmatter, first N body lines, and inbound-backlink 
 
 // response
 {
+  "vault": "personal",
   "path": "notes/ops/k8s-upgrades.md",
   "frontmatter": {"title": "Kubernetes upgrades", "type": "note", "status": "validated"},
   "preview": ["## Context", "", "Notes from the last upgrade cycle."],
@@ -280,11 +315,11 @@ Cheap overview of a note: frontmatter, first N body lines, and inbound-backlink 
 }
 ```
 
-**Notes:** `backlink_count` is a filesystem walk that only matches on the file stem (`[[stem`), not on title or aliases. Use `brain_backlinks` for alias-aware resolution and the actual list of linking lines. `.git`, `.obsidian`, `.trash`, and `attachments` are skipped.
+**Notes:** `backlink_count` uses the same link resolver as `brain_backlinks` (stem, path, title and alias, across the configured vaults) and counts each linking note once. Use `brain_backlinks` for the actual list of linking lines. `.git`, `.obsidian`, `.trash`, and `attachments` are skipped.
 
 ### `brain_list_tier`
 
-List notes in one tier, optionally filtered by frontmatter, sorted by `updated` desc then `path` asc.
+List notes in one tier across every vault, optionally filtered by frontmatter, sorted by `updated` desc, then by vault in config order, then `path` asc.
 
 **Input:**
 
@@ -295,6 +330,7 @@ List notes in one tier, optionally filtered by frontmatter, sorted by `updated` 
 | `status` | string | no | Filter by frontmatter status |
 | `type` | string | no | Filter by frontmatter type |
 | `limit` | int | no | Max results (default `100`) |
+| `vault` | string | no | List this configured vault only; default lists every vault |
 
 **Output:**
 
@@ -303,6 +339,7 @@ List notes in one tier, optionally filtered by frontmatter, sorted by `updated` 
 | `tier` | string | Echoed tier directory |
 | `total` | int | Total matching notes before `limit` truncation |
 | `notes` | array | Listed notes, truncated to `limit` |
+| `notes[].vault` | string | Name of the vault holding the note |
 | `notes[].path` | string | Vault-relative path |
 | `notes[].title` | string | frontmatter.title |
 | `notes[].status` | string | frontmatter.status |
@@ -323,7 +360,7 @@ List notes in one tier, optionally filtered by frontmatter, sorted by `updated` 
   "tier": "inbox",
   "total": 17,
   "notes": [
-    {"path": "inbox/2025-01-02-article.md", "title": "Article capture", "status": "raw", "type": "source", "updated": "2025-01-02T10:00:00Z"}
+    {"vault": "personal", "path": "inbox/2025-01-02-article.md", "title": "Article capture", "status": "raw", "type": "source", "updated": "2025-01-02T10:00:00Z"}
   ]
 }
 ```
@@ -332,53 +369,128 @@ List notes in one tier, optionally filtered by frontmatter, sorted by `updated` 
 
 ### `brain_backlinks`
 
-Return inbound and outbound wikilinks for a note. Inbound matches any `[[<stem>`, `[[<title>`, or `[[<alias>` prefix; outbound resolves every `[[...]]` in the body against a vault-wide lowercase stem → path index.
+Return inbound and outbound wikilinks for a note. One resolver decides every link's target, the same one `brain_peek`, `brain_promote` and `brain_graph` use:
+
+- A target matches case-insensitively: by path when it holds a slash (`[[ops/k8s-upgrades]]` matches `notes/ops/k8s-upgrades.md`), otherwise by stem, then by title or alias. It is never matched by prefix, so `[[team]]` does not reach `team-guide`.
+- A link in a private vault looks in that vault first, then in the shared vaults in config order. A link in a shared vault looks only in shared vaults.
+- Within a vault, a name two notes share goes to the one in `notes`, then `MOCs`, `outputs`, `inbox`.
+- Embeds (`![[stem]]`) count as links. Links inside code spans and fenced code blocks do not.
+- A target that resolves nowhere is a dangling link.
 
 **Input:**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `path` | string | one of path/title | Vault-relative note path (preferred) |
-| `title` | string | one of path/title | Note title or alias; matched case-insensitively against frontmatter.title and aliases |
+| `path` | string | one of path/title | Note ref: `vault:path`, `id:<ulid>`, or a vault-relative path found in exactly one vault (preferred) |
+| `title` | string | one of path/title | Note title or alias; matched case-insensitively against frontmatter.title and aliases. A title found in more than one vault fails as ambiguous |
+| `vault` | string | no | Look the note up in this configured vault only |
 
 **Output:**
 
 | Field | Type | Description |
 |---|---|---|
+| `vault` | string | Vault of the analyzed note |
 | `note_path` | string | Vault-relative path of the analyzed note |
 | `evidence` | string | Trust tier of the analyzed note (A/B/C/D/mixed), omitted when empty |
-| `inbound` | array | Lines in other notes that link here |
+| `inbound` | array | Lines in other notes that link here, each line once |
+| `inbound[].vault` | string | Vault of the linking note |
 | `inbound[].path` | string | Linking note path |
-| `inbound[].line` | int | 1-based line number |
+| `inbound[].line` | int | 1-based line number, counted from the top of the file |
 | `inbound[].excerpt` | string | Matching line, trimmed to ~200 chars |
 | `inbound[].evidence` | string | Trust tier of the linking note, omitted when empty |
 | `outbound` | array | Wikilinks in this note |
 | `outbound[].target` | string | Wikilink target as written |
-| `outbound[].path` | string | Resolved vault-relative path if the target stem exists |
-| `outbound[].line` | int | Line number in this note |
+| `outbound[].vault` | string | Vault of the resolved target; omitted when dangling |
+| `outbound[].path` | string | Vault-relative path of the resolved target; omitted when dangling |
+| `outbound[].line` | int | 1-based line number in this note, counted from the top of the file |
 | `outbound[].evidence` | string | Trust tier of the resolved target note, omitted when empty |
+| `outbound[].dangling` | bool | `true` when no note matches the target; omitted otherwise |
 
 **Example:**
 
 ```json
 // request
-{"path": "notes/ops/k8s-upgrades.md"}
+{"path": "personal:notes/ops/k8s-upgrades.md"}
 
 // response
 {
+  "vault": "personal",
   "note_path": "notes/ops/k8s-upgrades.md",
   "inbound": [
-    {"path": "MOCs/ops.md", "line": 12, "excerpt": "- [[k8s-upgrades]] — cluster upgrade playbook"}
+    {"vault": "personal", "path": "MOCs/ops.md", "line": 18, "excerpt": "- [[k8s-upgrades]]: cluster upgrade playbook"}
   ],
   "outbound": [
-    {"target": "k8s-networking", "path": "notes/ops/k8s-networking.md", "line": 18}
+    {"target": "k8s-networking", "vault": "team", "path": "notes/ops/k8s-networking.md", "line": 24},
+    {"target": "etcd-backups", "line": 31, "dangling": true}
   ]
 }
 ```
 
 **Notes:**
-- Inbound search scans every `.md` under the vault (skipping `.git`, `.obsidian`, `.trash`, `attachments`) and reads each matching file a second time to extract line numbers/excerpts.
-- Outbound `path` is empty when the target stem doesn't correspond to any note — useful for finding dangling links.
+- Every call reads every note in the configured vaults (skipping `.git`, `.obsidian`, `.trash`, `attachments`) to resolve links, so the `vault` input narrows the lookup of the analyzed note, not the links counted.
+- Line numbers include the frontmatter lines, unlike `brain_read`'s body-relative `body_lines`.
+
+### `brain_graph`
+
+Return the wikilink graph of the configured vaults as nodes and edges. Links resolve with the same resolver as `brain_backlinks`. Links of a note to itself are left out.
+
+**Input:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `vault` | string | no | Walk only this vault's notes; notes they link to in other vaults still appear, without their own links |
+| `center` | string | no | Note ref (`vault:path`, `id:<ulid>` or a bare path); keep only the nodes within `depth` hops of it. With `vault` set, it must be in that vault |
+| `depth` | int | no | Hops from `center`, following links in either direction (default `1`) |
+| `tags_as_nodes` | bool | no | Add a node per tag and a `tag` edge from each note to it |
+
+**Output:**
+
+| Field | Type | Description |
+|---|---|---|
+| `nodes` | array | Every node, sorted by `id` |
+| `nodes[].id` | string | `id:<note id>` for a note; `vault:path` for a note without an id, or sharing one; `dangling:<target>` (lowercased, one node per target); `tag:<name>` |
+| `nodes[].vault` | string | Vault of the note; omitted for dangling and tag nodes |
+| `nodes[].path` | string | Vault-relative path of the note; omitted for dangling and tag nodes |
+| `nodes[].stem` | string | Filename without `.md`; for a dangling node, the target as written |
+| `nodes[].title` | string | frontmatter.title; for a tag node, the tag |
+| `nodes[].tier` | string | Tier directory of the note, omitted when outside the tiers |
+| `nodes[].type` | string | frontmatter.type |
+| `nodes[].status` | string | frontmatter.status |
+| `nodes[].tags` | array[string] | frontmatter.tags |
+| `nodes[].evidence` | string | Trust tier (A/B/C/D/mixed), omitted when empty |
+| `nodes[].review_by` | string | The `review_by` frontmatter value, omitted when unset |
+| `nodes[].degree` | int | Edges of the returned graph that touch the node, either direction |
+| `nodes[].dangling` | bool | `true` for a link target no note matches |
+| `edges` | array | Every edge, sorted by `source`, then `target`, then `kind` |
+| `edges[].source` | string | Node id of the linking note |
+| `edges[].target` | string | Node id of the linked note, dangling target or tag |
+| `edges[].kind` | string | `link`, or `tag` with `tags_as_nodes` |
+| `edges[].resolved` | bool | `false` for an edge to a dangling node |
+
+**Example:**
+
+```json
+// request
+{"center": "personal:notes/ops/k8s-upgrades.md", "depth": 1}
+
+// response
+{
+  "nodes": [
+    {"id": "dangling:etcd-backups", "stem": "etcd-backups", "degree": 1, "dangling": true},
+    {"id": "id:01JABCDEFGHJKMNPQRSTVWXYZ0", "vault": "personal", "path": "notes/ops/k8s-upgrades.md", "stem": "k8s-upgrades", "title": "Kubernetes upgrades", "tier": "notes", "degree": 2, "dangling": false},
+    {"id": "team:notes/ops/k8s-networking.md", "vault": "team", "path": "notes/ops/k8s-networking.md", "stem": "k8s-networking", "tier": "notes", "degree": 1, "dangling": false}
+  ],
+  "edges": [
+    {"source": "id:01JABCDEFGHJKMNPQRSTVWXYZ0", "target": "dangling:etcd-backups", "kind": "link", "resolved": false},
+    {"source": "id:01JABCDEFGHJKMNPQRSTVWXYZ0", "target": "team:notes/ops/k8s-networking.md", "kind": "link", "resolved": true}
+  ]
+}
+```
+
+**Notes:**
+- Several links from one note to the same target make one edge.
+- `degree` counts only the edges returned, so with `center` set it ignores edges to nodes outside `depth`.
+- Every call reads every note in the configured vaults, like `brain_backlinks`.
 
 ### `brain_write`
 
@@ -398,11 +510,13 @@ Create a new note in a tier with frontmatter.
 | `source` | string | no | frontmatter.source URL |
 | `evidence` | string | no | Trust tier (A/B/C/D/mixed) for empirical notes |
 | `filename` | string | no | Override filename (without `.md`); default is `slug(title)` |
+| `vault` | string | no | Configured vault to write to; defaults to the default vault. A shared vault refuses the write |
 
 **Output:**
 
 | Field | Type | Description |
 |---|---|---|
+| `vault` | string | Name of the vault holding the note |
 | `path` | string | Vault-relative path of the created note |
 
 **Example:**
@@ -412,11 +526,13 @@ Create a new note in a tier with frontmatter.
 {"tier": "inbox", "title": "Article on raft consensus", "tags": ["distributed"], "source": "https://example.com/raft"}
 
 // response
-{"path": "inbox/article-on-raft-consensus.md"}
+{"vault": "personal", "path": "inbox/article-on-raft-consensus.md"}
 ```
 
 **Notes:**
+- The note gets a fresh note id in `id`.
 - Errors if a note with the same filename already exists in the target tier.
+- Fails with a read-only error when the target is a shared vault.
 - Outputs are filename-prefixed `YYYY-MM-DD-<slug>.md` automatically.
 - Tier defaults: `inbox` → `type=source,status=raw`; `notes` → `type=note,status=validated`; MOCs → `type=moc`; outputs → `type=output`.
 
@@ -428,7 +544,8 @@ Modify an existing note: replace the body, append to the body, and/or merge a fr
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `path` | string | yes | Vault-relative note path |
+| `path` | string | yes | Note ref: `vault:path`, `id:<ulid>`, or a vault-relative path found in exactly one vault |
+| `vault` | string | no | Look the path up in this configured vault only |
 | `body` | string | no | Replace body entirely (mutually exclusive with `append`) |
 | `append` | string | no | Append to existing body (mutually exclusive with `body`) |
 | `frontmatter_patch` | object | no | Partial frontmatter to merge (non-empty fields win) |
@@ -439,35 +556,41 @@ Modify an existing note: replace the body, append to the body, and/or merge a fr
 | `frontmatter_patch.status` | string | no | |
 | `frontmatter_patch.source` | string | no | |
 | `frontmatter_patch.evidence` | string | no | Trust tier (A/B/C/D/mixed); pass empty string to leave unchanged |
-| `frontmatter_patch.id` | string | no | |
+| `frontmatter_patch.id` | string | no | Sets an id on a note that has none; changing or removing an existing id fails |
+| `if_match` | string | no | The `sha` from `brain_read`; the edit is refused when the note changed since that read |
 
 **Output:**
 
 | Field | Type | Description |
 |---|---|---|
+| `vault` | string | Name of the vault holding the note |
 | `path` | string | Vault-relative path of the edited note |
+| `sha` | string | sha256 of the bytes written; the `if_match` for a next edit |
 
 **Example:**
 
 ```json
 // request
-{"path": "inbox/article-on-raft-consensus.md", "append": "\n## Followup\nRead the original paper.", "frontmatter_patch": {"status": "validated"}}
+{"path": "inbox/article-on-raft-consensus.md", "append": "\n## Followup\nRead the original paper.", "frontmatter_patch": {"status": "validated"}, "if_match": "3b6f0e1a9c4d2b7e8f5a1c0d9e2b4a6f7c8d1e3f5a7b9c0d2e4f6a8b0c1d3e5f"}
 
 // response
-{"path": "inbox/article-on-raft-consensus.md"}
+{"vault": "personal", "path": "inbox/article-on-raft-consensus.md", "sha": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a1c3e5f7092b4d6f8a0c2e4f6b8d0a1c3e5"}
 ```
 
-**Notes:** Errors if `body` and `append` are both set, or if none of `body`/`append`/`frontmatter_patch` is set.
+**Notes:**
+- Errors if `body` and `append` are both set, or if none of `body`/`append`/`frontmatter_patch` is set.
+- With `if_match` set, a note whose sha no longer matches is left as it is and the error says to read it again before editing.
+- Fails with a read-only error on a note in a shared vault.
 
 ### `brain_promote`
 
-Promote an inbox note into another tier (default `notes`): atomic file move, status flips to `validated`, every `[[<oldstem>]]` reference across the vault is rewritten to the new filename, and optionally a bullet is appended to a MOC.
+Promote an inbox note into another tier (default `notes`): atomic file move, status flips to `validated`, every wikilink that resolved to the note is pointed at its new stem (or its new path, for a path link), and optionally a bullet is appended to a MOC.
 
 **Input:**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `path` | string | yes | Vault-relative inbox note path |
+| `path` | string | yes | Note ref of an inbox note: `vault:path`, `id:<ulid>`, or a vault-relative path found in exactly one vault |
 | `new_title` | string | no | Optional new title (and re-slugged filename) |
 | `target_tier` | string | no | Destination tier; defaults to `notes` |
 | `moc` | string | no | MOC path (vault-relative or absolute) to append a bullet link to |
@@ -476,10 +599,11 @@ Promote an inbox note into another tier (default `notes`): atomic file move, sta
 
 | Field | Type | Description |
 |---|---|---|
+| `vault` | string | Name of the vault holding the note |
 | `old_path` | string | Vault-relative path before the move |
 | `new_path` | string | Vault-relative path after the move |
 | `backlink_rewrites` | array[string] | Vault-relative paths of notes whose wikilinks were updated |
-| `moc_appended` | string | Vault-relative path of the MOC that had a bullet appended (empty if none) |
+| `moc_appended` | string | Vault-relative path of the MOC that had a bullet appended; omitted when none |
 
 **Example:**
 
@@ -489,6 +613,7 @@ Promote an inbox note into another tier (default `notes`): atomic file move, sta
 
 // response
 {
+  "vault": "personal",
   "old_path": "inbox/raft-consensus.md",
   "new_path": "notes/raft-consensus.md",
   "backlink_rewrites": ["MOCs/distributed.md", "notes/etcd-internals.md"],
@@ -497,7 +622,11 @@ Promote an inbox note into another tier (default `notes`): atomic file move, sta
 ```
 
 **Notes:**
-- Backlink rewriting matches by file stem (`[[<oldstem>]]` → `[[<newstem>]]`) and scans every `.md` under the vault, not just the target tier.
+- The rewrite uses the `brain_backlinks` resolver and scans every note in the note's vault, not just the target tier. A stem link takes the new stem and a path link the new path. When `new_title` changes the title, a link by the old title takes the new stem and keeps the old title as display text. A link by an alias keeps resolving through the alias.
+- Links inside code spans and fenced code blocks are left alone.
+- A heading, block or display text on a rewritten link is kept.
+- The note keeps its id, or gets one when it has none.
+- There is no `vault` input. Use a `vault:path` ref when a bare path is in more than one vault. A note in a shared vault fails with a read-only error.
 - The MOC bullet is appended only if `moc` is set and the MOC file exists.
 
 ### `brain_doctor`
@@ -506,7 +635,7 @@ Run the checks `brain doctor` runs and return the same report. Read-only: it cre
 
 **Input:** none.
 
-**Output:** `ok` (false when any check failed) and `checks[] {name, status, detail, fix}`. `name` is `config`, `vault`, `index-dir`, `index` or `ollama`; `status` is `ok`, `fail` or `skip`, where `skip` means an earlier failure left the check nothing to examine; `fix` names the next step for a failure. A failing check is a result, never a tool error.
+**Output:** `ok` (false when any check failed) and `checks[] {name, status, detail, fix}`. `name` is `config`, `vault`, `index-dir`, `index`, `ids` (two notes holding one note id) or `ollama`; `status` is `ok`, `fail` or `skip`, where `skip` means an earlier failure left the check nothing to examine; `fix` names the next step for a failure. A failing check is a result, never a tool error.
 
 ## Zoekt query syntax
 
@@ -523,20 +652,24 @@ Run the checks `brain doctor` runs and return the same report. Read-only: it cre
 | `lang:markdown` | Language filter |
 | `case:yes` | Case-sensitive match |
 
-`repo:` is **not applicable** — the brain index is a single vault. Use the dedicated `tier` input to scope to a tier (it expands to `file:^<tier>/`), or pass `file:` directly for finer control over paths.
+`repo:` is **not applicable**: each vault has its own index, and a query runs against every one of them. Use the dedicated `vault` input to scope to one vault, the `tier` input to scope to a tier (it expands to `file:^<tier>/`), or pass `file:` directly for finer control over paths.
 
 Run `brain_query_validate` to parse-check complex queries before invoking search.
 
 ## Indexing
 
-The zoekt index lives at `index/` in the state directory (resolved via `brain.IndexDir()`). The MCP `brain_search` and `brain_count` handlers call `ensureIndex` before every call:
+Indexes are per vault. Each vault's zoekt index lives at `index/<vault>/` in the state directory (resolved via `brain.IndexDir(<vault>)`), and its semantic index at `semantic/<vault>/`. Before a literal query (`brain_search`, `brain_count`, and the literal side of `brain_hybrid_search`), each vault the query covers is checked:
 
-1. Compute a fingerprint of the vault (mtimes of every `.md` / `.mdx` file under the vault root).
-2. Compare to the stored state in the index directory.
-3. If stale (or no index exists), re-index the vault silently — progress is not written to stderr to avoid corrupting the MCP JSON-RPC framing.
+1. Compute a fingerprint of the vault (the set, sizes and mtimes of its markdown files).
+2. Compare to the stored state in that vault's index directory.
+3. If stale (or no index exists), re-index that vault silently. Progress is not written to stderr, which would corrupt the MCP JSON-RPC framing.
 4. Persist the new fingerprint and file list.
 
-Any `.md` / `.mdx` mtime change anywhere in the vault triggers staleness on the next search. To rebuild manually (e.g. after a config change):
+A markdown change in one vault makes only that vault's index stale on the next search. A build holds that vault's index lock, so the CLI and the MCP server never build the same index at once.
+
+The semantic index syncs incrementally. Its `manifest.json` records the embed model, the chunk sizes and a content hash per note. A sync re-embeds only the notes whose hash changed and purges the chunks of deleted notes; a store made with another model or chunk size is rebuilt. `brain_semantic_search` and `brain_hybrid_search` sync a stale semantic index before they query. When Ollama does not answer, the stale index stays as it was and the result carries `warnings[]` saying so. `brain_hybrid_search` then fuses the literal hits alone and adds a warning. `brain_semantic_search` still needs Ollama to embed the query, so with Ollama down it returns an error.
+
+To rebuild manually (e.g. after a config change):
 
 ```bash
 brain index            # refresh if stale
@@ -551,4 +684,4 @@ To verify `brain mcp` speaks JSON-RPC correctly without involving Claude Code:
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}\n{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 1 ) | brain mcp
 ```
 
-Expected: one `initialize` response followed by a `tools/list` response listing all thirteen `brain_*` tools with their input and output schemas. The `sleep 1` keeps stdin open long enough for the server to flush responses before exit.
+Expected: one `initialize` response followed by a `tools/list` response listing all fourteen `brain_*` tools with their input and output schemas. The `sleep 1` keeps stdin open long enough for the server to flush responses before exit.
