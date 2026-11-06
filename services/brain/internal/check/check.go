@@ -364,7 +364,7 @@ func (c *checker) secrets(n *vault.NoteView) {
 			c.add(n, f.Line, RuleNulByte, "%s", f.Match)
 			continue
 		}
-		c.add(n, f.Line, RuleSecret, "%s: %s", f.Rule.ID, f.Match)
+		c.add(n, f.Line, RuleSecret, "%s", vault.DescribeSecret(f))
 	}
 }
 
