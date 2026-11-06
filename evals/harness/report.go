@@ -72,6 +72,7 @@ type totals struct {
 	Tokens       int     `json:"tokens"`
 	ToolCalls    int     `json:"tool_calls"`
 	CSLCalls     int     `json:"csl_calls"`
+	BrainCalls   int     `json:"brain_calls,omitempty"`
 	CPUSeconds   float64 `json:"cpu_seconds"`
 	WallMS       int64   `json:"wall_ms"`
 	Errors       int     `json:"errors"`
@@ -93,6 +94,7 @@ func totalsOf(rows []Row) totals {
 		t.Tokens += r.Tokens
 		t.ToolCalls += r.ToolCalls
 		t.CSLCalls += r.CSLCalls
+		t.BrainCalls += r.BrainCalls
 		t.CPUSeconds += r.CPUSeconds
 		t.WallMS += r.WallMS
 	}
@@ -126,32 +128,18 @@ func writeSummary(w io.Writer, meta runMeta, rows []Row) {
 	if meta.Stopped != "" {
 		fmt.Fprintf(w, "Stopped early: %s.\n\n", meta.Stopped)
 	}
+	cli := fmt.Sprintf("%d csl", t.CSLCalls)
+	if t.BrainCalls > 0 {
+		cli += fmt.Sprintf(", %d brain", t.BrainCalls)
+	}
 	fmt.Fprintf(w, "%d rows, %d passed, mean score %.2f. Cost $%.3f plus judge $%.3f. "+
-		"%s tokens, %d tool calls (%d csl), %s wall, %.0f CPU seconds.\n\n",
+		"%s tokens, %d tool calls (%s), %s wall, %.0f CPU seconds.\n\n",
 		t.Rows, t.Passed, t.MeanScore, t.CostUSD, t.JudgeCostUSD,
-		kilo(t.Tokens), t.ToolCalls, t.CSLCalls, time.Duration(t.WallMS)*time.Millisecond,
+		kilo(t.Tokens), t.ToolCalls, cli, time.Duration(t.WallMS)*time.Millisecond,
 		t.CPUSeconds)
 
-	fmt.Fprintln(
-		w,
-		"| case | rep | score | pass | turns | tool calls | csl | tokens | cost | seconds | cpu s | stop |",
-	)
-	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|---|---|---|")
-	for _, r := range rows {
-		fmt.Fprintf(w, "| %s | %d | %.2f | %s | %d | %d | %d | %s | $%.3f | %.0f | %.0f | %s |\n",
-			r.Case, r.Rep, r.Score, yesNo(r.Pass), r.Turns, r.ToolCalls, r.CSLCalls, kilo(r.Tokens),
-			r.CostUSD, float64(r.WallMS)/1000, r.CPUSeconds, orDash(r.Stop))
-	}
-
-	fmt.Fprintln(w, "\n## Tool calls")
-	fmt.Fprintln(w)
-	for _, r := range rows {
-		line := fmt.Sprintf("- %s rep %d: %s", r.Case, r.Rep, orDash(formatCounts(r.Tools)))
-		if r.AgentToolCalls > 0 {
-			line += "; subagents: " + formatCounts(r.AgentTools)
-		}
-		fmt.Fprintln(w, line)
-	}
+	writeRowTable(w, rows)
+	writeToolCalls(w, rows)
 	writeFailures(w, rows)
 
 	unavailable := 0
@@ -161,6 +149,51 @@ func writeSummary(w io.Writer, meta runMeta, rows []Row) {
 		}
 	}
 	fmt.Fprintf(w, "\nScorecard: %d of %d rows unavailable.\n", unavailable, len(rows))
+}
+
+// writeRowTable renders one table row per (case, rep).
+func writeRowTable(w io.Writer, rows []Row) {
+	fmt.Fprintln(
+		w,
+		"| case | rep | score | pass | turns | tool calls | csl | brain | tokens | cost | seconds | cpu s | stop |",
+	)
+	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+	for _, r := range rows {
+		fmt.Fprintf(
+			w,
+			"| %s | %d | %.2f | %s | %d | %d | %d | %d | %s | $%.3f | %.0f | %.0f | %s |\n",
+			r.Case,
+			r.Rep,
+			r.Score,
+			yesNo(r.Pass),
+			r.Turns,
+			r.ToolCalls,
+			r.CSLCalls,
+			r.BrainCalls,
+			kilo(r.Tokens),
+			r.CostUSD,
+			float64(r.WallMS)/1000,
+			r.CPUSeconds,
+			orDash(r.Stop),
+		)
+	}
+}
+
+// writeToolCalls lists each row's tool calls, then its subagents' and the
+// brain subcommands it ran.
+func writeToolCalls(w io.Writer, rows []Row) {
+	fmt.Fprintln(w, "\n## Tool calls")
+	fmt.Fprintln(w)
+	for _, r := range rows {
+		line := fmt.Sprintf("- %s rep %d: %s", r.Case, r.Rep, orDash(formatCounts(r.Tools)))
+		if r.AgentToolCalls > 0 {
+			line += "; subagents: " + formatCounts(r.AgentTools)
+		}
+		if r.BrainCalls > 0 {
+			line += "; brain: " + formatCounts(r.BrainCommands)
+		}
+		fmt.Fprintln(w, line)
+	}
 }
 
 func writeFailures(w io.Writer, rows []Row) {
@@ -194,6 +227,7 @@ type caseMeans struct {
 	Tokens     float64
 	ToolCalls  float64
 	CSLCalls   float64
+	BrainCalls float64
 	CPUSeconds float64
 	Wall       float64
 }
@@ -209,6 +243,7 @@ func meansByCase(rows []Row) map[string]caseMeans {
 		m.Tokens += float64(r.Tokens)
 		m.ToolCalls += float64(r.ToolCalls)
 		m.CSLCalls += float64(r.CSLCalls)
+		m.BrainCalls += float64(r.BrainCalls)
 		m.CPUSeconds += r.CPUSeconds
 		m.Wall += float64(r.WallMS) / 1000
 		out[r.Case] = m
@@ -218,7 +253,8 @@ func meansByCase(rows []Row) map[string]caseMeans {
 		out[id] = caseMeans{
 			Reps: m.Reps, Score: m.Score / n, CostUSD: m.CostUSD / n,
 			Turns: m.Turns / n, Tokens: m.Tokens / n, ToolCalls: m.ToolCalls / n,
-			CSLCalls: m.CSLCalls / n, CPUSeconds: m.CPUSeconds / n, Wall: m.Wall / n,
+			CSLCalls: m.CSLCalls / n, BrainCalls: m.BrainCalls / n,
+			CPUSeconds: m.CPUSeconds / n, Wall: m.Wall / n,
 		}
 	}
 	return out
@@ -242,24 +278,26 @@ func writeCompare(w io.Writer, a, b compareSide) {
 	fmt.Fprintf(w, "A: %s.\nB: %s.\n\n", a.Meta.describe(), b.Meta.describe())
 	fmt.Fprintln(w, "Each cell is run B's mean over its reps, then the change from run A.")
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "| case | reps A/B | score | cost | turns | tokens | tool calls | csl | seconds | cpu s |")
-	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|---|")
+	fmt.Fprintln(w, "| case | reps A/B | score | cost | turns | tokens | tool calls | csl | brain "+
+		"| seconds | cpu s |")
+	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|---|---|")
 	var shared []string
 	for _, id := range slices.Sorted(maps.Keys(ids)) {
 		x, inA := ma[id]
 		y, inB := mb[id]
 		switch {
 		case !inB:
-			fmt.Fprintf(w, "| %s | %d/0 | only in A | | | | | | | |\n", id, x.Reps)
+			fmt.Fprintf(w, "| %s | %d/0 | only in A | | | | | | | | |\n", id, x.Reps)
 		case !inA:
-			fmt.Fprintf(w, "| %s | 0/%d | only in B | | | | | | | |\n", id, y.Reps)
+			fmt.Fprintf(w, "| %s | 0/%d | only in B | | | | | | | | |\n", id, y.Reps)
 		default:
 			shared = append(shared, id)
 			fmt.Fprintf(w, "| %s | %d/%d | %.2f (%+.2f) | $%.3f (%+.3f) | %.1f (%+.1f) "+
-				"| %s (%s) | %.1f (%+.1f) | %.1f (%+.1f) | %.0f (%+.0f) | %.0f (%+.0f) |\n",
+				"| %s (%s) | %.1f (%+.1f) | %.1f (%+.1f) | %.1f (%+.1f) | %.0f (%+.0f) | %.0f (%+.0f) |\n",
 				id, x.Reps, y.Reps, y.Score, y.Score-x.Score, y.CostUSD, y.CostUSD-x.CostUSD,
 				y.Turns, y.Turns-x.Turns, kilo(int(y.Tokens)), signedKilo(y.Tokens-x.Tokens),
 				y.ToolCalls, y.ToolCalls-x.ToolCalls, y.CSLCalls, y.CSLCalls-x.CSLCalls,
+				y.BrainCalls, y.BrainCalls-x.BrainCalls,
 				y.Wall, y.Wall-x.Wall, y.CPUSeconds, y.CPUSeconds-x.CPUSeconds)
 		}
 	}
@@ -270,9 +308,11 @@ func writeCompare(w io.Writer, a, b compareSide) {
 	ta, tb := passOver(ma, shared), passOver(mb, shared)
 	fmt.Fprintf(w, "\nTotals over the %d of %d cases both runs have, one rep each: "+
 		"mean score %.2f (%+.2f), cost $%.3f (%+.3f), tool calls %.1f (%+.1f), "+
-		"csl calls %.1f (%+.1f), %.0f seconds (%+.0f), %.0f CPU seconds (%+.0f).\n",
+		"csl calls %.1f (%+.1f), brain calls %.1f (%+.1f), %.0f seconds (%+.0f), "+
+		"%.0f CPU seconds (%+.0f).\n",
 		len(shared), len(ids), tb.Score, tb.Score-ta.Score, tb.CostUSD, tb.CostUSD-ta.CostUSD,
 		tb.ToolCalls, tb.ToolCalls-ta.ToolCalls, tb.CSLCalls, tb.CSLCalls-ta.CSLCalls,
+		tb.BrainCalls, tb.BrainCalls-ta.BrainCalls,
 		tb.Wall, tb.Wall-ta.Wall, tb.CPUSeconds, tb.CPUSeconds-ta.CPUSeconds)
 }
 
@@ -289,6 +329,7 @@ func passOver(means map[string]caseMeans, ids []string) caseMeans {
 		out.Tokens += m.Tokens
 		out.ToolCalls += m.ToolCalls
 		out.CSLCalls += m.CSLCalls
+		out.BrainCalls += m.BrainCalls
 		out.CPUSeconds += m.CPUSeconds
 		out.Wall += m.Wall
 	}

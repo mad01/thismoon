@@ -17,12 +17,16 @@ import (
 // gitTimeout bounds every git call the runner makes around a case.
 const gitTimeout = 60 * time.Second
 
-// workspaceRoots says where repo names resolve and where throwaway
-// workspaces land. TmpRoot "" means the system temp directory.
+// workspaceRoots says where repo names resolve, where brain fixtures live,
+// and where throwaway workspaces land. TmpRoot "" means the system temp
+// directory. BrainBinDir holds the brain binary built for the run, which a
+// brain workspace puts first on PATH; it is "" when no case needs one.
 type workspaceRoots struct {
 	SrcRoot      string
 	WorktreeRoot string
 	TmpRoot      string
+	FixtureRoot  string
+	BrainBinDir  string
 }
 
 // lockReason starts the lock reason of every eval worktree. The runner's
@@ -31,19 +35,21 @@ const lockReason = "harness-eval"
 
 // Workspace is a prepared directory a case runs in. Cleanup removes what
 // prepareWorkspace created; a repo workspace is the canonical checkout and
-// is left alone.
+// is left alone. brain is set for a brain workspace only.
 type Workspace struct {
 	Dir     string
 	Kind    string
 	repoDir string
 	branch  string
 	base    string
+	brain   *brainHome
 }
 
 // prepareWorkspace sets up the directory a case runs in. A worktree
 // workspace is a fresh, locked git worktree on a throwaway eval/ branch,
 // cut from the canonical checkout's HEAD, at
-// <WorktreeRoot>/<repo>/eval-<id>-<stamp>.
+// <WorktreeRoot>/<repo>/eval-<id>-<stamp>. A brain workspace is a scratch
+// copy of <FixtureRoot>/<fixture> (see brainHome).
 func prepareWorkspace(
 	ctx context.Context,
 	spec WorkspaceSpec,
@@ -64,6 +70,8 @@ func prepareWorkspace(
 			return nil, err
 		}
 		return addWorktree(ctx, repoDir, roots.WorktreeRoot, caseID, now)
+	case workspaceBrain:
+		return prepareBrain(ctx, filepath.Join(roots.FixtureRoot, spec.Fixture), roots, caseID)
 	case workspaceTmpdir:
 		dir, err := os.MkdirTemp(roots.TmpRoot, "harness-eval-"+caseID+"-")
 		if err != nil {
@@ -118,7 +126,7 @@ func addWorktree(
 
 // Canonical is the canonical checkout a workspace hangs off: the checkout
 // itself for a repo workspace, the main checkout for a worktree, and ""
-// for a tmpdir.
+// for a tmpdir or brain workspace.
 func (w *Workspace) Canonical() string {
 	switch w.Kind {
 	case workspaceRepo:
@@ -142,7 +150,35 @@ func (w *Workspace) Commits(ctx context.Context) ([]string, error) {
 	return strings.Split(out, "\n"), nil
 }
 
-// Cleanup removes a worktree workspace and its branch, or a tmpdir
+// ContentDir is the directory graders resolve paths against: the vault for
+// a brain workspace, the directory that holds private/ and shared/ for a
+// two-vault one, and the workspace directory otherwise.
+func (w *Workspace) ContentDir() string {
+	if w.brain != nil {
+		return w.brain.contentDir()
+	}
+	return w.Dir
+}
+
+// Environ is the environment claude runs with in w: base, plus the brain
+// variables for a brain workspace.
+func (w *Workspace) Environ(base []string) []string {
+	if w.brain != nil {
+		return w.brain.environ(base)
+	}
+	return base
+}
+
+// Vault reads back what the run left in a brain workspace's vault. Other
+// kinds have no vault and get the zero state.
+func (w *Workspace) Vault(ctx context.Context) (vaultState, error) {
+	if w.brain == nil {
+		return vaultState{}, nil
+	}
+	return w.brain.capture(ctx)
+}
+
+// Cleanup removes a worktree workspace and its branch, or a tmpdir or brain
 // workspace's directory. It runs on its own deadline so an interrupted run
 // still tears down.
 func (w *Workspace) Cleanup() error {
@@ -153,6 +189,8 @@ func (w *Workspace) Cleanup() error {
 		return removeEvalWorktree(ctx, w.repoDir, w.Dir, w.branch)
 	case workspaceTmpdir:
 		return os.RemoveAll(w.Dir)
+	case workspaceBrain:
+		return os.RemoveAll(w.brain.Root)
 	}
 	return nil
 }
@@ -168,9 +206,17 @@ func removeEvalWorktree(ctx context.Context, repoDir, dir, branch string) error 
 // git runs one git command in dir and returns its trimmed stdout; the
 // error carries stderr.
 func git(ctx context.Context, dir string, args ...string) (string, error) {
+	return runGit(ctx, nil, dir, args...)
+}
+
+// runGit is git with env added to the caller's environment.
+func runGit(ctx context.Context, env []string, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
