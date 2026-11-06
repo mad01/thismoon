@@ -207,9 +207,17 @@ func TestCodeRefInAPartialCloneFetchesNothing(t *testing.T) {
 func TestGitCallsAreBoundedAndPromptless(t *testing.T) {
 	bin := t.TempDir()
 	envFile := filepath.Join(t.TempDir(), "env")
-	script := "#!/bin/sh\nenv > \"$FAKE_GIT_ENV\"\nexec sleep 10\n"
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+	script := "#!/bin/sh\nenv > \"$FAKE_GIT_ENV\"\n[ -n \"$FAKE_GIT_WARM\" ] && exit 0\nexec sleep 10\n"
+	fake := filepath.Join(bin, "git")
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	// The first exec of a new script can take seconds on macOS under load;
+	// pay it here so the timeout below only measures the hung call.
+	warm := exec.Command(fake)
+	warm.Env = append(os.Environ(), "FAKE_GIT_WARM=1", "FAKE_GIT_ENV="+filepath.Join(bin, "warm-env"))
+	if err := warm.Run(); err != nil {
+		t.Fatalf("warm up fake git: %v", err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("FAKE_GIT_ENV", envFile)
@@ -218,7 +226,7 @@ func TestGitCallsAreBoundedAndPromptless(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := New(Options{CodeRoots: []string{root}})
-	c.git.timeout = 2 * time.Second // room for a first exec of a new script
+	c.git.timeout = 2 * time.Second
 	start := time.Now()
 	got := c.Sources(context.Background(), []lifecycle.Source{{Ref: "acme/app:a.go@abcdef1"}})
 	if elapsed := time.Since(start); elapsed > 8*time.Second {
