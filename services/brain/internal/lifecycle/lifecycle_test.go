@@ -129,6 +129,21 @@ func TestValidate(t *testing.T) {
 			wantKeys: []string{"sources[0].content_hash", "sources[0].ref"},
 		},
 		{
+			name:     "a prefix of a digest",
+			yml:      "sources:\n  - url: https://example.org\n    content_hash: sha256:9f86d081884c7d65\n",
+			wantKeys: []string{"sources[0].content_hash"},
+		},
+		{
+			name:     "an algorithm drift cannot compute",
+			yml:      "sources:\n  - url: https://example.org\n    content_hash: md5:0123456789abcdef0123456789abcdef\n",
+			wantKeys: []string{"sources[0].content_hash"},
+		},
+		{
+			name: "full sha1 and sha512 digests",
+			yml: "sources:\n  - url: https://example.org\n    content_hash: sha1:" + strings.Repeat("a", 40) +
+				"\n  - url: https://example.net\n    content_hash: SHA-512:" + strings.Repeat("B", 128) + "\n",
+		},
+		{
 			name: "note refs as sources",
 			yml: "sources:\n  - ref: id:01JC0000000000000000000000\n" +
 				"  - ref: team:notes/x.md\n  - ref: notes/y.md\n",

@@ -149,8 +149,8 @@ func (c *Checker) Sources(ctx context.Context, sources []lifecycle.Source) []Fin
 // to see it.
 func (c *Checker) external(ctx context.Context, s lifecycle.Source) []Finding {
 	if s.ContentHash != "" {
-		if _, err := parseContentHash(s.ContentHash); err != nil {
-			return []Finding{{Kind: KindBadHash, Source: s.URL, Message: err.Error()}}
+		if _, err := lifecycle.ParseContentHash(s.ContentHash); err != nil {
+			return []Finding{{Kind: KindBadHash, Source: s.URL, Message: "content_hash " + err.Error()}}
 		}
 	}
 	if !c.opts.Online {
