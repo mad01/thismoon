@@ -11,7 +11,8 @@
 // by later events of the same session and by nothing else:
 //
 //	<session>.turn     "<prompt_id> <offset>": the open turn and the
-//	                   transcript size when it opened
+//	                   transcript size when it first opened; a queued
+//	                   prompt opens the same prompt id again and keeps it
 //	<session>.paths    "<worktree>\t<path>" per line: the files the session
 //	                   edited, which every snapshot of the worktree covers
 //	<session>.touched  one worktree per line: where the session edited
@@ -79,6 +80,10 @@ type Options struct {
 	// AgentBudget is Budget for a SubagentStop payload, whose hook is
 	// async; moondb.AgentBudget when zero.
 	AgentBudget time.Duration
+	// FlushWait is how long a Stop waits for the transcript to hold the
+	// turn's final message; moondb.FlushWait when zero. A Stop's budget
+	// is Budget plus FlushWait, so what follows the wait keeps Budget.
+	FlushWait time.Duration
 	// Logf receives one line for each Bash payload whose files Run left
 	// out, with the counts, and for each subagent Run did not record or
 	// recorded without lines; nil discards it.
@@ -154,6 +159,9 @@ func (o Options) withDefaults() Options {
 	if o.AgentBudget <= 0 {
 		o.AgentBudget = moondb.AgentBudget
 	}
+	if o.FlushWait <= 0 {
+		o.FlushWait = moondb.FlushWait
+	}
 	if o.Logf == nil {
 		o.Logf = func(string, ...any) {}
 	}
@@ -165,13 +173,16 @@ func (o Options) withDefaults() Options {
 
 // budgetFor is how long Run gathers for p: BashBudget for a Bash payload
 // and AgentBudget for a SubagentStop, whose async hooks nobody waits on,
-// Budget for every other.
+// Budget plus FlushWait for a Stop, whose async hook waits for the
+// transcript first, Budget for every other.
 func (o Options) budgetFor(p payload) time.Duration {
 	switch {
 	case p.event == eventToolUsed && p.tool == toolBash:
 		return o.BashBudget
 	case p.event == eventSubagentStop:
 		return o.AgentBudget
+	case p.event == eventStop:
+		return o.Budget + o.FlushWait
 	}
 	return o.Budget
 }

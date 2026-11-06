@@ -44,9 +44,12 @@ envelopes, so it must be running for the import to reach the store.
 A session the store already holds was captured live and is skipped; --force
 imports it anyway. A forced import only fills: an edit the store holds stays
 as it is, a session or turn keeps every field it has and gets only its empty
-fields filled, and a turn still open is closed. An earlier imported prompt
-still moves a start time back. Run --force only while no session is active,
-because it closes a session's in-flight turn until the live Stop arrives.
+fields filled, and a turn still open is closed. A turn's transcript lines
+are the exception: the import's replace them when they hold other model
+calls, since the hook read the transcript before the turn was whole. An
+earlier imported prompt still moves a start time back. Run --force only
+while no session is active, because it closes a session's in-flight turn
+until the live Stop arrives.
 A session with neither a file edit nor a subagent transcript is skipped,
 unless --force is set and the store holds it. Then its turns are imported
 to fill what its session and turns have empty, such as the session's

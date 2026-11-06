@@ -127,12 +127,14 @@ These are compiled into the binary (`facts.go`) and not configurable:
 | Limit | Value | Effect |
 |---|---|---|
 | record budget | 200 ms | `record` spools what it has gathered when the budget runs out |
+| Stop flush wait (`FlushWait`) | 1 s | how long the Stop hook waits for the transcript to hold the turn's final message before it reads the turn's lines; when it runs out the hook records the lines there are |
 | Bash budget (`BashBudget`) | 2 s | the budget of the async Bash hook; the files it does not reach are skipped, counted on the turn as `timeout` with no edit |
 | snapshot budget | 2 s | the turn-edge snapshots of one hook; a snapshot cut short is marked truncated and counts the rest as timeout |
 | snapshot file cap | 1000 | paths one snapshot lists, the session's touched paths first; the rest count as over the file cap |
 | status cap | 4 MiB | `git status` output a snapshot or the Bash clean check reads; a worktree with more gets no snapshot, and its Bash files are skipped as `failed` |
 | largest chunk | 1 MiB | a larger file is recorded by path and patch, without content; a snapshot lists it by size |
-| transcript tail | 4 MiB | the most transcript a turn keeps; a trace of a longer turn sees only its tail |
+| transcript tail | 15 MiB | the most transcript a turn keeps; a trace of a longer turn sees only its tail |
+| agent transcript cap | 15 MiB | the most of a subagent's transcript kept after the cut to heads; a longer one loses whole lines from its head |
 | log segment | 64 MiB | the size at which `log/` rolls to a new file |
 | trace cache | 512 turns | turn traces serve keeps in memory, the least recently read dropped first |
 | trace rankings | 10 | spans `moondb trace` and `moondb_trace` list as the longest tool calls and the most expensive model calls |

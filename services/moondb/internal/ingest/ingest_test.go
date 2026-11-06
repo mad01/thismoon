@@ -305,6 +305,65 @@ func TestBackfillOnlyFills(t *testing.T) {
 	}
 }
 
+// assistantLine is one main-thread model call in transcript form.
+func assistantLine(id string, minute int) string {
+	return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"message":{"id":%q,`+
+		`"model":"claude-x","usage":{"input_tokens":1,"output_tokens":1}}}`+"\n",
+		at(minute).Format(time.RFC3339Nano), id)
+}
+
+func TestBackfillTakesTheTurnsCalls(t *testing.T) {
+	// Live capture closed turn p1 with only its last call, since a prompt
+	// queued mid-turn had moved the turn's offset, and turn p2 with p1's
+	// last call besides its own. A forced import brings each turn's lines
+	// from its prompt. A later import with the same calls in more bytes
+	// leaves the lines be.
+	f := newFixture(t)
+	c := chunkSet{}
+	live := func(turn string, minute int, transcript string) spool.Envelope {
+		env := closeEnv(c, "s1", turn, minute, "fixed "+turn)
+		env.TurnClose.TranscriptChunk = c.add(transcript)
+		return env
+	}
+	f.write(openEnv(c, "s1", "p1", 1, "fix the bug"), c)
+	f.write(live("p1", 4, assistantLine("m2", 3)), c)
+	f.write(openEnv(c, "s1", "p2", 5, "and the test"), c)
+	f.write(live("p2", 7, assistantLine("m2", 3)+assistantLine("m3", 6)), c)
+	f.drain()
+
+	backfill := func(turn string, transcript string) spool.Envelope {
+		env := closeEnv(c, "s1", turn, 9, "imported final")
+		env.Backfill = true
+		env.TurnClose.TranscriptChunk = c.add(transcript)
+		return env
+	}
+	p1Lines := assistantLine("m1", 2) + assistantLine("m2", 3)
+	p2Lines := assistantLine("m3", 6)
+	f.write(backfill("p1", p1Lines), c)
+	f.write(backfill("p2", p2Lines), c)
+	f.drain()
+	for turn, want := range map[string]struct {
+		lines string
+		calls int
+	}{"p1": {p1Lines, 2}, "p2": {p2Lines, 1}} {
+		tr := f.turn(turn).Turn
+		if tr.TranscriptChunk != spool.ChunkKey([]byte(want.lines)) ||
+			tr.Totals.ModelCalls != want.calls {
+			t.Errorf("turn %s transcript %s with %d calls, want the import's with %d",
+				turn, tr.TranscriptChunk, tr.Totals.ModelCalls, want.calls)
+		}
+		if tr.FinalChunk != spool.ChunkKey([]byte("fixed "+turn)) {
+			t.Errorf("turn %s final %s, want the live one kept", turn, tr.FinalChunk)
+		}
+	}
+
+	f.write(backfill("p1", "{\"type\":\"file-history-snapshot\"}\n"+p1Lines), c)
+	f.drain()
+	if got := f.turn("p1").TranscriptChunk; got != spool.ChunkKey([]byte(p1Lines)) {
+		t.Errorf("turn transcript %s after an import with the same calls, want it kept", got)
+	}
+}
+
 func TestBackfillOpenMovesStartEarlier(t *testing.T) {
 	// Live capture began mid-session: its first record of turn p1 is an edit
 	// at minute 3, which left a placeholder turn, and turn p2 opened at

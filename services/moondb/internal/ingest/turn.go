@@ -3,9 +3,11 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/mad01/thismoon/services/moondb/internal/spool"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
+	"github.com/mad01/thismoon/services/moondb/internal/trace"
 )
 
 // turnOpen records a submitted prompt. A turn the store already holds (a
@@ -73,10 +75,11 @@ func (in *Ingester) openTurn(
 // lines, its final status and the totals of its trace. A close whose open
 // never arrived creates the turn, and the session with it, so the turn's
 // records do not dangle. An import only fills: it closes a turn still open
-// and sets fields the turn has empty. The session is offered the title the
-// turn's lines give and, without a prompt line, the one its first prompt
-// gives, even when the close changes nothing on the turn: a replayed close
-// makes up a fill an earlier attempt lost to a failed write.
+// and sets fields the turn has empty, and replaces transcript lines that
+// hold other model calls (importedTranscript). The session is offered the
+// title the turn's lines give and, without a prompt line, the one its first
+// prompt gives, even when the close changes nothing on the turn: a
+// replayed close makes up a fill an earlier attempt lost to a failed write.
 func (in *Ingester) turnClose(
 	ctx context.Context,
 	env spool.Envelope,
@@ -103,13 +106,60 @@ func (in *Ingester) turnClose(
 	set := setter(env)
 	changed := !found
 	changed = set(&t.FinalChunk, in.kept(env, missing, p.FinalChunk)) || changed
-	changed = set(&t.TranscriptChunk, in.kept(env, missing, p.TranscriptChunk)) || changed
+	transcript := in.kept(env, missing, p.TranscriptChunk)
+	if env.Backfill {
+		changed = in.importedTranscript(ctx, &t, transcript) || changed
+	} else {
+		changed = replace(&t.TranscriptChunk, transcript) || changed
+	}
 	changed = closeTurn(&t, env, closedStatus(p.Status)) || changed
 	lines, err := in.closedLines(ctx, &t, changed)
 	if err != nil {
 		return err
 	}
 	return in.fillSession(ctx, t.SessionID, transcriptTitle(lines))
+}
+
+// importedTranscript sets an import's transcript chunk on t when t has none,
+// or when the stored lines hold other model calls, and reports whether it
+// changed. The import reads a turn's lines from its prompt to the next one,
+// after the session wrote them. A live close reads the transcript as it
+// stands at Stop, which can miss the turn's head (before record kept a
+// turn's first offset, a prompt queued mid-turn moved it) or hold a call of
+// the turn before, so the import's calls are the turn's. A chunk the store
+// cannot read is logged and changes nothing.
+func (in *Ingester) importedTranscript(ctx context.Context, t *store.Turn, chunk string) bool {
+	if t.TranscriptChunk == "" || chunk == "" || chunk == t.TranscriptChunk {
+		return fill(&t.TranscriptChunk, chunk)
+	}
+	stored, err := in.transcript(ctx, *t)
+	if err != nil {
+		in.logf("%v; keeping it over the import's", err)
+		return false
+	}
+	imported, err := in.Store.Chunks().Get(ctx, chunk)
+	if err != nil {
+		in.logf("ingest: imported transcript of turn %s: %v; keeping the stored one", t.ID, err)
+		return false
+	}
+	if slices.Equal(in.callIDs(*t, imported), in.callIDs(*t, stored)) {
+		return false
+	}
+	t.TranscriptChunk = chunk
+	return true
+}
+
+// callIDs lists the message ids of the model calls in a turn's lines,
+// sorted.
+func (in *Ingester) callIDs(t store.Turn, lines []byte) []string {
+	var ids []string
+	for _, s := range trace.Build(store.TurnDetail{Turn: t}, lines, in.Prices).Spans {
+		if s.Kind == trace.KindModel {
+			ids = append(ids, s.ID)
+		}
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 // closedLines returns a closed turn's transcript lines. A changed turn gets

@@ -10,6 +10,7 @@ Monorepo for the `*.this` platform: local web services, CLI tools, the shared we
 | Test everything | `make test` |
 | Install all components | `make install-all` |
 | List components | `make components` |
+| Format only the Go files changed against origin/main | `make fmt-changed` |
 | Render sandbox settings from the access manifests | `make sandbox-settings` |
 | Check the renders and expansion layers the way CI does | `make sandbox-verify` |
 
@@ -66,7 +67,7 @@ docs/CONTAINER-BUILDS.md package-manager build steps (npm, pip, gem) in a throwa
 - Recipes under `recipes/` must use absolute or `~`-prefixed `working_dir` in builds/packages — ralph resolves remote recipe paths against its sources cache, not the consuming machine's checkout.
 - Recipes are the **public layer** only: portable build/install, t-man-guarded hooks, skills. Machine-private wiring (`[[recipe_sources]]` pins, MCP registration, host enables, env/secrets, config overlays) lives in the consuming repo as companion recipes. Hard `depends_on` on the platform foundations t-man and d-man is allowed; on anything else cross-source deps are banned. See docs/adr/0006.
 - Mods under `mods/` are additive, not components: no skill, hook, or service may require one, and they carry no Makefile or release line. The consuming repo registers their marketplace, never this one (docs/adr/0021).
-- Every change lands through a PR: branch, push, PR, CI green, merge. Never push to main directly; a GitHub ruleset and belt's `git-push-main` guard both refuse it, and merging to main is the deploy (ralph pulls main on every `ralph up`).
+- Every change lands through a PR: branch, push, PR, CI green, merge. For CI green, wait on the `ci-ok` job's conclusion, not the full check list: `gh pr checks --watch` can exit before the matrix jobs register. Never push to main directly; a GitHub ruleset and belt's `git-push-main` guard both refuse it, and merging to main is the deploy (ralph pulls main on every `ralph up`).
 - Stores are plain JSON or JSONL files: single-writer serve, full state in memory, atomic temp-and-rename saves. An embedded database solves nothing the fleet has and costs git-diffable files you can read with cat and jq; bbolt was assessed and declined in 2026-07. Revisit only if a store outgrows memory, such as an unbounded events history. When several services need the same load and save code, share a package instead.
 - Install the secret-scanning pre-commit hook after cloning: `suspenders hook install`.
 - Every `CLAUDE.md` in the repo has a sibling `AGENTS.md` symlink pointing at it, so non-Claude agents (Codex and others that read `AGENTS.md`) discover the same instructions. New components get the symlink alongside the `CLAUDE.md`.
@@ -92,7 +93,8 @@ Prerequisites: `golang-pro`, `golang-style`, `handoff`, and `loom` need nothing 
 Full reference: `docs/RELEASING.md`. The short version for working here:
 
 - release-please (manifest mode) runs on merge to main, keyed by the `packages` map in `release-please-config.json`. Conventional commits scoped by path drive per-component bumps. Merging a release PR cuts the `name/vX.Y.Z` tag + GitHub Release. The artifacts matrix builds darwin/arm64 tarballs with checksums.txt + cosign keyless bundle, natively on a macOS arm64 runner. csl builds with cgo for its tree-sitter grammars; everything else stays CGO_ENABLED=0.
-- Release PRs can sit unmerged; merge = release. Never hand-edit `.release-please-manifest.json`.
+- Release PRs merge themselves: release.yml turns on auto-merge, so one lands once its required checks pass, and merge = release. Never hand-edit `.release-please-manifest.json`.
+- Merge with squash. A PR whose commits bump different components by different types lands with a rebase merge, so release-please reads each commit with its own files; merge commits are off.
 - The workflow authenticates with a token minted from the `mad01-release-please` GitHub App (secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`, via actions/create-github-app-token). "Error adding to tree" or a missing release PR usually means the App lost Contents or Pull requests write access on this repo. Or the private-key secret no longer matches the App.
 - New component → must be added to `release-please-config.json`; CI fails the PR otherwise.
 

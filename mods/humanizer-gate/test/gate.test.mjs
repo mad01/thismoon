@@ -7,16 +7,20 @@ import {
   HOLD_OPTIONS,
   basename,
   extractCommitMessage,
+  feedbackReason,
   holdQuestion,
   isProseFile,
+  judge,
   parseDetectOutput,
   readConfig,
+  rememberDenial,
   splitSegments,
   statusText,
   summarizeFindings,
+  textKey,
 } from '../lib/gate.ts'
 
-const empty = { total: 0, errors: 0, warnings: 0, suggestions: 0, matches: [] }
+const empty = { total: 0, errors: 0, warnings: 0, suggestions: 0, matches: [], findings: [] }
 
 describe('readConfig', () => {
   test('fills the defaults from an empty options object', () => {
@@ -24,15 +28,22 @@ describe('readConfig', () => {
   })
 
   test('takes booleans and a known severity', () => {
-    assert.deepEqual(readConfig({ holdOnError: false, holdOnCommitError: true, minSeverity: 'error' }), {
+    const options = { holdOnError: false, holdOnCommitError: true, feedbackWarnings: false, minSeverity: 'error' }
+    assert.deepEqual(readConfig(options), {
       holdOnError: false,
       holdOnCommitError: true,
+      feedbackWarnings: false,
       minSeverity: 'error',
     })
   })
 
   test('falls back on a value of the wrong kind', () => {
-    assert.deepEqual(readConfig({ holdOnError: 'yes', holdOnCommitError: 1, minSeverity: 'loud' }), DEFAULT_CONFIG)
+    const options = { holdOnError: 'yes', holdOnCommitError: 1, feedbackWarnings: 'off', minSeverity: 'loud' }
+    assert.deepEqual(readConfig(options), DEFAULT_CONFIG)
+  })
+
+  test('hands warnings back to the model by default', () => {
+    assert.equal(readConfig({}).feedbackWarnings, true)
   })
 })
 
@@ -233,12 +244,34 @@ describe('summarizeFindings', () => {
     assert.deepEqual(summarizeFindings({ findings: 'nope' }), empty)
     assert.deepEqual(summarizeFindings({ findings: [null, 1, 'x'] }), empty)
   })
+
+  test('keeps every finding in text order, missing fields empty', () => {
+    const findings = summarizeFindings({
+      findings: [
+        { rule_id: 'B', severity: 'error', line: 3, column: 1, match: 'b', message: 'mb' },
+        { rule_id: 'A', severity: 'warning', line: 1, column: 9, match: 'a', message: 'ma' },
+        { rule_id: 'C', severity: 'loud', line: 1, column: 2 },
+      ],
+    }).findings
+    assert.deepEqual(
+      findings.map(f => `${f.ruleId} ${f.line}:${f.column} ${f.severity}`),
+      ['C 1:2 null', 'A 1:9 warning', 'B 3:1 error'],
+    )
+    assert.deepEqual(findings[0], { ruleId: 'C', severity: null, line: 1, column: 2, match: '', message: '' })
+  })
 })
 
 describe('parseDetectOutput', () => {
   test('parses the detect payload', () => {
-    const stdout = JSON.stringify({ findings: [{ severity: 'warning', match: 'delve' }], summary: {}, engine: 'vale' })
-    assert.deepEqual(parseDetectOutput(stdout), { ...empty, total: 1, warnings: 1, matches: ['delve'] })
+    const finding = { rule_id: 'Humanizer.AIVocabulary', severity: 'warning', line: 2, column: 5, match: 'delve', message: 'm' }
+    const stdout = JSON.stringify({ findings: [finding], summary: {}, engine: 'vale' })
+    assert.deepEqual(parseDetectOutput(stdout), {
+      ...empty,
+      total: 1,
+      warnings: 1,
+      matches: ['delve'],
+      findings: [{ ruleId: 'Humanizer.AIVocabulary', severity: 'warning', line: 2, column: 5, match: 'delve', message: 'm' }],
+    })
   })
 
   test('is null for non-JSON or a JSON without findings', () => {
@@ -289,5 +322,135 @@ describe('holdQuestion', () => {
   test('the dialog labels and deny text are fixed strings', () => {
     assert.deepEqual([...HOLD_OPTIONS], ['Proceed', 'Cancel'])
     assert.equal(CANCELLED_REASON, 'humanizer-gate: cancelled by user')
+  })
+})
+
+// A summary as parseDetectOutput builds it, from findings given as
+// [rule id, severity, line, column, match, message].
+function summaryOf(rows) {
+  return summarizeFindings({
+    findings: rows.map(([rule_id, severity, line, column, match, message]) => ({
+      rule_id,
+      severity,
+      line,
+      column,
+      match,
+      message,
+    })),
+  })
+}
+
+const vocabulary = ['Humanizer.AIVocabulary', 'warning', 1, 4, 'delve', "AI vocabulary word: 'delve'."]
+const inflation = ['Humanizer.SignificanceInflation', 'error', 2, 6, 'is a testament', 'Describe what it does.']
+const filler = ['Humanizer.Filler', 'suggestion', 1, 1, 'Basically', 'Filler word.']
+
+describe('feedbackReason', () => {
+  test('lists each finding at warning or above in text order, then what to do', () => {
+    const reason = feedbackReason(summaryOf([inflation, filler, vocabulary]), 'PR body')
+    assert.equal(
+      reason,
+      [
+        'humanizer-gate: not sent. humanizer detect found 2 findings in the PR body (line:column in that text):',
+        `- Humanizer.AIVocabulary 1:4 "delve": AI vocabulary word: 'delve'.`,
+        '- Humanizer.SignificanceInflation 2:6 "is a testament": Describe what it does.',
+        'Fix them and send the call again. If they are false positives, send the same PR body unchanged and it goes through.',
+      ].join('\n'),
+    )
+  })
+
+  test('puts a match on one line and clips a long one', () => {
+    const long = 'x'.repeat(100)
+    const reason = feedbackReason(
+      summaryOf([
+        ['Humanizer.InlineHeaderList', 'warning', 4, 1, '\n- **Speed:**', 'Inline header.'],
+        ['Humanizer.SentenceLength', 'warning', 5, 1, long, 'Long sentence.'],
+      ]),
+      'commit message',
+    )
+    assert.match(reason, /^- Humanizer\.InlineHeaderList 4:1 "- \*\*Speed:\*\*": Inline header\.$/m)
+    assert.match(reason, new RegExp(`^- Humanizer\\.SentenceLength 5:1 "${'x'.repeat(57)}\\.\\.\\.": Long sentence\\.$`, 'm'))
+  })
+
+  test('leaves out an empty match', () => {
+    const reason = feedbackReason(summaryOf([['Humanizer.X', 'warning', 1, 1, '', 'msg']]), 'PR body')
+    assert.match(reason, /^- Humanizer\.X 1:1: msg$/m)
+  })
+
+  test('lists twenty findings and counts the rest', () => {
+    const rows = Array.from({ length: 23 }, (_, i) => ['Humanizer.AIVocabulary', 'warning', i + 1, 1, 'delve', 'm'])
+    const lines = feedbackReason(summaryOf(rows), 'PR body').split('\n')
+    assert.equal(lines.filter(line => line.startsWith('- Humanizer.')).length, 20)
+    assert.ok(lines.includes('- and 3 more'))
+    assert.match(lines[0], /found 23 findings/)
+  })
+})
+
+describe('textKey and rememberDenial', () => {
+  test('a key is stable and changes with the text or the target', () => {
+    assert.equal(textKey('PR body', 'We delve.'), textKey('PR body', 'We delve.'))
+    assert.notEqual(textKey('PR body', 'We delve.'), textKey('PR body', 'We delve!'))
+    assert.notEqual(textKey('PR body', 'We delve.'), textKey('commit message', 'We delve.'))
+    assert.match(textKey('PR body', ''), /^[0-9a-f]+$/)
+  })
+
+  test('remembers the newest keys, at most 32, without duplicates', () => {
+    let keys = []
+    for (let i = 0; i < 40; i += 1) keys = rememberDenial(keys, `k${i}`)
+    assert.equal(keys.length, 32)
+    assert.equal(keys[0], 'k8')
+    assert.equal(keys.at(-1), 'k39')
+    assert.deepEqual(rememberDenial(['a', 'b'], 'a'), ['b', 'a'])
+  })
+})
+
+describe('judge', () => {
+  const base = { target: 'PR body', text: 'We delve.', isHolding: true, isFeedback: true, denied: [] }
+
+  test('a warning is denied with the findings and a key to remember', () => {
+    const summary = summaryOf([vocabulary])
+    const verdict = judge({ ...base, summary })
+    assert.equal(verdict.kind, 'feedback')
+    assert.equal(verdict.reason, feedbackReason(summary, 'PR body'))
+    assert.equal(verdict.key, textKey('PR body', 'We delve.'))
+  })
+
+  test('the same text sent again passes', () => {
+    const verdict = judge({ ...base, summary: summaryOf([vocabulary]), denied: [textKey('PR body', 'We delve.')] })
+    assert.deepEqual(verdict, { kind: 'resubmitted' })
+  })
+
+  test('a changed text is judged again', () => {
+    const verdict = judge({
+      ...base,
+      text: 'We delve deeper.',
+      summary: summaryOf([vocabulary]),
+      denied: [textKey('PR body', 'We delve.')],
+    })
+    assert.equal(verdict.kind, 'feedback')
+  })
+
+  test('no finding, only suggestions, or a failed scan passes', () => {
+    assert.deepEqual(judge({ ...base, summary: summaryOf([]) }), { kind: 'pass' })
+    assert.deepEqual(judge({ ...base, summary: summaryOf([filler]) }), { kind: 'pass' })
+    assert.deepEqual(judge({ ...base, summary: null }), { kind: 'pass' })
+  })
+
+  test('an error with the hold on goes to the dialog, as before', () => {
+    const summary = summaryOf([inflation, vocabulary])
+    assert.deepEqual(judge({ ...base, summary }), { kind: 'hold', summary })
+    assert.deepEqual(judge({ ...base, summary, isFeedback: false }), { kind: 'hold', summary })
+  })
+
+  test('an error with the hold off is handed back like a warning', () => {
+    const verdict = judge({ ...base, summary: summaryOf([inflation]), isHolding: false })
+    assert.equal(verdict.kind, 'feedback')
+    assert.match(verdict.reason, /Humanizer\.SignificanceInflation 2:6/)
+  })
+
+  test('feedback off restores the status-line-only behaviour', () => {
+    assert.deepEqual(judge({ ...base, summary: summaryOf([vocabulary]), isFeedback: false }), { kind: 'pass' })
+    assert.deepEqual(judge({ ...base, summary: summaryOf([inflation]), isHolding: false, isFeedback: false }), {
+      kind: 'pass',
+    })
   })
 })

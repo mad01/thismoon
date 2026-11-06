@@ -327,6 +327,11 @@ func TestValidateRejectsUnusableValues(t *testing.T) {
 			"hints.read-size: exclude_repos has no effect (read-size reads: only enabled)",
 		},
 		{
+			"exclude_tools on a hint that ignores it",
+			"hints:\n  em-dash:\n    exclude_tools:\n      - mcp__gh_com__create_pull_request\n",
+			"hints.em-dash: exclude_tools has no effect (em-dash reads: only enabled)",
+		},
+		{
 			"exclude_paths on a guard that ignores it",
 			"guards:\n  git-push-main:\n    exclude_paths:\n      - ~/notes\n",
 			"guards.git-push-main: exclude_paths has no effect",

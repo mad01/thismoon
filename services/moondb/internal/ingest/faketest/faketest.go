@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -159,6 +160,24 @@ func (s *Store) CountAgentsToFill(_ context.Context, since time.Time) (int, erro
 		}
 	}
 	return n, nil
+}
+
+// TranscriptCuts lists the sessions in which store.CapCheck finds turns a
+// cap of capBytes cut, oldest session first.
+func (s *Store) TranscriptCuts(_ context.Context, capBytes int64) ([]store.CutSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sessions := slices.SortedFunc(maps.Values(s.sessions), func(a, b store.Session) int {
+		return cmp.Or(a.StartedAt.Compare(b.StartedAt), cmp.Compare(a.ID, b.ID))
+	})
+	check := store.CapCheck{Cap: capBytes, Kept: s.chunks.size}
+	out := []store.CutSession{}
+	for _, v := range sessions {
+		if cut, ok := check.Cuts(v, s.sessionTurns(v.ID)); ok {
+			out = append(out, cut)
+		}
+	}
+	return out, nil
 }
 
 // sessionAgents lists one session's agents; the caller holds mu.
@@ -427,6 +446,15 @@ func (c *Chunks) Get(_ context.Context, key string) ([]byte, error) {
 		return nil, fmt.Errorf("faketest: chunk %s: %w", key, store.ErrNotFound)
 	}
 	return slices.Clone(data), nil
+}
+
+// size returns the length of the bytes stored under key, false when none
+// are.
+func (c *Chunks) size(key string) (int64, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	data, ok := c.data[key]
+	return int64(len(data)), ok
 }
 
 // Has reports whether key is stored.

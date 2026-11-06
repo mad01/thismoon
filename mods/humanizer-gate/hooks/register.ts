@@ -1,7 +1,7 @@
-import { atom, update } from 'claude-code'
+import { atom, read, update } from 'claude-code'
 import type { Caught, EngineInterface, Register } from 'claude-code'
 
-import type { HumanizerGateReport } from '../types'
+import type { HumanizerGateDenied, HumanizerGateReport } from '../types'
 import {
   CANCELLED_REASON,
   DETECT_BUDGET_MS,
@@ -10,15 +10,25 @@ import {
   extractCommitMessage,
   holdQuestion,
   isProseFile,
+  judge,
   parseDetectOutput,
   readConfig,
+  rememberDenial,
   statusText,
 } from '../lib/gate'
-import type { FindingsSummary, Severity } from '../lib/gate'
+import type { FindingsSummary, GateConfig, Severity } from '../lib/gate'
 
 const lastReport = atom(
   { plugin: 'humanizer-gate', key: 'lastReport' } as const,
   null as HumanizerGateReport | null,
+)
+
+// The texts this session denied with findings. `/clear` resets it; the
+// session id keeps an in-process `/resume` from carrying another session's
+// keys over.
+const denied = atom(
+  { plugin: 'humanizer-gate', key: 'denied' } as const,
+  { sessionId: null, keys: [] } as HumanizerGateDenied,
 )
 
 // The one .catch every hook below carries: say why in the debug log, then
@@ -87,6 +97,52 @@ async function isCancelled($: EngineInterface, summary: FindingsSummary, target:
   }
 }
 
+async function sessionId($: EngineInterface): Promise<string | null> {
+  try {
+    return await $.session.id()
+  } catch {
+    return null
+  }
+}
+
+// The keys session `id` denied; another session's keys count as none.
+const keysOf = (stored: HumanizerGateDenied, id: string | null): string[] =>
+  stored.sessionId === id ? stored.keys : []
+
+// Scans a PR body or commit message and answers the deny reason, or null to
+// send it. Error-level findings with the hold on ask Proceed / Cancel as
+// before; any other finding at warning or above is denied once with the
+// findings as the reason, and the same text sent again passes.
+async function gate(
+  $: EngineInterface,
+  binary: string,
+  config: GateConfig,
+  text: string,
+  target: string,
+  isHolding: boolean,
+): Promise<string | null> {
+  const summary = await detect($, binary, { text }, config.minSeverity)
+  await report($, summary, target)
+  const id = await sessionId($)
+  const verdict = judge({
+    summary,
+    target,
+    text,
+    isHolding,
+    isFeedback: config.feedbackWarnings,
+    denied: keysOf(await read($, denied), id),
+  })
+  if (verdict.kind === 'hold') return (await isCancelled($, verdict.summary, target)) ? CANCELLED_REASON : null
+  if (verdict.kind === 'resubmitted') {
+    $.ui.log(`humanizer-gate: ${target} sent again unchanged, passing`, { to: 'debug' })
+    return null
+  }
+  if (verdict.kind === 'pass') return null
+  const { key } = verdict
+  await update($, denied, stored => ({ sessionId: id, keys: rememberDenial(keysOf(stored, id), key) }))
+  return verdict.reason
+}
+
 export const register: Register = (on, options) => {
   const config = readConfig(options)
   // The binary's path once session.start found it. Null until then and when
@@ -101,7 +157,8 @@ export const register: Register = (on, options) => {
     if (binary === null) {
       $.ui.log(`humanizer-gate: ${candidate} missing, every hook passes through`, { to: 'debug' })
     } else {
-      $.ui.log(`humanizer-gate: loaded (min severity ${config.minSeverity})`, { to: 'debug' })
+      const feedback = config.feedbackWarnings ? 'on' : 'off'
+      $.ui.log(`humanizer-gate: loaded (min severity ${config.minSeverity}, feedback ${feedback})`, { to: 'debug' })
     }
     return started
   }).catch(skipOnFailure)
@@ -124,11 +181,8 @@ export const register: Register = (on, options) => {
       const bin = binary
       const body = typeof e.body === 'string' ? e.body : ''
       if (bin === null || body.trim() === '') return next(e)
-      const summary = await detect($, bin, { text: body }, config.minSeverity)
-      await report($, summary, 'PR body')
-      const held = summary !== null && summary.errors > 0 && config.holdOnError
-      if (held && (await isCancelled($, summary, 'PR body'))) return { deny: CANCELLED_REASON }
-      return next(e)
+      const reason = await gate($, bin, config, body, 'PR body', config.holdOnError)
+      return reason === null ? next(e) : { deny: reason }
     },
   ).catch(skipOnFailure)
 
@@ -138,10 +192,7 @@ export const register: Register = (on, options) => {
     const bin = binary
     const message = extractCommitMessage(e.command)
     if (bin === null || message === null) return next(e)
-    const summary = await detect($, bin, { text: message }, config.minSeverity)
-    await report($, summary, 'commit message')
-    const held = summary !== null && summary.errors > 0 && config.holdOnCommitError
-    if (held && (await isCancelled($, summary, 'commit message'))) return { deny: CANCELLED_REASON }
-    return next(e)
+    const reason = await gate($, bin, config, message, 'commit message', config.holdOnCommitError)
+    return reason === null ? next(e) : { deny: reason }
   }).catch(skipOnFailure)
 }

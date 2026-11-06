@@ -54,9 +54,9 @@ capture off on this machine.
 ## failure modes
 
 Start with `moondb doctor`: one command runs the config, hook wiring,
-reachability, store, version-skew and agent-briefs checks below and prints
-one line per check, FAIL lines naming the cause. The paragraphs here cover
-what each failure means.
+reachability, store, version-skew, agent-briefs and cut-turns checks below
+and prints one line per check, FAIL lines naming the cause. The paragraphs
+here cover what each failure means.
 
 `hooks-wired` fails: the Claude Code settings file (`~/.claude/settings.json`,
 or the config's `claude_settings`) lacks a `moondb record` hook entry for
@@ -104,7 +104,7 @@ inside a turn: from the model stopping to a new input such as a teammate
 message. The trace walks turns in the order they started, so a turn an
 import added sits where it ran, under a higher number than the live turns
 after it. Harness time far above a few minutes usually means a turn longer
-than the 4 MiB transcript tail, whose cut head counts as harness; its
+than the 15 MiB transcript tail, whose cut head counts as harness; its
 trace's lines then say `cut_head`.
 
 A session shows two times in `moondb sessions`, on the web page and in
@@ -125,7 +125,7 @@ before it was. `moondb import --force` brings their transcripts in, also
 for a session where no file was edited. Subagents "not priced yet" have no
 priced model, or their totals wait for the totals backfill, which runs
 while the spool is empty. An agent with `lines_cut` had a transcript over
-8 MiB after the cut to heads; the calls in its cut head add no cost. One
+15 MiB after the cut to heads; the calls in its cut head add no cost. One
 marked `partial` ran out of the hook's 2 s budget before the file's end.
 
 `why` or a turn shows a subagent's spawn brief as unknown, or `moondb
@@ -138,6 +138,16 @@ in those 30 days. An agent whose transcript file is gone stays unknown,
 and so does an agent of type `internal`, which has no transcript, and one
 moondb knows only from its edits.
 
+`moondb doctor` notes `cut-turns` with a count of turns that keep a
+transcript cut at the old 4 MiB cap. Those turns were stored before moondb
+0.11.1 raised the cap to 15 MiB: they lost their head, and their trace
+misses the model calls and the cost in it. Run the import the note names,
+`moondb import --since <n>d --force`, while no session is active. Its
+window reaches the oldest of their transcript files still under
+`~/.claude/projects`. A turn whose transcript file is gone stays cut, and
+the note counts it apart. The check reads turn offsets and chunk sizes from
+the store and stats the transcript files, so it reads no transcript.
+
 The spawn brief is the first message a subagent got and nothing after it.
 Its parent can send it more while it works, to a teammate or to a running
 subagent, which `later_messages` counts. moondb keeps each of those
@@ -148,6 +158,17 @@ round of tool calls ran counts as after it. A count that ends in `none
 before this edit` means none had arrived yet. One that ends in `none
 shown` means the agent was recorded before moondb kept them, which the
 forced import above fills.
+
+A session shows fewer model calls, and a lower cost, than its transcript
+holds. Before 2026-11-05 a prompt typed while a turn ran moved the turn's
+start, so its Stop kept only the lines after that prompt. Older builds also
+read the transcript at Stop before Claude Code wrote the turn's last
+response, and kept at most 4 MiB of a turn's lines. The Stop hook now waits
+up to 1 s for the final message to reach the transcript and keeps up to
+15 MiB. Run `moondb import --since 30d --force` while no session is
+active: it replaces a turn's lines wherever the transcript holds other
+model calls for it. That also repairs a turn whose last lines took longer
+than the wait.
 
 A repo's cost looks wrong: the page, `moondb sessions --repo` and the
 `moondb_sessions` tool split a session's cost by agent, since model calls
@@ -206,7 +227,7 @@ doctor` runs this comparison as its version-skew check.
 
 ## first moves
 
-1. `moondb doctor`: hooks wired, serve reachable, store readable, version skew and agents without a brief or later messages in one pass
+1. `moondb doctor`: hooks wired, serve reachable, store readable, version skew, agents without a brief or later messages, and turns the old transcript cap cut, in one pass
 2. If serve is unreachable: `t-man list`, then `t-man restart moondb`
 3. On version skew: `t-man restart moondb`, then `moondb doctor` again
 4. `moondb sessions`, to confirm capture is recording on this machine

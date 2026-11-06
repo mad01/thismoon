@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.15.0](https://github.com/mad01/thismoon/compare/belt/v2.14.0...belt/v2.15.0) (2026-11-05)
+
+
+### Features
+
+* **belt:** let humanizer-check skip tools another check already scans ([bc85867](https://github.com/mad01/thismoon/commit/bc85867653fdafa8331407373929d91d815b6a26))
+
 ## [2.14.0](https://github.com/mad01/thismoon/compare/belt/v2.13.0...belt/v2.14.0) (2026-11-02)
 
 

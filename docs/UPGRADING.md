@@ -36,6 +36,35 @@ Verify:
 1. `curl -s 127.0.0.1:7427/version` reports the merged commit.
 2. `brain doctor` exits 0. Its `index-dir` line names `~/.local/state/brain/index`, and `serve-reachable`, `version-skew`, `serve-vaults` and `serve-state-dir` are ok. A `serve-vaults` failure on an unreadable vault means the expansion layer lacks that path; `srtspec explain brain-serve` prints what serve may read.
 
+## 2026-11-05 moondb: Stop waits for the turn's last lines, and a turn keeps up to 15 MiB
+
+Change: thismoon #395. Claude Code writes the transcript asynchronously, so at Stop the file usually still lacked the turn's last response, and `moondb record` stored the turn without it. The Stop hook now waits up to 1 s for the transcript to hold the payload's final message before it reads the turn's lines. A turn's transcript chunk now keeps up to 15 MiB instead of 4 MiB, so a long turn keeps its head. An agent transcript keeps up to 15 MiB instead of 8 MiB.
+
+Run, in order:
+
+1. Merge thismoon #394 first, then this change, then `ralph up`. The hooks run the new `moondb record` from their next call.
+2. With no Claude Code session active, run `moondb import --since 30d --force`. Run it again on a machine that already ran it for #394: that build kept at most 4 MiB of each turn.
+
+Verify:
+
+1. `moondb version -o json` and serve's `/version` report the merged commit.
+2. For a session with a turn over 4 MiB of transcript, `moondb trace <id> --json | jq .totals.model_calls` matches the transcript's main-thread calls, counted with the `jq` line in the #394 entry below.
+3. On a build with the `cut-turns` doctor check, `moondb doctor` prints `ok cut-turns` with no note. A note counts the turns the old cap still cuts and names the import that repairs the ones whose transcript is still on disk.
+
+## 2026-11-05 moondb: a forced import repairs turns that kept too few model calls
+
+Change: thismoon #394. A prompt typed while a turn runs fires UserPromptSubmit under the running turn's prompt id. `moondb record` moved the turn's transcript offset to that point. The Stop then kept only the lines after the queued prompt, and the trace lost the turn's earlier model calls and their cost. record now keeps the turn's first offset. A forced import now also replaces a turn's transcript chunk when the transcript holds other model calls for that turn. That repairs the turns recorded before this change, and turns whose Stop read the transcript before the harness wrote its last lines.
+
+Run, in order:
+
+1. Merge this change, then `ralph up`. The hooks run the new `moondb record` from their next call, and the import repair needs the new serve.
+2. With no Claude Code session active, run `moondb import --since 30d --force`. A forced import closes in-flight turns, so the machine must be quiet. Sessions older than 30 days need a wider `--since`.
+
+Verify:
+
+1. `moondb version -o json` and serve's `/version` report the merged commit.
+2. For a session from before the change whose transcript holds `queue-operation` lines, `moondb trace <id> --json | jq .totals.model_calls` matches the transcript's main-thread calls: `jq -r 'select(.type=="assistant" and (.isSidechain|not)) | .message.id' <transcript> | sort -u | wc -l`. A turn that ran past 4 MiB of transcript still loses its head to the cap, so such a session stays lower.
+
 ## 2026-11-01 belt: read-size also fires on `csl_read`, and its matcher must name the tool
 
 Change: thismoon #363. belt's read-size hint now also fires after a `csl_read` call that reads a file of 300 lines or more with no `start_line` and no `end_line`. The advice is the same as after a Read. belt only sees the calls its PostToolUse matcher routes to `belt hint read`, so the consuming repo's matcher has to name the MCP tool too. A Read and a `csl_read` of one file now share one nudge per agent per session. The seen-file marker now names the file by repo and repo-relative path. A session that spans the upgrade can therefore get the hint once more for a file it already saw it on.

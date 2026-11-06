@@ -15,7 +15,7 @@ import (
 // reuse instead of asking git again; a lookup the budget cuts short is left
 // out, so a later turn fills it. Then it takes the turn's pre snapshots.
 func (rec *recorder) openTurn() error {
-	offset := fileSize(rec.p.transcriptPath)
+	offset := rec.openOffset()
 	env := rec.envelope(spool.KindTurnOpen, rec.p.promptID+":open")
 	env.Turn.TranscriptOffset = offset
 	if rec.p.cwd != "" {
@@ -38,7 +38,8 @@ func (rec *recorder) openTurn() error {
 // closeTurn records the end of a turn: the last assistant message, the
 // transcript lines written since the turn opened when the open was seen,
 // a head-moved report for every touched worktree whose HEAD changed, and
-// the turn's post snapshots.
+// the turn's post snapshots. The lines are read once the transcript holds
+// the final message, or once the flush wait runs out (awaitFinal).
 func (rec *recorder) closeTurn() error {
 	env := rec.envelope(spool.KindTurnClose, rec.p.promptID+":close")
 	chunks := chunkSet{}
@@ -48,6 +49,7 @@ func (rec *recorder) closeTurn() error {
 	}
 	if offset, ok := rec.state.turnOffset(rec.p.promptID); ok {
 		env.Turn.TranscriptOffset = offset
+		rec.awaitFinal(offset)
 		var tail []byte
 		tail, tc.TranscriptEnd = readTail(rec.p.transcriptPath, offset, moondb.MaxTranscriptBytes)
 		if len(tail) > 0 {
@@ -64,6 +66,20 @@ func (rec *recorder) closeTurn() error {
 		return err
 	}
 	return rec.takeSnapshots(store.SnapshotPost)
+}
+
+// openOffset is where the turn's lines start in the transcript. A prompt
+// typed while the turn runs is queued, and its UserPromptSubmit carries the
+// running turn's prompt id, so a second open of the same prompt keeps the
+// offset the first one recorded: the turn's lines still start there. An
+// offset past the transcript's end means the file was replaced, so the
+// open starts from its current size.
+func (rec *recorder) openOffset() int64 {
+	size := fileSize(rec.p.transcriptPath)
+	if offset, ok := rec.state.turnOffset(rec.p.promptID); ok && offset <= size {
+		return offset
+	}
+	return size
 }
 
 // fileSize is the size of path, 0 when it cannot be read.

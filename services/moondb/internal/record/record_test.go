@@ -92,6 +92,9 @@ type testSession struct {
 	transcript string
 	excludes   []string
 	budget     time.Duration
+	// flushWait is how long a Stop waits for its final message; short, so
+	// a test whose transcript never holds it does not wait long.
+	flushWait time.Duration
 	// env is the environment Run reads, so a test never sees the one it
 	// runs in; empty unless a test sets it.
 	env map[string]string
@@ -110,6 +113,7 @@ func newSession(tb testing.TB, cwd string) *testSession {
 		cwd:        cwd,
 		transcript: filepath.Join(root, "transcript.jsonl"),
 		budget:     10 * time.Second,
+		flushWait:  20 * time.Millisecond,
 	}
 }
 
@@ -137,6 +141,7 @@ func (s *testSession) runRaw(body string) error {
 		Excludes:   s.excludes,
 		Budget:     s.budget,
 		BashBudget: s.budget,
+		FlushWait:  s.flushWait,
 		Logf: func(format string, args ...any) {
 			s.logs = append(s.logs, fmt.Sprintf(format, args...))
 		},
@@ -520,6 +525,60 @@ func TestPromptThenStop(t *testing.T) {
 		{"final", s.chunk(tc.FinalChunk), "Renamed the greeting."},
 		{"transcript", s.chunk(tc.TranscriptChunk), during},
 	})
+}
+
+// TestQueuedPromptKeepsTurnStart: a prompt typed while the turn runs is
+// queued, and its UserPromptSubmit carries the running turn's prompt id.
+// That second open keeps the offset of the first, so the close still tails
+// every line of the turn and not only those after the queued prompt.
+func TestQueuedPromptKeepsTurnStart(t *testing.T) {
+	s := newSession(t, physicalTempDir(t))
+	before := "{\"type\":\"user\",\"line\":\"before\"}\n"
+	writeFile(t, s.transcript, before)
+	s.mustRun("prompt.json")
+	s.take()
+
+	working := "{\"type\":\"assistant\",\"line\":1}\n"
+	writeFile(t, s.transcript, before+working)
+	s.mustRun("prompt.json")
+	if got := s.takeOne(spool.KindTurnOpen).Turn.TranscriptOffset; got != int64(len(before)) {
+		t.Errorf("queued open offset = %d, want the first open's %d", got, len(before))
+	}
+
+	queued := "{\"type\":\"queue-operation\",\"operation\":\"enqueue\"}\n" +
+		"{\"type\":\"assistant\",\"line\":2}\n"
+	writeFile(t, s.transcript, before+working+queued)
+	s.mustRun("stop.json")
+	closed := s.takeOne(spool.KindTurnClose)
+	if closed.Turn.TranscriptOffset != int64(len(before)) {
+		t.Errorf("close offset = %d, want %d", closed.Turn.TranscriptOffset, len(before))
+	}
+	if got := s.chunk(closed.TurnClose.TranscriptChunk); got != working+queued {
+		t.Errorf("transcript = %q, want every line since the first open %q", got, working+queued)
+	}
+}
+
+// TestReopenStartsFresh: a new prompt id, or the same one over a transcript
+// now shorter than its recorded offset, opens at the transcript's size.
+func TestReopenStartsFresh(t *testing.T) {
+	s := newSession(t, physicalTempDir(t))
+	long := "{\"line\":\"one\"}\n{\"line\":\"two\"}\n"
+	writeFile(t, s.transcript, long)
+	s.mustRun("prompt.json")
+	s.take()
+
+	writeFile(t, s.transcript, long+long)
+	s.mustRun("prompt.json", "prompt-1", "prompt-2")
+	if got := s.takeOne(spool.KindTurnOpen).Turn.TranscriptOffset; got != int64(len(long+long)) {
+		t.Errorf("new prompt offset = %d, want the size %d", got, len(long+long))
+	}
+
+	short := "{\"line\":0}\n"
+	writeFile(t, s.transcript, short)
+	s.mustRun("prompt.json", "prompt-1", "prompt-2")
+	if got := s.takeOne(spool.KindTurnOpen).Turn.TranscriptOffset; got != int64(len(short)) {
+		t.Errorf("open over a replaced transcript offset = %d, want the size %d", got, len(short))
+	}
 }
 
 // TestSessionOrigin: a turn-open carries where the session's cwd sits in

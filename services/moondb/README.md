@@ -125,7 +125,7 @@ moondb trace <session-id>    # where a session's time went and what it cost
 moondb inflight              # files in this checkout other sessions edited that no commit has taken yet
 moondb scorecard <session-id>  # how a session spent its context: searches, reads, hints, flags
 moondb import --dry-run      # what an import of past session transcripts would record
-moondb doctor                # are the hooks wired, is serve up, is the store readable, is the build current, do agents lack a brief or later messages
+moondb doctor                # are the hooks wired, is serve up, is the store readable, is the build current, do agents lack a brief or later messages, do turns keep a transcript the old cap cut
 ```
 
 For example, `moondb why services/events/internal/store/dedupe.go:42` names

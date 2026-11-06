@@ -27,8 +27,15 @@ const (
 	// MaxChunkBytes is the largest file content a hook ships as a chunk.
 	// Larger files are recorded by path and patch only.
 	MaxChunkBytes = 1 << 20
-	// MaxTranscriptBytes caps the transcript tail stored per turn.
-	MaxTranscriptBytes = 4 << 20
+	// MaxTranscriptBytes caps the transcript tail stored per turn. The
+	// longest main-thread turn in a 2026-11 survey of ~/.claude/projects
+	// was 10.4 MiB, so 15 MiB keeps every turn whole with room to spare.
+	MaxTranscriptBytes = 15 << 20
+	// OldMaxTranscriptBytes is the cap MaxTranscriptBytes held before
+	// moondb 0.11.1: a longer turn kept only its last 4 MiB of lines. The
+	// cut-turns doctor check finds the turns it cut; a forced import
+	// stores them again under the new cap.
+	OldMaxTranscriptBytes = 4 << 20
 	// RecordBudget is how long `moondb record` works before it writes what
 	// it has and returns. The Edit/Write hook is synchronous, so this is
 	// latency the session feels on every edit.
@@ -41,6 +48,15 @@ const (
 	// the budget does not reach are skipped: counted on the turn as
 	// timeout, with no edit.
 	BashBudget = 2 * time.Second
+	// FlushWait is how long the Stop hook waits for the transcript to
+	// hold the turn's final message before it reads the turn's lines.
+	// Claude Code writes the transcript asynchronously, and at Stop the
+	// file usually still lacks the turn's last response, which landed
+	// about 140 ms later when watched; 1 s leaves room for a busy machine.
+	// The hook is async, so no session waits on it; its budget is
+	// RecordBudget plus this wait, and when the wait runs out it records
+	// the lines there are.
+	FlushWait = 1 * time.Second
 	// GitBudget bounds every git call a hook makes.
 	GitBudget = 1 * time.Second
 	// SnapshotBudget is how long the turn-edge hooks (UserPromptSubmit and
@@ -70,8 +86,9 @@ const (
 	// MaxAgentTranscriptBytes caps an agent transcript after the cut to
 	// heads. A longer one loses whole lines from its head, counted on the
 	// Agent record, and the model calls in them add no tokens or cost, as
-	// for a turn's transcript (MaxTranscriptBytes).
-	MaxAgentTranscriptBytes = 8 << 20
+	// for a turn's transcript (MaxTranscriptBytes). It matches that cap:
+	// the largest cut transcript in the same survey was 1.3 MiB.
+	MaxAgentTranscriptBytes = 15 << 20
 	// MaxBriefBytes caps an Agent's spawn brief, the text of its
 	// transcript's first user line, and each of its later messages, which
 	// are kept whole beside the agent transcript.

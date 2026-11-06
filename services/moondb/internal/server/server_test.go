@@ -702,6 +702,41 @@ func TestDoctorCountsAgentsToFill(t *testing.T) {
 	}
 }
 
+// TestDoctorListsTranscriptCuts: a turn whose few stored bytes span 5 MiB
+// of transcript to the next turn's offset was cut at the old 4 MiB cap,
+// and the next turn, the session's last, is a tail for the doctor to
+// judge against the transcript file.
+func TestDoctorListsTranscriptCuts(t *testing.T) {
+	h := newHarness(t)
+	chunk := h.store.AddChunk([]byte(`{"type":"assistant"}` + "\n"))
+	turn := func(id string, seq int, offset int64) store.Turn {
+		return store.Turn{
+			ID: id, SessionID: "s-cut", Seq: seq, Status: store.TurnClosed,
+			StartedAt: servertest.T0.Add(time.Duration(seq) * time.Minute), TranscriptChunk: chunk,
+			TranscriptOffset: offset,
+		}
+	}
+	h.store.Add(
+		store.Session{ID: "s-cut", TranscriptPath: "/t/s-cut.jsonl", StartedAt: servertest.T0},
+		[]store.Turn{turn("t-cut", 1, 0), turn("t-tail", 2, 5<<20)}, nil, nil)
+	var v DoctorView
+	h.getJSON(t, "/api/doctor", http.StatusOK, &v)
+	if v.TranscriptCuts == nil || v.TranscriptCuts.Cap != 4<<20 {
+		t.Fatalf("transcript_cuts = %+v, want the 4 MiB cap", v.TranscriptCuts)
+	}
+	i := slices.IndexFunc(v.TranscriptCuts.Sessions, func(c store.CutSession) bool {
+		return c.SessionID == "s-cut"
+	})
+	if i < 0 {
+		t.Fatalf("s-cut missing from %+v", v.TranscriptCuts.Sessions)
+	}
+	got := v.TranscriptCuts.Sessions[i]
+	if !slices.Equal(got.Turns, []string{"t-cut"}) || got.TranscriptPath != "/t/s-cut.jsonl" ||
+		got.Tail == nil || *got.Tail != (store.CutTail{TurnID: "t-tail", Offset: 5 << 20}) {
+		t.Errorf("s-cut = %+v (tail %+v), want t-cut cut and t-tail as the tail", got, got.Tail)
+	}
+}
+
 // TestWithAgentRecordsMarksRecorded: a turn row built from edits alone,
 // when the turn's agents could not be traced, takes its record's name,
 // spawn brief and count of later messages and is marked recorded; a row
