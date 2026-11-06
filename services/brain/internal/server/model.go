@@ -17,8 +17,12 @@ import (
 const fingerprintTTL = 2 * time.Second
 
 // layoutVersion is part of every layout key. Bump it when the graph's node
-// ids or the layout file's shape change, so no old layout is reused.
-const layoutVersion = 1
+// ids, the layout file's shape or the layout's scale change, so no old
+// layout is reused. Version 2 is the d3-force layout, which spaces nodes in
+// pixels at zoom 1 where version 1's ForceAtlas2 used its own units.
+// Version 3 holds the notes on one island per community, and the UI reads
+// the islands back out of a saved layout, so a version 2 one is not used.
+const layoutVersion = 3
 
 // vaultPrint is one vault's fingerprint, the same mtime and size digest the
 // literal index's freshness check computes.

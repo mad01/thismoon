@@ -120,40 +120,110 @@ note, and is empty otherwise.
 ## Layout
 
 The layout key is the sha256 of the layout version, each vault's
-`name|fingerprint`, and the topics flag. ForceAtlas2 runs in the browser.
+`name|fingerprint`, and the topics flag. d3-force runs in the browser.
 On a hit, `/api/graph` returns the positions cached under the key with
 `"cached":true`. On a miss it returns the positions of the newest layout
 file, an older key's, with `"cached":false`, so notes already placed keep
 their place. The browser then:
 
-1. Takes the positions `/api/graph` returned for nodes it still knows.
-2. Places new nodes near their neighbours with `circular`.
-3. Runs ForceAtlas2 in its worker.
-4. POSTs the positions with the key it was given.
+1. Takes the positions `/api/graph` returned for nodes it still knows, or
+   the ones it last drew.
+2. Groups the notes into communities and gives each community an island
+   (see Islands below).
+3. Starts each new node on a small spiral next to the neighbours it links
+   to, or on a spiral at its island's centre when it links to no placed
+   node, as every node does when nothing is placed yet.
+4. Runs the simulation for up to 250 ms before the first draw, hotter the
+   larger the share of new nodes, then live until it comes to rest.
+5. POSTs the positions with the key it was given once it rests.
 
-The server writes the file atomically and keeps the newest three.
+Only the global layout is posted: a run over every node the default
+filters show (dangling targets stay hidden by default), with no search. A
+page opened with a vault filter, or on a local graph, settles what it
+shows and posts nothing; the next run over the whole graph picks up the
+settling that is left and posts once it rests. With every node cached the
+simulation starts cold, nothing moves and nothing is posted. The server writes the file atomically and keeps the
+newest three. Layout version 3 is the d3-force layout with islands; files
+of versions 1 and 2 are not read.
 
-A node dragged on the global graph stays where it is dropped: ForceAtlas2
-settles the rest around it for about a second, then the browser POSTs the
-positions under the current key, so the node keeps its place on reload. A
-drag on a local graph is never posted.
+### Islands
+
+The global graph shows each community of notes as an island, with empty
+space between the islands:
+
+- Louvain (`graphology-communities-louvain`, with a fixed seed) splits the
+  notes the default filters show into communities, numbered by size. Tags
+  and dangling targets join the community most of their neighbours are in.
+  Notes with no link share one island of their own.
+- Each island is a disc sized to its notes. The discs are packed around the
+  middle with a gap of half their mean radius, or at least 120 units,
+  between any two. An island whose notes are already placed stays at their
+  centroid.
+- A force holds every node on its island: a pull toward the centre, and a
+  stronger one back from beyond the edge. A link between two communities
+  pulls at 2% of its strength, and the global graph draws it faint.
+- A poll keeps every note's community, so the islands stay where they are.
+  A new note joins the community most of its neighbours are in; new notes
+  linked only among themselves form a new island.
+- A reload reads the islands back out of the positions: nodes whose
+  circles are less than 100 units apart share an island. A graph that
+  changed while the page was closed keeps its islands, even when Louvain
+  would now split it another way.
+- A filter or a search keeps the communities and the islands: the nodes
+  still shown gather on their own islands, and the hidden ones keep their
+  places.
+- A local graph has no islands: its notes spread around the centre with the
+  plain forces.
+
+The simulation stays live. Dragging a node on the global graph pulls its
+linked neighbours along; on release the node springs back among them, and
+once the graph rests the browser POSTs the positions under the current key.
+From the start of a drag until the graph rests, the physics run slower
+(more friction, less heat), so nodes drift instead of jumping.
+A local graph, or a graph a filter or a search reduced, is never posted;
+a drag or a filter that moved the global graph is posted after the next
+run over the whole graph rests.
 
 ## Browser
 
-- `assets/brain-graph.bundle.js` sets `window.BrainSigma` to
-  `{Graph, Sigma, forceAtlas2, FA2Layout, circular, MarkdownIt}`.
+- `assets/brain-graph.bundle.js` sets `window.BrainSigma` to `{Graph,
+  Sigma, MarkdownIt}`, the sigma 4 drawing pieces the UI composes
+  (`sdfCircle`, `layerFill`, `layerBorder`, `pathLine`, `pathCurved`,
+  `pathLoop`, `extremityArrow`, `layerPlain`) and the d3-force pieces
+  (`forceSimulation`, `forceLink`, `forceManyBody`, `forceCollide`,
+  `forceX`, `forceY`), and `louvain`, which finds the communities.
 - `graph.js` sets `window.BrainGraph` to pure helpers with no DOM access:
-  filters, color maps, depth search, node sizes, and the orphan and
-  dangling toggles.
+  filters, colour roles, node radii and captions, depth search, the
+  simulation settings, where a new node starts, camera framing and search
+  hits.
 - `app.js` is an IIFE over `window.Webkit`, `window.BrainSigma` and
   `window.BrainGraph`. It polls `/api/state` every 10 seconds and refetches
   when the key changes.
+- The page is one toolbar row over the graph: Global or Local with the
+  depth, the search with its Literal or Hybrid toggle, a Filters button
+  and a Review button. Filters opens a popover with the vault, colour,
+  tier, tag and status selects and the Orphans, Dangling, Size by links
+  and Topics toggles; the button counts the filters set away from their
+  defaults. Colour is by tier by default, or by vault, evidence, status,
+  staleness or cluster: each community in its own colour, named in the
+  legend after its note with the most links. Review counts what needs action: promotions, the stale queue
+  and check errors. Check warnings show in its Check tab only.
+- A click on a note opens it in a popup over the dimmed graph, which Esc,
+  the close button or a click outside closes; a double click opens its
+  local graph. A press that moves 5 px or more is a drag, never a click.
+  The review queues open in the same popup. When the vault changes, the
+  open note is read again in place, keeping its scroll position.
+- A search reduces the graph to the notes it finds and the edges among
+  them; Esc in the search box clears it.
 - The UI fetches the whole graph (`/api/graph` with only `topics`) and
   applies the vault filter and the local graph around a note in the
   browser. It never sends `/api/graph` a `vault`, `center` or `depth`; the
-  API still takes them. Search and the notes list do send `vault`.
-- serve sets no Content-Security-Policy. One that is added must allow
-  `worker-src blob:`: the ForceAtlas2 worker starts from a Blob URL.
+  API still takes them. Search does send `vault`.
+- The URL keeps `vault`, `color`, `note` (the note the popup shows),
+  `view=local` with `center` (the local graph's note), `depth` and
+  `topics`. A link with `view=local` and no `center` centres on `note`.
+- serve sets no Content-Security-Policy. The UI starts no worker, so one
+  that is added needs no `worker-src`.
 
 ## Doctor checks
 
