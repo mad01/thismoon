@@ -1,8 +1,6 @@
 package search
 
 import (
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
@@ -49,7 +47,7 @@ func readMeta(root, rel string, now time.Time) NoteMeta {
 	if root == "" {
 		return NoteMeta{}
 	}
-	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	data, err := readNote(root, rel)
 	if err != nil {
 		return NoteMeta{}
 	}
