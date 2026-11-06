@@ -4,24 +4,23 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
-## 2026-11-05 brain: `brain serve` runs sandboxed, so legacy indexes move out of `~/.config/brain`
+## 2026-11-05 brain: `brain serve` runs sandboxed, so legacy indexes leave `~/.config/brain`
 
-Change: thismoon #NNN. brain gains `brain serve`, the read-only web view at brain.this on port 7427. The new `recipes/brain/` builds brain as `packages.brain` and registers the t-man agent `brain-serve`, which runs serve under srt. The sandbox writes only `~/.local/state/brain`. brain keeps its state in `~/.config/brain` while `~/.config/brain/index/state.json` exists, so an install that still has its indexes there moves them first.
+Change: thismoon #NNN. brain gains `brain serve`, the read-only web view at brain.this on port 7427. The new `recipes/brain/` builds brain as `packages.brain` and registers the t-man agent `brain-serve`, which runs serve under srt. The sandbox writes only `~/.local/state/brain`. brain keeps its state in `~/.config/brain` while `~/.config/brain/index/state.json` exists, so an install that still has its indexes there sets them aside first.
 
 Run, in order:
 
 1. End the agent sessions that run the brain MCP server. An MCP server on the old binary rebuilds `~/.config/brain/index/state.json` on its next search, which sends brain back to the old state directory.
 2. Merge this change, then the consuming repo's brain change right after it, with no `ralph up` in between: until both are in, both repos declare `packages.brain`. The consuming repo's change stops building brain itself and ships the srt expansion layer `~/.config/srt/brain-serve.local.json`, which grants the vault and the target of the `config.yaml` link.
-3. Move the indexes. Check first that `~/.local/state/brain` holds no `index` or `semantic` directory, since `mv` would nest them. Skip the second `mv` when the semantic layer is off.
+3. Set the legacy indexes aside. Nothing in them carries over, because both indexes rebuild after this upgrade (see below). Renaming `index` also removes the probe file. Skip a line whose directory does not exist.
 
    ```sh
-   mkdir -p ~/.local/state/brain
-   mv ~/.config/brain/index ~/.local/state/brain/index
-   mv ~/.config/brain/semantic ~/.local/state/brain/semantic
+   mv ~/.config/brain/index ~/.config/brain/index.legacy
+   mv ~/.config/brain/semantic ~/.config/brain/semantic.legacy
    ```
 
-   The probe file moves with `index`. A store without a manifest sits at the root of `semantic/`; brain no longer reads it and builds `semantic/<vault>/` afresh. Files left at the root of `index/` and `semantic/` are unused after that and can be deleted. If the config sets `semantic.index_dir` under `~/.config/brain`, move that directory's `<vault>/` stores into `~/.local/state/brain/semantic/` and drop the key.
-4. `ralph up`, then `t-man restart brain-serve`, so serve starts on the moved state.
+   Delete the two `.legacy` directories once `brain doctor` passes. A config that sets `semantic.index_dir` must drop the key, or the semantic store stays outside the sandbox's write grant; the consuming repo's change drops it from its config.
+4. `ralph up`, then `t-man restart brain-serve`, so serve starts on the new state directory.
 5. Start new agent sessions, so the MCP server runs the new binary.
 
 brain now commits each change it makes to a vault that is a git repo, staging only the paths it touched. It never pushes. `autocommit: false` on a vault entry turns the commits off.
