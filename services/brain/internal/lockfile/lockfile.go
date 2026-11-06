@@ -1,7 +1,8 @@
 // Package lockfile takes cross-process advisory locks (flock) on files in
-// brain's lock directory, so the CLI, the MCP server and the coming brain
-// serve never build one vault's index, or rewrite its notes, at the same
-// time. The locks are advisory: an editor writing the vault ignores them.
+// brain's lock directory, so the CLI, the MCP server and brain serve never
+// build one vault's index, and the CLI and the MCP server never rewrite its
+// notes, at the same time. The locks are advisory: an editor writing the
+// vault ignores them.
 package lockfile
 
 import (

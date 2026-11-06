@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/mad01/thismoon/services/brain/internal/semantic"
@@ -57,5 +58,36 @@ func TestSemanticHitsFollowTheNoteStatus(t *testing.T) {
 	}
 	if b, ok := query(true)["notes/b.md"]; !ok || b.Status != "retracted" {
 		t.Errorf("include revoked: hit b = %+v, want its current status retracted", b)
+	}
+}
+
+// TestSemanticStatusFilterMatchesTheTierDefault pins that the semantic
+// status filter matches a note's effective status: a note with no status
+// line has its tier's default, raw in the inbox and validated elsewhere.
+func TestSemanticStatusFilterMatchesTheTierDefault(t *testing.T) {
+	f := newSemanticFixture(t, semanticNotes)
+	lib, v := f.open("model-a")
+	f.refresh(lib, v, false)
+	paths := func(status string) []string {
+		t.Helper()
+		res, err := lib.SemanticSearch(context.Background(), lib.Set(), SemanticQuery{
+			Text: "apple", Mode: semantic.ModePaths,
+			Filter: semantic.QueryOptions{K: 10, Status: status},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, h := range res.Hits {
+			out = append(out, h.Path)
+		}
+		slices.Sort(out)
+		return out
+	}
+	if got, want := paths("validated"), []string{"notes/a.md", "notes/b.md"}; !slices.Equal(got, want) {
+		t.Errorf("status validated = %q, want %q", got, want)
+	}
+	if got, want := paths("Raw"), []string{"inbox/c.md"}; !slices.Equal(got, want) {
+		t.Errorf("status Raw = %q, want %q", got, want)
 	}
 }

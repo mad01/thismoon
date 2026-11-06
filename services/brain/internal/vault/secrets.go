@@ -18,10 +18,13 @@ const SuspendersFile = ".suspenders.yaml"
 // maxReportedSecrets caps the findings a refused write lists.
 const maxReportedSecrets = 3
 
+// NulByteRule is the rule id of the finding Secrets reports for a NUL byte.
+const NulByteRule = "nul-byte"
+
 // nulRule names the finding Secrets reports for a NUL byte. The scan skips
 // content that holds one as binary, so a NUL could hide a secret after it.
 var nulRule = secretscan.Rule{
-	ID:          "nul-byte",
+	ID:          NulByteRule,
 	Description: "a NUL byte: a note is text, and the secret scan skips a file holding one",
 	Severity:    "high",
 }
@@ -73,10 +76,8 @@ func (v *Vault) refuseContent(path string, content []byte) error {
 }
 
 // refuseSecrets fails with ErrSecretFound when content bound for path holds
-// a secret, naming each finding by its rule, line and length alone: no
-// character of the value, since the message lands in terminals, logs and
-// agent context. It runs before a write touches disk, so a refused note is
-// never written.
+// a secret, naming each finding by its line and DescribeSecret. It runs
+// before a write touches disk, so a refused note is never written.
 func (v *Vault) refuseSecrets(path string, content []byte) error {
 	rel := v.Rel(path)
 	findings, err := v.Secrets(rel, content)
@@ -88,8 +89,7 @@ func (v *Vault) refuseSecrets(path string, content []byte) error {
 	}
 	parts := make([]string, 0, maxReportedSecrets+1)
 	for _, f := range findings[:min(len(findings), maxReportedSecrets)] {
-		parts = append(parts, fmt.Sprintf("line %d: %s (%d characters)",
-			f.Line, f.Rule.ID, utf8.RuneCountInString(f.RawMatch)))
+		parts = append(parts, fmt.Sprintf("line %d: %s", f.Line, DescribeSecret(f)))
 	}
 	if extra := len(findings) - maxReportedSecrets; extra > 0 {
 		parts = append(parts, fmt.Sprintf("and %d more", extra))
@@ -99,4 +99,11 @@ func (v *Vault) refuseSecrets(path string, content []byte) error {
 			"with suspenders:ignore on its line or in the vault's %s)",
 		ErrSecretFound, rel, strings.Join(parts, "; "), SuspendersFile,
 	)
+}
+
+// DescribeSecret names a secret finding by its rule id and the length of
+// the match, with no character of the value: what a refused write and
+// brain check print, since both land in terminals, logs and agent context.
+func DescribeSecret(f secretscan.Finding) string {
+	return fmt.Sprintf("%s (%d characters)", f.Rule.ID, utf8.RuneCountInString(f.RawMatch))
 }

@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
+	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
 // PolicyFile is where a vault keeps its policy, relative to the vault root.
@@ -41,6 +42,12 @@ const (
 	RuleStemDuplicate   = "stem-duplicate"
 	RuleClassification  = "classification"
 	RuleSecret          = "secret"
+	// RuleSymlink reports a note path that is a symbolic link, or that
+	// resolves through one: brain reads no note through a link.
+	RuleSymlink = "symlink"
+	// RuleNulByte reports a NUL byte, which hides what follows it from the
+	// secret scan.
+	RuleNulByte = vault.NulByteRule
 	// RulePolicy reports a policy file that cannot be used. It is always an
 	// error and no policy can turn it off.
 	RulePolicy = "policy"
@@ -63,6 +70,8 @@ var DefaultLevels = map[string]string{
 	RuleStemDuplicate:   Warning,
 	RuleClassification:  Error,
 	RuleSecret:          Error,
+	RuleSymlink:         Error,
+	RuleNulByte:         Error,
 }
 
 // Policy is a vault's .brain/policy.yaml: the classifications the vault

@@ -59,7 +59,7 @@ func IndexVault(t Target, progress func(path string)) error {
 		return fmt.Errorf("create index builder for %s: %w", vaultRoot, err)
 	}
 	for _, rel := range rels {
-		content, err := os.ReadFile(filepath.Join(vaultRoot, filepath.FromSlash(rel)))
+		content, err := readNote(vaultRoot, rel)
 		if err != nil {
 			continue // best effort: skip a file that vanished or cannot be read
 		}
@@ -363,7 +363,7 @@ func tagsForPath(vaultRoot, relPath string) []string {
 	if vaultRoot == "" {
 		return nil
 	}
-	data, err := os.ReadFile(filepath.Join(vaultRoot, relPath))
+	data, err := readNote(vaultRoot, relPath)
 	if err != nil {
 		return nil
 	}
@@ -394,7 +394,7 @@ func noteFilter(vaultRoot string, opts SearchOptions) func(path string) bool {
 // The status compared is the effective one (vault.StatusOf): the stored
 // value, else the default of the note's tier.
 func noteMatchesFrontmatter(vaultRoot, relPath string, opts SearchOptions) bool {
-	data, err := os.ReadFile(filepath.Join(vaultRoot, relPath))
+	data, err := readNote(vaultRoot, relPath)
 	if err != nil {
 		return false
 	}

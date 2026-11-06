@@ -846,6 +846,19 @@ func TestDoctor(t *testing.T) {
 	}
 }
 
+// TestDoctorHelpNamesEveryCheck keeps brain doctor --help in step with the
+// checks the report holds.
+func TestDoctorHelpNamesEveryCheck(t *testing.T) {
+	setupCLI(t, "")
+	report := decodeStrict[doctor.Report](t, runBrain(t, "", "doctor", "-o", "json").stdout)
+	help := runBrain(t, "", "doctor", "--help").stdout
+	for _, c := range report.Checks {
+		if !strings.Contains(help, "("+c.Name+")") {
+			t.Errorf("brain doctor --help does not name check %q", c.Name)
+		}
+	}
+}
+
 func mapsEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {
 		return false
@@ -891,6 +904,19 @@ func TestDocsLifecycle(t *testing.T) {
 	}
 	if got := runBrain(t, "", "docs", "bogus"); got.code != exitUsage {
 		t.Errorf("docs bogus: exit %d, want %d", got.code, exitUsage)
+	}
+}
+
+func TestDocsServe(t *testing.T) {
+	got := runBrain(t, "", "docs", "serve")
+	if got.code != exitOK {
+		t.Fatalf("exit %d, stderr %q", got.code, got.stderr)
+	}
+	if !strings.HasPrefix(got.stdout, "# brain serve: HTTP API and UI contract") {
+		t.Errorf("docs serve does not print docs/serve.md: %.80q", got.stdout)
+	}
+	if help := runBrain(t, "", "docs", "--help").stdout; !strings.Contains(help, "serve ") {
+		t.Errorf("brain docs --help does not list the serve topic:\n%s", help)
 	}
 }
 

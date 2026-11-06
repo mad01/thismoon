@@ -26,7 +26,8 @@ func newCheckCmd(a *app) *cobra.Command {
 		Long: `Check notes for problems a reviewer would otherwise catch by hand: frontmatter
 that breaks the status rules, a source note without a source, links that
 resolve to nothing, ids and filename stems shared within a vault, a
-classification the vault's .brain/policy.yaml does not allow, and secrets.
+classification the vault's .brain/policy.yaml does not allow, secrets, NUL
+bytes and notes that are symbolic links.
 A link from a checked note to a retracted or withdrawn note is an error; a
 link to any other note that is not validated, or one past its review_by, is
 a warning, and so is a link from an unchecked note to a checked one that is
@@ -48,10 +49,10 @@ optional field is a warning:
 
 Rules: schema, status-unknown, status-fields, missing-field, provenance,
 link-dangling, link-revoked, link-unvalidated, id-duplicate, stem-duplicate,
-classification, secret. -o text prints one line per finding, -o json
-the report {"ok", "checked", "errors", "warnings", "findings", "skipped"},
--o github one workflow annotation per finding. Exits 0 when no finding is
-an error, 1 when one is, 2 on a usage error.`,
+classification, secret, nul-byte, symlink. -o text prints one line per
+finding, -o json the report {"ok", "checked", "errors", "warnings",
+"findings", "skipped"}, -o github one workflow annotation per finding.
+Exits 0 when no finding is an error, 1 when one is, 2 on a usage error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			lib, r, err := a.runCheck(cmd, args)
 			if err != nil {
@@ -100,14 +101,15 @@ func (a *app) runCheck(cmd *cobra.Command, args []string) (*library.Library, che
 
 // checkTarget resolves one argument to a note. A file on disk wins over a
 // ref of the same spelling, so a CI job in the vault's checkout can pass
-// the paths a diff names. It returns a skip reason, not an error, for an
-// argument that names no note.
+// the paths a diff names. A symbolic link is never followed: it is the
+// note checked, and check flags it. It returns a skip reason, not an
+// error, for an argument that names no note.
 func (a *app) checkTarget(
 	lib *library.Library,
 	scope *vault.Set,
 	arg string,
 ) (vault.Ref, string, error) {
-	if info, err := os.Stat(arg); err == nil {
+	if info, err := os.Lstat(arg); err == nil {
 		switch {
 		case info.IsDir():
 			return vault.Ref{}, "a directory; run brain check without arguments to check every note", nil
@@ -130,24 +132,44 @@ func (a *app) checkTarget(
 	return ref, "", nil
 }
 
-// fileRef finds the vault of set that holds the file at path.
+// fileRef finds the vault of set that holds the file at path: lexically
+// first, so a path through a linked directory inside the vault stays in it
+// and check flags the link, then with the directory's links resolved, so a
+// vault reached through a linked directory still contains its files. The
+// file itself is never resolved: a note that is a symbolic link stays the
+// link, wherever it points.
 func fileRef(set *vault.Set, path string) (vault.Ref, bool) {
-	abs, err := realPath(path)
+	abs, err := filepath.Abs(path)
 	if err != nil {
 		return vault.Ref{}, false
 	}
+	resolved := ""
+	if dir, err := realPath(filepath.Dir(abs)); err == nil {
+		resolved = filepath.Join(dir, filepath.Base(abs))
+	}
 	for _, v := range set.Vaults() {
+		if rel, ok := relWithin(v.Root, abs); ok {
+			return vault.Ref{Vault: v, Path: rel}, true
+		}
 		root, err := realPath(v.Root)
-		if err != nil {
+		if err != nil || resolved == "" {
 			continue
 		}
-		rel, err := filepath.Rel(root, abs)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
+		if rel, ok := relWithin(root, resolved); ok {
+			return vault.Ref{Vault: v, Path: rel}, true
 		}
-		return vault.Ref{Vault: v, Path: filepath.ToSlash(rel)}, true
 	}
 	return vault.Ref{}, false
+}
+
+// relWithin returns path relative to root with forward slashes, and false
+// when path is not under root.
+func relWithin(root, path string) (string, bool) {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
 }
 
 // realPath is the absolute path with symlinks resolved, so a vault under a

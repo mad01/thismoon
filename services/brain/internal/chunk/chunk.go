@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
+	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
 // Chunk is one indexable slice of a note. The caller embeds Body and stores
@@ -49,7 +50,8 @@ type Chunk struct {
 	Tags []string
 	// Type is the note's frontmatter type.
 	Type string
-	// Status is the note's frontmatter status.
+	// Status is the note's effective status (vault.StatusOf): the stored
+	// value, normalized, else the default of the note's tier.
 	Status string
 	// Evidence is the note's evidence tier (A/B/C/D/mixed) — frontmatter
 	// field first, "evidence/<tier>" tag second, empty otherwise.
@@ -140,6 +142,7 @@ func Split(path, tier string, content []byte, opts Options) ([]Chunk, error) {
 	pathHash := sha256.Sum256([]byte(path))
 	idPrefix := hex.EncodeToString(pathHash[:])[:8]
 	evidence := markdown.EvidenceOf(fm)
+	status := vault.StatusOf(path, fm)
 
 	var chunks []Chunk
 	seq := 0
@@ -160,7 +163,7 @@ func Split(path, tier string, content []byte, opts Options) ([]Chunk, error) {
 				Tier:        tier,
 				Tags:        append([]string(nil), fm.Tags...),
 				Type:        fm.Type,
-				Status:      fm.Status,
+				Status:      status,
 				Evidence:    evidence,
 				CharStart:   sec.start + body.charStart,
 				CharEnd:     sec.start + body.charEnd,

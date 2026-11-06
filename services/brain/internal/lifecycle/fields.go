@@ -143,10 +143,6 @@ func isNoteRef(ref string) bool {
 	return noteRefShape.MatchString(ref)
 }
 
-// contentHash matches a sources[].content_hash: hex, optionally prefixed
-// with its algorithm, such as sha256:.
-var contentHash = regexp.MustCompile(`^([a-z0-9-]+:)?[0-9a-fA-F]{16,128}$`)
-
 // Read returns the lifecycle view of fm, leaving fields of the wrong shape
 // empty.
 func Read(fm markdown.Frontmatter) Fields {
@@ -201,11 +197,13 @@ func Validate(fm markdown.Frontmatter) []Problem {
 					"(id:<ulid>, vault:path.md or path.md)", s.Ref),
 			})
 		}
-		if s.ContentHash != "" && !contentHash.MatchString(s.ContentHash) {
-			problems = append(problems, Problem{
-				fmt.Sprintf("%s[%d].content_hash", KeySources, i),
-				fmt.Sprintf("%q is not a hex digest such as sha256:<hex>", s.ContentHash),
-			})
+		if s.ContentHash != "" {
+			if _, err := ParseContentHash(s.ContentHash); err != nil {
+				problems = append(problems, Problem{
+					fmt.Sprintf("%s[%d].content_hash", KeySources, i),
+					err.Error() + "; want the full digest, such as sha256:<64 hex digits>",
+				})
+			}
 		}
 	}
 	slices.SortStableFunc(problems, func(a, b Problem) int { return strings.Compare(a.Key, b.Key) })

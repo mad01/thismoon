@@ -2,6 +2,7 @@ package check
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -18,7 +19,13 @@ func TestRunFindsSecrets(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("findings = %q, want %q", got, want)
 	}
-	if msg := r.Findings[0].Message; msg != "aws-access-key-id: AKIA************MPLE" {
-		t.Errorf("message = %q, want the rule and the redacted value", msg)
+	// The message names the rule and the length, as a refused write does,
+	// and no character of the value: it lands in CI logs and annotations.
+	msg := r.Findings[0].Message
+	if msg != "aws-access-key-id (20 characters)" {
+		t.Errorf("message = %q, want the rule id and the match length", msg)
+	}
+	if strings.Contains(msg, fixtureKey[:4]) || strings.Contains(msg, fixtureKey[len(fixtureKey)-4:]) {
+		t.Errorf("message %q shows characters of the secret", msg)
 	}
 }

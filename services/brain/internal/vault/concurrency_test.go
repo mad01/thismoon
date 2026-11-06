@@ -4,9 +4,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mad01/thismoon/services/brain/internal/lockfile"
 )
 
 // TestWriteRaceHasOneWinner is two writers creating one note at once: one
@@ -130,5 +133,32 @@ func TestCreateCheckedRunsTheCheckUnderTheLock(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(v.Root, "inbox", "two.md")); err == nil {
 		t.Error("the second note landed")
+	}
+}
+
+// TestWriteLockTimesOut is a write behind a write lock another brain
+// process never lets go: it gives up with lockfile.ErrTimeout, naming the
+// lock file, instead of hanging.
+func TestWriteLockTimesOut(t *testing.T) {
+	v := newTestVault(t, nil)
+	v.WriteLock = filepath.Join(t.TempDir(), "locks", "v.write.lock")
+	v.LockTimeout = 100 * time.Millisecond
+	release, err := lockfile.Hold(v.WriteLock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = release() })
+	done := make(chan error, 1)
+	go func() {
+		_, err := v.Write(WriteOptions{Tier: TierInbox, Title: "Blocked"})
+		done <- err
+	}()
+	select {
+	case err = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Write still waiting on the held write lock after 5s")
+	}
+	if !errors.Is(err, lockfile.ErrTimeout) || !strings.Contains(err.Error(), v.WriteLock) {
+		t.Errorf("Write = %v, want ErrTimeout naming %s", err, v.WriteLock)
 	}
 }

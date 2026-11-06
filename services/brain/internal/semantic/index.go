@@ -17,6 +17,7 @@ import (
 	chromem "github.com/philippgille/chromem-go"
 
 	"github.com/mad01/thismoon/services/brain/internal/chunk"
+	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
 )
 
 // CollectionName is the single chromem-go collection used by brain.
@@ -127,7 +128,8 @@ type QueryOptions struct {
 	// Type, if non-empty, restricts to chunks whose note frontmatter type
 	// matches.
 	Type string
-	// Status, if non-empty, restricts to a frontmatter status.
+	// Status, if non-empty, restricts to an effective status, in any case:
+	// the stored one, else the default of the note's tier.
 	Status string
 	// Evidence, if non-empty, restricts to a single evidence tier.
 	Evidence string
@@ -196,7 +198,7 @@ func (i *Index) Query(ctx context.Context, q string, opts QueryOptions) ([]Hit, 
 		where["type"] = opts.Type
 	}
 	if opts.Status != "" {
-		where["status"] = opts.Status
+		where["status"] = lifecycle.Normalize(opts.Status)
 	}
 	if opts.Evidence != "" {
 		where["evidence"] = opts.Evidence

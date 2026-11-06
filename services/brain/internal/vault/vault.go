@@ -39,6 +39,9 @@ type Vault struct {
 	// so two brain processes never change the vault at once. Empty takes
 	// no lock.
 	WriteLock string
+	// LockTimeout bounds the wait for WriteLock while another brain
+	// process holds it; zero means lockfile.DefaultTimeout.
+	LockTimeout time.Duration
 	// Committer records each change brain makes, under the write lock,
 	// with the paths it touched: a git commit when the vault is a repo.
 	// Nil records nothing.
@@ -109,12 +112,18 @@ func ContentSHA(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// lockWrites takes the vault's write lock and returns its release.
+// lockWrites takes the vault's write lock and returns its release. It waits
+// at most LockTimeout for another brain process to let go, then fails with
+// lockfile.ErrTimeout naming the lock file.
 func (v *Vault) lockWrites() (func() error, error) {
 	if v.WriteLock == "" {
 		return func() error { return nil }, nil
 	}
-	return lockfile.Hold(v.WriteLock)
+	timeout := v.LockTimeout
+	if timeout <= 0 {
+		timeout = lockfile.DefaultTimeout
+	}
+	return lockfile.HoldTimeout(v.WriteLock, timeout)
 }
 
 // LockWrites takes the vault's write lock and returns its release, for a

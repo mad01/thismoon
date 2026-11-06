@@ -7,7 +7,9 @@ import (
 )
 
 // NoteView is one note of a Snapshot. Frontmatter is zero when the note's
-// frontmatter does not parse; ParseErr then says why.
+// frontmatter does not parse; ParseErr then says why. A note path that is a
+// symbolic link, or resolves through one, is never read: its ParseErr is
+// ErrInvalidPath.
 type NoteView struct {
 	Ref         Ref
 	Stem        string
