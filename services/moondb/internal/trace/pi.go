@@ -87,41 +87,6 @@ var piStopReasons = map[string]string{
 	"length":  "max_tokens",
 }
 
-// isPi reports whether chunk is a pi session file's lines: its first line
-// with a type Claude Code or pi alone writes is a pi message entry. Claude
-// Code never writes a "message" line, and pi never writes "user" or
-// "assistant" lines.
-func isPi(chunk []byte) bool {
-	for raw := range bytes.SplitSeq(chunk, []byte("\n")) {
-		var l struct {
-			Type string `json:"type"`
-		}
-		if json.Unmarshal(raw, &l) != nil {
-			continue
-		}
-		switch l.Type {
-		case piTypeMessage:
-			return true
-		case "user", "assistant":
-			return false
-		}
-	}
-	return false
-}
-
-// piPrompted is a pi turn's events with its prompt put back at start, and
-// whether the size cap cut the lines. pi appends the prompt to its session
-// file before the extension opens the turn, so a pi turn's lines begin
-// after it: an assistant line first is the model answering the prompt,
-// not a cut. A tool result first still answers lines the chunk lost.
-func piPrompted(events []event, start time.Time) ([]event, bool) {
-	if len(events) == 0 || events[0].kind != evAssistant {
-		return events, cutHead(events)
-	}
-	prompt := event{at: start, line: -1, kind: evUser}
-	return append([]event{prompt}, events...), false
-}
-
 // piParser reads pi lines in chunk order, remembering the model last seen
 // so a summary entry, which names none, is priced at it.
 type piParser struct {

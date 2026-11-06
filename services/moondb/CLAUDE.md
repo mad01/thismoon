@@ -297,7 +297,7 @@ mapping and the limits. What holds the two sides together:
   entries onto the same events as Claude's lines; everything after the
   parse is shared. pi writes the prompt before `before_agent_start`, so a
   turn's lines open on the first answer, and `Build` puts the prompt back
-  at the turn's start (`piPrompted`) instead of reading a cut head.
+  at the turn's start (`prompted`) instead of reading a cut head.
 - Prices: `Prices.Lookup` reads OpenRouter's dotted ids
   (`anthropic/claude-haiku-5.5`) as the dashed Claude row. pi's own
   `cost.total` is not read: the store keeps tokens and prices them on read.
@@ -306,6 +306,31 @@ Enabling it is a `packages[]` entry in pi's `settings.json`
 (`~/.config/ralph/sources/thismoon/services/moondb/pi`), which the
 consuming repo owns. `pi/README.md`, last section, lists what stays open:
 `moondb import` for pi sessions and linking pi subagents.
+
+### Codex capture: Codex's own hooks
+
+Codex CLI's hooks send Claude-shaped payloads, so `record` takes them
+unchanged (README "Codex capture" has the hooks.json):
+
+- Codex names the turn `turn_id` and sends no `prompt_id`; `decodePayload`
+  uses the turn id as the prompt id. Only UserPromptSubmit and Stop are
+  wired: Codex's Bash payload has no `bashEditDiff`, and its `apply_patch`
+  is not an edit `record` knows.
+- The hook command sets `MOONDB_HARNESS=codex`, and the session settles on
+  `codex` as pi's does on `pi`.
+- `transcript_path` is the rollout file. `formatOf` knows a Codex chunk by
+  its `{timestamp, type, payload}` lines, and `internal/trace/codex.go`
+  maps them: a `token_usage_record` is one model call (its usage line
+  carries the tool calls the response asked for, and the model comes from
+  the turn's `turn_context`); `function_call_output` answers a call, failed
+  when an `item_completed` CommandExecution failed, the output header names
+  a nonzero exit code, or the tool is unsupported; `task_complete` is the
+  Stop line. Codex's `input_tokens` counts cached and cache-written tokens,
+  so the uncached input is what they leave. `Build` puts the prompt back at
+  the turn's start when the lines open on the first response (`prompted`).
+- `trace/testdata/codex/` holds rollouts Codex CLI 0.163 wrote in the
+  paginated history mode, with home paths and instruction texts trimmed.
+  The legacy history mode and subagent rollouts are not read.
 
 ### Snapshots: the worktree at each turn edge
 

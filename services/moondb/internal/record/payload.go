@@ -1,6 +1,7 @@
 package record
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -57,6 +58,8 @@ func (f fields) array(key string) json.RawMessage {
 
 // payload is the part of a hook payload Run reads. Every event carries the
 // session, prompt, transcript and cwd; inside a subagent also the agent.
+// Codex names the prompt's turn turn_id and sends no prompt_id, so its
+// turn id stands in for one.
 type payload struct {
 	event          string
 	sessionID      string
@@ -91,7 +94,7 @@ func decodePayload(in io.Reader) (payload, error) {
 	p := payload{
 		event:               f.str("hook_event_name"),
 		sessionID:           f.str("session_id"),
-		promptID:            f.str("prompt_id"),
+		promptID:            cmp.Or(f.str("prompt_id"), f.str("turn_id")),
 		transcriptPath:      f.str("transcript_path"),
 		cwd:                 f.str("cwd"),
 		agentID:             f.str("agent_id"),

@@ -38,8 +38,8 @@ func Build(d store.TurnDetail, lines []byte, prices Prices) TurnTrace {
 		ended = *d.EndedAt
 	}
 	start, end := bounds(d.StartedAt, ended, events)
-	if isPi(lines) {
-		events, counts.CutHead = piPrompted(events, start)
+	if f := formatOf(lines); f == formatPi || f == formatCodex {
+		events, counts.CutHead = prompted(events, start)
 	}
 	tt := TurnTrace{
 		TurnID: d.ID,

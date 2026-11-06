@@ -5,10 +5,12 @@ import "strings"
 // The harnesses moondb knows: the agent runtime a session ran in.
 // HarnessClaudeCode is the default, since moondb's hooks and importer
 // started with Claude Code; the pi extension (services/moondb/pi) records
-// pi sessions through the same hooks and says so.
+// pi sessions through the same hooks and says so, and Codex's hooks name
+// theirs in the environment of `moondb record`.
 const (
 	HarnessClaudeCode = "claude-code"
 	HarnessPi         = "pi"
+	HarnessCodex      = "codex"
 )
 
 // piEntrypointPrefix starts the entrypoint the pi extension sets
@@ -18,7 +20,7 @@ const piEntrypointPrefix = "pi-"
 // ParseHarness is raw when it names a known harness, else empty.
 func ParseHarness(raw string) string {
 	switch raw {
-	case HarnessClaudeCode, HarnessPi:
+	case HarnessClaudeCode, HarnessPi, HarnessCodex:
 		return raw
 	}
 	return ""

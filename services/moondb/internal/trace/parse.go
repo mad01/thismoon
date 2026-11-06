@@ -117,12 +117,16 @@ type toolResult struct {
 // than broken; cutHead reports it.
 // sidechain keeps the lines a subagent wrote, for an agent transcript; a
 // turn's lines read past them. The chunk's own lines say which agent wrote
-// it: a pi session file goes to the pi parser (pi.go), everything else to
-// Claude Code's.
+// it (formatOf): a pi session file goes to the pi parser (pi.go), a Codex
+// rollout to the Codex parser (codex.go), everything else to Claude
+// Code's.
 func parseLines(chunk []byte, sidechain bool) ([]event, Lines) {
 	parse := parseLine
-	if isPi(chunk) {
+	switch formatOf(chunk) {
+	case formatPi:
 		parse = (&piParser{}).line
+	case formatCodex:
+		parse = (&codexParser{}).line
 	}
 	var counts Lines
 	var events []event
@@ -143,6 +147,55 @@ func parseLines(chunk []byte, sidechain bool) ([]event, Lines) {
 	counts.Events = len(events)
 	counts.CutHead = cutHead(events)
 	return events, counts
+}
+
+// format is which agent wrote a transcript chunk's lines.
+type format int
+
+const (
+	formatClaude format = iota
+	formatPi
+	formatCodex
+)
+
+// formatOf reads which agent wrote chunk from its first line with a type
+// only one of them writes: a Codex line with a payload, a pi message
+// entry, or a Claude Code user or assistant line. Claude Code never writes
+// a "message" line or a payload, and pi never writes "user" or
+// "assistant" lines. A chunk none of them claims is Claude Code's.
+func formatOf(chunk []byte) format {
+	for raw := range bytes.SplitSeq(chunk, []byte("\n")) {
+		var l struct {
+			Type    string          `json:"type"`
+			Payload json.RawMessage `json:"payload"`
+		}
+		if json.Unmarshal(raw, &l) != nil {
+			continue
+		}
+		switch {
+		case isCodexLine(l.Type, l.Payload):
+			return formatCodex
+		case l.Type == piTypeMessage:
+			return formatPi
+		case l.Type == "user", l.Type == "assistant":
+			return formatClaude
+		}
+	}
+	return formatClaude
+}
+
+// prompted is a turn's events with its prompt put back at start, and
+// whether the size cap cut the lines, for a harness that may append the
+// prompt before the hook opens the turn: pi always does, and Codex can.
+// Such a turn's lines can begin after the prompt, so an assistant line
+// first is the model answering it, not a cut. A tool result first still
+// answers lines the chunk lost.
+func prompted(events []event, start time.Time) ([]event, bool) {
+	if len(events) == 0 || events[0].kind != evAssistant {
+		return events, cutHead(events)
+	}
+	prompt := event{at: start, line: -1, kind: evUser}
+	return append([]event{prompt}, events...), false
 }
 
 // cutHead reports whether the timeline starts inside the turn. A turn opens

@@ -114,6 +114,30 @@ pi sessions show the harness `pi` and the entrypoint `pi-tui` or
 `pi-print`. `moondb trace` reads their turns from pi's session file, with
 tokens and a cost for Claude models, OpenRouter's included.
 
+## Codex capture
+
+The [Codex CLI](https://github.com/openai/codex) runs the same `moondb
+record` from its own hooks. Add the prompt and stop hooks to
+`~/.codex/hooks.json`, with `MOONDB_HARNESS=codex` so the session is
+labelled as Codex's:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "MOONDB_HARNESS=codex moondb record" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "MOONDB_HARNESS=codex moondb record" }] }]
+  }
+}
+```
+
+Codex runs a new or changed hook only after you trust it: open `codex`,
+run `/hooks`, and trust both. Codex sessions then show the harness `codex`,
+and `moondb trace` reads each turn from the session's rollout file
+(`~/.codex/sessions/.../rollout-*.jsonl`), with tokens and a cost for
+Claude models. moondb's price table has no OpenAI rows, so a GPT turn shows
+its tokens and lists the model as unpriced. Edits are not recorded:
+`moondb why` and `moondb history` don't cover Codex's `apply_patch` yet.
+
 ## Usage
 
 ```bash
@@ -280,8 +304,6 @@ doesn't delete the store.
 
 Later releases add:
 
-- traces, costs and a `pi` harness for pi sessions, read from pi's session
-  files
 - the Bash diffs a transcript keeps, read by `moondb import`
 - a cloud backend: the log on a Kubernetes StatefulSet, file contents in
   object storage

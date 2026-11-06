@@ -653,7 +653,8 @@ func TestHarnessFromEnvironment(t *testing.T) {
 	tests := map[string]string{
 		"pi":          store.HarnessPi,
 		"claude-code": store.HarnessClaudeCode,
-		"codex":       store.HarnessClaudeCode,
+		"codex":       store.HarnessCodex,
+		"gemini":      store.HarnessClaudeCode,
 		"":            store.HarnessClaudeCode,
 	}
 	for raw, want := range tests {
@@ -663,6 +664,33 @@ func TestHarnessFromEnvironment(t *testing.T) {
 		if got := s.takeOne(spool.KindTurnOpen).Harness; got != want {
 			t.Errorf("%s=%q recorded harness %q, want %q", HarnessEnv, raw, got, want)
 		}
+	}
+}
+
+// TestTurnIDStandsInForPromptID: Codex's hooks name the turn turn_id and
+// send no prompt_id, so the turn id keys the turn; a payload with both
+// keeps the prompt id.
+func TestTurnIDStandsInForPromptID(t *testing.T) {
+	s := newSession(t, physicalTempDir(t))
+	open := `{"hook_event_name":"UserPromptSubmit","session_id":"s","turn_id":"turn-1","prompt":"hi"}`
+	if err := s.runRaw(open); err != nil {
+		t.Fatalf("UserPromptSubmit: %v", err)
+	}
+	if got := s.takeOne(spool.KindTurnOpen).Turn.ID; got != "turn-1" {
+		t.Errorf("turn open id = %q, want turn-1", got)
+	}
+	if err := s.runRaw(`{"hook_event_name":"Stop","session_id":"s","turn_id":"turn-1"}`); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := s.takeOne(spool.KindTurnClose).Turn.ID; got != "turn-1" {
+		t.Errorf("turn close id = %q, want turn-1", got)
+	}
+	both := `{"hook_event_name":"UserPromptSubmit","session_id":"s","prompt_id":"p","turn_id":"t"}`
+	if err := s.runRaw(both); err != nil {
+		t.Fatalf("UserPromptSubmit: %v", err)
+	}
+	if got := s.takeOne(spool.KindTurnOpen).Turn.ID; got != "p" {
+		t.Errorf("turn open id = %q, want the prompt id p", got)
 	}
 }
 

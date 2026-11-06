@@ -135,11 +135,11 @@ func Run(ctx context.Context, in io.Reader, opts Options) error {
 	}
 	switch p.event {
 	case eventPrompt:
-		return rec.require(rec.openTurn, "prompt_id", p.promptID)
+		return rec.require(rec.openTurn, "prompt_id or turn_id", p.promptID)
 	case eventToolUsed:
 		return rec.require(rec.toolUsed, "tool_use_id", p.toolUseID)
 	case eventStop:
-		return rec.require(rec.closeTurn, "prompt_id", p.promptID)
+		return rec.require(rec.closeTurn, "prompt_id or turn_id", p.promptID)
 	case eventSubagentStop:
 		return rec.require(rec.closeAgent, "agent_id", p.agentID)
 	default:
