@@ -34,8 +34,8 @@ func TestPiCorpusParses(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !isPi(data) {
-				t.Fatal("isPi = false for a pi session file")
+			if f := formatOf(data); f != formatPi {
+				t.Fatalf("formatOf = %d; want formatPi for a pi session file", f)
 			}
 			_, counts := parseLines(data, false)
 			if counts.Skipped != 0 || counts.Read == 0 {
@@ -45,10 +45,10 @@ func TestPiCorpusParses(t *testing.T) {
 	}
 }
 
-func TestIsPiLeavesClaudeTranscripts(t *testing.T) {
+func TestFormatOfClaudeTranscripts(t *testing.T) {
 	for _, name := range []string{"plain.jsonl", "tools.jsonl", "agent.jsonl"} {
-		if isPi(fixture(t, name)) {
-			t.Errorf("isPi(%s) = true for a Claude Code transcript", name)
+		if f := formatOf(fixture(t, name)); f != formatClaude {
+			t.Errorf("formatOf(%s) = %d; want formatClaude", name, f)
 		}
 	}
 }

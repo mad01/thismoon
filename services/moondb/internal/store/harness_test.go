@@ -12,6 +12,8 @@ func TestSettleHarness(t *testing.T) {
 		{HarnessPi, HarnessClaudeCode, HarnessPi},
 		{HarnessClaudeCode, "", HarnessClaudeCode},
 		{HarnessPi, HarnessPi, HarnessPi},
+		{HarnessClaudeCode, HarnessCodex, HarnessCodex},
+		{HarnessCodex, HarnessPi, HarnessCodex},
 	}
 	for _, tt := range tests {
 		if got := SettleHarness(tt.cur, tt.next); got != tt.want {

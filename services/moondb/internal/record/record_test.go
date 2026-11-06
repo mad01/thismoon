@@ -646,6 +646,17 @@ func TestEntrypointBounded(t *testing.T) {
 	}
 }
 
+// TestCodexDropsInheritedEntrypoint: Codex started from a Claude Code
+// shell inherits its CLAUDE_CODE_ENTRYPOINT; a codex session leaves it out.
+func TestCodexDropsInheritedEntrypoint(t *testing.T) {
+	s := newSession(t, physicalTempDir(t))
+	s.env = map[string]string{HarnessEnv: "codex", EntrypointEnv: "cli"}
+	s.mustRun("prompt.json")
+	if got := s.takeOne(spool.KindTurnOpen).Session.Entrypoint; got != "" {
+		t.Errorf("entrypoint = %q under the codex harness; want none", got)
+	}
+}
+
 // TestHarnessFromEnvironment: a runtime that plays the hook payloads names
 // its harness in the environment; an unknown name or none leaves Claude
 // Code's.
@@ -653,7 +664,8 @@ func TestHarnessFromEnvironment(t *testing.T) {
 	tests := map[string]string{
 		"pi":          store.HarnessPi,
 		"claude-code": store.HarnessClaudeCode,
-		"codex":       store.HarnessClaudeCode,
+		"codex":       store.HarnessCodex,
+		"gemini":      store.HarnessClaudeCode,
 		"":            store.HarnessClaudeCode,
 	}
 	for raw, want := range tests {
@@ -663,6 +675,38 @@ func TestHarnessFromEnvironment(t *testing.T) {
 		if got := s.takeOne(spool.KindTurnOpen).Harness; got != want {
 			t.Errorf("%s=%q recorded harness %q, want %q", HarnessEnv, raw, got, want)
 		}
+	}
+}
+
+// TestTurnIDStandsInForPromptID: Codex's hooks name the turn turn_id and
+// send no prompt_id, so the turn id keys the turn; a payload with both
+// keeps the prompt id.
+func TestTurnIDStandsInForPromptID(t *testing.T) {
+	s := newSession(t, physicalTempDir(t))
+	open := `{"hook_event_name":"UserPromptSubmit","session_id":"s","turn_id":"turn-1",` +
+		`"prompt":"hi","model":"anthropic/claude-haiku-5.5"}`
+	if err := s.runRaw(open); err != nil {
+		t.Fatalf("UserPromptSubmit: %v", err)
+	}
+	env := s.takeOne(spool.KindTurnOpen)
+	if env.Turn.ID != "turn-1" {
+		t.Errorf("turn open id = %q, want turn-1", env.Turn.ID)
+	}
+	if env.Session.Model != "anthropic/claude-haiku-5.5" {
+		t.Errorf("session model = %q, want the payload's model", env.Session.Model)
+	}
+	if err := s.runRaw(`{"hook_event_name":"Stop","session_id":"s","turn_id":"turn-1"}`); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := s.takeOne(spool.KindTurnClose).Turn.ID; got != "turn-1" {
+		t.Errorf("turn close id = %q, want turn-1", got)
+	}
+	both := `{"hook_event_name":"UserPromptSubmit","session_id":"s","prompt_id":"p","turn_id":"t"}`
+	if err := s.runRaw(both); err != nil {
+		t.Fatalf("UserPromptSubmit: %v", err)
+	}
+	if got := s.takeOne(spool.KindTurnOpen).Turn.ID; got != "p" {
+		t.Errorf("turn open id = %q, want the prompt id p", got)
 	}
 }
 

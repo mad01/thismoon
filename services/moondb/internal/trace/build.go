@@ -38,9 +38,10 @@ func Build(d store.TurnDetail, lines []byte, prices Prices) TurnTrace {
 		ended = *d.EndedAt
 	}
 	start, end := bounds(d.StartedAt, ended, events)
-	if isPi(lines) {
-		events, counts.CutHead = piPrompted(events, start)
+	if f := formatOf(lines); f == formatPi || f == formatCodex {
+		events, counts.CutHead = prompted(events, start)
 	}
+	withModel(events, d.Model)
 	tt := TurnTrace{
 		TurnID: d.ID,
 		Seq:    d.Seq,
@@ -61,6 +62,21 @@ func Build(d store.TurnDetail, lines []byte, prices Prices) TurnTrace {
 	tt.Totals = turnTotals(tt.Span, tt.Gaps, models, tools)
 	tt.Totals.Usage = prices.Usage(calls)
 	return tt
+}
+
+// withModel names model on every model call that billed tokens and whose
+// lines name no model, such as a Codex turn's, whose model is written
+// before the prompt. Without a model the call would be unpriced.
+func withModel(events []event, model string) {
+	if model == "" {
+		return
+	}
+	for i := range events {
+		c := &events[i].call
+		if events[i].kind == evAssistant && c.Model == "" && c.Tokens != (Tokens{}) {
+			c.Model = model
+		}
+	}
 }
 
 // bounds is a span's start and end from the recorded times, a zero one

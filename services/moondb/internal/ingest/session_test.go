@@ -119,6 +119,21 @@ func TestSessionHarnessReplacesDefault(t *testing.T) {
 	}
 }
 
+// TestTurnKeepsHookModel: the model a hook payload names lands on the
+// turn, and a later envelope without one leaves it.
+func TestTurnKeepsHookModel(t *testing.T) {
+	f := newFixture(t)
+	c := chunkSet{}
+	open := openEnv(c, "s1", "p1", 1, "hi")
+	open.Session.Model = "anthropic/claude-haiku-5.5"
+	f.write(open, c)
+	f.write(closeEnv(c, "s1", "p1", 2, "done"), c)
+	f.drain()
+	if got := f.turn("p1").Model; got != "anthropic/claude-haiku-5.5" {
+		t.Errorf("turn model = %q; want the open's anthropic/claude-haiku-5.5", got)
+	}
+}
+
 // TestBackfillFillsSessionOrigin: an import fills the location and the
 // entrypoint a live session recorded before it kept them, and keeps its
 // tags.
