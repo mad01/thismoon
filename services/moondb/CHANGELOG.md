@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/mad01/thismoon/compare/moondb/v0.12.0...moondb/v0.13.0) (2026-11-06)
+
+
+### Features
+
+* **moondb:** read pi sessions for trace, cost and the pi harness ([#406](https://github.com/mad01/thismoon/issues/406)) ([591d15f](https://github.com/mad01/thismoon/commit/591d15f9875838d08ebbea7782f0a0c01151eab5))
+
 ## [0.12.0](https://github.com/mad01/thismoon/compare/moondb/v0.11.1...moondb/v0.12.0) (2026-11-05)
 
 
