@@ -8,7 +8,7 @@ packages are not part of this repository's BSD-3-Clause licensed source and
 stay under their own licences, listed here. The bundle also ends with the
 full licence text of each package in it.
 
-Licences were checked on 2026-11-05 against the `license` field of each
+Licences were checked on 2026-11-06 against the `license` field of each
 npm package. The policy behind the committed bundle is
 [ADR-0031](../../docs/adr/0031-brain-graph-bundle.md).
 
@@ -17,16 +17,25 @@ npm package. The policy behind the committed bundle is
 The packages the UI imports:
 
 - sigma 4.0.4, MIT, https://github.com/jacomyal/sigma.js
+- @sigma/node-border 4.0.0, MIT, https://github.com/jacomyal/sigma.js
 - graphology 0.26.0, MIT, https://github.com/graphology/graphology
-- graphology-layout-forceatlas2 0.10.1, MIT, https://github.com/graphology/graphology
-- graphology-layout 0.6.1, MIT, https://github.com/graphology/graphology
 - graphology-utils 2.5.2, MIT, https://github.com/graphology/graphology
+- graphology-communities-louvain 2.0.2, MIT,
+  https://github.com/graphology/graphology
+- d3-force 3.0.1, ISC, https://github.com/d3/d3-force
 - markdown-it 15.0.3, MIT, https://github.com/markdown-it/markdown-it
 
 Their dependencies that esbuild puts in the bundle:
 
 - events 3.3.0, MIT, https://github.com/Gozala/events
+- d3-dispatch 3.0.2, ISC, https://github.com/d3/d3-dispatch
+- d3-quadtree 3.0.2, ISC, https://github.com/d3/d3-quadtree
+- d3-timer 3.0.2, ISC, https://github.com/d3/d3-timer
 - entities 8.1.0, BSD-2-Clause, https://github.com/fb55/entities
+- graphology-indices 0.17.1, MIT, https://github.com/graphology/graphology
+- mnemonist 0.39.8, MIT, https://github.com/yomguithereal/mnemonist
+- obliterator 2.0.5, MIT, https://github.com/yomguithereal/obliterator
+- pandemonium 2.4.1, MIT, https://github.com/yomguithereal/pandemonium
 - linkify-it 6.1.0, MIT, https://github.com/markdown-it/linkify-it
 - mdurl 2.1.0, MIT, https://github.com/markdown-it/mdurl
 - uc.micro 3.0.0, MIT, https://github.com/markdown-it/uc.micro
@@ -39,8 +48,8 @@ These are in the lockfile but not in the bundle:
 - esbuild 0.28.2, MIT, https://github.com/evanw/esbuild
 - graphology-types 0.24.8, MIT, https://github.com/graphology/graphology
   (type declarations)
-- argparse, mnemonist, obliterator and pandemonium, dependencies of the
-  packages above that the UI's imports never reach
+- argparse 3.0.4, PSF-2.0, https://github.com/nodeca/argparse, the
+  markdown-it command line's parser, which the UI's imports never reach
 
 ## Bumping a version
 
