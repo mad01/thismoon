@@ -2,7 +2,9 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 	zoektsearch "github.com/sourcegraph/zoekt/search"
 
+	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
@@ -26,7 +29,9 @@ type Target struct {
 
 // IndexVault walks the target vault, indexes each markdown/MDX note into
 // zoekt under the target's name, and returns after the shard is flushed to
-// disk. progress (if non-nil) is called for each indexed file with its
+// disk. The walk finishes before the build starts, so a vault it cannot
+// walk fails the call with nothing written and the previous index still in
+// place. progress (if non-nil) is called for each indexed file with its
 // vault-relative path.
 func IndexVault(t Target, progress func(path string)) error {
 	vaultRoot, indexDir := t.Root, t.IndexDir
@@ -44,16 +49,50 @@ func IndexVault(t Target, progress func(path string)) error {
 	}
 	opts.SetDefaults()
 
+	rels, err := indexablePaths(vaultRoot, int64(opts.SizeMax))
+	if err != nil {
+		return fmt.Errorf("walk %s: %w (the previous index is kept)", vaultRoot, err)
+	}
+
 	builder, err := index.NewBuilder(opts)
 	if err != nil {
 		return fmt.Errorf("create index builder for %s: %w", vaultRoot, err)
 	}
-
-	walkErr := filepath.Walk(vaultRoot, func(path string, info os.FileInfo, err error) error {
+	for _, rel := range rels {
+		content, err := os.ReadFile(filepath.Join(vaultRoot, filepath.FromSlash(rel)))
 		if err != nil {
-			return nil // best-effort, skip unreadable files
+			continue // best effort: skip a file that vanished or cannot be read
 		}
+		if err := builder.AddFile(rel, content); err != nil {
+			// The failed shard build is the builder's error, so Finish
+			// only removes the temporary shards and commits none.
+			_ = builder.Finish()
+			return fmt.Errorf("add file %s: %w", rel, err)
+		}
+		if progress != nil {
+			progress(rel)
+		}
+	}
 
+	if err := builder.Finish(); err != nil {
+		return fmt.Errorf("finish index for %s: %w", vaultRoot, err)
+	}
+	return nil
+}
+
+// indexablePaths returns the vault-relative paths of the notes IndexVault
+// indexes, in walk order: markdown and MDX files of at most sizeMax bytes,
+// outside skipped and hidden directories. An entry that vanished during the
+// walk is skipped; any other error reading the vault fails the walk.
+func indexablePaths(vaultRoot string, sizeMax int64) ([]string, error) {
+	var rels []string
+	err := filepath.Walk(vaultRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			if path != vaultRoot && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
 		if info.IsDir() {
 			base := filepath.Base(path)
 			if path != vaultRoot && (skipDirs[base] || strings.HasPrefix(base, ".")) {
@@ -61,50 +100,18 @@ func IndexVault(t Target, progress func(path string)) error {
 			}
 			return nil
 		}
-
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-
 		ext := strings.ToLower(filepath.Ext(path))
-		if ext != ".md" && ext != ".mdx" {
+		if !info.Mode().IsRegular() || (ext != ".md" && ext != ".mdx") || info.Size() > sizeMax {
 			return nil
 		}
-
-		// Skip very large files (>1MB by default, zoekt handles this too).
-		if info.Size() > int64(opts.SizeMax) {
-			return nil
-		}
-
 		rel, err := filepath.Rel(vaultRoot, path)
 		if err != nil {
-			return nil
+			return err
 		}
-		rel = filepath.ToSlash(rel)
-
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return nil // skip unreadable files
-		}
-
-		if err := builder.AddFile(rel, content); err != nil {
-			return fmt.Errorf("add file %s: %w", rel, err)
-		}
-		if progress != nil {
-			progress(rel)
-		}
+		rels = append(rels, filepath.ToSlash(rel))
 		return nil
 	})
-
-	if walkErr != nil {
-		_ = builder.Finish()
-		return fmt.Errorf("walk %s: %w", vaultRoot, walkErr)
-	}
-
-	if err := builder.Finish(); err != nil {
-		return fmt.Errorf("finish index for %s: %w", vaultRoot, err)
-	}
-	return nil
+	return rels, err
 }
 
 // Search queries the zoekt index and returns matches.
@@ -384,6 +391,8 @@ func noteFilter(vaultRoot string, opts SearchOptions) func(path string) bool {
 
 // noteMatchesFrontmatter returns true when the note's frontmatter satisfies
 // every non-empty filter in opts and the note is not hidden by its status.
+// The status compared is the effective one (vault.StatusOf): the stored
+// value, else the default of the note's tier.
 func noteMatchesFrontmatter(vaultRoot, relPath string, opts SearchOptions) bool {
 	data, err := os.ReadFile(filepath.Join(vaultRoot, relPath))
 	if err != nil {
@@ -399,10 +408,11 @@ func noteMatchesFrontmatter(vaultRoot, relPath string, opts SearchOptions) bool 
 	if opts.Type != "" && !strings.EqualFold(fm.Type, opts.Type) {
 		return false
 	}
-	if opts.Status != "" && !strings.EqualFold(fm.Status, opts.Status) {
+	status := vault.StatusOf(relPath, fm)
+	if opts.Status != "" && status != lifecycle.Normalize(opts.Status) {
 		return false
 	}
-	return !Hidden(fm.Status, opts.IncludeRevoked, opts.Status)
+	return !Hidden(status, opts.IncludeRevoked, opts.Status)
 }
 
 // searcherRepo returns the name and filesystem source (the vault root) of

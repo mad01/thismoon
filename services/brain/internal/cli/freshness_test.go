@@ -265,6 +265,7 @@ func TestCapture(t *testing.T) {
 }
 
 func TestDrift(t *testing.T) {
+	testgit.Isolate(t) // the git brain drift runs reads no global or system config
 	code := t.TempDir()
 	repo := filepath.Join(code, "github.com", "acme", "app")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -312,6 +313,7 @@ func TestDrift(t *testing.T) {
 }
 
 func TestStale(t *testing.T) {
+	testgit.Isolate(t) // the git brain drift runs reads no global or system config
 	code := t.TempDir()
 	repo := filepath.Join(code, "github.com", "acme", "app")
 	if err := os.MkdirAll(repo, 0o755); err != nil {

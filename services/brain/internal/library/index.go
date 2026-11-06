@@ -36,7 +36,8 @@ type Refresh struct {
 // RefreshLiteral rebuilds the vault's literal index when the vault changed
 // since it was built, or always when force is set. The build holds the
 // vault's literal lock, so two brain processes never build one index at once;
-// a process that waited re-checks and skips a build the other just did.
+// a process that waited re-checks and skips a build the other just did, and
+// one that waited past the lock timeout fails with lockfile.ErrTimeout.
 // progress, when set, sees each indexed note's path.
 func (l *Library) RefreshLiteral(
 	v *vault.Vault,
@@ -218,8 +219,10 @@ func (l *Library) Health(ctx context.Context) error {
 }
 
 // refreshSemantic refreshes the stale semantic indexes of vaults before a
-// query. When the embedder does not answer, the stale indexes stay as they
-// are and each one adds a warning instead of failing the query.
+// query. When the embedder does not answer, or another brain process holds
+// a vault's semantic lock past the lock timeout (a long embedding run), the
+// stale indexes stay as they are and each one adds a warning instead of
+// failing the query.
 func (l *Library) refreshSemantic(ctx context.Context, vaults *vault.Set) ([]string, error) {
 	var (
 		warnings  []string
@@ -244,7 +247,12 @@ func (l *Library) refreshSemantic(ctx context.Context, vaults *vault.Set) ([]str
 			continue
 		}
 		if _, err := l.RefreshSemantic(ctx, v, false, nil); err != nil {
-			return warnings, err
+			if !errors.Is(err, lockfile.ErrTimeout) {
+				return warnings, err
+			}
+			warnings = append(warnings, fmt.Sprintf(
+				"%s: semantic index is stale and was not refreshed: %v", v.Name, err,
+			))
 		}
 	}
 	return warnings, nil
@@ -303,11 +311,12 @@ const (
 	lockSemantic = "semantic"
 )
 
-// lock takes one of the vault's index locks.
+// lock takes one of the vault's index locks, waiting at most the library's
+// lock timeout for another brain process to finish with it.
 func (l *Library) lock(v *vault.Vault, kind string) (func() error, error) {
 	path, err := lockPath(v, kind)
 	if err != nil {
 		return nil, err
 	}
-	return lockfile.Hold(path)
+	return lockfile.HoldTimeout(path, l.lockTimeout)
 }

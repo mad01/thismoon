@@ -29,6 +29,40 @@ var hashes = map[string]func() hash.Hash{
 	"sha1":   sha1.New,
 }
 
+// contentHash is a well-formed content_hash: an algorithm drift computes
+// and the full lowercase hex digest of it.
+type contentHash struct {
+	algorithm string
+	digest    string
+}
+
+// parseContentHash splits a content_hash into its algorithm (sha256 when it
+// names none) and its hex digest, and refuses one that is not the full
+// digest of an algorithm drift computes.
+func parseContentHash(raw string) (contentHash, error) {
+	algorithm, digest, ok := strings.Cut(strings.TrimSpace(raw), ":")
+	if !ok {
+		algorithm, digest = defaultHashAlgorithm, algorithm
+	}
+	h := contentHash{
+		algorithm: strings.ReplaceAll(strings.ToLower(algorithm), "-", ""),
+		digest:    strings.ToLower(digest),
+	}
+	newHash, known := hashes[h.algorithm]
+	if !known {
+		return h, fmt.Errorf("content_hash %q names %q, not one of sha256, sha512 or sha1",
+			raw, h.algorithm)
+	}
+	if want := 2 * newHash().Size(); len(h.digest) != want {
+		return h, fmt.Errorf("content_hash %q has %d hex digits, a %s digest has %d",
+			raw, len(h.digest), h.algorithm, want)
+	}
+	if _, err := hex.DecodeString(h.digest); err != nil {
+		return h, fmt.Errorf("content_hash %q is not a hex digest", raw)
+	}
+	return h, nil
+}
+
 func isWebURL(u string) bool {
 	return strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://")
 }
@@ -66,16 +100,11 @@ func fetch(ctx context.Context, client *http.Client, s lifecycle.Source) []Findi
 	if s.ContentHash == "" {
 		return nil
 	}
-	algorithm, want := splitHash(s.ContentHash)
-	newHash, ok := hashes[algorithm]
-	if !ok {
-		return finding(
-			KindUnresolved,
-			"content_hash algorithm %q is not one drift computes",
-			algorithm,
-		)
+	pin, err := parseContentHash(s.ContentHash)
+	if err != nil {
+		return finding(KindBadHash, "%v", err)
 	}
-	h := newHash()
+	h := hashes[pin.algorithm]()
 	n, err := io.Copy(h, io.LimitReader(resp.Body, maxFetchBytes+1))
 	if err != nil {
 		return finding(KindUnresolved, "read failed: %v", err)
@@ -87,19 +116,9 @@ func fetch(ctx context.Context, client *http.Client, s lifecycle.Source) []Findi
 			maxFetchBytes>>20,
 		)
 	}
-	if got := hex.EncodeToString(h.Sum(nil)); !strings.HasPrefix(got, want) {
+	if got := hex.EncodeToString(h.Sum(nil)); got != pin.digest {
 		return finding(KindHashChanged, "the content no longer matches content_hash %s (now %s:%s)",
-			s.ContentHash, algorithm, got)
+			s.ContentHash, pin.algorithm, got)
 	}
 	return nil
-}
-
-// splitHash splits a content_hash into its algorithm (sha256 when it names
-// none) and its lowercase hex digest, which may be a prefix of the full one.
-func splitHash(contentHash string) (algorithm, digest string) {
-	algorithm, digest, ok := strings.Cut(strings.TrimSpace(contentHash), ":")
-	if !ok {
-		algorithm, digest = defaultHashAlgorithm, algorithm
-	}
-	return strings.ReplaceAll(strings.ToLower(algorithm), "-", ""), strings.ToLower(digest)
 }

@@ -17,8 +17,9 @@ import (
 
 func newStaleCmd(a *app) *cobra.Command {
 	var (
-		withDrift, online bool
-		limit             int
+		withDrift bool
+		online    onlineFlags
+		limit     int
 	)
 	c := &cobra.Command{
 		Use:   "stale",
@@ -37,7 +38,7 @@ Notes are grouped by domain: the owners the vault's CODEOWNERS (or
 .github/CODEOWNERS) gives the note's path, else its steward field, else
 unowned. Each group shows its first --limit notes (10), oldest reason
 first. --drift runs drift on every note, which is slow; add --online to
-fetch external sources too. -o json prints {"total", "drift", "groups":
+fetch external sources too, with drift's --allow-local and --timeout. -o json prints {"total", "drift", "groups":
 [{domain, from, total, notes: [{vault, path, title, status, reasons:
 [{kind, detail, since}]}]}]}. Exits 0 whatever the queue holds.`,
 		Args: exactArgs(0),
@@ -45,8 +46,11 @@ fetch external sources too. -o json prints {"total", "drift", "groups":
 			if limit <= 0 {
 				return usageErrorf("--limit must be > 0, got %d", limit)
 			}
-			if online && !withDrift {
+			if online.online && !withDrift {
 				return usageErrorf("--online fetches sources for --drift; pass both")
+			}
+			if err := online.validate(cmd); err != nil {
+				return err
 			}
 			lib, sn, notes, err := a.freshnessTargets(nil)
 			if err != nil {
@@ -73,7 +77,7 @@ fetch external sources too. -o json prints {"total", "drift", "groups":
 	}
 	c.Flags().
 		BoolVar(&withDrift, "drift", false, "also queue notes whose pinned sources drifted (slow)")
-	c.Flags().BoolVar(&online, "online", false, "with --drift, fetch external sources too")
+	online.register(c, "with --drift, fetch external sources too")
 	c.Flags().IntVar(&limit, "limit", stale.DefaultLimit, "notes shown per group")
 	return c
 }

@@ -79,3 +79,61 @@ func TestSearchHidesRevokedNotes(t *testing.T) {
 		})
 	}
 }
+
+// TestStatusFilterUsesTheTierDefault pins that a note with no status line
+// matches the default status of its tier: validated in notes, raw in inbox.
+func TestStatusFilterUsesTheTierDefault(t *testing.T) {
+	root := t.TempDir()
+	notes := map[string]string{
+		"notes/bare.md":      "---\ntitle: Bare\n---\nnarwhal\n",
+		"notes/explicit.md":  "---\ntitle: Explicit\nstatus: Validated\n---\nnarwhal\n",
+		"notes/disputed.md":  "---\ntitle: Disputed\nstatus: disputed\n---\nnarwhal\n",
+		"inbox/capture.md":   "---\ntitle: Capture\n---\nnarwhal\n",
+		"inbox/promoted.md":  "---\ntitle: Odd\nstatus: validated\n---\nnarwhal\n",
+		"outputs/report.md":  "---\ntitle: Report\n---\nnarwhal\n",
+		"elsewhere/loose.md": "---\ntitle: Loose\n---\nnarwhal\n",
+	}
+	for rel, content := range notes {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	indexDir := t.TempDir()
+	if err := IndexVault(Target{Name: "v", Root: root, IndexDir: indexDir}, nil); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		status string
+		want   []string
+	}{
+		{"validated", []string{
+			"inbox/promoted.md", "notes/bare.md", "notes/explicit.md", "outputs/report.md",
+		}},
+		{"raw", []string{"inbox/capture.md"}},
+		{"RAW", []string{"inbox/capture.md"}},
+		{"disputed", []string{"notes/disputed.md"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			matches, err := Search(context.Background(), indexDir,
+				SearchOptions{Pattern: "narwhal", Status: tt.status})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, m := range matches {
+				if !slices.Contains(got, m.Path) {
+					got = append(got, m.Path)
+				}
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("paths = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

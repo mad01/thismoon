@@ -37,7 +37,8 @@ type SearchOptions struct {
 	Tag string
 	// Type restricts results to notes with this frontmatter type.
 	Type string
-	// Status restricts results to notes with this frontmatter status.
+	// Status restricts results to notes with this effective status: the
+	// stored status, else the default of the note's tier (vault.StatusOf).
 	Status string
 	// Tier restricts results to a single vault tier (inbox/notes/outputs/MOCs).
 	// Empty means search all tiers.
