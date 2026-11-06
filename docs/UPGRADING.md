@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-11-05 brain: `brain serve` runs sandboxed, so legacy indexes leave `~/.config/brain`
 
-Change: thismoon #NNN. brain gains `brain serve`, the read-only web view at brain.this on port 7427. The new `recipes/brain/` builds brain as `packages.brain` and registers the t-man agent `brain-serve`, which runs serve under srt. The sandbox writes only `~/.local/state/brain`. brain keeps its state in `~/.config/brain` while `~/.config/brain/index/state.json` exists, so an install that still has its indexes there sets them aside first.
+Change: thismoon #401. brain gains `brain serve`, the read-only web view at brain.this on port 7427. The new `recipes/brain/` builds brain as `packages.brain` and registers the t-man agent `brain-serve`, which runs serve under srt. The sandbox writes only `~/.local/state/brain`. brain keeps its state in `~/.config/brain` while `~/.config/brain/index/state.json` exists, so an install that still has its indexes there sets them aside first.
 
 Run, in order:
 
