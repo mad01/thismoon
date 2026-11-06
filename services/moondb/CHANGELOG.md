@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/mad01/thismoon/compare/moondb/v0.14.0...moondb/v0.14.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **moondb:** count Codex tool searches as tool calls ([#412](https://github.com/mad01/thismoon/issues/412)) ([73d0d80](https://github.com/mad01/thismoon/commit/73d0d801cb44d869c12fa890281cfedd2e546ceb))
+
 ## [0.14.0](https://github.com/mad01/thismoon/compare/moondb/v0.13.0...moondb/v0.14.0) (2026-11-06)
 
 
