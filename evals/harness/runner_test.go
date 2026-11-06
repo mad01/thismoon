@@ -80,7 +80,7 @@ func TestClaudeCmdTimeoutKillsGroup(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	var out strings.Builder
-	_, err := claude.run(ctx, t.TempDir(), invocation{Prompt: "p"}, &out)
+	_, err := claude.run(ctx, &Workspace{Dir: t.TempDir()}, invocation{Prompt: "p"}, &out)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("err = %v, want the deadline", err)
 	}
@@ -99,7 +99,8 @@ func TestClaudeCmdReapsStragglersOnNormalExit(t *testing.T) {
 	t.Setenv("FAKE_CLAUDE_PIDFILE", pidFile)
 	t.Setenv("FAKE_CLAUDE_IGNORE_TERM", "1")
 
-	if _, err := fakeClaude(t).run(context.Background(), t.TempDir(), invocation{Prompt: "p"}, io.Discard); err != nil {
+	ws := &Workspace{Dir: t.TempDir()}
+	if _, err := fakeClaude(t).run(context.Background(), ws, invocation{Prompt: "p"}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	waitGone(t, readPID(t, pidFile))
@@ -110,7 +111,7 @@ func testCase(t *testing.T, id string, ws WorkspaceSpec) Case {
 	return Case{
 		ID: id, Workspace: ws, Timeout: 10 * time.Second, MaxTurns: 3, Prompt: "p",
 		DisallowedTools: []string{"CaseOnly"},
-		Graders:         []Grader{grader(t, Grader{Type: gradeMaxTurns, Max: 10}, ws.Kind)},
+		Graders:         []Grader{grader(t, Grader{Type: gradeMaxTurns, Max: num(10.0)}, ws.Kind)},
 	}
 }
 
@@ -215,5 +216,63 @@ func TestRunAllStopsAtMaxTotal(t *testing.T) {
 	r.maxTotalUSD = 0
 	if rows, stopped := r.runAll(context.Background(), cases, 1); len(rows) != 3 || stopped != "" {
 		t.Errorf("no cap: ran %d, stopped %q", len(rows), stopped)
+	}
+}
+
+// TestRunCaseBrainWorkspace: a brain case runs in the empty work directory
+// with brain pointed at the scratch vault, its vault diff lands in diffs/,
+// and the graders read the vault.
+func TestRunCaseBrainWorkspace(t *testing.T) {
+	setStream(t, "stream-success.jsonl")
+	tmp := t.TempDir()
+	argsFile, envFile := filepath.Join(tmp, "args"), filepath.Join(tmp, "env")
+	t.Setenv("FAKE_CLAUDE_ARGS", argsFile)
+	t.Setenv("FAKE_CLAUDE_ENV", envFile)
+	t.Setenv("FAKE_CLAUDE_TOUCH", "../vault/inbox/new.md")
+	roots := brainRoots(t, map[string]string{"notes/a.md": "a\n", "inbox/old.md": "old\n"})
+	t.Setenv("BRAIN_CONFIG", "/real/config.yaml")
+	r := testRunner(t, roots)
+	r.diffDir = t.TempDir()
+	p, err := loadProfile(profileOptions{Name: profileBrainCLI, SteerFile: writeSteer(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.profile = p
+	c := testCase(t, "brain-x", WorkspaceSpec{Kind: workspaceBrain, Fixture: "team"})
+	c.Graders = []Grader{
+		grader(t, Grader{Type: gradeNewNotes, Dir: "inbox", Min: num(1)}, workspaceBrain),
+	}
+
+	row := r.runCase(context.Background(), c, 0)
+	if row.Error != "" || !row.Pass {
+		t.Fatalf("brain run: %+v", row)
+	}
+	if len(row.Changes) != 1 || row.Changes[0] != (Change{Status: "A", Path: "inbox/new.md"}) {
+		t.Errorf("changes = %v", row.Changes)
+	}
+	diff, err := os.ReadFile(filepath.Join(r.diffDir, "brain-x-r0.patch"))
+	if err != nil || row.Diff != filepath.Join("diffs", "brain-x-r0.patch") ||
+		!strings.Contains(string(diff), "+touched") {
+		t.Errorf("diff %s = %q, %v", row.Diff, diff, err)
+	}
+	env, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"\nPATH=" + roots.BrainBinDir + ":", "\nBRAIN_CONFIG=", "/config.yaml\n", "\nXDG_STATE_HOME="} {
+		if !strings.Contains("\n"+string(env), want) {
+			t.Errorf("claude's environment misses %q", want)
+		}
+	}
+	if strings.Contains(string(env), "/real/config.yaml") {
+		t.Error("the caller's BRAIN_CONFIG reached claude")
+	}
+	args, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(args), "--permission-mode\ndontAsk\n") ||
+		!strings.Contains(string(args), "--tools\nBash,Read,Glob,Grep,Edit,Write\n") {
+		t.Errorf("claude args miss the brain-cli flags:\n%s", args)
 	}
 }

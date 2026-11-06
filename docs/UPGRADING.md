@@ -4,6 +4,37 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-05 brain: `brain serve` runs sandboxed, so legacy indexes leave `~/.config/brain`
+
+Change: thismoon #401. brain gains `brain serve`, the read-only web view at brain.this on port 7427. The new `recipes/brain/` builds brain as `packages.brain` and registers the t-man agent `brain-serve`, which runs serve under srt. The sandbox writes only `~/.local/state/brain`. brain keeps its state in `~/.config/brain` while `~/.config/brain/index/state.json` exists, so an install that still has its indexes there sets them aside first.
+
+Run, in order:
+
+1. End the agent sessions that run the brain MCP server. An MCP server on the old binary rebuilds `~/.config/brain/index/state.json` on its next search, which sends brain back to the old state directory.
+2. Merge this change, then the consuming repo's brain change right after it, with no `ralph up` in between: until both are in, both repos declare `packages.brain`. The consuming repo's change stops building brain itself and ships the srt expansion layer `~/.config/srt/brain-serve.local.json`, which grants the vault and the target of the `config.yaml` link.
+3. Set the legacy indexes aside. Nothing in them carries over, because both indexes rebuild after this upgrade (see below). Renaming `index` also removes the probe file. Skip a line whose directory does not exist.
+
+   ```sh
+   mv ~/.config/brain/index ~/.config/brain/index.legacy
+   mv ~/.config/brain/semantic ~/.config/brain/semantic.legacy
+   ```
+
+   Delete the two `.legacy` directories once `brain doctor` passes. A config that sets `semantic.index_dir` must drop the key, or the semantic store stays outside the sandbox's write grant; the consuming repo's change drops it from its config.
+4. `ralph up`, then `t-man restart brain-serve`, so serve starts on the new state directory.
+5. Start new agent sessions, so the MCP server runs the new binary.
+
+brain now commits each change it makes to a vault that is a git repo, staging only the paths it touched. It never pushes. `autocommit: false` on a vault entry turns the commits off.
+
+After the upgrade, two rebuilds run once on their own, and neither needs a command:
+
+- Every literal index rebuilds on its first refresh, because the vault fingerprint now counts mtimes in nanoseconds.
+- The first semantic refresh re-embeds every note, because the semantic manifest moved to version 2.
+
+Verify:
+
+1. `curl -s 127.0.0.1:7427/version` reports the merged commit.
+2. `brain doctor` exits 0. Its `index-dir` line names `~/.local/state/brain/index`, and `serve-reachable`, `version-skew`, `serve-vaults` and `serve-state-dir` are ok. A `serve-vaults` failure on an unreadable vault means the expansion layer lacks that path; `srtspec explain brain-serve` prints what serve may read.
+
 ## 2026-11-05 moondb: Stop waits for the turn's last lines, and a turn keeps up to 15 MiB
 
 Change: thismoon #395. Claude Code writes the transcript asynchronously, so at Stop the file usually still lacked the turn's last response, and `moondb record` stored the turn without it. The Stop hook now waits up to 1 s for the transcript to hold the payload's final message before it reads the turn's lines. A turn's transcript chunk now keeps up to 15 MiB instead of 4 MiB, so a long turn keeps its head. An agent transcript keeps up to 15 MiB instead of 8 MiB.

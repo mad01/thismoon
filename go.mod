@@ -18,6 +18,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mattn/go-runewidth v0.0.21
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/philippgille/chromem-go v0.7.0
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
 	github.com/sourcegraph/zoekt v0.0.0-20260413093009-c3d4afa94960

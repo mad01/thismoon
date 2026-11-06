@@ -9,25 +9,62 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 )
 
-// Evidence is what graders read: the run's transcript, the workspace it
-// ran in, the subjects of the commits it made there, and the prompt the
-// llm grader shows its judge.
+// Evidence is what graders read: the run's transcript, the directory its
+// paths resolve against (the vault in a brain workspace), the subjects of
+// the commits it made in a worktree, and the prompt the llm grader shows
+// its judge. Files, Changes and Diff describe a brain workspace's vaults
+// after the run: every file, and how the run changed it from the baseline.
+// TwoVault marks a two-vault workspace, whose paths start with private/ or
+// shared/; Branches are the shared origin's branches the run pushed, and
+// GHCalls the fake gh's calls. They are empty for other workspaces.
 type Evidence struct {
 	Transcript Transcript
 	Dir        string
 	Commits    []string
 	Prompt     string
+	Files      []string
+	Changes    []Change
+	Diff       string
+	TwoVault   bool
+	Branches   []OriginBranch
+	GHCalls    []string
+}
+
+// added reports whether p is a file the run created.
+func (ev Evidence) added(p string) bool {
+	return slices.ContainsFunc(ev.Changes, func(c Change) bool {
+		return c.Status == "A" && c.Path == p
+	})
+}
+
+// files lists every file under ev.Dir: the vault's list in a brain
+// workspace, a walk of the directory otherwise.
+func (ev Evidence) files() ([]string, error) {
+	if ev.Files != nil {
+		return ev.Files, nil
+	}
+	return listFiles(ev.Dir)
 }
 
 // judge is the llm grader's model call. It is an interface so tests grade
 // without the claude binary.
 type judge interface {
-	Judge(ctx context.Context, rubric, prompt, answer string) (Verdict, error)
+	Judge(ctx context.Context, in JudgeInput) (Verdict, error)
+}
+
+// JudgeInput is what the llm grader shows its judge: the rubric, the task,
+// the run's final answer and, in a brain workspace, the vault diff.
+type JudgeInput struct {
+	Rubric string
+	Prompt string
+	Answer string
+	Diff   string
 }
 
 // Verdict is a judge's answer on one rubric, with what the call cost.
@@ -83,34 +120,35 @@ func evaluate(ctx context.Context, g Grader, ev Evidence, j judge) (GraderResult
 	calls := ev.Transcript.Calls(g.IncludeAgents)
 	switch g.Type {
 	case gradeRegex:
-		res.Pass = g.patternRE.MatchString(ev.Transcript.Result)
-		if !res.Pass {
-			res.Detail = "result does not match"
-		}
+		res.Pass, res.Detail = checkRegex(g, ev.Transcript.Result)
 	case gradeFile:
-		res.Pass, res.Detail = checkFile(g, ev.Dir)
+		res.Pass, res.Detail = checkFile(g, ev)
+	case gradeFrontmatter:
+		res.Pass, res.Detail = checkFrontmatter(g, ev)
+	case gradeNewNotes:
+		res.Pass, res.Detail = checkNewNotes(g, ev)
+	case gradeVaultUnchangedExcept:
+		res.Pass, res.Detail = checkUnchangedExcept(g, ev.Changes)
+	case gradeWikilinks:
+		res.Pass, res.Detail = checkWikilinks(g, ev)
+	case gradeBrainCmd:
+		res.Pass, res.Detail = checkBrainCmd(g, brainCallsIn(calls))
+	case gradeGHCall:
+		res.Pass, res.Detail = checkGHCalls(g, ev.GHCalls)
+	case gradeOriginBranch:
+		res.Pass, res.Detail = checkOriginBranches(g, ev.Branches)
 	case gradeCommit:
 		res.Pass, res.Detail = checkCommits(g, ev.Commits)
-	case gradeToolUsed:
-		res.Pass = len(matchingCalls(g, calls)) > 0
-		if !res.Pass {
-			res.Detail = "no matching call; tools: " + toolSummary(calls)
-		}
-	case gradeToolNotUsed:
-		matched := matchingCalls(g, calls)
-		res.Pass = len(matched) == 0
-		if !res.Pass {
-			res.Detail = fmt.Sprintf("%d matching calls, first %s %s",
-				len(matched), matched[0].Name, clip(matched[0].Input, 160))
-		}
+	case gradeToolUsed, gradeToolNotUsed:
+		res.Pass, res.Detail = checkToolUse(g, calls)
 	case gradeToolBefore:
 		res.Pass, res.Detail = checkOrder(g, calls)
 	case gradeMaxTurns:
-		res.Pass, res.Detail = atMost(float64(ev.Transcript.NumTurns), g.Max, "turns")
+		res.Pass, res.Detail = atMost(float64(ev.Transcript.NumTurns), *g.Max, "turns")
 	case gradeMaxCostUSD:
-		res.Pass, res.Detail = atMost(ev.Transcript.CostUSD, g.Max, "USD")
+		res.Pass, res.Detail = atMost(ev.Transcript.CostUSD, *g.Max, "USD")
 	case gradeMaxToolCalls:
-		res.Pass, res.Detail = atMost(float64(len(calls)), g.Max, "tool calls")
+		res.Pass, res.Detail = atMost(float64(len(calls)), *g.Max, "tool calls")
 	case gradeLLM:
 		res.Pass, res.Detail, cost = checkLLM(ctx, g, ev, j)
 	default:
@@ -119,17 +157,308 @@ func evaluate(ctx context.Context, g Grader, ev Evidence, j judge) (GraderResult
 	return res, cost
 }
 
-func checkFile(g Grader, dir string) (bool, string) {
-	data, err := os.ReadFile(filepath.Join(dir, g.Path))
+// checkRegex passes when the pattern matches the final result, or with
+// Absent, when it does not.
+func checkRegex(g Grader, result string) (bool, string) {
+	loc := g.patternRE.FindStringIndex(result)
 	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return false, "missing"
-	case err != nil:
-		return false, err.Error()
-	case g.patternRE != nil && !g.patternRE.Match(data):
-		return false, "content does not match"
+	case g.Absent && loc != nil:
+		return false, fmt.Sprintf("result contains %q", clip(result[loc[0]:loc[1]], 80))
+	case !g.Absent && loc == nil:
+		return false, "result does not match"
 	}
 	return true, ""
+}
+
+// scope returns the files g.Path matches, relative to ev.Dir, only the ones
+// the run added when g.NewOnly is set. A literal path outside a brain
+// workspace is checked on its own, so a repo is not walked for one file.
+func scope(g Grader, ev Evidence) ([]string, error) {
+	if ev.Files == nil && !isGlob(g.Path) {
+		_, err := os.Stat(filepath.Join(ev.Dir, g.Path))
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			return nil, nil
+		case err != nil:
+			return nil, err
+		}
+		return []string{g.Path}, nil
+	}
+	files, err := ev.files()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, f := range files {
+		if matchGlob(g.Path, f) && (!g.NewOnly || ev.added(f)) {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
+
+// checkFile passes when a file matches the path and, with a pattern, one
+// of the matching files has content that matches it. Absent turns both
+// around: no file matches the path or, with a pattern, none of the matching
+// files has content that matches it.
+func checkFile(g Grader, ev Evidence) (bool, string) {
+	files, err := scope(g, ev)
+	switch {
+	case err != nil:
+		return false, err.Error()
+	case len(files) == 0:
+		if g.Absent {
+			return true, ""
+		}
+		return false, "missing"
+	case g.patternRE == nil:
+		if g.Absent {
+			return false, "found " + listSome(files)
+		}
+		return true, ""
+	}
+	hit, excerpt, err := firstMatch(ev.Dir, files, g.patternRE)
+	switch {
+	case err != nil:
+		return false, err.Error()
+	case g.Absent && hit != "":
+		return false, fmt.Sprintf("%s contains %q", hit, clip(excerpt, 80))
+	case !g.Absent && hit == "":
+		return false, "content does not match in " + listSome(files)
+	}
+	return true, ""
+}
+
+// firstMatch returns the first of files under dir whose content re
+// matches, and the matched text, or "" when none matches.
+func firstMatch(dir string, files []string, re *regexp.Regexp) (string, string, error) {
+	for _, f := range files {
+		data, err := os.ReadFile(filepath.Join(dir, f))
+		if err != nil {
+			return "", "", err
+		}
+		if m := re.Find(data); m != nil {
+			return f, string(m), nil
+		}
+	}
+	return "", "", nil
+}
+
+// checkFrontmatter passes when a file in scope has g.Key with a value the
+// pattern matches. A list value is matched one item per line.
+func checkFrontmatter(g Grader, ev Evidence) (bool, string) {
+	files, err := scope(g, ev)
+	switch {
+	case err != nil:
+		return false, err.Error()
+	case len(files) == 0:
+		return false, "no file matches the path"
+	}
+	var misses []string
+	for _, f := range files {
+		value, ok, err := frontmatterValue(filepath.Join(ev.Dir, f), g.Key)
+		switch {
+		case err != nil:
+			misses = append(misses, fmt.Sprintf("%s: %v", f, err))
+		case !ok:
+			misses = append(misses, f+": no "+g.Key)
+		case g.patternRE.MatchString(value):
+			return true, ""
+		default:
+			misses = append(misses, fmt.Sprintf("%s: %s is %q", f, g.Key, clip(value, 80)))
+		}
+	}
+	return false, listSome(misses)
+}
+
+// checkNewNotes counts the markdown files the run added under g.Dir. It
+// passes when the count is within min and max and, with content_regex,
+// every one of them matches it.
+func checkNewNotes(g Grader, ev Evidence) (bool, string) {
+	var added []string
+	for _, c := range ev.Changes {
+		if c.Status == "A" && strings.HasSuffix(c.Path, ".md") && inDir(c.Path, g.Dir) {
+			added = append(added, c.Path)
+		}
+	}
+	detail := fmt.Sprintf("%d new: %s", len(added), listSome(added))
+	if g.Min != nil && len(added) < *g.Min {
+		return false, detail + fmt.Sprintf("; want at least %d", *g.Min)
+	}
+	if g.Max != nil && float64(len(added)) > *g.Max {
+		return false, detail + "; want at most " + roundNum(*g.Max)
+	}
+	if g.contentRE == nil {
+		return true, ""
+	}
+	for _, p := range added {
+		data, err := os.ReadFile(filepath.Join(ev.Dir, p))
+		if err != nil {
+			return false, err.Error()
+		}
+		if !g.contentRE.Match(data) {
+			return false, p + " does not match content_regex"
+		}
+	}
+	return true, ""
+}
+
+func inDir(p, dir string) bool {
+	dir = strings.Trim(dir, "/")
+	return dir == "" || strings.HasPrefix(p, dir+"/")
+}
+
+// checkUnchangedExcept passes when every changed path matches one of
+// g.Paths; with no paths the vault must be unchanged.
+func checkUnchangedExcept(g Grader, changes []Change) (bool, string) {
+	var stray []string
+	for _, c := range changes {
+		if !slices.ContainsFunc(
+			g.Paths,
+			func(glob string) bool { return matchGlob(glob, c.Path) },
+		) {
+			stray = append(stray, c.Status+" "+c.Path)
+		}
+	}
+	if len(stray) > 0 {
+		return false, "unexpected changes: " + listSome(stray)
+	}
+	return true, ""
+}
+
+// checkWikilinks passes when every wikilink in the files in scope resolves
+// to a note and each file links at least min distinct notes.
+func checkWikilinks(g Grader, ev Evidence) (bool, string) {
+	files, err := scope(g, ev)
+	if err != nil {
+		return false, err.Error()
+	}
+	if len(files) == 0 {
+		return false, "no file matches the path"
+	}
+	all, err := ev.files()
+	if err != nil {
+		return false, err.Error()
+	}
+	links := newLinkIndex(all, ev.TwoVault)
+	minLinks := 0
+	if g.Min != nil {
+		minLinks = *g.Min
+	}
+	var problems []string
+	for _, f := range files {
+		data, err := os.ReadFile(filepath.Join(ev.Dir, f))
+		if err != nil {
+			return false, err.Error()
+		}
+		resolved := map[string]bool{}
+		for _, target := range wikilinkTargets(string(data)) {
+			if note, ok := links.resolve(f, target); ok {
+				resolved[note] = true
+			} else {
+				problems = append(problems, fmt.Sprintf("%s: [[%s]] does not resolve", f, target))
+			}
+		}
+		if len(resolved) < minLinks {
+			problems = append(
+				problems,
+				fmt.Sprintf("%s links %d notes, want %d", f, len(resolved), minLinks),
+			)
+		}
+	}
+	if len(problems) > 0 {
+		return false, listSome(problems)
+	}
+	return true, ""
+}
+
+// checkBrainCmd counts the brain calls whose subcommand label matches the
+// pattern, help lookups left out, and passes when the count is within g's
+// bounds (withinBounds).
+func checkBrainCmd(g Grader, calls []BrainCall) (bool, string) {
+	n := 0
+	for _, c := range calls {
+		if !c.isHelp() && g.patternRE.MatchString(c.SubcommandLabel()) {
+			n++
+		}
+	}
+	if withinBounds(g, n) {
+		return true, ""
+	}
+	ran := "none"
+	if len(calls) > 0 {
+		ran = formatCounts(brainCommandCounts(calls))
+	}
+	return false, fmt.Sprintf("%d matching brain calls; ran: %s", n, ran)
+}
+
+// withinBounds reports whether a count is at least g's min and at most its
+// max. Min defaults to 1, or to 0 when max is set, so max: 0 alone forbids
+// what is counted.
+func withinBounds(g Grader, n int) bool {
+	least := 1
+	if g.Max != nil {
+		least = 0
+	}
+	if g.Min != nil {
+		least = *g.Min
+	}
+	return n >= least && (g.Max == nil || float64(n) <= *g.Max)
+}
+
+// checkGHCalls counts the fake gh's calls the pattern matches, each as its
+// arguments joined by spaces, and passes when the count is within g's
+// bounds.
+func checkGHCalls(g Grader, calls []string) (bool, string) {
+	n := 0
+	for _, c := range calls {
+		if g.patternRE.MatchString(c) {
+			n++
+		}
+	}
+	if withinBounds(g, n) {
+		return true, ""
+	}
+	ran := make([]string, len(calls))
+	for i, c := range calls {
+		ran[i] = clip(strings.ReplaceAll(c, "\n", " "), 60)
+	}
+	return false, fmt.Sprintf("%d matching gh calls; ran: %s", n, listSome(ran))
+}
+
+// checkOriginBranches counts the shared origin's pushed branches that
+// match g and passes when the count is within g's bounds. A branch matches
+// when its name matches the pattern and, with a path or content_regex, it
+// changes a file matching the path whose content on the branch matches
+// content_regex. Each part applies only when set.
+func checkOriginBranches(g Grader, branches []OriginBranch) (bool, string) {
+	var matched, pushed []string
+	for _, b := range branches {
+		pushed = append(pushed, b.Name)
+		if branchMatches(g, b) {
+			matched = append(matched, b.Name)
+		}
+	}
+	if withinBounds(g, len(matched)) {
+		return true, ""
+	}
+	return false, fmt.Sprintf("%d matching origin branches: %s; pushed: %s",
+		len(matched), listSome(matched), listSome(pushed))
+}
+
+func branchMatches(g Grader, b OriginBranch) bool {
+	if g.patternRE != nil && !g.patternRE.MatchString(b.Name) {
+		return false
+	}
+	if g.Path == "" && g.contentRE == nil {
+		return true
+	}
+	return slices.ContainsFunc(b.Changes, func(c Change) bool {
+		if g.Path != "" && !matchGlob(g.Path, c.Path) {
+			return false
+		}
+		return g.contentRE == nil || (c.Status != "D" && g.contentRE.MatchString(b.content[c.Path]))
+	})
 }
 
 func checkCommits(g Grader, subjects []string) (bool, string) {
@@ -140,6 +469,20 @@ func checkCommits(g Grader, subjects []string) (bool, string) {
 		if !g.patternRE.MatchString(s) {
 			return false, fmt.Sprintf("subject %q does not match", s)
 		}
+	}
+	return true, ""
+}
+
+// checkToolUse passes tool_used when some call matches and tool_not_used
+// when none does.
+func checkToolUse(g Grader, calls []ToolCall) (bool, string) {
+	matched := matchingCalls(g, calls)
+	switch {
+	case g.Type == gradeToolUsed && len(matched) == 0:
+		return false, "no matching call; tools: " + toolSummary(calls)
+	case g.Type == gradeToolNotUsed && len(matched) > 0:
+		return false, fmt.Sprintf("%d matching calls, first %s %s",
+			len(matched), matched[0].Name, clip(matched[0].Input, 160))
 	}
 	return true, ""
 }
@@ -202,7 +545,9 @@ func checkLLM(ctx context.Context, g Grader, ev Evidence, j judge) (bool, string
 	if j == nil {
 		return false, "no judge configured", 0
 	}
-	v, err := j.Judge(ctx, g.Rubric, ev.Prompt, ev.Transcript.Result)
+	v, err := j.Judge(ctx, JudgeInput{
+		Rubric: g.Rubric, Prompt: ev.Prompt, Answer: ev.Transcript.Result, Diff: ev.Diff,
+	})
 	if err != nil {
 		return false, "judge: " + err.Error(), v.CostUSD
 	}
@@ -228,6 +573,18 @@ func formatCounts(counts map[string]int) string {
 		parts = append(parts, fmt.Sprintf("%s %d", name, counts[name]))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// listSome renders up to five items and how many more there are.
+func listSome(items []string) string {
+	const shown = 5
+	switch {
+	case len(items) == 0:
+		return "none"
+	case len(items) <= shown:
+		return strings.Join(items, "; ")
+	}
+	return fmt.Sprintf("%s; and %d more", strings.Join(items[:shown], "; "), len(items)-shown)
 }
 
 // clip bounds a detail excerpt.

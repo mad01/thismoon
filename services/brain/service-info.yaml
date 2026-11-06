@@ -1,0 +1,26 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: brain
+  description: Local markdown knowledge base over an Obsidian-style vault; CLI + MCP stdio server + brain serve web view on port 7427, zoekt literal and chromem-go semantic search
+  tags: [go, cli, mcp, knowledge-base]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon
+  # Sandbox access for `brain serve`, rendered to
+  # recipes/brain/brain-serve.srt.json by `make sandbox-settings`
+  # (docs/SANDBOXING.md, "Declaring access"). The state dir is the workdir.
+  # The vault and the target of the config.yaml link differ per machine, so
+  # a machine grants them in ~/.config/srt/brain-serve.local.json. ollama is
+  # a peer by name: hybrid search embeds the query through 127.0.0.1:11434,
+  # which allowLocalBinding covers.
+  access:
+    sandbox: srt
+    label: brain-serve
+    workdir: ~/.local/state/brain
+    listen: 7427
+    local: [ollama]
+    reads: [~/.config/brain, ~/code/bin, workdir]
+    writes: [workdir, temp]

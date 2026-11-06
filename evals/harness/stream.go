@@ -40,11 +40,14 @@ type Transcript struct {
 
 // ToolCall is one tool_use block. Input is the call's input as compact JSON
 // with sorted keys, so graders can match it with a regex. Origin is
-// originMain or originAgent.
+// originMain or originAgent. Denied marks a call the permission rules
+// refused, so it never ran.
 type ToolCall struct {
+	ID     string `json:"id,omitempty"`
 	Name   string `json:"name"`
 	Input  string `json:"input"`
 	Origin string `json:"origin"`
+	Denied bool   `json:"denied,omitempty"`
 }
 
 // Usage is the result event's token accounting.
@@ -101,25 +104,28 @@ func (t Transcript) Problems() error {
 // stays raw because a user event's content may be a plain string. A
 // subagent's events carry the id of the tool call that started it.
 type streamEvent struct {
-	Type              string            `json:"type"`
-	Subtype           string            `json:"subtype"`
-	SessionID         string            `json:"session_id"`
-	ParentToolUseID   *string           `json:"parent_tool_use_id"`
-	Model             string            `json:"model"`
-	Version           string            `json:"claude_code_version"`
-	Message           json.RawMessage   `json:"message"`
-	Result            string            `json:"result"`
-	IsError           bool              `json:"is_error"`
-	TotalCostUSD      float64           `json:"total_cost_usd"`
-	DurationMS        int64             `json:"duration_ms"`
-	NumTurns          int               `json:"num_turns"`
-	Usage             Usage             `json:"usage"`
-	PermissionDenials []json.RawMessage `json:"permission_denials"`
+	Type              string          `json:"type"`
+	Subtype           string          `json:"subtype"`
+	SessionID         string          `json:"session_id"`
+	ParentToolUseID   *string         `json:"parent_tool_use_id"`
+	Model             string          `json:"model"`
+	Version           string          `json:"claude_code_version"`
+	Message           json.RawMessage `json:"message"`
+	Result            string          `json:"result"`
+	IsError           bool            `json:"is_error"`
+	TotalCostUSD      float64         `json:"total_cost_usd"`
+	DurationMS        int64           `json:"duration_ms"`
+	NumTurns          int             `json:"num_turns"`
+	Usage             Usage           `json:"usage"`
+	PermissionDenials []struct {
+		ToolUseID string `json:"tool_use_id"`
+	} `json:"permission_denials"`
 }
 
 type assistantMessage struct {
 	Content []struct {
 		Type  string          `json:"type"`
+		ID    string          `json:"id"`
 		Name  string          `json:"name"`
 		Input json.RawMessage `json:"input"`
 	} `json:"content"`
@@ -167,7 +173,7 @@ func (t *Transcript) apply(line []byte) {
 		for _, block := range msg.Content {
 			if block.Type == "tool_use" {
 				t.ToolCalls = append(t.ToolCalls, ToolCall{
-					Name: block.Name, Input: canonicalJSON(block.Input), Origin: origin,
+					ID: block.ID, Name: block.Name, Input: canonicalJSON(block.Input), Origin: origin,
 				})
 			}
 		}
@@ -177,8 +183,23 @@ func (t *Transcript) apply(line []byte) {
 		t.CostUSD, t.DurationMS, t.NumTurns = ev.TotalCostUSD, ev.DurationMS, ev.NumTurns
 		t.Usage = ev.Usage
 		t.PermissionDenials = len(ev.PermissionDenials)
+		for _, d := range ev.PermissionDenials {
+			t.markDenied(d.ToolUseID)
+		}
 		if ev.SessionID != "" {
 			t.SessionID = ev.SessionID
+		}
+	}
+}
+
+// markDenied flags the call with tool use id as denied.
+func (t *Transcript) markDenied(id string) {
+	if id == "" {
+		return
+	}
+	for i := range t.ToolCalls {
+		if t.ToolCalls[i].ID == id {
+			t.ToolCalls[i].Denied = true
 		}
 	}
 }

@@ -1,0 +1,7 @@
+# Owners of the team vault's notes; brain stale groups notes by them.
+*                    @bramblewick/platform
+/notes/dispatch-*    @bramblewick/routing
+/notes/redis-*       @bramblewick/routing
+/notes/parcel-*      @bramblewick/tracking
+/notes/kafka-*       @bramblewick/messaging
+/notes/adr-*         @bramblewick/architecture

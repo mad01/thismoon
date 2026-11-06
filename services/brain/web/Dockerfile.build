@@ -1,0 +1,25 @@
+# Sandboxed build for the brain graph bundle (see the Makefile `bundle`).
+#
+# npm ci runs package install scripts, so the install and the esbuild run
+# happen in a throwaway Apple-container VM. That keeps a poisoned npm package
+# off the host. The bundle and its SHA256SUMS come out through the BuildKit
+# local exporter (--output type=local), never by mounting the host
+# filesystem in.
+#
+# Explicit COPYs (no `COPY . .`) keep the context tight regardless of
+# .dockerignore handling (apple/container#425).
+
+FROM node:26-bookworm-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM deps AS build
+COPY build.mjs entry.mjs ./
+RUN npm run build
+
+# Export stage: only the build artifacts (brain-graph.bundle.js, SHA256SUMS),
+# extracted with
+#   container build --target export --output type=local,dest=./.build-out
+FROM scratch AS export
+COPY --from=build /app/dist /

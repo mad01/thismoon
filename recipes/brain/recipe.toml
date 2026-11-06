@@ -1,0 +1,63 @@
+[recipe]
+name = "brain"
+description = "brain: local markdown knowledge base; CLI + MCP + the brain serve web view (brain.this) on port 7427"
+wave = 0
+
+# Consumed as a remote recipe: machines point at this repo with a
+# [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout
+# under ~/.config/ralph/sources/thismoon. Remote recipes cannot use relative
+# working_dir on packages/builds, so the paths below name that cache directly.
+# The consuming repo's brain overlay (config link, vault clone, model pulls,
+# index warm-up, the srt expansion layer) keys its edges on packages.brain.
+[packages.brain]
+source = "local"
+working_dir = "~/.config/ralph/sources/thismoon/services/brain"
+version_check = true
+build = ["make build"]
+install = ["make install"]
+install_paths = ["~/code/bin/brain"]
+
+# Restart the serve agent when the freshly installed binary actually changed.
+# ralph hashes install_paths and runs this only when the bytes differ. The
+# `t-man status` guard skips the restart on first install, where this fires
+# before [hooks.builds.brain_service] has registered the agent.
+[packages.brain.service]
+restart = "if command -v t-man >/dev/null && t-man status brain-serve >/dev/null 2>&1; then t-man restart brain-serve; fi"
+
+[hooks]
+# Stop and remove the t-man-managed serve agent during cleanup, before the
+# binary it runs is removed (ralph disable thismoon/brain && ralph up --enable-cleanup).
+pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove brain-serve 2>/dev/null; fi || true"]
+
+# srt settings for the serve agent, linked to ~/.config/srt/brain-serve.json.
+# They read the config directory, the binaries and the state dir (the
+# workdir), and write only the workdir and the temp dirs; loopback only, with
+# Ollama as the one peer. The vault and the config.yaml link target are
+# machine paths, so they come from the machine's expansion layer,
+# ~/.config/srt/brain-serve.local.json, which the consuming repo ships.
+# Rendered from spec.access in services/brain/service-info.yaml by
+# `make sandbox-settings` (docs/adr/0027): edit the manifest, not the JSON.
+[dotfiles.brain_serve_srt_settings]
+source = "brain-serve.srt.json"
+target = "~/.config/srt/brain-serve.json"
+action = "symlink"
+
+# Register `brain serve` as a long-running launchd user agent via t-man. It is
+# the read-only web view of the vaults at brain.this; its one write is the
+# graph layout cache in the state dir. The CLI and the MCP server never reach
+# it: they read the vaults and indexes themselves.
+# Idempotent; run = "always" keeps it registered and self-heals if it was removed.
+# It runs sandboxed (docs/SANDBOXING.md, "Sandboxing a t-man service"). serve
+# runs no git, so it needs none of the git environment moondb's agent sets.
+# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable,
+# and packages.srtspec, the launcher the shim execs.
+# ralph links dotfiles items before any build or package in every run, so the
+# srt-run and settings links exist before this registration; depends_on could
+# not name them anyway, since ralph only accepts builds. and packages. refs.
+[hooks.builds.brain_service]
+commands = [
+  "if command -v t-man >/dev/null; then t-man add --name brain-serve --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/code/bin/srt-run $HOME/.config/srt/brain-serve.json $HOME/code/bin/brain serve --port 7427; else echo 'brain: skip service (t-man not on PATH; install t-man then run: t-man add --name brain-serve -- brain serve --port 7427)'; fi",
+]
+working_dir = "~/.config/ralph/sources/thismoon/recipes/brain"
+run = "always"
+depends_on = ["packages.brain", "packages.t_man", "builds.speak_chmod_scripts", "packages.srtspec"]

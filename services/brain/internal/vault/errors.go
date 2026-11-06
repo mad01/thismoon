@@ -1,0 +1,43 @@
+package vault
+
+import "errors"
+
+// Sentinel errors callers branch on with errors.Is. The CLI maps them to exit
+// codes and the MCP server reports their text.
+var (
+	// ErrNotFound means the note (or title) the caller named does not exist.
+	ErrNotFound = errors.New("vault: note not found")
+	// ErrExists means a write or promote would overwrite an existing note.
+	ErrExists = errors.New("vault: note already exists")
+	// ErrInvalidPath means a path argument is empty, absolute, or escapes the vault.
+	ErrInvalidPath = errors.New("vault: invalid path")
+	// ErrUnknownTier means a tier name is not inbox, notes, outputs, or MOCs.
+	ErrUnknownTier = errors.New("vault: unknown tier")
+	// ErrUnknownVault means a vault name is not in the config.
+	ErrUnknownVault = errors.New("vault: unknown vault")
+	// ErrAmbiguous means a bare path or title names notes in more than one
+	// vault; the message lists the qualified candidates.
+	ErrAmbiguous = errors.New("vault: ambiguous note")
+	// ErrReadOnly means a write, edit or promote targets a shared vault, or
+	// no writable vault is configured.
+	ErrReadOnly = errors.New("vault: read-only")
+	// ErrImmutableID means an edit would change or remove a note's id.
+	ErrImmutableID = errors.New("vault: note id is immutable")
+	// ErrConflict means an edit's IfMatch sha no longer matches the note.
+	ErrConflict = errors.New("vault: note changed since it was read")
+	// ErrInvalidStatusChange means a supersede, retract or withdraw cannot
+	// apply to the note as named: a withdrawn note, a note superseding
+	// itself, an unknown retract reason.
+	ErrInvalidStatusChange = errors.New("vault: invalid status change")
+	// ErrSecretFound means a write, edit, promote or status change would put
+	// a secret in a note; the message names the rule and the redacted value.
+	ErrSecretFound = errors.New("vault: secret found")
+	// ErrInvalidContent means a change would leave a note brain cannot keep
+	// as a text note: a title with a control character, a NUL byte, or
+	// frontmatter whose fence is not closed. Nothing was written.
+	ErrInvalidContent = errors.New("vault: invalid note content")
+	// ErrPossibleDuplicate means a write would create a note an existing one
+	// likely covers already; the message names the candidates. Nothing was
+	// written.
+	ErrPossibleDuplicate = errors.New("vault: possible duplicate")
+)

@@ -27,6 +27,8 @@ const (
 	// judgeMaxBudgetUSD caps one llm grader call; a haiku verdict costs
 	// about a cent.
 	judgeMaxBudgetUSD = "0.05"
+	// judgeDiffLimit bounds the vault diff the judge sees.
+	judgeDiffLimit = 30000
 	// scorecardTimeout bounds the optional moondb scorecard fetch.
 	scorecardTimeout = 3 * time.Second
 	// stderrTail is how much of claude's stderr a failed run keeps.
@@ -116,13 +118,15 @@ func claudeVersion(ctx context.Context, bin string) string {
 }
 
 // invocation is one case run's claude command line. Model, Effort, and
-// MaxBudgetUSD left zero leave the user's settings in charge.
+// MaxBudgetUSD left zero leave the user's settings in charge. Tools nil
+// leaves every built-in tool in.
 type invocation struct {
 	SessionID       string
 	MaxTurns        int
 	Model           string
 	Effort          string
 	PermissionMode  string
+	Tools           []string
 	DisallowedTools []string
 	AllowedTools    []string
 	MaxBudgetUSD    float64
@@ -159,6 +163,9 @@ func (inv invocation) args() []string {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(inv.MaxBudgetUSD, 'f', -1, 64))
 	}
 	args = append(args, inv.Profile.args()...)
+	if len(inv.Tools) > 0 {
+		args = append(args, "--tools", strings.Join(inv.Tools, ","))
+	}
 	if len(inv.AllowedTools) > 0 {
 		args = append(args, "--allowedTools")
 		args = append(args, inv.AllowedTools...)
@@ -170,8 +177,10 @@ func (inv invocation) args() []string {
 	return append(args, "--", inv.Prompt)
 }
 
-// args renders the profile's own flags. Allow and Deny are not here: the
-// invocation merges them with the case's lists.
+// args renders the profile's own flags. Allow, Deny, PermissionMode and
+// the tool list are not here: the invocation merges them with the case's.
+// An isolated profile reads no setting sources, so the user's settings,
+// CLAUDE.md, output style and plugins stay out, and keeps no session file.
 func (p profile) args() []string {
 	var args []string
 	if p.Steer != "" {
@@ -180,10 +189,29 @@ func (p profile) args() []string {
 	if p.MCPConfig != "" {
 		args = append(args, "--strict-mcp-config", "--mcp-config", p.MCPConfig)
 	}
-	if p.DisableHooks {
-		args = append(args, "--settings", `{"disableAllHooks":true}`)
+	if settings := p.settings(); settings != "" {
+		args = append(args, "--settings", settings)
+	}
+	if p.Isolated {
+		args = append(args, "--setting-sources", "", "--no-session-persistence")
 	}
 	return args
+}
+
+// settings is the --settings JSON the profile needs, or "": hooks off, and
+// auto memory off for an isolated profile.
+func (p profile) settings() string {
+	var parts []string
+	if p.Isolated {
+		parts = append(parts, `"autoMemoryEnabled":false`)
+	}
+	if p.DisableHooks {
+		parts = append(parts, `"disableAllHooks":true`)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "{" + strings.Join(parts, ",") + "}"
 }
 
 // flagTemplate is the command line every case run shares, with the
@@ -194,6 +222,7 @@ func flagTemplate(model, effort string, maxBudgetUSD float64, p profile) []strin
 	}
 	args := invocation{
 		SessionID: "<uuid>", Model: model, Effort: effort, MaxBudgetUSD: maxBudgetUSD,
+		PermissionMode: p.PermissionMode, Tools: p.tools(p.Allow),
 		Prompt: "<case prompt>", Profile: p, AllowedTools: p.Allow, DisallowedTools: p.Deny,
 	}.args()
 	for i, a := range args {
@@ -211,19 +240,25 @@ type claudeCmd struct {
 	grace time.Duration
 }
 
-// run runs one case in dir and writes claude's stdout, the stream-json
-// transcript, to stream. Its session carries the eval tag (caseEnv). When
-// ctx ends first the group gets SIGTERM. On
+// run runs one case in ws and writes claude's stdout, the stream-json
+// transcript, to stream. Its session carries the eval tag (caseEnv), and
+// the workspace adds its own variables (Workspace.Environ). When ctx ends
+// first the group gets SIGTERM. On
 // every exit path, timeout or not, whatever is left of the group gets
 // SIGTERM and then SIGKILL after the grace period, so no MCP server or
 // hook outlives the case. The error carries the tail of stderr. The CPU
 // time returned is claude's own plus the children it waited for (hooks,
 // and MCP servers it shut down itself); a server the reaper killed is
 // not in it.
-func (c claudeCmd) run(ctx context.Context, dir string, inv invocation, stream io.Writer) (time.Duration, error) {
+func (c claudeCmd) run(
+	ctx context.Context,
+	ws *Workspace,
+	inv invocation,
+	stream io.Writer,
+) (time.Duration, error) {
 	cmd := exec.CommandContext(ctx, c.bin, inv.args()...)
-	cmd.Dir = dir
-	cmd.Env = caseEnv(os.Environ())
+	cmd.Dir = ws.Dir
+	cmd.Env = ws.Environ(caseEnv(os.Environ()))
 	cmd.Stdout = stream
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -289,29 +324,34 @@ func tail(s string, n int) string {
 // judgeSystem frames the llm grader. The rubric comes in the user prompt.
 const judgeSystem = `You grade one answer from a coding agent against a rubric.
 Read the task, the rubric, and the answer. Decide whether the answer meets
-the rubric. Reply with a single JSON object and nothing else:
-{"pass": true or false, "reason": "one sentence"}`
+the rubric. Judge only what the rubric asks, and count different wording
+with the same meaning as meeting it. Write the reason first, then set pass
+so it agrees with the reason. Reply with a single JSON object and nothing
+else:
+{"reason": "one sentence", "pass": true or false}`
 
 // claudeJudge is the production judge: a one-shot haiku call with no
-// tools, no MCP servers, no session, and a small spend cap. User settings
-// still load, so their hooks would fire; the flag settings turn every hook
-// off (disableAllHooks), and the run starts in the temp directory so no
-// repo's project settings or CLAUDE.md apply.
+// tools, no MCP servers, no session, and a small spend cap. No setting
+// sources load, so the user's CLAUDE.md, output style and hooks stay out
+// of the verdict; the run starts in the temp directory so no repo's
+// project settings apply either.
 type claudeJudge struct {
 	bin string
 }
 
-// Judge asks haiku whether answer meets rubric for the task in prompt.
-func (j claudeJudge) Judge(ctx context.Context, rubric, prompt, answer string) (Verdict, error) {
+// Judge asks haiku whether the answer meets the rubric for the task. A
+// vault diff, when there is one, follows the answer.
+func (j claudeJudge) Judge(ctx context.Context, in JudgeInput) (Verdict, error) {
 	ctx, cancel := context.WithTimeout(ctx, judgeTimeout)
 	defer cancel()
-	user := "Task:\n" + prompt + "\n\nRubric:\n" + rubric + "\n\nAnswer:\n" + answer
+	user := judgePrompt(in)
 	cmd := exec.CommandContext(ctx, j.bin,
 		"-p",
 		"--model", "haiku",
 		"--tools", "",
 		"--strict-mcp-config",
-		"--settings", `{"disableAllHooks":true}`,
+		"--settings", `{"disableAllHooks":true,"autoMemoryEnabled":false}`,
+		"--setting-sources", "",
 		"--no-session-persistence",
 		"--max-budget-usd", judgeMaxBudgetUSD,
 		"--output-format", "json",
@@ -325,6 +365,16 @@ func (j claudeJudge) Judge(ctx context.Context, rubric, prompt, answer string) (
 		return Verdict{}, fmt.Errorf("exec claude -p: %w", err)
 	}
 	return parseJudgeOutput(out)
+}
+
+// judgePrompt is the user message of a judge call.
+func judgePrompt(in JudgeInput) string {
+	user := "Task:\n" + in.Prompt + "\n\nRubric:\n" + in.Rubric + "\n\nAnswer:\n" + in.Answer
+	if in.Diff != "" {
+		user += "\n\nVault diff (what the agent changed in the knowledge base):\n" +
+			clip(in.Diff, judgeDiffLimit)
+	}
+	return user
 }
 
 // parseJudgeOutput reads `claude -p --output-format json` output whose

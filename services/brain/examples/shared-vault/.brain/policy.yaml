@@ -1,0 +1,14 @@
+# The policy brain check applies to this vault: in CI on every pull
+# request, and in brain promote --to before anything is pushed. A rule not
+# named here keeps brain's default level (brain check --help lists them).
+classifications: [public, internal]
+rules:
+  # A shared note carries an id, a classification and a review_by date.
+  missing-field: error
+  # A source note names where it came from.
+  provenance: error
+  # A link resolves inside this vault: a reader of a shared note cannot
+  # follow a link into someone's private vault.
+  link-dangling: error
+  status-unknown: error
+  stem-duplicate: error

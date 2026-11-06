@@ -1,0 +1,9 @@
+# The last matching line wins. The vault's maintainers own the policy, the
+# workflow and anything no domain claims; each domain under notes/ is owned
+# by the team that knows it. Turn on "Require review from Code Owners" in
+# the branch protection rule so a note change needs its domain's approval.
+*                     @example-org/brain-maintainers
+/notes/platform/      @example-org/platform
+/notes/security/      @example-org/security
+/.brain/              @example-org/brain-maintainers
+/.github/             @example-org/brain-maintainers

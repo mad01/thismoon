@@ -1,0 +1,84 @@
+name: brain check
+
+# Checks the notes a pull request adds or changes against .brain/policy.yaml,
+# and warns about notes that look like ones the vault already has.
+# It runs on every pull request, with no paths filter, so it can be a
+# required check.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brain-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # A brain release of mad01/thismoon (tag brain/<version>) and the sha256 of
+  # its darwin/arm64 tarball, from that release's checksums.txt. The README
+  # says how to verify checksums.txt before you copy the line. Bump both
+  # together.
+  BRAIN_VERSION: v0.1.0
+  BRAIN_SHA256: "0000000000000000000000000000000000000000000000000000000000000000"
+
+jobs:
+  check:
+    # brain ships darwin/arm64 binaries only.
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install brain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset="brain_${BRAIN_VERSION}_darwin_arm64.tar.gz"
+          dir="$RUNNER_TEMP/brain"
+          mkdir -p "$dir/bin" "$dir/state"
+          gh release download "brain/${BRAIN_VERSION}" --repo mad01/thismoon \
+            --pattern "$asset" --dir "$dir"
+          if ! echo "${BRAIN_SHA256}  ${dir}/${asset}" | shasum -a 256 -c -; then
+            echo "::error::${asset} does not match BRAIN_SHA256; set it from the release's checksums.txt"
+            exit 1
+          fi
+          tar -xzf "$dir/$asset" -C "$dir/bin" brain
+          echo "$dir/bin" >> "$GITHUB_PATH"
+          # The checkout is the one vault brain knows here, read-only as every
+          # shared vault is; state stays in the runner's temp directory.
+          printf 'vaults:\n  - {name: shared, path: "%s", shared: true}\n' \
+            "$GITHUB_WORKSPACE" > "$dir/config.yaml"
+          echo "BRAIN_CONFIG=$dir/config.yaml" >> "$GITHUB_ENV"
+          echo "XDG_STATE_HOME=$dir/state" >> "$GITHUB_ENV"
+
+      - name: Check changed notes
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          brain version
+          notes=()
+          while IFS= read -r -d '' path; do notes+=("$path"); done < <(
+            git diff --name-only -z --diff-filter=d "origin/${BASE_REF}...HEAD" \
+              -- 'inbox/*.md' 'notes/*.md' 'outputs/*.md' 'MOCs/*.md'
+          )
+          if [ "${#notes[@]}" -eq 0 ]; then
+            # No note changed (the policy did, say): check every note.
+            brain check -o github
+          else
+            brain check -o github "${notes[@]}"
+          fi
+
+      # A warning, never a gate: similar exits 0 whatever it finds, and the
+      # step may not fail the job either.
+      - name: Look for similar notes
+        continue-on-error: true
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git diff --name-only -z --diff-filter=A "origin/${BASE_REF}...HEAD" \
+            -- 'inbox/*.md' 'notes/*.md' 'outputs/*.md' 'MOCs/*.md' |
+            while IFS= read -r -d '' path; do brain similar -o github "$path"; done
