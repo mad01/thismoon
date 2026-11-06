@@ -18,10 +18,13 @@ const SuspendersFile = ".suspenders.yaml"
 // maxReportedSecrets caps the findings a refused write lists.
 const maxReportedSecrets = 3
 
+// NulByteRule is the rule id of the finding Secrets reports for a NUL byte.
+const NulByteRule = "nul-byte"
+
 // nulRule names the finding Secrets reports for a NUL byte. The scan skips
 // content that holds one as binary, so a NUL could hide a secret after it.
 var nulRule = secretscan.Rule{
-	ID:          "nul-byte",
+	ID:          NulByteRule,
 	Description: "a NUL byte: a note is text, and the secret scan skips a file holding one",
 	Severity:    "high",
 }

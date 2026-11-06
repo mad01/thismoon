@@ -26,7 +26,8 @@ func newCheckCmd(a *app) *cobra.Command {
 		Long: `Check notes for problems a reviewer would otherwise catch by hand: frontmatter
 that breaks the status rules, a source note without a source, links that
 resolve to nothing, ids and filename stems shared within a vault, a
-classification the vault's .brain/policy.yaml does not allow, and secrets.
+classification the vault's .brain/policy.yaml does not allow, secrets, NUL
+bytes and notes that are symbolic links.
 A link from a checked note to a retracted or withdrawn note is an error; a
 link to any other note that is not validated, or one past its review_by, is
 a warning, and so is a link from an unchecked note to a checked one that is
@@ -48,10 +49,10 @@ optional field is a warning:
 
 Rules: schema, status-unknown, status-fields, missing-field, provenance,
 link-dangling, link-revoked, link-unvalidated, id-duplicate, stem-duplicate,
-classification, secret. -o text prints one line per finding, -o json
-the report {"ok", "checked", "errors", "warnings", "findings", "skipped"},
--o github one workflow annotation per finding. Exits 0 when no finding is
-an error, 1 when one is, 2 on a usage error.`,
+classification, secret, nul-byte, symlink. -o text prints one line per
+finding, -o json the report {"ok", "checked", "errors", "warnings",
+"findings", "skipped"}, -o github one workflow annotation per finding.
+Exits 0 when no finding is an error, 1 when one is, 2 on a usage error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			lib, r, err := a.runCheck(cmd, args)
 			if err != nil {

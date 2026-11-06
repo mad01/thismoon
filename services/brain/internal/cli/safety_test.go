@@ -150,7 +150,8 @@ func TestLinkedNotesAreRefusedAndChecked(t *testing.T) {
 	report := decodeStrict[check.Report](t, got.stdout)
 	found := false
 	for _, f := range report.Findings {
-		if f.Path == "notes/leak.md" && f.Level == check.Error && strings.Contains(f.Message, "symbolic link") {
+		if f.Path == "notes/leak.md" && f.Rule == check.RuleSymlink && f.Level == check.Error &&
+			strings.Contains(f.Message, "symbolic link") {
 			found = true
 		}
 	}
@@ -179,7 +180,8 @@ func TestNULBytesAreRefusedAndChecked(t *testing.T) {
 	report := decodeStrict[check.Report](t, got.stdout)
 	found := false
 	for _, f := range report.Findings {
-		found = found || (f.Level == check.Error && f.Line == 4 && strings.HasPrefix(f.Message, "nul-byte: "))
+		found = found || (f.Rule == check.RuleNulByte && f.Level == check.Error && f.Line == 4 &&
+			strings.Contains(f.Message, "NUL byte"))
 	}
 	if !found {
 		t.Errorf("check findings %+v, want a nul-byte error on line 4", report.Findings)

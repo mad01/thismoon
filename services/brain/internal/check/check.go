@@ -6,6 +6,7 @@
 package check
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -179,7 +180,11 @@ func (c *checker) add(n *vault.NoteView, line int, rule, format string, args ...
 func (c *checker) note(n *vault.NoteView) {
 	c.secrets(n)
 	c.links(n)
-	if n.ParseErr != nil {
+	switch {
+	case errors.Is(n.ParseErr, vault.ErrInvalidPath):
+		c.add(n, 0, RuleSymlink, "%v", n.ParseErr)
+		return
+	case n.ParseErr != nil:
 		c.add(n, 1, RuleSchema, "frontmatter does not parse: %v", n.ParseErr)
 		return
 	}
@@ -355,6 +360,10 @@ func (c *checker) secrets(n *vault.NoteView) {
 		return
 	}
 	for _, f := range found {
+		if f.Rule.ID == vault.NulByteRule {
+			c.add(n, f.Line, RuleNulByte, "%s", f.Match)
+			continue
+		}
 		c.add(n, f.Line, RuleSecret, "%s: %s", f.Rule.ID, f.Match)
 	}
 }
