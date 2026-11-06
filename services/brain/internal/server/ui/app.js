@@ -24,8 +24,20 @@
   var LIST_LIMIT = 100;
   var SEARCH_LIMIT = 30;
   var DIM = 0.12;
-  // A local graph this small shows every label.
+  // A local graph, or a hovered node's neighbourhood, this small shows every
+  // label; a bigger one leaves the label grid to pick.
   var LOCAL_LABELS_MAX = 60;
+  // Camera zoom bounds, shared by sigma's settings and the wheel handler.
+  var MIN_CAMERA_RATIO = 0.02;
+  var MAX_CAMERA_RATIO = 20;
+  // A hover from rest draws once the cursor has stayed on a node this long,
+  // so a cursor passing over nodes does not dim the graph. Leaving a node
+  // clears the hover after HOVER_LINGER_MS, so crossing the gap between two
+  // nodes does not un-dim and re-dim it.
+  var HOVER_INTENT_MS = 80;
+  var HOVER_LINGER_MS = 150;
+  // A dropped node stays pinned while the rest settles for this long.
+  var DROP_LAYOUT_MS = 1200;
 
   // ── state ──
   // stateKey is the last /api/state key; a new one refetches everything.
@@ -57,7 +69,11 @@
     byDegree: true,
     topics: false,
     hovered: null,
+    hoverTimer: null,
+    pointer: null,
     focus: null,
+    focusCrowded: false,
+    drag: null,
     selected: null,
     noteRef: '',
     noteSeq: 0,
@@ -286,7 +302,7 @@
         out.labelVisibility = 'hidden';
         out.zIndex = 0;
       } else {
-        out.labelVisibility = 'visible';
+        if (key === S.hovered || !S.focusCrowded) out.labelVisibility = 'visible';
         out.zIndex = key === S.hovered ? 3 : 1;
       }
     }
@@ -310,6 +326,9 @@
 
   function ensureSigma(graph) {
     if (S.sigma) {
+      clearHover();
+      S.drag = null;
+      S.sigma.setCustomBBox(null);
       S.sigma.setGraph(graph);
       return;
     }
@@ -325,19 +344,34 @@
         labelDensity: 0.5,
         labelRenderedSizeThreshold: 7,
         allowInvalidContainer: true,
-        minCameraRatio: 0.02,
-        maxCameraRatio: 20,
+        minCameraRatio: MIN_CAMERA_RATIO,
+        maxCameraRatio: MAX_CAMERA_RATIO,
+        enableNodeDrag: true,
       },
       nodeReducer: nodeReducer,
       edgeReducer: edgeReducer,
     });
-    S.sigma.on('enterNode', function (e) { setHover(e.node); });
-    S.sigma.on('leaveNode', function () { setHover(null); });
+    // pointer follows sigma's hover even mid-drag; the drawn hover waits
+    // for the drop.
+    S.sigma.on('enterNode', function (e) {
+      S.pointer = e.node;
+      if (!S.drag) enterHover(e.node);
+    });
+    S.sigma.on('leaveNode', function () {
+      S.pointer = null;
+      if (!S.drag) lingerHover();
+    });
     S.sigma.on('clickNode', function (e) { clickNode(e.node); });
     S.sigma.on('doubleClickNode', function (e) {
       e.preventSigmaDefault();
       showLocal(e.node);
     });
+    S.sigma.on('nodeDragStart', function (e) { startDrag(e.node); });
+    S.sigma.on('nodeDrag', function () { if (S.drag) S.drag.moves++; });
+    S.sigma.on('nodeDragEnd', endDrag);
+    // Capture runs before sigma's own wheel listener on its canvas, and
+    // stopPropagation keeps the event from reaching it.
+    sigmaBox.addEventListener('wheel', wheelZoom, { passive: false, capture: true });
     // sigma refreshes on a window resize; the note panel opening resizes
     // the stage without one.
     new ResizeObserver(function () {
@@ -349,10 +383,88 @@
     if (S.sigma) S.sigma.refresh({ skipIndexation: true });
   }
 
+  function clearHover() {
+    clearTimeout(S.hoverTimer);
+    S.hoverTimer = null;
+    S.hovered = null;
+    S.pointer = null;
+    S.focus = null;
+    S.focusCrowded = false;
+  }
+
   function setHover(id) {
+    clearTimeout(S.hoverTimer);
+    S.hoverTimer = null;
+    if (id === S.hovered) return;
     S.hovered = id;
     S.focus = id ? BG.depthSearch(S.adj, id, 1) : null;
+    S.focusCrowded = !!S.focus && Object.keys(S.focus).length > LOCAL_LABELS_MAX;
     refreshGraph();
+  }
+
+  // enterHover moves a drawn hover at once (the graph stays dimmed, only the
+  // focus moves) and draws one from rest after HOVER_INTENT_MS.
+  function enterHover(id) {
+    clearTimeout(S.hoverTimer);
+    if (S.hovered) { setHover(id); return; }
+    S.hoverTimer = setTimeout(function () { setHover(id); }, HOVER_INTENT_MS);
+  }
+
+  // lingerHover clears the hover after HOVER_LINGER_MS unless the cursor
+  // reaches another node first; it also drops a pending enterHover.
+  function lingerHover() {
+    clearTimeout(S.hoverTimer);
+    S.hoverTimer = setTimeout(function () { setHover(null); }, HOVER_LINGER_MS);
+  }
+
+  // wheelZoom replaces sigma's wheel zoom, which takes one animated 1.7x
+  // step per event and drops events under 50 ms apart, while a trackpad
+  // sends one every frame. Each event here zooms by its own delta, around
+  // the cursor, with no animation.
+  function wheelZoom(e) {
+    if (!S.sigma) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var cam = S.sigma.getCamera();
+    var ratio = BG.wheelRatio(cam.ratio, e.deltaY, e.deltaMode, e.ctrlKey, MIN_CAMERA_RATIO, MAX_CAMERA_RATIO);
+    if (ratio === cam.ratio) return;
+    var box = sigmaBox.getBoundingClientRect();
+    cam.setState(S.sigma.getViewportZoomedState({ x: e.clientX - box.left, y: e.clientY - box.top }, ratio));
+  }
+
+  // ── node drag ──
+  // sigma moves the dragged node. startDrag stops the view's layout so it
+  // does not fight the cursor, and pins the graph's frame, so the rest does
+  // not rescale while the node crosses the edge. A drag that interrupted a
+  // layout resumes it on the drop, even when the node barely moved.
+  function startDrag(id) {
+    var run = S.runs[S.view];
+    S.drag = { node: id, moves: 0, resumeMs: run ? Math.max(0, run.endsAt - Date.now()) : 0 };
+    stopLayout(S.view);
+    if (!S.sigma.getCustomBBox()) S.sigma.setCustomBBox(S.sigma.getBBox());
+  }
+
+  function endDrag() {
+    var d = S.drag;
+    S.drag = null;
+    if (!d) return;
+    if (S.pointer) setHover(S.pointer);
+    else lingerHover();
+    // Under sigma's drag tolerance the press counts as a click, not a move.
+    var moved = d.moves >= S.sigma.getSetting('draggedEventsTolerance');
+    if (moved || d.resumeMs) settle(S.sigma.getGraph(), moved ? d.node : null, Math.max(DROP_LAYOUT_MS, d.resumeMs));
+  }
+
+  // settle runs ForceAtlas2 for ms with the dropped node, if any, pinned.
+  // A global layout that ran to the end is saved, so a moved node keeps its
+  // place across reloads; a local layout is never posted.
+  function settle(g, pinned, ms) {
+    var gen = S.gen;
+    if (pinned) g.setNodeAttribute(pinned, 'fixed', true);
+    runLayout(g, ms, S.view).then(function (done) {
+      if (pinned && g.hasNode(pinned)) g.removeNodeAttribute(pinned, 'fixed');
+      if (done && g === S.global && gen === S.gen) saveLayout(S.data.key, positionsOf(g), gen);
+    });
   }
 
   function clickNode(id) {
@@ -374,7 +486,11 @@
     var cam = S.sigma.getCamera();
     if (how === 'in') cam.zoomIn();
     else if (how === 'out') cam.zoomOut();
-    else cam.reset();
+    else {
+      // A drag pins the frame; fitting frames what the graph spans now.
+      S.sigma.setCustomBBox(null);
+      cam.reset();
+    }
   }
 
   function applyFilters() {
@@ -401,26 +517,28 @@
   // ── layout ──
 
   // runLayout runs ForceAtlas2 in its worker for ms, then stops it. slot
-  // names the run ("global" or "local"), so a newer run in the same slot
-  // stops the older one.
+  // names the run ("global" or "local", as S.view does), so a newer run in
+  // the same slot stops the older one. The promise resolves true when the
+  // run lasted its ms, false at once when something stopped it first.
   function runLayout(g, ms, slot) {
-    if (S.runs[slot]) S.runs[slot].kill();
-    var settings = B.forceAtlas2.inferSettings(g);
-    var fa2 = new B.FA2Layout(g, { settings: settings });
-    S.runs[slot] = fa2;
-    fa2.start();
+    stopLayout(slot);
+    var fa2 = new B.FA2Layout(g, { settings: B.forceAtlas2.inferSettings(g) });
     return new Promise(function (resolve) {
-      setTimeout(function () {
+      var run = { endsAt: Date.now() + ms };
+      run.stop = function (done) {
+        clearTimeout(run.timer);
         fa2.kill();
-        if (S.runs[slot] === fa2) S.runs[slot] = null;
-        resolve();
-      }, ms);
+        if (S.runs[slot] === run) S.runs[slot] = null;
+        resolve(done);
+      };
+      run.timer = setTimeout(function () { run.stop(true); }, ms);
+      S.runs[slot] = run;
+      fa2.start();
     });
   }
 
   function stopLayout(slot) {
-    if (S.runs[slot]) S.runs[slot].kill();
-    S.runs[slot] = null;
+    if (S.runs[slot]) S.runs[slot].stop(false);
   }
 
   // placeFresh gives every node without a position a start point
@@ -460,8 +578,10 @@
     if (ms) {
       S.layoutNote = 'laying out ' + fresh.length + ' new';
       renderStatus();
-      await runLayout(g, ms, 'global');
-      if (gen !== S.gen) return;
+      // A stopped run is either stale (a refetch) or resumed by a drop,
+      // which saves when it ends.
+      var done = await runLayout(g, ms, 'global');
+      if (!done || gen !== S.gen) return;
     }
     await saveLayout(data.key, positionsOf(g), gen);
   }
@@ -570,8 +690,8 @@
     renderToolbar();
     renderStatus();
     if (lg.order > 1) {
-      runLayout(lg, LOCAL_LAYOUT_MS, 'local').then(function () {
-        if (keepCamera !== true && S.view === 'local' && S.centerId === id) camera('fit');
+      runLayout(lg, LOCAL_LAYOUT_MS, 'local').then(function (done) {
+        if (done && keepCamera !== true && S.view === 'local' && S.centerId === id) camera('fit');
       });
     }
   }

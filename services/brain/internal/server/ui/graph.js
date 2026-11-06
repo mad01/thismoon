@@ -382,6 +382,20 @@
     return Math.round(Math.max(800, full * share));
   }
 
+  // wheelRatio is the camera ratio after one wheel event. It scales by the
+  // event's own delta, so a trackpad's stream of small events zooms smoothly
+  // and a mouse notch (about 100 px) takes one step of about 1.2x. A pinch
+  // arrives as ctrl+wheel with small deltas, so it weighs more per pixel.
+  // Line-mode deltas, which some mice send, count as LINE_PX pixels each.
+  var WHEEL_ZOOM_PER_PX = 0.002;
+  var PINCH_ZOOM_PER_PX = 0.01;
+  var LINE_PX = 16;
+  function wheelRatio(ratio, deltaY, deltaMode, pinch, min, max) {
+    var px = deltaMode === 1 ? deltaY * LINE_PX : deltaY;
+    var next = ratio * Math.exp(px * (pinch ? PINCH_ZOOM_PER_PX : WHEEL_ZOOM_PER_PX));
+    return Math.min(max, Math.max(min, next));
+  }
+
   function round3(v) {
     return Math.round(v * 1000) / 1000;
   }
@@ -455,6 +469,7 @@
     groupByAnchor: groupByAnchor,
     spacing: spacing,
     layoutMs: layoutMs,
+    wheelRatio: wheelRatio,
     layoutPayload: layoutPayload,
     wikilinkLabel: wikilinkLabel,
     linkIndex: linkIndex,

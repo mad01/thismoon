@@ -133,6 +133,11 @@ their place. The browser then:
 
 The server writes the file atomically and keeps the newest three.
 
+A node dragged on the global graph stays where it is dropped: ForceAtlas2
+settles the rest around it for about a second, then the browser POSTs the
+positions under the current key, so the node keeps its place on reload. A
+drag on a local graph is never posted.
+
 ## Browser
 
 - `assets/brain-graph.bundle.js` sets `window.BrainSigma` to
