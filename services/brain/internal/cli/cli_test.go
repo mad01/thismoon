@@ -846,6 +846,19 @@ func TestDoctor(t *testing.T) {
 	}
 }
 
+// TestDoctorHelpNamesEveryCheck keeps brain doctor --help in step with the
+// checks the report holds.
+func TestDoctorHelpNamesEveryCheck(t *testing.T) {
+	setupCLI(t, "")
+	report := decodeStrict[doctor.Report](t, runBrain(t, "", "doctor", "-o", "json").stdout)
+	help := runBrain(t, "", "doctor", "--help").stdout
+	for _, c := range report.Checks {
+		if !strings.Contains(help, "("+c.Name+")") {
+			t.Errorf("brain doctor --help does not name check %q", c.Name)
+		}
+	}
+}
+
 func mapsEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {
 		return false
