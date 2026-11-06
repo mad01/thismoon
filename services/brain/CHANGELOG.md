@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/mad01/thismoon/compare/brain/v0.1.1...brain/v0.2.0) (2026-11-06)
+
+
+### Features
+
+* **brain:** Neo4j-style clustered graph with live physics on brain.this ([#410](https://github.com/mad01/thismoon/issues/410)) ([3a6c6f5](https://github.com/mad01/thismoon/commit/3a6c6f52a45871f92d9b6457c68ef25e7526777d))
+
 ## [0.1.1](https://github.com/mad01/thismoon/compare/brain/v0.1.0...brain/v0.1.1) (2026-11-06)
 
 
