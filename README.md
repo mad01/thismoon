@@ -86,7 +86,7 @@ address, managed as launchd agents by t-man.
 | [present](services/present/README.md) | Single-page HTML briefings and slide decks, authored as structured JSON | web · CLI · MCP | proven |
 | [speak](services/speak/README.md) | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
 | [status](services/status/README.md) | Status page with 30-day uptime history for the fleet | web · CLI | proven |
-| [brain](services/brain/README.md) | Markdown knowledge base: literal and semantic search over an Obsidian-style vault | CLI · MCP | experimental |
+| [brain](services/brain/README.md) | Markdown knowledge base: literal and semantic search over an Obsidian-style vault | web · CLI · MCP | experimental |
 | [moondb](services/moondb/README.md) | Edit history between commits: every file edit an agent session makes, linked to the turn and prompt behind it | web · CLI · MCP | experimental |
 
 ## Tools

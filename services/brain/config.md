@@ -54,6 +54,8 @@ indexes there, named after the vault:
 - `worktrees/`: the temporary git worktrees of a shared vault's clone that
   `promote --to` and `edit --pr` prepare a pull request in. Each is removed
   when its command ends.
+- `layout/`: the graph node positions `brain serve` caches under their
+  layout key (`CONTEXT.md`), written atomically; the newest three stay.
 
 Because every vault keeps its own fingerprint, a pull in one vault
 re-indexes only that vault. Every file there is rebuilt from the vaults, so
@@ -68,6 +70,9 @@ links `config.yaml` into `~/.config/brain` on every machine, and only a
 finished `brain index` writes `state.json`. An absolute `XDG_STATE_HOME`
 always wins, which is what lets an eval or a test isolate brain from a
 machine's real indexes. `brain doctor` names the index directory in effect.
+`brain serve` runs sandboxed and may write only `~/.local/state/brain`, so a
+machine that runs it moves a legacy state directory there first
+([docs/UPGRADING.md](../../docs/UPGRADING.md)).
 Indexes from before per-vault state sit at the root of `index/` and
 `semantic/`; brain no longer reads them and builds `index/default/` and
 `semantic/default/` afresh, which costs one re-embed. The old
@@ -134,9 +139,22 @@ found in its own vault resolves in the shared vaults in this order.
 
 The defaults are the constants in `facts.go`. Unknown keys are ignored.
 
+## brain serve
+
+`brain serve` listens on `127.0.0.1` only. The port is `--port`, else
+`$BRAIN_PORT`, else 7427 (`DefaultPort` in `facts.go`). It reads the same
+config file and state directory as every other command, so it shows the
+vaults and indexes the CLI sees. `brain.this` reaches it on a machine whose
+d-man routes `brain` to that port. Under its sandbox serve reads only what
+the srt settings and the machine's expansion layer grant. The vault roots
+and the target of a linked `config.yaml` come from that layer
+(`recipes/brain/CLAUDE.md` in the repo root).
+
 ## Environment variables
 
 - `BRAIN_CONFIG`: path to the config file. `--config` beats it.
+- `BRAIN_PORT`: the port `brain serve` listens on. `--port` beats it; the
+  default is 7427.
 - `XDG_CONFIG_HOME` / `XDG_STATE_HOME`: roots of the config and state
   directories when set to an absolute path. Relative values are ignored, per
   the XDG spec.

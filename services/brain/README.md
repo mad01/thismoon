@@ -1,6 +1,6 @@
 # brain
 
-A local CLI and MCP stdio server over an Obsidian-style markdown vault. It indexes the vault with zoekt for literal search and with chromem-go for semantic search on Ollama embeddings, and serves both to Claude Code as `brain_*` tools.
+A local CLI, MCP stdio server and web view over Obsidian-style markdown vaults. It indexes each vault with zoekt for literal search and with chromem-go for semantic search on Ollama embeddings, and serves both to Claude Code as `brain_*` tools and to a browser through `brain serve`.
 
 brain is the tool only. The vault content lives in your own vault repo, checked out wherever `vault:` in the config points, so its history and backups stay separate from the tool's.
 
@@ -18,12 +18,17 @@ brain search '<query>'     # zoekt query across the vault
 brain semantic-search 'q'  # vector search through Ollama embeddings
 brain hybrid-search 'q'    # literal and semantic results fused by reciprocal rank
 brain mcp                  # MCP stdio server exposing the brain_* tools
+brain serve                # read-only web view: graph, notes, search, review queues
 brain version -o json      # build metadata: version, commit, tag, build_time
 ```
 
 `brain --help` lists the rest (read, peek, backlinks, write, edit, promote, list, count, query).
 
 Agents: run `brain docs` for the guide and `brain doctor` to check setup.
+
+## Web view
+
+`brain serve` listens on `127.0.0.1:7427`. `--port` or `BRAIN_PORT` picks another port. It shows the wikilink graph of every configured vault, each note rendered with its backlinks, search, the stale queue and the open shared promotions. It never writes a vault; its one write is the cached graph layout in the state directory. With the thismoon recipe it runs as the t-man agent `brain-serve` under an srt sandbox, and `brain.this` reaches it through d-man. [docs/serve.md](docs/serve.md) is its HTTP API.
 
 ## Vault tiers
 
