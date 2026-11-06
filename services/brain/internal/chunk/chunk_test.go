@@ -224,3 +224,31 @@ func lastTokens(s string, n int) string {
 	}
 	return strings.Join(fs[len(fs)-n:], " ")
 }
+
+// TestChunk_StatusIsTheEffectiveStatus pins that a chunk carries the
+// status the note has, not the line it stores: the tier default when the
+// status line is missing, normalized when present. The semantic and hybrid
+// status filters match on it.
+func TestChunk_StatusIsTheEffectiveStatus(t *testing.T) {
+	tests := []struct {
+		path, frontmatter, want string
+	}{
+		{"notes/a.md", "title: A\n", "validated"},
+		{"inbox/a.md", "title: A\n", "raw"},
+		{"MOCs/a.md", "title: A\n", "validated"},
+		{"notes/a.md", "title: A\nstatus: Disputed\n", "disputed"},
+		{"draft.md", "title: A\n", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path+" "+tt.want, func(t *testing.T) {
+			note := []byte("---\n" + tt.frontmatter + "---\nSome body text.\n")
+			chunks, err := Split(tt.path, "", note, Options{})
+			if err != nil || len(chunks) != 1 {
+				t.Fatalf("Split = %d chunks, %v; want one", len(chunks), err)
+			}
+			if got := chunks[0].Status; got != tt.want {
+				t.Errorf("Status = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

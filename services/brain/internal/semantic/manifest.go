@@ -18,8 +18,9 @@ import (
 const manifestFile = "manifest.json"
 
 // ManifestVersion changes when the chunk metadata the index stores changes
-// shape. An index whose manifest has another version is rebuilt.
-const ManifestVersion = 1
+// shape or meaning. An index whose manifest has another version is rebuilt.
+// Version 2 stores the effective status, not the literal status line.
+const ManifestVersion = 2
 
 // Settings are what an index's chunks were made with. Chunks made with
 // other settings are not comparable, so a change rebuilds the index.
