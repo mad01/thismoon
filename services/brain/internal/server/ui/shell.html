@@ -1,3 +1,91 @@
-<!doctype html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>brain</title>
-<p>The brain UI is not built yet.</p>
+<script src="/webkit/boot.js"></script>
+<link href="/webkit/webkit.css" rel="stylesheet">
+<style>
+/* Palette, header chrome, badges, segmented controls and prose come from
+   /webkit/webkit.css. Only the brain layout lives here: a sidebar, the graph
+   stage and the note panel, filling the window under the header. app.js
+   renders all three into <div id="app">. */
+html,body{height:100%}
+body{display:flex;flex-direction:column;overflow:hidden}
+wk-header{flex:none}
+wk-header .topbar{margin-bottom:0}
+#app{flex:1;min-height:0;display:grid;grid-template-columns:19rem minmax(0,1fr);background:var(--bg)}
+#app.with-note{grid-template-columns:19rem minmax(0,1fr) minmax(22rem,30rem)}
+.side,.note{overflow-y:auto;min-height:0;padding:1rem;font-size:0.85rem}
+.side{border-right:1px solid var(--border)}
+.note{border-left:1px solid var(--border);background:var(--paper)}
+.sec{margin:0 0 1.25rem}
+.sec-title{font-size:0.72rem;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-3);margin:0 0 0.5rem;display:flex;align-items:center;gap:0.4rem}
+.sec-title .n{color:var(--text-2);font-weight:500;letter-spacing:0;text-transform:none}
+.hint{color:var(--text-3);font-size:0.78rem;margin:0.35rem 0}
+.hint code{background:var(--chip-bg);padding:0.05rem 0.3rem;border-radius:3px}
+.list{display:flex;flex-direction:column;gap:2px;margin:0.4rem 0 0}
+.row{display:flex;align-items:baseline;gap:0.4rem;width:100%;text-align:left;background:none;border:none;border-radius:6px;padding:0.3rem 0.45rem;font:inherit;color:var(--text-2);cursor:pointer}
+.row:hover{background:var(--chip-bg);color:var(--text-1)}
+.row.active{background:var(--chip-bg);color:var(--text-1);box-shadow:inset 2px 0 0 var(--primary)}
+.row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .m{flex:none;color:var(--text-3);font-size:0.75rem}
+.row.multi{flex-direction:column;align-items:stretch;gap:0.15rem}
+.row .sub{color:var(--text-3);font-size:0.75rem;overflow-wrap:anywhere}
+.row .snip{color:var(--text-2);font-size:0.78rem;overflow-wrap:anywhere}
+.side wk-seg{display:flex;flex-wrap:wrap;margin:0 0 0.4rem}
+.side wk-seg button{flex:1}
+.side input[type=search]{width:100%;appearance:none;background:var(--paper);border:1px solid var(--border);border-radius:8px;padding:0.4rem 0.65rem;font:inherit;color:var(--text-1);margin:0 0 0.4rem}
+.side input[type=search]:focus{outline:none;border-color:var(--primary)}
+.group{margin:0.6rem 0 0}
+.group-title{font-size:0.78rem;color:var(--text-1);font-weight:600;margin:0 0 0.2rem}
+.stage{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:0.5rem 0.9rem;padding:0.55rem 0.9rem;border-bottom:1px solid var(--border);font-size:0.8rem;color:var(--text-2)}
+.toolbar label{display:inline-flex;align-items:center;gap:0.3rem;cursor:pointer}
+.toolbar select{appearance:auto;background:var(--paper);border:1px solid var(--border);border-radius:6px;padding:0.2rem 0.35rem;font:inherit;color:var(--text-1);max-width:11rem}
+.toolbar input[type=range]{width:5rem}
+.toolbar .off{opacity:0.45}
+#graph{position:relative;flex:1;min-height:0;background:var(--graph-bg,var(--paper))}
+#graph .sigma{position:absolute;inset:0}
+.overlay{position:absolute;z-index:2;font-size:0.75rem;color:var(--text-3)}
+.status{top:0.6rem;left:0.8rem}
+.legend{bottom:0.6rem;left:0.8rem;display:flex;flex-wrap:wrap;gap:0.3rem 0.75rem;max-width:70%;background:color-mix(in srgb,var(--paper) 85%,transparent);padding:0.35rem 0.55rem;border-radius:6px}
+.legend span{display:inline-flex;align-items:center;gap:0.3rem;color:var(--text-2)}
+.legend i{display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%}
+.legend i.line{width:0.9rem;height:2px;border-radius:1px}
+.zoom{bottom:0.6rem;right:0.8rem;display:flex;gap:0.25rem}
+.zoom button{appearance:none;background:var(--paper);border:1px solid var(--border);border-radius:6px;width:1.9rem;height:1.9rem;font:inherit;color:var(--text-2);cursor:pointer}
+.zoom button:hover{color:var(--text-1);border-color:var(--border-hover)}
+.empty[hidden]{display:none}
+.empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:2rem;text-align:center;color:var(--text-3);z-index:1}
+.empty wk-callout{max-width:34rem;text-align:left}
+.note-head{display:flex;align-items:flex-start;gap:0.5rem;margin:0 0 0.4rem}
+.note-title{flex:1;font-size:1.1rem;font-weight:600;color:var(--text-1);margin:0;overflow-wrap:anywhere}
+.note-ref{color:var(--text-3);font-size:0.75rem;overflow-wrap:anywhere;margin:0 0 0.6rem}
+.note-meta{display:flex;flex-wrap:wrap;gap:0.3rem;margin:0 0 0.7rem}
+.note-meta wk-badge[data-tag]{cursor:pointer}
+.note-actions{display:flex;gap:0.4rem;margin:0 0 0.8rem}
+.note wk-callout{margin:0 0 0.8rem}
+.note-body{font-size:0.9rem;margin:0 0 1.2rem}
+.note-body a.wikilink{color:var(--primary);text-decoration:none;border-bottom:1px dotted var(--primary)}
+.note-body .wikilink.dangling{color:var(--text-3);border-bottom:1px dashed var(--text-3)}
+.fm{margin:0 0 1rem;font-size:0.8rem}
+.fm summary{cursor:pointer;color:var(--text-3)}
+.fm dl{display:grid;grid-template-columns:auto 1fr;gap:0.15rem 0.7rem;margin:0.4rem 0 0}
+.fm dt{color:var(--text-3)}
+.fm dd{margin:0;color:var(--text-2);overflow-wrap:anywhere}
+.btn-x{appearance:none;background:none;border:none;color:var(--text-3);cursor:pointer;font-size:1rem;padding:0 0.2rem}
+.btn-x:hover{color:var(--text-1)}
+</style>
+</head>
+<body>
+<wk-header brand="brain" title="Knowledge graph" page-width="1600"><a data-nav href="/webkit/themes">Themes</a></wk-header>
+<div id="app"></div>
+<wk-toast-host id="toast-host"></wk-toast-host>
+<script src="/webkit/webkit.js"></script>
+<script src="/assets/brain-graph.bundle.js"></script>
+<script src="/graph.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
