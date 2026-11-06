@@ -6,11 +6,11 @@ Go CLI, MCP stdio server and `brain serve` web view over Obsidian-style markdown
 
 ```
 brain/
-  facts.go, paths.go  - package brain: defaults, the reserved port, agentdoc.Facts, config and state paths
+  facts.go, paths.go  - package brain: defaults, serve's port and its env var, agentdoc.Facts, config and state paths
   config.md           - config file, precedence, paths, env vars, parse-failure posture
   cmd/brain/          - entrypoint (delegates to internal/cli)
   internal/
-    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, capture, edit, promote, supersede, retract, withdraw, flag, inbox, drift, stale, check, similar, sync, list, migrate, docs, doctor, mcp, serve, version
+    cli/              - cobra: index, search, semantic-search, hybrid-search, count, query, read, peek, backlinks, graph, write, capture, edit, promote, supersede, retract, withdraw, flag, inbox, drift, stale, check, similar, sync, list, vaults, migrate, docs, doctor, mcp, serve, version
     check/            - brain check: the rules, the vault's .brain/policy.yaml, the report
     drift/            - brain drift: code refs checked in local checkouts (git), external sources fetched (--online)
     stale/            - brain stale: the computed review queue, grouped by CODEOWNERS owner, steward or unowned
@@ -19,6 +19,7 @@ brain/
     doctor/           - the checks `brain doctor` and `brain_doctor` share
     library/          - the vaults opened together: ref lookup, per-vault index refresh under a lock, cross-vault search, count, semantic and hybrid queries
     lockfile/         - cross-process flock on the files under the state dir's locks/
+    atomicfile/       - writes through a uniquely named temporary file: renamed over a target, or linked to a new path
     gitvault/         - git for one vault: the autocommit of changed paths, upstream, fetch, ff-only pull, push, worktrees
     ghcli/            - gh for a shared vault's repo: pr create, pr view, issue create
     sharing/          - promote --to, edit --pr, a shared flag's issue and brain sync, over library, gitvault and ghcli
@@ -34,15 +35,17 @@ brain/
     mcpserver/        - MCP tool handlers, thin adapters over the packages above
     server/           - brain serve: the HTTP API of docs/serve.md over library and vault, the layout cache in the state dir's layout/
     server/ui/        - the brain.this UI embedded in the binary: shell.html, app.js, graph.js, the graph bundle and its SHA256SUMS in assets/
-    testhome/         - test helper isolating HOME, XDG and BRAIN_CONFIG
+    testhome/         - test helper isolating HOME, XDG and BRAIN_CONFIG, with BRAIN_PORT on a closed port
     testgit/          - test helper running git in a test's own temp repos and bare remotes
     testgh/           - test helper putting a fake gh on PATH that records its argv
   docs/cli.md         - agent CLI guide, embedded and printed by `brain docs`
   docs/lifecycle.md   - statuses, revocation, check and freshness, printed by `brain docs lifecycle`
   docs/sharing.md     - git vaults, sync, promote --to, edit --pr, similar, printed by `brain docs sharing`
-  docs/serve.md       - the brain serve HTTP API and UI contract: routes, JSON shapes, layout, browser globals
+  docs/serve.md       - the brain serve HTTP API and UI contract (routes, JSON shapes, layout, browser globals), printed by `brain docs serve`
   examples/shared-vault/ - a shared vault's repo to copy: policy, CODEOWNERS, CI workflow; a test keeps it passing check
   docs/mcp.md         - full MCP tool reference (inputs, outputs, evidence scheme)
+  web/                - the npm package, lockfile and esbuild script behind the UI's graph bundle
+  THIRD-PARTY.md      - notices for the npm packages in the graph bundle
 ```
 
 ## Build, test, install
@@ -52,12 +55,16 @@ make build      # ./brain, linked with $(BUILDINFO_LDFLAGS)
 make test       # go test ./...
 make lint       # golangci-lint, using the repo-root .golangci.yml
 make test-js    # the UI's JavaScript tests under node's test runner (CI runs them too)
+make bundle     # rebuilds the graph bundle and its SHA256SUMS in a throwaway Apple container
+make bundle-local  # the same build on the host, only when the container runtime is missing
 make install    # copies to ~/code/bin/brain and re-signs on macOS
 ```
 
+The graph bundle in `internal/server/ui/assets/` is committed build output (ADR-0031): `web/package.json` pins each direct dependency and `web/package-lock.json` the rest. A version bump is a lockfile change, `make bundle` and a `THIRD-PARTY.md` update in one commit.
+
 `brain version` prints the bare version token; `brain version -o json` prints the shared four-key build object (`version`, `commit`, `tag`, `build_time`) from the `buildinfo` package.
 
-Tests never read or write the real config or state. A test that resolves a default path calls `testhome.Isolate(t)` first. It points `HOME` at a temp dir and clears `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and `BRAIN_CONFIG`. Everything else takes explicit temp paths. Keep it that way; a test that falls through to the real config indexes the real vault.
+Tests never read or write the real config or state. A test that resolves a default path calls `testhome.Isolate(t)` first. It points `HOME` at a temp dir, clears `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and `BRAIN_CONFIG`, and sets `BRAIN_PORT` to a loopback port nothing listens on, so `brain doctor` in a test never probes a real serve. Everything else takes explicit temp paths. Keep it that way; a test that falls through to the real config indexes the real vault.
 
 Tests never reach the network, the real `gh` or a real checkout. A git test calls `testgit.Isolate(t)`, which points `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` at `/dev/null` and sets an explicit author, and its remotes are bare repos from `testgit.Bare(t)` in `t.TempDir()`. A test that runs `gh` calls `testgh.Install(t, ...)` first: a fake script on `PATH` that records each call's argv and prints canned URLs or `pr view` JSON.
 
@@ -78,7 +85,7 @@ Agents drive brain from the shell, so the CLI keeps a stable contract:
 |---|---|---|
 | 0 | | success |
 | 1 | `error` | anything else (config, I/O, Ollama) |
-| 2 | `usage` | bad flag, argument, path, tier or vault |
+| 2 | `usage` | bad flag, argument, path, tier or vault; a title with a control character; a note with a NUL byte or unclosed frontmatter; a note path that is a symbolic link; an edit that sets superseded, retracted or withdrawn, or edits a tombstone |
 | 2 | `ambiguous` | a bare path or title names notes in more than one vault |
 | 2 | `invalid_config` | config file does not parse or describes no usable vault |
 | 3 | `not_found` | note or title does not exist |
@@ -91,7 +98,7 @@ Agents drive brain from the shell, so the CLI keeps a stable contract:
 
 - `docs/cli.md` is the agent guide `brain docs` prints. Keep it under 200 lines and in step with `internal/cli/errors.go`: a new exit code or error class changes both. Lifecycle and freshness detail goes in `docs/lifecycle.md` (`brain docs lifecycle`), git vaults and sharing in `docs/sharing.md` (`brain docs sharing`), each under the same cap.
 - Writes are safe against each other: a new note is created exclusively (a temporary file hard-linked into place), every rewrite renames a uniquely named temporary file, and write, edit, promote and migrate hold the vault's `locks/<vault>.write.lock`. `read -o json` returns the note's `sha`; `edit --if-match <sha>` refuses with exit 7 when the note changed since.
-- Frontmatter keys brain does not model survive write, edit and promote in source order, nested values included (`internal/markdown/fields.go`). `--set key=<yaml>` and `--unset key` reach any key; typed keys are shape-checked. Rendering writes 2-space YAML, so an edit to one key leaves the other lines of the frontmatter byte-identical.
+- Frontmatter keys brain does not model survive write, edit and promote in source order, nested values included (`internal/markdown/fields.go`). `--set key=<yaml>` and `--unset key` reach any key; typed keys are shape-checked. An edit rewrites only the keys it changes (`internal/markdown/patch.go`): the comments, quoting, indentation, fences and line endings of the rest stay. Frontmatter it cannot patch line by line (a flow mapping, two keys on one line, a repeated key) is written fresh, and a new note gets 2-space YAML.
 
 ## Tier model
 
@@ -122,7 +129,7 @@ Fourteen tools: `brain_search`, `brain_semantic_search`, `brain_hybrid_search`, 
 
 - `brain_search` and `brain_count` take zoekt query syntax; `brain_query_validate` checks a query before running it.
 - A `tier` input on search, list and count expands to `file:^<tier>/`, so don't add a `file:` prefix yourself when passing `tier`.
-- `brain_promote` writes the note under the target tier, sets `status: validated`, rewrites every `[[oldstem]]` wikilink across the vault, then deletes the inbox file.
+- `brain_promote` writes the note under the target tier, sets `status: validated`, rewrites every `[[oldstem]]` wikilink across the vault, then deletes the inbox file. It is all or nothing: a failure puts every file back. `moc` must be a note in `MOCs/`.
 - `brain_edit` takes `body` (replace) or `append`, which are mutually exclusive, plus a `frontmatter_patch`.
 - `brain_doctor` is read-only and returns the `brain doctor -o json` report; a failing check is a result, not a tool error.
 - Write, edit and promote autocommit in a git vault through the same `library` and `vault` path as the CLI. Sync, `promote --to`, `edit --pr` and `similar` are CLI only; `brain_promote` takes no `to`.

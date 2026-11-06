@@ -20,11 +20,16 @@ Run, in order:
    mv ~/.config/brain/semantic ~/.local/state/brain/semantic
    ```
 
-   The probe file moves with `index`. A per-vault store, `semantic/<vault>/` with a `manifest.json` in it, keeps its embeddings. A store without a manifest sits at the root of `semantic/`, and the next `brain index` embeds that vault again from scratch. Files left at the root of `index/` and `semantic/` are unused after that and can be deleted. If the config sets `semantic.index_dir` under `~/.config/brain`, move that directory's `<vault>/` stores into `~/.local/state/brain/semantic/` and drop the key.
+   The probe file moves with `index`. A store without a manifest sits at the root of `semantic/`; brain no longer reads it and builds `semantic/<vault>/` afresh. Files left at the root of `index/` and `semantic/` are unused after that and can be deleted. If the config sets `semantic.index_dir` under `~/.config/brain`, move that directory's `<vault>/` stores into `~/.local/state/brain/semantic/` and drop the key.
 4. `ralph up`, then `t-man restart brain-serve`, so serve starts on the moved state.
 5. Start new agent sessions, so the MCP server runs the new binary.
 
 brain now commits each change it makes to a vault that is a git repo, staging only the paths it touched. It never pushes. `autocommit: false` on a vault entry turns the commits off.
+
+After the upgrade, two rebuilds run once on their own, and neither needs a command:
+
+- Every literal index rebuilds on its first refresh, because the vault fingerprint now counts mtimes in nanoseconds.
+- The first semantic refresh re-embeds every note, because the semantic manifest moved to version 2.
 
 Verify:
 

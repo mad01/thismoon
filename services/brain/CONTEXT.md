@@ -38,11 +38,11 @@ One of the four top-level vault directories a Note lives in: `inbox`, `notes`, `
 _Avoid_: folder, stage, category
 
 **Note**:
-One markdown file in the Vault with YAML frontmatter between `---` fences. The known fields are `title`, `aliases`, `tags`, `type`, `status`, `source`, `evidence`, `created`, `updated` and `id`; a write requires only `title`. The fields of its Status (`expires_at`, `review_by`, `status_at` and the rest) are kept with the keys brain does not model, so a note written before them still reads.
+One markdown file in the Vault with YAML frontmatter between `---` fences. A byte order mark may come before the first fence, a fence line may end in spaces, and the closing fence may be `...`. The known fields are `title`, `aliases`, `tags`, `type`, `status`, `source`, `evidence`, `created`, `updated` and `id`; a write requires only `title`. The fields of its Status (`expires_at`, `review_by`, `status_at` and the rest) are kept with the keys brain does not model, so a note written before them still reads.
 _Avoid_: document, page, entry
 
 **Stem**:
-A Note's filename without the `.md` extension, and the name a Wikilink uses for it. A write derives it from the title (lowercased, every run of other characters collapsed to one hyphen), and a note written to `outputs` gets a `YYYY-MM-DD-` prefix. A stem is unique within its tier directory, not across the vault.
+A Note's filename without the `.md` extension, and the name a Wikilink uses for it. A write derives it from the title: lowercased, the letters and digits of any script kept, every run of other characters collapsed to one hyphen. A title with no letter or digit gets the Note id as its stem. A note written to `outputs` gets a `YYYY-MM-DD-` prefix. A stem is unique within its tier directory, not across the vault.
 _Avoid_: slug (the function that makes one), id (a frontmatter field)
 
 **Wikilink**:
@@ -62,7 +62,7 @@ A line in another Note with a Wikilink that resolves to this note: an inbound li
 _Avoid_: mention, reference
 
 **MOC**:
-A Map of Content: a curated index note in the `MOCs` tier that lists other notes by Wikilink. Promotion can append the promoted note to one. An index written as the record of one research batch (a `research-index-` or `kickoff-` filename, or the `meta/index` tag) is refused as that target.
+A Map of Content: a curated index note in the `MOCs` tier that lists other notes by Wikilink. Promotion can append the promoted note to one, and its target must be a note in `MOCs/`. An index written as the record of one research batch (a `research-index-` or `kickoff-` filename, or the `meta/index` tag) is refused as that target.
 _Avoid_: index (on its own), hub
 
 **Evidence tier**:
@@ -70,7 +70,7 @@ The trust grade of an empirical Note, held in the `evidence` frontmatter field. 
 _Avoid_: confidence, rating, score
 
 **Promotion**:
-Moving an `inbox` Note into another tier of its Vault, `notes` by default, through `brain promote` or `brain_promote`. Copying a note into a Shared vault is a Shared promotion. It writes the note under the target tier with status `validated` and a Stem made from its title. It then points every Wikilink that resolved to the note at its new stem, or its new path for a path link, and deletes the inbox file. A link by an old title keeps that title as display text. Links inside code are left alone. If the rewrite fails, the new file is removed again; rewrites that already landed stay.
+Moving an `inbox` Note into another tier of its Vault, `notes` by default, through `brain promote` or `brain_promote`. Copying a note into a Shared vault is a Shared promotion. It writes the note under the target tier with status `validated` and a Stem made from its title. It then points every Wikilink that resolved to the note at its new stem, or its new path for a path link, and deletes the inbox file. A link by an old title keeps that title as display text. Links inside code are left alone. A promotion is all or nothing: when any step fails, every rewritten note and the MOC get their old bytes back and the new file goes.
 _Avoid_: move, publish, graduate
 
 **Shared promotion**:
@@ -142,7 +142,7 @@ The vault's `.brain/policy.yaml`: the Classifications it accepts and the level (
 _Avoid_: config (that is the brain config file), rules file
 
 **Check**:
-`brain check`, which judges notes against the Status rules, their Citations, unique ids and stems, the Vault policy and the secret scan. It is the gate a Shared vault's CI runs on the notes a pull request changes, and exits 1 when a finding is at error level.
+`brain check`, which judges notes against the Status rules, their Citations, unique ids and stems, the Vault policy and the secret scan. It also reports a note path that is or goes through a symbolic link, and a NUL byte in a note. It is the gate a Shared vault's CI runs on the notes a pull request changes, and exits 1 when a finding is at error level.
 _Avoid_: lint, validate (the status), doctor (which checks the install)
 
 **Autocommit**:
