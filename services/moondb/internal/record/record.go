@@ -55,6 +55,17 @@ const HarnessEnv = "MOONDB_HARNESS"
 // (store.ParseEntrypoint).
 const EntrypointEnv = "CLAUDE_CODE_ENTRYPOINT"
 
+// entrypointFor is the session's entrypoint from the hook's environment.
+// Codex sets no EntrypointEnv, so under the codex harness a value there
+// was inherited from a Claude Code session that started Codex, and it is
+// left out.
+func entrypointFor(getenv func(string) string) string {
+	if store.ParseHarness(getenv(HarnessEnv)) == store.HarnessCodex {
+		return ""
+	}
+	return store.ParseEntrypoint(getenv(EntrypointEnv))
+}
+
 // Hook events Run records; every other event is ignored.
 const (
 	eventPrompt       = "UserPromptSubmit"
@@ -121,7 +132,7 @@ func Run(ctx context.Context, in io.Reader, opts Options) error {
 		p:          p,
 		opts:       opts,
 		harness:    store.ParseHarness(opts.Getenv(HarnessEnv)),
-		entrypoint: store.ParseEntrypoint(opts.Getenv(EntrypointEnv)),
+		entrypoint: entrypointFor(opts.Getenv),
 		tags:       store.ParseTags(opts.Getenv(moondb.SessionTagsEnv)),
 		locs:       map[string]store.Location{},
 		spool: &spool.Writer{
@@ -254,8 +265,8 @@ func (rec *recorder) envelope(kind spool.Kind, id string) spool.Envelope {
 		At:      rec.start,
 		Harness: harness,
 		Session: spool.SessionRef{
-			ID: p.sessionID, Cwd: p.cwd, Title: p.title, TranscriptPath: p.transcriptPath,
-			Entrypoint: rec.entrypoint, Tags: rec.tags,
+			ID: p.sessionID, Cwd: p.cwd, Title: p.title, Model: p.model,
+			TranscriptPath: p.transcriptPath, Entrypoint: rec.entrypoint, Tags: rec.tags,
 		},
 		Turn:  spool.TurnRef{ID: p.promptID},
 		Agent: spool.AgentRef{ID: p.agentID, Type: p.agentType},

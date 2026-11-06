@@ -63,6 +63,7 @@ func (in *Ingester) openTurn(
 	if t.TranscriptOffset == 0 && env.Turn.TranscriptOffset != 0 {
 		t.TranscriptOffset, changed = env.Turn.TranscriptOffset, true
 	}
+	changed = fill(&t.Model, env.Session.Model) || changed
 	changed = earliest(&t.StartedAt, env.At) || changed // a stored StartedAt is never empty
 	if !changed {
 		return nil
@@ -105,6 +106,7 @@ func (in *Ingester) turnClose(
 	}
 	set := setter(env)
 	changed := !found
+	changed = fill(&t.Model, env.Session.Model) || changed
 	changed = set(&t.FinalChunk, in.kept(env, missing, p.FinalChunk)) || changed
 	transcript := in.kept(env, missing, p.TranscriptChunk)
 	if env.Backfill {
@@ -210,6 +212,7 @@ func newTurn(env spool.Envelope, status store.TurnStatus) store.Turn {
 		TranscriptOffset: env.Turn.TranscriptOffset,
 		Status:           status,
 		StartedAt:        env.At,
+		Model:            env.Session.Model,
 	}
 }
 

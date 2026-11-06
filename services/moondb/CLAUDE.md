@@ -317,12 +317,20 @@ unchanged (README "Codex capture" has the hooks.json):
   wired: Codex's Bash payload has no `bashEditDiff`, and its `apply_patch`
   is not an edit `record` knows.
 - The hook command sets `MOONDB_HARNESS=codex`, and the session settles on
-  `codex` as pi's does on `pi`.
+  `codex` as pi's does on `pi`. Under that harness `record` leaves out
+  `CLAUDE_CODE_ENTRYPOINT`, which only a Claude Code shell that started
+  Codex could have passed down.
+- Codex writes the turn's `turn_context`, the one line naming its model,
+  before UserPromptSubmit fires, so a live turn's lines lack it. Every
+  Codex payload carries `model`: `record` stamps it on the envelope
+  (`Session.Model`), ingest keeps it on the turn (`store.Turn.Model`), and
+  `Build` prices a call whose lines name no model at it (`withModel`).
 - `transcript_path` is the rollout file. `formatOf` knows a Codex chunk by
   its `{timestamp, type, payload}` lines, and `internal/trace/codex.go`
   maps them: a `token_usage_record` is one model call (its usage line
   carries the tool calls the response asked for, and the model comes from
-  the turn's `turn_context`); `function_call_output` answers a call, failed
+  the turn's `turn_context` when the lines hold it); `function_call_output`
+  answers a call, failed
   when an `item_completed` CommandExecution failed, the output header names
   a nonzero exit code, or the tool is unsupported; `task_complete` is the
   Stop line. Codex's `input_tokens` counts cached and cache-written tokens,

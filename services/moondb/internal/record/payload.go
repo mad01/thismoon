@@ -68,6 +68,10 @@ type payload struct {
 	cwd            string
 	agentID        string
 	agentType      string
+	// model is the model the harness names on the payload; Codex sends it
+	// on every event, since its transcript names it only before the
+	// prompt.
+	model string
 	// UserPromptSubmit.
 	prompt string
 	title  string
@@ -99,6 +103,7 @@ func decodePayload(in io.Reader) (payload, error) {
 		cwd:                 f.str("cwd"),
 		agentID:             f.str("agent_id"),
 		agentType:           f.str("agent_type"),
+		model:               f.str("model"),
 		prompt:              f.str("prompt"),
 		title:               f.str("session_title"),
 		tool:                f.str("tool_name"),

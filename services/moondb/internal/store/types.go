@@ -146,6 +146,11 @@ type Turn struct {
 	// turn opened (PromptOrigin). It is "" on a turn stored before origins
 	// existed; a reader classifies its prompt then.
 	Origin TurnOrigin `json:"origin,omitempty"`
+	// Model is the model the harness named on the turn's hook payloads,
+	// "" when it named none. The trace prices a model call whose lines
+	// name no model at it: Codex writes the turn's model before the
+	// prompt, outside the turn's lines.
+	Model string `json:"model,omitempty"`
 }
 
 // SkippedFiles counts the skipped files of one tool call, the ones capture

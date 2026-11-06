@@ -142,6 +142,25 @@ func TestBuildCodexCutHead(t *testing.T) {
 	}
 }
 
+func TestBuildCodexModelFromHook(t *testing.T) {
+	// A live turn's lines start at the prompt, after the turn_context line
+	// that names the model; the hook payload's model, kept on the turn,
+	// prices the calls instead.
+	lines := codexLines(t, "twoturns.jsonl", 8, 45)
+	if got := Build(codexTurn(codexStart, codexEnd), lines, Prices{}).Totals; len(
+		got.Unpriced,
+	) == 0 {
+		t.Fatalf("unpriced = %v without a turn model; want the calls unpriced", got.Unpriced)
+	}
+	d := codexTurn(codexStart, codexEnd)
+	d.Model = "anthropic/claude-haiku-5.5"
+	got := Build(d, lines, Prices{}).Totals
+	if got.Cost == nil || len(got.Unpriced) != 0 || got.ModelCalls != 5 {
+		t.Errorf("cost = %v, unpriced %v, %d calls; want 5 calls priced at the turn's model",
+			got.Cost, got.Unpriced, got.ModelCalls)
+	}
+}
+
 func TestBuildCodexResumedTurn(t *testing.T) {
 	// The second turn resumes the thread: it names its model again in its
 	// own turn_context and bills cache reads for the first turn's prefix.
