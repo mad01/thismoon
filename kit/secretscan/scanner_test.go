@@ -1,4 +1,4 @@
-package scanner
+package secretscan
 
 import (
 	"os"
@@ -2044,5 +2044,48 @@ func TestProviderKeyReferencesPass(t *testing.T) {
 				strings.Replace(line, key, "<key>", 1),
 			)
 		}
+	}
+}
+
+// TestScanContent pins that content scanned before it reaches disk gets the
+// same rules and suppression as a file: the path picks the ignore globs, and
+// the inline marker silences its line.
+func TestScanContent(t *testing.T) {
+	dir := t.TempDir()
+	ignorePath := filepath.Join(dir, ".suspenders.yaml")
+	if err := os.WriteFile(ignorePath, []byte("paths:\n  - \"notes/ok/**\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("---\ntitle: x\n---\nkey AKIA1234567890ABCDEF\n")
+	tests := []struct {
+		name    string
+		path    string
+		content []byte
+		want    int
+	}{
+		{"finding on its line", "notes/a.md", content, 1},
+		{"path glob suppresses", "notes/ok/a.md", content, 0},
+		{
+			"inline marker suppresses",
+			"notes/a.md",
+			[]byte("key AKIA1234567890ABCDEF suspenders:ignore\n"),
+			0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sc := New(DefaultRules)
+			sc.IgnoreFile = ignorePath
+			findings, err := sc.ScanContent(tt.path, tt.content)
+			if err != nil {
+				t.Fatalf("ScanContent: %v", err)
+			}
+			if len(findings) != tt.want {
+				t.Fatalf("findings = %d, want %d: %+v", len(findings), tt.want, findings)
+			}
+			if tt.want > 0 && findings[0].Line != 4 {
+				t.Errorf("line = %d, want 4", findings[0].Line)
+			}
+		})
 	}
 }

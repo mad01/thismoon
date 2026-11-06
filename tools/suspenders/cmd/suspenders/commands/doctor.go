@@ -11,9 +11,9 @@ import (
 
 	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/kit/internalnames"
+	"github.com/mad01/thismoon/kit/secretscan"
 	"github.com/mad01/thismoon/tools/suspenders/internal/config"
 	"github.com/mad01/thismoon/tools/suspenders/internal/guard"
-	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
 )
 
 func init() {
@@ -136,7 +136,7 @@ func printRepoStatus(out io.Writer, root string, cfg *config.Config) {
 	fmt.Fprintf(out, "\nrepo: %s\n", root)
 
 	if p := repoConfigPath(root); p != "" {
-		if ic, err := scanner.LoadIgnoreConfig(p); err != nil {
+		if ic, err := secretscan.LoadIgnoreConfig(p); err != nil {
 			fmt.Fprintf(out, "  per-repo config: %s (unreadable: %v)\n", p, err)
 		} else {
 			fmt.Fprintf(out, "  per-repo config: %s (+%d safe references, +%d blocked words)\n",

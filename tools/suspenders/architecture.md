@@ -19,8 +19,6 @@ cmd/suspenders/
   commands/          one cobra command per file: scan, hook, history, version
 internal/
   config/            Config struct (YAML), loaded from the XDG path
-  scanner/           84 content rules + 7 filename rules, entropy gating,
-                     per-repo ignore handling, the Finding type and redaction
   guard/             internal-reference guard: derives the block list from
                      checked-out repos, checks staged diffs and tracked files
   hook/              hook script generation, checksum, install/update/uninstall
@@ -28,13 +26,17 @@ internal/
                      rewriter plus Clean orchestration (history clean)
   repo/              concurrent repository discovery (32 workers), remote parsing
 tests/integration/   Docker-based end-to-end hook tests
+
+kit/secretscan/      the scanner (shared package at the repo root): 84
+                     content rules + 7 filename rules, entropy gating,
+                     per-repo ignore handling, the Finding type and redaction
 ```
 
 ## Data flow
 
 Scan: `commands/scan.go` loads config, resolves the per-repo `.suspenders.yaml`,
-and calls `scanner.ScanDir` over git-tracked files (from `git ls-files`) or
-`scanner.ScanStaged`, which reads content from the index via `git show :<path>`.
+and calls `secretscan.ScanDir` over git-tracked files (from `git ls-files`) or
+`secretscan.ScanStaged`, which reads content from the index via `git show :<path>`.
 That way the scan sees exactly what would be committed
 (tools/suspenders/docs/adr/0001). Every line runs through all rules, then
 entropy gates, allowlists, and inline `suspenders:ignore` markers; findings are

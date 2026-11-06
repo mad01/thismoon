@@ -12,9 +12,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/kit/repofind"
+	"github.com/mad01/thismoon/kit/secretscan"
 	"github.com/mad01/thismoon/tools/suspenders/internal/config"
 	"github.com/mad01/thismoon/tools/suspenders/internal/guard"
-	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
 )
 
 // skipCollector accumulates files the scanner or guard skipped (too large or
@@ -25,8 +25,8 @@ type skipCollector struct {
 	files []string
 }
 
-func (c *skipCollector) scannerSkip(sk scanner.SkippedFile) { c.add(sk.Path, sk.Reason) }
-func (c *skipCollector) guardSkip(sk guard.SkippedFile)     { c.add(sk.Path, sk.Reason) }
+func (c *skipCollector) scannerSkip(sk secretscan.SkippedFile) { c.add(sk.Path, sk.Reason) }
+func (c *skipCollector) guardSkip(sk guard.SkippedFile)        { c.add(sk.Path, sk.Reason) }
 
 func (c *skipCollector) add(path, reason string) {
 	c.mu.Lock()
@@ -89,7 +89,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	skips := &skipCollector{}
 	s.OnSkip = skips.scannerSkip
 
-	var findings []scanner.Finding
+	var findings []secretscan.Finding
 	if scanStaged {
 		findings, err = s.ScanStaged(root)
 	} else {
@@ -119,7 +119,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	if scanFailOnFindings {
-		return scanner.ErrFindingsFound
+		return secretscan.ErrFindingsFound
 	}
 	return nil
 }
@@ -172,11 +172,11 @@ func printBlockedNames(findings []guard.Finding) {
 // rules, exclude-rules filter, and allowlist in cfg, and wires the per-repo
 // .suspenders.yaml ignore file under root when present. Both `scan` and the
 // pre-commit hook build through here so the two paths detect identically.
-func buildScanner(root string, cfg *config.Config) *scanner.Scanner {
-	rules := append([]scanner.Rule{}, scanner.DefaultRules...)
+func buildScanner(root string, cfg *config.Config) *secretscan.Scanner {
+	rules := append([]secretscan.Rule{}, secretscan.DefaultRules...)
 	if cfg != nil {
 		for _, w := range cfg.Watch {
-			r, err := scanner.NewWatchRule(w.ID, w.Description, w.Pattern, w.Severity)
+			r, err := secretscan.NewWatchRule(w.ID, w.Description, w.Pattern, w.Severity)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warning: skipping watch rule %q: %v\n", w.ID, err)
 				continue
@@ -186,7 +186,7 @@ func buildScanner(root string, cfg *config.Config) *scanner.Scanner {
 		rules = applyExcludeRules(rules, cfg.Scan.ExcludeRules)
 	}
 
-	s := scanner.New(rules)
+	s := secretscan.New(rules)
 
 	if cfg != nil {
 		for _, a := range cfg.Allowlist {
@@ -230,7 +230,7 @@ func guardConfigFor(root string, cfg *config.Config) config.GuardConfig {
 	if p == "" {
 		return gcfg
 	}
-	ic, err := scanner.LoadIgnoreConfig(p)
+	ic, err := secretscan.LoadIgnoreConfig(p)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 		return gcfg
@@ -252,7 +252,7 @@ func appendCopy(base, extra []string) []string {
 }
 
 // applyExcludeRules drops rules whose ID appears in excludeIDs.
-func applyExcludeRules(rules []scanner.Rule, excludeIDs []string) []scanner.Rule {
+func applyExcludeRules(rules []secretscan.Rule, excludeIDs []string) []secretscan.Rule {
 	if len(excludeIDs) == 0 {
 		return rules
 	}
@@ -269,7 +269,7 @@ func applyExcludeRules(rules []scanner.Rule, excludeIDs []string) []scanner.Rule
 	return filtered
 }
 
-func printFindings(findings []scanner.Finding, root string) {
+func printFindings(findings []secretscan.Finding, root string) {
 	red := color.New(color.FgRed, color.Bold)
 	yellow := color.New(color.FgYellow)
 	cyan := color.New(color.FgCyan)
