@@ -160,6 +160,44 @@ func TestLinkedNotesAreRefusedAndChecked(t *testing.T) {
 	}
 }
 
+// TestCheckFlagsALinkedNoteNamedByPath pins that brain check given the path
+// of a note that is a symbolic link, or lies in a linked directory, flags
+// the link, wherever it points or when it points nowhere, instead of
+// following it out of the vault.
+func TestCheckFlagsALinkedNoteNamedByPath(t *testing.T) {
+	root := setupCLI(t, "")
+	outside := filepath.Join(t.TempDir(), "credentials.md")
+	if err := os.WriteFile(outside, []byte("aws_secret=hunter2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	links := map[string]string{
+		"notes/leak.md":     outside,
+		"notes/dangling.md": filepath.Join(t.TempDir(), "gone.md"),
+		"notes/away":        filepath.Dir(outside),
+	}
+	for rel, target := range links {
+		if err := os.Symlink(target, filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, rel := range []string{"notes/leak.md", "notes/dangling.md", "notes/away/credentials.md"} {
+		t.Run(rel, func(t *testing.T) {
+			got := runBrain(t, "", "check", "-o", "json", filepath.Join(root, filepath.FromSlash(rel)))
+			if got.code != exitError {
+				t.Fatalf("check exit = %d, want 1; stdout %s stderr %s", got.code, got.stdout, got.stderr)
+			}
+			report := decodeStrict[check.Report](t, got.stdout)
+			if len(report.Skipped) != 0 || len(report.Findings) != 1 ||
+				report.Findings[0].Path != rel || report.Findings[0].Rule != check.RuleSymlink {
+				t.Errorf("report = %+v, want one symlink finding for %s and nothing skipped", report, rel)
+			}
+			if strings.Contains(got.stdout, "hunter2") {
+				t.Error("check printed the linked file's content")
+			}
+		})
+	}
+}
+
 func TestNULBytesAreRefusedAndChecked(t *testing.T) {
 	root := setupCLI(t, "")
 	got := runBrain(t, "x\x00y\n", "write", "--title", "Nul")
