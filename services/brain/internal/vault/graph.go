@@ -11,8 +11,17 @@ import (
 
 // Edge kinds.
 const (
+	// EdgeLink is a wikilink.
 	EdgeLink = "link"
-	EdgeTag  = "tag"
+	// EdgeTag runs from a note to the node of one of its tags.
+	EdgeTag = "tag"
+	// EdgeSupersedes runs from a superseded note to the note its
+	// superseded_by names.
+	EdgeSupersedes = "supersedes"
+	// EdgeSource runs from a note to a note one of its sources[] refs names.
+	EdgeSource = "source"
+	// EdgeMOC is a wikilink out of a note in the MOCs tier.
+	EdgeMOC = "moc"
 )
 
 // Node id prefixes. A note's node id is id:<note id>, or vault:path when the
@@ -62,7 +71,7 @@ type GraphNode struct {
 type GraphEdge struct {
 	Source   string `json:"source"`
 	Target   string `json:"target"`
-	Kind     string `json:"kind"     jsonschema:"link, or tag with tags as nodes"`
+	Kind     string `json:"kind"     jsonschema:"link, moc (a link out of a MOC), supersedes, source, or tag with tags as nodes"`
 	Resolved bool   `json:"resolved"`
 }
 
@@ -76,26 +85,38 @@ type Graph struct {
 // Graph builds the link graph of the set with the one link resolver
 // backlinks and promote use. Links of a note to itself are left out.
 func (s *Set) Graph(opts GraphOptions) (Graph, error) {
-	walked, err := s.Filter(opts.Sources)
+	sn, err := s.Snapshot()
 	if err != nil {
 		return Graph{}, err
 	}
-	idx, err := buildLinkIndex(s)
+	return sn.Graph(opts)
+}
+
+// Graph builds the link graph of the snapshot's notes, as Set.Graph does,
+// without reading the vaults again. A snapshot answers any number of
+// concurrent Graph calls.
+func (sn *Snapshot) Graph(opts GraphOptions) (Graph, error) {
+	walked, err := sn.idx.set.Filter(opts.Sources)
 	if err != nil {
 		return Graph{}, err
 	}
-	b := graphBuilder{idx: idx, nodes: map[string]*GraphNode{}, edges: map[GraphEdge]bool{}}
+	b := graphBuilder{
+		sn:    sn,
+		idx:   sn.idx,
+		nodes: map[string]*GraphNode{},
+		edges: map[GraphEdge]bool{},
+	}
 	walk := map[*Vault]bool{}
 	for _, v := range walked.vaults {
 		walk[v] = true
 	}
-	for _, n := range idx.notes {
+	for _, n := range sn.idx.notes {
 		if walk[n.ref.Vault] {
 			b.addNoteEdges(n, opts.TagsAsNodes)
 		}
 	}
 	if opts.Center != nil {
-		center, err := idx.note(*opts.Center)
+		center, err := sn.idx.note(*opts.Center)
 		if err != nil {
 			return Graph{}, err
 		}
@@ -109,6 +130,7 @@ func (s *Set) Graph(opts GraphOptions) (Graph, error) {
 }
 
 type graphBuilder struct {
+	sn    *Snapshot
 	idx   *linkIndex
 	nodes map[string]*GraphNode
 	edges map[GraphEdge]bool
@@ -116,6 +138,10 @@ type graphBuilder struct {
 
 func (b *graphBuilder) addNoteEdges(n *indexedNote, tags bool) {
 	src := b.addNote(n)
+	kind := EdgeLink
+	if tierDir(n.ref.Path) == TierMOCs.Dir() {
+		kind = EdgeMOC
+	}
 	for _, l := range n.links {
 		if l.to == n {
 			continue
@@ -126,7 +152,16 @@ func (b *graphBuilder) addNoteEdges(n *indexedNote, tags bool) {
 		} else {
 			dst = b.addDangling(l.Target)
 		}
-		b.edges[GraphEdge{Source: src, Target: dst, Kind: EdgeLink, Resolved: l.to != nil}] = true
+		b.edges[GraphEdge{Source: src, Target: dst, Kind: kind, Resolved: l.to != nil}] = true
+	}
+	f := lifecycle.Read(n.fm)
+	if f.SupersededBy != "" {
+		b.addRefEdge(n, src, f.SupersededBy, EdgeSupersedes)
+	}
+	for _, source := range f.Sources {
+		if ref := source.NoteRef(); ref != "" {
+			b.addRefEdge(n, src, ref, EdgeSource)
+		}
 	}
 	if !tags {
 		return
@@ -140,12 +175,20 @@ func (b *graphBuilder) addNoteEdges(n *indexedNote, tags bool) {
 	}
 }
 
+// addRefEdge adds a kind edge from the note n, whose node is src, to the
+// note a stored note ref names. A ref that names no single note, or n
+// itself, adds nothing: brain check reports the first.
+func (b *graphBuilder) addRefEdge(n *indexedNote, src, ref, kind string) {
+	to, ok := b.sn.Resolve(ref)
+	if !ok || to.n == n {
+		return
+	}
+	b.edges[GraphEdge{Source: src, Target: b.addNote(to.n), Kind: kind, Resolved: true}] = true
+}
+
 // addNote adds the node of n when it is new and returns its id.
 func (b *graphBuilder) addNote(n *indexedNote) string {
-	id := n.ref.String()
-	if n.fm.ID != "" && !b.idx.dupIDs[n.fm.ID] {
-		id = "id:" + n.fm.ID
-	}
+	id := b.idx.nodeID(n)
 	if b.nodes[id] != nil {
 		return id
 	}
@@ -168,7 +211,7 @@ func (b *graphBuilder) addNote(n *indexedNote) string {
 // addDangling adds the node of an unresolved target, one per target
 // regardless of case, and returns its id.
 func (b *graphBuilder) addDangling(target string) string {
-	id := danglingNodePrefix + strings.ToLower(target)
+	id := danglingID(target)
 	if b.nodes[id] == nil {
 		b.nodes[id] = &GraphNode{ID: id, Stem: target, Dangling: true}
 	}
@@ -235,6 +278,52 @@ func (b *graphBuilder) graph() Graph {
 		return a.Kind < c.Kind
 	})
 	return g
+}
+
+// nodeID is the graph node id of n: id:<note id>, or vault:path when the
+// note has no id or shares it with another note.
+func (idx *linkIndex) nodeID(n *indexedNote) string {
+	if n.fm.ID != "" && !idx.dupIDs[n.fm.ID] {
+		return idRefPrefix + ":" + n.fm.ID
+	}
+	return n.ref.String()
+}
+
+// danglingID is the graph node id of a target no note matches.
+func danglingID(target string) string {
+	return danglingNodePrefix + strings.ToLower(target)
+}
+
+// NoteLink is one wikilink of a note body as written, and the graph node it
+// resolves to.
+type NoteLink struct {
+	// Text is the wikilink as written, [[stem|alias]] included.
+	Text string `json:"text"`
+	// Target is the id of the graph node the link resolves to: a note's
+	// node, or dangling:<target> when no note matches.
+	Target   string `json:"target"`
+	Resolved bool   `json:"resolved"`
+}
+
+// Links resolves each wikilink of body, written in a note of the vault
+// from, with the one resolver behind the graph, and names the graph node
+// each reaches. A vault outside the snapshot resolves nothing. Links with
+// an empty target ([[#heading]]) are left out, as the graph leaves them.
+func (sn *Snapshot) Links(from *Vault, body []byte) []NoteLink {
+	links := []NoteLink{}
+	for _, wl := range markdown.ExtractWikilinks(body) {
+		if wl.Target == "" {
+			continue
+		}
+		l := NoteLink{Text: wl.Raw, Target: danglingID(wl.Target)}
+		if sn.idx.names[from] != nil {
+			if to, _ := sn.idx.resolve(from, wl.Target); to != nil {
+				l.Target, l.Resolved = sn.idx.nodeID(to), true
+			}
+		}
+		links = append(links, l)
+	}
+	return links
 }
 
 // tierDir returns the tier directory a vault-relative path is in, or "".

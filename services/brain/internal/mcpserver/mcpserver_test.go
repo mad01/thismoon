@@ -491,15 +491,16 @@ func TestBrainGraphAroundANote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleGraph: %v", err)
 	}
-	// concept-beta links to concept-alpha; the output and the MOC link to it.
+	// concept-beta links to concept-alpha; the output and the MOC link to it,
+	// and a link out of a MOC is a moc edge.
 	want := map[string]bool{
-		"default:notes/concept-beta.md -> default:notes/concept-alpha.md":         true,
-		"default:outputs/2026-04-14-analysis.md -> default:notes/concept-beta.md": true,
-		"default:MOCs/ai-topics.md -> default:notes/concept-beta.md":              true,
+		"default:notes/concept-beta.md -link-> default:notes/concept-alpha.md":         true,
+		"default:outputs/2026-04-14-analysis.md -link-> default:notes/concept-beta.md": true,
+		"default:MOCs/ai-topics.md -moc-> default:notes/concept-beta.md":               true,
 	}
 	got := map[string]bool{}
 	for _, e := range g.Edges {
-		got[e.Source+" -> "+e.Target] = true
+		got[e.Source+" -"+e.Kind+"-> "+e.Target] = true
 	}
 	for edge := range want {
 		if !got[edge] {

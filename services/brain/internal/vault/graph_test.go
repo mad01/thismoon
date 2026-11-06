@@ -2,6 +2,7 @@ package vault
 
 import (
 	"maps"
+	"slices"
 	"testing"
 )
 
@@ -173,5 +174,103 @@ func TestGraphDuplicateIDsKeepNotesApart(t *testing.T) {
 	want := map[edgeKey]bool{{"personal:notes/one.md", "personal:notes/two.md", EdgeLink}: true}
 	if got := graphEdges(g); !maps.Equal(got, want) {
 		t.Errorf("edges = %v, want %v", got, want)
+	}
+}
+
+func TestGraphEdgeKinds(t *testing.T) {
+	const (
+		idOld  = "01JOLDOLDOLDOLDOLDOLDOLDOL"
+		idNew  = "01JNEWNEWNEWNEWNEWNEWNEWNE"
+		oldN   = "id:" + idOld
+		newN   = "id:" + idNew
+		moc    = "personal:MOCs/topics.md"
+		claim  = "personal:notes/claim.md"
+		ghost  = "dangling:ghost"
+		shared = "team:notes/base.md"
+	)
+	set := newTestSet(t,
+		map[string]string{
+			"notes/old.md": "---\ntitle: Old\nid: " + idOld + "\nstatus: superseded\n" +
+				"superseded_by: id:" + idNew + "\n---\nbody\n",
+			"notes/new.md": "---\ntitle: New\nid: " + idNew + "\n---\nbody\n",
+			"notes/claim.md": "---\ntitle: Claim\nsources:\n" +
+				"  - ref: notes/old.md\n" +
+				"  - ref: team:notes/base.md\n" +
+				"  - ref: github.com/o/r:main.go@abc123\n" +
+				"  - ref: notes/missing.md\n" +
+				"  - ref: notes/claim.md\n" +
+				"---\n[[new]]\n",
+			"MOCs/topics.md": "---\ntitle: Topics\n---\n[[claim]] [[ghost]]\n",
+		},
+		map[string]string{"notes/base.md": "---\ntitle: Base\n---\nbody\n"},
+	)
+	g, err := set.Graph(GraphOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[edgeKey]bool{
+		{oldN, newN, EdgeSupersedes}: true,
+		{claim, oldN, EdgeSource}:    true,
+		{claim, shared, EdgeSource}:  true,
+		{claim, newN, EdgeLink}:      true,
+		{moc, claim, EdgeMOC}:        true,
+		{moc, ghost, EdgeMOC}:        false,
+	}
+	if got := graphEdges(g); !maps.Equal(got, want) {
+		t.Errorf("edges = %v\nwant %v", got, want)
+	}
+	wantDeg := map[string]int{oldN: 2, newN: 2, claim: 4, shared: 1, moc: 2, ghost: 1}
+	if got := graphDegrees(g); !maps.Equal(got, wantDeg) {
+		t.Errorf("degrees = %v, want %v", got, wantDeg)
+	}
+}
+
+func TestSnapshotLinks(t *testing.T) {
+	set := graphFixture(t)
+	sn, err := set.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	personal, _ := set.Get("personal")
+	team, _ := set.Get("team")
+	body := []byte("[[b|Bee]] [[Team Guide]] [[ghost]] [[#local]] `[[in code]]`\n")
+	want := []NoteLink{
+		{Text: "[[b|Bee]]", Target: "personal:notes/b.md", Resolved: true},
+		{Text: "[[Team Guide]]", Target: "id:" + idT, Resolved: true},
+		{Text: "[[ghost]]", Target: "dangling:ghost"},
+	}
+	if got := sn.Links(personal, body); !slices.Equal(got, want) {
+		t.Errorf("links = %+v\nwant %+v", got, want)
+	}
+	// A shared vault never resolves into a private one.
+	got := sn.Links(team, []byte("[[a]]"))
+	if len(got) != 1 || got[0].Resolved || got[0].Target != "dangling:a" {
+		t.Errorf("shared links = %+v, want [[a]] dangling", got)
+	}
+	if got := sn.Links(&Vault{Name: "elsewhere"}, []byte("[[b]]")); len(got) != 1 ||
+		got[0].Resolved {
+		t.Errorf("links from a vault outside the snapshot = %+v, want dangling", got)
+	}
+}
+
+func TestSnapshotGraphMatchesSetGraph(t *testing.T) {
+	set := graphFixture(t)
+	sn, err := set.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := GraphOptions{TagsAsNodes: true}
+	fromSet, err := set.Graph(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromSnapshot, err := sn.Graph(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.EqualFunc(fromSet.Nodes, fromSnapshot.Nodes, func(a, b GraphNode) bool {
+		return a.ID == b.ID && a.Degree == b.Degree
+	}) || !slices.Equal(fromSet.Edges, fromSnapshot.Edges) {
+		t.Errorf("snapshot graph %+v differs from set graph %+v", fromSnapshot, fromSet)
 	}
 }

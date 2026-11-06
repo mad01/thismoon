@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -366,6 +367,28 @@ func TestVaultsGraph(t *testing.T) {
 	wantText := "personal:notes/mine.md -> team:notes/team-guide.md\n2 node(s), 1 edge(s)\n"
 	if text.code != exitOK || text.stdout != wantText {
 		t.Errorf("graph --center: exit %d, stdout %q, want %q", text.code, text.stdout, wantText)
+	}
+}
+
+func TestVaultsGraphSupersedesEdge(t *testing.T) {
+	setupVaults(t)
+	const (
+		old = "personal:notes/shared-name.md"
+		by  = "personal:notes/mine.md"
+		id  = "01JMINEMINEMINEMINEMINEMIN"
+	)
+	if got := runBrain(t, "", "edit", by, "--set", "id="+id); got.code != exitOK {
+		t.Fatalf("edit: exit %d, stderr %q", got.code, got.stderr)
+	}
+	if got := runBrain(t, "", "supersede", old, "--by", by); got.code != exitOK {
+		t.Fatalf("supersede: exit %d, stderr %q", got.code, got.stderr)
+	}
+	g := decodeStrict[vault.Graph](t, runBrain(t, "", "graph", "-o", "json").stdout)
+	want := vault.GraphEdge{
+		Source: old, Target: "id:" + id, Kind: vault.EdgeSupersedes, Resolved: true,
+	}
+	if !slices.Contains(g.Edges, want) {
+		t.Errorf("edges = %+v, want %+v", g.Edges, want)
 	}
 }
 
