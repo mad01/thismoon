@@ -186,14 +186,14 @@ func (v *Vault) collectTier(opts ListOptions) ([]ListedNote, error) {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(strings.ToLower(path), ".md") {
+		if isLink(d) || !strings.HasSuffix(strings.ToLower(path), ".md") {
 			return nil
 		}
 		fm, _, err := v.ReadFrontmatter(path)
 		if err != nil {
 			return nil // skip an unreadable note, keep listing
 		}
-		if !matchesFilters(fm, opts) {
+		if !matchesFilters(v.Rel(path), fm, opts) {
 			return nil
 		}
 		out = append(out, ListedNote{
@@ -215,11 +215,14 @@ func (v *Vault) collectTier(opts ListOptions) ([]ListedNote, error) {
 	return out, nil
 }
 
-func matchesFilters(fm markdown.Frontmatter, opts ListOptions) bool {
+// matchesFilters reports whether the note at the vault-relative path rel
+// passes opts. The status filter compares the effective status, so a note
+// with no status line matches its tier's default.
+func matchesFilters(rel string, fm markdown.Frontmatter, opts ListOptions) bool {
 	if opts.Tag != "" && !fm.HasTag(opts.Tag) {
 		return false
 	}
-	if opts.Status != "" && !strings.EqualFold(fm.Status, opts.Status) {
+	if opts.Status != "" && StatusOf(rel, fm) != lifecycle.Normalize(opts.Status) {
 		return false
 	}
 	if opts.Type != "" && !strings.EqualFold(fm.Type, opts.Type) {

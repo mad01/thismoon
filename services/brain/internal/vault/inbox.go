@@ -92,7 +92,7 @@ func (v *Vault) rawInbox(now time.Time) ([]InboxNote, error) {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(strings.ToLower(p), ".md") {
+		if isLink(d) || !strings.HasSuffix(strings.ToLower(p), ".md") {
 			return nil
 		}
 		fm, _, err := v.ReadFrontmatter(p)

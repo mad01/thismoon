@@ -3,6 +3,9 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -49,7 +52,8 @@ status, or type. With -o json, prints the brain_list_tier document.`,
 					if updated == "" {
 						updated = "-"
 					}
-					fmt.Fprintf(w, "%s  %s  %s\n", updated, a.show(n.Vault, n.Path), n.Title)
+					fmt.Fprintf(w, "%s  %s  %s\n",
+						printable(updated), printable(a.show(n.Vault, n.Path)), printable(n.Title))
 				}
 				return nil
 			})
@@ -77,4 +81,33 @@ func listTierName(args []string, flag string) (string, error) {
 		return "", usageErrorf("tier given twice: %q and --tier %q", args[0], flag)
 	}
 	return args[0], nil
+}
+
+// printable returns s with every control character but tab written as its
+// Go escape (\n, \x1b), so a title or a body line printed as text can
+// neither break the output's lines nor send an escape sequence to the
+// terminal.
+func printable(s string) string {
+	if !strings.ContainsFunc(s, isControl) {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if isControl(r) {
+			b.WriteString(strings.Trim(strconv.QuoteRune(r), "'"))
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func isControl(r rune) bool { return r != '\t' && unicode.IsControl(r) }
+
+// writePrintable writes text line by line through printable, ending each
+// line with "\n".
+func writePrintable(w io.Writer, text string) {
+	for line := range strings.Lines(text) {
+		fmt.Fprintln(w, printable(strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")))
+	}
 }

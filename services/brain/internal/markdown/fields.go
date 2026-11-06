@@ -60,6 +60,20 @@ func (f *Frontmatter) UnmarshalYAML(n *yaml.Node) error {
 // since parsing follow, typed fields in struct order, then extras in the
 // order they were set.
 func (f Frontmatter) MarshalYAML() (any, error) {
+	fields, err := f.fields()
+	if err != nil {
+		return nil, err
+	}
+	out := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	for _, field := range fields {
+		out.Content = append(out.Content, keyNode(field.Key), field.Value)
+	}
+	return out, nil
+}
+
+// fields returns the keys MarshalYAML writes, in its order, each with its
+// value node.
+func (f Frontmatter) fields() ([]Field, error) {
 	var typed yaml.Node
 	if err := typed.Encode(fieldsOnly(f)); err != nil {
 		return nil, err
@@ -69,14 +83,14 @@ func (f Frontmatter) MarshalYAML() (any, error) {
 		typedValues[typed.Content[i].Value] = typed.Content[i+1]
 	}
 
-	out := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	out := make([]Field, 0, len(typedValues)+len(f.Extra))
 	emitted := make(map[string]bool, len(typedValues)+len(f.Extra))
 	emit := func(key string, value *yaml.Node) {
 		if value == nil || emitted[key] {
 			return
 		}
 		emitted[key] = true
-		out.Content = append(out.Content, keyNode(key), value)
+		out = append(out, Field{Key: key, Value: value})
 	}
 	for _, key := range f.order {
 		if _, ok := typedFields[key]; ok {
@@ -97,17 +111,13 @@ func (f Frontmatter) MarshalYAML() (any, error) {
 // Keys returns the keys fm holds a value for, in the order Render writes
 // them.
 func (f Frontmatter) Keys() []string {
-	out, err := f.MarshalYAML()
+	fields, err := f.fields()
 	if err != nil {
 		return nil
 	}
-	n, ok := out.(*yaml.Node)
-	if !ok {
-		return nil
-	}
-	keys := make([]string, 0, len(n.Content)/2)
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		keys = append(keys, n.Content[i].Value)
+	keys := make([]string, 0, len(fields))
+	for _, field := range fields {
+		keys = append(keys, field.Key)
 	}
 	return keys
 }

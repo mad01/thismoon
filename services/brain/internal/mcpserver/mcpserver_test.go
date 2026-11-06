@@ -985,7 +985,7 @@ func TestEvidence_Edit_FrontmatterPatch(t *testing.T) {
 	_, _, err := testServer(t).handleEdit(context.Background(), nil, editInput{
 		Path: "notes/concept-alpha.md",
 		FrontmatterPatch: &frontmatterIn{
-			Evidence: "C",
+			Evidence: ptr("C"),
 		},
 	})
 	if err != nil {

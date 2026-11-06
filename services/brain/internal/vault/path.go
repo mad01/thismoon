@@ -1,7 +1,10 @@
 package vault
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -21,11 +24,60 @@ func (v *Vault) Resolve(rel string) (string, error) {
 		)
 	}
 	full := filepath.Join(v.Root, filepath.Clean(rel))
-	if full != v.Root && !strings.HasPrefix(full, v.Root+string(filepath.Separator)) {
+	if !within(v.Root, full) {
 		return "", fmt.Errorf("%w: path escapes vault: %s", ErrInvalidPath, rel)
+	}
+	if err := v.contained(full); err != nil {
+		return "", err
 	}
 	return full, nil
 }
+
+// contained refuses, with ErrInvalidPath, a note path that is a symbolic
+// link, or whose real path leaves the vault root through a linked
+// directory. A committed link in a shared vault could otherwise read any
+// file of the machine into a note. The path need not exist: its nearest
+// existing parent is checked.
+func (v *Vault) contained(abs string) error {
+	root, err := filepath.EvalSymlinks(v.Root)
+	if err != nil {
+		return fmt.Errorf("resolve vault root %s: %w", v.Root, err)
+	}
+	for p := abs; ; p = filepath.Dir(p) {
+		info, err := os.Lstat(p)
+		switch {
+		case err == nil && info.Mode()&fs.ModeSymlink != 0 && p == abs:
+			return fmt.Errorf("%w: %s is a symbolic link; brain reads and writes no note through a link",
+				ErrInvalidPath, v.Rel(abs))
+		case err != nil && !errors.Is(err, fs.ErrNotExist):
+			return err
+		case err == nil:
+			real, err := filepath.EvalSymlinks(p)
+			if errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("%w: %s goes through a broken link", ErrInvalidPath, v.Rel(abs))
+			}
+			if err != nil {
+				return err
+			}
+			if !within(root, real) {
+				return fmt.Errorf("%w: %s resolves outside the vault, to %s", ErrInvalidPath, v.Rel(abs), real)
+			}
+			return nil
+		}
+		if filepath.Dir(p) == p {
+			return nil
+		}
+	}
+}
+
+// within reports whether path is root or lies under it, lexically.
+func within(root, path string) bool {
+	return path == root || strings.HasPrefix(path, root+string(filepath.Separator))
+}
+
+// isLink reports whether a walk entry is a symbolic link. Walks skip them:
+// a note is never read through a link.
+func isLink(d fs.DirEntry) bool { return d.Type()&fs.ModeSymlink != 0 }
 
 // Rel returns abs relative to the vault root with forward slashes, or abs
 // unchanged when it is not under the root.

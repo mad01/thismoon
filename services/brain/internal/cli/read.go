@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -75,14 +76,16 @@ is worth a full read. With -o json, prints the brain_peek document.`,
 			}
 			return a.emit(cmd.OutOrStdout(), peek, func(w io.Writer) error {
 				if peek.Banner != "" {
-					fmt.Fprintln(w, peek.Banner)
+					fmt.Fprintln(w, printable(peek.Banner))
 				}
 				fmt.Fprintf(w, "backlinks: %d\n", peek.BacklinkCount)
-				if err := writeFrontmatter(w, peek.Raw()); err != nil {
+				var fm strings.Builder
+				if err := writeFrontmatter(&fm, peek.Raw()); err != nil {
 					return err
 				}
+				writePrintable(w, fm.String())
 				for _, l := range peek.Preview {
-					fmt.Fprintln(w, l)
+					fmt.Fprintln(w, printable(l))
 				}
 				return nil
 			})

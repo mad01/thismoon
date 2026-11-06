@@ -8,7 +8,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
 )
@@ -147,29 +146,6 @@ func (v *Vault) promoteEdits(path string, r linkRetarget) (map[string]noteEdits,
 	return out, nil
 }
 
-// writeEdits applies each note's edits and writes it, returning the
-// absolute paths written in sorted order.
-func (v *Vault) writeEdits(edits map[string]noteEdits) ([]string, error) {
-	rels := make([]string, 0, len(edits))
-	for rel := range edits {
-		rels = append(rels, rel)
-	}
-	sort.Strings(rels)
-	var written []string
-	for _, rel := range rels {
-		e := edits[rel]
-		data, err := applyLinkEdits(e.note.data, e.edits)
-		if err != nil {
-			return written, fmt.Errorf("%s: %w", rel, err)
-		}
-		if err := atomicWrite(e.note.ref.Abs(), data, 0o644); err != nil {
-			return written, err
-		}
-		written = append(written, e.note.ref.Abs())
-	}
-	return written, nil
-}
-
 // batchIndexNamePattern matches MOC filenames that act as batch-provenance
 // indexes (the kickoff registry of a research wave) rather than topical maps
 // of content. Examples: "research-index-2026-134-reference-topics.md",
@@ -204,27 +180,4 @@ func isBatchIndexMOC(mocPath string) (bool, error) {
 		return false, nil
 	}
 	return fm.HasTag("meta/index"), nil
-}
-
-// appendMOCBullet appends a "- [[stem|title]]  <!-- added YYYY-MM-DD -->" line
-// to the end of the MOC file. Creates the MOC if missing.
-func appendMOCBullet(mocPath, title, stem string, now time.Time) error {
-	line := fmt.Sprintf(
-		"- [[%s|%s]]  <!-- added %s -->\n",
-		stem,
-		title,
-		now.UTC().Format("2006-01-02"),
-	)
-	if _, err := os.Stat(mocPath); os.IsNotExist(err) {
-		return os.WriteFile(mocPath, []byte(line), 0o644)
-	}
-	f, err := os.OpenFile(mocPath, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := f.WriteString(line); err != nil {
-		_ = f.Close()
-		return err
-	}
-	return f.Close()
 }

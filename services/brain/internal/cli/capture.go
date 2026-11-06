@@ -2,6 +2,7 @@ package cli
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -104,10 +105,25 @@ func captureTitle(title, body, source string) string {
 		if line == "" {
 			continue
 		}
+		// A title is one line of text: drop the control characters a body
+		// line may hold, such as an escape sequence.
+		line = strings.TrimSpace(strings.Map(dropControl, line))
 		if r := []rune(line); len(r) > maxDerivedTitle {
 			line = strings.TrimSpace(string(r[:maxDerivedTitle]))
+		}
+		if line == "" {
+			continue
 		}
 		return line
 	}
 	return strings.TrimSpace(source)
+}
+
+// dropControl maps a control character other than tab to nothing, for
+// strings.Map.
+func dropControl(r rune) rune {
+	if r != '\t' && unicode.IsControl(r) {
+		return -1
+	}
+	return r
 }

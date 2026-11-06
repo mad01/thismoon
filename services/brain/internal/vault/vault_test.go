@@ -16,9 +16,15 @@ func TestSlug(t *testing.T) {
 		{"  Trim-Me  ", "trim-me"},
 		{"With Punctuation!! And...stuff", "with-punctuation-and-stuff"},
 		{"CamelCase Foo", "camelcase-foo"},
-		{"", "untitled"},
-		{"-----", "untitled"},
+		{"", ""},
+		{"-----", ""},
+		{"!!! ???", ""},
 		{"  --bob--  ", "bob"},
+		{"日本語のメモ", "日本語のメモ"},
+		{"東京 2026", "東京-2026"},
+		{"Ünïcödé Title", "ünïcödé-title"},
+		{"हिन्दी नोट", "हिन्दी-नोट"},
+		{"Ελληνικά", "ελληνικά"},
 	}
 	for _, tc := range tests {
 		if got := Slug(tc.in); got != tc.want {

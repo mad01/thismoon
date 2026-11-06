@@ -8,8 +8,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/mad01/thismoon/services/brain/internal/atomicfile"
 	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
@@ -20,9 +22,9 @@ import (
 
 // Vault is a handle to a brain vault on disk. A single-file write is atomic
 // (a uniquely named temporary file, renamed or linked into place), a new
-// note never replaces an existing one, and a multi-file operation like
-// Promote rolls back on a best-effort basis. Every change holds the vault's
-// write lock when WriteLock is set.
+// note never replaces an existing one, and Promote, which writes many
+// files, puts every one back when a write fails. Every change holds the
+// vault's write lock when WriteLock is set.
 type Vault struct {
 	// Root is the absolute vault directory.
 	Root string
@@ -156,7 +158,7 @@ type WriteOptions struct {
 	Status   string // a lifecycle status; defaults based on tier
 	Source   string // optional URL
 	Evidence string // optional trust tier: A | B | C | D | mixed — empty for non-empirical
-	Filename string // optional; defaults to Slug(Title) + ".md" (YYYY-MM-DD- prefix for outputs)
+	Filename string // optional; defaults to Slug(Title) + ".md", the id when that is empty (YYYY-MM-DD- prefix for outputs)
 	// Verb names the change in its commit: VerbWrite when empty,
 	// VerbCapture for brain capture.
 	Verb string
@@ -217,7 +219,13 @@ func (v *Vault) Draft(opts WriteOptions) (Draft, error) {
 	if err != nil {
 		return Draft{}, err
 	}
-	path := filepath.Join(v.TierDir(opts.Tier), noteFilename(opts))
+	if err := CheckTitle(fm.Title); err != nil {
+		return Draft{}, err
+	}
+	path, err := v.notePath(opts, fm.ID)
+	if err != nil {
+		return Draft{}, err
+	}
 	if _, err := os.Stat(path); err == nil {
 		return Draft{}, fmt.Errorf("%w: %s", ErrExists, v.Rel(path))
 	}
@@ -226,7 +234,7 @@ func (v *Vault) Draft(opts WriteOptions) (Draft, error) {
 	if err != nil {
 		return Draft{}, err
 	}
-	if err := v.refuseSecrets(path, content); err != nil {
+	if err := v.refuseContent(path, content); err != nil {
 		return Draft{}, err
 	}
 	verb := opts.Verb
@@ -238,7 +246,15 @@ func (v *Vault) Draft(opts WriteOptions) (Draft, error) {
 
 // Create writes a draft under the vault's write lock and returns its path.
 // It never replaces a note: one created since the draft is ErrExists.
-func (v *Vault) Create(d Draft) (path string, err error) {
+func (v *Vault) Create(d Draft) (string, error) {
+	return v.CreateChecked(d, nil)
+}
+
+// CreateChecked is Create with check run under the write lock, right
+// before the note is written. A failing check writes nothing, and no other
+// brain write lands between the check and the note, so two writers of the
+// same title cannot both pass a duplicate check. A nil check is Create.
+func (v *Vault) CreateChecked(d Draft, check func() error) (path string, err error) {
 	if err := v.writable(); err != nil {
 		return "", err
 	}
@@ -250,6 +266,11 @@ func (v *Vault) Create(d Draft) (path string, err error) {
 		return "", err
 	}
 	defer func() { err = errors.Join(err, release()) }()
+	if check != nil {
+		if err := check(); err != nil {
+			return "", err
+		}
+	}
 	if err := v.create(d.Path, d.content); err != nil {
 		return "", err
 	}
@@ -295,12 +316,45 @@ func newFrontmatter(opts WriteOptions) (markdown.Frontmatter, error) {
 	return fm, nil
 }
 
+// notePath is the absolute path a new note gets: its file name under its
+// tier directory. A --filename that names a path, rather than a file in the
+// tier, is ErrInvalidPath.
+func (v *Vault) notePath(opts WriteOptions, id string) (string, error) {
+	if err := validFilename(opts.Filename); err != nil {
+		return "", err
+	}
+	dir := v.TierDir(opts.Tier)
+	path := filepath.Join(dir, noteFilename(opts, id))
+	if filepath.Dir(path) != filepath.Clean(dir) {
+		return "", fmt.Errorf("%w: filename %q leaves the %s tier", ErrInvalidPath, opts.Filename, opts.Tier)
+	}
+	return path, v.contained(path)
+}
+
+// validFilename refuses a --filename holding a path separator, "..", or a
+// control character: a note's file name stays inside its tier directory.
+// An empty name is the default, the title's slug.
+func validFilename(name string) error {
+	if name == "" {
+		return nil
+	}
+	if strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") ||
+		strings.ContainsFunc(name, unicode.IsControl) {
+		return fmt.Errorf(
+			"%w: filename %q must be a plain file name, with no path separator, .. or control character",
+			ErrInvalidPath, name,
+		)
+	}
+	return nil
+}
+
 // noteFilename is the file a new note gets: opts.Filename, else the title's
-// slug, date-prefixed in outputs.
-func noteFilename(opts WriteOptions) string {
+// slug (the note id when the title has no letter or digit), date-prefixed
+// in outputs.
+func noteFilename(opts WriteOptions, id string) string {
 	filename := opts.Filename
 	if filename == "" {
-		slug := Slug(opts.Title)
+		slug := stemFor(opts.Title, id)
 		if opts.Tier == TierOutputs {
 			slug = opts.Now.UTC().Format("2006-01-02") + "-" + slug
 		}
@@ -330,8 +384,12 @@ func (v *Vault) ReadFrontmatter(path string) (markdown.Frontmatter, []byte, erro
 }
 
 // readNote reads the note at the absolute path: its bytes, frontmatter and
-// body. A missing note is ErrNotFound.
+// body. A missing note is ErrNotFound, a symbolic link or a path that
+// resolves outside the vault ErrInvalidPath.
 func (v *Vault) readNote(path string) ([]byte, markdown.Frontmatter, []byte, error) {
+	if err := v.contained(path); err != nil {
+		return nil, markdown.Frontmatter{}, nil, err
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, markdown.Frontmatter{}, nil, fmt.Errorf("%w: %s", ErrNotFound, v.Rel(path))
@@ -344,6 +402,17 @@ func (v *Vault) readNote(path string) ([]byte, markdown.Frontmatter, []byte, err
 		return nil, markdown.Frontmatter{}, nil, fmt.Errorf("%s: %w", v.Rel(path), err)
 	}
 	return data, fm, body, nil
+}
+
+// refuseUnclosed fails with ErrInvalidContent when data opens a
+// frontmatter fence it never closes: rendering it would stack a second
+// frontmatter block on top of the first.
+func (v *Vault) refuseUnclosed(path string, data []byte) error {
+	if markdown.Unclosed(data) {
+		return fmt.Errorf("%w: %s: %w (add the closing --- line)",
+			ErrInvalidContent, v.Rel(path), markdown.ErrUnclosed)
+	}
+	return nil
 }
 
 // EditOptions replaces the body and/or merges frontmatter fields. At most one
@@ -384,21 +453,58 @@ func (v *Vault) Edit(path string, opts EditOptions) (sha string, err error) {
 		opts.IfMatch,
 		VerbEdit,
 		func(fm *markdown.Frontmatter, body []byte) ([]byte, error) {
-			id, status := fm.ID, fm.Status
+			id, status, title := fm.ID, fm.Status, fm.Title
+			if lifecycle.Normalize(status) == lifecycle.Withdrawn {
+				return nil, fmt.Errorf(
+					"%w: %s is withdrawn; a tombstone takes no edit (write a new note instead)",
+					ErrInvalidStatusChange, v.Rel(path),
+				)
+			}
 			if opts.FrontmatterPatch != nil {
 				*fm = mergeFrontmatter(*fm, *opts.FrontmatterPatch)
 			}
 			if err := applyFields(fm, opts.Set, opts.Unset); err != nil {
 				return nil, err
 			}
+			if fm.Title != title {
+				if err := CheckTitle(fm.Title); err != nil {
+					return nil, err
+				}
+			}
 			if id != "" && fm.ID != id {
 				return nil, fmt.Errorf("%w: %s keeps id %s", ErrImmutableID, v.Rel(path), id)
+			}
+			if err := checkEditStatus(v.Rel(path), status, fm.Status); err != nil {
+				return nil, err
 			}
 			lifecycle.Transition(fm, status, opts.Now)
 			fm.Touch(opts.Now)
 			return editedBody(body, opts), nil
 		},
 	)
+}
+
+// EditStatuses are the statuses an edit may set. Superseded, retracted and
+// withdrawn go through brain supersede, retract and withdraw, which record
+// the replacement, the reason or the tombstone a revocation needs.
+var EditStatuses = []string{lifecycle.Raw, lifecycle.Validated, lifecycle.Promoting, lifecycle.Disputed}
+
+// checkEditStatus refuses an edit that changes the status of the note at
+// rel from from to anything but one of EditStatuses, with
+// ErrInvalidStatusChange. Removing the status leaves the tier's default.
+func checkEditStatus(rel, from, to string) error {
+	next := lifecycle.Normalize(to)
+	switch {
+	case next == lifecycle.Normalize(from), next == "", slices.Contains(EditStatuses, next):
+		return nil
+	case lifecycle.Revoked(next):
+		return fmt.Errorf(
+			"%w: edit does not set status %s; revoke %s with brain supersede, brain retract or brain withdraw",
+			ErrInvalidStatusChange, next, rel,
+		)
+	}
+	return fmt.Errorf("%w: status %q is not one of %s",
+		ErrInvalidStatusChange, to, strings.Join(EditStatuses, ", "))
 }
 
 // editedBody returns body with opts.Body replacing it or opts.Append added.
@@ -443,6 +549,9 @@ func (v *Vault) rewriteWith(
 	if err != nil {
 		return "", err
 	}
+	if err := v.refuseUnclosed(path, data); err != nil {
+		return "", err
+	}
 	if got := ContentSHA(data); ifMatch != "" && got != ifMatch {
 		return "", fmt.Errorf(
 			"%w: %s has sha %s, not %s; read it again before editing",
@@ -456,7 +565,7 @@ func (v *Vault) rewriteWith(
 	if err != nil {
 		return "", err
 	}
-	if err := v.refuseSecrets(path, content); err != nil {
+	if err := v.refuseContent(path, content); err != nil {
 		return "", err
 	}
 	if err := atomicWrite(path, content, 0o644); err != nil {
@@ -486,9 +595,15 @@ type PromoteResult struct {
 // TargetTier (default TierNotes). Updates frontmatter.Status to "validated"
 // with its lifecycle defaults (status_at, review_by, no expires_at),
 // points every wikilink in the vault that resolves to the note at its new
-// stem or path (see linkRetarget), optionally appends to a MOC. The note keeps its id, or gets one when it
-// has none. Best-effort rollback on failure.
-func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, err error) {
+// stem or path (see linkRetarget), optionally appends to a MOC. The note
+// keeps its id, or gets one when it has none. It is all or nothing: when a
+// write fails, every note it rewrote gets its old bytes back.
+func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error) {
+	return v.promote(path, opts, writeNoteFile)
+}
+
+// promote is Promote writing each rewritten note through write.
+func (v *Vault) promote(path string, opts PromoteOptions, write noteWriter) (res PromoteResult, err error) {
 	if err := v.writable(); err != nil {
 		return PromoteResult{}, err
 	}
@@ -507,8 +622,11 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 		target = TierNotes
 	}
 
-	fm, body, err := v.ReadFrontmatter(path)
+	data, fm, body, err := v.readNote(path)
 	if err != nil {
+		return PromoteResult{}, err
+	}
+	if err := v.refuseUnclosed(path, data); err != nil {
 		return PromoteResult{}, err
 	}
 
@@ -520,21 +638,24 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 		return PromoteResult{}, fmt.Errorf("promote: source must be in inbox/, got %s", fromTier)
 	}
 
-	// Validate moc target up front so a bad target (batch-provenance index)
-	// rejects the call before any move happens — no half-done state.
+	if err := CheckTitle(opts.NewTitle); err != nil {
+		return PromoteResult{}, err
+	}
+	// Validate moc target up front so a bad target (outside MOCs/, or a
+	// batch-provenance index) rejects the call before any move happens.
+	var mocPath string
 	if opts.MOC != "" {
-		mocAbs := opts.MOC
-		if !filepath.IsAbs(mocAbs) {
-			mocAbs = filepath.Join(v.Root, mocAbs)
+		if mocPath, err = v.mocPath(opts.MOC); err != nil {
+			return PromoteResult{}, err
 		}
-		isBatch, err := isBatchIndexMOC(mocAbs)
+		isBatch, err := isBatchIndexMOC(mocPath)
 		if err != nil {
-			return PromoteResult{}, fmt.Errorf("check moc target %s: %w", mocAbs, err)
+			return PromoteResult{}, fmt.Errorf("check moc target %s: %w", v.Rel(mocPath), err)
 		}
 		if isBatch {
 			return PromoteResult{}, fmt.Errorf(
 				"moc target %s is a batch-provenance index (filename matches research-index-* / kickoff-*, or has tag meta/index); pass a topical MOC or omit moc",
-				mocAbs,
+				v.Rel(mocPath),
 			)
 		}
 	}
@@ -550,8 +671,20 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 	if title == "" {
 		title = oldStem
 	}
-	newStem := Slug(title)
+	if mocPath != "" {
+		// The title goes into the MOC's bullet line.
+		if err := CheckTitle(title); err != nil {
+			return PromoteResult{}, err
+		}
+	}
+	if fm.ID == "" {
+		fm.ID = noteid.New(opts.Now)
+	}
+	newStem := stemFor(title, fm.ID)
 	newPath := filepath.Join(v.TierDir(target), newStem+".md")
+	if err := v.contained(newPath); err != nil {
+		return PromoteResult{}, err
+	}
 	if _, err := os.Stat(newPath); err == nil {
 		return PromoteResult{}, fmt.Errorf("%w: promote target %s", ErrExists, v.Rel(newPath))
 	}
@@ -560,9 +693,6 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 	fm.Status = lifecycle.Validated
 	lifecycle.Transition(&fm, from, opts.Now)
 	fm.Touch(opts.Now)
-	if fm.ID == "" {
-		fm.ID = noteid.New(opts.Now)
-	}
 
 	edits, err := v.promoteEdits(path, linkRetarget{
 		oldTitle: oldTitle,
@@ -584,58 +714,63 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (res PromoteResult, er
 	if err != nil {
 		return PromoteResult{}, err
 	}
-	if err := v.refuseSecrets(newPath, content); err != nil {
+	if err := v.refuseContent(newPath, content); err != nil {
 		return PromoteResult{}, err
 	}
-
-	if err := os.MkdirAll(filepath.Dir(newPath), 0o755); err != nil {
-		return PromoteResult{}, err
+	p := promotion{oldPath: path, newPath: newPath, content: content}
+	if p.rewrites, err = linkChanges(edits); err != nil {
+		return PromoteResult{}, fmt.Errorf("rewrite backlinks: %w", err)
 	}
-	// Write new file, delete old only after success.
-	if err := v.create(newPath, content); err != nil {
-		return PromoteResult{}, err
-	}
-
-	rewrites, rewriteErr := v.writeEdits(edits)
-	if rewriteErr != nil {
-		// Roll back the new file; a failed rollback is reported with the cause.
-		rollbackErr := os.Remove(newPath)
-		return PromoteResult{}, errors.Join(
-			fmt.Errorf("rewrite backlinks: %w", rewriteErr),
-			rollbackErr,
-		)
-	}
-
-	if err := os.Remove(path); err != nil {
-		// Try to roll back rewrites? Not worth it for best-effort; leave a warning.
-		return PromoteResult{}, fmt.Errorf(
-			"remove old path %s after writing %s: %w",
-			path,
-			newPath,
-			err,
-		)
-	}
-
-	res = PromoteResult{
-		OldPath:          path,
-		NewPath:          newPath,
-		BacklinkRewrites: rewrites,
-	}
-
-	var mocErr error
-	if opts.MOC != "" {
-		mocPath := opts.MOC
-		if !filepath.IsAbs(mocPath) {
-			mocPath = filepath.Join(v.Root, mocPath)
-		}
-		if err := appendMOCBullet(mocPath, title, newStem, opts.Now); err != nil {
-			mocErr = fmt.Errorf("append to MOC %s: %w", mocPath, err)
-		} else {
-			res.MOCAppended = mocPath
+	if mocPath != "" {
+		if p.moc, err = mocChange(mocPath, title, newStem, opts.Now); err != nil {
+			return PromoteResult{}, fmt.Errorf("read MOC %s: %w", v.Rel(mocPath), err)
 		}
 	}
-	return res, errors.Join(mocErr, v.commitPromote(res))
+	if res, err = v.apply(p, write); err != nil {
+		return PromoteResult{}, err
+	}
+	return res, v.commitPromote(res)
 }
+
+// mocPath resolves promote's moc target to a note in this vault's MOCs
+// tier: a vault-relative path, or an absolute one inside the vault, with
+// ".md" added when it has none. Anything else is ErrInvalidPath.
+func (v *Vault) mocPath(moc string) (string, error) {
+	rel := moc
+	if filepath.IsAbs(moc) {
+		rel = v.Rel(filepath.Clean(moc))
+		if filepath.IsAbs(rel) {
+			return "", fmt.Errorf("%w: moc %s is outside vault %s", ErrInvalidPath, moc, v.Name)
+		}
+	}
+	if !strings.EqualFold(filepath.Ext(rel), ".md") {
+		rel += ".md"
+	}
+	abs, err := v.Resolve(rel)
+	if err != nil {
+		return "", fmt.Errorf("moc: %w", err)
+	}
+	if tier, err := TierOf(v.Root, abs); err != nil || tier != TierMOCs {
+		return "", fmt.Errorf("%w: moc %s is not a note in the vault's %s/ tier",
+			ErrInvalidPath, moc, TierMOCs.Dir())
+	}
+	return abs, nil
+}
+
+// CheckTitle refuses a title holding a control character other than tab
+// with ErrInvalidContent. A newline or an escape sequence in a title would
+// break the lines it is printed on and the MOC bullet promote writes.
+func CheckTitle(title string) error {
+	if strings.ContainsFunc(title, isTitleControl) {
+		return fmt.Errorf(
+			"%w: title %q holds a control character; a title is one line of text",
+			ErrInvalidContent, title,
+		)
+	}
+	return nil
+}
+
+func isTitleControl(r rune) bool { return r != '\t' && unicode.IsControl(r) }
 
 // commitPromote commits a promote: the new note first, then the inbox file
 // it left, the notes whose links it rewrote and the MOC it appended to.

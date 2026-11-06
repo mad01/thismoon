@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode"
 )
 
 // Tier enumerates the directory tiers in a brain vault.
@@ -83,31 +84,32 @@ func relativeToVault(vaultRoot, notePath string) (string, error) {
 	return rel, nil
 }
 
-// Slug converts a title into a safe filename stem. Lowercases, collapses
-// whitespace + non-alphanumerics into single hyphens, trims hyphens.
+// Slug converts a title into a safe filename stem: lowercased, with
+// letters (any script), digits and the marks that combine with a letter
+// kept, and every run of other characters collapsed into one hyphen. A
+// title with no letter or digit slugs to "", and the caller names the file
+// by the note's id instead.
 func Slug(title string) string {
 	var b strings.Builder
 	lastDash := true
 	for _, r := range strings.ToLower(strings.TrimSpace(title)) {
 		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case unicode.IsLetter(r), unicode.IsDigit(r), unicode.IsMark(r) && !lastDash:
 			b.WriteRune(r)
 			lastDash = false
-		case r == '-' || r == '_':
-			if !lastDash {
-				b.WriteByte('-')
-				lastDash = true
-			}
-		default:
-			if !lastDash {
-				b.WriteByte('-')
-				lastDash = true
-			}
+		case !lastDash:
+			b.WriteByte('-')
+			lastDash = true
 		}
 	}
-	out := strings.Trim(b.String(), "-")
-	if out == "" {
-		out = "untitled"
+	return strings.Trim(b.String(), "-")
+}
+
+// stemFor is the stem a note titled title gets: its slug, else its id
+// lowercased.
+func stemFor(title, id string) string {
+	if s := Slug(title); s != "" {
+		return s
 	}
-	return out
+	return strings.ToLower(id)
 }

@@ -42,6 +42,10 @@ type linkIndex struct {
 	names map[*Vault]*nameTable
 	// dupIDs holds the note ids more than one note carries.
 	dupIDs map[string]bool
+	// linked holds the markdown files that are symbolic links. They are
+	// never read, link to nothing and resolve no link; Snapshot lists them
+	// so brain check reports each one.
+	linked []*indexedNote
 }
 
 // nameTable is one vault's notes by the names a wikilink can use. Each list
@@ -88,6 +92,8 @@ func buildLinkIndex(s *Set) (*linkIndex, error) {
 		}
 		err := walkNotes(v.Root, func(path string, data []byte) {
 			table.notes = append(table.notes, readIndexedNote(v, path, data))
+		}, func(path string) {
+			idx.linked = append(idx.linked, linkedNote(v, path))
 		})
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", v.Name, err)
@@ -118,6 +124,16 @@ func buildLinkIndex(s *Set) (*linkIndex, error) {
 		idx.resolveLinks(n)
 	}
 	return idx, nil
+}
+
+// linkedNote is the unread entry of a note path that is a symbolic link.
+func linkedNote(v *Vault, path string) *indexedNote {
+	return &indexedNote{
+		ref:  Ref{Vault: v, Path: v.Rel(path)},
+		stem: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
+		parseErr: fmt.Errorf("%w: %s is a symbolic link; brain reads no note through a link",
+			ErrInvalidPath, v.Rel(path)),
+	}
 }
 
 // readIndexedNote parses one note. A note whose frontmatter does not parse
@@ -257,6 +273,9 @@ func (idx *linkIndex) searchOrder(from *Vault) []*Vault {
 func (idx *linkIndex) note(ref Ref) (*indexedNote, error) {
 	if n, ok := idx.byRef[ref.String()]; ok {
 		return n, nil
+	}
+	if err := ref.Vault.contained(ref.Abs()); err != nil {
+		return &indexedNote{ref: ref, stem: strings.TrimSuffix(filepath.Base(ref.Path), ".md"), parseErr: err}, nil
 	}
 	data, err := os.ReadFile(ref.Abs())
 	if err != nil {
@@ -408,7 +427,7 @@ func (v *Vault) FindByTitle(title string) (string, error) {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(strings.ToLower(path), ".md") {
+		if isLink(d) || !strings.HasSuffix(strings.ToLower(path), ".md") {
 			return nil
 		}
 		fm, _, err := v.ReadFrontmatter(path)
@@ -440,8 +459,10 @@ func hasAlias(fm markdown.Frontmatter, name string) bool {
 }
 
 // walkNotes calls visit with the path and content of every readable markdown
-// note in the vault, skipping tool directories. Unreadable files are skipped.
-func walkNotes(vaultRoot string, visit func(path string, data []byte)) error {
+// note in the vault, skipping tool directories. Unreadable files are
+// skipped. A markdown file that is a symbolic link is never read: linked
+// gets its path instead.
+func walkNotes(vaultRoot string, visit func(path string, data []byte), linked func(path string)) error {
 	return filepath.WalkDir(vaultRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -453,6 +474,10 @@ func walkNotes(vaultRoot string, visit func(path string, data []byte)) error {
 			return nil
 		}
 		if !strings.HasSuffix(strings.ToLower(path), ".md") {
+			return nil
+		}
+		if isLink(d) {
+			linked(path)
 			return nil
 		}
 		data, err := os.ReadFile(path)

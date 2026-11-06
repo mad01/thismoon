@@ -6,7 +6,9 @@ package markdown
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,6 +42,8 @@ type Frontmatter struct {
 
 	// order is the key order of the parsed source; Render follows it.
 	order []string
+	// src is the text the frontmatter was parsed from, nil for a new one.
+	src *source
 }
 
 // Field is one frontmatter key with its YAML value.
@@ -63,82 +67,115 @@ func EvidenceOf(fm Frontmatter) string {
 	return ""
 }
 
-// Split returns the (frontmatter raw bytes, body bytes). Frontmatter is empty
-// if the file has no YAML fence. The body excludes the trailing --- fence.
-func Split(content []byte) (frontmatterRaw, body []byte) {
-	if !bytes.HasPrefix(content, []byte("---\n")) && !bytes.HasPrefix(content, []byte("---\r\n")) {
-		return nil, content
-	}
+// bom is the UTF-8 byte order mark some editors write at the start of a
+// file. A note may open with one before its frontmatter fence.
+var bom = []byte("\xEF\xBB\xBF")
 
-	// Find the closing fence. It must be on its own line.
-	start := bytes.IndexByte(content, '\n') + 1
-	rest := content[start:]
-	end := -1
-	for i := 0; i < len(rest); {
-		// line starts at i
-		nl := bytes.IndexByte(rest[i:], '\n')
-		var line []byte
-		if nl < 0 {
-			line = rest[i:]
-		} else {
-			line = rest[i : i+nl]
-		}
-		trimmed := bytes.TrimRight(line, "\r")
-		if bytes.Equal(trimmed, []byte("---")) {
-			end = i + len(line)
-			if nl >= 0 {
-				end = i + nl
-			}
-			break
-		}
-		if nl < 0 {
-			break
-		}
-		i += nl + 1
+// ErrUnclosed means a note opens a frontmatter fence that no later line
+// closes. ParseFrontmatter reads such a note as body alone; a change to it
+// would stack a second frontmatter block on top, so writers refuse it.
+var ErrUnclosed = errors.New("frontmatter is not closed: the note opens with --- and no line closes it")
+
+// fences is a note cut at its frontmatter fences. open holds the byte order
+// mark, if any, and the opening fence line; close the closing fence line.
+// Both keep their line endings, so the note renders back byte for byte.
+type fences struct {
+	open, yaml, close, body []byte
+}
+
+// cut finds the frontmatter of content. A fence is a line of "---" (the
+// closing one may also be "...") followed by nothing but whitespace, and
+// the opening one may follow a byte order mark. ok is false when content
+// has no frontmatter; unclosed reports an opening fence with no closing one.
+func cut(content []byte) (f fences, ok, unclosed bool) {
+	first, rest := nextLine(bytes.TrimPrefix(content, bom))
+	if !isFence(first, "---") {
+		return fences{}, false, false
 	}
-	if end < 0 {
-		// Unterminated fence — treat the whole file as body.
+	open := content[:len(content)-len(rest)]
+	for i := 0; i < len(rest); {
+		line, next := nextLine(rest[i:])
+		if isFence(line, "---") || isFence(line, "...") {
+			return fences{open: open, yaml: rest[:i], close: line, body: next}, true, false
+		}
+		i = len(rest) - len(next)
+	}
+	return fences{}, false, true
+}
+
+// nextLine splits data after its first line break: the line, its line
+// ending included, and the rest.
+func nextLine(data []byte) (line, rest []byte) {
+	if nl := bytes.IndexByte(data, '\n'); nl >= 0 {
+		return data[:nl+1], data[nl+1:]
+	}
+	return data, nil
+}
+
+// isFence reports whether line is mark followed only by whitespace.
+func isFence(line []byte, mark string) bool {
+	return string(bytes.TrimRight(line, " \t\r\n")) == mark
+}
+
+// Split returns the (frontmatter raw bytes, body bytes). Frontmatter is nil
+// if the file has no closed YAML fence. The body excludes the closing fence.
+func Split(content []byte) (frontmatterRaw, body []byte) {
+	f, ok, _ := cut(content)
+	if !ok {
 		return nil, content
 	}
-	fm := rest[:end]
-	// Advance past the closing fence line (and its newline if present).
-	tail := rest[end:]
-	if len(tail) > 0 && tail[0] == '\n' {
-		tail = tail[1:]
-	} else if len(tail) > 1 && tail[0] == '\r' && tail[1] == '\n' {
-		tail = tail[2:]
-	} else if len(tail) >= 4 {
-		// Skip the closing "---" + newline if we didn't already.
-		if bytes.HasPrefix(tail, []byte("---\n")) {
-			tail = tail[4:]
-		} else if bytes.HasPrefix(tail, []byte("---\r\n")) {
-			tail = tail[5:]
-		}
-	}
-	return fm, tail
+	return f.yaml, f.body
+}
+
+// Unclosed reports whether content opens a frontmatter fence that no line
+// closes (see ErrUnclosed).
+func Unclosed(content []byte) bool {
+	_, _, unclosed := cut(content)
+	return unclosed
 }
 
 // ParseFrontmatter returns the typed frontmatter plus the body bytes. When the
 // file has no frontmatter, returns a zero Frontmatter and the full content.
+// The frontmatter remembers its source text, so Render rewrites only the
+// keys that changed since.
 func ParseFrontmatter(content []byte) (Frontmatter, []byte, error) {
-	raw, body := Split(content)
-	if len(raw) == 0 {
-		return Frontmatter{}, body, nil
+	f, ok, _ := cut(content)
+	if !ok {
+		return Frontmatter{}, content, nil
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(f.yaml, &doc); err != nil {
+		return Frontmatter{}, f.body, fmt.Errorf("parse frontmatter: %w", err)
 	}
 	var fm Frontmatter
-	if err := yaml.Unmarshal(raw, &fm); err != nil {
-		return Frontmatter{}, body, fmt.Errorf("parse frontmatter: %w", err)
+	var mapping *yaml.Node
+	if len(doc.Content) > 0 {
+		mapping = doc.Content[0]
+		if err := fm.UnmarshalYAML(mapping); err != nil {
+			return Frontmatter{}, f.body, fmt.Errorf("parse frontmatter: %w", err)
+		}
 	}
-	return fm, body, nil
+	fm.src = newSource(f, mapping, fm)
+	return fm, f.body, nil
 }
 
-// yamlIndent is the indentation Encode writes. Two spaces is the width
-// hand-written frontmatter uses, so an edit to one key leaves the lines of
-// every other key as they were; yaml.v3 would otherwise write four.
+// yamlIndent is the indentation a new note's frontmatter gets. Two spaces is
+// the width hand-written frontmatter uses; yaml.v3 would otherwise write four.
 const yamlIndent = 2
 
-// Encode returns fm as the YAML that goes between the --- fences.
+// Encode returns fm as the YAML that goes between the --- fences. A
+// frontmatter parsed from a note keeps its source text: only the lines of
+// keys whose value changed are rewritten, new keys go last, and the note's
+// line endings stay. Any other frontmatter is written fresh.
 func Encode(fm Frontmatter) ([]byte, error) {
+	if fm.src != nil {
+		return fm.src.render(fm)
+	}
+	return encodeFresh(fm)
+}
+
+// encodeFresh writes fm as new 2-space YAML.
+func encodeFresh(fm Frontmatter) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(yamlIndent)
@@ -151,24 +188,21 @@ func Encode(fm Frontmatter) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Render returns bytes in the form "---\n<yaml>\n---\n<body>". If body is
-// empty, only the frontmatter fence block is emitted.
+// Render returns bytes in the form "---\n<yaml>---\n<body>". A parsed
+// frontmatter keeps the fence lines it was read with.
 func Render(fm Frontmatter, body []byte) ([]byte, error) {
 	yml, err := Encode(fm)
 	if err != nil {
 		return nil, err
 	}
-	var out bytes.Buffer
-	out.WriteString("---\n")
-	out.Write(yml)
-	out.WriteString("---\n")
-	if len(body) > 0 {
-		if !bytes.HasPrefix(body, []byte("\n")) {
-			out.WriteString("")
+	open, closing := []byte("---\n"), []byte("---\n")
+	if fm.src != nil {
+		open, closing = fm.src.open, fm.src.close
+		if len(body) > 0 && !bytes.HasSuffix(closing, []byte("\n")) {
+			closing = append(slices.Clone(closing), fm.src.eol...)
 		}
-		out.Write(body)
 	}
-	return out.Bytes(), nil
+	return slices.Concat(open, yml, closing, body), nil
 }
 
 // Touch updates the Updated timestamp to the current UTC date (YYYY-MM-DD).
