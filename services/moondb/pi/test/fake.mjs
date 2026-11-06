@@ -4,19 +4,20 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
-// A moondb stand-in on PATH. Each run keeps its argv, its stdin and the
-// entrypoint it was given under its pid, then appends the pid to order, so
-// the calls read back in the order they finished. FAKE_MOONDB_SLEEP holds
-// it before it reads, to see whether a caller waits.
+// A moondb stand-in on PATH. Each run keeps its argv, its stdin, and the
+// entrypoint and harness it was given under its pid, then appends the pid
+// to order, so the calls read back in the order they finished.
+// FAKE_MOONDB_SLEEP holds it before it reads, to see whether a caller waits.
 const FAKE_MOONDB = `#!/bin/sh
 [ -n "$FAKE_MOONDB_SLEEP" ] && sleep "$FAKE_MOONDB_SLEEP"
 cat > "$FAKE_MOONDB_LOG/$$.json"
 printf '%s\\n' "$@" > "$FAKE_MOONDB_LOG/$$.argv"
 printf '%s' "$CLAUDE_CODE_ENTRYPOINT" > "$FAKE_MOONDB_LOG/$$.env"
+printf '%s' "$MOONDB_HARNESS" > "$FAKE_MOONDB_LOG/$$.harness"
 echo "$$" >> "$FAKE_MOONDB_LOG/order"
 `
 
-const ENV_KEYS = ['PATH', 'FAKE_MOONDB_LOG', 'FAKE_MOONDB_SLEEP', 'CLAUDE_CODE_ENTRYPOINT']
+const ENV_KEYS = ['PATH', 'FAKE_MOONDB_LOG', 'FAKE_MOONDB_SLEEP', 'CLAUDE_CODE_ENTRYPOINT', 'MOONDB_HARNESS']
 
 // A scratch dir with the fake on PATH, restored afterwards. withMoondb:
 // false leaves moondb off PATH entirely. repo: true makes dir/repo a git
@@ -34,6 +35,7 @@ export function scratch(t, { withMoondb = true, repo = false } = {}) {
   delete process.env.FAKE_MOONDB_SLEEP
   // A test run from a Claude Code shell inherits its entrypoint.
   process.env.CLAUDE_CODE_ENTRYPOINT = 'cli'
+  delete process.env.MOONDB_HARNESS
   const repoDir = join(dir, 'repo')
   if (repo) {
     mkdirSync(repoDir)
@@ -61,6 +63,7 @@ export function scratch(t, { withMoondb = true, repo = false } = {}) {
         argv: readFileSync(join(log, `${pid}.argv`), 'utf8').trimEnd().split('\n'),
         payload: JSON.parse(readFileSync(join(log, `${pid}.json`), 'utf8')),
         entrypoint: readFileSync(join(log, `${pid}.env`), 'utf8'),
+        harness: readFileSync(join(log, `${pid}.harness`), 'utf8'),
       }))
   }
   return {

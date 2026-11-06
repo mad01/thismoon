@@ -65,12 +65,17 @@ func (p Prices) table() map[string]moondb.Price {
 // Lookup finds a model id's price: the exact id first, then the longest id
 // in the table that is the model's family, so a dated
 // "claude-opus-4-5-20251101" takes the "claude-opus-4-5" row. A provider
-// prefix before "claude-" (us.anthropic.) is dropped first. A new version
-// ("claude-opus-5-6") is not in "claude-opus-5"'s family: versions differ
-// in price, so it has none until the table or the config names it.
+// prefix before "claude-" (us.anthropic., anthropic/) is dropped first, and
+// a dotted version ("claude-haiku-5.5", as OpenRouter names it) reads as
+// the dashed one. A new version ("claude-opus-5-6") is not in
+// "claude-opus-5"'s family: versions differ in price, so it has none until
+// the table or the config names it.
 func (p Prices) Lookup(model string) (moondb.Price, bool) {
 	if i := strings.Index(model, "claude-"); i > 0 {
 		model = model[i:]
+	}
+	if strings.HasPrefix(model, "claude-") {
+		model = dottedVersion.ReplaceAllString(model, "$1-$2")
 	}
 	table := p.table()
 	if price, ok := table[model]; ok {
@@ -92,6 +97,9 @@ func (p Prices) Lookup(model string) (moondb.Price, bool) {
 // ("-20251101"), a provider version ("@20251101") or a context marker
 // ("[1m]").
 var familySuffix = regexp.MustCompile(`^(-\d{8}|@|\[)`)
+
+// dottedVersion is a dot between two version digits.
+var dottedVersion = regexp.MustCompile(`(\d)\.(\d)`)
 
 // familyOf reports whether model is id with a family suffix.
 func familyOf(model, id string) bool {

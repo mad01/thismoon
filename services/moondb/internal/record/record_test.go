@@ -646,6 +646,26 @@ func TestEntrypointBounded(t *testing.T) {
 	}
 }
 
+// TestHarnessFromEnvironment: a runtime that plays the hook payloads names
+// its harness in the environment; an unknown name or none leaves Claude
+// Code's.
+func TestHarnessFromEnvironment(t *testing.T) {
+	tests := map[string]string{
+		"pi":          store.HarnessPi,
+		"claude-code": store.HarnessClaudeCode,
+		"codex":       store.HarnessClaudeCode,
+		"":            store.HarnessClaudeCode,
+	}
+	for raw, want := range tests {
+		s := newSession(t, physicalTempDir(t))
+		s.env = map[string]string{HarnessEnv: raw}
+		s.mustRun("prompt.json")
+		if got := s.takeOne(spool.KindTurnOpen).Harness; got != want {
+			t.Errorf("%s=%q recorded harness %q, want %q", HarnessEnv, raw, got, want)
+		}
+	}
+}
+
 func TestStopWithoutOpenOmitsTranscript(t *testing.T) {
 	s := newSession(t, physicalTempDir(t))
 	writeFile(t, s.transcript, "{\"line\":1}\n")

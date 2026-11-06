@@ -127,8 +127,10 @@ func (in *Ingester) kept(env spool.Envelope, missing map[string]bool, key string
 // transcript path of a known one. The envelope's title is offered through
 // store.OfferTitle, so it replaces a stored one only by outranking it.
 // Cwd, Harness and Entrypoint keep their first value, since the session
-// started there and that way. Location keeps its first value too, and only
-// a location of the stored cwd counts. Tags are a union (store.MergeTags),
+// started there and that way, except that a known harness replaces the
+// claude-code default (store.SettleHarness). Location keeps its first
+// value too, and only a location of the stored cwd counts. Tags are a
+// union (store.MergeTags),
 // so a tag once recorded stays. StartedAt keeps the earliest time seen, so
 // a session first known from a late envelope moves back when an earlier
 // one arrives. An import only fills empty fields, except that its
@@ -154,7 +156,9 @@ func (in *Ingester) upsertSession(ctx context.Context, env spool.Envelope) error
 	}
 	s := cur.Session
 	set := setter(env)
-	changed := fill(&s.Harness, env.Harness)
+	harness := store.SettleHarness(s.Harness, store.ParseHarness(env.Harness))
+	changed := harness != s.Harness
+	s.Harness = harness
 	changed = fill(&s.Cwd, ref.Cwd) || changed
 	if ref.Cwd == s.Cwd {
 		changed = fillLocation(&s.Location, ref.Location) || changed

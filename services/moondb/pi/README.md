@@ -84,7 +84,7 @@ command:
 moondb's own status check then skips the files a command put back to their
 committed state, as it does for Claude Code.
 
-### Session entrypoint
+### Session entrypoint and harness
 
 moondb reads a session's entrypoint from `CLAUDE_CODE_ENTRYPOINT`. The
 extension sets it for the `moondb record` child to `pi-<mode>`: `pi-tui`,
@@ -92,13 +92,18 @@ extension sets it for the `moondb record` child to `pi-<mode>`: `pi-tui`,
 inherits Claude's value, and this replaces it. The web page shows the
 entrypoint as a badge. `MOONDB_SESSION_TAGS` passes through unchanged.
 
+The extension also sets `MOONDB_HARNESS=pi`, so moondb stores the session
+with harness `pi`. A session recorded before the extension set it carries
+`claude-code`, and moondb reads it as `pi` from its `pi-<mode>` entrypoint.
+
 ## Limits
 
-- The session's harness stays `claude-code`. moondb's `record` sets it from
-  a constant, so a pi session can't say otherwise until moondb changes
-  (Phase B).
-- Traces and costs are empty. `Stop` spools the tail of pi's session file,
-  and moondb's Claude transcript parser skips pi's lines (Phase B).
+- Cost comes from moondb's price table. A Claude model through OpenRouter
+  (`anthropic/claude-haiku-5.5`) takes its Claude row. Any other model is
+  unpriced unless moondb's config prices it. moondb doesn't read the
+  `cost.total` pi records.
+- A pi run without a session file has no trace: `Stop` has no lines to
+  spool.
 - A Bash change to a file that was already uncommitted is recorded by path
   only. `history` lists it, but `why` can't name its lines, because the
   extension doesn't know what the file held before the command.
@@ -123,49 +128,35 @@ node --test services/moondb/pi/test/*.test.mjs   # or: make -C services/moondb t
 ```
 
 The tests run the extension against a fake pi and a fake `moondb` on
-`PATH` that keeps each run's argv, stdin and entrypoint.
+`PATH` that keeps each run's argv, stdin, entrypoint and harness.
 
-## Phase B: what moondb needs from pi's session format
+## Traces from pi's session file
 
-Traces, costs and the harness need moondb to read pi's session file in Go.
-The format is pi's `docs/session-format.md` and `docs/message-types.md`.
-moondb would need these pieces:
+A pi turn's lines are the bytes `Stop` spooled from pi's session file.
+moondb's trace parser (`internal/trace/pi.go`) knows them by their
+`message` lines and reads pi's session format version 3 (pi's
+`docs/session-format.md` and `docs/message-types.md`):
 
-- A harness value of `pi` on the envelopes that `record` writes, for
-  example from an environment variable this extension sets.
-- A JSONL parser for format version 3:
-  - The header line (`type: session`) gives `id`, `cwd`, `version`, and
-    `parentSession` for a fork or clone.
-  - `message` entries carry roles `user`, `assistant`, `toolResult`,
-    `system` and `custom`. Each entry has an ISO `timestamp`, and its
-    message a millisecond one.
-- Assistant fields:
-  - `provider`, `model` and `responseModel`, `stopReason`, and
-    `errorMessage`.
-  - `usage`: `input`, `output`, `cacheRead`, `cacheWrite`, `cacheWrite1h`,
-    `reasoning` (already counted in `output`), `totalTokens`, and
-    `cost.total`.
-  - `toolCall` content blocks with `id`, `name` and `arguments`.
-- Tool results: `toolCallId`, `toolName` and `isError`. A result's `usage`
-  holds nested model work, and its `nestedCalls` the tools that a tool
-  called.
-- Other entries:
-  - `usage` entries such as `cache_warm`, and the `usage` of `compaction`
-    and `branch_summary` entries, all count toward totals.
-  - `session_info.name` is the title, and `model_change` and
-    `thinking_level_change` mark switches.
-  - `custom`, `custom_message`, `label` and `context_edit` carry no cost.
-- The tree: entries link by `id` and `parentId`, and `/tree` leaves
-  abandoned branches in the same file. pi only appends, so a turn's lines
-  are still the bytes after its offset.
-- Prices: pi records each message's `cost.total`. moondb can take that, or
-  map pi's provider and model ids (OpenRouter names such as
-  `anthropic/claude-haiku-5.5`) onto its own price table.
-- For `moondb import`: sessions live at
-  `<agent dir>/sessions/--<cwd with / as ->--/<timestamp>_<id>.jsonl`. The
-  agent dir is `~/.pi/agent` or `$PI_CODING_AGENT_DIR`. pi creates the
-  file at the first user or assistant message, so a new session's first
-  turn opens at offset 0.
+- An assistant message is one model call: its `model`, its `usage` and its
+  `toolCall` blocks. `cacheWrite1h` is the 1-hour part of `cacheWrite`, and
+  `reasoning` counts as thinking. A `toolUse` stop goes on; `stop`, `error`
+  and `aborted` wait for input.
+- A `toolResult` message ends its tool call, failed when `isError` is set.
+- A `usage` entry (such as `cache_warm`) and the `usage` of a `compaction`
+  or `branch_summary` entry count as model calls. The two summaries name no
+  model and are priced at the model last seen before them.
+- pi writes the prompt before the extension opens the turn, so a turn's
+  lines begin at the first answer. moondb puts the prompt back at the
+  turn's start.
+- pi writes no line when its loop stops, so the time after the last line is
+  harness time.
+
+Still open:
+
+- `moondb import` for pi sessions. They live at
+  `<agent dir>/sessions/--<cwd with / as ->--/<timestamp>_<id>.jsonl`; the
+  agent dir is `~/.pi/agent` or `$PI_CODING_AGENT_DIR`. An import needs
+  turn ids that match the extension's, and those are random today.
 - Subagents: pi has no SubagentStop event. A pi subagent is another pi
   process with its own session file. Linking the two needs
   `parentSession` or a tag the parent sets.

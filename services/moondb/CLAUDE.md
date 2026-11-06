@@ -284,18 +284,28 @@ mapping and the limits. What holds the two sides together:
   the Claude Edit hook is synchronous. The rest start and run on their
   own. Children are detached into their own process group but stay
   referenced: an awaited record must keep print mode's event loop alive.
-- `transcript_path` is pi's session file. `record` spools its tail
-  unparsed, and the trace parser skips pi's lines, so a pi turn has no
-  trace or cost yet. `Session.Harness` stays `claude-code`, because
-  `record.Harness` is a constant. The entrypoint is the one thing the
-  environment can say: the child gets `CLAUDE_CODE_ENTRYPOINT=pi-<mode>`
-  (`pi-tui`, `pi-print`, `pi-json`, `pi-rpc`), replacing any value
-  inherited from a Claude Code shell.
+- The environment names the session: the child gets
+  `CLAUDE_CODE_ENTRYPOINT=pi-<mode>` (`pi-tui`, `pi-print`, `pi-json`,
+  `pi-rpc`), replacing any value inherited from a Claude Code shell, and
+  `MOONDB_HARNESS=pi` (`record.HarnessEnv`). Ingest lets a known harness
+  replace the `claude-code` default (`store.SettleHarness`), and the store
+  reads a session recorded before the variable existed, `claude-code` with
+  a `pi-` entrypoint, as `pi` (`store.SessionHarness`).
+- `transcript_path` is pi's session file, and `record` spools its tail
+  unparsed. `trace.parseLines` knows the chunk by its `message` lines and
+  reads it with the pi parser (`internal/trace/pi.go`), which maps pi's
+  entries onto the same events as Claude's lines; everything after the
+  parse is shared. pi writes the prompt before `before_agent_start`, so a
+  turn's lines open on the first answer, and `Build` puts the prompt back
+  at the turn's start (`piPrompted`) instead of reading a cut head.
+- Prices: `Prices.Lookup` reads OpenRouter's dotted ids
+  (`anthropic/claude-haiku-5.5`) as the dashed Claude row. pi's own
+  `cost.total` is not read: the store keeps tokens and prices them on read.
 
 Enabling it is a `packages[]` entry in pi's `settings.json`
 (`~/.config/ralph/sources/thismoon/services/moondb/pi`), which the
-consuming repo owns. Phase B (`pi/README.md`, last section) is moondb
-reading pi's session JSONL in Go, for traces, costs and a `pi` harness.
+consuming repo owns. `pi/README.md`, last section, lists what stays open:
+`moondb import` for pi sessions and linking pi subagents.
 
 ### Snapshots: the worktree at each turn edge
 

@@ -24,7 +24,7 @@ var ErrNotFound = errors.New("store: not found")
 type Session struct {
 	// ID is the harness's session id (Claude Code session_id).
 	ID string `json:"id"`
-	// Harness names the agent runtime, "claude-code" today.
+	// Harness names the agent runtime: HarnessClaudeCode or HarnessPi.
 	Harness string `json:"harness"`
 	// Cwd is the working directory the session started in.
 	Cwd string `json:"cwd"`

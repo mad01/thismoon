@@ -39,8 +39,14 @@ import (
 )
 
 // Harness names the agent runtime whose hook payloads Run reads and whose
-// transcripts `moondb import` reads; every envelope carries it.
-const Harness = "claude-code"
+// transcripts `moondb import` reads; every envelope carries it, unless
+// HarnessEnv names another.
+const Harness = store.HarnessClaudeCode
+
+// HarnessEnv names the harness of a runtime that plays Claude Code's hook
+// payloads into Run: the pi extension sets it to "pi". A value that is not
+// a known harness (store.ParseHarness) leaves Harness.
+const HarnessEnv = "MOONDB_HARNESS"
 
 // EntrypointEnv is the variable Claude Code sets for its hooks to say how
 // it was started: "cli" for an interactive terminal session, "sdk-cli" for
@@ -88,7 +94,7 @@ type Options struct {
 	// out, with the counts, and for each subagent Run did not record or
 	// recorded without lines; nil discards it.
 	Logf func(format string, args ...any)
-	// Getenv reads the hook's environment: EntrypointEnv and
+	// Getenv reads the hook's environment: HarnessEnv, EntrypointEnv and
 	// moondb.SessionTagsEnv; os.Getenv when nil.
 	Getenv func(key string) string
 }
@@ -114,6 +120,7 @@ func Run(ctx context.Context, in io.Reader, opts Options) error {
 		start:      opts.Now(),
 		p:          p,
 		opts:       opts,
+		harness:    store.ParseHarness(opts.Getenv(HarnessEnv)),
 		entrypoint: store.ParseEntrypoint(opts.Getenv(EntrypointEnv)),
 		tags:       store.ParseTags(opts.Getenv(moondb.SessionTagsEnv)),
 		locs:       map[string]store.Location{},
@@ -198,8 +205,9 @@ type recorder struct {
 	opts  Options
 	spool *spool.Writer
 	state sessionState
-	// entrypoint and tags are what the environment says about the session,
-	// read once per Run.
+	// harness, entrypoint and tags are what the environment says about the
+	// session, read once per Run; an empty harness is Harness.
+	harness    string
 	entrypoint string
 	tags       []string
 	// locs caches the git location of each directory git placed in this
@@ -235,12 +243,16 @@ func (rec *recorder) require(handle func() error, key, id string) error {
 // envelope once its reads are done.
 func (rec *recorder) envelope(kind spool.Kind, id string) spool.Envelope {
 	p := rec.p
+	harness := rec.harness
+	if harness == "" {
+		harness = Harness
+	}
 	return spool.Envelope{
 		Version: spool.Version,
 		Kind:    kind,
 		ID:      id,
 		At:      rec.start,
-		Harness: Harness,
+		Harness: harness,
 		Session: spool.SessionRef{
 			ID: p.sessionID, Cwd: p.cwd, Title: p.title, TranscriptPath: p.transcriptPath,
 			Entrypoint: rec.entrypoint, Tags: rec.tags,

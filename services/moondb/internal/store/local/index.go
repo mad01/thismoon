@@ -127,8 +127,11 @@ func decodeInto[T any](raw json.RawMessage, fn func(T)) error {
 	return nil
 }
 
-// putSession replaces the session with the same id, or adds it.
+// putSession replaces the session with the same id, or adds it. A pi
+// session recorded before pi could name its harness reads as pi
+// (store.SessionHarness).
 func (ix *index) putSession(s store.Session) {
+	s.Harness = store.SessionHarness(s)
 	cur, ok := ix.sessions[s.ID]
 	if ok {
 		ix.sessionOrder = removeSorted(ix.sessionOrder, cur, cmpSession)

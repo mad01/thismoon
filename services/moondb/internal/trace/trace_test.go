@@ -495,6 +495,9 @@ func TestPricesLookup(t *testing.T) {
 		{"claude-sonnet-4-20250514", 3},
 		{"us.anthropic.claude-sonnet-4-6", 3},
 		{"claude-fable-5-1[1m]", 10},
+		{"anthropic/claude-haiku-5.5", 0.10}, // OpenRouter's id, as pi records it
+		{"claude-opus-5.5", 4},
+		{"openai/gpt-4o", 0},
 		{"claude-opus-4-9", 0},
 		{"claude-opus-5-6", 0}, // a new version is not claude-opus-5 with a date
 		{"claude-opus-5-55", 0},
