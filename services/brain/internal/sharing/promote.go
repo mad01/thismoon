@@ -4,13 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/mad01/thismoon/services/brain/internal/check"
 	"github.com/mad01/thismoon/services/brain/internal/ghcli"
 	"github.com/mad01/thismoon/services/brain/internal/library"
 	"github.com/mad01/thismoon/services/brain/internal/lifecycle"
@@ -53,11 +50,13 @@ type PromoteResult struct {
 
 // Promote opens a pull request that adds the private note at ref to the
 // shared vault target, under the same path and with the same id, and marks
-// the private copy promoting with shared_pr naming the pull request. The
-// note must be validated, hold no secret, and pass brain check at error
-// level against the shared vault's policy. A target that is not shared is
-// vault.ErrReadOnly, a note that is not validated (or is promoting already,
-// without Force) vault.ErrInvalidStatusChange.
+// the private copy promoting with shared_pr naming the pull request. It
+// stops at the first gate that refuses (see the Gate names): a target that
+// is not shared is vault.ErrReadOnly, a note that is not validated (or is
+// promoting already, without Force) vault.ErrInvalidStatusChange, a path
+// the shared vault has vault.ErrExists, a secret vault.ErrSecretFound. A
+// classification the policy does not accept, or an error from brain check,
+// refuses with a plain error. DryRun runs the same gates.
 func Promote(
 	ctx context.Context,
 	lib *library.Library,
@@ -68,21 +67,19 @@ func Promote(
 	if opts.Now.IsZero() {
 		opts.Now = time.Now()
 	}
-	if err := promotable(ref, target); err != nil {
-		return PromoteResult{}, err
-	}
-	fm, body, err := ref.Vault.ReadFrontmatter(ref.Abs())
+	fm, body, gates, err := noteGates(ref, target, opts.Force)
 	if err != nil {
 		return PromoteResult{}, err
 	}
-	if err := ready(ref, fm, opts.Force); err != nil {
+	if err := refusal(gates); err != nil {
 		return PromoteResult{}, err
 	}
 	wt, err := openWorktree(lib, target)
 	if err != nil {
 		return PromoteResult{}, err
 	}
-	res, err := promoteIn(ctx, lib, wt, ref, fm, body)
+	gates = append(gates, repoPassed(target, wt.remote, wt.base))
+	res, err := promoteIn(ctx, lib, wt, ref, fm, body, gates)
 	err = errors.Join(err, wt.close())
 	if res.PR == "" {
 		return res, err
@@ -146,8 +143,8 @@ func ready(ref vault.Ref, fm markdown.Frontmatter, force bool) error {
 	return nil
 }
 
-// promoteIn places the shared copy in the worktree, checks it, and
-// publishes it as a pull request.
+// promoteIn runs the gates on the shared copy in the worktree, after the
+// gates already passed, and publishes the copy as a pull request.
 func promoteIn(
 	ctx context.Context,
 	lib *library.Library,
@@ -155,33 +152,21 @@ func promoteIn(
 	ref vault.Ref,
 	fm markdown.Frontmatter,
 	body []byte,
+	gates []Gate,
 ) (PromoteResult, error) {
 	res := PromoteResult{
 		Vault: ref.Vault.Name, Path: ref.Path, ID: fm.ID, SharedVault: wt.shared.Name,
 		MOCs: lifecycle.Read(fm).MOCs,
 	}
-	if _, err := os.Stat(filepath.Join(wt.vault.Root, filepath.FromSlash(ref.Path))); err == nil {
-		return res, fmt.Errorf("%w: shared vault %s has %s already",
-			vault.ErrExists, wt.shared.Name, ref.Path)
-	}
-	copyFM := lifecycle.ForShared(fm)
-	copyFM.Status = lifecycle.Validated
-	if _, err := wt.vault.CreateAt(ref.Path, copyFM, body); err != nil {
-		return res, err
-	}
-	report, err := checkCopy(lib, wt, ref.Path)
+	copied, warnings, err := copyGates(lib, wt.vault, wt.shared, ref, fm, body)
 	if err != nil {
 		return res, err
 	}
-	if !report.OK {
-		return res, refusal(ref, wt.shared, report)
+	if err := refusal(copied); err != nil {
+		return res, fmt.Errorf("%s: %w; nothing was pushed", ref, err)
 	}
-	res.Warnings = findings(report, check.Warning)
-	res.Checks = []string{
-		fmt.Sprintf("brain check against %s's policy: no errors, %d warning(s)",
-			wt.shared.Name, report.Warnings),
-		"secret scan: nothing found",
-	}
+	res.Warnings = warnings
+	res.Checks = details(append(gates, copied...))
 	branch, err := wt.freeBranch(promoteBranch(ref.Path, fm.ID))
 	if err != nil {
 		return res, err
@@ -196,53 +181,6 @@ func promoteIn(
 	}
 	res.Branch, res.PR = branch, url
 	return res, nil
-}
-
-// checkCopy runs brain check on the copy at rel in the worktree, the
-// worktree standing in for the shared vault: its policy, its secret scan
-// config, and links resolving among the shared vaults only.
-func checkCopy(lib *library.Library, wt *worktree, rel string) (check.Report, error) {
-	stand := *wt.vault
-	stand.Shared = true
-	var vaults []*vault.Vault
-	for _, v := range lib.Set().Vaults() {
-		switch {
-		case v == wt.shared:
-			vaults = append(vaults, &stand)
-		case v.Shared:
-			vaults = append(vaults, v)
-		}
-	}
-	return check.Run(check.Options{
-		Set:     vault.NewSet(vaults...),
-		Targets: []vault.Ref{{Vault: &stand, Path: rel}},
-	})
-}
-
-// refusal is the error of a copy that fails the check: its error findings.
-func refusal(ref vault.Ref, shared *vault.Vault, r check.Report) error {
-	errs := findings(r, check.Error)
-	if len(errs) > maxReportedFindings {
-		errs = append(
-			errs[:maxReportedFindings],
-			fmt.Sprintf("and %d more", len(errs)-maxReportedFindings),
-		)
-	}
-	return fmt.Errorf(
-		"%s fails brain check against %s's policy: %s; nothing was pushed",
-		ref, shared.Name, strings.Join(errs, "; "),
-	)
-}
-
-// findings lists the report's findings at level as "rule: message".
-func findings(r check.Report, level string) []string {
-	var out []string
-	for _, f := range r.Findings {
-		if f.Level == level {
-			out = append(out, f.Rule+": "+f.Message)
-		}
-	}
-	return out
 }
 
 // promoteBranch is brain/promote/<stem>-<short id>.

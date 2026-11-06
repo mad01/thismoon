@@ -7,16 +7,18 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/services/brain/internal/library"
 	"github.com/mad01/thismoon/services/brain/internal/sharing"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
 func newPromoteCmd(a *app) *cobra.Command {
 	var (
-		opts  vault.PromoteOptions
-		tier  string
-		to    string
-		force bool
+		opts   vault.PromoteOptions
+		tier   string
+		to     string
+		force  bool
+		dryRun bool
 	)
 	c := &cobra.Command{
 		Use:   "promote <note>",
@@ -39,16 +41,34 @@ brain sync removes it once the pull request merges, or returns it to
 validated if it closes. brain never edits a shared MOC: the note's mocs
 field lists the MOCs it belongs in, and the pull request says so. A target
 that is not shared exits 6, a note that is not validated 2, a note with an
-open shared_pr 2 unless --force. Needs gh (the GitHub CLI) logged in. With
--o json, prints {"vault", "path", "id", "shared_vault", "branch", "pr",
-"checks", "mocs", "warnings"}.`,
+open shared_pr 2 unless --force, a path the shared vault has 4, a
+classification its policy does not accept 1. Needs gh (the GitHub CLI)
+logged in. With -o json, prints {"vault", "path", "id", "shared_vault",
+"branch", "pr", "checks", "mocs", "warnings"}.
+
+Before sharing a note, run brain vaults to see which classifications each
+shared vault accepts, then check the promote with --to <vault> --dry-run.
+It runs every gate the real promote runs (target, status, repo, duplicate,
+secrets, classification, check) against the shared clone as it is on disk,
+without fetching, and prints each gate with pass or the refusal, the target
+path and the branch the pull request would use. It changes nothing: no
+worktree, commit, push or gh, no write to either vault. It exits 0 when the
+real promote would proceed, else with the exit code the real promote would
+give. With -o json, prints {"dry_run", "verdict", "vault", "path", "id",
+"shared_vault", "target", "branch", "base", "gates" [{"name", "result",
+"detail"}], "mocs", "warnings"}. --dry-run goes with --to only.`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if to != "" {
-				return a.promoteTo(cmd, args[0], to, tier, opts, force)
+				return a.promoteTo(cmd, args[0], to, tier, opts, sharing.PromoteOptions{
+					Force: force,
+				}, dryRun)
 			}
 			if force {
 				return usageErrorf("--force goes with --to")
+			}
+			if dryRun {
+				return usageErrorf("--dry-run goes with --to: a promote within one vault has no dry run")
 			}
 			t, err := parseTierFlag(tier)
 			if err != nil {
@@ -78,15 +98,18 @@ open shared_pr 2 unless --force. Needs gh (the GitHub CLI) logged in. With
 		StringVar(&to, "to", "", "open a pull request that adds the note to this shared vault")
 	c.Flags().BoolVar(&force, "force", false,
 		"with --to: open another pull request for a note promoting through one already")
+	c.Flags().BoolVar(&dryRun, "dry-run", false,
+		"with --to: run every gate and print each, changing nothing")
 	return c
 }
 
-// promoteTo runs brain promote --to.
+// promoteTo runs brain promote --to, or its dry run.
 func (a *app) promoteTo(
 	cmd *cobra.Command,
 	ref, to, tier string,
 	opts vault.PromoteOptions,
-	force bool,
+	shareOpts sharing.PromoteOptions,
+	dryRun bool,
 ) error {
 	if tier != "" || opts.NewTitle != "" || opts.MOC != "" {
 		return usageErrorf("--to takes no --tier, --title or --moc: the shared copy keeps the " +
@@ -100,8 +123,10 @@ func (a *app) promoteTo(
 	if err != nil {
 		return err
 	}
-	res, err := sharing.Promote(context.Background(), lib, note, target,
-		sharing.PromoteOptions{Force: force})
+	if dryRun {
+		return a.promoteDryRun(cmd, lib, note, target, shareOpts)
+	}
+	res, err := sharing.Promote(context.Background(), lib, note, target, shareOpts)
 	if err != nil {
 		return withNoteHint(err, note.Path)
 	}
@@ -119,6 +144,55 @@ func (a *app) promoteTo(
 		)
 		return nil
 	})
+}
+
+// promoteDryRun prints the plan of brain promote --to --dry-run. A refused
+// plan exits with the code the real promote would give; the plan is on
+// stdout either way.
+func (a *app) promoteDryRun(
+	cmd *cobra.Command,
+	lib *library.Library,
+	note vault.Ref,
+	target *vault.Vault,
+	opts sharing.PromoteOptions,
+) error {
+	plan, err := sharing.DryRun(lib, note, target, opts)
+	if err != nil {
+		return withNoteHint(err, note.Path)
+	}
+	if err := a.emit(cmd.OutOrStdout(), plan, func(w io.Writer) error {
+		a.writePromotePlan(w, plan)
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := plan.Err(); err != nil {
+		return &reportedError{err: err}
+	}
+	return nil
+}
+
+func (a *app) writePromotePlan(w io.Writer, p sharing.PromotePlan) {
+	fmt.Fprintf(w, "dry run: %s -> %s: %s\n", a.show(p.Vault, p.Path), p.Target, p.Verdict)
+	width := 0
+	for _, g := range p.Gates {
+		width = max(width, len(g.Name))
+	}
+	for _, g := range p.Gates {
+		fmt.Fprintf(w, "  %-*s  %-7s  %s\n", width, g.Name, g.Result, g.Detail)
+	}
+	for _, warning := range p.Warnings {
+		fmt.Fprintf(w, "  warning: %s\n", warning)
+	}
+	if p.Branch != "" {
+		fmt.Fprintf(w, "branch: %s (with a -2, -3 suffix if the remote has that name already)\n",
+			p.Branch)
+	}
+	for _, m := range p.MOCs {
+		fmt.Fprintf(w, "list it in MOC %s: brain never edits a shared MOC\n", m)
+	}
+	fmt.Fprintf(w, "checked against %s's clone as it is on disk; the real promote fetches first. "+
+		"Nothing was written, committed, pushed or opened.\n", p.SharedVault)
 }
 
 func (a *app) writePromoteText(w io.Writer, r vault.PromoteReport) {
