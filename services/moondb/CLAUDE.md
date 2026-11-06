@@ -329,15 +329,16 @@ unchanged (README "Codex capture" has the hooks.json):
   its `{timestamp, type, payload}` lines, and `internal/trace/codex.go`
   maps them: a `token_usage_record` is one model call (its usage line
   carries the tool calls the response asked for, and the model comes from
-  the turn's `turn_context` when the lines hold it); `function_call_output`
-  answers a call, failed
-  when an `item_completed` CommandExecution failed, the output header names
-  a nonzero exit code, or the tool is unsupported; `task_complete` is the
-  Stop line. Codex's `input_tokens` counts cached and cache-written tokens,
+  the turn's `turn_context` when the lines hold it); a `tool_search_call`,
+  Codex's search of the deferred MCP tools, is a tool call named
+  `tool_search`; `function_call_output`, `custom_tool_call_output` and
+  `tool_search_output` answer a call, failed when an `item_completed`
+  CommandExecution failed, the output header names a nonzero exit code, or
+  the tool is unsupported; `task_complete` is the Stop line. Codex's `input_tokens` counts cached and cache-written tokens,
   so the uncached input is what they leave. `Build` puts the prompt back at
   the turn's start when the lines open on the first response (`prompted`).
-- `trace/testdata/codex/` holds rollouts Codex CLI 0.163 wrote in the
-  paginated history mode, with home paths and instruction texts trimmed.
+- `trace/testdata/codex/` holds rollouts Codex CLI 0.163 and 0.167 wrote in
+  the paginated history mode, with home paths and instruction texts trimmed.
   The legacy history mode and subagent rollouts are not read.
 
 ### Snapshots: the worktree at each turn edge
