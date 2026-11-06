@@ -9,18 +9,21 @@ import (
 	"time"
 )
 
-// The Codex rollout shape a trace relies on, as Codex CLI 0.163 writes it
-// to $CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl in
-// the paginated history mode. Each line is {timestamp, type, payload},
-// written when Codex appends it. These lines make the timeline:
+// The Codex rollout shape a trace relies on, as Codex CLI 0.163 to 0.167
+// writes it to $CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread
+// id>.jsonl in the paginated history mode. Each line is {timestamp, type,
+// payload}, written when Codex appends it. These lines make the timeline:
 //
 //	response_item     message role user: the prompt, and the environment
 //	                  context Codex sends beside it
 //	                  function_call, custom_tool_call: a tool call {call_id,
 //	                  name}, written before the usage of the response that
 //	                  asked for it
-//	                  function_call_output, custom_tool_call_output: the
-//	                  answer to one tool call, by call_id
+//	                  tool_search_call: a search of the deferred MCP tools
+//	                  {call_id}, with no name, written the same way
+//	                  function_call_output, custom_tool_call_output,
+//	                  tool_search_output: the answer to one tool call, by
+//	                  call_id
 //	token_usage_record
 //	                  one model response: response_id and its usage, written
 //	                  after the response's items
@@ -83,6 +86,8 @@ const (
 	codexItemCustomCall       = "custom_tool_call"
 	codexItemCallOutput       = "function_call_output"
 	codexItemCustomCallOutput = "custom_tool_call_output"
+	codexItemToolSearch       = "tool_search_call"
+	codexItemToolSearchOutput = "tool_search_output"
 	codexEventTaskComplete    = "task_complete"
 	codexEventItemCompleted   = "item_completed"
 	codexItemCommand          = "CommandExecution"
@@ -106,6 +111,9 @@ var codexExitCode = regexp.MustCompile(`(?m)^Process exited with code (-?\d+)$`)
 // codexUnsupported starts the output Codex answers a call to a tool it
 // does not offer with.
 const codexUnsupported = "unsupported call: "
+
+// codexToolSearchName names a tool search's span; its line carries no name.
+const codexToolSearchName = "tool_search"
 
 // codexParser reads Codex lines in chunk order. It keeps the model the
 // turn runs, the tool calls asked since the last usage line, and the calls
@@ -195,13 +203,21 @@ func (p *codexParser) item(pl codexPayload) (eventKind, bool) {
 	case codexItemMessage:
 		return evUser, pl.Role == codexRoleUser
 	case codexItemCall, codexItemCustomCall:
-		if pl.CallID != "" {
-			p.pending = append(p.pending, toolUse{id: pl.CallID, name: pl.Name})
-		}
-	case codexItemCallOutput, codexItemCustomCallOutput:
+		p.call(pl.CallID, pl.Name)
+	case codexItemToolSearch:
+		p.call(pl.CallID, codexToolSearchName)
+	case codexItemCallOutput, codexItemCustomCallOutput, codexItemToolSearchOutput:
 		return evUser, true
 	}
 	return 0, false
+}
+
+// call keeps a tool call for the usage line of the response that asked
+// for it.
+func (p *codexParser) call(id, name string) {
+	if id != "" {
+		p.pending = append(p.pending, toolUse{id: id, name: name})
+	}
 }
 
 // isError reports whether a tool call's output says it failed: Codex

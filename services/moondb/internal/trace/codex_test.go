@@ -181,6 +181,44 @@ func TestBuildCodexResumedTurn(t *testing.T) {
 	}
 }
 
+func TestBuildCodexToolSearch(t *testing.T) {
+	// A real-home session searches its deferred MCP tools before it runs a
+	// command; the search is a tool call like the command beside it.
+	start := time.Date(2026, 11, 6, 13, 52, 31, 454e6, time.UTC)
+	end := time.Date(2026, 11, 6, 13, 52, 38, 26e6, time.UTC)
+	tt := Build(
+		codexTurn(start, end),
+		fixture(t, filepath.Join("codex", "toolsearch.jsonl")),
+		Prices{},
+	)
+	got := tt.Totals
+	if got.ModelCalls != 2 || got.ToolCalls != 2 || got.ToolErrors != 0 {
+		t.Errorf("calls = %d model, %d tool, %d errors; want 2, 2, 0",
+			got.ModelCalls, got.ToolCalls, got.ToolErrors)
+	}
+	// The search and the command run side by side after the first
+	// response, so tool time is the longer of the two.
+	if got.WallMS != 6572 || got.ModelMS != 6196 || got.ToolMS != 101 ||
+		got.HarnessMS != 275 || got.UserMS != 0 {
+		t.Errorf("time split = wall %d model %d tool %d harness %d user %d; "+
+			"want 6572, 6196, 101, 275, 0",
+			got.WallMS, got.ModelMS, got.ToolMS, got.HarnessMS, got.UserMS)
+	}
+	var tools []string
+	for _, s := range tt.Spans {
+		if s.Kind == KindTool {
+			tools = append(tools, s.ID+" "+s.Name)
+		}
+	}
+	want := []string{
+		"toolu_01551rNxHP5kL6BJ5cb7DQym tool_search",
+		"toolu_01CS1isQqbdpK2cGHtLvAtky exec_command",
+	}
+	if !slices.Equal(tools, want) {
+		t.Errorf("tool spans = %v; want %v", tools, want)
+	}
+}
+
 func TestCodexOutputErrors(t *testing.T) {
 	for _, tc := range []struct {
 		output string
