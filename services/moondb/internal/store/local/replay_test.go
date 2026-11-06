@@ -68,6 +68,29 @@ func TestSegmentsRoll(t *testing.T) {
 	}
 }
 
+// TestReplayReadsLegacyPiSessionAsPi: a session the pi extension recorded
+// before it could name its harness carries claude-code and a pi-<mode>
+// entrypoint in the log, and reads as pi after a reopen.
+func TestReplayReadsLegacyPiSessionAsPi(t *testing.T) {
+	dir := t.TempDir()
+	s := mustOpen(t, dir, 0)
+	legacy := store.Session{ID: "s-pi", Harness: store.HarnessClaudeCode, Entrypoint: "pi-print"}
+	if err := s.PutSession(t.Context(), legacy); err != nil {
+		t.Fatalf("PutSession: %v", err)
+	}
+	mustClose(t, s)
+
+	s = mustOpen(t, dir, 0)
+	t.Cleanup(func() { mustClose(t, s) })
+	got, err := s.Session(t.Context(), "s-pi")
+	if err != nil {
+		t.Fatalf("Session: %v", err)
+	}
+	if got.Harness != store.HarnessPi {
+		t.Errorf("harness after reopen = %q; want %q", got.Harness, store.HarnessPi)
+	}
+}
+
 func TestTornTailIsDropped(t *testing.T) {
 	dir := t.TempDir()
 	s := mustOpen(t, dir, 0)

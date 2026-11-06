@@ -10,8 +10,9 @@ import "github.com/mad01/thismoon/services/moondb/internal/store"
 // totals keep the old side of the threshold until they are computed again.
 //
 // Version 2 adds idle time (GapIdle): a stretch past moondb.IdleGapAfter
-// that version 1 gave to model, tool or harness time.
-const TotalsVersion = 2
+// that version 1 gave to model, tool or harness time. Version 3 reads pi
+// session lines, which version 2 skipped, so a pi turn had no totals.
+const TotalsVersion = 3
 
 // Stored is a turn's totals as the Turn keeps them: the time split, the
 // usage and the call counts, without the cost, which a reader prices from

@@ -116,8 +116,14 @@ type toolResult struct {
 // cap keeps its tail from a line boundary, so its head is missing rather
 // than broken; cutHead reports it.
 // sidechain keeps the lines a subagent wrote, for an agent transcript; a
-// turn's lines read past them.
+// turn's lines read past them. The chunk's own lines say which agent wrote
+// it: a pi session file goes to the pi parser (pi.go), everything else to
+// Claude Code's.
 func parseLines(chunk []byte, sidechain bool) ([]event, Lines) {
+	parse := parseLine
+	if isPi(chunk) {
+		parse = (&piParser{}).line
+	}
 	var counts Lines
 	var events []event
 	for i, raw := range bytes.Split(chunk, []byte("\n")) {
@@ -125,7 +131,7 @@ func parseLines(chunk []byte, sidechain bool) ([]event, Lines) {
 			continue
 		}
 		counts.Read++
-		ev, ok, err := parseLine(raw, i, sidechain)
+		ev, ok, err := parse(raw, i, sidechain)
 		switch {
 		case err != nil:
 			counts.Skipped++

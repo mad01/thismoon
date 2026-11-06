@@ -37,6 +37,9 @@ export const RECORD_TIMEOUT_MS = 3_000;
 
 // The variable moondb reads a session's entrypoint from (record.EntrypointEnv).
 const ENTRYPOINT_ENV = "CLAUDE_CODE_ENTRYPOINT";
+// The variable moondb reads a session's harness from (record.HarnessEnv).
+const HARNESS_ENV = "MOONDB_HARNESS";
+const HARNESS = "pi";
 const TAG = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
 let moondbMissing = false;
@@ -70,7 +73,7 @@ function record(payload: Record<string, unknown>, mode: unknown): Promise<void> 
 			const child = spawn("moondb", ["record"], {
 				stdio: ["pipe", "ignore", "ignore"],
 				detached: true,
-				env: { ...process.env, [ENTRYPOINT_ENV]: entrypoint(mode) },
+				env: { ...process.env, [ENTRYPOINT_ENV]: entrypoint(mode), [HARNESS_ENV]: HARNESS },
 			});
 			timer = setTimeout(done, RECORD_TIMEOUT_MS);
 			child.on("error", (err: NodeJS.ErrnoException) => {

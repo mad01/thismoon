@@ -90,6 +90,35 @@ func TestSessionLocationFollowsCwd(t *testing.T) {
 	}
 }
 
+// TestSessionHarnessReplacesDefault: a pi envelope relabels a session that
+// earlier envelopes stamped with the claude-code default, and a later
+// claude-code envelope, such as an import's, leaves pi.
+func TestSessionHarnessReplacesDefault(t *testing.T) {
+	f := newFixture(t)
+	c := chunkSet{}
+	f.write(openEnv(c, "s1", "p1", 1, "before the extension named pi"), c)
+	pi := openEnv(c, "s1", "p2", 2, "after")
+	pi.Harness = store.HarnessPi
+	f.write(pi, c)
+	f.drain()
+	if s := f.session("s1"); s.Harness != store.HarnessPi {
+		t.Fatalf("harness = %q after a pi envelope; want %q", s.Harness, store.HarnessPi)
+	}
+
+	imported := openEnv(c, "s1", "p1", 1, "before the extension named pi")
+	imported.Backfill = true
+	f.write(imported, c)
+	f.write(openEnv(c, "s1", "p3", 3, "a stale claude-code stamp"), c)
+	f.drain()
+	if s := f.session("s1"); s.Harness != store.HarnessPi {
+		t.Errorf(
+			"harness = %q after claude-code envelopes; want %q kept",
+			s.Harness,
+			store.HarnessPi,
+		)
+	}
+}
+
 // TestBackfillFillsSessionOrigin: an import fills the location and the
 // entrypoint a live session recorded before it kept them, and keeps its
 // tags.

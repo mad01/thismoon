@@ -54,8 +54,10 @@ test('a prompt opens a turn and a settle closes it under the same prompt id', as
   })
   for (const c of calls) {
     assert.deepEqual(c.argv, ['record'])
-    // The inherited Claude entrypoint is replaced by pi's mode.
+    // The inherited Claude entrypoint is replaced by pi's mode, and the
+    // harness names pi.
     assert.equal(c.entrypoint, 'pi-print')
+    assert.equal(c.harness, 'pi')
   }
 
   // A settle with no turn open records nothing more.

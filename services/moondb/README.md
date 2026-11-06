@@ -110,9 +110,9 @@ entry to `packages` in pi's `settings.json`, then start a new pi session:
 { "source": "~/.config/ralph/sources/thismoon/services/moondb/pi" }
 ```
 
-pi sessions show the entrypoint `pi-tui` or `pi-print`. They have no trace
-or cost yet: that needs moondb to read pi's session files, which is the
-package README's last section.
+pi sessions show the harness `pi` and the entrypoint `pi-tui` or
+`pi-print`. `moondb trace` reads their turns from pi's session file, with
+tokens and a cost for Claude models, OpenRouter's included.
 
 ## Usage
 
