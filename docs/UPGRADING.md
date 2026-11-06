@@ -4,6 +4,18 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-06 moondb: Codex sessions through Codex's own hooks
+
+Change: thismoon #408. `moondb record` takes Codex CLI's hook payloads, and `moondb trace` reads Codex rollout files. Capture is opt-in: nothing changes until Codex runs the hooks.
+
+Run, in order:
+
+1. `ralph up`, so `~/code/bin/moondb` has the change.
+2. Add UserPromptSubmit and Stop entries to the consuming repo's Codex hooks file, each running `MOONDB_HARNESS=codex ~/code/bin/moondb record` (moondb README, "Codex capture"), then `ralph up` again.
+3. Open `codex`, run `/hooks`, and trust the two new hooks. Codex skips a new or changed hook until it is trusted.
+
+Verify: after one Codex prompt, `moondb sessions --since 1h` lists the session with the harness `codex`, and `moondb trace <session-id>` shows its model spans with tokens.
+
 ## 2026-11-05 brain: `brain serve` runs sandboxed, so legacy indexes leave `~/.config/brain`
 
 Change: thismoon #401. brain gains `brain serve`, the read-only web view at brain.this on port 7427. The new `recipes/brain/` builds brain as `packages.brain` and registers the t-man agent `brain-serve`, which runs serve under srt. The sandbox writes only `~/.local/state/brain`. brain keeps its state in `~/.config/brain` while `~/.config/brain/index/state.json` exists, so an install that still has its indexes there sets them aside first.
