@@ -237,6 +237,20 @@ test('layoutMs: none without new nodes, a short settle for a few, more for many'
   assert.equal(G.layoutMs(5000, 5000), 8000);
 });
 
+test('wheelRatio: scales by the delta, adds up across events, weights pinches, clamps', () => {
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
+  assert.equal(G.wheelRatio(1, 0, 0, false, 0.02, 20), 1);
+  assert.ok(G.wheelRatio(1, -100, 0, false, 0.02, 20) < 1, 'scrolling up zooms in');
+  assert.ok(G.wheelRatio(1, 100, 0, false, 0.02, 20) > 1, 'scrolling down zooms out');
+  let r = 1;
+  for (let i = 0; i < 100; i++) r = G.wheelRatio(r, 1, 0, false, 0.02, 20);
+  close(r, G.wheelRatio(1, 100, 0, false, 0.02, 20));
+  close(G.wheelRatio(1, 3, 1, false, 0.02, 20), G.wheelRatio(1, 48, 0, false, 0.02, 20));
+  assert.ok(G.wheelRatio(1, 10, 0, true, 0.02, 20) > G.wheelRatio(1, 10, 0, false, 0.02, 20));
+  assert.equal(G.wheelRatio(1, -1e6, 0, false, 0.02, 20), 0.02);
+  assert.equal(G.wheelRatio(1, 1e6, 0, false, 0.02, 20), 20);
+});
+
 test('layoutPayload rounds positions and drops non-finite ones', () => {
   assert.deepEqual(G.layoutPayload('k1', { a: [1.23456, -2.00049], b: [NaN, 1] }), {
     key: 'k1',
