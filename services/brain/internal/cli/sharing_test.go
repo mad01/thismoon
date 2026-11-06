@@ -229,7 +229,7 @@ func TestPromoteToRefusals(t *testing.T) {
 			"policy",
 			[]string{"notes/secret-plan.md", "--to", "team"},
 			exitError,
-			`classification "confidential" is not allowed`,
+			"classification confidential is not accepted by team (accepts: public, internal)",
 		},
 		{
 			"with --moc",

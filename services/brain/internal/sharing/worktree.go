@@ -41,20 +41,34 @@ type worktree struct {
 	vault *vault.Vault
 }
 
-// openWorktree fetches the shared vault's remote and checks its tip out
-// into a fresh directory under the state dir.
-func openWorktree(lib *library.Library, shared *vault.Vault) (*worktree, error) {
-	clone := lib.Git(shared)
+// prTarget returns the shared vault's clone and the remote and branch a
+// pull request on it goes to. It reads the clone's git config alone: no
+// fetch, no write.
+func prTarget(
+	lib *library.Library,
+	shared *vault.Vault,
+) (clone *gitvault.Repo, remote, base string, err error) {
+	clone = lib.Git(shared)
 	if !clone.IsRepo() {
-		return nil, fmt.Errorf(
+		return nil, "", "", fmt.Errorf(
 			"shared vault %s at %s is not a git clone; brain opens pull requests from a clone of its repo",
 			shared.Name,
 			shared.Root,
 		)
 	}
-	remote, base, err := target(clone)
+	remote, base, err = target(clone)
 	if err != nil {
-		return nil, fmt.Errorf("shared vault %s: %w", shared.Name, err)
+		return nil, "", "", fmt.Errorf("shared vault %s: %w", shared.Name, err)
+	}
+	return clone, remote, base, nil
+}
+
+// openWorktree fetches the shared vault's remote and checks its tip out
+// into a fresh directory under the state dir.
+func openWorktree(lib *library.Library, shared *vault.Vault) (*worktree, error) {
+	clone, remote, base, err := prTarget(lib, shared)
+	if err != nil {
+		return nil, err
 	}
 	if err := clone.Fetch(remote); err != nil {
 		return nil, fmt.Errorf("shared vault %s: %w", shared.Name, err)
