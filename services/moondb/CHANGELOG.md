@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/mad01/thismoon/compare/moondb/v0.13.0...moondb/v0.14.0) (2026-11-06)
+
+
+### Features
+
+* **moondb:** read Codex sessions for trace, cost and the codex harness ([#408](https://github.com/mad01/thismoon/issues/408)) ([c593fb7](https://github.com/mad01/thismoon/commit/c593fb7cda914d65ea99a158001f73cb72e0975e))
+
 ## [0.13.0](https://github.com/mad01/thismoon/compare/moondb/v0.12.0...moondb/v0.13.0) (2026-11-06)
 
 
