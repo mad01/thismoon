@@ -29,7 +29,10 @@ validated or is expired.
 never delete the file, so links to it still resolve. supersede stores the
 replacement as `superseded_by: id:<ulid>`. retract keeps the body under a
 banner with `retracted_reason`. withdraw leaves a tombstone of `id`, `status`
-and `status_at` and purges the note from both indexes at once.
+and `status_at` and purges the note from both indexes at once. `brain edit`
+never revokes: it sets only `raw`, `validated`, `promoting` or `disputed`,
+and a revoked status through `--status` or `--set`, or any edit of a
+tombstone, exits 2.
 
 ## Flagging a note
 
@@ -100,19 +103,31 @@ candidate is named. `brain edit` never runs the check. The exists check
 sources:
   - ref: github.com/acme/app:pkg/serve.go@4f2a9c1#Serve
   - url: https://example.com/spec
-    content_hash: sha256:9f86d081884c7d65
+    content_hash: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
     archive: https://web.archive.org/web/2026/https://example.com/spec
 ```
 
-Findings: `moved` (the path is gone at HEAD; `moved_to` when git sees a
-rename), `changed` (its content differs from the pinned commit),
-`symbol-missing` (the symbol no longer appears as a whole word), `gone` (a
-url answers 404 or 410, with the `archive` url), `hash-changed` (a url no
-longer matches `content_hash`, sha256 unless prefixed `sha512:` or `sha1:`; a
-prefix of the hex digest is enough) and `unresolved` (a repo not checked out,
-a commit not fetched, a failed fetch). Urls are fetched only with
-`--online`. drift exits 1 when a note drifted; `unresolved` alone is not
-drift. With no arguments it checks every note that is not revoked.
+`content_hash` is a full hex digest, sha256 unless prefixed `sha512:` or
+`sha1:`. The findings:
+
+- `moved`: the path is gone at HEAD (`moved_to` when git sees a rename).
+- `changed`: the path's content differs from the pinned commit.
+- `symbol-missing`: the symbol no longer appears as a whole word.
+- `gone`: a url answers 404 or 410 (with the `archive` url).
+- `hash-changed`: a url no longer matches `content_hash`.
+- `bad-hash`: `content_hash` is not a full digest. drift finds it offline too.
+- `too-large`: the file is over 8 MiB at HEAD, so drift skipped the symbol.
+- `unresolved`: a repo not checked out, a commit not fetched, a failed fetch.
+
+drift exits 1 when a note drifted; `unresolved` and `too-large` alone are
+not drift. With no arguments it checks every note that is not revoked.
+
+Urls are fetched only with `--online`, and only over http and https,
+redirects included. A fetch to a loopback, link-local or private address is
+refused unless `--allow-local`. Each fetch gets 20 seconds and all of them
+together `--timeout` (2m by default); a url the budget does not reach, or a
+body over 32 MiB, is `unresolved`. `--allow-local` and `--timeout` need
+`--online` (exit 2 without it).
 
 A `sources[]` `ref` may also name a note: `id:<ulid>`, `vault:path.md` or
 `path.md`. drift skips it, `brain stale` reads it, and `brain check` reports
@@ -138,11 +153,21 @@ Each group shows its first `--limit` notes (10), oldest reason first. Add
 ## brain check
 
 `brain check` exits 1 on an error: a citation of a retracted or withdrawn
-note, bad status fields, a shared id, a secret. It skips a path that names no
-note. `.brain/policy.yaml` in the vault sets `classifications:
-[public, internal]` and `rules: {provenance: error, missing-field: off}`.
-`brain promote --to` runs the same check against the shared vault's policy
-before it pushes anything.
+note, bad status fields, a shared id, a secret. A note path that is or goes
+through a symbolic link is an error too (`symlink`). So is a NUL byte
+(`nul-byte`), which would hide what follows it from the secret scan. A
+`secret` finding names the scan rule and the match length, never its
+characters. check skips a path that names no note.
+
+The vault's `.brain/policy.yaml` names the classifications it accepts and
+sets rule levels: `classifications: [public, internal]` and
+`rules: {provenance: error, missing-field: off}`. A rule it does not name
+keeps its default. At error: `schema`, `status-fields`, `link-revoked`,
+`id-duplicate`, `classification`, `secret`, `symlink`, `nul-byte`. At
+warning: `status-unknown`, `missing-field`, `provenance`, `link-dangling`,
+`link-unvalidated`, `stem-duplicate`. `policy` (a policy file brain cannot
+use) is always an error. `brain promote --to` runs the same check against
+the shared vault's policy before it pushes anything.
 
 ## JSON shapes
 
@@ -154,4 +179,4 @@ before it pushes anything.
 | `stale` | `total`, `drift`, `groups[] {domain, from, total, notes[] {vault, path, title, status, reasons[] {kind, detail, since}}}` |
 | `inbox list` | `total`, `notes[] {vault, path, title, captured_by, expires_at, expired}` |
 | `inbox keep` | `vault`, `path`, `sha`, `expires_at` |
-| `inbox archive` | `dry_run`, `archived[] {vault, path, archived_to}`, `skipped[] {vault, reason}` |
+| `inbox archive` | `dry_run`, `archived[] {vault, path, archived_to}`, `skipped[] {vault, reason}`, and `error {code, message}` when it failed partway after the moves listed |

@@ -77,18 +77,49 @@ through a pull request on the shared vault's repo:
    private-only fields (`status_reason`, `shared_pr`, `captured_by`,
    `distinct_from`, `expires_at`). `steward` stays.
 4. The copy must pass `brain check` at error level against the shared
-   vault's `.brain/policy.yaml`, classification included (exit 1 with the
-   findings), and hold no secret (exit 8). A path the shared vault already
-   has exits 4.
-5. brain commits it on branch `brain/promote/<stem>-<short id>`, pushes the
-   branch and runs `gh pr create`. The body names the path, the id, the
-   sources, the MOCs and the checks that passed. Then the worktree goes.
+   vault's `.brain/policy.yaml` (exit 1 with the findings), and hold no
+   secret (exit 8) or NUL byte (exit 2). A classification the policy does
+   not accept exits 1, and the message names the ones it does:
+   `classification internal is not accepted by team (accepts: public)`.
+   With the `classification` rule at warning it only warns. A path the
+   shared vault already has exits 4.
+5. brain commits it on branch `brain/promote/<stem>-<short id>`, or with a
+   `-2`, `-3` suffix when the remote has that name, pushes the branch and
+   runs `gh pr create`. The body names the path, the id, the sources, the
+   MOCs and the checks that passed. Then the worktree goes.
 6. The private note becomes `promoting` with `shared_pr: <url>`, committed
    as `brain: share <path>`.
 
 brain never edits a shared MOC (Map of Content). The note's `mocs:` field
 lists the MOCs it belongs in; the pull request body and the command's output
 say so.
+
+`--dry-run` checks a promote first. It runs every gate the real one runs
+(`target`, `status`, `repo`, `duplicate`, `secrets`, `classification`,
+`check`) and changes nothing: no fetch, worktree, commit, push or `gh`, and
+no write to either vault. It reads the shared clone as it is on disk,
+without fetching, so a change the remote has since the last pull is not
+seen. Each gate prints `pass`, `refused` or `skipped` with its detail, then
+the target path and the branch. The real run may add a `-2` suffix to that
+branch when the remote has the name. A refused gate does not stop the dry
+run, so every gate shows. It exits 0 when the real promote would proceed,
+else with the code the real one would give. `--dry-run` without `--to`
+exits 2.
+
+## brain vaults
+
+`brain vaults` lists every configured vault in config order, the order a
+bare note path resolves in. Each line names the vault, its path, and
+whether it is shared or private and the default write target. Then come
+its git state, how many notes its tiers hold, and the classifications its
+`.brain/policy.yaml` accepts (`any` with no policy or an empty list). A
+vault with a policy gets a second line with the rule levels it sets. The
+git state is `remote` (with origin's URL, its credentials masked),
+`local-only` (a repo with no `origin`) or `none` (the directory is not the
+top of a git repo). It reads only the vaults and their git settings: it
+uses no network and writes nothing. A missing or unreadable vault is listed
+with its error and does not fail the command. Run it before `promote --to`
+to see what a shared vault accepts.
 
 ## brain edit --pr
 
@@ -132,6 +163,8 @@ set it up.
 |---|---|
 | `sync` | `ok`, `vaults[] {vault, shared, state, message, pulled, pushed, promotions[] {path, id, pr, state, action, detail}}`; `state` is `synced`, `local_only`, `not_git`, `refused` or `failed`, `action` is `removed`, `validated`, `waiting` or `failed` |
 | `promote --to` | `vault`, `path`, `id`, `shared_vault`, `branch`, `pr`, `checks[]`, `mocs[]`, `warnings[]` |
+| `promote --to --dry-run` | `dry_run`, `verdict` (`proceed` or `refused`), `vault`, `path`, `id`, `shared_vault`, `target`, `branch`, `base`, `gates[] {name, result, detail}`, `mocs[]`, `warnings[]`; `result` is `pass`, `refused` or `skipped` |
+| `vaults` | `vaults[] {name, path, shared, default, git, remote, accepts_any, accepts[], policy {file, classifications, rules, error}, notes, error}`; `git` is `remote`, `local-only` or `none` |
 | `edit --pr` | `vault`, `path`, `branch`, `pr`, `sha` |
 | `flag` (shared) | `vault`, `path`, `id`, `repo`, `title`, `body`, `url`, `dry_run` |
 | `similar` | `vault`, `path`, `similar[] {vault, path, title, match, score}`, `warnings[]`; `match` is `title`, `alias` or `semantic` |

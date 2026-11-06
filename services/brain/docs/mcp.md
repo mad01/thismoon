@@ -94,7 +94,7 @@ A `tier` input on search / count / list tools translates into a `file:^<tier>/` 
 
 Superseded, retracted and withdrawn notes are revoked. The CLI revokes a note (`brain supersede`, `brain retract`, `brain withdraw`); there is no MCP tool for it. Every search tool leaves revoked notes out unless `include_revoked` is true or `status` names a revoked status, and the filter runs before `limit`. `brain_read` and `brain_peek` return a `banner` for a revoked or disputed note; show it before quoting the note. A withdrawn note is a tombstone with no body.
 
-`brain_write`, `brain_edit` and `brain_promote` scan the note they would write with the suspenders rules and refuse it, writing nothing, when it holds a secret. The error names the rule and the line and shows the value redacted. A false positive passes with `suspenders:ignore` on its line or an entry in the vault's `.suspenders.yaml`. The CLI exits 8 (`secret_found`) on the same refusal.
+`brain_write`, `brain_edit` and `brain_promote` scan the note they would write with the suspenders rules and refuse it, writing nothing, when it holds a secret. The error names the line, the rule id and the match length, and no character of the value. A false positive passes with `suspenders:ignore` on its line or an entry in the vault's `.suspenders.yaml`. The CLI exits 8 (`secret_found`) on the same refusal. A note holding a NUL byte is refused too, before the scan (CLI exit 2).
 
 `brain check` (CLI only) checks notes against these rules and the vault's `.brain/policy.yaml`; see `brain docs`.
 
@@ -450,7 +450,7 @@ Return inbound and outbound wikilinks for a note. One resolver decides every lin
 
 ### `brain_graph`
 
-Return the wikilink graph of the configured vaults as nodes and edges. Links resolve with the same resolver as `brain_backlinks`. Links of a note to itself are left out.
+Return the link graph of the configured vaults as nodes and edges: wikilinks, plus the note refs in `superseded_by` and `sources[]`. Links resolve with the same resolver as `brain_backlinks`. Links of a note to itself are left out.
 
 **Input:**
 
@@ -482,7 +482,7 @@ Return the wikilink graph of the configured vaults as nodes and edges. Links res
 | `edges` | array | Every edge, sorted by `source`, then `target`, then `kind` |
 | `edges[].source` | string | Node id of the linking note |
 | `edges[].target` | string | Node id of the linked note, dangling target or tag |
-| `edges[].kind` | string | `link`, or `tag` with `tags_as_nodes` |
+| `edges[].kind` | string | `link` (a wikilink); `moc` (a wikilink out of a note in `MOCs/`); `supersedes` (to the note `superseded_by` names); `source` (to a note a `sources[]` ref names); `tag` with `tags_as_nodes` |
 | `edges[].resolved` | bool | `false` for an edge to a dangling node |
 
 **Example:**
@@ -507,6 +507,7 @@ Return the wikilink graph of the configured vaults as nodes and edges. Links res
 
 **Notes:**
 - Several links from one note to the same target make one edge.
+- A `supersedes` or `source` edge appears only for a ref that resolves to exactly one note; `brain check` reports the others.
 - `degree` counts only the edges returned, so with `center` set it ignores edges to nodes outside `depth`.
 - Every call reads every note in the configured vaults, like `brain_backlinks`.
 
@@ -575,9 +576,9 @@ Modify an existing note: replace the body, append to the body, and/or merge a fr
 | `frontmatter_patch.aliases` | array[string] | no | |
 | `frontmatter_patch.tags` | array[string] | no | |
 | `frontmatter_patch.type` | string | no | |
-| `frontmatter_patch.status` | string | no | |
+| `frontmatter_patch.status` | string | no | `raw`, `validated`, `promoting` or `disputed`. `superseded`, `retracted` and `withdrawn` are refused: revoke with the CLI |
 | `frontmatter_patch.source` | string | no | |
-| `frontmatter_patch.evidence` | string | no | Trust tier (A/B/C/D/mixed); pass empty string to leave unchanged |
+| `frontmatter_patch.evidence` | string | no | Trust tier (A/B/C/D/mixed); an empty string removes the `evidence` key, and leaving it out keeps the field as it is |
 | `frontmatter_patch.id` | string | no | Sets an id on a note that has none; changing or removing an existing id fails |
 | `if_match` | string | no | The `sha` from `brain_read`; the edit is refused when the note changed since that read |
 
@@ -605,10 +606,11 @@ Modify an existing note: replace the body, append to the body, and/or merge a fr
 - With `if_match` set, a note whose sha no longer matches is left as it is and the error says to read it again before editing.
 - Fails with a read-only error on a note in a shared vault.
 - Refuses an edit whose result holds a secret, leaving the note as it was.
+- Refuses any edit of a withdrawn note (a tombstone), and a status outside `raw`, `validated`, `promoting` and `disputed`, whether through `frontmatter_patch.status` or not.
 
 ### `brain_promote`
 
-Promote an inbox note into another tier (default `notes`): atomic file move, status flips to `validated`, every wikilink that resolved to the note is pointed at its new stem (or its new path, for a path link), and optionally a bullet is appended to a MOC.
+Promote an inbox note into another tier (default `notes`). The note moves and its status flips to `validated`. Every wikilink that resolved to the note then points at its new stem (or its new path, for a path link), and a bullet is appended to a MOC when `moc` is set. It is all or nothing: on any failure every rewritten note and the MOC get their old bytes back and the new file is removed.
 
 **Input:**
 
@@ -617,7 +619,7 @@ Promote an inbox note into another tier (default `notes`): atomic file move, sta
 | `path` | string | yes | Note ref of an inbox note: `vault:path`, `id:<ulid>`, or a vault-relative path found in exactly one vault |
 | `new_title` | string | no | Optional new title (and re-slugged filename) |
 | `target_tier` | string | no | Destination tier; defaults to `notes` |
-| `moc` | string | no | MOC path (vault-relative or absolute) to append a bullet link to |
+| `moc` | string | no | A note in the vault's `MOCs/` tier (vault-relative, or absolute inside the vault) to append a bullet link to; anything else is refused |
 
 **Output:**
 
@@ -651,7 +653,7 @@ Promote an inbox note into another tier (default `notes`): atomic file move, sta
 - A heading, block or display text on a rewritten link is kept.
 - The note keeps its id, or gets one when it has none.
 - There is no `vault` input. Use a `vault:path` ref when a bare path is in more than one vault. A note in a shared vault fails with a read-only error.
-- The MOC bullet is appended only if `moc` is set and the MOC file exists.
+- The MOC bullet is appended only if `moc` is set. A MOC file that does not exist yet is created holding the bullet alone.
 
 ### `brain_doctor`
 
@@ -659,7 +661,7 @@ Run the checks `brain doctor` runs and return the same report. Read-only: it cre
 
 **Input:** none.
 
-**Output:** `ok` (false when any check failed) and `checks[] {name, status, detail, fix}`. `name` is `config`, `vault`, `index-dir`, `index`, `ids` (two notes holding one note id) or `ollama`; `status` is `ok`, `fail` or `skip`, where `skip` means an earlier failure left the check nothing to examine; `fix` names the next step for a failure. A failing check is a result, never a tool error.
+**Output:** `ok` (false when any check failed) and `checks[] {name, status, detail, fix}`. `name` is `config`, `vault`, `index-dir`, `index`, `ids` (two notes holding one note id) or `ollama`. The checks of a running `brain serve` follow: `serve-reachable`, `version-skew`, `serve-vaults` and `serve-state-dir`, all skipped when nothing listens. `status` is `ok`, `fail` or `skip`, where `skip` means an earlier failure (or no serve) left the check nothing to examine; `fix` names the next step for a failure. A failing check is a result, never a tool error.
 
 ## Zoekt query syntax
 
