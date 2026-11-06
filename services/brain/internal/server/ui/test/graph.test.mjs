@@ -382,7 +382,8 @@ test('simParams: the base settings, decay from coolTicks', () => {
   assert.equal(p.linkPerShared, 1);
   assert.equal(p.gravity, 0.01);
   assert.equal(p.velocityDecay, 0.3);
-  assert.equal(p.dragAlphaTarget, 0.3);
+  assert.ok(p.calmVelocityDecay > p.velocityDecay, 'a drag moves the graph slower than a settle');
+  assert.ok(p.dragAlphaTarget < p.reheatAlpha, 'a drag heats the graph less than a reheat');
   assert.ok(near(Math.pow(1 - p.alphaDecay, p.coolTicks), p.alphaMin, 1e-6), 'cools to alphaMin in coolTicks');
   p.charge = 0;
   assert.equal(G.simParams().charge, -200, 'each call returns a fresh copy');

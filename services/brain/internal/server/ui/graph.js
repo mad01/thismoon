@@ -564,6 +564,11 @@
   //     unlinked notes back in. It is weak: a strong pull packs the groups
   //     into one even disc.
   //   - alphaDecay cools the graph from alpha 1 to alphaMin in coolTicks.
+  //   - dragAlphaTarget is the heat a drag holds the graph at. It is low,
+  //     so the neighbours follow slowly instead of jumping.
+  //   - calmVelocityDecay replaces velocityDecay from the start of a drag
+  //     until the graph rests again, so the drag and the swing back after
+  //     the drop move slowly.
   //   - warmTicks and warmMs bound the synchronous run before the first
   //     draw, so the page opens on a settled graph.
   var SIM = {
@@ -576,9 +581,10 @@
     collideIterations: 2,
     gravity: 0.01,
     velocityDecay: 0.3,
+    calmVelocityDecay: 0.6,
     alphaMin: 0.02,
     coolTicks: 220,
-    dragAlphaTarget: 0.3,
+    dragAlphaTarget: 0.1,
     reheatAlpha: 0.3,
     warmTicks: 300,
     warmMs: 250,

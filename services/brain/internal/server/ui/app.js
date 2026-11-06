@@ -738,6 +738,7 @@
       this.P = P;
       this.full = full;
       this.cooled = false;
+      this.calm = false;
       this.pinned = null;
       if (S.pointer) this.pin(S.pointer);
       this.warm(Math.min(warmMs, P.warmMs));
@@ -763,6 +764,7 @@
       this.index = {};
       this.pinned = null;
       this.full = false;
+      this.calm = false;
     },
 
     hot: function () {
@@ -782,11 +784,11 @@
       return n;
     },
 
-    // step runs one live frame: one tick while a drag holds the graph hot,
-    // more while it settles alone, within the frame budget.
+    // step runs one live frame: one tick while a drag holds the graph hot
+    // or calmed, more while it settles alone, within the frame budget.
     step: function () {
       var t0 = performance.now();
-      var max = this.sim.alphaTarget() > 0 ? 1 : SETTLE_TICKS;
+      var max = this.sim.alphaTarget() > 0 || this.calm ? 1 : SETTLE_TICKS;
       for (var i = 0; i < max && this.hot(); i++) {
         this.sim.tick();
         if (performance.now() - t0 > FRAME_BUDGET_MS) break;
@@ -804,6 +806,14 @@
         }
         return a;
       }, { attributes: ['x', 'y'] });
+    },
+
+    // soothe slows the graph down while the user moves a node: more
+    // friction and one tick a frame, until the graph rests again.
+    soothe: function (on) {
+      if (!this.sim || this.calm === on) return;
+      this.calm = on;
+      this.sim.velocityDecay(on ? this.P.calmVelocityDecay : this.P.velocityDecay);
     },
 
     reheat: function (alpha) {
@@ -848,6 +858,7 @@
       busy = true;
     } else if (phys.sim && !phys.cooled) {
       phys.cooled = true;
+      phys.soothe(false);
       cooled();
     }
     if (fadeStep(now)) busy = true;
@@ -981,6 +992,7 @@
         // A drag also drops a waiting click, and a double click across it.
         S.lastClick = null;
         if (phys.sim) {
+          phys.soothe(true);
           phys.sim.alphaTarget(phys.P.dragAlphaTarget);
           phys.reheat(phys.P.dragAlphaTarget);
         }

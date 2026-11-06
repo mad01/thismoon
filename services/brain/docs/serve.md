@@ -178,6 +178,8 @@ space between the islands:
 The simulation stays live. Dragging a node on the global graph pulls its
 linked neighbours along; on release the node springs back among them, and
 once the graph rests the browser POSTs the positions under the current key.
+From the start of a drag until the graph rests, the physics run slower
+(more friction, less heat), so nodes drift instead of jumping.
 A local graph, or a graph a filter or a search reduced, is never posted;
 a drag or a filter that moved the global graph is posted after the next
 run over the whole graph rests.
