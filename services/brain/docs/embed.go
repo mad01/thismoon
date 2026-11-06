@@ -20,3 +20,9 @@ var Lifecycle string
 //
 //go:embed sharing.md
 var Sharing string
+
+// Serve is docs/serve.md: the brain serve HTTP API and UI contract, printed
+// by `brain docs serve`.
+//
+//go:embed serve.md
+var Serve string

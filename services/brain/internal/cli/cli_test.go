@@ -894,6 +894,19 @@ func TestDocsLifecycle(t *testing.T) {
 	}
 }
 
+func TestDocsServe(t *testing.T) {
+	got := runBrain(t, "", "docs", "serve")
+	if got.code != exitOK {
+		t.Fatalf("exit %d, stderr %q", got.code, got.stderr)
+	}
+	if !strings.HasPrefix(got.stdout, "# brain serve: HTTP API and UI contract") {
+		t.Errorf("docs serve does not print docs/serve.md: %.80q", got.stdout)
+	}
+	if help := runBrain(t, "", "docs", "--help").stdout; !strings.Contains(help, "serve ") {
+		t.Errorf("brain docs --help does not list the serve topic:\n%s", help)
+	}
+}
+
 func TestDocsSharing(t *testing.T) {
 	got := runBrain(t, "", "docs", "sharing")
 	if got.code != exitOK {
