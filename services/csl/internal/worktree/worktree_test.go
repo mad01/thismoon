@@ -200,6 +200,7 @@ func TestEnsure_BuildsOnceAndFollowsEdits(t *testing.T) {
 	}
 
 	worktreetest.Write(t, f.Worktree, "main.go", "package main\n\nfunc FirstEdit() {}\n")
+	settle(t, f.Worktree) // an edit within changeSlack of the call would rebuild once more
 	idx := mustEnsure(t, wt, true)
 	root, err := search.WorktreeIndexRoot()
 	if err != nil {

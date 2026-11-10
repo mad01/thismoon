@@ -3,6 +3,7 @@ package worktree
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,16 +24,36 @@ func shortLockWait(t *testing.T, wait time.Duration) {
 	t.Cleanup(func() { lockWait, lockPoll = prevWait, prevPoll })
 }
 
-// fixtureWorktree is a resolved worktree in an isolated state dir.
+// fixtureWorktree is a resolved worktree in an isolated state dir, its
+// files settled.
 func fixtureWorktree(t *testing.T) (worktreetest.Fixture, finder.Repo) {
 	t.Helper()
 	isolateState(t)
 	f := worktreetest.New(t, t.TempDir(), "feat")
+	settle(t, f.Worktree)
 	wt, err := Resolve(configFor(f), f.Worktree)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return f, wt
+}
+
+// settle dates every file under dir an hour back, as in a worktree whose
+// checkout and last edit are a while behind it, so a build does not read
+// them as written while it ran (changeSlack) and leaves its fingerprint
+// for the next call to match.
+func settle(t *testing.T, dir string) {
+	t.Helper()
+	old := time.Now().Add(-time.Hour)
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		return os.Chtimes(path, old, old)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 // holdBuild takes the build lock of the worktree's index the way another
@@ -267,5 +288,60 @@ func TestEnsure_SearchDuringRebuild(t *testing.T) {
 	wg.Wait()
 	if searches == 0 {
 		t.Error("no search ran during the rebuilds")
+	}
+}
+
+// TestEnsure_FileChangedDuringBuild: an editor truncates main.go in a clean
+// worktree, the build reads it empty, and the editor writes the same bytes
+// back. The worktree is clean again and its fingerprint as it was, so only
+// the build's own check can tell; the next call must rebuild and find the
+// content the first build missed.
+func TestEnsure_FileChangedDuringBuild(t *testing.T) {
+	f, wt := fixtureWorktree(t)
+	path := filepath.Join(f.Worktree, "main.go")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := fingerprint(wt.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := indexWorktree
+	t.Cleanup(func() { indexWorktree = index })
+	indexWorktree = func(genDir string, repo finder.Repo, hiddenDirs []string) ([]search.WalkFile, error) {
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			return nil, err
+		}
+		files, err := index(genDir, repo, hiddenDirs)
+		if restoreErr := os.WriteFile(path, content, 0o644); err == nil {
+			err = restoreErr
+		}
+		return files, err
+	}
+
+	first, err := Ensure(wt, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hits(t, first, "MainOnly"); len(got) != 0 {
+		t.Fatalf("the first build found MainOnly in %v; it should have read main.go empty", got)
+	}
+	first.Close()
+	indexWorktree = index
+	if after, err := fingerprint(wt.Path); err != nil || after.Fingerprint != before.Fingerprint {
+		t.Fatalf("fingerprint moved (err %v): the worktree is not as it was before the build", err)
+	}
+
+	again, err := Ensure(wt, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if !again.Built {
+		t.Error("the next call reused the build that read main.go mid-edit")
+	}
+	if got := hits(t, again, "MainOnly"); len(got) != 1 {
+		t.Errorf("rebuilt index: MainOnly hits %v, want main.go", got)
 	}
 }
