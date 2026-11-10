@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/mad01/thismoon/compare/events/v0.11.0...events/v0.12.0) (2026-11-10)
+
+
+### Features
+
+* time spans for events since, next-move errors, status list ([736bb12](https://github.com/mad01/thismoon/commit/736bb12574dd8cfccb5d3dde225b2de58fe96527))
+
 ## [0.11.0](https://github.com/mad01/thismoon/compare/events/v0.10.0...events/v0.11.0) (2026-10-25)
 
 
