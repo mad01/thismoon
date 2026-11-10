@@ -1,6 +1,7 @@
 package search
 
 import (
+	"fmt"
 	"io/fs"
 	"maps"
 	"os/exec"
@@ -143,15 +144,21 @@ func (t *trackedFiles) has(rel string) bool {
 	return t.set[rel]
 }
 
-// listTracked runs git ls-files under root and returns the tracked paths in
-// the platform's path form. A failure leaves the set empty: a directory that
-// is not a git work tree tracks nothing.
+// listTracked is TrackedFiles with a failure read as an empty set: a
+// directory that is not a git work tree tracks nothing.
 func listTracked(root string) map[string]bool {
+	set, _ := TrackedFiles(root)
+	return set
+}
+
+// TrackedFiles runs git ls-files under root and returns the tracked paths
+// in the platform's path form, the form WalkFile.Rel takes.
+func TrackedFiles(root string) (map[string]bool, error) {
 	cmd := exec.Command("git", "ls-files", "-z")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("git ls-files in %s: %w", root, err)
 	}
 	set := make(map[string]bool)
 	for p := range strings.SplitSeq(string(out), "\x00") {
@@ -159,7 +166,7 @@ func listTracked(root string) map[string]bool {
 			set[filepath.FromSlash(p)] = true
 		}
 	}
-	return set
+	return set, nil
 }
 
 // IndexSizeMax is the largest file, in bytes, the lexical index takes:

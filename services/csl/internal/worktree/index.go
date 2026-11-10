@@ -25,6 +25,22 @@ var (
 	lockPoll = 200 * time.Millisecond
 )
 
+// indexWorktree indexes a worktree into a generation directory and returns
+// the files it read. A test swaps it to change a file under the build.
+var indexWorktree = search.IndexRepoFiles
+
+// changeSlack widens the span a build ran over when it checks whether a
+// file it read was written meanwhile. A filesystem stores mtimes at its own
+// granularity (whole seconds on HFS+, two on FAT), so a write just after the
+// build started can carry an earlier time. Erring wide costs one extra
+// rebuild after a call that came within the slack of an edit.
+const changeSlack = 2 * time.Second
+
+// changedFingerprint is what a build records instead of its fingerprint
+// when a file it read may have changed under it. A computed fingerprint is
+// a hex digest, never this, so the next call rebuilds.
+const changedFingerprint = "changed-during-build"
+
 // Index is a worktree's own lexical index, current as of the Ensure call
 // that returned it unless Stale is set. Close it once the last search of it
 // is done.
@@ -98,6 +114,9 @@ func Ensure(wt finder.Repo, hiddenDirs []string) (Index, error) {
 // the build lock, it answers from that build, marked Stale, and waits for
 // the lock only when there is none.
 func ensureIn(dir string, wt finder.Repo, hiddenDirs []string) (Index, error) {
+	// Taken before the fingerprint, so any write the fingerprint may have
+	// missed comes after it.
+	start := time.Now()
 	fp, err := fingerprint(wt.Path)
 	if err != nil {
 		return Index{}, fmt.Errorf("fingerprint worktree %s: %w", wt.Path, err)
@@ -125,17 +144,18 @@ func ensureIn(dir string, wt finder.Repo, hiddenDirs []string) (Index, error) {
 		return Index{}, err
 	}
 	defer unlock()
-	return buildLocked(dir, wt, hiddenDirs, fp)
+	return buildLocked(dir, wt, hiddenDirs, fp, start)
 }
 
 // buildLocked builds the worktree into a fresh generation and publishes it,
 // unless another call published one from fp while this one waited for the
-// build lock, which it holds.
+// build lock, which it holds. start is when fp began to be taken.
 func buildLocked(
 	dir string,
 	wt finder.Repo,
 	hiddenDirs []string,
 	fp search.RepoState,
+	start time.Time,
 ) (Index, error) {
 	gen, err := search.OpenWorktreeGeneration(dir)
 	if err != nil {
@@ -149,7 +169,7 @@ func buildLocked(
 	if err != nil {
 		return Index{}, err
 	}
-	if err := build(gen.Dir, wt, hiddenDirs, fp); err != nil {
+	if err := build(gen.Dir, wt, hiddenDirs, fp, start); err != nil {
 		gen.Close()
 		return Index{}, err
 	}
@@ -168,11 +188,24 @@ func indexOf(gen search.WorktreeGeneration, wt finder.Repo) Index {
 }
 
 // build indexes the worktree into genDir, an empty generation, and records
-// the fingerprint the build started from. A file that changes during the
-// build therefore reads as stale on the next call.
-func build(genDir string, wt finder.Repo, hiddenDirs []string, fp search.RepoState) error {
-	if err := search.IndexRepo(genDir, wt, hiddenDirs); err != nil {
+// fp, the fingerprint taken from start on. When a file it read may have
+// been written since start it records changedFingerprint instead, so the
+// next call rebuilds: a file changed and changed back while the build read
+// it leaves a clean worktree's fingerprint as it was, and the index would
+// keep what the build read until some other change.
+func build(
+	genDir string,
+	wt finder.Repo,
+	hiddenDirs []string,
+	fp search.RepoState,
+	start time.Time,
+) error {
+	files, err := indexWorktree(genDir, wt, hiddenDirs)
+	if err != nil {
 		return fmt.Errorf("index worktree %s: %w", wt.Path, err)
+	}
+	if changedSince(wt.Path, files, start) {
+		fp.Fingerprint = changedFingerprint
 	}
 	fp.IndexedAt = time.Now()
 	state := search.EmptyState()
@@ -181,6 +214,39 @@ func build(genDir string, wt finder.Repo, hiddenDirs []string, fp search.RepoSta
 		return fmt.Errorf("save worktree index state: %w", err)
 	}
 	return nil
+}
+
+// changedSince reports whether one of files, those a build of the worktree
+// at root read, may have been written since start: it is gone, or git
+// tracks it and its mtime falls between start and now, each widened by
+// changeSlack. An untracked file that is still there needs no check. When
+// git status lists it, its size and mtime are in the fingerprint already;
+// when git ignores it, no edit of it ever rebuilds the index, and checking
+// it would let a process that keeps writing one (a log) force a rebuild on
+// every call. An mtime past now is left out, or a file dated ahead of the
+// clock would do the same. When git cannot list what it tracks, any file
+// in the span counts.
+func changedSince(root string, files []search.WalkFile, start time.Time) bool {
+	from, to := start.Add(-changeSlack), time.Now().Add(changeSlack)
+	var tracked map[string]bool
+	for _, f := range files {
+		info, err := os.Lstat(f.Abs)
+		if err != nil {
+			return true
+		}
+		if mtime := info.ModTime(); mtime.Before(from) || mtime.After(to) {
+			continue
+		}
+		if tracked == nil {
+			if tracked, err = search.TrackedFiles(root); err != nil {
+				return true
+			}
+		}
+		if tracked[f.Rel] {
+			return true
+		}
+	}
+	return false
 }
 
 // builtFrom reports whether gen is a build of the worktree from the

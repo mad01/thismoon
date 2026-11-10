@@ -50,7 +50,8 @@ func WorktreeIndexDir(root, path string) string {
 // any tombstone a crash left. Past maxWorktreeIndexes the least recently
 // used go too. An index a caller holds a lease on (LeaseWorktreeIndex) is
 // never removed. It returns the removed index directories. A missing root
-// is not an error.
+// is not an error. A failed delete does not stop the run: the rest of it,
+// eviction included, still goes, and the errors come back joined.
 func PruneWorktreeIndexes(root string) ([]string, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -61,12 +62,11 @@ func PruneWorktreeIndexes(root string) ([]string, error) {
 	}
 	var removed []string
 	var kept []indexUse
+	var errs []error
 	for _, e := range entries {
 		dir := filepath.Join(root, e.Name())
 		if strings.HasPrefix(e.Name(), tombstonePrefix) {
-			if err := removeUnder(root, dir); err != nil {
-				return removed, err
-			}
+			errs = append(errs, removeUnder(root, dir))
 			continue
 		}
 		if !e.IsDir() {
@@ -74,9 +74,7 @@ func PruneWorktreeIndexes(root string) ([]string, error) {
 		}
 		if worktreeIndexGone(dir) {
 			ok, err := removeUnleased(root, dir)
-			if err != nil {
-				return removed, err
-			}
+			errs = append(errs, err)
 			if ok {
 				removed = append(removed, dir)
 				continue
@@ -85,7 +83,8 @@ func PruneWorktreeIndexes(root string) ([]string, error) {
 		kept = append(kept, indexUse{dir: dir, lastUse: lastUse(dir)})
 	}
 	evicted, err := evictLeastRecentlyUsed(root, kept, maxWorktreeIndexes)
-	return append(removed, evicted...), err
+	errs = append(errs, err)
+	return append(removed, evicted...), errors.Join(errs...)
 }
 
 // worktreeIndexGone reports whether the worktree index in dir has outlived

@@ -116,7 +116,10 @@ Semantic indexing of worktrees is out of scope.
 before the call, and rebuilds it when the fingerprint moves. That is the main
 fingerprint plus the size and mtime of every file git status lists, since
 git status stays the same while an already modified file is edited again.
-A build never writes where a search reads: it fills a fresh generation
+A file changed and changed back mid-build leaves that fingerprint as it was.
+So a build checks the files it read once it is done. When one is gone, or is
+tracked with an mtime within two seconds of the build, it records a
+fingerprint that never matches, and the next call rebuilds. A build never writes where a search reads: it fills a fresh generation
 directory (`search.NewWorktreeGeneration`) and publishes it by renaming a
 new `current` file over the old one (`search.PublishWorktreeGeneration`).
 A caller reads `current` once and searches that generation for the whole

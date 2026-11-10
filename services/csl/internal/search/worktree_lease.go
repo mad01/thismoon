@@ -41,6 +41,16 @@ const maxWorktreeIndexes = 16
 // remover renamed the directory aside between its open and its lock.
 const leaseAttempts = 3
 
+// removeAttempts bounds how often removeUnder starts a delete over when it
+// emptied a directory and still found it not empty. A caller whose open of
+// a lease file resolved the directory before a remover renamed it to a
+// tombstone creates that file inside the tombstone, possibly after the
+// delete emptied it. Each such caller does so once: its lease check
+// (stillAt) then fails and it starts over elsewhere. So every retry clears
+// what the callers still in flight left, and eight is more callers than
+// share one worktree at a time.
+const removeAttempts = 8
+
 // errLeaseRemoved is what LeaseWorktreeIndex fails with when removers took
 // the directory away on every attempt.
 var errLeaseRemoved = fmt.Errorf("removed %d times while taking it", leaseAttempts)
@@ -124,6 +134,8 @@ func stillAt(f *os.File, path string) bool {
 // lands (stillAt) and starts over on a fresh directory, and none can open
 // anything inside the tombstone while it is deleted. It reports whether it
 // removed dir; one that is gone already counts as not removed and no error.
+// Once dir is renamed it counts as removed even when the tombstone delete
+// fails: that tombstone goes on the next prune.
 // root is the worktree index root, the only tree it may delete from.
 func removeUnleased(root, dir string) (bool, error) {
 	if err := checkUnder(root, dir); err != nil {
@@ -167,12 +179,20 @@ func renameUnleased(f *os.File, path, dir string) (string, error) {
 	return tomb, nil
 }
 
-// removeUnder deletes path and everything below it, after checkUnder.
+// removeUnder deletes path and everything below it, after checkUnder. A
+// delete that finds a directory not empty once it removed what it listed
+// starts over, up to removeAttempts times.
 func removeUnder(root, path string) error {
 	if err := checkUnder(root, path); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(path); err != nil {
+	var err error
+	for range removeAttempts {
+		if err = os.RemoveAll(path); !errors.Is(err, syscall.ENOTEMPTY) {
+			break
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("remove %s: %w", path, err)
 	}
 	return nil
@@ -224,7 +244,8 @@ func lastUse(dir string) time.Time {
 
 // evictLeastRecentlyUsed removes the least recently used indexes under root
 // until at most limit remain, skipping any a caller holds a lease on. It
-// returns the removed directories.
+// returns the removed directories. A failed delete does not stop it: it
+// goes on to the next index and returns the errors joined.
 func evictLeastRecentlyUsed(root string, uses []indexUse, limit int) ([]string, error) {
 	excess := len(uses) - limit
 	if excess <= 0 {
@@ -232,17 +253,16 @@ func evictLeastRecentlyUsed(root string, uses []indexUse, limit int) ([]string, 
 	}
 	slices.SortFunc(uses, func(a, b indexUse) int { return a.lastUse.Compare(b.lastUse) })
 	var removed []string
+	var errs []error
 	for _, u := range uses {
 		if len(removed) == excess {
 			break
 		}
 		ok, err := removeUnleased(root, u.dir)
-		if err != nil {
-			return removed, err
-		}
+		errs = append(errs, err)
 		if ok {
 			removed = append(removed, u.dir)
 		}
 	}
-	return removed, nil
+	return removed, errors.Join(errs...)
 }

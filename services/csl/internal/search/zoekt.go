@@ -24,6 +24,14 @@ import (
 // Symbol sections come from csl's own tree-sitter extractor rather than ctags,
 // so the builder's ctags run stays disabled and never looks for a binary.
 func IndexRepo(indexDir string, repo finder.Repo, hiddenDirs []string) error {
+	_, err := IndexRepoFiles(indexDir, repo, hiddenDirs)
+	return err
+}
+
+// IndexRepoFiles is IndexRepo that also returns the files the walk handed
+// to the index, for a caller that checks afterwards whether one of them
+// changed while the build read it.
+func IndexRepoFiles(indexDir string, repo finder.Repo, hiddenDirs []string) ([]WalkFile, error) {
 	opts := index.Options{
 		IndexDir:     indexDir,
 		DisableCTags: true,
@@ -36,22 +44,24 @@ func IndexRepo(indexDir string, repo finder.Repo, hiddenDirs []string) error {
 
 	builder, err := index.NewBuilder(opts)
 	if err != nil {
-		return fmt.Errorf("create index builder for %s: %w", repo.Name, err)
+		return nil, fmt.Errorf("create index builder for %s: %w", repo.Name, err)
 	}
 
+	var files []WalkFile
 	walkErr := WalkRepo(repo.Path, int64(opts.SizeMax), hiddenDirs, func(f WalkFile) error {
+		files = append(files, f)
 		return addFile(builder, repo.Name, f.Rel, f.Abs)
 	})
 
 	if walkErr != nil {
 		_ = builder.Finish()
-		return fmt.Errorf("walk %s: %w", repo.Path, walkErr)
+		return nil, fmt.Errorf("walk %s: %w", repo.Path, walkErr)
 	}
 
 	if err := builder.Finish(); err != nil {
-		return fmt.Errorf("finish index for %s: %w", repo.Name, err)
+		return nil, fmt.Errorf("finish index for %s: %w", repo.Name, err)
 	}
-	return nil
+	return files, nil
 }
 
 // addFile reads one file and adds it to the builder with its symbol
