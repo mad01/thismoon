@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-11-10 toss-bin: `--temp-only` for agent scratch cleanup
 
-Change: thismoon #TODO-PR-NUMBER (placeholder: fill in the PR number before merge). `toss-bin --temp-only` refuses the whole run unless every path sits strictly inside `/tmp`, `/var/tmp` or `~/.tmp`, so a Claude Code allow rule for that one invocation can replace the `rm` prompt for temp cleanup. The roots are fixed in the binary. With the rule in place, an agent can trash anything under those roots with no prompt, backups parked in `~/.tmp` included; it stays recoverable from `~/.Trash/my-trash/`.
+Change: thismoon #415. `toss-bin --temp-only` refuses the whole run unless every path sits strictly inside `/tmp`, `/var/tmp` or `~/.tmp`, so a Claude Code allow rule for that one invocation can replace the `rm` prompt for temp cleanup. The roots are fixed in the binary. With the rule in place, an agent can trash anything under those roots with no prompt, backups parked in `~/.tmp` included; it stays recoverable from `~/.Trash/my-trash/`.
 
 Order matters: update the binary on every machine first, add the allow rule second. A toss-bin that predates this change ignores `--temp-only` as an unknown flag and trashes any path, without safe mode.
 
