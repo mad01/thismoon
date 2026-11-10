@@ -19,6 +19,7 @@ var searchParamWords = map[string]bool{
 	"offset":             true,
 	"case_sensitive":     true,
 	"response_format":    true,
+	"worktree":           true,
 	"files_with_matches": true,
 	"content":            true,
 }

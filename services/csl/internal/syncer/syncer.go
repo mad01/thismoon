@@ -34,6 +34,9 @@ type Report struct {
 	Results []PullResult  // one per evaluated repo, sorted by name
 	Indexed []finder.Repo // repos reindexed this run
 	Pruned  int           // orphan shards deleted this run (full runs only)
+	// WorktreesPruned counts the worktree indexes deleted this run because
+	// their worktree is gone (full runs only).
+	WorktreesPruned int
 }
 
 // Options tunes one sync run. The zero value is a full, quiet, non-TTY run
@@ -57,11 +60,12 @@ type Options struct {
 
 // Run executes one sync: discover repos, pull them in parallel, drain the
 // reindex queue, prune the index entries of repos discovery no longer returns
-// (full runs only), reindex what changed or has a stale fingerprint, and (when
-// semantic.sync is on) re-embed the same repos. It holds the sync lock for the
-// pull and index phases and
-// returns ErrLocked without touching anything when another run already holds
-// it.
+// and the worktree indexes whose worktree is gone (full runs only), reindex
+// what changed or has a stale fingerprint, and (when semantic.sync is on)
+// re-embed the same repos. It posts a summary event only when the run changed
+// something or a pull failed. It holds the sync lock for the pull and index
+// phases and returns ErrLocked without touching anything when another run
+// already holds it.
 func Run(ctx context.Context, cfg *config.Config, opts Options) (*Report, error) {
 	start := time.Now()
 	out, errw := opts.Out, opts.Err
@@ -156,6 +160,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) (*Report, error)
 	if opts.Only == "" {
 		keep := pruneKeepSet(discovered, dropped, queuedRepos)
 		report.Pruned = pruneOrphans(indexDir, keep, out, errw)
+		report.WorktreesPruned = pruneWorktreeIndexes(out, errw)
 	}
 
 	indexed, err := indexChanged(indexInput{
@@ -184,7 +189,9 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) (*Report, error)
 
 	fmt.Fprintf(out, "\n%s\n", syncSummary(counts))
 	printAttention(out, results)
-	emitSyncEvent(start, counts, len(results), len(indexed))
+	if syncChanged(counts, report) {
+		emitSyncEvent(start, counts, len(results), len(indexed))
+	}
 
 	return report, nil
 }
@@ -260,6 +267,25 @@ func pruneOrphans(indexDir string, keep []finder.Repo, out, errw io.Writer) int 
 	return len(removed)
 }
 
+// pruneWorktreeIndexes deletes the worktree indexes whose worktree is gone,
+// reporting the count on out, and returns it. Like pruneOrphans it is
+// housekeeping: a failure is reported on errw and never fails the sync.
+func pruneWorktreeIndexes(out, errw io.Writer) int {
+	root, err := search.WorktreeIndexRoot()
+	if err != nil {
+		fmt.Fprintf(errw, "prune worktree indexes: %v\n", err)
+		return 0
+	}
+	removed, err := search.PruneWorktreeIndexes(root)
+	if err != nil {
+		fmt.Fprintf(errw, "prune worktree indexes: %v\n", err)
+	}
+	if len(removed) > 0 {
+		fmt.Fprintf(out, "pruned %d worktree index(es)\n", len(removed))
+	}
+	return len(removed)
+}
+
 // filterOnly keeps the repos whose org/repo name or absolute path equals only.
 func filterOnly(repos []finder.Repo, only string) []finder.Repo {
 	var out []finder.Repo
@@ -293,8 +319,18 @@ func syncSummary(counts map[string]int) string {
 	)
 }
 
+// syncChanged reports whether a completed run did something worth an event:
+// it pulled new commits, reindexed or pruned anything, or a pull failed. A
+// run that found everything current is the common case on the background
+// refresh, and its event would only push real ones out of the events cap.
+func syncChanged(counts map[string]int, report *Report) bool {
+	return counts["updated"] > 0 || counts["fail"] > 0 || len(report.Indexed) > 0 ||
+		report.Pruned > 0 || report.WorktreesPruned > 0
+}
+
 // emitSyncEvent archives one summary event per completed (non-dry-run) sync
-// run to the local events service; best-effort, dropped if serve is down.
+// run that changed something to the local events service; best-effort,
+// dropped if serve is down.
 func emitSyncEvent(start time.Time, counts map[string]int, total, indexed int) {
 	level := "info"
 	if counts["fail"] > 0 {

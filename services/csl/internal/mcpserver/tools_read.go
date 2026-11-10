@@ -14,10 +14,11 @@ import (
 
 // readInput is the typed input for the csl_read tool.
 type readInput struct {
-	Repo      string `json:"repo"                 jsonschema:"case-insensitive regex or substring matched against the org/repo name (e.g. 'myrepo', 'mad01/thismoon'); must resolve to exactly one repo"`
+	Repo      string `json:"repo,omitempty"       jsonschema:"case-insensitive regex or substring matched against the org/repo name (e.g. 'myrepo', 'mad01/thismoon'); must resolve to exactly one repo; required unless worktree is set"`
 	File      string `json:"file"                 jsonschema:"file path relative to the repo root"`
 	StartLine int    `json:"start_line,omitempty" jsonschema:"first line to return, 1-based; 0 or omit for start of file"`
 	EndLine   int    `json:"end_line,omitempty"   jsonschema:"last line to return, 1-based inclusive; 0 or omit for end of file"`
+	worktreeParam
 	formatParam
 }
 
@@ -65,9 +66,6 @@ func handleRead(
 	_ *mcp.CallToolRequest,
 	in readInput,
 ) (*mcp.CallToolResult, readOutput, error) {
-	if strings.TrimSpace(in.Repo) == "" {
-		return nil, readOutput{}, fmt.Errorf("repo is required")
-	}
 	if strings.TrimSpace(in.File) == "" {
 		return nil, readOutput{}, fmt.Errorf("file is required")
 	}
@@ -82,7 +80,7 @@ func handleRead(
 		)
 	}
 
-	matched, err := resolveRepo(in.Repo)
+	matched, err := resolveTarget(in.Repo, in.Worktree)
 	if err != nil {
 		return nil, readOutput{}, err
 	}

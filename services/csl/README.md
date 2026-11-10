@@ -98,6 +98,7 @@ csl repo --list --owner platform         # repos the platform team owns
 csl search "func Walk"                   # search all indexed repos
 csl search "TODO" --repo myrepo          # filter by repo name (case-insensitive)
 csl search "fmt\.Errorf" --lang go --output-mode content -C 3
+csl search "TODO" --worktree ~/.worktrees/myrepo/my-branch  # one linked worktree
 csl hybrid "retry failed HTTP requests"  # fuse lexical + semantic (RRF)
 csl semantic "where do we retry failed requests"  # meaning-based search
 csl count "TODO" --group-by repo         # cross-repo tally
@@ -109,6 +110,8 @@ csl config                               # which config file is read, and the se
 ```
 
 An empty `csl search` explains itself on stderr with the same zero-result hint the `csl_search` tool returns. The hint shows how zoekt parsed the query, how many files each AND term matches on its own, and the repos and index age it covered. When some AND terms match no file and others do, it reruns once without them and names the dropped terms above the results. `--json` carries the same facts as `zero_result_hint`, `relaxed_query`, and `dropped_terms` beside `matches`. A query that is empty, only quotes, or has an unbalanced quote fails with the fix. There is no `--offset`: raise `--limit` and slice with a pipe such as `| sed -n '51,100p'`.
+
+A linked git worktree is not in the main index, which holds each repo's main checkout. Pass `--worktree <path>` to `csl search`, `count`, `read`, `outline` or `ask` (`--worktree .` for the one you are in). The command then covers that worktree alone, from an index of its own, built on first use and rebuilt whole when the worktree's files change. Results name the repo `org/repo@branch`. The working directory narrows nothing on its own, so a fleet-wide search run from a worktree still covers the fleet. The one exception is a `--repo` that selects only the worktree's repo, which answers from the worktree and says so on stderr; `--no-worktree` keeps it on the main index. The MCP tools take the same thing as a `worktree` parameter. At most 16 worktree indexes stay on disk, the least recently used going first.
 
 First search in a fresh checkout triggers an initial index build. The daemon serves subsequent searches and returns them in hundreds of milliseconds. Semantic and hybrid search need `csl index --semantic-all` run once first, with Ollama running and the embedding model pulled (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`).
 
@@ -189,6 +192,7 @@ Both forms read the same index and take the same query language.
 `config.yaml` lives in the config directory (see Configuration). Everything csl writes lives in the state directory (`$XDG_STATE_HOME/csl`, or `~/.local/state/csl` when that variable is unset):
 
 - `search-index/`: lexical index (`state.json` per-repo fingerprint/branch/dirty/indexed-at, plus `<shard-hash>.zoekt` shard files).
+- `worktree-index/`: one throwaway index per linked worktree a search named, removed once the worktree is gone or when it is the least recently used past 16.
 - `semantic-index/`: per-repo vector stores (embeddings come from Ollama; no model files live here).
 - `search-daemon.sock`, `search-daemon.pid`, `search-daemon.log`: the search daemon's socket, PID file, and rotated log.
 - `reindex.queue`: repo paths queued by the suspenders `csl-reindex` post-merge hook; drained by `csl sync` / `csl index --drain`.

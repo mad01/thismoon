@@ -17,6 +17,7 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/services/csl/internal/syncer"
+	"github.com/mad01/thismoon/services/csl/internal/worktree"
 )
 
 var (
@@ -32,6 +33,7 @@ var (
 	searchReindexFlag       bool
 	searchServeFlag         bool
 	searchStopFlag          bool
+	searchWorktreeFlags     worktreeFlags
 )
 
 var searchCmd = &cobra.Command{
@@ -72,7 +74,19 @@ Indexing behavior:
   On first run, all configured repos are indexed (this may take a moment).
   Subsequent searches check for staleness: repos with new commits or
   dirty working trees are re-indexed in the background after results are
-  returned. Use --reindex to force a synchronous re-index before searching.`,
+  returned. Use --reindex to force a synchronous re-index before searching.
+
+Linked worktrees:
+  The main index holds each repo's main checkout, and a search without
+  --worktree covers it whatever the working directory, so a fleet-wide
+  search run from inside a worktree still covers the fleet. --worktree
+  <path> (--worktree . for the worktree you are in) searches that worktree
+  alone, from an index of its own that is built or refreshed before the
+  search runs; a rebuild reads every file of the worktree. Results name the
+  repo org/repo@branch. Inside a worktree, a --repo that selects only its
+  repo ('thismoon$', not 'thismoon' when thismoon-arcade exists) searches
+  the worktree too, and a stderr line says so; --no-worktree keeps that
+  search on the main index.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runSearch,
 }
@@ -98,6 +112,7 @@ func init() {
 	searchCmd.Flags().
 		BoolVar(&searchServeFlag, "serve", false, "start the search daemon (foreground)")
 	searchCmd.Flags().BoolVar(&searchStopFlag, "stop", false, "stop the running search daemon")
+	searchWorktreeFlags.register(searchCmd)
 	rootCmd.AddCommand(searchCmd)
 }
 
@@ -150,6 +165,14 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	choice, err := searchWorktreeFlags.choose(cfg, searchRepoFlag)
+	if err != nil {
+		return err
+	}
+	if choice != nil {
+		return searchWorktree(cmd, cfg, choice, pattern)
+	}
+
 	repos, dropped, err := cfg.DiscoverReposReport()
 	if err != nil {
 		return err
@@ -200,6 +223,38 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	matches, err := searchInProcess(ctx, cmd, cfg, local, req)
+	if err != nil {
+		return err
+	}
+	return reportSearch(ctx, cmd, local, req, matches)
+}
+
+// searchWorktree searches one linked worktree's own index, in-process: the
+// daemon serves the main index only. The index is brought up to date first,
+// so --reindex has nothing to add, and the repo filter is not applied, since
+// the worktree is the only repo.
+func searchWorktree(
+	cmd *cobra.Command,
+	cfg *config.Config,
+	choice *worktreeChoice,
+	pattern string,
+) error {
+	choice.announce(cmd.ErrOrStderr())
+	idx, err := worktree.Ensure(choice.repo, cfg.AllowedHiddenDirs())
+	if err != nil {
+		return err
+	}
+	defer idx.Close()
+	noteStale(cmd.ErrOrStderr(), idx)
+	local := lexical.Local{
+		IndexDir:  idx.Dir,
+		RepoNames: map[string]string{idx.Repo.Name: idx.Repo.Path},
+	}
+	opts := searchOptions(pattern)
+	opts.RepoFilter = ""
+	req := lexical.Request{Options: opts, Repos: []finder.Repo{idx.Repo}, IndexDir: idx.Dir}
+	ctx := context.Background()
+	matches, err := local.Search(ctx, opts)
 	if err != nil {
 		return err
 	}

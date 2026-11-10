@@ -39,6 +39,7 @@ Both forms read the same index and take the same query language.
 - `csl_repo_reindex` after significant local changes so search stays current.
 - `csl_repo_health` for a fleet-wide sweep of uncommitted or unpushed work across every checkout. One call, not a loop of `csl_repo_info`.
 - A search re-indexes a stale or dirty repo in the background after answering, so one search may answer from the previous commit. When freshness matters, call `csl_repo_info` and reindex first. `csl_index_info` reports when the index was last built.
+- **A linked worktree is not in the main index**, which holds each repo's main checkout. Working in one (under `~/.worktrees`, say), pass `worktree` with its path to `csl_search`, `csl_search_multi`, `csl_count`, `csl_read`, `csl_outline` or `csl_ask`: the call searches the worktree's own index, rebuilt when its files change, and names the repo `org/repo@branch`. On the CLI the same is `--worktree .` (or its path); without it the working directory narrows nothing, so a fleet search from a worktree still covers the fleet.
 
 ### MCP tools
 
@@ -63,6 +64,7 @@ csl sync                                          # pull every clean repo and re
 csl search '<query>' --repo <re> --file '<re>'    # files that match (default)
 csl search '<query>' -o content -C 2 --limit 100  # matching lines with context
 csl search '<query>' --limit 5000 | cut -d/ -f1-2 | sort | uniq -c | sort -rn  # matching files per repo
+csl search '<query>' --worktree <path>            # one linked worktree, from its own index
 csl count '<query>' --group-by repo               # how many matches per repo
 csl count '<query>' --group-by repo --names       # every matching repo, one per line, no cap
 csl count '<query>' --lang go --repo <re>         # one total, narrowed

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -19,6 +20,7 @@ var (
 	outlineIncludeTestsFlag bool
 	outlineMaxFilesFlag     int
 	outlineJSONFlag         bool
+	outlineWorktree         worktreeFlags
 )
 
 var outlineCmd = &cobra.Command{
@@ -46,13 +48,20 @@ When --limit cuts the list, the last line says how many symbols exist and
 the next --limit that returns them all, or the max of 500 when there are
 more. Past the max, narrow with path or --kinds.
 
+With --worktree (--worktree . for the one you are in) the outline covers
+that linked git worktree and the arguments are only the optional path.
+Inside a worktree, a repo argument that selects only its repo outlines the
+worktree too, and a stderr line says so; --no-worktree outlines the main
+checkout.
+
 Examples:
   csl outline thismoon
   csl outline thismoon services/csl/internal
   csl outline thismoon --kinds struct,interface --limit 20
   csl outline thismoon docs --kinds section
-  csl outline thismoon services/csl --json`,
-	Args: cobra.RangeArgs(1, 2),
+  csl outline thismoon services/csl --json
+  csl outline --worktree ~/.worktrees/thismoon/my-branch services/csl`,
+	Args: cobra.RangeArgs(0, 2),
 	RunE: runOutline,
 }
 
@@ -67,7 +76,54 @@ func init() {
 	outlineCmd.Flags().IntVar(&outlineMaxFilesFlag, "max-files", outline.DefaultMaxFiles,
 		"stop the walk after this many files and mark the result truncated")
 	outlineCmd.Flags().BoolVar(&outlineJSONFlag, "json", false, "output as JSON")
+	outlineWorktree.register(outlineCmd)
 	rootCmd.AddCommand(outlineCmd)
+}
+
+// outlineTarget splits the arguments into the checkout to outline and the
+// optional path. With --worktree they are only the path; otherwise the first
+// is the repo, outlined from the working directory's worktree when it
+// selects only that worktree's repo. A worktree choice is announced on w.
+func outlineTarget(cfg *config.Config, args []string, w io.Writer) (finder.Repo, string, error) {
+	if outlineWorktree.arg != "" {
+		if len(args) > 1 {
+			return finder.Repo{}, "", errors.New("with --worktree, pass only the optional path")
+		}
+		choice, err := outlineWorktree.choose(cfg, "")
+		if err != nil {
+			return finder.Repo{}, "", err
+		}
+		choice.announce(w)
+		path := ""
+		if len(args) == 1 {
+			path = args[0]
+		}
+		return choice.repo, path, nil
+	}
+	if len(args) == 0 {
+		return finder.Repo{}, "", errors.New("accepts a <repo> argument, or --worktree")
+	}
+	path := ""
+	if len(args) == 2 {
+		path = args[1]
+	}
+	choice, err := outlineWorktree.choose(cfg, args[0])
+	if err != nil {
+		return finder.Repo{}, "", err
+	}
+	if choice != nil {
+		choice.announce(w)
+		return choice.repo, path, nil
+	}
+	repos, err := cfg.DiscoverRepos()
+	if err != nil {
+		return finder.Repo{}, "", err
+	}
+	if len(repos) == 0 {
+		return finder.Repo{}, "", errors.New(cfg.EmptyResultHint())
+	}
+	repo, err := finder.MatchOne(repos, args[0])
+	return repo, path, err
 }
 
 func runOutline(cmd *cobra.Command, args []string) error {
@@ -75,14 +131,7 @@ func runOutline(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
-	repos, err := cfg.DiscoverRepos()
-	if err != nil {
-		return err
-	}
-	if len(repos) == 0 {
-		return errors.New(cfg.EmptyResultHint())
-	}
-	repo, err := finder.MatchOne(repos, args[0])
+	repo, path, err := outlineTarget(cfg, args, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -94,9 +143,7 @@ func runOutline(cmd *cobra.Command, args []string) error {
 		MaxFiles:     outlineMaxFilesFlag,
 		HiddenDirs:   cfg.AllowedHiddenDirs(),
 	}
-	if len(args) == 2 {
-		opts.Path = args[1]
-	}
+	opts.Path = path
 	res, err := outline.Build(repo, opts)
 	if err != nil {
 		return err

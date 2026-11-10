@@ -68,6 +68,7 @@ func (q searchMultiQuery) searchInput() searchInput {
 // searchMultiInput is the typed input for the csl_search_multi tool.
 type searchMultiInput struct {
 	Queries []searchMultiQuery `json:"queries" jsonschema:"1 to 10 independent queries; each gets its own entry in results, in the order sent"`
+	worktreeParam
 	formatParam
 }
 
@@ -85,7 +86,7 @@ type searchMultiResult struct {
 type searchMultiOutput struct {
 	Results   []searchMultiResult `json:"results"        jsonschema:"one entry per query, in the order sent"`
 	Truncated bool                `json:"truncated"      jsonschema:"true if any entry's results were capped; that entry carries truncated and total_available"`
-	Note      string              `json:"note,omitempty" jsonschema:"set when the shared line budget cut an entry, saying how to get the rest"`
+	Note      string              `json:"note,omitempty" jsonschema:"set when the shared line budget cut an entry, saying how to get the rest, or when a worktree's results come from its previous index build"`
 }
 
 func registerSearchMultiTools(s *mcp.Server) {
@@ -113,11 +114,16 @@ func handleSearchMulti(
 	if err := checkMultiQueryCount(len(in.Queries)); err != nil {
 		return nil, searchMultiOutput{}, err
 	}
-	env, err := newMultiSearchEnv()
+	env, err := newMultiSearchEnv(in.Worktree)
 	if err != nil {
 		return nil, searchMultiOutput{}, err
 	}
-	return nil, runSearchMulti(ctx, env, in.Queries), nil
+	defer env.close()
+	out := runSearchMulti(ctx, env, in.Queries)
+	if env.note != "" {
+		out.Note = strings.TrimPrefix(out.Note+"; "+env.note, "; ")
+	}
+	return nil, out, nil
 }
 
 // checkMultiQueryCount refuses an empty call and one past maxMultiQueries.
@@ -142,13 +148,14 @@ func checkMultiQueryCount(n int) error {
 // it, since starting the daemon from a test binary runs the test binary.
 var ensureDaemon = daemon.EnsureDaemon
 
-// newMultiSearchEnv loads the config and builds the batch setup from it.
-func newMultiSearchEnv() (searchEnv, error) {
+// newMultiSearchEnv loads the config and builds the batch setup from it,
+// over the worktree wt names when it is set.
+func newMultiSearchEnv(wt string) (searchEnv, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return searchEnv{}, fmt.Errorf("load csl config: %w", err)
 	}
-	return newMultiSearchEnvIn(cfg)
+	return newMultiSearchEnvIn(cfg, wt)
 }
 
 // newMultiSearchEnvIn does csl_search's setup once for the batch, from an
@@ -156,13 +163,14 @@ func newMultiSearchEnv() (searchEnv, error) {
 // workers find it running instead of each racing to start one. When that
 // start fails the whole call searches in-process: the daemon backend would
 // retry the start for every query and every zero-result count, each
-// waiting up to a second.
-func newMultiSearchEnvIn(cfg *config.Config) (searchEnv, error) {
-	env, err := newSearchEnvIn(cfg)
+// waiting up to a second. A worktree setup searches in-process from the
+// start, so it starts no daemon.
+func newMultiSearchEnvIn(cfg *config.Config, wt string) (searchEnv, error) {
+	env, err := newSearchEnvFor(cfg, wt)
 	if err != nil {
 		return searchEnv{}, err
 	}
-	if len(env.repos) == 0 {
+	if len(env.repos) == 0 || env.worktree {
 		return env, nil
 	}
 	if err := ensureDaemon(env.indexDir, daemon.DefaultSocketPath()); err != nil {

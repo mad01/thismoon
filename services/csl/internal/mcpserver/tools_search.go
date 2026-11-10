@@ -11,6 +11,7 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
+	"github.com/mad01/thismoon/services/csl/internal/worktree"
 )
 
 const (
@@ -31,6 +32,7 @@ type searchInput struct {
 	Limit         int    `json:"limit,omitempty"          jsonschema:"maximum number of file results (default 50)"`
 	Offset        int    `json:"offset,omitempty"         jsonschema:"skip this many ranked file results before applying limit, to page past the first limit results (default 0); ranking is stable across calls, so successive pages line up"`
 	CaseSensitive bool   `json:"case_sensitive,omitempty" jsonschema:"force case-sensitive matching; default is smart case (case-insensitive unless the query has uppercase)"`
+	worktreeParam
 	formatParam
 }
 
@@ -66,6 +68,7 @@ type searchOutput struct {
 	RelaxedQuery   string            `json:"relaxed_query,omitempty"    jsonschema:"set when the original query matched nothing and the search reran once without the AND terms that match no file at all; the query these results come from"`
 	DroppedTerms   []string          `json:"dropped_terms,omitempty"    jsonschema:"the AND terms removed to form relaxed_query, each matching zero files under the same filters; do not add them back"`
 	ZeroHint       *lexical.ZeroHint `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: how the query was parsed, files per AND term, how many repos the filters covered, and index age; read it before assuming the code doesn't exist"`
+	Note           string            `json:"note,omitempty"             jsonschema:"set when a worktree's results come from its previous index build, saying why"`
 }
 
 // countInput is the typed input for the csl_count tool.
@@ -74,6 +77,7 @@ type countInput struct {
 	Repo    string `json:"repo,omitempty"     jsonschema:"restrict to repo names matching this case-insensitive regex (a plain substring also works)"`
 	Lang    string `json:"lang,omitempty"     jsonschema:"restrict to files of this language"`
 	GroupBy string `json:"group_by,omitempty" jsonschema:"group matches by: repo or language; empty returns a single total"`
+	worktreeParam
 	formatParam
 }
 
@@ -87,6 +91,7 @@ type countGroup struct {
 type countOutput struct {
 	Total  int          `json:"total"            jsonschema:"total match count across all groups"`
 	Groups []countGroup `json:"groups,omitempty" jsonschema:"per-group counts; empty when group_by isn't set"`
+	Note   string       `json:"note,omitempty"   jsonschema:"set when a worktree's count comes from its previous index build, saying why"`
 }
 
 // queryValidateInput is the typed input for the csl_query_validate tool.
@@ -129,6 +134,7 @@ func registerSearchTools(s *mcp.Server) {
 			"When some AND terms match no file and others do, the search reruns once without them and the response carries relaxed_query and dropped_terms; do not add a dropped term back. " +
 			"A query that is empty, only quotes, or has an unbalanced quote is rejected with the fix instead of searched. " +
 			"The results come from a persistent in-memory zoekt index maintained by the csl search daemon, so calls are fast across a session. " +
+			"It holds each repo's main checkout; in a linked git worktree, pass worktree to search your branch's copy. " +
 			"Set response_format to pick the encoding (text, the default, is ripgrep-style: `repo/path` headers, `LINE:match`, `LINE-context`; json restores the structured object); every csl tool accepts it. " +
 			"Several independent queries: " + parallelCallsTail,
 		Annotations: &mcp.ToolAnnotations{
@@ -172,14 +178,16 @@ func handleSearch(
 	if err != nil {
 		return nil, searchOutput{}, err
 	}
-	env, err := newSearchEnv()
+	env, err := newSearchEnv(in.Worktree)
 	if err != nil {
 		return nil, searchOutput{}, err
 	}
+	defer env.close()
 	out, err := env.search(ctx, req)
 	if err != nil {
 		return nil, searchOutput{}, err
 	}
+	out.Note = env.note
 	return nil, out, nil
 }
 
@@ -230,15 +238,31 @@ type searchEnv struct {
 	// surface words the zero-result hint for the front end that asked:
 	// mcpSurface for the tools, the CLI's own for `csl ask`.
 	surface lexical.Surface
+	// worktree marks the setup over one worktree's own index, where the
+	// worktree is the only repo and a repo filter is not applied.
+	worktree bool
+	// note is the worktree index's stale note, "" when it is current.
+	note string
+	// release ends the worktree index's lease; nil over the main index.
+	release func()
 }
 
-// newSearchEnv loads the config and builds the search setup from it.
-func newSearchEnv() (searchEnv, error) {
+// close releases what the setup holds: the worktree index's lease, which
+// keeps pruning from removing the index while it is searched.
+func (e searchEnv) close() {
+	if e.release != nil {
+		e.release()
+	}
+}
+
+// newSearchEnv loads the config and builds the search setup from it: over
+// the main index, or over the worktree wt names when it is set.
+func newSearchEnv(wt string) (searchEnv, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return searchEnv{}, fmt.Errorf("load csl config: %w", err)
 	}
-	return newSearchEnvIn(cfg)
+	return newSearchEnvFor(cfg, wt)
 }
 
 // newSearchEnvIn resolves the index and discovers the repos of an already
@@ -278,9 +302,13 @@ func (e searchEnv) search(ctx context.Context, r searchRequest) (searchOutput, e
 			Notes: []string{noReposNote},
 		}}, nil
 	}
+	repo := r.in.Repo
+	if e.worktree {
+		repo = ""
+	}
 	opts := search.SearchOptions{
 		Pattern:       r.in.Query,
-		RepoFilter:    lexical.RepoFilter(r.in.Repo),
+		RepoFilter:    lexical.RepoFilter(repo),
 		FileFilter:    r.in.File,
 		Lang:          r.in.Lang,
 		CaseSensitive: r.in.CaseSensitive,
@@ -296,7 +324,7 @@ func (e searchEnv) search(ctx context.Context, r searchRequest) (searchOutput, e
 	if out := buildSearchOutput(r.mode, r.limit, r.offset, matches); out.Total > 0 {
 		return out, nil
 	}
-	req := lexical.Request{Options: opts, Repo: r.in.Repo, Repos: e.repos, IndexDir: e.indexDir}
+	req := lexical.Request{Options: opts, Repo: repo, Repos: e.repos, IndexDir: e.indexDir}
 	return explainZero(ctx, e.backend, e.surface, req), nil
 }
 
@@ -398,19 +426,20 @@ func handleCount(
 		)
 	}
 
-	indexDir, err := search.DefaultIndexDir()
-	if err != nil {
-		return nil, countOutput{}, fmt.Errorf("resolve index dir: %w", err)
-	}
-	socketPath := daemon.DefaultSocketPath()
-
 	opts := search.CountOptions{
 		Pattern:    in.Query,
 		RepoFilter: lexical.RepoFilter(in.Repo),
 		Lang:       in.Lang,
 		GroupBy:    in.GroupBy,
 	}
-	backend := lexical.Daemon{Local: lexical.Local{IndexDir: indexDir}, SocketPath: socketPath}
+	backend, wtIndex, err := countBackend(in.Worktree)
+	if err != nil {
+		return nil, countOutput{}, err
+	}
+	defer wtIndex.Close()
+	if in.Worktree != "" {
+		opts.RepoFilter = ""
+	}
 	results, total, err := backend.Count(ctx, opts)
 	if err != nil {
 		return nil, countOutput{}, fmt.Errorf("count: %w", err)
@@ -421,7 +450,33 @@ func handleCount(
 		groups = append(groups, countGroup{Group: r.Group, Count: r.Count})
 	}
 
-	return nil, countOutput{Total: total, Groups: groups}, nil
+	return nil, countOutput{Total: total, Groups: groups, Note: wtIndex.StaleNote()}, nil
+}
+
+// countBackend is the index a count runs against: the main index through the
+// daemon, or the worktree's own index in-process when wt is set. The
+// returned Index is the worktree's, for its stale note and its Close, and
+// the zero Index over the main index.
+func countBackend(wt string) (lexical.Backend, worktree.Index, error) {
+	if wt != "" {
+		cfg, err := config.Load()
+		if err != nil {
+			return nil, worktree.Index{}, fmt.Errorf("load csl config: %w", err)
+		}
+		idx, err := ensureWorktreeIndex(cfg, wt)
+		if err != nil {
+			return nil, worktree.Index{}, err
+		}
+		return lexical.Local{IndexDir: idx.Dir}, idx, nil
+	}
+	indexDir, err := search.DefaultIndexDir()
+	if err != nil {
+		return nil, worktree.Index{}, fmt.Errorf("resolve index dir: %w", err)
+	}
+	return lexical.Daemon{
+		Local:      lexical.Local{IndexDir: indexDir},
+		SocketPath: daemon.DefaultSocketPath(),
+	}, worktree.Index{}, nil
 }
 
 func handleQueryValidate(

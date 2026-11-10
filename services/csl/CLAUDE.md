@@ -36,6 +36,13 @@ internal/
                     zero hits the per-term counts, the relaxed rerun and the
                     zero-result hint
     lexicaltest/   the fixture index the lexical, cli and mcpserver tests share
+  worktree/        a linked git worktree's own lexical index: resolving a
+                    worktree argument (path or org/repo@branch name), the
+                    CLI's --repo rule (SelectsOnly), and Ensure, which
+                    leases the index and, when it is out of date, builds
+                    a new generation of it under the build lock
+    worktreetest/  the clone-plus-worktree fixture the worktree, mcpserver
+                    and cli tests share
   queue/           reindex queue drained by `csl sync` / `csl index --drain`
   syncer/          the sync engine (pull all + reindex changed) shared by
                     `csl sync` and the background refresh, incl. the sync lock
@@ -90,6 +97,63 @@ the latest state; `csl sync` and `csl index` do it synchronously up front.
 fingerprint-stale repo whatever its pull status, so an index-format bump heals
 on the next cycle.
 
+**Linked worktrees get an index of their own.** The main index holds what
+discovery walks to under `dirs`. The walk stops at a repo's root, so a
+linked worktree under `~/.worktrees` or a repo's `.claude/worktrees` is not
+in it, and a fleet search returns one entry per repo. A call that names a
+worktree runs against that worktree alone: `worktree` on csl_search,
+csl_search_multi, csl_count, csl_read, csl_outline and csl_ask, or
+`--worktree` on the CLI (a relative path such as `.` resolves against the
+working directory). The working directory never narrows a CLI query on its
+own: agents work in worktrees, and the fleet recipes (`csl search ... |
+cut -d/ -f1-2 | sort -u`, `count --group-by repo`, `ask --per-repo`) must
+cover the fleet from there. The one implicit pick is a `--repo` that
+`worktree.SelectsOnly` finds selects only the working directory's worktree
+repo and no other discovered repo; `--no-worktree` turns it off.
+Semantic indexing of worktrees is out of scope.
+
+`worktree.Ensure` builds the index under `worktree-index/` (see Data model)
+before the call, and rebuilds it when the fingerprint moves. That is the main
+fingerprint plus the size and mtime of every file git status lists, since
+git status stays the same while an already modified file is edited again.
+A build never writes where a search reads: it fills a fresh generation
+directory (`search.NewWorktreeGeneration`) and publishes it by renaming a
+new `current` file over the old one (`search.PublishWorktreeGeneration`).
+A caller reads `current` once and searches that generation for the whole
+call. One call builds at a time, under a flock on the index dir's
+`.csl-build` (`search.LockWorktreeBuild`). A second call that finds it held
+answers from the published generation, marked `Index.Stale`, and every
+surface carries `Index.StaleNote` (stderr on the CLI, `note` on the tools,
+the csl_ask footer). With no published generation it waits up to `lockWait`
+(2 minutes), then fails with its own error naming the worktree build. Any change rebuilds the whole index: zoekt's delta
+builds need commits, and a dirty working tree has none, so reusing
+unchanged shards is not on offer. The cost is one read of every file
+(about 1.8 s and 43 MB for this repo).
+
+`Ensure` takes a shared flock lease on `.csl-in-use` in the index dir
+(`search.LeaseWorktreeIndex`) before it opens or builds, and another on
+`.csl-in-use` in the generation it searches (`search.OpenWorktreeGeneration`).
+The caller holds both until its search is done (`Index.Close`,
+`searchEnv.close`). A remover takes a lease exclusive without waiting,
+renames the directory to a `.tomb-` name, lets go, and only then deletes the
+tombstone. So it never removes an index or generation in use, and a caller
+that opened the lease before the rename finds it gone and starts over on a
+fresh directory. The kernel drops a dead caller's leases. Every delete goes
+through `search.checkUnder`, which refuses any path not strictly inside a
+`worktree-index` root.
+
+A generation that is no longer current goes on the first sweep after its
+last reader lets go: after each publish, and on each call that finds the
+index current. The index dir's lease mtime is the last use: past
+`maxWorktreeIndexes` (16) the least recently used indexes go.
+
+Worktree searches run in-process (`lexical.Local`), since the daemon serves
+the main index only, and ignore the repo filter. Results carry finder's
+worktree name, `org/repo@branch` (`@<worktree id>` on a detached HEAD),
+which tells a reader the branch copy from main. A branch switch moves the
+fingerprint, and the rebuild's fresh generation holds only the shards under
+the new name.
+
 **Hybrid search (RRF).** `csl hybrid` / `csl_hybrid_search` run the lexical
 (zoekt) and semantic (vector) backends independently and collapse each to one
 entry per `(repo, path)`. They fuse the two ranked lists with Reciprocal Rank
@@ -134,6 +198,7 @@ state path goes through that one resolver; do not join `.config/csl` by
 hand.
 
 - **`search-index/`**: the lexical index. `state.json` holds each repo's fingerprint, HEAD, branch, dirty flag, and `indexed_at`; one or more `<shard-hash>.zoekt` shard files sit alongside it per repo. `search-index/.csl-sync.lock` is the cross-process sync lock: `csl sync` and the `csl web` background refresh take it for the whole pull + index phase. Each pull in that phase is bounded by `pullTimeout` (5 minutes, `internal/syncer/pull.go`) and killed with its whole process tree, so a hung remote fails that repo instead of holding the lock. Every other index writer takes it too: `csl index` in all its forms, `csl search`'s foreground and background reindex, the web fallback's first build, and `csl_repo_reindex`. The index commands and the MCP tool fail fast while another writer holds it, naming that writer's PID; the search-time and web-fallback builds step aside. So no two writers ever overlap on shards or `state.json`. Each full sync (`csl sync` or a background refresh, not a single-repo run) removes the shards and `state.json` entries of repos that discovery no longer returns, keeping the ones `hooks.post_merge.exclude` hides (`search.PruneOrphans`).
+- **`worktree-index/`**: one throwaway lexical index per linked worktree a call named, in `<dir-name>-<hash of the path>/` (`search.WorktreeIndexDir`). Each holds the `.csl-in-use` lease file, the `.csl-build` build lock, and a `current` file naming the published generation. The generations sit beside them as `g-<random>/`, each with its shards, a `state.json` recording the worktree's path and fingerprint, and its own `.csl-in-use`. `search.PruneWorktreeIndexes` deletes an index whose worktree path has no `.git` left, and a directory that publishes no generation and is older than an hour (an abandoned first build). It also deletes any `.tomb-` directory a crash left and, past 16 indexes, the least recently used. It skips any index a caller holds a lease on. It runs at the start of every worktree call and in every full sync, so the whole tree can be deleted at any time.
 - **`semantic-index/`**: per-repo vector stores. Embeddings come from a local Ollama server (jina-code-v2 by default, overridable via `semantic.embed_model`/`semantic.dim`/`semantic.ollama_url`); no model files live on disk here.
 - **`search-daemon.sock`**, **`search-daemon.pid`**, **`search-daemon.log`**: the search daemon's Unix socket, PID file, and rotated log (`lumberjack`, 5 MB / 1 backup).
 - **`reindex.queue`**: repo paths appended by the suspenders `csl-reindex` post-merge hook after an ad-hoc `git pull`, drained by `csl sync` or `csl index --drain`.
@@ -224,12 +289,12 @@ All handlers run the same daemon-first-then-fallback search path as the CLI and 
 
 CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 
-- **`csl search <pattern>`**: search across all indexed repos. `--repo/-r`, `--lang/-l`, `--file/-f`, `--limit` (50), `--output-mode/-o` (files_with_matches\|content), `--context-lines/-C`, `--case-sensitive`, `--reindex` (synchronous re-index first), `--json`, `--toon`. `--serve` starts the search daemon in the foreground (there is no separate `csl serve`); `--stop` stops it. Content mode prints ripgrep `--heading` style blocks (`repo/path` header, `LINE:COL:match` with the 1-based match column as in ripgrep `--column`, `LINE-context`, `--` between gaps). It merges nearby hits into one block per context window via `search.Blocks`. That is the same grammar and code the `csl_search` text format uses except that the MCP text form prints `LINE:match` without the column (`search.RenderOptions.Column`). `--repo` matches case-insensitively (`lexical.RepoFilter`, as csl_search does). A malformed query is refused with the fix (`lexical.CheckShape`). An empty first search goes through `lexical.ExplainZero` with the CLI's `cliSurface`, whose notes name `csl repo --list` and `csl index` instead of the MCP tools. Text and `--toon` print the relaxed line before the results and the hint after them, both on stderr. `--json` prints an object: `matches`, one entry per line, plus `relaxed_query`/`dropped_terms` or `zero_result_hint`. There is no `--offset`; page with a high `--limit` and a shell pipe.
+- **`csl search <pattern>`**: search across all indexed repos. `--repo/-r`, `--lang/-l`, `--file/-f`, `--limit` (50), `--output-mode/-o` (files_with_matches\|content), `--context-lines/-C`, `--case-sensitive`, `--reindex` (synchronous re-index first), `--json`, `--toon`. `--serve` starts the search daemon in the foreground (there is no separate `csl serve`); `--stop` stops it. Content mode prints ripgrep `--heading` style blocks (`repo/path` header, `LINE:COL:match` with the 1-based match column as in ripgrep `--column`, `LINE-context`, `--` between gaps). It merges nearby hits into one block per context window via `search.Blocks`. That is the same grammar and code the `csl_search` text format uses except that the MCP text form prints `LINE:match` without the column (`search.RenderOptions.Column`). `--repo` matches case-insensitively (`lexical.RepoFilter`, as csl_search does). A malformed query is refused with the fix (`lexical.CheckShape`). An empty first search goes through `lexical.ExplainZero` with the CLI's `cliSurface`, whose notes name `csl repo --list` and `csl index` instead of the MCP tools. Text and `--toon` print the relaxed line before the results and the hint after them, both on stderr. `--json` prints an object: `matches`, one entry per line, plus `relaxed_query`/`dropped_terms` or `zero_result_hint`. There is no `--offset`; page with a high `--limit` and a shell pipe. `--worktree <path|name>` searches one linked worktree's own index instead (see How it works), `.` being the one the working directory sits in. The working directory alone never picks a worktree; a `--repo` that selects only its worktree's repo does, unless `--no-worktree` is set, and a stderr line then says so. The worktree path mutes the standard logger, since zoekt logs every shard it loads in-process. The same `--worktree` / `--no-worktree` pair and `--repo` rule (`worktreeFlags` in `internal/cli/worktree.go`) sit on `csl count`, `csl read`, `csl outline` and `csl ask`, each printing the same stderr line.
 - **`csl count <pattern>`**: count matches across indexed repos. `--repo/-r`, `--lang/-l`, `--group-by` (repo\|language), `--names` (with `--group-by`: only the group names, one per line, no total; the uncapped way to list every repo that matches a pattern), `--json`.
 - **`csl query <pattern>`**: validate and parse a zoekt query without running a search. `--json`.
-- **`csl read <file> --repo <name>`**: read a file from a repo with line numbers. `--repo/-r` (required), `--start-line`, `--end-line`, `--json`.
+- **`csl read <file> --repo <name>`**: read a file from a repo with line numbers. `--repo/-r` (required unless `--worktree` is set), `--start-line`, `--end-line`, `--worktree`, `--no-worktree`, `--json`.
 - **`csl ask <question>`**: the CLI form of csl_ask; it calls `mcpserver.Ask` with the same request the tool builds, so both share one corpus builder and one search path. `-q/--query` (repeatable, 1 to 10), `--repo/-r`, `--lang/-l`, `--file/-f`, `--max-files` (20, max 100), `--max-lines` (6000, max 20000), `--per-repo`, `--json`. `--files-from -` reads `org/repo/path` lines from stdin (the `csl search` files output, so `csl search ... | csl ask "q" --files-from -` works), or from a named file; it excludes `-q` and the three filters. Text prints the answer on stdout and the footer on stderr; `--json` prints the tool's JSON object. A Ctrl-C cancels the worker call (the claude CLI backend is a child process).
-- **`csl outline <repo> [path]`**: the ranked outline `csl_outline` returns, as text or `--json`. `--kinds` (comma-separated; fields, enumerators, and headings are out by default), `--limit` (100, max 500), `--include-tests`, `--max-files` (20000). The repo resolves by the MCP rule, case-insensitive regex matching exactly one repo (`finder.MatchOne`, shared with the tools).
+- **`csl outline <repo> [path]`**: the ranked outline `csl_outline` returns, as text or `--json`. `--kinds` (comma-separated; fields, enumerators, and headings are out by default), `--limit` (100, max 500), `--include-tests`, `--max-files` (20000). The repo resolves by the MCP rule, case-insensitive regex matching exactly one repo (`finder.MatchOne`, shared with the tools). With `--worktree` the arguments are only the optional path.
 - **`csl repo [query]`**: interactive picker over discovered repos. With a query, prints the single matching repo's path (case-insensitive substring on org/repo; errors on zero or multiple matches); a query also filters `--list` output. `--component`/`--owner`/`--system` narrow by the repo's catalog descriptor (case-insensitive substring on `metadata.name`/`spec.owner`/`spec.system`; a repo with no descriptor never matches). All filters compose (AND); catalog filters alone open the picker over the narrowed set, or print the path directly when exactly one repo is left. `--list` (non-interactive), `--json`/`--toon` (imply `--list`, rows gain `component`/`owner`/`system` when present). `--skipped` (implies `--list`) prints the repos discovery dropped instead, tab-separated name/path/reason, from `cfg.DiscoverReposReport()` (`finder.Dropped` carries a `Kind`: host, no-remote, excluded); with `--json`/`--toon` each entry also carries `remote` and `host`. When a filter drops every repo, `cfg.EmptyDiscoveryHint(dropped)` names the filter and counts instead of the plain "no git repos found" hint; a zero query errors with `no repos match query "<set fields>"`. The picker is csl's own (`internal/picker`, tcell + go-fuzzyfinder's matching package), not go-fuzzyfinder, because it needs to color parts of a line: `org/repo  <component>  owner:<owner>  system:<system> @ <path>`. The component is shown only when it differs from the repo's short name, matched characters are green, and `NO_COLOR` disables all color. Space-separated query words are independent fuzzy terms that must all match (fzf extended search, `internal/picker` `findAll`). The query line has readline editing keys (cursor motion by rune and word, deletion on either side). The selected row's band is derived from the terminal background (`internal/picker/theme.go`). An OSC 11 query on /dev/tty runs with a 100ms poll before tcell starts. The band is stepped toward white on dark and black on light, with a bright-black palette fallback. Dim text is lifted to the default foreground.
 - **`csl doctor`**: run the self-checks, one ok/FAIL line per check. The config check requires the file to parse, and to set at least one dir when the file exists. No file at all passes with a note naming the path to create. The repos-discovered check is a plain ok when every walked repo made it in, and a Skip note with the dropped counts when a filter removed any. It reports FAIL naming the filter when a loaded config discovers nothing. Then come the state file and index freshness checks. Index freshness gives a Skip note when repos exist but nothing is indexed yet, since the first search builds it. It reports "no repos to check" when repos-discovered already failed, and FAIL only for stale or dirty repos against an existing index. Shard integrity and search-server responsiveness follow. The ask-backend check reports the worker csl_ask would use as ok with a note (backend, model, effort), and notes a missing one, since search works without it. It FAILs only on an `ask.backend` or `ask.effort` value kit/llm cannot run. The catalog-descriptors check is ok when every descriptor discovery found reads cleanly, with a note when no repo carries one. It reports FAIL naming each unreadable descriptor, and is skipped when repos-discovered already failed. Web-only reachability and version-skew probes also run against the effective web base URL (search works with both failing). `--repair` (reset a corrupt state file). The list lives in `internal/selfcheck` and is also served as the `csl_doctor` MCP tool.
 - **`csl config`**: print which config file csl reads, whether it loaded, and the settings in effect once defaults are applied. `--help` carries an annotated reference of every key and of the `CSL_*` environment variables.
@@ -237,7 +302,7 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 - **`csl semantic <query>`**: search by meaning via vector embeddings. `--repo`, `--lang`, `--k` (10), `--expand`, `--json`. Requires `csl index --semantic-all` first.
 - **`csl semantic files [path]`**: classify every tracked file under a path with the indexer's skip rules, without embedding. Default output lists the files that would be embedded; `--skipped` lists filtered files with reasons; `--json` dumps every decision.
 - **`csl hybrid <query>`**: lexical + semantic, RRF-fused. `--repo/-r`, `--lang/-l`, `--limit` (50), `--rrf-k` (60), `--expand`, `--json`.
-- **`csl sync`**: pull all repos (parallel, ff-only) and batch-reindex the changed ones in one process, one `state.json` write. `--concurrency` (0 = config default, fallback 8), `--dry-run`. Skips repos on a non-default branch, in detached HEAD, with a dirty tree, without a remote, or matching `hooks.post_merge.exclude`. Also drains `reindex.queue` and, when `semantic.sync: true`, re-embeds changed repos. Fails fast (instead of racing) when the background refresh in `csl web` — or another sync — holds the sync lock; the engine is shared with that refresh via `internal/syncer`.
+- **`csl sync`**: pull all repos (parallel, ff-only) and batch-reindex the changed ones in one process, one `state.json` write. `--concurrency` (0 = config default, fallback 8), `--dry-run`. Skips repos on a non-default branch, in detached HEAD, with a dirty tree, without a remote, or matching `hooks.post_merge.exclude`. Also drains `reindex.queue`, prunes the worktree indexes whose worktree is gone (full runs), and, when `semantic.sync: true`, re-embeds changed repos. It posts its `sync complete` event to the events service only when the run pulled, reindexed or pruned something, or a pull failed (`syncChanged`): an all-current run is the common background refresh, and its event would push real ones out of the events cap. Fails fast (instead of racing) when the background refresh in `csl web` — or another sync — holds the sync lock; the engine is shared with that refresh via `internal/syncer`.
 - **`csl hooks`**: **deprecated.** csl no longer manages post-merge hooks; suspenders is the single git-hook manager, feeding `reindex.queue` via a `csl-reindex` post_merge entry that csl still drains (`csl sync` / `csl index --drain`). `csl hooks install` prints a deprecation notice and still writes the legacy hook when `hooks.post_merge.enabled` is set. `csl hooks uninstall` removes any csl-managed post-merge hook; `csl hooks status` (`--json`) reports per-repo hook state. Migration: run `csl hooks uninstall`, then add the `csl-reindex` entry to suspenders' `post_merge` config.
 - **`csl docs`**: print the embedded operating doc (`operating.md`, rendered with the resolved paths). `--claude-md` prints the embedded csl rules fragment (`claude-md.md`) instead. That file is the one copy of the agent-facing csl rules. The csl recipe links it to `~/.claude/CLAUDE.csl.md`, a path the consuming repo's global CLAUDE.md imports, so the target must not move. The eval harness uses it as its default steer file. `claude_md_test.go` checks it names every tool `csl mcp` registers. It also checks that the fenced block under "Add this to your CLAUDE.md" in `README.md` is a verbatim excerpt of it. `internal/cli/claude_md_test.go` checks every command and flag in its CLI block and inline `csl ...` spans against the cobra tree. Edit the fragment, then recopy the README excerpt if the routing section changed. `--claude-md --cli` prints `claude-md-cli.md`, the CLI-only form for a machine with csl on PATH and no `csl mcp` registered: it names no `csl_*` tool (`TestClaudeMDCLINamesNoTool`), and its `### CLI` and `### Query syntax` sections must match the full fragment byte for byte (`TestClaudeMDCLISharesSections`), so edit those two in `claude-md.md` and copy them over. The cobra-tree gate runs over both files.
 - **`csl shell-init <zsh|bash>`**: print the `repo` and `repo-sync` shell functions for `eval "$(csl shell-init zsh)"`. `shell_init_test.go` asserts the bodies match `[shell.functions]` in `recipes/csl/recipe.toml`, so change both or neither.
@@ -264,6 +329,8 @@ resolves the worker once at startup (`ask.NewWorker` on the loaded config)
 and passes the result as `Options.AskWorkerResolved`. With no backend, or a
 config that fails to load, every csl_ask call would fail, so the tool stays
 registered but deferred. `TestAlwaysLoadMeta` pins the set for both values.
+
+`csl_search`, `csl_search_multi`, `csl_count`, `csl_read`, `csl_outline` and `csl_ask` also take `worktree` (the embedded `worktreeParam`): a linked worktree's path, or its `org/repo@branch` name matched like a repo name among the discovered repos' worktrees (`worktree.Resolve`). It points the call at that worktree's own index or files (see How it works) and replaces `repo`, which is why `repo` is no longer required on csl_read and csl_outline; the handler refuses a call with neither. A worktree whose main checkout the config drops (`index.hosts`, or `hooks.post_merge.exclude` on the main checkout's path or `org/repo` name) is refused with the drop reason `csl repo --skipped` prints. The parameter description stays one short line, since it loads on six tools in every session; this doc and `csl docs` carry the rest. A file list in csl_ask may name the worktree's files beside the main checkouts'.
 
 Every tool accepts `response_format`: `text` (default) | `json` | `jsonl` |
 `toon` | `csv` | `markdown-kv` | `xml`. Precedence: the tool parameter, then

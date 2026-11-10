@@ -625,7 +625,7 @@ func TestNewMultiSearchEnv_FailedDaemonStartSearchesInProcess(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			calls := stubDaemonStart(t, tt.startErr)
-			env, err := newMultiSearchEnv()
+			env, err := newMultiSearchEnv("")
 			if err != nil {
 				t.Fatalf("newMultiSearchEnv: %v", err)
 			}

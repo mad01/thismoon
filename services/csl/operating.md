@@ -46,6 +46,34 @@ never the reference count. A `files_capped` result stopped at max_files
 next_limit is the limit that returns the rest, up to 500; past that, narrow
 with path or kinds.
 
+A linked git worktree (a branch checked out beside its main clone, say
+under ~/.worktrees) is not in the main index: that index holds each repo's
+main checkout, so a plain search from a worktree answers from the default
+branch. Pass `worktree` (a path inside the worktree, or its org/repo@branch
+name) on csl_search, csl_search_multi, csl_count, csl_read, csl_outline or
+csl_ask, or `--worktree` on the matching CLI command (`--worktree .` for the
+one you are in). The call then covers that worktree alone, from an index of
+its own, and results name the repo org/repo@branch.
+
+The working directory never narrows a CLI query on its own: a fleet-wide
+search run from inside a worktree still covers the fleet. The one exception
+is a `--repo` that selects only the worktree's repo (`'thismoon$'`, not
+`thismoon` when thismoon-arcade also exists). The CLI then answers from the
+worktree and says so on stderr; `--no-worktree` keeps it on the main
+index. A call without either never opens a worktree index.
+
+A worktree index is built on first use and rebuilt whole when any file in
+the worktree changes, because a working tree has no commit to build a delta
+against. The rebuild reads every file again: about 2 s and 40 MB for a
+mid-size repo, more for a large one. An edit loop pays it on the first
+search after each edit. A rebuild writes a new copy beside the one searches
+read and switches over once it is complete, so a search never sees a
+half-built index. When another call is mid-rebuild, a search answers from
+the previous build, and its result carries a note saying so. With no
+previous build it waits up to 2 minutes, then fails naming the build. At
+most 16 worktree indexes stay on disk: past that, the least recently used
+goes, never one in use.
+
 ## asking over many files
 
 csl_ask (and `csl ask` on the CLI) answers a question over the files 1 to 10
@@ -99,6 +127,12 @@ does not parse is an error. Everything csl writes sits under {{.StorePath}}:
 
 - `search-index/`: the lexical index. `state.json` records each repo's
   fingerprint; `<hash>.zoekt` shard files sit beside it.
+- `worktree-index/`: one throwaway lexical index per linked worktree a call
+  named, in `<dir-name>-<hash>/`: each build in its own `g-<random>/`
+  directory, and a `current` file naming the one searches read. It is
+  removed once its worktree is gone,
+  or when it is the least recently used past the cap: on the next worktree
+  call, or by the next full `csl sync` or web refresh.
 - `semantic-index/`: per-repo vector stores, present only after a
   `csl index --semantic-all` run.
 - `search-daemon.sock` / `.pid` / `.log`: the search server's socket, PID

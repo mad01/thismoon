@@ -22,6 +22,11 @@ import (
 // a `repo/path` header per file, `LINE:text` for matches, `LINE-text` for
 // context, `--` between non-contiguous groups, and a trailer with counts.
 func renderSearchText(out searchOutput) string {
+	return withNote(out.Note, renderSearchBody(out))
+}
+
+// renderSearchBody is renderSearchText without the note.
+func renderSearchBody(out searchOutput) string {
 	if out.Total == 0 {
 		return renderZeroHint(out.ZeroHint)
 	}
@@ -33,6 +38,14 @@ func renderSearchText(out searchOutput) string {
 		return body
 	}
 	return lexical.RelaxedLine(out.DroppedTerms, out.RelaxedQuery) + "\n\n" + body
+}
+
+// withNote leads body with a `note:` line when note is set.
+func withNote(note, body string) string {
+	if note == "" {
+		return body
+	}
+	return "note: " + note + "\n\n" + body
 }
 
 // renderFileMatches lists one `repo/path` per line. When truncated, the page
@@ -305,7 +318,7 @@ func renderCountText(out countOutput) string {
 	for _, g := range out.Groups {
 		lines = append(lines, fmt.Sprintf("%s  %d", g.Group, g.Count))
 	}
-	return strings.Join(lines, "\n")
+	return withNote(out.Note, strings.Join(lines, "\n"))
 }
 
 // renderDoctorText prints `ok` or `FAIL` (with the note when set), then one

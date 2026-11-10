@@ -14,6 +14,7 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/ask"
 	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/mcpserver"
+	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 )
 
 var (
@@ -26,6 +27,7 @@ var (
 	askPerRepoFlag   bool
 	askFilesFromFlag string
 	askJSONFlag      bool
+	askWorktree      worktreeFlags
 )
 
 var askCmd = &cobra.Command{
@@ -58,6 +60,12 @@ stops at --max-files (default 20, max 100) and --max-lines (default 6000, max
 truncated when matching files were never read, and names each query rerun
 without its zero-file terms. --per-repo asks once per repo and prints the
 answers under an org/repo heading each.
+
+With --worktree (--worktree . for the one you are in), the queries search
+that linked worktree's own index and the files are read from it (see 'csl
+search --help'); a file list may then name its org/repo@branch files beside
+the main checkouts'. Inside a worktree, a --repo that selects only its repo
+asks over the worktree too; --no-worktree keeps to the main index.
 
 The worker comes from the ask keys of config.yaml (see 'csl config --help').
 With no ask.backend set it is a LiteLLM proxy when LITELLM_BASE_URL is set,
@@ -92,6 +100,7 @@ func init() {
 	f.StringVar(&askFilesFromFlag, "files-from", "",
 		"read org/repo/path lines from this file, or from stdin for -")
 	f.BoolVar(&askJSONFlag, "json", false, "output the answer, corpus and usage as JSON")
+	askWorktree.register(askCmd)
 	askCmd.MarkFlagsOneRequired("query", "files-from")
 	for _, filter := range []string{"query", "repo", "lang", "file"} {
 		askCmd.MarkFlagsMutuallyExclusive("files-from", filter)
@@ -125,6 +134,9 @@ func runAsk(cmd *cobra.Command, args []string) error {
 		}
 		req.FileList = lines
 	}
+	if err := pickAskWorktree(cmd, &req); err != nil {
+		return err
+	}
 
 	parent := cmd.Context()
 	if parent == nil {
@@ -146,6 +158,23 @@ func runAsk(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), res.Answer)
 	fmt.Fprintln(cmd.ErrOrStderr(), res.Footer())
+	return nil
+}
+
+// pickAskWorktree points req at the linked worktree --worktree names, or at
+// the one the working directory is in when --repo selects only its repo,
+// and says so on stderr. It leaves req on the main index otherwise.
+func pickAskWorktree(cmd *cobra.Command, req *mcpserver.AskRequest) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	choice, err := askWorktree.choose(cfg, askRepoFlag)
+	if err != nil || choice == nil {
+		return err
+	}
+	choice.announce(cmd.ErrOrStderr())
+	req.Worktree = choice.repo.Path
 	return nil
 }
 
