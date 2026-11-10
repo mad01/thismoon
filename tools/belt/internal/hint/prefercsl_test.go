@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/sourcegraph/zoekt/query"
+
+	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
 func TestSegments(t *testing.T) {
@@ -617,7 +619,7 @@ func TestCheckWording(t *testing.T) {
 
 func TestAdviceRendersCLIFirst(t *testing.T) {
 	sw := &sweep{tool: "grep", walks: true, pattern: `it's|x`, include: "*.go"}
-	got := sw.advice("org/alpha")
+	got := sw.advice(cslTarget{repo: "org/alpha"})
 
 	cli := `csl search 'it'\''s|x f:\.go$' --repo '^org/alpha$'.`
 	mcp := `csl_search repo="^org/alpha$" query="it's|x f:\\.go$"`
@@ -635,7 +637,7 @@ func TestAdviceRendersCLIFirst(t *testing.T) {
 
 func TestAdviceAnchorsTheRepo(t *testing.T) {
 	sw := &sweep{tool: "grep", walks: true, pattern: "x"}
-	got := sw.advice("org/a.b")
+	got := sw.advice(cslTarget{repo: "org/a.b"})
 	for _, want := range []string{`--repo '^org/a\.b$'`, `repo="^org/a\\.b$"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("advice = %q, missing %q", got, want)
@@ -667,7 +669,7 @@ func TestAdviceForListings(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tc.sw.advice("org/alpha")
+			got := tc.sw.advice(cslTarget{repo: "org/alpha"})
 			last := -1
 			for _, w := range tc.want {
 				i := strings.Index(got, w)
@@ -680,5 +682,141 @@ func TestAdviceForListings(t *testing.T) {
 				last = i
 			}
 		})
+	}
+}
+
+// fakeWorktree lays out a linked worktree by files alone, the shape git
+// writes: <root>/main/.git/worktrees/wt/commondir, and <root>/wt/.git, a
+// pointer file naming that git dir. It returns the worktree's root.
+func fakeWorktree(t *testing.T, root string) string {
+	t.Helper()
+	gitDir := filepath.Join(root, "main", ".git", "worktrees", "wt")
+	wt := filepath.Join(root, "wt")
+	for _, dir := range []string{gitDir, wt} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		filepath.Join(gitDir, "commondir"): "../..\n",
+		filepath.Join(wt, ".git"):          "gitdir: " + gitDir + "\n",
+	}
+	for path, body := range files {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return wt
+}
+
+// TestCheckPointsAWorktreeAtItsOwnIndex: a search inside a linked worktree
+// of an indexed repo is advised a csl call naming the worktree, which
+// searches the worktree's own index, not one scoped to the repo, which would
+// answer from its main checkout. A worktree of a repo csl does not index, or
+// one the config excludes, gets nothing, and a submodule-style pointer is
+// not a worktree.
+func TestCheckPointsAWorktreeAtItsOwnIndex(t *testing.T) {
+	wt := fakeWorktree(t, t.TempDir())
+	h := NewPreferCSL(testConfig())
+	h.indexed = func() map[string]bool { return map[string]bool{"org/alpha": true} }
+	h.resolveRepo = func(string) string { return "github.com/org/alpha" }
+
+	got := h.Check(Input{Event: EventBash, Command: `grep -rn foo .`, Cwd: wt})
+	if got == nil {
+		t.Fatal("Check in a worktree of an indexed repo = nil, want advice")
+	}
+	for _, want := range []string{
+		wt + " is a linked worktree of org/alpha",
+		"csl search 'foo' --worktree '" + wt + "'.",
+		`csl_search worktree="` + wt + `" query="foo"`,
+	} {
+		if !strings.Contains(got.Text, want) {
+			t.Errorf("advice = %q, missing %q", got.Text, want)
+		}
+	}
+	if strings.Contains(got.Text, "--repo") {
+		t.Errorf("advice = %q, want no --repo: it would answer from the main checkout", got.Text)
+	}
+
+	h.resolveRepo = func(string) string { return "github.com/org/unindexed" }
+	if got := h.Check(Input{Event: EventBash, Command: `grep -rn foo .`, Cwd: wt}); got != nil {
+		t.Errorf("worktree of an unindexed repo: advice %q, want none", got.Text)
+	}
+
+	h.resolveRepo = func(string) string { return "github.com/org/alpha" }
+	h.cfg = config.Config{Hints: map[string]config.Toggle{
+		h.ID(): {ExcludeRepos: []string{"github.com/org/alpha"}},
+	}}
+	if got := h.Check(Input{Event: EventBash, Command: `grep -rn foo .`, Cwd: wt}); got != nil {
+		t.Errorf("excluded repo's worktree: advice %q, want none", got.Text)
+	}
+
+	sub := t.TempDir()
+	if err := os.WriteFile(filepath.Join(sub, ".git"), []byte("gitdir: ../modules/x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if root, ok := linkedWorktreeRoot(sub); ok {
+		t.Errorf("submodule pointer read as the worktree %s", root)
+	}
+}
+
+// TestCheckSpeaksOncePerAgentPerCheckout: within one session the hint
+// speaks once per checkout for each agent. The main thread and a subagent
+// each get their word, and a worktree counts apart from its repo's main
+// checkout.
+func TestCheckSpeaksOncePerAgentPerCheckout(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // the seen store lives under ~/.cache/belt
+	root := t.TempDir()
+	alpha := filepath.Join(root, "org", "alpha")
+	beta := filepath.Join(root, "org", "beta")
+	for _, repo := range []string{alpha, beta} {
+		if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wt := fakeWorktree(t, t.TempDir())
+	h := NewPreferCSL(testConfig())
+	h.indexed = func() map[string]bool { return map[string]bool{"org/alpha": true, "org/beta": true} }
+	h.resolveRepo = func(string) string { return "github.com/org/alpha" }
+
+	steps := []struct {
+		name, cwd, agent string
+		want             bool
+	}{
+		{"first grep in alpha", alpha, "", true},
+		{"second grep in alpha", alpha, "", false},
+		{"a subagent in alpha", alpha, "agent-1", true},
+		{"the subagent again", alpha, "agent-1", false},
+		{"beta is another checkout", beta, "", true},
+		{"alpha's worktree is another checkout", wt, "", true},
+		{"the worktree again", wt, "", false},
+	}
+	for _, s := range steps {
+		got := h.Check(Input{
+			Event: EventBash, Command: `grep -rn foo .`, Cwd: s.cwd,
+			SessionID: "s1", AgentID: s.agent,
+		})
+		if (got != nil) != s.want {
+			t.Errorf("%s: advice = %v, want advice %v", s.name, got, s.want)
+		}
+	}
+
+	if got := h.Check(Input{Event: EventBash, Command: `grep -rn foo .`, Cwd: alpha, SessionID: "s2"}); got == nil {
+		t.Error("a new session: no advice, want the hint again")
+	}
+}
+
+// TestAdviceForAWorktreeListing: a file listing in a worktree hands over
+// csl_search with the worktree, since csl_ls takes a repo only.
+func TestAdviceForAWorktreeListing(t *testing.T) {
+	sw := sweep{tool: "find", walks: true}
+	got := sw.advice(cslTarget{repo: "org/alpha", worktree: "/w/alpha/feat"})
+	for _, want := range []string{
+		`csl search 'f:<regex>' --worktree '/w/alpha/feat'`,
+		`csl_search worktree="/w/alpha/feat" query="f:<regex>"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("advice = %q, missing %q", got, want)
+		}
 	}
 }
