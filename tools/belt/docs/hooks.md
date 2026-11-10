@@ -703,7 +703,10 @@ and a `warn` event tagged `decode_error` records why (see Wiring above).
 Every hint fire posts an `info` event tagged `hint` (the hint id), `event`
 (the hint event), and the session identity (`session_id`, plus `agent_id`
 and `agent_type` inside a subagent). The hook sets all five; a hint adds
-none of its own.
+none of its own. Two kinds of fire post nothing: `agent-memory`, and a
+custom hint set to `skip_event`. Both inject the same context on every
+start, so they carry no signal and would push guard history out of the
+events cap.
 
 ### agent-memory (session-start)
 
@@ -713,8 +716,22 @@ Injects the shared agent-memory index when a session opens.
   `~/.config/agent-memory-work/MEMORY.md` (machines that have one), keeps
   only the fact bullets, and injects them as session context. A missing store
   renders nothing, so a personal machine never sees a work index.
-- **Caps** at 30 facts per store; past that it truncates and flags the store
-  for pruning.
+- **Caps** the whole injected block at 9,000 bytes: the `belt[agent-memory]`
+  prefix, each store's header, its fact lines and any truncation note.
+  Claude Code hands the model at most 10,000 characters of one hook's output
+  and swaps anything longer for a short preview. The budget keeps the memory
+  block alone under that line. Every session-start hint renders into the same
+  output, so when other hints fire with it (moondb-inflight, custom hints)
+  and are large, the combined output can still pass the cap.
+- **Holds a quarter for the work store** when both stores have facts. The
+  personal store renders first, and without the reserve a large personal
+  index would leave the work index a few hundred bytes. A store that needs
+  less than its share hands the rest to the other.
+- **Cuts a store past its share** at the last fact that fits, and its note
+  names that store. `belt doctor` shows each store against its share, warns
+  at 80% of the budget, and lists a cut store by name in its warnings
+  section.
+- **Posts no event** per fire: it injects the same text every session.
 - **No per-session dedupe** on purpose: the index is the thing to see every
   session.
 - **Why**: "read the memory index at session start" as instruction prose
@@ -1203,7 +1220,8 @@ missing key:
 | custom guard timeout | 5 s | custom guards |
 | custom hint default budget | 400 ms | custom hints (`timeout_ms` overrides it per hint) |
 | script size cap | 1 MiB | script-deny-list |
-| memory facts per store | 30 | agent-memory |
+| memory block budget, prefix and headers included | 9,000 bytes | agent-memory |
+| share held for the work store when both have facts | 2,250 bytes | agent-memory |
 | in-flight files asked of moondb | 200 | moondb-inflight |
 | in-flight paths per fire | 10 | moondb-inflight |
 | large-read threshold | 300 lines | read-size |

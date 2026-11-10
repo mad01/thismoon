@@ -22,6 +22,10 @@ custom_hints:
   plain:
     event: session-start
     command: [true]
+  index:
+    event: subagent-start
+    command: [true]
+    skip_event: true
 `)
 	cfg := mustLoad(t, Paths{
 		BeltYAML: filepath.Join(dir, "config.yaml"),
@@ -51,6 +55,9 @@ custom_hints:
 	}
 	if got := cfg.CustomHints["plain"].Timeout(); got != CustomHintTimeout {
 		t.Errorf("default Timeout() = %s, want %s", got, CustomHintTimeout)
+	}
+	if cfg.CustomHints["plain"].SkipEvent || !cfg.CustomHints["index"].SkipEvent {
+		t.Error("skip_event: want off by default and on where set")
 	}
 }
 

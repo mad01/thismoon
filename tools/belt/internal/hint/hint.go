@@ -76,6 +76,10 @@ type Input struct {
 type Advice struct {
 	Hint string
 	Text string
+	// SkipEvent keeps this advice off the events service. It is for context
+	// a hint injects on every start, which carries no signal about the
+	// session and would push guard history out of the events cap.
+	SkipEvent bool
 }
 
 // Hint checks one tool call and optionally advises. Returning nil is the

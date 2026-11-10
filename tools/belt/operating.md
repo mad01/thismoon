@@ -179,9 +179,9 @@ again.
 
 1. `belt doctor`: build metadata, which config surface loaded (include
    files too), guard and hint enablement, the `belt hint read` matcher,
-   moondb reachability, the ledger and
-   watch settings with events-service reachability, and the resolved
-   blocked-name list. It ends with a warnings section and exits 1 when that
+   moondb reachability, each agent-memory index against its budget share,
+   the ledger and watch settings with events-service reachability, and the
+   resolved blocked-name list. It ends with a warnings section and exits 1 when that
    section is not empty
 2. `belt check bash "<command>"`, or `belt check write --file <path>
    --content "<text>"`: dry-run the guards and print each verdict

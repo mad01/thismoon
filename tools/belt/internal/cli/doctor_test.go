@@ -56,11 +56,13 @@ func armedConfig(t *testing.T, dir string) config.Paths {
 
 // stubProbes keeps doctor tests off the network: an events probe that
 // answers eventsErr and a reachable moondb, so no doctor test dials a real
-// port, which may or may not have a server behind it on a dev machine.
+// port, which may or may not have a server behind it on a dev machine. No
+// agent-memory store is present, so the real ones under $HOME stay unread.
 func stubProbes(eventsErr error) doctorProbes {
 	return doctorProbes{
 		moondb: stubMoondbProbe(nil),
 		events: func() (string, error) { return "http://127.0.0.1:7430", eventsErr },
+		memory: func() []hint.MemoryUsage { return nil },
 	}
 }
 

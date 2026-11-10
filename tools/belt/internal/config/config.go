@@ -206,6 +206,10 @@ type CustomHint struct {
 	// subagent. Validated at load: subagent-start only, never empty, and no
 	// * before an entry's end.
 	AgentTypes []string `toml:"agent_types"   yaml:"agent_types,omitempty"`
+	// SkipEvent keeps this hint's advice off the events service, for
+	// context injected on every start (an index, a brief) that says nothing
+	// about the session. The warn event for a failed run still posts.
+	SkipEvent bool `toml:"skip_event"    yaml:"skip_event,omitempty"`
 	// agentTypesKey records that the YAML entry wrote the agent_types key,
 	// even with no value (see UnmarshalYAML).
 	agentTypesKey bool

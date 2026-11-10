@@ -334,6 +334,12 @@ machine's rendered config, not in belt and not in a second hook.
   key ignores it and runs the hint for every subagent, and one older than
   `*` matching reads the `*` literally and briefs no subagent. So run
   `ralph up` before a config names either.
+- `custom_hints.<name>.skip_event` (bool, default `false`): when true, the
+  hint's advice posts no event to the events service. It is for context a
+  hint injects on every start, such as a memory index, which says nothing
+  about the session and would crowd guard history out of the events cap.
+  The warn event for a failed run still posts. A belt older than the key
+  ignores it and posts every fire, so it is safe to set before `ralph up`.
 
 ### ledger
 
@@ -656,6 +662,7 @@ custom_hints:
     event: subagent-start
     command: [worker-brief]
     agent_types: [reviewer-*, docs-writer]
+    skip_event: true
 
 ledger:
   enabled: true
