@@ -22,6 +22,7 @@ csl (code-search-local) keeps a zoekt index of every git checkout under its conf
 - Exploring needs no pull. Say "based on the local checkout, may be behind upstream".
 - Never stash, reset or discard uncommitted work on your own. On a non-default branch, ask before switching.
 - `csl index --status` shows when each repo was last indexed; `csl index` reindexes the stale ones; `csl sync` pulls every clean repo and reindexes. A search re-indexes a stale or dirty repo in the background after answering, so one search may answer from the previous commit. When freshness matters, run `csl index` first.
+- **A linked worktree is not in the main index**, which holds each repo's main checkout. Working in one (under `~/.worktrees`, say), pass `--worktree .` (or its path) to `csl search`, `count`, `read`, `outline` or `ask`: the command answers from the worktree's own index, rebuilt when its files change, and names the repo `org/repo@branch`. Without it the working directory narrows nothing, so a fleet search from a worktree still covers the fleet. A `--repo` that selects only the worktree's repo (`'thismoon$'`) also answers from the worktree and says so on stderr; `--no-worktree` keeps it on the main index.
 - `csl doctor` when a call errors or comes back empty. Run it before retrying.
 
 ### CLI
@@ -37,6 +38,7 @@ csl sync                                          # pull every clean repo and re
 csl search '<query>' --repo <re> --file '<re>'    # files that match (default)
 csl search '<query>' -o content -C 2 --limit 100  # matching lines with context
 csl search '<query>' --limit 5000 | cut -d/ -f1-2 | sort | uniq -c | sort -rn  # matching files per repo
+csl search '<query>' --worktree <path>            # one linked worktree, from its own index
 csl count '<query>' --group-by repo               # how many matches per repo
 csl count '<query>' --group-by repo --names       # every matching repo, one per line, no cap
 csl count '<query>' --lang go --repo <re>         # one total, narrowed

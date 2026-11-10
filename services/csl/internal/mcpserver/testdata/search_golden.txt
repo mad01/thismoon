@@ -440,6 +440,10 @@ ok
         "xml"
       ],
       "type": "string"
+    },
+    "worktree": {
+      "description": "linked git worktree path or org/repo@branch to answer from instead of repo",
+      "type": "string"
     }
   },
   "required": [
@@ -578,6 +582,10 @@ null
         "markdown-kv",
         "xml"
       ],
+      "type": "string"
+    },
+    "worktree": {
+      "description": "linked git worktree path or org/repo@branch to answer from instead of repo",
       "type": "string"
     }
   },

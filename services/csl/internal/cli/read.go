@@ -3,7 +3,9 @@ package cli
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -19,6 +21,7 @@ var (
 	readfileStartLineFlag int
 	readfileEndLineFlag   int
 	readfileJSONFlag      bool
+	readfileWorktree      worktreeFlags
 )
 
 var readfileCmd = &cobra.Command{
@@ -26,27 +29,63 @@ var readfileCmd = &cobra.Command{
 	Short: "Read a file from a repository",
 	Long: `Read a file from a repository with line numbers.
 
-The --repo flag is required to resolve which repository the file belongs to.
-The file path is relative to the repository root.
+The --repo flag names the repository the file belongs to. The file path is
+relative to the repository root.
+
+--worktree reads from a linked git worktree instead (--worktree . for the
+one you are in), and replaces --repo. Inside a worktree, a --repo that
+selects only its repo reads from the worktree too, and a stderr line says
+so; --no-worktree reads the main checkout.
 
 Examples:
   csl read internal/cli/root.go --repo thismoon
   csl read main.go --repo thismoon --start-line 10 --end-line 30
-  csl read README.md --repo thismoon --json`,
+  csl read README.md --repo thismoon --json
+  csl read README.md --worktree ~/.worktrees/thismoon/my-branch
+  csl read README.md --worktree .`,
 	Args: cobra.ExactArgs(1),
 	RunE: runReadfile,
 }
 
 func init() {
 	readfileCmd.Flags().
-		StringVarP(&readfileRepoFlag, "repo", "r", "", "repository name to read from (required)")
-	_ = readfileCmd.MarkFlagRequired("repo")
+		StringVarP(&readfileRepoFlag, "repo", "r", "", "repository name to read from (required unless --worktree is set)")
 	readfileCmd.Flags().
 		IntVar(&readfileStartLineFlag, "start-line", 0, "first line to show (1-based, 0 = start of file)")
 	readfileCmd.Flags().
 		IntVar(&readfileEndLineFlag, "end-line", 0, "last line to show (1-based, 0 = end of file)")
 	readfileCmd.Flags().BoolVar(&readfileJSONFlag, "json", false, "output as JSON")
+	readfileWorktree.register(readfileCmd)
 	rootCmd.AddCommand(readfileCmd)
+}
+
+// readTarget returns the checkout csl read reads from: the worktree the
+// worktree flags choose, announced on w, else the first discovered repo
+// whose name holds --repo.
+func readTarget(cfg *config.Config, w io.Writer) (*finder.Repo, error) {
+	choice, err := readfileWorktree.choose(cfg, readfileRepoFlag)
+	if err != nil {
+		return nil, err
+	}
+	if choice != nil {
+		choice.announce(w)
+		return &choice.repo, nil
+	}
+	if readfileRepoFlag == "" {
+		return nil, errors.New(
+			"--repo is required, or --worktree for a linked worktree (--worktree . for the one you are in)",
+		)
+	}
+	repos, err := cfg.DiscoverRepos()
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range repos {
+		if strings.Contains(r.Name, readfileRepoFlag) {
+			return &r, nil
+		}
+	}
+	return nil, fmt.Errorf("no repo matching %q found", readfileRepoFlag)
 }
 
 type readfileLineJSON struct {
@@ -68,21 +107,9 @@ func runReadfile(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	repos, err := cfg.DiscoverRepos()
+	matched, err := readTarget(cfg, cmd.ErrOrStderr())
 	if err != nil {
 		return err
-	}
-
-	// Find the matching repo.
-	var matched *finder.Repo
-	for _, r := range repos {
-		if strings.Contains(r.Name, readfileRepoFlag) {
-			matched = &r
-			break
-		}
-	}
-	if matched == nil {
-		return fmt.Errorf("no repo matching %q found", readfileRepoFlag)
 	}
 
 	absPath, err := repopath.Resolve(matched.Path, "file", relPath)

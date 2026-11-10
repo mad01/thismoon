@@ -122,9 +122,10 @@ func TestHandleOutline_Errors(t *testing.T) {
 	}
 }
 
-// TestOutlineTool_Schema pins the advertised contract: repo is the only
-// required field, the options are optional, and response_format is there
-// with its enum.
+// TestOutlineTool_Schema pins the advertised contract: nothing is required,
+// since repo or worktree names the checkout and the handler refuses a call
+// with neither, the options are optional, and response_format is there with
+// its enum.
 func TestOutlineTool_Schema(t *testing.T) {
 	var tool *mcp.Tool
 	for _, tl := range mcptest.ListTools(t, New("test", Options{})) {
@@ -136,12 +137,12 @@ func TestOutlineTool_Schema(t *testing.T) {
 		t.Fatal("csl_outline is not registered")
 	}
 	props, required := schemaProperties(t, tool.InputSchema)
-	for _, p := range []string{"repo", "path", "kinds", "limit", "include_tests", "response_format"} {
+	for _, p := range []string{"repo", "worktree", "path", "kinds", "limit", "include_tests", "response_format"} {
 		if _, ok := props[p]; !ok {
 			t.Errorf("input schema lacks %s", p)
 		}
 	}
-	if len(required) != 1 || required[0] != "repo" {
-		t.Errorf("required = %v, want [repo]", required)
+	if len(required) != 0 {
+		t.Errorf("required = %v, want none", required)
 	}
 }

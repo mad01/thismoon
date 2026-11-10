@@ -108,6 +108,9 @@ type Corpus struct {
 	// Truncated is set when matching files were never considered: the caps
 	// were reached before them, or a query's search stopped at its limit.
 	Truncated bool `json:"truncated"`
+	// Note says why the selection may be off, such as a worktree index
+	// answering from its previous build; "" when there is nothing to say.
+	Note string `json:"note,omitempty"`
 }
 
 // Union merges ranked hit lists into one: every list's first hit, then

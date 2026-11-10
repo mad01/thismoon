@@ -14,6 +14,7 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/ask"
 	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
+	"github.com/mad01/thismoon/services/csl/internal/worktree"
 )
 
 // csl_ask is the bulk reader: a question over the files a search selects,
@@ -56,6 +57,7 @@ type askInput struct {
 	MaxFiles int      `json:"max_files,omitempty" jsonschema:"most files the worker reads (default 20, max 100)"`
 	MaxLines int      `json:"max_lines,omitempty" jsonschema:"most lines across those files (default 6000, max 20000); each file is read whole or skipped"`
 	PerRepo  bool     `json:"per_repo,omitempty"  jsonschema:"ask once per repo and return the answers under an org/repo heading each"`
+	worktreeParam
 	formatParam
 }
 
@@ -68,8 +70,8 @@ func registerAskTools(s *mcp.Server, alwaysLoad bool) {
 	tool := &mcp.Tool{
 		Name: "csl_ask",
 		Description: fmt.Sprintf(
-			"Pick this over csl_read or Read when a file runs to %d lines or more, or a question spans several files, and you need only the answer, not the lines. " +
-			"Try it before you read: a thin answer costs one cheap call, and the lines are still there to read after. ",
+			"Pick this over csl_read or Read when a file runs to %d lines or more, or a question spans several files, and you need only the answer, not the lines. "+
+				"Try it before you read: a thin answer costs one cheap call, and the lines are still there to read after. ",
 			AskMinLines,
 		) +
 			"A cheap hosted worker model reads the files a zoekt search selects, so they never enter your context: only its answer comes back, with a footer giving the corpus size, the backend and model, and the list price. " +
@@ -105,6 +107,7 @@ func handleAsk(
 		File:     in.File,
 		Limits:   ask.Limits{MaxFiles: in.MaxFiles, MaxLines: in.MaxLines},
 		PerRepo:  in.PerRepo,
+		Worktree: in.Worktree,
 	})
 	if err != nil {
 		return nil, ask.Result{}, err
@@ -128,6 +131,10 @@ type AskRequest struct {
 	// Limits cap the corpus; zero fields take the defaults.
 	Limits  ask.Limits
 	PerRepo bool
+	// Worktree names a linked worktree, by path or org/repo@branch name.
+	// Queries then search its own index and replace Repo; a file list may
+	// name its files beside the main checkouts'.
+	Worktree string
 	// Surface words the malformed-query fix and the zero-result hint for the
 	// caller's front end. The zero value is the MCP tool's.
 	Surface lexical.Surface
@@ -229,13 +236,14 @@ func askCorpus(
 	lim ask.Limits,
 ) (ask.Corpus, []ask.Relaxed, error) {
 	if len(req.FileList) > 0 {
-		corpus, err := fileListCorpus(cfg, req.FileList, lim)
+		corpus, err := fileListCorpus(cfg, req.FileList, req.Worktree, lim)
 		return corpus, nil, err
 	}
-	env, err := newMultiSearchEnvIn(cfg)
+	env, err := newMultiSearchEnvIn(cfg, req.Worktree)
 	if err != nil {
 		return ask.Corpus{}, nil, err
 	}
+	defer env.close()
 	env.surface = req.Surface
 	sel, err := searchAskQueries(ctx, env, req, askSearchLimit)
 	if err != nil {
@@ -246,14 +254,29 @@ func askCorpus(
 		return ask.Corpus{}, nil, err
 	}
 	corpus.Truncated = corpus.Truncated || sel.truncated
+	corpus.Note = env.note
 	return corpus, sel.relaxed, nil
 }
 
 // fileListCorpus reads the files a --files-from list names into a corpus.
-func fileListCorpus(cfg *config.Config, list []string, lim ask.Limits) (ask.Corpus, error) {
+// With wt set, the list may also name the worktree's files, under the
+// org/repo@branch name a worktree search prints.
+func fileListCorpus(
+	cfg *config.Config,
+	list []string,
+	wt string,
+	lim ask.Limits,
+) (ask.Corpus, error) {
 	env, err := newSearchEnvIn(cfg)
 	if err != nil {
 		return ask.Corpus{}, err
+	}
+	if wt != "" {
+		repo, err := worktree.Resolve(cfg, wt)
+		if err != nil {
+			return ask.Corpus{}, err
+		}
+		env.repoPaths[repo.Name] = repo.Path
 	}
 	names := slices.Collect(maps.Keys(env.repoPaths))
 	hits, err := ask.ParseFileList(list, names)

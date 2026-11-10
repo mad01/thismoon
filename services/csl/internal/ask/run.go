@@ -70,7 +70,8 @@ type Result struct {
 }
 
 // Footer is the one line that closes a text answer: the corpus size, the
-// backend and model, the list price, and each query that was relaxed.
+// backend and model, the list price, each query that was relaxed, and the
+// corpus note when there is one.
 func (r Result) Footer() string {
 	corpus := fmt.Sprintf("%d files, %d lines", len(r.Corpus.Files), r.Corpus.Lines)
 	if n := len(r.Corpus.Skipped); n > 0 {
@@ -84,6 +85,9 @@ func (r Result) Footer() string {
 	)
 	for _, q := range r.Relaxed {
 		footer += fmt.Sprintf("; relaxed: %s -> %s", q.Query, q.RelaxedQuery)
+	}
+	if r.Corpus.Note != "" {
+		footer += "; note: " + r.Corpus.Note
 	}
 	return footer
 }

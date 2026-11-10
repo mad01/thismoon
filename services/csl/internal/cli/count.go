@@ -9,7 +9,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
+	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/search"
+	"github.com/mad01/thismoon/services/csl/internal/worktree"
 )
 
 var (
@@ -18,6 +20,7 @@ var (
 	countLangFlag    string
 	countGroupByFlag string
 	countNamesFlag   bool
+	countWorktree    worktreeFlags
 )
 
 var countCmd = &cobra.Command{
@@ -36,7 +39,12 @@ Examples:
   csl count "func.*Error" --group-by repo
   csl count "import" --lang go --group-by language
   csl count "uses: .*/deploy" --group-by repo --names
-  csl count "FIXME" --repo thismoon --json`,
+  csl count "FIXME" --repo thismoon --json
+  csl count "TODO" --worktree ~/.worktrees/thismoon/my-branch
+
+With --worktree, the count covers that linked worktree alone, from its own
+index (see 'csl search --help'). Inside a worktree, a --repo that selects
+only its repo counts the worktree too; --no-worktree counts the main index.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runCount,
 }
@@ -47,7 +55,9 @@ func init() {
 		StringVarP(&countRepoFlag, "repo", "r", "", "filter to repos matching this name")
 	countCmd.Flags().StringVarP(&countLangFlag, "lang", "l", "", "filter to a specific language")
 	countCmd.Flags().StringVar(&countGroupByFlag, "group-by", "", "group counts by: repo, language")
-	countCmd.Flags().BoolVar(&countNamesFlag, "names", false, "with --group-by: print only the group names, one per line")
+	countCmd.Flags().
+		BoolVar(&countNamesFlag, "names", false, "with --group-by: print only the group names, one per line")
+	countWorktree.register(countCmd)
 	rootCmd.AddCommand(countCmd)
 }
 
@@ -63,16 +73,33 @@ func runCount(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--names needs --group-by repo or --group-by language")
 	}
 
-	indexDir, err := search.DefaultIndexDir()
-	if err != nil {
-		return err
-	}
-
 	opts := search.CountOptions{
 		Pattern:    pattern,
 		RepoFilter: countRepoFlag,
 		Lang:       countLangFlag,
 		GroupBy:    countGroupByFlag,
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	choice, err := countWorktree.choose(cfg, countRepoFlag)
+	if err != nil {
+		return err
+	}
+	if choice != nil {
+		return countWorktreeIndex(cmd, cfg, choice, opts)
+	}
+	return countMainIndex(cmd, opts)
+}
+
+// countMainIndex counts in the main index, through the daemon when it runs
+// and in-process otherwise.
+func countMainIndex(cmd *cobra.Command, opts search.CountOptions) error {
+	indexDir, err := search.DefaultIndexDir()
+	if err != nil {
+		return err
 	}
 
 	// Try daemon first.
@@ -97,6 +124,31 @@ func runCount(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	return printCount(cmd.OutOrStdout(), results, total)
+}
+
+// countWorktreeIndex counts in one linked worktree's own index, in-process:
+// the daemon serves the main index only. The index is brought up to date
+// first, and the repo filter is not applied, since the worktree is the only
+// repo.
+func countWorktreeIndex(
+	cmd *cobra.Command,
+	cfg *config.Config,
+	choice *worktreeChoice,
+	opts search.CountOptions,
+) error {
+	choice.announce(cmd.ErrOrStderr())
+	idx, err := worktree.Ensure(choice.repo, cfg.AllowedHiddenDirs())
+	if err != nil {
+		return err
+	}
+	defer idx.Close()
+	noteStale(cmd.ErrOrStderr(), idx)
+	opts.RepoFilter = ""
+	results, total, err := search.Count(context.Background(), idx.Dir, opts)
+	if err != nil {
+		return err
+	}
 	return printCount(cmd.OutOrStdout(), results, total)
 }
 

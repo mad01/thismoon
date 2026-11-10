@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -13,12 +12,13 @@ import (
 
 // outlineInput is the typed input for the csl_outline tool.
 type outlineInput struct {
-	Repo         string   `json:"repo"                    jsonschema:"case-insensitive regex or substring matched against the org/repo name; must resolve to exactly one repo"`
+	Repo         string   `json:"repo,omitempty"          jsonschema:"case-insensitive regex or substring matched against the org/repo name; must resolve to exactly one repo; required unless worktree is set"`
 	Path         string   `json:"path,omitempty"          jsonschema:"directory inside the repo whose files contribute definitions (e.g. services/csl/internal); default the whole repo. References are always counted across the whole repo"`
 	Kinds        []string `json:"kinds,omitempty"         jsonschema:"keep only these kinds: interface, struct, class, type, typealias, enum, namespace, function, method, methodSpec, const, var, field, enumerator, section; default all but field, enumerator, and section"`
 	Limit        int      `json:"limit,omitempty"         jsonschema:"maximum symbols to return (default 100, max 500); a cut result's next_limit is the value to pass for more"`
 	IncludeTests bool     `json:"include_tests,omitempty" jsonschema:"include test files (_test.go, test_*.py, *.test.ts, __tests__/, ...); default false leaves them out of both the definitions and the reference counts"`
 	MaxFiles     int      `json:"max_files,omitempty"     jsonschema:"stop the walk after this many files (default 20000) and mark the result truncated with files_capped"`
+	worktreeParam
 	formatParam
 }
 
@@ -49,9 +49,6 @@ func handleOutline(
 	_ *mcp.CallToolRequest,
 	in outlineInput,
 ) (*mcp.CallToolResult, outline.Result, error) {
-	if strings.TrimSpace(in.Repo) == "" {
-		return nil, outline.Result{}, fmt.Errorf("repo is required")
-	}
 	if in.Limit < 0 || in.MaxFiles < 0 {
 		return nil, outline.Result{}, fmt.Errorf("limit and max_files must be >= 0")
 	}
@@ -59,7 +56,7 @@ func handleOutline(
 	if err != nil {
 		return nil, outline.Result{}, fmt.Errorf("load csl config: %w", err)
 	}
-	matched, err := resolveRepoIn(cfg, in.Repo)
+	matched, err := resolveTargetIn(cfg, in.Repo, in.Worktree)
 	if err != nil {
 		return nil, outline.Result{}, err
 	}
