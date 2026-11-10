@@ -633,3 +633,52 @@ func TestRunHintSessionStartRunsCustomHints(t *testing.T) {
 		t.Errorf("additionalContext = %q, want it to contain %q", got, want)
 	}
 }
+
+// TestRunHintSessionStartArchivesNoMemoryInjection: the agent-memory index
+// rides every session start and carries no signal, so it reaches the
+// session but not the events service, and so does a custom hint set to
+// skip_event. Any other custom hint on the same event is still archived.
+func TestRunHintSessionStartArchivesNoMemoryInjection(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	index := filepath.Join(home, ".config", "agent-memory", "MEMORY.md")
+	if err := os.MkdirAll(filepath.Dir(index), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(index, []byte("- [a.md](a.md) — draft, never send\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	load := func() (config.Config, error) {
+		return config.Config{CustomHints: map[string]config.CustomHint{
+			"journal": {
+				Event:   "session-start",
+				Command: []string{"sh", "-c", "echo two open actions"},
+			},
+			"brief": {
+				Event: "session-start", Command: []string{"sh", "-c", "echo the brief"}, SkipEvent: true,
+			},
+		}}, nil
+	}
+
+	var out bytes.Buffer
+	var a archived
+	runner{
+		load: load,
+		emit: a.emit,
+	}.hints(
+		"session-start",
+		strings.NewReader(`{"session_id":"s1"}`),
+		&out,
+	)
+
+	for _, want := range []string{
+		"belt[agent-memory]:", "draft, never send", "belt[journal]: two open actions", "belt[brief]: the brief",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("advice %q is missing %q", out.String(), want)
+		}
+	}
+	if len(a.events) != 1 || a.events[0].Tags["hint"] != "journal" {
+		t.Errorf("archived %+v, want only the journal hint's event", a.events)
+	}
+}

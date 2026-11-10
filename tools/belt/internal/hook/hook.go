@@ -291,6 +291,9 @@ func (rn runner) hints(event string, r io.Reader, w io.Writer) {
 		return
 	}
 	for _, a := range advice {
+		if a.SkipEvent {
+			continue
+		}
 		rn.emit(
 			"belt",
 			"info",

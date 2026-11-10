@@ -90,7 +90,9 @@ session id, transcript path, cwd) and runs every enabled hint for the event.
 Hints do not short-circuit, each speaks or stays silent independently. Advice
 is emitted as `hookSpecificOutput.additionalContext` with the invoking
 event's name. Every fired hint POSTs an
-info event, so hint volume is measurable from the events timeline. A
+info event, so hint volume is measurable from the events timeline. The
+exception is advice marked `SkipEvent` (agent-memory, and custom hints with
+`skip_event`), which repeats on every start and would crowd the cap. A
 payload that fails the same decode runs no hint, writes nothing, and POSTs
 a warn event tagged `decode_error`.
 

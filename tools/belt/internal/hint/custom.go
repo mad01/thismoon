@@ -122,7 +122,7 @@ func (c *Custom) Check(in Input) *Advice {
 		c.warn("external command exited 0 with empty stdout — staying silent")
 		return nil
 	}
-	return &Advice{Hint: c.id, Text: text}
+	return &Advice{Hint: c.id, Text: text, SkipEvent: c.cfg.SkipEvent}
 }
 
 // command builds the external's exec.Cmd with the payload on stdin and the

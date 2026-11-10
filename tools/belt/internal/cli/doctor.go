@@ -25,15 +25,17 @@ var errDoctorWarnings = errors.New("belt doctor: warnings present")
 
 func doctorCmd(paths pathsFunc) *cobra.Command {
 	return doctorCmdWith(paths, doctorProbes{
-		moondb: liveMoondbProbe, events: liveEventsProbe,
+		moondb: liveMoondbProbe, events: liveEventsProbe, memory: liveMemoryProbe,
 	})
 }
 
 // doctorProbes are the network checks doctor makes, injected so tests never
-// dial a real port.
+// dial a real port, plus the agent-memory measurement, injected so tests
+// never read the real stores.
 type doctorProbes struct {
 	moondb moondbProbe
 	events eventsProbe
+	memory memoryProbe
 }
 
 // doctorCmdWith builds the doctor command around injectable probes, so the
@@ -56,12 +58,15 @@ a broken config or include file (every hook is denying), a script guard
 with no deny patterns to enforce, an internal-name guard with no names to
 match, a toggle no registered guard or hint answers to, or an enabled
 watcher that cannot work (events service unreachable, or a max wait at or
-past the hook timeout). A machine with no belt config at all warns about
-the internal-name, script and toggle cases by design.
+past the hook timeout), or an agent-memory index past its injection budget
+(facts are dropped). A machine with no belt config at all warns about the
+internal-name, script and toggle cases by design.
 
 A belt hint read matcher that lets no csl_read through gets a WARNING line
 in the hook wiring section instead. It leaves the exit status alone:
-read-size is advisory, so the gap costs a nudge, not a guard.`,
+read-size is advisory, so the gap costs a nudge, not a guard. An
+agent-memory index near its budget gets the same kind of WARNING line in
+the agent memory section: every fact still reaches the session.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := paths()
@@ -183,6 +188,7 @@ func runDoctor(w io.Writer, p config.Paths, probes doctorProbes) []string {
 	}
 
 	printCustomHints(w, cfg, customHints)
+	warns = append(warns, printAgentMemory(w, cfg, probes.memory)...)
 	printHookWiring(w, cfg, p)
 
 	printMoondb(w, probes.moondb)
@@ -456,12 +462,21 @@ func printCustomHints(w io.Writer, cfg config.Config, customs []*hint.Custom) {
 	}
 	for _, c := range customs {
 		ch := c.Config()
-		fmt.Fprintf(w, "  %-22s %-14s %-9s budget: %s  command: %s%s%s%s\n",
+		fmt.Fprintf(w, "  %-22s %-14s %-9s budget: %s  command: %s%s%s%s%s\n",
 			c.ID(), c.Event(), enabledWord(cfg.HintEnabled(c.ID())), c.Timeout(),
 			strings.Join(ch.Command, " "), agentTypesNote(ch.AgentTypes),
-			excludeReposNote(cfg, c.ID()),
+			excludeReposNote(cfg, c.ID()), skipEventNote(ch.SkipEvent),
 			reachabilityNote(ch.Command, "hint stays silent with a warn event"))
 	}
+}
+
+// skipEventNote marks a hint whose fires stay off the events service, so a
+// quiet timeline is not read as a hint that never runs.
+func skipEventNote(skip bool) string {
+	if !skip {
+		return ""
+	}
+	return "  (skip_event: fires post no event)"
 }
 
 // agentTypesNote names the subagent types a gated hint runs for, so the

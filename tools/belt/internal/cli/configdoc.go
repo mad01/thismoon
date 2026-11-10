@@ -139,9 +139,10 @@ custom_guards:
 # spawn named reviewer-deep-<slug>. A name that shadows a
 # built-in hint, a missing command, an unsupported event, and agent_types
 # that is empty, holds a * before an entry's end, or sits on another event
-# are config errors. This is where a machine-private hint (a daily
-# journal, a worker brief) is registered without a second hook or a
-# compiled-in hint.
+# are config errors. skip_event: true keeps a hint's fires off the events
+# service, for context injected on every start that carries no signal.
+# This is where a machine-private hint (a daily journal, a worker brief) is
+# registered without a second hook or a compiled-in hint.
 custom_hints:
   daily-journal:
     enabled: true
@@ -154,6 +155,7 @@ custom_hints:
     event: subagent-start
     command: [worker-brief]
     agent_types: [reviewer-*, docs-writer]
+    skip_event: true
 
 # The lifecycle ledger: belt record posts one events-service entry per
 # Claude Code lifecycle event it is wired to (subagent start and stop, task
