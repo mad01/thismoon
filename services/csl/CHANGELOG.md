@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.34.0](https://github.com/mad01/thismoon/compare/csl/v0.33.0...csl/v0.34.0) (2026-11-10)
+
+
+### Features
+
+* **csl:** temporary index for git worktrees, no event for no-op syncs ([a88f7bf](https://github.com/mad01/thismoon/commit/a88f7bf0ec44509dfde5dea1ea1431288ba0174e))
+
+
+### Bug Fixes
+
+* **csl:** retry tombstone deletes and rebuild when a file changed mid-build ([0065170](https://github.com/mad01/thismoon/commit/0065170d9ed424815d82ed390c403394983c430d))
+
 ## [0.33.0](https://github.com/mad01/thismoon/compare/csl/v0.32.1...csl/v0.33.0) (2026-11-03)
 
 
