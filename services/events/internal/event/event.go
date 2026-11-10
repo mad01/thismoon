@@ -108,6 +108,28 @@ func NewID(t time.Time, rnd io.Reader) string {
 	return fmt.Sprintf("%020d-%04x", t.UTC().UnixNano(), b[:])
 }
 
+// idLen is the length of an id NewID mints: 20 digits, a dash, 4 hex chars.
+const idLen = 25
+
+// IsID reports whether s has the shape NewID mints. No duration or RFC 3339
+// time has it, so a since value can be told apart from an event id.
+func IsID(s string) bool {
+	if len(s) != idLen || s[20] != '-' {
+		return false
+	}
+	for i := range s {
+		c := s[i]
+		switch {
+		case i == 20:
+		case i < 20 && c >= '0' && c <= '9':
+		case i > 20 && (c >= '0' && c <= '9' || c >= 'a' && c <= 'f'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // TimeFromID decodes the timestamp embedded in an event id minted by NewID.
 // Returns false when the id does not carry a parseable unix-nano prefix.
 func TimeFromID(id string) (time.Time, bool) {

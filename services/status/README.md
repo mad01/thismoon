@@ -50,14 +50,25 @@ t-man logs status --stderr
 The dashboard refreshes itself every 60 seconds; visit `http://status.this/`
 or `http://localhost:7426/` (on hosts without d-man).
 
+From a terminal or an agent, `status list` prints the same fleet view: one
+line per service with up or down, the probe's detail, and a stale-binary
+mark. `-o json` prints it as JSON without the uptime days. It reads the
+running serve's `GET /api/status` and exits 1 when any service is down:
+
+```bash
+status list            # SERVICE  STATE  DETAIL, then "N of M down"
+status list -o json    # {generated_at, down, services: [{label, up, detail, port, link, drift, version, installed}]}
+```
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--port` | `7426` | Listen port |
 | `--workdir` | `~/.local/share/status` | History store location |
 | `--routes` | `~/.config/d-man/routes.toml` | d-man routes file for .this links |
 
-These are persistent flags on the root command, so `status doctor` takes the
-same ones and diagnoses the same target `serve` runs against.
+These are persistent flags on the root command, so `status doctor` and
+`status list` take the same ones and reach the same target `serve` runs
+against.
 
 ## Endpoints
 

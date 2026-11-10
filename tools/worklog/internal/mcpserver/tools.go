@@ -65,6 +65,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Save resumable work state for a long, cross-repo task so a later session can pick it up. " +
 			"Key by ticket id (e.g. ABC-1234) when one exists, else a stable topic slug. Creates the item if missing. " +
 			"Pass `cwd` (the user's working directory) so the touched repo is recorded; pass `repo` to override detection. " +
+			"Pass `status` (active, paused, or done) to set the item's status in the same write, such as done on the closing checkpoint; " +
+			"omit it to keep the current status (a new item starts active). Any other status value is an error. " +
 			"Use when the user says checkpoint, save my progress, worklog this, or before a session ends mid-task. " +
 			"IMPORTANT: the `where` field is the ONLY context a fresh session gets when resuming. " +
 			"Write it for a reader with zero prior knowledge. Include: goal, repo paths (host + local), " +
@@ -130,6 +132,7 @@ type checkpointInput struct {
 	Topic  string `json:"topic,omitempty"  jsonschema:"free-text topic, set on first creation"`
 	Repo   string `json:"repo,omitempty"   jsonschema:"repo this checkpoint touched; overrides cwd detection"`
 	Cwd    string `json:"cwd,omitempty"    jsonschema:"the user's working directory, used to detect the repo and record last_cwd"`
+	Status string `json:"status,omitempty" jsonschema:"set the item's status in the same write: active, paused, or done; omit to keep it (a new item starts active)"`
 }
 
 func (h *handlers) handleCheckpoint(
@@ -138,7 +141,14 @@ func (h *handlers) handleCheckpoint(
 	in checkpointInput,
 ) (*mcp.CallToolResult, itemView, error) {
 	if in.Where == "" && in.Note == "" {
-		return nil, itemView{}, fmt.Errorf("nothing to record: provide where and/or note")
+		return nil, itemView{}, fmt.Errorf(
+			"nothing to record: provide where and/or note; to change only the status, call worklog_status",
+		)
+	}
+	if in.Status != "" {
+		if err := store.ValidateStatus(in.Status); err != nil {
+			return nil, itemView{}, err
+		}
 	}
 	repo := in.Repo
 	if repo == "" {
@@ -150,6 +160,7 @@ func (h *handlers) handleCheckpoint(
 	}
 	it, err := s.Checkpoint(store.Sanitize(in.Key), store.CheckpointInput{
 		Ticket: in.Ticket, Topic: in.Topic, Where: in.Where, Note: in.Note, Repo: repo, Cwd: in.Cwd,
+		Status: in.Status,
 	})
 	if errors.Is(err, store.ErrPush) {
 		// The checkpoint is written and committed; surface the failed push
@@ -297,8 +308,8 @@ func (h *handlers) handleStatus(
 	_ *mcp.CallToolRequest,
 	in statusInput,
 ) (*mcp.CallToolResult, itemView, error) {
-	if in.Status != "active" && in.Status != "paused" && in.Status != "done" {
-		return nil, itemView{}, fmt.Errorf("status must be active, paused, or done")
+	if err := store.ValidateStatus(in.Status); err != nil {
+		return nil, itemView{}, err
 	}
 	s, err := h.store()
 	if err != nil {

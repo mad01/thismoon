@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/timespan"
 	"github.com/mad01/thismoon/services/events/internal/client"
 )
 
@@ -20,7 +21,7 @@ func apiClient() *client.Client {
 var (
 	emitSource, emitTitle, emitComponent, emitLevel, emitMessage, emitData string
 	emitTags                                                               []string
-	listSource, listLevel, listQ                                           string
+	listSource, listLevel, listQ, listSince, listAfterID                   string
 	listLimit                                                              int
 	purgeSource, purgeBefore                                               string
 )
@@ -60,11 +61,15 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List recent events, newest first",
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		// serve validates since and after_id, so a bad value fails with the
+		// same message the API and events_query give.
 		evs, err := apiClient().Query(client.QueryFilter{
-			Source: listSource,
-			Level:  listLevel,
-			Q:      listQ,
-			Limit:  listLimit,
+			Source:  listSource,
+			Level:   listLevel,
+			Q:       listQ,
+			Since:   listSince,
+			AfterID: listAfterID,
+			Limit:   listLimit,
 		})
 		if err != nil {
 			return err
@@ -134,6 +139,10 @@ func init() {
 	listCmd.Flags().StringVar(&listSource, "source", "", "filter by source")
 	listCmd.Flags().StringVar(&listLevel, "level", "", "filter by level: info|warn|error")
 	listCmd.Flags().StringVar(&listQ, "q", "", "case-insensitive substring filter")
+	listCmd.Flags().StringVar(&listSince, "since", "",
+		"time window: "+timespan.Grammar+"; keeps events at or after it")
+	listCmd.Flags().StringVar(&listAfterID, "after-id", "",
+		"event id cursor: only events newer than it (exclusive), for polling")
 	listCmd.Flags().IntVar(&listLimit, "limit", 50, "max events to show")
 
 	purgeCmd.Flags().StringVar(&purgeSource, "source", "", "source to purge (required)")

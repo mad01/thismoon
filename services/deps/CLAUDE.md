@@ -541,7 +541,9 @@ The annotated key reference lives in `deps config --help`.
 - `deps_check`: discover + OSV + registries; return flagged, malicious first (each advisory has `key`, `kind`, `resolved`), plus `registry_unknown`
 - `deps_list_flagged`: flagged from the last check, no re-scan
 - `deps_scan_repo(repo)`: rescan one repo (path or basename) or mise tool
-  (whole label) and merge
+  (whole label) and merge. An id that matches nothing fails with the ids it
+  would take (the scanned repos' basenames, or the installed mise labels, at
+  most 25), so the next call can pass one
 - `deps_resolve(keys)`: acknowledge advisories by key; the description tells
   the agent to get the user's confirmation before resolving a malicious one
 - `deps_doctor`: run the same checks as `deps doctor` (service-reachable,

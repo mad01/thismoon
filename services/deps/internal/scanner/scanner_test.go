@@ -660,9 +660,11 @@ func TestCheckRepoRescansOneMiseTool(t *testing.T) {
 	}
 
 	_, err := e.CheckRepo(context.Background(), "mise:npm:absent")
-	if err == nil || !strings.Contains(err.Error(), "not among the installed mise tools") {
+	if err == nil || !strings.Contains(err.Error(), "not among the installed mise tools") ||
+		!strings.Contains(err.Error(), "(mise:npm:left-pad, mise:npm:yarn)") {
 		t.Errorf(
-			"rescan of an unknown label: err = %v, want not among the installed mise tools",
+			"rescan of an unknown label: err = %v, want not among the installed mise tools, "+
+				"naming the installed labels",
 			err,
 		)
 	}
@@ -673,6 +675,45 @@ func TestCheckRepoRescansOneMiseTool(t *testing.T) {
 	}
 	if got := inventory(st); !slices.Equal(got, want) {
 		t.Errorf("failed rescans changed the inventory to %q, want %q", got, want)
+	}
+}
+
+// TestCheckRepoUnknownNamesTheScannedRepos: a rescan of a repo the plan does
+// not hold fails with the ids it would take, so the next call can pass one.
+func TestCheckRepoUnknownNamesTheScannedRepos(t *testing.T) {
+	e := &Engine{
+		Prepare: func() (Plan, error) {
+			return Plan{Repos: []string{"/src/zeta", "/src/alpha"}}, nil
+		},
+		Checker: fakeChecker{},
+		Store:   newStore(t),
+	}
+	_, err := e.CheckRepo(context.Background(), "nosuch")
+	if err == nil {
+		t.Fatal("rescan of an unknown repo succeeded")
+	}
+	for _, want := range []string{`"nosuch"`, "(alpha, zeta)", "basenames", "mise:npm:"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %q, want it to mention %q", err, want)
+		}
+	}
+}
+
+func TestKnownIDsCapsTheList(t *testing.T) {
+	ids := make([]string, maxKnownIDs+5)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("repo%02d", i)
+	}
+	got := knownIDs(append(ids, "repo00"))
+	if !strings.HasPrefix(got, "repo00, repo01,") || !strings.HasSuffix(got, " and 5 more") {
+		t.Errorf(
+			"knownIDs = %q, want the first %d sorted and a count of the rest",
+			got,
+			maxKnownIDs,
+		)
+	}
+	if got := knownIDs(nil); got != "none registered" {
+		t.Errorf("knownIDs(nil) = %q", got)
 	}
 }
 

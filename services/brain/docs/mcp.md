@@ -293,6 +293,7 @@ Read a note's frontmatter and a slice of its body.
 **Notes:**
 - Line numbers in `body_lines` are body-relative (frontmatter excluded), not file-relative.
 - Paths are rejected if they are absolute or contain `..` segments that escape the vault root.
+- A ref that names no note fails with `vault: note not found` plus the next call to make: `brain_search` with query `f:<file name>` or a word from the note's title, whose hits carry the `vault:path` to pass. `brain_peek` fails the same way.
 
 ### `brain_peek`
 

@@ -134,25 +134,31 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// writeErr writes the API's one error shape: {"error": "<message>"}.
+// writeErr writes the API's error shape: {"error": "<message>"}, plus a
+// "code" on the few errors writeBackendErr names by type.
 func writeErr(w http.ResponseWriter, code int, err error) {
 	writeJSON(w, code, map[string]string{"error": err.Error()})
 }
 
 // writeBackendErr maps a store or query error to its status: a request the
 // query rejects is 400, a missing record is 404, a question this build
-// cannot answer is 501, anything else is 500.
+// cannot answer is 501, anything else is 500. An unknown worktree's 400 also
+// carries query.CodeUnknownWorktree.
 func writeBackendErr(w http.ResponseWriter, err error) {
-	code := http.StatusInternalServerError
+	status := http.StatusInternalServerError
 	switch {
 	case errors.Is(err, query.ErrInvalidRequest):
-		code = http.StatusBadRequest
+		status = http.StatusBadRequest
 	case errors.Is(err, store.ErrNotFound):
-		code = http.StatusNotFound
+		status = http.StatusNotFound
 	case errors.Is(err, query.ErrNotImplemented):
-		code = http.StatusNotImplemented
+		status = http.StatusNotImplemented
 	}
-	writeErr(w, code, fmt.Errorf("moondb: %w", err))
+	body := map[string]string{"error": fmt.Errorf("moondb: %w", err).Error()}
+	if errors.Is(err, query.ErrUnknownWorktree) {
+		body["code"] = query.CodeUnknownWorktree
+	}
+	writeJSON(w, status, body)
 }
 
 // statusRecorder remembers the status a handler wrote, for the request log.

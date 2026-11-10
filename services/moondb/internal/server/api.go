@@ -10,9 +10,9 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/mad01/thismoon/kit/timespan"
 	"github.com/mad01/thismoon/services/moondb/internal/query"
 	"github.com/mad01/thismoon/services/moondb/internal/store"
 	"github.com/mad01/thismoon/services/moondb/internal/trace"
@@ -311,35 +311,13 @@ func parseBool(q url.Values, name string) (bool, error) {
 	return b, nil
 }
 
-// ParseSince reads a lower time bound: an RFC 3339 time, or a positive
-// duration before now ("90m", "24h", or whole days as "7d"). Empty means no
-// bound.
+// ParseSince reads a lower time bound in the fleet's shared grammar
+// (kit/timespan): an RFC 3339 time, or a positive span before now such as
+// 90m, 24h or 7d. Empty means no bound.
 func ParseSince(raw string, now time.Time) (time.Time, error) {
-	if raw == "" {
-		return time.Time{}, nil
-	}
-	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-		return t, nil
-	}
-	d, err := parseAge(raw)
-	if err != nil || d <= 0 {
-		return time.Time{}, fmt.Errorf(
-			"moondb: since must be an RFC 3339 time or a positive duration like 24h or 7d, got %q",
-			raw)
-	}
-	return now.Add(-d), nil
-}
-
-// parseAge is time.ParseDuration plus whole days ("7d"), the unit people
-// reach for first when asking about recent sessions.
-func parseAge(raw string) (time.Duration, error) {
-	days, ok := strings.CutSuffix(raw, "d")
-	if !ok {
-		return time.ParseDuration(raw)
-	}
-	n, err := strconv.Atoi(days)
+	t, err := timespan.Since(raw, now)
 	if err != nil {
-		return 0, err
+		return time.Time{}, fmt.Errorf("moondb: since %w", err)
 	}
-	return time.Duration(n) * 24 * time.Hour, nil
+	return t, nil
 }

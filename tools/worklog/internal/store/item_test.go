@@ -108,6 +108,30 @@ func TestListFiltersAndStatus(t *testing.T) {
 	}
 }
 
+func TestCheckpointSetsStatus(t *testing.T) {
+	s := testStore(t)
+	mustCheckpoint(t, s, "a", CheckpointInput{Note: "x", Status: StatusPaused})
+	it, _ := s.Load("a")
+	if it.FM.Status != StatusPaused {
+		t.Fatalf("new item with status paused = %q", it.FM.Status)
+	}
+	mustCheckpoint(t, s, "a", CheckpointInput{Note: "y"})
+	if it, _ = s.Load("a"); it.FM.Status != StatusPaused {
+		t.Errorf("a checkpoint without status changed it to %q", it.FM.Status)
+	}
+
+	if _, err := s.Checkpoint("b", CheckpointInput{Note: "z", Status: "wip"}); err == nil ||
+		!strings.Contains(err.Error(), `got "wip"`) {
+		t.Errorf("checkpoint with status wip: err = %v, want the valid statuses", err)
+	}
+	if s.Exists("b") {
+		t.Error("a rejected checkpoint wrote the item")
+	}
+	if _, err := s.SetStatus("a", "closed"); err == nil {
+		t.Error("SetStatus accepted closed")
+	}
+}
+
 func TestSearchActiveFirst(t *testing.T) {
 	s := testStore(t)
 	mustCheckpoint(t, s, "old-one", CheckpointInput{Note: "kubernetes work", Repo: "a"})

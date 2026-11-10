@@ -442,7 +442,7 @@ wk-card.ev-group{cursor:pointer}
       return;
     }
     var myGen = gen;
-    fetchMerged('since', newestId).then(function(list){
+    fetchMerged('after_id', newestId).then(function(list){
       if (myGen !== gen || !list.length) return;
       all = list.concat(all);
       newestId = all[0].id;

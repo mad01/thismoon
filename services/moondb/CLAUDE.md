@@ -934,7 +934,9 @@ Owned by `moondb serve`, bound to `127.0.0.1` only:
 There is no write endpoint. The spool is the only way records get in;
 `moondb sessions hide` and `show` write to it too. A
 request the query rejects (a relative worktree, a file outside the worktree)
-answers 400.
+answers 400. A worktree with no recorded edit adds `"code": "unknown_worktree"`
+to that body, the one 400 `moondb_why` answers with a pointer to
+`moondb_history`.
 
 A session row comes from the index alone, never a chunk
 (`internal/server/sessions.go`):
@@ -1237,6 +1239,14 @@ Thin client over the API above (`internal/client`), served on stdio by
 
 Tool responses include a `url` built from `MOONDB_BASE_URL` (for example
 `http://moondb.this`). The client itself always calls `localhost:<port>`.
+
+An error that a listing can fix names that listing (`withNextMove` in
+`internal/mcpserver/tools.go`). An unknown session id on `moondb_trace` or
+`moondb_scorecard` points at `moondb_sessions`. An unknown turn id on
+`moondb_turn` points at `moondb_history` and `moondb_why`. A request
+`moondb_why` refuses, such as a worktree with no recorded edit, points at
+`moondb_history` with `path` and `repo`. An error serve did not send, such as
+serve being down, passes through with its own fix.
 
 ## Shared UI: webkit
 

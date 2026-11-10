@@ -10,7 +10,7 @@ func TestServiceFlagsReachEverySubcommand(t *testing.T) {
 	flags := []string{
 		"port", "workdir", "routes", "interval", "restart-window", "restart-threshold",
 	}
-	for _, name := range []string{"serve", "doctor", "docs", "version"} {
+	for _, name := range []string{"serve", "doctor", "docs", "version", "list"} {
 		cmd, _, err := rootCmd.Find([]string{name})
 		if err != nil {
 			t.Fatalf("find %q: %v", name, err)

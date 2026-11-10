@@ -123,3 +123,21 @@ func TestTimeFromID(t *testing.T) {
 		}
 	}
 }
+
+func TestIsID(t *testing.T) {
+	minted := NewID(time.Date(2026, 8, 22, 10, 30, 0, 0, time.UTC), strings.NewReader("\xab\x12"))
+	if !IsID(minted) {
+		t.Errorf("IsID(%q) = false for a minted id", minted)
+	}
+	for _, bad := range []string{
+		"", "24h", "7d", "2026-08-22T10:30:00Z",
+		"0000000000000000000a-ab12", // letter in the digits
+		"00000000000000000000_ab12", // wrong separator
+		"00000000000000000000-AB12", // NewID mints lowercase hex
+		"00000000000000000000-ab1",  // short suffix
+	} {
+		if IsID(bad) {
+			t.Errorf("IsID(%q) = true, want false", bad)
+		}
+	}
+}

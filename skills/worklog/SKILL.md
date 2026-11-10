@@ -80,6 +80,8 @@ little.
    - `note`: a log entry (what changed this session + remaining work list)
    - `cwd`: the user's working directory
    - `ticket` / `topic`: on first creation
+   - `status`: optional, `active`, `paused` or `done` in the same write (omit
+     it to keep the current status)
 4. Report the key and how to resume (`/worklog <key>`).
 
 Durable *insights* (preferences, decisions, reusable facts) still go to
@@ -88,7 +90,8 @@ auto-memory; worklog triggers only on the verbs above.
 
 ### Manage
 
-- Close out: `worklog_status` with `done` when the task ships.
+- Close out: `worklog_status` with `done` when the task ships, or pass
+  `status: "done"` on the closing `worklog_checkpoint`.
 - Pause: `worklog_status` with `paused` to keep it out of the active list.
 
 ## Notes

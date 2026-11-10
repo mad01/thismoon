@@ -104,7 +104,7 @@ func (s *Service) knownWorktree(ctx context.Context, worktree string) error {
 		return fmt.Errorf("query: edits in %s: %w", worktree, err)
 	}
 	if len(seen) == 0 {
-		return fmt.Errorf("%w: no edit recorded in worktree %s", ErrInvalidRequest, worktree)
+		return fmt.Errorf("%w in worktree %s", ErrUnknownWorktree, worktree)
 	}
 	return nil
 }

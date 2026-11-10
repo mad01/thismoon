@@ -70,7 +70,7 @@ Event{ ID, Time, Source, Component, Level, Title, Message, Tags, Data }
 ```
 
 - `ID` is time-sortable (`"%020d-%04x"` of unix-nanos + 2 random bytes), so
-  lexical order == time order. It is the cursor for `since` polling.
+  lexical order == time order. It is the cursor for `after_id` polling.
 - `Time` is stamped server-side at ingest (UTC); producers don't set it.
 - `Source` and `Title` are required. `Level` is `info` (default), `warn`, or
   `error`. `Component`, `Message`, `Tags`, `Data` (opaque JSON) are optional.
@@ -93,7 +93,7 @@ make test     # go test ./...  (hermetic: t.TempDir + injected clock, never touc
 ## HTTP API
 
 - `GET  /`              : webkit-chromed, client-rendered timeline (newest-first; live-tailing; infinite scroll)
-- `GET  /api/events[?source=&level=&q=&since=&before=&limit=]` : JSON array, newest-first (`since`/`before` are exclusive ID cursors: newer-than for tailing, older-than for paging)
+- `GET  /api/events[?source=&level=&q=&since=&after_id=&before=&limit=]` : JSON array, newest-first. `since` is a time window in the grammar moondb uses (`kit/timespan`: a span before now such as `90m`, `24h`, `7d`, or an RFC 3339 time). It keeps events stamped at or after it. `after_id`/`before` are exclusive ID cursors: newer-than for tailing, older-than for paging. A `since` that is an event id is read as `after_id`, so pollers written before `after_id` existed keep working. A value of the wrong shape is a 400 whose message names the parameter that fits.
 - `POST /api/events`    : emit one event (JSON body); returns `{"id":"…"}` (201)
 - `DELETE /api/events?source=<s>[&before=<id>]` : purge a source (all, or only events with id <= cursor); returns `{"purged":n}`
 - `GET  /api/sources`   : `[{"source":"…","count":n}]`
@@ -124,10 +124,14 @@ leaked before the `testing.Testing()` guards existed). `events purge --source X
 
 ## MCP tools
 
-- `events_query(source?, level?, q?, since?, limit?)` → `{events: Event[], url}`:
+- `events_query(source?, level?, q?, since?, after_id?, limit?)` → `{events: Event[], url}`:
   newest-first; the primary tool for debugging what happened. `q` is a
   case-insensitive substring matched against title, message, component, or
-  tags; `since` is an event id (exclusive), for polling new activity. Call
+  tags; `since` is a time window (`24h`, `7d`, or an RFC 3339 time), the same
+  grammar `moondb_sessions` takes; `after_id` is an event id (exclusive), for
+  polling new activity. A bad `since` or `after_id` is a tool error naming the
+  parameter to use. On zero results, `zero_result_hint` gives `since_time` and
+  `after_id_time`, the times the two bounds resolved to. Call
   `events_sources` first to see which sources exist.
 - `events_sources()` → `{sources: [{source, count}], url}`: every source with
   its current event count, sorted by name.
@@ -179,7 +183,7 @@ controls manually.
 - The timeline is client-rendered and paged: `index.html` fetches
   `/api/events` in 200-event pages, appends older pages with
   `?before=<oldestLoadedId>` as a sentinel at the bottom scrolls into view,
-  and live-tails with `?since=<newestId>` every 7s. Active filters go to the
+  and live-tails with `?after_id=<newestId>` every 7s. Active filters go to the
   API (one request per selected source chip, merged client-side) so matches
   older than the loaded window still surface; a filter change resets the
   window. All event text is set via `textContent`/`createElement`, never

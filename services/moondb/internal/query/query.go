@@ -26,6 +26,15 @@ var ErrNotImplemented = errors.New("query: not implemented")
 // A server maps it to a client error.
 var ErrInvalidRequest = errors.New("query: invalid request")
 
+// ErrUnknownWorktree is the invalid request that names a worktree moondb
+// never recorded an edit in. Agents edit in worktrees, so a main checkout
+// often has none of its own.
+var ErrUnknownWorktree = fmt.Errorf("%w: no edit recorded", ErrInvalidRequest)
+
+// CodeUnknownWorktree is the code serve sends beside an ErrUnknownWorktree
+// message, so a client can tell the error apart without reading its text.
+const CodeUnknownWorktree = "unknown_worktree"
+
 // defaultHistoryLimit is how many edits History returns when the request
 // names no limit.
 const defaultHistoryLimit = 100

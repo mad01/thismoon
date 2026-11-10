@@ -36,9 +36,12 @@ Start with `status doctor`: one command runs the reachability, store, and
 version-skew checks and prints one line per check, FAIL lines naming the
 cause. The paragraphs here cover what each failure means and what to do next.
 
-Status page unreachable: the status process itself is down. t-man supervises
-it: `t-man list`, then `t-man restart status`. For a quick look without
-t-man, `status serve` in a spare terminal also works.
+Status page unreachable, or `status list` failing with "status serve not
+reachable": the status process itself is down. t-man supervises it: `t-man
+list`, then `t-man restart status`. For a quick look without t-man, `status
+serve` in a spare terminal also works. `status list` failing with "has not
+finished its first check yet" means serve just started; run it again in a
+few seconds.
 
 A service shown down that is actually up: the probe target does not match how
 the service really listens. The HTTP probe hits the `--port` value found in
@@ -74,5 +77,5 @@ skew, doctor detects status's own.
 1. `status doctor`: serve reachable, history store readable, and version skew in one pass
 2. If serve is unreachable: `t-man list`, then `t-man restart status`
 3. On version skew: `t-man restart status`, then `status doctor` again
-4. `curl -s {{.BaseURL}}/api/status` to see the snapshot the dashboard renders
+4. `status list` (or `-o json`) to see which services are down without a browser; it exits 1 when any is, and `curl -s {{.BaseURL}}/api/status` gives the full snapshot with the uptime days
 5. For a suspect service, compare its own `/version` with what the dashboard shows
