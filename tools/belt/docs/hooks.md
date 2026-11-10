@@ -802,7 +802,8 @@ commit has taken yet.
 ### prefer-csl (bash)
 
 After a Bash command sweeps multiple files inside a repo csl already indexes,
-hands back the equivalent `csl search` command, then the `csl_search` call.
+or inside a linked git worktree of one, hands back the equivalent `csl search`
+command, then the `csl_search` call.
 
 - **Fires when** a `grep`/`rg`/`ag`/`git grep`/`find`/`fd` command recurses,
   or names a glob or three or more files, inside an indexed repo. With
@@ -845,6 +846,21 @@ hands back the equivalent `csl search` command, then the `csl_search` call.
   because it runs in any session with csl on PATH and has no per-call
   result cap. A bare "use csl" would cost a turn while the model guesses
   the query language.
+- **A linked worktree gets its own index.** csl's main index holds each
+  repo's main checkout, so `--repo` would answer from the default branch. A
+  path inside a linked worktree (its `.git` is a pointer file whose git dir
+  holds `commondir`) gets `csl search '<query>' --worktree '<root>'` and
+  `csl_search worktree="<root>"` instead, which search the worktree's own
+  index. The repo comes from the worktree's origin remote, since the
+  `~/.worktrees/<repo>/<slug>` directory names match no shard, and the hint
+  fires only when csl indexes that repo. A listing with nothing to translate
+  gets `csl_search worktree=... query="f:<regex>"`, since `csl_ls` takes a
+  repo only.
+- **Once per checkout per agent per session.** A marker in the session's
+  seen file, keyed like read-size's on the agent id plus the repo name (a
+  worktree by its root), stops the hint repeating on every grep in the same
+  checkout. A subagent gets its own word. Without a session id nothing is
+  recorded and the hint speaks on every match.
 - **Wording follows the search**: a recursive search "re-walks the
   filesystem", and a grep over three or more named files is "a grep over
   several files".
