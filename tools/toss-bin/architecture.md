@@ -18,8 +18,11 @@ Sources/toss-bin/       executable target
 Sources/TossBinCore/    library target
   Safety.swift          PathSafety — deny-list tables, ExtraProtections, validate()
   Config.swift          TossConfig + ConfigLoader — YAML config (Yams), path normalization
-Tests/TossBinTests/     XCTest suite over PathSafety
+  TempOnly.swift        TempOnly: fixed temp roots, --temp-only containment check
+  TempOnlyMove.swift    TempOnlyMove: the --temp-only move by file descriptor; TrashName
+Tests/TossBinTests/     XCTest suites over PathSafety, TempOnly and TempOnlyMove
 test                    shell suite: fresh build, --validate over the deny-list
+scripts/temp-only-race.sh  races a --temp-only run against a parent swap
 ```
 
 `TossBinCore` exists so the safety logic is importable: the XCTest suite
@@ -36,7 +39,27 @@ combined short flags expand (`-rf` becomes `-r -f`), `--` ends flag
 parsing, and unknown flags are dropped so the `rm` wrapper can pass
 anything through. Dispatch order: help/version (short forms only when they
 are the sole argument), then `--validate` (prints `OK:`/`BLOCKED:` per path
-and exits), then `toss()`.
+and exits), then either `tossTempOnly()` under `--temp-only` or `toss()`.
+Under `--temp-only` every path must pass `TempOnly.locate()` and the
+deny-list before anything moves; one failure refuses the whole run. The
+check resolves the parent chain with realpath(3) and compares the result
+against roots fixed in code (`/tmp`, `/var/tmp`, `~/.tmp` and their
+`/private` real paths). It returns a `Location`: the real parent directory
+and the final name. `tossTempOnly()` never moves by path string, because
+the kernel would resolve the parents again and a process that can write
+/tmp could swap one for a symlink after the check. `TempOnlyMove` walks
+the `Location` directory from `/` with openat(O_NOFOLLOW | O_DIRECTORY),
+the root's own real path included (so `/tmp` is reached as
+`/private/tmp`, never through its symlink), and refuses any component
+that is a symlink at move time. It then renames the entry from that open
+directory into the open trash directory with renameatx_np(RENAME_EXCL),
+counting up the name on a clash, and refuses a cross-volume entry
+(EXDEV) instead of copying it. The trash directory is opened the same way
+(`TempOnlyMove.openTrash`): the home is resolved once with realpath(3) and
+walked from `/`, then `.Trash`, `my-trash` and the dated directory are each
+created with mkdirat and opened with openat(O_NOFOLLOW | O_DIRECTORY). A
+symlink or non-directory at any of them refuses the run before the first
+move, so a planted link cannot pick where the entries land.
 
 For each path, `toss()` refuses `.` and `..`, runs `PathSafety.validate()`
 when safe mode is on, and stats the path without following a final symlink.
@@ -44,7 +67,7 @@ So broken symlinks count as existing and a link to a directory moves as a
 link. Directories require `-r` (or `-d`); `--dry-run` prints the would-be
 destination and stops there. The dated trash directory is created on the
 first real move; name conflicts append `.1`, `.2`, ... before the
-extension; the move itself is `FileManager.moveItem`. Any per-path error is
+extension (`TrashName`); the move itself is `FileManager.moveItem`. Any per-path error is
 reported to stderr and the run exits 1 after processing all paths.
 
 `PathSafety.validate()` checks three built-in tables: exact-match system
@@ -68,7 +91,7 @@ and no state directory.
 ## Interfaces
 
 A single CLI command: `toss-bin [flags] <path> [...]` with `--safe-mode`,
-`--dry-run`, `--validate`, `-r`/`-R`/`--recursive`, `-d`, `-f`, and
+`--temp-only`, `--dry-run`, `--validate`, `-r`/`-R`/`--recursive`, `-d`, `-f`, and
 help/version. The consuming shell interface is the `rm` function shipped by
 `recipes/toss-bin`: it routes to `toss-bin --safe-mode "$@"` when the
 binary is on `PATH` and falls back to real `rm` otherwise. The version

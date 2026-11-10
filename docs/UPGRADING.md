@@ -4,6 +4,20 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-10 toss-bin: `--temp-only` for agent scratch cleanup
+
+Change: thismoon #TODO-PR-NUMBER (placeholder: fill in the PR number before merge). `toss-bin --temp-only` refuses the whole run unless every path sits strictly inside `/tmp`, `/var/tmp` or `~/.tmp`, so a Claude Code allow rule for that one invocation can replace the `rm` prompt for temp cleanup. The roots are fixed in the binary. With the rule in place, an agent can trash anything under those roots with no prompt, backups parked in `~/.tmp` included; it stays recoverable from `~/.Trash/my-trash/`.
+
+Order matters: update the binary on every machine first, add the allow rule second. A toss-bin that predates this change ignores `--temp-only` as an unknown flag and trashes any path, without safe mode.
+
+Run, in order:
+
+1. `ralph up` on every machine, so `~/.local/bin/toss-bin` has the flag.
+2. On each machine, gate on the binary: `toss-bin --temp-only --validate ~/notes.txt` must print `BLOCKED:` and exit 1. An old binary ignores the flag and prints `OK:`. `--version` cannot tell them apart: both print 1.3.1 until the release bumps it.
+3. Only after step 2 passes on every machine, add `Bash(toss-bin --temp-only *)` to `permissions.allow` in the consuming repo's Claude settings template, then `ralph up` again.
+
+Verify: `command -v toss-bin` prints `~/.local/bin/toss-bin`. `toss-bin --temp-only --validate ~/notes.txt` prints `BLOCKED:` and exits 1, and `toss-bin --temp-only --validate /tmp/x` prints `OK: /tmp/x`.
+
 ## 2026-11-06 moondb: Codex sessions through Codex's own hooks
 
 Change: thismoon #408. `moondb record` takes Codex CLI's hook payloads, and `moondb trace` reads Codex rollout files. Capture is opt-in: nothing changes until Codex runs the hooks.

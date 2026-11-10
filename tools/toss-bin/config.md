@@ -5,7 +5,12 @@
 `~/.config/toss-bin/config.yaml`, YAML, optional. toss-bin runs on its
 built-in deny-list alone when the file is absent; the file only adds to
 that list, it can never unblock a built-in entry. It is read only when
-`--safe-mode` or `--validate` runs. `$TOSS_BIN_CONFIG` overrides the path.
+`--safe-mode`, `--temp-only` or `--validate` runs. `$TOSS_BIN_CONFIG`
+overrides the path.
+
+No key changes the `--temp-only` roots (`/tmp`, `/var/tmp`, `~/.tmp`).
+They are fixed in the binary: an allow rule for `toss-bin --temp-only`
+rests on the binary, and this file is something an agent could edit.
 
 A malformed file logs a warning to stderr (`toss-bin: warning: ignoring
 <path>: <error>`) and the run continues on built-ins alone, so a YAML typo
