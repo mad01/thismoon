@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.17.0](https://github.com/mad01/thismoon/compare/belt/v2.16.0...belt/v2.17.0) (2026-11-10)
+
+
+### Features
+
+* **belt:** prefer-csl hint targets the worktree index, once per agent ([f8ae4f9](https://github.com/mad01/thismoon/commit/f8ae4f957b5b2fafa8e3629928ea28f8ff2ab8d2))
+
 ## [2.16.0](https://github.com/mad01/thismoon/compare/belt/v2.15.0...belt/v2.16.0) (2026-11-10)
 
 
