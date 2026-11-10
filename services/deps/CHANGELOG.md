@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/mad01/thismoon/compare/deps/v0.15.0...deps/v0.16.0) (2026-11-10)
+
+
+### Features
+
+* time spans for events since, next-move errors, status list ([736bb12](https://github.com/mad01/thismoon/commit/736bb12574dd8cfccb5d3dde225b2de58fe96527))
+
 ## [0.15.0](https://github.com/mad01/thismoon/compare/deps/v0.14.0...deps/v0.15.0) (2026-10-28)
 
 

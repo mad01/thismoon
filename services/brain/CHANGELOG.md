@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/brain/v0.2.0...brain/v0.3.0) (2026-11-10)
+
+
+### Features
+
+* time spans for events since, next-move errors, status list ([736bb12](https://github.com/mad01/thismoon/commit/736bb12574dd8cfccb5d3dde225b2de58fe96527))
+
 ## [0.2.0](https://github.com/mad01/thismoon/compare/brain/v0.1.1...brain/v0.2.0) (2026-11-06)
 
 
