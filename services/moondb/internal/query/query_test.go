@@ -447,9 +447,24 @@ func TestWhyInvalidRequest(t *testing.T) {
 		{Path: "a.go", Line: -1, Text: "x"},
 		{Worktree: "wt/a", Path: "a.go", Line: 1},
 	} {
-		if _, err := f.svc.Why(context.Background(), req); !errors.Is(err, ErrInvalidRequest) {
-			t.Errorf("Why(%+v) = %v, want ErrInvalidRequest", req, err)
+		_, err := f.svc.Why(context.Background(), req)
+		if !errors.Is(err, ErrInvalidRequest) || errors.Is(err, ErrUnknownWorktree) {
+			t.Errorf("Why(%+v) = %v, want ErrInvalidRequest only", req, err)
 		}
+	}
+}
+
+// TestWhyUnknownWorktree types the one 400 a caller fixes by asking for the
+// path's history instead, and keeps the message callers already read.
+func TestWhyUnknownWorktree(t *testing.T) {
+	f := newFixture(t)
+	wt := t.TempDir()
+	_, err := f.svc.Why(context.Background(), WhyRequest{Worktree: wt, Path: "a.go", Line: 1})
+	if !errors.Is(err, ErrUnknownWorktree) || !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("Why in %s = %v, want ErrUnknownWorktree", wt, err)
+	}
+	if want := "no edit recorded in worktree " + wt; !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %q, want it to say %q", err, want)
 	}
 }
 

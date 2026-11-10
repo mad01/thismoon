@@ -60,6 +60,8 @@ events emit --source deps --title "3 advisories" --level warn \
   --tag repo=catalog --message "OSV flagged 3 packages"
 
 events list --source deps --level warn --limit 20
+events list --since 24h               # a window: 90m, 24h, 7d, or an RFC 3339 time
+events list --after-id <id>           # only events newer than an id, for polling
 events purge --source deps            # drop a whole source
 events purge --source deps --before <id>   # or only events at/before a cursor
 ```
@@ -73,7 +75,7 @@ API only; deletion stays human-triggered.
 | Path | Description |
 |------|-------------|
 | `GET /` | Client-rendered timeline (filters, day separators, burst coalescing, infinite scroll, ~7s live tail) |
-| `GET /api/events` | JSON array, newest first (`?source=&level=&q=&since=&before=&limit=`) |
+| `GET /api/events` | JSON array, newest first (`?source=&level=&q=&since=&after_id=&before=&limit=`); `since` is a time window such as `24h` or `7d`, `after_id` and `before` are event-id cursors |
 | `POST /api/events` | Emit one event; returns `{"id":"…"}` (201) |
 | `DELETE /api/events?source=<s>[&before=<id>]` | Purge a source; returns `{"purged":n}` |
 | `GET /api/sources` | Sources with counts |
@@ -87,7 +89,7 @@ Ask in plain language: "what's happened with deps today", "any errors in the
 last hour", "log that the release finished". Claude calls the `events_*` MCP
 tools:
 
-- `events_query`: query the log, newest-first; filter by source, level, text, or since; the primary tool for debugging what happened
+- `events_query`: query the log, newest-first; filter by source, level, text, a `since` window (`24h`, `7d`), or an `after_id` cursor; the primary tool for debugging what happened
 - `events_sources`: list sources with their event counts
 - `events_emit`: record a single event (`source` and `title` required)
 - `events_doctor`: run the `events doctor` checks and return the report
@@ -105,7 +107,7 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 Each source keeps its newest 500 events in memory (`--per-source-cap`); once a
 source file grows past 1.5× that cap in lines, it's compacted in place (temp
 file + rename). Event IDs are time-sortable, so lexical order is time order;
-the ID doubles as the `since` cursor for polling. Removing the service doesn't
+the ID doubles as the `after_id` cursor for polling. Removing the service doesn't
 delete the JSONL files.
 
 ## Develop

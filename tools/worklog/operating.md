@@ -58,6 +58,12 @@ The CLI uses its own cwd; the MCP server process runs from /, so the
 worklog_checkpoint tool only detects the repo when the call passes `cwd`.
 Pass `repo` explicitly to override detection.
 
+Checkpoint fails with "status must be active, paused, or done": the `status`
+argument names a status worklog does not have. Pass one of the three, or
+leave `status` out to keep the item's current one. A rejected checkpoint
+writes nothing. "unexpected additional properties" naming `status` means the
+registered MCP binary predates the argument: reinstall as above.
+
 ## version skew
 
 There is no serve process, so skew is between binaries: the MCP host keeps

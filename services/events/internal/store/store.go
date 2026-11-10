@@ -43,12 +43,13 @@ type SourceCount struct {
 
 // Filter selects events for Query. Zero values mean "no constraint".
 type Filter struct {
-	Source string // exact source (sanitized before matching); empty = all sources
-	Level  string // exact level
-	Q      string // case-insensitive substring over title+message+component+tags
-	Since  string // return only events with ID strictly greater than this (exclusive)
-	Before string // return only events with ID strictly less than this (exclusive); the backward-paging cursor
-	Limit  int    // max events returned; <=0 or > globalCap means globalCap
+	Source  string    // exact source (sanitized before matching); empty = all sources
+	Level   string    // exact level
+	Q       string    // case-insensitive substring over title+message+component+tags
+	Since   time.Time // return only events stamped at or after this time
+	AfterID string    // return only events with ID strictly greater than this (exclusive); the tailing cursor
+	Before  string    // return only events with ID strictly less than this (exclusive); the backward-paging cursor
+	Limit   int       // max events returned; <=0 or > globalCap means globalCap
 }
 
 // Store keeps a capped, time-ordered slice per source and appends each new
@@ -268,7 +269,10 @@ func (s *Store) Query(f Filter) []event.Event {
 			if f.Level != "" && ev.Level != f.Level {
 				continue
 			}
-			if f.Since != "" && ev.ID <= f.Since {
+			if ev.Time.Before(f.Since) {
+				continue
+			}
+			if f.AfterID != "" && ev.ID <= f.AfterID {
 				continue
 			}
 			if f.Before != "" && ev.ID >= f.Before {

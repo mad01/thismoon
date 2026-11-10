@@ -41,8 +41,10 @@ change.
 emits one compact JSON digest per recent session (repos, tickets, title,
 per-day activity, first/last prompts) so `/worklog-backfill` can cluster and
 import past work without pulling raw transcripts into context. Window via
-`--since Nd` or a Go duration; override the transcript root with
-`$CLAUDE_PROJECTS_DIR` (used by tests).
+`--since Nd` or a Go duration, the span grammar `kit/timespan` shares with
+moondb and events; override the transcript root with
+`$CLAUDE_PROJECTS_DIR` (used by tests). The span must be positive, so `0d` and
+`-1h`, which older builds accepted, are now an error.
 
 `scan` extracts ticket ids from prompt text: uppercase project keys
 (`[A-Z]{2,}-\d+`, covering both Linear `MAD-123` and Jira `ABC-1234`), github
@@ -185,9 +187,12 @@ the CLI (see How it works). `worklog_checkpoint`, `worklog_list`,
 `worklog_search`, and `worklog_status` return an item view:
 `{key, status, ticket?, topic?, updated, repos?}`.
 
-- `worklog_checkpoint(key, where?, note?, ticket?, topic?, repo?, cwd?)` → item
+- `worklog_checkpoint(key, where?, note?, ticket?, topic?, repo?, cwd?, status?)` → item
   view. Requires `where` and/or `note`. Creates the item if missing; `ticket`/
-  `topic` only apply on first creation. `cwd` is the user's working
+  `topic` only apply on first creation. `status` (`active`, `paused`, or
+  `done`) sets the item's status in the same write and is checked by
+  `store.ValidateStatus`, the one status check the CLI and both MCP tools
+  share; omitted, the status stays as it was. `cwd` is the user's working
   directory: pass it so the tool can detect the repo, since the MCP server
   process itself runs from `/` (see Gotchas); `repo` overrides detection.
   `where` is the ONLY context a fresh session gets when resuming. Write it

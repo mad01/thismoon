@@ -31,6 +31,22 @@ type Item struct {
 	Body string
 }
 
+// The statuses an item can have. A new item starts StatusActive.
+const (
+	StatusActive = "active"
+	StatusPaused = "paused"
+	StatusDone   = "done"
+)
+
+// ValidateStatus rejects any status but active, paused and done.
+func ValidateStatus(status string) error {
+	switch status {
+	case StatusActive, StatusPaused, StatusDone:
+		return nil
+	}
+	return fmt.Errorf("status must be active, paused, or done, got %q", status)
+}
+
 // CheckpointInput carries one checkpoint's content. Empty fields are skipped.
 type CheckpointInput struct {
 	Ticket string // set on first creation
@@ -39,6 +55,7 @@ type CheckpointInput struct {
 	Note   string // prepended as a new "Log" entry
 	Repo   string // repo this checkpoint touched ("" = none / not in a repo)
 	Cwd    string // recorded as last_cwd
+	Status string // sets the item's status in the same write ("" = keep it)
 }
 
 var keyRe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
@@ -90,42 +107,23 @@ func (it *Item) Render() ([]byte, error) {
 }
 
 // Checkpoint creates the item if missing, then applies in to its CONTEXT.md,
-// optional per-repo note, frontmatter, and the git history.
+// optional per-repo note, frontmatter, and the git history. An invalid
+// status fails before anything is written.
 func (s *Store) Checkpoint(key string, in CheckpointInput) (*Item, error) {
+	if in.Status != "" {
+		if err := ValidateStatus(in.Status); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.ensureGit(); err != nil {
 		return nil, err
 	}
 	now := s.now()
-
-	var it *Item
-	if s.Exists(key) {
-		var err error
-		if it, err = s.Load(key); err != nil {
-			return nil, err
-		}
-	} else {
-		it = &Item{
-			FM: Frontmatter{
-				Key: key, Ticket: in.Ticket, Topic: in.Topic,
-				Status: "active", Created: now,
-			},
-			Body: fmt.Sprintf("# %s\n\n## Where I am\n\n_Just started._\n\n## Log\n", key),
-		}
+	it, err := s.loadOrNew(key, in, now)
+	if err != nil {
+		return nil, err
 	}
-
-	it.FM.Updated = now
-	if in.Cwd != "" {
-		it.FM.LastCwd = in.Cwd
-	}
-	if in.Repo != "" && !contains(it.FM.Repos, in.Repo) {
-		it.FM.Repos = append(it.FM.Repos, in.Repo)
-	}
-	if in.Where != "" {
-		it.Body = replaceSection(it.Body, "## Where I am", in.Where)
-	}
-	if in.Note != "" {
-		it.Body = prependLog(it.Body, now, in.Repo, in.Note)
-	}
+	in.apply(it, now)
 
 	if err := s.writeItem(it); err != nil {
 		return nil, err
@@ -141,6 +139,42 @@ func (s *Store) Checkpoint(key string, in CheckpointInput) (*Item, error) {
 	// The item is returned even when only the push fails (ErrPush): the write
 	// and local commit succeeded, and callers report the push as a warning.
 	return it, s.maybePush()
+}
+
+// loadOrNew loads the item at key, or starts a new active one with the
+// ticket and topic in carries.
+func (s *Store) loadOrNew(key string, in CheckpointInput, now time.Time) (*Item, error) {
+	if s.Exists(key) {
+		return s.Load(key)
+	}
+	return &Item{
+		FM: Frontmatter{
+			Key: key, Ticket: in.Ticket, Topic: in.Topic,
+			Status: StatusActive, Created: now,
+		},
+		Body: fmt.Sprintf("# %s\n\n## Where I am\n\n_Just started._\n\n## Log\n", key),
+	}, nil
+}
+
+// apply writes the checkpoint onto it: the time, cwd, repo, status, the
+// Where I am snapshot and a new log entry, each only when in carries it.
+func (in CheckpointInput) apply(it *Item, now time.Time) {
+	it.FM.Updated = now
+	if in.Cwd != "" {
+		it.FM.LastCwd = in.Cwd
+	}
+	if in.Repo != "" && !contains(it.FM.Repos, in.Repo) {
+		it.FM.Repos = append(it.FM.Repos, in.Repo)
+	}
+	if in.Status != "" {
+		it.FM.Status = in.Status
+	}
+	if in.Where != "" {
+		it.Body = replaceSection(it.Body, "## Where I am", in.Where)
+	}
+	if in.Note != "" {
+		it.Body = prependLog(it.Body, now, in.Repo, in.Note)
+	}
 }
 
 func (s *Store) writeItem(it *Item) error {
@@ -169,6 +203,9 @@ func (s *Store) appendRepoNote(key, repo string, t time.Time, note string) error
 
 // SetStatus updates an item's status and commits.
 func (s *Store) SetStatus(key, status string) (*Item, error) {
+	if err := ValidateStatus(status); err != nil {
+		return nil, err
+	}
 	if err := s.ensureGit(); err != nil {
 		return nil, err
 	}

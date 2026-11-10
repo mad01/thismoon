@@ -11,7 +11,7 @@ running state plus history.
 status/
   cmd/status/          entrypoint (delegates to internal/cli)
   internal/
-    cli/               cobra: serve, version (build metadata from the shared buildinfo package), docs
+    cli/               cobra: serve, list (fleet view from GET /api/status), version (build metadata from the shared buildinfo package), docs, doctor
     discover/          plist scan + d-man routes.toml link mapping
     check/             HTTP and launchctl PID probes
     crashloop/         restart-counter tracker behind crash-loop alerts
@@ -118,7 +118,9 @@ make test     # go test ./...
 ## HTTP API
 
 - `GET /`: the dashboard (no-store; reloads itself every 60s)
-- `GET /api/status`: full snapshot as JSON
+- `GET /api/status`: full snapshot as JSON. `status list` reads it: a text
+  table, or `-o json` with the per-service fields minus the uptime days, and
+  exit 1 when any service is down (the error names them)
 - `GET /healthz`: 204
 - `GET /version`: the four-key build metadata object (`version`, `commit`, `tag`, `build_time`), same convention as the other services
 - `GET /webkit/`: shared chrome from the in-module `github.com/mad01/thismoon/webkit` package

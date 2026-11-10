@@ -125,7 +125,7 @@ Ask in plain language: "scan for vulnerable dependencies", "what's flagged",
 - `deps_scan`: discover all dependencies, no advisory check
 - `deps_check`: discover and check against OSV; returns the flagged packages
 - `deps_list_flagged`: re-read the last findings without re-scanning
-- `deps_scan_repo`: rescan one repo (by path or basename) or mise tool (by label) and merge the result
+- `deps_scan_repo`: rescan one repo (by path or basename) or mise tool (by label) and merge the result; an unknown id fails with the ids it would take
 - `deps_resolve`: acknowledge advisories by their key
 - `deps_doctor`: run the same checks as `deps doctor` and return the report
 

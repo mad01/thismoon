@@ -56,11 +56,11 @@ func (h *handlers) handleRead(
 
 	_, ref, err := h.locate(in.Vault, in.Path)
 	if err != nil {
-		return nil, vault.Note{}, fmt.Errorf("brain_read: %w", err)
+		return nil, vault.Note{}, noteErr("brain_read", in.Path, err)
 	}
 	note, err := ref.Vault.Read(ref.Path, in.StartLine, in.EndLine)
 	if err != nil {
-		return nil, vault.Note{}, fmt.Errorf("brain_read: %w", err)
+		return nil, vault.Note{}, noteErr("brain_read", in.Path, err)
 	}
 	return nil, note, nil
 }
@@ -72,11 +72,11 @@ func (h *handlers) handlePeek(
 ) (*mcp.CallToolResult, vault.Peek, error) {
 	lib, ref, err := h.locate(in.Vault, in.Path)
 	if err != nil {
-		return nil, vault.Peek{}, fmt.Errorf("brain_peek: %w", err)
+		return nil, vault.Peek{}, noteErr("brain_peek", in.Path, err)
 	}
 	peek, err := lib.Set().Peek(ref, in.MaxBodyLines)
 	if err != nil {
-		return nil, vault.Peek{}, fmt.Errorf("brain_peek: %w", err)
+		return nil, vault.Peek{}, noteErr("brain_peek", in.Path, err)
 	}
 	return nil, peek, nil
 }

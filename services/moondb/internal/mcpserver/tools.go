@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -168,6 +169,26 @@ func registerSessionTools(s *mcp.Server, h *handlers) {
 	}, h.handleDoctor)
 }
 
+// The calls a failed tool names next, so an unknown id or worktree leads to
+// the listing that holds the right one instead of to another guess.
+const (
+	nextSessionID = "call moondb_sessions for session ids, newest first " +
+		`(since: "24h" or repo narrows the list)`
+	nextTurnID   = "call moondb_history or moondb_why for a turn_id"
+	nextWhyEdits = "call moondb_history with path and repo (host/owner/repo) " +
+		"for the file's recorded edits in every checkout"
+)
+
+// withNextMove appends next to an error that is kind, the one failure next
+// fixes. Any other error, such as serve being down or a relative worktree,
+// names its own fix already and passes through unchanged.
+func withNextMove(err, kind error, next string) error {
+	if errors.Is(err, kind) {
+		return fmt.Errorf("%w; %s", err, next)
+	}
+	return err
+}
+
 // sessionURL is the web page that shows one session's turns and edits.
 func (h *handlers) sessionURL(id string) string {
 	if id == "" {
@@ -213,7 +234,7 @@ func (h *handlers) handleWhy(
 		Text:     in.Text,
 	})
 	if err != nil {
-		return nil, whyOutput{}, err
+		return nil, whyOutput{}, withNextMove(err, query.ErrUnknownWorktree, nextWhyEdits)
 	}
 	sessionID := ""
 	if res.Edit != nil {
@@ -325,7 +346,7 @@ func (h *handlers) handleTurn(
 ) (*mcp.CallToolResult, turnOutput, error) {
 	d, err := h.client.Turn(ctx, in.ID)
 	if err != nil {
-		return nil, turnOutput{}, err
+		return nil, turnOutput{}, withNextMove(err, store.ErrNotFound, nextTurnID)
 	}
 	prompt := h.chunkText(ctx, d.PromptChunk, promptExcerpt)
 	return nil, turnOutput{
@@ -477,7 +498,7 @@ func (h *handlers) handleTrace(
 ) (*mcp.CallToolResult, traceOutput, error) {
 	st, err := h.client.SessionTrace(ctx, in.ID)
 	if err != nil {
-		return nil, traceOutput{}, err
+		return nil, traceOutput{}, withNextMove(err, store.ErrNotFound, nextSessionID)
 	}
 	return nil, traceOutput{
 		SessionID:       st.SessionID,
@@ -581,7 +602,7 @@ func (h *handlers) handleScorecard(
 ) (*mcp.CallToolResult, scorecardOutput, error) {
 	sc, err := h.client.SessionScorecard(ctx, in.ID)
 	if err != nil {
-		return nil, scorecardOutput{}, err
+		return nil, scorecardOutput{}, withNextMove(err, store.ErrNotFound, nextSessionID)
 	}
 	return nil, scorecardOutput{
 		Scorecard: sc,

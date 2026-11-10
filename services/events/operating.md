@@ -51,9 +51,13 @@ the emit. Check `events_sources` first: when the source is absent entirely,
 no emit has ever landed, so fix the producer, not the store.
 
 Empty query result: check the filters before concluding loss. `source` must
-match exactly, and `since` is an exclusive id cursor that returns nothing
-when it already points at the newest event. The per-source cap drops the
-oldest events once a source passes 500.
+match exactly. `since` is a time window (`90m`, `24h`, `7d`, or an RFC 3339
+time) that drops older events. `after_id` is an exclusive id cursor that
+returns nothing when it already points at the newest event. A `since` or
+`after_id` of the wrong shape is an error that names the parameter to use,
+never an empty result. `events list` takes the same two filters as `--since`
+and `--after-id`, with the same errors. The per-source cap drops the oldest
+events once a source passes 500.
 
 ## version skew
 

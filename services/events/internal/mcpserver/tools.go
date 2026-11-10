@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/kit/timespan"
 	"github.com/mad01/thismoon/services/events/internal/client"
 	"github.com/mad01/thismoon/services/events/internal/event"
 )
@@ -26,9 +27,11 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Query the local event/audit log, newest first, the primary tool for debugging what happened. " +
 			"Optional filters: `source` (e.g. 'deps', 'reminder'), `level` ('info'|'warn'|'error'), " +
 			"`q` (case-insensitive substring over title, message, component, and tags), " +
-			"`since` (an event id; returns only events newer than it, so use it to poll for new activity), " +
+			"`since` (a time window, the same grammar moondb_sessions takes: a span before now such as 90m, 24h or 7d, or an RFC 3339 time), " +
+			"`after_id` (an event id from an earlier result; returns only events newer than it, so use it to poll for new activity), " +
 			"and `limit` (max events, defaults to the global cap). Use events_sources first to see which sources exist. " +
-			"On zero results the response carries zero_result_hint (whether the source filter names a real source, the known sources, the time the since cursor decodes to). Read it before assuming nothing happened.",
+			"A since or after_id value of the wrong shape is an error that names the parameter to use. " +
+			"On zero results the response carries zero_result_hint (whether the source filter names a real source, the known sources, the times since and after_id resolve to). Read it before assuming nothing happened.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),
@@ -73,27 +76,30 @@ func registerTools(s *mcp.Server, h *handlers) {
 // ── query ──
 
 type queryInput struct {
-	Source string `json:"source,omitempty" jsonschema:"filter to one source (e.g. 'deps')"`
-	Level  string `json:"level,omitempty"  jsonschema:"filter by level: info | warn | error"`
-	Q      string `json:"q,omitempty"      jsonschema:"case-insensitive substring over title, message, component, and tags"`
-	Since  string `json:"since,omitempty"  jsonschema:"an event id; return only events newer than it (exclusive)"`
-	Limit  int    `json:"limit,omitempty"  jsonschema:"max events to return; defaults to the global cap"`
+	Source  string `json:"source,omitempty"   jsonschema:"filter to one source (e.g. 'deps')"`
+	Level   string `json:"level,omitempty"    jsonschema:"filter by level: info | warn | error"`
+	Q       string `json:"q,omitempty"        jsonschema:"case-insensitive substring over title, message, component, and tags"`
+	Since   string `json:"since,omitempty"    jsonschema:"a time window: a span before now such as 90m, 24h or 7d, or an RFC 3339 time; returns events stamped at or after it"`
+	AfterID string `json:"after_id,omitempty" jsonschema:"an event id from an earlier result; return only events newer than it (exclusive), for polling"`
+	Limit   int    `json:"limit,omitempty"    jsonschema:"max events to return; defaults to the global cap"`
 }
 
 type queryOutput struct {
 	Events   []client.Event `json:"events"`
 	URL      string         `json:"url"`
-	ZeroHint *queryZeroHint `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: what the filters actually applied to, so an empty log is distinguishable from a wrong source name or an over-tight since cursor"`
+	ZeroHint *queryZeroHint `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: what the filters actually applied to, so an empty log is distinguishable from a wrong source name or an over-tight since window or after_id cursor"`
 }
 
 // queryZeroHint explains an empty events_query so an agent can tell "nothing
 // happened" from "the source filter names no real source" or "the since
-// cursor excluded everything". Additive: it appears only on zero results.
+// window or after_id cursor excluded everything". Additive: it appears only
+// on zero results.
 type queryZeroHint struct {
 	SourceFilter string   `json:"source_filter,omitempty" jsonschema:"the source filter this query applied"`
 	SourceExists bool     `json:"source_exists"           jsonschema:"whether the source filter names a source that exists; only meaningful when source_filter is set"`
 	KnownSources []string `json:"known_sources,omitempty" jsonschema:"every source that exists, from events_sources"`
-	SinceTime    string   `json:"since_time,omitempty"    jsonschema:"the timestamp the since cursor decodes to (RFC3339); only events newer than this were considered"`
+	SinceTime    string   `json:"since_time,omitempty"    jsonschema:"the time the since window starts at (RFC3339); only events stamped at or after it were considered"`
+	AfterIDTime  string   `json:"after_id_time,omitempty" jsonschema:"the time the after_id cursor decodes to (RFC3339); only events newer than it were considered"`
 	EventsStored int      `json:"events_stored"           jsonschema:"total events across all sources"`
 	Notes        []string `json:"notes,omitempty"         jsonschema:"targeted suggestions naming why the query came back empty"`
 }
@@ -103,28 +109,40 @@ func (h *handlers) handleQuery(
 	_ *mcp.CallToolRequest,
 	in queryInput,
 ) (*mcp.CallToolResult, queryOutput, error) {
+	in = legacyCursor(in)
 	evs, err := h.client.Query(client.QueryFilter{
-		Source: in.Source,
-		Level:  in.Level,
-		Q:      in.Q,
-		Since:  in.Since,
-		Limit:  in.Limit,
+		Source:  in.Source,
+		Level:   in.Level,
+		Q:       in.Q,
+		Since:   in.Since,
+		AfterID: in.AfterID,
+		Limit:   in.Limit,
 	})
 	if err != nil {
 		return nil, queryOutput{}, err
 	}
 	outp := queryOutput{Events: evs, URL: h.webURL}
 	if len(evs) == 0 {
-		outp.ZeroHint = h.buildQueryZeroHint(in)
+		outp.ZeroHint = h.buildQueryZeroHint(in, time.Now())
 	}
 	return nil, outp, nil
+}
+
+// legacyCursor moves an event id passed as since to after_id, the reading
+// serve gives it too, so the zero-result hint describes the cursor the
+// query actually applied. since took an id before after_id existed.
+func legacyCursor(in queryInput) queryInput {
+	if in.AfterID == "" && event.IsID(in.Since) {
+		in.AfterID, in.Since = in.Since, ""
+	}
+	return in
 }
 
 // buildQueryZeroHint compares the query's filters against the live source
 // list. Best-effort: it returns nil when the extra lookup fails, leaving the
 // plain empty result. The source filter is sanitized the same way the query
 // path sanitizes it, so the hint judges the name the store actually matched.
-func (h *handlers) buildQueryZeroHint(in queryInput) *queryZeroHint {
+func (h *handlers) buildQueryZeroHint(in queryInput, now time.Time) *queryZeroHint {
 	srcs, err := h.client.Sources()
 	if err != nil {
 		return nil
@@ -147,8 +165,12 @@ func (h *handlers) buildQueryZeroHint(in queryInput) *queryZeroHint {
 			sourceEvents = s.Count
 		}
 	}
-	if since, ok := event.TimeFromID(in.Since); ok {
-		hint.SinceTime = since.Format(time.RFC3339)
+	// serve already rejected a since it cannot parse, so the error is moot.
+	if since, err := timespan.Since(in.Since, now); err == nil && !since.IsZero() {
+		hint.SinceTime = since.UTC().Format(time.RFC3339)
+	}
+	if after, ok := event.TimeFromID(in.AfterID); ok {
+		hint.AfterIDTime = after.Format(time.RFC3339)
 	}
 	hint.Notes = queryZeroNotes(in, hint, sourceEvents)
 	return hint
@@ -168,20 +190,16 @@ func queryZeroNotes(in queryInput, hint *queryZeroHint, sourceEvents int) []stri
 			in.Source, strings.Join(hint.KnownSources, ", "),
 		)}
 	}
-	if in.Since != "" && hint.SinceTime == "" {
-		return []string{fmt.Sprintf(
-			"the since cursor %q does not decode as an event id and may exclude everything; drop it or pass an id returned by a previous query",
-			in.Since,
-		)}
-	}
-
 	scope := fmt.Sprintf("the log holds %d events", hint.EventsStored)
 	if in.Source != "" {
 		scope = fmt.Sprintf("source %q holds %d events", in.Source, sourceEvents)
 	}
 	var filters []string
 	if in.Since != "" {
-		filters = append(filters, "since cursor")
+		filters = append(filters, "since window")
+	}
+	if in.AfterID != "" {
+		filters = append(filters, "after_id cursor")
 	}
 	if in.Level != "" {
 		filters = append(filters, "level filter")
@@ -193,8 +211,13 @@ func queryZeroNotes(in queryInput, hint *queryZeroHint, sourceEvents int) []stri
 		return []string{scope}
 	}
 	note := fmt.Sprintf("%s; the %s excluded them all", scope, strings.Join(filters, " and "))
-	if in.Since != "" {
-		note += "; drop since to include older events"
+	switch {
+	case in.Since != "" && in.AfterID != "":
+		note += "; widen since or drop after_id to include older events"
+	case in.Since != "":
+		note += "; widen since (such as 7d) or drop it to include older events"
+	case in.AfterID != "":
+		note += "; drop after_id to include older events"
 	}
 	return []string{note}
 }

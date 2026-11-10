@@ -70,7 +70,9 @@ worklog config
 `worklog mcp` starts the MCP stdio server, exposing the same operations as
 tools so an agent can checkpoint and resume without shelling out:
 `worklog_checkpoint`, `worklog_list`, `worklog_search`, `worklog_show`,
-`worklog_status`.
+`worklog_status`. `worklog_checkpoint` takes an optional `status` (`active`,
+`paused`, or `done`), so the closing checkpoint can mark the item done in the
+same write.
 
 On a standalone install, register it once:
 

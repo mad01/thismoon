@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/mad01/thismoon/kit/agentdoc"
 	"github.com/mad01/thismoon/kit/agentdoc/agentcli"
 	"github.com/mad01/thismoon/kit/envdefault"
+	"github.com/mad01/thismoon/kit/timespan"
 	"github.com/mad01/thismoon/tools/worklog"
 	"github.com/mad01/thismoon/tools/worklog/internal/config"
 	"github.com/mad01/thismoon/tools/worklog/internal/mcpserver"
@@ -189,16 +189,14 @@ func (a *app) scanCmd() *cobra.Command {
 	return c
 }
 
-// parseSince accepts "14d" / "30d" (days) or any Go duration string.
+// parseSince reads the --since window in the fleet's shared span grammar
+// (kit/timespan): whole days such as 14d, or a Go duration such as 336h.
 func parseSince(s string) (time.Duration, error) {
-	if strings.HasSuffix(s, "d") {
-		days, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
-		if err != nil {
-			return 0, fmt.Errorf("invalid --since %q", s)
-		}
-		return time.Duration(days) * 24 * time.Hour, nil
+	d, err := timespan.Parse(s)
+	if err != nil {
+		return 0, fmt.Errorf("--since %w", err)
 	}
-	return time.ParseDuration(s)
+	return d, nil
 }
 
 func (a *app) mcpCmd() *cobra.Command {
@@ -403,8 +401,8 @@ func (a *app) statusCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st := args[1]
-			if st != "active" && st != "paused" && st != "done" {
-				return fmt.Errorf("status must be active, paused, or done")
+			if err := store.ValidateStatus(st); err != nil {
+				return err
 			}
 			s, err := a.store()
 			if err != nil {

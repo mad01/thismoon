@@ -509,21 +509,61 @@ func discoverUnit(
 	if !discover.IsMiseLabel(id) {
 		repo, ok := matchRepo(plan.Repos, id)
 		if !ok {
-			return "", nil, nil, fmt.Errorf("repo %q is not among the scanned repos", id)
+			return "", nil, nil, unknownRepo(plan.Repos, id)
 		}
 		deps, errs := Discover(Plan{Repos: []string{repo}, Options: plan.Options}, ecosystems)
 		return repo, deps, errs, nil
 	}
-	tools, err := plan.Mise.Locked()
+	installed, err := plan.Mise.Locked()
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("read mise tools: %w", err)
 	}
-	tools = slices.DeleteFunc(tools, func(t discover.MiseTool) bool { return t.Label != id })
+	tools := slices.DeleteFunc(slices.Clone(installed),
+		func(t discover.MiseTool) bool { return t.Label != id })
 	if len(tools) == 0 {
-		return "", nil, nil, fmt.Errorf("%q is not among the installed mise tools", id)
+		return "", nil, nil, unknownTool(installed, id)
 	}
 	deps, errs := discover.Tools(tools)
 	return id, deps, logged(errs), nil
+}
+
+// maxKnownIDs caps the ids an unknown-id error lists, so a large registry
+// cannot turn one error into a page.
+const maxKnownIDs = 25
+
+// unknownRepo names the repo ids a rescan accepts, so the caller's next try
+// can pass one instead of guessing again.
+func unknownRepo(repos []string, id string) error {
+	names := make([]string, len(repos))
+	for i, r := range repos {
+		names[i] = filepath.Base(r)
+	}
+	return fmt.Errorf("repo %q is not among the scanned repos; pass one of their basenames "+
+		"or absolute paths (%s), or a mise tool label such as mise:npm:yarn",
+		id, knownIDs(names))
+}
+
+// unknownTool names the mise tool labels a rescan accepts.
+func unknownTool(installed []discover.MiseTool, id string) error {
+	labels := make([]string, len(installed))
+	for i, t := range installed {
+		labels[i] = t.Label
+	}
+	return fmt.Errorf("%q is not among the installed mise tools; pass one of their labels (%s)",
+		id, knownIDs(labels))
+}
+
+// knownIDs lists ids sorted and deduplicated, at most maxKnownIDs of them.
+func knownIDs(ids []string) string {
+	if len(ids) == 0 {
+		return "none registered"
+	}
+	ids = slices.Compact(slices.Sorted(slices.Values(ids)))
+	if len(ids) <= maxKnownIDs {
+		return strings.Join(ids, ", ")
+	}
+	return fmt.Sprintf("%s and %d more",
+		strings.Join(ids[:maxKnownIDs], ", "), len(ids)-maxKnownIDs)
 }
 
 // matchRepo resolves a user-supplied repo id (an absolute path or a basename)

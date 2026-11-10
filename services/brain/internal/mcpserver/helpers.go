@@ -1,7 +1,11 @@
 package mcpserver
 
 import (
+	"errors"
 	"fmt"
+	"path"
+	"regexp"
+	"strings"
 
 	"github.com/mad01/thismoon/services/brain/internal/config"
 	"github.com/mad01/thismoon/services/brain/internal/library"
@@ -57,6 +61,23 @@ func (h *handlers) locate(name, ref string) (*library.Library, vault.Ref, error)
 		return nil, vault.Ref{}, err
 	}
 	return lib, r, nil
+}
+
+// noteErr prefixes err with the tool name. A ref that names no note also
+// gets the search that finds the right one, the way the CLI's not-found hint
+// does, so a wrong guess at a path leads to a search instead of another guess.
+func noteErr(tool, ref string, err error) error {
+	if !errors.Is(err, vault.ErrNotFound) {
+		return fmt.Errorf("%s: %w", tool, err)
+	}
+	search := "brain_search with a word from its title"
+	if stem := strings.TrimSuffix(path.Base(ref), path.Ext(ref)); stem != "" &&
+		!strings.HasPrefix(ref, "id:") {
+		search = fmt.Sprintf("brain_search with query 'f:%s', or a word from its title",
+			regexp.QuoteMeta(stem))
+	}
+	return fmt.Errorf("%s: %w; find it with %s, whose hits carry the vault:path to pass",
+		tool, err, search)
 }
 
 func names(name string) []string {

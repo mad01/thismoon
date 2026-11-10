@@ -53,8 +53,12 @@ type QueryFilter struct {
 	Source string
 	Level  string
 	Q      string
-	Since  string
-	Limit  int
+	// Since is a time window: an RFC 3339 time or a span before now such
+	// as 90m, 24h or 7d.
+	Since string
+	// AfterID is the exclusive event-id cursor: only events newer than it.
+	AfterID string
+	Limit   int
 }
 
 // Client talks to a running `events serve` over its localhost HTTP API.
@@ -93,6 +97,9 @@ func (c *Client) Query(f QueryFilter) ([]Event, error) {
 	}
 	if f.Since != "" {
 		q.Set("since", f.Since)
+	}
+	if f.AfterID != "" {
+		q.Set("after_id", f.AfterID)
 	}
 	if f.Limit > 0 {
 		q.Set("limit", strconv.Itoa(f.Limit))

@@ -322,18 +322,26 @@ func (c *Client) transportErr(
 }
 
 // APIError is a non-2xx answer from serve: the status and the server's
-// message. It matches store.ErrNotFound on a 404 and query.ErrNotImplemented
-// on a 501, so callers test the outcome the way they would against the store.
+// message. It matches store.ErrNotFound on a 404, query.ErrNotImplemented
+// on a 501 and query.ErrUnknownWorktree on that code, so callers test the
+// outcome the way they would against the store.
 type APIError struct {
 	Status  int
 	Message string
+	// Code is the error code serve sent, such as
+	// query.CodeUnknownWorktree; "" for most errors.
+	Code string
 }
 
 // Error returns the server's message, already prefixed "moondb: ".
 func (e *APIError) Error() string { return e.Message }
 
-// Is maps the status back to the sentinel the server mapped it from.
+// Is maps the status and code back to the sentinel the server mapped them
+// from.
 func (e *APIError) Is(target error) bool {
+	if e.Code == query.CodeUnknownWorktree && target == query.ErrUnknownWorktree {
+		return true
+	}
 	switch e.Status {
 	case http.StatusNotFound:
 		return target == store.ErrNotFound
@@ -348,10 +356,11 @@ func (e *APIError) Is(target error) bool {
 func apiError(status int, raw []byte) *APIError {
 	var body struct {
 		Error string `json:"error"`
+		Code  string `json:"code"`
 	}
 	_ = json.Unmarshal(raw, &body)
 	if body.Error == "" {
 		body.Error = fmt.Sprintf("moondb: serve returned %d %s", status, http.StatusText(status))
 	}
-	return &APIError{Status: status, Message: body.Error}
+	return &APIError{Status: status, Message: body.Error, Code: body.Code}
 }

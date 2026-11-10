@@ -68,6 +68,13 @@ t-man typically supervises it. Run `t-man list` to see whether the moondb
 agent exists, then `t-man restart moondb`. For a quick test without t-man,
 `moondb serve` in a spare terminal also works. Capture is not lost meanwhile.
 
+"store: not found" on a session or turn id, or "no edit recorded in
+worktree": the id or worktree is not one moondb holds. The MCP tools name the
+listing that has the right one: `moondb_sessions` for a session id,
+`moondb_history` or `moondb_why` for a turn id. For a worktree it is
+`moondb_history` with `path` and `repo`, since agents edit in worktrees and a
+main checkout often has no edit of its own.
+
 `spool/` keeps growing: serve is down or cannot ingest. Check `t-man logs
 moondb --stderr` for the envelope it refused.
 

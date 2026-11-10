@@ -52,6 +52,12 @@ A scan cycle failing with a config parse error: a pattern in `exclude_repos` or
 never skipped in silence, so this fails the cycle rather than scanning a repo
 the config asked to skip.
 
+A rescan (`deps check --repo`, `deps_scan_repo`) failing with "is not among the
+scanned repos" or "is not among the installed mise tools": the id matches no
+registered repo or installed tool. The error lists the ids it takes (repo
+basenames, or mise labels, at most 25). Pass one of them; a repo missing from
+the list is missing from the catalog registry or excluded by the config.
+
 Connection refused, or "deps serve not reachable": serve is not running. t-man
 typically supervises it. Run `t-man list` to see whether the deps agent
 exists, then `t-man restart deps`. For a quick test without t-man, `deps

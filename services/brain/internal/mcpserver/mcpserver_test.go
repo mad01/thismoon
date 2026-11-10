@@ -384,6 +384,26 @@ func TestBrainRead_EscapeAttempt(t *testing.T) {
 	}
 }
 
+// TestBrainReadMissingNoteNamesSearch holds a missing note to an error that
+// names the search that finds the right ref, on read and on peek.
+func TestBrainReadMissingNoteNamesSearch(t *testing.T) {
+	setupFixtureVault(t)
+	ctx := context.Background()
+	h := testServer(t)
+
+	_, _, readErr := h.handleRead(ctx, nil, readInput{Path: "notes/no-such-note.md"})
+	_, _, peekErr := h.handlePeek(ctx, nil, peekInput{Path: "notes/no-such-note.md"})
+	for name, err := range map[string]error{"brain_read": readErr, "brain_peek": peekErr} {
+		if !errors.Is(err, vault.ErrNotFound) {
+			t.Fatalf("%s err = %v, want vault.ErrNotFound", name, err)
+		}
+		if !strings.HasPrefix(err.Error(), name+": ") ||
+			!strings.Contains(err.Error(), "brain_search with query 'f:no-such-note'") {
+			t.Errorf("%s err = %q, want the tool prefix and a brain_search next move", name, err)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // brain_peek
 // ---------------------------------------------------------------------------

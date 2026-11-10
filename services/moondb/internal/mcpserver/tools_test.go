@@ -18,6 +18,7 @@ import (
 	"github.com/mad01/thismoon/kit/mcptest"
 
 	"github.com/mad01/thismoon/services/moondb/internal/client"
+	"github.com/mad01/thismoon/services/moondb/internal/query"
 	"github.com/mad01/thismoon/services/moondb/internal/scorecard"
 	"github.com/mad01/thismoon/services/moondb/internal/server"
 	"github.com/mad01/thismoon/services/moondb/internal/server/servertest"
@@ -64,7 +65,19 @@ func sessionOn(
 	checks func(context.Context) []doctor.Check,
 ) *mcp.ClientSession {
 	t.Helper()
-	ts := httptest.NewServer(server.New(st, servertest.NewQuerier(st), buildinfo.Info{}).Handler())
+	return sessionWith(t, st, servertest.NewQuerier(st), checks)
+}
+
+// sessionWith is sessionOn with the querier given, for a test that makes
+// the query fail.
+func sessionWith(
+	t *testing.T,
+	st *servertest.Store,
+	q *servertest.Querier,
+	checks func(context.Context) []doctor.Check,
+) *mcp.ClientSession {
+	t.Helper()
+	ts := httptest.NewServer(server.New(st, q, buildinfo.Info{}).Handler())
 	t.Cleanup(ts.Close)
 	s := newServer(
 		"test",
@@ -458,29 +471,76 @@ func TestTraceRoundTrip(t *testing.T) {
 	}
 }
 
-func TestTraceNotFoundIsToolError(t *testing.T) {
-	cs := session(t, noChecks)
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "moondb_trace", Arguments: map[string]any{"id": "nope"},
-	})
+// wantToolError calls name and holds the result to a tool error whose text
+// carries every one of want.
+func wantToolError(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any,
+	want ...string,
+) {
+	t.Helper()
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
-		t.Fatalf("call: %v", err)
+		t.Fatalf("call %s: %v", name, err)
 	}
-	if !res.IsError || !strings.Contains(toolText(res), "not found") {
-		t.Errorf("result = %+v, want a not-found tool error", res)
+	if !res.IsError {
+		t.Fatalf("%s = %s, want a tool error", name, toolText(res))
+	}
+	for _, w := range want {
+		if !strings.Contains(toolText(res), w) {
+			t.Errorf("%s error = %q, want it to mention %q", name, toolText(res), w)
+		}
 	}
 }
 
-func TestTurnNotFoundIsToolError(t *testing.T) {
-	cs := session(t, noChecks)
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "moondb_turn", Arguments: map[string]any{"id": "nope"},
-	})
+func TestTraceNotFoundNamesSessions(t *testing.T) {
+	wantToolError(t, session(t, noChecks), "moondb_trace", map[string]any{"id": "nope"},
+		"not found", "moondb_sessions")
+}
+
+func TestTurnNotFoundNamesHistory(t *testing.T) {
+	wantToolError(t, session(t, noChecks), "moondb_turn", map[string]any{"id": "nope"},
+		"not found", "moondb_history")
+}
+
+// TestWhyUnknownWorktreeNamesHistory is the reported failure: a worktree
+// with no recorded edit failed with nothing to try next.
+func TestWhyUnknownWorktreeNamesHistory(t *testing.T) {
+	st := servertest.NewStore()
+	q := servertest.NewQuerier(st)
+	q.SetErr(fmt.Errorf("%w in worktree /tmp", query.ErrUnknownWorktree))
+	wantToolError(t, sessionWith(t, st, q, noChecks), "moondb_why",
+		map[string]any{"worktree": "/tmp", "path": "a.go", "line": 1},
+		"no edit recorded in worktree /tmp", "moondb_history with path and repo")
+}
+
+// TestWhyBadRequestKeepsItsOwnFix keeps the history hint off a 400 it does
+// not fix: a relative worktree is fixed by passing an absolute one.
+func TestWhyBadRequestKeepsItsOwnFix(t *testing.T) {
+	st := servertest.NewStore()
+	q := servertest.NewQuerier(st)
+	q.SetErr(fmt.Errorf("%w: worktree %q is not absolute", query.ErrInvalidRequest, "repo"))
+	cs := sessionWith(t, st, q, noChecks)
+	args := map[string]any{"worktree": "repo", "path": "a.go", "line": 1}
+	wantToolError(t, cs, "moondb_why", args, `worktree "repo" is not absolute`)
+	res, err := cs.CallTool(context.Background(),
+		&mcp.CallToolParams{Name: "moondb_why", Arguments: args})
 	if err != nil {
-		t.Fatalf("call: %v", err)
+		t.Fatal(err)
 	}
-	if !res.IsError || !strings.Contains(toolText(res), "not found") {
-		t.Errorf("result = %+v, want a not-found tool error", res)
+	if strings.Contains(toolText(res), "moondb_history") {
+		t.Errorf("moondb_why error = %q, want no moondb_history hint", toolText(res))
+	}
+}
+
+// TestWhyServeDownKeepsItsOwnFix keeps the next move off errors it does not
+// fix: serve being down names moondb doctor, not moondb_history.
+func TestWhyServeDownKeepsItsOwnFix(t *testing.T) {
+	err := withNextMove(
+		errors.New("moondb: serve not reachable"),
+		query.ErrUnknownWorktree,
+		nextWhyEdits,
+	)
+	if strings.Contains(err.Error(), "moondb_history") {
+		t.Errorf("err = %q, want the transport error unchanged", err)
 	}
 }
 
@@ -562,15 +622,7 @@ func TestScorecardRoundTrip(t *testing.T) {
 	}
 }
 
-func TestScorecardNotFoundIsToolError(t *testing.T) {
-	cs := session(t, noChecks)
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "moondb_scorecard", Arguments: map[string]any{"id": "nope"},
-	})
-	if err != nil {
-		t.Fatalf("call: %v", err)
-	}
-	if !res.IsError || !strings.Contains(toolText(res), "not found") {
-		t.Errorf("result = %+v, want a not-found tool error", res)
-	}
+func TestScorecardNotFoundNamesSessions(t *testing.T) {
+	wantToolError(t, session(t, noChecks), "moondb_scorecard", map[string]any{"id": "nope"},
+		"not found", "moondb_sessions")
 }

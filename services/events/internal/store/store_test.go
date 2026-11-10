@@ -261,9 +261,13 @@ func TestQueryFilters(t *testing.T) {
 	if got := s.Query(Filter{Q: "NEEDLE"}); len(got) != 2 {
 		t.Errorf("q substring (message+tags, case-insensitive): len = %d, want 2", len(got))
 	}
-	since := s.Query(Filter{Since: e2.ID})
-	if len(since) != 1 || since[0].Title != "gamma" {
-		t.Errorf("since-exclusive: %+v", since)
+	after := s.Query(Filter{AfterID: e2.ID})
+	if len(after) != 1 || after[0].Title != "gamma" {
+		t.Errorf("after_id-exclusive: %+v", after)
+	}
+	since := s.Query(Filter{Since: e2.Time})
+	if len(since) != 2 || since[0].Title != "gamma" || since[1].Title != "beta" {
+		t.Errorf("since-inclusive time bound: %+v", since)
 	}
 	if got := s.Query(Filter{Limit: 1}); len(got) != 1 {
 		t.Errorf("limit: len = %d, want 1", len(got))
@@ -292,10 +296,10 @@ func TestQueryBeforeCursor(t *testing.T) {
 		t.Errorf("before+limit page: %+v", page)
 	}
 
-	// Since and Before combine to the open interval (since, before).
-	mid := s.Query(Filter{Since: evs[0].ID, Before: evs[4].ID})
+	// AfterID and Before combine to the open interval (after_id, before).
+	mid := s.Query(Filter{AfterID: evs[0].ID, Before: evs[4].ID})
 	if len(mid) != 3 || mid[0].ID != evs[3].ID || mid[2].ID != evs[1].ID {
-		t.Errorf("since+before window: %+v", mid)
+		t.Errorf("after_id+before window: %+v", mid)
 	}
 
 	// A cursor at the oldest id yields nothing.

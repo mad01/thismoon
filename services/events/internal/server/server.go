@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/timespan"
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/services/events/internal/event"
@@ -26,11 +27,12 @@ var indexHTML []byte
 type Server struct {
 	store *store.Store
 	info  buildinfo.Info
+	now   func() time.Time // the clock a since span counts back from
 }
 
 // New returns a Server backed by st, reporting info on /version.
 func New(st *store.Store, info buildinfo.Info) *Server {
-	return &Server{store: st, info: info}
+	return &Server{store: st, info: info, now: time.Now}
 }
 
 // Handler builds the routes, wrapped in request logging.
@@ -64,8 +66,13 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		Source: q.Get("source"),
 		Level:  q.Get("level"),
 		Q:      q.Get("q"),
-		Since:  q.Get("since"),
 		Before: q.Get("before"),
+	}
+	var err error
+	f.Since, f.AfterID, err = parseWindow(q.Get("since"), q.Get("after_id"), s.now())
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
 	}
 	if f.Level != "" && !validLevel(f.Level) {
 		writeErr(
@@ -123,6 +130,35 @@ func (s *Server) handlePurge(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSources(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.store.Sources())
+}
+
+// parseWindow reads the two lower bounds a query takes. since is a time
+// window in the fleet's shared grammar (kit/timespan), counted back from now.
+// afterID is the exclusive event-id cursor a tail polls with. A since that is
+// itself an event id is read as afterID, so pollers written before after_id
+// existed keep working. Each error names the parameter that would fit.
+func parseWindow(since, afterID string, now time.Time) (time.Time, string, error) {
+	if afterID != "" && !event.IsID(afterID) {
+		return time.Time{}, "", fmt.Errorf(
+			"events: after_id must be an event id, the id field of an event a query returned "+
+				"(such as 01761393600000000000-ab12), got %q; for a time window pass since=24h instead",
+			afterID)
+	}
+	if event.IsID(since) {
+		if afterID != "" {
+			return time.Time{}, "", fmt.Errorf(
+				"events: since %q is an event id and after_id is set too; pass the cursor once, as after_id",
+				since,
+			)
+		}
+		return time.Time{}, since, nil
+	}
+	bound, err := timespan.Since(since, now)
+	if err != nil {
+		return time.Time{}, "", fmt.Errorf(
+			"events: since %w; to resume after an event id, pass it as after_id", err)
+	}
+	return bound, afterID, nil
 }
 
 func validLevel(level string) bool {
