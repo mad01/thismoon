@@ -17,7 +17,7 @@ forbidden:
   - '(?i)retryWithBackoff'
 oracle: |
   - No function in scanner.go implements exponential backoff.
-  - The only retry language is in deliver (scanner.go:599): when Notify fails it logs "notify failed, will retry" and returns 0 with no error, leaving the retry to the next run.
+  - The only retry language is in deliver (scanner.go:639): when Notify fails it logs "notify failed, will retry" and returns 0 with no error, leaving the retry to the next run.
 notes: >-
   Held out. The negative case: the question presumes a function that is
   not there. A worker that names one has invented it, and the forbidden
