@@ -28,7 +28,34 @@ func writeScript(t *testing.T, dir, name, content string) string {
 	return path
 }
 
+// scriptDenyCase is one command and the decision the guard must reach.
+type scriptDenyCase struct {
+	name    string
+	command string
+	cwd     string
+	deny    bool
+}
+
 func TestScriptDenyList(t *testing.T) {
+	claudeDeny, extra, tests := scriptDenyListCases(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewScriptDenyList(scriptDenyConfig(claudeDeny, extra))
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: tt.cwd})
+			if got := d != nil; got != tt.deny {
+				t.Fatalf("deny = %v, want %v (denial: %+v)", got, tt.deny, d)
+			}
+			if d != nil && !strings.Contains(d.Reason, "belt["+ScriptDenyListID+"]") {
+				t.Fatalf("reason missing guard prefix: %s", d.Reason)
+			}
+		})
+	}
+}
+
+// scriptDenyListCases builds the script files the general cases run and
+// returns the patterns and cases; the differential test reuses them.
+func scriptDenyListCases(t *testing.T) (claudeDeny, extra []string, cases []scriptDenyCase) {
+	t.Helper()
 	dir := t.TempDir()
 	deleting := writeScript(t, dir, "deleting.sh",
 		"#!/bin/bash\nset -euo pipefail\nkubectl delete pod broken\n")
@@ -45,15 +72,10 @@ func TestScriptDenyList(t *testing.T) {
 	writeScript(t, dir, "data", "kubectl delete pod x\n")
 	genPath := filepath.Join(dir, "gen.sh")
 
-	claudeDeny := []string{"kubectl delete", "gcloud projects delete", "gsutil rm"}
-	extra := []string{"rm -rf"}
+	claudeDeny = []string{"kubectl delete", "gcloud projects delete", "gsutil rm"}
+	extra = []string{"rm -rf"}
 
-	tests := []struct {
-		name    string
-		command string
-		cwd     string
-		deny    bool
-	}{
+	return claudeDeny, extra, []scriptDenyCase{
 		{"plain command untouched", "ls -la && echo done", "", false},
 		{"blocked words in echo string allowed", `echo "kubectl delete would be bad"`, "", false},
 		{"bash script with blocked command", "bash " + deleting, "", true},
@@ -133,18 +155,6 @@ func TestScriptDenyList(t *testing.T) {
 		{"line continuation in script", "bash " + continued, "", true},
 		{"quoted token in script", "bash " + quoted, "", true},
 		{"python list form subprocess", "python3 " + listForm, "", true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewScriptDenyList(scriptDenyConfig(claudeDeny, extra))
-			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: tt.cwd})
-			if got := d != nil; got != tt.deny {
-				t.Fatalf("deny = %v, want %v (denial: %+v)", got, tt.deny, d)
-			}
-			if d != nil && !strings.Contains(d.Reason, "belt["+ScriptDenyListID+"]") {
-				t.Fatalf("reason missing guard prefix: %s", d.Reason)
-			}
-		})
 	}
 }
 

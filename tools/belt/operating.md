@@ -89,6 +89,14 @@ call unchanged, and do not work around the block by writing the command to a
 script or switching tools. If the deny looks wrong, surface it and let the
 user decide.
 
+Known false-positive path for `script-deny-list`: an inline script matches
+as text, the shell after it included. So a heredoc or `-c` string that only
+writes or prints a denied command's name is denied. The one exception is a
+Python heredoc that is the whole command and runs as `python3 -I`. It may
+import only json, re, pathlib, textwrap, datetime or collections, and may
+not name os, sys, exec, eval, getattr, vars or a `_`-prefixed name anywhere.
+The deny reason for a Python heredoc names that shape.
+
 Known false-positive path for `write-internal-names`: exclude_paths entries
 usually name the canonical checkout, and a git worktree at another path
 misses the match. So a write that is fine in the canonical checkout gets

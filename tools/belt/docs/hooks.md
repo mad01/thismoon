@@ -419,6 +419,38 @@ then run the file" bypass.
   joined before matching, and a second pass collapses quotes, commas, and
   brackets so `kubectl "delete"` and list-form `subprocess.run(["rm",
   "-rf", …])` match the same patterns as their plain forms.
+- **One Python heredoc shape is read as code, not text.** Every other inline
+  script matches as text, so a heredoc that only writes a file naming
+  `rm -rf` is denied like one that runs it. The exception (`scriptpy.go`)
+  is a Python heredoc the guard can prove runs nothing, and it needs all of
+  these:
+  - It is the whole command: `python3 -I [-] <<'EOF'`, optionally after
+    `cd DIR &&` or `cd DIR;`, with only option flags and output redirects
+    (`> out.txt`, `2>&1`) on the line, and nothing after the terminator.
+    A second heredoc, an input redirect, a pipe, a substitution, a
+    background job or any other command keeps the text match.
+  - The interpreter is the bare name (`python3`, `python3.12`). A path such
+    as `./python3` or `~/bin/python3` may be a link to a shell, so it keeps
+    the text match.
+  - It runs with `-I`. Without it Python imports from the working directory,
+    so a script could write `heapq.py` and have a later import in the same
+    run execute it. `-I` keeps the working directory and the user site
+    directory off the import path. It does not cover the stdlib or
+    site-packages directory: where the user owns it (mise and Homebrew
+    installs), a script can still write a module there and import it. The
+    text match never stopped that write either.
+  - The delimiter is quoted, or the body holds no `$`, backtick or
+    backslash, so the shell hands the text over unchanged.
+  - Every import is json, re, pathlib, textwrap, datetime or collections.
+  - No word in the body is a blocked name: os, sys, subprocess, posix,
+    builtins, exec, eval, getattr, vars, globals and the rest. Nor is any
+    word `_`-prefixed, a frame attribute such as `gi_frame` or `f_globals`,
+    or the bare builtin `compile` (`re.compile` is fine). Strings and
+    comments count too, and a source encoding declaration keeps the text
+    match.
+
+  A blocked word inside a string costs only a text match. A denied Python
+  heredoc's reason names the shape that passes.
 - **`mode: soft`** downgrades every denial to a warn event on the events
   service and lets the command proceed — the rollout setting for tuning new
   patterns before they block.
