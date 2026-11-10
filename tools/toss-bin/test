@@ -12,6 +12,16 @@ TOSS="$PWD/.build/release/toss-bin"
 # below overrides this to exercise config behavior.
 export TOSS_BIN_CONFIG="$PWD/.build/toss-bin-test-no-config.yaml"
 
+# Every case that really moves a file trashes into a scratch home, so the
+# suite never fills the real ~/.Trash. CFFIXED_USER_HOME moves the home
+# Foundation reports, and the home deny-list with it, so the --validate cases
+# that check the real $HOME keep calling $TOSS directly.
+TRASH_HOME=$(mktemp -d)
+trap 'rm -rf "$TRASH_HOME"' EXIT
+toss_scratch() {
+    CFFIXED_USER_HOME="$TRASH_HOME" "$TOSS" "$@"
+}
+
 echo "=== Testing toss-bin safety validation ==="
 echo ""
 
@@ -87,8 +97,9 @@ BATCH_DIR=$(mktemp -d)
 touch "$BATCH_DIR/keep.txt"
 touch "$BATCH_DIR/also-keep.txt"
 
-# Pass a blocked path first, then two valid files
-$TOSS --safe-mode "$HOME" "$BATCH_DIR/keep.txt" "$BATCH_DIR/also-keep.txt" 2>/dev/null
+# Pass a blocked path first, then two valid files. /System, not $HOME: under
+# the scratch home the real $HOME is no longer the home the deny-list sees.
+toss_scratch --safe-mode /System "$BATCH_DIR/keep.txt" "$BATCH_DIR/also-keep.txt" 2>/dev/null
 BATCH_EXIT=$?
 
 if [ ! -f "$BATCH_DIR/keep.txt" ] && [ ! -f "$BATCH_DIR/also-keep.txt" ]; then
@@ -113,7 +124,7 @@ echo "--- Symlinks: the link is trashed, the target is untouched ---"
 SYM_DIR=$(mktemp -d)
 
 ln -s /nonexistent-target-for-toss-bin-tests "$SYM_DIR/broken-link"
-$TOSS --safe-mode "$SYM_DIR/broken-link" 2>/dev/null
+toss_scratch --safe-mode "$SYM_DIR/broken-link" 2>/dev/null
 if [ ! -L "$SYM_DIR/broken-link" ]; then
     echo "PASS: broken symlink was trashed"
 else
@@ -123,7 +134,7 @@ fi
 
 mkdir "$SYM_DIR/realdir"
 ln -s "$SYM_DIR/realdir" "$SYM_DIR/dir-link"
-$TOSS --safe-mode "$SYM_DIR/dir-link" 2>/dev/null
+toss_scratch --safe-mode "$SYM_DIR/dir-link" 2>/dev/null
 if [ ! -L "$SYM_DIR/dir-link" ] && [ -d "$SYM_DIR/realdir" ]; then
     echo "PASS: symlink to directory trashed without -r, target kept"
 else
@@ -132,7 +143,7 @@ else
 fi
 
 ln -s "$HOME/Documents" "$SYM_DIR/docs-link"
-$TOSS --safe-mode "$SYM_DIR/docs-link" 2>/dev/null
+toss_scratch --safe-mode "$SYM_DIR/docs-link" 2>/dev/null
 if [ ! -L "$SYM_DIR/docs-link" ] && [ -e "$HOME/Documents" ]; then
     echo "PASS: symlink to protected directory trashed (link only), target intact"
 else
@@ -147,7 +158,7 @@ echo "--- Refuses . and .. ---"
 
 DOT_DIR=$(mktemp -d)
 
-(cd "$DOT_DIR" && "$TOSS" --safe-mode -r .) >/dev/null 2>&1
+(cd "$DOT_DIR" && toss_scratch --safe-mode -r .) >/dev/null 2>&1
 DOT_EXIT=$?
 if [ $DOT_EXIT -ne 0 ] && [ -d "$DOT_DIR" ]; then
     echo "PASS: -r . is refused and the directory survives"
@@ -156,7 +167,7 @@ else
     FAILED=1
 fi
 
-(cd "$DOT_DIR" && "$TOSS" --safe-mode -r ..) >/dev/null 2>&1
+(cd "$DOT_DIR" && toss_scratch --safe-mode -r ..) >/dev/null 2>&1
 DOTDOT_EXIT=$?
 if [ $DOTDOT_EXIT -ne 0 ] && [ -d "$DOT_DIR" ]; then
     echo "PASS: -r .. is refused and the parent survives"
@@ -180,7 +191,7 @@ fi
 
 V_DIR=$(mktemp -d)
 touch "$V_DIR/victim.txt"
-$TOSS --safe-mode -v "$V_DIR/victim.txt" 2>/dev/null
+toss_scratch --safe-mode -v "$V_DIR/victim.txt" 2>/dev/null
 if [ ! -f "$V_DIR/victim.txt" ]; then
     echo "PASS: -v mixed with a path still trashes the file"
 else
@@ -194,7 +205,7 @@ echo "--- docs: sole argument prints the doc unless an entry named docs exists -
 
 DOCS_DIR=$(mktemp -d)
 
-DOCS_OUT=$(cd "$DOCS_DIR" && "$TOSS" docs)
+DOCS_OUT=$(cd "$DOCS_DIR" && toss_scratch docs)
 if echo "$DOCS_OUT" | grep -q "^# operating toss-bin"; then
     echo "PASS: sole docs with no such file prints the operating doc"
 else
@@ -203,7 +214,7 @@ else
 fi
 
 touch "$DOCS_DIR/docs"
-DOCS_FILE_OUT=$(cd "$DOCS_DIR" && "$TOSS" docs 2>/dev/null)
+DOCS_FILE_OUT=$(cd "$DOCS_DIR" && toss_scratch docs 2>/dev/null)
 if [ ! -e "$DOCS_DIR/docs" ] && ! echo "$DOCS_FILE_OUT" | grep -q "^# operating toss-bin"; then
     echo "PASS: file named docs is trashed, not printed"
 else
@@ -271,6 +282,140 @@ fi
 
 export TOSS_BIN_CONFIG="$CFG_DIR/does-not-exist.yaml"
 rm -rf "$CFG_DIR"
+
+echo ""
+echo "--- --temp-only: every path inside /tmp, /var/tmp or ~/.tmp, or nothing is trashed ---"
+
+check() {
+    local name="$1"
+    shift
+    if "$@"; then
+        echo "PASS: $name"
+    else
+        echo "FAIL: $name"
+        FAILED=1
+    fi
+}
+
+temp_validate() {
+    local output
+    output=$($TOSS --validate --temp-only "$1" 2>/dev/null)
+    grep -q "^$2: " <<<"$output"
+}
+
+# IN sits under the real /tmp root; OUT under $TMPDIR (/var/folders on
+# macOS), which is outside every temp root. Only scratch files are touched.
+IN=$(mktemp -d /tmp/toss-bin-temp-only.XXXXXX)
+OUT=$(mktemp -d)
+touch "$IN/a" "$IN/b" "$IN/c" "$OUT/keep.txt"
+
+in_scratch_trash() {
+    compgen -G "$TRASH_HOME/.Trash/my-trash/*/$1" >/dev/null
+}
+
+toss_scratch --temp-only "$IN/a" 2>/dev/null
+TO_EXIT=$?
+check "file inside /tmp is trashed" test $TO_EXIT -eq 0 -a ! -e "$IN/a"
+check "it lands in the dated trash under the home" in_scratch_trash a
+
+TO_OUT=$(toss_scratch --temp-only "$OUT/keep.txt" 2>&1)
+TO_EXIT=$?
+check "file outside the roots is refused and survives" \
+    test $TO_EXIT -ne 0 -a -e "$OUT/keep.txt"
+check "refusal names the path" grep -q "REFUSED: $OUT/keep.txt" <<<"$TO_OUT"
+check "refusal names the roots" grep -q "/tmp, /var/tmp, /private/tmp, /private/var/tmp" <<<"$TO_OUT"
+
+toss_scratch --temp-only "$IN/b" "$OUT/keep.txt" 2>/dev/null
+TO_EXIT=$?
+check "mixed run is all-or-nothing: both files survive" \
+    test $TO_EXIT -ne 0 -a -e "$IN/b" -a -e "$OUT/keep.txt"
+
+for root in /tmp /tmp/ /private/tmp /var/tmp "$HOME/.tmp"; do
+    check "root $root itself is refused" temp_validate "$root" BLOCKED
+done
+TO_OUT=$(toss_scratch --temp-only --dry-run -r /tmp 2>&1)
+TO_EXIT=$?
+check "dry-run -r on /tmp is refused before any preview" \
+    test $TO_EXIT -ne 0 -a -z "$(grep '\[dry-run\]' <<<"$TO_OUT")"
+
+# A lexical check would read IN/sub-link/../keep.txt as IN/keep.txt; the
+# kernel climbs from the link's target, so it names OUT/keep.txt.
+mkdir "$OUT/sub"
+ln -s "$OUT/sub" "$IN/sub-link"
+toss_scratch --temp-only "$IN/sub-link/../keep.txt" 2>/dev/null
+TO_EXIT=$?
+check ".. after a symlinked directory is refused" \
+    test $TO_EXIT -ne 0 -a -e "$OUT/keep.txt"
+check "/tmp/../Users/x is refused" temp_validate /tmp/../Users/x BLOCKED
+
+ln -s "$OUT" "$IN/out-link"
+toss_scratch --temp-only "$IN/out-link/keep.txt" 2>/dev/null
+TO_EXIT=$?
+check "symlinked parent escape is refused" \
+    test $TO_EXIT -ne 0 -a -e "$OUT/keep.txt"
+
+ln -s "$OUT/keep.txt" "$IN/link-file"
+toss_scratch --temp-only "$IN/link-file" 2>/dev/null
+check "symlink inside pointing outside: link trashed, target intact" \
+    test ! -L "$IN/link-file" -a -e "$OUT/keep.txt"
+
+toss_scratch "$OUT/keep.txt" --temp-only 2>/dev/null
+check "flag last still applies" test $? -ne 0 -a -e "$OUT/keep.txt"
+toss_scratch "$IN/c" --temp-only "$OUT/keep.txt" 2>/dev/null
+check "flag between paths still applies" test $? -ne 0 -a -e "$IN/c" -a -e "$OUT/keep.txt"
+toss_scratch --temp-only --no-temp-only "$OUT/keep.txt" 2>/dev/null
+check "no flag switches it off" test $? -ne 0 -a -e "$OUT/keep.txt"
+
+TO_OUT=$(toss_scratch --temp-only --dry-run "$IN/c" 2>&1)
+TO_EXIT=$?
+check "dry-run previews a path inside" \
+    test $TO_EXIT -eq 0 -a -e "$IN/c" -a -n "$(grep '\[dry-run\]' <<<"$TO_OUT")"
+TO_OUT=$($TOSS --validate --temp-only "$IN/c" "$OUT/keep.txt" 2>/dev/null)
+TO_EXIT=$?
+check "validate reports each path" test $TO_EXIT -ne 0 \
+    -a -n "$(grep "^OK: $IN/c" <<<"$TO_OUT")" \
+    -a -n "$(grep "^BLOCKED: $OUT/keep.txt" <<<"$TO_OUT")"
+test_allowed "$OUT/keep.txt" || FAILED=1
+check "a path under ~/.tmp is allowed" \
+    temp_validate "$HOME/.tmp/toss-bin-test-$$-missing" OK
+
+# --temp-only implies --safe-mode: a config-protected path inside /tmp is
+# refused even though it sits inside a root.
+mkdir "$IN/protected"
+printf 'protected_paths:\n  - %s\n' "$IN/protected" >"$IN/config.yaml"
+TOSS_BIN_CONFIG="$IN/config.yaml" toss_scratch --temp-only -r "$IN/protected" 2>/dev/null
+check "implies --safe-mode (config deny-list applies)" test $? -ne 0 -a -d "$IN/protected"
+
+# The trash is reached without following a link below the home: a symlink
+# planted at my-trash or at the dated directory is refused, nothing lands
+# where it points, and the entry stays put.
+LINK_HOME=$(mktemp -d)
+mkdir -p "$LINK_HOME/.Trash" "$OUT/trash-target"
+touch "$IN/d"
+
+trash_link_refused() {
+    local name="$1" output status
+    output=$(CFFIXED_USER_HOME="$LINK_HOME" "$TOSS" --temp-only "$IN/d" 2>&1)
+    status=$?
+    check "symlinked $name in the trash path is refused, nothing lands outside" \
+        test $status -ne 0 -a -e "$IN/d" -a -z "$(ls -A "$OUT/trash-target")"
+    check "the refusal names $name" \
+        grep -q "$name, on the way to the trash, is a symlink" <<<"$output"
+}
+
+ln -s "$OUT/trash-target" "$LINK_HOME/.Trash/my-trash"
+trash_link_refused my-trash
+rm "$LINK_HOME/.Trash/my-trash"
+mkdir "$LINK_HOME/.Trash/my-trash"
+TODAY=$(date +%Y-%m-%d)
+ln -s "$OUT/trash-target" "$LINK_HOME/.Trash/my-trash/$TODAY"
+trash_link_refused "$TODAY"
+
+rm -rf "$LINK_HOME" "$IN" "$OUT"
+
+echo ""
+echo "--- --temp-only: a parent swapped for a symlink mid-run never redirects the move ---"
+./scripts/temp-only-race.sh "$TOSS" || FAILED=1
 
 echo ""
 if [ $FAILED -eq 0 ]; then

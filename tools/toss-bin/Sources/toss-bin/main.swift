@@ -21,22 +21,28 @@ func loadExtraProtections() -> PathSafety.ExtraProtections {
     }
 }
 
+/// Today as the dated trash directory names it, ISO 8601: YYYY-MM-DD.
+func todayDate() -> String {
+    let dateFormatter = DateFormatter()
+    dateFormatter.dateFormat = "yyyy-MM-dd"
+    return dateFormatter.string(from: Date())
+}
+
+/// ~/.Trash/my-trash/YYYY-MM-DD/ for `date`, today by default. Call after
+/// CLI.revertSudo() so the home is the user's.
+func todayTrashDirectory(date: String = todayDate()) -> URL {
+    TempOnlyMove.trashComponents(date: date).reduce(FileManager.default.homeDirectoryForCurrentUser) {
+        $0.appendingPathComponent($1)
+    }
+}
+
 /// Move files to ~/.Trash/my-trash/YYYY-MM-DD/
 func toss(_ paths: [String], safeMode: Bool, dryRun: Bool, recursive: Bool, force: Bool, removeDir: Bool, extra: PathSafety.ExtraProtections = .none) {
     // Revert sudo to use user's trash
     CLI.revertSudo()
 
     let fileManager = FileManager.default
-    let trashBase = fileManager.homeDirectoryForCurrentUser
-        .appendingPathComponent(".Trash")
-        .appendingPathComponent("my-trash")
-
-    // ISO 8601 date format: YYYY-MM-DD
-    let dateFormatter = DateFormatter()
-    dateFormatter.dateFormat = "yyyy-MM-dd"
-    let today = dateFormatter.string(from: Date())
-
-    let todayTrash = trashBase.appendingPathComponent(today)
+    let todayTrash = todayTrashDirectory()
 
     var directoryCreated = false
     var hasErrors = false
@@ -102,9 +108,7 @@ func toss(_ paths: [String], safeMode: Bool, dryRun: Bool, recursive: Bool, forc
         }
 
         var destination = todayTrash.appendingPathComponent(url.lastPathComponent)
-        var counter = 1
-        let baseName = url.deletingPathExtension().lastPathComponent
-        let ext = url.pathExtension
+        var attempt = 0
 
         // fileExists follows symlinks, so a broken symlink already in the
         // trash would read as absent and the move would collide. Stat the
@@ -114,9 +118,9 @@ func toss(_ paths: [String], safeMode: Bool, dryRun: Bool, recursive: Bool, forc
         }
 
         while entryExists(destination.path) {
-            let newName = ext.isEmpty ? "\(baseName).\(counter)" : "\(baseName).\(counter).\(ext)"
+            attempt += 1
+            let newName = TrashName.candidate(url.lastPathComponent, attempt: attempt)
             destination = todayTrash.appendingPathComponent(newName)
-            counter += 1
         }
 
         do {
@@ -160,22 +164,170 @@ func parseArguments(_ arguments: [String]) -> (flags: Set<Character>, longFlags:
     return (flags, longFlags, paths)
 }
 
+struct Blocked: Error {
+    let reason: String
+}
+
+/// A path that passed --temp-only, with the real location the check
+/// approved. The move works on `location`, never on `path`.
+struct ApprovedPath {
+    let path: String
+    let location: TempOnly.Location
+}
+
+/// Under --temp-only: the real location `path` may be trashed from, or why
+/// not (the containment check first, then the deny-list).
+func approveTempOnly(_ path: String, extra: PathSafety.ExtraProtections) -> Result<ApprovedPath, Blocked> {
+    switch TempOnly.locate(path: path) {
+    case .failure(let refusal):
+        return .failure(Blocked(reason: "--temp-only: \(refusal.description)"))
+    case .success(let location):
+        if let error = PathSafety.validate(path: path, extra: extra) {
+            return .failure(Blocked(reason: error.description))
+        }
+        return .success(ApprovedPath(path: path, location: location))
+    }
+}
+
+/// Why a path may not be trashed: the --temp-only containment check when
+/// that mode is on, then the deny-list. Nil when the path passes.
+func blockReason(_ path: String, extra: PathSafety.ExtraProtections, tempOnly: Bool) -> String? {
+    guard tempOnly else {
+        return PathSafety.validate(path: path, extra: extra)?.description
+    }
+    if case .failure(let blocked) = approveTempOnly(path, extra: extra) {
+        return blocked.reason
+    }
+    return nil
+}
+
+/// The line that names the allowed roots after a --temp-only refusal.
+func tempRootsNote() -> String {
+    "toss-bin: --temp-only takes only paths strictly inside "
+        + TempOnly.roots().joined(separator: ", ")
+}
+
 /// Validate paths only - no file operations
-func validatePaths(_ paths: [String], extra: PathSafety.ExtraProtections = .none) -> Int32 {
+func validatePaths(
+    _ paths: [String],
+    extra: PathSafety.ExtraProtections = .none,
+    tempOnly: Bool = false
+) -> Int32 {
     var hasErrors = false
     for path in paths {
-        if let error = PathSafety.validate(path: path, extra: extra) {
-            print("BLOCKED: \(path) - \(error.description)")
+        if let reason = blockReason(path, extra: extra, tempOnly: tempOnly) {
+            print("BLOCKED: \(path) - \(reason)")
             hasErrors = true
         } else {
             print("OK: \(path)")
         }
     }
+    if tempOnly && hasErrors {
+        print(tempRootsNote(), to: .standardError)
+    }
     return hasErrors ? 1 : 0
 }
 
+/// --temp-only is all-or-nothing: when any path fails the containment check
+/// or the deny-list, the run trashes nothing and exits 1. Otherwise returns
+/// every path with the location the check approved.
+func refuseUnlessAllPass(_ paths: [String], extra: PathSafety.ExtraProtections) -> [ApprovedPath] {
+    var approved: [ApprovedPath] = []
+    var refused = false
+    for path in paths {
+        switch approveTempOnly(path, extra: extra) {
+        case .failure(let blocked):
+            print("toss-bin: REFUSED: \(path): \(blocked.reason)", to: .standardError)
+            refused = true
+        case .success(let passed):
+            approved.append(passed)
+        }
+    }
+    guard refused else {
+        return approved
+    }
+    print(tempRootsNote() + "; nothing was trashed", to: .standardError)
+    exit(1)
+}
+
+/// Opens the dated trash directory for the --temp-only move, creating what
+/// is missing without following a symlink below the home
+/// (TempOnlyMove.openTrash). It runs before the first move, so when it
+/// cannot, nothing has been trashed and the run exits 1.
+func openTodayTrash(date: String, shownAs todayTrash: URL) -> TempOnlyMove.Directory {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    switch TempOnlyMove.openTrash(home: home, date: date) {
+    case .failure(let failure):
+        print(
+            "toss-bin: REFUSED: cannot open the trash directory \(todayTrash.path): "
+                + "\(failure.description); nothing was trashed",
+            to: .standardError
+        )
+        exit(1)
+    case .success(let trash):
+        return trash
+    }
+}
+
+/// The --temp-only move. Each entry moves from the real directory the check
+/// approved, walked by file descriptor (TempOnlyMove), so swapping a parent
+/// directory for a symlink mid-run cannot redirect it. The flags behave as
+/// in toss().
+func tossTempOnly(_ approved: [ApprovedPath], dryRun: Bool, recursive: Bool, force: Bool, removeDir: Bool) {
+    CLI.revertSudo()
+    let today = todayDate()
+    let todayTrash = todayTrashDirectory(date: today)
+    var trash: TempOnlyMove.Directory?
+    var hasErrors = false
+
+    for item in approved {
+        let location = item.location
+        let entry: TempOnlyMove.Entry
+        switch TempOnlyMove.prepare(location) {
+        case .failure(.missing):
+            if !force {
+                print("toss-bin: \(location.name): No such file or directory", to: .standardError)
+                hasErrors = true
+            }
+            continue
+        case .failure(let failure):
+            print("toss-bin: REFUSED: \(item.path): \(failure.description)", to: .standardError)
+            hasErrors = true
+            continue
+        case .success(let prepared):
+            entry = prepared
+        }
+
+        if entry.isDirectory && !recursive && !removeDir {
+            print("toss-bin: \(location.name): is a directory", to: .standardError)
+            hasErrors = true
+            continue
+        }
+
+        if dryRun {
+            let destination = todayTrash.appendingPathComponent(location.name)
+            print("[dry-run] [safe-mode: OK] \(location.path) -> \(destination.path)")
+            continue
+        }
+
+        let into = trash ?? openTodayTrash(date: today, shownAs: todayTrash)
+        trash = into
+        switch TempOnlyMove.move(entry, into: into) {
+        case .success(let name):
+            print("\(location.path) -> \(todayTrash.appendingPathComponent(name).path)", to: .standardError)
+        case .failure(let failure):
+            print("toss-bin: Failed to trash \(location.name): \(failure.description)", to: .standardError)
+            hasErrors = true
+        }
+    }
+
+    if hasErrors {
+        exit(1)
+    }
+}
+
 func printUsage() {
-    print("Usage: toss-bin [--help | -h] [--version | -v] [--safe-mode] [--dry-run] [--validate] <path> [...]")
+    print("Usage: toss-bin [--help | -h] [--version | -v] [--safe-mode] [--temp-only] [--dry-run] [--validate] <path> [...]")
     print("")
     print("Move files to ~/.Trash/my-trash/YYYY-MM-DD/")
     print("")
@@ -184,6 +336,8 @@ func printUsage() {
     print("  -d                   Allow trashing directories")
     print("  -f                   Ignore nonexistent files (no error)")
     print("  --safe-mode          Block trashing protected system paths")
+    print("  --temp-only          Refuse the whole run unless every path sits inside")
+    print("                       /tmp, /var/tmp or ~/.tmp (implies --safe-mode)")
     print("  --dry-run            Show what would be done without doing it")
     print("  --validate           Only check if paths would be blocked (no file operations)")
     print("")
@@ -229,7 +383,10 @@ if parsed.longFlags.contains("--version") || CLI.arguments == ["-v"] {
     exit(0)
 }
 
-let safeMode = parsed.longFlags.contains("--safe-mode")
+// --temp-only holds wherever it appears before `--`, implies --safe-mode,
+// and no flag turns either back off.
+let tempOnly = parsed.longFlags.contains("--temp-only")
+let safeMode = tempOnly || parsed.longFlags.contains("--safe-mode")
 let dryRun = parsed.longFlags.contains("--dry-run")
 let validateOnly = parsed.longFlags.contains("--validate")
 let recursive = parsed.flags.contains("r")
@@ -238,24 +395,40 @@ let recursive = parsed.flags.contains("r")
 let force = parsed.flags.contains("f")
 let removeDir = parsed.flags.contains("d")
 
+// Under --temp-only a leading ~ is expanded here, so the deny-list and the
+// messages see the same path the containment check judged.
+let paths = tempOnly ? parsed.paths.map { TempOnly.expandTilde($0) } : parsed.paths
+
 if validateOnly {
-    guard !parsed.paths.isEmpty else {
+    guard !paths.isEmpty else {
         print("Usage: toss-bin --validate <path> [...]", to: .standardError)
         exit(1)
     }
-    exit(validatePaths(parsed.paths, extra: loadExtraProtections()))
+    exit(validatePaths(paths, extra: loadExtraProtections(), tempOnly: tempOnly))
 }
 
-guard !parsed.paths.isEmpty else {
+guard !paths.isEmpty else {
+    exit(0)
+}
+
+let extra = safeMode ? loadExtraProtections() : .none
+if tempOnly {
+    tossTempOnly(
+        refuseUnlessAllPass(paths, extra: extra),
+        dryRun: dryRun,
+        recursive: recursive,
+        force: force,
+        removeDir: removeDir
+    )
     exit(0)
 }
 
 toss(
-    parsed.paths,
+    paths,
     safeMode: safeMode,
     dryRun: dryRun,
     recursive: recursive,
     force: force,
     removeDir: removeDir,
-    extra: safeMode ? loadExtraProtections() : .none
+    extra: extra
 )
