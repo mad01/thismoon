@@ -17,14 +17,14 @@ Save the handoff to a durable, agent-agnostic directory, not the workspace: `~/.
 
 ### 2. Persist learnings to memory
 
-Before writing the handoff document, save anything from this session that future conversations should know, even ones that never read the handoff file. When the agent's global config defines memory routing (which store takes a cross-agent preference, a project gotcha, a code-behavior claim, or task progress), follow it. Otherwise use the auto-memory system (`~/.claude/projects/.../memory/`):
+Before writing the handoff document, save what future sessions should know, even ones that never read the handoff file. Each fact goes to the one store that owns it. When the agent's global config defines memory routing, follow it; otherwise route like this:
 
-- **feedback**: corrections, validated approaches, user preferences discovered this session
-- **project**: decisions made, constraints learned, who owns what, deadlines surfaced
-- **user**: new context about the user's role, expertise, or working style
-- **reference**: external resources, dashboards, docs, or links that proved useful
+- **A preference, a correction, or a fact every agent needs** (how the user wants work done, a tool or machine fact): the shared agent-memory store at `~/.config/agent-memory/`. Write one fact per file and add a line to its `MEMORY.md` index.
+- **A fact about one repo** (a build gotcha, an ordering rule, a declined design): that repo's docs or `CLAUDE.md`, where the next agent in the repo reads it anyway.
+- **Progress on the task** (where it stands, what comes next): the worklog item for the ticket or topic, through the `worklog` skill.
+- **A project or harness gotcha the repo does not record** (how the code behaves at run time, a quirk of the coding agent itself): the agent's own auto-memory, and only that.
 
-Skip memory writes when nothing non-obvious was learned. Don't save ephemeral task state (that goes in the handoff doc) or a recap of shipped or resolved work. Don't duplicate what's already in memory; check the store's `MEMORY.md` index first.
+Never save a recap of shipped or resolved work, in any store: the tracker, the worklog and git history already hold it. Skip the step when nothing non-obvious was learned. Before adding an entry, read the target store's index and update an existing entry instead of writing a near-copy. State only the next session needs goes in the handoff document.
 
 ### 3. Write the handoff document
 
@@ -63,5 +63,5 @@ If the user passed arguments, treat them as a description of what the next sessi
 
 - **Redact sensitive data.** Strip API keys, passwords, tokens, and PII before writing.
 - **Reference, don't repeat.** Link to PRDs, plans, ADRs, issues, commits, and diffs by path or URL. The handoff should be a map, not a copy.
-- **Memory is for durable insights, handoff is for session state.** A decision rationale or user preference goes in memory. A list of "files left to edit" goes in the handoff doc.
-- **Tell the user what was saved.** After writing, report: the handoff file path (so they can pass it to the next session), and a one-line summary of each memory written or updated.
+- **Stores are for durable facts, the handoff is for session state.** A user preference goes in shared memory and a decision's rationale in the repo's docs. A list of "files left to edit" goes in the handoff doc.
+- **Tell the user what was saved.** After writing, report the handoff file path (so they can pass it to the next session) and one line per entry written or updated, naming its store.
