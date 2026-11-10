@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.16.0](https://github.com/mad01/thismoon/compare/moondb/v0.15.0...moondb/v0.16.0) (2026-11-10)
+
+
+### Features
+
+* **moondb,belt:** name a checkout's files other sessions left uncommitted ([#311](https://github.com/mad01/thismoon/issues/311)) ([68ee61a](https://github.com/mad01/thismoon/commit/68ee61af48277c505890b5286e9922a27b9f1adf))
+* **moondb,evals:** show where a session worked, mark headless and eval runs ([#320](https://github.com/mad01/thismoon/issues/320)) ([165ce0b](https://github.com/mad01/thismoon/commit/165ce0b745d13464efd61c7554047d5381caff1d))
+* **moondb:** add a session scorecard ([#312](https://github.com/mad01/thismoon/issues/312)) ([fca139b](https://github.com/mad01/thismoon/commit/fca139b5eca47d34efe7e7f9675c94c8d0889d35))
+* **moondb:** attribute session cost to repos ([#303](https://github.com/mad01/thismoon/issues/303)) ([3770891](https://github.com/mad01/thismoon/commit/3770891eeba913342c655179af10b2eb22e3a37e))
+* **moondb:** doctor check for turns the old 4 MiB transcript cap cut ([#399](https://github.com/mad01/thismoon/issues/399)) ([1382acc](https://github.com/mad01/thismoon/commit/1382acc4378485e5168ee844a7472ae67fcefaa3))
+* **moondb:** hide sessions from the listings ([#349](https://github.com/mad01/thismoon/issues/349)) ([b9badd7](https://github.com/mad01/thismoon/commit/b9badd70f052fa1075f01bfd8610a15cec3a57fb))
+* **moondb:** import transcripts, derive edits from the tool input ([#279](https://github.com/mad01/thismoon/issues/279)) ([ee6fdae](https://github.com/mad01/thismoon/commit/ee6fdaeac82840374419758094e1e8097a4e8adc))
+* **moondb:** list sessions under every day they were active ([#330](https://github.com/mad01/thismoon/issues/330)) ([0fc2d50](https://github.com/mad01/thismoon/commit/0fc2d509dfc32d56d62ac75f758065be75aefe8d))
+* **moondb:** read Codex sessions for trace, cost and the codex harness ([#408](https://github.com/mad01/thismoon/issues/408)) ([c593fb7](https://github.com/mad01/thismoon/commit/c593fb7cda914d65ea99a158001f73cb72e0975e))
+* **moondb:** read pi sessions for trace, cost and the pi harness ([#406](https://github.com/mad01/thismoon/issues/406)) ([591d15f](https://github.com/mad01/thismoon/commit/591d15f9875838d08ebbea7782f0a0c01151eab5))
+* **moondb:** record each subagent's spawn brief and show it in why and turn ([#343](https://github.com/mad01/thismoon/issues/343)) ([1d48426](https://github.com/mad01/thismoon/commit/1d4842638e3fcf6e8252173f66c15f7a55600d19))
+* **moondb:** record edits between commits and answer why a line changed ([#273](https://github.com/mad01/thismoon/issues/273)) ([d72e4b5](https://github.com/mad01/thismoon/commit/d72e4b569866e931a919990a6153b5323bc17e1e))
+* **moondb:** record pi edits through a pi package ([#377](https://github.com/mad01/thismoon/issues/377)) ([27f54cc](https://github.com/mad01/thismoon/commit/27f54cc079386b88ba875840c039057bf7f5b934))
+* **moondb:** session list as a landing page with stored turn totals ([#286](https://github.com/mad01/thismoon/issues/286)) ([c118ee0](https://github.com/mad01/thismoon/commit/c118ee0f6c5755e4cd0b903c4091cf6bd0c8df95))
+* **moondb:** show active time beside the wall span for sessions ([#302](https://github.com/mad01/thismoon/issues/302)) ([96ad51b](https://github.com/mad01/thismoon/commit/96ad51ba8540adbf6ce705a27a8874efae9c4c2d))
+* **moondb:** show the last parent message before each subagent edit ([#347](https://github.com/mad01/thismoon/issues/347)) ([a721dca](https://github.com/mad01/thismoon/commit/a721dca07945251907c19abb27b28ca438dd3c9c))
+* **moondb:** show tokens and tokens per model on the sessions page ([#386](https://github.com/mad01/thismoon/issues/386)) ([0ed5ffa](https://github.com/mad01/thismoon/commit/0ed5ffad7c523086e6f4170f12246f8cdfa86bd0))
+* **moondb:** snapshot worktrees at turn edges and capture Bash edits ([#281](https://github.com/mad01/thismoon/issues/281)) ([af85608](https://github.com/mad01/thismoon/commit/af85608dedd8277a73bdef4437a863d58d5b194a))
+* **moondb:** trace a session's time and cost from its transcripts ([#282](https://github.com/mad01/thismoon/issues/282)) ([2e5371a](https://github.com/mad01/thismoon/commit/2e5371a28279720ae32b02968a9263faeb4216a1))
+* **moondb:** trace subagents from their own transcripts and price them ([#298](https://github.com/mad01/thismoon/issues/298)) ([a1f654f](https://github.com/mad01/thismoon/commit/a1f654fbf6fc8f278ab711bfc9edbb060deceb48))
+* **moondb:** web UI with session, turn and annotated file views ([#276](https://github.com/mad01/thismoon/issues/276)) ([bb2a972](https://github.com/mad01/thismoon/commit/bb2a97269705186ae69b70da496deca2a24571c1))
+* **sandbox:** render srt settings from access manifests beside the code ([#278](https://github.com/mad01/thismoon/issues/278)) ([04f6c54](https://github.com/mad01/thismoon/commit/04f6c54bc5cc3ff7cb534e1bbbe2f7474190f050))
+* time spans for events since, next-move errors, status list ([736bb12](https://github.com/mad01/thismoon/commit/736bb12574dd8cfccb5d3dde225b2de58fe96527))
+
+
+### Bug Fixes
+
+* **moondb,evals:** score eval sessions from their transcript and give each assertion its own pins ([#313](https://github.com/mad01/thismoon/issues/313)) ([9ce548c](https://github.com/mad01/thismoon/commit/9ce548c5b695689da2ae1d22a13fb150b0bd9b6d))
+* **moondb:** cache only complete locations, keep symlink walks for existing paths ([#289](https://github.com/mad01/thismoon/issues/289)) ([b483a17](https://github.com/mad01/thismoon/commit/b483a174a1b29ebe011d54a425b0d562d332ce9d))
+* **moondb:** classify a long gap inside a turn as idle ([#305](https://github.com/mad01/thismoon/issues/305)) ([358d680](https://github.com/mad01/thismoon/commit/358d680cb057d9374101ac5e5fa7d59038b6d10b))
+* **moondb:** count Codex tool searches as tool calls ([#412](https://github.com/mad01/thismoon/issues/412)) ([73d0d80](https://github.com/mad01/thismoon/commit/73d0d801cb44d869c12fa890281cfedd2e546ceb))
+* **moondb:** drop the subagent stops Claude Code fires for the main conversation ([#319](https://github.com/mad01/thismoon/issues/319)) ([db1f9b8](https://github.com/mad01/thismoon/commit/db1f9b886b65019fae4ed7557e3b9367d9d9b923))
+* **moondb:** drop the window label from the sessions totals row ([#388](https://github.com/mad01/thismoon/issues/388)) ([d00ef64](https://github.com/mad01/thismoon/commit/d00ef6441916f2f8e5f00bfe2cbedd4ccdd4b11f))
+* **moondb:** history --worktree lists edits stored without a repo ([#334](https://github.com/mad01/thismoon/issues/334)) ([8d30da4](https://github.com/mad01/thismoon/commit/8d30da4c6d5c4ff194f15cb736e64a7a8572d5b6))
+* **moondb:** keep a turn's model calls when a prompt is queued mid-turn ([#394](https://github.com/mad01/thismoon/issues/394)) ([dc45a51](https://github.com/mad01/thismoon/commit/dc45a51b819c4ce74e09836ed8d1e29e35ce15d1))
+* **moondb:** list a path's history across every checkout by default ([#306](https://github.com/mad01/thismoon/issues/306)) ([8314dbb](https://github.com/mad01/thismoon/commit/8314dbb169258144df9ea711c894ab46e8bcd7b0))
+* **moondb:** skip Bash-changed files a command left clean ([#288](https://github.com/mad01/thismoon/issues/288)) ([4e96a3f](https://github.com/mad01/thismoon/commit/4e96a3fc994566369543d647cbd0db9ce3593e09))
+* **moondb:** wait at Stop for the final message and keep up to 15 MiB per turn ([#395](https://github.com/mad01/thismoon/issues/395)) ([d9306ae](https://github.com/mad01/thismoon/commit/d9306aed0c51282a18d39a4c1075094f5450a66b))
+* **moondb:** walk the session trace in time order ([#304](https://github.com/mad01/thismoon/issues/304)) ([ef26ac3](https://github.com/mad01/thismoon/commit/ef26ac3ecfbf86b6b2287959fd7fbfcd160dee23))
+
 ## [0.15.0](https://github.com/mad01/thismoon/compare/moondb/v0.14.1...moondb/v0.15.0) (2026-11-10)
 
 
