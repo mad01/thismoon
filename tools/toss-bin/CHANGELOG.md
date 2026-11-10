@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/mad01/thismoon/compare/toss-bin/v1.3.1...toss-bin/v1.4.0) (2026-11-10)
+
+
+### Features
+
+* **toss-bin:** --temp-only mode limited to temp folders ([#415](https://github.com/mad01/thismoon/issues/415)) ([86644ae](https://github.com/mad01/thismoon/commit/86644ae4757e0c72c398031d8a1f87269b5de3d3))
+
 ## [1.3.1](https://github.com/mad01/thismoon/compare/toss-bin/v1.3.0...toss-bin/v1.3.1) (2026-11-03)
 
 
