@@ -132,7 +132,13 @@ func (g *ScriptDenyList) check(in Input) *Denial {
 	}
 	segs := splitSegments(in.Command)
 	s := scan{in: in, segs: segs, written: redirectTargets(segs, in.Cwd), patterns: patterns}
+	// A Python heredoc proven inert ends the command: its own segment, its
+	// body lines and its terminator need no check.
+	inertFrom, inert := inertPythonHeredoc(in.Command)
 	for i := range segs {
+		if inert && segs[i].off >= inertFrom {
+			break
+		}
 		if d := g.checkSegment(s, i); d != nil {
 			return d
 		}
@@ -150,7 +156,7 @@ func (g *ScriptDenyList) checkSegment(s scan, i int) *Denial {
 	}
 	head := filepath.Base(tokens[0])
 	if flags, ok := isInterpreter(head); ok {
-		return g.checkInterpreter(s, i, tokens[1:], flags)
+		return g.checkInterpreter(s, i, head, tokens[1:], flags)
 	}
 	switch {
 	case head == "uv" && len(tokens) > 1 && tokens[1] == "run":
@@ -181,7 +187,7 @@ func (g *ScriptDenyList) checkSegment(s scan, i int) *Denial {
 // script (-c/-e string or heredoc), a script file argument, a `< file` stdin
 // redirect, or a pipe feeding it from a producer segment.
 func (g *ScriptDenyList) checkInterpreter(
-	s scan, i int, args []string, inlineFlags map[string]bool,
+	s scan, i int, head string, args []string, inlineFlags map[string]bool,
 ) *Denial {
 	seg := s.segs[i]
 	inline, file := parseInterpreterArgs(args, inlineFlags)
@@ -192,6 +198,9 @@ func (g *ScriptDenyList) checkInterpreter(
 		// splits inside quotes, but text before the segment belongs to
 		// other commands.
 		if d := scanText(s.in.Command[seg.off:], "the inline script", s.patterns); d != nil {
+			if heredoc && pythonName.MatchString(head) {
+				d.Reason += " " + pyHeredocHint
+			}
 			return d
 		}
 	}
