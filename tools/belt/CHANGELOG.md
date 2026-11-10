@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.16.0](https://github.com/mad01/thismoon/compare/belt/v2.15.0...belt/v2.16.0) (2026-11-10)
+
+
+### Features
+
+* **belt:** byte budget for the agent-memory index, no events for memory hints ([069c34c](https://github.com/mad01/thismoon/commit/069c34c740e2500f4e1bc6a7649e9893f9583149))
+
+
+### Bug Fixes
+
+* **belt:** stop denying inert python heredocs that mention a denied command ([#419](https://github.com/mad01/thismoon/issues/419)) ([91335e8](https://github.com/mad01/thismoon/commit/91335e84c8a3f153ccd0686e01351233ca2f77d4))
+
 ## [2.15.0](https://github.com/mad01/thismoon/compare/belt/v2.14.0...belt/v2.15.0) (2026-11-05)
 
 

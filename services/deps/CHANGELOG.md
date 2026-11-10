@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.17.0](https://github.com/mad01/thismoon/compare/deps/v0.16.0...deps/v0.17.0) (2026-11-10)
+
+
+### Features
+
+* **deps:** check GitHub Actions refs against OSV by commit ([#321](https://github.com/mad01/thismoon/issues/321)) ([bdfa5f0](https://github.com/mad01/thismoon/commit/bdfa5f05cb6e937ac139d128189ea87a11a79926))
+* **deps:** fail doctor when registry lookups go unanswered ([#324](https://github.com/mad01/thismoon/issues/324)) ([b60d1b3](https://github.com/mad01/thismoon/commit/b60d1b35e284f1370ae630e864099444bb54f4ce))
+* **deps:** flag versions the registry withdrew or blocks ([#322](https://github.com/mad01/thismoon/issues/322)) ([6b3302a](https://github.com/mad01/thismoon/commit/6b3302aa7b9e8299522021eced09d3c13dc831cd))
+* **deps:** map vendored JS files to npm and check them ([#318](https://github.com/mad01/thismoon/issues/318)) ([7bbb01b](https://github.com/mad01/thismoon/commit/7bbb01b28060b1765e84b147483fb5ba621620e5))
+* **deps:** rank malicious findings first with their own alert ([#315](https://github.com/mad01/thismoon/issues/315)) ([eaedc9b](https://github.com/mad01/thismoon/commit/eaedc9bff10fe47270993f76deff4536f87145ba))
+* **deps:** scan the installed mise npm and pipx trees ([#317](https://github.com/mad01/thismoon/issues/317)) ([c834cd3](https://github.com/mad01/thismoon/commit/c834cd37ef6d6df740bdb8b7076668e5c971994f))
+* **sandbox:** render srt settings from access manifests beside the code ([#278](https://github.com/mad01/thismoon/issues/278)) ([04f6c54](https://github.com/mad01/thismoon/commit/04f6c54bc5cc3ff7cb534e1bbbe2f7474190f050))
+* **sandbox:** run deps, status and speak-web under srt ([#280](https://github.com/mad01/thismoon/issues/280)) ([e6185e9](https://github.com/mad01/thismoon/commit/e6185e907a4271f6e370e93f320dd784d1e36c37))
+* **sandbox:** run fleet processes under sandbox-runtime ([#274](https://github.com/mad01/thismoon/issues/274)) ([5bf57e9](https://github.com/mad01/thismoon/commit/5bf57e91707a8554b90d0ad9549661bceb12fd71))
+* time spans for events since, next-move errors, status list ([736bb12](https://github.com/mad01/thismoon/commit/736bb12574dd8cfccb5d3dde225b2de58fe96527))
+
+
+### Bug Fixes
+
+* **deps:** match OSV Action advisories filed under a sub-path or URL ([#326](https://github.com/mad01/thismoon/issues/326)) ([89d126a](https://github.com/mad01/thismoon/commit/89d126a9f198af8c5295275543f53066378cb49b))
+
 ## [0.16.0](https://github.com/mad01/thismoon/compare/deps/v0.15.0...deps/v0.16.0) (2026-11-10)
 
 
