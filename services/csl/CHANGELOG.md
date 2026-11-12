@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/mad01/thismoon/compare/csl/v0.34.0...csl/v0.35.0) (2026-11-12)
+
+
+### Features
+
+* **belt:** refuse rm on temp-only targets and point to toss-bin ([#424](https://github.com/mad01/thismoon/issues/424)) ([f712de8](https://github.com/mad01/thismoon/commit/f712de894294c732792b56681fb0496b11b581cd))
+
 ## [0.34.0](https://github.com/mad01/thismoon/compare/csl/v0.33.0...csl/v0.34.0) (2026-11-10)
 
 

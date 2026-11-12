@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.18.0](https://github.com/mad01/thismoon/compare/belt/v2.17.1...belt/v2.18.0) (2026-11-12)
+
+
+### Features
+
+* **belt:** answer allow for read-only git -C calls inside a root ([#429](https://github.com/mad01/thismoon/issues/429)) ([6fbb183](https://github.com/mad01/thismoon/commit/6fbb1839d55ed0264f5d9d63d57cf1666d873abd))
+* **belt:** refuse rm on temp-only targets and point to toss-bin ([#424](https://github.com/mad01/thismoon/issues/424)) ([f712de8](https://github.com/mad01/thismoon/commit/f712de894294c732792b56681fb0496b11b581cd))
+
+
+### Bug Fixes
+
+* **belt:** treat a heredoc written to a document file as text ([#426](https://github.com/mad01/thismoon/issues/426)) ([2900d41](https://github.com/mad01/thismoon/commit/2900d41b9a65263bb13dc51f73d494066cb29ae9))
+
 ## [2.17.1](https://github.com/mad01/thismoon/compare/belt/v2.17.0...belt/v2.17.1) (2026-11-12)
 
 
