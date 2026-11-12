@@ -410,6 +410,50 @@ rather than inherit it from a hook entry.
 - `watch.source` (string, default `belt-inbox`): the events-service source
   the watcher polls, rewritten like `ledger.source`.
 
+### allows
+
+A map keyed by allow id. An allow runs in `belt hook` only after every
+guard passed cleanly (no denial, no failed-open custom guard, no soft-mode
+warning), and may answer allow so the call runs without a
+permission prompt (docs/adr/0032). It cannot deny, and a deny always wins.
+Every allow is off until its entry sets `enabled`, the opposite of guards
+and hints: a missing config must never approve a call. The one allow is
+`git-c-read`; docs/hooks.md has its full rule.
+
+- `allows.<id>.enabled` (bool, default `false`): with it off, the allow
+  never answers.
+- `allows.git-c-read.roots` (list of paths, default empty): the directories
+  `git-c-read` may approve a `git -C <dir>` call in, beside the work tree
+  the session's cwd sits in (unless that is home). A leading `~` or `~/`
+  is expanded, and the path is resolved physically, symlinks and `..`
+  walked the way git walks a `-C` dir. An entry that is not absolute, does
+  not resolve to a directory, or is `/`, home or a directory above home is
+  ignored, with a `belt doctor` warning, never a config error. doctor also
+  warns about a root that sits inside a git work tree. A call is approved
+  only when the repo's work tree and every git directory it reads sit
+  inside the roots, so a linked worktree needs both its folder (say
+  `~/.worktrees`) and its main checkout (say `~/code/src`) listed. This
+  list is the safety boundary. The read commands still run code a repo's
+  own `.git/config` names (`core.fsmonitor`, the `post-index-change` hook,
+  `diff.external`, textconv drivers), so list only trees of clones and
+  repos you made, never one holding an unpacked archive with its own
+  `.git`. It is purpose-named and read by this allow alone
+  (docs/adr/0013).
+
+A belt older than this key ignores it and never answers allow, so the
+rollout order does not matter here. `belt doctor` lists each allow with its
+state and roots, and warns about an ignored root, a root inside a work
+tree, or an `allows` key no allow answers to.
+
+```yaml
+allows:
+  git-c-read:
+    enabled: true
+    roots:
+      - ~/code/src
+      - ~/.worktrees
+```
+
 ### guards
 
 A map keyed by built-in guard id (`git-push-main`, `git-discard`, `git-identity`,
@@ -680,6 +724,12 @@ watch:
   poll_interval_ms: 2000
   max_wait_s: 540
   source: belt-inbox
+
+allows:
+  git-c-read:
+    enabled: true
+    roots:
+      - ~/code/src
 
 guards:
   git-push-main:

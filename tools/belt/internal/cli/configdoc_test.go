@@ -108,6 +108,9 @@ func TestConfigBodyIsEffectiveYAML(t *testing.T) {
 	if len(got.Hints) == 0 {
 		t.Error("hints = empty, want the registered hints")
 	}
+	if a, ok := got.Allows[guard.GitCReadID]; !ok || a.Enabled {
+		t.Errorf("allows = %+v, want %s listed and disabled", got.Allows, guard.GitCReadID)
+	}
 	for _, key := range []string{"internal_names:", "claude_settings:", "claude_deny:"} {
 		if !strings.Contains(body, key) {
 			t.Errorf("body missing the %s section:\n%s", key, body)

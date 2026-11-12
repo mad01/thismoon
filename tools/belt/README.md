@@ -4,9 +4,10 @@ Guard, hint and ledger hooks for Claude Code sessions. belt inspects tool calls 
 
 Named for the layer it adds: suspenders holds up the git side (pre-commit secret scanning and internal-name guard). belt holds up the session side, before anything reaches git.
 
-belt has three concepts, and the split is deliberate (see `docs/adr/0008` and `docs/adr/0024`):
+belt has four concepts, and the split is deliberate (see `docs/adr/0008`, `docs/adr/0024` and `docs/adr/0032`):
 
 - **Guards** run as a PreToolUse hook and can deny. They are reserved for damage that is hard to undo.
+- **Allows** run in the same PreToolUse hook, only after every guard passed with no denial and no warning, and can answer allow so a call runs without a permission prompt. They cannot deny, and each is off until the config turns it on.
 - **Hints** only advise. Most run as a PostToolUse hook after the tool call whose result stands; the rest ride session lifecycle events instead (SessionStart and SubagentStart). A hint that misfires costs a few lines of ignored text rather than a stalled session.
 - **Ledger** entries only record. `belt record` posts one entry to the events service per lifecycle event it is wired to: subagents starting and stopping, tasks completing, permission denials, notifications, compaction, session end, and turns that died on an API error. It never prints anything, so it cannot steer the session.
 
@@ -28,6 +29,14 @@ Eight built-in guards run against tool calls before they execute:
 - `rm-temp`: refuses a Bash call whose every `rm` deletes only paths inside `/tmp`, `/var/tmp` or `~/.tmp`, a folder `mktemp` made earlier in the same command included, and hands over `toss-bin --temp-only` with those paths filled in. toss-bin needs no permission prompt and moves the paths to the trash, so the agent skips the dialog a settings ask rule on `rm` would show. Paths are judged as written, never on disk: `/tmp/../etc`, `/tmp` itself, relative paths and globs that could leave the folder are not temp. An rm with any target the guard cannot place inside a temp folder is left to the ask rule, and so is every rm when `toss-bin` is not on PATH.
 
 Beyond the built-ins, a `custom_guards` config section registers named guards that shell out to an external command. The tool-call fields arrive as JSON on stdin. Exit 0 allows, and exit 1 denies with stdout as the reason. Anything else (a crash, a missing binary, a 5-second timeout) allows with a warn event, so a broken external never blocks work.
+
+## Allows
+
+One allow exists, and it is off until `allows.git-c-read.enabled` is set:
+
+- `git-c-read`: answers allow for a Bash call made only of read-only `git -C <dir> <subcommand>` commands. A Claude Code rule like `Bash(git status:*)` never matches the `-C` form, and a wider rule would also match `git -C x -c core.fsmonitor=<cmd> status`, which runs code. The subcommand must be status, log, diff, show, rev-parse or ls-files, or the listing form of branch, remote or worktree, with no argument that writes a file, runs a program or reads outside the repo. The call may join such commands with `;`, `&&` or `||` and quote their arguments, and nothing else: a pipe, a redirect, a variable or a glob means no answer. The repo git would find from the dir must be a normal one, with no embedded git directory on the way up and no config that moves its work tree, and its work tree and git directory must both sit inside the session's own work tree or a directory listed under `allows.git-c-read.roots`. A linked worktree therefore needs its main checkout under a root too. Those roots are the safety boundary, because the read commands still run code a repo's own `.git/config` names, such as `core.fsmonitor`.
+
+An allow has no denial path. When it gives no answer, the call goes to Claude Code's own permission check as before. Per the Claude Code hooks documentation, a hook allow skips the permission prompt and does not override a settings deny or ask rule. Whether it also skips the auto-mode classifier is not verified (docs/adr/0032).
 
 ## Hints
 
@@ -113,7 +122,7 @@ belt version
 belt version -o json
 ```
 
-`belt doctor` prints the resolved state behind those decisions. First comes the installed build (version, commit, release tag, build time) and which config file loaded, or failed to parse. Next are the guards and hints in effect, with their allow/exclude counts. Doctor also probes moondb serve, which backs the moondb-inflight hint. The hint renders "moondb down" and "moondb too old" identically, as silence, so doctor is what tells them apart.
+`belt doctor` prints the resolved state behind those decisions. First comes the installed build (version, commit, release tag, build time) and which config file loaded, or failed to parse. Next are the guards, allows and hints in effect, with their allow/exclude counts and each enabled allow's roots. Doctor also probes moondb serve, which backs the moondb-inflight hint. The hint renders "moondb down" and "moondb too old" identically, as silence, so doctor is what tells them apart.
 
 Doctor then shows the ledger and watch settings and whether the events service they post to and poll answers. An enabled watcher that cannot work is a warning. The last block is the full blocked-name set the write-internal-names and publish-internal-names guards match against. Doctor closes with a warnings section and exits 1 when that section is not empty, on a machine with no config at all included.
 
@@ -123,7 +132,7 @@ When a deny surprises you: `check` shows the verdict, `doctor` shows the state t
 
 `belt version` prints the bare version token of the installed build. With `-o json` it prints the full build metadata (`version`, `commit`, `tag`, `build_time`), the same four keys every tool in this repo reports, so one probe can ask any of them what build is running.
 
-`belt hook <event>`, `belt hint <event>`, `belt record <event>` and `belt watch` are the real hook entrypoints, with the payload on stdin; Claude Code invokes them, not the user. `hook` carries deny decisions for guards on stdout. `hint` carries `additionalContext` JSON for the bash, read, external-text, session-start and subagent-start events. `record` prints nothing. `watch` prints only when it wakes the session, on stderr with exit 2.
+`belt hook <event>`, `belt hint <event>`, `belt record <event>` and `belt watch` are the real hook entrypoints, with the payload on stdin; Claude Code invokes them, not the user. `hook` carries deny decisions for guards on stdout, or an allow decision when no guard denied and an enabled allow approved. `hint` carries `additionalContext` JSON for the bash, read, external-text, session-start and subagent-start events. `record` prints nothing. `watch` prints only when it wakes the session, on stderr with exit 2.
 
 ## Configuration
 
@@ -139,7 +148,7 @@ The other shared list, `public_repos`, states which repos are public or headed t
 
 An exemption that should hold on only some machines goes in those machines' rendered config file, because there is no machine-profile switch inside the config (docs/adr/0010).
 
-The rule-driven guards, the external hints, the ledger and the watcher read six more top-level sections:
+The rule-driven guards, the external hints, the ledger, the watcher and the allows read seven more top-level sections:
 
 - `git_identity` holds the expected email per repo pattern.
 - `commit_guards` holds work-hours rules with `block_hours`, `always_allow`, and an `override` name.
@@ -147,8 +156,9 @@ The rule-driven guards, the external hints, the ledger and the watcher read six 
 - `custom_hints` registers external commands as named session-start or subagent-start hints.
 - `ledger` switches `belt record` off (`enabled: false`), moves it to another events source (`source`), and maps agent types to the model and effort their subagent-start entries are tagged with (`agent_types`).
 - `watch` turns `belt watch` on (`enabled: true`) and sets its `poll_interval_ms` (2000), `max_wait_s` (540) and `source` (`belt-inbox`).
+- `allows` turns an allow on (`allows.git-c-read.enabled: true`) and lists the directories it may approve a call in (`allows.git-c-read.roots`, `~` expanded and symlinks resolved; `/`, home and anything above home are dropped).
 
-The `ledger` and `watch` values are clamped and normalized with a doctor warning, never rejected. A malformed `ledger.agent_types` entry is dropped the same way. A typo there cannot turn into the machine-wide deny a config error causes.
+The `ledger`, `watch` and `allows` values are clamped and normalized with a doctor warning, never rejected. A malformed `ledger.agent_types` entry is dropped the same way. A typo there cannot turn into the machine-wide deny a config error causes.
 
 `belt config --help` carries the annotated reference for all of them. Denials and hints are logged to the local events timeline (events.this), tagged with the session id on every real call and with the agent id and type inside a subagent. Custom guards receive the same identity keys on stdin.
 

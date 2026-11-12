@@ -17,11 +17,13 @@ daemon, registers no hooks itself, and ships no config of its own; hook
 registration and the config overlay live in the consuming repo's companion
 recipe (docs/adr/0006).
 
-The three concepts are asymmetric by design (docs/adr/0008,
-docs/adr/0024). A guard can return `permissionDecision: deny` and stop a
-tool call. The `Hint` interface has no denial path at all, and the record
-entrypoint takes no output writer. A hint returns advice text or nil; a
-record posts an entry and prints nothing.
+The four concepts are asymmetric by design (docs/adr/0008,
+docs/adr/0024, docs/adr/0032). A guard can return `permissionDecision: deny`
+and stop a tool call. An allow can return an approval, which becomes
+`permissionDecision: allow`, but only after every guard passed cleanly, and
+it has no denial path. The `Hint` interface has no denial path at all, and
+the record entrypoint takes no output writer. A hint returns advice text
+or nil; a record posts an entry and prints nothing.
 
 ## Structure
 
@@ -30,9 +32,9 @@ cmd/belt/           entry point, hands off to internal/cli
 internal/cli/       cobra commands: hook <event>, hint <event>,
                     record <event>, watch, check, doctor, config, override,
                     docs, version; Execute maps a watcher's wake to exit 2
-internal/hook/      payload parsing + output emission per event: deny JSON,
-                    additionalContext JSON, nothing for record; the watch
-                    entrypoint
+internal/hook/      payload parsing + output emission per event: deny or
+                    allow JSON, additionalContext JSON, nothing for record;
+                    the watch entrypoint
 internal/ledger/    the record events and the pure entry builder: title,
                     level, 500-byte message, session/agent/repo/worktree tags,
                     model and effort from ledger.agent_types
@@ -44,7 +46,9 @@ internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     guards (git-push-main, git-discard, git-identity, commit-guard,
                     script-deny-list, write-internal-names,
                     publish-internal-names, rm-temp), and the Custom guard that execs
-                    config-registered external commands
+                    config-registered external commands; the Allow
+                    interface, the Allows registry, the git-c-read allow,
+                    and its strict shell reader
 internal/hint/      the Hint interface and the hints (prefer-csl,
                     read-size, commit-policy, lint-policy, moondb-inflight,
                     agent-memory, humanizer-check, em-dash), the Custom
@@ -79,9 +83,14 @@ Write carries `file_path` plus `content`, falling back to Edit's
 guards from `ForEvent`; the first denial wins. On a deny, `notify.EmitEvent`
 POSTs a warn event (synchronous, one-second timeout, dropped if the events
 service is down), then the decision is encoded as
-`hookSpecificOutput.permissionDecision: "deny"` on stdout. The guard path
-always exits 0 (the deny is data, not an exit code), and an allow produces
-no output at all. Across belt the only non-zero exit on
+`hookSpecificOutput.permissionDecision: "deny"` on stdout. When the guards
+pass cleanly (`guard.RunClean`: no denial, and no guard that failed open or
+warned in soft mode), `guard.Approve` walks the enabled allows; the first
+approval is
+encoded the same way with `permissionDecision: "allow"` and posts no
+event. With every allow off (the default) or silent, the guard path writes
+nothing. It always exits 0 (the decision is data, not an exit code).
+Across belt the only non-zero exit on
 purpose is `belt watch`'s exit 2 (see the watch path below).
 
 The hint path mirrors it: `belt hint bash|read|external-text|
@@ -119,7 +128,8 @@ the CLI prints the items on stderr and exits 2.
 
 The check path: `belt check <event> [command]` builds the same `guard.Input`
 from argv instead of stdin. It prints one verdict line per guard, so a guard
-decision can be inspected without a live Claude Code session.
+decision can be inspected without a live Claude Code session. It does not
+run the allows.
 
 ## Storage
 
@@ -139,7 +149,7 @@ file yields zero values. A present file that fails to parse, or a listed
 include that is missing or broken, is an error `config.Load()` returns and
 every hook denies on:
 
-- `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns, `claude_settings`, guard rules, the `internal_names` section, and the two purpose-named repo lists `direct_main_repos` and `public_repos` (legacy `config.toml` read when the YAML file is absent)
+- `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns, `claude_settings`, guard rules, the `internal_names` section, the two purpose-named repo lists `direct_main_repos` and `public_repos`, and the `allows` section with its per-allow `roots` (legacy `config.toml` read when the YAML file is absent)
 - the shared names files `internal_names.include` lists (`~`-expanded paths belt's own config names, docs/adr/0016): `blocked_words`, `allowlist`, and `allow_phrases` only, decoded strictly so a stray key is an error. The lists are appended to the section's own, and a listed file that is missing denies exactly like a broken config.yaml
 - `~/.claude/settings.json` + `settings.local.json`: the `permissions.deny` Bash entries for script-deny-list, read live on every invocation, and the `hooks.PostToolUse` entries, which only `belt doctor` reads to check the `belt hint read` matcher. `claude_settings.enabled: false` turns both reads off
 
@@ -161,6 +171,15 @@ over the paths moondb names. A custom hint execs the command
 its `custom_hints` entry names, with the same 400 ms default budget
 (`timeout_ms` overrides it), and relays the command's stdout.
 
+The git-c-read allow reads only the filesystem and runs no git, since a
+git call would run code the repo's config names. It resolves each `-C`
+directory and each root with `filepath.EvalSymlinks`, then walks up the
+way git's discovery does: it checks each directory for the marks of a git
+directory, reads the first `.git` entry (a directory, or a linked
+worktree's `.git` file with its `commondir` and `gitdir`), and scans the
+repo's `config` and `config.worktree` for keys that move the work tree,
+hooks or includes. Each file it reads is small and bounded.
+
 Denials, hints and ledger entries are recorded remotely: a POST to the
 local events service (`http://127.0.0.1:7430/api/events`, overridable via
 `EVENTS_BASE_URL`), denials and hints under `belt`, ledger entries under
@@ -174,7 +193,7 @@ bash|read|external-text|session-start|subagent-start`,
 `belt record <lifecycle event>` and `belt watch`. The other CLI commands are
 `belt check bash "<command>"` and `belt check write --file <path> --content
 <text>` (dry runs), and `belt doctor` (installed build, resolved config,
-guard/hint state, custom guard and custom hint reachability, active
+guard/allow/hint state, custom guard and custom hint reachability, active
 overrides, moondb reachability, and the blocked-name set). The CLI also has `belt override`
 (list/set/clear the named switches commit-guard rules honor) and `belt config`
 (config locations + the settings in effect; the annotated setting reference

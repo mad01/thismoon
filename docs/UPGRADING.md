@@ -4,6 +4,28 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-12 belt: `git-c-read` answers allow for read-only `git -C` calls
+
+Change: thismoon #429. belt gains its first allow (docs/adr/0032). With it on, `belt hook bash` answers allow for a Bash call made only of read-only `git -C <dir> <subcommand>` commands whose dir sits inside the session's repo or a listed root, so the call skips the permission prompt. It is off until a machine's belt config turns it on: `ralph up` alone changes nothing.
+
+The roots list is the safety boundary. The read commands still run code a repo's own `.git/config` names, such as `core.fsmonitor`, so list only trees of clones and repos you made. A call is approved only when the repo's work tree and git directory both sit under roots, so a linked worktree needs its folder and its main checkout listed. `/`, home and anything above home are dropped.
+
+Run, in order:
+
+1. `ralph up`, so `~/code/bin/belt` has the allow. A belt older than this change ignores the `allows` key, so a config that sets it first does nothing yet.
+2. In the consuming repo's rendering of the belt config for each machine class that wants it, add the section below with that machine's roots, then `ralph up` again.
+
+   ```yaml
+   allows:
+     git-c-read:
+       enabled: true
+       roots:
+         - ~/code/src
+         - ~/.worktrees
+   ```
+
+Verify: `belt doctor` lists `git-c-read` as `enabled` with its roots and no warning about them (a dropped root, or a root inside a git work tree). From a repo inside a root, `printf '{"tool_name":"Bash","tool_input":{"command":"git -C %s status"},"cwd":"%s"}' "$PWD" "$PWD" | belt hook bash` prints `"permissionDecision":"allow"` with a `belt[git-c-read]:` reason.
+
 ## 2026-11-10 toss-bin: `--temp-only` for agent scratch cleanup
 
 Change: thismoon #415. `toss-bin --temp-only` refuses the whole run unless every path sits strictly inside `/tmp`, `/var/tmp` or `~/.tmp`, so a Claude Code allow rule for that one invocation can replace the `rm` prompt for temp cleanup. The roots are fixed in the binary. With the rule in place, an agent can trash anything under those roots with no prompt, backups parked in `~/.tmp` included; it stays recoverable from `~/.Trash/my-trash/`.
