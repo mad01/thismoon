@@ -226,7 +226,7 @@ func (w *textWalk) line(cmd string, pos, end int) (span textSpan, next int, ok b
 	line := cmd[pos:end]
 	opAt := strings.Index(line, "<<")
 	if opAt < 0 {
-		if !plainShell(line) {
+		if !plainTextLine(line) {
 			return textSpan{}, 0, false
 		}
 		w.steps(line, -1)
@@ -237,7 +237,7 @@ func (w *textWalk) line(cmd string, pos, end int) (span textSpan, next int, ok b
 		return textSpan{}, 0, false
 	}
 	rest := line[:opAt] + " " + line[opAt+op.width:]
-	if strings.Contains(rest, "<<") || !plainShell(rest) {
+	if strings.Contains(rest, "<<") || !plainTextLine(rest) {
 		return textSpan{}, 0, false
 	}
 	body, after, ok := heredocBody(cmd[end+1:], op)
@@ -388,7 +388,10 @@ func (w *textWalk) systemPath(path string) bool {
 	if w.homeLibrary(path) {
 		return true
 	}
-	return slices.ContainsFunc(textSystemDirs, func(dir string) bool { return pathUnder(path, dir) })
+	return slices.ContainsFunc(
+		textSystemDirs,
+		func(dir string) bool { return pathUnder(path, dir) },
+	)
 }
 
 // homeLibrary reports whether an absolute path is under ~/Library.
@@ -547,9 +550,9 @@ func gitWritesFile(arg string) bool {
 	})
 }
 
-// plainShell reports whether a line holds only the bytes pyHeadChars allows,
+// plainTextLine reports whether a line holds only the bytes pyHeadChars allows,
 // so no quote, substitution, comment or continuation can hide in it.
-func plainShell(line string) bool {
+func plainTextLine(line string) bool {
 	for i := 0; i < len(line); i++ {
 		if strings.IndexByte(pyHeadChars, line[i]) < 0 {
 			return false
