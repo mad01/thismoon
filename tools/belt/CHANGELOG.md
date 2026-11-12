@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.17.1](https://github.com/mad01/thismoon/compare/belt/v2.17.0...belt/v2.17.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **belt:** resolve literal variables and close directory gaps in git guards ([#425](https://github.com/mad01/thismoon/issues/425)) ([56aca08](https://github.com/mad01/thismoon/commit/56aca08458bb9a95ffb5d6fe1d94f50bc5f5e16b))
+
 ## [2.17.0](https://github.com/mad01/thismoon/compare/belt/v2.16.0...belt/v2.17.0) (2026-11-10)
 
 
