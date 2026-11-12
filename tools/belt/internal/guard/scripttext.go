@@ -349,7 +349,10 @@ func (w *textWalk) textTarget(target string) bool {
 	}
 	path = filepath.Clean(path)
 	base, rel := w.trustedBase(path)
-	if !slices.Contains(textTempDirs, base) && w.systemPath(path) {
+	// A temp base sits under /private on macOS, so it skips the system
+	// directories. ~/Library is refused under any base: HOME itself can sit
+	// inside a temp folder.
+	if w.homeLibrary(path) || (!slices.Contains(textTempDirs, base) && w.systemPath(path)) {
 		return false
 	}
 	parts := strings.Split(rel, string(filepath.Separator))
@@ -382,14 +385,21 @@ func textPathOK(word string) bool {
 // systemPath reports whether an absolute path is under a system directory
 // or ~/Library.
 func (w *textWalk) systemPath(path string) bool {
-	under := func(dir string) bool {
-		p, d := strings.ToLower(path), strings.ToLower(dir)
-		return p == d || strings.HasPrefix(p, d+"/")
-	}
-	if w.home != "" && under(filepath.Join(w.home, "Library")) {
+	if w.homeLibrary(path) {
 		return true
 	}
-	return slices.ContainsFunc(textSystemDirs, under)
+	return slices.ContainsFunc(textSystemDirs, func(dir string) bool { return pathUnder(path, dir) })
+}
+
+// homeLibrary reports whether an absolute path is under ~/Library.
+func (w *textWalk) homeLibrary(path string) bool {
+	return w.home != "" && pathUnder(path, filepath.Join(w.home, "Library"))
+}
+
+// pathUnder reports whether path is dir or below it, ignoring case.
+func pathUnder(path, dir string) bool {
+	p, d := strings.ToLower(path), strings.ToLower(dir)
+	return p == d || strings.HasPrefix(p, d+"/")
 }
 
 // trustedBase splits an absolute path into the first of w.bases that holds
