@@ -1028,6 +1028,7 @@ var (
 		"write-internal-names":   {"allow_repos", "exclude_paths"},
 		"publish-internal-names": {"allow_repos"},
 		"git-discard":            {"allow_repos"},
+		"rm-temp":                {},
 	}
 	HintFields = map[string][]string{
 		"agent-memory":    {},

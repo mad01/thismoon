@@ -620,6 +620,48 @@ Blocks git commands that throw away uncommitted work.
 - **Fails closed**: a directory only a shell can name, or a `git status`
   that fails there, denies. `mode: soft` turns a deny into a warn event.
 
+### rm-temp
+
+Sends deletes of temp paths to `toss-bin` instead of `rm`.
+
+- **Fires on** a Bash call in which every `rm` deletes only temp paths.
+  `rm` counts only as a command name: in a chain (`make build && rm -rf
+  /tmp/x`), a pipeline, a subshell, a `{ }` group, after `if`, `then` or
+  `do`, behind `NAME=value` prefixes, and as `\rm` or `/bin/rm`. An `rm`
+  inside a quoted string, a `$(...)` substitution, a heredoc body or a
+  comment is not one. Neither is an `rm` that is another command's
+  argument: `echo rm`, `xargs rm`, `find -exec rm`, `sudo rm`.
+- **Decides by** each target, cleaned lexically. belt never stats a path
+  or follows a symlink. A target is temp when it sits strictly inside
+  `/tmp`, `/var/tmp`, `/private/tmp`, `/private/var/tmp` or `~/.tmp`, the
+  folders `toss-bin --temp-only` accepts. A leading `~`, `$HOME` or
+  `${HOME}` expands to the home directory. A variable set from `mktemp`
+  earlier in the same command counts too (`D=$(mktemp -d); ...; rm -rf
+  "$D"`, or `"$D/sub"`), as long as the target stays inside what mktemp
+  made. Not temp: a folder itself (`/tmp`), a path that cleans out of one
+  (`/tmp/../etc`, `$HOME/.tmp/../x`), and a relative path. An unknown
+  variable or substitution and brace expansion are not temp either.
+  Neither is a glob that could leave its folder: one with a `..`
+  component, or a globbing component that starts with a dot, such as `.*`.
+- **Answers with** the toss-bin command for each rm, its targets as
+  written: `rm -rf /tmp/x "$D"` becomes `toss-bin --temp-only /tmp/x "$D"`.
+  A plain `mktemp` creates in `$TMPDIR`, which is under `/var/folders` on
+  macOS and which toss-bin refuses. When a target comes from one, the
+  reason also says to give mktemp a template under `/tmp`.
+- **Why it exists**: a settings ask rule `Bash(rm:*)` shows a permission
+  dialog for every rm, temp paths included. A PreToolUse deny runs before
+  the ask rule, so the agent switches to toss-bin and no dialog shows.
+  toss-bin moves the paths to the trash, so the delete also stays
+  recoverable.
+- **Fails open.** Anything the guard cannot vouch for gets no answer, and
+  the ask rule decides as before. That covers one target outside the temp
+  folders or one it cannot resolve, and one rm of several that does not
+  qualify. It also covers an option after an operand (BSD and GNU rm read
+  it differently), an unknown option, and a command it cannot read. On a
+  machine where `toss-bin` is not on PATH every rm gets no answer, and
+  `belt doctor` marks the guard's line. There is no mode and no repo list:
+  `enabled: false` is the only switch.
+
 ### Custom guards
 
 A `custom_guards.<name>` config entry registers a guard implemented as any
@@ -1283,6 +1325,7 @@ missing key:
 | custom guard timeout | 5 s | custom guards |
 | custom hint default budget | 400 ms | custom hints (`timeout_ms` overrides it per hint) |
 | script size cap | 1 MiB | script-deny-list |
+| temp folders | `/tmp`, `/var/tmp`, `/private/tmp`, `/private/var/tmp`, `~/.tmp` | rm-temp (the folders `toss-bin --temp-only` accepts) |
 | memory block budget, prefix and headers included | 9,000 bytes | agent-memory |
 | share held for the work store when both have facts | 2,250 bytes | agent-memory |
 | in-flight files asked of moondb | 200 | moondb-inflight |

@@ -43,7 +43,7 @@ internal/cache/     per-session file names under ~/.cache/belt with the
 internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     guards (git-push-main, git-discard, git-identity, commit-guard,
                     script-deny-list, write-internal-names,
-                    publish-internal-names), and the Custom guard that execs
+                    publish-internal-names, rm-temp), and the Custom guard that execs
                     config-registered external commands
 internal/hint/      the Hint interface and the hints (prefer-csl,
                     read-size, commit-policy, lint-policy, moondb-inflight,

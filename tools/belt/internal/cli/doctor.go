@@ -406,13 +406,16 @@ func claudeDenyNote(cfg config.Config, p config.Paths) string {
 
 // ruleNote reports how many config rules feed the rule-driven guards — a
 // rule-less git-identity or commit-guard is enabled yet checks nothing, and
-// that must be visible.
+// that must be visible. rm-temp needs toss-bin instead: without it on PATH
+// the guard stays silent.
 func ruleNote(cfg config.Config, id string) string {
 	switch id {
 	case guard.GitIdentityID:
 		return countNote("git_identity rules", len(cfg.GitIdentity))
 	case guard.CommitGuardID:
 		return countNote("commit_guards rules", len(cfg.CommitGuards))
+	case guard.RmTempID:
+		return reachabilityNote([]string{guard.TossBin}, "guard is a no-op")
 	}
 	return ""
 }
