@@ -95,7 +95,7 @@ purpose is `belt watch`'s exit 2 (see the watch path below).
 
 The hint path mirrors it: `belt hint bash|read|external-text|
 session-start|subagent-start` maps the payload onto a `hint.Input` (tool name, request, response,
-session id, transcript path, cwd) and runs every enabled hint for the event.
+session id, transcript path, cwd, plus the entrypoint's `--agent` value) and runs every enabled hint for the event.
 Hints do not short-circuit, each speaks or stays silent independently. Advice
 is emitted as `hookSpecificOutput.additionalContext` with the invoking
 event's name. Every fired hint POSTs an

@@ -526,6 +526,77 @@ func TestLoadFromClaudeSettingsGate(t *testing.T) {
 			if got, want := cfg.ClaudeSettings.ReadEnabled(), tt.want == 1; got != want {
 				t.Errorf("ReadEnabled() = %v, want %v", got, want)
 			}
+			// The files a hint reads on demand follow the same gate.
+			if got, want := len(cfg.ClaudeSettingsFiles), len(p.ClaudeSettings)*tt.want; got != want {
+				t.Errorf("ClaudeSettingsFiles = %v, want %d files", cfg.ClaudeSettingsFiles, want)
+			}
+		})
+	}
+}
+
+// TestLoadClaudeAutoMemoryDirectory: the later file wins, a missing file
+// adds nothing, and a file belt cannot read as JSON is an error, because
+// belt then cannot tell what Claude Code resolved.
+func TestLoadClaudeAutoMemoryDirectory(t *testing.T) {
+	tests := []struct {
+		name            string
+		settings, local string // "" leaves the file missing
+		wantDir         string
+		wantFile        string // settings or local
+		wantErr         bool
+	}{
+		{"no files", "", "", "", "", false},
+		{"no key", `{"model": "opus"}`, "", "", "", false},
+		{"settings.json only", `{"autoMemoryDirectory": "~/m"}`, "", "~/m", "settings", false},
+		{
+			"local wins",
+			`{"autoMemoryDirectory": "~/m"}`,
+			`{"autoMemoryDirectory": "~/l"}`,
+			"~/l",
+			"local",
+			false,
+		},
+		{"local without the key", `{"autoMemoryDirectory": "~/m"}`, `{}`, "~/m", "settings", false},
+		{
+			"empty local value counts as set",
+			`{"autoMemoryDirectory": "~/m"}`,
+			`{"autoMemoryDirectory": ""}`,
+			"",
+			"local",
+			false,
+		},
+		{"broken local", `{"autoMemoryDirectory": "~/m"}`, `{not json`, "", "", true},
+		{"not a string", `{"autoMemoryDirectory": 7}`, "", "", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			files := map[string]string{
+				"settings": filepath.Join(dir, "settings.json"),
+				"local":    filepath.Join(dir, "settings.local.json"),
+			}
+			if tt.settings != "" {
+				writeFile(t, dir, "settings.json", tt.settings)
+			}
+			if tt.local != "" {
+				writeFile(t, dir, "settings.local.json", tt.local)
+			}
+			got, file, err := LoadClaudeAutoMemoryDirectory(files["settings"], files["local"])
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, want error %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if got != tt.wantDir || file != files[tt.wantFile] {
+				t.Errorf(
+					"got %q from %q, want %q from %q",
+					got,
+					file,
+					tt.wantDir,
+					files[tt.wantFile],
+				)
+			}
 		})
 	}
 }

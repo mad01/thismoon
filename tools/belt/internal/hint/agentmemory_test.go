@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
 func memoryHint(t *testing.T, content string) *AgentMemory {
@@ -339,6 +341,165 @@ func TestAgentMemoryWorstCaseFitsTheHookCap(t *testing.T) {
 		longest = max(longest, len(block))
 	}
 	t.Logf("longest worst-case block: %d bytes of %d", longest, MemoryBudgetBytes)
+}
+
+// autoMemoryHome lays out a temporary HOME with both stores at their real
+// paths, each index holding one fact that names its store. The work store
+// is a symlink into ~/sync, the way a store linked into a synced folder
+// looks. It returns the home and the Claude settings files under it.
+func autoMemoryHome(t *testing.T, personalIndex, workIndex string) (string, []string) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	personal := filepath.Join(home, ".config", "agent-memory")
+	work := filepath.Join(home, "sync", "agent-memory-work")
+	for dir, index := range map[string]string{personal: personalIndex, work: workIndex} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "MEMORY.md"), []byte(index), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(work, filepath.Join(home, ".config", "agent-memory-work")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p, err := config.DefaultPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return home, p.ClaudeSettings
+}
+
+// writeSettings writes the Claude settings files, settings.json first and
+// settings.local.json second; "" leaves a file missing.
+func writeSettings(t *testing.T, files []string, contents ...string) {
+	t.Helper()
+	for i, content := range contents {
+		if content == "" {
+			continue
+		}
+		if err := os.WriteFile(files[i], []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestAgentMemoryLeavesOutTheStoreClaudeCodeLoads: with --agent
+// claude-code, a store whose directory autoMemoryDirectory names is left
+// out, after ~ expansion and symlink resolution on both sides. Anything
+// belt cannot read with certainty keeps the store, and so does a session
+// without the flag.
+func TestAgentMemoryLeavesOutTheStoreClaudeCodeLoads(t *testing.T) {
+	toWork := `{"autoMemoryDirectory": "~/sync/agent-memory-work/"}`
+	tests := []struct {
+		name            string
+		settings, local string
+		agent           string
+		wantPersonal    bool
+		wantWork        bool
+		wantMarked      string // the store Usage marks: "personal", "work" or ""
+	}{
+		{"no setting", `{"model": "opus"}`, "", AgentClaudeCode, true, true, ""},
+		{"no settings files", "", "", AgentClaudeCode, true, true, ""},
+		{"work store through its symlink", toWork, "", AgentClaudeCode, true, false, "work"},
+		{
+			"work store by its link path",
+			`{"autoMemoryDirectory": "~/.config/agent-memory-work"}`, "",
+			AgentClaudeCode, true, false, "work",
+		},
+		{
+			"personal store",
+			`{"autoMemoryDirectory": "~/.config/agent-memory"}`, "",
+			AgentClaudeCode, false, true, "personal",
+		},
+		{"elsewhere", `{"autoMemoryDirectory": "~/sync"}`, "", AgentClaudeCode, true, true, ""},
+		{
+			"local wins",
+			toWork,
+			`{"autoMemoryDirectory": "~/sync"}`,
+			AgentClaudeCode,
+			true,
+			true,
+			"",
+		},
+		{"local names the store", `{}`, toWork, AgentClaudeCode, true, false, "work"},
+		{"broken local", toWork, `{not json`, AgentClaudeCode, true, true, ""},
+		{"broken settings", `{"autoMemoryDirectory": `, "", AgentClaudeCode, true, true, ""},
+		{
+			"unresolvable path",
+			`{"autoMemoryDirectory": "~/no/such/dir"}`, "",
+			AgentClaudeCode, true, true, "",
+		},
+		{
+			"relative path",
+			`{"autoMemoryDirectory": "sync/agent-memory-work"}`, "",
+			AgentClaudeCode, true, true, "",
+		},
+		{"matching setting without the flag", toWork, "", "", true, true, "work"},
+		{"matching setting for another agent", toWork, "", "codex", true, true, "work"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, files := autoMemoryHome(t,
+				"- [p.md](p.md) — a personal fact\n", "- [w.md](w.md) — a work fact\n")
+			writeSettings(t, files, tt.settings, tt.local)
+			h := NewAgentMemory(config.Config{ClaudeSettingsFiles: files})
+
+			got := h.Check(Input{Event: EventSessionStart, Agent: tt.agent})
+			text := ""
+			if got != nil {
+				text = got.Text
+			}
+			if has := strings.Contains(text, "a personal fact"); has != tt.wantPersonal {
+				t.Errorf("personal store injected = %v, want %v: %q", has, tt.wantPersonal, text)
+			}
+			if has := strings.Contains(text, "a work fact"); has != tt.wantWork {
+				t.Errorf("work store injected = %v, want %v: %q", has, tt.wantWork, text)
+			}
+
+			// Usage is doctor's view: every fact counted, the store marked.
+			usage := h.Usage()
+			for i, store := range []string{"personal", "work"} {
+				marked := usage[i].AutoMemorySettings != ""
+				if marked != (store == tt.wantMarked) || usage[i].Facts != 1 {
+					t.Errorf("%s usage = %+v, want marked %v with its fact counted",
+						store, usage[i], store == tt.wantMarked)
+				}
+			}
+		})
+	}
+}
+
+// TestAgentMemoryLeftOutStoreHandsOverTheBudget: a store left out counts as
+// absent, so the other store gets the whole budget instead of what the work
+// share leaves it.
+func TestAgentMemoryLeftOutStoreHandsOverTheBudget(t *testing.T) {
+	const facts, size = 80, 100
+	workIndex := strings.ReplaceAll(factIndex(30, size), "- fact ", "- work ")
+	_, files := autoMemoryHome(t, factIndex(facts, size), workIndex)
+	writeSettings(t, files, `{"autoMemoryDirectory": "~/.config/agent-memory-work"}`)
+	h := NewAgentMemory(config.Config{ClaudeSettingsFiles: files})
+
+	both := h.Check(Input{Event: EventSessionStart})
+	if n := strings.Count(both.Text, "- fact "); n >= facts {
+		t.Fatalf("with both stores the personal index kept %d of %d facts; "+
+			"the fixture must overflow its share to prove anything", n, facts)
+	}
+
+	alone := h.Check(Input{Event: EventSessionStart, Agent: AgentClaudeCode})
+	if n := strings.Count(alone.Text, "- fact "); n != facts {
+		t.Errorf("with the work store left out the personal index kept %d of %d facts", n, facts)
+	}
+	if strings.Contains(alone.Text, "- work ") || strings.Contains(alone.Text, "is over its") {
+		t.Errorf("advice %q renders the work store or a truncation note", alone.Text)
+	}
+	if block := renderedBlock(alone); len(block) > MemoryBudgetBytes {
+		t.Errorf("block is %d bytes, past the %d-byte budget", len(block), MemoryBudgetBytes)
+	}
 }
 
 // TestAgentMemorySkipsTheEventsService: the injection fires on every

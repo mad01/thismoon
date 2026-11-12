@@ -138,6 +138,9 @@ type emitFunc func(source, level, title, message string, tags map[string]string)
 type runner struct {
 	load Load
 	emit emitFunc
+	// agent is the hint entrypoint's --agent value, copied into hint.Input.
+	// The guards never read it.
+	agent string
 }
 
 // Run reads a payload from r, runs the guards for event, and writes a deny
@@ -287,8 +290,11 @@ func configDenial(err error) *guard.Denial {
 // nothing: a hint has no denial path, and the tool call it would advise on
 // has already run. It leaves a warn event naming the decode error instead,
 // so the silence is visible on the timeline.
-func RunHint(event string, load Load, r io.Reader, w io.Writer) {
-	runner{load: load, emit: notify.EmitEventSync}.hints(event, r, w)
+//
+// agent is the --agent value the settings entry passes ("" without one).
+// It reaches the hints as hint.Input.Agent; belt never infers it.
+func RunHint(event, agent string, load Load, r io.Reader, w io.Writer) {
+	runner{load: load, emit: notify.EmitEventSync, agent: agent}.hints(event, r, w)
 }
 
 func (rn runner) hints(event string, r io.Reader, w io.Writer) {
@@ -311,7 +317,9 @@ func (rn runner) hints(event string, r io.Reader, w io.Writer) {
 		writeAdvice(w, event, configDenial(err).Reason)
 		return
 	}
-	advice := hint.Run(toHintInput(event, p), cfg)
+	in := toHintInput(event, p)
+	in.Agent = rn.agent
+	advice := hint.Run(in, cfg)
 	text := hint.Render(advice)
 	if text == "" {
 		return

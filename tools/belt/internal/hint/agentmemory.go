@@ -35,6 +35,12 @@ const workMemoryShare = MemoryBudgetBytes / 4
 // warning, so a store gets pruned before its facts stop fitting.
 const memoryNearPercent = 80
 
+// AgentClaudeCode is the --agent value that names Claude Code, the one
+// agent that loads a memory index on its own (autoMemoryDirectory). Codex
+// and pi have no auto memory, so any other value, and none, keeps every
+// store.
+const AgentClaudeCode = "claude-code"
+
 // AgentMemory injects the shared agent memory index when a session starts.
 // The instruction files say "read ~/.config/agent-memory/MEMORY.md at session
 // start", and instruction-only prose does not trigger reliably. This hint has
@@ -46,6 +52,12 @@ const memoryNearPercent = 80
 // every machine) and a work one at ~/.config/agent-memory-work, which only
 // work-profile machines clone at all. Both are injected when present; absence
 // of either is silence, so personal machines never see or need the work store.
+//
+// A session started with --agent claude-code leaves out a store whose
+// directory Claude Code's autoMemoryDirectory setting names: Claude Code
+// loads that MEMORY.md itself, so injecting it too would load it twice. The
+// store left out takes no share of the budget. Any other agent, and a
+// session started without the flag, keeps both stores.
 type AgentMemory struct {
 	cfg config.Config
 	// path locates the personal index; overridable for tests.
@@ -93,7 +105,12 @@ type MemoryUsage struct {
 	// Share is the part of the budget this store may fill, after the
 	// prefix and the other store's share.
 	Share int
-	facts []string
+	// AutoMemorySettings names the Claude settings file whose
+	// autoMemoryDirectory is this store's directory, so Claude Code loads
+	// the index itself. Empty when no setting names it. A session started
+	// with --agent claude-code leaves the store out.
+	AutoMemorySettings string
+	facts              []string
 	// hidden is set when the share cannot hold even the header and the
 	// truncation note: the store then renders nothing.
 	hidden bool
@@ -116,17 +133,76 @@ func MemoryNear(usage []MemoryUsage) bool {
 }
 
 // Usage measures each store's index, personal first, and fits each into its
-// share of the budget. belt doctor reports it; Check renders from it.
+// share of the budget, as a session that keeps both stores sees it. It also
+// marks a store Claude Code loads itself (AutoMemorySettings). belt doctor
+// reports it.
 func (h *AgentMemory) Usage() []MemoryUsage {
-	usage := []MemoryUsage{
+	usage := h.readStores()
+	h.markAutoMemory(usage)
+	h.fitStores(usage)
+	return usage
+}
+
+func (h *AgentMemory) readStores() []MemoryUsage {
+	return []MemoryUsage{
 		readStore(h.path(), "shared agent memory"),
 		readStore(h.workPath(), "work agent memory"),
 	}
+}
+
+// fitStores splits the budget between the stores and fits each into its
+// share.
+func (h *AgentMemory) fitStores(usage []MemoryUsage) {
 	room := MemoryBudgetBytes - len(Render([]Advice{{Hint: h.ID()}}))
 	personal, work := memoryShares(usage[0], usage[1], room)
 	usage[0].fit(personal)
 	usage[1].fit(work)
-	return usage
+}
+
+// markAutoMemory sets AutoMemorySettings on each present store whose
+// directory is the one Claude Code's autoMemoryDirectory names. Both sides
+// are compared after ~ expansion and symlink resolution, since a store is
+// often a link into a synced folder. A missing key, a broken settings file,
+// or a path that is relative or does not resolve marks nothing. In doubt the
+// store stays in: an index loaded twice costs less than one never loaded.
+func (h *AgentMemory) markAutoMemory(usage []MemoryUsage) {
+	setting, file, err := config.LoadClaudeAutoMemoryDirectory(h.cfg.ClaudeSettingsFiles...)
+	if err != nil || setting == "" {
+		return
+	}
+	dir, ok := resolvedDir(setting)
+	if !ok {
+		return
+	}
+	for i := range usage {
+		if !usage[i].Present {
+			continue
+		}
+		if store, ok := resolvedDir(filepath.Dir(usage[i].Path)); ok && store == dir {
+			usage[i].AutoMemorySettings = file
+		}
+	}
+}
+
+// resolvedDir expands a leading ~ and resolves symlinks, so two spellings of
+// one directory compare equal. A relative path, or one that does not
+// resolve, is not ok.
+func resolvedDir(path string) (string, bool) {
+	expanded := config.ExpandHome(path)
+	if !filepath.IsAbs(expanded) {
+		return "", false
+	}
+	resolved, err := filepath.EvalSymlinks(expanded)
+	if err != nil {
+		return "", false
+	}
+	return resolved, true
+}
+
+// leaveOut empties a store Claude Code loads itself. Like an absent store,
+// it renders nothing and takes no share of the budget.
+func (u *MemoryUsage) leaveOut() {
+	u.facts, u.Facts, u.Kept, u.Bytes = nil, 0, 0, 0
 }
 
 // memoryShares splits room between the stores. A store with no facts takes
@@ -150,9 +226,22 @@ func memoryShares(personal, work MemoryUsage, room int) (int, int) {
 	return room - share, share
 }
 
-func (h *AgentMemory) Check(_ Input) *Advice {
+// Check renders both stores. Only a session started with --agent
+// claude-code reads the Claude settings, and it leaves out a store Claude
+// Code loads itself before the budget is split.
+func (h *AgentMemory) Check(in Input) *Advice {
+	usage := h.readStores()
+	if in.Agent == AgentClaudeCode {
+		h.markAutoMemory(usage)
+		for i := range usage {
+			if usage[i].AutoMemorySettings != "" {
+				usage[i].leaveOut()
+			}
+		}
+	}
+	h.fitStores(usage)
 	var parts []string
-	for _, u := range h.Usage() {
+	for _, u := range usage {
 		if block := renderMemory(u); block != "" {
 			parts = append(parts, block)
 		}

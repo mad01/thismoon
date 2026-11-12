@@ -26,6 +26,20 @@ Run, in order:
 
 Verify: `belt doctor` lists `git-c-read` as `enabled` with its roots and no warning about them (a dropped root, or a root inside a git work tree). From a repo inside a root, `printf '{"tool_name":"Bash","tool_input":{"command":"git -C %s status"},"cwd":"%s"}' "$PWD" "$PWD" | belt hook bash` prints `"permissionDecision":"allow"` with a `belt[git-c-read]:` reason.
 
+## 2026-11-12 belt: `--agent claude-code` skips a memory store Claude Code loads itself
+
+Change: thismoon #427. `belt hint session-start --agent claude-code` leaves out an agent-memory store whose directory Claude Code's `autoMemoryDirectory` setting names. Claude Code loads that `MEMORY.md` itself, so the index stops loading twice per session. Without the flag nothing changes: Codex, pi and every machine whose settings entry is unchanged get both stores as before.
+
+Order matters: install the new belt on every machine first, change the settings entry second. A belt that predates this change fails on the unknown flag, and the session then starts with no session-start hints at all.
+
+Run, in order:
+
+1. `ralph up` on every machine, so `~/code/bin/belt` knows the flag.
+2. On each machine, gate on the binary: `belt hint --help` must list `--agent`.
+3. Only after step 2 passes on every machine, change the Claude Code SessionStart entry in the consuming repo's Claude settings template from `belt hint session-start` to `belt hint session-start --agent claude-code`, then `ralph up` again. Leave Codex and pi entries without the flag.
+
+Verify: on a machine where `autoMemoryDirectory` points at a store, the agent memory section of `belt doctor` prints a line naming that store and the settings file. The line must not end in "so sessions here still load it twice"; that ending means the SessionStart entry still lacks the flag. In a new Claude Code session the store's facts appear once.
+
 ## 2026-11-10 toss-bin: `--temp-only` for agent scratch cleanup
 
 Change: thismoon #415. `toss-bin --temp-only` refuses the whole run unless every path sits strictly inside `/tmp`, `/var/tmp` or `~/.tmp`, so a Claude Code allow rule for that one invocation can replace the `rm` prompt for temp cleanup. The roots are fixed in the binary. With the rule in place, an agent can trash anything under those roots with no prompt, backups parked in `~/.tmp` included; it stays recoverable from `~/.Trash/my-trash/`.

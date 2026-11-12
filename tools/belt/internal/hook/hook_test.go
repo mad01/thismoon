@@ -80,7 +80,7 @@ func TestRunDeniesOnUnreadableConfig(t *testing.T) {
 // same failure has to arrive as advice on the events guards never see.
 func TestRunHintAdvisesOnUnreadableConfig(t *testing.T) {
 	var out bytes.Buffer
-	RunHint("bash", failing, strings.NewReader(`{"tool_name":"Bash"}`), &out)
+	RunHint("bash", "", failing, strings.NewReader(`{"tool_name":"Bash"}`), &out)
 
 	var a adviceDecision
 	if err := json.Unmarshal(out.Bytes(), &a); err != nil {
@@ -619,7 +619,7 @@ func TestRunHintSessionStartRunsCustomHints(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	RunHint("session-start", load, bytes.NewReader(p), &out)
+	RunHint("session-start", "", load, bytes.NewReader(p), &out)
 
 	var a adviceDecision
 	if err := json.Unmarshal(out.Bytes(), &a); err != nil {

@@ -45,7 +45,7 @@ func TestRunHintSubagentStartBriefsTheWorker(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	RunHint("subagent-start", load, bytes.NewReader(p), &out)
+	RunHint("subagent-start", "", load, bytes.NewReader(p), &out)
 
 	var a adviceDecision
 	if err := json.Unmarshal(out.Bytes(), &a); err != nil {
@@ -118,7 +118,7 @@ func TestRunHintSubagentStartGatesByAgentType(t *testing.T) {
 			}
 
 			var out bytes.Buffer
-			RunHint("subagent-start", load, bytes.NewReader(p), &out)
+			RunHint("subagent-start", "", load, bytes.NewReader(p), &out)
 
 			_, statErr := os.Stat(marker)
 			if ran := statErr == nil; ran != tt.wantBrief {

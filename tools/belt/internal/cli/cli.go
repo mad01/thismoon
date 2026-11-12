@@ -86,7 +86,8 @@ func loader(paths pathsFunc) hook.Load {
 }
 
 func hintCmd(paths pathsFunc) *cobra.Command {
-	return &cobra.Command{
+	var agent string
+	cmd := &cobra.Command{
 		Use:   "hint <event>",
 		Short: "Run as a Claude Code PostToolUse hint hook (payload on stdin, advice JSON on stdout)",
 		Long: `Run as a Claude Code PostToolUse hook. Reads the tool-call payload on stdin
@@ -113,17 +114,27 @@ context, and only custom hints run there). Wire them in
          "hooks": [{"type": "command", "command": "belt hint external-text"}]}
       ],
       "SessionStart": [
-        {"matcher": "", "hooks": [{"type": "command", "command": "belt hint session-start"}]}
+        {"matcher": "", "hooks": [{"type": "command",
+          "command": "belt hint session-start --agent claude-code"}]}
       ],
       "SubagentStart": [
         {"matcher": "", "hooks": [{"type": "command", "command": "belt hint subagent-start"}]}
       ]
     }
-  }`,
+  }
+
+--agent names the agent the hook runs for. Only claude-code changes
+anything: the session-start memory injection then leaves out a store
+whose directory Claude Code's autoMemoryDirectory setting names, because
+Claude Code loads that MEMORY.md itself. Any other value, and no flag,
+keeps every store, so a Codex or pi entry leaves the flag off. Install a
+belt that knows the flag before a settings entry passes it: an older belt
+fails on the unknown flag.`,
 		Args: eventArg("hint event", hint.Events),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			hook.RunHint(
 				strings.ToLower(args[0]),
+				strings.ToLower(agent),
 				loader(paths),
 				cmd.InOrStdin(),
 				cmd.OutOrStdout(),
@@ -131,6 +142,10 @@ context, and only custom hints run there). Wire them in
 			return nil // always exit 0: advice travels in the JSON, not the exit code
 		},
 	}
+	cmd.Flags().StringVar(&agent, "agent", "",
+		"the agent this hook runs for; "+hint.AgentClaudeCode+
+			" leaves out a memory store Claude Code loads itself (other values change nothing)")
+	return cmd
 }
 
 func recordCmd(paths pathsFunc) *cobra.Command {

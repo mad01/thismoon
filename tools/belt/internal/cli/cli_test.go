@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/ledger"
 )
 
@@ -36,6 +37,62 @@ func TestRecordCmdEventValidation(t *testing.T) {
 			err := root.Execute()
 			if gotErr := err != nil; gotErr != tt.wantErr {
 				t.Errorf("record %q error = %v, want error %v", tt.event, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestHintCmdAgentFlag runs belt hint session-start end to end under a
+// temporary HOME whose Claude settings point autoMemoryDirectory at the
+// work store. --agent claude-code leaves that store out. No flag and any
+// other agent keep it, and an unknown agent is no error.
+func TestHintCmdAgentFlag(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv(config.EnvConfig, "")
+	for _, dir := range []string{".config/agent-memory", ".config/agent-memory-work", ".claude"} {
+		if err := os.MkdirAll(filepath.Join(home, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(home, ".config", "agent-memory"), "MEMORY.md",
+		"- [p.md](p.md) — a personal fact\n")
+	writeFile(t, filepath.Join(home, ".config", "agent-memory-work"), "MEMORY.md",
+		"- [w.md](w.md) — a work fact\n")
+	writeFile(t, filepath.Join(home, ".claude"), "settings.json",
+		`{"autoMemoryDirectory": "~/.config/agent-memory-work"}`)
+
+	tests := []struct {
+		name     string
+		args     []string
+		wantWork bool
+	}{
+		{"claude-code", []string{"hint", "session-start", "--agent", "claude-code"}, false},
+		{
+			"mixed case before the event",
+			[]string{"hint", "--agent=Claude-Code", "session-start"},
+			false,
+		},
+		{"no flag", []string{"hint", "session-start"}, true},
+		{"another agent", []string{"hint", "session-start", "--agent", "codex"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := rootCmd()
+			root.SetArgs(tt.args)
+			root.SetIn(strings.NewReader("{}"))
+			var out bytes.Buffer
+			root.SetOut(&out)
+			root.SetErr(io.Discard)
+			if err := root.Execute(); err != nil {
+				t.Fatalf("%v: %v", tt.args, err)
+			}
+			if !strings.Contains(out.String(), "a personal fact") {
+				t.Errorf("output %q is missing the personal store", out.String())
+			}
+			if got := strings.Contains(out.String(), "a work fact"); got != tt.wantWork {
+				t.Errorf("work store injected = %v, want %v: %q", got, tt.wantWork, out.String())
 			}
 		})
 	}

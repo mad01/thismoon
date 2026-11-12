@@ -199,14 +199,17 @@ The switch on belt's read of the Claude Code settings files, the only
 non-belt config surface belt reads (docs/adr/0010). belt's hooks take only the
 `permissions.deny` Bash entries feeding `script-deny-list`, and `belt
 doctor` reads the `hooks.PostToolUse` entries to check the `belt hint read`
-matcher. belt never writes either.
+matcher. Under `belt hint session-start --agent claude-code`, the
+agent-memory hint also reads `autoMemoryDirectory`, and doctor reads it with
+the `hooks.SessionStart` entries. belt never writes either file.
 
 - `claude_settings.enabled` (bool, default `true`): whether belt opens
   `~/.claude/settings.json` and `~/.claude/settings.local.json` at all.
   Disabling it leaves `script-deny-list` matching only its
   `extra_patterns` — the guard stays on, with a smaller pattern set — and
   both `belt doctor` and `belt config` state that the read is off. The
-  doctor's read matcher check is skipped too.
+  doctor's read matcher check is skipped too, and agent-memory leaves out
+  no store.
 
 ### git_identity
 

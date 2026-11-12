@@ -335,7 +335,7 @@ func TestRunHintStaysSilentOnAnUnreadablePayload(t *testing.T) {
 // posts through notify, which sends nothing under go test.
 func TestRunHintWritesNothingOnAMalformedPayload(t *testing.T) {
 	var out bytes.Buffer
-	RunHint("bash", failing, strings.NewReader("not json"), &out)
+	RunHint("bash", "", failing, strings.NewReader("not json"), &out)
 	if out.Len() != 0 {
 		t.Errorf("RunHint wrote %q on a malformed payload, want nothing", out.String())
 	}

@@ -71,9 +71,10 @@ internal_names:
 
 # The switch on belt reading the Claude settings files (~/.claude/
 # settings.json + settings.local.json), the source of the permissions.deny
-# Bash entries script-deny-list enforces inside scripts. Defaults to true;
-# false stops belt opening those files, leaving the guard with
-# extra_patterns only.
+# Bash entries script-deny-list enforces inside scripts, and of the
+# autoMemoryDirectory agent-memory reads under --agent claude-code. Defaults
+# to true; false stops belt opening those files, leaving the guard with
+# extra_patterns only and agent-memory leaving out no store.
 claude_settings:
   enabled: true
 

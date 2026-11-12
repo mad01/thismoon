@@ -58,10 +58,16 @@ machines and across agents.
   `MEMORY.md` index with one line per fact. A fact can move between the two
   stores unchanged.
 - belt's `agent-memory` hint reads it at SessionStart and injects the index
-  lines, capped at 30 facts per store. A second store at
+  lines, within a 9,000-byte budget. A second store at
   `~/.config/agent-memory-work/` is injected as well when that directory
   exists. A missing store is silence, so a machine without the second store
   never sees it.
+- Claude Code's `autoMemoryDirectory` can point at one of these stores.
+  Claude Code then loads that `MEMORY.md` itself. Run Claude Code's hook as
+  `belt hint session-start --agent claude-code` and belt leaves that store
+  out, so the index does not load twice. The other store gets the whole
+  budget. Codex and pi entries leave the flag off and get both stores.
+  `belt doctor` names a store the flag leaves out.
 - To add a fact, the agent writes the fact file and its index line in the
   clone, then commits and pushes there. belt never writes to it. With the
   clone's ralph item set to `update = true`, the next `ralph up` on every
@@ -153,7 +159,7 @@ belt:
 
 | belt entrypoint | Claude Code event | Hint | What the agent gets |
 |---|---|---|---|
-| `belt hint session-start` | SessionStart | `agent-memory` | the agent-memory indexes |
+| `belt hint session-start` | SessionStart | `agent-memory` | the agent-memory indexes; with `--agent claude-code`, not a store Claude Code's `autoMemoryDirectory` already loads |
 | `belt hint session-start` | SessionStart | `moondb-inflight` | up to ten files of the checkout that other sessions edited and no commit has taken, when git status shows them dirty |
 | `belt hint session-start`, `belt hint subagent-start` | SessionStart, SubagentStart | custom hints | machine-private context from a command you configure, such as a daily journal or a worker brief |
 | `belt record <event>` | nine lifecycle events | the ledger | nothing; it writes to events and never to the session |
