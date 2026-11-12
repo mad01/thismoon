@@ -414,7 +414,7 @@ rather than inherit it from a hook entry.
 
 A map keyed by built-in guard id (`git-push-main`, `git-discard`, `git-identity`,
 `commit-guard`, `script-deny-list`, `write-internal-names`,
-`publish-internal-names`) or a
+`publish-internal-names`, `rm-temp`) or a
 `custom_guards` name. Every guard, built-in or custom, defaults to enabled
 when the file or its entry is missing. The toggle shape is shared across
 guards, but which fields have an effect depends on the guard. `allow_repos`
@@ -493,6 +493,9 @@ entries match the same way as `git_identity[].repos` and
     carve-out that should hold for both guards is listed under both. The
     name set itself comes from `internal_names`, shared with the write
     guard.
+- **rm-temp**
+  - `guards.rm-temp.enabled` (bool, default `true`): the only field with
+    effect. The guard needs `toss-bin` on PATH and stays silent without it.
 - **custom guard entries**
   - `guards.<name>.enabled` (bool, default `true`): a secondary toggle for a
     custom guard, used only when that guard's own

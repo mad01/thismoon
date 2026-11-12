@@ -149,6 +149,12 @@ to the events service — check there when a guard seems silent. A hard
 hatch, not rewording the commit command. set/extend archive the reason as
 a warn event, a suppressed block leaves one too, and it expires on its own.
 
+`rm-temp` fails open as well. An rm with one target it cannot place
+inside a temp folder, a call where one rm of several does not qualify,
+and every rm on a machine without `toss-bin` on PATH get no answer, so
+the settings ask rule decides them as before. The doctor guard line says
+when toss-bin is unreachable.
+
 The moondb-inflight hint is silent when moondb is down or older than its
 in-flight route, and the doctor moondb line says which. read-size never
 sees a csl_read whose tool the `belt hint read` matcher leaves out; the

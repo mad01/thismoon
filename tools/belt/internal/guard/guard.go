@@ -115,6 +115,7 @@ func All(cfg config.Config) []Guard {
 		// switches both.
 		NewPublishInternalNames(cfg, EventBash),
 		NewPublishInternalNames(cfg, EventExternalText),
+		NewRmTemp(),
 	}
 	for _, name := range slices.Sorted(maps.Keys(cfg.CustomGuards)) {
 		guards = append(guards, NewCustom(name, cfg.CustomGuards[name]))
