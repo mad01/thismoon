@@ -11,6 +11,10 @@ followed.
 The ledger joins guards and hints, recording lifecycle events with no output
 at all, and `belt watch` is the one command that exits 2.
 
+**Amended by ADR-0032 (2026-11-12):** belt carries four concepts. An allow
+may answer allow at PreToolUse once every guard passed, and is off until a
+config turns it on.
+
 ## Context
 
 belt has one shape: a guard inspects a tool call before it runs and either

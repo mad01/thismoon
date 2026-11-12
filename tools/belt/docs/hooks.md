@@ -5,7 +5,8 @@ sequence it runs, why it exists, and how it fails. The keys behind them are in
 [config.md](../config.md); this page covers behavior and wiring. For the
 reasoning behind the guard/hint split itself, see `docs/adr/0008` in the repo
 root. `docs/adr/0024` adds the ledger as the third concept and records why
-the watcher is the one command that exits 2.
+the watcher is the one command that exits 2. `docs/adr/0032` adds the allow
+as the fourth, and records why it is off by default.
 
 ## The execution model
 
@@ -20,6 +21,11 @@ shape has consequences worth knowing before reading about any single hook:
   `permissionDecision: deny` with a reason the model reads. A hint has no
   denial path in its interface; the worst a broken hint can do is add a few
   lines of ignored text.
+- **Allows answer allow, and only after the guards.** An enabled allow runs
+  in the same PreToolUse hook once every guard passed cleanly, with no
+  denial and no warning, and may return `permissionDecision: allow`. It has
+  no denial path, a deny always wins, and every allow is off until the
+  config turns it on (see Allows below).
 - **Ledger entries only record.** `belt record` posts an entry and prints
   nothing at all, so it cannot keep a subagent running or block a task the
   way output or a non-zero exit would on those events.
@@ -37,7 +43,9 @@ shape has consequences worth knowing before reading about any single hook:
   service (`events.this`): denies and soft-mode hits as `warn`, hints as
   `info`. Each event is tagged with the session id on every real call, and
   with the agent id and type when the call came from inside a subagent.
-  When a guard seems silent, the timeline is where to look.
+  When a guard seems silent, the timeline is where to look. An approval is
+  prefixed `belt[<id>]:` too, but posts no event: it would be the most
+  frequent one and push denials out of the source's capped history.
 
 ## Wiring belt into Claude Code
 
@@ -805,6 +813,129 @@ Path-based exceptions use
 substring. `belt config` prints every list in effect after fallbacks, and
 `belt doctor` shows the blocked-name set they produce.
 
+## Allows
+
+An allow answers allow for one narrow call shape, so the call runs without
+a permission prompt. It rides the `belt hook <event>` entry the guards
+already use, so it needs no new wiring. The hook runs it only after a
+clean guard pass: no guard denied, no custom guard failed open (timed out,
+failed to start, or exited with neither 0 nor 1), and no guard in soft
+mode let the call through with a warning. An unreadable payload or config
+denies before either runs. So a deny, or a warning that stands in for
+one, always wins. When an allow gives no answer, the call goes to Claude
+Code's own permission check as before.
+
+Per the Claude Code hooks documentation, a hook allow skips the permission
+prompt and does not override a settings deny or ask rule. Whether it also
+skips the auto-mode classifier is not documented and not verified;
+docs/adr/0032 says how to check.
+
+Every allow is off until `allows.<id>.enabled: true`, the opposite of
+guards and hints: a missing config must never approve a call. `belt doctor`
+lists each allow with its state and roots.
+
+### git-c-read (bash)
+
+- **Invoked**: `belt hook bash`, after a clean pass of every bash guard,
+  when `allows.git-c-read.enabled` is true.
+- **Decision**: answers allow with `belt[git-c-read]:` only when every
+  command in the call is `git -C <dir> <subcommand> [args]`. Any doubt is no
+  answer.
+  1. The tool call is a plain Bash call: `tool_name` is exactly `Bash`,
+     `dangerouslyDisableSandbox` and `run_in_background` are absent or
+     false, and `tool_input` holds no key besides those, `command`,
+     `description` and `timeout`. A key a newer Claude Code adds means no
+     answer until belt knows it.
+  2. The call is read by a strict, quote-aware reader. Commands may be
+     joined by `;`, `&&`, `||` or newlines, and words may be quoted (single
+     quotes, or double quotes without `$`, backticks, `\` or `!`). Anything
+     else means no answer: a pipe, a redirect, `$`, backticks, a subshell or
+     group, a lone `&`, a heredoc, a comment, a line continuation, an
+     unquoted glob (`*`, `?`, `[`, `^`) or brace, a word that starts with
+     `=`, a non-ASCII byte outside quotes, or an empty command. A word that
+     starts with `~` must have no quote before its first unquoted `/`:
+     zsh expands `~'/x'` and bash does not.
+  3. Each command starts with an unquoted `git`, so an env assignment and a
+     wrapper (`sudo`, `command`, `env`, `time`) mean no answer. Exactly one
+     `-C <dir>` follows, and the subcommand comes right after it, so `-c`,
+     `--git-dir`, `--no-pager` or a second `-C` mean no answer.
+  4. The subcommand is `status`, `log`, `diff`, `show`, `rev-parse` or
+     `ls-files`, or a listing form: `branch` with only `--list`, `-a`,
+     `--all`, `-r`, `--remotes`, `-v`, `-vv`, `--verbose` or
+     `--show-current` (a positional only beside `--list`, where it is a
+     pattern), bare `remote` or `remote -v`, and `worktree list` with
+     `--porcelain`, `-v`, `--verbose` or `-z`.
+  5. No argument may be risky: a long option that is any prefix of
+     `--output`, `--ext-diff`, `--textconv`, `--no-index`, `--exec`,
+     `--upload-pack`, `--receive-pack`, `--open-files-in-pager`,
+     `--show-signature`, `--help`, `--exclude-from` or `--resolve-git-dir`
+     (git accepts abbreviations, so `--exclude=<pattern>` counts too); a
+     short-flag word holding `O` or `X` (`-O<file>`, `-X<file>`, bundled
+     `-pO<file>`); a `%G` signature placeholder; or a positional argument
+     or `--option=value` value that is absolute, starts with `~`, or has a
+     `..` segment (`git diff` with a path outside the tree runs as
+     `--no-index`). Arguments are judged by their text: a relative one
+     that names a symlink in the work tree can still make git read the
+     file the link points to, as with `ls-files
+     --exclude-per-directory=<name>`.
+  6. The dir is joined to the session cwd when relative, a leading `~` or
+     `~/` is expanded, and symlinks are resolved the way git resolves them,
+     `..` after a symlink included. The real dir must exist.
+  7. The repo git would find from the dir must be one belt can vouch for,
+     found the way git's own discovery walks, without running git:
+     - No directory from the dir up to the top of the work tree looks like
+       a git directory: a `HEAD` beside `objects`, `refs`, `commondir` or
+       `config`. git would use such a directory, its config included, and a
+       clone can carry one as tracked files.
+     - The top is the first directory with a `.git` entry. That entry is a
+       real directory git accepts (a valid `HEAD`, `objects` and `refs` as
+       real directories, no `commondir`), or the `.git` file `git worktree
+       add` writes: `gitdir:` naming `<main>/.git/worktrees/<name>`, whose
+       `commondir` leads back to `<main>/.git` and whose `gitdir` leads back
+       to this file. A symlinked `.git`, an empty or broken `.git`
+       directory (git walks past it to a repo further up), a submodule's
+       `.git` file, or a `.git` file naming anything else is no answer.
+     - The work tree top and every git directory git reads sit inside a
+       root: the `.git` directory, or for a linked worktree its own git
+       directory and `<main>/.git`. A worktree under `~/.worktrees` whose
+       main checkout lives under `~/code/src` needs both folders in the
+       roots.
+     - The repo's `config` and `config.worktree` set no `core.worktree`,
+       no `core.bare` other than false, no `core.hooksPath`, and no
+       `include` or `includeIf` section. A file the scan cannot read with
+       certainty (a line continuation, a malformed section header or key,
+       over 1 MiB) counts as setting one.
+     - belt's own environment sets none of `GIT_DIR`, `GIT_WORK_TREE`,
+       `GIT_COMMON_DIR`, `GIT_INDEX_FILE` or `GIT_OBJECT_DIRECTORY`.
+  8. The roots are the work tree the session's cwd is in, unless that is
+     home or a directory above it, plus `allows.git-c-read.roots`. Each
+     root is resolved the same physical way as the dir; one that is `/`,
+     home or above home, or that does not resolve, is dropped with a doctor
+     warning.
+- **Why it exists**: Claude Code allow rules match the command text as
+  written. `Bash(git status:*)` never matches `git -C <path> status`, and
+  `Bash(git -C * status *)` also matches `git -C x -c core.fsmonitor=<cmd>
+  status`, which runs code.
+- **Residual risk**: any repo under a root can carry config or an embedded
+  git directory from wherever it came. The check refuses embedded git
+  directories and the config keys above, and trusts the rest of a repo's
+  own `.git/config`, which a clone never writes: the user or a tool on the
+  machine did. The read commands still run code that config names: `git
+  status` and `git diff` run `core.fsmonitor` and clean filters, `git
+  status` runs the `post-index-change` hook when it refreshes the index,
+  `git diff` runs `diff.external` and diff drivers, `git diff`, `git log
+  -p` and `git show` run textconv filters, and a partial clone fetches
+  missing objects. A tracked `.gitattributes` picks which configured
+  driver or filter applies. `Bash(git status:*)` already accepts all that
+  for the cwd repo; the roots widen it to every repo under them, so keep
+  out of them any tree that carries its own `.git` directory without being
+  a clone, such as an unpacked archive. belt sees only its own environment,
+  so a `GIT_DIR` that the session's shell sets in an rc file is out of its
+  sight.
+- **Fails toward the prompt**: an allow that is off, a call it cannot read,
+  or a dir or repo it cannot vouch for is no answer, never a deny. `belt
+  check` does not run the allows.
+
 ## Hints
 
 Hints add advisory context next to a tool result or at session boundaries.
@@ -1430,3 +1561,11 @@ In symptom order:
 9. **read-size fires after a Read but never after a `csl_read`.** The
    `belt hint read` matcher leaves the tool out. `belt doctor` prints a
    `WARNING` line in its hook wiring section with the matcher to set.
+10. **A `git -C` read still prompts.** `belt doctor` shows whether
+    git-c-read is enabled, which roots it uses and which it dropped. Then
+    check the call against the git-c-read rule above: one pipe, redirect,
+    `$`, unquoted glob or `^`, or a dir that resolves outside the roots
+    means no answer. So does a linked worktree whose main checkout is under
+    no root, and a custom guard in soft mode or one that times out or
+    fails: the events timeline shows its warning. A settings ask rule that
+    matches the call wins over the allow.

@@ -131,6 +131,7 @@ type Config struct {
 	CustomHints    map[string]CustomHint  // external-command hints keyed by hint name
 	Ledger         Ledger                 // what `belt record` posts, and where
 	Watch          Watch                  // whether and how `belt watch` polls for items
+	Allows         map[string]Allow       // per-allow switch and roots; every allow is off until enabled
 }
 
 // GitIdentity is one git-identity rule: the git user.email expected for
@@ -708,6 +709,7 @@ func LoadFrom(p Paths) (Config, error) {
 		CustomHints:     f.CustomHints,
 		Ledger:          f.Ledger,
 		Watch:           f.Watch,
+		Allows:          f.Allows,
 	}
 	if cfg.ClaudeSettings.ReadEnabled() {
 		cfg.ClaudeDeny = LoadClaudeDenyPatterns(p.ClaudeSettings...)
@@ -827,6 +829,7 @@ type File struct {
 	CustomHints     map[string]CustomHint  `toml:"custom_hints"      yaml:"custom_hints"`
 	Ledger          Ledger                 `toml:"ledger"            yaml:"ledger"`
 	Watch           Watch                  `toml:"watch"             yaml:"watch"`
+	Allows          map[string]Allow       `toml:"allows"            yaml:"allows"`
 }
 
 // Source reports which belt config file was read and what happened.

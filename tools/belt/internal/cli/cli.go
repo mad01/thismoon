@@ -198,7 +198,7 @@ func eventArg(kind string, events func() []string) cobra.PositionalArgs {
 func hookCmd(paths pathsFunc) *cobra.Command {
 	return &cobra.Command{
 		Use:   "hook <event>",
-		Short: "Run as a Claude Code PreToolUse hook (payload on stdin, deny JSON on stdout)",
+		Short: "Run as a Claude Code PreToolUse hook (payload on stdin, deny or allow JSON on stdout)",
 		Long: `Run as a Claude Code PreToolUse hook. Reads the tool-call payload on stdin
 and writes any deny decision as JSON on stdout; a valid event always exits 0
 (the deny travels in the JSON, not the exit code).
@@ -211,6 +211,12 @@ that is not a JSON object, or a field the guards read (tool_name,
 tool_input, cwd, and the command, file_path, content or new_string inside
 tool_input) holding another JSON type. The session and agent fields never
 deny. See belt docs.
+
+When no guard denies, an enabled allow may write permissionDecision allow
+instead (allows.<id>.enabled, off by default; docs/adr/0032). git-c-read
+answers a Bash call made only of read-only git -C <dir> <subcommand>
+commands in a repo whose work tree and git directory sit inside the
+session's work tree or an allows.git-c-read.roots entry.
 
 The event argument is belt's guard event, not the Claude Code tool name:
 bash guards Bash commands, write guards Write and Edit, external-text guards

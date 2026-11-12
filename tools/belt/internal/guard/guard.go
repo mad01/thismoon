@@ -38,9 +38,10 @@ type Input struct {
 	Cwd      string // bash: the session working directory
 	FilePath string // write: target file
 	Content  string // write: content being written (Write content / Edit new_string)
-	ToolName string // external-text: the MCP tool about to run
-	// ToolInput carries the external-text tool call's input fields: every
-	// string in it is text that is about to leave the machine.
+	ToolName string // external-text and bash: the tool about to run
+	// ToolInput carries the tool call's input fields. For external-text,
+	// every string in it is text that is about to leave the machine; for
+	// bash, only the allows read it.
 	ToolInput map[string]any
 	// SessionID names the Claude Code session making the call. AgentID and
 	// AgentType name the subagent inside it, and are empty for a call made
@@ -135,12 +136,9 @@ func ForEvent(event string, cfg config.Config) []Guard {
 }
 
 // Run checks the input against every enabled guard for its event and returns
-// the first denial, or nil when all guards allow.
+// the first denial, or nil when all guards allow. RunClean also says whether
+// the pass was clean.
 func Run(in Input, cfg config.Config) *Denial {
-	for _, g := range ForEvent(in.Event, cfg) {
-		if d := g.Check(in); d != nil {
-			return d
-		}
-	}
-	return nil
+	d, _ := RunClean(in, cfg)
+	return d
 }

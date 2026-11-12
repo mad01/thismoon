@@ -7,7 +7,10 @@ session lifecycle events (subagents, tasks, permission denials,
 notifications, compaction, session end, failed turns) to the events
 service. The three are separate by design. A hint has no denial path in its
 interface, and the record path has no output at all, so neither can block
-or steer anything, even by mistake.
+or steer anything, even by mistake. A fourth concept, the allow, rides the
+guard hook: once every guard passed, an enabled allow may answer allow so
+the call skips the permission prompt. It has no denial path either, and
+every allow is off until the config turns it on.
 
 ## how it runs
 
@@ -64,8 +67,10 @@ Validation covers the values that parse and then do nothing:
 A names file listed under internal_names.include that is missing or fails
 to parse is the same error, and the deny names the include file. The
 broken config does not reach the ledger or the watcher: `record` posts with
-the defaults, and `watch` stays off. The `ledger` and `watch` values never
-fail validation at all. A bad number is clamped and a source is rewritten
+the defaults, and `watch` stays off. No allow runs either, since the deny
+comes first. The `ledger`, `watch` and `allows` values never fail
+validation at all; an `allows.<id>.roots` entry that is not absolute or
+`~/`, does not resolve, or covers home is dropped with a doctor warning. A bad number is clamped and a source is rewritten
 the way the events service stores it, and doctor warns about each. A
 malformed `ledger.agent_types` entry or value is dropped with a doctor
 warning, even one of the wrong YAML type.
@@ -164,6 +169,24 @@ and every rm on a machine without `toss-bin` on PATH get no answer, so
 the settings ask rule decides them as before. The doctor guard line says
 when toss-bin is unreachable.
 
+The `git-c-read` allow fails toward the prompt. When it gives no answer,
+the call goes to Claude Code's own permission check, exactly as without
+belt. It answers `belt[git-c-read]:` only for a plain Bash call made of
+nothing but read-only `git -C <dir> <subcommand>` commands, after a guard
+pass with no denial and no warning, in a normal repo whose work tree and
+git directory sit inside the session's work tree or an
+`allows.git-c-read.roots` entry. A call it should have answered but did
+not: check `belt doctor` for the allow's state and roots. Then look for
+shell syntax the strict reader refuses (a pipe, a redirect, `$`, a glob,
+an unquoted `^`), a dir that resolves through a symlink outside the
+roots, a linked worktree whose main checkout is under no root, or a
+soft-mode or failing custom guard (its warning is on the events
+timeline). An approval posts no event; the hook output in the transcript
+is its only record. Per the Claude Code hooks
+documentation, a hook allow does not override a settings deny or ask rule,
+and whether it skips the auto-mode classifier is not verified
+(docs/adr/0032).
+
 The moondb-inflight hint is silent when moondb is down or older than its
 in-flight route, and the doctor moondb line says which. read-size never
 sees a csl_read whose tool the `belt hint read` matcher leaves out; the
@@ -201,7 +224,8 @@ again.
 ## first moves
 
 1. `belt doctor`: build metadata, which config surface loaded (include
-   files too), guard and hint enablement, the `belt hint read` matcher,
+   files too), guard, allow and hint enablement with each allow's roots,
+   the `belt hint read` matcher,
    moondb reachability, each agent-memory index against its budget share,
    the ledger and watch settings with events-service reachability, and the
    resolved blocked-name list. It ends with a warnings section and exits 1 when that

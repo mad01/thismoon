@@ -45,7 +45,7 @@ func doctorCmdWith(paths pathsFunc, probes doctorProbes) *cobra.Command {
 		Use:   "doctor",
 		Short: "Show the build and resolved config: surfaces loaded, guard/hint state, moondb reachability, blocked names",
 		Long: `Show what belt is actually running with: which build is installed, which
-config surface loaded (or didn't), which guards and hints are enabled,
+config surface loaded (or didn't), which guards, allows and hints are enabled,
 the matcher of the Claude settings entry that runs belt hint read,
 whether the moondb serve instance the moondb-inflight hint queries is
 reachable, the ledger and watch settings with the events service they
@@ -56,7 +56,8 @@ names the guard, doctor names the build and the config behind it.
 The report ends with a warnings section and exits 1 when it is not empty:
 a broken config or include file (every hook is denying), a script guard
 with no deny patterns to enforce, an internal-name guard with no names to
-match, a toggle no registered guard or hint answers to, or an enabled
+match, a toggle no registered guard, allow or hint answers to, an allows
+root entry belt ignores, or an enabled
 watcher that cannot work (events service unreachable, or a max wait at or
 past the hook timeout), or an agent-memory index past its injection budget
 (facts are dropped). A machine with no belt config at all warns about the
@@ -162,6 +163,7 @@ func runDoctor(w io.Writer, p config.Paths, probes doctorProbes) []string {
 	}
 
 	printCustomGuards(w, cfg, customs)
+	warns = append(warns, printAllows(w, cfg)...)
 
 	fmt.Fprintln(
 		w,

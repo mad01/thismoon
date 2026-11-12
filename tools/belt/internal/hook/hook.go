@@ -1,6 +1,7 @@
-// Package hook adapts Claude Code hook payloads to belt's three concepts.
+// Package hook adapts Claude Code hook payloads to belt's four concepts.
 // PreToolUse payloads become guard inputs and guard denials become deny
-// decisions. PostToolUse, SessionStart and SubagentStart payloads become
+// decisions; when no guard denies, an allow's approval becomes an allow
+// decision. PostToolUse, SessionStart and SubagentStart payloads become
 // hint inputs and hint advice becomes added context. Lifecycle payloads
 // (subagents, tasks, compaction, session end, failed turns) become ledger
 // entries and print nothing at all. Every entrypoint exits 0: a hook must
@@ -140,7 +141,8 @@ type runner struct {
 }
 
 // Run reads a payload from r, runs the guards for event, and writes a deny
-// decision to w when one fires. It never returns an error: the deny is the
+// decision to w when one fires. When none fires, an enabled allow may write
+// an allow decision instead. It never returns an error: the decision is the
 // only output, and it travels as data.
 //
 // Two failures deny before any guard runs, because a guard that cannot see
@@ -186,8 +188,19 @@ func (rn runner) guards(event string, r io.Reader, w io.Writer) {
 		return
 	}
 	in := toInput(event, p)
-	d := guard.Run(in, cfg)
+	d, clean := guard.RunClean(in, cfg)
 	if d == nil {
+		// The allows run only here, once every guard passed cleanly: none
+		// denied, none failed open and none softened a denial into a
+		// warning. A deny always wins (docs/adr/0032). An approval posts no
+		// event, since it would be belt's most frequent one and push guard
+		// denials out of the events service's per-source history.
+		if !clean {
+			return
+		}
+		if a := guard.Approve(in, cfg); a != nil {
+			writeAllow(w, a)
+		}
 		return
 	}
 	rn.emit(
@@ -235,6 +248,19 @@ func writeDeny(w io.Writer, d *guard.Denial) {
 			HookEventName:            "PreToolUse",
 			PermissionDecision:       "deny",
 			PermissionDecisionReason: d.Reason,
+		},
+	})
+}
+
+// writeAllow emits an allow decision, in the same envelope as a deny. Per
+// the Claude Code hooks documentation, a hook allow skips the permission
+// prompt and does not override a settings deny or ask rule.
+func writeAllow(w io.Writer, a *guard.Approval) {
+	_ = json.NewEncoder(w).Encode(decision{
+		HookSpecificOutput: hookOutput{
+			HookEventName:            "PreToolUse",
+			PermissionDecision:       "allow",
+			PermissionDecisionReason: a.Reason,
 		},
 	})
 }
@@ -542,6 +568,10 @@ func toInput(event string, p payload) guard.Input {
 	switch event {
 	case guard.EventBash:
 		in.Command = str("command")
+		// The allows read the tool and its whole input: an approval is for
+		// a Bash call that runs sandboxed in the foreground (guard.Approve).
+		in.ToolName = p.ToolName
+		in.ToolInput = p.ToolInput
 	case guard.EventWrite:
 		in.FilePath = str("file_path")
 		in.Content = str("content")

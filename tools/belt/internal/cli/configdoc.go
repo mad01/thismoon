@@ -199,6 +199,27 @@ watch:
   max_wait_s: 540
   source: belt-inbox
 
+# Allows answer allow at PreToolUse, so a call runs without a permission
+# prompt, and only once every guard passed with no denial and no warning:
+# a deny always wins. Each is off until enabled is set (docs/adr/0032).
+# git-c-read answers a Bash call made only of read-only git -C <dir>
+# <subcommand> commands (status, log, diff, show, rev-parse, ls-files, and
+# the listing forms of branch, remote and worktree) with no shell syntax
+# beyond ; && || and quotes. The repo git finds from the dir must be a
+# normal one whose work tree and git directory sit inside the session's
+# own work tree or a roots entry, so a linked worktree needs its main
+# checkout under a root too. roots is the safety boundary: those read
+# commands still run code a repo's own .git/config names (core.fsmonitor,
+# diff.external, textconv), so list only trees of clones and repos you
+# made. A roots entry that is not absolute or ~/, does not resolve, or is
+# /, home or above home is ignored with a doctor warning, never a config
+# error.
+allows:
+  git-c-read:
+    enabled: false
+    roots:
+      - ~/code/src
+
 guards:
   git-push-main:
     enabled: true
@@ -388,6 +409,7 @@ type effectiveConfig struct {
 	CustomHints    map[string]config.CustomHint  `yaml:"custom_hints,omitempty"`
 	Ledger         config.Ledger                 `yaml:"ledger"`
 	Watch          config.Watch                  `yaml:"watch"`
+	Allows         map[string]config.Allow       `yaml:"allows"`
 	Guards         map[string]config.Toggle      `yaml:"guards"`
 	Hints          map[string]config.Toggle      `yaml:"hints"`
 	ClaudeDeny     []string                      `yaml:"claude_deny"`
@@ -412,6 +434,13 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 		Guards:         make(map[string]config.Toggle, len(guards)),
 		Hints:          make(map[string]config.Toggle, len(hints)),
 		ClaudeDeny:     cfg.ClaudeDeny,
+	}
+	e.Allows = make(map[string]config.Allow)
+	for _, a := range guard.Allows(cfg) {
+		e.Allows[a.ID()] = config.Allow{
+			Enabled: cfg.AllowEnabled(a.ID()),
+			Roots:   cfg.Allows[a.ID()].RootDirs(),
+		}
 	}
 	for _, g := range guards {
 		if _, ok := g.(*guard.Custom); ok {
