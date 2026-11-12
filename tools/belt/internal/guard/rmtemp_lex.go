@@ -436,25 +436,8 @@ func matchParen(s string, open int) (int, bool) {
 	return 0, false
 }
 
-// isShellName reports whether s is a shell variable name.
-func isShellName(s string) bool {
-	if s == "" || !isNameStart(s[0]) {
-		return false
-	}
-	for i := 1; i < len(s); i++ {
-		if !isNameByte(s[i]) {
-			return false
-		}
-	}
-	return true
-}
-
 func isNameStart(c byte) bool {
 	return c == '_' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
-}
-
-func isNameByte(c byte) bool {
-	return isNameStart(c) || ('0' <= c && c <= '9')
 }
 
 func isDigits(s string) bool {
