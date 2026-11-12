@@ -95,7 +95,16 @@ writes or prints a denied command's name is denied. The one exception is a
 Python heredoc that is the whole command and runs as `python3 -I`. It may
 import only json, re, pathlib, textwrap, datetime or collections, and may
 not name os, sys, exec, eval, getattr, vars or a `_`-prefixed name anywhere.
-The deny reason for a Python heredoc names that shape.
+The deny reason for a Python heredoc names that shape. A `cat` or `tee`
+heredoc written to a document file (`.md`, `.txt` and a few more) is text,
+and its lines are not read as commands. The file may not sit in a dot
+directory or a system directory, and JSON, YAML and TOML files are never
+text. The temp folders `/tmp`, `/var/tmp` and `~/.tmp` are allowed, with the
+same rules below them. Every other step must be one that cannot run the file (`mkdir`,
+`git add`, `gh pr create` and a few more), with no redirect, and every
+`cd` must be followed by `&&`.
+After a `bash -c` or an interpreter heredoc in the same command it still
+matches, because that inline script scans to the end of the command.
 
 Known false-positive path for `write-internal-names`: exclude_paths entries
 usually name the canonical checkout, and a git worktree at another path

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/mad01/thismoon/kit/notify"
@@ -133,11 +134,16 @@ func (g *ScriptDenyList) check(in Input) *Denial {
 	segs := splitSegments(in.Command)
 	s := scan{in: in, segs: segs, written: redirectTargets(segs, in.Cwd), patterns: patterns}
 	// A Python heredoc proven inert ends the command: its own segment, its
-	// body lines and its terminator need no check.
+	// body lines and its terminator need no check. A text heredoc's body
+	// lines are not commands either (scripttext.go).
 	inertFrom, inert := inertPythonHeredoc(in.Command)
+	text := textHeredocBodies(in.Command, in.Cwd)
 	for i := range segs {
 		if inert && segs[i].off >= inertFrom {
 			break
+		}
+		if text.holds(segs[i].off) {
+			continue
 		}
 		if d := g.checkSegment(s, i); d != nil {
 			return d
@@ -174,6 +180,8 @@ func (g *ScriptDenyList) checkSegment(s scan, i int) *Denial {
 		if len(tokens) > 1 {
 			return g.scanTarget(s, tokens[1])
 		}
+	case head == "chmod":
+		return g.scanMadeExecutable(s, tokens[1:])
 	case strings.ContainsRune(tokens[0], '/'):
 		resolved := resolvePath(tokens[0], s.in.Cwd)
 		if s.written[resolved] || scannableScript(resolved) {
@@ -214,17 +222,28 @@ func (g *ScriptDenyList) checkInterpreter(
 }
 
 // checkProducer looks at the segment piped into a bare interpreter: file
-// producers (cat x.sh | bash) get their file arguments scanned, fetchers
+// producers (cat x.sh | bash) get their file arguments scanned, a heredoc
+// they pass on (cat <<EOF | bash) gets its body scanned, and fetchers
 // (curl ... | bash) are denied because nothing can read what would run.
 func (g *ScriptDenyList) checkProducer(s scan, i int) *Denial {
 	if i == 0 || !pipeBefore(s.in.Command, s.segs[i].off) {
 		return nil
 	}
-	prev := stripWrappers(strings.Fields(s.segs[i-1].text))
+	producer := s.segs[i-1]
+	prev := stripWrappers(strings.Fields(producer.text))
 	if len(prev) == 0 {
 		return nil
 	}
-	switch head := filepath.Base(prev[0]); {
+	head := filepath.Base(prev[0])
+	if (fileProducers[head] || head == "tee") && strings.Contains(producer.text, "<<") {
+		// A heredoc or here-string passed on unchanged (cat <<EOF | sh) is
+		// the script the interpreter reads; its body follows the producer.
+		where := "the heredoc piped into an interpreter"
+		if d := scanText(s.in.Command[producer.off:], where, s.patterns); d != nil {
+			return d
+		}
+	}
+	switch {
 	case fileProducers[head]:
 		for _, arg := range prev[1:] {
 			if strings.HasPrefix(arg, "-") {
@@ -291,6 +310,76 @@ func (g *ScriptDenyList) scanTarget(s scan, path string) *Denial {
 		}
 	}
 	return g.scanFile(resolved, s.patterns)
+}
+
+// scanMadeExecutable handles chmod: a file the same command writes and then
+// gives an execute bit is a script about to exist, so the raw command text,
+// where its content lives, is scanned as for a write-then-run. A mode that
+// adds no execute bit (600, -x) and a file the command does not write are
+// left alone.
+func (g *ScriptDenyList) scanMadeExecutable(s scan, args []string) *Denial {
+	if !chmodAddsExec(args) {
+		return nil
+	}
+	for _, arg := range args {
+		resolved := resolvePath(arg, s.in.Cwd)
+		if !s.written[resolved] || g.cfg.Guards[ScriptDenyListID].ExcludesPath(resolved) {
+			continue
+		}
+		where := fmt.Sprintf("the command (which writes %s and changes its mode)", arg)
+		if d := scanText(s.in.Command, where, s.patterns); d != nil {
+			return d
+		}
+	}
+	return nil
+}
+
+var (
+	// chmodClause is one symbolic mode clause: who, then operators each with
+	// the permissions they set or clear (u+x, go=r, +rwx, a-x, g=u).
+	chmodClause = regexp.MustCompile(`^[ugoa]*([-+=][rwxXstugo]*)+$`)
+	// chmodSets is an operator in a clause that can set bits, with its
+	// permissions.
+	chmodSets  = regexp.MustCompile(`[+=][rwxXstugo]*`)
+	chmodOctal = regexp.MustCompile(`^[0-7]{1,4}$`)
+)
+
+// chmodAddsExec reports whether chmod's arguments may add an execute bit.
+// Flags such as -R are skipped, and the first other word is the mode. A long
+// option (--reference copies another file's mode) or a mode it cannot read
+// counts as adding one.
+func chmodAddsExec(args []string) bool {
+	for _, arg := range args {
+		switch {
+		case strings.HasPrefix(arg, "--"):
+			return true
+		case strings.HasPrefix(arg, "-") && !chmodClause.MatchString(arg):
+			continue
+		}
+		return modeAddsExec(arg)
+	}
+	return false
+}
+
+// modeAddsExec reports whether a chmod mode may set an execute bit: an octal
+// mode with one, or a clause that sets x or X, or copies another class's
+// bits (g=u).
+func modeAddsExec(mode string) bool {
+	if chmodOctal.MatchString(mode) {
+		bits, err := strconv.ParseUint(mode, 8, 16)
+		return err != nil || bits&0o111 != 0
+	}
+	for _, clause := range strings.Split(mode, ",") {
+		if !chmodClause.MatchString(clause) {
+			return true
+		}
+		for _, set := range chmodSets.FindAllString(clause, -1) {
+			if strings.ContainsAny(set[1:], "xXugo") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // scanFile reads the script (capped at maxScriptSize) and scans it.

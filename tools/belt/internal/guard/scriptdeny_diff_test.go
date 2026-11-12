@@ -115,13 +115,18 @@ type corpusInput struct {
 }
 
 // TestScriptDenyListNarrowsOnlyIntendedPasses is the safety net for the
-// Python heredoc rule: across a generated corpus, every input the origin/main
-// decision denies is still denied, unless it is one of heredocIntendedPasses.
-// The rule only removes checks, so it never denies what origin allowed.
+// Python heredoc and text heredoc rules: across a generated corpus, every
+// input the origin/main decision denies is still denied, unless it is one of
+// heredocIntendedPasses or in a relaxed shape. Both rules only remove checks.
+// The chmod and heredoc-pipe checks add denials, and textTightened lists the
+// inputs that may be denied now although origin allowed them.
 func TestScriptDenyListNarrowsOnlyIntendedPasses(t *testing.T) {
+	// A relative cd is followed only when CDPATH is unset (scripttext.go).
+	t.Setenv("CDPATH", "")
 	cwd, bypasses := heredocBypassCases(t)
 	writeScript(t, cwd, "evil.sh", "rm -rf /tmp/x\n")
 	writeScript(t, cwd, "notes.md", "Run git config to check the name.\n")
+	writeScript(t, cwd, "tool", "#!/bin/sh\necho hi\n")
 	generalDeny, generalExtra, general := scriptDenyListCases(t)
 	g := NewScriptDenyList(scriptDenyConfig(
 		append(slices.Clone(heredocDeny), generalDeny...),
@@ -142,9 +147,17 @@ func TestScriptDenyListNarrowsOnlyIntendedPasses(t *testing.T) {
 	for _, c := range generatedCorpus() {
 		corpus = append(corpus, entry{c.command, cwd, c.relaxed})
 	}
+	for _, c := range textHeredocCorpus() {
+		corpus = append(corpus, entry{c.command, cwd, c.relaxed})
+	}
 	intended := map[string]bool{}
 	for _, c := range heredocIntendedPasses {
 		intended[c] = true
+		corpus = append(corpus, entry{c, cwd, false})
+	}
+	tightened := map[string]bool{}
+	for _, c := range textTightened {
+		tightened[c] = true
 		corpus = append(corpus, entry{c, cwd, false})
 	}
 
@@ -153,15 +166,22 @@ func TestScriptDenyListNarrowsOnlyIntendedPasses(t *testing.T) {
 		in := Input{Event: EventBash, Command: e.command, Cwd: e.cwd}
 		old, now := originCheck(g, in) != nil, g.Check(in) != nil
 		switch {
-		case now && !old:
+		case now && !old && !tightened[e.command]:
 			t.Errorf("denies what origin/main allowed:\n%s", e.command)
+		case tightened[e.command] && (old || !now):
+			t.Errorf(
+				"tightened input must be allowed by origin/main and denied now (old %v, now %v):\n%s",
+				old,
+				now,
+				e.command,
+			)
 		case old && !now && !intended[e.command] && !e.relaxed:
 			t.Errorf(
 				"lets through what origin/main denied, and it is not an intended pass:\n%s",
 				e.command,
 			)
 		case e.relaxed && now:
-			t.Errorf("denies a benign Python heredoc in the relaxed shape:\n%s", e.command)
+			t.Errorf("denies an input in a relaxed shape:\n%s", e.command)
 		case intended[e.command] && (!old || now):
 			t.Errorf(
 				"intended pass must be denied by origin/main and allowed now (old %v, now %v):\n%s",
