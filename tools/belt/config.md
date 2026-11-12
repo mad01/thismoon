@@ -56,6 +56,8 @@ nothing:
 - `mode: soft` under `guards:` or `hints:` on any id except
   `script-deny-list` and `publish-internal-names`, the two that read a
   toggle mode. Use `enabled: false` to switch a different guard off;
+- a negative top-level `large_file_lines`: 0 or unset is the default, and a
+  negative threshold would refuse every Read;
 - any list key on a built-in id that does not read it. Each id declares
   the toggle fields it reads (the `GuardFields`/`HintFields` tables in the
   config package), and the error names the fields that do work there.
@@ -158,6 +160,17 @@ every github.com repo is public-bound. So a rendering that predates the key
 stays strict rather than silently unguarded; `belt
 doctor` prints which of the two modes is in effect. An empty present list
 (`public_repos: []`) guards nothing. docs/adr/0015 records the decision.
+
+### large_file_lines (top-level)
+
+An integer, default 300 (unset or 0 means the default). The line count at
+which a whole-file read counts as large, read by exactly the two checks
+whose subject is that: the `large-read` guard refuses a Read with no
+`offset` and no `limit` of a text file this long in a csl-indexed repo, and
+the `read-size` hint speaks after such a Read or `csl_read`. One value for
+both, so the refusal and the advice never disagree about what is large. A
+negative value is a config error. `belt config` prints the value in effect,
+and `belt doctor` shows it beside the guard.
 
 ### internal_names
 
@@ -461,7 +474,7 @@ allows:
 
 A map keyed by built-in guard id (`git-push-main`, `git-discard`, `git-identity`,
 `commit-guard`, `script-deny-list`, `write-internal-names`,
-`publish-internal-names`, `rm-temp`) or a
+`publish-internal-names`, `rm-temp`, `large-read`) or a
 `custom_guards` name. Every guard, built-in or custom, defaults to enabled
 when the file or its entry is missing. The toggle shape is shared across
 guards, but which fields have an effect depends on the guard. `allow_repos`
@@ -543,6 +556,15 @@ entries match the same way as `git_identity[].repos` and
 - **rm-temp**
   - `guards.rm-temp.enabled` (bool, default `true`): the only field with
     effect. The guard needs `toss-bin` on PATH and stays silent without it.
+- **large-read**
+  - `guards.large-read.enabled` (bool, default `true`): refuses a Read with
+    no `offset` and no `limit` of a text file of `large_file_lines` or more
+    in a csl-indexed repo, handing over the `csl_ask` call for it. A ranged
+    read passes, and so does a file the reading agent already edited or
+    wrote in the session. The guard takes no other key and no `mode`; the
+    threshold is the top-level `large_file_lines`. It runs only where the
+    Claude settings wire `belt hook read` on PreToolUse with matcher
+    `Read`.
 - **custom guard entries**
   - `guards.<name>.enabled` (bool, default `true`): a secondary toggle for a
     custom guard, used only when that guard's own
@@ -572,8 +594,8 @@ the repo's origin remote.
   the swept repo's origin remote — not its checkout path, so a worktree
   under a different parent directory is still covered.
 - `hints.read-size.enabled` (bool, default `true`): PostToolUse (read),
-  fires when a Read or a `csl_read` without a range pulls in 300 lines or
-  more from an indexed repo, for a file type `csl_outline` has symbols
+  fires when a Read or a `csl_read` without a range pulls in
+  `large_file_lines` or more (300 by default) from an indexed repo, for a file type `csl_outline` has symbols
   for. It points at `csl_ask`, `csl_outline` or a ranged read, once per
   file per agent per session.
 - **commit-policy**
@@ -662,6 +684,8 @@ direct_main_repos:
 public_repos:
   - github.com/you/your-open-source-tool
   - github.com/you/your-public-site
+
+large_file_lines: 300
 
 internal_names:
   include:
@@ -763,6 +787,9 @@ guards:
     enabled: true
     allow_repos:
       - github.com/you/private-companion
+
+  large-read:
+    enabled: true
 
 hints:
   agent-memory:

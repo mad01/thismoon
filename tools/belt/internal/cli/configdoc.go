@@ -51,6 +51,13 @@ public_repos:
   - github.com/you/your-open-source-tool
   - github.com/you/your-public-site
 
+# The line count at which a whole-file read counts as large, for the two
+# checks about one: the large-read guard refuses a Read with no offset and
+# no limit of a text file this long in a csl-indexed repo, and the
+# read-size hint speaks after such a Read or csl_read. 0 or unset means 300;
+# a negative value is a config error.
+large_file_lines: 300
+
 # The internal-name list for write-internal-names, owned by belt and
 # standalone: no other tool's file is consulted, and an unset or empty
 # section means an empty name set (the guard then has nothing to match).
@@ -232,6 +239,14 @@ guards:
     allow_repos:
       - github.com/you/yourrepo
 
+  large-read:
+    enabled: true
+    # Refuses a Read with no offset and no limit of a text file of
+    # large_file_lines or more in a csl-indexed repo, and hands over the
+    # csl_ask call for that file. A ranged read passes, and so does a file
+    # the reading agent already edited or wrote in the session. Runs only
+    # where the Claude settings wire belt hook read on PreToolUse (Read).
+
   script-deny-list:
     enabled: true
     # "soft" downgrades every denial to a warn event on the events service
@@ -275,8 +290,8 @@ hints:
   read-size:
     enabled: true
     # Speaks once per file per agent per session, after a Read or a
-    # csl_read without a range pulls in a file of 300 lines or more in a
-    # csl-indexed repo, for file types csl_outline has symbols for.
+    # csl_read without a range pulls in a file of large_file_lines or more
+    # in a csl-indexed repo, for file types csl_outline has symbols for.
   commit-policy:
     enabled: true
     # Opt-outs for this hint only; a repo whose main is committed to
@@ -411,6 +426,7 @@ type effectiveConfig struct {
 	Ledger         config.Ledger                 `yaml:"ledger"`
 	Watch          config.Watch                  `yaml:"watch"`
 	Allows         map[string]config.Allow       `yaml:"allows"`
+	LargeFileLines int                           `yaml:"large_file_lines"`
 	Guards         map[string]config.Toggle      `yaml:"guards"`
 	Hints          map[string]config.Toggle      `yaml:"hints"`
 	ClaudeDeny     []string                      `yaml:"claude_deny"`
@@ -432,6 +448,7 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 		CustomHints:    effectiveCustomHints(cfg),
 		Ledger:         effectiveLedger(cfg.Ledger),
 		Watch:          effectiveWatch(cfg.Watch),
+		LargeFileLines: cfg.LargeFileThreshold(),
 		Guards:         make(map[string]config.Toggle, len(guards)),
 		Hints:          make(map[string]config.Toggle, len(hints)),
 		ClaudeDeny:     cfg.ClaudeDeny,

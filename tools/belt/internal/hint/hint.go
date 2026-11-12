@@ -112,7 +112,7 @@ func All(cfg config.Config) []Hint {
 		NewEmDash(cfg, EventExternalText),
 		NewEmDash(cfg, EventBash),
 		NewPreferCSL(cfg),
-		NewReadSize(),
+		NewReadSize(cfg),
 	}
 	for _, name := range slices.Sorted(maps.Keys(cfg.CustomHints)) {
 		hints = append(hints, NewCustom(name, cfg))

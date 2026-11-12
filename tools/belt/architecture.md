@@ -45,10 +45,12 @@ internal/cache/     per-session file names under ~/.cache/belt with the
 internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     guards (git-push-main, git-discard, git-identity, commit-guard,
                     script-deny-list, write-internal-names,
-                    publish-internal-names, rm-temp), and the Custom guard that execs
+                    publish-internal-names, rm-temp, large-read), and the Custom guard that execs
                     config-registered external commands; the Allow
                     interface, the Allows registry, the git-c-read allow,
                     and its strict shell reader
+internal/cslindex/  csl index lookup from the shard listing and the csl_ask
+                    call for one file, shared by large-read and read-size
 internal/hint/      the Hint interface and the hints (prefer-csl,
                     read-size, commit-policy, lint-policy, moondb-inflight,
                     agent-memory, humanizer-check, em-dash), the Custom
@@ -159,7 +161,8 @@ machine-profile concept (docs/adr/0010). The provisioning layer renders one
 belt config per machine class.
 
 The hints also read the world they advise about: the csl shard listing in
-`~/.config/csl/search-index/` (prefer-csl and read-size, no csl process launched) and the
+`~/.config/csl/search-index/` (prefer-csl and read-size, and the large-read
+guard too, no csl process launched) and the
 agent-memory index files in `~/.config/agent-memory[-work]/` (agent-memory).
 They read the session transcript file named in the payload
 (humanizer-check) and the git repo a commit ran in. From that repo they read
@@ -188,7 +191,7 @@ local events service (`http://127.0.0.1:7430/api/events`, overridable via
 
 ## Interfaces
 
-The hook entrypoints are `belt hook bash|write|external-text`, `belt hint
+The hook entrypoints are `belt hook bash|write|external-text|read`, `belt hint
 bash|read|external-text|session-start|subagent-start`,
 `belt record <lifecycle event>` and `belt watch`. The other CLI commands are
 `belt check bash "<command>"` and `belt check write --file <path> --content

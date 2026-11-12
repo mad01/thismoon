@@ -236,15 +236,16 @@ session's work tree or an allows.git-c-read.roots entry.
 The event argument is belt's guard event, not the Claude Code tool name:
 bash guards Bash commands, write guards Write and Edit, external-text guards
 the MCP tools that publish to a public code host (the matcher names them;
-only the github.com server belongs there). Wire all three in
-~/.claude/settings.json:
+only the github.com server belongs there), and read guards Read. Wire all
+four in ~/.claude/settings.json:
 
   {
     "hooks": {
       "PreToolUse": [
         {"matcher": "Bash", "hooks": [{"type": "command", "command": "belt hook bash"}]},
         {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "belt hook write"}]},
-        {"matcher": "^mcp__gh_com__.*", "hooks": [{"type": "command", "command": "belt hook external-text"}]}
+        {"matcher": "^mcp__gh_com__.*", "hooks": [{"type": "command", "command": "belt hook external-text"}]},
+        {"matcher": "Read", "hooks": [{"type": "command", "command": "belt hook read"}]}
       ]
     }
   }`,
@@ -257,7 +258,7 @@ only the github.com server belongs there). Wire all three in
 }
 
 func checkCmd(paths pathsFunc) *cobra.Command {
-	var cwd, file, content, tool, input string
+	var cwd, file, content, tool, input, transcript string
 	cmd := &cobra.Command{
 		Use:   "check <event> [command]",
 		Short: "Dry-run the guards against a command, write, or MCP call and print each verdict",
@@ -265,7 +266,11 @@ func checkCmd(paths pathsFunc) *cobra.Command {
 			"  belt check bash \"git push origin main\"\n" +
 			"  belt check write --file ~/code/src/github.com/mad01/thismoon/README.md --content \"some text\"\n" +
 			"  belt check external-text --tool mcp__gh_com__create_pull_request" +
-			" --input '{\"owner\":\"o\",\"repo\":\"r\",\"title\":\"t\",\"body\":\"text\"}'",
+			" --input '{\"owner\":\"o\",\"repo\":\"r\",\"title\":\"t\",\"body\":\"text\"}'\n" +
+			"  belt check read --file ~/code/src/github.com/mad01/thismoon/tools/belt/docs/hooks.md" +
+			" --transcript /dev/null\n\n" +
+			"A read is checked as a whole-file Read. Without --transcript the read guard\n" +
+			"cannot tell whether the session edited the file, so it allows.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// The guards treat an empty cwd as unknown and fail closed, so a
@@ -285,6 +290,7 @@ func checkCmd(paths pathsFunc) *cobra.Command {
 				Content:  content,
 				ToolName: tool,
 			}
+			in.TranscriptPath = transcript
 			if len(args) == 2 {
 				in.Command = args[1]
 			}
@@ -325,11 +331,13 @@ func checkCmd(paths pathsFunc) *cobra.Command {
 	}
 	cmd.Flags().
 		StringVar(&cwd, "cwd", "", "working directory for bare git push resolution (default: current dir)")
-	cmd.Flags().StringVar(&file, "file", "", "target file path (write event)")
+	cmd.Flags().StringVar(&file, "file", "", "target file path (write and read events)")
 	cmd.Flags().StringVar(&content, "content", "", "content to scan (write event)")
 	cmd.Flags().StringVar(&tool, "tool", "", "MCP tool name (external-text event)")
 	cmd.Flags().
 		StringVar(&input, "input", "", "tool call input as a JSON object (external-text event)")
+	cmd.Flags().StringVar(&transcript, "transcript", "",
+		"session transcript to look for earlier edits of the file in (read event)")
 	return cmd
 }
 

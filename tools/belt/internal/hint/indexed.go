@@ -1,101 +1,21 @@
 package hint
 
 import (
-	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
+
+	"github.com/mad01/thismoon/tools/belt/internal/cslindex"
 )
-
-// indexDir is where csl keeps one zoekt shard per indexed repo. Reading the
-// directory listing is how belt answers "is this repo indexed" without
-// spawning csl: a hook runs on every matching tool call and cannot afford a
-// process launch.
-func indexDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".config", "csl", "search-index")
-}
-
-// indexedRepos returns the set of org/repo names csl has a shard for. Shards
-// are named `<org>%2F<repo>_v<N>.<NNNNN>.zoekt`, so the repo name is the
-// URL-unescaped portion before the version suffix. A missing or unreadable
-// index directory yields an empty set, which makes every caller fall through
-// to "not indexed" and stay quiet.
-func indexedRepos() map[string]bool {
-	dir := indexDir()
-	if dir == "" {
-		return nil
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	repos := make(map[string]bool, len(entries))
-	for _, e := range entries {
-		name := e.Name()
-		if !strings.HasSuffix(name, ".zoekt") {
-			continue
-		}
-		// Trim the `_v16.00000.zoekt` tail: the repo name never contains an
-		// underscore-v-digit sequence, so the last such separator wins.
-		idx := strings.LastIndex(name, "_v")
-		if idx <= 0 {
-			continue
-		}
-		escaped := name[:idx]
-		repo, err := url.QueryUnescape(escaped)
-		if err != nil {
-			continue
-		}
-		repos[strings.ToLower(repo)] = true
-	}
-	return repos
-}
 
 // repoForPath names the git working tree p sits in as `<parent-dir>/<repo-dir>`,
 // matching how csl names its shards. It returns "" when p is not inside a
 // repo, which is the correct answer for paths like ~/.claude or /tmp where a
 // filesystem grep is the right tool.
 func repoForPath(p string) string {
-	root := repoRoot(p)
+	root := cslindex.RepoRoot(p)
 	if root == "" {
 		return ""
 	}
-	return repoName(root)
-}
-
-// repoRoot walks up from p to the nearest directory holding a .git entry
-// and returns it, "" when p is not inside a git working tree.
-func repoRoot(p string) string {
-	if p == "" {
-		return ""
-	}
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		return ""
-	}
-	// A file path needs its directory; a directory is already the start.
-	if st, err := os.Stat(abs); err == nil && !st.IsDir() {
-		abs = filepath.Dir(abs)
-	}
-	for dir := abs; ; {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
-	}
-}
-
-// repoName names a working tree root the way csl names its shard.
-func repoName(root string) string {
-	return filepath.Base(filepath.Dir(root)) + "/" + filepath.Base(root)
+	return cslindex.RepoName(root)
 }
 
 // isIndexed reports whether the repo containing p has a csl shard.

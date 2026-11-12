@@ -137,30 +137,6 @@ func TestQuery(t *testing.T) {
 	}
 }
 
-func TestZoektTerm(t *testing.T) {
-	tests := []struct {
-		re   string
-		want string
-	}{
-		{`foo`, `foo`},
-		{`foo\(`, `foo\(`},
-		// A space would make two AND terms; quoted, it is one phrase.
-		{`func Foo`, `"func Foo"`},
-		// zoekt unescapes one level of backslashes inside quotes.
-		{`func Foo\(`, `"func Foo\\("`},
-		// A leading - would negate the term.
-		{`-x`, `"-x"`},
-		{`say "hi"`, `"say \"hi\""`},
-	}
-	for _, tc := range tests {
-		t.Run(tc.re, func(t *testing.T) {
-			if got := zoektTerm(tc.re); got != tc.want {
-				t.Errorf("zoektTerm(%q) = %q, want %q", tc.re, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestParseSweepDialects(t *testing.T) {
 	tests := []struct {
 		seg  string
@@ -269,7 +245,7 @@ func TestDropRedirects(t *testing.T) {
 }
 
 func TestCheckStaysQuietWithoutIndex(t *testing.T) {
-	// indexedRepos reads the real csl index dir. Whatever it holds, a command
+	// cslindex.Repos reads the real csl index dir. Whatever it holds, a command
 	// with no search in it must never produce advice.
 	h := NewPreferCSL(testConfig())
 	if got := h.Check(Input{Event: EventBash, Command: "go test ./...", Cwd: "/repo"}); got != nil {
