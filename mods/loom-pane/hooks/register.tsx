@@ -20,6 +20,7 @@ import {
   membersFrom,
   mergeTreeArgs,
   ownerClaimFrom,
+  ownerDenyReason,
   parseCount,
   parseDefaultRef,
   parseLedger,
@@ -31,6 +32,7 @@ import {
   shouldAskWorktreeRemoval,
   statusText,
   trailingDelay,
+  withCreated,
   worktreeAt,
   worktreeOfBranch,
 } from '../lib/loom'
@@ -49,6 +51,10 @@ const members = atom({ plugin: 'loom-pane', key: 'members' } as const, [] as Loo
 // and a state from before the key existed reads null too, so either way the
 // next main-loop turn detects again.
 const detectedSession = atom({ plugin: 'loom-pane', key: 'sessionId' } as const, null as string | null)
+// The worktrees this session created with `git worktree add`, in the main
+// loop or a subagent: the owner guard lets the main loop push from them.
+// Emptied when the session changes, so another session never inherits it.
+const createdWorktrees = atom({ plugin: 'loom-pane', key: 'createdWorktrees' } as const, [] as string[])
 
 type Logger = { ui: { log: (text: string, options: { to: 'debug' }) => void } }
 type Failed<E, R> = ((e: E) => R) & { event: string; error: { kind: string; message?: string } }
@@ -256,9 +262,11 @@ async function detect($: EngineInterface, cwd: string): Promise<void> {
 }
 
 // Detects the role for session `id` in `cwd` and records the id, dropping
-// stored members first when the listing is off.
+// stored members first when the listing is off, and the created worktrees
+// when the id is not the one detected last.
 async function redetect($: EngineInterface, cwd: string, id: string | null, isListing: boolean): Promise<void> {
   if (!isListing) await update($, members, () => [])
+  if (id !== (await read($, detectedSession))) await update($, createdWorktrees, () => [])
   await detect($, cwd)
   await update($, detectedSession, () => id)
   if (isListing) await refreshMembers($)
@@ -275,6 +283,15 @@ async function claimOwner($: EngineInterface, claims: readonly string[]): Promis
   await refreshWorktrees($)
   await showStatus($)
   $.ui.log(`loom-pane: owner of ${claimed}`, { to: 'debug' })
+}
+
+// Adds the worktrees a command created to the session's record. `before` is
+// the layout as it stood before the command ran, so a worktree git already
+// listed then is never taken for a new one.
+async function recordCreated($: EngineInterface, paths: readonly string[], before: Layout): Promise<void> {
+  if (paths.length === 0) return
+  const record = await update($, createdWorktrees, known => withCreated(known, paths, before))
+  $.ui.log(`loom-pane: created by this session: ${record.join(', ')}`, { to: 'debug' })
 }
 
 async function markWeave($: EngineInterface, cwd: string): Promise<void> {
@@ -417,25 +434,30 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(skipOnFailure)
 
+  // The owner guard judges the main loop's calls only. A subagent's call
+  // passes untouched, except that a `git worktree add` it ran, like one the
+  // main loop ran, goes into the session's record of created worktrees: the
+  // main loop may push from those.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    if (e.agentId !== undefined) return next(e)
+    const isMainLoop = e.agentId === undefined
     const home = await $.env.get('HOME')
+    // In a subagent's call this is the subagent's own directory.
     const analysis = analyzeBash(e.command, { cwd: await $.session.cwd(), home: home ?? null })
-    if (analysis.isUncertain) return next(e)
-    if (isGuarding && (await read($, role)) === 'owner') {
-      const layout = await layoutOf($)
-      for (const path of analysis.writes) {
-        const cls = classifyPath(path, layout)
-        if (cls === 'canonical' || cls === 'other') return { deny: denyReason(path, cls) }
-      }
+    if (analysis.isUncertain || (!isMainLoop && analysis.creates.length === 0)) return next(e)
+    const layout = await layoutOf($)
+    if (isMainLoop && isGuarding && (await read($, role)) === 'owner') {
+      const reason = ownerDenyReason(analysis, layout, await read($, createdWorktrees))
+      if (reason !== null) return { deny: reason }
     }
-    // A claim counts once the command ran: a call this guard, belt or the
-    // person denied leaves the role where it was. A failure from here on is
-    // logged, never handed to .catch, which would run the command again.
+    // A claim or a created worktree counts once the command ran: a call this
+    // guard, belt or the person denied leaves both where they were. A failure
+    // from here on is logged, never handed to .catch, which would run the
+    // command again.
     const ran = await next(e)
     if (ran.deny !== undefined || ran.isError === true) return ran
     try {
-      await claimOwner($, analysis.claims)
+      await recordCreated($, analysis.creates, layout)
+      if (isMainLoop) await claimOwner($, analysis.claims)
     } catch (err) {
       $.ui.log(`loom-pane: claim not recorded (${errorText(err)})`, { to: 'debug' })
     }

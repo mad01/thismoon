@@ -9,6 +9,7 @@ import {
   analyzeBash,
   canonicalFrom,
   classifyPath,
+  classifyPush,
   denyReason,
   detectLayout,
   isIntegratedTree,
@@ -16,6 +17,7 @@ import {
   loomArgsOf,
   mergeTreeArgs,
   ownerClaimFrom,
+  ownerDenyReason,
   parseCount,
   parseDefaultRef,
   parseWorktreeList,
@@ -25,6 +27,7 @@ import {
   shouldAskWorktreeRemoval,
   statusText,
   tokenizeShell,
+  withCreated,
   worktreeAt,
   worktreeClaimedBy,
   worktreeOfBranch,
@@ -191,6 +194,45 @@ describe('classifyPath', () => {
   })
 })
 
+describe('worktrees the session created', () => {
+  const BUILDER = `${ROOT}/feat-builder`
+
+  test('a push from a created worktree is the session own; any other worktree stays another', () => {
+    assert.equal(classifyPush(BUILDER, layout, [BUILDER]), 'own')
+    assert.equal(classifyPush(`${BUILDER}/mods`, layout, [BUILDER]), 'own')
+    assert.equal(classifyPush(BUILDER, layout, []), 'other')
+    assert.equal(classifyPush(OTHER, layout, [BUILDER]), 'other')
+    assert.equal(classifyPush(CANONICAL, layout, [BUILDER]), 'canonical')
+  })
+
+  test('a created worktree git lists counts as created, at the same length', () => {
+    const listed = { ...layout, worktrees: [...layout.worktrees, BUILDER] }
+    assert.equal(classifyPush(BUILDER, listed, [BUILDER]), 'own')
+  })
+
+  test('a created path never takes the canonical checkout, the root or a worktree below it', () => {
+    assert.equal(classifyPush(CANONICAL, layout, [CANONICAL]), 'canonical')
+    assert.equal(classifyPush(`${ROOT}/unlisted`, layout, [ROOT]), 'other')
+    assert.equal(classifyPush(NESTED, layout, [`${CANONICAL}/.claude`]), 'other')
+  })
+
+  test('the record keeps each path of this repo once, and never one git listed before', () => {
+    const nested = `${CANONICAL}/.claude/worktrees/feat-x`
+    assert.deepEqual(withCreated([], [BUILDER, `${BUILDER}/`, '/tmp/elsewhere', OTHER, nested], layout), [BUILDER, nested])
+    assert.deepEqual(withCreated([BUILDER], [BUILDER], layout), [BUILDER])
+  })
+
+  test('the owner guard refuses a write there and lets only the push through', () => {
+    const push = analyzeBash(`git -C ${BUILDER} status && git -C ${BUILDER} log origin/main..feat/builder && git -C ${BUILDER} push -u origin feat/builder`, { cwd: OWN, home: HOME })
+    assert.equal(ownerDenyReason(push, layout, [BUILDER]), null)
+    assert.match(ownerDenyReason(push, layout, []) ?? '', /feat-builder belongs to another worktree/)
+    const commit = analyzeBash(`git -C ${BUILDER} commit -m x && git -C ${BUILDER} push`, { cwd: OWN, home: HOME })
+    assert.match(ownerDenyReason(commit, layout, [BUILDER]) ?? '', /feat-builder belongs to another worktree/)
+    const other = analyzeBash(`git -C ${OTHER} push`, { cwd: OWN, home: HOME })
+    assert.match(ownerDenyReason(other, layout, [BUILDER]) ?? '', /fix-band belongs to another worktree/)
+  })
+})
+
 describe('resolvePath', () => {
   test('resolves absolute, relative, .. and ~ paths', () => {
     assert.equal(resolvePath('/a/b/../c', '/cwd', HOME), '/a/c')
@@ -253,8 +295,22 @@ describe('analyzeBash', () => {
   })
 
   test('a quoted path with a space resolves whole', () => {
-    const found = analyzeBash(`git -C "${ROOT}/with space" push`, env)
+    const found = analyzeBash(`git -C "${ROOT}/with space" commit -m x`, env)
     assert.deepEqual(found.writes, [`${ROOT}/with space`])
+  })
+
+  test('a push is kept apart from the writes', () => {
+    const found = analyzeBash(`git -C ${OTHER} commit -m x && git -C ${OTHER} push -u origin feat/x && git stash push`, env)
+    assert.deepEqual(found.writes, [OTHER, OWN])
+    assert.deepEqual(found.pushes, [OTHER])
+    assert.deepEqual(analyzeBash(`cd ${OTHER} && git push`, env).pushes, [OTHER])
+  })
+
+  test('git worktree add creates its path; cd claims without creating', () => {
+    const found = analyzeBash(`git -C ${CANONICAL} worktree add ~/.worktrees/thismoon/feat-new -b feat/new`, env)
+    assert.deepEqual(found.creates, [`${ROOT}/feat-new`])
+    assert.deepEqual(found.claims, [`${ROOT}/feat-new`])
+    assert.deepEqual(analyzeBash(`cd ${OTHER} && git status`, env).creates, [])
   })
 
   test('a path outside the repo is reported and classifies outside', () => {
@@ -291,7 +347,7 @@ describe('analyzeBash', () => {
 
   test('accepts command git, time git and a git by path', () => {
     assert.deepEqual(analyzeBash(`command git -C ${CANONICAL} commit -m x`, env).writes, [CANONICAL])
-    assert.deepEqual(analyzeBash(`time git -C ${CANONICAL} push`, env).writes, [CANONICAL])
+    assert.deepEqual(analyzeBash(`time git -C ${CANONICAL} push`, env).pushes, [CANONICAL])
     assert.deepEqual(analyzeBash(`/usr/bin/git -C ${CANONICAL} add .`, env).writes, [CANONICAL])
   })
 
