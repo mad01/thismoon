@@ -197,6 +197,14 @@ prints nothing stays silent and leaves a warn event naming the cause. The
 doctor custom hints section says whether its command resolves to something
 executable at all.
 
+A memory store missing from a Claude Code session's start context is
+usually the `--agent claude-code` skip: Claude Code's autoMemoryDirectory
+names that store's directory, so Claude Code loads the MEMORY.md itself.
+The doctor agent memory section prints one line per store the flag leaves
+out. An older belt fails on the flag, and then no session-start hint
+reaches the session: install the new belt before a settings entry passes
+`--agent`.
+
 The ledger and the watcher both need the events service. When it is down,
 ledger entries are dropped without a trace and the watcher wakes nobody;
 the doctor events line says which. Ledger entries live under the

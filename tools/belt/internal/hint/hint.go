@@ -70,6 +70,11 @@ type Input struct {
 	// otherwise they reach custom hints.
 	AgentID   string
 	AgentType string
+	// Agent is the --agent value the entrypoint was given: the agent the
+	// hook runs for, as its settings entry names it (AgentClaudeCode). It
+	// is empty without the flag, and it is not the subagent (AgentID,
+	// AgentType). agent-memory reads it.
+	Agent string
 }
 
 // Advice is one hint's output: which hint spoke and what it said.

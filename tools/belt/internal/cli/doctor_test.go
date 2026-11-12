@@ -62,7 +62,7 @@ func stubProbes(eventsErr error) doctorProbes {
 	return doctorProbes{
 		moondb: stubMoondbProbe(nil),
 		events: func() (string, error) { return "http://127.0.0.1:7430", eventsErr },
-		memory: func() []hint.MemoryUsage { return nil },
+		memory: func(config.Config) []hint.MemoryUsage { return nil },
 	}
 }
 

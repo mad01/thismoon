@@ -89,7 +89,7 @@ complete hooks block looks like this:
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "~/code/bin/belt hint session-start" },
+          { "type": "command", "command": "~/code/bin/belt hint session-start --agent claude-code" },
           { "type": "command", "command": "~/code/bin/belt watch", "asyncRewake": true, "timeout": 590 }
         ]
       }
@@ -158,7 +158,7 @@ The event-to-subcommand mapping is fixed:
 | `belt hint bash` | PostToolUse | `Bash` |
 | `belt hint read` | PostToolUse | `Read\|mcp__csl__csl_read` |
 | `belt hint external-text` | PostToolUse | your publishing MCP tools (see below) |
-| `belt hint session-start` | SessionStart | none (fires on every session) |
+| `belt hint session-start` (`--agent claude-code` in Claude Code) | SessionStart | none (fires on every session) |
 | `belt hint subagent-start` | SubagentStart | none, or an agent type to brief only some subagents |
 | `belt record subagent-start` | SubagentStart | none |
 | `belt record subagent-stop` | SubagentStop | none |
@@ -235,8 +235,9 @@ The wiring rules that are easy to get wrong:
   github.com tools only.
 
 `belt doctor` verifies the binary and the config. Of the wiring, it checks
-only the matcher of the `belt hint read` entry; it doesn't check whether
-the rest of `~/.claude/settings.json` points at belt. A correctly
+the matcher of the `belt hint read` entry, and whether the SessionStart
+entry passes `--agent claude-code` when a memory store needs it. It doesn't
+check whether the rest of `~/.claude/settings.json` points at belt. A correctly
 configured belt that is simply not wired up looks identical to a healthy one.
 Run one `git push origin main` dry-run through `belt check bash` and one real
 session if you want proof the wiring is live.
@@ -257,7 +258,8 @@ event and reads its stdout can run it. What to expect per harness:
   agent-memory and moondb-inflight injections stay Claude-only. Custom hints
   ride the same `belt hint session-start` entrypoint, so a Codex setup that
   adds the SessionStart entry to its hooks file gets them with no further
-  wiring.
+  wiring. Leave `--agent claude-code` off that entry: Codex has no auto
+  memory, so it must get every agent-memory store.
   The reference setup wires no `belt record` entry either, so a Codex
   session leaves nothing in the ledger. `belt record` has no Claude-specific
   code: it decodes the fields it knows, and a payload it can't decode still
@@ -993,6 +995,22 @@ Injects the shared agent-memory index when a session opens.
   names that store. `belt doctor` shows each store against its share, warns
   at 80% of the budget, and lists a cut store by name in its warnings
   section.
+- **Leaves out a store Claude Code loads itself**, but only when the entry
+  runs `belt hint session-start --agent claude-code`. Claude Code's
+  `autoMemoryDirectory` setting makes it load that directory's `MEMORY.md`
+  on its own. When the setting names a store's directory, the hint skips
+  that store, so its index does not load twice. `settings.local.json` wins
+  over `settings.json`. A leading `~` is expanded and symlinks are resolved
+  on both sides, so a store linked into a synced folder still matches. The
+  store left out counts as absent, and the other store gets the whole
+  budget. A missing setting, broken JSON, or a path that does not resolve
+  keeps the store. Without the flag, or with any other value, both stores
+  are injected, which is what Codex and pi need. `belt doctor` prints one
+  line for a store the flag would leave out. The line also says when a
+  SessionStart entry in the Claude settings runs the hint without the flag.
+  Install a belt that knows the flag before a settings entry passes it: an
+  older belt fails on the unknown flag and the session starts with no
+  session-start hints.
 - **Posts no event** per fire: it injects the same text every session.
 - **No per-session dedupe** on purpose: the index is the thing to see every
   session.

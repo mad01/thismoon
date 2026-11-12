@@ -132,6 +132,12 @@ type Config struct {
 	Ledger         Ledger                 // what `belt record` posts, and where
 	Watch          Watch                  // whether and how `belt watch` polls for items
 	Allows         map[string]Allow       // per-allow switch and roots; every allow is off until enabled
+	// ClaudeSettingsFiles lists the Claude settings files a hint may read
+	// on demand, later files winning; nil when the read is disabled. The
+	// agent-memory hint reads autoMemoryDirectory from them, only for a
+	// session started with --agent claude-code, so no other hook pays for
+	// the read.
+	ClaudeSettingsFiles []string
 }
 
 // GitIdentity is one git-identity rule: the git user.email expected for
@@ -399,7 +405,8 @@ func ReadIncludes(paths []string) ([]Include, error) {
 // read the permissions.deny Bash entries, which the script-deny-list guard
 // enforces inside scripts so the guard and the permission system share one
 // deny list. belt doctor also reads the PostToolUse hook entries, to check
-// the matcher of the one that runs belt hint read.
+// the matcher of the one that runs belt hint read. The agent-memory hint
+// reads autoMemoryDirectory, to leave out a store Claude Code loads itself.
 type ClaudeSettings struct {
 	Enabled *bool `toml:"enabled" yaml:"enabled"`
 }
@@ -713,6 +720,7 @@ func LoadFrom(p Paths) (Config, error) {
 	}
 	if cfg.ClaudeSettings.ReadEnabled() {
 		cfg.ClaudeDeny = LoadClaudeDenyPatterns(p.ClaudeSettings...)
+		cfg.ClaudeSettingsFiles = p.ClaudeSettings
 	}
 	if src.Broken() {
 		return cfg, src.Err
@@ -811,6 +819,35 @@ func LoadClaudeHooks(event string, paths ...string) []ClaudeHook {
 		}
 	}
 	return hooks
+}
+
+// LoadClaudeAutoMemoryDirectory reads Claude Code's autoMemoryDirectory
+// setting from the given settings files and names the file it came from. A
+// later file wins, as settings.local.json wins over settings.json, and a key
+// set to "" counts as set. A missing file contributes nothing. A file that
+// cannot be read or does not parse, or a value that is not a string, is an
+// error: belt then cannot tell what Claude Code resolved. The agent-memory
+// hint and belt doctor are the only readers.
+func LoadClaudeAutoMemoryDirectory(paths ...string) (dir, file string, err error) {
+	for _, path := range paths {
+		raw, readErr := os.ReadFile(path)
+		if errors.Is(readErr, fs.ErrNotExist) {
+			continue
+		}
+		if readErr != nil {
+			return "", "", readErr
+		}
+		var settings struct {
+			AutoMemoryDirectory *string `json:"autoMemoryDirectory"`
+		}
+		if err := json.Unmarshal(raw, &settings); err != nil {
+			return "", "", fmt.Errorf("%s: %w", path, err)
+		}
+		if settings.AutoMemoryDirectory != nil {
+			dir, file = *settings.AutoMemoryDirectory, path
+		}
+	}
+	return dir, file, nil
 }
 
 // File is the parsed shape of the belt config file in either format. An

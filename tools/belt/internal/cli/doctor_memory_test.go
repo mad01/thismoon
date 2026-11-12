@@ -9,7 +9,7 @@ import (
 )
 
 func usageProbe(u ...hint.MemoryUsage) memoryProbe {
-	return func() []hint.MemoryUsage { return u }
+	return func(config.Config) []hint.MemoryUsage { return u }
 }
 
 func TestDoctorReportsAgentMemoryBudget(t *testing.T) {
@@ -109,5 +109,78 @@ func TestDoctorNamesTheStoreOverItsShare(t *testing.T) {
 	}
 	if !strings.Contains(b.String(), "8 facts, 1500 bytes of a 2250-byte share") {
 		t.Errorf("section %q does not show the work store against its share", b.String())
+	}
+}
+
+// TestDoctorNamesAStoreClaudeCodeLoadsItself: a store autoMemoryDirectory
+// points at gets one line saying a Claude Code session with the flag skips
+// it, and why. When the SessionStart entry runs belt hint session-start
+// without the flag, the line says the store still loads twice.
+func TestDoctorNamesAStoreClaudeCodeLoadsItself(t *testing.T) {
+	work := hint.MemoryUsage{
+		Label: "work agent memory", Path: "/w/MEMORY.md", Present: true,
+		Facts: 8, Kept: 8, Bytes: 1500, Share: 2250,
+		AutoMemorySettings: "/h/.claude/settings.json",
+	}
+	off := false
+	tests := []struct {
+		name      string
+		command   string // the SessionStart hook command; "" writes no entry
+		disabled  bool
+		wantLine  bool
+		wantTwice bool
+	}{
+		{"no SessionStart entry", "", false, true, false},
+		{
+			"entry with the flag",
+			"~/code/bin/belt hint session-start --agent claude-code",
+			false,
+			true,
+			false,
+		},
+		{
+			"entry with the flag as one word",
+			"belt hint session-start --agent=claude-code",
+			false,
+			true,
+			false,
+		},
+		{"entry without the flag", "~/code/bin/belt hint session-start", false, true, true},
+		{"entry for another agent", "belt hint session-start --agent codex", false, true, true},
+		{"another belt command only", "belt watch", false, true, false},
+		{"hint disabled", "belt hint session-start", true, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			settings := `{}`
+			if tt.command != "" {
+				settings = `{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "` +
+					tt.command + `"}]}]}}`
+			}
+			cfg := config.Config{
+				ClaudeSettingsFiles: []string{writeFile(t, t.TempDir(), "settings.json", settings)},
+			}
+			if tt.disabled {
+				cfg.Hints = map[string]config.Toggle{"agent-memory": {Enabled: &off}}
+			}
+			var b strings.Builder
+			if warns := printAgentMemory(&b, cfg, usageProbe(work)); len(warns) != 0 {
+				t.Errorf("warnings = %q, want none: a skipped store is no fault", warns)
+			}
+			line := "work agent memory: a Claude Code session started with --agent claude-code skips it, " +
+				"because autoMemoryDirectory in /h/.claude/settings.json points at /w"
+			if got := strings.Contains(b.String(), line); got != tt.wantLine {
+				t.Errorf("section %q has the skip line: %v, want %v", b.String(), got, tt.wantLine)
+			}
+			twice := "runs belt hint session-start without --agent claude-code, so sessions here still load it twice"
+			if got := strings.Contains(b.String(), twice); got != tt.wantTwice {
+				t.Errorf(
+					"section %q says it loads twice: %v, want %v",
+					b.String(),
+					got,
+					tt.wantTwice,
+				)
+			}
+		})
 	}
 }

@@ -61,7 +61,7 @@ func TestRunHintSessionStartListsInflightFiles(t *testing.T) {
 	payload := `{"session_id":"s1","transcript_path":"/nowhere.jsonl","cwd":` + string(cwd) +
 		`,"hook_event_name":"SessionStart","source":"startup"}`
 	var out bytes.Buffer
-	RunHint("session-start", defaults, strings.NewReader(payload), &out)
+	RunHint("session-start", "", defaults, strings.NewReader(payload), &out)
 
 	var a adviceDecision
 	if err := json.Unmarshal(out.Bytes(), &a); err != nil {
