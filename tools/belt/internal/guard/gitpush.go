@@ -44,7 +44,10 @@ func (g *GitPushMain) Event() string { return EventBash }
 // directory it runs in (gitCommandsAt tracks `cd`/`pushd` and resolves `git
 // -C`), not the session cwd. Without that, `cd <other-repo> && git push
 // origin main` from an exempt repo's cwd would be checked against the exempt
-// repo and wrongly allowed. A cd or git -C whose target cannot be resolved
+// repo and wrongly allowed. A variable the command sets to a literal path
+// resolves to that path first (`S=~/repo; git -C $S push`), but only when
+// nothing in the command could leave it empty or change it
+// (resolveLiteralVars). A cd or git -C whose target still cannot be resolved
 // without a shell leaves the directory unknown, and checkPush then fails
 // closed instead of guessing.
 func (g *GitPushMain) Check(in Input) *Denial {
@@ -59,11 +62,23 @@ func (g *GitPushMain) Check(in Input) *Denial {
 // checkPush judges one push against the directory it runs in. An empty
 // push.dir means that directory could not be determined, and the push is
 // handed to unknownDirDenial rather than resolved against a guessed location.
+// So is a push that needs the current branch where git cannot read one: the
+// shell may not be in that directory at all, after a cd that failed before a
+// `;` or one that found its target through CDPATH, and a push from a
+// directory with no repository fails anyway.
 func (g *GitPushMain) checkPush(push gitPush) *Denial {
 	if push.dir == "" {
 		return unknownDirDenial(push)
 	}
-	branch := push.targetBranch(func() string { return g.resolveBranch(push.dir) })
+	noBranch := false
+	branch := push.targetBranch(func() string {
+		b := g.resolveBranch(push.dir)
+		noBranch = b == ""
+		return b
+	})
+	if noBranch {
+		return unknownDirDenial(push)
+	}
 	if !defaultBranches[branch] || g.pushExempt(push.dir) {
 		return nil
 	}
@@ -77,10 +92,13 @@ func (g *GitPushMain) checkPush(push gitPush) *Denial {
 
 // unknownDirDenial decides a push whose directory could not be determined: a
 // cd, pushd, popd, or git -C before it with a target only a shell can
-// resolve, or a --git-dir/--work-tree pointing git elsewhere. Neither the
-// current branch nor the repo can be resolved without running git somewhere
-// it does not belong, so the push is denied unless its refspecs name a
-// non-default branch outright, which is safe wherever it runs.
+// resolve (cd -, a stack entry, a CDPATH search, a substitution, a variable
+// resolveLiteralVars cannot vouch for), a cd the shell may not have run, a
+// --git-dir/--work-tree or GIT_DIR and its siblings pointing git elsewhere,
+// or a directory where git reads no branch (checkPush). Neither the current
+// branch nor the repo can be resolved without running git somewhere it does
+// not belong, so the push is denied unless its refspecs name a non-default
+// branch outright, which is safe wherever it runs.
 func unknownDirDenial(push gitPush) *Denial {
 	needsBranch := false
 	branch := push.targetBranch(func() string {
@@ -93,9 +111,11 @@ func unknownDirDenial(push gitPush) *Denial {
 	return Reasonf(
 		GitPushMainID,
 		"cannot tell which repo this push runs in: its directory comes from a cd, pushd, popd, or "+
-			"git -C only a shell can resolve (a variable, cd -, a substitution), or from --git-dir "+
-			"or --work-tree. Use an absolute path, ~, or $HOME in a cd or git -C so the target repo "+
-			"can be checked.",
+			"git -C only a shell can resolve (cd -, cd +1, a CDPATH search, a substitution, or a "+
+			"variable belt cannot pin to one literal path), from a cd that may not have run, from "+
+			"--git-dir, --work-tree, or GIT_DIR, or git reads no branch there. Use an absolute "+
+			"path, ~, or $HOME in a plain cd or git -C, or a variable set to one of those at the "+
+			"start of a plain command (S=~/repo; git -C $S push), so the target repo can be checked.",
 	)
 }
 
