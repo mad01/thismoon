@@ -373,6 +373,129 @@ func TestGitPushMainCdTracking(t *testing.T) {
 	}
 }
 
+// TestGitPushMainLiteralVar pins MAD-554: a push whose directory comes from a
+// variable the command sets to a literal path, with nothing that could change
+// it, is judged in that path like any other push, while a variable only a
+// shell can evaluate still fails closed without the resolvers ever being
+// asked about it.
+func TestGitPushMainLiteralVar(t *testing.T) {
+	t.Setenv("HOME", "/Users/tester")
+	const x = "/Users/tester/x"
+	tests := []struct {
+		name       string
+		command    string
+		branch     string // current branch the resolver reports
+		wantDeny   bool
+		wantReason string // substring the denial must carry, if any
+		wantDir    string // directory the branch resolver is asked about
+	}{
+		{"literal -C on a feature branch", "S=~/x; git -C $S push", "feature", false, "", x},
+		{"literal -C on main", "S=~/x; git -C $S push", "main", true, "is blocked", x},
+		{"literal cd on a feature branch", "S=~/x; cd $S && git push", "feature", false, "", x},
+		{"literal cd on main", "S=~/x; cd $S && git push", "main", true, "is blocked", x},
+		{"literal refspec", "B=main; git push origin $B", "feature", true, "is blocked", ""},
+		{
+			"substitution is unknown",
+			"S=$(pwd); git -C $S push",
+			"feature",
+			true,
+			unknownDirHint,
+			"",
+		},
+		{
+			"reassigned is unknown",
+			"S=~/x; S=~/y; git -C $S push",
+			"feature",
+			true,
+			unknownDirHint,
+			"",
+		},
+		{
+			"variable from variable is unknown",
+			"T=~/x; S=$T; git -C $S push",
+			"feature",
+			true,
+			unknownDirHint,
+			"",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGitPushMain(config.Config{})
+			var gotDir string
+			g.resolveBranch = func(dir string) string {
+				if dir == "" {
+					t.Error("resolveBranch asked about an empty directory")
+				}
+				gotDir = dir
+				return tt.branch
+			}
+			g.resolveRepo = func(string) string { return "" }
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/session"})
+			if (d != nil) != tt.wantDeny {
+				t.Fatalf("Check(%q) denial = %v, wantDeny %v", tt.command, d, tt.wantDeny)
+			}
+			if d != nil && !strings.Contains(d.Reason, tt.wantReason) {
+				t.Errorf("reason %q does not contain %q", d.Reason, tt.wantReason)
+			}
+			if gotDir != tt.wantDir {
+				t.Errorf("resolver dir = %q, want %q", gotDir, tt.wantDir)
+			}
+		})
+	}
+}
+
+// TestGitPushMainUnvouchedVarFailsClosed pins the guard side of the MAD-554
+// review. The session cwd is on main and every other directory on a feature
+// branch, so a push the shell sends from the cwd (its variable left empty)
+// must not be judged in the path the variable seemed to name. Each push in
+// unvouchedVarCommands is denied as one from an unknown directory.
+func TestGitPushMainUnvouchedVarFailsClosed(t *testing.T) {
+	t.Setenv("HOME", "/Users/tester")
+	g := NewGitPushMain(config.Config{})
+	g.resolveBranch = func(dir string) string {
+		if dir == "/session" {
+			return "main"
+		}
+		return "feature"
+	}
+	g.resolveRepo = func(string) string { return "" }
+	for _, tt := range unvouchedVarCommands {
+		t.Run(tt.name, func(t *testing.T) {
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/session"})
+			if d == nil || !strings.Contains(d.Reason, unknownDirHint) {
+				t.Errorf("Check(%q) = %v, want the unknown-directory denial", tt.command, d)
+			}
+		})
+	}
+}
+
+// TestGitPushMainShellDirGaps pins the guard side of MAD-569. The decoy, the
+// directory the walk once placed each push in, is on a feature branch and
+// every other directory on main, so a push judged in the decoy is the only
+// way through.
+func TestGitPushMainShellDirGaps(t *testing.T) {
+	t.Setenv("HOME", "/Users/tester")
+	for _, tt := range shellDirGaps {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGitPushMain(config.Config{})
+			g.resolveBranch = func(dir string) string {
+				if dir == "" {
+					t.Error("resolveBranch asked about an empty directory")
+				}
+				if dir == tt.decoy {
+					return "feature"
+				}
+				return "main"
+			}
+			g.resolveRepo = func(string) string { return "" }
+			if d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/session"}); d == nil {
+				t.Errorf("Check(%q) allowed the push", tt.command)
+			}
+		})
+	}
+}
+
 // initRepo creates a git repository at dir on branch main, with one commit and
 // the given origin URL, and returns dir.
 func initRepo(t *testing.T, dir, origin string) string {
@@ -503,6 +626,39 @@ func TestGitPushMainRealResolver(t *testing.T) {
 			"popd then git -C dot fails closed",
 			"pushd " + other + " && popd && git -C . push origin main",
 			exempt,
+			true,
+			unknownDirHint,
+		},
+		{
+			"literal variable git -C home is exempt",
+			"S=~; git -C $S push origin main",
+			other,
+			false,
+			"",
+		},
+		{"literal variable cd into non-exempt", "S=~/other; cd $S && git push", exempt, true, ""},
+		{
+			"substitution variable git -C fails closed",
+			"S=$(pwd); git -C $S push origin main",
+			exempt,
+			true,
+			unknownDirHint,
+		},
+		// MAD-569: a cd to a directory that does not exist fails and leaves the
+		// shell where it was, or finds the target through cdpath. git reads no
+		// branch in the path the text names, so the push is unknown.
+		{"failed cd then ; bare push", "cd ~/missing; git push", other, true, unknownDirHint},
+		{
+			"relative cd missing under the cwd",
+			"cd other && git push",
+			filepath.Join(other, "sub"),
+			true,
+			unknownDirHint,
+		},
+		{
+			"failed cd then ; push HEAD",
+			"cd ~/missing; git push origin HEAD",
+			other,
 			true,
 			unknownDirHint,
 		},

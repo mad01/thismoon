@@ -309,16 +309,31 @@ Blocks `git push` to `main` or `master` before it happens.
   same way. Absolute and relative targets resolve as written. A leading
   `~`, `$HOME`, or `${HOME}` expands to the home directory in either, so
   `git -C ~/repo` names the same repo as the absolute path, and a bare `cd`
-  goes home. A target only a shell can resolve (another variable, `cd -`, a
-  command substitution, a glob) leaves the directory unknown. So do `popd`
+  goes home. A variable the command sets to a plain literal path is
+  substituted first, so `S=~/repo; git -C $S push` is judged in `~/repo`
+  (`${S}`, `"$S"`, and `cd $S` too). belt does that only when nothing could
+  leave the variable empty or change it before the use; otherwise every
+  variable stays as written. So the name gets one assignment, at the start
+  or after a `;` or newline, with no quote before it. And the command holds
+  no heredoc, subshell, brace group, comment, backslash, glob, keyword,
+  other variable, zsh modifier like `$S:h`, or builtin such as `eval`,
+  `read`, or `source`. A target only a shell can resolve (any other
+  variable, `cd -`, a command substitution, a glob) leaves the directory
+  unknown. So do `popd`
   and a bare `pushd`, since belt keeps no directory stack, `cd -P`, whose
   physical mode resolves symlinks before `..`, and
-  `--git-dir`/`--work-tree`, which point git at a tree only git can name. A
+  `--git-dir`/`--work-tree`, which point git at a tree only git can name.
+  A cd the shell may not run as written is unknown too: `cd +1`, `chdir`,
+  any word before cd but `builtin`, a cd after `||` or in a pipeline, or a
+  relative target while CDPATH is set. So is git with `GIT_DIR`,
+  `GIT_WORK_TREE`, `GIT_COMMON_DIR` or `env -C`, and a push where git reads
+  no branch, as after a failed cd and `;`. A
   `-C` path reaches git as written: git resolves `..` physically, so
   `link/..` is the link target's parent there, where a shell's cd is logical
   and lands in the link's own parent. A push to `main` or `master` from an
-  unknown directory is denied, with a hint to use an absolute path, `~`, or
-  `$HOME`. belt never runs git in its own process directory to fill the gap:
+  unknown directory is denied, with a hint to use an absolute path, `~`,
+  `$HOME`, or a variable set to one of those at the start of a plain
+  command. belt never runs git in its own process directory to fill the gap:
   that once let a push into a non-exempt repo ride an exempt session cwd.
 - **Allows when** the push directory's origin remote resolves to a repo on
   the top-level `direct_main_repos` list or on
