@@ -2,8 +2,8 @@
 id: belt-sweep-readsize-cross
 title: Two hints, two files, one answer
 split: train
-query: 'readSizeMinLines|spansManyFiles lang:go f:^tools/belt/ -f:_test\.go'
-anchors: [tools/belt/internal/hint/readsize.go, tools/belt/internal/hint/sweep.go]
+query: 'DefaultLargeFileLines|spansManyFiles lang:go f:^tools/belt/ -f:_test\.go'
+anchors: [tools/belt/internal/config/config.go, tools/belt/internal/hint/sweep.go]
 max_files: 3
 max_answer_chars: 1000
 expected:
@@ -14,13 +14,13 @@ expected:
   - '(?i)more than (two|2)|third|three|> ?2|over two'
   - '(?i)director|not an existing regular file|not a regular file|regular file'
   - '(?i)recursive'
-  - '\b16\b'
+  - '\b98\b'
   - '\b677\b'
 forbidden:
   - '\b350\b'
   - '\b500\b'
 oracle: |
-  - readSizeMinLines = 300 (tools/belt/internal/hint/readsize.go:16): a Read without a range earns the hint from 300 lines.
+  - DefaultLargeFileLines = 300 (tools/belt/internal/config/config.go:98): a Read without a range earns the hint from 300 lines, unless large_file_lines sets another count.
   - spansManyFiles (tools/belt/internal/hint/sweep.go:677) returns true for find or fd, for more than two path operands, and for any operand with a glob character (* ? [).
   - Under a recursive search it also returns true for an operand that is not an existing regular file, such as a directory or a missing path; a non-recursive grep over one or two named files is not a sweep.
 notes: >-
