@@ -4,16 +4,11 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
-)
 
-// readSizeMinLines is the file length at which a read without a range, a
-// Read or a csl_read, earns the hint. Below it, reading the whole file is
-// usually the right call. Above it, most of what lands in context is code
-// the task did not need, and an outline or a ranged read gets to the same
-// place for far fewer tokens.
-const readSizeMinLines = 300
+	"github.com/mad01/thismoon/tools/belt/internal/config"
+	"github.com/mad01/thismoon/tools/belt/internal/cslindex"
+)
 
 // readSizeMarkerPrefix starts the seen-file id that keeps the hint to one
 // word per file per agent per session.
@@ -40,17 +35,28 @@ var headingExts = map[string]bool{".md": true, ".markdown": true}
 // after the fact: this file's content is already in context, so the advice
 // is for the next read, and a false positive costs one ignored line
 // (docs/adr/0008).
-type ReadSize struct{}
+type ReadSize struct {
+	// minLines is the file length at which a read without a range, a Read
+	// or a csl_read, earns the hint: large_file_lines, shared with the
+	// large-read guard. Below it, reading the whole file is usually the
+	// right call. Above it, most of what lands in context is code the task
+	// did not need, and an outline or a ranged read gets to the same place
+	// for far fewer tokens.
+	minLines int
+}
 
-// NewReadSize returns the read-size hint. It reads no config key besides
-// enabled, which ForEvent checks before the hint runs.
-func NewReadSize() *ReadSize { return &ReadSize{} }
+// NewReadSize returns the read-size hint. Besides enabled, which ForEvent
+// checks before the hint runs, it reads only the top-level
+// large_file_lines.
+func NewReadSize(cfg config.Config) *ReadSize {
+	return &ReadSize{minLines: cfg.LargeFileThreshold()}
+}
 
 func (h *ReadSize) ID() string    { return "read-size" }
 func (h *ReadSize) Event() string { return EventRead }
 
 // Check fires once per file per agent per session, for a read with no range
-// of a file of readSizeMinLines or more that csl can outline, inside a
+// of a file of minLines or more that csl can outline, inside a
 // csl-indexed repo. A Read names the file by absolute path and a csl_read by
 // repo and path as csl names them; both resolve to the repo and path csl knows
 // the file by, and that pair keys the marker, so a Read and a csl_read of
@@ -59,7 +65,7 @@ func (h *ReadSize) Event() string { return EventRead }
 // repo-relative path, and without a session id the once-per-file promise
 // cannot hold.
 func (h *ReadSize) Check(in Input) *Advice {
-	if in.Ranged || in.TotalLines < readSizeMinLines {
+	if in.Ranged || in.TotalLines < h.minLines {
 		return nil
 	}
 	file, ok := locateRead(in)
@@ -96,7 +102,7 @@ func locateRead(in Input) (readFile, bool) {
 	if !outlineable(file) {
 		return readFile{}, false
 	}
-	repo, rel, ok := indexedLocation(file)
+	repo, rel, ok := cslindex.Locate(file)
 	return readFile{name: file, how: "without a range", repo: repo, rel: rel}, ok
 }
 
@@ -108,7 +114,7 @@ func locateCSLRead(f CSLFile) (readFile, bool) {
 	if !outlineable(f.Name) && !outlineable(f.Path) {
 		return readFile{}, false
 	}
-	repo, rel, ok := cslRepoPath(f, indexedRepos())
+	repo, rel, ok := cslRepoPath(f, cslindex.Repos())
 	if !ok || !filepath.IsLocal(rel) {
 		return readFile{}, false
 	}
@@ -140,26 +146,6 @@ func readSizeMarker(agentID, repo, rel string) string {
 	return strings.TrimSpace(
 		readSizeMarkerPrefix + agentID + ":" + strings.ToLower(repo) + "/" + rel,
 	)
-}
-
-// indexedLocation resolves file to the repo name and repo-relative path
-// csl_outline takes, ok only when csl has a shard for that repo. A loom
-// worktree is named after its own directory, which has no shard, so it
-// resolves to not indexed.
-func indexedLocation(file string) (repo, rel string, ok bool) {
-	root := repoRoot(file)
-	if root == "" {
-		return "", "", false
-	}
-	repo = repoName(root)
-	if !indexedRepos()[strings.ToLower(repo)] {
-		return "", "", false
-	}
-	r, err := filepath.Rel(root, file)
-	if err != nil {
-		return "", "", false
-	}
-	return repo, filepath.ToSlash(r), true
 }
 
 // cslRepoPath resolves a csl_read's file to the repo and repo-relative path
@@ -207,21 +193,6 @@ func readSizeAdvice(file readFile, lines int) string {
 		"%s is %d lines and was read %s.\n"+
 			"When you only need an answer from it, use %s, which returns the answer, not the file.\n"+
 			"For orientation use %s); for a region you will edit use csl_read or Read with offset and limit.",
-		file.name, lines, file.how, askCall(file.repo, file.rel), outline,
-	)
-}
-
-// askCall is the csl_ask call scoped to the one file just read. zoekt reads
-// f: as a regex over the repo-relative path, and csl reads repo as a regex
-// over repo names, so both are escaped and anchored at both ends: unanchored,
-// the path also matches a same-named file deeper in the tree and the repo
-// also matches every repo its name prefixes. zoektTerm quotes a path holding
-// a space as one term.
-func askCall(repo, rel string) string {
-	query := "f:" + zoektTerm("^"+regexp.QuoteMeta(rel)+"$")
-	repoRE := "^" + regexp.QuoteMeta(repo) + "$"
-	return fmt.Sprintf(
-		`csl_ask(question: "<what you need from it>", queries: [%q], repo: %q)`,
-		query, repoRE,
+		file.name, lines, file.how, cslindex.AskCall(file.repo, file.rel), outline,
 	)
 }

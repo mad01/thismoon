@@ -26,6 +26,7 @@ const decodeErrorTag = "decode_error"
 var guardInputFields = map[string][]string{
 	guard.EventBash:  {"command"},
 	guard.EventWrite: {"file_path", "content", "new_string"},
+	guard.EventRead:  {"file_path"},
 }
 
 // hintInputFields is the same list for toHintInput. The read event's offset

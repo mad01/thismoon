@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
+	"github.com/mad01/thismoon/tools/belt/internal/cslindex"
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
 )
 
@@ -35,7 +36,7 @@ type PreferCSL struct {
 }
 
 func NewPreferCSL(cfg config.Config) *PreferCSL {
-	return &PreferCSL{cfg: cfg, resolveRepo: repoIdentityForPath, indexed: indexedRepos}
+	return &PreferCSL{cfg: cfg, resolveRepo: repoIdentityForPath, indexed: cslindex.Repos}
 }
 
 // repoIdentityForPath resolves a swept path (file, dir, or unexpanded glob)
@@ -165,7 +166,7 @@ func (h *PreferCSL) locate(
 // commondir file. A main clone's .git is a directory, and a submodule's
 // pointer leads to a git dir with no commondir.
 func linkedWorktreeRoot(target string) (string, bool) {
-	root := repoRoot(target)
+	root := cslindex.RepoRoot(target)
 	if root == "" {
 		return "", false
 	}
@@ -253,10 +254,10 @@ func (t cslTarget) scopes() (cli, mcp string) {
 func (s *sweep) query() string {
 	var parts []string
 	if s.pattern != "" {
-		parts = append(parts, zoektTerm(s.pattern))
+		parts = append(parts, cslindex.ZoektTerm(s.pattern))
 	}
 	if s.name != "" {
-		parts = append(parts, "f:"+zoektTerm(s.name))
+		parts = append(parts, "f:"+cslindex.ZoektTerm(s.name))
 	}
 	if f := zoektFileFilter(s.include); f != "" {
 		parts = append(parts, f)
@@ -268,17 +269,6 @@ func (s *sweep) query() string {
 // be pasted as it is whatever the pattern holds.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// zoektTerm renders an RE2 pattern as one zoekt term. Unquoted, a pattern
-// with a space reads as an AND of several terms, a double quote opens a
-// phrase, and a leading - negates; such a pattern is quoted as a phrase.
-// zoekt unescapes one level of backslashes inside quotes, so they double.
-func zoektTerm(re string) string {
-	if !strings.ContainsAny(re, " \t\"") && !strings.HasPrefix(re, "-") {
-		return re
-	}
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(re) + `"`
 }
 
 // zoektFileFilter turns --include=*.go into the f: regex zoekt wants. Globs

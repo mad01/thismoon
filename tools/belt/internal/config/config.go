@@ -91,6 +91,12 @@ var CustomHintEvents = []string{HintEventSessionStart, HintEventSubagentStart}
 // custom_hints.<name>.timeout_ms overrides it per hint.
 const CustomHintTimeout = 400 * time.Millisecond
 
+// DefaultLargeFileLines is the file length, in lines, at which a whole-file
+// read counts as large when large_file_lines is unset: the large-read guard
+// refuses a whole-file Read of such a file, and the read-size hint speaks
+// after one. Below it, reading the whole file is usually the right call.
+const DefaultLargeFileLines = 300
+
 // SoftModeGuards lists the built-in guards that read a `mode:` toggle.
 // Every other guard ignores it, so setting mode: soft on one of them is a
 // config error rather than a quietly ignored key — the shape that lets an
@@ -138,6 +144,22 @@ type Config struct {
 	// session started with --agent claude-code, so no other hook pays for
 	// the read.
 	ClaudeSettingsFiles []string
+	// LargeFileLines is large_file_lines as written, 0 when unset; read it
+	// through LargeFileThreshold, which applies the default. One value for
+	// the two checks whose subject is a large whole-file read: the
+	// large-read guard and the read-size hint.
+	LargeFileLines int
+}
+
+// LargeFileThreshold is the file length, in lines, at which a whole-file
+// read counts as large: large_file_lines when set, else
+// DefaultLargeFileLines. Validation rejects a negative value, so anything
+// below 1 here is the unset zero.
+func (c Config) LargeFileThreshold() int {
+	if c.LargeFileLines > 0 {
+		return c.LargeFileLines
+	}
+	return DefaultLargeFileLines
 }
 
 // GitIdentity is one git-identity rule: the git user.email expected for
@@ -717,6 +739,7 @@ func LoadFrom(p Paths) (Config, error) {
 		Ledger:          f.Ledger,
 		Watch:           f.Watch,
 		Allows:          f.Allows,
+		LargeFileLines:  f.LargeFileLines,
 	}
 	if cfg.ClaudeSettings.ReadEnabled() {
 		cfg.ClaudeDeny = LoadClaudeDenyPatterns(p.ClaudeSettings...)
@@ -867,6 +890,7 @@ type File struct {
 	Ledger          Ledger                 `toml:"ledger"            yaml:"ledger"`
 	Watch           Watch                  `toml:"watch"             yaml:"watch"`
 	Allows          map[string]Allow       `toml:"allows"            yaml:"allows"`
+	LargeFileLines  int                    `toml:"large_file_lines"  yaml:"large_file_lines"`
 }
 
 // Source reports which belt config file was read and what happened.
@@ -971,6 +995,11 @@ func (f File) validate() error {
 			errs = append(errs, fmt.Errorf("internal_names.include[%d] is empty", i))
 		}
 	}
+	if f.LargeFileLines < 0 {
+		errs = append(errs, fmt.Errorf(
+			"large_file_lines is %d (must be 0 for the default, or positive)", f.LargeFileLines,
+		))
+	}
 	return errors.Join(errs...)
 }
 
@@ -1066,6 +1095,7 @@ var (
 		"commit-guard":           {},
 		"script-deny-list":       {"extra_patterns", "exclude_paths"},
 		"write-internal-names":   {"allow_repos", "exclude_paths"},
+		"large-read":             {},
 		"publish-internal-names": {"allow_repos"},
 		"git-discard":            {"allow_repos"},
 		"rm-temp":                {},

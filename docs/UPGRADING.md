@@ -40,6 +40,18 @@ Run, in order:
 
 Verify: on a machine where `autoMemoryDirectory` points at a store, the agent memory section of `belt doctor` prints a line naming that store and the settings file. The line must not end in "so sessions here still load it twice"; that ending means the SessionStart entry still lacks the flag. In a new Claude Code session the store's facts appear once.
 
+## 2026-11-12 belt: the large-read guard refuses whole-file reads of large files
+
+Change: thismoon #428. `belt hook read` runs a new guard, large-read, before every Read. It refuses a Read with no `offset` and no `limit` of a text file of 300 lines or more in a csl-indexed repo and hands over the `csl_ask` call for that file; a ranged read passes. It applies to subagents too. Nothing changes until the consuming repo's Claude settings template runs the new command, and `belt doctor` does not check for the entry.
+
+Run, in order:
+
+1. `ralph up` on every machine, so `~/code/bin/belt` knows the `read` event. An older belt rejects `belt hook read` as an unknown event, so a Read hook added first errors on every Read.
+2. Add a `hooks.PreToolUse` entry to the consuming repo's Claude settings template, beside the other `belt hook` entries: matcher `Read`, command `~/code/bin/belt hook read`. Then `ralph up` again.
+3. Optional: set the top-level `large_file_lines` in the consuming repo's belt config to move the threshold for the guard and the read-size hint together. To switch the guard off on a machine class, set `guards.large-read.enabled: false` there.
+
+Verify: `belt doctor` lists `large-read  read  enabled  (large_file_lines: 300)`. `belt check read --file <a file of 300+ lines in an indexed repo> --transcript /dev/null` prints `DENY  large-read` and exits 1. In a new session, a whole-file Read of such a file is refused with `belt[large-read]:` and the `csl_ask` call.
+
 ## 2026-11-10 toss-bin: `--temp-only` for agent scratch cleanup
 
 Change: thismoon #415. `toss-bin --temp-only` refuses the whole run unless every path sits strictly inside `/tmp`, `/var/tmp` or `~/.tmp`, so a Claude Code allow rule for that one invocation can replace the `rm` prompt for temp cleanup. The roots are fixed in the binary. With the rule in place, an agent can trash anything under those roots with no prompt, backups parked in `~/.tmp` included; it stays recoverable from `~/.Trash/my-trash/`.

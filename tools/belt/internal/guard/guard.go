@@ -22,13 +22,16 @@ const (
 	// matcher: the MCP tools that publish to a public code host (the
 	// consuming repo picks them, docs/adr/0006).
 	EventExternalText = config.EventExternalText
+	// matcher: Read. Not a config constant: no custom guard registers on
+	// it, so the config file never names it.
+	EventRead = "read"
 )
 
 // Events lists every valid guard event. CLI validation and its error text
 // read from here so a new event cannot be added above and then be silently
 // rejected at the command line.
 func Events() []string {
-	return []string{EventBash, EventWrite, EventExternalText}
+	return []string{EventBash, EventWrite, EventExternalText, EventRead}
 }
 
 // Input carries the fields extracted from a PreToolUse payload.
@@ -43,6 +46,13 @@ type Input struct {
 	// every string in it is text that is about to leave the machine; for
 	// bash, only the allows read it.
 	ToolInput map[string]any
+	// Ranged and TranscriptPath describe a Read (read event, FilePath names
+	// the file): whether the call named an offset or a limit, and the
+	// session transcript, where large-read looks for an earlier edit of the
+	// file. A `belt check` dry-run is never ranged, and its transcript is
+	// the one --transcript names, if any.
+	Ranged         bool
+	TranscriptPath string
 	// SessionID names the Claude Code session making the call. AgentID and
 	// AgentType name the subagent inside it, and are empty for a call made
 	// by the main session. No built-in guard reads them: they reach custom
@@ -117,6 +127,7 @@ func All(cfg config.Config) []Guard {
 		NewPublishInternalNames(cfg, EventBash),
 		NewPublishInternalNames(cfg, EventExternalText),
 		NewRmTemp(),
+		NewLargeRead(cfg),
 	}
 	for _, name := range slices.Sorted(maps.Keys(cfg.CustomGuards)) {
 		guards = append(guards, NewCustom(name, cfg.CustomGuards[name]))

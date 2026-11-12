@@ -589,6 +589,12 @@ func toInput(event string, p payload) guard.Input {
 	case guard.EventExternalText:
 		in.ToolName = p.ToolName
 		in.ToolInput = p.ToolInput
+	case guard.EventRead:
+		// offset and limit are JSON numbers; any non-null one names a range,
+		// the rule the read hint follows (readHintInput).
+		in.FilePath = str("file_path")
+		in.Ranged = p.ToolInput["offset"] != nil || p.ToolInput["limit"] != nil
+		in.TranscriptPath = string(p.TranscriptPath)
 	}
 	return in
 }

@@ -122,8 +122,8 @@ broken config: no guard can check a call it cannot see. `belt hook` denies
 with `belt[payload]:` before any guard runs when stdin holds no JSON object
 (empty, not JSON, or another JSON value). It also denies when a field the
 guards read arrives with another JSON type. Those fields are `tool_name`,
-`tool_input` and `cwd`, plus `command` inside `tool_input` on bash and
-`file_path`, `content` and `new_string` on write. A JSON null counts as
+`tool_input` and `cwd`, plus `command` inside `tool_input` on bash,
+`file_path`, `content` and `new_string` on write, and `file_path` on read. A JSON null counts as
 absent. The session and agent fields (`session_id`, `transcript_path`,
 `agent_id`, `agent_type`) and every key no guard reads decode leniently, so
 a mistyped identity never denies.
@@ -186,6 +186,14 @@ is its only record. Per the Claude Code hooks
 documentation, a hook allow does not override a settings deny or ask rule,
 and whether it skips the auto-mode classifier is not verified
 (docs/adr/0032).
+
+The large-read guard fails open on everything it cannot judge: a file it
+cannot read or that holds a NUL byte, a file outside the csl index (a loom
+worktree included), and a transcript it cannot find or read when it looks
+for an earlier edit of the file. A refusal names the way past it: a Read
+with offset and limit always passes. A refusal of a file the agent did
+edit means the edit is in another agent's transcript (a subagent counts
+only its own) or under another spelling of the path.
 
 The moondb-inflight hint is silent when moondb is down or older than its
 in-flight route, and the doctor moondb line says which. read-size never

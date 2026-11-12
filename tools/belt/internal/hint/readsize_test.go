@@ -1,10 +1,14 @@
 package hint
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/tools/belt/internal/config"
+	"github.com/mad01/thismoon/tools/belt/internal/cslindex"
 )
 
 // indexedRepoFile builds a hermetic home holding a csl shard for acme/widget
@@ -51,8 +55,16 @@ func TestReadSizeCheck(t *testing.T) {
 		want bool
 	}{
 		{"large whole read", in(file), true},
-		{"exactly the threshold", Input{FilePath: file, TotalLines: readSizeMinLines}, true},
-		{"below the threshold", Input{FilePath: file, TotalLines: readSizeMinLines - 1}, false},
+		{
+			"exactly the threshold",
+			Input{FilePath: file, TotalLines: config.DefaultLargeFileLines},
+			true,
+		},
+		{
+			"below the threshold",
+			Input{FilePath: file, TotalLines: config.DefaultLargeFileLines - 1},
+			false,
+		},
 		{"ranged read", Input{FilePath: file, TotalLines: 412, Ranged: true}, false},
 		{"unknown line count", Input{FilePath: file}, false},
 		{"relative path", in("internal/big.go"), false},
@@ -78,11 +90,37 @@ func TestReadSizeCheck(t *testing.T) {
 			in := tt.in
 			in.Event = EventRead
 			in.SessionID = "s" + string(rune('a'+i)) // a fresh session per case
-			got := NewReadSize().Check(in)
+			got := NewReadSize(config.Config{}).Check(in)
 			if (got != nil) != tt.want {
 				t.Fatalf("Check(%+v) = %+v, want advice: %v", in, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestReadSizeFollowsLargeFileLines: the hint reads its threshold from the
+// one config value it shares with the large-read guard.
+func TestReadSizeFollowsLargeFileLines(t *testing.T) {
+	file, _ := indexedRepoFile(t)
+	h := NewReadSize(config.Config{LargeFileLines: 100})
+	for i, tt := range []struct {
+		lines int
+		want  bool
+	}{{100, true}, {99, false}} {
+		in := Input{
+			Event:      EventRead,
+			FilePath:   file,
+			TotalLines: tt.lines,
+			SessionID:  fmt.Sprint("s", i),
+		}
+		if got := h.Check(in) != nil; got != tt.want {
+			t.Errorf(
+				"Check at %d lines with large_file_lines 100: advised = %v, want %v",
+				tt.lines,
+				got,
+				tt.want,
+			)
+		}
 	}
 }
 
@@ -113,7 +151,7 @@ func TestReadSizeAdviceNamesTheCalls(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := NewReadSize().Check(Input{
+			got := NewReadSize(config.Config{}).Check(Input{
 				Event: EventRead, FilePath: tt.path, TotalLines: 412, SessionID: tt.name,
 			})
 			if got == nil {
@@ -148,7 +186,7 @@ func TestReadSizeAdviceNamesTheCalls(t *testing.T) {
 func TestReadSizeSpeaksOncePerFilePerAgent(t *testing.T) {
 	file, root := indexedRepoFile(t)
 	other := filepath.Join(root, "other.go")
-	h := NewReadSize()
+	h := NewReadSize(config.Config{})
 	steps := []struct {
 		name, session, agent, path string
 		ranged, want               bool
@@ -195,7 +233,7 @@ func TestReadSizeMarkerSurvivesTheSeenStore(t *testing.T) {
 }
 
 // TestReadSizeIsSilentInALinkedWorktree backs the documented worktree rule:
-// a linked worktree's .git is a file, which repoRoot finds, but the
+// a linked worktree's .git is a file, which RepoRoot finds, but the
 // worktree is named after its own directory, so no shard matches.
 func TestReadSizeIsSilentInALinkedWorktree(t *testing.T) {
 	_, root := indexedRepoFile(t)
@@ -208,11 +246,11 @@ func TestReadSizeIsSilentInALinkedWorktree(t *testing.T) {
 	}
 	file := filepath.Join(worktree, "internal", "big.go")
 	writeEmpty(t, file)
-	if got := repoRoot(file); got != worktree {
-		t.Fatalf("repoRoot(%s) = %q, want the worktree %q", file, got, worktree)
+	if got := cslindex.RepoRoot(file); got != worktree {
+		t.Fatalf("RepoRoot(%s) = %q, want the worktree %q", file, got, worktree)
 	}
 	in := Input{Event: EventRead, FilePath: file, TotalLines: 412, SessionID: "s1"}
-	if got := NewReadSize().Check(in); got != nil {
+	if got := NewReadSize(config.Config{}).Check(in); got != nil {
 		t.Errorf("Check in a linked worktree = %+v, want nil", got)
 	}
 }
@@ -238,12 +276,12 @@ func TestReadSizeCheckOnCSLRead(t *testing.T) {
 		{"large whole read", in("acme/widget/internal/big.go"), true},
 		{
 			"exactly the threshold",
-			Input{CSLFile: big, TotalLines: readSizeMinLines},
+			Input{CSLFile: big, TotalLines: config.DefaultLargeFileLines},
 			true,
 		},
 		{
 			"below the threshold",
-			Input{CSLFile: big, TotalLines: readSizeMinLines - 1},
+			Input{CSLFile: big, TotalLines: config.DefaultLargeFileLines - 1},
 			false,
 		},
 		{
@@ -271,7 +309,7 @@ func TestReadSizeCheckOnCSLRead(t *testing.T) {
 			in := tt.in
 			in.Event = EventRead
 			in.SessionID = "c" + string(rune('a'+i)) // a fresh session per case
-			got := NewReadSize().Check(in)
+			got := NewReadSize(config.Config{}).Check(in)
 			if (got != nil) != tt.want {
 				t.Fatalf("Check(%+v) = %+v, want advice: %v", in, got, tt.want)
 			}
@@ -284,7 +322,7 @@ func TestReadSizeCheckOnCSLRead(t *testing.T) {
 // calls as after a Read.
 func TestReadSizeAdviceOnCSLRead(t *testing.T) {
 	_, _ = indexedRepoFile(t)
-	got := NewReadSize().Check(Input{
+	got := NewReadSize(config.Config{}).Check(Input{
 		Event:      EventRead,
 		CSLFile:    CSLFile{Name: "acme/widget/./internal/big.go"},
 		TotalLines: 843,
@@ -316,7 +354,7 @@ func TestReadSizeSharesTheNudgeAcrossReadAndCSLRead(t *testing.T) {
 	file, _ := indexedRepoFile(t)
 	text := CSLFile{Name: "acme/widget/internal/big.go"}
 	structured := CSLFile{Repo: "acme/widget", Path: "internal/big.go"}
-	h := NewReadSize()
+	h := NewReadSize(config.Config{})
 	steps := []struct {
 		name, agent string
 		cslFile     CSLFile
@@ -388,7 +426,7 @@ func TestReadSizeKeepsTheJSONRepoBoundary(t *testing.T) {
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := NewReadSize().Check(Input{
+			got := NewReadSize(config.Config{}).Check(Input{
 				Event:      EventRead,
 				CSLFile:    tt.file,
 				TotalLines: 412,

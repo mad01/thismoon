@@ -70,6 +70,10 @@ complete hooks block looks like this:
       {
         "matcher": "^mcp__github__.*",
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hook external-text" }]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hook read" }]
       }
     ],
     "PostToolUse": [
@@ -155,6 +159,7 @@ The event-to-subcommand mapping is fixed:
 | `belt hook bash` | PreToolUse | `Bash` |
 | `belt hook write` | PreToolUse | `Write\|Edit` |
 | `belt hook external-text` | PreToolUse | the github.com MCP server's tools, and only that server (see below) |
+| `belt hook read` | PreToolUse | `Read` |
 | `belt hint bash` | PostToolUse | `Bash` |
 | `belt hint read` | PostToolUse | `Read\|mcp__csl__csl_read` |
 | `belt hint external-text` | PostToolUse | your publishing MCP tools (see below) |
@@ -265,6 +270,8 @@ event and reads its stdout can run it. What to expect per harness:
   code: it decodes the fields it knows, and a payload it can't decode still
   posts, as a warn entry. Reading the ledger needs no hook: Codex queries
   the events service like any other client.
+  Codex has no Read tool (it reads files through the shell), so
+  `belt hook read` has nothing to guard there.
   Two Codex-specific rules:
   define hooks in `hooks.json` only. A duplicate `[[hooks.PreToolUse]]`
   block in `config.toml` runs belt twice per call. Codex trusts hooks by
@@ -284,6 +291,8 @@ event and reads its stdout can run it. What to expect per harness:
   and `belt check external-text --tool <name> --input <json>` per tool
   call and block on exit code 1. The guards are the same, the verdict
   travels as the exit code and the `DENY` line instead of hook JSON. The
+  gate does not run the read guard (large-read): its edit exemption reads
+  Claude Code's transcript format, and pi's session file is not one. The
   pi package in `pi/` also runs the session-start, bash, read and
   external-text hints. It records pre-compact, post-compact, session-end,
   permission-denied and stop-failure in the ledger, adapting pi's events
@@ -714,6 +723,43 @@ Sends deletes of temp paths to `toss-bin` instead of `rm`.
   `belt doctor` marks the guard's line. There is no mode and no repo list:
   `enabled: false` is the only switch.
 
+### large-read
+
+Refuses a whole-file Read of a large file before the tokens are spent.
+
+- **Fires on** a Read with no `offset` and no `limit` of a text file of
+  `large_file_lines` or more (300 by default) inside a repo csl indexes.
+  The index check is the shard listing read-size and prefer-csl read.
+  The line count stops reading at the threshold, so a large file costs
+  one bounded read. Every file type counts, not only the ones
+  `csl_outline` knows, because `csl_ask` reads any indexed text file.
+- **The reason** names the file and hands over the `csl_ask` call for it,
+  built by the same code as the read-size hint's: a placeholder question,
+  the path as an anchored `f:` query and the repo as an anchored regex. Its
+  last line says that a ranged read passes. That is the way in for a file
+  the agent will edit, since an edit needs the real lines.
+- **Allows** any Read with an `offset` or a `limit`, a relative path, an
+  image, PDF or notebook, a missing file, a directory, a file it cannot
+  read, a file with a NUL byte, a file under the threshold, and a file
+  outside the index. A loom worktree has no shard of its own, so reads
+  there pass, as read-size stays silent there.
+- **Allows a file the agent already edited.** Only on a read it would
+  refuse, the guard reads the calling agent's transcript and passes when it
+  holds an `Edit`, `Write` or `MultiEdit` call on the same path. The main
+  thread's calls are in the session transcript the payload names. A
+  subagent's are in `<session>/subagents/agent-<id>.jsonl` beside it, and
+  only those count for it. So a subagent reviewing what the main thread
+  changed is refused like any reader.
+- **Why it exists**: the read-size hint gave the same advice after the
+  read, when every line was already in context. Prose asking agents to try
+  `csl_ask` first did not change the habit.
+- **Fails open**: a transcript that cannot be found or read allows, since a
+  wrong refusal blocks work and a missed one only costs tokens. There is no
+  soft mode: `enabled: false` switches the guard off, and without the
+  PreToolUse `Read` entry it never runs. `belt check read --file <path>`
+  allows unless `--transcript` names a transcript to read (`/dev/null` for
+  one with no edits).
+
 ### Custom guards
 
 A `custom_guards.<name>` config entry registers a guard implemented as any
@@ -951,7 +997,8 @@ lint-policy, prefer-csl, moondb-inflight) also read an
 `exclude_repos` list, and humanizer-check reads an `exclude_tools` list. Hints opt repos out with `exclude_repos`;
 `allow_repos` belongs to guards, and each key on the wrong kind is a
 validation error. commit-policy additionally honors the shared
-`direct_main_repos` list. Everything else
+`direct_main_repos` list, and read-size takes its threshold from the
+top-level `large_file_lines`, shared with the large-read guard. Everything else
 about hint behavior is fixed
 (see Fixed constants below). The guards carry the richer per-guard keys —
 each guard section above names its own, and [config.md](../config.md)
@@ -1122,7 +1169,7 @@ After a Read or a `csl_read` pulls in a large file without a range, points
 at the cheaper ways in.
 
 - **Fires when** a Read with no `offset` and no `limit` returns a file of
-  300 lines or more inside a repo csl indexes. The index check is the same
+  `large_file_lines` or more (300 by default) inside a repo csl indexes. The index check is the same
   shard listing prefer-csl reads. The file must be a type `csl_outline`
   has symbols for: Go, TypeScript, Python, Java, protobuf, shell, or
   markdown.
@@ -1171,6 +1218,10 @@ at the cheaper ways in.
   when the task usually needs one region or one answer. A question to
   `csl_ask`, an outline or a ranged read gets there for a fraction of the
   tokens.
+- **Beside the large-read guard**: a whole-file Read the guard refuses
+  never runs, so the hint never sees it. The hint still speaks for the
+  reads the guard lets through, such as a file the agent edited, and for
+  every `csl_read`, which the guard does not watch.
 
 ### commit-policy (bash)
 
@@ -1482,10 +1533,11 @@ cannot afford discovery:
   through `nearestExistingDir` — walking upward, because a Write may create
   its parent directories first — and then reads that directory's origin
   remote. A `github.com` remote is the entire public/private test.
-- **Read another tool's artifacts, for csl.** `prefer-csl` never asks csl
-  anything; it lists csl's shard directory (`~/.config/csl/search-index/`)
-  to learn which repos are indexed, and names the repo containing a swept
-  path as `<parent-dir>/<repo-dir>` to match csl's shard naming.
+- **Read another tool's artifacts, for csl.** `prefer-csl`, `read-size`
+  and `large-read` never ask csl anything; they list csl's shard directory
+  (`~/.config/csl/search-index/`) to learn which repos are indexed, and
+  name the repo containing a path as `<parent-dir>/<repo-dir>` to match
+  csl's shard naming.
 - **Locate, for the ledger.** `belt record` runs one
   `git rev-parse --show-toplevel --git-dir --git-common-dir --abbrev-ref HEAD`
   in the payload's working directory, plus the origin lookup. A linked
@@ -1521,11 +1573,10 @@ missing key:
 | share held for the work store when both have facts | 2,250 bytes | agent-memory |
 | in-flight files asked of moondb | 200 | moondb-inflight |
 | in-flight paths per fire | 10 | moondb-inflight |
-| large-read threshold | 300 lines | read-size |
 | published-text excerpt | 200 bytes | humanizer-check |
 | session dedupe store | `~/.cache/belt/seen-<session>` | all once-per-session hints |
 | agent-memory store paths | `~/.config/agent-memory[-work]/MEMORY.md` | agent-memory |
-| csl shard listing | `~/.config/csl/search-index/` | prefer-csl, read-size |
+| csl shard listing | `~/.config/csl/search-index/` | prefer-csl, read-size, large-read |
 | ledger message cap | 500 bytes | belt record |
 | record budgets | 1 s to locate in git, 300 ms to post | belt record |
 | watcher request timeout | 2 s per poll | belt watch |
@@ -1547,7 +1598,8 @@ In symptom order:
    but every hint on one event stays silent, look for `warn` events tagged
    `decode_error`: that event's payloads do not decode.
 2. **One guard never denies.** Run the case through `belt check bash "<the
-   command>"` or `belt check write --file <path> --content <text>` — one
+   command>"`, `belt check write --file <path> --content <text>` or
+   `belt check read --file <path> --transcript /dev/null` — one
    verdict line per guard shows whether the guard matched and why it decided
    as it did. Then `belt config` shows which file and key produced that
    state.

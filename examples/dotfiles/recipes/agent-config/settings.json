@@ -39,6 +39,10 @@
       {
         "matcher": "^mcp__github__.*",
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hook external-text" }]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hook read" }]
       }
     ],
     "PostToolUse": [
