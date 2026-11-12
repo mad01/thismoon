@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.0](https://github.com/mad01/thismoon/compare/csl/v0.35.0...csl/v0.36.0) (2026-11-12)
+
+
+### Features
+
+* **belt:** skip a memory store Claude Code already loads ([#427](https://github.com/mad01/thismoon/issues/427)) ([c872170](https://github.com/mad01/thismoon/commit/c87217040cd75f0413e0331eac36b8dd4dd52d12))
+
 ## [0.35.0](https://github.com/mad01/thismoon/compare/csl/v0.34.0...csl/v0.35.0) (2026-11-12)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.19.0](https://github.com/mad01/thismoon/compare/belt/v2.18.0...belt/v2.19.0) (2026-11-12)
+
+
+### Features
+
+* **belt:** skip a memory store Claude Code already loads ([#427](https://github.com/mad01/thismoon/issues/427)) ([c872170](https://github.com/mad01/thismoon/commit/c87217040cd75f0413e0331eac36b8dd4dd52d12))
+
 ## [2.18.0](https://github.com/mad01/thismoon/compare/belt/v2.17.1...belt/v2.18.0) (2026-11-12)
 
 
