@@ -68,12 +68,20 @@ function fakeGit(repo: Repo, argv: readonly string[], cwd: string): ProcessRunRe
   return failed()
 }
 
-type Seat = { asked: string[]; answer: 'Proceed' | 'Cancel' | 'dismiss' }
+type Seat = {
+  asked: string[]
+  answer: 'Proceed' | 'Cancel' | 'dismiss'
+  sessionId: string
+  // Stands for belt or the person: a command it refuses never runs.
+  deniesBash: (command: string) => boolean
+}
 
 // The engine beneath the plugin.
 function seat(on: On, repo: Repo, cwd: string, answer: Seat['answer'] = 'Proceed'): Seat {
-  const seated: Seat = { asked: [], answer }
+  const seated: Seat = { asked: [], answer, sessionId: 's-self', deniesBash: () => false }
   mock.env(on, { HOME })
+  on('session.id', () => ({ value: seated.sessionId }))
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   const values = new Map<string, unknown>()
   const versions = new Map<string, number>()
   on('state.get', (_$, e) => {
@@ -93,7 +101,9 @@ function seat(on: On, repo: Repo, cwd: string, answer: Seat['answer'] = 'Proceed
   on('ui.log', () => ({ value: undefined }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('tool.call', { tool: 'Write' }, () => ({ result: { type: 'create', filePath: '', content: '', structuredPatch: [] } }))
-  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+  on('tool.call', { tool: 'Bash' }, (_$, e) =>
+    seated.deniesBash(e.command) ? { deny: 'belt[test]: refused' } : { result: { stdout: '', stderr: '', interrupted: false } },
+  )
   on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
     const question = e.questions[0]?.question ?? ''
     seated.asked.push(question)
@@ -127,6 +137,58 @@ test('an owner writes its own worktree and nothing else of the repo', async ($, 
 
   const look = await $.tool.call({ tool: 'Bash', command: `git -C ${CANONICAL} log -1 && (cd ${CANONICAL} && git status)` })
   expect(refusalOf(look)).toBeUndefined()
+})
+
+const BUILDER = '/home/u/.worktrees/thismoon/feat-builder'
+const OTHER = '/home/u/.worktrees/thismoon/fix-band'
+const ADD_BUILDER = `git -C ${CANONICAL} worktree add ~/.worktrees/thismoon/feat-builder -b feat/builder`
+const PUSH_BUILDER = `git -C ${BUILDER} status && git -C ${BUILDER} log origin/main..feat/builder && git -C ${BUILDER} push -u origin feat/builder`
+
+test('the main loop pushes from a worktree its subagent created, and from no other session', async ($, on) => {
+  seat(on, { dirty: [], ahead: 0, remoteAhead: 0 }, OWN)
+  await $.session.start({ cwd: OWN, surface: null, isInteractive: true })
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BUILDER }))).toMatch(/feat-builder belongs to another worktree/)
+
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: ADD_BUILDER, agentId: 'a1' }))).toBeUndefined()
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BUILDER }))).toBeUndefined()
+
+  // Push only: a commit or a file write there is still refused.
+  const commit = await $.tool.call({ tool: 'Bash', command: `git -C ${BUILDER} commit -m x && git -C ${BUILDER} push` })
+  expect(refusalOf(commit)).toMatch(/feat-builder belongs to another worktree/)
+  const write = await $.tool.call({ tool: 'Write', file_path: `${BUILDER}/README.md`, content: 'x' })
+  expect(refusalOf(write)).toMatch(/feat-builder\/README.md belongs to another worktree/)
+
+  // A worktree no subagent of this session created stays refused.
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: `git -C ${OTHER} push` }))).toMatch(/fix-band belongs to another worktree/)
+})
+
+test('a subagent add that did not run records nothing', async ($, on) => {
+  const seated = seat(on, { dirty: [], ahead: 0, remoteAhead: 0 }, OWN)
+  seated.deniesBash = command => command.includes('worktree add')
+  await $.session.start({ cwd: OWN, surface: null, isInteractive: true })
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: ADD_BUILDER, agentId: 'a1' }))).toMatch(/belt\[test\]/)
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BUILDER }))).toMatch(/feat-builder belongs to another worktree/)
+})
+
+test('a worktree the main loop added for a subagent stays pushable once it moves back to its own', async ($, on) => {
+  seat(on, { dirty: [], ahead: 0, remoteAhead: 0 }, OWN)
+  await $.session.start({ cwd: OWN, surface: null, isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: ADD_BUILDER })
+  await $.tool.call({ tool: 'Bash', command: `cd ${OWN} && git status` })
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: `git -C ${BUILDER} commit -m x` }))).toMatch(/belongs to another worktree/)
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BUILDER }))).toBeUndefined()
+})
+
+test('another session never inherits the record: after an in-process /resume the push is refused', async ($, on) => {
+  const seated = seat(on, { dirty: [], ahead: 0, remoteAhead: 0 }, OWN)
+  await $.session.start({ cwd: OWN, surface: null, isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: ADD_BUILDER, agentId: 'a1' })
+  await $.turn.start({ text: '', turnId: 't1' })
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BUILDER }))).toBeUndefined()
+
+  seated.sessionId = 's-resumed'
+  await $.turn.start({ text: '', turnId: 't2' })
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BUILDER }))).toMatch(/feat-builder belongs to another worktree/)
 })
 
 test('guards off lets every call through', { options: { guards: false } }, async ($, on) => {

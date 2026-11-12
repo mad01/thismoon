@@ -129,16 +129,20 @@ export function resolvePath(word: string, cwd: string, home: string | null): str
   return normalizePath(`${cwd}/${word}`)
 }
 
+type Root = { root: string; cls: PathClass }
+
 /**
- * Which checkout a path falls in: the longest root that holds it wins, so a
- * worktree nested under the canonical checkout counts as a worktree and the
- * own worktree wins over the `~/.worktrees/<repo>` root above it.
+ * The roots a path is judged against, in tie order: at equal length the
+ * earlier one wins. Worktrees this session created (`created`) come after the
+ * own worktree, the canonical checkout and the `~/.worktrees/<repo>` root, and
+ * before the worktrees git listed.
  */
-export function classifyPath(path: string, layout: Layout): PathClass {
-  const roots: Array<{ root: string; cls: PathClass }> = []
+function rootsOf(layout: Layout, created: readonly string[]): Root[] {
+  const roots: Root[] = []
   if (layout.ownWorktree !== null) roots.push({ root: layout.ownWorktree, cls: 'own' })
   if (layout.canonical !== null) roots.push({ root: layout.canonical, cls: 'canonical' })
   if (layout.worktreeRoot !== null) roots.push({ root: layout.worktreeRoot, cls: 'other' })
+  for (const worktree of created) roots.push({ root: worktree, cls: 'own' })
   for (const worktree of layout.worktrees) {
     const cls: PathClass = isSamePath(worktree, layout.ownWorktree)
       ? 'own'
@@ -147,7 +151,11 @@ export function classifyPath(path: string, layout: Layout): PathClass {
         : 'other'
     roots.push({ root: worktree, cls })
   }
-  let best: { root: string; cls: PathClass } | null = null
+  return roots
+}
+
+function classOf(path: string, roots: readonly Root[]): PathClass {
+  let best: Root | null = null
   for (const candidate of roots) {
     if (!isUnder(path, candidate.root)) continue
     if (best === null || trimSlash(candidate.root).length > trimSlash(best.root).length) best = candidate
@@ -155,9 +163,67 @@ export function classifyPath(path: string, layout: Layout): PathClass {
   return best === null ? 'outside' : best.cls
 }
 
+/**
+ * Which checkout a path falls in: the longest root that holds it wins, so a
+ * worktree nested under the canonical checkout counts as a worktree and the
+ * own worktree wins over the `~/.worktrees/<repo>` root above it.
+ */
+export function classifyPath(path: string, layout: Layout): PathClass {
+  return classOf(path, rootsOf(layout, []))
+}
+
+/**
+ * Where a `git push` acts, for an owner: a worktree this session created
+ * (`created`, by the main loop or a subagent) counts as its own, so the main
+ * loop can push a branch its builder committed. The longest root still wins,
+ * so a worktree git lists below a created path stays another's, and a created
+ * path never turns the canonical checkout or the `~/.worktrees/<repo>` root
+ * into the session's.
+ */
+export function classifyPush(path: string, layout: Layout, created: readonly string[]): PathClass {
+  return classOf(path, rootsOf(layout, created))
+}
+
+/**
+ * The session's record of created worktrees with `paths` added, each once.
+ * A path outside this repo is none of the loom's business, and a worktree
+ * git already listed before the command ran was not created by it.
+ */
+export function withCreated(record: readonly string[], paths: readonly string[], layout: Layout): string[] {
+  const next = [...record]
+  for (const path of paths) {
+    if (classifyPath(path, layout) === 'outside') continue
+    if (layout.worktrees.some(listed => isSamePath(listed, path))) continue
+    if (next.some(known => isSamePath(known, path))) continue
+    next.push(trimSlash(path))
+  }
+  return next
+}
+
 export function denyReason(path: string, cls: 'canonical' | 'other'): string {
   const holder = cls === 'canonical' ? 'the canonical checkout' : 'another worktree'
   return `loom-pane: ${path} belongs to ${holder}; owners edit only their own worktree`
+}
+
+/**
+ * Why the owner guard refuses a command, or null when it passes: a write in
+ * the canonical checkout or another worktree, or a push from one, unless
+ * this session created that worktree (`created`).
+ */
+export function ownerDenyReason(
+  analysis: Pick<BashAnalysis, 'writes' | 'pushes'>,
+  layout: Layout,
+  created: readonly string[],
+): string | null {
+  for (const path of analysis.writes) {
+    const cls = classifyPath(path, layout)
+    if (cls === 'canonical' || cls === 'other') return denyReason(path, cls)
+  }
+  for (const path of analysis.pushes) {
+    const cls = classifyPush(path, layout, created)
+    if (cls === 'canonical' || cls === 'other') return denyReason(path, cls)
+  }
+  return null
 }
 
 /**
@@ -581,12 +647,16 @@ function removalsOf(call: GitCall, home: string | null): Removal[] | null {
 export type BashAnalysis = {
   /** True when the command could not be followed; the caller lets it through. */
   isUncertain: boolean
-  /** Where a mutating git verb acts (its repo, and path operands for the verbs that take them) and what redirections write. */
+  /** Where a mutating git verb other than `push` acts (its repo, and path operands for the verbs that take them) and what redirections write. */
   writes: string[]
+  /** Where a `git push` acts: kept apart from `writes`, since a push from a worktree the session created passes. */
+  pushes: string[]
   /** The branches and worktrees the command force-deletes or removes. */
   removals: Removal[]
   /** Where the command goes: every `cd` target and `git worktree add` path, resolved. */
   claims: string[]
+  /** The worktrees the command creates: every `git worktree add` path, resolved. */
+  creates: string[]
 }
 
 /**
@@ -596,10 +666,10 @@ export type BashAnalysis = {
  * cannot follow makes the whole reading uncertain rather than a guess.
  */
 export function analyzeBash(command: string, env: { cwd: string; home: string | null }): BashAnalysis {
-  const uncertain: BashAnalysis = { isUncertain: true, writes: [], removals: [], claims: [] }
+  const uncertain: BashAnalysis = { isUncertain: true, writes: [], pushes: [], removals: [], claims: [], creates: [] }
   const { tokens, isUncertain } = tokenizeShell(command)
   if (isUncertain) return uncertain
-  const analysis: BashAnalysis = { isUncertain: false, writes: [], removals: [], claims: [] }
+  const analysis: BashAnalysis = { isUncertain: false, writes: [], pushes: [], removals: [], claims: [], creates: [] }
   let cwd = normalizePath(env.cwd)
   const outer: string[] = []
   for (const segment of segmentsOf(tokens)) {
@@ -635,7 +705,8 @@ export function analyzeBash(command: string, env: { cwd: string; home: string | 
     if (gitArgv === null) continue
     const call = parseGit(gitArgv, cwd, env.home)
     if (call === null) return uncertain
-    if (isMutating(call)) {
+    if (call.verb === 'push') analysis.pushes.push(call.location)
+    else if (isMutating(call)) {
       analysis.writes.push(call.location)
       if (call.verb !== null && OPERAND_VERBS.has(call.verb)) {
         for (const operand of operandsOf(call.args)) {
@@ -651,6 +722,7 @@ export function analyzeBash(command: string, env: { cwd: string; home: string | 
         const path = resolvePath(spelled, call.location, env.home)
         if (path === null) return uncertain
         analysis.claims.push(path)
+        analysis.creates.push(path)
       }
     }
     const removals = removalsOf(call, env.home)
