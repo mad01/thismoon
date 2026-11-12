@@ -406,16 +406,58 @@ then run the file" bypass.
   x.sh`, `python x.py` (versioned names like `python3.12` too), `perl`,
   `ruby`, `node`, `osascript`, `uv run`, `./x.sh`, extensionless `./deploy`
   when the file starts with a shebang, `source x.sh`, interpreter `-c`/`-e`
-  strings, heredocs, `bash < x.sh` stdin redirects, and `cat x.sh | bash`
-  pipes. Wrappers (`sudo`, `env`, `nohup`, `timeout <n>`, …) are stripped
-  first.
+  strings, heredocs, `bash < x.sh` stdin redirects, `cat x.sh | bash`
+  pipes, and a heredoc or here-string passed through `cat`, `head`, `tail`
+  or `tee` into an interpreter (`cat <<EOF | sh`). Wrappers (`sudo`, `env`,
+  `nohup`, `timeout <n>`, …) are stripped first.
 - **Indirection heads are scanned too**: the command after `eval`, `xargs`,
   and `find -exec`/`-execdir`/`-ok` runs through the same patterns — those
   are the routes a prefix matcher never sees.
 - **A file written and run in one command** (`echo '…' > s.sh && bash
   s.sh`, `tee` included) gets the whole command text scanned. At check time
   the file does not exist yet, so the command line is where its future
-  content lives.
+  content lives. A written file the same command gives an execute bit
+  (`chmod +x s.sh`, `chmod 755 s.sh`) is scanned the same way. A mode that
+  adds none, such as `600` or `-x`, is left alone.
+- **A heredoc written to a text file is text, not commands.** The command
+  is split into lines, so a heredoc body is otherwise read line by line as
+  commands, and a markdown code block showing `bash -c '…'` or `xargs rm
+  -rf` is denied. The guard skips those lines (`scripttext.go`) only when
+  it can show the shell never runs them:
+  - The heredoc is a bare `cat` or `tee`, optionally after `sudo`, whose
+    other words are output redirects, tee's `-a`/`-i`, and file targets.
+    Its line is reached through plain lines only: no quote, comment,
+    substitution or continuation before it.
+  - Each target is a literal path, with no variable, glob or `~user`, and
+    a document extension: `.md`, `.markdown`, `.txt`, `.rst`, `.adoc`,
+    `.log`, `.csv` or `.tsv`. JSON, YAML and TOML are left out, because
+    hook runners and mise run commands from `package.json`, `lefthook.yml`
+    and `mise.toml`.
+  - No part of the target's path below the cwd or home starts with a dot,
+    so `.git/`, `.husky/`, `.claude/` and dotfiles are out. The target is
+    not under `/etc`, `/private`, `/Library`, `~/Library`, `/usr`, `/opt`,
+    `/System`, `/bin`, `/sbin` or `/dev`, and no directory on the way is a
+    symlink. A temp folder (`/tmp`, `/private/tmp`, `/var/tmp`,
+    `/private/var/tmp` or `~/.tmp`, but not `$TMPDIR` or `/var/folders`) is
+    a base like the cwd and home, so only the part below it is checked.
+  - An existing target is a regular file with one link and no execute bit.
+  - The delimiter is quoted, or the body holds no `$`, backtick or
+    backslash, since the shell expands an unquoted body. The body does not
+    start with a shebang.
+  - Every `cd` is `cd PATH` followed by `&&`. A relative target counts only
+    after the cds in its own `&&` chain, since a failed cd skips the rest of
+    that chain. `CDPATH` in the command ends the relaxation, and one in the
+    environment makes a relative `cd` unknown.
+  - Every other step is `mkdir`, `touch`, `ls`, `echo`, `printf`, `cat`,
+    `wc`, `pwd`, `true`, `git add|commit|status|diff|log|show` without
+    `--output` or `--chmod`, `gh pr|issue create|edit|comment` or `gh
+    release|gist create|edit`. No step carries a redirect or `sudo`, and
+    nothing outside the bodies opens a pipe, a substitution, a subshell or
+    a background job.
+
+  So `cat > doc.md <<'EOF'` followed by `git add doc.md` passes, while the
+  same file run, sourced, made executable, copied or piped on keeps every
+  line checked.
 - **`curl | bash` is denied outright** (`wget` too): nothing can read what
   would run. Download to a file first, then run the file.
 - **Patterns come from** the `permissions.deny` `Bash(...)` entries of
