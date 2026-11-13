@@ -56,7 +56,9 @@ d-man/
     blockpage/            embedded retro arcade served on blocked hosts, random
                            pick per visit; more games load as plugins from the
                            optional games_dir config key (go:embed assets/ +
-                           blockpage_test.go)
+                           blockpage_test.go); the kit (assets/arcade.js) steps
+                           games at a fixed 60 a second, and arcade.test.mjs
+                           runs it under node (make test-js)
   Makefile               - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
@@ -148,6 +150,7 @@ A bad `routes.toml` edit is logged and ignored; the previous good routes +
 ```bash
 make build && make install     # ~/code/bin/d-man, codesigned ("mad01 Local Signing" when present)
 go test ./...
+make test-js                   # the arcade kit's node tests (make test runs both)
 ```
 
 ## HTTP API

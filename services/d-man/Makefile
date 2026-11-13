@@ -5,7 +5,7 @@ DEST     := $(PREFIX)/$(BIN)
 COMPONENT := d-man
 include ../../buildinfo.mk
 
-.PHONY: build install resign clean test tidy fmt lint
+.PHONY: build install resign clean test test-js tidy fmt lint
 
 build:
 	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/d-man
@@ -27,6 +27,16 @@ resign:
 
 test:
 	go test ./...
+	$(MAKE) test-js
+
+# The block page's arcade kit runs under node's test runner. Build and install
+# never need node, so a machine without it skips these tests.
+test-js:
+	@if command -v node >/dev/null 2>&1; then \
+		node --test internal/blockpage/*.test.mjs; \
+	else \
+		echo "d-man: node not found, skipping the arcade kit tests"; \
+	fi
 
 tidy:
 	go mod tidy

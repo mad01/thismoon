@@ -177,8 +177,11 @@ Any flat `<name>.js` file in that directory (lowercase letters, digits, `-`,
 `_`) is loaded into the page after the built-in games and joins the rotation by
 calling `ARCADE.register(name, factory)`. It's the same one-file contract the
 bundled games use (see `internal/blockpage/assets/smash.js` for a complete
-example). The directory is read per request, so dropping a file in takes effect
-on the next page load; a missing directory simply means no extra games.
+example). The kit calls a game's `update` 60 times a second on any display and
+its `draw` once per display frame, so a game counts updates for speed and
+timers and changes no state in `draw`. The directory is read per request, so
+dropping a file in takes effect on the next page load; a missing directory
+simply means no extra games.
 
 Distraction sites force HTTPS via HSTS, so the browser hits port 443 before you
 ever see plain HTTP. `d-man serve` listens on `127.0.0.1:443` too and mints a
@@ -209,7 +212,7 @@ sudo d-man ca install      # generate the CA if needed and trust it
 ## Develop
 
 ```bash
-make test    # go test ./...
+make test    # go test ./..., then the arcade kit's node tests (make test-js)
 make build   # ./d-man
 make tidy    # go mod tidy
 ```
