@@ -1,7 +1,8 @@
 // Package cslindex answers "does csl index this file, and under which repo
 // name" from csl's shard listing on disk, follows a linked worktree to its
 // main checkout (worktree.go), tells a file a csl_ask call cannot answer
-// from (skip.go), and builds the csl_ask call scoped to one file.
+// from and counts its lines (skip.go), and builds the csl_ask call scoped
+// to one file, sized by kit/cslask.
 // git's small bookkeeping files are read through SmallFile, which the
 // guard's git discovery shares, so no read blocks or runs on. A hook
 // runs on every matching tool call and cannot afford to launch csl, so
@@ -11,11 +12,9 @@
 package cslindex
 
 import (
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -98,19 +97,6 @@ func RepoName(root string) string {
 	return filepath.Base(filepath.Dir(root)) + "/" + filepath.Base(root)
 }
 
-// Locate resolves file to the repo name and repo-relative path csl knows it
-// by, ok only when csl has a shard for that repo. A loom worktree is named
-// after its own directory, which has no shard, so it resolves to not
-// indexed; Resolve is the lookup that follows a worktree to its main
-// checkout.
-func Locate(file string) (repo, rel string, ok bool) {
-	root := RepoRoot(file)
-	if root == "" {
-		return "", "", false
-	}
-	return locateIn(root, RepoName(root), file)
-}
-
 // locateIn returns repo and file's slash path below root, ok only when csl
 // has a shard for repo.
 func locateIn(root, repo, file string) (string, string, bool) {
@@ -122,21 +108,6 @@ func locateIn(root, repo, file string) (string, string, bool) {
 		return "", "", false
 	}
 	return repo, filepath.ToSlash(r), true
-}
-
-// AskCall is the csl_ask call scoped to one file. zoekt reads f: as a regex
-// over the repo-relative path, and csl reads repo as a regex over repo
-// names, so both are escaped and anchored at both ends: unanchored, the path
-// also matches a same-named file deeper in the tree and the repo also
-// matches every repo its name prefixes. ZoektTerm quotes a path holding a
-// space as one term.
-func AskCall(repo, rel string) string {
-	query := "f:" + ZoektTerm("^"+regexp.QuoteMeta(rel)+"$")
-	repoRE := "^" + regexp.QuoteMeta(repo) + "$"
-	return fmt.Sprintf(
-		`csl_ask(question: "<what you need from it>", queries: [%q], repo: %q)`,
-		query, repoRE,
-	)
 }
 
 // ZoektTerm renders an RE2 pattern as one zoekt term. Unquoted, a pattern

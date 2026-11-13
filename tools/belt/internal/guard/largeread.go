@@ -40,7 +40,8 @@ const lineCountChunk = 32 << 10
 // LargeRead refuses a Read with no offset and no limit of a text file of
 // large_file_lines or more that csl indexes, in a csl-indexed repo or a
 // linked worktree of one, and hands over the csl_ask call for that file
-// instead. The read-size hint said the same after the read, when the tokens
+// instead, or for a file too long for any csl_ask call says to read it in
+// ranges. The read-size hint said the same after the read, when the tokens
 // were already spent; this says it before. A ranged read always passes, and
 // so does a file that call cannot answer from and a file this agent already
 // edited or wrote in the session. Everything the guard cannot judge passes:
@@ -62,7 +63,7 @@ func (g *LargeRead) Event() string { return EventRead }
 // Check runs the cheap tests first: the range and the path need no
 // filesystem, and the line count stops at the threshold. Only after the
 // line count and the index lookup pass is the whole file read for
-// csl_ask's NUL check, and the transcript only after that.
+// csl_ask's NUL check and line count, and the transcript only after that.
 func (g *LargeRead) Check(in Input) *Denial {
 	if in.Ranged || !filepath.IsAbs(in.FilePath) {
 		return nil
@@ -72,20 +73,43 @@ func (g *LargeRead) Check(in Input) *Denial {
 		return nil
 	}
 	loc, ok := cslindex.Resolve(file)
-	if !ok || cslindex.Skipped(loc.Root, loc.Rel) {
+	if !ok {
+		return nil
+	}
+	lines, ok := cslindex.AskLines(loc.Root, loc.Rel)
+	if !ok {
 		return nil
 	}
 	if edited, known := editedByAgent(in.TranscriptPath, in.AgentID, file); edited || !known {
 		return nil
 	}
+	return g.refuse(file, loc, lines)
+}
+
+// refuse is the three-line refusal: what the read would cost, then the way
+// past it. A file csl_ask can read gets the call for it; one past
+// csl_ask's line ceiling gets the ranged read alone, since no call can
+// read it.
+func (g *LargeRead) refuse(file string, loc cslindex.Located, lines int) *Denial {
+	const ranged = "a ranged read passes this guard."
+	call, ok := loc.AskCall(lines)
+	if !ok {
+		return Reasonf(
+			LargeReadID,
+			"%s has %d lines, and a Read without offset and limit puts all of them in context.\n"+
+				"%s.\n"+
+				"Read it in ranges with offset and limit instead: "+ranged,
+			file, lines, cslindex.AskTooLong,
+		)
+	}
 	return Reasonf(
 		LargeReadID,
 		"%s has %d lines or more, and a Read without offset and limit puts all of them in context.\n"+
 			"When you need an answer from it, ask instead: %s returns the answer, not the file.\n"+
-			"When you will edit it, Read the region with offset and limit: a ranged read passes this guard.",
+			"When you will edit it, Read the region with offset and limit: "+ranged,
 		file,
 		g.minLines,
-		loc.AskCall(),
+		call,
 	)
 }
 

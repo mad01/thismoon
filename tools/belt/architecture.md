@@ -52,7 +52,8 @@ internal/guard/     the Guard interface, the ForEvent registry, the built-in
 internal/cslindex/  csl index lookup from the shard listing, the linked
                     worktree lookup, csl's skip rules (kit/cslignore plus
                     zoekt's pinned limits) and the csl_ask call for one
-                    file, shared by large-read, read-size and prefer-csl
+                    file (max_lines sized by kit/cslask), shared by
+                    large-read, read-size and prefer-csl
 internal/hint/      the Hint interface and the hints (prefer-csl,
                     read-size, commit-policy, lint-policy, moondb-inflight,
                     agent-memory, humanizer-check, em-dash), the Custom

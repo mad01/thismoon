@@ -12,7 +12,7 @@ import (
 )
 
 // nulScanChunk is how much of a file one read takes while looking for a
-// NUL byte.
+// NUL byte and counting lines.
 const nulScanChunk = 32 << 10
 
 // Skipped reports whether a csl_ask call scoped to the file at rel (a slash
@@ -27,7 +27,18 @@ const nulScanChunk = 32 << 10
 // file there only when git tracks it, which belt cannot tell without running
 // git. A file that cannot be read counts as left out too.
 func Skipped(root, rel string) bool {
-	return skippedPath(root, rel) || skippedContent(filepath.Join(root, filepath.FromSlash(rel)))
+	_, ok := AskLines(root, rel)
+	return !ok
+}
+
+// AskLines returns the lines csl_ask counts in the file at rel, the count a
+// call's max_lines must cover, from the same read that looks for a NUL
+// byte. ok is false when Skipped reports the file.
+func AskLines(root, rel string) (lines int, ok bool) {
+	if skippedPath(root, rel) {
+		return 0, false
+	}
+	return contentLines(filepath.Join(root, filepath.FromSlash(rel)))
 }
 
 // skippedPath applies the walk's path rules: kit/cslignore's directory
@@ -48,37 +59,60 @@ func skippedPath(root, rel string) bool {
 	return cslignore.Load(root).Match(rel)
 }
 
-// skippedContent applies the walk's file rules and csl_ask's binary check.
-func skippedContent(file string) bool {
+// contentLines applies the walk's file rules and csl_ask's binary check,
+// and counts the lines of a file that passes both.
+func contentLines(file string) (int, bool) {
 	st, err := os.Lstat(file)
 	if err != nil || !st.Mode().IsRegular() || st.Size() > cslignore.SizeMax {
-		return true
+		return 0, false
 	}
-	nul, err := hasNUL(file)
-	return err != nil || nul
+	return scanText(file)
 }
 
-// hasNUL reports whether file holds a NUL byte, reading it a chunk at a
-// time and at most cslignore.SizeMax bytes of it, should it have grown
-// since its size was checked.
-func hasNUL(file string) (bool, error) {
+// scanText counts file's lines the way csl_ask does, ok false when it holds
+// a NUL byte or cannot be read. It reads a chunk at a time and at most
+// cslignore.SizeMax bytes, should the file have grown since its size was
+// checked.
+func scanText(file string) (int, bool) {
 	f, err := os.Open(file)
 	if err != nil {
-		return false, err
+		return 0, false
 	}
 	defer func() { _ = f.Close() }()
 	r := io.LimitReader(f, cslignore.SizeMax)
 	buf := make([]byte, nulScanChunk)
+	var count lineCount
 	for {
 		n, err := r.Read(buf)
 		if bytes.IndexByte(buf[:n], 0) >= 0 {
-			return true, nil
+			return 0, false
 		}
+		count.add(buf[:n])
 		if errors.Is(err, io.EOF) {
-			return false, nil
+			return count.lines(), true
 		}
 		if err != nil {
-			return false, err
+			return 0, false
 		}
 	}
 }
+
+// lineCount counts lines chunk by chunk with csl_ask's rule: trailing
+// newlines are dropped first, then the rest splits at each newline, so a
+// file ending in one has no empty last line and an empty file is one line.
+type lineCount struct {
+	newlines int // every newline seen
+	trailing int // the newlines at the end of what was seen
+}
+
+func (c *lineCount) add(chunk []byte) {
+	c.newlines += bytes.Count(chunk, []byte{'\n'})
+	body := bytes.TrimRight(chunk, "\n")
+	if len(body) == 0 {
+		c.trailing += len(chunk)
+		return
+	}
+	c.trailing = len(chunk) - len(body)
+}
+
+func (c *lineCount) lines() int { return c.newlines - c.trailing + 1 }

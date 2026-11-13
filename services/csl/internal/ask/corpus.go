@@ -7,17 +7,20 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/mad01/thismoon/kit/cslask"
 	"github.com/mad01/thismoon/services/csl/internal/repo/repopath"
 )
 
 // The corpus caps: what a call gets when it names none, and the most it may
 // ask for. The defaults keep a call near the size the eval measured; the
-// ceilings keep one call inside a worker's context window.
+// ceilings keep one call inside a worker's context window. The line caps
+// live in kit/cslask, which belt reads to size the csl_ask calls it hands
+// over.
 const (
 	DefaultMaxFiles = 20
 	MaxFilesCeiling = 100
-	DefaultMaxLines = 6000
-	MaxLinesCeiling = 20000
+	DefaultMaxLines = cslask.DefaultMaxLines
+	MaxLinesCeiling = cslask.MaxLinesCeiling
 )
 
 // maxFileBytes refuses a file too large to be source a worker should read

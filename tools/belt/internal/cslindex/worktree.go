@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/mad01/thismoon/kit/cslask"
 )
 
 // LinkedWorktree returns the root of the linked git worktree p sits in and
@@ -95,26 +97,56 @@ type Located struct {
 	Worktree bool
 }
 
-// AskCall is the csl_ask call scoped to the file: by repo for a main
-// checkout (AskCall), and by worktree root for a linked worktree, so csl
-// answers from the worktree's index and not its main checkout's.
-func (l Located) AskCall() string {
-	if !l.Worktree {
-		return AskCall(l.Repo, l.Rel)
+// AskTooLong says why a file past csl_ask's line ceiling gets no csl_ask
+// call: the large-read guard and the read-size hint both say it.
+var AskTooLong = fmt.Sprintf(
+	"csl_ask reads at most %d lines in one call, so it cannot answer from this file",
+	cslask.MaxLinesCeiling,
+)
+
+// askScope is the argument that points a csl_ask call at the file's tree:
+// repo for a main checkout, and the worktree root for a linked worktree, so
+// csl answers from the worktree's index and not its main checkout's. csl
+// reads repo as a regex over repo names, so it is escaped and anchored at
+// both ends: unanchored, it also matches every repo its name prefixes.
+func (l Located) askScope() string {
+	if l.Worktree {
+		return fmt.Sprintf("worktree: %q", l.Root)
 	}
-	query := "f:" + ZoektTerm("^"+regexp.QuoteMeta(l.Rel)+"$")
-	return fmt.Sprintf(
-		`csl_ask(question: "<what you need from it>", queries: [%q], worktree: %q)`,
-		query, l.Root,
-	)
+	return fmt.Sprintf("repo: %q", "^"+regexp.QuoteMeta(l.Repo)+"$")
 }
 
-// Resolve is Locate that also follows a linked worktree to its main
-// checkout: a file in a worktree whose main checkout has a shard resolves
-// to the worktree. The main index never holds a worktree, but csl builds one
-// an index of its own on the first call that names it, so the main
-// checkout's shard is what says csl covers it. The main checkout is named
-// the way Locate names any checkout, by its directories.
+// AskCall is the csl_ask call scoped to the file, for a file of lines lines
+// as csl_ask counts them. zoekt reads f: as a regex over the path below the
+// tree's root, so the path is escaped and anchored too: unanchored, it also
+// matches a same-named file deeper in the tree. ZoektTerm quotes a path
+// holding a space as one term. csl_ask reads a file whole or skips it, so
+// the call raises max_lines past the default (cslask.MaxLines). ok is false
+// past the ceiling, where no call can read the file; say AskTooLong then.
+func (l Located) AskCall(lines int) (call string, ok bool) {
+	maxLines, ok := cslask.MaxLines(lines)
+	if !ok {
+		return "", false
+	}
+	query := "f:" + ZoektTerm("^"+regexp.QuoteMeta(l.Rel)+"$")
+	call = fmt.Sprintf(
+		`csl_ask(question: "<what you need from it>", queries: [%q], %s`,
+		query, l.askScope(),
+	)
+	if maxLines > 0 {
+		call += fmt.Sprintf(", max_lines: %d", maxLines)
+	}
+	return call + ")", true
+}
+
+// Resolve resolves file to the tree csl knows it by and its path below
+// that tree's root, ok only when csl has a shard for the repo. It follows a
+// linked worktree to its main checkout: a file in a worktree whose main
+// checkout has a shard resolves to the worktree. The main index never holds
+// a worktree, but csl builds one an index of its own on the first call that
+// names it, so the main checkout's shard is what says csl covers it. A
+// checkout is named the way csl names its shard, by its directories
+// (RepoName).
 func Resolve(file string) (Located, bool) {
 	root := RepoRoot(file)
 	if root == "" {

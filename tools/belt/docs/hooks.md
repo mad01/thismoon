@@ -839,6 +839,14 @@ Refuses a whole-file Read of a large file before the tokens are spent.
   worktree's files and not the main checkout's. Its last line says that a
   ranged read passes. That is the way in for a file the agent will edit,
   since an edit needs the real lines.
+- **The call fits the file.** `csl_ask` reads a file whole or skips it,
+  and by default it reads 6000 lines in one call. For a longer file the
+  call sets `max_lines` to the line count rounded up to a hundred. The
+  limits come from `kit/cslask`, the package csl's `csl_ask` uses, so the
+  two cannot drift apart. No call may ask for more than 20000 lines. For a
+  file past that, the reason hands over no `csl_ask` call. It states the
+  line count, says `csl_ask` cannot answer from the file, and says to read
+  it in ranges with `offset` and `limit`.
 - **Passes a file the `csl_ask` call cannot answer from.** csl's walk
   keeps some files out of the index, name and all, so the call's `f:`
   query finds nothing. Those rules are csl's own. The directory names, the
@@ -854,8 +862,9 @@ Refuses a whole-file Read of a large file before the tokens are spent.
   Every hidden directory counts, `.github` and `.claude` too: csl indexes a
   file there only when git tracks it, and the guard runs no git. A
   gitignored file anywhere else is refused, because csl's walk reads no
-  `.gitignore`. The NUL check reads the whole file. It runs after the line
-  count and the index lookup, and before the transcript check.
+  `.gitignore`. The NUL check reads the whole file and counts its lines
+  the way `csl_ask` does, for `max_lines`. It runs after the line count and
+  the index lookup, and before the transcript check.
 - **Allows** any Read with an `offset` or a `limit`, a relative path, an
   image, PDF or notebook, a missing file, a directory, a file it cannot
   read, a file with a NUL byte, a file under the threshold, and a file
@@ -1291,10 +1300,11 @@ After a Read or a `csl_read` pulls in a large file without a range, points
 at the cheaper ways in.
 
 - **Fires when** a Read with no `offset` and no `limit` returns a file of
-  `large_file_lines` or more (300 by default) inside a repo csl indexes. The index check is the same
-  shard listing prefer-csl reads. The file must be a type `csl_outline`
-  has symbols for: Go, TypeScript, Python, Java, protobuf, shell, or
-  markdown.
+  `large_file_lines` or more (300 by default) inside a repo csl indexes,
+  or in a linked worktree of one. The lookup is the large-read guard's
+  (`cslindex.Resolve`), over the same shard listing prefer-csl reads. The
+  file must be a type `csl_outline` has symbols for: Go, TypeScript,
+  Python, Java, protobuf, shell, or markdown.
 - **Also fires on `csl_read`** with no `start_line` and no `end_line`,
   under the same rules. A whole-file `csl_read` returns at most 500 lines,
   but the hint goes by the file's length, so `lines 1-500 of 843` counts.
@@ -1313,18 +1323,28 @@ at the cheaper ways in.
   no range, as csl reads it. The matcher has to name the tool:
   `Read|mcp__csl__csl_read`.
 - **The advice** names the file and its line count. It hands over a
-  `csl_ask` call first, for when only an answer is needed. The question is
-  a placeholder, and the file goes in as an `f:` query on its path. csl
-  reads the path and the repo as regexes, so both are escaped and
-  anchored. Then comes the `csl_outline` call with repo and path filled
+  `csl_ask` call first, for when only an answer is needed. It is the same
+  call the large-read guard hands over, built by the same code. The
+  question is a placeholder, and the file goes in as an `f:` query on its
+  path. csl reads the path and the repo as regexes, so both are escaped
+  and anchored. Then comes the `csl_outline` call with repo and path filled
   in, and `csl_read` or a ranged Read for a region the agent will edit,
   which needs the real lines. The outline call always sets
   `include_tests: true`, because csl leaves test files out of an outline by
   default. For markdown it adds `kinds: ["section"]`, since headings are
   left out otherwise.
+- **In a linked worktree** both calls set `worktree` to the worktree's
+  root in place of `repo`, so csl answers from the worktree's own index,
+  not the main checkout's.
+- **The call fits the file**, as the guard's does. Past 6000 lines it sets
+  `max_lines` to the line count rounded up to a hundred. Past 20000 lines
+  no `csl_ask` call can read the file, so the advice says so and points at
+  `csl_read` or a ranged Read instead, then at the outline.
 - **Once per file per agent per session**, through the seen file. The
   marker names the file by repo and repo-relative path, so a Read and a
-  `csl_read` of one file share a nudge. A subagent shares its parent's
+  `csl_read` of one file share a nudge. In a linked worktree the marker
+  names the worktree's root in place of the repo, since its file is not
+  the main checkout's. A subagent shares its parent's
   session id, so it gets its own nudge, and its read doesn't use up the
   main thread's. A ranged read of the file doesn't use one up either.
 - **Silent** without a session id, on a relative path, and outside an
@@ -1332,10 +1352,14 @@ at the cheaper ways in.
   symbols for: JSON, YAML, TOML, plain text, CSV, lock files, JavaScript,
   Dockerfiles and the rest. It's also silent on a response it can't read:
   an image, notebook or PDF read, or a line count that is missing or of
-  another JSON type. A loom worktree
-  has no shard of its own, so reads there stay silent too. That is on
-  purpose, since `csl_outline` would describe the indexed checkout, not the
-  worktree's files.
+  another JSON type.
+- **Silent on a file the `csl_ask` call cannot answer from**, after a
+  Read. The rule is the large-read guard's (`cslindex.Skipped`): a
+  generated or hidden directory on the path, a `.cslignore` match, a
+  symlink, a file over 2 MiB or with a NUL byte. The check reads the file,
+  so it runs only once the seen file says the nudge is still due. The
+  silence does not use up the nudge. A `csl_read` names no checkout on
+  disk, so its file gets no such check.
 - **Why**: a whole-file read of a large file puts every line in context
   when the task usually needs one region or one answer. A question to
   `csl_ask`, an outline or a ranged read gets there for a fraction of the
@@ -1659,8 +1683,9 @@ cannot afford discovery:
   and `large-read` never ask csl anything; they list csl's shard directory
   (`~/.config/csl/search-index/`) to learn which repos are indexed, and
   name the repo containing a path as `<parent-dir>/<repo-dir>` to match
-  csl's shard naming. `large-read` names a linked worktree's main checkout
-  the same way, found through the worktree's `commondir` file.
+  csl's shard naming. `large-read` and `read-size` name a linked
+  worktree's main checkout the same way, found through the worktree's
+  `commondir` file.
 - **Locate, for the ledger.** `belt record` runs one
   `git rev-parse --show-toplevel --git-dir --git-common-dir --abbrev-ref HEAD`
   in the payload's working directory, plus the origin lookup. A linked
@@ -1700,7 +1725,8 @@ missing key:
 | session dedupe store | `~/.cache/belt/seen-<session>` | all once-per-session hints |
 | agent-memory store paths | `~/.config/agent-memory[-work]/MEMORY.md` | agent-memory |
 | csl shard listing | `~/.config/csl/search-index/` | prefer-csl, read-size, large-read |
-| csl index file size limit | 2 MiB (`kit/cslignore.SizeMax`, the limit csl's index takes) | large-read |
+| csl index file size limit | 2 MiB (`kit/cslignore.SizeMax`, the limit csl's index takes) | large-read, read-size |
+| csl_ask lines per call | 6000 by default, 20000 at most (`kit/cslask`, the limits `csl_ask` applies) | large-read, read-size |
 | ledger message cap | 500 bytes | belt record |
 | record budgets | 1 s to locate in git, 300 ms to post | belt record |
 | watcher request timeout | 2 s per poll | belt watch |

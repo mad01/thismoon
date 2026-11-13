@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
-	"github.com/mad01/thismoon/tools/belt/internal/cslindex"
 )
 
 // indexedRepoFile builds a hermetic home holding a csl shard for acme/widget
@@ -87,6 +86,9 @@ func TestReadSizeCheck(t *testing.T) {
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if filepath.IsAbs(tt.in.FilePath) {
+				writeEmpty(t, tt.in.FilePath) // a Read that returned lines read a file
+			}
 			in := tt.in
 			in.Event = EventRead
 			in.SessionID = "s" + string(rune('a'+i)) // a fresh session per case
@@ -151,6 +153,7 @@ func TestReadSizeAdviceNamesTheCalls(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			writeEmpty(t, tt.path)
 			got := NewReadSize(config.Config{}).Check(Input{
 				Event: EventRead, FilePath: tt.path, TotalLines: 412, SessionID: tt.name,
 			})
@@ -186,6 +189,7 @@ func TestReadSizeAdviceNamesTheCalls(t *testing.T) {
 func TestReadSizeSpeaksOncePerFilePerAgent(t *testing.T) {
 	file, root := indexedRepoFile(t)
 	other := filepath.Join(root, "other.go")
+	writeEmpty(t, other)
 	h := NewReadSize(config.Config{})
 	steps := []struct {
 		name, session, agent, path string
@@ -232,26 +236,158 @@ func TestReadSizeMarkerSurvivesTheSeenStore(t *testing.T) {
 	}
 }
 
-// TestReadSizeIsSilentInALinkedWorktree backs the documented worktree rule:
-// a linked worktree's .git is a file, which RepoRoot finds, but the
-// worktree is named after its own directory, so no shard matches.
-func TestReadSizeIsSilentInALinkedWorktree(t *testing.T) {
-	_, root := indexedRepoFile(t)
-	worktree := filepath.Join(filepath.Dir(filepath.Dir(root)), ".worktrees", "widget", "feature")
-	gitFile := filepath.Join(worktree, ".git")
-	writeEmpty(t, gitFile)
-	pointer := "gitdir: " + filepath.Join(root, ".git", "worktrees", "feature") + "\n"
-	if err := os.WriteFile(gitFile, []byte(pointer), 0o644); err != nil {
+// writeText writes content at path, making its directories.
+func writeText(t *testing.T, path, content string) {
+	t.Helper()
+	writeEmpty(t, path)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// linkedWorktree lays out a linked worktree of the checkout at root by
+// files alone, the shape git worktree add writes, and returns its root.
+func linkedWorktree(t *testing.T, root, name string) string {
+	t.Helper()
+	gitDir := filepath.Join(root, ".git", "worktrees", name)
+	writeText(t, filepath.Join(gitDir, "commondir"), "../..\n")
+	worktree := filepath.Join(filepath.Dir(filepath.Dir(root)), ".worktrees", "widget", name)
+	writeText(t, filepath.Join(worktree, ".git"), "gitdir: "+gitDir+"\n")
+	return worktree
+}
+
+// TestReadSizeSpeaksInALinkedWorktree: a linked worktree of an indexed repo
+// has no shard of its own, but csl builds it an index on the first call
+// that names it. The hint speaks there, the large-read guard's way
+// (cslindex.Resolve), and its csl_ask and csl_outline calls name the
+// worktree's root in place of the repo, so csl answers from the worktree's
+// files. The worktree's file is not the main checkout's, so each gets its
+// own nudge.
+func TestReadSizeSpeaksInALinkedWorktree(t *testing.T) {
+	mainFile, root := indexedRepoFile(t)
+	worktree := linkedWorktree(t, root, "feature")
 	file := filepath.Join(worktree, "internal", "big.go")
 	writeEmpty(t, file)
-	if got := cslindex.RepoRoot(file); got != worktree {
-		t.Fatalf("RepoRoot(%s) = %q, want the worktree %q", file, got, worktree)
+	h := NewReadSize(config.Config{})
+	got := h.Check(Input{Event: EventRead, FilePath: file, TotalLines: 412, SessionID: "s1"})
+	if got == nil {
+		t.Fatal("Check in a linked worktree = nil, want advice")
 	}
-	in := Input{Event: EventRead, FilePath: file, TotalLines: 412, SessionID: "s1"}
-	if got := NewReadSize(config.Config{}).Check(in); got != nil {
-		t.Errorf("Check in a linked worktree = %+v, want nil", got)
+	wants := []string{
+		file + " is 412 lines",
+		`queries: ["f:^internal/big\\.go$"], worktree: "` + worktree + `")`,
+		`csl_outline(worktree: "` + worktree + `", path: "internal/big.go", include_tests: true)`,
+	}
+	for _, want := range wants {
+		if !strings.Contains(got.Text, want) {
+			t.Errorf("advice %q does not mention %q", got.Text, want)
+		}
+	}
+	if strings.Contains(got.Text, "repo:") {
+		t.Errorf("advice %q names a repo; the calls would answer from the main checkout", got.Text)
+	}
+	main := Input{Event: EventRead, FilePath: mainFile, TotalLines: 412, SessionID: "s1"}
+	if h.Check(main) == nil {
+		t.Error("Check of the main checkout's file after the worktree's = nil, want its own nudge")
+	}
+}
+
+// TestReadSizeIsSilentOnWhatCSLSkips: a file the csl_ask call could not
+// answer from gets no advice, the large-read guard's rule
+// (cslindex.Skipped): a generated or hidden directory, a .cslignore match,
+// a symlink, a NUL byte. The silence spends no nudge, so the file speaks
+// once csl could answer from it.
+func TestReadSizeIsSilentOnWhatCSLSkips(t *testing.T) {
+	file, root := indexedRepoFile(t)
+	writeText(t, filepath.Join(root, ".cslignore"), "generated/\n")
+	paths := []string{
+		filepath.Join(root, "node_modules", "pkg", "big.go"),
+		filepath.Join(root, "vendor", "big.go"),
+		filepath.Join(root, ".cache", "big.go"),
+		filepath.Join(root, "generated", "big.go"),
+	}
+	for _, p := range paths {
+		writeEmpty(t, p)
+	}
+	nul := filepath.Join(root, "nul.go")
+	writeText(t, nul, "package x\n\x00\n")
+	link := filepath.Join(root, "link.go")
+	if err := os.Symlink(file, link); err != nil {
+		t.Fatal(err)
+	}
+	paths = append(paths, nul, link, filepath.Join(root, "gone.go"))
+	h := NewReadSize(config.Config{})
+	for _, p := range paths {
+		in := Input{Event: EventRead, FilePath: p, TotalLines: 412, SessionID: "s1"}
+		if got := h.Check(in); got != nil {
+			t.Errorf("Check(%s) = %q, want silence", p, got.Text)
+		}
+	}
+	writeText(t, nul, "package x\n")
+	if h.Check(Input{Event: EventRead, FilePath: nul, TotalLines: 412, SessionID: "s1"}) == nil {
+		t.Error("Check after the NUL byte went = nil, want advice: the silence spent the nudge")
+	}
+}
+
+// TestReadSizeSizesTheAskCall: csl_ask reads a file whole or skips it. Past
+// its default line budget the call sets max_lines high enough for the
+// file; past the highest budget no call can read it, so the advice hands
+// over no csl_ask call and says to read the file in ranges, keeping the
+// outline. A Read and a csl_read get the same rule.
+func TestReadSizeSizesTheAskCall(t *testing.T) {
+	file, _ := indexedRepoFile(t)
+	csl := CSLFile{Name: "acme/widget/internal/big.go"}
+	tests := []struct {
+		name  string
+		in    Input
+		wants []string
+		ask   bool
+	}{
+		{
+			"Read past the default",
+			Input{FilePath: file, TotalLines: 7421},
+			[]string{`repo: "^acme/widget$", max_lines: 7500)`},
+			true,
+		},
+		{
+			"csl_read past the default",
+			Input{CSLFile: csl, TotalLines: 7421},
+			[]string{`repo: "^acme/widget$", max_lines: 7500)`},
+			true,
+		},
+		{
+			"Read past the ceiling",
+			Input{FilePath: file, TotalLines: 20001},
+			[]string{"20001 lines", "at most 20000 lines", "offset and limit", "csl_outline("},
+			false,
+		},
+		{
+			"csl_read past the ceiling",
+			Input{CSLFile: csl, TotalLines: 25000},
+			[]string{"25000 lines", "at most 20000 lines", "csl_read", "csl_outline("},
+			false,
+		},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := tt.in
+			in.Event, in.SessionID = EventRead, fmt.Sprint("m", i)
+			got := NewReadSize(config.Config{}).Check(in)
+			if got == nil {
+				t.Fatal("Check = nil, want advice")
+			}
+			for _, want := range tt.wants {
+				if !strings.Contains(got.Text, want) {
+					t.Errorf("advice %q does not mention %q", got.Text, want)
+				}
+			}
+			if has := strings.Contains(got.Text, "csl_ask("); has != tt.ask {
+				t.Errorf("advice %q hands over a csl_ask call: %v, want %v", got.Text, has, tt.ask)
+			}
+			if n := strings.Count(got.Text, "\n") + 1; n != 3 {
+				t.Errorf("advice is %d lines, want 3: %q", n, got.Text)
+			}
+		})
 	}
 }
 

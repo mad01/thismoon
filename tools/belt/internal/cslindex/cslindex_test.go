@@ -36,11 +36,11 @@ func TestZoektTerm(t *testing.T) {
 	}
 }
 
-// TestLocate pins the index lookup against a hermetic home: a file in a
-// repo with a shard resolves to the shard's repo name and a slash path, and
-// a file in a repo without one, outside any repo, or in a linked worktree
-// of the indexed repo does not resolve.
-func TestLocate(t *testing.T) {
+// TestResolveByShard pins the index lookup against a hermetic home: a file
+// in a repo with a shard resolves to the shard's repo name and a slash path,
+// and a file in a repo without one, outside any repo, or behind an empty
+// .git file, which is no linked worktree, does not resolve.
+func TestResolveByShard(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	index := filepath.Join(home, ".config", "csl", "search-index")
@@ -70,14 +70,14 @@ func TestLocate(t *testing.T) {
 		},
 		{"repo csl does not index", filepath.Join(other, "big.go"), "", "", false},
 		{"outside any repo", filepath.Join(home, "loose.go"), "", "", false},
-		{"linked worktree", filepath.Join(worktree, "big.go"), "", "", false},
+		{"empty .git file", filepath.Join(worktree, "big.go"), "", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repo, rel, ok := Locate(tt.file)
-			if repo != tt.repo || rel != tt.rel || ok != tt.ok {
-				t.Errorf("Locate(%s) = %q, %q, %v, want %q, %q, %v",
-					tt.file, repo, rel, ok, tt.repo, tt.rel, tt.ok)
+			loc, ok := Resolve(tt.file)
+			if loc.Repo != tt.repo || loc.Rel != tt.rel || ok != tt.ok {
+				t.Errorf("Resolve(%s) = %q, %q, %v, want %q, %q, %v",
+					tt.file, loc.Repo, loc.Rel, ok, tt.repo, tt.rel, tt.ok)
 			}
 		})
 	}
@@ -221,11 +221,11 @@ func TestResolve(t *testing.T) {
 	if !ok || loc != want {
 		t.Errorf("Resolve(worktree) = %+v, %v, want %+v, true", loc, ok, want)
 	}
-	call := loc.AskCall()
+	call, ok := loc.AskCall(400)
 	wantCall := `csl_ask(question: "<what you need from it>", ` +
 		`queries: ["f:^internal/big\\.go$"], worktree: "` + wt + `")`
-	if call != wantCall {
-		t.Errorf("worktree AskCall = %s, want %s", call, wantCall)
+	if !ok || call != wantCall {
+		t.Errorf("worktree AskCall = %s, %v, want %s, true", call, ok, wantCall)
 	}
 
 	if loc, ok := Resolve(filepath.Join(otherWT, "big.go")); ok {
@@ -313,15 +313,83 @@ func randomText(lines, width int) string {
 // TestAskCallAnchorsBoth: the path and the repo are regexes to csl, so both
 // are escaped and anchored. The %q rendering doubles each backslash.
 func TestAskCallAnchorsBoth(t *testing.T) {
-	got := AskCall("acme/widget", "internal/big.go")
+	got, _ := Located{Repo: "acme/widget", Rel: "internal/big.go"}.AskCall(400)
 	want := `csl_ask(question: "<what you need from it>", ` +
 		`queries: ["f:^internal/big\\.go$"], repo: "^acme/widget$")`
 	if got != want {
 		t.Errorf("AskCall = %s, want %s", got, want)
 	}
-	if spaced := AskCall("acme/widget", "my dir/big.go"); !strings.Contains(
-		spaced, `queries: ["f:\"^my dir/big\\\\.go$\""]`,
-	) {
+	spaced, _ := Located{Repo: "acme/widget", Rel: "my dir/big.go"}.AskCall(400)
+	if !strings.Contains(spaced, `queries: ["f:\"^my dir/big\\\\.go$\""]`) {
 		t.Errorf("AskCall with a space = %s, want the path quoted as one term", spaced)
+	}
+}
+
+// TestAskCallSizesMaxLines: csl_ask reads a file whole or skips it, so a
+// file past its default line budget gets a call with max_lines raised to
+// cover it, and a file past the ceiling gets no call, in a main checkout and
+// in a linked worktree alike.
+func TestAskCallSizesMaxLines(t *testing.T) {
+	main := Located{Repo: "acme/widget", Rel: "big.go"}
+	wt := Located{Root: "/w/feature", Rel: "big.go", Repo: "acme/widget", Worktree: true}
+	tests := []struct {
+		name  string
+		loc   Located
+		lines int
+		tail  string // what the call ends with; "" means no call
+	}{
+		{"within the default", main, 6000, `repo: "^acme/widget$")`},
+		{"past the default", main, 7421, `repo: "^acme/widget$", max_lines: 7500)`},
+		{"at the ceiling", main, 20000, `repo: "^acme/widget$", max_lines: 20000)`},
+		{"past the ceiling", main, 20001, ""},
+		{"worktree past the default", wt, 7421, `worktree: "/w/feature", max_lines: 7500)`},
+		{"worktree past the ceiling", wt, 25000, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			call, ok := tt.loc.AskCall(tt.lines)
+			if ok != (tt.tail != "") || !strings.HasSuffix(call, tt.tail) {
+				t.Errorf("AskCall(%d) = %q, %v, want a call ending %q", tt.lines, call, ok, tt.tail)
+			}
+			if !ok && call != "" {
+				t.Errorf("AskCall(%d) = %q with ok false, want no call", tt.lines, call)
+			}
+		})
+	}
+}
+
+// TestAskLinesCountsLikeCSLAsk: the count is csl_ask's own, trailing
+// newlines dropped first and an empty file one line, so a call's max_lines
+// covers the file as csl_ask counts it. A run of newlines across the scan's
+// chunk boundary counts once. A skipped file has no count.
+func TestAskLinesCountsLikeCSLAsk(t *testing.T) {
+	root := t.TempDir()
+	long := strings.Repeat("x", nulScanChunk-1) + "\n\n\n"
+	files := map[string]struct {
+		content string
+		lines   int
+		ok      bool
+	}{
+		"two.go":          {"a\nb\n", 2, true},
+		"no-newline.go":   {"a\nb", 2, true},
+		"trailing.go":     {"a\n\n\n", 1, true},
+		"empty.go":        {"", 1, true},
+		"blank-middle.go": {"a\n\nb\n", 3, true},
+		"across-chunk.go": {long + "y\n", 4, true},
+		"chunk-tail.go":   {long, 1, true},
+		"vendor/big.go":   {"a\nb\n", 0, false},
+		"nul.go":          {"a\n\x00\n", 0, false},
+	}
+	for rel, f := range files {
+		writeFile(t, filepath.Join(root, filepath.FromSlash(rel)), f.content)
+	}
+	for rel, f := range files {
+		lines, ok := AskLines(root, rel)
+		if lines != f.lines || ok != f.ok {
+			t.Errorf("AskLines(%s) = %d, %v, want %d, %v", rel, lines, ok, f.lines, f.ok)
+		}
+		if Skipped(root, rel) == ok {
+			t.Errorf("Skipped(%s) = %v, want the opposite of AskLines' ok %v", rel, !ok, ok)
+		}
 	}
 }

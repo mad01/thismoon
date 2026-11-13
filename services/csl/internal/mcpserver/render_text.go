@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/mad01/thismoon/kit/cslask"
 	"github.com/mad01/thismoon/kit/doctor"
-	"github.com/mad01/thismoon/services/csl/internal/ask"
 	"github.com/mad01/thismoon/services/csl/internal/lexical"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
@@ -215,10 +215,6 @@ const readPagingNote = "truncated: read more with start_line/end_line"
 // csl_read's to fetch.
 const topHitTruncatedNote = "truncated: read the rest with csl_read"
 
-// askLinesStep is what the max_lines in a ready csl_ask call rounds up to,
-// so the number reads as a budget rather than a measurement.
-const askLinesStep = 100
-
 // renderReadText prints csl_read's text form; a capped read closes with
 // readTruncatedNote.
 func renderReadText(out readOutput) string {
@@ -251,27 +247,29 @@ func renderFileText(out readOutput, truncatedNote string) string {
 // only be paged through. One within it gets a csl_ask call ready to copy,
 // raising max_lines when the file runs past the default.
 func readTruncatedNote(out readOutput) string {
-	if out.TotalLines > ask.MaxLinesCeiling {
+	maxLines, ok := cslask.MaxLines(out.TotalLines)
+	if !ok {
 		return readPagingNote
 	}
-	return readPagingNote + ", or ask " + askFileCall(out) + " when you only need an answer"
+	call := askFileCall(out, maxLines)
+	return readPagingNote + ", or ask " + call + " when you only need an answer"
 }
 
-// askFileCall is the csl_ask call scoped to the one file out read. zoekt
-// reads f: as a regex over the repo-relative path, and csl reads repo as a
-// regex over repo names, so both are escaped and anchored at both ends:
-// unanchored, the path also matches a same-named file deeper in the tree
-// and the repo every repo its name prefixes. belt's read-size hint builds
-// the same call (askCall in tools/belt/internal/hint/readsize.go).
-func askFileCall(out readOutput) string {
+// askFileCall is the csl_ask call scoped to the one file out read, with
+// maxLines set when it is not 0. zoekt reads f: as a regex over the
+// repo-relative path, and csl reads repo as a regex over repo names, so
+// both are escaped and anchored at both ends: unanchored, the path also
+// matches a same-named file deeper in the tree and the repo every repo its
+// name prefixes. belt's large-read guard and read-size hint build the same
+// call (Located.AskCall in tools/belt/internal/cslindex).
+func askFileCall(out readOutput, maxLines int) string {
 	query := "f:" + zoektTerm("^"+regexp.QuoteMeta(path.Clean(out.Path))+"$")
 	call := fmt.Sprintf(
 		`csl_ask(question: "<what you need from it>", queries: [%q], repo: %q`,
 		query, "^"+regexp.QuoteMeta(out.Repo)+"$",
 	)
-	if out.TotalLines > ask.DefaultMaxLines {
-		budget := (out.TotalLines + askLinesStep - 1) / askLinesStep * askLinesStep
-		call += fmt.Sprintf(", max_lines: %d", min(budget, ask.MaxLinesCeiling))
+	if maxLines > 0 {
+		call += fmt.Sprintf(", max_lines: %d", maxLines)
 	}
 	return call + ")"
 }
