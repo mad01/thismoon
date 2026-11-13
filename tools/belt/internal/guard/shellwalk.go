@@ -29,6 +29,13 @@ type walkStep struct {
 	// defines marks a command that defines a shell function
 	// (definesFunction), which may stand in for git or any later command.
 	defines bool
+	// opaque names text the command runs that the walk could not read and
+	// that may hold a push (walkMemory.claim): a git alias body, text printed
+	// into a shell, an interpreter script that names a push.
+	opaque opacity
+	// pipedConfig marks a command a pipeline hands the output of a command
+	// that names a git config file to (pipeInto), as xargs takes file names.
+	pipedConfig bool
 	// before and after are the joints around the command. chain names the
 	// run of commands joined by && it belongs to in its own shell, so a later
 	// command with the same chain runs only if this one succeeded. A command
@@ -49,11 +56,17 @@ type walkStep struct {
 // run is walked as code (walkProse). A code text readShell cannot follow
 // gets the full walk up to the line it fails on and a fail-closed read of
 // the rest (walkLines); a body read as code that it cannot follow, or one
-// with a space oddSpace reports, is walked the token way (walkTokens).
+// with a space oddSpace reports, is walked the token way (walkTokens). It
+// also reads what a command hands a shell to run beyond its own words
+// (feedsOf): a git alias body, text printed into a shell, a file or a
+// variable the command filled with text.
 func walkCommands(command, cwd string, fn func(walkStep)) {
-	command = resolveLiteralVars(command)
-	w := shellWalk{dir: cwd, cdpath: os.Getenv("CDPATH") != "", chains: new(int)}
-	w.walkRead(command, true, fn)
+	resolved := resolveLiteralVars(command)
+	w := shellWalk{
+		dir: cwd, cdpath: os.Getenv("CDPATH") != "", chains: new(int),
+		mem: newWalkMemory(command, resolved),
+	}
+	w.walkRead(resolved, true, fn)
 }
 
 // walkRead walks one text. code says the shell runs it as commands; with
@@ -117,7 +130,7 @@ func (w *shellWalk) walkCmds(text string, cmds []shellCmd, fn func(walkStep)) {
 		}
 		w.walkNested(text, c, fn)
 		if tokens := c.tokens(); len(tokens) > 0 {
-			w.walkWords(text, c, tokens, fn)
+			w.walkWords(text, c, tokens, w.pipeInto(cmds, i), fn)
 		}
 		w.heredoc = w.heredoc || len(c.docs) > 0
 		var reader *shellCmd
@@ -295,10 +308,46 @@ func handsOn(c shellCmd) bool {
 	return false
 }
 
+// pipeIn is what the pipeline in front of a command hands it.
+type pipeIn struct {
+	// from is the command whose output reaches it, past any cat or tee
+	// (passesStdin) between them; nil outside a pipeline.
+	from *shellCmd
+	// namesConfig marks a pipeline in which a command in front of it names a
+	// git config file (gitConfigFile).
+	namesConfig bool
+}
+
+// pipeInto returns what the pipeline in front of command i of cmds hands it.
+func (w *shellWalk) pipeInto(cmds []shellCmd, i int) pipeIn {
+	var in pipeIn
+	for j := i - 1; j >= 0 && cmds[j+1].before == jointPipe; j-- {
+		in.namesConfig = in.namesConfig || namesGitConfig(cmds[j], w.dir)
+		if in.from == nil && (!passesStdin(cmds[j]) || cmds[j].before != jointPipe) {
+			in.from = &cmds[j]
+		}
+	}
+	return in
+}
+
+// namesGitConfig reports whether a command's words or redirections name a
+// git config file (gitConfigFile).
+func namesGitConfig(c shellCmd, dir string) bool {
+	names := func(w placedWord) bool { return gitConfigFile(w.token(), dir) }
+	return slices.ContainsFunc(c.words, names) || slices.ContainsFunc(c.targets, names)
+}
+
 // walkWords handles one command's words, read from text: a cd moves the
 // walk, anything else reaches fn, and a shell -c script or an eval text is
-// walked in turn. A function definition moves nothing, even one named cd.
-func (w *shellWalk) walkWords(text string, c shellCmd, tokens []string, fn func(walkStep)) {
+// walked in turn, then what the command feeds a shell (feedsOf). A function
+// definition moves nothing, even one named cd.
+func (w *shellWalk) walkWords(
+	text string,
+	c shellCmd,
+	tokens []string,
+	in pipeIn,
+	fn func(walkStep),
+) {
 	w.cdpath = w.cdpath || mentionsName(strings.Join(tokens, " "), cdpathNames)
 	defines := definesFunction(text, c, tokens)
 	if target, ok := parseCd(tokens); ok && !defines {
@@ -320,16 +369,24 @@ func (w *shellWalk) walkWords(text string, c shellCmd, tokens []string, fn func(
 	}
 	step := walkStep{
 		tokens: tokens, dir: dir, configEnv: w.configEnv, targets: targets, defines: defines,
+		pipedConfig: in.namesConfig,
 	}
 	if !w.prose {
 		step.before, step.after, step.chain = c.before, c.after, w.chain
 	}
+	feeds := w.feedsOf(text, c, tokens, in, dir)
+	opaque, walk := w.mem.claim(feeds)
+	step.opaque = opaque
 	fn(step)
+	w.remember(text, c, tokens, in, dir)
 	if at := inlineScriptAt(tokens); at >= 0 {
 		w.childFor(dir, tokens[:at]).walkRead(c.words[at].script(), true, fn)
 	}
 	if at := evalAt(tokens); at >= 0 {
 		w.walkEval(c, tokens, at, fn)
+	}
+	if walk {
+		w.walkFeeds(feeds, fn)
 	}
 }
 
@@ -351,15 +408,21 @@ func definesFunction(text string, c shellCmd, tokens []string) bool {
 // definition in one command (`if x; then function f { ...; }; fi`).
 var functionLeads = wordSet("! { if then elif else while until do time")
 
-// walkEval walks the text eval runs. eval runs it in this shell, so the
-// variables it sets stay set, and a directory it moves to is unknown here.
+// walkEval walks the text eval runs (walkInShell).
 func (w *shellWalk) walkEval(c shellCmd, tokens []string, at int, fn func(walkStep)) {
 	script := make([]string, 0, len(c.words)-at)
 	for _, word := range c.words[at+1:] {
 		script = append(script, word.script())
 	}
-	inner := w.childFor(w.dir, tokens[:at])
-	inner.walkRead(strings.Join(script, " "), true, fn)
+	w.walkInShell(tokens[:at], strings.Join(script, " "), fn)
+}
+
+// walkInShell walks text this shell runs itself, behind the words pre (eval,
+// source): the variables it sets stay set, and a directory it moves to is
+// unknown here.
+func (w *shellWalk) walkInShell(pre []string, text string, fn func(walkStep)) {
+	inner := w.childFor(w.dir, pre)
+	inner.walkRead(text, true, fn)
 	w.gitEnv = w.gitEnv || inner.gitEnv
 	w.configEnv = w.configEnv || inner.configEnv
 	w.cdpath = w.cdpath || inner.cdpath
@@ -373,7 +436,7 @@ func (w *shellWalk) walkEval(c shellCmd, tokens []string, at int, fn func(walkSt
 func (w *shellWalk) child(dir string) *shellWalk {
 	return &shellWalk{
 		dir: dir, cdpath: w.cdpath, gitEnv: w.gitEnv, configEnv: w.configEnv, heredoc: w.heredoc,
-		feeds: w.feeds, depth: w.depth + 1, chains: w.chains,
+		feeds: w.feeds, depth: w.depth + 1, chains: w.chains, mem: w.mem, expanding: w.expanding,
 	}
 }
 
@@ -451,7 +514,10 @@ func (w *shellWalk) walkTokens(command string, unread bool, fn func(walkStep)) {
 			w.move(target, seg.text, before, after, w.prose || inText(command, seg.off))
 		} else {
 			w.noteGitEnv(tokens)
-			fn(walkStep{tokens: tokens, dir: w.gitDir(tokens), configEnv: w.configEnv, unread: unread})
+			fn(walkStep{
+				tokens: tokens, dir: w.gitDir(tokens), configEnv: w.configEnv, unread: unread,
+				opaque: opacity{what: w.tokenAlias(tokens)},
+			})
 		}
 		w.heredoc = w.heredoc || opensHeredoc(seg.text)
 	}

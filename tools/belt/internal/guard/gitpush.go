@@ -37,6 +37,9 @@ type GitPushMain struct {
 	// resolveHasBranch reports whether the repo at dir has the local branch
 	// name (pushHeads.verify). Injectable for tests.
 	resolveHasBranch func(dir, name string) bool
+	// resolveInRepo reports whether dir is inside a git repository
+	// (opaqueDenial). Injectable for tests.
+	resolveInRepo func(dir string) bool
 }
 
 // NewGitPushMain builds the guard with the real git-backed resolvers.
@@ -47,6 +50,7 @@ func NewGitPushMain(cfg config.Config) *GitPushMain {
 		resolveRepo:       canonicalPushRepoAt,
 		resolvePushRemote: gitPushRemote,
 		resolveHasBranch:  gitHasBranch,
+		resolveInRepo:     gitInRepo,
 	}
 }
 
@@ -96,6 +100,8 @@ func (g *GitPushMain) Check(in Input) *Denial {
 // judged on the branch git reads, as if the command had no switch.
 func (g *GitPushMain) checkPush(push gitPush) *Denial {
 	switch {
+	case push.opaque.what != "":
+		return g.opaqueDenial(push)
 	case push.unread:
 		return unreadDenial(push)
 	case push.dir == "":
@@ -194,6 +200,42 @@ func (g *GitPushMain) toPlainOrigin(push gitPush, current string) bool {
 	return g.resolvePushRemote(push.dir, current) == "origin"
 }
 
+// opaqueDenial decides a command that runs text the walk could not read
+// (walkStep.opaque). An alias body or an interpreter script that names a
+// push may push to a default branch from any branch, so it is denied
+// wherever it runs, an exempt repo included. Shell text alone (text printed
+// into a shell from a variable or a command, anything but a printer piped
+// into one) is denied only where the guard would deny a default-branch
+// push: in a repo (resolveInRepo) with no direct-push exemption, or in a
+// directory belt cannot tell.
+func (g *GitPushMain) opaqueDenial(push gitPush) *Denial {
+	if !push.opaque.textOnly {
+		return Reasonf(
+			GitPushMainID,
+			"cannot read %s, so a git push in it cannot be checked. Write the push as a plain "+
+				"command (git push origin <branch>), not through a git alias, text printed into a "+
+				"shell, or a script.",
+			push.opaque.what,
+		)
+	}
+	if push.dir != "" && (!g.resolveInRepo(push.dir) || g.pushExempt(push.dir)) {
+		return nil
+	}
+	return Reasonf(
+		GitPushMainID,
+		"cannot read %s, so a git push in it cannot be checked in a repo that blocks direct "+
+			"pushes. Write that text to a file and run it in a command of its own, or run the "+
+			"command directly.",
+		push.opaque.what,
+	)
+}
+
+// gitInRepo reports whether dir is inside a git repository, one with no
+// commit yet included.
+func gitInRepo(dir string) bool {
+	return gitOutput(dir, "rev-parse", "--git-dir") != ""
+}
+
 // unreadDenial decides a push the walk found in code readShell could not
 // follow, so its words come from the token split and a quote may hide where
 // it goes. It is denied unless its refspecs name non-default branches in
@@ -245,9 +287,10 @@ func unknownDirDenial(push gitPush) *Denial {
 // it has run: a git config write (gitConfigWrites), a git remote add,
 // set-url, rename or remove, a git branch upstream change, a redirection
 // into a git config file (gitConfigFile), or any other command that names
-// one in its words. A command that only reads or prints (readOnlyCommand)
-// writes through its redirections alone, and a comment or a heredoc body no
-// shell runs (walkStep.prose) changes nothing.
+// one in its words or takes the output of one that does through a pipe
+// (`grep -l x .git/config | xargs sed -i ...`). A command that only reads or
+// prints (readOnlyCommand) writes through its redirections alone, and a
+// comment or a heredoc body no shell runs (walkStep.prose) changes nothing.
 func retargetsPush(s walkStep) bool {
 	if s.prose {
 		return false
@@ -271,7 +314,8 @@ func retargetsPush(s walkStep) bool {
 	if len(words) == 0 || readOnlyCommand(words) {
 		return false
 	}
-	return slices.ContainsFunc(words, func(w string) bool { return gitConfigFile(w, s.dir) })
+	return s.pipedConfig ||
+		slices.ContainsFunc(words, func(w string) bool { return gitConfigFile(w, s.dir) })
 }
 
 // readOnlyCommands only read the files they name, or print their words.
@@ -442,6 +486,9 @@ type gitPush struct {
 	// heads are the branches the checkouts and switches before the push may
 	// leave checked out (gitInvocation.heads).
 	heads pushHeads
+	// opaque names text the command runs that the walk could not read
+	// (gitInvocation.opaque).
+	opaque opacity
 }
 
 // targetBranch resolves which branch the push lands on. For explicit refspecs
@@ -546,6 +593,7 @@ var pushFlagsWithValue = map[string]bool{
 func parsePushArgs(c gitInvocation) gitPush {
 	push := gitPush{
 		dir: c.dir, configured: c.configured, unread: c.unread, moved: c.moved, heads: c.heads,
+		opaque: c.opaque,
 	}
 	var positional []string
 	for i := 0; i < len(c.args); i++ {

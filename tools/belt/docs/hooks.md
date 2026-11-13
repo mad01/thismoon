@@ -422,6 +422,34 @@ Blocks `git push` to `main` or `master` before it happens.
   fail-closed: a git word and a push there are denied unless the refspecs
   name a non-default branch in plain text. Nesting deeper than 32 levels is
   read the same way.
+- **Reads git aliases and text printed into a shell.** A git alias the
+  command sets is read in place of the subcommand: one from the
+  invocation's own `-c alias.<name>=`, or from a `git config alias.<name>`
+  write earlier in the command. A body that starts with `!` is read as
+  shell text. So `git -c alias.p=push p origin main` and `git config
+  alias.p push; git p origin main` are denied like the plain push. Text that
+  `echo`, `printf`, or a `cat` of a heredoc or here-string prints is read as
+  code when a shell runs it. That covers a pipe (`echo '...' | sh`), a
+  here-string (`sh <<< '...'`), a `<( )` operand (`bash <(echo ...)`,
+  `. <(...)`) and a substitution in a `-c` script or `eval`. It also covers
+  a variable the command set to such text (`X=$(cat <<'EOF' ...); eval
+  "$X"`) and a file the command wrote and then runs (`cat <<'EOF' > x.sh &&
+  sh x.sh`).
+- **Denies what it cannot read there.** Two causes are denied on any
+  branch, in an exempt repo too. One is an alias the command names as
+  `alias.<name>` without a body belt can read. The other is a Python, Perl,
+  Ruby, Node or osascript script that names `git` followed by `push`
+  (`subprocess.run(["git", "push", ...])`). Shell text belt cannot read is
+  denied only in a repo with no direct-push exemption, or from a directory
+  belt cannot tell. That is printed text that holds a variable or a
+  command's output, and any other command piped into a shell (`cat x.sh |
+  sh`, `curl x | sh`). Outside any git repo and in an exempt repo it
+  passes. The denial says to write the text to a file and run it, or to run
+  the command directly. A `$( )` or `<( )` of any
+  other command keeps its old reading, so `eval "$(ssh-agent -s)"` and
+  `source <(fzf --zsh)` pass. Still not seen: an alias set before the
+  command, a script file already on disk, a script that builds the words at
+  run time, and `ssh`, `xargs sh -c` or `trap` bodies.
 - **Heredoc bodies are text unless a shell may run them.** A body read by
   `cat`, `tee`, `head`, `tail`, `git commit` or a `gh pr`, `issue`,
   `release`, `gist` or `api` call is prose. So is a body `git tag`, `git
@@ -478,7 +506,9 @@ Blocks `git push` to `main` or `master` before it happens.
   `git remote add`, `set-url`, `rename` or `remove`, or `git branch -u`. So
   is a redirect into a `.git/` path, a `.gitconfig`, the XDG `git/config` or
   a `GIT_CONFIG*` file, and any other command that names one in its words
-  (`cp`, `mv`, `tee`, `sed -i`, a `python3 -c` script). A command that only
+  (`cp`, `mv`, `tee`, `sed -i`, a `python3 -c` script) or takes the output
+  of one through a pipe (`grep -l url .git/config | xargs sed -i ...`). A
+  command that only
   reads or prints counts only through a redirect: `echo`, `printf`, `cat`,
   `head`, `tail`, `less`, `more`, `grep`, `rg` (not with `--pre`), `ls`,
   `stat`, `wc`, `diff` and `file`. So `cat .git/config; git push origin
