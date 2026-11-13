@@ -33,7 +33,7 @@ and other sessions' uncommitted edits into hints inside your agent sessions.
 
 - **macOS on Apple Silicon.** darwin/arm64 is the only build target
   ([docs/adr/0007](adr/0007-macos-arm64-only-artifacts.md)).
-- **Go 1.27.3 or newer**, for the fleet path and `go install`. Everything
+- **Go 1.27.4 or newer**, for the fleet path and `go install`. Everything
   builds from source.
 - **Xcode Command Line Tools** (`xcode-select --install`), for the fleet path
   and `go install`. csl compiles its tree-sitter grammars with cgo, which

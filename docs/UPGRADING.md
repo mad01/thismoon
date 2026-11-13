@@ -4,6 +4,18 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-13 every Go component: rebuild on Go 1.27.4
+
+Change: thismoon #PR. Go 1.27.4 fixes GO-2026-6859, an HTTP/1 server crash in `net/http` that most services reach, and `go.mod` now requires it. A machine with an older Go downloads the 1.27.4 toolchain for the build, so this change and the consuming repo's Go pin can land in either order. A plain `ralph up` rebuilds only the components whose own directory changed, so most binaries would keep the old Go.
+
+Run, in order:
+
+1. After the consuming repo's Go pin moves to 1.27.4, `ralph up`, so code outside this repo builds on it too.
+2. `ralph up --reset-builds`, so every component rebuilds.
+3. Start new Claude Code sessions: a running session keeps its MCP servers on the old binaries.
+
+Verify: `go version -m ~/code/bin/csl | head -1` prints `go1.27.4`, and so does any other thismoon binary. `zsh -lic 'go version'` run from the home directory prints `go1.27.4`.
+
 ## 2026-11-13 present: a share warns when the shared instance's client code is older
 
 Change: thismoon #486. A share sends the page's render level, and the shared instance answers with its own. A shared instance built before this change answers none, so every share to it carries a warning that the copy may draw wrong there. Nothing is refused and the `Page` custom resource definition is unchanged, so the local presents and the instance can roll in either order.
