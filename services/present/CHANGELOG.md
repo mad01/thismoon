@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.0](https://github.com/mad01/thismoon/compare/present/v1.27.2...present/v1.28.0) (2026-11-13)
+
+
+### Features
+
+* **present:** add the split slide layout ([#494](https://github.com/mad01/thismoon/issues/494)) ([1325fab](https://github.com/mad01/thismoon/commit/1325fab970328aca8e9e2c6fc5d9f2b02c115971))
+
 ## [1.27.2](https://github.com/mad01/thismoon/compare/present/v1.27.1...present/v1.27.2) (2026-11-13)
 
 
