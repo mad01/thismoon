@@ -6,8 +6,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import {
-  AUTHORED_ROLES, REFERENCE_ROLES, TONES,
-  mix, alpha, luminance, contrast, deriveVariant, validateFamily, resolveFamily, renderCSS, loadFamilies, buildThemes,
+  AUTHORED_ROLES, REFERENCE_ROLES, TONES, STATUSES, STATUS_FILL_SHARE, INK_SHARES,
+  mix, alpha, luminance, contrast, deriveVariant, statusInkShare, accentInkShare,
+  validateFamily, resolveFamily, renderCSS, loadFamilies, buildThemes,
 } from '../src/themes.mjs';
 import { bootSnippetFor } from '../src/boot.snippet.js';
 
@@ -125,6 +126,49 @@ test('every reference role and every tone triple is derived', () => {
   const r = deriveVariant(variant, 'light');
   for (const role of REFERENCE_ROLES) assert.ok(role in r, `missing ${role}`);
   for (const t of TONES) for (const part of ['bg', 'border', 'text']) assert.ok(`tone-${t}-${part}` in r);
+});
+
+// A status fill is paper tinted toward its colour and its ink is the colour
+// pulled toward text-1 by the variant's ink share, both literal hex so the
+// badge and callout rules read them with no color-mix of their own.
+test('deriveVariant: each status gets a tinted fill and an ink from its semantic colour', () => {
+  const r = deriveVariant(variant, 'light');
+  const share = statusInkShare(variant);
+  assert.deepEqual(STATUSES.map(([s]) => s), ['info', 'ok', 'warn', 'error']);
+  assert.ok(INK_SHARES.includes(share), `share ${share}`);
+  for (const [s, c] of STATUSES) {
+    assert.equal(r[`status-${s}-bg`], mix(variant.paper, variant[c], STATUS_FILL_SHARE), `status-${s}-bg`);
+    assert.equal(r[`status-${s}-text`], mix(variant[c], variant['text-1'], share), `status-${s}-text`);
+    assert.match(r[`status-${s}-bg`], /^#[0-9a-f]{6}$/);
+  }
+  assert.equal(r['accent-ink-share'], `${Math.round(accentInkShare(variant) * 100)}%`);
+});
+
+// The ink share is the first of INK_SHARES at which every ink reads 4.5 on
+// its fill, else the last: every earlier share leaves some ink under the bar.
+// Checked over the shipped collection, status and accent alike.
+test('ink share: the first share at which every status ink reads 4.5, else the last', () => {
+  const reads = (pairs, text1, share) => pairs.every(([c, fill]) => contrast(mix(c, text1, share), fill) >= 4.5);
+  const src = name => JSON.parse(readFileSync(`${shippedDir}/${name}.json`, 'utf8'));
+  for (const f of loadFamilies(shippedDir)) {
+    for (const mode of ['light', 'dark']) {
+      const v = src(f.name)[mode];
+      if (!v) continue;
+      const status = STATUSES.map(([, c]) => [v[c], mix(v.paper, v[c], STATUS_FILL_SHARE)]);
+      const accent = [[v.primary, mix(v.paper, v.primary, STATUS_FILL_SHARE)]];
+      for (const [what, pairs, share] of [['status', status, statusInkShare(v)], ['accent', accent, accentInkShare(v)]]) {
+        const i = INK_SHARES.indexOf(share);
+        for (const earlier of INK_SHARES.slice(0, i)) {
+          assert.ok(!reads(pairs, v['text-1'], earlier), `${f.name} ${mode} ${what}: ${earlier} already reads`);
+        }
+        if (i < INK_SHARES.length - 1) assert.ok(reads(pairs, v['text-1'], share), `${f.name} ${mode} ${what}: ${share}`);
+      }
+    }
+  }
+  const def = src('default');
+  assert.equal(statusInkShare(def.light), 0.45, 'the default family keeps the most hue, light');
+  assert.equal(statusInkShare(def.dark), 0.45, 'the default family keeps the most hue, dark');
+  assert.equal(statusInkShare(src('solarized').light), 0.65, 'no share reads: the deepest ink');
 });
 
 test('validateFamily: accepts a complete family and names the fault otherwise', () => {

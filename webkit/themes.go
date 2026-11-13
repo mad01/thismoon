@@ -26,7 +26,8 @@ type Theme struct {
 }
 
 // Variant is one mode of a family: its name, the authoring notes, and every
-// role resolved to a literal colour (hex, or rgba for the alpha surfaces).
+// role resolved to a literal: a colour (hex, or rgba for the alpha surfaces),
+// a shadow, or the accent badge's ink share as a percentage.
 type Variant struct {
 	Name  string            `json:"variant"`
 	Notes string            `json:"notes,omitempty"`

@@ -73,6 +73,25 @@ func TestHandlerServesCSS(t *testing.T) {
 		".wk-ra-bar", ".wk-ra-bar-actions", "wk-badge.wk-ra-state", ".wk-ra-btn.wk-ra-text",
 		// a11y
 		"prefers-reduced-motion", ":focus-visible",
+		// narrow header (MAD-560): labels that drop to icons, the help modal's
+		// links, a variantless button in the ghost look, the warn toast
+		".ctrl-label", ":where(.btn, wk-button)", "wk-toast[variant=\"warn\"]",
+		// keyboard path (MAD-561): the skip link, the chip row and its counts
+		".wk-skip-link", ".wk-skip-target:focus", "wk-chips",
+		"wk-badge[variant=\"filter\"] > small",
+		// visual polish (MAD-565): the one focus ring, native controls per
+		// mode, plain links in content blocks (the help modal's among them),
+		// the lift only on cards you can act on, the stat tile filling its column
+		"wk-badge[variant=\"filter\"]):focus-visible", "color-scheme: dark", "accent-color:",
+		".wk-help-desc) :where(a:not([class]))", "wk-card[interactive]", ".wk-card wk-title",
+		"wk-col > wk-stat:only-child",
+		// status contrast (MAD-566): badges and callout tints read the status roles
+		"var(--status-info-text)", "var(--status-error-bg)",
+		// layout (MAD-562, MAD-563): the reading measure, the prose it caps,
+		// and the empty state with its error variant and title
+		"--wk-measure: 76ch", "max-width: var(--wk-measure)",
+		".wk-prose > :is(p, ul, ol, blockquote)", "wk-empty", "wk-empty[variant=\"error\"]",
+		"wk-empty-title",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("webkit.css missing expected token %q", want)
@@ -122,6 +141,13 @@ func TestHandlerServesJS(t *testing.T) {
 		// theme API: mode + palette keys, storage and system sync, the help link
 		"webkit-palette-", "prefers-color-scheme", `addEventListener("storage"`, "/webkit/themes",
 		"setPalette", "setThemeMode", "resetTheme", "data-palette",
+		// narrow header (MAD-560): the labels that hide at narrow widths
+		"ctrl-label",
+		// keyboard path (MAD-561): the skip link and its opt-out, the page
+		// heading, the keyboard-operable filter badge, the chip row
+		"wk-skip-link", "skip-link", "Skip to content", "aria-level", "observedAttributes", "wk-chips",
+		// empty state (MAD-563): the no-op registrations
+		"wk-empty", "wk-empty-title",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("webkit.js missing expected token %q", want)

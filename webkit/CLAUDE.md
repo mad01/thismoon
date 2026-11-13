@@ -10,6 +10,7 @@ in consumers via `go:embed` and served at `GET /webkit/`.
 
 ```
 src/webkit.ts        # custom element definitions, the theme API, Webkit.bootSnippet FOUC guard
+src/a11y.ts          # the keyboard path's decisions (page heading, filter badge keys, skip target)
 src/webkit.css       # topbar chrome, controls, component styles, .wrap layout (reads palette roles only)
 src/themes/*.json    # the theme collection: one family per file, light + dark variants
 src/themes.mjs       # validates the files, derives the full role set, emits palette CSS + themes.json
@@ -26,9 +27,20 @@ themes.go            # Themes(), Roles(), IsRole() parsed from the embedded them
 ## Components
 
 ### `<wk-header>` (JS custom element — the only interactive one)
-Renders the sticky topbar. Key attributes: `brand`, `brand-href`, `back-label`,
+Renders the topbar, sticky above 1024px. Key attributes: `brand`, `brand-href`, `back-label`,
 `back-href`, `title`, `controls` (CSV, default `cmdk,font,fixation,size,reload,theme,help`),
-`page-width` (default 1080).
+`page-width` (default 1080), `skip-link` (`off` drops the skip link).
+
+Its first child is a visually hidden "Skip to content" link, the page's first
+tab stop; it moves focus to the first `main`, else `.wrap`, else the element
+after the header. The bar wraps at any width: when the left group and the
+controls do not fit one row, the controls drop to a second row on the right,
+and a control set wider than the bar wraps inside itself, so the header never
+widens the page; a header that fits stays one row, as before. Under 720px the
+bar is always two rows (left group, then controls under the brand), the
+`.ctrl-label` text of Fixation, Audio and Reload and the ⌘K hint hide (each
+control keeps its `aria-label`). Up to 1024px the bar scrolls with the page
+instead of sticking, so a wrapped bar never holds part of the screen.
 
 Light-DOM children it relocates:
 - `<a data-nav>…</a>` → nav links area.
@@ -45,19 +57,38 @@ themes page beside a brief) and when the system appearance flips in system mode.
 
 ### Content components (CSS-only)
 All use light DOM only (no Shadow DOM) — styled by tag + attribute selectors in
-`webkit.css`.
+`webkit.css`. Two carry a little behaviour, each in its own class: `wk-title`
+sets `role="heading"` + `aria-level="1"` when it has no role and sits outside
+`wk-card`, `.wk-card` and `wk-panel`; `wk-badge variant="filter"` without its
+own `tabindex` or `role`, outside any link or button, gets `role="button"` +
+`tabindex="0"`, and Enter and Space click it (badges that set either are the
+page's to wire).
 
 Layout/content: `<wk-page-header>` / `<wk-title>` / `<wk-subtitle>`,
-`<wk-card>` (`--accent` left bar; `a.wk-card`/`[href]` gets hover lift),
+`<wk-card>` (`--accent` left bar; the lift on hover only for `a.wk-card`,
+`[href]`, and `[interactive]`, which a page sets on a card it made clickable),
 `<wk-panel>` / `<wk-panel-title>` / `<wk-panel-subtitle>`,
-`<wk-button variant="primary|ghost">`, `<wk-table>`.
+`<wk-button variant="primary|ghost|danger">` (no or an unknown variant gets the
+ghost look), `<wk-table>`.
 
 Interactive: `<wk-search>` (optional first-child `<svg>` as leading icon),
 `<wk-seg>` (`<button class="active">` marks selected segment).
 
-Badges: `<wk-badge variant="a|b|c|outline|stat|accent|filter">`;
+Badges: `<wk-badge variant="a|b|c|outline|stat|accent|filter">`, and the
+status variants `info|ok|warn|error` on the `status-<s>-bg`/`-text` roles;
 `variant="filter"` is a clickable pill, `[active]` fills it with
-`--chip-active-bg`; `accent` binds `var(--accent, --primary)`.
+`--chip-active-bg`, and a `<small>` inside holds a count; `accent` binds
+`var(--accent, --primary)`, mixed by the status rule in the stylesheet with the
+variant's `--accent-ink-share`, so its text reads 4.5:1. `<wk-chips>` lays
+filter badges out in a wrapping row.
+
+Shared looks: one focus ring for everything the keyboard reaches except text
+inputs and `tabindex="-1"` containers, at zero specificity (`:where(...)`). Plain links (`a:not([class])`) in
+content blocks take the primary ink and a soft underline, also at zero
+specificity. The header's controls rest quiet, scoped to `.topbar-controls`: selects as
+wide as their option, a gapless size stepper, and with no visible `.btn` the
+row ends on the content's right edge.
+`color-scheme` follows `data-theme`.
 
 Content blocks: `<wk-kv>` / `<wk-kv-row>` / `<wk-kv-label>` / `<wk-kv-value>`
 (`variant="card"` adds border + rounded corners + uppercased labels),
@@ -70,12 +101,21 @@ Content blocks: `<wk-kv>` / `<wk-kv-row>` / `<wk-kv-label>` / `<wk-kv-value>`
 fixation), `<wk-figure>` / `<wk-figcaption>` (an image with a caption; read-aloud
 reads the image's `alt` in its place), and inside a section the native
 `blockquote` (+ `cite`) and `details` (+ `summary`, closed by default; read-aloud
-opens it while a part inside plays).
+opens it while a part inside plays). `<wk-empty [variant="error"]>` /
+`<wk-empty-title>` is the empty, loading or failed state of a list or page;
+`variant="error"` takes the callout's frame at the full width of its block.
+
+Spacing and measure: the header's `2rem` bottom margin is the only space above
+a page's first line (`wk-page-header` has no top margin, `.wrap` no top
+padding). `--wk-measure` (`76ch`, on `:root`) caps prose straight in a
+`wk-section` or `.wk-prose`; the `wk-callout` box and a `details` straight in a
+section end at the same right edge (their caps scale the `ch` measure by the
+paragraph's font over their own). `--wk-measure: none` opts a subtree out.
 
 Overlays: `<wk-modal [hidden]>` / `<wk-modal-panel>` / `<wk-modal-head>` /
 `<wk-modal-actions>` (fade+slide in; toggle `[hidden]` to open/close),
 `<wk-form>` / `<wk-form-row>` / `<wk-form-hint>`,
-`<wk-toast-host>` + `<wk-toast variant="ok|err">` (fixed bottom-right stack).
+`<wk-toast-host>` + `<wk-toast variant="ok|warn|err">` (fixed bottom-right stack).
 
 Full spec with markup examples: `COMPONENTS.md`.
 
@@ -92,7 +132,8 @@ has a `variant` name, optional `notes`, and the authored roles:
 - `series`: four chart colours in order
 
 Every other role is derived at build time by the fixed rules in
-`src/themes.mjs`: tags, code tokens, the Cytoscape box and tone colours, chart
+`src/themes.mjs`: tags, the status fills and inks (`status-<info|ok|warn|error>-bg`
+and `-text`), code tokens, the Cytoscape box and tone colours, chart
 grid and text, `text-body`, the alpha surfaces (`topbar-bg`, `scrim`,
 `focus-ring`), and the `on-<colour>` inks. An `on-<colour>` ink is white or
 the variant's deepest ink (`text-1` in light, `bg` in dark), whichever reads
@@ -108,13 +149,27 @@ the bar, the family moved it a few points of lightness with the hue held. It pin
 fill to the published values, so only the fill and its ink changed (MAD-372,
 MAD-376, MAD-378).
 
+The same file holds each `status-<s>-text` to 4.5:1 on its `status-<s>-bg`
+(the semantic badges and callout tints read them). The fill is paper 14%
+toward the colour; the ink is the colour moved toward `text-1` by the first of
+45%, 55% and 65% at which all four inks clear the bar, so each variant keeps
+as much hue as it can (the default family takes 45%), and
+`TestStatusInkShareIsTheFirstThatReads` holds that pick. Solarized light and
+dark and Tokyo Night Day clear at no share: their own `text-1` only just
+clears 4.5 on paper. They take 65% and sit in `statusFloorExceptions` with
+their measured floors (MAD-566). The accent badge mixes at run time, so the
+build makes the same pick for it on `primary` and emits it as the
+`accent-ink-share` percentage, held by `TestAccentBadgeInkReadsOnItsFill`. The
+status roles are not in `Roles()`; no page names them as a reference.
+
 A variant can pin any derived role under `overrides`. The default family
 does that for every role whose derived value differs from the old
 hand-written stylesheet, so it stays byte-identical (pinned by
 `TestDefaultFamilyPinsTodaysPalette`).
 
-The build emits every role as a literal hex or rgba, never a `var()` or a
-`color-mix()`. Cytoscape and Chart.js parse colour strings themselves, and
+The build emits every colour role as a literal hex or rgba, never a `var()`
+or a `color-mix()` (the shadows and `accent-ink-share` are literal non-colour
+values). Cytoscape and Chart.js parse colour strings themselves, and
 `getComputedStyle` returns a custom property's declared text, so present reads
 a role with one `cssVar` call. The generated blocks sit at the top of
 `dist/webkit.css`:
@@ -238,7 +293,7 @@ reference implementation.
 2. Register the element as a no-op in `src/webkit.ts` — one fresh class per tag
    (no shared superclass, so each element stays independently removable).
 3. Add an example to `examples/gallery.html`.
-4. Document it in `COMPONENTS.md`.
+4. Document it in `COMPONENTS.md` and `docs/components.md`.
 5. Add an assertion in `embed_test.go` that the token appears in `webkit.css`.
 
 ## Rules / gotchas

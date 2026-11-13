@@ -69,7 +69,7 @@
     refreshAll.disabled = d.running;
     const repos = d.repos || [];
     if (!repos.length) {
-      results.innerHTML = '<div class="health-empty">no repos found</div>';
+      results.innerHTML = '<wk-empty>no repos found</wk-empty>';
       return;
     }
     renderPagedTable(results, repos, {

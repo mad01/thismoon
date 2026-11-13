@@ -74,6 +74,11 @@
 .status { font-size: 0.8125rem; color: var(--text-3); min-height: 1.2em; margin-right: auto; }
 #modeToggle[hidden] { display: none !important; }
 .status .err { color: var(--red); }
+/* On a phone the summary would shrink to one word per line beside the
+   controls; wrapping gives it its own line and puts the controls below. */
+@media (max-width: 640px) {
+  .status-row { flex-wrap: wrap; }
+}
 
 /* Expand-context stepper (lexical results only): ± lines fetched by expand. */
 .expand-ctl { display: flex; align-items: center; gap: 0.3rem; font-size: 0.75rem; color: var(--text-2); }
@@ -117,8 +122,6 @@
    the read-aloud sentence, so it follows the family instead of a literal. */
 .line mark { background: var(--ra-highlight); color: inherit; border-radius: 2px; padding: 0 1px; }
 
-.empty { text-align: center; color: var(--text-3); padding: 3rem 1rem; font-size: 0.9375rem; }
-
 .load-more {
   appearance: none; display: block; width: 100%; margin: 0.25rem 0 1.5rem;
   background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
@@ -152,6 +155,5 @@ code, .mono { font-family: inherit; background: var(--chip-bg); border-radius: 4
 
 /* ── Health page ── */
 .health-err { font-size: 0.75rem; color: var(--red); margin-top: 0.2rem; }
-.health-empty { color: var(--text-2); font-size: 0.875rem; padding: 1.5rem 0; }
 .repo-name { font-weight: 500; }
 .refresh-none { color: var(--text-2); font-size: 0.8125rem; }

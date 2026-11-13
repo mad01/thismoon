@@ -30,6 +30,45 @@ export const SERIES_COUNT = 4;
 export const TONES = ['neutral', 'green', 'red', 'blue', 'amber', 'purple'];
 
 /**
+ * Statuses the semantic badges and callouts carry, each with the colour it
+ * is derived from. A status gets a tinted fill (status-<s>-bg) and an ink
+ * for text on it (status-<s>-text).
+ */
+export const STATUSES = [['info', 'blue'], ['ok', 'green'], ['warn', 'amber'], ['error', 'red']];
+// The status fill is paper moved 14% toward the colour (the tone tint), and
+// its ink the colour moved toward text-1 by the variant's ink share: the
+// first of INK_SHARES at which all four inks read 4.5 on their fills, so each
+// variant keeps as much hue as the bar allows. One fixed 65% greyed the
+// default family's badges (ok read grey, warn and error the same brown). A
+// variant that clears at no share takes the last, the deepest ink; the Go
+// contrast test names the three that do (their own text-1 only just clears
+// 4.5 on paper).
+export const STATUS_FILL_SHARE = 0.14;
+export const INK_SHARES = [0.45, 0.55, 0.65];
+const MIN_INK_CONTRAST = 4.5;
+
+/** The first of INK_SHARES at which ink(share) reads 4.5 on fill for every
+ * pair, else the last share. pairs: [colour, fill] hex pairs. */
+function firstReadingShare(pairs, text1) {
+  return INK_SHARES.find(share =>
+    pairs.every(([c, fill]) => contrast(mix(c, text1, share), fill) >= MIN_INK_CONTRAST),
+  ) ?? INK_SHARES[INK_SHARES.length - 1];
+}
+
+/** The status ink share for a variant: the first of INK_SHARES at which all
+ * four status inks read 4.5 on their fills. */
+export function statusInkShare(v) {
+  return firstReadingShare(STATUSES.map(([, c]) => [v[c], mix(v.paper, v[c], STATUS_FILL_SHARE)]), v['text-1']);
+}
+
+/** The accent badge's ink share, picked the same way for its fallback colour
+ * (primary): the accent is only known at run time, so the stylesheet mixes
+ * it with this share, emitted as the accent-ink-share percentage. */
+export function accentInkShare(v) {
+  return firstReadingShare([[v.primary, mix(v.paper, v.primary, STATUS_FILL_SHARE)]], v['text-1']);
+}
+
+/**
  * Roles a page may reference by name (a panel accent, a chart series colour,
  * a slide tone). Exported through themes.json as `roles` so webkit.Roles() in
  * Go validates against the same list. Every name here is emitted for every
@@ -142,6 +181,12 @@ export function deriveVariant(v, mode) {
   r['tag-b-text'] = mix(v.green, v['text-1'], 0.5);
   r['tag-c'] = mix(v.paper, v.blue, 0.2);
   r['tag-c-text'] = mix(v.blue, v['text-1'], 0.5);
+  const inkShare = statusInkShare(v);
+  for (const [status, c] of STATUSES) {
+    r[`status-${status}-bg`] = mix(v.paper, v[c], STATUS_FILL_SHARE);
+    r[`status-${status}-text`] = mix(v[c], v['text-1'], inkShare);
+  }
+  r['accent-ink-share'] = `${Math.round(accentInkShare(v) * 100)}%`;
   for (const c of SEMANTIC_ROLES) r[`on-${c}`] = onColour(v[c], v, mode);
   r['focus-ring'] = alpha(v.primary, 0.15);
   r['topbar-bg'] = alpha(v.bg, 0.88);

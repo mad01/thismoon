@@ -9,6 +9,7 @@ import { rankSites } from './fuzzy.js';
 import type { Site, SiteMatch } from './fuzzy.js';
 import { initProse } from './prose.js';
 import { bootSnippetFor } from './boot.snippet.js';
+import { isActivationKey, skipTarget, wantsFilterKeys, wantsPageHeading } from './a11y.js';
 
 export { toFixation } from './fixation.js';
 export { segmentSentences } from './sentences.js';
@@ -377,7 +378,7 @@ class WkHeader extends HTMLElement {
           controlParts.push(divider());
           controlParts.push(
             `<button class="ctrl-btn" id="webkit-fixation" aria-label="Toggle fixation reading" aria-pressed="false">` +
-            SVG_FIXATION + ` Fixation</button>`
+            SVG_FIXATION + ` <span class="ctrl-label">Fixation</span></button>`
           );
           needsDivider = true;
           break;
@@ -397,7 +398,7 @@ class WkHeader extends HTMLElement {
           controlParts.push(divider());
           controlParts.push(
             `<button class="ctrl-btn" id="webkit-audio" aria-label="Hide read-aloud controls" aria-pressed="true">` +
-            SVG_AUDIO + ` Audio</button>`
+            SVG_AUDIO + ` <span class="ctrl-label">Audio</span></button>`
           );
           needsDivider = true;
           break;
@@ -416,7 +417,7 @@ class WkHeader extends HTMLElement {
           controlParts.push(divider());
           controlParts.push(
             `<button class="ctrl-btn" id="webkit-reload" aria-label="Reload page">` +
-            SVG_RELOAD + ` Reload</button>`
+            SVG_RELOAD + ` <span class="ctrl-label">Reload</span></button>`
           );
           needsDivider = true;
           break;
@@ -451,8 +452,15 @@ class WkHeader extends HTMLElement {
       }
     }
 
+    // The skip link comes first, so it is the page's first tab stop; it stays
+    // out of sight until it has focus. skip-link="off" leaves it out.
+    const skipLink = this.getAttribute('skip-link') === 'off'
+      ? ''
+      : `<a class="wk-skip-link" href="#">Skip to content</a>`;
+
     // Inject into host element (replace existing children)
     this.innerHTML =
+      skipLink +
       `<div class="topbar">` +
       `<div class="topbar-inner">` +
       `<div class="topbar-left">${leftParts.join('')}</div>` +
@@ -469,6 +477,19 @@ class WkHeader extends HTMLElement {
 
   private _wire(): void {
     const fixationTargets = this.getAttribute('fixation-targets') ?? DEFAULT_FIXATION_TARGETS;
+
+    // Skip link: the target is looked up on use, since a client-rendered page
+    // may not have it yet when the header renders.
+    this.querySelector('.wk-skip-link')?.addEventListener('click', e => {
+      const target = skipTarget<Element>(document, this) as HTMLElement | null;
+      if (!target) return;
+      e.preventDefault();
+      if (!target.hasAttribute('tabindex') && target.tabIndex < 0) {
+        target.setAttribute('tabindex', '-1');
+        target.classList.add('wk-skip-target');
+      }
+      target.focus();
+    });
 
     // Font
     const fontEl = this.querySelector('#webkit-font') as HTMLSelectElement | null;
@@ -625,18 +646,74 @@ class WkHeader extends HTMLElement {
   }
 }
 
+// ── <wk-title>: the page's heading ──
+// Outside a card or panel it is the page title, and it says so to assistive
+// tech unless the page gave it a role of its own.
+
+class WkTitle extends HTMLElement {
+  connectedCallback(): void {
+    if (!wantsPageHeading(this)) return;
+    this.setAttribute('role', 'heading');
+    if (!this.hasAttribute('aria-level')) this.setAttribute('aria-level', '1');
+  }
+}
+
+// ── <wk-badge>: a filter badge the keyboard can press ──
+// A filter badge without its own tabindex or role becomes a button: a tab
+// stop that Enter and Space click, so the page's click handler covers the
+// keyboard too. Only a connected badge is checked: el() sets a page's own
+// role and tabindex before it inserts the badge, and those stay the page's.
+
+class WkBadge extends HTMLElement {
+  static observedAttributes = ['variant'];
+  private _managed = false;
+  private _keysWired = false;
+
+  connectedCallback(): void { this._sync(); }
+
+  attributeChangedCallback(): void {
+    if (this.isConnected) this._sync();
+  }
+
+  private _sync(): void {
+    if (this._managed) {
+      if (this.getAttribute('variant') === 'filter') return;
+      // No longer a filter: hand back the attributes webkit added.
+      this.removeAttribute('role');
+      this.removeAttribute('tabindex');
+      this._managed = false;
+      return;
+    }
+    if (!wantsFilterKeys(this)) return;
+    this.setAttribute('role', 'button');
+    this.setAttribute('tabindex', '0');
+    this._managed = true;
+    if (this._keysWired) return;
+    this._keysWired = true;
+    this.addEventListener('keydown', e => {
+      if (!this._managed || e.target !== this || !isActivationKey(e.key)) return;
+      e.preventDefault();
+      this.click();
+    });
+  }
+}
+
 // ── Self-register all custom elements ──
 
 customElements.define('wk-header', WkHeader);
 customElements.define('wk-read-aloud', WkReadAloud);
+customElements.define('wk-title', WkTitle);
+customElements.define('wk-badge', WkBadge);
 
 // CSS-only components: registered as no-op elements purely for semantics +
 // upgrade. Each tag needs its OWN constructor — customElements.define rejects a
 // constructor that's already registered — so the loop mints a fresh class per tag.
 const NOOP_ELEMENTS = [
-  // base kit
-  'wk-page-header', 'wk-title', 'wk-subtitle', 'wk-card', 'wk-panel',
-  'wk-panel-title', 'wk-panel-subtitle', 'wk-badge', 'wk-button', 'wk-search', 'wk-table',
+  // base kit (wk-title and wk-badge carry behaviour, defined above)
+  'wk-page-header', 'wk-subtitle', 'wk-card', 'wk-panel',
+  'wk-panel-title', 'wk-panel-subtitle', 'wk-button', 'wk-search', 'wk-table',
+  // a row of filter badges
+  'wk-chips',
   // segmented control
   'wk-seg',
   // key/value rows
@@ -645,6 +722,8 @@ const NOOP_ELEMENTS = [
   'wk-section', 'wk-section-heading', 'wk-section-subheading',
   // callout
   'wk-callout',
+  // empty, loading and error state
+  'wk-empty', 'wk-empty-title',
   // columns of blocks
   'wk-columns', 'wk-col',
   // stat tile

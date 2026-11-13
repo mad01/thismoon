@@ -237,6 +237,7 @@ func TestStylesheetCarriesEveryFamily(t *testing.T) {
 		`[data-theme="dark"], [data-palette="default"][data-theme="dark"] {`,
 		"--on-primary:", "--topbar-bg:", "--scrim:", "--focus-ring:", "--text-body:",
 		"--graph-leaf-bg:", "--tone-amber-bg:", "--series-4:", "--chart-grid:",
+		"--status-info-bg:", "--status-error-text:",
 		// themes page styling
 		".wk-theme-card", ".wk-theme-grid",
 	} {

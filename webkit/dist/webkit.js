@@ -3376,6 +3376,22 @@ var Webkit = (() => {
     return "(function(){try{var t=localStorage.getItem('webkit-theme')||'light';if(t==='system'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t!=='dark'){t='light';}document.documentElement.setAttribute('data-theme',t);var p=localStorage.getItem('webkit-palette-'+t);if(p&&p!=='default'&&" + list + ".indexOf(p)!==-1){document.documentElement.setAttribute('data-palette',p);}var s=parseInt(localStorage.getItem('webkit-size'),10);if(!isNaN(s)){s=Math.max(12,Math.min(24,s));document.documentElement.style.fontSize=s+'px';}var k=document.documentElement.getAttribute('data-audio-key')||'webkit-audio';var a=localStorage.getItem(k);if(a!=='on'&&a!=='off'){a=document.documentElement.getAttribute('data-audio-default')==='off'?'off':'on';}document.documentElement.setAttribute('data-audio',a);}catch(e){}})();";
   }
 
+  // src/a11y.ts
+  var TITLE_CONTAINERS = "wk-card, .wk-card, wk-panel";
+  function wantsPageHeading(title) {
+    return !title.hasAttribute("role") && title.closest(TITLE_CONTAINERS) === null;
+  }
+  var INTERACTIVE_ANCESTORS = "a, button";
+  function wantsFilterKeys(badge) {
+    return badge.getAttribute("variant") === "filter" && !badge.hasAttribute("tabindex") && !badge.hasAttribute("role") && badge.closest(INTERACTIVE_ANCESTORS) === null;
+  }
+  function isActivationKey(key) {
+    return key === "Enter" || key === " ";
+  }
+  function skipTarget(doc, header) {
+    return doc.querySelector("main") ?? doc.querySelector(".wrap") ?? header.nextElementSibling;
+  }
+
   // src/render.ts
   var HTML_ENTITIES = {
     "&": "&amp;",
@@ -3648,7 +3664,7 @@ var Webkit = (() => {
           case "fixation":
             controlParts.push(divider());
             controlParts.push(
-              `<button class="ctrl-btn" id="webkit-fixation" aria-label="Toggle fixation reading" aria-pressed="false">` + SVG_FIXATION + ` Fixation</button>`
+              `<button class="ctrl-btn" id="webkit-fixation" aria-label="Toggle fixation reading" aria-pressed="false">` + SVG_FIXATION + ` <span class="ctrl-label">Fixation</span></button>`
             );
             needsDivider = true;
             break;
@@ -3662,7 +3678,7 @@ var Webkit = (() => {
           case "audio":
             controlParts.push(divider());
             controlParts.push(
-              `<button class="ctrl-btn" id="webkit-audio" aria-label="Hide read-aloud controls" aria-pressed="true">` + SVG_AUDIO + ` Audio</button>`
+              `<button class="ctrl-btn" id="webkit-audio" aria-label="Hide read-aloud controls" aria-pressed="true">` + SVG_AUDIO + ` <span class="ctrl-label">Audio</span></button>`
             );
             needsDivider = true;
             break;
@@ -3676,7 +3692,7 @@ var Webkit = (() => {
           case "reload":
             controlParts.push(divider());
             controlParts.push(
-              `<button class="ctrl-btn" id="webkit-reload" aria-label="Reload page">` + SVG_RELOAD + ` Reload</button>`
+              `<button class="ctrl-btn" id="webkit-reload" aria-label="Reload page">` + SVG_RELOAD + ` <span class="ctrl-label">Reload</span></button>`
             );
             needsDivider = true;
             break;
@@ -3702,13 +3718,24 @@ var Webkit = (() => {
           controlParts.push(ex.outerHTML);
         }
       }
-      this.innerHTML = `<div class="topbar"><div class="topbar-inner"><div class="topbar-left">${leftParts.join("")}</div><div class="topbar-controls">${controlParts.join("")}</div></div></div>`;
+      const skipLink = this.getAttribute("skip-link") === "off" ? "" : `<a class="wk-skip-link" href="#">Skip to content</a>`;
+      this.innerHTML = skipLink + `<div class="topbar"><div class="topbar-inner"><div class="topbar-left">${leftParts.join("")}</div><div class="topbar-controls">${controlParts.join("")}</div></div></div>`;
     }
     _applyTheme() {
       setThemeAttributes(themeState());
     }
     _wire() {
       const fixationTargets = this.getAttribute("fixation-targets") ?? DEFAULT_FIXATION_TARGETS;
+      this.querySelector(".wk-skip-link")?.addEventListener("click", (e) => {
+        const target = skipTarget(document, this);
+        if (!target) return;
+        e.preventDefault();
+        if (!target.hasAttribute("tabindex") && target.tabIndex < 0) {
+          target.setAttribute("tabindex", "-1");
+          target.classList.add("wk-skip-target");
+        }
+        target.focus();
+      });
       const fontEl = this.querySelector("#webkit-font");
       if (fontEl) {
         const savedFont = localStorage.getItem(FONT_KEY) ?? "Fira Code";
@@ -3817,21 +3844,64 @@ var Webkit = (() => {
       });
     }
   };
+  var WkTitle = class extends HTMLElement {
+    connectedCallback() {
+      if (!wantsPageHeading(this)) return;
+      this.setAttribute("role", "heading");
+      if (!this.hasAttribute("aria-level")) this.setAttribute("aria-level", "1");
+    }
+  };
+  var WkBadge = class extends HTMLElement {
+    constructor() {
+      super(...arguments);
+      this._managed = false;
+      this._keysWired = false;
+    }
+    connectedCallback() {
+      this._sync();
+    }
+    attributeChangedCallback() {
+      if (this.isConnected) this._sync();
+    }
+    _sync() {
+      if (this._managed) {
+        if (this.getAttribute("variant") === "filter") return;
+        this.removeAttribute("role");
+        this.removeAttribute("tabindex");
+        this._managed = false;
+        return;
+      }
+      if (!wantsFilterKeys(this)) return;
+      this.setAttribute("role", "button");
+      this.setAttribute("tabindex", "0");
+      this._managed = true;
+      if (this._keysWired) return;
+      this._keysWired = true;
+      this.addEventListener("keydown", (e) => {
+        if (!this._managed || e.target !== this || !isActivationKey(e.key)) return;
+        e.preventDefault();
+        this.click();
+      });
+    }
+  };
+  WkBadge.observedAttributes = ["variant"];
   customElements.define("wk-header", WkHeader);
   customElements.define("wk-read-aloud", WkReadAloud);
+  customElements.define("wk-title", WkTitle);
+  customElements.define("wk-badge", WkBadge);
   var NOOP_ELEMENTS = [
-    // base kit
+    // base kit (wk-title and wk-badge carry behaviour, defined above)
     "wk-page-header",
-    "wk-title",
     "wk-subtitle",
     "wk-card",
     "wk-panel",
     "wk-panel-title",
     "wk-panel-subtitle",
-    "wk-badge",
     "wk-button",
     "wk-search",
     "wk-table",
+    // a row of filter badges
+    "wk-chips",
     // segmented control
     "wk-seg",
     // key/value rows
@@ -3845,6 +3915,9 @@ var Webkit = (() => {
     "wk-section-subheading",
     // callout
     "wk-callout",
+    // empty, loading and error state
+    "wk-empty",
+    "wk-empty-title",
     // columns of blocks
     "wk-columns",
     "wk-col",

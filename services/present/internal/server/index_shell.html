@@ -12,8 +12,7 @@
    Only genuinely index-specific bits live here. The page list is rendered
    client-side by /index.js into <div id="app">. */
 @keyframes pageEnter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-.wrap{padding-top:1.5rem;animation:pageEnter 0.35s ease-out}
-.empty{color:var(--text-2);font-size:0.9375rem;padding:2rem 0}
+.wrap{animation:pageEnter 0.35s ease-out}
 .page-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.25rem}
 @media (max-width:720px){.page-grid{grid-template-columns:1fr}}
 .wk-card{display:flex;align-items:center;gap:0.75rem}
@@ -29,13 +28,17 @@
 .pager-spacer{visibility:hidden}
 /* Import: the page header holds the button; the hidden file input below is
    what it clicks. Dropping a file anywhere on the page imports it too, and
-   .drop-active outlines the list while a file is over it. */
+   .drop-active outlines the list while a file is over it. The dashed frame
+   is a pseudo-element: on the box's sides and bottom, and 1.5rem above the
+   title, where the old border sat. It takes no room, so the content keeps
+   the header's left edge and the title its height. */
 .header-row{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
 .header-row wk-page-header{flex:1;min-width:0}
-#import-button{flex:none;margin-top:1.5rem;cursor:pointer}
+#import-button{flex:none;cursor:pointer}
 #import-button[aria-busy="true"]{opacity:0.6;pointer-events:none}
-.wrap{border:2px dashed transparent;border-radius:12px;transition:border-color 0.15s ease}
-body.drop-active .wrap{border-color:var(--primary)}
+.wrap{position:relative}
+.wrap::before{content:'';position:absolute;inset:-1.5rem 0 0;border:2px dashed transparent;border-radius:12px;pointer-events:none;transition:border-color 0.15s ease}
+body.drop-active .wrap::before{border-color:var(--primary)}
 </style>
 </head>
 <body>

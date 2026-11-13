@@ -27,7 +27,9 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-.brief { max-width: var(--page-width, 1080px); margin: 0 auto; padding: 2rem 1.5rem 6rem; animation: briefEnter 0.35s ease-out; }
+/* No top padding: webkit's header margin is the one space above the title,
+   as on every other page. */
+.brief { max-width: var(--page-width, 1080px); margin: 0 auto; padding: 0 1.5rem 6rem; animation: briefEnter 0.35s ease-out; }
 
 /* Softer ink for the page body. webkit's primary text is near-black in
    light mode and near-white in dark, which reads harsh in a monospace face,
@@ -61,6 +63,20 @@
    enters it. */
 .brief-presenter { font-size: 0.8125rem; color: var(--text-3); margin: -0.125rem 0 0.5rem; letter-spacing: 0.02em; }
 .brief-summary { font-size: 1.0625rem; color: var(--text-2); line-height: 1.75; margin-bottom: 2.5rem; max-width: 640px; }
+/* Read-aloud puts its play button and status badge inside the summary as
+   right floats, which sit at the 640px edge and cut into its first lines.
+   Where the column has room for them, they leave the text's flow (an empty
+   shape-outside) and shift by the column's spare width to its edge, where
+   the section headings carry theirs. The cap stays on the text. A narrower
+   column keeps them as plain floats. 100cqw is the brief's content width;
+   100% (for left) is the summary's. */
+.brief:not(.deck) { container: brief / inline-size; }
+@container brief (min-width: 960px) {
+  .brief > .brief-summary > .wk-ra-btn,
+  .brief > .brief-summary > wk-badge.wk-ra-state {
+    position: relative; left: calc(100cqw - 100%); shape-outside: inset(50%);
+  }
+}
 
 .chip-row { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-top: 0.5rem; }
 
@@ -188,6 +204,11 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
 .present-diagram-canvas { display: flex; justify-content: center; max-height: 420px; }
 .present-diagram-svg { --diagram-fade: 350ms; display: block; overflow: visible; font-family: inherit; }
 .present-diagram-caption { font-size: 0.875rem; color: var(--text-2); margin: 0.5rem 0 0; }
+/* A caption and a step list are prose: they end where the section's
+   paragraphs do. Their 0.875rem font reads the ch-based measure smaller, so
+   the cap scales by the paragraph's 0.9375rem, as the kit's callout does;
+   the deck's --wk-measure: none lifts it. */
+.present-diagram-caption, .present-steps { max-width: calc(var(--wk-measure) * 0.9375 / 0.875); }
 .deck .present-diagram-caption, .deck .present-diagram .present-steps { text-align: center; }
 .present-diagram-svg .tone-neutral { --dtone-bg: var(--tone-neutral-bg); --dtone-border: var(--tone-neutral-border); --dtone-text: var(--tone-neutral-text); }
 .present-diagram-svg .tone-green { --dtone-bg: var(--tone-green-bg); --dtone-border: var(--tone-green-border); --dtone-text: var(--tone-green-text); }
@@ -279,7 +300,7 @@ html.presenting .slide.solo-terminal .present-terminal-canvas { height: 64vh; }
 .refs-url { font-size: 0.75rem; color: var(--text-3); }
 
 @media (max-width: 600px) {
-  .brief { padding: 1rem 1rem 4rem; }
+  .brief { padding: 0 1rem 4rem; }
   .brief-title { font-size: 1.625rem; }
   .cy-container, wk-col .cy-container { height: 380px; }
   .cy-controls .size-btn { width: 2rem; height: 2rem; }
@@ -288,8 +309,12 @@ html.presenting .slide.solo-terminal .present-terminal-canvas { height: 64vh; }
 }
 /* Deck view (/p/{id}/deck). The deck's compiled fragment is split into
    .slide sections client-side; only the active one is displayed. The bar
-   is present-specific chrome, so it lives here rather than in webkit. */
-.deck { padding-bottom: 5.5rem; }
+   is present-specific chrome, so it lives here rather than in webkit. The
+   top padding keeps a slide where it sat when the brief carried 2rem of its
+   own above webkit's old 2.5rem header margin: the slide heights below
+   (100vh less 12rem, 9rem, 10rem) count that space. A slide sets its own
+   text widths, so the reading measure is off in the deck. */
+.deck { padding-top: 2.5rem; padding-bottom: 5.5rem; --wk-measure: none; }
 .slide { display: none; }
 .slide.active {
   display: flex; flex-direction: column;
@@ -498,6 +523,7 @@ html[data-transition="slide"].deck-prev::view-transition-new(deck-slide) { anima
 html[data-transition="none"] .cy-container { transition: none; }
 @media (max-width: 600px) {
   .slide-title .brief-title { font-size: 1.875rem; }
+  .deck { padding-top: 1.5rem; }
   .slide.active { min-height: calc(100vh - 10rem); }
   html.presenting .slide.active { padding: 1.5rem 1rem; }
   html.has-deck-strip.presenting .slide.active { padding-bottom: 3.25rem; }

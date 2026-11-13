@@ -24,12 +24,28 @@ working because everything is light DOM (no Shadow DOM).
   ported verbatim into `webkit.css` from present's original page template,
   csl's `internal/web/assets/static/app.css` and the retired catalog service's
   stylesheet (`.card`, `.search-bar`, `.kind-badge`).
+- **One look per job.** One focus ring (a 2px `--primary` outline, 2px out) on
+  everything the keyboard reaches, at zero specificity (a `tabindex="-1"`
+  container, focused only from script, gets none); text inputs keep a
+  `--primary` border plus a `--focus-ring` halo instead. Filled buttons darken by
+  `brightness(0.95)` on hover. Surfaces (card, panel, toc, stat, details, callout,
+  kv card, code block) rest on a 1px `--border` at a 10px radius; all but the
+  callout carry `--shadow-xs`. A plain link (no class) in a content block takes
+  the `--primary` ink over a soft underline. The rule has zero specificity, so a
+  page's own link rule wins.
+  `color-scheme` follows the mode and `accent-color` is `--primary`, so native
+  controls match.
 
 ## Components
 
 ### `<wk-header>`  (JS custom element)
-Replaces `Webkit.init()`. Renders the sticky `.topbar` with `.topbar-inner`
-(max-width `--page-width`, centered). Attributes:
+Replaces `Webkit.init()`. Renders the `.topbar` with `.topbar-inner`
+(max-width `--page-width`, centered), sticky above 1024px. The bar wraps at any
+width: when the left group and the controls do not fit one row the controls
+drop to a second row on the right, and a control set wider than the bar wraps
+inside itself, so the header never widens the page. Under 720px the controls
+take their own row under the brand, the Fixation, Audio and Reload labels and
+the ⌘K hint hide. Up to 1024px the bar scrolls away with the page. Attributes:
 - `brand`, `brand-href` (default `/`) — wordmark (wrap trailing `.`/`·` in `.dot`).
 - `back-label`, `back-href` — optional back link (present's "← All").
 - `title` — small muted label (present's "Brief").
@@ -57,7 +73,17 @@ Replaces `Webkit.init()`. Renders the sticky `.topbar` with `.topbar-inner`
 Light-DOM children it relocates into the bar:
 - `<a data-nav [class=active]>…</a>` → nav links area.
 - `<button data-extra id=…>…</button>` → controls area (rendered as-is, app keeps
-  its own click handler, e.g. present's `shareBtn`).
+  its own click handler, e.g. present's `shareBtn`). A `.btn` there keeps its
+  frame and sits 0.5rem from the controls above 720px.
+
+The header's own controls (`.ctrl-btn`, `.ctrl-select`, `.size-btn` inside
+`.topbar-controls`) rest without fill or visible border and take the chip fill on
+hover; `.active` and a pressed size button keep the primary fill. A select is as
+wide as the option it shows, the size stepper's two buttons sit together with a
+1rem glyph, and with no visible `.btn` the row pulls out by the last control's
+padding so its icon ends on the content's right edge. `.ctrl-divider` is still
+rendered but hidden. The same classes outside the header (present's graph
+controls reuse `.size-btn`) keep the framed look.
 
 Behavior (ported from the current `Webkit.init`): font/fixation/size/reload/theme
 controls wired to GLOBAL keys `webkit-theme|font|size|fixation` (default light,
@@ -204,23 +230,40 @@ section.
 
 ### Content components (CSS-only; define as no-op elements for semantics)
 - `<wk-page-header>` wrapping `<wk-title>` + `<wk-subtitle>` — hero/page header
-  (port `.brief-title`/`.brief-summary` + csl/catalog `.hero`).
-- `<wk-card>` — content/entity card; `wk-card[href]` (or an `<a class=wk-card>`)
-  gets the hover lift. Port present `.row` + catalog `.card`.
+  (port `.brief-title`/`.brief-summary` + csl/catalog `.hero`). A `<wk-title>`
+  outside `wk-card`, `.wk-card` and `wk-panel` gets `role="heading"` +
+  `aria-level="1"` on connect unless it has a role. No top margin: the
+  header's `2rem` bottom margin is the one space above a page's first line, and
+  `.wrap` adds no top padding, so every page's title sits at the same height.
+- `<wk-card>` — content/entity card; every card's border darkens on hover, and
+  only a card you can act on lifts: `wk-card[href]`, an `<a class=wk-card>`, or a
+  `<wk-card interactive>` the page made clickable itself (the attribute adds the
+  lift and pointer, nothing else; the page wires the click and any `tabindex`).
+  Port present `.row` + catalog `.card`.
 - `<wk-panel>` with `<wk-panel-title>` / `<wk-panel-subtitle>` — info panel (port
   present `.panel`).
 - `<wk-badge variant="a|b|c|outline|stat|accent">` — chips/badges/kind-badge (port
   present `.chip*` + catalog `.kind-badge`). `a|b|c` are non-semantic tag hues.
-- `<wk-badge variant="info|ok|warn|error">` — semantic status badges bound to
-  `--blue|--green|--amber|--red`. Use these for event level / finding severity /
-  health state, never the `a|b|c` hues (which make a warning look like a success).
+  `accent` mixes `--accent` (else `--primary`) by the status rule below, the ink
+  moved `--accent-ink-share` toward `--text-1`, so its text reads 4.5:1 on its
+  tint where the variant allows.
+- `<wk-badge variant="info|ok|warn|error">` — semantic status badges on the
+  `--status-<s>-bg` fill with `--status-<s>-text` ink, derived from
+  `--blue|--green|--amber|--red` so the ink reads 4.5:1 on the fill. Use these for
+  event level / finding severity / health state, never the `a|b|c` hues (which
+  make a warning look like a success).
 - `<wk-badge variant="filter" [active]>` — clickable pill for filter toggles and
   query chips. `[active]` fills the pill with `--chip-active-bg`. Example:
-  `<wk-badge variant="filter" active>All</wk-badge>`
+  `<wk-badge variant="filter" active>All</wk-badge>`. Without its own
+  `tabindex` or `role`, and outside any link or button, it gets
+  `role="button"` + `tabindex="0"` and Enter/Space click it. A `<small>` inside
+  holds a count in the muted ink.
+- `<wk-chips>` — a wrapping row of filter badges (`gap: 0.5rem`, `1.25rem` below).
 - `<wk-button variant="primary|ghost|danger">` — align to the header `.btn`/`.btn-primary`/
   `.btn-ghost`/`.btn-danger` already in webkit.css (share the same rules). `danger` fills
   with the theme `--red` for destructive actions. `[hidden]` hides either one: the kit ships that
-  override because the shared `display` rule would otherwise win.
+  override because the shared `display` rule would otherwise win. No variant, or an unknown
+  one, falls back to the ghost look at zero specificity.
 - `<wk-search>` — search bar: styles a child `<input>` (+ optional `<button>`).
   Port csl/catalog `.search-bar`/`.search-input`/`.search-btn`. An optional first-child
   `<svg>` overlays the input's left edge as a leading icon; the input gains extra
@@ -258,10 +301,26 @@ section.
     <p>More text.</p>
   </wk-section>
   ```
-- `<wk-callout [variant="info|warn|ok|error"]>` — left-bordered callout block. Default border
-  color is `--primary`; `variant="info"` uses `--blue`; `variant="warn"` uses
-  `--amber`; `variant="ok"` uses `--green`; `variant="error"` uses `--red`. Example:
-  `<wk-callout variant="info">Info callout.</wk-callout>`
+- `<wk-callout [variant="info|warn|ok|error"]>` — callout block framed in `--border`
+  with a 3px bar on the left. Default bar color is `--primary` on the card fill;
+  `variant="info"` uses `--blue`, `variant="warn"` `--amber`, `variant="ok"`
+  `--green` and `variant="error"` `--red`, each on its `--status-<s>-bg` tint.
+  The box ends where a section paragraph beside it does: the measure, read in
+  the callout's smaller font, scaled by the paragraph's font over its own (its
+  text is usually a bare text node, which no rule can size apart from the box).
+  Example: `<wk-callout variant="info">Info callout.</wk-callout>`
+- Reading measure: `--wk-measure` on `:root` (`76ch`) caps `wk-section > p|ul|ol|blockquote`,
+  `.wk-prose > :is(p, ul, ol, blockquote)`, and `wk-callout` and `wk-section > details`
+  at the same right edge. Tables, figures,
+  charts, code blocks, stats and columns keep the full width. A page or subtree
+  opts out with `--wk-measure: none` (present's deck does).
+- `<wk-empty [variant="error"]>` with an optional `<wk-empty-title>` — the block
+  a list or page shows while empty, loading, or failed: `--text-2` ink,
+  left-aligned, `padding: 2rem 0`. `variant="error"` takes the callout's frame
+  (a `--border` box with a 3px `--red` bar on the left) on `--status-error-bg`
+  with `--status-error-text`, padded inside and as wide as its block; put the
+  raw error under a short title. Example:
+  `<wk-empty variant="error"><wk-empty-title>Could not load sessions</wk-empty-title>read sessions.jsonl: permission denied</wk-empty>`
 - `<wk-columns [cols="2|3"]>` with `<wk-col>` children — two or three equal-width
   columns of blocks (two when `cols` is unset), with a grid gap, collapsing to one
   column under 700px. Transparent to the fixation and read-aloud walks; a column
@@ -298,7 +357,8 @@ section.
   own rule under `.wk-prose`). Example:
   `<blockquote><p>We never saw the resolver.</p><cite>On-call engineer</cite></blockquote>`
 - `wk-section details` with a `<summary>` — a native disclosure framed like a
-  panel, closed by default, with a kit-drawn marker that turns when open. No JS;
+  panel, closed by default, with a kit-drawn marker that turns when open. One
+  straight in a section ends at the callout's right edge. No JS;
   read-aloud opens it while a part inside plays so the highlight is visible.
   Example:
   `<details><summary>Full timeline</summary><ul><li>14:02 first 502s</li></ul></details>`
@@ -382,7 +442,7 @@ section.
     <wk-form-hint>Path is relative to <code>~/code</code>.</wk-form-hint>
   </wk-form>
   ```
-- `<wk-toast-host>` + `<wk-toast [variant="ok|err"]>` — fixed bottom-right toast stack.
+- `<wk-toast-host>` + `<wk-toast [variant="ok|warn|err"]>` — fixed bottom-right toast stack.
   Place one `<wk-toast-host>` in the document; append `<wk-toast>` children dynamically
   and remove them to dismiss. `variant="ok"` is green; `variant="err"` is red. Example:
   ```js

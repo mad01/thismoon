@@ -28,11 +28,11 @@
   var TAG_PREFIX = 'tag:';
   var DANGLING_PREFIX = 'dangling:';
 
-  // The node palette, in the order a categorical mode hands it out.
-  var NODE_ROLES = [
-    'node-blue', 'node-orange', 'node-cyan', 'node-green', 'node-purple', 'node-yellow',
-    'node-red', 'node-beige', 'node-pink', 'node-rose', 'node-teal', 'node-brown',
-  ];
+  // The node palette, in the order a categorical mode hands it out: the six
+  // hues shell.html keeps apart in every theme family come first, so the
+  // largest communities and the first vaults get the clearest colours. JSON
+  // on one line: palette_test.go reads it.
+  var NODE_ROLES = ["node-blue", "node-orange", "node-green", "node-purple", "node-red", "node-yellow", "node-cyan", "node-teal", "node-pink", "node-rose", "node-beige", "node-brown"];
   var TIER_ROLES = { inbox: 'node-yellow', notes: 'node-blue', outputs: 'node-green', MOCs: 'node-purple' };
   var EVIDENCE_ROLES = { A: 'node-green', B: 'node-blue', C: 'node-yellow', D: 'node-red', mixed: 'node-purple' };
   var STATUS_ROLES = {
