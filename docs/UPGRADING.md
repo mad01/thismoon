@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-13 present: a share warns when the shared instance's client code is older
+
+Change: thismoon #486. A share sends the page's render level, and the shared instance answers with its own. A shared instance built before this change answers none, so every share to it carries a warning that the copy may draw wrong there. Nothing is refused and the `Page` custom resource definition is unchanged, so the local presents and the instance can roll in either order.
+
+Run: roll the shared instance to an image built from a main that includes this change (a `main` or `sha-*` tag), through the consuming repo's deployment.
+
+Verify: `present share <id>` prints the link with no `warning:` line on stderr. The Share modal shows no warning after the status.
+
 ## 2026-11-13 belt: the memory store skip reads only the settings Claude Code reads
 
 Change: thismoon #453. `belt hint session-start --agent claude-code` now reads `autoMemoryDirectory` from the files Claude Code reads it from: `~/.claude/settings.json`, the session's project files and the managed settings files. It reads `~/.claude/settings.local.json` only for a session started in the home directory, since Claude Code treats that file as local scope. It also keeps a store while auto memory is off. A machine that sets `autoMemoryDirectory` only in `~/.claude/settings.local.json` gets that store from belt again: Claude Code never loaded it in project sessions, so its facts reached no session.

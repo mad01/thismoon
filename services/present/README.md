@@ -88,6 +88,8 @@ present unshare <id>                              # removes the copy
 
 With both variables set, `present serve` shows a Share button in every page's header (a modal with the expiry checkbox, the link, and a Copy button), and `present mcp` registers a `present_share` tool. The button reads "Shared" once a copy exists. Sharing a page again replaces the copy under the same link. Only your author key can change or remove the copy; if you lose it, mint a new one and share each page again. `present doctor` checks the instance and the key once you have set both variables.
 
+A shared instance draws a page with its own client code. When that code is older than your present's, the share still goes through, and the button, `present share`, and `present_share` add a warning that the copy may draw wrong there. Update the shared instance, then share the page again.
+
 ### Exporting a page
 
 When the reader has no access to your machine or a shared instance, export the page as one HTML file and send that:

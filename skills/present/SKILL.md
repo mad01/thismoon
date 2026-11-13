@@ -180,7 +180,7 @@ The brief's first section answers the question. How you found it, the background
 | `present_share(id, ephemeral?)` | Push the page to the configured shared instance and return its `url`. Sharing again replaces the copy under the same link; `ephemeral` makes it expire 30 days after the last share. |
 | `present_doctor()` | Check the page store, the serve process, and version skew. Call it when a tool errors or a page URL does not load. |
 
-Hold the `id` from `present_create` for the whole session: every later call takes it. If `present_open` fails (sandbox or no `open` binary), return the URL from `present_create` to the user instead. When the user asks to share a page, call `present_share` with the id and return the link; if the tool is missing or fails with a network error, tell the user to use the Share button on the page or run `present share <id>`.
+Hold the `id` from `present_create` for the whole session: every later call takes it. If `present_open` fails (sandbox or no `open` binary), return the URL from `present_create` to the user instead. When the user asks to share a page, call `present_share` with the id and return the link with any `warnings` message; if the tool is missing or fails on the network, point the user at the Share button or `present share <id>`.
 
 ## Checks
 

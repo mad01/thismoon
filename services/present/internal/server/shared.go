@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
@@ -38,6 +39,10 @@ type bundle struct {
 	DeckSource  json.RawMessage `json:"deck_source,omitempty"`
 	GraphSource json.RawMessage `json:"graph_source,omitempty"`
 	Ephemeral   bool            `json:"ephemeral"`
+	// RenderLevel is the render level the pushing binary rendered the page
+	// at; a client from before render levels sends none. It is never
+	// stored, and a level above this instance's is logged, not refused.
+	RenderLevel int `json:"render_level,omitempty"`
 }
 
 // sharedPage is what a shared write returns: where the page lives now.
@@ -51,6 +56,10 @@ type sharedPage struct {
 	// before decks answers without the key, and the client reads that as
 	// the deck having been dropped.
 	HasDeck bool `json:"has_deck"`
+	// RenderLevel is this instance's present.RenderLevel, which the pushing
+	// side compares with its own to warn when the page may draw wrong here.
+	// An instance from before render levels answers without the key.
+	RenderLevel int `json:"render_level"`
 }
 
 // handleHowTo serves the shared instance's root page.
@@ -92,6 +101,7 @@ func (s *Server) handleSharedCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	notify.EmitEvent("present", "info", "page shared: "+p.Title, "",
 		map[string]string{"id": p.ID, "title": p.Title})
+	logNewerPage(p.ID, b.RenderLevel)
 	s.writeSharedPage(w, r, http.StatusCreated, p)
 }
 
@@ -119,7 +129,18 @@ func (s *Server) handleSharedReplace(w http.ResponseWriter, r *http.Request) {
 	}
 	notify.EmitEvent("present", "info", "shared page replaced: "+p.Title, "",
 		map[string]string{"id": p.ID, "title": p.Title})
+	logNewerPage(p.ID, b.RenderLevel)
 	s.writeSharedPage(w, r, http.StatusOK, p)
+}
+
+// logNewerPage logs a pushed page rendered at a render level above this
+// instance's. The write stands; the line tells the operator the instance is
+// behind the binaries pushing to it.
+func logNewerPage(id string, level int) {
+	if level > present.RenderLevel {
+		log.Printf("present: page %s was rendered at render level %d, above this instance's %d; "+
+			"it may draw wrong here until the instance is updated", id, level, present.RenderLevel)
+	}
 }
 
 // replaceEdit is the store edit a replace runs: the page takes the bundle's
@@ -178,12 +199,13 @@ func (s *Server) writeSharedPage(w http.ResponseWriter, r *http.Request, status 
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(sharedPage{
-		ID:        p.ID,
-		URL:       s.pageURL(r, p.ID),
-		Version:   p.Version,
-		Ephemeral: p.Ephemeral,
-		ExpiresAt: p.ExpiresAt,
-		HasDeck:   p.HasDeck,
+		ID:          p.ID,
+		URL:         s.pageURL(r, p.ID),
+		Version:     p.Version,
+		Ephemeral:   p.Ephemeral,
+		ExpiresAt:   p.ExpiresAt,
+		HasDeck:     p.HasDeck,
+		RenderLevel: present.RenderLevel,
 	})
 }
 

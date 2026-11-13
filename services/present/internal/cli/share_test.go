@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/services/present/internal/store"
 )
 
 // setSharingFlags points the package-level sharing flags at url and key for
@@ -124,5 +125,51 @@ func TestKeyNewPrintsAFreshKey(t *testing.T) {
 	}
 	if !regexp.MustCompile(`^[0-9a-f]{64}\n$`).MatchString(buf.String()) {
 		t.Errorf("key new printed %q, want 64 lowercase hex and a newline", buf.String())
+	}
+}
+
+// present share prints the link on stdout and, for an instance from before
+// render levels, the warning on stderr; the share itself succeeds.
+func TestShareCommandPrintsTheLevelWarning(t *testing.T) {
+	quietLog(t)
+	id := strings.Repeat("e", 32)
+	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/pages" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write(
+			[]byte(`{"id":"` + id + `","url":"http://old.example/p/` + id + `","version":1}`),
+		)
+	}))
+	t.Cleanup(old.Close)
+	setSharingFlags(t, old.URL, "k")
+	dir := t.TempDir()
+	prev := flagWorkdir
+	flagWorkdir = dir
+	t.Cleanup(func() { flagWorkdir = prev })
+	st, err := store.NewFS(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := st.Create(t.Context(), store.Draft{Title: "T", Content: "<p>x</p>"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	shareCmd.SetOut(&stdout)
+	shareCmd.SetErr(&stderr)
+	t.Cleanup(func() { shareCmd.SetOut(nil); shareCmd.SetErr(nil) })
+	if err := runShare(shareCmd, []string{p.ID}); err != nil {
+		t.Fatalf("share: %v", err)
+	}
+	if want := "http://old.example/p/" + id + "\n"; stdout.String() != want {
+		t.Errorf("stdout = %q, want %q", stdout.String(), want)
+	}
+	if !strings.Contains(stderr.String(), "warning: the shared instance predates render levels") {
+		t.Errorf("stderr = %q, want the render level warning", stderr.String())
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	present "github.com/mad01/thismoon/services/present"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
 
@@ -25,11 +26,14 @@ type fakeShared struct {
 	ts    *httptest.Server
 	// legacy makes the fake answer like an instance from before decks.
 	legacy bool
+	// level is the render level the fake answers with; 0 answers like an
+	// instance from before render levels.
+	level int
 }
 
 func newFakeShared(t *testing.T, key string) *fakeShared {
 	t.Helper()
-	f := &fakeShared{key: key, pages: map[string]Bundle{}}
+	f := &fakeShared{key: key, pages: map[string]Bundle{}, level: present.RenderLevel}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/pages", f.create)
 	mux.HandleFunc("PUT /api/p/{id}", f.replace)
@@ -65,7 +69,8 @@ func (f *fakeShared) reply(w http.ResponseWriter, status int, id string, b Bundl
 		Encode(Result{
 			ID: id, URL: f.ts.URL + "/p/" + id, Version: 1, Ephemeral: b.Ephemeral, ExpiresAt: exp,
 			// An instance from before decks never sets has_deck.
-			HasDeck: !f.legacy && b.Deck != "",
+			HasDeck:     !f.legacy && b.Deck != "",
+			RenderLevel: f.level,
 		})
 }
 

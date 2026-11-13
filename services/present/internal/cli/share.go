@@ -41,7 +41,9 @@ var shareCmd = &cobra.Command{
 	Long: `Push a local page to the shared instance named by --shared-url, signed with
 --author-key, and print the link others can open. Sharing a page again
 replaces its copy under the same link. With --ephemeral the copy expires 30
-days after the last share; otherwise it stays until 'present unshare'.`,
+days after the last share; otherwise it stays until 'present unshare'. A
+shared instance whose client code is older than this binary's still takes
+the page, and a warning on stderr says the copy may draw wrong there.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runShare,
 }
@@ -104,6 +106,9 @@ func runShare(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(cmd.OutOrStdout(), info.URL)
 	if info.ExpiresAt != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "expires %s\n", info.ExpiresAt.UTC().Format(time.RFC3339))
+	}
+	if info.Warning != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", info.Warning)
 	}
 	return nil
 }

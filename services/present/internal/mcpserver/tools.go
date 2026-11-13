@@ -212,7 +212,9 @@ func registerTools(s *mcp.Server, h *handlers) {
 				Name: "present_share",
 				Description: "Push a local page to the configured shared instance and return the link others can open. " +
 					"Sharing again replaces the copy under the same link. Set `ephemeral` to have the copy expire 30 days after " +
-					"the last share; otherwise it stays until `present unshare`. Only this machine's author key can change the copy.",
+					"the last share; otherwise it stays until `present unshare`. Only this machine's author key can change the copy. " +
+					"A `warnings` entry with rule `render-level` means the shared instance's client code is older than this " +
+					"present's, so the copy may draw wrong there: pass it on to the user, who updates the instance and shares again.",
 				Annotations: &mcp.ToolAnnotations{
 					DestructiveHint: new(false),
 					IdempotentHint:  true,
@@ -984,10 +986,23 @@ type shareInput struct {
 }
 
 type shareOutput struct {
-	URL       string `json:"url"`
-	Ephemeral bool   `json:"ephemeral"`
-	ExpiresAt string `json:"expires_at,omitempty"`
-	SharedAt  string `json:"shared_at"`
+	URL       string         `json:"url"`
+	Ephemeral bool           `json:"ephemeral"`
+	ExpiresAt string         `json:"expires_at,omitempty"`
+	SharedAt  string         `json:"shared_at"`
+	Warnings  []shareWarning `json:"warnings,omitempty" jsonschema:"what may make the copy draw wrong on the shared instance; the page is shared either way"`
+}
+
+// ruleRenderLevel names the share warning for an instance whose client code
+// is older than this binary's.
+const ruleRenderLevel = "render-level"
+
+// shareWarning is a share's warning in the shape the lint's warnings take
+// in present_create, so a caller reads both the same way.
+type shareWarning struct {
+	Rule    string `json:"rule"`
+	Where   string `json:"where"`
+	Message string `json:"message"`
 }
 
 func (h *handlers) handleShare(
@@ -1006,6 +1021,11 @@ func (h *handlers) handleShare(
 	}
 	if info.ExpiresAt != nil {
 		out.ExpiresAt = info.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	if info.Warning != "" {
+		out.Warnings = []shareWarning{
+			{Rule: ruleRenderLevel, Where: h.sharer.BaseURL, Message: info.Warning},
+		}
 	}
 	notify.EmitEvent("present", "info", "page shared: "+in.ID, "",
 		map[string]string{"id": in.ID, "url": info.URL})

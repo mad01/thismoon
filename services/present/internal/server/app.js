@@ -2357,8 +2357,9 @@
   // wireShare attaches the Share button and its modal. The button is hidden
   // unless the server reports sharing enabled (a shared instance is
   // configured and this is a local serve), so a shared instance never shows
-  // it. Confirm posts to /p/{id}/share; the result shows the shared URL and
-  // whether it expires. Re-sharing replaces the copy under the same URL.
+  // it. Confirm posts to /p/{id}/share; the result shows the shared URL,
+  // whether it expires, and any warning the share carries. Re-sharing
+  // replaces the copy under the same URL.
   function wireShare(share) {
     if (standalone) return;
     var btn = document.getElementById('shareBtn');
@@ -2376,6 +2377,9 @@
       status.textContent = info.ephemeral && info.expires_at
         ? 'Expires ' + new Date(info.expires_at).toLocaleDateString()
         : 'Kept until unshared';
+      // Only the reply to a share carries a warning: the shared instance's
+      // client code is older than this binary's, so the copy may draw wrong.
+      if (info.warning) status.textContent += '. Warning: ' + info.warning + '.';
       eph.checked = !!info.ephemeral;
       result.removeAttribute('hidden');
       btn.textContent = 'Shared';

@@ -64,6 +64,16 @@ const DefaultSweepInterval = 10 * time.Minute
 // deep inside a write.
 const MaxPageBytes = 1 << 20
 
+// RenderLevel counts the changes to what a stored page can use and the
+// client code must know to draw it: a block, a Doc field, a layout, a chart
+// or diagram form. A share sends it with the page and a shared instance
+// answers with its own, so a local present can warn when the instance's
+// client code is older than the code that rendered the page. Raise it by one
+// whenever the client code learns something a page can depend on;
+// TestRenderLevelFollowsTheVocabulary in internal/render fails when the Doc
+// vocabulary changes and the level stays put.
+const RenderLevel = 1
+
 // MaxImageBytes caps one image file an image block brings in from this
 // machine. Images are stored beside the pages, not inside them, so the page
 // cap above does not count them; this one keeps a stray screenshot of the
