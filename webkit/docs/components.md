@@ -130,6 +130,32 @@ A token on `:root` beside `--page-width`, `76ch` by default: the widest a line o
 .deck { --wk-measure: none; }
 ```
 
+### Design tokens (radius, spacing, control height, motion)
+
+Tokens on `:root` beside `--page-width` and `--wk-measure` set the kit's shape, rhythm and motion, and the kit's own rules read them. **Read these from service CSS too.** A shell that writes `padding: var(--wk-space-4) var(--wk-space-5)` or `border-radius: var(--wk-radius-surface)` lines up with the kit. A copied near-value (`1.1rem`, `9px`) drifts away from it.
+
+| Token | Value | For |
+|-------|-------|-----|
+| `--wk-radius-mark` | `4px` | Badges, inline code, swatches |
+| `--wk-radius-control` | `6px` | Buttons, header controls, segments |
+| `--wk-radius-field` | `8px` | Inputs, the segmented group, list items, images |
+| `--wk-radius-surface` | `10px` | Card, panel, callout, toc, stat, details, kv card, code block, toast, search |
+| `--wk-radius-overlay` | `14px` | Dialog, command palette |
+| `--wk-radius-pill` | `999px` | Filter badge, progress bar |
+| `--wk-space-N` | N × `0.25rem` | Padding, margin and gap. N is `0-5`, `1`, `1-5`, `2`, `2-5`, `3`, `4`, `5`, `6`, `8` or `10` (`0.125rem` to `2.5rem`) |
+| `--wk-control-h` | `1.75rem` | The height of a button, a header control and a `wk-seg` |
+| `--wk-dur-fast` | `0.15s` | Hover and focus feedback |
+| `--wk-dur` | `0.2s` | A card lifting, a dialog or toast arriving |
+| `--wk-dur-theme` | `0.3s` | The page recolouring when the theme changes |
+
+Spacing is in rem, so it grows with the header's size control; a px value never equals a token. A value in `webkit.css` that is not on the scale is a literal on purpose. Either other code depends on it (the header bar, `.wrap`, the `wk-search` input, `wk-badge` padding, the `wk-stat` and `wk-section-heading` box), or moving it onto the scale would shift content by more than 2px.
+
+```css
+.my-row { display: flex; gap: var(--wk-space-2); padding: var(--wk-space-3) var(--wk-space-4); }
+.my-tile { border-radius: var(--wk-radius-surface); transition: border-color var(--wk-dur-fast); }
+.my-toolbar button { height: var(--wk-control-h); }
+```
+
 ---
 
 ## Cards and panels
@@ -186,7 +212,7 @@ Chips and kind labels. Variant controls color and behavior.
 | `a` | Warm amber tag (`--tag-a` / `--tag-a-text`) |
 | `b` | Green tag (`--tag-b` / `--tag-b-text`) |
 | `c` | Blue tag (`--tag-c` / `--tag-c-text`) |
-| `outline` | Border-only, no fill |
+| `outline` | No fill, muted ink, a 1px `--border` ring drawn inside the box, so it stands as tall as a plain badge |
 | `stat` | Muted stat chip |
 | `accent` | Uses `var(--accent, --primary)`, mixed by the status rule: the ink moves `--accent-ink-share` (45%, 55% or 65%, per variant) toward `--text-1`, so its text reads 4.5:1 on its tint where the variant allows |
 | `info` / `ok` / `warn` / `error` | Status badge: `--status-<s>-bg` fill, `--status-<s>-text` ink (blue, green, amber, red) |
@@ -240,6 +266,13 @@ A `<wk-button>` or `.btn` with no variant, or one the kit does not know, gets th
 <wk-button variant="danger">Delete</wk-button>
 ```
 
+Every button is at least `--wk-control-h` (`1.75rem`) tall, the height of a header control and a `wk-seg`, so they line up in a row. `size="md"` (the class `.btn-md` on a `.btn`) is the larger size for a dialog's actions: `2.25rem` tall with `1rem` side padding, same text size.
+
+```html
+<wk-button variant="primary" size="md">Save</wk-button>
+<button class="btn btn-ghost btn-md">Cancel</button>
+```
+
 ### `<wk-search>`
 
 Search bar. Styles a child `<input>`. Optional first-child `<svg>` becomes a leading icon with extra left padding added automatically via `:has(> svg)`.
@@ -255,7 +288,7 @@ Search bar. Styles a child `<input>`. Optional first-child `<svg>` becomes a lea
 
 ### `<wk-seg>`
 
-Segmented control. Wrap `<button>` children; `class="active"` marks the selected segment.
+Segmented control. Wrap `<button>` children; `class="active"` marks the selected segment. The group is as tall as a button (`--wk-control-h`) and the segments fill it.
 
 ```html
 <wk-seg>
@@ -414,8 +447,8 @@ Fixed overlay modal. Toggle the `[hidden]` attribute to open and close. Animates
       <p><strong>my-entry</strong> will be permanently removed.</p>
     </wk-modal-body>
     <wk-modal-actions>
-      <wk-button variant="ghost" id="cancelBtn">Cancel</wk-button>
-      <wk-button variant="danger" id="deleteBtn">Delete</wk-button>
+      <wk-button variant="ghost" size="md" id="cancelBtn">Cancel</wk-button>
+      <wk-button variant="danger" size="md" id="deleteBtn">Delete</wk-button>
     </wk-modal-actions>
   </wk-modal-panel>
 </wk-modal>

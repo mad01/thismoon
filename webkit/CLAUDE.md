@@ -68,8 +68,9 @@ Layout/content: `<wk-page-header>` / `<wk-title>` / `<wk-subtitle>`,
 `<wk-card>` (`--accent` left bar; the lift on hover only for `a.wk-card`,
 `[href]`, and `[interactive]`, which a page sets on a card it made clickable),
 `<wk-panel>` / `<wk-panel-title>` / `<wk-panel-subtitle>`,
-`<wk-button variant="primary|ghost|danger">` (no or an unknown variant gets the
-ghost look), `<wk-table>`.
+`<wk-button variant="primary|ghost|danger" [size="md"]>` (no or an unknown
+variant gets the ghost look; `size="md"` or `.btn-md` is the 2.25rem dialog
+size), `<wk-table>`.
 
 Interactive: `<wk-search>` (optional first-child `<svg>` as leading icon),
 `<wk-seg>` (`<button class="active">` marks selected segment).
@@ -111,6 +112,21 @@ padding). `--wk-measure` (`76ch`, on `:root`) caps prose straight in a
 `wk-section` or `.wk-prose`; the `wk-callout` box and a `details` straight in a
 section end at the same right edge (their caps scale the `ch` measure by the
 paragraph's font over their own). `--wk-measure: none` opts a subtree out.
+
+Tokens (MAD-567), on the same `:root` block: radius by role
+`--wk-radius-mark|control|field|surface|overlay|pill` (4, 6, 8, 10, 14,
+999px), spacing `--wk-space-N` (N × 0.25rem, N in `0-5 1 1-5 2 2-5 3 4 5 6 8
+10`), `--wk-control-h` (1.75rem: every `.btn`/`wk-button` min-height, each
+header control, `wk-seg`) and motion `--wk-dur-fast|--wk-dur|--wk-dur-theme`
+(0.15s, 0.2s, 0.3s). Rules read them; service CSS should too, rather than
+copying near-values. Spacing tokens are rem, so only rem literals map to them
+(the size control moves the root font size; px spacing stays px). Values off
+the scale are literals on purpose: the header layout rules and its 55px bar
+(the controls row keeps a 30px min-height for it), `.wrap`, `wk-page-header`,
+the `wk-search` input (csl mirrors it), `wk-badge` padding (moondb overrides
+it), the `wk-stat` and `wk-section-heading` box (present restyles them), and
+snaps that would move content by more than 2px. `embed_test.go` pins each
+token's name and value.
 
 Overlays: `<wk-modal [hidden]>` / `<wk-modal-panel>` / `<wk-modal-head>` /
 `<wk-modal-actions>` (fade+slide in; toggle `[hidden]` to open/close),

@@ -29,12 +29,23 @@ working because everything is light DOM (no Shadow DOM).
   container, focused only from script, gets none); text inputs keep a
   `--primary` border plus a `--focus-ring` halo instead. Filled buttons darken by
   `brightness(0.95)` on hover. Surfaces (card, panel, toc, stat, details, callout,
-  kv card, code block) rest on a 1px `--border` at a 10px radius; all but the
-  callout carry `--shadow-xs`. A plain link (no class) in a content block takes
+  kv card, code block) rest on a 1px `--border` at `--wk-radius-surface` (10px);
+  all but the callout carry `--shadow-xs`. A plain link (no class) in a content block takes
   the `--primary` ink over a soft underline. The rule has zero specificity, so a
   page's own link rule wins.
   `color-scheme` follows the mode and `accent-color` is `--primary`, so native
   controls match.
+- **Tokens for shape, rhythm and motion.** `:root` declares the radius roles
+  `--wk-radius-mark|control|field|surface|overlay|pill` (4, 6, 8, 10, 14 and
+  999px), the spacing scale `--wk-space-N` (N × `0.25rem`, N in `0-5`, `1`,
+  `1-5`, `2`, `2-5`, `3`, `4`, `5`, `6`, `8`, `10`), the control height
+  `--wk-control-h` (`1.75rem`: buttons, header controls, `wk-seg`) and the
+  durations `--wk-dur-fast|--wk-dur|--wk-dur-theme` (0.15s, 0.2s, 0.3s). The
+  rules read them, and service CSS should read them too instead of copying
+  near-values. A literal off the scale is deliberate: other code depends on it
+  (the header bar, `.wrap`, the `wk-search` input, `wk-badge` padding, the
+  `wk-stat` and `wk-section-heading` box), or snapping it would move content by
+  more than 2px.
 
 ## Components
 
@@ -244,6 +255,8 @@ section.
   present `.panel`).
 - `<wk-badge variant="a|b|c|outline|stat|accent">` — chips/badges/kind-badge (port
   present `.chip*` + catalog `.kind-badge`). `a|b|c` are non-semantic tag hues.
+  `outline` draws its 1px `--border` ring inside the box (an inset shadow), so it
+  stands as tall as a plain badge.
   `accent` mixes `--accent` (else `--primary`) by the status rule below, the ink
   moved `--accent-ink-share` toward `--text-1`, so its text reads 4.5:1 on its
   tint where the variant allows.
@@ -263,7 +276,9 @@ section.
   `.btn-ghost`/`.btn-danger` already in webkit.css (share the same rules). `danger` fills
   with the theme `--red` for destructive actions. `[hidden]` hides either one: the kit ships that
   override because the shared `display` rule would otherwise win. No variant, or an unknown
-  one, falls back to the ghost look at zero specificity.
+  one, falls back to the ghost look at zero specificity. Every button is at least
+  `--wk-control-h` tall. `size="md"` (`.btn-md` on a `.btn`) is the larger size for a
+  dialog's actions: `min-height: 2.25rem`, `padding: 0 1rem`, same text size.
 - `<wk-search>` — search bar: styles a child `<input>` (+ optional `<button>`).
   Port csl/catalog `.search-bar`/`.search-input`/`.search-btn`. An optional first-child
   `<svg>` overlays the input's left edge as a leading icon; the input gains extra
@@ -280,7 +295,8 @@ section.
 - `<wk-table>` — styles a descendant `<table>` as a data table (port present
   `.data-table`).
 - `<wk-seg>` — segmented control. Wraps `<button>` children; `.active` class
-  marks the selected segment. Example:
+  marks the selected segment. The group is `--wk-control-h` tall and the
+  segments fill it. Example:
   `<wk-seg><button class="active">Files</button><button>Matches</button></wk-seg>`
 - `<wk-kv>` with `<wk-kv-row>`, `<wk-kv-label>`, `<wk-kv-value>` — key/value row
   list. `variant="card"` frames the block with a border, rounded corners, and
@@ -423,8 +439,8 @@ section.
       <wk-modal-head><h2>Delete entry?</h2><button class="btn btn-ghost">✕</button></wk-modal-head>
       <wk-modal-body><p><strong>my-entry</strong> will be permanently removed.</p></wk-modal-body>
       <wk-modal-actions>
-        <wk-button variant="ghost">Cancel</wk-button>
-        <wk-button variant="danger">Delete</wk-button>
+        <wk-button variant="ghost" size="md">Cancel</wk-button>
+        <wk-button variant="danger" size="md">Delete</wk-button>
       </wk-modal-actions>
     </wk-modal-panel>
   </wk-modal>
