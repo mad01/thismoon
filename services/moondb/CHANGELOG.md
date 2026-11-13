@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/mad01/thismoon/compare/moondb/v0.19.0...moondb/v0.19.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **moondb:** keep the session list on the last filter clicked ([#464](https://github.com/mad01/thismoon/issues/464)) ([feb6b30](https://github.com/mad01/thismoon/commit/feb6b30c4e0c6238b976d18a6ca5d0214bd8afc1))
+
 ## [0.19.0](https://github.com/mad01/thismoon/compare/moondb/v0.18.0...moondb/v0.19.0) (2026-11-13)
 
 
