@@ -37,8 +37,12 @@
   var POLL_MS = 60000; // how often the sessions list refetches
 
   // poll is the sessions list's refetch timer. route clears it, so each
-  // render starts with none and only the list view sets one.
+  // render starts with none and only the list view sets one. listGen
+  // numbers the list's latest fetch: a filter, "show more", a poll tick and
+  // route each take a new number, and a fetch that lands with an older one
+  // is dropped, rows and error alike, so it never paints over a newer view.
   var poll = null;
+  var listGen = 0;
 
   // Turn bands in the file view cycle through these webkit roles.
   var BANDS = ['--series-1', '--series-2', '--series-3', '--series-4',
@@ -613,9 +617,11 @@
       load();
     }
     function load() {
+      var gen = ++listGen;
       var since = state.since === 'any' ? '' : state.since;
       getJSON('/api/sessions?' + qs({ repo: state.repo, cwd: state.cwd, since: since, limit: state.limit }))
         .then(function (data) {
+          if (gen !== listGen) return;
           var sessions = data.sessions || [];
           var win = data.window || {};
           controls.replaceChildren(sinceControl(state, set),
@@ -624,7 +630,9 @@
           list.replaceChildren.apply(list, sessionDays(sessions, state,
             (win.sessions || 0) > sessions.length ? more : null, data.dirs || []));
         })
-        .catch(function (err) { list.replaceChildren(failure('Could not load sessions', err)); });
+        .catch(function (err) {
+          if (gen === listGen) list.replaceChildren(failure('Could not load sessions', err));
+        });
     }
 
     replace([
@@ -2376,10 +2384,12 @@
   }
 
   // route renders the view the query picks. It runs again on back and
-  // forward, so it first stops the timer the last render left behind.
+  // forward, so it first stops the timer the last render left behind and
+  // drops the list fetch still in flight.
   function route() {
     clearInterval(poll);
     poll = null;
+    listGen++;
     if (params.turn) {
       renderTurn(params.turn);
     } else if (params.session) {
