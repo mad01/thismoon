@@ -14,10 +14,17 @@ import (
 // gitInvocation is one parsed git invocation from a shell command: the
 // directory it runs in, the subcommand, and the tokens after it. dir is ""
 // when that directory cannot be told without a shell (see parseGitCmd).
+// configured marks a -c or --config-env option, or an environment that may
+// change git's config (gitCommandsAt); unread marks an invocation taken from
+// code readShell could not follow (walkStep); moved marks a -C, which runs
+// git somewhere other than the shell's directory.
 type gitInvocation struct {
-	dir  string
-	sub  string
-	args []string
+	dir        string
+	sub        string
+	args       []string
+	configured bool
+	unread     bool
+	moved      bool
 }
 
 // gitCommandsAt extracts bare `git <sub>` invocations from a shell command,
@@ -30,54 +37,51 @@ type gitInvocation struct {
 // An invocation's dir is "" when a cd or -C target before it needs a shell
 // to resolve, or git may use another repository (walkSegments); each caller
 // decides what unknown means, and no git-backed resolver fills the gap with
-// belt's own process directory (gitOutput). The parser is deliberately
-// token-based (see splitSegments): quoted strings containing the words do
-// not tokenize to a bare `git` and are ignored.
+// belt's own process directory (gitOutput). Wrapped invocations count:
+// `(git push)`, `$(git push)`, `sh -c 'git push'`, `eval "git push"` and a
+// push split over continued lines (walkCommands), while a quoted string
+// that only holds the words is one word, never a bare `git`.
+//
+// A step anywhere in the command that can change where a push goes
+// (retargetsPush) marks every invocation configured: the resolvers read the
+// config before the command runs, and a step after a push may run beside it.
 func gitCommandsAt(command, cwd, sub string) []gitInvocation {
 	var cmds []gitInvocation
-	walkSegments(command, cwd, func(tokens []string, dir string) {
-		if c, ok := segmentGitCommand(tokens, dir); ok && c.sub == sub {
-			cmds = append(cmds, c)
+	retargets := false
+	walkCommands(command, cwd, func(s walkStep) {
+		retargets = retargets || retargetsPush(s)
+		c, ok := segmentGitCommand(s.tokens, s.dir)
+		if !ok || c.sub != sub {
+			return
 		}
+		pre, _ := beforeGit(s.tokens)
+		c.configured = c.configured || s.configEnv || overridesConfig(pre)
+		c.unread = s.unread
+		cmds = append(cmds, c)
 	})
+	for i := range cmds {
+		cmds[i].configured = cmds[i].configured || retargets
+	}
 	return cmds
 }
 
-// walkSegments calls fn for every segment of a compound shell command that
-// does not move the shell (`cd`, `pushd`, `popd`), with the segment's tokens
+// walkSegments calls fn for every command of a compound shell command that
+// does not move the shell (`cd`, `pushd`, `popd`), with the command's tokens
 // and the directory git works on when it runs there: cwd to begin with, then
 // whatever the moves before it resolved to (shellWalk.move), and "" once one
 // of them could not be resolved statically or git may use another repository
 // (shellWalk.gitDir). A move that may carry another command (`cd /x & git
-// push`) is passed to fn too, with an unknown directory. The tokens come from
-// the command with its variables substituted when resolveLiteralVars can
-// vouch for every one, so a cd, a `git -C`, or any other argument sees what
-// the shell would pass; otherwise they are the command as written. A CDPATH
-// in belt's own environment counts: belt runs with the session's
-// environment, so an exported CDPATH reaches the Bash tool's shell too. One
-// the shell sets without exporting is invisible here, and then zsh's rule of
-// trying the current directory first is what keeps a relative target right.
+// push`) is passed to fn too, with an unknown directory. The commands come
+// from readShell, nested ones included (walkCommands), with the command's
+// variables substituted first when resolveLiteralVars can vouch for every
+// one, so a cd, a `git -C`, or any other argument sees what the shell would
+// pass; otherwise they are the command as written. A CDPATH in belt's own
+// environment counts: belt runs with the session's environment, so an
+// exported CDPATH reaches the Bash tool's shell too. One the shell sets
+// without exporting is invisible here, and then zsh's rule of trying the
+// current directory first is what keeps a relative target right.
 func walkSegments(command, cwd string, fn func(tokens []string, dir string)) {
-	command = resolveLiteralVars(command)
-	segs := splitSegments(command)
-	w := shellWalk{dir: cwd, cdpath: os.Getenv("CDPATH") != ""}
-	for i, seg := range segs {
-		before := jointBefore(command, segs, i)
-		w.join(before)
-		w.cdpath = w.cdpath || mentionsName(seg.text, cdpathNames)
-		tokens := strings.Fields(seg.text)
-		if target, ok := parseCd(tokens); ok {
-			if target == "-" {
-				fn(tokens, "")
-			}
-			after := jointBefore(command, segs, i+1)
-			w.move(target, seg.text, before, after, inText(command, seg.off))
-		} else {
-			w.noteGitEnv(tokens)
-			fn(tokens, w.gitDir(tokens))
-		}
-		w.heredoc = w.heredoc || opensHeredoc(seg.text)
-	}
+	walkCommands(command, cwd, func(s walkStep) { fn(s.tokens, s.dir) })
 }
 
 // shellWalk is what walkSegments carries from one segment to the next.
@@ -86,20 +90,28 @@ type shellWalk struct {
 	// andOnly marks a dir that a move after && set: it holds only while the
 	// commands after the move stay joined by &&, since the move may not have
 	// run.
-	andOnly bool
-	cdpath  bool // a relative cd target may be looked up in CDPATH
-	gitEnv  bool // GIT_DIR or a sibling may be set for the rest of the command
-	heredoc bool // a heredoc began, so a later line may be its body
+	andOnly   bool
+	cdpath    bool // a relative cd target may be looked up in CDPATH
+	gitEnv    bool // GIT_DIR or a sibling may be set for the rest of the command
+	configEnv bool // a gitConfigEnv variable may be set for the rest of the command
+	heredoc   bool // a heredoc began, so a later line may be its body
+	prose     bool // walking a heredoc body or comment (walkProse)
+	// feeds marks text whose output a shell or interpreter may run (a
+	// substitution in a -c script or piped on), so every heredoc body in it
+	// is read as code (walkProse).
+	feeds bool
+	depth int // how many subshells, -c scripts and evals deep the walk is
 }
 
-// joint is the separator splitSegments dropped in front of a segment.
+// joint is the separator in front of a command or segment.
 type joint int
 
 const (
 	jointList joint = iota // the start or end of the command, ; or a newline
 	jointAnd               // &&
 	jointOr                // ||
-	jointPipe              // |
+	jointPipe              // | or |&
+	jointBg                // a lone &, which runs the command before it in the background
 )
 
 // jointBefore reads back the separator in front of segment i of command;
@@ -131,12 +143,14 @@ func (w *shellWalk) join(before joint) {
 // move applies one cd, pushd, or popd to the walk. On top of what parseCd
 // and resolveDir cannot place, the destination is unknown when the shell may
 // not run the move in this shell or at all (after ||, in a pipeline, which
-// bash runs in subshells), may not read it as a command (inside a string,
-// a comment, or a heredoc body the segment split cut up), splits its words
-// elsewhere (a space oddSpace reports, which strings.Fields splits at and the
-// shell does not), or may look its target up in CDPATH (searchesCdpath).
+// bash runs in subshells, or sent to the background with &), may not read it
+// as a command (inside a string, a comment, or a heredoc body the segment
+// split cut up), splits its words elsewhere (a space oddSpace reports, which
+// strings.Fields splits at and the shell does not), or may look its target
+// up in CDPATH (searchesCdpath).
 func (w *shellWalk) move(target, text string, before, after joint, inText bool) {
-	if before == jointOr || before == jointPipe || after == jointPipe || inText || w.heredoc ||
+	if before == jointOr || before == jointPipe || after == jointPipe || after == jointBg ||
+		inText || w.heredoc ||
 		strings.IndexFunc(text, oddSpace) >= 0 || (w.cdpath && searchesCdpath(target)) {
 		target = "-"
 	}
@@ -157,12 +171,15 @@ var cdpathNames = wordSet("CDPATH cdpath")
 
 // noteGitEnv remembers a gitRepoEnvNames variable named in a segment with no
 // git word in it (`export GIT_DIR=...`, `GIT_DIR=...;`): it may reach every
-// git after it. One that prefixes a git word is that invocation's alone.
+// git after it. One that prefixes a git word is that invocation's alone. An
+// assignment of a gitConfigEnv variable there is remembered the same way.
 func (w *shellWalk) noteGitEnv(tokens []string) {
-	if pre, hasGit := beforeGit(tokens); !hasGit &&
-		mentionsName(strings.Join(pre, " "), gitRepoEnvNames) {
-		w.gitEnv = true
+	pre, hasGit := beforeGit(tokens)
+	if hasGit {
+		return
 	}
+	w.gitEnv = w.gitEnv || mentionsName(strings.Join(pre, " "), gitRepoEnvNames)
+	w.configEnv = w.configEnv || slices.ContainsFunc(pre, assignsGitConfigEnv)
 }
 
 // gitDir returns the directory a git invocation in this segment works on:
@@ -186,10 +203,16 @@ func (w *shellWalk) gitDir(tokens []string) string {
 // beforeGit returns the tokens in front of the first git word, or all of
 // them when there is none.
 func beforeGit(tokens []string) (pre []string, hasGit bool) {
-	if i := slices.Index(tokens, "git"); i >= 0 {
+	if i := slices.IndexFunc(tokens, isGitWord); i >= 0 {
 		return tokens[:i], true
 	}
 	return tokens, false
+}
+
+// isGitWord reports whether a token names git: the bare word or a path to it
+// (/usr/bin/git, ~/bin/git).
+func isGitWord(tok string) bool {
+	return tok == "git" || strings.HasSuffix(tok, "/git")
 }
 
 // mentionsName reports whether text names one of names as a word of its
@@ -353,10 +376,8 @@ func redirection(tok string) (redir, operandNext bool) {
 // segmentGitCommand parses the first bare `git` in one segment's tokens: one
 // invocation per segment.
 func segmentGitCommand(tokens []string, cwd string) (gitInvocation, bool) {
-	for i, tok := range tokens {
-		if tok == "git" {
-			return parseGitCmd(tokens[i+1:], cwd)
-		}
+	if i := slices.IndexFunc(tokens, isGitWord); i >= 0 {
+		return parseGitCmd(tokens[i+1:], cwd)
 	}
 	return gitInvocation{}, false
 }
@@ -373,10 +394,11 @@ func segmentGitCommand(tokens []string, cwd string) (gitInvocation, bool) {
 // Repeated -C flags chain the way git chains them. git takes -C only as a
 // separate token, so there is no = form to parse. --git-dir and --work-tree
 // point git at a tree only git itself can name, so either form leaves dir
-// "" as well. Every other global flag before the subcommand is skipped,
-// together with its value when it takes one (gitValueFlags), so `git
-// --no-pager push` is still a push. ok is false when no subcommand follows
-// the flags.
+// "" as well. -c and --config-env set configured, since either may name
+// another push destination (remote.origin.pushurl, url.X.pushInsteadOf).
+// Every other global flag before the subcommand is skipped, together with
+// its value when it takes one (gitValueFlags), so `git --no-pager push` is
+// still a push. ok is false when no subcommand follows the flags.
 func parseGitCmd(tokens []string, cwd string) (gitInvocation, bool) {
 	c := gitInvocation{dir: cwd}
 	otherTree := false
@@ -386,7 +408,14 @@ func parseGitCmd(tokens []string, cwd string) (gitInvocation, bool) {
 		switch {
 		case tok == "-C" && i+1 < len(tokens):
 			c.dir = placeDir(c.dir, tokens[i+1])
+			c.moved = true
 			i += 2
+		case tok == "-c" || tok == "--config-env":
+			c.configured = true
+			i += 2
+		case strings.HasPrefix(tok, "--config-env="):
+			c.configured = true
+			i++
 		case tok == "--git-dir" || tok == "--work-tree":
 			otherTree = true
 			i += 2 // separate-value form consumes the path token too

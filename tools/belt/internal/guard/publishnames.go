@@ -248,12 +248,12 @@ func (g *PublishInternalNames) bashPublications(in Input) []publication {
 	var pubs []publication
 	walkSegments(in.Command, in.Cwd, func(tokens []string, cwd string) {
 		for i, tok := range tokens {
-			switch tok {
-			case "git":
+			switch {
+			case isGitWord(tok):
 				if c, ok := parseGitCmd(tokens[i+1:], cwd); ok {
 					pubs = append(pubs, g.gitPublications(in.Command, c)...)
 				}
-			case "gh":
+			case tok == "gh":
 				if c, ok := parseGh(tokens[i+1:]); ok {
 					pubs = append(pubs, g.ghPublications(in.Command, c, cwd)...)
 				}

@@ -482,8 +482,11 @@ func (w *textWalk) endChain() {
 }
 
 // textCdWord reports whether a cd argument names one directory as written.
+// ~/.tmp and paths below it are allowed, the one dot directory a target may
+// sit under (textTargetWord), so a note written after `cd ~/.tmp` is still
+// judged text.
 func textCdWord(word string) bool {
-	return word == "~" || textPathOK(word)
+	return word == "~" || word == "~/"+textHomeTemp || textTargetWord(word)
 }
 
 // textSafeCommand reports whether nothing outside the text bodies can run a

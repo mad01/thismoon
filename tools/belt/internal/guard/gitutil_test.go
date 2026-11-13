@@ -593,7 +593,9 @@ var shellDirGaps = []struct{ name, command, decoy, want string }{
 	{"cd after ||", "true || cd /x; git push", "/x", ""},
 	{"zsh two-argument cd", "cd /x/only && cd only repo && git push", "/x/only/only", ""},
 	{"cd in a heredoc body", "cat > /tmp/n <<'EOF'\ncd /x\nEOF\ngit push", "/x", ""},
-	{"cd in a quoted string", "echo \"a\ncd /x\nb\"; git push", "/x", ""},
+	// The quote-aware reader (MAD-570) reads the string as one echo word, so
+	// the push is placed where the shell runs it.
+	{"cd in a quoted string", "echo \"a\ncd /x\nb\"; git push", "/x", "/session"},
 	{"cd in a comment", "# a; cd /x\ngit push", "/x", ""},
 }
 
