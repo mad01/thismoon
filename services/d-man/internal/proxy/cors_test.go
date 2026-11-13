@@ -17,7 +17,7 @@ func TestSitesCORSAllowlist(t *testing.T) {
 	sites := []config.Site{
 		{Name: "csl", Host: "csl.this", URL: "http://csl.this/", Backend: "127.0.0.1:9"},
 	}
-	h, err := New(map[string]string{"csl.this": "127.0.0.1:9"}, sites, nil, "")
+	h, err := New(map[string]string{"csl.this": "127.0.0.1:9"}, sites, nil, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

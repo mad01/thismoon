@@ -22,6 +22,11 @@ const DefaultRoutesPath = "~/.config/d-man/routes.toml"
 // `d-man serve` work there.
 const SystemRoutesPath = "/etc/d-man/routes.toml"
 
+// SettingsFile is the name of the UI settings file serve keeps beside the
+// routes file unless --settings-file moves it. The root daemon has no user
+// HOME, and the routes file's directory is the one user path it holds.
+const SettingsFile = "ui-settings.json"
+
 // Facts returns the mechanical facts rendered into OperatingDoc and error
 // hints. BaseURL stays empty: d-man is the proxy under every .this host and
 // has no address of its own.

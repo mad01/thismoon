@@ -49,15 +49,34 @@ re-apply with `d-man profile "$(d-man profile)"`. The personal profile needs
 no block list; any other name without one fails, and a result that does not
 validate is never written.
 
+## ui settings
+
+serve answers GET and PATCH /__this/settings.json on every configured route
+host. The document holds the webkit theme, palette, font, size and fixation
+choices, so a choice made on one .this host shows on the next. It lives in
+ui-settings.json beside the routes file (--settings-file moves it), written
+by the root daemon with mode 0644 through a temp file and a rename. A missing
+file opens empty. A file that does not parse is logged on stderr and serve
+starts with no settings, and the next change overwrites it. A route reload
+keeps the settings; only a restart rereads the file.
+
+A PATCH must carry an Origin equal to the page's own scheme and host, so only
+the page on that host can change the settings. No answer on this path
+carries a CORS header. Values outside what the kit accepts are refused with a
+400. The kit syncs only on pages served through d-man under the .this
+suffix. A page on a localhost port, or under a custom suffix, keeps its
+settings in that origin's own browser storage.
+
 ## failure modes
 
-Start with `d-man docs` for this doc, then `d-man doctor`: three read-only
+Start with `d-man docs` for this doc, then `d-man doctor`: four read-only
 checks, one line each. config-loads parses and validates the resolved routes
 file. hosts-entries-present confirms the managed /etc/hosts block exists and
 names every configured host. proxy-answers fetches d-man's own
 /__this/sites.json on 127.0.0.1:80, the one path serve answers itself on any
-host. Doctor checks the wiring this machine has, not the wiring it should
-have.
+host. settings-answers fetches /__this/settings.json on 127.0.0.1:80 as the
+first configured route's host and wants a version 1 document. Doctor checks
+the wiring this machine has, not the wiring it should have.
 
 One host fails while others work: almost always the route, not the daemon.
 `d-man list` shows what is routed; a 502 means the route exists but the
@@ -78,6 +97,16 @@ A blocked host still loads over https: the block-page CA is not trusted yet.
 `sudo d-man ca install` fixes it once. The CA key is root-owned by design; a
 non-root process cannot read it.
 
+UI settings do not follow between hosts: run `d-man doctor`. A
+settings-answers FAIL with a 404, or with a page that is not a settings
+document, means the running serve predates the endpoint and sent the request
+to the backend. Kill serve and KeepAlive starts the current binary. A FAIL
+with a 502 that says the daemon has no route for the host means serve loaded
+another routes file than the one doctor read; `d-man config` names doctor's.
+A PATCH that gets a 403 sent an Origin other than the page's own. A 500 means
+the save failed; the log names the file, and the settings in memory stay as
+they were.
+
 The wrong hosts are blocked after a profile switch: `d-man profile` names the
 recorded profile, and `d-man config` shows the blocklist the routes file holds.
 A hand edit to a generated routes file is lost at the next switch.
@@ -87,7 +116,8 @@ A hand edit to a generated routes file is lost at the next switch.
 `d-man version` reports the binary on PATH. The running daemon normally
 cannot lag it: serve exits when its binary changes and KeepAlive relaunches
 the new build. There is no /version endpoint to compare against, so doctor
-carries no skew check. If skew is still suspected, kill the serve process;
+carries no general skew check; settings-answers fails on a serve older than
+the settings endpoint. If skew is still suspected, kill the serve process;
 KeepAlive brings it back on the current binary.
 
 ## first moves

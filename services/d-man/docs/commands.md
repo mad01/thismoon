@@ -26,6 +26,7 @@ d-man serve --config ~/.config/d-man/routes.toml
 | `--port` | `80` | Port the proxy listens on (loopback only). |
 | `--tls-port` | `443` | Port the block-page TLS listener uses (loopback only). |
 | `--ca-dir` | `<config dir>/ca` | Directory holding the block-page CA cert and key. |
+| `--settings-file` | `<config dir>/ui-settings.json` | File the UI settings document is saved to. A leading `~` is expanded. |
 
 On start it writes the managed `/etc/hosts` block and builds the proxy. It also
 listens on `127.0.0.1:443` to serve the block page for blocked HTTPS hosts,
@@ -35,14 +36,28 @@ running it:
 - watches the routes file and re-syncs + reloads when it changes,
 - reloads on `SIGHUP`,
 - watches its own binary and exits when it changes, so launchd relaunches the
-  new build.
+  new build,
+- answers `GET` and `PATCH /__this/settings.json` on every configured host
+  from the UI settings file, which it reads once at start and keeps across
+  route reloads (see [config](../config.md#ui-settings)).
 
 Binding `:80` and writing `/etc/hosts` need root, so `serve` runs as a root
 launchd daemon (see [getting started](getting-started.md)). For local testing
 without root, use a high `--port` and a temp `--hosts-file`:
 
 ```bash
-d-man serve --port 18080 --hosts-file /tmp/hosts --config ./routes.toml
+d-man serve --port 18080 --tls-port 18443 --hosts-file /tmp/hosts \
+  --ca-dir /tmp/ca --settings-file /tmp/ui-settings.json --config ./routes.toml
+```
+
+Then reach a configured host with its `Host` header:
+
+```bash
+curl -H 'Host: csl.this' http://127.0.0.1:18080/__this/settings.json
+curl -X PATCH -H 'Host: csl.this:18080' -H 'Origin: http://csl.this:18080' \
+  -H 'Content-Type: application/json' \
+  -d '{"v":1,"settings":{"webkit-theme":"dark"}}' \
+  http://127.0.0.1:18080/__this/settings.json
 ```
 
 ## sync
