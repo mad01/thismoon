@@ -140,7 +140,7 @@ func (h *PreferCSL) locate(
 	agentID string,
 	done map[string]bool,
 ) (cslTarget, bool) {
-	if root, ok := linkedWorktreeRoot(target); ok {
+	if root, _, ok := cslindex.LinkedWorktree(target); ok {
 		t := cslTarget{worktree: root}
 		if done[t.marker(agentID)] {
 			return cslTarget{}, false
@@ -159,33 +159,6 @@ func (h *PreferCSL) locate(
 		return cslTarget{}, false
 	}
 	return t, true
-}
-
-// linkedWorktreeRoot returns the root of the linked git worktree target sits
-// in: the nearest .git entry is a pointer file whose git dir holds a
-// commondir file. A main clone's .git is a directory, and a submodule's
-// pointer leads to a git dir with no commondir.
-func linkedWorktreeRoot(target string) (string, bool) {
-	root := cslindex.RepoRoot(target)
-	if root == "" {
-		return "", false
-	}
-	data, err := os.ReadFile(filepath.Join(root, ".git")) // a directory fails here
-	if err != nil {
-		return "", false
-	}
-	gitDir, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "gitdir:")
-	if !ok {
-		return "", false
-	}
-	gitDir = strings.TrimSpace(gitDir)
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(root, gitDir)
-	}
-	if _, err := os.Stat(filepath.Join(gitDir, "commondir")); err != nil {
-		return "", false
-	}
-	return root, true
 }
 
 // advice renders the replacement, the CLI command first and the MCP call

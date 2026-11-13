@@ -13,6 +13,7 @@ import (
 	"github.com/sourcegraph/zoekt/index"
 	zoektsearch "github.com/sourcegraph/zoekt/search"
 
+	"github.com/mad01/thismoon/kit/cslignore"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/symbols"
 )
@@ -34,6 +35,7 @@ func IndexRepo(indexDir string, repo finder.Repo, hiddenDirs []string) error {
 func IndexRepoFiles(indexDir string, repo finder.Repo, hiddenDirs []string) ([]WalkFile, error) {
 	opts := index.Options{
 		IndexDir:     indexDir,
+		SizeMax:      cslignore.SizeMax,
 		DisableCTags: true,
 		RepositoryDescription: zoekt.Repository{
 			Name:   repo.Name,

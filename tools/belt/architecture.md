@@ -49,8 +49,10 @@ internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     config-registered external commands; the Allow
                     interface, the Allows registry, the git-c-read allow,
                     and its strict shell reader
-internal/cslindex/  csl index lookup from the shard listing and the csl_ask
-                    call for one file, shared by large-read and read-size
+internal/cslindex/  csl index lookup from the shard listing, the linked
+                    worktree lookup, csl's skip rules (kit/cslignore plus
+                    zoekt's pinned limits) and the csl_ask call for one
+                    file, shared by large-read, read-size and prefer-csl
 internal/hint/      the Hint interface and the hints (prefer-csl,
                     read-size, commit-policy, lint-policy, moondb-inflight,
                     agent-memory, humanizer-check, em-dash), the Custom
@@ -162,7 +164,8 @@ belt config per machine class.
 
 The hints also read the world they advise about: the csl shard listing in
 `~/.config/csl/search-index/` (prefer-csl and read-size, and the large-read
-guard too, no csl process launched) and the
+guard too, no csl process launched; the guard also reads a checkout's
+`.cslignore` and a linked worktree's `.git` and `commondir` files) and the
 agent-memory index files in `~/.config/agent-memory[-work]/` (agent-memory).
 They read the session transcript file named in the payload
 (humanizer-check) and the git repo a commit ran in. From that repo they read

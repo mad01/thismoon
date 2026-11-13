@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+
+	"github.com/mad01/thismoon/tools/belt/internal/cslindex"
 )
 
 // This file finds the repo `git -C <dir>` would read, without running git:
@@ -119,7 +121,7 @@ func enterableDir(p string) bool {
 // a regular file, not a symlink, naming a ref under refs/ or holding an
 // object id.
 func validHead(path string) bool {
-	s, ok := smallFile(path)
+	s, ok := cslindex.SmallFile(path)
 	if !ok {
 		return false
 	}
@@ -134,26 +136,11 @@ func isHexDigit(r rune) bool {
 	return '0' <= r && r <= '9' || 'a' <= r && r <= 'f' || 'A' <= r && r <= 'F'
 }
 
-// maxSmallFile bounds the git bookkeeping files belt reads: HEAD, a .git
-// file, commondir and gitdir each hold one short line.
-const maxSmallFile = 4096
-
-// smallFile returns the content of a regular file, not a symlink, of at
-// most maxSmallFile bytes.
-func smallFile(path string) (string, bool) {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.Mode().IsRegular() || fi.Size() > maxSmallFile {
-		return "", false
-	}
-	b, err := os.ReadFile(path)
-	return string(b), err == nil
-}
-
 // pathLine returns the one path a bookkeeping file holds, the way git reads
 // it: the content with trailing line endings trimmed, after prefix. A
 // second line or an empty path fails it.
 func pathLine(path, prefix string) (string, bool) {
-	s, ok := smallFile(path)
+	s, ok := cslindex.SmallFile(path)
 	if !ok {
 		return "", false
 	}

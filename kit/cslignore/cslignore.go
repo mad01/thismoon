@@ -1,5 +1,9 @@
-// Package cslignore loads a repo's .cslignore file: per-repo path exclusion
-// rules honored by every csl index (lexical and semantic).
+// Package cslignore holds the rules csl's index applies: the directory
+// names its walk never enters (dirs.go), the largest file its lexical index
+// takes (size.go), and a repo's .cslignore file of per-repo path exclusions,
+// honored by every csl index (lexical and semantic). csl's walk applies
+// them, and belt's large-read guard reads them to pass a file csl leaves
+// out, so the two cannot drift apart.
 package cslignore
 
 import (

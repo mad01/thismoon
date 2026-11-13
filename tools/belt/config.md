@@ -559,9 +559,10 @@ entries match the same way as `git_identity[].repos` and
 - **large-read**
   - `guards.large-read.enabled` (bool, default `true`): refuses a Read with
     no `offset` and no `limit` of a text file of `large_file_lines` or more
-    in a csl-indexed repo, handing over the `csl_ask` call for it. A ranged
-    read passes, and so does a file the reading agent already edited or
-    wrote in the session. The guard takes no other key and no `mode`; the
+    that csl indexes, in a csl-indexed repo or a linked worktree of one,
+    handing over the `csl_ask` call for it. A ranged read passes, and so do
+    a file csl's index leaves out and a file the reading agent already
+    edited or wrote in the session. The guard takes no other key and no `mode`; the
     threshold is the top-level `large_file_lines`. It runs only where the
     Claude settings wire `belt hook read` on PreToolUse with matcher
     `Read`.

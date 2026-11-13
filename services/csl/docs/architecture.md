@@ -134,11 +134,11 @@ The fingerprint is `sha256(HEAD + "\n" + branch + "\n" + git status --porcelain 
 
 ### What's indexed
 
-`IndexRepo` walks the working tree (not the git object database), so uncommitted changes are searchable. The walk is `search.WalkRepo` in `internal/search/walk.go`, the one place the skip rules live (the outline reads the tree through it too). It skips:
+`IndexRepo` walks the working tree (not the git object database), so uncommitted changes are searchable. The walk is `search.WalkRepo` in `internal/search/walk.go`, the one place the skip rules are applied (the outline reads the tree through it too). The directory names, the size limit and the `.cslignore` matcher live in `kit/cslignore`, which belt's large-read guard reads to pass a file csl leaves out. It skips:
 
 - any hidden directory except the repo root and the allowed names (rules out `.git`, `.cache`, `.venv`)
 - `node_modules`, `vendor`, `__pycache__`, `build`, `dist`, `target`
-- files larger than the zoekt default `SizeMax` (1 MB)
+- files larger than `cslignore.SizeMax` (2 MiB, zoekt's default), the limit `IndexRepoFiles` hands zoekt's builder too
 - non-regular files (symlinks, devices, sockets)
 - paths the repo's `.cslignore` matches
 

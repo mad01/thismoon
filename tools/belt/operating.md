@@ -189,9 +189,13 @@ and whether it skips the auto-mode classifier is not verified
 (docs/adr/0032).
 
 The large-read guard fails open on everything it cannot judge: a file it
-cannot read or that holds a NUL byte, a file outside the csl index (a loom
-worktree included), and a transcript it cannot find or read when it looks
-for an earlier edit of the file. A refusal names the way past it: a Read
+cannot read or that holds a NUL byte, a file outside the csl index, a file
+csl's index leaves out (under a hidden or generated directory, matched by
+.cslignore, or over 2 MiB), and a transcript it cannot
+find or read when it looks for an earlier edit of the file. A file in a
+linked worktree counts when the worktree's main checkout is indexed, and
+the refusal then names the worktree root in its csl_ask call. A refusal
+names the way past it: a Read
 with offset and limit always passes. A refusal of a file the agent did
 edit means the edit is in another agent's transcript (a subagent counts
 only its own) or under another spelling of the path.
