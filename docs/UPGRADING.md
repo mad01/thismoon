@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-11-13 present: the split slide layout
 
-Change: thismoon, present (MAD-581). A deck section may set `layout: "split"`: the heading and up to 15 words in a left column, exactly one chart, diagram, graph, image, or terminal in a right one. An older present refuses a deck Doc that uses it (`unknown layout "split"`). A share push carries the rendered deck, so an older shared instance takes the page but draws each split slide as a default one, the visual under the text. With the render level in place (#486), the share warns that the instance is older than the page.
+Change: thismoon #494. A deck section may set `layout: "split"`: the heading and up to 15 words in a left column, exactly one chart, diagram, graph, image, or terminal in a right one. An older present refuses a deck Doc that uses it (`unknown layout "split"`). A share push carries the rendered deck, so an older shared instance takes the page but draws each split slide as a default one, the visual under the text. With the render level in place (#486), the share warns that the instance is older than the page.
 
 Run: on the fleet, nothing; `ralph up` rebuilds the local present. Roll the shared instance to this present or newer before you share a deck that uses `split` to it.
 
