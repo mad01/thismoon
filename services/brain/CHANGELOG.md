@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/mad01/thismoon/compare/brain/v0.5.0...brain/v0.6.0) (2026-11-13)
+
+
+### Features
+
+* **brain:** neighbour side panel and clickable cluster legend in the graph view ([#446](https://github.com/mad01/thismoon/issues/446)) ([456defe](https://github.com/mad01/thismoon/commit/456defe7d7d1ebd9c510dc923e3b856564291fec))
+
 ## [0.5.0](https://github.com/mad01/thismoon/compare/brain/v0.4.0...brain/v0.5.0) (2026-11-13)
 
 
