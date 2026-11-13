@@ -5,11 +5,16 @@
 // pulls it, reconciles it with localStorage (still the first-paint cache
 // boot.js reads), and pushes the reader's own changes back.
 //
-// It talks to the endpoint only on a hostname ending in .this, and only once
-// the first GET came back as a settings document. Anything else (a 404, an
-// HTML page from an old d-man that proxies the path to the backend, another
-// version, a network error) turns it off for the page load, so the kit sends
-// no PATCH there and behaves as it did before.
+// It talks to the endpoint only on a hostname ending in .this, with site
+// storage it can use, and only once the first GET came back as a settings
+// document within FIRST_PULL_TIMEOUT_MS. Anything else (a 404, an HTML page
+// from an old d-man that proxies the path to the backend, another version, a
+// network error, no answer in time) turns it off for the page load, so the
+// kit sends no PATCH there and behaves as it did before. The one request
+// before that answer is a pagehide while the reader has a change queued: it
+// goes out once, so the change is not lost with the page. Against an old
+// d-man that PATCH reaches the service's own backend, which routes nothing
+// at /__this/ and answers 404 or 405.
 //
 // The module holds no DOM: fetch, storage, the timers, the clock, the
 // hostname and the apply callback are passed in, so the node tests drive it
@@ -23,6 +28,8 @@ export const DOC_VERSION = 1;
 export const PUSH_DEBOUNCE_MS = 200;
 /** At most one re-pull per this many ms, however many focus events arrive. */
 export const PULL_THROTTLE_MS = 2000;
+/** A first pull with no answer after this many ms counts as a bad answer: sync is off for the page load. */
+export const FIRST_PULL_TIMEOUT_MS = 1500;
 
 /** The localStorage keys that sync, which are also the wire keys. */
 export const SYNC_KEYS = [
@@ -151,10 +158,14 @@ export interface SyncResponse {
   json(): Promise<unknown>;
 }
 
+/** The storage calls the sync makes. */
+export type SyncStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
 export interface SyncDeps {
   hostname: string;
   fetch(url: string, init: RequestInit): Promise<SyncResponse>;
-  storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+  /** Site storage, or null where the page cannot use it; sync is then off. */
+  storage: SyncStorage | null;
   setTimeout(fn: () => void, ms: number): number;
   clearTimeout(id: number): void;
   now(): number;
@@ -168,7 +179,7 @@ export interface SyncDeps {
 }
 
 export interface SettingsSync {
-  /** False off a .this hostname: every method is then a no-op. */
+  /** False off a .this hostname or without storage: every method is then a no-op. */
   readonly enabled: boolean;
   /** The first pull, at module load. It decides whether sync is on. */
   start(): Promise<void>;
@@ -176,38 +187,74 @@ export interface SettingsSync {
   push(changes: Record<string, string>): void;
   /** A throttled re-pull, for focus, visibility and a page restored from the back/forward cache. */
   resume(): Promise<void>;
-  /** Sends the queue now, for pagehide. */
+  /**
+   * For pagehide: sends the queue now, keepalive, even beside a PATCH in
+   * flight or before the first pull has answered, since the page may not
+   * get another chance.
+   */
   flush(): void;
 }
 
 type State = 'idle' | 'starting' | 'on' | 'off';
 
-/** Whether a PATCH answer refuses the patch for good, so it is dropped rather than resent. */
-function refused(status: number): boolean {
-  return status >= 400 && status < 500;
+/**
+ * What a PATCH answer means for the keys it carried. A 400 is the endpoint
+ * refusing a value, which fails the whole patch; another 4xx refuses the
+ * patch for good; a 5xx or a network error is worth a resend.
+ */
+type Outcome = 'done' | 'invalid' | 'refused' | 'retry';
+
+function outcomeOf(res: SyncResponse): Outcome {
+  if (res.ok) return 'done';
+  if (res.status === 400) return 'invalid';
+  return res.status > 400 && res.status < 500 ? 'refused' : 'retry';
 }
 
 function isJSONType(contentType: string | null): boolean {
   return (contentType ?? '').split(';')[0].trim().toLowerCase() === 'application/json';
 }
 
+/** The keys a settings object holds, in SYNC_KEYS order. */
+function keysOf(settings: Settings): SyncKey[] {
+  return SYNC_KEYS.filter(key => hasOwn(settings, key));
+}
+
+const OFF: SettingsSync = Object.freeze({
+  enabled: false,
+  start: () => Promise.resolve(),
+  push: () => {},
+  resume: () => Promise.resolve(),
+  flush: () => {},
+});
+
 export function createSettingsSync(deps: SyncDeps): SettingsSync {
-  const enabled = syncsOn(deps.hostname);
+  const { storage } = deps;
+  return syncsOn(deps.hostname) && storage !== null ? liveSync(deps, storage) : OFF;
+}
+
+function liveSync(deps: SyncDeps, storage: SyncStorage): SettingsSync {
   const rules = rulesFor(deps.choices);
-  let state: State = enabled ? 'idle' : 'off';
-  // The queue: keys waiting to go, and the keys of the PATCH in flight.
+  let state: State = 'idle';
+  // Keys waiting to go.
   let pending: Settings = {};
-  let sending: Settings = {};
-  let inFlight: Promise<void> | null = null;
+  // The PATCHes in flight and the keys each carries. The debounced path
+  // keeps one at a time; a pagehide flush may send another beside it.
+  const flights = new Map<Promise<void>, Settings>();
+  // Keys the endpoint refused: a pull leaves the local value alone until the
+  // reader changes the key again.
+  const held = new Set<SyncKey>();
   let timer: number | null = null;
   let pulling = false;
   let lastPull = -Infinity;
   // A pull leaves alone any key pushed after its GET went out, even when
-  // that push has already been sent and answered.
+  // that push has already been sent and answered. The same count tells a
+  // PATCH answer which of its keys the reader has changed since.
   let pushSeq = 0;
   const pushedAt: Partial<Record<SyncKey, number>> = {};
 
   const hasPending = (): boolean => Object.keys(pending).length > 0;
+  const pushedSince = (key: SyncKey, seq: number): boolean => (pushedAt[key] ?? 0) > seq;
+  const inFlight = (key: SyncKey): boolean => [...flights.values()].some(body => hasOwn(body, key));
 
   function cancelTimer(): void {
     if (timer === null) return;
@@ -223,32 +270,75 @@ export function createSettingsSync(deps: SyncDeps): SettingsSync {
     }, PUSH_DEBOUNCE_MS);
   }
 
-  // One PATCH at a time. A network error or a 5xx puts its keys back in the
-  // queue under any newer value, to go before the next pull; a 4xx drops them.
-  function send(): Promise<void> {
-    if (inFlight) return inFlight;
-    if (state !== 'on' || !hasPending()) return Promise.resolve();
+  function take(): Settings {
     const body = pending;
     pending = {};
-    sending = body;
-    inFlight = deps
+    return body;
+  }
+
+  function patch(body: Settings): Promise<Outcome> {
+    return deps
       .fetch(SETTINGS_PATH, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ v: DOC_VERSION, settings: body }),
         keepalive: true,
       })
-      .then(
-        res => (res.ok || refused(res.status) ? 'done' : 'retry'),
-        () => 'retry' as const,
-      )
-      .then(outcome => {
-        inFlight = null;
-        sending = {};
-        if (outcome === 'retry') pending = { ...body, ...pending };
-        else if (hasPending() && timer === null) schedule();
-      });
-    return inFlight;
+      .then(outcomeOf, () => 'retry' as const);
+  }
+
+  // Acts on one answer and reports whether a key went back in the queue. A
+  // key the reader changed since the PATCH went out is left to the newer
+  // value. On a retry the key waits in the queue for the next pull; on a
+  // refusal it is held, so that pull does not revert the reader's value.
+  function settle(body: Settings, outcome: Outcome, seq: number): boolean {
+    if (outcome === 'done') return false;
+    let requeued = false;
+    for (const key of keysOf(body)) {
+      if (pushedSince(key, seq)) continue;
+      if (outcome !== 'retry') held.add(key);
+      else if (!hasOwn(pending, key)) {
+        pending[key] = body[key];
+        requeued = true;
+      }
+    }
+    return requeued;
+  }
+
+  // One refused value fails a whole patch with a 400, so a patch of several
+  // keys that gets one goes again key by key: the valid keys land and only
+  // the refused one is held.
+  async function deliver(body: Settings, seq: number): Promise<boolean> {
+    const outcome = await patch(body);
+    const keys = keysOf(body);
+    if (outcome !== 'invalid' || keys.length < 2) return settle(body, outcome, seq);
+    let requeued = false;
+    for (const key of keys) {
+      if (pushedSince(key, seq)) continue;
+      const one: Settings = { [key]: body[key] };
+      if (settle(one, await patch(one), seq)) requeued = true;
+    }
+    return requeued;
+  }
+
+  function dispatch(body: Settings): Promise<void> {
+    const flight = deliver(body, pushSeq).then(requeued => {
+      flights.delete(flight);
+      if (!requeued && hasPending() && timer === null) schedule();
+    });
+    flights.set(flight, body);
+    return flight;
+  }
+
+  async function idle(): Promise<void> {
+    while (flights.size > 0) await Promise.all(flights.keys());
+  }
+
+  // The debounced path: one PATCH at a time, so a change made meanwhile
+  // waits for the answer.
+  function send(): Promise<void> {
+    if (flights.size > 0 || state !== 'on' || !hasPending()) return Promise.resolve();
+    return dispatch(take());
   }
 
   function push(changes: Record<string, string>): void {
@@ -259,9 +349,10 @@ export function createSettingsSync(deps: SyncDeps): SettingsSync {
       if (typeof value !== 'string' || !rules[key].accepts(value)) continue;
       pending[key] = value;
       pushedAt[key] = ++pushSeq;
+      held.delete(key);
       queued = true;
     }
-    // Before the first pull answers, the queue waits for it.
+    // Before the first pull answers, the queue waits for it, or for pagehide.
     if (queued && state === 'on') schedule();
   }
 
@@ -276,33 +367,50 @@ export function createSettingsSync(deps: SyncDeps): SettingsSync {
     }
   }
 
+  // The first GET gives up after FIRST_PULL_TIMEOUT_MS, so the reader's
+  // changes do not wait on a slow d-man; a later answer is ignored.
+  function firstDocument(): Promise<Record<string, unknown> | null> {
+    return new Promise(resolve => {
+      const id = deps.setTimeout(() => resolve(null), FIRST_PULL_TIMEOUT_MS);
+      void getDocument().then(doc => {
+        deps.clearTimeout(id);
+        resolve(doc);
+      });
+    });
+  }
+
   function readLocal(): LocalValues {
     const local: LocalValues = {};
-    for (const key of SYNC_KEYS) local[key] = deps.storage.getItem(key);
+    for (const key of SYNC_KEYS) local[key] = storage.getItem(key);
     return local;
   }
 
-  function write(key: SyncKey, value: string): void {
+  // Stores a pulled value; false when storage refuses the write (over
+  // quota, say), so the key is not reported as written.
+  function write(key: SyncKey, value: string): boolean {
     const rule = rules[key];
-    if (rule.removeAtFallback && value === rule.fallback) deps.storage.removeItem(key);
-    else deps.storage.setItem(key, value);
+    try {
+      if (rule.removeAtFallback && value === rule.fallback) storage.removeItem(key);
+      else storage.setItem(key, value);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // The reader's own change wins over the document: a key still queued, in
-  // flight, or pushed since the GET went out is neither applied nor seeded.
+  // flight, pushed since the GET went out, or refused by the endpoint is
+  // neither applied nor seeded.
   function adopt(server: Record<string, unknown>, seq: number): boolean {
     const mine = (key: SyncKey): boolean =>
-      hasOwn(pending, key) || hasOwn(sending, key) || (pushedAt[key] ?? 0) > seq;
+      hasOwn(pending, key) || inFlight(key) || pushedSince(key, seq) || held.has(key);
     const { apply, seed } = reconcile(server, readLocal(), deps.choices);
     const written: SyncKey[] = [];
     let seeded = false;
     for (const key of SYNC_KEYS) {
       if (mine(key)) continue;
       const theirs = apply[key];
-      if (theirs !== undefined) {
-        write(key, theirs);
-        written.push(key);
-      }
+      if (theirs !== undefined && write(key, theirs)) written.push(key);
       const ours = seed[key];
       if (ours !== undefined) {
         pending[key] = ours;
@@ -317,7 +425,7 @@ export function createSettingsSync(deps: SyncDeps): SettingsSync {
   // again before the GET.
   async function drain(): Promise<void> {
     cancelTimer();
-    if (inFlight) await inFlight;
+    await idle();
     cancelTimer();
     await send();
   }
@@ -340,7 +448,7 @@ export function createSettingsSync(deps: SyncDeps): SettingsSync {
     state = 'starting';
     lastPull = deps.now();
     const seq = pushSeq;
-    const server = await getDocument();
+    const server = await firstDocument();
     if (!server) {
       state = 'off';
       pending = {};
@@ -360,10 +468,12 @@ export function createSettingsSync(deps: SyncDeps): SettingsSync {
     return pull();
   }
 
+  // The page may not come back, so the queue goes now: beside a PATCH in
+  // flight, and before the first pull has answered.
   function flush(): void {
     cancelTimer();
-    void send();
+    if ((state === 'on' || state === 'starting') && hasPending()) void dispatch(take());
   }
 
-  return { enabled, start, push, resume, flush };
+  return { enabled: true, start, push, resume, flush };
 }

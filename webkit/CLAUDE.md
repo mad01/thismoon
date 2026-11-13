@@ -451,19 +451,27 @@ reference implementation.
   the theme, both palettes, font, size and fixation, not `webkit-audio` or
   `webkit-ra-speed`. d-man serves one document on every host at
   `/__this/settings.json`, same-origin, with the localStorage keys as its wire
-  keys. Only on a hostname ending in `.this`, `webkit.js` pulls it at load
-  and again on focus, on the page turning visible and on a back/forward
-  restore (at most once per 2s). Unless that first answer is a
-  `{"v":1,"settings":{...}}` JSON document, sync stays off for the page load
-  and sends nothing more, which keeps the kit safe behind an old d-man.
-  localStorage stays the first-paint cache: boot.js is unchanged, so a pull
-  that changes something repaints after first paint. The server wins for
-  every key it holds; a key it lacks is seeded from a local value that is not
-  the default. The reader's own changes (the mode and palette setters, reset,
+  keys. Only on a hostname ending in `.this`, with site storage the page can
+  use, `webkit.js` pulls it at load and again on focus, on the page turning
+  visible and on a back/forward restore (at most once per 2s). Unless that
+  first answer is a `{"v":1,"settings":{...}}` JSON document within 1.5s,
+  sync stays off for the page load and sends nothing more, which keeps the
+  kit safe behind an old d-man. localStorage stays the first-paint cache:
+  boot.js is unchanged, so a pull that changes something repaints after
+  first paint. The server wins for every key it holds; a key it lacks is
+  seeded from a local value that is not the default. The server also wins
+  over a newer value another tab of the same host wrote moments earlier,
+  before that tab's PATCH landed. That shows as a brief flicker, which
+  converges on the next focus. The reader's own changes (the mode and palette setters, reset,
   the header's font, size and fixation controls) go out as one PATCH per
-  200ms, one in flight; a failed one is resent before the next pull, and a
-  4xx drops it. Absent keys read as their defaults (`light`, `default`,
-  `Fira Code`, `16`, `false`). The endpoint cannot delete a key, so a reset
+  200ms, one in flight. On pagehide the queue goes at once with keepalive,
+  even beside a PATCH in flight or before the first pull has answered. A
+  failed PATCH is resent before the next pull. A 400 on a patch of several
+  keys is resent key by key, so the valid keys land. A refused value is not
+  resent: a key refused on its own, or any key of a patch another 4xx
+  refuses. Pulls leave its local value alone until the reader changes that
+  key again or the page reloads. Absent keys read as their defaults
+  (`light`, `default`, `Fira Code`, `16`, `false`). The endpoint cannot delete a key, so a reset
   sends those defaults, and a pulled `default` palette removes the local key;
   every other pulled value is stored as sent.
 - **A theme is a file; a rule reads a role.** Never put a colour literal or a

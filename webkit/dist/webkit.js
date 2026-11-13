@@ -1603,6 +1603,7 @@ var Webkit = (() => {
   var DOC_VERSION = 1;
   var PUSH_DEBOUNCE_MS = 200;
   var PULL_THROTTLE_MS = 2e3;
+  var FIRST_PULL_TIMEOUT_MS = 1500;
   var SYNC_KEYS = [
     "webkit-theme",
     "webkit-palette-light",
@@ -1666,25 +1667,44 @@ var Webkit = (() => {
   function syncsOn(hostname) {
     return hostname.endsWith(".this");
   }
-  function refused(status) {
-    return status >= 400 && status < 500;
+  function outcomeOf(res) {
+    if (res.ok) return "done";
+    if (res.status === 400) return "invalid";
+    return res.status > 400 && res.status < 500 ? "refused" : "retry";
   }
   function isJSONType(contentType) {
     return (contentType ?? "").split(";")[0].trim().toLowerCase() === "application/json";
   }
+  function keysOf(settings) {
+    return SYNC_KEYS.filter((key) => hasOwn(settings, key));
+  }
+  var OFF = Object.freeze({
+    enabled: false,
+    start: () => Promise.resolve(),
+    push: () => {
+    },
+    resume: () => Promise.resolve(),
+    flush: () => {
+    }
+  });
   function createSettingsSync(deps) {
-    const enabled = syncsOn(deps.hostname);
+    const { storage } = deps;
+    return syncsOn(deps.hostname) && storage !== null ? liveSync(deps, storage) : OFF;
+  }
+  function liveSync(deps, storage) {
     const rules = rulesFor(deps.choices);
-    let state = enabled ? "idle" : "off";
+    let state = "idle";
     let pending = {};
-    let sending = {};
-    let inFlight = null;
+    const flights = /* @__PURE__ */ new Map();
+    const held = /* @__PURE__ */ new Set();
     let timer = null;
     let pulling = false;
     let lastPull = -Infinity;
     let pushSeq = 0;
     const pushedAt = {};
     const hasPending = () => Object.keys(pending).length > 0;
+    const pushedSince = (key, seq) => (pushedAt[key] ?? 0) > seq;
+    const inFlight = (key) => [...flights.values()].some((body) => hasOwn(body, key));
     function cancelTimer() {
       if (timer === null) return;
       deps.clearTimeout(timer);
@@ -1697,27 +1717,58 @@ var Webkit = (() => {
         void send();
       }, PUSH_DEBOUNCE_MS);
     }
-    function send() {
-      if (inFlight) return inFlight;
-      if (state !== "on" || !hasPending()) return Promise.resolve();
+    function take() {
       const body = pending;
       pending = {};
-      sending = body;
-      inFlight = deps.fetch(SETTINGS_PATH, {
+      return body;
+    }
+    function patch(body) {
+      return deps.fetch(SETTINGS_PATH, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ v: DOC_VERSION, settings: body }),
         keepalive: true
-      }).then(
-        (res) => res.ok || refused(res.status) ? "done" : "retry",
-        () => "retry"
-      ).then((outcome) => {
-        inFlight = null;
-        sending = {};
-        if (outcome === "retry") pending = { ...body, ...pending };
-        else if (hasPending() && timer === null) schedule();
+      }).then(outcomeOf, () => "retry");
+    }
+    function settle(body, outcome, seq) {
+      if (outcome === "done") return false;
+      let requeued = false;
+      for (const key of keysOf(body)) {
+        if (pushedSince(key, seq)) continue;
+        if (outcome !== "retry") held.add(key);
+        else if (!hasOwn(pending, key)) {
+          pending[key] = body[key];
+          requeued = true;
+        }
+      }
+      return requeued;
+    }
+    async function deliver(body, seq) {
+      const outcome = await patch(body);
+      const keys = keysOf(body);
+      if (outcome !== "invalid" || keys.length < 2) return settle(body, outcome, seq);
+      let requeued = false;
+      for (const key of keys) {
+        if (pushedSince(key, seq)) continue;
+        const one = { [key]: body[key] };
+        if (settle(one, await patch(one), seq)) requeued = true;
+      }
+      return requeued;
+    }
+    function dispatch(body) {
+      const flight = deliver(body, pushSeq).then((requeued) => {
+        flights.delete(flight);
+        if (!requeued && hasPending() && timer === null) schedule();
       });
-      return inFlight;
+      flights.set(flight, body);
+      return flight;
+    }
+    async function idle() {
+      while (flights.size > 0) await Promise.all(flights.keys());
+    }
+    function send() {
+      if (flights.size > 0 || state !== "on" || !hasPending()) return Promise.resolve();
+      return dispatch(take());
     }
     function push(changes) {
       if (state === "off") return;
@@ -1727,6 +1778,7 @@ var Webkit = (() => {
         if (typeof value !== "string" || !rules[key].accepts(value)) continue;
         pending[key] = value;
         pushedAt[key] = ++pushSeq;
+        held.delete(key);
         queued = true;
       }
       if (queued && state === "on") schedule();
@@ -1741,28 +1793,39 @@ var Webkit = (() => {
         return null;
       }
     }
+    function firstDocument() {
+      return new Promise((resolve) => {
+        const id = deps.setTimeout(() => resolve(null), FIRST_PULL_TIMEOUT_MS);
+        void getDocument().then((doc) => {
+          deps.clearTimeout(id);
+          resolve(doc);
+        });
+      });
+    }
     function readLocal() {
       const local = {};
-      for (const key of SYNC_KEYS) local[key] = deps.storage.getItem(key);
+      for (const key of SYNC_KEYS) local[key] = storage.getItem(key);
       return local;
     }
     function write2(key, value) {
       const rule = rules[key];
-      if (rule.removeAtFallback && value === rule.fallback) deps.storage.removeItem(key);
-      else deps.storage.setItem(key, value);
+      try {
+        if (rule.removeAtFallback && value === rule.fallback) storage.removeItem(key);
+        else storage.setItem(key, value);
+        return true;
+      } catch {
+        return false;
+      }
     }
     function adopt(server, seq) {
-      const mine = (key) => hasOwn(pending, key) || hasOwn(sending, key) || (pushedAt[key] ?? 0) > seq;
+      const mine = (key) => hasOwn(pending, key) || inFlight(key) || pushedSince(key, seq) || held.has(key);
       const { apply, seed } = reconcile(server, readLocal(), deps.choices);
       const written = [];
       let seeded = false;
       for (const key of SYNC_KEYS) {
         if (mine(key)) continue;
         const theirs = apply[key];
-        if (theirs !== void 0) {
-          write2(key, theirs);
-          written.push(key);
-        }
+        if (theirs !== void 0 && write2(key, theirs)) written.push(key);
         const ours = seed[key];
         if (ours !== void 0) {
           pending[key] = ours;
@@ -1774,7 +1837,7 @@ var Webkit = (() => {
     }
     async function drain() {
       cancelTimer();
-      if (inFlight) await inFlight;
+      await idle();
       cancelTimer();
       await send();
     }
@@ -1795,7 +1858,7 @@ var Webkit = (() => {
       state = "starting";
       lastPull = deps.now();
       const seq = pushSeq;
-      const server = await getDocument();
+      const server = await firstDocument();
       if (!server) {
         state = "off";
         pending = {};
@@ -1815,9 +1878,9 @@ var Webkit = (() => {
     }
     function flush() {
       cancelTimer();
-      void send();
+      if ((state === "on" || state === "starting") && hasPending()) void dispatch(take());
     }
-    return { enabled, start, push, resume, flush };
+    return { enabled: true, start, push, resume, flush };
   }
 
   // src/prepare.ts
@@ -3976,10 +4039,19 @@ var Webkit = (() => {
   initThemeSync();
   var controlRefreshers = /* @__PURE__ */ new Set();
   var isThemeKey = (key) => key === THEME_KEY || key.startsWith(PALETTE_KEY_PREFIX);
+  function siteStorage() {
+    try {
+      const storage = window.localStorage;
+      storage.getItem(THEME_KEY);
+      return storage;
+    } catch {
+      return null;
+    }
+  }
   var settingsSync = createSettingsSync({
     hostname: location.hostname,
     fetch: (url, init2) => fetch(url, init2),
-    storage: localStorage,
+    storage: siteStorage(),
     setTimeout: (fn, ms) => window.setTimeout(fn, ms),
     clearTimeout: (id) => window.clearTimeout(id),
     now: () => Date.now(),
@@ -4053,13 +4125,23 @@ var Webkit = (() => {
     constructor() {
       super(...arguments);
       this._initialized = false;
+      /** Brings font, size and fixation in line with storage after a settings pull; registered while connected. */
+      this._refresh = null;
     }
     connectedCallback() {
-      if (this._initialized) return;
+      if (this._initialized) {
+        if (this._refresh) controlRefreshers.add(this._refresh);
+        return;
+      }
       this._render();
       this._applyTheme();
       this._wire();
       this._initialized = true;
+    }
+    // A header taken off the page stops answering pulls; put back, it
+    // registers again in connectedCallback.
+    disconnectedCallback() {
+      if (this._refresh) controlRefreshers.delete(this._refresh);
     }
     _attr(name, fallback = "") {
       return this.getAttribute(name) ?? fallback;
@@ -4281,7 +4363,7 @@ var Webkit = (() => {
         localStorage.setItem(FIXATION_KEY, String(fixationActive));
         settingsSync.push({ [FIXATION_KEY]: String(fixationActive) });
       });
-      controlRefreshers.add(() => {
+      this._refresh = () => {
         if (fontEl) {
           const name = localStorage.getItem(FONT_KEY) ?? "Fira Code";
           if (name !== fontEl.value) applyFont(name, fontEl);
@@ -4290,7 +4372,8 @@ var Webkit = (() => {
         if (size !== currentSize) currentSize = applySize(size);
         const active = localStorage.getItem(FIXATION_KEY) === "true";
         if (active !== fixationActive) setFixation(active);
-      });
+      };
+      controlRefreshers.add(this._refresh);
       this.querySelector("#webkit-reload")?.addEventListener("click", () => {
         location.reload();
       });

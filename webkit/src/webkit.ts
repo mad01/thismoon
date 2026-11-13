@@ -243,10 +243,23 @@ const controlRefreshers = new Set<() => void>();
 
 const isThemeKey = (key: SyncKey): boolean => key === THEME_KEY || key.startsWith(PALETTE_KEY_PREFIX);
 
+// Site storage, or null where the page cannot use it: reading localStorage
+// throws when site data is blocked, and it is null where storage is turned
+// off. Sync then stays off, so the module evaluates as it did before.
+function siteStorage(): Storage | null {
+  try {
+    const storage = window.localStorage;
+    storage.getItem(THEME_KEY);
+    return storage;
+  } catch {
+    return null;
+  }
+}
+
 const settingsSync = createSettingsSync({
   hostname: location.hostname,
   fetch: (url, init) => fetch(url, init),
-  storage: localStorage,
+  storage: siteStorage(),
   setTimeout: (fn, ms) => window.setTimeout(fn, ms),
   clearTimeout: id => window.clearTimeout(id),
   now: () => Date.now(),
@@ -343,16 +356,27 @@ function applySize(px: number): number {
 
 class WkHeader extends HTMLElement {
   private _initialized = false;
+  /** Brings font, size and fixation in line with storage after a settings pull; registered while connected. */
+  private _refresh: (() => void) | null = null;
 
   connectedCallback(): void {
     // One-time guard: a detach+reattach (DOM move / htmx swap) must NOT
     // re-run _render() — it reads the now-consumed [data-nav]/[data-extra]
     // light-DOM children and would overwrite the built header with empties.
-    if (this._initialized) return;
+    if (this._initialized) {
+      if (this._refresh) controlRefreshers.add(this._refresh);
+      return;
+    }
     this._render();
     this._applyTheme();
     this._wire();
     this._initialized = true;
+  }
+
+  // A header taken off the page stops answering pulls; put back, it
+  // registers again in connectedCallback.
+  disconnectedCallback(): void {
+    if (this._refresh) controlRefreshers.delete(this._refresh);
   }
 
   private _attr(name: string, fallback = ''): string {
@@ -673,7 +697,7 @@ class WkHeader extends HTMLElement {
 
     // A settings pull (from another .this host, or another tab of this one)
     // rewrote storage: bring the font, size and fixation in line with it.
-    controlRefreshers.add(() => {
+    this._refresh = (): void => {
       if (fontEl) {
         const name = localStorage.getItem(FONT_KEY) ?? 'Fira Code';
         if (name !== fontEl.value) applyFont(name, fontEl);
@@ -682,7 +706,8 @@ class WkHeader extends HTMLElement {
       if (size !== currentSize) currentSize = applySize(size);
       const active = localStorage.getItem(FIXATION_KEY) === 'true';
       if (active !== fixationActive) setFixation(active);
-    });
+    };
+    controlRefreshers.add(this._refresh);
 
     // Reload
     this.querySelector('#webkit-reload')?.addEventListener('click', () => {
