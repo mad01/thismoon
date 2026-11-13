@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/mad01/thismoon/compare/brain/v0.4.0...brain/v0.5.0) (2026-11-13)
+
+
+### Features
+
+* **webkit:** look and keyboard pass across the kit and the service UIs ([#433](https://github.com/mad01/thismoon/issues/433)) ([bc9acbe](https://github.com/mad01/thismoon/commit/bc9acbec9bf4d4b7628c7e0b4d667ff2d215ad4e))
+
 ## [0.4.0](https://github.com/mad01/thismoon/compare/brain/v0.3.0...brain/v0.4.0) (2026-11-10)
 
 
