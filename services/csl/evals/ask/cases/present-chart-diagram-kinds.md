@@ -33,10 +33,10 @@ forbidden:
   - '\bpolar\b'
 oracle: |
   - chartKinds (doc.go:66): bar, line, area, sparkline, stacked-bar, horizontal-bar, doughnut, scatter, sankey, ribbon. An empty kind draws as bar.
-  - diagramKinds (doc.go:78): service, store, queue, person, external. An empty kind draws as service.
-  - diagramDirections (doc.go:81): LR (the default) and TB.
+  - diagramKinds (doc.go:74): service, store, queue, person, external. An empty kind draws as service.
+  - diagramDirections (doc.go:77): LR (the default) and TB.
 notes: >-
-  The largest file in the repo (1998 lines). The answer is three literal
+  The largest file in the repo (2197 lines). The answer is three literal
   lists near the top; the test is whether the worker copies them exactly
   and resists the chart kinds every charting library has but this one
   refuses.
