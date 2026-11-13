@@ -5,7 +5,7 @@ RECIPE_TESTS := $(wildcard recipes/*/*-test.sh)
 
 # fmt-changed formats the files that differ from the merge base with this ref.
 FMT_BASE ?= origin/main
-GOLINES := golines -m 100 --base-formatter=gofumpt
+GOLINES := golines -m 100 --base-formatter=gofumpt --no-reformat-tags
 
 .PHONY: build test test-recipes sandbox-settings sandbox-verify fmt-changed install-all components
 
