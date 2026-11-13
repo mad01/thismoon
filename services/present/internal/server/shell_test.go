@@ -112,7 +112,7 @@ func TestDeckShellAudioDefault(t *testing.T) {
 		if !strings.Contains(brief, "size,audio,speed,") {
 			t.Errorf("%s: shell header does not list the audio toggle beside speed", name)
 		}
-		if strings.Contains(brief, "data-audio") {
+		if namesAudioKeyOrDefault(brief) {
 			t.Errorf("%s: brief shell names an audio key or default; it must take webkit's", name)
 		}
 		if !strings.Contains(deck, marker) {
@@ -137,9 +137,16 @@ func TestDeckShellAudioDefault(t *testing.T) {
 	if _, body := get(t, ts.URL+"/p/"+both.ID+"/deck"); !strings.Contains(body, marker) {
 		t.Error("GET /p/{id}/deck does not serve the deck shell")
 	}
-	if _, body := get(t, ts.URL+"/p/"+both.ID); strings.Contains(body, "data-audio") {
+	if _, body := get(t, ts.URL+"/p/"+both.ID); namesAudioKeyOrDefault(body) {
 		t.Error("GET /p/{id} serves the deck's audio default")
 	}
+}
+
+// namesAudioKeyOrDefault reports whether a page sets either attribute webkit
+// reads its audio choice from. The brief's stylesheet may still match the
+// data-audio state webkit sets on <html>; only these two name a key or default.
+func namesAudioKeyOrDefault(page string) bool {
+	return strings.Contains(page, "data-audio-key") || strings.Contains(page, "data-audio-default")
 }
 
 // A panel accent named terracotta renders as var(--primary) and webkit no
@@ -159,6 +166,127 @@ func TestShellsDeclareTerracottaAlias(t *testing.T) {
 			t.Errorf("%s shell lacks the terracotta compatibility rule %q", name, rule)
 		}
 	}
+}
+
+// The brief's reading styles are one block of shell.html between two marker
+// comments. The block declares the type scale on #root and the strong ink on
+// :root, reads webkit's --wk-measure rather than a measure of its own, and
+// scopes every other selector to .brief:not(.deck), so no rule of it reaches
+// the deck.
+func TestBriefStylesStayInTheBrief(t *testing.T) {
+	const (
+		begin = "/* The brief's reading styles."
+		end   = "/* End of the brief's reading styles. */"
+		scope = ".brief:not(.deck)"
+	)
+	shell := string(shellHTML)
+	from, to := strings.Index(shell, begin), strings.Index(shell, end)
+	if from < 0 || to < from {
+		t.Fatalf("shell.html lacks the brief's block between %q and %q", begin, end)
+	}
+	block := shell[from:to]
+	for _, token := range []string{
+		"--ink-strong:", "--fs-micro:", "--fs-small:", "--fs-body:",
+		"--fs-h3:", "--fs-lede:", "--fs-h2:", "--fs-title:",
+	} {
+		if !strings.Contains(block, token) {
+			t.Errorf("the brief's block does not declare %s", strings.TrimSuffix(token, ":"))
+		}
+	}
+	if strings.Contains(shell, "--measure:") {
+		t.Error("shell.html declares a measure of its own; the brief reads webkit's --wk-measure")
+	}
+	if !strings.Contains(block, "var(--wk-measure)") {
+		t.Error("the brief's block never reads --wk-measure")
+	}
+	tokenRules := 0
+	for _, rule := range cssRules(t, block) {
+		if rule.selector == ":root" || rule.selector == "#root" {
+			tokenRules++
+			if !declaresOnlyTokens(rule.body) {
+				t.Errorf(
+					"the token rule %s sets more than custom properties: %q",
+					rule.selector,
+					rule.body,
+				)
+			}
+			continue
+		}
+		for _, sel := range splitSelectors(rule.selector) {
+			if !strings.HasPrefix(sel, scope) {
+				t.Errorf("selector %q in the brief's block lacks the %s scope", sel, scope)
+			}
+		}
+	}
+	if tokenRules != 2 {
+		t.Errorf("the brief's block has %d token rules, want the :root and #root ones", tokenRules)
+	}
+}
+
+// cssRule is one style rule: its selector list and its declarations.
+type cssRule struct{ selector, body string }
+
+var cssComment = regexp.MustCompile(`(?s)/\*.*?\*/`)
+
+// cssRules lists the style rules of a stylesheet, those inside @media and
+// @container blocks included. Declarations hold no braces, so a rule's body
+// ends at the first closing brace.
+func cssRules(t *testing.T, sheet string) []cssRule {
+	t.Helper()
+	sheet = cssComment.ReplaceAllString(sheet, "")
+	var rules []cssRule
+	for sheet = strings.TrimSpace(sheet); sheet != ""; sheet = strings.TrimSpace(sheet) {
+		if strings.HasPrefix(sheet, "}") {
+			sheet = sheet[1:] // the end of an at-rule block
+			continue
+		}
+		open := strings.Index(sheet, "{")
+		if open < 0 {
+			t.Fatalf("stray text after the last rule: %q", sheet)
+		}
+		prelude := strings.Join(strings.Fields(sheet[:open]), " ")
+		sheet = sheet[open+1:]
+		if strings.HasPrefix(prelude, "@") {
+			continue // its rules follow, up to its closing brace
+		}
+		closing := strings.Index(sheet, "}")
+		if closing < 0 {
+			t.Fatalf("rule %q never closes", prelude)
+		}
+		rules = append(rules, cssRule{selector: prelude, body: strings.TrimSpace(sheet[:closing])})
+		sheet = sheet[closing+1:]
+	}
+	return rules
+}
+
+// splitSelectors splits a selector list at the commas outside parentheses.
+func splitSelectors(list string) []string {
+	var out []string
+	depth, start := 0, 0
+	for i, r := range list {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				out = append(out, strings.TrimSpace(list[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	return append(out, strings.TrimSpace(list[start:]))
+}
+
+// declaresOnlyTokens reports whether every declaration sets a custom property.
+func declaresOnlyTokens(body string) bool {
+	for _, decl := range strings.Split(body, ";") {
+		if decl = strings.TrimSpace(decl); decl != "" && !strings.HasPrefix(decl, "--") {
+			return false
+		}
+	}
+	return true
 }
 
 var (
@@ -186,7 +314,9 @@ func TestShellLoadsEveryCachedAsset(t *testing.T) {
 	}
 	fetched := cachedAssets(t, string(script))
 	if len(fetched) == 0 {
-		t.Fatal("cache-assets.sh declares no $ASSETS/js or $ASSETS/css file; the pattern no longer matches")
+		t.Fatal(
+			"cache-assets.sh declares no $ASSETS/js or $ASSETS/css file; the pattern no longer matches",
+		)
 	}
 	loaded := map[string]bool{}
 	for _, re := range shellAssets {

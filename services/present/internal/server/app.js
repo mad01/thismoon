@@ -343,14 +343,36 @@
   function legendLabels(colors, fonts) {
     return { color: colors.text, boxWidth: 12, boxHeight: 12, font: fonts.legend };
   }
+  // slideUnits is the unit of the slide holding el, in px, as the
+  // stylesheet resolves it on the slide body: u0 the unfitted 1% of the
+  // canvas width, u the fitted unit, floor the smallest text. They are
+  // registered lengths, so the computed values read as px. Null off a
+  // slide.
+  function slideUnits(el) {
+    var body = el.closest('.slide-body');
+    if (!body) return null;
+    var cs = getComputedStyle(body);
+    var u0 = parseFloat(cs.getPropertyValue('--u0')), u = parseFloat(cs.getPropertyValue('--u'));
+    if (!(u0 > 0) || !(u > 0)) return null;
+    return { u0: u0, u: u, floor: parseFloat(cs.getPropertyValue('--floor')) || 0 };
+  }
   // chartFonts is the type a chart draws its text in: the block's own face
-  // at the sizes PresentViz.chartFontSizes gives for the root size, read
-  // when the chart is built (a theme change rebuilds it). A reader's face
-  // or size change has no event yet, so a chart shows it after a reload.
+  // at the sizes PresentViz.chartFontSizes gives for the root size, and on
+  // a slide for the slide's unit, read when the chart is built. A theme
+  // change, the reader's face or size (watchReading), and a slide fit that
+  // changes the unit (rebuildStaleCharts) rebuild it.
   function chartFonts(block) {
     var family = getComputedStyle(block).fontFamily || undefined;
-    var sizes = PresentViz.chartFontSizes(parseFloat(getComputedStyle(document.documentElement).fontSize));
+    var sizes = PresentViz.chartFontSizes(parseFloat(getComputedStyle(document.documentElement).fontSize), slideUnits(block));
     return { tick: { family: family, size: sizes.tick }, legend: { family: family, size: sizes.legend } };
+  }
+  // CHART_LINE_PX is a line or area chart's stroke in the brief; on a slide
+  // it is CHART_SLIDE_LINE_U of the slide's unit.
+  var CHART_LINE_PX = 2;
+  var CHART_SLIDE_LINE_U = 0.25;
+  function chartLineWidth(block) {
+    var units = slideUnits(block);
+    return units ? CHART_SLIDE_LINE_U * units.u : CHART_LINE_PX;
   }
   function chartTypeFor(kind) {
     if (kind === 'bar' || kind === 'stacked-bar' || kind === 'horizontal-bar') return 'bar';
@@ -402,8 +424,9 @@
     };
   }
   // cartesianDatasets are a cartesian chart's series, drawn by kind; a
-  // line joins its points straight (PresentViz.chartLine).
-  function cartesianDatasets(kind, spec, colors) {
+  // line joins its points straight (PresentViz.chartLine), and a line or
+  // area strokes at line px.
+  function cartesianDatasets(kind, spec, colors, line) {
     return (spec.series || []).map(function (s, i) {
       var col = chartSeriesColor(colors, s.color, i);
       var pts = s.points || [];
@@ -414,20 +437,20 @@
         return ds;
       }
       ds.data = pts.map(function (p) { return p.y; });
-      if (kind === 'area') { ds.fill = true; ds.backgroundColor = col + '33'; ds.pointRadius = 2; ds.borderWidth = 2; }
-      else if (kind === 'line') { ds.fill = false; ds.pointRadius = 0; ds.pointHoverRadius = 5; ds.borderWidth = 2; }
+      if (kind === 'area') { ds.fill = true; ds.backgroundColor = col + '33'; ds.pointRadius = 2; ds.borderWidth = line; }
+      else if (kind === 'line') { ds.fill = false; ds.pointRadius = 0; ds.pointHoverRadius = 5; ds.borderWidth = line; }
       else if (kind === 'sparkline') { ds.fill = false; ds.pointRadius = 0; ds.borderWidth = 1.5; }
       else if (kind === 'stacked-bar') { ds.borderColor = colors.surface; ds.borderWidth = 2; ds.borderRadius = 3; }
       else { ds.borderWidth = 0; ds.borderRadius = 3; } // bar, horizontal-bar
       return Object.assign(ds, PresentViz.chartLine(kind));
     });
   }
-  function cartesianConfig(kind, spec, colors, fonts, animate) {
+  function cartesianConfig(kind, spec, colors, fonts, animate, line) {
     var first = (spec.series || [])[0];
     var labels = ((first && first.points) || []).map(function (p) { return p.x || ''; });
     return {
       type: chartTypeFor(kind),
-      data: { labels: labels, datasets: cartesianDatasets(kind, spec, colors) },
+      data: { labels: labels, datasets: cartesianDatasets(kind, spec, colors, line) },
       options: cartesianOptions(kind, spec, colors, fonts, animate)
     };
   }
@@ -533,6 +556,8 @@
     var colors = getChartColors(block), fonts = chartFonts(block);
     var animate = !reducedMotion && !block._built;
     block._built = true;
+    block._chartFonts = fonts;
+    block._chartStale = false;
     var cfg;
     if (kind === 'doughnut') {
       cfg = doughnutConfig(spec, colors, fonts, animate);
@@ -543,7 +568,7 @@
       }
       cfg = sankeyConfig(spec, colors, fonts, animate);
     } else {
-      cfg = cartesianConfig(kind, spec, colors, fonts, animate);
+      cfg = cartesianConfig(kind, spec, colors, fonts, animate, chartLineWidth(block));
     }
     if (animate && opts && opts.duration !== undefined && cfg.options) {
       cfg.options.animation = opts.duration > 0 ? { duration: opts.duration, easing: 'easeOutQuart' } : false;
@@ -867,6 +892,18 @@
       buildChart(block, opts);
     });
   }
+  // rebuildStaleCharts rebuilds each Chart.js chart under root whose text
+  // would now be drawn otherwise than at its build: a slide fit or the
+  // presenting unit changed its size (PresentViz.chartFontsChanged), or
+  // the reader's face or size marked it stale, whose file may have loaded
+  // since. The rebuild plays no entry and keeps the step (data-step-at).
+  // A ribbon sizes its text in the stylesheet and is never stale.
+  function rebuildStaleCharts(root) {
+    root.querySelectorAll('.present-chart').forEach(function (block) {
+      if (!block._chart) return;
+      if (block._chartStale || PresentViz.chartFontsChanged(block._chartFonts, chartFonts(block))) buildChart(block);
+    });
+  }
 
   // ── Diagram blocks (elk + d3) ──
   // A diagram block is laid out by ELK from its spec once per form (a
@@ -908,8 +945,8 @@
   // is drawn in (label: a node's name; group: a group's label; anything
   // else: a text line or an edge label), in the block's font family. The
   // forms measure the same strings, so each width is kept. The family is
-  // read once: a reader's font change has no event yet, so the boxes keep
-  // the measured width until a reload.
+  // read once per layout; the reader's face (relayoutDiagram) lays the
+  // diagram out again.
   function diagramMeasure(block) {
     if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
     var family = getComputedStyle(block).fontFamily || 'sans-serif', known = Object.create(null);
@@ -923,20 +960,30 @@
       return known[key];
     };
   }
+  // diagramMeasureKey is what text in the block's face measures as now:
+  // the face, and PresentViz.readingSample in each of the three fonts a
+  // diagram measures in. Two layouts under one key size every box alike.
+  function diagramMeasureKey(block) {
+    var measure = diagramMeasure(block);
+    return ['label', 'group', 'text'].map(function (role) { return measure(PresentViz.readingSample, role).toFixed(2); })
+      .concat(getComputedStyle(block).fontFamily).join('|');
+  }
   // diagramLayout lays the spec out in every form of its ladder (four in
   // the brief, six on a slide), one form after another on the one ELK,
   // once the page's fonts have loaded (a fallback font measures
-  // differently). The bundled ELK runs each layout as a task of its own,
-  // so the page handles input between forms. A form whose layout fails is
-  // dropped, and the fit picks among the rest (diagramPlan takes any of
-  // the ladder's forms, in order). It resolves to the laid-out forms in
-  // ladder order, and rejects with the first error only when every form
-  // failed.
+  // differently), and keeps what the text measured as on the block
+  // (_diagramKey, for relayoutDiagram). The bundled ELK runs each layout
+  // as a task of its own, so the page handles input between forms. A form
+  // whose layout fails is dropped, and the fit picks among the rest
+  // (diagramPlan takes any of the ladder's forms, in order). It resolves
+  // to the laid-out forms in ladder order, and rejects with the first
+  // error only when every form failed.
   function diagramLayout(block, spec) {
     var fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
     return fonts.then(function () {
       if (!diagramEngine) diagramEngine = new ELK();
       var measure = diagramMeasure(block), laid = [], failed = [];
+      block._diagramKey = diagramMeasureKey(block);
       var ladder = PresentViz.diagramLadder(spec.direction, !!block.closest('.slide'));
       return ladder.reduce(function (done, form) {
         return done.then(function () { return diagramLayoutForm(spec, measure, form); })
@@ -1289,22 +1336,22 @@
     return isNaN(v) ? DIAGRAM_SLIDE_MAX_H : v;
   }
   // diagramRoom is where a diagram is fitted, as PresentViz.diagramLimits
-  // takes it: the wrapper's width, then in the brief the wrapper's and the
+  // takes it: the wrapper's width and font size, then in the brief the
   // root's font size, and on a slide the canvas's height cap and the
-  // slide's canvas width.
+  // canvas width, 100 of the slide's unfitted unit.
   function diagramRoom(block, wrap) {
     var slide = block.closest('.slide');
+    var wrapFontPx = parseFloat(getComputedStyle(wrap).fontSize);
     if (!slide) {
       return {
-        onSlide: false, wrapWidth: wrap.clientWidth,
-        wrapFontPx: parseFloat(getComputedStyle(wrap).fontSize),
+        onSlide: false, wrapWidth: wrap.clientWidth, wrapFontPx: wrapFontPx,
         rootPx: parseFloat(getComputedStyle(document.documentElement).fontSize)
       };
     }
-    var presenting = document.documentElement.classList.contains('presenting');
+    var units = slideUnits(wrap);
     return {
-      onSlide: true, wrapWidth: wrap.clientWidth, maxHeight: diagramMaxHeight(wrap),
-      canvasWidth: PresentViz.canvasWidth(slide.clientWidth, slide.clientHeight, presenting)
+      onSlide: true, wrapWidth: wrap.clientWidth, maxHeight: diagramMaxHeight(wrap), wrapFontPx: wrapFontPx,
+      canvasWidth: units ? 100 * units.u0 : slide.clientWidth
     };
   }
   // diagramSize draws the svg at scale: its viewBox stays the layout's.
@@ -1330,11 +1377,13 @@
   // wrapper sideways. The block carries data-diagram-form ("TB compact")
   // and data-under-floor for tests and the eval. The refits come from the
   // wrapper's resize observer (a window resize too), the deck's refresh
-  // (presenting changes the height cap, which no observer sees), and a
-  // theme change. A reader's font or size change has no event yet, so it
-  // shows after a reload.
+  // (presenting changes the height cap, which no observer sees), the slide
+  // fit (each fit changes the cap and the largest scale), a theme change,
+  // and the reader's size (relayoutDiagram). A new layout of a drawn
+  // diagram (the reader's face) mounts over it: its first draw replaces
+  // the svg on the page.
   function mountDiagram(block, spec, forms, wrap, animate) {
-    var drawn = -1, svg = null, last = '';
+    var drawn = -1, svg = block._diagramSvg || null, last = '';
     function attempt() {
       if (wrap.clientWidth < 1) return;
       var limits = PresentViz.diagramLimits(diagramRoom(block, wrap));
@@ -1385,13 +1434,39 @@
     var spec;
     try { spec = JSON.parse(specEl.textContent); } catch (e) { return; }
     block._built = true;
-    var animate = !reducedMotion && !(opts && opts.duration === 0);
+    block._diagramSpec = spec;
+    block._diagramAnimate = !reducedMotion && !(opts && opts.duration === 0);
     block._presentStep = diagramStepHook(block, spec);
+    layDiagram(block, wrap);
+  }
+  // layDiagram lays the block's diagram out and mounts it, then fits the
+  // slide holding it again when that slide is on screen. Only the newest
+  // layout mounts, since the reader's face can start one while the first
+  // still runs. The entry plays when the build asked for it and no drawn
+  // diagram has finished its own (a face loading mid-entry starts it over).
+  function layDiagram(block, wrap) {
+    var spec = block._diagramSpec, run = block._diagramRun = (block._diagramRun || 0) + 1;
     diagramLayout(block, spec).then(function (forms) {
-      mountDiagram(block, spec, forms, wrap, animate);
+      if (run !== block._diagramRun) return;
+      var drawn = block._diagramSvg, entering = !drawn || drawn.classList.contains('entering');
+      mountDiagram(block, spec, forms, wrap, block._diagramAnimate && entering);
+      var slide = block.closest('.slide.active');
+      if (slide) fitSlide(slide, true);
     }).catch(function (err) {
+      if (run !== block._diagramRun) return;
       chartNote(block, 'Diagram could not be drawn: ' + ((err && err.message) || err));
     });
+  }
+  // relayoutDiagram follows the reader's face or size on a built diagram.
+  // Its boxes are sized in px of their own from text measured in the
+  // block's face, so it is laid out again when that text measures
+  // otherwise now (a new face, or the face's file loading after the first
+  // layout), and only refitted to its room otherwise (a new size).
+  function relayoutDiagram(block) {
+    var wrap = block.querySelector('.present-diagram-canvas');
+    if (!block._diagramSpec || !wrap) return;
+    if (block._diagramKey !== diagramMeasureKey(block)) layDiagram(block, wrap);
+    else if (block._diagramFit) block._diagramFit();
   }
   // initPresentDiagrams builds every diagram block under root (the
   // document by default); with opts.builtOnly it only refits the ones
@@ -2135,7 +2210,8 @@
   }
 
   // enhanceBrief brings a mounted brief to life: the graph script and its
-  // controls, charts, diagrams, terminals, link targets, read-aloud, and
+  // controls, the reader's face and size (watchReading, before the first
+  // chart), charts, diagrams, terminals, link targets, read-aloud, and
   // code highlighting. An exported page runs it on the body it carries.
   function enhanceBrief(brief, data) {
     // The graph is delivered as the authored Cytoscape init script; executing it
@@ -2151,6 +2227,7 @@
 
     setupGraphControls();
     initGraphAndFlow();
+    watchReading(redrawBrief);
     initPresentCharts();
     initPresentDiagrams();
     initPresentTerminals(brief);
@@ -2373,6 +2450,57 @@
     openStream();
   }
 
+  // ── Slide fit ── every size on a slide is written in the unit, and --fit
+  // on the slide body scales it: fitSlide sets the largest fit at which the
+  // body holds its content (PresentViz.fitSteps), and marks a slide that
+  // still overflows at the smallest one slide-overflow, which scrolls. Each
+  // pass refits the slide's diagrams before measuring, since a diagram's
+  // height cap and largest scale follow the fit; charts follow their
+  // container. A fit is kept per slide under the slide's size, the root
+  // font size and the body's face, so a change of any of them fits again;
+  // force fits again regardless, after a chart or diagram mounts or the
+  // reader's face or size changes. A chart whose text the new fit sizes
+  // otherwise is rebuilt after it (rebuildStaleCharts); it keeps its
+  // container's height, so the fit stands.
+  //
+  // slideBodyOverflows is the measure. The body is a flex column, and once
+  // its items overflow, its scrollHeight leaves out the bottom padding, so
+  // the items' heights (the title slide's bar included) are added to both
+  // paddings instead. A child wider than its box overflows sideways. A stat
+  // value keeps to one line while the fit can still shrink, so each is
+  // measured on its own as well: in a column it spills into the gap and
+  // leaves the row's width alone.
+  function slideBodyOverflows(body) {
+    var cs = getComputedStyle(body), bar = getComputedStyle(body, '::before');
+    var need = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom), wide = false;
+    if (bar.content !== 'none') need += parseFloat(bar.height) + parseFloat(bar.marginTop) + parseFloat(bar.marginBottom);
+    Array.prototype.forEach.call(body.children, function (c) {
+      var s = getComputedStyle(c);
+      if (s.display === 'none' || s.position === 'absolute' || s.position === 'fixed') return;
+      need += c.getBoundingClientRect().height + parseFloat(s.marginTop) + parseFloat(s.marginBottom);
+      if (c.scrollWidth > c.clientWidth + 1) wide = true;
+    });
+    Array.prototype.forEach.call(body.querySelectorAll('wk-stat-value'), function (v) {
+      if (v.scrollWidth > v.clientWidth + 1) wide = true;
+    });
+    return need > body.clientHeight + 1 || wide;
+  }
+  function fitSlide(slide, force) {
+    var body = slide && slide.classList.contains('active') && slide.querySelector('.slide-body');
+    if (!body) return;
+    var key = [slide.offsetWidth, slide.offsetHeight, getComputedStyle(document.documentElement).fontSize, getComputedStyle(body).fontFamily].join('|');
+    if (!force && slide._fitKey === key) return;
+    slide._fitKey = key;
+    var diagrams = slide.querySelectorAll('.present-diagram');
+    slide.classList.remove('slide-overflow');
+    var result = PresentViz.fitSteps(function (fit) {
+      body.style.setProperty('--fit', String(fit));
+      diagrams.forEach(function (b) { if (b._diagramFit) b._diagramFit(); });
+      return slideBodyOverflows(body);
+    });
+    slide.classList.toggle('slide-overflow', result.overflow);
+    rebuildStaleCharts(slide);
+  }
 
   // ── Deck view ── the deck's compiled fragment holds the same markup the
   // brief does (title hero, an optional wk-toc, one wk-section per section),
@@ -2386,9 +2514,9 @@
     var body = Webkit.el('div', { class: 'slide-body' });
     nodes.forEach(function (n) { body.appendChild(n); });
     var slide = Webkit.el('section', { class: 'slide ' + cls }, [body]);
-    // A visual (the graph, a chart, an image, a diagram) sizes the slide by the
-    // viewport instead of zooming the body while presenting. A terminal does
-    // too: a zoomed xterm would also place its selection off the pointer.
+    // A visual (the graph, a chart, an image, a diagram, a terminal) puts
+    // the heading at the top of a default slide with the visual under it,
+    // where a text slide centres the two as a group.
     if (body.querySelector('#cy-graph, .present-chart, wk-figure, .present-diagram')) slide.classList.add('has-viz');
     if (body.querySelector('.present-terminal')) slide.classList.add('has-viz');
     return slide;
@@ -2713,13 +2841,17 @@
     function remember() { memory.save(current + 1, presenting); }
 
     function graphSlide(slide) { return !!slide.querySelector('#cy-graph'); }
+    // fitActiveSlide fits the slide on screen again (fitSlide); force
+    // fits it even when its size, the root size and the face are the same.
+    function fitActiveSlide(force) { fitSlide(slides[current], force); }
 
-    // refreshVisuals fits the graph and charts on the active slide to their
-    // container, which changes when the slide first shows and when
+    // refreshVisuals fits the active slide, then the graph and charts on it
+    // to their container, which changes when the slide first shows and when
     // presenting toggles the layout.
     function refreshVisuals() {
       var slide = slides[current];
       if (!slide) return;
+      fitSlide(slide);
       if (graphSlide(slide)) {
         if (!graphReady) {
           graphReady = true;
@@ -2733,11 +2865,14 @@
       if (typeof Chart !== 'undefined') registerSankey();
       // The draw-in follows the deck's transition: 400 ms, or none for a
       // deck that cuts (Reduce Motion already turns it off in buildChart).
+      // A chart that mounts here fits the slide again.
+      var mounted = false;
       slide.querySelectorAll('.present-chart').forEach(function (b) {
-        if (!b._built) buildChart(b, { duration: transition === 'none' ? 0 : 400 });
+        if (!b._built) { buildChart(b, { duration: transition === 'none' ? 0 : 400 }); mounted = true; }
         else if (b._chart) b._chart.resize();
         else if (b._ribbonResize) b._ribbonResize();
       });
+      if (mounted) fitSlide(slide, true);
       // A diagram draws in the same way; built, it refits to the height cap
       // presenting sets, which no resize observer sees.
       slide.querySelectorAll('.present-diagram').forEach(function (b) {
@@ -2848,6 +2983,7 @@
           sl.classList.toggle('active', j === i);
           if (j === i) sl.scrollTop = 0;
         });
+        fitSlide(slides[i]);
         applySteps(slides[i], target.steps, target.rest);
         updateCounter();
         chrome.update(i);
@@ -2912,6 +3048,7 @@
       if (presenting === on) return;
       presenting = on;
       document.documentElement.classList.toggle('presenting', on);
+      fitActiveSlide();
       presentBtn.textContent = on ? 'Exit' : 'Present';
       remember();
       if (!on && navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
@@ -2988,6 +3125,19 @@
     window.addEventListener('hashchange', function () {
       var n = slideFromHash();
       if (n) show(n - 1);
+    });
+    // A resize (fullscreen included) changes the slide's size, which the
+    // fit's key sees. The reader's face and size, and the face's file
+    // loading after the first fit, come through watchReading: every slide
+    // fits again on its next showing and every built chart rebuilds there,
+    // every diagram lays out again or refits (relayoutDiagram), and the
+    // slide on screen fits now, on the step it stands at.
+    window.addEventListener('resize', function () { fitActiveSlide(); });
+    watchReading(function () {
+      slides.forEach(function (s) { s._fitKey = ''; });
+      deck.querySelectorAll('.present-chart').forEach(function (b) { if (b._chart) b._chartStale = true; });
+      deck.querySelectorAll('.present-diagram').forEach(relayoutDiagram);
+      fitActiveSlide(true);
     });
 
     // A theme change rebuilds the graph; that only works while its slide is
@@ -3074,6 +3224,46 @@
     if (!document.hidden) start();
   }
 
+  // watchReading calls redraw when the reader's face or text size changes
+  // what text measures. The kit's header changes both without an event,
+  // so present watches the effect instead of the control: a probe, one
+  // hidden line of PresentViz.readingSample in the page's face at the
+  // root size, whose box a ResizeObserver reports. A new face, a new size,
+  // and the face's file loading after the first build all move the box; a
+  // box that holds means text measures as it did. A burst (three presses
+  // on plus, a face and then its file) redraws once, READING_SETTLE_MS
+  // after the last change. A view calls it before it builds anything, so
+  // the first read predates every measurement it must outdate. Without
+  // ResizeObserver (the tests' fake DOM) the page keeps what it built.
+  var READING_SETTLE_MS = 150;
+  function watchReading(redraw) {
+    if (typeof ResizeObserver !== 'function') return;
+    var probe = document.createElement('span');
+    probe.className = 'present-reading-probe';
+    probe.setAttribute('aria-hidden', 'true');
+    probe.textContent = PresentViz.readingSample;
+    document.body.appendChild(probe);
+    var last = readingBox(probe), later = PresentViz.settle(redraw, READING_SETTLE_MS);
+    new ResizeObserver(function () {
+      var now = readingBox(probe);
+      if (!PresentViz.readingChanged(last, now)) return;
+      last = now;
+      later();
+    }).observe(probe);
+  }
+  function readingBox(el) {
+    var r = el.getBoundingClientRect();
+    return { width: r.width, height: r.height };
+  }
+  // redrawBrief follows the reader's face or size in the brief: every
+  // built chart rebuilds, without its entry, and every diagram lays out
+  // again or refits (relayoutDiagram). A chart keeps its height, so the
+  // reader's place holds.
+  function redrawBrief() {
+    initPresentCharts(document, { builtOnly: true });
+    document.querySelectorAll('.present-diagram').forEach(relayoutDiagram);
+  }
+
   // followTheme recolours the brief's graph, charts, and diagrams when the
   // webkit theme toggle fires (the deck view registers its own listener).
   function followTheme() {
@@ -3122,8 +3312,39 @@
   var id = pageId();
   if (!id) return;
 
+  // loadFailure is the page body when the page data did not load: the kit's
+  // error state inside the brief wrapper, so the header and width match a
+  // page. An unknown id (404) says the page is gone and links to the page
+  // list; a shared instance has no list (its / is the how-to page), so there
+  // it offers no link. Any other failure shows the error under its title.
+  function loadFailure(err) {
+    var box;
+    if (err && err.status === 404) {
+      var shared = document.documentElement.getAttribute('data-present-mode') === 'shared';
+      box = Webkit.el('wk-empty', { variant: 'error' }, [
+        Webkit.el('wk-empty-title', {}, 'No page at this address'),
+        'This page may have been deleted.',
+        shared ? null : ' ',
+        shared ? null : Webkit.el('a', { href: '/' }, 'Back to all pages'),
+      ]);
+    } else {
+      box = Webkit.el('wk-empty', { variant: 'error' }, [
+        Webkit.el('wk-empty-title', {}, 'Could not load this page'),
+        (err && err.message) || String(err),
+      ]);
+    }
+    return Webkit.el('div', { class: 'brief' }, box);
+  }
+
   fetch('/api/p/' + encodeURIComponent(id), { headers: { accept: 'application/json' } })
-    .then(function (r) { if (!r.ok) throw new Error('load failed (' + r.status + ')'); return r.json(); })
+    .then(function (r) {
+      if (!r.ok) {
+        var err = new Error('load failed (' + r.status + ')');
+        err.status = r.status;
+        throw err;
+      }
+      return r.json();
+    })
     .then(function (data) {
       var base = '/p/' + encodeURIComponent(id);
       // The server redirects a URL whose rendition is gone, but a replica
@@ -3145,7 +3366,6 @@
     })
     .catch(function (err) {
       root.innerHTML = '';
-      var msg = (err && err.message) || String(err);
-      root.appendChild(Webkit.el('div', { class: 'brief' }, 'Failed to load presentation: ' + msg));
+      root.appendChild(loadFailure(err));
     });
 })();

@@ -88,7 +88,7 @@ func TestDeckChromeWiring(t *testing.T) {
 	for _, want := range []string{
 		".deck-strip", ".deck-dot.done", ".deck-dot.current", ".deck-progress-fill",
 		".deck-logo-top-left", ".deck-logo-top-right", ".deck-bar.raised", ".deck.has-strip",
-		"html.has-deck-strip.presenting .slide.active", ".brief-presenter",
+		"html.has-deck-strip.presenting .deck .slide-body", ".brief-presenter",
 	} {
 		if !contains(shell, want) {
 			t.Errorf("shell.html lacks %q", want)

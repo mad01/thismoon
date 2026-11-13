@@ -30,17 +30,18 @@ func deckShell(shell []byte) []byte {
 
 // handleDeckPage serves the static shell for a page's slide deck. The same
 // shell and app.js serve the brief; the client tells the two views apart by
-// the /deck suffix on its own URL. An unknown page is a 404, so a stale link
-// never lands on an empty shell; a page that exists without a deck sends the
-// reader on to the brief, the mirror of the redirect a deck-only page makes
-// from the brief's URL, so a deck tab whose deck an update removed reloads
-// into the rendition that is left rather than into a 404.
+// the /deck suffix on its own URL. An unknown page answers 404 with the deck
+// shell, whose script shows the not-found state, so a stale link keeps the
+// header; a page that exists without a deck sends the reader on to the
+// brief, the mirror of the redirect a deck-only page makes from the brief's
+// URL, so a deck tab whose deck an update removed reloads into the rendition
+// that is left rather than into a 404.
 func (s *Server) handleDeckPage(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	p, err := s.store.GetMeta(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.NotFound(w, r)
+			writeShell(w, s.deckShell, http.StatusNotFound)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -50,11 +51,7 @@ func (s *Server) handleDeckPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/p/"+id, http.StatusFound)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// no-store for the same reason the brief sets it: the version poll
-	// reloads on a bump, and a cached shell would reload forever.
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(s.deckShell)
+	writeShell(w, s.deckShell, http.StatusOK)
 }
 
 // deckCommands is the poll's answer: the newest sequence number the page
