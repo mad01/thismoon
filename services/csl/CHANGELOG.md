@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.0](https://github.com/mad01/thismoon/compare/csl/v0.38.2...csl/v0.39.0) (2026-11-13)
+
+
+### Features
+
+* **webkit:** date, clock and URL state helpers, DOM tests, narrow header ([#457](https://github.com/mad01/thismoon/issues/457)) ([c79d4b6](https://github.com/mad01/thismoon/commit/c79d4b68cb2fed5de6fa137a53c871e080b15af0))
+
 ## [0.38.2](https://github.com/mad01/thismoon/compare/csl/v0.38.1...csl/v0.38.2) (2026-11-13)
 
 
