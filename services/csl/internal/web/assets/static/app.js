@@ -807,7 +807,7 @@ async function initSearchPage() {
       : lastHybHits;
 
     if (hits.length === 0) {
-      results.innerHTML = hybNote + '<div class="empty">No matches.</div>';
+      results.innerHTML = hybNote + '<wk-empty>No matches.</wk-empty>';
       status.textContent = '0 results';
       return;
     }
@@ -882,7 +882,7 @@ async function initSearchPage() {
       : lastSemHits;
 
     if (hits.length === 0) {
-      results.innerHTML = '<div class="empty">No matches.</div>';
+      results.innerHTML = '<wk-empty>No matches.</wk-empty>';
       status.textContent = '0 results';
       return;
     }
@@ -983,7 +983,7 @@ async function initSearchPage() {
   function renderPage() {
     const data = lastData;
     if (!data || data.repos.length === 0) {
-      results.innerHTML = '<div class="empty">No matches.</div>';
+      results.innerHTML = '<wk-empty>No matches.</wk-empty>';
       status.textContent = data ? statusText(data, 0) : '';
       return;
     }

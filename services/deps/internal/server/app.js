@@ -369,7 +369,10 @@
   }
 
   function toolbar(v) {
-    var kids = [Webkit.el('wk-button', { variant: 'accent', 'data-action': 'rescan-all' }, 'Rescan all')];
+    // A native <button> with the kit's .btn-primary (the rule wk-button
+    // [variant=primary] shares) is in the tab order, fires on Enter/Space and
+    // honours disabled while the scan runs.
+    var kids = [Webkit.el('button', { class: 'btn btn-primary', 'data-action': 'rescan-all' }, 'Rescan all')];
     if (v.hasScan) {
       kids.push(Webkit.el('span', { class: 'scanmeta' + (v.stale ? ' stale' : '') },
         'scanned ' + v.agoText + (v.stale ? ' · stale' : '')));
@@ -494,7 +497,7 @@
   // read. Their dependencies were never checked, so the page must not read as
   // clean while any exist.
   function discoveryCallout(errs) {
-    return Webkit.el('wk-callout', { variant: 'error' }, [
+    return Webkit.el('wk-callout', { variant: 'error', class: 'disc-callout' }, [
       Webkit.el('div', {}, [
         Webkit.el('strong', {}, 'Discovery failed for ' + errs.length + ' repo/ecosystem pair' + (errs.length !== 1 ? 's' : '')),
         ': their dependencies were not checked.'
@@ -536,7 +539,7 @@
       'Supply-chain scan across the repos in the catalog registry, checked against OSV.dev and each package registry. Resolve a finding to acknowledge it; it returns if the version changes or a new advisory lands.'));
 
     if (!v.hasScan) {
-      nodes.push(Webkit.el('div', { class: 'empty' }, [
+      nodes.push(Webkit.el('wk-empty', {}, [
         'No scan has run yet. Click ', Webkit.el('strong', {}, 'Rescan all'), ', or wait for the daily background scan.'
       ]));
     } else {
@@ -703,9 +706,15 @@
     var filterEco = e.target.closest('[data-action="filter-eco"]');
     if (filterEco) {
       var eco = filterEco.dataset.eco;
+      var hadFocus = document.activeElement === filterEco;
       if (ecoSel[eco]) delete ecoSel[eco]; else ecoSel[eco] = true;
       syncURL();
       if (lastData) render(lastData);
+      // render() replaced the badge; keep the keyboard on the same ecosystem.
+      if (hadFocus) {
+        var again = document.querySelector('[data-action="filter-eco"][data-eco="' + CSS.escape(eco) + '"]');
+        if (again) again.focus();
+      }
       return;
     }
     var clearFilter = e.target.closest('[data-action="clear-filter"]');
@@ -762,7 +771,9 @@
   // server-rendered page with no auto-reload.
   Webkit.poll('/api/deps', render, 60000, function (err) {
     app.innerHTML = '';
-    app.appendChild(Webkit.el('div', { class: 'empty' },
-      'Failed to load dependencies: ' + ((err && err.message) || String(err))));
+    app.appendChild(Webkit.el('wk-empty', { variant: 'error' }, [
+      Webkit.el('wk-empty-title', {}, 'Could not load dependencies'),
+      (err && err.message) || String(err)
+    ]));
   });
 })();

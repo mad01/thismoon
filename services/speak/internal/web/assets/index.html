@@ -11,8 +11,7 @@
    layout lives here. The page is static: the engine line is the one thing
    filled in client-side, from GET /enginez, so serving it never runs a
    synthesis. */
-main.wrap { max-width: var(--page-width); margin: 0 auto; padding: 1.5rem 2rem 4rem; }
-.lead { margin: 1.25rem 0 0; font-size: 0.9375rem; color: var(--text-2); }
+.lead { margin: 1.25rem 0 0; font-size: 0.9375rem; color: var(--text-2); max-width: var(--wk-measure); }
 .lead a { color: var(--primary); }
 .engine { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; margin-top: 1rem; font-size: 0.8125rem; color: var(--text-2); }
 .engine .detail { font-family: var(--mono); }
@@ -20,6 +19,13 @@ h2 { margin: 2rem 0 0.75rem; font-size: 1rem; }
 .routes { border-collapse: collapse; font-size: 0.8125rem; }
 .routes td { border-top: 1px solid var(--border); padding: 0.4rem 1rem 0.4rem 0; vertical-align: top; color: var(--text-2); }
 .routes td:first-child { font-family: var(--mono); white-space: nowrap; color: var(--text-1); }
+/* On a phone the route column would squeeze the description to a few words
+   a line, so each row stacks: the route, then its description below it. */
+@media (max-width: 600px) {
+  .routes, .routes tbody, .routes tr, .routes td { display: block; }
+  .routes td { padding: 0 0 0.4rem; border-top: 0; }
+  .routes td:first-child { border-top: 1px solid var(--border); padding-top: 0.4rem; }
+}
 </style>
 </head>
 <body>

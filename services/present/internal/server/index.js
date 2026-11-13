@@ -60,7 +60,7 @@
 
     var pages = data.pages || [];
     if (!pages.length) {
-      children.push(Webkit.el('div', { class: 'empty' }, 'No presentations yet.'));
+      children.push(Webkit.el('wk-empty', {}, 'No presentations yet.'));
     }
 
     var grid = Webkit.el('div', { class: 'page-grid' }, pages.map(pageCard));
@@ -237,7 +237,9 @@
       .catch(function (err) {
         var msg = (err && err.message) || String(err);
         app.innerHTML = '';
-        app.appendChild(Webkit.el('div', { class: 'empty' }, 'Failed to load presentations: ' + msg));
+        app.appendChild(Webkit.el('wk-empty', { variant: 'error' }, [
+          Webkit.el('wk-empty-title', {}, 'Could not load presentations'), msg
+        ]));
       });
   }
 

@@ -11,13 +11,14 @@
    styles live here. The dashboard body is rendered client-side by /app.js
    into <div id="app">. */
 :root {
-  --st-ok: #3ba55d;
-  --st-warn: #e2a33c;
-  --st-down: #d65745;
+  --st-ok: var(--green);
+  --st-warn: var(--amber);
+  --st-down: var(--red);
   --st-none: var(--border);
 }
 
-.status { max-width: var(--page-width, 1080px); margin: 0 auto; padding: 2rem 1.5rem 6rem; }
+/* No top padding: webkit's header margin is the one space above the page. */
+.status { max-width: var(--page-width, 1080px); margin: 0 auto; padding: 0 1.5rem 6rem; }
 
 .svc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 @media (max-width: 720px) { .svc-grid { grid-template-columns: 1fr; } }
@@ -27,18 +28,19 @@
   padding: 0.875rem 1.25rem;
   font-weight: 600;
   margin-bottom: 2rem;
-  color: #fff;
 }
-.banner.ok { background: var(--st-ok); }
-.banner.down { background: var(--st-down); }
-.banner.none { background: var(--text-3); }
+.banner.ok { background: var(--st-ok); color: var(--on-green); }
+.banner.warn { background: var(--st-warn); color: var(--on-amber); }
+.banner.down { background: var(--st-down); color: var(--on-red); }
+.banner.none { background: var(--text-3); color: var(--bg); }
+.banner a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
 
 .legend {
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: 0.8125rem; color: var(--text-3); margin-bottom: 0.75rem;
 }
 
-wk-card.svc { display: block; padding: 1.25rem 1.5rem; }
+wk-card.svc { display: block; padding: 1.25rem 1.5rem; scroll-margin-top: 4.5rem; }
 
 .svc-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.75rem; }
 .svc-name { font-weight: 600; font-size: 1rem; color: var(--text-1); text-decoration: none; }

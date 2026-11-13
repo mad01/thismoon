@@ -7,15 +7,59 @@
 (function () {
   var app = document.getElementById('app');
 
-  // banner mirrors view.go buildView: text + class from the down count.
-  function banner(snap) {
-    var services = snap.services || [];
-    var down = snap.down || 0;
-    if (services.length === 0) return { text: 'Waiting for first check cycle…', cls: 'none' };
-    if (down === 0) return { text: 'All systems operational', cls: 'ok' };
-    if (down === 1) return { text: '1 service down', cls: 'down' };
-    return { text: down + ' services down', cls: 'down' };
+  // banner builds the headline from the card states, so its count always
+  // matches the cards. It names every down and degraded service as a link to
+  // its card, which may sit below the fold. Red when any service is down,
+  // amber when some are only degraded, green when all are operational.
+  function banner(services, ids) {
+    if (services.length === 0) return Webkit.el('div', { class: 'banner none' }, 'Waiting for first check cycle…');
+    var down = services.filter(function (s) { return statusState(s).cls === 'down'; });
+    var warn = services.filter(function (s) { return statusState(s).cls === 'warn'; });
+    if (!down.length && !warn.length) return Webkit.el('div', { class: 'banner ok' }, 'All systems operational');
+    var kids = [];
+    if (down.length) {
+      kids = kids.concat([down.length + (down.length === 1 ? ' service down: ' : ' services down: ')], cardLinks(down, ids));
+    }
+    if (warn.length) {
+      var lead = down.length ? ' · ' + warn.length + ' degraded: '
+        : warn.length + (warn.length === 1 ? ' service degraded: ' : ' services degraded: ');
+      kids = kids.concat([lead], cardLinks(warn, ids));
+    }
+    return Webkit.el('div', { class: 'banner ' + (down.length ? 'down' : 'warn') }, kids);
   }
+
+  // cardLinks is a comma-separated run of links to the services' cards.
+  function cardLinks(services, ids) {
+    var out = [];
+    services.forEach(function (s, i) {
+      if (i) out.push(', ');
+      out.push(Webkit.el('a', { href: '#' + ids.get(s) }, s.label));
+    });
+    return out;
+  }
+
+  // cardIds maps each service to its card's anchor: the label with anything
+  // outside an id-safe set replaced, plus a counter when that collides with
+  // an earlier card's ("a/b" and "a b" both read "a-b"), so every banner
+  // link resolves to its own card.
+  function cardIds(services) {
+    var ids = new Map();
+    var taken = {};
+    services.forEach(function (s) {
+      var base = 'svc-' + String(s.label).replace(/[^A-Za-z0-9_.-]/g, '-');
+      var id = base;
+      for (var n = 2; taken[id]; n++) id = base + '-' + n;
+      taken[id] = true;
+      ids.set(s, id);
+    });
+    return ids;
+  }
+
+  // STATE_ORDER sorts the grid: down first, then degraded, then operational,
+  // then pending. Array.prototype.sort is stable, so each group keeps the
+  // server's order.
+  var STATE_ORDER = { down: 0, warn: 1, ok: 2, none: 3 };
+  function byState(a, b) { return STATE_ORDER[statusState(a).cls] - STATE_ORDER[statusState(b).cls]; }
 
   // statusState mirrors buildSvcView's status text/class. A running service
   // serving an older sha than the binary on disk shows as stale, not ok.
@@ -102,7 +146,7 @@
     return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
   }
 
-  function svcCard(s, windowDays) {
+  function svcCard(s, windowDays, id) {
     var st = statusState(s);
     var name = s.link
       ? Webkit.el('a', { class: 'svc-name', href: s.link }, s.label)
@@ -120,7 +164,7 @@
       ]);
     });
 
-    return Webkit.el('wk-card', { class: 'svc' }, [
+    return Webkit.el('wk-card', { class: 'svc', id: id }, [
       Webkit.el('div', { class: 'svc-head' }, [
         name,
         Webkit.el('span', { class: 'svc-state ' + st.cls }, st.text)
@@ -139,13 +183,14 @@
 
   function render(snap) {
     var windowDays = snap.window_days || 0;
-    var b = banner(snap);
+    var services = (snap.services || []).slice().sort(byState);
+    var ids = cardIds(services);
 
     var grid = Webkit.el('div', { class: 'svc-grid' },
-      (snap.services || []).map(function (s) { return svcCard(s, windowDays); }));
+      services.map(function (s) { return svcCard(s, windowDays, ids.get(s)); }));
 
     app.innerHTML = '';
-    app.appendChild(Webkit.el('div', { class: 'banner ' + b.cls }, b.text));
+    app.appendChild(banner(services, ids));
     app.appendChild(Webkit.el('div', { class: 'legend' }, [
       Webkit.el('span', {}, 'Uptime over the past ' + windowDays + ' days'),
       Webkit.el('span', {}, 'generated ' + fmtGenerated(snap.generated_at))

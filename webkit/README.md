@@ -27,12 +27,14 @@ See [`COMPONENTS.md`](COMPONENTS.md) for the full design spec. Summary:
 
 | Component | Type | Notes |
 |-----------|------|-------|
-| `<wk-header>` | JS custom element | Brand/nav/back/title + font·fixation·size·reload·theme controls; fires `wk-themechange` on `document` |
+| `<wk-header>` | JS custom element | Brand/nav/back/title + font·fixation·size·reload·theme controls; fires `wk-themechange` on `document`; leads with a skip link to the content, `skip-link="off"` drops it |
 | `<wk-page-header>`, `<wk-title>`, `<wk-subtitle>` | CSS-only | Hero/page header block |
-| `<wk-card>` | CSS-only | Content card; `a.wk-card` / `[href]` gets hover lift; `--accent` left bar |
+| `<wk-card>` | CSS-only | Content card; `a.wk-card` / `[href]` / `[interactive]` (a card the page made clickable) gets hover lift; `--accent` left bar |
 | `<wk-panel>`, `<wk-panel-title>`, `<wk-panel-subtitle>` | CSS-only | Info panel |
 | `<wk-badge variant="a\|b\|c\|outline\|stat\|accent\|filter">` | CSS-only | Chips / badges; `variant="filter"` is a clickable pill; `[active]` fills it |
-| `<wk-button variant="primary\|ghost">` | CSS-only | Action button |
+| `<wk-badge variant="info\|ok\|warn\|error">` | CSS-only | Status badges on the status fill and ink roles, the ink at 4.5:1 on its fill |
+| `<wk-chips>` | CSS-only | A wrapping row of filter badges |
+| `<wk-button variant="primary\|ghost\|danger">` | CSS-only | Action button; no or an unknown variant gets the ghost look |
 | `<wk-search>` | CSS-only | Search bar; optional first-child `<svg>` becomes a leading icon |
 | `<wk-seg>` | CSS-only | Segmented control; `<button class="active">` marks selected |
 | `<wk-table>` | CSS-only | Wraps a descendant `<table>` as a data table |
@@ -44,10 +46,11 @@ See [`COMPONENTS.md`](COMPONENTS.md) for the full design spec. Summary:
 | `wk-section blockquote` (+ `<cite>`), `wk-section details` (+ `<summary>`) | CSS-only | Quote with attribution and a closed-by-default disclosure, styled inside a section |
 | `<wk-progress>`, `<wk-progress-bar>`, `<wk-progress-fill>`, `<wk-progress-label>` | CSS-only | Horizontal progress bar |
 | `<wk-toc>`, `<wk-toc-title>` | CSS-only | Table of contents block |
+| `<wk-empty [variant="error"]>`, `<wk-empty-title>` | CSS-only | Empty, loading or failed state of a list or page; `error` takes the callout's frame with the error bar |
 | `.wk-prose` | CSS + JS | Rich-markdown container; fenced code is Prism-highlighted client-side with a language badge + copy button |
 | `<wk-modal>`, `<wk-modal-panel>`, `<wk-modal-head>`, `<wk-modal-actions>` | CSS-only | Fixed overlay modal; `[hidden]` toggles open/closed |
 | `<wk-form>`, `<wk-form-row>`, `<wk-form-hint>` | CSS-only | Form layout, typically inside a modal |
-| `<wk-toast-host>`, `<wk-toast variant="ok\|err">` | CSS-only | Fixed bottom-right toast stack |
+| `<wk-toast-host>`, `<wk-toast variant="ok\|warn\|err">` | CSS-only | Fixed bottom-right toast stack |
 
 All components use **light DOM** only (no Shadow DOM) — CSS vars and fixation
 text-walk work normally.

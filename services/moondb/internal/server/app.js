@@ -592,7 +592,7 @@
     };
     var controls = el('div', { class: 'ls-controls' });
     var strip = el('div', { class: 'ls-strip' });
-    var list = el('div', {}, el('div', { class: 'empty' }, 'Loading…'));
+    var list = el('div', {}, el('wk-empty', {}, 'Loading…'));
 
     function sync() {
       var q = qs({
@@ -626,7 +626,7 @@
           list.replaceChildren.apply(list, sessionDays(sessions, state,
             (win.sessions || 0) > sessions.length ? more : null, data.dirs || []));
         })
-        .catch(function (err) { list.replaceChildren(el('div', { class: 'empty' }, 'Failed to load: ' + err.message)); });
+        .catch(function (err) { list.replaceChildren(failure('Could not load sessions', err)); });
     }
 
     replace([
@@ -732,6 +732,8 @@
 
   // windowStrip is one line adding up every session the filters keep. The
   // window switch and the chips above it already say which ones those are.
+  // The optional figure and the bars are null when empty, so they are
+  // dropped: replaceChildren would print a null as the text "null".
   function windowStrip(w) {
     function figure(n, word) {
       return el('span', { class: 'ls-fig' }, [el('b', {}, fmtCount(n)), plural(n || 0, word).replace(/^\d+ /, '')]);
@@ -750,7 +752,7 @@
         [el('b', {}, money(w.cost_agents)), 'of it by subagents']) : null,
       repoCostBar(w.repo_costs || []),
       modelBar(w.models || [])
-    ];
+    ].filter(Boolean);
   }
 
   // modelBar is the window's tokens as one bar stacked by model, most
@@ -857,7 +859,7 @@
   function sessionDays(sessions, state, more, dirs) {
     if (!sessions.length) {
       var scope = SINCE_PHRASE[state.since] || 'active since ' + state.since;
-      return [el('div', { class: 'empty' }, state.repo
+      return [el('wk-empty', {}, state.repo
         ? 'No sessions in ' + repoName(state.repo) + ' ' + scope + '.'
         : state.cwd ? 'No sessions started in ' + cwdLabel(state.cwd, dirs) + ' ' + scope + '.'
           : 'No sessions ' + scope + '. Older ones are under Any time.')];
@@ -1373,7 +1375,7 @@
         ? table(['#', 'Prompt', 'Status', 'Edits', 'Agents', 'Started'], turnList.map(function (t) {
           return turnRow(t, sum.byTurn[t.id] || 0, ['main'].concat(ran[t.id] || []));
         }))
-        : el('div', { class: 'empty' }, 'No turns recorded.')]),
+        : el('wk-empty', {}, 'No turns recorded.')]),
       section('Worktrees', [worktreeTable(sum.byWorktree)]),
       el('wk-section', {}, el('details', {}, [
         el('summary', {}, 'Session details'),
@@ -1448,7 +1450,7 @@
 
   function worktreeTable(byWorktree) {
     var keys = Object.keys(byWorktree).sort();
-    if (!keys.length) return el('div', { class: 'empty' }, 'No edits recorded.');
+    if (!keys.length) return el('wk-empty', {}, 'No edits recorded.');
     return table(['Worktree', 'Repo', 'Branch', 'Edits'], keys.map(function (k) {
       var w = byWorktree[k];
       return el('tr', {}, [
@@ -1494,7 +1496,7 @@
   // (the API sends it first), then the subagents in the order they
   // started, or costliest first once the Cost heading is clicked.
   function agentsSection(rows, seqs) {
-    if (!rows.length) return [el('div', { class: 'empty' }, 'No agents recorded.')];
+    if (!rows.length) return [el('wk-empty', {}, 'No agents recorded.')];
     var byCost = false;
     var box = el('div');
     function draw() {
@@ -1633,7 +1635,7 @@
     }
     var turns = (tr.turns || []).filter(function (t) { return (t.spans || []).length; });
     if (!turns.length) {
-      return [el('div', { class: 'empty' },
+      return [el('wk-empty', {},
         'No transcript lines recorded for these turns, so there is nothing to trace.')];
     }
     var lanes = el('div', { class: 'tr-lanes' });
@@ -1915,7 +1917,7 @@
       section('Unattributed deltas', deltas.length
         ? [note('Changes no recorded tool call explains: a formatter hook, a human, or another process wrote the file.')]
           .concat(deltas.map(deltaPanel))
-        : [el('div', { class: 'empty' }, 'None. Every change in this turn came from a recorded tool call.')]),
+        : [el('wk-empty', {}, 'None. Every change in this turn came from a recorded tool call.')]),
       section('Snapshots', [snapshotTable(t.snapshots || [])]),
       section('Commit links', [commitTable(t.commit_links || [], edits)]),
       transcriptSection(t)
@@ -1962,7 +1964,7 @@
   // conversation first, then every subagent with its work under the turn,
   // with or without edits.
   function agentTable(rows) {
-    if (!rows.length) return el('div', { class: 'empty' }, 'No agents recorded.');
+    if (!rows.length) return el('wk-empty', {}, 'No agents recorded.');
     return table(['Agent', 'Kind', 'Model calls', 'Tool calls', 'Time', 'Edits', 'Cost', 'Agent id'],
       rows.map(function (r) {
         return el('tr', {}, [
@@ -2031,7 +2033,7 @@
   // editGroups lays the turn's edits out by worktree, then path, each path
   // in the order its edits happened.
   function editGroups(edits) {
-    if (!edits.length) return [el('div', { class: 'empty' }, 'No edits recorded in this turn.')];
+    if (!edits.length) return [el('wk-empty', {}, 'No edits recorded in this turn.')];
     var worktrees = [];
     var groups = {};
     edits.forEach(function (e) {
@@ -2122,7 +2124,7 @@
   // when the turn stopped.
   function snapshotTable(snaps) {
     if (!snaps.length) {
-      return el('div', { class: 'empty' }, 'No snapshot: the worktrees were clean, or unchanged since the last one.');
+      return el('wk-empty', {}, 'No snapshot: the worktrees were clean, or unchanged since the last one.');
     }
     var rows = snaps.slice().sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
     return table(['Taken', 'Phase', 'Worktree', 'Files', 'Skipped', 'Map'], rows.map(function (s) {
@@ -2149,7 +2151,7 @@
 
   function commitTable(links, edits) {
     if (!links.length) {
-      return el('div', { class: 'empty' }, 'No commit has taken this turn\'s content yet.');
+      return el('wk-empty', {}, 'No commit has taken this turn\'s content yet.');
     }
     var byID = {};
     edits.forEach(function (e) { byID[e.id] = e; });
@@ -2169,7 +2171,7 @@
   // disclosure, fetched on first open and cut at TRANSCRIPT_CHARS.
   function transcriptSection(t) {
     if (!t.transcript_chunk) {
-      return section('Raw transcript', [el('div', { class: 'empty' },
+      return section('Raw transcript', [el('wk-empty', {},
         t.status === 'open' ? 'Recorded when the turn closes.' : 'No transcript lines recorded.')]);
     }
     var body = el('div', {}, note('Loading…'));
@@ -2335,7 +2337,7 @@
   // turn and a diff on demand.
   function drawHistory(box, edits, bandFor) {
     if (!edits.length) {
-      box.replaceChildren(el('div', { class: 'empty' }, 'No recorded edits of this path.'));
+      box.replaceChildren(el('wk-empty', {}, 'No recorded edits of this path.'));
       return;
     }
     box.replaceChildren(el('ol', { class: 'timeline' }, edits.map(function (e) {
@@ -2379,7 +2381,16 @@
   function renderError(err) {
     replace([
       backLinks([['← All sessions', '/']]),
-      el('div', { class: 'empty' }, 'Failed to load: ' + ((err && err.message) || String(err)))
+      failure('Could not load this view', err)
+    ]);
+  }
+
+  // failure is the error state of a view whose fetch failed: a short title,
+  // and under it the error chain the server or the browser gave.
+  function failure(title, err) {
+    return el('wk-empty', { variant: 'error' }, [
+      el('wk-empty-title', {}, title),
+      (err && err.message) || String(err)
     ]);
   }
 

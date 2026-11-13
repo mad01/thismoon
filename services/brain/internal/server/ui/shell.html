@@ -13,13 +13,28 @@
    renders all of it into <div id="app">. */
 
 /* The graph palette app.js reads by role (graph.js names the roles): the
-   canvas, the edges, the hover and selection halos, and one fill and
-   border pair per node colour. The dark variants sit a tenth of the way
-   toward the dark canvas. */
-:root{--graph-bg:#F9FCFF;--edge:#A5ABB6;--edge-text:#5D626C;--halo-hover:rgba(106,198,255,0.3);--halo-selected:rgba(253,204,89,0.3);--label-pill:#FFFFFF;--label-pill-text:#2A2C34;
---node-blue:#4C8EDA;--node-blue-border:#2870C2;--node-orange:#F79767;--node-orange-border:#F36924;--node-cyan:#57C7E3;--node-cyan-border:#23B3D7;--node-green:#8DCC93;--node-green-border:#5DB665;--node-purple:#C990C0;--node-purple-border:#B261A5;--node-yellow:#FFC454;--node-yellow-border:#D7A013;--node-red:#F16667;--node-red-border:#EB2728;--node-beige:#D9C8AE;--node-beige-border:#C0A378;--node-pink:#ECB5C9;--node-pink-border:#DA7298;--node-rose:#DA7194;--node-rose-border:#CC3C6C;--node-teal:#569480;--node-teal-border:#447666;--node-brown:#604A0E;--node-brown-border:#423204;--node-grey:#A5ABB6;--node-grey-border:#9AA1AC}
-[data-theme="dark"]{--graph-bg:#292C33;--edge:#80858F;--edge-text:#B5BAC4;--halo-hover:rgba(106,198,255,0.35);--halo-selected:rgba(253,204,89,0.35);--label-pill:#1F2126;--label-pill-text:#E3E5EA;
---node-blue:#4884C9;--node-blue-border:#2869B4;--node-orange:#E28C62;--node-orange-border:#DF6326;--node-cyan:#52B8D1;--node-cyan-border:#24A6C7;--node-green:#83BC89;--node-green-border:#58A860;--node-purple:#B986B2;--node-purple-border:#A45C9A;--node-yellow:#EAB551;--node-yellow-border:#C69416;--node-red:#DD6062;--node-red-border:#D82829;--node-beige:#C7B8A2;--node-beige-border:#B19771;--node-pink:#D8A7BA;--node-pink-border:#C86B8E;--node-rose:#C86A8A;--node-rose-border:#BC3A66;--node-teal:#528A78;--node-teal-border:#416F61;--node-brown:#5A4712;--node-brown-border:#403109;--node-grey:#999EA9;--node-grey-border:#8F95A0}
+   edges, the hover and selection halos, the caption pill, and one fill and
+   border pair per node colour. Each role points at a webkit role, so the
+   graph follows the theme family and its light and dark variants, and the
+   canvas is webkit's own --graph-bg. Those roles hold #rrggbb (the halos
+   rgba) in every family, which sigma and graph.js's luminance() parse. A
+   node's border is a thin ring in the canvas colour, which keeps touching
+   nodes apart.
+   The colours that carry meaning (tier, lifecycle status, evidence,
+   staleness, tag and dangling nodes: blue, orange, green, purple, yellow,
+   red, grey, teal, beige) are picked per mode so they stay apart in every
+   family: rose-pine has one gold for amber and yellow, and a light family's
+   own yellow can sit too pale on the canvas, so light mode takes the
+   darker amber tag ink for yellow and dark mode takes it for orange.
+   palette_test.go holds the nine apart and visible on --graph-bg. Cyan,
+   pink, rose and brown only tint the later clusters and vaults. They take
+   the roles that keep all twelve cluster colours furthest apart, so their
+   names are slots rather than hues (light brown is the ink); the test holds
+   the twelve to a lower floor. */
+:root{--edge:var(--border-hover);--edge-text:var(--text-3);--halo-hover:var(--focus-ring);--halo-selected:var(--ra-highlight);--label-pill:var(--paper);--label-pill-text:var(--text-1);
+--node-blue:var(--blue);--node-orange:var(--amber);--node-green:var(--green);--node-purple:var(--tone-purple-text);--node-yellow:var(--tag-a-text);--node-red:var(--red);--node-grey:var(--text-2);--node-teal:var(--tone-green-text);--node-beige:var(--border-hover);--node-cyan:var(--primary-soft);--node-pink:var(--tone-red-text);--node-rose:var(--graph-module-4);--node-brown:var(--graph-leaf-text);
+--node-blue-border:var(--graph-bg);--node-orange-border:var(--graph-bg);--node-cyan-border:var(--graph-bg);--node-green-border:var(--graph-bg);--node-purple-border:var(--graph-bg);--node-yellow-border:var(--graph-bg);--node-red-border:var(--graph-bg);--node-beige-border:var(--graph-bg);--node-pink-border:var(--graph-bg);--node-rose-border:var(--graph-bg);--node-teal-border:var(--graph-bg);--node-brown-border:var(--graph-bg);--node-grey-border:var(--graph-bg)}
+[data-theme="dark"]{--node-orange:var(--tag-a-text);--node-yellow:var(--yellow);--node-purple:var(--purple);--node-grey:var(--text-3);--node-beige:var(--text-2);--node-rose:var(--tone-purple-text);--node-brown:var(--status-info-text)}
 
 html,body{height:100%}
 body{display:flex;flex-direction:column;overflow:hidden}
@@ -34,7 +49,7 @@ wk-header .topbar{margin-bottom:0}
 .tb-push{margin-left:auto}
 .toolbar label{display:inline-flex;align-items:center;gap:0.3rem;cursor:pointer;white-space:nowrap}
 .toolbar select{appearance:auto;background:var(--paper);border:1px solid var(--border);border-radius:6px;padding:0.2rem 0.35rem;font:inherit;color:var(--text-1);max-width:10rem}
-.toolbar input[type=range]{width:4.5rem}
+.toolbar input[type=range]{width:4.5rem;accent-color:var(--primary)}
 .toolbar .off{opacity:0.45}
 .search{flex:0 1 auto;min-width:0;gap:0.5rem}
 .search input{flex:0 1 15rem;width:15rem;min-width:7rem;appearance:none;background:var(--paper);border:1px solid var(--border);border-radius:8px;padding:0.32rem 0.6rem;font:inherit;color:var(--text-1)}
@@ -78,7 +93,7 @@ wk-header .topbar{margin-bottom:0}
    set again here. */
 .pop{margin:auto;box-sizing:border-box;width:min(760px,calc(100vw - 2rem));max-width:760px;max-height:85vh;padding:0;border:1px solid var(--border);border-radius:14px;background:var(--paper);color:var(--text-1);box-shadow:0 18px 60px rgba(0,0,0,0.28);overflow:hidden}
 .pop[open]{display:flex;flex-direction:column}
-.pop::backdrop{background:rgba(20,22,28,0.45)}
+.pop::backdrop{background:var(--scrim)}
 .pop:focus{outline:none}
 .pop-scroll{overflow-y:auto;min-height:0;padding:0 1.4rem 1.2rem;font-size:0.88rem}
 .pop-scroll:focus{outline:none}

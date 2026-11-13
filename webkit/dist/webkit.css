@@ -35,6 +35,15 @@
   --tag-b-text: #2B6B3E;
   --tag-c: #D4DEE8;
   --tag-c-text: #2B4A6B;
+  --status-info-bg: #e8eff7;
+  --status-info-text: #435e7a;
+  --status-ok-bg: #e6f1ea;
+  --status-ok-text: #396749;
+  --status-warn-bg: #faecdc;
+  --status-warn-text: #885112;
+  --status-error-bg: #f6e7e5;
+  --status-error-text: #7b3e33;
+  --accent-ink-share: 45%;
   --on-red: #FFFFFF;
   --on-green: #252320;
   --on-amber: #252320;
@@ -130,6 +139,15 @@
   --tag-b-text: #6BC48A;
   --tag-c: #1E2A3A;
   --tag-c-text: #7AAAE8;
+  --status-info-bg: #2d3237;
+  --status-info-text: #93aec8;
+  --status-ok-bg: #2a342b;
+  --status-ok-text: #8ab697;
+  --status-warn-bg: #3e2f1c;
+  --status-warn-text: #d9a160;
+  --status-error-bg: #3c2d28;
+  --status-error-text: #d0998e;
+  --accent-ink-share: 45%;
   --on-red: #1A1916;
   --on-green: #1A1916;
   --on-amber: #1A1916;
@@ -225,6 +243,15 @@
   --tag-b-text: #46784a;
   --tag-c: #c5d5f5;
   --tag-c-text: #355baf;
+  --status-info-bg: #d2def5;
+  --status-info-text: #3c579a;
+  --status-ok-bg: #d7e6d9;
+  --status-ok-text: #486b53;
+  --status-warn-bg: #f1ddd4;
+  --status-warn-text: #8a5648;
+  --status-error-bg: #ebd1db;
+  --status-error-text: #7b3958;
+  --accent-ink-share: 45%;
   --on-red: #FFFFFF;
   --on-green: #FFFFFF;
   --on-amber: #FFFFFF;
@@ -320,6 +347,15 @@
   --tag-b-text: #baddcb;
   --tag-c: #333c57;
   --tag-c-text: #abc5f7;
+  --status-info-bg: #2d334b;
+  --status-info-text: #a8c3f7;
+  --status-ok-bg: #313a3e;
+  --status-ok-text: #b8ddc6;
+  --status-warn-bg: #3d333a;
+  --status-warn-text: #e6c3b8;
+  --status-error-bg: #3c2d3f;
+  --status-error-text: #e2adca;
+  --accent-ink-share: 45%;
   --on-red: #181825;
   --on-green: #181825;
   --on-amber: #181825;
@@ -415,6 +451,15 @@
   --tag-b-text: #5b5622;
   --tag-c: #c9d8c4;
   --tag-c-text: #224f57;
+  --status-info-bg: #d7e1ca;
+  --status-info-text: #1f515a;
+  --status-ok-bg: #e7e3bb;
+  --status-ok-text: #5e5920;
+  --status-warn-bg: #efdbb9;
+  --status-warn-text: #7b391a;
+  --status-error-bg: #ecd3ba;
+  --status-error-text: #71191c;
+  --accent-ink-share: 45%;
   --on-red: #FFFFFF;
   --on-green: #FFFFFF;
   --on-amber: #FFFFFF;
@@ -510,6 +555,15 @@
   --tag-b-text: #d2cb6c;
   --tag-c: #4a4e4a;
   --tag-c-text: #b7c0a5;
+  --status-info-bg: #464744;
+  --status-info-text: #b2bda4;
+  --status-ok-bg: #4d4a34;
+  --status-ok-text: #cfc965;
+  --status-warn-bg: #574232;
+  --status-warn-text: #f5a95e;
+  --status-error-bg: #57403c;
+  --status-error-text: #f4a186;
+  --accent-ink-share: 45%;
   --on-red: #282828;
   --on-green: #282828;
   --on-amber: #282828;
@@ -605,6 +659,15 @@
   --tag-b-text: #697966;
   --tag-c: #d0d9e6;
   --tag-c-text: #465b76;
+  --status-info-bg: #d7dee9;
+  --status-info-text: #3c4c63;
+  --status-ok-bg: #e2e8e5;
+  --status-ok-text: #57645b;
+  --status-warn-bg: #e8e1e2;
+  --status-warn-text: #675252;
+  --status-error-bg: #e5dadf;
+  --status-error-text: #5f404b;
+  --accent-ink-share: 45%;
   --on-red: #FFFFFF;
   --on-green: #2e3440;
   --on-amber: #2e3440;
@@ -700,6 +763,15 @@
   --tag-b-text: #c8d7c0;
   --tag-c: #495568;
   --tag-c-text: #b7c8db;
+  --status-info-bg: #454f62;
+  --status-info-text: #b1c4d8;
+  --status-ok-bg: #4a535a;
+  --status-ok-text: #c4d4bb;
+  --status-warn-bg: #504d57;
+  --status-warn-text: #deb9b0;
+  --status-error-bg: #504c5b;
+  --status-error-text: #ddb8be;
+  --accent-ink-share: 45%;
   --on-red: #2e3440;
   --on-green: #2e3440;
   --on-amber: #2e3440;
@@ -795,6 +867,15 @@
   --tag-b-text: #446e49;
   --tag-c: #d5e0f8;
   --tag-c-text: #3c599a;
+  --status-info-bg: #dee6f9;
+  --status-info-text: #3557a2;
+  --status-ok-bg: #e2eee2;
+  --status-ok-text: #457349;
+  --status-warn-bg: #ece6d7;
+  --status-warn-text: #6d531e;
+  --status-error-bg: #f7e3e1;
+  --status-error-text: #974946;
+  --accent-ink-share: 45%;
   --on-red: #FFFFFF;
   --on-green: #383a42;
   --on-amber: #FFFFFF;
@@ -890,6 +971,15 @@
   --tag-b-text: #a2bb9c;
   --tag-c: #334659;
   --tag-c-text: #86b1d7;
+  --status-info-bg: #303e4e;
+  --status-info-text: #91b1d0;
+  --status-ok-bg: #38413e;
+  --status-ok-text: #a4b8a7;
+  --status-warn-bg: #403b3b;
+  --status-warn-text: #b8aaa0;
+  --status-error-bg: #42353d;
+  --status-error-text: #be9aa5;
+  --accent-ink-share: 45%;
   --on-red: #21252b;
   --on-green: #21252b;
   --on-amber: #21252b;
@@ -985,6 +1075,15 @@
   --tag-b-text: #375672;
   --tag-c: #dde6e2;
   --tag-c-text: #4e6b80;
+  --status-info-bg: #e6e9e4;
+  --status-info-text: #47576f;
+  --status-ok-bg: #e1e6e3;
+  --status-ok-text: #3c506d;
+  --status-warn-bg: #fceedb;
+  --status-warn-text: #806558;
+  --status-error-bg: #f4e4e1;
+  --status-error-text: #6b4b68;
+  --accent-ink-share: 55%;
   --on-red: #FFFFFF;
   --on-green: #FFFFFF;
   --on-amber: #464261;
@@ -1080,6 +1179,15 @@
   --tag-b-text: #89a9c2;
   --tag-c: #384150;
   --tag-c-text: #bed7e6;
+  --status-info-bg: #313646;
+  --status-info-text: #bbd6e5;
+  --status-ok-bg: #232d40;
+  --status-ok-text: #87b3cf;
+  --status-warn-bg: #3d3438;
+  --status-warn-text: #ecceaf;
+  --status-error-bg: #3c283c;
+  --status-error-text: #e6a1be;
+  --accent-ink-share: 45%;
   --on-red: #191724;
   --on-green: #191724;
   --on-amber: #191724;
@@ -1175,6 +1283,15 @@
   --tag-b-text: #6f843b;
   --tag-c: #d2e1e0;
   --tag-c-text: #3f7da4;
+  --status-info-bg: #dee5dd;
+  --status-info-text: #45728c;
+  --status-ok-bg: #ece9c3;
+  --status-ok-text: #687d4c;
+  --status-warn-bg: #f6dec6;
+  --status-warn-text: #806254;
+  --status-error-bg: #f8dbca;
+  --status-error-text: #86595d;
+  --accent-ink-share: 65%;
   --on-red: #FFFFFF;
   --on-green: #FFFFFF;
   --on-amber: #FFFFFF;
@@ -1270,6 +1387,15 @@
   --tag-b-text: #8c9d51;
   --tag-c: #0d475f;
   --tag-c-text: #5d96ba;
+  --status-info-bg: #0d4357;
+  --status-info-text: #719db5;
+  --status-ok-bg: #194439;
+  --status-ok-text: #8e9e69;
+  --status-warn-bg: #253a3c;
+  --status-warn-text: #ad8571;
+  --status-error-bg: #253943;
+  --status-error-text: #ae8382;
+  --accent-ink-share: 65%;
   --on-red: #FFFFFF;
   --on-green: #002b36;
   --on-amber: #FFFFFF;
@@ -1365,6 +1491,15 @@
   --tag-b-text: #486b7c;
   --tag-c: #bdcee7;
   --tag-c-text: #336fd4;
+  --status-info-bg: #c5d2e7;
+  --status-info-text: #2e66cd;
+  --status-ok-bg: #ced3cf;
+  --status-ok-text: #436790;
+  --status-warn-bg: #dacfc7;
+  --status-warn-text: #625f7c;
+  --status-error-bg: #e2c4d1;
+  --status-error-text: #744296;
+  --accent-ink-share: 65%;
   --on-red: #FFFFFF;
   --on-green: #FFFFFF;
   --on-amber: #FFFFFF;
@@ -1460,6 +1595,15 @@
   --tag-b-text: #afccb0;
   --tag-c: #2d3650;
   --tag-c-text: #9db6f6;
+  --status-info-bg: #272e43;
+  --status-info-text: #9ab4f6;
+  --status-ok-bg: #2c3430;
+  --status-ok-text: #adcca9;
+  --status-warn-bg: #3a2d2f;
+  --status-warn-text: #e3b2a5;
+  --status-error-bg: #392835;
+  --status-error-text: #de9cbc;
+  --accent-ink-share: 45%;
   --on-red: #16161e;
   --on-green: #16161e;
   --on-amber: #16161e;
@@ -1530,6 +1674,9 @@
    family swap recolours everything. Only the non-colour tokens live here. */
 :root {
   --page-width: 1080px;
+  /* The reading measure: the widest a line of prose runs. A page that wants
+     its prose at full width opts out with --wk-measure: none. */
+  --wk-measure: 76ch;
   --mono: 'Fira Code', 'SF Mono', 'Cascadia Code', ui-monospace, monospace;
 }
 
@@ -1544,7 +1691,25 @@ body {
   line-height: 1.6;
 }
 
-/* ── Layout container ── */
+/* Native controls (scrollbars, select menus, checkboxes, date pickers) follow
+   the mode and take the family's accent. */
+[data-theme="light"] { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
+:root, [data-theme] { accent-color: var(--primary); }
+
+/* ── Focus ── one ring for everything the keyboard reaches. :where() keeps it
+   at zero specificity, so a rule that draws its own focus state (the text
+   inputs' border and --focus-ring, the skip link) wins over it. A container
+   with tabindex="-1" takes focus only from script (a skip target, a dialog
+   panel) and gets no ring. */
+:where(a, button, select, summary, [tabindex]:not([tabindex="-1"]), wk-button, wk-badge[variant="filter"]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ── Layout container ── the header's bottom margin is the one space
+   between the bar and the page's first line, so .wrap and wk-page-header
+   add none above it. */
 
 .wrap {
   max-width: var(--page-width, 1080px);
@@ -1555,7 +1720,7 @@ body {
 /* ── Topbar ── */
 
 .topbar {
-  margin-bottom: 2.5rem;
+  margin-bottom: 2rem;
   border-bottom: 1px solid var(--border);
   position: sticky; top: 0; background: var(--bg); z-index: 100;
   transition: background 0.3s;
@@ -1567,17 +1732,41 @@ body {
 
 wk-header { display: block; }
 
+/* Skip link: the header's first child and the page's first tab stop. Out of
+   sight until it has focus, then a pill in the top-left corner above the bar. */
+.wk-skip-link {
+  position: fixed; top: 0.5rem; left: 0.5rem; z-index: 300;
+  width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.wk-skip-link:focus {
+  width: auto; height: auto; overflow: visible; clip-path: none;
+  padding: 0.375rem 0.75rem; border-radius: 6px;
+  background: var(--primary); color: var(--on-primary);
+  font-size: 0.8125rem; font-weight: 600; text-decoration: none;
+  outline: 2px solid var(--primary); outline-offset: 2px;
+  box-shadow: var(--shadow-md);
+}
+/* The skip target takes focus only to move the caret; no ring around it. */
+.wk-skip-target:focus { outline: none; }
+
+/* The bar wraps at any width: when the left group and the controls do not
+   fit one row, the controls drop to a second row, still on the right, and a
+   control set wider than the bar wraps inside itself. A header that fits
+   lays out exactly as one row. */
 .topbar-inner {
   max-width: var(--page-width, 1080px);
   margin: 0 auto;
   padding: 0.75rem 1.5rem;
   display: flex; align-items: center; justify-content: space-between;
-  gap: 1rem;
+  flex-wrap: wrap; gap: 0.375rem 1rem;
 }
 
-.topbar-left { display: flex; align-items: center; gap: 0.75rem; }
+.topbar-left { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
 .topbar-title { font-size: 0.8125rem; font-weight: 500; color: var(--text-2); }
-.topbar-controls { display: flex; align-items: center; gap: 0.5rem; }
+.topbar-controls {
+  display: flex; align-items: center; justify-content: flex-end;
+  flex-wrap: wrap; gap: 0.125rem; margin-left: auto;
+}
 
 /* ── Brand ── */
 
@@ -1638,16 +1827,21 @@ wk-header { display: block; }
 #webkit-audio[aria-pressed="false"] .icon-audio-on { display: none; }
 #webkit-audio[aria-pressed="false"] .icon-audio-off { display: inline; }
 
+/* The arrow is two 5px half-squares in --text-3 that meet in a 10px-wide
+   down-pointing triangle, so it follows the palette. */
 .ctrl-select {
   appearance: none; background: var(--chip-bg); border: 1px solid var(--border);
   border-radius: 6px; padding: 0.375rem 0.625rem; padding-right: 1.5rem; font-family: inherit;
   font-size: 0.75rem; font-weight: 500; color: var(--text-2);
   cursor: pointer; transition: all 0.15s;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238C8578'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 0.5rem center;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-3) 50%),
+    linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  background-position: right calc(0.5rem + 5px) center, right 0.5rem center;
 }
 .ctrl-select:hover { border-color: var(--border-hover); color: var(--text-1); }
-.ctrl-select:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
 .ctrl-select:disabled { opacity: 0.45; cursor: default; }
 .ctrl-select:disabled:hover { border-color: var(--border); color: var(--text-2); }
 
@@ -1662,7 +1856,39 @@ wk-header { display: block; }
 .size-btn:active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 
 .ctrl-group { display: flex; align-items: center; gap: 0.25rem; }
-.ctrl-divider { width: 1px; height: 1rem; background: var(--border); margin: 0 0.25rem; }
+/* The header no longer rules its control groups apart; the element stays in
+   the markup so a page that styles it keeps working. */
+.ctrl-divider { display: none; }
+
+/* In the header bar the controls rest quiet: no fill and an invisible border
+   (still 1px, so no box changes), the chip fill on hover, the primary fill
+   while active or pressed as before. Scoped to .topbar-controls because
+   present reuses .size-btn for its graph controls. */
+.topbar-controls .ctrl-btn:not(.active),
+.topbar-controls .ctrl-select,
+.topbar-controls .size-btn:not(:active) {
+  background-color: transparent; border-color: transparent;
+}
+.topbar-controls .ctrl-btn:not(.active):hover,
+.topbar-controls .ctrl-select:hover,
+.topbar-controls .size-btn:not(:active):hover {
+  background-color: var(--chip-bg); border-color: transparent;
+}
+.topbar-controls .ctrl-select:disabled { background-color: transparent; }
+/* A select is as wide as the option it shows, so its arrow sits by the text
+   ("1×") instead of after the widest option. */
+.topbar-controls .ctrl-select { field-sizing: content; }
+/* The size stepper reads as one control: no gap between its halves and a
+   glyph the size of the other icons. */
+.topbar-controls .ctrl-group { gap: 0; }
+.topbar-controls .size-btn { font-size: 1rem; }
+/* A data-extra button (present's Slides and Share, the gallery's New) keeps
+   its frame and sits a step apart from the quiet controls. */
+.topbar-controls > .btn { margin-left: 0.5rem; }
+/* With no framed button showing, the last control is a quiet one whose icon
+   sits its padding and border inside its box; pull the row out by that much
+   so the icon ends on the content's right edge. */
+.topbar-controls:not(:has(> .btn:not([hidden]))) { margin-right: -0.6875rem; }
 
 .theme-toggle {
   appearance: none; background: none; border: none; cursor: pointer;
@@ -1683,8 +1909,16 @@ wk-button {
   appearance: none; border-radius: 6px; padding: 0.375rem 0.75rem; font-family: inherit;
   font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: all 0.15s;
   display: inline-flex; align-items: center; gap: 0.375rem; line-height: 1;
-  text-decoration: none; border: 1px solid transparent;
+  text-decoration: none; border-width: 1px; border-style: solid;
 }
+/* The base wears the ghost look, so a variant the kit does not know still
+   reads as a button. :where() keeps it at zero specificity: the named
+   variants below and any page rule win over it. The rule above sets the
+   border's width and style only, so the colour here is the one that applies. */
+:where(.btn, wk-button) {
+  background: var(--chip-bg); border-color: var(--border); color: var(--text-2);
+}
+:where(.btn, wk-button):where(:hover) { border-color: var(--border-hover); color: var(--text-1); }
 /* [hidden] must beat the inline-flex above, or a hidden button still shows
    (the same trap .wk-ra-btn[hidden] guards against further down). */
 .btn[hidden],
@@ -1699,14 +1933,15 @@ wk-button[variant="ghost"]:hover { border-color: var(--border-hover); color: var
 wk-button[variant="primary"] {
   background: var(--primary); border-color: var(--primary); color: var(--on-primary);
 }
+/* Every filled button darkens the same small step on hover. */
 .btn-primary:hover,
-wk-button[variant="primary"]:hover { opacity: 0.88; }
+wk-button[variant="primary"]:hover { filter: brightness(0.95); }
 .btn-danger,
 wk-button[variant="danger"] {
   background: var(--red); border-color: var(--red); color: var(--on-red);
 }
 .btn-danger:hover,
-wk-button[variant="danger"]:hover { opacity: 0.88; }
+wk-button[variant="danger"]:hover { filter: brightness(0.95); }
 
 /* ── Fixation ── */
 
@@ -1720,7 +1955,7 @@ wk-button[variant="danger"]:hover { opacity: 0.88; }
 
 wk-page-header {
   display: block;
-  margin: 1.5rem 0 1.5rem;
+  margin: 0 0 1.5rem;
 }
 
 /* ── wk-title ── */
@@ -1735,8 +1970,9 @@ wk-title {
   margin-bottom: 0.375rem;
 }
 
-/* wk-title inside a wk-card or wk-panel is smaller */
+/* wk-title inside a wk-card (the element or the class) or a wk-panel is smaller */
 wk-card wk-title,
+.wk-card wk-title,
 wk-panel wk-title {
   font-size: 0.9375rem;
   font-weight: 600;
@@ -1761,34 +1997,40 @@ wk-card,
   display: block;
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 1rem 1.125rem 1.125rem;
   overflow: hidden;
   position: relative;
   color: inherit;
+  box-shadow: var(--shadow-xs);
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
-/* Accent left-edge bar (optional via --accent custom prop) */
+/* Accent left-edge bar (optional via --accent custom prop). The card's
+   rounded corners clip it. */
 wk-card::before,
 .wk-card::before {
   content: "";
   position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
   background: var(--accent, transparent);
-  border-radius: 12px 0 0 12px;
 }
 
-/* Hover lift for linked cards */
+/* Every card's border darkens on hover; only a card you can act on lifts.
+   That is a linked card (wk-card[href], a.wk-card) or one the page made
+   clickable and marked with the interactive attribute. */
 wk-card[href],
-a.wk-card {
+a.wk-card,
+wk-card[interactive] {
   text-decoration: none;
   cursor: pointer;
 }
 wk-card:hover,
 .wk-card:hover {
+  border-color: var(--border-hover);
+}
+:is(wk-card[href], a.wk-card, wk-card[interactive]):hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
-  border-color: var(--border-hover);
 }
 
 /* ── wk-panel ── */
@@ -1848,14 +2090,15 @@ wk-badge[variant="b"] { background: var(--tag-b); color: var(--tag-b-text); }
 /* variant=c: blue */
 wk-badge[variant="c"] { background: var(--tag-c); color: var(--tag-c-text); }
 
-/* Semantic status variants — bind to status tokens so level/severity always
+/* Semantic status variants — bind to the status roles so level/severity always
    reads correctly: info=blue, ok=green, warn=amber, error=red. Use these for
    event levels, finding severity, health states — never the tag-a/b/c hues,
-   which are non-semantic and make a warning look like a success. */
-wk-badge[variant="info"]  { background: color-mix(in srgb, var(--blue)  16%, transparent); color: var(--blue); }
-wk-badge[variant="ok"]    { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
-wk-badge[variant="warn"]  { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); }
-wk-badge[variant="error"] { background: color-mix(in srgb, var(--red)   18%, transparent); color: var(--red); }
+   which are non-semantic and make a warning look like a success. Each
+   status-<s>-text is derived to read 4.5:1 on its status-<s>-bg. */
+wk-badge[variant="info"]  { background: var(--status-info-bg);  color: var(--status-info-text); }
+wk-badge[variant="ok"]    { background: var(--status-ok-bg);    color: var(--status-ok-text); }
+wk-badge[variant="warn"]  { background: var(--status-warn-bg);  color: var(--status-warn-text); }
+wk-badge[variant="error"] { background: var(--status-error-bg); color: var(--status-error-text); }
 
 /* variant=outline: borderless muted */
 wk-badge[variant="outline"] {
@@ -1872,13 +2115,19 @@ wk-badge[variant="stat"] {
 }
 
 /* variant=accent: kind-tinted. Binds a local --accent (set by an ancestor, e.g.
-   wk-card.k-system) and falls back to --primary when no accent is in scope. */
+   wk-card.k-system) and falls back to --primary when no accent is in scope.
+   The accent is only known at run time, so the badge mixes it by the status
+   roles' rule: paper 14% toward the accent for the fill, the accent moved
+   --accent-ink-share toward text-1 for the ink. The build picks that share
+   per variant as the least of 45%, 55% and 65% at which the ink reads 4.5:1
+   on --primary's fill; the three variants the contrast test excepts take
+   65%. */
 wk-badge[variant="accent"] {
-  background: color-mix(in srgb, var(--accent, var(--primary)) 14%, transparent);
-  color: var(--accent, var(--primary));
-  font-size: 0.625rem;
+  background: color-mix(in srgb, var(--accent, var(--primary)) 14%, var(--paper));
+  color: color-mix(in srgb, var(--accent, var(--primary)), var(--text-1) var(--accent-ink-share, 65%));
+  font-size: 0.6875rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   font-weight: 600;
 }
 
@@ -1904,12 +2153,26 @@ wk-badge[active] {
   border-color: transparent;
 }
 
-/* Keyboard focus ring for interactive chips + segmented buttons. Consumers must
-   add role="button" + tabindex="0" to a non-button wk-badge[variant="filter"]. */
-wk-badge[variant="filter"]:focus-visible,
-wk-seg button:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
+/* Filter badges and segmented buttons take the kit's one focus ring (top of
+   the file). webkit.js gives a filter badge role="button" + tabindex="0" when
+   the page set neither. */
+
+/* A count inside a filter badge: <wk-badge variant="filter">go <small>12</small></wk-badge>.
+   On an active badge it takes the active ink, dimmed. */
+wk-badge[variant="filter"] > small {
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+wk-badge[variant="filter"][active] > small { color: inherit; opacity: 0.75; }
+
+/* ── wk-chips ── a row of filter badges above the list they filter */
+
+wk-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1.25rem;
 }
 
 /* ── wk-search ── */
@@ -1937,6 +2200,7 @@ wk-search:has(> svg) input { padding-left: 2.6rem; }
 
 wk-search input {
   flex: 1;
+  min-width: 0;
   appearance: none;
   background: var(--paper);
   border: 1px solid var(--border);
@@ -1969,8 +2233,8 @@ wk-search button {
   transition: filter 0.15s;
   white-space: nowrap;
 }
-wk-search button:hover { filter: brightness(1.05); }
-wk-search button:active { filter: brightness(0.95); }
+wk-search button:hover { filter: brightness(0.95); }
+wk-search button:active { filter: brightness(0.9); }
 
 /* ── wk-table ── */
 
@@ -1991,12 +2255,15 @@ wk-table th {
   font-weight: 600;
   color: var(--text-2);
   padding: 0.5rem 0.75rem;
-  border-bottom: 2px solid var(--border);
+  border-bottom: 1px solid var(--border);
   font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   background: var(--chip-bg);
 }
+/* The header band's top corners are rounded. */
+wk-table th:first-child { border-top-left-radius: 6px; }
+wk-table th:last-child { border-top-right-radius: 6px; }
 
 wk-table td {
   padding: 0.5rem 0.75rem;
@@ -2030,9 +2297,10 @@ wk-kv-value { color: var(--text-1); }
 /* variant=card: framed key/value table (catalog's meta-table look) */
 wk-kv[variant="card"] {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 10px;
   overflow: hidden;
   background: var(--card-bg);
+  box-shadow: var(--shadow-xs);
 }
 wk-kv[variant="card"] wk-kv-row {
   padding: 0.7rem 1rem;
@@ -2045,7 +2313,7 @@ wk-kv[variant="card"] wk-kv-label {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-size: 0.78rem;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* ── wk-section ── */
@@ -2080,6 +2348,15 @@ wk-section p {
   margin-bottom: 1rem;
 }
 wk-section p + p { margin-top: -0.25rem; }
+/* Prose straight in a section stops at the reading measure. Tables,
+   figures, charts, code, stats and columns are not prose: they keep the
+   section's full width. */
+wk-section > p,
+wk-section > ul,
+wk-section > ol,
+wk-section > blockquote {
+  max-width: var(--wk-measure);
+}
 wk-section-subheading {
   display: block;
   font-size: 1rem;
@@ -2090,22 +2367,72 @@ wk-section-subheading {
 
 /* ── wk-callout ── */
 
+/* Framed like the other surfaces, with a 3px bar in the variant's colour on
+   the left and, for a status variant, that status's tinted fill. */
 wk-callout {
   display: block;
+  border: 1px solid var(--border);
   border-left: 3px solid var(--primary);
   padding: 0.875rem 1.125rem;
   margin: 1rem 0;
   background: var(--card-bg);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 10px 10px 0;
   font-size: 0.875rem;
-  color: var(--text-2);
+  color: var(--text-1);
   line-height: 1.6;
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
 }
-wk-callout[variant="info"]  { border-left-color: var(--blue); }
-wk-callout[variant="warn"]  { border-left-color: var(--amber); }
-wk-callout[variant="ok"]    { border-left-color: var(--green); }
-wk-callout[variant="error"] { border-left-color: var(--red); }
+wk-callout[variant="info"]  { border-left-color: var(--blue);  background: var(--status-info-bg); }
+wk-callout[variant="warn"]  { border-left-color: var(--amber); background: var(--status-warn-bg); }
+wk-callout[variant="ok"]    { border-left-color: var(--green); background: var(--status-ok-bg); }
+wk-callout[variant="error"] { border-left-color: var(--red);   background: var(--status-error-bg); }
+/* A callout's box ends where a paragraph beside it does. The measure is in
+   ch, which a callout reads in its own 0.875rem font, so the cap scales by
+   the section paragraph's 0.9375rem over that to reach the same right edge.
+   With --wk-measure: none the product is invalid and max-width falls back
+   to none: the callout runs full width again. */
+wk-callout { max-width: calc(var(--wk-measure) * 0.9375 / 0.875); }
+
+/* ── wk-empty ── what a list or a page shows in place of its content while
+   it is empty, loading, or failed to load: muted ink, left-aligned, one
+   padding. An optional wk-empty-title leads with a short headline over the
+   detail. variant="error" takes the callout's frame with the error bar and
+   the error status roles, at the full width of its block. */
+wk-empty {
+  display: block;
+  padding: 2rem 0;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+wk-empty-title {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+  color: var(--text-1);
+}
+wk-empty[variant="error"] {
+  margin: 1rem 0;
+  padding: 0.875rem 1.125rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--red);
+  border-radius: 0 10px 10px 0;
+  background: var(--status-error-bg);
+  color: var(--status-error-text);
+  overflow-wrap: anywhere;
+}
+wk-empty[variant="error"] wk-empty-title { color: inherit; }
+
+/* ── Links in content ── a plain link (one with no class of its own) inside
+   a content block reads as a link: the primary ink over a soft underline.
+   Zero specificity, so any rule a page or a component writes for its links
+   (wk-toc, .wk-prose, a service's own) wins. */
+:where(wk-section, wk-callout, wk-modal-body, wk-panel, wk-card, wk-kv-value, wk-figcaption, .wk-help-desc) :where(a:not([class])) {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  text-underline-offset: 0.15em;
+}
 
 /* ── wk-columns ── two or three equal columns of blocks (cols="2|3", two
    when unset); one column under 700px so nothing gets squeezed. Columns are
@@ -2134,9 +2461,11 @@ wk-stat {
   margin: 1rem 0;
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   box-shadow: var(--shadow-xs);
 }
+/* A tile alone in a column fills it, so a row of tiles lines up. */
+wk-col > wk-stat:only-child { height: 100%; }
 wk-stat-value {
   display: block;
   font-size: 2.25rem;
@@ -2156,7 +2485,7 @@ wk-stat-sub {
   display: block;
   margin-top: 0.25rem;
   font-size: 0.75rem;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* ── wk-figure ── an image with an optional wk-figcaption under it. The
@@ -2180,7 +2509,7 @@ wk-figcaption {
   margin-top: 0.5rem;
   font-size: 0.8125rem;
   line-height: 1.5;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* ── blockquote in a section ── a quotation with an optional <cite>
@@ -2213,8 +2542,13 @@ wk-section details {
   padding: 0 1rem;
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-xs);
 }
+/* A disclosure straight in a section ends where the paragraphs and callouts
+   beside it do: the measure in its own 1rem font, scaled to the paragraph's
+   0.9375rem. --wk-measure: none lifts the cap as it does for the callout. */
+wk-section > details { max-width: calc(var(--wk-measure) * 0.9375); }
 wk-section details > summary {
   padding: 0.75rem 0;
   font-size: 0.9375rem;
@@ -2236,7 +2570,6 @@ wk-section details > summary::before {
 }
 wk-section details[open] > summary::before { transform: rotate(45deg); }
 wk-section details[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 0.75rem; }
-wk-section details > summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
 wk-section details > :last-child:not(summary) { margin-bottom: 0.875rem; }
 
 /* ── wk-progress ── */
@@ -2263,7 +2596,7 @@ wk-progress-fill {
 wk-progress-label {
   font-size: 0.75rem;
   font-weight: 500;
-  color: var(--text-3);
+  color: var(--text-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -2344,6 +2677,9 @@ wk-seg button.active {
 }
 .wk-prose > :first-child { margin-top: 0; }
 .wk-prose > :last-child { margin-bottom: 0; }
+/* Rendered paragraphs, lists and quotes stop at the reading measure;
+   tables, code blocks and images keep the full width. */
+.wk-prose > :is(p, ul, ol, blockquote) { max-width: var(--wk-measure); }
 
 .wk-prose h1,
 .wk-prose h2,
@@ -2419,8 +2755,13 @@ wk-seg button.active {
 .wk-prose th {
   font-weight: 600;
   color: var(--text-2);
-  border-bottom: 2px solid var(--border-hover);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--chip-bg);
 }
+.wk-prose th:first-child { border-top-left-radius: 6px; }
+.wk-prose th:last-child { border-top-right-radius: 6px; }
 
 /* Inline code */
 .wk-prose :not(pre) > code {
@@ -2449,7 +2790,7 @@ wk-seg button.active {
   border: 1px solid var(--code-border);
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-xs);
 }
 .wk-prose pre,
 pre.wk-code-block {
@@ -2502,7 +2843,7 @@ pre.wk-code-block.wk-has-controls { padding-top: 3rem; }
 }
 .wk-code-lang {
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -2514,7 +2855,7 @@ pre.wk-code-block.wk-has-controls { padding-top: 3rem; }
   appearance: none;
   cursor: pointer;
   font-family: inherit;
-  font-size: 0.68rem;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: var(--text-2);
   background: var(--code-bg);
@@ -2524,7 +2865,6 @@ pre.wk-code-block.wk-has-controls { padding-top: 3rem; }
   transition: all 0.15s;
 }
 .wk-code-copy:hover { border-color: var(--text-3); color: var(--text-1); }
-.wk-code-copy:focus-visible { outline: 2px solid var(--code-keyword); outline-offset: 1px; }
 .wk-code-copy.wk-copied { color: var(--code-string); border-color: var(--code-string); }
 
 /* Prism token colors on the --code-* palette (defined on the block container
@@ -2633,6 +2973,8 @@ wk-modal-body {
   color: var(--text-2);
   line-height: 1.6;
 }
+/* A body that ends the panel (no actions under it) keeps the panel's bottom inset. */
+wk-modal-body:last-child { padding-bottom: 1.5rem; }
 wk-modal-body p { margin: 0 0 0.75rem; }
 wk-modal-body p:last-child { margin-bottom: 0; }
 wk-modal-body strong { color: var(--text-1); font-weight: 600; }
@@ -2650,9 +2992,10 @@ wk-form label {
   font-size: 0.74rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 wk-form input {
+  min-width: 0;
   font-family: var(--mono);
   font-size: 0.9rem;
   color: var(--text-1);
@@ -2667,11 +3010,11 @@ wk-form input {
 wk-form input:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 wk-form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
 }
 wk-form-hint {
@@ -2712,10 +3055,6 @@ wk-form wk-modal-actions { padding: 0; margin-top: 0.4rem; }
   transition: color 0.15s, background 0.15s;
 }
 .wk-help-close:hover { color: var(--text-1); background: var(--chip-bg); }
-.wk-help-close:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
-}
 .wk-help-row {
   display: grid;
   grid-template-columns: 8.5rem 1fr;
@@ -2819,6 +3158,7 @@ wk-toast {
 }
 wk-toast[variant="ok"]  { background: var(--green); color: var(--on-green); }
 wk-toast[variant="err"] { background: var(--red); color: var(--on-red); }
+wk-toast[variant="warn"] { background: var(--amber); color: var(--on-amber); }
 @keyframes wkSlideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
 
 /* ── Read aloud (wk-read-aloud) ── */
@@ -2849,7 +3189,6 @@ html[data-audio="off"] wk-badge.wk-ra-state { display: none; }
 .wk-ra-btn[hidden] { display: none; } /* inline-flex above would otherwise show it */
 .wk-ra-btn:hover { border-color: var(--border-hover); color: var(--text-1); }
 .wk-ra-btn.active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
-.wk-ra-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 /* Set when the last play failed (reason in the title and a toast); the next
    click clears it. */
 .wk-ra-btn.wk-ra-error { border-color: var(--red); color: var(--red); }
@@ -2929,9 +3268,39 @@ wk-badge.wk-ra-state {
 
 /* ── Responsive ── */
 
+/* Narrow header: the brand and nav on one row, the controls on the next,
+   starting under the brand. Fixation, Audio and Reload drop to their icons
+   and the ⌘K hint goes (each keeps its aria-label), spacing tightens so
+   csl's full set fits one row at 390px, and anything wider wraps to another
+   row. */
+
+/* A bar that may wrap scrolls away with the page: two or three rows held on
+   screen would take too much of it. From 1024px up every consumer's control
+   set fits one row, so the bar sticks there. */
+@media (max-width: 1024px) {
+  .topbar { position: static; }
+}
+
+@media (max-width: 720px) {
+  .topbar-inner { padding: 0.5rem 1rem; }
+  .topbar-left,
+  .topbar-controls { flex: 1 1 100%; min-width: 0; }
+  .topbar-left { gap: 0.25rem 0.5rem; }
+  .topbar-nav { flex-wrap: wrap; min-width: 0; }
+  .topbar-controls { justify-content: flex-start; gap: 0.25rem; }
+  .topbar-controls,
+  .topbar-controls:not(:has(> .btn:not([hidden]))) { margin-right: 0; margin-left: -0.5625rem; }
+  .topbar-controls > .btn { margin-left: 0; }
+  .topbar-link, .topbar-brand, .topbar-title,
+  .nav-link, .topbar-nav a[data-nav] { white-space: nowrap; }
+  .nav-link, .topbar-nav a[data-nav] { padding: 0.25rem 0.375rem; }
+  /* A long title (present shows the page's) ends in an ellipsis. */
+  .topbar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .ctrl-btn { padding-left: 0.5rem; padding-right: 0.5rem; }
+  .ctrl-label, .ctrl-kbd { display: none; }
+}
+
 @media (max-width: 600px) {
-  .topbar-controls { flex-wrap: wrap; }
-  .ctrl-divider { display: none; }
   wk-title { font-size: 1.5rem; }
 }
 
@@ -2964,13 +3333,12 @@ wk-badge.wk-ra-state {
   transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
 }
 .wk-theme-card:hover { border-color: var(--border-hover); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
-.wk-theme-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .wk-theme-card[aria-pressed="true"] { border-color: var(--primary); box-shadow: 0 0 0 3px var(--focus-ring); }
 .wk-theme-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
 .wk-theme-card-name { font-weight: 600; font-size: 0.9375rem; color: var(--text-1); }
 .wk-theme-card-variant { color: var(--text-2); font-size: 0.75rem; }
 .wk-theme-card-current {
-  font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--on-primary); background: var(--primary); border-radius: 999px; padding: 0.1rem 0.5rem;
 }
 .wk-theme-swatches { display: flex; gap: 0.25rem; margin: 0.625rem 0; }

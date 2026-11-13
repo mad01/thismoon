@@ -44,6 +44,7 @@
         <li><a href="#section-kv">09 wk-kv</a></li>
         <li><a href="#section-section">10 wk-section</a></li>
         <li><a href="#section-callout">11 wk-callout</a></li>
+        <li><a href="#section-empty">11a wk-empty</a></li>
         <li><a href="#section-columns">11b wk-columns + wk-stat</a></li>
         <li><a href="#section-quote">11c blockquote + details</a></li>
         <li><a href="#section-figure">11d wk-figure</a></li>
@@ -112,6 +113,15 @@
         </div>
       </a>
 
+      <wk-card interactive tabindex="0" style="--accent: var(--purple);">
+        <wk-title>Interactive card</wk-title>
+        <p style="font-size:0.82rem;color:var(--text-2);margin-top:0.5rem;">No <code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">href</code>, but the page made it clickable: <code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">interactive</code> gives it the lift and pointer.</p>
+        <div style="margin-top:0.75rem;display:flex;gap:0.35rem;flex-wrap:wrap;">
+          <wk-badge variant="ok">healthy</wk-badge>
+          <wk-badge variant="accent">Kind</wk-badge>
+        </div>
+      </wk-card>
+
     </div>
   </section>
 
@@ -151,19 +161,28 @@
       <wk-badge variant="stat">42 results</wk-badge>
       <wk-badge variant="accent">System</wk-badge>
     </div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.75rem;">
+      <wk-badge variant="info">info</wk-badge>
+      <wk-badge variant="ok">ok</wk-badge>
+      <wk-badge variant="warn">warn</wk-badge>
+      <wk-badge variant="error">error</wk-badge>
+    </div>
   </section>
 
   <!-- ── Filter chips ── -->
   <section id="section-filter" style="margin: 2rem 0;">
     <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-badge variant="filter"</h2>
-    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.5rem;">
-      <wk-badge variant="filter" active>All</wk-badge>
-      <wk-badge variant="filter">Systems</wk-badge>
-      <wk-badge variant="filter">Components</wk-badge>
-      <wk-badge variant="filter" active>Tools</wk-badge>
-      <wk-badge variant="filter">Services</wk-badge>
-      <wk-badge variant="filter">Libraries</wk-badge>
-    </div>
+    <!-- wk-chips lays the row out. A filter badge without tabindex or role
+         becomes a tab stop that Enter and Space click; the demo script below
+         toggles [active] on click. -->
+    <wk-chips id="demo-chips">
+      <wk-badge variant="filter" active>All <small>128</small></wk-badge>
+      <wk-badge variant="filter">Systems <small>4</small></wk-badge>
+      <wk-badge variant="filter">Components <small>31</small></wk-badge>
+      <wk-badge variant="filter" active>Tools <small>12</small></wk-badge>
+      <wk-badge variant="filter">Services <small>9</small></wk-badge>
+      <wk-badge variant="filter">Libraries <small>72</small></wk-badge>
+    </wk-chips>
   </section>
 
   <!-- ── Buttons ── -->
@@ -172,6 +191,8 @@
     <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.5rem;">
       <wk-button variant="primary">Primary action</wk-button>
       <wk-button variant="ghost">Ghost action</wk-button>
+      <!-- an unknown variant (or none) falls back to the ghost look -->
+      <wk-button variant="accent">Unknown variant</wk-button>
       <!-- .btn classes also work for backward-compat -->
       <button class="btn btn-primary">btn-primary</button>
       <button class="btn btn-ghost">btn-ghost</button>
@@ -308,7 +329,7 @@
     <wk-section>
       <wk-section-heading>Overview</wk-section-heading>
       <p>Body paragraph one. This is a content section: a ruled heading followed by any number of body paragraphs and optional subheadings.</p>
-      <p>Body paragraph two. The primary accent underline on the heading is driven by CSS variables, so it adapts to light and dark themes automatically.</p>
+      <p>Body paragraph two. The primary accent underline on the heading is driven by CSS variables, so it adapts to light and dark themes automatically. A plain link such as <a href="#section-callout">the callouts below</a> takes the primary ink over a soft underline.</p>
       <wk-section-subheading>Details</wk-section-subheading>
       <p>More text under the subheading. Use <code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">wk-section-subheading</code> for secondary headings within a section without the underline treatment.</p>
     </wk-section>
@@ -318,10 +339,18 @@
   <section id="section-callout" style="margin: 2rem 0;">
     <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-callout</h2>
     <wk-callout>Default callout — left border in primary color. Fixation-aware.</wk-callout>
-    <wk-callout variant="info">Info callout — blue left border. Use for tips and supplementary context.</wk-callout>
+    <wk-callout variant="info">Info callout — blue left border and the info tint. Use for tips and supplementary context, with a <a href="#section-section">plain link</a> when it points somewhere.</wk-callout>
     <wk-callout variant="warn">Warn callout — amber left border. Use for caveats and breaking changes.</wk-callout>
     <wk-callout variant="ok">Ok callout — green left border. Use for a resolved state or a confirmed fix.</wk-callout>
     <wk-callout variant="error">Error callout — red left border. Use for a failure or an active incident.</wk-callout>
+  </section>
+
+  <!-- ── wk-empty ── -->
+  <section id="section-empty" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-empty</h2>
+    <wk-empty>No events match these filters.</wk-empty>
+    <wk-empty><wk-empty-title>No scan yet</wk-empty-title>Click Rescan all, or wait for the daily background scan.</wk-empty>
+    <wk-empty variant="error"><wk-empty-title>Could not load sessions</wk-empty-title>GET /api/sessions: open store: read sessions.jsonl: permission denied</wk-empty>
   </section>
 
   <!-- ── wk-columns + wk-stat ── -->
@@ -535,9 +564,10 @@ languages:
     <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-toast</h2>
 
     <!-- Static inline demo: two toasts visible without clicking, in a positioned container -->
-    <div style="position:relative;height:6rem;margin-bottom:1rem;">
+    <div style="position:relative;height:9rem;margin-bottom:1rem;">
       <div style="position:absolute;bottom:0;right:0;display:flex;flex-direction:column;gap:0.5rem;">
         <wk-toast variant="ok">Saved ✓</wk-toast>
+        <wk-toast variant="warn">No note matches that link yet</wk-toast>
         <wk-toast variant="err">Failed to connect ✕</wk-toast>
       </div>
     </div>
@@ -625,6 +655,12 @@ languages:
   document.getElementById('demo-confirm-delete')?.addEventListener('click', closeConfirm);
   confirmModal?.addEventListener('click', function(e) {
     if (e.target === confirmModal) closeConfirm();
+  });
+
+  // Filter chips: click (or Enter / Space on a focused chip) toggles it.
+  document.getElementById('demo-chips')?.addEventListener('click', function(e) {
+    var chip = e.target.closest('wk-badge[variant="filter"]');
+    if (chip) chip.toggleAttribute('active');
   });
 
   // Toast demo

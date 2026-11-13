@@ -72,11 +72,11 @@
     status.textContent = statusLine();
     if (!shown.length) {
       if (computing && !entries.length) {
-        results.innerHTML = '<div class="health-empty">computing repo health…</div>';
+        results.innerHTML = '<wk-empty>computing repo health…</wk-empty>';
         return;
       }
-      results.innerHTML = '<div class="health-empty">' +
-        (scope === 'all' ? 'no repos found' : 'all clean — nothing needs attention') + '</div>';
+      results.innerHTML = '<wk-empty>' +
+        (scope === 'all' ? 'no repos found' : 'all clean — nothing needs attention') + '</wk-empty>';
       return;
     }
     renderPagedTable(results, shown, {
