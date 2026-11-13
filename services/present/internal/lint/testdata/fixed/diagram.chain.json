@@ -1,0 +1,106 @@
+{
+  "title": "ADR-0028: sandbox-runtime replaces hand-written seatbelt profiles",
+  "content": {
+    "summary": "The fleet now confines its processes with **sandbox-runtime (srt)** instead of hand-written seatbelt profiles: each process starts default-deny and reaches only the hosts its settings name.",
+    "sections": [
+      {
+        "h": "One settings file and one launch path confine every process",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "Launching one confined process. Green boxes are our launch and watch code, red ones enforce the policy, blue holds it, and grey is outside.",
+            "groups": [
+              {
+                "id": "box",
+                "label": "sandbox",
+                "tone": "amber"
+              }
+            ],
+            "nodes": [
+              {
+                "id": "wrapper",
+                "label": "Wrapper",
+                "text": "resolves secrets, env -i allow-list, cd /",
+                "tone": "green"
+              },
+              {
+                "id": "settings",
+                "label": "Settings file",
+                "text": "~/.config/srt/<label>.json",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "srt",
+                "label": "srt-run, then srt",
+                "text": "merges hosts, spawns under a default-deny profile",
+                "tone": "red"
+              },
+              {
+                "id": "proc",
+                "label": "Confined process",
+                "text": "MCP server, install step, Go service",
+                "tone": "green",
+                "group": "box"
+              },
+              {
+                "id": "proxy",
+                "label": "HTTP and SOCKS proxies",
+                "text": "listed hosts only, no direct connections",
+                "tone": "red"
+              },
+              {
+                "id": "hosts",
+                "label": "Allowed hosts",
+                "text": "named in settings or at launch",
+                "kind": "external",
+                "tone": "neutral"
+              },
+              {
+                "id": "watch",
+                "label": "sandbox-watch",
+                "text": "decodes the SRT_RUN label from denials",
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "wrapper",
+                "to": "srt",
+                "label": "argv + domains"
+              },
+              {
+                "from": "settings",
+                "to": "srt",
+                "label": "static policy"
+              },
+              {
+                "from": "srt",
+                "to": "proc",
+                "label": "spawns"
+              },
+              {
+                "from": "proc",
+                "to": "proxy",
+                "label": "all egress",
+                "flow": true
+              },
+              {
+                "from": "proxy",
+                "to": "hosts",
+                "label": "allowlisted",
+                "flow": true
+              },
+              {
+                "from": "proc",
+                "to": "watch",
+                "label": "denials via log"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,487 @@
+{
+  "title": "csl ask eval: Haiku 5.5 against Sonnet 5.5",
+  "content": {
+    "summary": "**Haiku 5.5** passed all 24 runs of the csl ask eval. **Sonnet 5.5** passed 4, and cost about 21 times as much. Both found every expected fact. Sonnet failed on length: 20 of its 24 answers ran over the budget.",
+    "meta": "2026-11-01 · csl ask eval · 2 models, 8 cases, 3 runs per case",
+    "sections": [
+      {
+        "h": "Haiku passed 24 of 24 runs and Sonnet passed 4",
+        "blocks": [
+          {
+            "t": "columns",
+            "cols": [
+              [
+                {
+                  "t": "stat",
+                  "value": "24 of 24",
+                  "label": "runs Haiku 5.5 passed",
+                  "sub": "every case, all three times"
+                }
+              ],
+              [
+                {
+                  "t": "stat",
+                  "value": "4 of 24",
+                  "label": "runs Sonnet 5.5 passed",
+                  "sub": "1 run in every 6"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "chart",
+            "kind": "bar",
+            "title": "Runs passed per case, out of 3",
+            "unit": "runs",
+            "series": [
+              {
+                "name": "Haiku 5.5",
+                "points": [
+                  {
+                    "x": "belt-soft-mode-guards",
+                    "y": 3
+                  },
+                  {
+                    "x": "belt-sweep-readsize-cross",
+                    "y": 3
+                  },
+                  {
+                    "x": "belt-validmode",
+                    "y": 3
+                  },
+                  {
+                    "x": "csl-index-flags",
+                    "y": 3
+                  },
+                  {
+                    "x": "csl-repo-tools",
+                    "y": 3
+                  },
+                  {
+                    "x": "deps-no-backoff",
+                    "y": 3
+                  },
+                  {
+                    "x": "present-chart-diagram-kinds",
+                    "y": 3
+                  },
+                  {
+                    "x": "speak-pause",
+                    "y": 3
+                  }
+                ]
+              },
+              {
+                "name": "Sonnet 5.5",
+                "points": [
+                  {
+                    "x": "belt-soft-mode-guards",
+                    "y": 0
+                  },
+                  {
+                    "x": "belt-sweep-readsize-cross",
+                    "y": 0
+                  },
+                  {
+                    "x": "belt-validmode",
+                    "y": 2
+                  },
+                  {
+                    "x": "csl-index-flags",
+                    "y": 1
+                  },
+                  {
+                    "x": "csl-repo-tools",
+                    "y": 0
+                  },
+                  {
+                    "x": "deps-no-backoff",
+                    "y": 0
+                  },
+                  {
+                    "x": "present-chart-diagram-kinds",
+                    "y": 1
+                  },
+                  {
+                    "x": "speak-pause",
+                    "y": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "t": "p",
+            "text": "Haiku passed every case three times out of three. Sonnet passed no run at all in five of the eight cases, and its best case passed twice."
+          },
+          {
+            "t": "p",
+            "text": "The failures are not about facts. Both models scored 1.00 on the expected facts and neither gave a forbidden answer. Sonnet failed on length: 20 of its 24 answers, 83%, were longer than the budget allows."
+          }
+        ]
+      },
+      {
+        "h": "Sonnet's answers were nearly twice as long: 0.044 of the corpus against 0.024",
+        "blocks": [
+          {
+            "t": "chart",
+            "kind": "line",
+            "title": "Answer length as a share of the corpus, by corpus size in lines",
+            "unit": "answer chars per corpus char",
+            "series": [
+              {
+                "name": "Haiku 5.5",
+                "points": [
+                  {
+                    "x": "656",
+                    "y": 0.031
+                  },
+                  {
+                    "x": "666",
+                    "y": 0.046
+                  },
+                  {
+                    "x": "683",
+                    "y": 0.031
+                  },
+                  {
+                    "x": "855",
+                    "y": 0.029
+                  },
+                  {
+                    "x": "875",
+                    "y": 0.032
+                  },
+                  {
+                    "x": "1,091",
+                    "y": 0.013
+                  },
+                  {
+                    "x": "1,091",
+                    "y": 0.007
+                  },
+                  {
+                    "x": "1,998",
+                    "y": 0.005
+                  }
+                ]
+              },
+              {
+                "name": "Sonnet 5.5",
+                "points": [
+                  {
+                    "x": "656",
+                    "y": 0.059
+                  },
+                  {
+                    "x": "666",
+                    "y": 0.070
+                  },
+                  {
+                    "x": "683",
+                    "y": 0.051
+                  },
+                  {
+                    "x": "855",
+                    "y": 0.053
+                  },
+                  {
+                    "x": "875",
+                    "y": 0.059
+                  },
+                  {
+                    "x": "1,091",
+                    "y": 0.028
+                  },
+                  {
+                    "x": "1,091",
+                    "y": 0.015
+                  },
+                  {
+                    "x": "1,998",
+                    "y": 0.013
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "t": "p",
+            "text": "Each point is one case. The cases run from the smallest corpus on the left to the largest on the right. The Sonnet line stays above the Haiku line at all eight points, so its answer was the longer one in every case, by 1.5 to 2.6 times."
+          },
+          {
+            "t": "p",
+            "text": "Both lines fall to the right: an answer takes a smaller share of a bigger corpus. The two points at 1,091 lines are two questions about the same file."
+          },
+          {
+            "t": "p",
+            "text": "The eval calls this measure compression: the characters in the answer divided by the characters in the files the model read. Sonnet also wrote more output tokens, 628 against 404."
+          }
+        ]
+      },
+      {
+        "h": "Sonnet pointed at the wrong line 8 times in 282, and Haiku never in 167",
+        "blocks": [
+          {
+            "t": "columns",
+            "cols": [
+              [
+                {
+                  "t": "stat",
+                  "value": "0 of 167",
+                  "label": "wrong line references from Haiku 5.5"
+                }
+              ],
+              [
+                {
+                  "t": "stat",
+                  "value": "8 of 282",
+                  "label": "wrong line references from Sonnet 5.5",
+                  "sub": "5 of the 8 in one case"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "p",
+            "text": "A line reference is a file and line number the model gives for a claim. It is wrong when the name the model mentions is not on that line. Five of the eight wrong ones are in the case `belt-validmode`, and the other three are in three different cases."
+          },
+          {
+            "t": "p",
+            "text": "A wrong line reference does not fail a run. The eval counts it apart from the pass."
+          },
+          {
+            "t": "details",
+            "summary": "The eight wrong line references",
+            "blocks": [
+              {
+                "t": "p",
+                "text": "Each row is one line number Sonnet named and what that line really holds."
+              },
+              {
+                "t": "table",
+                "cols": [
+                  "Case",
+                  "Line",
+                  "What the line holds"
+                ],
+                "rows": [
+                  [
+                    "belt-sweep-readsize-cross",
+                    "678",
+                    "`if tool == \"find\" || tool == \"fd\" {`"
+                  ],
+                  [
+                    "belt-validmode",
+                    "850",
+                    "`if err := validMode(cg.Mode); err != nil {`"
+                  ],
+                  [
+                    "belt-validmode",
+                    "862",
+                    "`if err := validMode(r.Mode); err != nil {`"
+                  ],
+                  [
+                    "belt-validmode",
+                    "867",
+                    "`if err := validMode(r.Mode); err != nil {`"
+                  ],
+                  [
+                    "belt-validmode",
+                    "1025",
+                    "`if err := validMode(mode); err != nil {`"
+                  ],
+                  [
+                    "belt-validmode",
+                    "1049",
+                    "`}`"
+                  ],
+                  [
+                    "csl-index-flags",
+                    "25",
+                    "`indexAllFlag         bool`"
+                  ],
+                  [
+                    "present-chart-diagram-kinds",
+                    "247",
+                    "`// sit inside another), Edges are labelled arrows between nodes, and`"
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Sonnet cost $1.023 against $0.048 and took 1.8 times as long",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Both models read the same input, 18,177 tokens. Sonnet cost about 21 times as much at list price, and its median answer took 4,325 ms against 2,388 ms for Haiku."
+          },
+          {
+            "t": "table",
+            "cols": [
+              "Measure",
+              "Haiku 5.5",
+              "Sonnet 5.5"
+            ],
+            "rows": [
+              [
+                "Cost at list price",
+                "$0.048",
+                "$1.023"
+              ],
+              [
+                "Median time to answer",
+                "2,388 ms",
+                "4,325 ms"
+              ],
+              [
+                "Output tokens",
+                "404",
+                "628"
+              ],
+              [
+                "Input tokens",
+                "18,177",
+                "18,177"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Each model answered 8 questions about code 3 times",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Each case asks one question about one or two source files, 656 to 1,998 lines long. A run passes when the answer holds every expected fact, matches nothing forbidden, and stays inside the length budget."
+          },
+          {
+            "t": "details",
+            "summary": "The full method and the numbers per case",
+            "blocks": [
+              {
+                "t": "list",
+                "items": [
+                  "The run started on 2026-11-01 at 15:37 with prompt `de149df974ad82ad`.",
+                  "The models were `anthropic/claude-haiku-5.5` and `anthropic/claude-sonnet-5.5`, with no effort setting.",
+                  "Six cases are in the train split and two in the test split.",
+                  "Each model made 24 runs, and none of them ended in an error.",
+                  "The answers were graded again at 16:30 against the cases as edited after the run.",
+                  "Cost is the list price of the tokens, with no cache discount."
+                ]
+              },
+              {
+                "t": "p",
+                "text": "The table gives the runs passed and the compression for each case. Haiku passed three of three in every row."
+              },
+              {
+                "t": "table",
+                "cols": [
+                  "Case",
+                  "Split",
+                  "Corpus",
+                  "Haiku 5.5",
+                  "Sonnet 5.5"
+                ],
+                "rows": [
+                  [
+                    "belt-soft-mode-guards",
+                    "train",
+                    "1 file, 1,091 lines",
+                    "3 of 3, 0.013",
+                    "0 of 3, 0.028"
+                  ],
+                  [
+                    "belt-sweep-readsize-cross",
+                    "train",
+                    "2 files, 855 lines",
+                    "3 of 3, 0.029",
+                    "0 of 3, 0.053"
+                  ],
+                  [
+                    "belt-validmode",
+                    "train",
+                    "1 file, 1,091 lines",
+                    "3 of 3, 0.007",
+                    "2 of 3, 0.015"
+                  ],
+                  [
+                    "csl-index-flags",
+                    "test",
+                    "1 file, 666 lines",
+                    "3 of 3, 0.046",
+                    "1 of 3, 0.070"
+                  ],
+                  [
+                    "csl-repo-tools",
+                    "train",
+                    "2 files, 656 lines",
+                    "3 of 3, 0.031",
+                    "0 of 3, 0.059"
+                  ],
+                  [
+                    "deps-no-backoff",
+                    "test",
+                    "1 file, 683 lines",
+                    "3 of 3, 0.031",
+                    "0 of 3, 0.051"
+                  ],
+                  [
+                    "present-chart-diagram-kinds",
+                    "train",
+                    "1 file, 1,998 lines",
+                    "3 of 3, 0.005",
+                    "1 of 3, 0.013"
+                  ],
+                  [
+                    "speak-pause",
+                    "train",
+                    "1 file, 875 lines",
+                    "3 of 3, 0.032",
+                    "0 of 3, 0.059"
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "h": "The results leave 4 questions open",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "Which model finds facts better: both scored 1.00, so these cases cannot tell them apart.",
+              "How far over the budget Sonnet ran: the results give the share of answers over it, not the budget or the overrun.",
+              "Whether the grades match the cases the models saw: the cases were edited after the run and the answers were not made again.",
+              "Whether tokens and cost are for one run or for all 24: the results table does not say."
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Next",
+        "blocks": [
+          {
+            "t": "list",
+            "ordered": true,
+            "items": [
+              "Use Haiku 5.5 for csl ask on this evidence: it passed every run and cost less.",
+              "Before you rule Sonnet 5.5 out on quality, run it again with a prompt that holds the answer to the budget."
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "csl ask eval results, 2026-11-01",
+      "url": "https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/services/csl/evals/ask/results/2026-11-01-haiku55-vs-sonnet55-openrouter.md"
+    }
+  ]
+}

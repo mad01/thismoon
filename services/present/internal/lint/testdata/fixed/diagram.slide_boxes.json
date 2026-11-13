@@ -1,0 +1,86 @@
+{
+  "title": "How the fleet fits together",
+  "deck": {
+    "summary": "Our tools invoke each other: hooks, hints and shared services fire on every session without anyone remembering.",
+    "sections": [
+      {
+        "h": "A wired session uses tools nobody asked for",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "Purple: you and the agent. Red: guardrails. Blue: shared stores. Green: shared services.",
+            "nodes": [
+              {
+                "id": "agent",
+                "label": "Claude Code session",
+                "text": "you and your agent in a repo",
+                "kind": "person",
+                "tone": "purple"
+              },
+              {
+                "id": "belt",
+                "label": "belt",
+                "text": "session hooks: guards and hints",
+                "tone": "red"
+              },
+              {
+                "id": "memory",
+                "label": "agent-memory",
+                "text": "facts you told any agent, any machine",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "moondb",
+                "label": "moondb",
+                "text": "other sessions' uncommitted edits",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "csl",
+                "label": "csl",
+                "text": "zoekt index, also at csl.this",
+                "tone": "green"
+              },
+              {
+                "id": "suspenders",
+                "label": "suspenders",
+                "text": "pre-commit hook, same name rules",
+                "tone": "red"
+              }
+            ],
+            "edges": [
+              {
+                "from": "memory",
+                "to": "belt",
+                "label": "index"
+              },
+              {
+                "from": "moondb",
+                "to": "belt",
+                "label": "open edits"
+              },
+              {
+                "from": "belt",
+                "to": "agent",
+                "label": "injected at start"
+              },
+              {
+                "from": "agent",
+                "to": "csl",
+                "label": "csl_search"
+              },
+              {
+                "from": "agent",
+                "to": "suspenders",
+                "label": "commit"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

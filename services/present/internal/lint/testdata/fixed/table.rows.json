@@ -1,0 +1,77 @@
+{
+  "title": "Releasing: from merged PR to signed artifact",
+  "content": {
+    "summary": "A merged PR reaches a signed artifact with no hand-made tag: release-please opens the release PR, and merging it cuts the tag.",
+    "sections": [
+      {
+        "h": "When a release stalls, the step it stopped at tells you what to check",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Most stalls are one of these four; the five rarer ones are below."
+          },
+          {
+            "t": "table",
+            "cols": [
+              "What you see",
+              "Check"
+            ],
+            "rows": [
+              [
+                "A commit merged and nothing opened",
+                "The commit type: `chore:` and `docs:` never release"
+              ],
+              [
+                "release-please fails with \"Error adding to tree\"",
+                "The GitHub App's secrets and permissions"
+              ],
+              [
+                "A component is missing from the release PR",
+                "Whether its last tag is within 200 commits"
+              ],
+              [
+                "The release PR sits unmerged",
+                "Its required checks"
+              ]
+            ]
+          },
+          {
+            "t": "details",
+            "summary": "Five rarer stalls",
+            "blocks": [
+              {
+                "t": "table",
+                "cols": [
+                  "What you see",
+                  "Check"
+                ],
+                "rows": [
+                  [
+                    "The PR opened for a different component",
+                    "The paths the commit touched"
+                  ],
+                  [
+                    "The release run fails on API timeouts",
+                    "`commit-search-depth` and `commit-batch-size`"
+                  ],
+                  [
+                    "The run has not started",
+                    "Another run in the `release` concurrency group"
+                  ],
+                  [
+                    "Checks are green and it still does not merge",
+                    "Whether auto-merge was turned off on the PR"
+                  ],
+                  [
+                    "The GitHub Release has no tarball",
+                    "The `artifacts` job of that run"
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

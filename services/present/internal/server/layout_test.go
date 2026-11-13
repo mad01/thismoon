@@ -21,7 +21,7 @@ func TestDeckLayoutWiring(t *testing.T) {
 		// slide's first showing and refitted after, never laid out twice.
 		"'#cy-graph, .present-chart, wk-figure, .present-diagram'", "solo-diagram",
 		"buildDiagram(b, { duration: transition === 'none' ? 0 : 400 })", "b._diagramFit()",
-		"initPresentDiagrams(document, { builtOnly: true })", "PresentViz.diagramGraph(spec, measure)",
+		"initPresentDiagrams(document, { builtOnly: true })", "PresentViz.diagramElk(spec, measure, form)",
 	} {
 		if !contains(app, want) {
 			t.Errorf("app.js lacks %q", want)

@@ -1,0 +1,49 @@
+{
+  "direction": "TB",
+  "groups": [
+    {
+      "id": "public",
+      "label": "public"
+    },
+    {
+      "id": "private",
+      "label": "private",
+      "tone": "amber"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "thismoon",
+      "label": "thismoon",
+      "text": "Components and recipes: the code and its install",
+      "tone": "green",
+      "group": "public"
+    },
+    {
+      "id": "ralph",
+      "label": "ralph",
+      "text": "Installer: reconciles machines against TOML recipes",
+      "tone": "green",
+      "group": "public"
+    },
+    {
+      "id": "config",
+      "label": "Your config repo",
+      "text": "Secrets, hosts, hooks, overlays",
+      "tone": "purple",
+      "group": "private"
+    }
+  ],
+  "edges": [
+    {
+      "from": "thismoon",
+      "to": "ralph",
+      "label": "consumed by"
+    },
+    {
+      "from": "ralph",
+      "to": "config",
+      "label": "configured by"
+    }
+  ]
+}

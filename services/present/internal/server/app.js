@@ -334,14 +334,23 @@
   function seriesName(series, i) {
     return (series[i] && series[i].name) || '';
   }
-  function axisTitle(colors, text) {
-    return { display: !!text, text: text || '', color: colors.text, font: { size: 11 } };
+  function axisTitle(colors, fonts, text) {
+    return { display: !!text, text: text || '', color: colors.text, font: fonts.tick };
   }
   function entryAnimation(animate) {
     return animate ? { duration: 700, easing: 'easeOutQuart' } : false;
   }
-  function legendLabels(colors) {
-    return { color: colors.text, boxWidth: 12, boxHeight: 12, font: { size: 11 } };
+  function legendLabels(colors, fonts) {
+    return { color: colors.text, boxWidth: 12, boxHeight: 12, font: fonts.legend };
+  }
+  // chartFonts is the type a chart draws its text in: the block's own face
+  // at the sizes PresentViz.chartFontSizes gives for the root size, read
+  // when the chart is built (a theme change rebuilds it). A reader's face
+  // or size change has no event yet, so a chart shows it after a reload.
+  function chartFonts(block) {
+    var family = getComputedStyle(block).fontFamily || undefined;
+    var sizes = PresentViz.chartFontSizes(parseFloat(getComputedStyle(document.documentElement).fontSize));
+    return { tick: { family: family, size: sizes.tick }, legend: { family: family, size: sizes.legend } };
   }
   function chartTypeFor(kind) {
     if (kind === 'bar' || kind === 'stacked-bar' || kind === 'horizontal-bar') return 'bar';
@@ -356,7 +365,11 @@
     var n = parseInt(block.getAttribute('data-step-at'), 10);
     return isNaN(n) ? null : n;
   }
-  function cartesianOptions(kind, spec, colors, animate) {
+  // cartesianOptions are the axes, legend and tooltip of a cartesian
+  // chart. The value axis takes its range rule from
+  // PresentViz.chartValueAxis: from zero for bars and areas, fitted to the
+  // data for lines and scatters.
+  function cartesianOptions(kind, spec, colors, fonts, animate) {
     var spark = kind === 'sparkline';
     var multi = (spec.series || []).length > 1;
     var horizontal = kind === 'horizontal-bar';
@@ -367,27 +380,29 @@
     scales[categoryAxis] = {
       display: !spark, stacked: stacked,
       grid: { color: colors.grid, display: !horizontal }, border: { display: false },
-      ticks: { color: colors.text, font: { size: 11 } }
+      ticks: { color: colors.text, font: fonts.tick }
     };
-    scales[valueAxis] = {
-      display: !spark, stacked: stacked, beginAtZero: true,
+    scales[valueAxis] = Object.assign({
+      display: !spark, stacked: stacked,
       grid: { color: colors.grid }, border: { display: false },
-      ticks: { color: colors.text, font: { size: 11 } },
-      title: axisTitle(colors, spec.unit)
-    };
-    if (scatter) { scales.x.type = 'linear'; scales.x.title = axisTitle(colors, spec.xunit); }
+      ticks: { color: colors.text, font: fonts.tick },
+      title: axisTitle(colors, fonts, spec.unit)
+    }, PresentViz.chartValueAxis(kind));
+    if (scatter) { scales.x.type = 'linear'; scales.x.title = axisTitle(colors, fonts, spec.xunit); }
     return {
       responsive: true, maintainAspectRatio: false, animation: entryAnimation(animate),
       indexAxis: horizontal ? 'y' : 'x',
       interaction: scatter ? { mode: 'nearest', intersect: true } : { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: multi && !spark, labels: legendLabels(colors) },
+        legend: { display: multi && !spark, labels: legendLabels(colors, fonts) },
         title: { display: false },
         tooltip: { enabled: !spark }
       },
       scales: scales
     };
   }
+  // cartesianDatasets are a cartesian chart's series, drawn by kind; a
+  // line joins its points straight (PresentViz.chartLine).
   function cartesianDatasets(kind, spec, colors) {
     return (spec.series || []).map(function (s, i) {
       var col = chartSeriesColor(colors, s.color, i);
@@ -399,25 +414,25 @@
         return ds;
       }
       ds.data = pts.map(function (p) { return p.y; });
-      if (kind === 'area') { ds.fill = true; ds.backgroundColor = col + '33'; ds.tension = 0.3; ds.pointRadius = 2; ds.borderWidth = 2; }
-      else if (kind === 'line') { ds.fill = false; ds.tension = 0.3; ds.pointRadius = 0; ds.pointHoverRadius = 5; ds.borderWidth = 2; }
-      else if (kind === 'sparkline') { ds.fill = false; ds.pointRadius = 0; ds.borderWidth = 1.5; ds.tension = 0.3; }
+      if (kind === 'area') { ds.fill = true; ds.backgroundColor = col + '33'; ds.pointRadius = 2; ds.borderWidth = 2; }
+      else if (kind === 'line') { ds.fill = false; ds.pointRadius = 0; ds.pointHoverRadius = 5; ds.borderWidth = 2; }
+      else if (kind === 'sparkline') { ds.fill = false; ds.pointRadius = 0; ds.borderWidth = 1.5; }
       else if (kind === 'stacked-bar') { ds.borderColor = colors.surface; ds.borderWidth = 2; ds.borderRadius = 3; }
       else { ds.borderWidth = 0; ds.borderRadius = 3; } // bar, horizontal-bar
-      return ds;
+      return Object.assign(ds, PresentViz.chartLine(kind));
     });
   }
-  function cartesianConfig(kind, spec, colors, animate) {
+  function cartesianConfig(kind, spec, colors, fonts, animate) {
     var first = (spec.series || [])[0];
     var labels = ((first && first.points) || []).map(function (p) { return p.x || ''; });
     return {
       type: chartTypeFor(kind),
       data: { labels: labels, datasets: cartesianDatasets(kind, spec, colors) },
-      options: cartesianOptions(kind, spec, colors, animate)
+      options: cartesianOptions(kind, spec, colors, fonts, animate)
     };
   }
   // Doughnut: one series, one slice per point, slice colors in fixed palette order.
-  function doughnutConfig(spec, colors, animate) {
+  function doughnutConfig(spec, colors, fonts, animate) {
     var first = (spec.series || [])[0] || {};
     var pts = first.points || [];
     return {
@@ -433,7 +448,7 @@
       options: {
         responsive: true, maintainAspectRatio: false, cutout: '62%', animation: entryAnimation(animate),
         plugins: {
-          legend: { position: 'right', labels: legendLabels(colors) },
+          legend: { position: 'right', labels: legendLabels(colors, fonts) },
           tooltip: { callbacks: { label: function (t) { return ' ' + t.label + ': ' + t.parsed + (spec.unit ? ' ' + spec.unit : ''); } } }
         }
       }
@@ -441,7 +456,7 @@
   }
   // Sankey: flows {from, to, value}; each node takes the next palette color in
   // first-appearance order and every link fades from its source to its target.
-  function sankeyConfig(spec, colors, animate) {
+  function sankeyConfig(spec, colors, fonts, animate) {
     var flows = (spec.flows || []).map(function (f) { return { from: f.from, to: f.to, flow: f.value }; });
     var nodeColor = {}, n = 0;
     flows.forEach(function (f) {
@@ -453,7 +468,7 @@
       type: 'sankey',
       data: { datasets: [{
         label: spec.title || '', data: flows, colorMode: 'gradient', alpha: 0.55, nodeWidth: 10, borderWidth: 0,
-        color: colors.label, font: { size: 11 },
+        color: colors.label, font: fonts.legend,
         colorFrom: function (ctx) { return nodeColor[ctx.raw.from]; },
         colorTo: function (ctx) { return nodeColor[ctx.raw.to]; }
       }] },
@@ -515,20 +530,20 @@
     if (block._chart) { block._chart.destroy(); block._chart = null; }
     var kind = spec.kind || 'bar';
     block.classList.toggle('is-sparkline', kind === 'sparkline');
-    var colors = getChartColors(block);
+    var colors = getChartColors(block), fonts = chartFonts(block);
     var animate = !reducedMotion && !block._built;
     block._built = true;
     var cfg;
     if (kind === 'doughnut') {
-      cfg = doughnutConfig(spec, colors, animate);
+      cfg = doughnutConfig(spec, colors, fonts, animate);
     } else if (kind === 'sankey') {
       if (!sankeyAvailable()) {
         chartNote(block, needsAsset('Sankey', 'chartjs-chart-sankey asset'));
         return;
       }
-      cfg = sankeyConfig(spec, colors, animate);
+      cfg = sankeyConfig(spec, colors, fonts, animate);
     } else {
-      cfg = cartesianConfig(kind, spec, colors, animate);
+      cfg = cartesianConfig(kind, spec, colors, fonts, animate);
     }
     if (animate && opts && opts.duration !== undefined && cfg.options) {
       cfg.options.animation = opts.duration > 0 ? { duration: opts.duration, easing: 'easeOutQuart' } : false;
@@ -542,8 +557,9 @@
   // applyStepConfig shapes a stepped chart for the step the deck has walked
   // to (data-step-at; the brief sets none and gets the full chart): the
   // series of later steps start hidden, the value axis is pinned to the
-  // full data, and the legend lists only the series shown and stops
-  // toggling them, so a click cannot undo a step.
+  // full data (both ends when it fits the data rather than starting at
+  // zero), and the legend lists only the series shown and stops toggling
+  // them, so a click cannot undo a step.
   function applyStepConfig(cfg, spec, block, kind) {
     var at = chartStepAt(block);
     if (at === null || !cfg.data || !cfg.data.datasets) return;
@@ -552,7 +568,9 @@
     var opts = cfg.options || {};
     if (opts.scales) {
       var axis = opts.indexAxis === 'y' ? 'x' : 'y';
-      if (opts.scales[axis]) opts.scales[axis].suggestedMax = PresentViz.seriesMax(spec.series, kind === 'stacked-bar');
+      var scale = opts.scales[axis], extent = PresentViz.seriesExtent(spec.series);
+      if (scale && scale.beginAtZero === false && extent) { scale.suggestedMin = extent.min; scale.suggestedMax = extent.max; }
+      else if (scale) scale.suggestedMax = PresentViz.seriesMax(spec.series, kind === 'stacked-bar');
     }
     if (opts.plugins && opts.plugins.legend) {
       opts.plugins.legend.onClick = function () {};
@@ -851,35 +869,34 @@
   }
 
   // ── Diagram blocks (elk + d3) ──
-  // A diagram block is laid out once by ELK from its spec, every box sized
-  // from its measured text, and drawn as one svg whose geometry never
-  // changes after: steps, focus, the entry, and a theme change only move
-  // classes and CSS variables, and a resize rescales the svg through its
-  // width and height. Every drawn group, node, and edge carries
+  // A diagram block is laid out by ELK from its spec once per form (a
+  // direction and a density, PresentViz.diagramLadder), every box sized
+  // from its measured text, and drawn as one svg from the form a fit
+  // picks. Steps, focus, the entry, and a theme change only move classes
+  // and CSS variables; a resize rescales the svg through its width and
+  // height, or redraws it from another form's layout when the room calls
+  // for one. Every drawn group, node, and edge carries
   // {kind, key, item} as __data__ for stepping, and a class naming it
   // (g-<id>, n-<id>, e-<k>) for the stylesheet and anyone inspecting it.
   var DIAGRAM_LABEL_FONT = '600 13px '; // a node's name
   var DIAGRAM_TEXT_FONT = '11.5px '; // a node's text lines and the edge labels
-  var DIAGRAM_GROUP_FONT_PX = 11; // a group's label, drawn in upper case
-  var DIAGRAM_GROUP_FONT = DIAGRAM_GROUP_FONT_PX + 'px ';
-  var DIAGRAM_GROUP_TRACKING = 0.06; // the group label's letter spacing, in em
+  var DIAGRAM_GROUP_FONT = '600 11.5px '; // a group's label, in sentence case
   var DIAGRAM_BOX_RX = 8; // a box's corner
   var DIAGRAM_GROUP_RX = 10; // a group's corner
-  var DIAGRAM_HALO = { pad: 8, h: 16, rx: 3 }; // an edge label's halo around its text
-  var DIAGRAM_MAX_SCALE = 1.25; // how far a small diagram grows to fill its width
-  var DIAGRAM_MAX_H = 420; // the canvas height when the stylesheet sets none
+  var DIAGRAM_HALO_RX = 3; // an edge label halo's corner (PresentViz sizes the halo)
+  var DIAGRAM_SLIDE_MAX_H = 420; // a slide canvas's height when the stylesheet sets none
   var DIAGRAM_STAGGER_MS = 40; // between node layers in the entry
   var DIAGRAM_PHASE_MS = 120; // between the entry's phases: groups, nodes, edges
   var DIAGRAM_DOT_R = 3.5; // a flow dot
   // Node centres closer than this along the flow share a layer in the
   // entry: less than any two layers sit apart (a box is at least 120 wide
-  // or 38 high, plus 56 between layers).
+  // or 38 high, plus 32 between layers).
   var DIAGRAM_LAYER_PX = 30;
   var DIAGRAM_CAP_RY = 6; // a store's cap
   var DIAGRAM_PIPE_INSET = 8; // a queue's end lines from its ends
   // A person's figure in its box's top left corner: inset from the edges,
   // the head's radius, the shoulders' radius (half the strip
-  // PresentViz.diagramGraph adds to the box), and the gap between them.
+  // PresentViz.diagramElk adds to the box), and the gap between them.
   var DIAGRAM_FIGURE = { inset: 9, head: 5, shoulders: 7, gap: 2 };
   var DIAGRAM_ARROW = 8; // the arrowhead's length and width
   var diagramEngine = null; // one ELK for every diagram, made on first use
@@ -888,31 +905,60 @@
 
   // diagramMeasure returns the measure(string, role) PresentViz sizes
   // boxes and labels with: the width of the string in the font its role
-  // is drawn in (label: a node's name; group: a group's label with its
-  // tracking; anything else: a text line or an edge label), in the block's
-  // font family. The header's font control changes that family after the
-  // layout, so the boxes keep the measured width until a reload.
+  // is drawn in (label: a node's name; group: a group's label; anything
+  // else: a text line or an edge label), in the block's font family. The
+  // forms measure the same strings, so each width is kept. The family is
+  // read once: a reader's font change has no event yet, so the boxes keep
+  // the measured width until a reload.
   function diagramMeasure(block) {
     if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
-    var family = getComputedStyle(block).fontFamily || 'sans-serif';
+    var family = getComputedStyle(block).fontFamily || 'sans-serif', known = Object.create(null);
     return function (text, role) {
-      text = String(text);
-      measureCtx.font = (role === 'label' ? DIAGRAM_LABEL_FONT : role === 'group' ? DIAGRAM_GROUP_FONT : DIAGRAM_TEXT_FONT) + family;
-      var w = measureCtx.measureText(text).width;
-      return role === 'group' ? w + text.length * DIAGRAM_GROUP_FONT_PX * DIAGRAM_GROUP_TRACKING : w;
+      var font = (role === 'label' ? DIAGRAM_LABEL_FONT : role === 'group' ? DIAGRAM_GROUP_FONT : DIAGRAM_TEXT_FONT) + family;
+      var key = font + '\n' + text;
+      if (!(key in known)) {
+        measureCtx.font = font;
+        known[key] = measureCtx.measureText(String(text)).width;
+      }
+      return known[key];
     };
   }
-  // diagramLayout lays the spec out with ELK once the page's fonts have
-  // loaded (a fallback font measures differently), resolving to ELK's
-  // graph with every position filled in, relative to the root.
+  // diagramLayout lays the spec out in every form of its ladder (four in
+  // the brief, six on a slide), one form after another on the one ELK,
+  // once the page's fonts have loaded (a fallback font measures
+  // differently). The bundled ELK runs each layout as a task of its own,
+  // so the page handles input between forms. A form whose layout fails is
+  // dropped, and the fit picks among the rest (diagramPlan takes any of
+  // the ladder's forms, in order). It resolves to the laid-out forms in
+  // ladder order, and rejects with the first error only when every form
+  // failed.
   function diagramLayout(block, spec) {
     var fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
     return fonts.then(function () {
       if (!diagramEngine) diagramEngine = new ELK();
-      var measure = diagramMeasure(block, spec);
-      return diagramEngine.layout(PresentViz.diagramGraph(spec, measure)).then(function (layout) {
-        return { graph: layout, measure: measure };
+      var measure = diagramMeasure(block), laid = [], failed = [];
+      var ladder = PresentViz.diagramLadder(spec.direction, !!block.closest('.slide'));
+      return ladder.reduce(function (done, form) {
+        return done.then(function () { return diagramLayoutForm(spec, measure, form); })
+          .then(function (one) { laid.push(one); }, function (err) { failed.push(err); });
+      }, Promise.resolve()).then(function () {
+        if (!laid.length) throw failed[0];
+        return laid;
       });
+    });
+  }
+  // diagramLayoutForm lays one form out: the form, ELK's graph with every
+  // position filled in (relative to the root), the node and edge label
+  // boxes it was built from, where ELK put each label, and the size
+  // diagramPlan weighs.
+  function diagramLayoutForm(spec, measure, form) {
+    var built = PresentViz.diagramElk(spec, measure, form);
+    return diagramEngine.layout(built.graph).then(function (graph) {
+      return {
+        form: form, group: form.group, density: form.density, graph: graph,
+        boxes: built.boxes, labels: built.labels, spots: PresentViz.diagramLabelSpots(graph),
+        width: graph.width, height: graph.height
+      };
     });
   }
   // diagramBoxes maps every group and node id to its laid-out box.
@@ -929,9 +975,10 @@
   }
   // diagramFlags returns, for an element's datum, whether it is off (not
   // shown at step at, or everything while the entry has not started), lit
-  // by the step's focus, or dimmed by it.
-  function diagramFlags(spec, at, entering) {
-    var shown = PresentViz.diagramShown(spec, at), focus = PresentViz.diagramFocus(spec, at);
+  // by the step's focus, or dimmed by it. At rest (a jump onto the slide)
+  // no step singles anything out.
+  function diagramFlags(spec, at, entering, rest) {
+    var shown = PresentViz.diagramShown(spec, at), focus = PresentViz.diagramFocus(spec, at, rest);
     return function (d) {
       var lit = !!(focus && focus[d.kind][d.key]);
       return { off: entering || !shown[d.kind][d.key], focus: lit, dim: !!focus && !lit };
@@ -944,6 +991,11 @@
       var f = flags(d);
       return base(d) + (f.off ? ' off' : '') + (f.focus ? ' focus' : '') + (f.dim ? ' dim' : '');
     };
+  }
+  // diagramRest says whether the block stands at rest: the deck landed on
+  // its slide by a jump, with every step taken and no focus.
+  function diagramRest(block) {
+    return block.hasAttribute('data-step-rest');
   }
   // diagramToken is an id made safe for a class name: ids are any
   // non-empty string, and a space would split the class.
@@ -1020,9 +1072,10 @@
     g.append('text').attr('class', 'dgroup-label').attr('x', at.x).attr('y', at.y)
       .text(function (d) { return d.item.label; });
   }
-  // drawDiagramNodes draws the boxes: the shape by kind, the name, the
-  // text lines under it, and the text as a tooltip.
-  function drawDiagramNodes(layer, spec, boxes, flags, measure) {
+  // drawDiagramNodes draws the boxes: the shape by kind, the name lines,
+  // the text lines under them as the form wrapped them (none in names),
+  // and the text as a tooltip. sized holds the form's box per node id.
+  function drawDiagramNodes(layer, spec, boxes, flags, sized) {
     var data = (spec.nodes || []).map(function (n) { return { kind: 'nodes', key: n.id, item: n, box: boxes[n.id] }; });
     layer.selectAll('g').data(data).join('g')
       .attr('class', diagramClass(function (d) {
@@ -1030,11 +1083,13 @@
       }, flags))
       .attr('transform', function (d) { return 'translate(' + d.box.x + ',' + d.box.y + ')'; })
       .each(function (d) {
-        var g = d3.select(this), node = d.item, w = d.box.width;
+        var g = d3.select(this), node = d.item, w = d.box.width, box = sized[d.key];
         (DIAGRAM_SHAPES[node.kind] || DIAGRAM_SHAPES.service)(g, w, d.box.height);
-        var lines = PresentViz.diagramBox(node, measure).lines, at = PresentViz.diagramText(node, lines.length, w);
-        g.append('text').attr('class', 'dnode-label').attr('x', at.x).attr('y', at.label).text(node.label);
-        lines.forEach(function (line, i) {
+        var at = PresentViz.diagramText(node, box, w);
+        box.label.forEach(function (line, i) {
+          g.append('text').attr('class', 'dnode-label').attr('x', at.x).attr('y', at.label[i]).text(line);
+        });
+        box.lines.forEach(function (line, i) {
           g.append('text').attr('class', 'dnode-text').attr('x', at.x).attr('y', at.lines[i]).text(line);
         });
         if (node.text) g.append('title').text(node.label + ': ' + node.text);
@@ -1042,8 +1097,9 @@
   }
   // drawDiagramEdges draws the arrows along ELK's routes: the line, a dot
   // on a flow edge (none under Reduce Motion, where the dash alone says
-  // flow), and the label on a halo in the surface colour.
-  function drawDiagramEdges(layer, spec, layout, flags, arrowId, measure) {
+  // flow), and the label on a halo in the surface colour, one or two
+  // lines where ELK placed it. laid is the drawn form.
+  function drawDiagramEdges(layer, spec, layout, flags, arrowId, laid) {
     var routes = Object.create(null);
     (layout.edges || []).forEach(function (e) { routes[e.id] = e; });
     var data = (spec.edges || []).map(function (e, k) {
@@ -1059,27 +1115,28 @@
         .attr('cx', function (d) { return d.route.sections[0].startPoint.x; })
         .attr('cy', function (d) { return d.route.sections[0].startPoint.y; });
     }
-    // The label sits on the longest straight run of the route (ELK never
-    // saw it, so the chain stays as tight as its boxes), on a halo.
+    // ELK gave the label room on its own route, so it touches no box and
+    // no other label; it draws at the corner ELK returned.
     g.each(function (d) {
-      var p = d.item.label ? PresentViz.routeLabelPoint(d.route) : null;
-      if (!p) return;
-      var w = Math.ceil(measure(d.item.label, 'text')) + DIAGRAM_HALO.pad, h = DIAGRAM_HALO.h;
+      var box = laid.labels[d.key], at = laid.spots[d.key];
+      if (!box || !at) return;
       var label = d3.select(this).append('g').attr('class', 'dedge-label')
-        .attr('transform', 'translate(' + (p.x - w / 2) + ',' + (p.y - h / 2) + ')');
-      label.append('rect').attr('width', w).attr('height', h).attr('rx', DIAGRAM_HALO.rx);
-      label.append('text').attr('x', w / 2).attr('y', h / 2).text(d.item.label);
+        .attr('transform', 'translate(' + at.x + ',' + at.y + ')');
+      label.append('rect').attr('width', box.w).attr('height', box.h).attr('rx', DIAGRAM_HALO_RX);
+      PresentViz.edgeLabelRows(box).forEach(function (y, i) {
+        label.append('text').attr('x', box.w / 2).attr('y', y).text(box.lines[i]);
+      });
     });
   }
-  // drawDiagram draws the whole diagram into its detached svg, groups
+  // drawDiagram draws one laid-out form into its detached svg, groups
   // under edges under nodes, every element already carrying its step's
   // classes.
-  function drawDiagram(svg, spec, result, flags) {
-    var root = d3.select(svg), boxes = diagramBoxes(result.graph);
+  function drawDiagram(svg, spec, laid, flags) {
+    var root = d3.select(svg), boxes = diagramBoxes(laid.graph);
     drawDiagramGroups(root.append('g').attr('class', 'dgroups'), spec, boxes, flags);
     var arrowId = svg.querySelector('marker').id;
-    drawDiagramEdges(root.append('g').attr('class', 'dedges'), spec, result.graph, flags, arrowId, result.measure);
-    drawDiagramNodes(root.append('g').attr('class', 'dnodes'), spec, boxes, flags, result.measure);
+    drawDiagramEdges(root.append('g').attr('class', 'dedges'), spec, laid.graph, flags, arrowId, laid);
+    drawDiagramNodes(root.append('g').attr('class', 'dnodes'), spec, boxes, flags, laid.boxes);
   }
   // diagramElements are the parts that step, dim, and enter: every group,
   // node, and edge, each carrying its datum.
@@ -1087,9 +1144,9 @@
     return Array.prototype.slice.call(svg.querySelectorAll('.dgroup, .dnode, .dedge'));
   }
   // diagramStep moves a drawn diagram to step n (null: everything shown,
-  // nothing dimmed).
-  function diagramStep(svg, spec, n) {
-    var flags = diagramFlags(spec, n, false);
+  // nothing dimmed); at rest nothing dims either.
+  function diagramStep(svg, spec, n, rest) {
+    var flags = diagramFlags(spec, n, false, rest);
     diagramElements(svg).forEach(function (el) {
       var f = flags(el.__data__);
       el.classList.toggle('off', f.off);
@@ -1104,14 +1161,15 @@
   function diagramStepHook(block, spec) {
     return function (n) {
       var svg = block._diagramSvg;
-      if (svg) cutStep(block, svg, function () { diagramStep(svg, spec, n); });
+      if (svg) cutStep(block, svg, function () { diagramStep(svg, spec, n, diagramRest(block)); });
     };
   }
   // diagramDelays times the entry: groups first, then the nodes layer by
-  // layer along the flow (x for LR, y for TB), then each edge with its
-  // source's layer. total is when the last edge has drawn in.
-  function diagramDelays(spec, boxes, fade) {
-    var lr = spec.direction !== 'TB';
+  // layer along the flow of the drawn direction (x for LR, y for TB; the
+  // fit may draw the other one than the author named), then each edge
+  // with its source's layer. total is when the last edge has drawn in.
+  function diagramDelays(spec, boxes, fade, direction) {
+    var lr = direction !== 'TB';
     function along(id) { var b = boxes[id]; return lr ? b.x + b.width / 2 : b.y + b.height / 2; }
     var layerOf = Object.create(null), layer = -1, start = -Infinity;
     (spec.nodes || []).map(function (n) { return n.id; })
@@ -1147,11 +1205,11 @@
   // diagramDelays, and the edges draw in. Once the last is in, the delays
   // and the draw-in dash clear (a flow edge gets its own dash back from
   // the stylesheet) and the flow dots, hidden by .entering, fade in.
-  function diagramEnter(block, svg, spec, boxes) {
-    var fade = diagramFadeMs(svg), delays = diagramDelays(spec, boxes, fade);
+  function diagramEnter(block, svg, spec, boxes, direction) {
+    var fade = diagramFadeMs(svg), delays = diagramDelays(spec, boxes, fade, direction);
     svg.classList.add('entering');
     requestAnimationFrame(function () {
-      var flags = diagramFlags(spec, chartStepAt(block), false), els = diagramElements(svg);
+      var flags = diagramFlags(spec, chartStepAt(block), false, diagramRest(block)), els = diagramElements(svg);
       var shown = els.filter(function (el) { return !flags(el.__data__).off; });
       var lines = svg.querySelectorAll('.dedge-line');
       shown.forEach(function (el) {
@@ -1224,46 +1282,79 @@
       });
     });
   }
-  // diagramMaxHeight is the canvas's height cap in pixels, which the
-  // stylesheet sets per context (page, slide, presenting, solo).
+  // diagramMaxHeight is a slide canvas's height cap in pixels, which the
+  // stylesheet sets per context (slide, presenting, solo).
   function diagramMaxHeight(wrap) {
     var v = parseFloat(getComputedStyle(wrap).maxHeight);
-    return isNaN(v) ? DIAGRAM_MAX_H : v;
+    return isNaN(v) ? DIAGRAM_SLIDE_MAX_H : v;
   }
-  // diagramFitter returns fit(), which scales the svg to its wrapper: as
-  // wide as the wrapper allows, no taller than its cap, and at most
-  // DIAGRAM_MAX_SCALE, so a three-box diagram does not fill a slide. It
-  // only sets the svg's size, so nothing redraws or replays.
-  function diagramFitter(wrap, svg, layout) {
-    var last = null;
-    return function () {
-      var w = wrap.clientWidth, maxH = diagramMaxHeight(wrap);
-      if (w < 1 || (last && Math.abs(last.w - w) <= 1 && Math.abs(last.h - maxH) <= 1)) return;
-      last = { w: w, h: maxH };
-      var s = Math.min(w / layout.width, maxH / layout.height, DIAGRAM_MAX_SCALE);
-      svg.setAttribute('width', String(Math.floor(layout.width * s)));
-      svg.setAttribute('height', String(Math.floor(layout.height * s)));
+  // diagramRoom is where a diagram is fitted, as PresentViz.diagramLimits
+  // takes it: the wrapper's width, then in the brief the wrapper's and the
+  // root's font size, and on a slide the canvas's height cap and the
+  // slide's canvas width.
+  function diagramRoom(block, wrap) {
+    var slide = block.closest('.slide');
+    if (!slide) {
+      return {
+        onSlide: false, wrapWidth: wrap.clientWidth,
+        wrapFontPx: parseFloat(getComputedStyle(wrap).fontSize),
+        rootPx: parseFloat(getComputedStyle(document.documentElement).fontSize)
+      };
+    }
+    var presenting = document.documentElement.classList.contains('presenting');
+    return {
+      onSlide: true, wrapWidth: wrap.clientWidth, maxHeight: diagramMaxHeight(wrap),
+      canvasWidth: PresentViz.canvasWidth(slide.clientWidth, slide.clientHeight, presenting)
     };
   }
+  // diagramSize draws the svg at scale: its viewBox stays the layout's.
+  function diagramSize(svg, laid, scale) {
+    svg.setAttribute('width', String(Math.floor(laid.width * scale)));
+    svg.setAttribute('height', String(Math.floor(laid.height * scale)));
+  }
+  // diagramDraw draws one laid-out form into a new, detached svg at scale,
+  // with the step's classes (all off while entering).
+  function diagramDraw(block, spec, laid, scale, entering) {
+    var svg = diagramSvg(laid.graph);
+    drawDiagram(svg, spec, laid, diagramFlags(spec, chartStepAt(block), entering, diagramRest(block)));
+    diagramSize(svg, laid, scale);
+    return svg;
+  }
   // mountDiagram puts a laid-out diagram on the page the first time its
-  // wrapper has a width (a slide not showing has none): drawn with its
-  // step's classes before it enters the page, so the first paint plays no
-  // transition, then sized, entered, and set moving. After that a change
-  // of width (the observer) or of the height cap (the deck's refresh)
-  // only refits it.
-  function mountDiagram(block, spec, result, wrap, animate) {
-    var fit = null;
+  // wrapper has a width (a slide not showing has none), and refits it on
+  // every later call: PresentViz.diagramPlan picks the form for the room
+  // and its scale. Another form draws a new svg from that form's layout,
+  // with the step's classes before it enters the page, so the first paint
+  // plays no transition; the entry plays on the first draw only. Another
+  // scale only resizes the svg. Under the floor the brief scrolls the
+  // wrapper sideways. The block carries data-diagram-form ("TB compact")
+  // and data-under-floor for tests and the eval. The refits come from the
+  // wrapper's resize observer (a window resize too), the deck's refresh
+  // (presenting changes the height cap, which no observer sees), and a
+  // theme change. A reader's font or size change has no event yet, so it
+  // shows after a reload.
+  function mountDiagram(block, spec, forms, wrap, animate) {
+    var drawn = -1, svg = null, last = '';
     function attempt() {
-      if (fit) { fit(); return; }
       if (wrap.clientWidth < 1) return;
-      var svg = diagramSvg(result.graph);
-      drawDiagram(svg, spec, result, diagramFlags(spec, chartStepAt(block), animate));
-      fit = diagramFitter(wrap, svg, result.graph);
-      fit();
-      wrap.appendChild(svg);
-      block._diagramSvg = svg;
-      if (animate) diagramEnter(block, svg, spec, diagramBoxes(result.graph));
-      diagramFlow(block, svg, spec);
+      var limits = PresentViz.diagramLimits(diagramRoom(block, wrap));
+      var plan = PresentViz.diagramPlan(forms, limits.room, limits.lim);
+      var key = plan.index + ':' + plan.scale.toFixed(3), laid = forms[plan.index];
+      if (key === last) return;
+      last = key;
+      if (plan.index === drawn) diagramSize(svg, laid, plan.scale);
+      else {
+        var first = drawn < 0, next = diagramDraw(block, spec, laid, plan.scale, first && animate);
+        if (svg) svg.replaceWith(next); else wrap.appendChild(next);
+        svg = next;
+        drawn = plan.index;
+        block._diagramSvg = svg;
+        if (first && animate) diagramEnter(block, svg, spec, diagramBoxes(laid.graph), laid.form.direction);
+        diagramFlow(block, svg, spec);
+      }
+      wrap.style.overflowX = plan.scroll ? 'auto' : '';
+      block.setAttribute('data-diagram-form', laid.form.direction + ' ' + laid.form.density);
+      block.toggleAttribute('data-under-floor', plan.underFloor);
     }
     block._diagramFit = attempt;
     if (block._diagramObserver) block._diagramObserver.disconnect();
@@ -1276,9 +1367,10 @@
     attempt();
   }
   // buildDiagram builds a diagram block: its step hook at once, then the
-  // ELK layout, kept on the block, and the drawing. A later call (a theme
-  // change, the deck's refresh) only refits: every colour is a CSS
-  // variable and the geometry does not change, so ELK never runs twice.
+  // ELK layout of every form, kept by the fit, and the drawing. A later
+  // call (a theme change, the deck's refresh) only refits: every colour is
+  // a CSS variable and each form's geometry does not change, so ELK never
+  // runs twice.
   // The entry plays once, on the brief's mount or the deck's first
   // showing, and never under Reduce Motion or a deck that cuts
   // (opts.duration 0).
@@ -1295,9 +1387,8 @@
     block._built = true;
     var animate = !reducedMotion && !(opts && opts.duration === 0);
     block._presentStep = diagramStepHook(block, spec);
-    diagramLayout(block, spec).then(function (result) {
-      block._diagramLayout = result.graph;
-      mountDiagram(block, spec, result, wrap, animate);
+    diagramLayout(block, spec).then(function (forms) {
+      mountDiagram(block, spec, forms, wrap, animate);
     }).catch(function (err) {
       chartNote(block, 'Diagram could not be drawn: ' + ((err && err.message) || err));
     });
@@ -2663,31 +2754,36 @@
     // Steps: how many of the current slide's steps (reveal fragments and
     // a stepped chart's steps) are taken. Next takes one more before
     // moving on, Prev takes one back before moving back, and a jump (goto,
-    // a dot, the hash, Home and End) lands with every step taken. The hash
-    // and the dots track slides only.
+    // a dot, the hash, Home and End, Prev from the next slide, a reload)
+    // lands with every step taken and at rest: a stepped diagram shows
+    // whole, with no step's focus dimming the rest, until a step inside
+    // the slide moves it again. The hash and the dots track slides only.
     var step = 0;
     function stepTotal(slide) { return slide && slide._steps ? slide._steps.length : 0; }
     // applySteps lands the slide on step n: the first n fragments shown and
     // every stepped block at the highest step among its entries below n
-    // (step 0 before its first one). A terminal in a fragment attaches when
-    // the fragment shows, not when its slide does (terminalShow skips it
-    // while hidden), so it starts where Run and Kill can be seen.
-    function applySteps(slide, n) {
+    // (step 0 before its first one), at rest when rest is set. A terminal
+    // in a fragment attaches when the fragment shows, not when its slide
+    // does (terminalShow skips it while hidden), so it starts where Run and
+    // Kill can be seen.
+    function applySteps(slide, n, rest) {
       step = n;
       if (!slide || !slide._steps) return;
       slide._steps.forEach(function (entry, k) {
         if (entry.kind === 'fragment') entry.el.classList.toggle('shown', k < n);
       });
-      PresentViz.blockStepsAt(slide._steps, n).forEach(function (r) { setBlockStep(r.el, r.n); });
+      PresentViz.blockStepsAt(slide._steps, n).forEach(function (r) { setBlockStep(r.el, r.n, rest); });
       slide.querySelectorAll('.fragment.shown .present-terminal, .present-terminal.fragment.shown').forEach(function (b) {
         if (b._terminal) terminalShow(b._terminal);
       });
     }
-    // setBlockStep moves a stepped block to step m: the attribute the chart
-    // bootstrap reads when the block builds later, the renderer's hook when
-    // it is already built, and the caption of that step.
-    function setBlockStep(el, m) {
+    // setBlockStep moves a stepped block to step m: the attributes the
+    // chart and diagram bootstrap read when the block builds later (the
+    // step, and data-step-rest after a jump), the renderer's hook when it
+    // is already built, and the caption of that step.
+    function setBlockStep(el, m, rest) {
       el.setAttribute('data-step-at', String(m));
+      el.toggleAttribute('data-step-rest', !!rest);
       el._stepCut = transition === 'none';
       if (typeof el._presentStep === 'function') el._presentStep(m);
       var list = el.querySelector('.present-steps');
@@ -2743,7 +2839,7 @@
       // target is this call's own record: a step pressed before apply runs
       // bumps its steps, and a later show() replaces pending without
       // touching it, so each deferred apply lands what was asked of it.
-      var target = { i: i, steps: stepsMode === 'none' ? 0 : stepTotal(slides[i]) };
+      var target = { i: i, steps: stepsMode === 'none' ? 0 : stepTotal(slides[i]), rest: stepsMode !== 'none' };
       pending = target;
       function apply() {
         current = i;
@@ -2752,7 +2848,7 @@
           sl.classList.toggle('active', j === i);
           if (j === i) sl.scrollTop = 0;
         });
-        applySteps(slides[i], target.steps);
+        applySteps(slides[i], target.steps, target.rest);
         updateCounter();
         chrome.update(i);
         if (notesOpen) renderNotes();
@@ -2770,9 +2866,10 @@
     }
     // A step on a slide still being entered is recorded on the pending
     // target and lands with it; on the current slide it shows at once.
+    // Either way it ends the rest a jump left.
     function stepTo(n) {
-      if (pending) { pending.steps = n; return; }
-      applySteps(slides[current], n);
+      if (pending) { pending.steps = n; pending.rest = false; return; }
+      applySteps(slides[current], n, false);
       updateCounter();
     }
     function next() {

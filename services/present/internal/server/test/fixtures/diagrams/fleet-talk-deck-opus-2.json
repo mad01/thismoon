@@ -1,0 +1,49 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "pub",
+      "label": "public",
+      "tone": "amber"
+    },
+    {
+      "id": "priv",
+      "label": "private"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "config",
+      "label": "Your config repo",
+      "text": "secrets, hosts, hooks, overlays",
+      "tone": "purple",
+      "group": "priv"
+    },
+    {
+      "id": "ralph",
+      "label": "ralph",
+      "text": "installer, reconciles machines to TOML",
+      "tone": "green",
+      "group": "pub"
+    },
+    {
+      "id": "thismoon",
+      "label": "thismoon",
+      "text": "components and their recipes",
+      "tone": "green",
+      "group": "pub"
+    }
+  ],
+  "edges": [
+    {
+      "from": "config",
+      "to": "ralph",
+      "label": "configures"
+    },
+    {
+      "from": "ralph",
+      "to": "thismoon",
+      "label": "consumes recipes"
+    }
+  ]
+}

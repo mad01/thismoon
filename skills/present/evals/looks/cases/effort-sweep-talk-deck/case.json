@@ -1,0 +1,12 @@
+{
+  "id": "effort-sweep-talk-deck",
+  "kind": "deck",
+  "ask": "Make me a deck for a 10-minute talk at the team meeting on what the Haiku 5.5 effort sweep for csl ask showed. The numbers are the story, so let them carry it.",
+  "stresses": "talk with real numbers: pass rate, latency, output tokens and cost across five effort levels call for charts",
+  "source": {
+    "repo": "github.com/mad01/thismoon",
+    "path": "services/csl/evals/ask/results/2026-11-01-haiku55-effort-sweep-claude.md",
+    "commit": "b59bd3ff5465c77d74aabe9283df0b05b36b6250",
+    "trimmed": "no"
+  }
+}

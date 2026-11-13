@@ -1,0 +1,174 @@
+# Releasing
+
+Components release independently, on merge to main, with no manual tagging.
+[release-please](https://github.com/googleapis/release-please) in manifest
+mode watches each path registered in `release-please-config.json`, maintains
+a release PR per component, and cuts a `name/vX.Y.Z` tag plus a GitHub
+Release when that PR merges. A CI matrix job then builds and signs the
+artifacts.
+
+## Version bumps
+
+Versions come from conventional commits, scoped by path. A commit touching
+`services/present/` counts toward present's next release and nobody else's:
+
+- `fix:` bumps the patch version
+- `feat:` bumps the minor version
+- `feat!:` (or a `BREAKING CHANGE:` footer) bumps the major version
+- `chore:`, `docs:`, `ci:` and friends don't trigger a release
+
+Current versions live in `.release-please-manifest.json`; don't edit it by
+hand, release-please owns it.
+
+### Merge methods
+
+Squash is the default: the PR title becomes the one commit release-please
+reads. A PR whose commits bump different components by different types (a
+`fix` in one component, a `feat` in another) lands with a rebase merge
+instead. Squashed, it would be one commit touching every component, and each
+would get the same bump. Merge commits are turned off.
+
+## The release PR
+
+1. A releasable commit merges to main.
+2. release-please opens (or updates) a release PR for the affected component:
+   version bump in the manifest, generated changelog.
+3. Merging that PR creates the component tag (`present/v1.2.3`) and the
+   GitHub Release.
+4. The `artifacts` job fans out over every path released in that run and
+   uploads the tarballs.
+
+The release PR merges itself: the `release-pr-automerge` job turns on
+auto-merge, so the PR lands once its required checks pass. Turning auto-merge
+off on the PR holds the release until the next push to main updates the PR
+and turns it back on.
+
+### How far back release-please looks
+
+On every run release-please walks main backwards from the head, fetching each commit's file list to map it to a component, and stops once it has passed every component's last release tag or reaches `commit-search-depth` (set to 200 in `release-please-config.json`; the tool's default is 500). A component whose last tag is deeper than that gets only the commits inside the window, which is also what happens to it today past 500: nothing is lost unless an unreleased change sits beyond the window. The window exists because the walk is hundreds of GitHub API calls, each of which can time out, and a release run was failing on that alone. If a component you expect to release does not show up in the release PR, check that its last tag is within the window; `commit-batch-size` (default 10 commits per request) is the other knob the tool offers.
+
+## Artifacts
+
+Each released component gets, on its GitHub Release:
+
+- `<name>_vX.Y.Z_darwin_arm64.tar.gz`: the binary, built natively on a
+  macOS arm64 runner with `-trimpath` (`CGO_ENABLED=0` for everything
+  except csl, which needs cgo for its tree-sitter grammars), build metadata
+  embedded via ldflags
+- `checksums.txt`: sha256 sums for every tarball
+- `checksums.txt.bundle`: a cosign keyless signature over `checksums.txt`,
+  signed with the workflow's GitHub OIDC identity
+
+Artifacts target darwin/arm64 only; the platform is macOS-focused and the
+linux targets carried no users (`docs/adr/0007`).
+
+present is the one exception, for its shared mode (`docs/adr/0018`): a
+present release also builds `ghcr.io/mad01/present` for linux/amd64 and
+linux/arm64 from `services/present/Dockerfile`, tags it `X.Y.Z` and
+`latest`, and signs the manifest digest keyless. Every push to main that
+touches present also publishes `main` and `sha-<short>` tags, so a cluster
+tracking main can follow it. The image job runs on an ubuntu runner apart
+from the macOS artifacts job, through the composite action in
+`.github/actions/present-image`.
+
+## Build metadata
+
+The ldflags set four variables in the shared
+`github.com/mad01/thismoon/buildinfo` package, the same four every local
+`make build` injects through `buildinfo.mk`:
+
+| Variable | Release build |
+|---|---|
+| `Version` | `vX.Y.Z-<short-sha>` (a local build sets the short sha alone) |
+| `Commit` | the full sha the tag points at |
+| `Tag` | the component tag, `<name>/vX.Y.Z` |
+| `BuildTime` | UTC, RFC 3339 |
+
+A released binary reports all four with `<name> version -o json`, and services
+serve the same object from `GET /version`, so you can ask a downloaded or
+deployed binary which release it came from. Plain `<name> version` stays the
+bare version token that status and ralph parse.
+
+Swift components take no ldflags: release-please writes the version into their
+source, and the workflow builds them with `swift build`.
+
+## Verifying a release
+
+```sh
+cosign verify-blob \
+  --bundle checksums.txt.bundle \
+  --certificate-identity-regexp '^https://github.com/mad01/thismoon/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+
+shasum -a 256 -c checksums.txt
+```
+
+The first command proves this repo's release workflow produced
+`checksums.txt`; the second proves your tarball matches it.
+
+For the present image:
+
+```sh
+cosign verify \
+  --certificate-identity-regexp '^https://github.com/mad01/thismoon/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/mad01/present:X.Y.Z
+```
+
+The package on ghcr.io has to be made public once, by hand, after the
+first push; until then anonymous pulls (a kind cluster, a colleague's
+cluster) fail.
+
+## Adding a new component
+
+Register the component in the `packages` map of
+`release-please-config.json`:
+
+```json
+"services/newthing": { "component": "newthing" }
+```
+
+CI fails the PR if a Makefile-bearing component is missing from the map, so
+you can't forget. The first release uses `initial-version` (0.1.0).
+
+## Maintainer setup
+
+Two pieces of repo configuration the workflow depends on:
+
+- **GitHub App token**: release-please authenticates with a token minted
+  per run by a GitHub App (`actions/create-github-app-token`), not the
+  default `GITHUB_TOKEN`. The default may not create PRs without a repo-wide
+  Actions toggle (too broad a grant for a public repo), and PRs it opens
+  never trigger `ci.yml` checks. The App token expires within the hour, so
+  there is no long-lived secret to rotate. Symptom of a missing or misscoped
+  App: release-please fails with "Error adding to tree" or silently opens no
+  PR.
+
+  Setup (reproduce if the App is ever lost):
+
+  1. Create a GitHub App under the account that owns the repo
+     (`https://github.com/settings/apps/new`). Uncheck Webhook → Active;
+     set "Only on this account".
+  2. Repository permissions: Contents read-write, Pull requests read-write,
+     Issues read-write. Issues is required for release-please's labels; the
+     other two for the branch and the release PR.
+  3. Create the App, note its App ID, then Generate a private key
+     (downloads a `.pem`).
+  4. Install the App on this repo only (App → Install App).
+  5. Add two repo secrets under
+     `Settings → Secrets and variables → Actions`: `RELEASE_APP_ID` (the App
+     ID) and `RELEASE_APP_PRIVATE_KEY` (the full `.pem`, including the
+     `BEGIN`/`END` lines).
+
+  The `release.yml` `create-github-app-token` step exchanges these for a
+  short-lived installation token each run. The private key itself doesn't
+  expire, but it can be regenerated from the App's settings without touching
+  the workflow.
+- **Auto-merge and merge methods**: the repo setting "Allow auto-merge" must
+  stay on, or the `release-pr-automerge` job fails. Squash and rebase merges
+  are allowed and merge commits are off, both in the repo settings and in the
+  `main` ruleset.
+- **Concurrency group `release`**: two merges to main racing release-please
+  can double-process the release PR, so runs queue instead of overlapping
+  (`cancel-in-progress: false`).

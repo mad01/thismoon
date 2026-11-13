@@ -1,0 +1,12 @@
+{
+  "id": "adr-sandbox-runtime",
+  "kind": "brief",
+  "ask": "Brief me on this decision: what we picked, what we gave up, and what it changes for the fleet.",
+  "stresses": "decision record: options, trade-offs, consequences",
+  "source": {
+    "repo": "github.com/mad01/thismoon",
+    "path": "docs/adr/0028-sandbox-runtime-replaces-seatbelt.md",
+    "commit": "b59bd3ff5465c77d74aabe9283df0b05b36b6250",
+    "trimmed": "no"
+  }
+}

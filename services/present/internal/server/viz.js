@@ -1,7 +1,8 @@
 'use strict';
 // present deck visuals: the pure, node-tested parts of the deck's in-block
-// stepping, the ribbon chart's layout, the diagram block's ELK graph,
-// stepping, and routes, and the brief's changed-section marker. shell.html loads this file before
+// stepping, the ribbon chart's layout, the chart options that follow the
+// data, the diagram block's forms, ELK graph, fit, stepping, and routes,
+// and the brief's changed-section marker. shell.html loads this file before
 // app.js, which reads the helpers from window.PresentViz. Nothing here touches
 // the DOM at load time.
 (function (root) {
@@ -130,82 +131,190 @@
   }
 
   // ── Diagram helpers ──
-  // The diagram block's pure side: the ELK graph built from a spec, which
+  // The diagram block's pure side: the forms a diagram is laid out in, the
+  // ELK graph of one form, which form a fit draws and at what scale, which
   // elements a step shows and lights up, an ELK edge route as an SVG path,
   // and the flow speed. app.js measures text, runs ELK, and draws.
-  var DIAGRAM_BOX = { minW: 120, maxW: 240, padX: 14, padY: 10, label: 18, text: 15, lineChars: 28 };
+  //
+  // A form is one way to lay a diagram out: a direction and a density. The
+  // floor is the smallest scale its text may draw at, and the aim the
+  // scale a fit reaches for when it has the room.
+  var DIAGRAM_BOX = { minW: 120, padX: 14, padY: 10, label: 18, text: 15 };
+  // DIAGRAM_DENSITY is how much a form shows: its widest box, how many
+  // lines an edge label may take, and whether the boxes keep their text.
+  // compact trades width for height; names leaves the box text out (it
+  // stays in the box's hover title) and is for slides only.
+  var DIAGRAM_DENSITY = {
+    full: { maxW: 240, edgeLines: 1, text: true },
+    compact: { maxW: 190, edgeLines: 2, text: true },
+    names: { maxW: 240, edgeLines: 2, text: false }
+  };
+  // DIAGRAM_HALO is an edge label's box around its text: padX across the
+  // widest line, line per line, and padY across the top and bottom.
+  var DIAGRAM_HALO = { padX: 8, line: 14, padY: 2 };
+  var DIAGRAM_LABEL_SPLIT_PX = 84; // an edge label wider than this takes two lines where the density allows
   var DIAGRAM_GROUP_PAD = '[top=36,left=16,bottom=16,right=16]';
-  var DIAGRAM_LAYER_GAP = 56; // between layers, unless a label needs more
+  // ELK spaces a set of siblings by their parent's options, not the
+  // root's, so every group carries the same spacing as the root. Without
+  // it the boxes inside a group sit ELK's default 20 apart. The labels are
+  // in the layout, so the gap between layers no longer grows for them.
+  var DIAGRAM_SPACING = {
+    'elk.layered.spacing.nodeNodeBetweenLayers': '32',
+    'elk.layered.spacing.edgeNodeBetweenLayers': '12',
+    'elk.spacing.nodeNode': '28',
+    'elk.spacing.edgeEdge': '14',
+    'elk.spacing.edgeNode': '24'
+  };
+  var DIAGRAM_BREAK_AFTER = '/._-:'; // where a word wider than a line may break: after a path or name separator
+  var DIAGRAM_CLOSING = ',.;:)]'; // marks that hang into the box padding rather than start a line
+  var DIAGRAM_HANG = 2; // how many closing marks may hang
+  // The sizes a fit works with. Text draws at these sizes at scale 1: a
+  // box name at DIAGRAM_NAME_PX, box text and edge labels at
+  // DIAGRAM_TEXT_PX.
+  var DIAGRAM_NAME_PX = 13;
+  var DIAGRAM_TEXT_PX = 11.5;
+  var DIAGRAM_AIM_PX = 13; // the brief aims for every text at this size
+  var DIAGRAM_TALL_REM = 45; // a brief drawing taller than this shrinks toward it, not below the aim
+  var DIAGRAM_SLIDE_FLOOR = 0.011; // the smallest slide text, as a share of the canvas width
+  var DIAGRAM_SLIDE_MAX = 0.022; // the largest box name on a slide, as a share of the canvas width
+  var DIAGRAM_NAMES_GAIN = 1.15; // how much larger a names form must draw to replace one with box text
+  var DIAGRAM_RATIO_EPS = 0.005; // ratios closer than this count as equal, and the earlier form wins
 
-  // wrapLines breaks text into at most two lines of about max characters,
-  // on spaces; a long last line is cut with an ellipsis.
-  function wrapLines(text, max) {
-    var words = String(text || '').split(/\s+/).filter(Boolean), lines = [], line = '';
-    words.forEach(function (w) {
-      var next = line ? line + ' ' + w : w;
-      if (next.length <= max || !line) { line = next; return; }
-      lines.push(line);
-      line = w;
+  // closingAt says whether the character at i of s is a closing mark.
+  function closingAt(s, i) {
+    var c = s.charAt(i);
+    return c !== '' && DIAGRAM_CLOSING.indexOf(c) >= 0;
+  }
+
+  // hangingMarks is how many closing marks end s and may hang, never all of s.
+  function hangingMarks(s) {
+    var n = 0;
+    while (n < DIAGRAM_HANG && n < s.length - 1 && closingAt(s, s.length - 1 - n)) n++;
+    return n;
+  }
+
+  // wordCut is where a word too wide for a line breaks: after the longest
+  // prefix that sits on a line, moved back to just after a separator in
+  // that prefix's second half when it has one. What is left never starts
+  // with a closing mark.
+  function wordCut(word, sits) {
+    var cut = word.length - 1;
+    while (cut > 1 && !sits(word.slice(0, cut))) cut--;
+    for (var i = cut; i > cut / 2; i--) {
+      if (DIAGRAM_BREAK_AFTER.indexOf(word.charAt(i - 1)) >= 0 && !closingAt(word, i)) return i;
+    }
+    while (cut > 1 && closingAt(word, cut)) cut--;
+    return cut;
+  }
+
+  // wrapText breaks text into lines no wider than maxWidth as measure(s,
+  // role) reads them. Nothing is cut and nothing is added: the lines hold
+  // every character of the text. A word wider than a line breaks after a
+  // separator (a path, a dotted name), else after the last character that
+  // fits, and one or two closing marks may hang past the width into the
+  // box padding, so none starts a line.
+  function wrapText(text, maxWidth, measure, role) {
+    function fits(s) { return measure(s, role) <= maxWidth; }
+    function sits(s) {
+      var hang = hangingMarks(s);
+      return fits(s) || (hang > 0 && fits(s.slice(0, s.length - hang)));
+    }
+    var lines = [], line = '';
+    String(text || '').split(/\s+/).filter(Boolean).forEach(function (word) {
+      var next = line ? line + ' ' + word : word;
+      if (sits(next)) { line = next; return; }
+      if (line) lines.push(line);
+      line = word;
+      while (line.length > 1 && !sits(line)) {
+        var cut = wordCut(line, sits);
+        lines.push(line.slice(0, cut));
+        line = line.slice(cut);
+      }
     });
     if (line) lines.push(line);
-    if (lines.length > 2) { lines = lines.slice(0, 2); lines[1] = lines[1].slice(0, Math.max(0, max - 1)) + '\u2026'; }
     return lines;
   }
 
-  // diagramBox sizes a node from its label and text lines: as wide as the
-  // widest line plus padding, between minW and maxW, and one label line
-  // plus one text line per wrapped line high. measure(string) returns the
-  // string's width in pixels.
-  function diagramBox(node, measure) {
-    var lines = wrapLines(node.text, DIAGRAM_BOX.lineChars);
-    var widest = measure(node.label || '', 'label');
-    lines.forEach(function (l) { widest = Math.max(widest, measure(l, 'text')); });
-    var w = Math.min(DIAGRAM_BOX.maxW, Math.max(DIAGRAM_BOX.minW, Math.ceil(widest) + 2 * DIAGRAM_BOX.padX));
-    var h = 2 * DIAGRAM_BOX.padY + DIAGRAM_BOX.label + lines.length * DIAGRAM_BOX.text;
-    return { width: w, height: h, lines: lines };
+  // diagramDensity is a density by name, full for an unknown one.
+  function diagramDensity(name) {
+    return Object.prototype.hasOwnProperty.call(DIAGRAM_DENSITY, name) ? DIAGRAM_DENSITY[name] : DIAGRAM_DENSITY.full;
   }
 
-  // diagramElk turns a spec into the graph ELK lays out: groups become
-  // compound nodes holding their nodes and child groups (padded for the
-  // group label), nodes carry the box size diagramBox gives them, and edges
-  // sit at the root. Edge labels stay out of the graph: ELK gives a centre
-  // label a layer of its own, which doubled the width of a chain, so the
-  // renderer puts each label on its route (routeLabelPoint) instead.
-  // Coordinates come back relative to the root, so the drawing needs no
-  // offsetting.
-  function diagramElk(spec, measure) {
-    var gap = DIAGRAM_LAYER_GAP, lr = spec.direction !== 'TB';
-    var edges = (spec.edges || []).map(function (e, i) {
-      // Left to right, the widest label sets the gap between layers, so a
-      // label on the run between two boxes never reaches into either box.
-      // Top to bottom the runs are vertical and a label's width is beside
-      // them, so the gap stays.
-      if (e.label && lr) gap = Math.max(gap, Math.ceil(measure(e.label, 'text')) + 24);
-      return { id: 'e' + i, sources: [e.from], targets: [e.to] };
-    });
-    // ELK spaces a set of siblings by their parent's options, not the
-    // root's, so every group carries the same spacing as the root. Without
-    // it the boxes inside a group sit ELK's default 20 apart and the
-    // labels on the runs between them land on the boxes.
-    var spacing = {
-      'elk.layered.spacing.nodeNodeBetweenLayers': String(gap),
-      'elk.layered.spacing.edgeNodeBetweenLayers': '24',
-      'elk.spacing.nodeNode': '28',
-      'elk.spacing.edgeNode': '24',
-      'elk.spacing.edgeEdge': '14'
-    };
-    function spaced(options) {
-      for (var k in spacing) options[k] = spacing[k];
-      return options;
+  // diagramBox sizes a node for a density: its name, and its text unless
+  // the density leaves it out, wrapped inside the density's widest box;
+  // the box as wide as its widest line plus padding (between minW and the
+  // widest box) and one row per line high. measure(string, role) returns
+  // the string's width in pixels.
+  function diagramBox(node, measure, density) {
+    var d = diagramDensity(density), inner = d.maxW - 2 * DIAGRAM_BOX.padX;
+    var label = wrapText(node.label, inner, measure, 'label');
+    var lines = d.text ? wrapText(node.text, inner, measure, 'text') : [];
+    var widest = 0;
+    label.forEach(function (l) { widest = Math.max(widest, measure(l, 'label')); });
+    lines.forEach(function (l) { widest = Math.max(widest, measure(l, 'text')); });
+    var w = Math.min(d.maxW, Math.max(DIAGRAM_BOX.minW, Math.ceil(widest) + 2 * DIAGRAM_BOX.padX));
+    var h = 2 * DIAGRAM_BOX.padY + Math.max(1, label.length) * DIAGRAM_BOX.label + lines.length * DIAGRAM_BOX.text;
+    return { width: w, height: h, label: label, lines: lines };
+  }
+
+  // edgeLabelBox is an edge label's lines and the halo around them: one
+  // line, or, where the density allows two and the label is wider than
+  // DIAGRAM_LABEL_SPLIT_PX, two lines split at the space that leaves the
+  // shorter longest line.
+  function edgeLabelBox(label, measure, density) {
+    var text = String(label), lines = [text], widest = measure(text, 'text');
+    if (diagramDensity(density).edgeLines > 1 && widest > DIAGRAM_LABEL_SPLIT_PX) {
+      var words = text.split(' ');
+      for (var i = 1; i < words.length; i++) {
+        var a = words.slice(0, i).join(' '), b = words.slice(i).join(' ');
+        var longest = Math.max(measure(a, 'text'), measure(b, 'text'));
+        if (longest < widest) { widest = longest; lines = [a, b]; }
+      }
     }
+    return { lines: lines, w: Math.ceil(widest) + DIAGRAM_HALO.padX, h: lines.length * DIAGRAM_HALO.line + DIAGRAM_HALO.padY };
+  }
+
+  // diagramSpaced adds the spacing set to a graph's or a group's options.
+  function diagramSpaced(options) {
+    for (var k in DIAGRAM_SPACING) options[k] = DIAGRAM_SPACING[k];
+    return options;
+  }
+
+  // diagramElk builds the ELK graph of one form ({direction, density}).
+  // Groups become compound nodes holding their nodes and child groups,
+  // padded for the group label and at least as wide as it. A node carries
+  // the box diagramBox gives it, grown by its shape's room. Edges sit at
+  // the root, and a labelled edge carries its label as an inline ELK
+  // label, so ELK gives the label room on the edge's own route, where it
+  // can land on no box, group label or other label. Coordinates come back
+  // relative to the root. Returns the graph, each labelled edge's label box
+  // by edge index, and each node's box by id.
+  function diagramElk(spec, measure, form) {
+    var density = form && form.density, labels = [], boxes = Object.create(null);
+    var direction = form && form.direction ? form.direction : spec.direction;
+    var edges = (spec.edges || []).map(function (e, i) {
+      var el = { id: 'e' + i, sources: [e.from], targets: [e.to] };
+      if (!e.label) return el;
+      var box = edgeLabelBox(e.label, measure, density);
+      labels[i] = box;
+      el.labels = [{ id: 'l' + i, text: String(e.label), width: box.w, height: box.h,
+        layoutOptions: { 'elk.edgeLabels.inline': 'true' } }];
+      return el;
+    });
     var byParent = Object.create(null);
     function child(parent, el) { (byParent[parent || ''] = byParent[parent || ''] || []).push(el); }
     (spec.groups || []).forEach(function (g) {
-      child(g.group, { id: g.id, group: true, layoutOptions: spaced({ 'elk.padding': DIAGRAM_GROUP_PAD }) });
+      var w = Math.ceil(measure(String(g.label || ''), 'group')) + 2 * DIAGRAM_GROUP_LABEL.x;
+      child(g.group, { id: g.id, group: true, layoutOptions: diagramSpaced({
+        'elk.padding': DIAGRAM_GROUP_PAD,
+        'elk.nodeSize.constraints': 'MINIMUM_SIZE',
+        'elk.nodeSize.minimum': '(' + w + ',0)'
+      }) });
     });
     (spec.nodes || []).forEach(function (n) {
-      var box = diagramBox(n, measure);
-      child(n.group, { id: n.id, width: box.width, height: box.height });
+      var box = diagramBox(n, measure, density), room = diagramKindRoom(n.kind);
+      boxes[n.id] = box;
+      child(n.group, { id: n.id, width: box.width + room.left, height: box.height + room.top });
     });
     function attach(parentId) {
       return (byParent[parentId] || []).map(function (el) {
@@ -213,11 +322,11 @@
         return el;
       });
     }
-    return {
+    var graph = {
       id: 'root',
-      layoutOptions: spaced({
+      layoutOptions: diagramSpaced({
         'elk.algorithm': 'layered',
-        'elk.direction': spec.direction === 'TB' ? 'DOWN' : 'RIGHT',
+        'elk.direction': direction === 'TB' ? 'DOWN' : 'RIGHT',
         'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
         'elk.edgeRouting': 'ORTHOGONAL',
         'elk.json.edgeCoords': 'ROOT',
@@ -227,22 +336,128 @@
       children: attach(''),
       edges: edges
     };
+    return { graph: graph, labels: labels, boxes: boxes };
   }
 
-  // routeLabelPoint is where an edge's label sits: the middle of the
-  // longest straight run of its route, so a label lands on the long
-  // horizontal of an orthogonal route and not on a short jog. Null when
-  // the edge has no route.
-  function routeLabelPoint(edge) {
-    var best = null, bestLen = -1;
-    (edge.sections || []).forEach(function (sec) {
-      var pts = [sec.startPoint].concat(sec.bendPoints || [], [sec.endPoint]);
-      for (var i = 1; i < pts.length; i++) {
-        var len = Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
-        if (len > bestLen) { bestLen = len; best = { x: (pts[i].x + pts[i - 1].x) / 2, y: (pts[i].y + pts[i - 1].y) / 2 }; }
-      }
+  // diagramLabelSpots is where ELK put each edge's label, by edge index:
+  // the label's top left corner, relative to the root.
+  function diagramLabelSpots(layout) {
+    var spots = [];
+    ((layout && layout.edges) || []).forEach(function (e) {
+      var k = /^e(\d+)$/.exec(e.id), label = e.labels && e.labels[0];
+      if (k && label) spots[parseInt(k[1], 10)] = { x: label.x, y: label.y };
+    });
+    return spots;
+  }
+
+  // diagramLadder is the forms a diagram is laid out in, in the order a
+  // fit prefers them, each with its group: the authored direction full
+  // then compact, the other direction the same, and on a slide the two
+  // names forms last.
+  function diagramLadder(direction, onSlide) {
+    var a = direction === 'TB' ? 'TB' : 'LR', b = a === 'TB' ? 'LR' : 'TB';
+    var forms = [
+      { direction: a, density: 'full', group: 0 }, { direction: a, density: 'compact', group: 0 },
+      { direction: b, density: 'full', group: 1 }, { direction: b, density: 'compact', group: 1 }
+    ];
+    if (onSlide) forms.push({ direction: a, density: 'names', group: 2 }, { direction: b, density: 'names', group: 2 });
+    return forms;
+  }
+
+  // largestRatio is the index of the largest ratio among the indexes keep
+  // passes, the earliest of near ties, or -1 when keep passes none.
+  function largestRatio(ratios, keep) {
+    var best = -1;
+    ratios.forEach(function (r, i) {
+      if (keep(i) && (best < 0 || r > ratios[best] + DIAGRAM_RATIO_EPS)) best = i;
     });
     return best;
+  }
+
+  // planInGroup is the form a group gives a fit: its first form at the
+  // aim, else its largest when that reaches the floor, else -1.
+  function planInGroup(forms, ratios, lim, group) {
+    function member(i) { return forms[i].group === group; }
+    for (var i = 0; i < forms.length; i++) {
+      if (member(i) && ratios[i] >= lim.aim) return i;
+    }
+    var best = largestRatio(ratios, member);
+    return best >= 0 && ratios[best] >= lim.floor ? best : -1;
+  }
+
+  // planUnderFloor is the form drawn when no group reaches the floor: the
+  // largest form that keeps the box text, unless a names form draws
+  // DIAGRAM_NAMES_GAIN times as large.
+  function planUnderFloor(forms, ratios) {
+    var any = largestRatio(ratios, function () { return true; });
+    var keep = largestRatio(ratios, function (i) { return forms[i].density !== 'names'; });
+    return keep >= 0 && ratios[any] < DIAGRAM_NAMES_GAIN * ratios[keep] ? keep : any;
+  }
+
+  // planScale is the scale a picked form draws at: its ratio capped at the
+  // largest scale, and in the brief a drawing taller than room.soft shrunk
+  // toward it but not below the aim. Under the floor the brief draws at
+  // the floor (and scrolls) and a slide at the ratio.
+  function planScale(form, ratio, under, room, lim) {
+    if (under) return room.h ? ratio : lim.floor;
+    var scale = Math.min(ratio, lim.max);
+    if (!room.h && room.soft && form.height * scale > room.soft) {
+      scale = Math.max(Math.min(ratio, lim.aim), room.soft / form.height);
+    }
+    return scale;
+  }
+
+  // diagramPlan picks the form a fit draws and its scale. forms: one
+  // {width, height, group, density} per laid-out form, in ladder order; a
+  // form whose layout failed is left out, and the pick is among the rest.
+  // room: {w, h, soft}, h null where the page scrolls (the brief). lim:
+  // {floor, aim, max} as scales. A form's ratio is the largest scale it
+  // fits at. The groups go in order, and the first that gives a form wins
+  // (planInGroup); when none does, planUnderFloor picks. So the brief keeps
+  // the author's direction while either of its densities reaches the
+  // floor, and a slide keeps the box text while any form with it does.
+  function diagramPlan(forms, room, lim) {
+    var ratios = forms.map(function (f) {
+      return Math.min(room.w / f.width, room.h ? room.h / f.height : Infinity);
+    });
+    var pick = -1;
+    for (var i = 0; i < forms.length && pick < 0; i++) {
+      if (i === 0 || forms[i].group !== forms[i - 1].group) pick = planInGroup(forms, ratios, lim, forms[i].group);
+    }
+    if (pick < 0) pick = planUnderFloor(forms, ratios);
+    var under = ratios[pick] < lim.floor;
+    return { index: pick, scale: planScale(forms[pick], ratios[pick], under, room, lim), underFloor: under, scroll: under && !room.h };
+  }
+
+  // diagramLimits turns where a diagram is fitted into the room and the
+  // scales diagramPlan takes. fit: {onSlide, wrapWidth, maxHeight,
+  // wrapFontPx, rootPx, canvasWidth}. The brief: no height limit, the
+  // floor at scale 1, the aim at every text DIAGRAM_AIM_PX, and box names
+  // no larger than the wrapper's font (never under the aim); a drawing
+  // taller than DIAGRAM_TALL_REM shrinks toward it. A slide: the canvas's
+  // height cap, the floor and the aim at the smallest text
+  // DIAGRAM_SLIDE_FLOOR of the canvas width, and box names at most
+  // DIAGRAM_SLIDE_MAX of it.
+  function diagramLimits(fit) {
+    if (!fit.onSlide) {
+      var aim = DIAGRAM_AIM_PX / DIAGRAM_TEXT_PX;
+      return {
+        room: { w: fit.wrapWidth, h: null, soft: DIAGRAM_TALL_REM * fit.rootPx },
+        lim: { floor: 1, aim: aim, max: Math.max(aim, fit.wrapFontPx / DIAGRAM_NAME_PX) }
+      };
+    }
+    var floor = DIAGRAM_SLIDE_FLOOR * fit.canvasWidth / DIAGRAM_TEXT_PX;
+    return {
+      room: { w: fit.wrapWidth, h: fit.maxHeight, soft: null },
+      lim: { floor: floor, aim: floor, max: Math.max(floor, DIAGRAM_SLIDE_MAX * fit.canvasWidth / DIAGRAM_NAME_PX) }
+    };
+  }
+
+  // canvasWidth is the width a slide is composed in: while presenting the
+  // 16:9 area the slide holds (the smaller of its width and its height
+  // times 16/9), otherwise the slide's width.
+  function canvasWidth(slideW, slideH, presenting) {
+    return presenting ? Math.min(slideW, slideH * 16 / 9) : slideW;
   }
 
   // elkPath turns an ELK edge's sections (start, bend points, end) into one
@@ -271,9 +486,10 @@
   // diagramFocus says which groups, nodes, and edges light up at stepAt:
   // the step's focus ids, everything inside a focused group, and every
   // edge touching a focused node. Null means the step singles nothing out
-  // (or there is no stepping), so nothing dims.
-  function diagramFocus(spec, stepAt) {
-    var step = isStep(stepAt) ? (spec.steps || [])[stepAt - 1] : null;
+  // (or there is no stepping, or the diagram stands at rest after a jump
+  // onto its slide), so nothing dims.
+  function diagramFocus(spec, stepAt, rest) {
+    var step = !rest && isStep(stepAt) ? (spec.steps || [])[stepAt - 1] : null;
     if (!step || !step.focus || !step.focus.length) return null;
     var parent = Object.create(null);
     (spec.groups || []).forEach(function (g) { parent[g.id] = g.group || ''; });
@@ -298,45 +514,88 @@
 
   // DIAGRAM_KIND_ROOM is the room a shape's decoration takes inside its
   // box: a person's figure a strip down the left, a store's cap a band
-  // across the top. diagramGraph grows the box by it, so the text keeps
+  // across the top. diagramElk grows the box by it, so the text keeps
   // its padding, and diagramText moves the text past it.
   var DIAGRAM_KIND_ROOM = { person: { left: 14, top: 0 }, store: { left: 0, top: 6 } };
+  var DIAGRAM_NO_ROOM = { left: 0, top: 0 };
+  function diagramKindRoom(kind) {
+    return Object.prototype.hasOwnProperty.call(DIAGRAM_KIND_ROOM, kind) ? DIAGRAM_KIND_ROOM[kind] : DIAGRAM_NO_ROOM;
+  }
   // DIAGRAM_GROUP_LABEL is where a group's label sits from the group's top
   // left corner: x the left inset (kept on the right too), y the baseline,
   // inside the top padding diagramElk gives every group.
   var DIAGRAM_GROUP_LABEL = { x: 12, y: 20 };
 
-  // diagramGraph is diagramElk's graph made ready to draw: every box grown
-  // by its shape's room and every group at least as wide as its label
-  // (drawn in upper case, so that is what measure gets).
-  function diagramGraph(spec, measure) {
-    var graph = diagramElk(spec, measure), kind = Object.create(null), label = Object.create(null);
-    (spec.nodes || []).forEach(function (n) { kind[n.id] = n.kind; });
-    (spec.groups || []).forEach(function (g) { label[g.id] = String(g.label || '').toUpperCase(); });
-    function grow(children) {
-      (children || []).forEach(function (el) {
-        var room = DIAGRAM_KIND_ROOM[kind[el.id]];
-        if (room && !el.group) { el.width += room.left; el.height += room.top; }
-        if (el.group) {
-          var w = Math.ceil(measure(label[el.id], 'group')) + 2 * DIAGRAM_GROUP_LABEL.x;
-          el.layoutOptions['elk.nodeSize.constraints'] = 'MINIMUM_SIZE';
-          el.layoutOptions['elk.nodeSize.minimum'] = '(' + w + ',0)';
-        }
-        grow(el.children);
-      });
-    }
-    grow(graph.children);
-    return graph;
+  // diagramText places a node's lines in its drawn box of width w: the
+  // centre line x, then the middle of each name line and of each text
+  // line, in the rows diagramBox sized the box for (box is its result),
+  // moved past the shape's room.
+  function diagramText(node, box, w) {
+    var room = diagramKindRoom(node.kind), top = DIAGRAM_BOX.padY + room.top;
+    var label = box.label.map(function (_, i) { return top + (i + 0.5) * DIAGRAM_BOX.label; });
+    top += Math.max(1, box.label.length) * DIAGRAM_BOX.label;
+    var lines = box.lines.map(function (_, i) { return top + (i + 0.5) * DIAGRAM_BOX.text; });
+    return { x: (w + room.left) / 2, label: label, lines: lines };
   }
 
-  // diagramText places a node's text in its drawn box of width w: the
-  // centre line x, the label row's middle, and each text line's middle,
-  // the rows diagramBox sized the box for, moved past the shape's room.
-  function diagramText(node, lineCount, w) {
-    var room = DIAGRAM_KIND_ROOM[node.kind] || { left: 0, top: 0 };
-    var top = DIAGRAM_BOX.padY + room.top, lines = [];
-    for (var i = 0; i < lineCount; i++) lines.push(top + DIAGRAM_BOX.label + (i + 0.5) * DIAGRAM_BOX.text);
-    return { x: (w + room.left) / 2, label: top + DIAGRAM_BOX.label / 2, lines: lines };
+  // edgeLabelRows is the middle of each line of an edge label, from the
+  // top of its halo.
+  function edgeLabelRows(box) {
+    return box.lines.map(function (_, i) { return DIAGRAM_HALO.padY / 2 + (i + 0.5) * DIAGRAM_HALO.line; });
+  }
+
+  // ── Chart helpers ──
+  var CHART_LINE_KINDS = { line: true, area: true, sparkline: true };
+  var CHART_ZERO_KINDS = { bar: true, 'stacked-bar': true, 'horizontal-bar': true, area: true };
+  var CHART_FITTED_KINDS = { line: true, sparkline: true, scatter: true };
+  var CHART_GRACE = '5%'; // the air a fitted value axis keeps around the data
+  var CHART_TICK = { share: 0.75, min: 11, max: 15 }; // ticks and axis titles against the root size
+  var CHART_LEGEND_SHARE = 0.8125; // the legend and sankey labels against the root size
+  var ROOT_PX = 16; // the browser's root font size, when none is read
+
+  // chartLine is how a chart drawn with lines joins its points: straight,
+  // since a curve draws values nobody measured. Nothing for other kinds.
+  function chartLine(kind) {
+    return CHART_LINE_KINDS[kind] === true ? { tension: 0 } : {};
+  }
+
+  // chartValueAxis is the value axis's range: bars and areas start at
+  // zero, since their length or area is the value; a line, a sparkline,
+  // and a scatter fit the data's range with a little air, so values
+  // between 0.84 and 0.97 do not draw as a flat line. Null for a kind
+  // with no value axis.
+  function chartValueAxis(kind) {
+    if (CHART_ZERO_KINDS[kind] === true) return { beginAtZero: true };
+    if (CHART_FITTED_KINDS[kind] === true) return { beginAtZero: false, grace: CHART_GRACE };
+    return null;
+  }
+
+  // chartFontSizes is the size of chart text in px for a root font size:
+  // ticks and axis titles at CHART_TICK's share of it, kept between its
+  // bounds, and the legend and sankey labels at CHART_LEGEND_SHARE.
+  function chartFontSizes(rootPx) {
+    var root = Number(rootPx) || ROOT_PX;
+    return {
+      tick: Math.min(CHART_TICK.max, Math.max(CHART_TICK.min, CHART_TICK.share * root)),
+      legend: CHART_LEGEND_SHARE * root
+    };
+  }
+
+  // seriesExtent is the range a stepped chart's fitted value axis is
+  // pinned to: the smallest and largest point of every series, so a series
+  // shown at a later step does not move the axis under the ones already
+  // there. Null without a point.
+  function seriesExtent(series) {
+    var min = Infinity, max = -Infinity;
+    (series || []).forEach(function (s) {
+      ((s && s.points) || []).forEach(function (p) {
+        var y = Number(p.y);
+        if (isNaN(y)) return;
+        if (y < min) min = y;
+        if (y > max) max = y;
+      });
+    });
+    return min > max ? null : { min: min, max: max };
   }
 
   // changedSectionTargets turns the content half of a diff answer
@@ -354,9 +613,12 @@
   root.PresentViz = {
     changedSectionTargets: changedSectionTargets,
     stepPlan: stepPlan, blockStepsAt: blockStepsAt, chartStepVisibility: chartStepVisibility, seriesMax: seriesMax,
-    ribbonLayout: ribbonLayout,
-    wrapLines: wrapLines, diagramBox: diagramBox, diagramElk: diagramElk, elkPath: elkPath, routeLabelPoint: routeLabelPoint,
+    seriesExtent: seriesExtent, ribbonLayout: ribbonLayout,
+    chartLine: chartLine, chartValueAxis: chartValueAxis, chartFontSizes: chartFontSizes,
+    wrapText: wrapText, diagramBox: diagramBox, edgeLabelBox: edgeLabelBox, edgeLabelRows: edgeLabelRows,
+    diagramElk: diagramElk, diagramLabelSpots: diagramLabelSpots, elkPath: elkPath,
+    diagramLadder: diagramLadder, diagramPlan: diagramPlan, diagramLimits: diagramLimits, canvasWidth: canvasWidth,
     diagramShown: diagramShown, diagramFocus: diagramFocus, flowSpeed: flowSpeed,
-    diagramGraph: diagramGraph, diagramText: diagramText, diagramGroupLabel: DIAGRAM_GROUP_LABEL
+    diagramText: diagramText, diagramGroupLabel: DIAGRAM_GROUP_LABEL
   };
 })(typeof window !== 'undefined' ? window : globalThis);

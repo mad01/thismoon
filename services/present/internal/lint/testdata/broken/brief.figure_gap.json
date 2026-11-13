@@ -1,0 +1,53 @@
+{
+  "title": "Releasing: from merged PR to signed artifact",
+  "content": {
+    "summary": "A merged PR reaches a signed artifact with no hand-made tag: release-please opens the release PR, and merging it cuts the tag.",
+    "sections": [
+      {
+        "h": "The commit prefix and path decide the version bump",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "A `feat:` commit bumps the minor version and a `fix:` the patch. A commit counts only toward the components whose registered path it changes."
+          }
+        ]
+      },
+      {
+        "h": "release-please looks back only 200 commits",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "A component whose last tag is further back than 200 commits on main is not seen. `commit-search-depth` in release-please-config.json sets the window."
+          }
+        ]
+      },
+      {
+        "h": "What to check when a release is stuck",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Start from the last thing that exists: no release PR, a release PR that will not merge, or a tag without its assets."
+          }
+        ]
+      },
+      {
+        "h": "Each release ships a tarball, a checksum file, and a signature",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "The artifacts job builds one tarball per component on a macOS arm64 runner, then writes checksums.txt and its cosign bundle."
+          }
+        ]
+      },
+      {
+        "h": "Two commands prove a release is genuine",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Check the cosign bundle against checksums.txt first, then the tarball against its line in checksums.txt."
+          }
+        ]
+      }
+    ]
+  }
+}

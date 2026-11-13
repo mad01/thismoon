@@ -10,7 +10,8 @@
 // footnotes are dropped, nested lists flatten into their parent, a
 // blockquote becomes one callout, and inline markup is rewritten into
 // present's own inline syntax, which the renderer applies to prose again (so
-// a literal asterisk in the source still italicises).
+// a literal asterisk in the source still italicises when it pairs with
+// another; a lone one prints as written).
 package mdimport
 
 import (

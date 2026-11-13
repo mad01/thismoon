@@ -1,0 +1,12 @@
+{
+  "id": "csl-ask-baseline",
+  "kind": "brief",
+  "ask": "Present what the csl_ask baseline runs showed, with the real numbers.",
+  "stresses": "change summary with real numbers: four runs, per-case cost, turns and score deltas",
+  "source": {
+    "repo": "github.com/mad01/thismoon",
+    "path": "evals/harness/results/2026-11-01-csl-ask.md",
+    "commit": "b59bd3ff5465c77d74aabe9283df0b05b36b6250",
+    "trimmed": "no"
+  }
+}

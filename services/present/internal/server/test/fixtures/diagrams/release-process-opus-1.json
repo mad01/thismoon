@@ -1,0 +1,185 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "actions",
+      "label": "release.yml (GitHub Actions)",
+      "tone": "amber"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "pr",
+      "label": "Merged PR",
+      "text": "conventional commit on main",
+      "tone": "neutral"
+    },
+    {
+      "id": "rp",
+      "label": "release-please",
+      "text": "maps commits to components by path",
+      "tone": "green",
+      "group": "actions"
+    },
+    {
+      "id": "relpr",
+      "label": "Release PR",
+      "text": "manifest bump + changelog",
+      "tone": "neutral"
+    },
+    {
+      "id": "automerge",
+      "label": "release-pr-automerge",
+      "text": "enables auto-merge, waits on checks",
+      "tone": "green",
+      "group": "actions",
+      "step": 2
+    },
+    {
+      "id": "tag",
+      "label": "Tag + GitHub Release",
+      "text": "name/vX.Y.Z",
+      "kind": "store",
+      "tone": "blue",
+      "step": 2
+    },
+    {
+      "id": "artifacts",
+      "label": "artifacts job",
+      "text": "macOS arm64 runner, one per released path",
+      "tone": "green",
+      "group": "actions",
+      "step": 3
+    },
+    {
+      "id": "assets",
+      "label": "Release assets",
+      "text": "tarball, checksums.txt, .bundle",
+      "kind": "store",
+      "tone": "blue",
+      "step": 3
+    },
+    {
+      "id": "sign",
+      "label": "cosign keyless",
+      "text": "workflow's GitHub OIDC identity",
+      "kind": "external",
+      "tone": "neutral",
+      "step": 3
+    },
+    {
+      "id": "image",
+      "label": "present image job",
+      "text": "ubuntu runner, present only",
+      "tone": "green",
+      "group": "actions",
+      "step": 4
+    },
+    {
+      "id": "ghcr",
+      "label": "ghcr.io/mad01/present",
+      "text": "linux amd64 + arm64",
+      "kind": "store",
+      "tone": "blue",
+      "step": 4
+    }
+  ],
+  "edges": [
+    {
+      "from": "pr",
+      "to": "rp",
+      "label": "push to main",
+      "flow": true
+    },
+    {
+      "from": "rp",
+      "to": "relpr",
+      "label": "opens or updates",
+      "flow": true
+    },
+    {
+      "from": "automerge",
+      "to": "relpr",
+      "label": "turns on auto-merge",
+      "step": 2
+    },
+    {
+      "from": "relpr",
+      "to": "tag",
+      "label": "merge cuts tag",
+      "flow": true,
+      "step": 2
+    },
+    {
+      "from": "tag",
+      "to": "artifacts",
+      "label": "fans out per path",
+      "flow": true,
+      "step": 3
+    },
+    {
+      "from": "artifacts",
+      "to": "assets",
+      "label": "uploads",
+      "flow": true,
+      "step": 3
+    },
+    {
+      "from": "artifacts",
+      "to": "sign",
+      "label": "signs checksums.txt",
+      "step": 3
+    },
+    {
+      "from": "tag",
+      "to": "image",
+      "label": "present release",
+      "flow": true,
+      "step": 4
+    },
+    {
+      "from": "image",
+      "to": "ghcr",
+      "label": "pushes X.Y.Z, latest",
+      "flow": true,
+      "step": 4
+    },
+    {
+      "from": "image",
+      "to": "sign",
+      "label": "signs digest",
+      "step": 4
+    }
+  ],
+  "steps": [
+    {
+      "caption": "A releasable commit lands on main, and release-please opens or updates that component's release PR.",
+      "focus": [
+        "rp",
+        "relpr"
+      ]
+    },
+    {
+      "caption": "The automerge job turns on auto-merge, and once checks pass the PR merges and cuts the tag and GitHub Release.",
+      "focus": [
+        "automerge",
+        "tag"
+      ]
+    },
+    {
+      "caption": "The artifacts job builds every released path, uploads the tarballs and checksums, and signs checksums.txt keyless.",
+      "focus": [
+        "artifacts",
+        "assets",
+        "sign"
+      ]
+    },
+    {
+      "caption": "A present release also builds the multi-arch image, pushes it to ghcr.io, and signs its digest.",
+      "focus": [
+        "image",
+        "ghcr"
+      ]
+    }
+  ]
+}

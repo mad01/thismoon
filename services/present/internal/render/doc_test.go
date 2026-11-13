@@ -757,6 +757,112 @@ func TestInlineMdNestedMarkup(t *testing.T) {
 	}
 }
 
+// TestInlineMdStars covers a star that is not an emphasis mark. A star inside
+// a code span is always literal, and a bare star that cannot open or close
+// emphasis by CommonMark's flanking rules stays literal too. The first cases
+// are list items and paragraphs from real Docs whose glob patterns rendered
+// as empty code chips with italics leaking across the sentence. The
+// neighbours after them pin emphasis that already rendered right.
+func TestInlineMdStars(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{
+			"bare star in code, inside bold and after it",
+			"**`*` is never allowed.** srt rejects a bare `*` in settings, and `srt-run` " +
+				"refuses one in `SRT_RUN_ALLOW_DOMAINS`.",
+			"<strong><code>*</code> is never allowed.</strong> srt rejects a bare <code>*</code> " +
+				"in settings, and <code>srt-run</code> refuses one in <code>SRT_RUN_ALLOW_DOMAINS</code>.",
+		},
+		{
+			"globs in code spans",
+			"Nested denies keep `.env`, `*.pem`, `*.key` and `.git/config` unreadable.",
+			"Nested denies keep <code>.env</code>, <code>*.pem</code>, <code>*.key</code> and " +
+				"<code>.git/config</code> unreadable.",
+		},
+		{
+			"globs in code spans after a bold lead",
+			"**Reads deny the home directory and carve back.** A process gets the code roots, " +
+				"with nested denies keeping `.env`, `*.pem`, `*.key`, and `.git/config` unreadable.",
+			"<strong>Reads deny the home directory and carve back.</strong> A process gets the " +
+				"code roots, with nested denies keeping <code>.env</code>, <code>*.pem</code>, " +
+				"<code>*.key</code>, and <code>.git/config</code> unreadable.",
+		},
+		{
+			"one bare star in code",
+			"A bare `*` is never an allowed host: `srt-run` refuses it.",
+			"A bare <code>*</code> is never an allowed host: <code>srt-run</code> refuses it.",
+		},
+		{
+			"globs outside code",
+			"keep .env, *.pem, *.key and .git/config unreadable",
+			"keep .env, *.pem, *.key and .git/config unreadable",
+		},
+		{"bare star outside code", "a bare * in settings", "a bare * in settings"},
+		{"spaced operators", "a * b * c", "a * b * c"},
+		{
+			"double-star glob in code",
+			"match `**/*.go` and `*.md`",
+			"match <code>**/*.go</code> and <code>*.md</code>",
+		},
+		{
+			"star in a link url",
+			"see [x](https://e.com/a*b*c)",
+			`see <a href="https://e.com/a*b*c">x</a>`,
+		},
+		{
+			"emphasis cannot cross into a link",
+			"*a [b*](https://x)",
+			`*a <a href="https://x">b*</a>`,
+		},
+		{"italic", "this is *important* text", "this is <em>important</em> text"},
+		{"bold", "hello **world** end", "hello <strong>world</strong> end"},
+		{"bold then italic", "**bold** and *italic*", "<strong>bold</strong> and <em>italic</em>"},
+		{"italic inside bold", "**a *b* c**", "<strong>a <em>b</em> c</strong>"},
+		{"code inside italic", "*see `x` now*", "<em>see <code>x</code> now</em>"},
+		{"italic link label", "[*docs*](https://x)", `<a href="https://x"><em>docs</em></a>`},
+		{"italic around a link", "*see [d](https://d)*", `<em>see <a href="https://d">d</a></em>`},
+		{
+			"italic beside punctuation",
+			`(*note*), "*quoted*"`,
+			"(<em>note</em>), &#34;<em>quoted</em>&#34;",
+		},
+		{"intraword", "2*3*4", "2<em>3</em>4"},
+		{"list marker", "* first item", "* first item"},
+		{"snake case", "snake_case_name and __init__", "snake_case_name and __init__"},
+	}
+	for _, c := range cases {
+		if got := string(inlineMd(c.in)); got != c.want {
+			t.Errorf("%s: inlineMd(%q)\n got %s\nwant %s", c.name, c.in, got, c.want)
+		}
+	}
+}
+
+// TestRenderDocKVLabelInlineMarkdown renders a kv label through inline
+// markdown like its value, so a label naming a setting in backticks shows a
+// code span instead of the raw backticks. The rows come from a real Doc.
+func TestRenderDocKVLabelInlineMarkdown(t *testing.T) {
+	d := Doc{Sections: []Section{{Heading: "S", Blocks: []Block{{T: "kv", KV: []KVPair{
+		{K: "`commit-search-depth`", V: "200 here (the tool's default is 500)"},
+		{K: "`commit-batch-size`", V: "10 commits per request (default)"},
+		{K: "Why the window", V: "Each API call can time out"},
+		{K: "a <b> & **c**", V: "v"},
+	}}}}}}
+	out, err := RenderDoc(d, "T")
+	if err != nil {
+		t.Fatalf("RenderDoc: %v", err)
+	}
+	for _, want := range []string{
+		"<wk-kv-label><code>commit-search-depth</code></wk-kv-label>",
+		"<wk-kv-label><code>commit-batch-size</code></wk-kv-label>",
+		"<wk-kv-label>Why the window</wk-kv-label>",
+		"<wk-kv-label>a &lt;b&gt; and <strong>c</strong></wk-kv-label>",
+		"<wk-kv-value>200 here (the tool&#39;s default is 500)</wk-kv-value>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
 // TestRenderDocChartSteps renders a stepped chart: the block carries the
 // step count, the captions follow the canvas as a fixated numbered list
 // with inline markdown and name normalization applied, and the series
@@ -764,11 +870,21 @@ func TestInlineMdNestedMarkup(t *testing.T) {
 func TestRenderDocChartSteps(t *testing.T) {
 	stepped := Block{
 		T: "chart", Kind: "stacked-bar", Title: "Errors",
-		Steps:  []Step{{Caption: "The **JIRA** queue fills."}, {Caption: "Retries pile on."}},
-		Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "x", Y: 1}}}, {Name: "b", Step: 2, Points: []ChartPoint{{X: "x", Y: 2}}}},
+		Steps: []Step{{Caption: "The **JIRA** queue fills."}, {Caption: "Retries pile on."}},
+		Series: []ChartSeries{
+			{Name: "a", Points: []ChartPoint{{X: "x", Y: 1}}},
+			{Name: "b", Step: 2, Points: []ChartPoint{{X: "x", Y: 2}}},
+		},
 	}
-	plain := Block{T: "chart", Kind: "bar", Series: []ChartSeries{{Points: []ChartPoint{{X: "x", Y: 1}}}}}
-	out, err := RenderDoc(Doc{Sections: []Section{{Heading: "S", Blocks: []Block{stepped, plain}}}}, "T")
+	plain := Block{
+		T:      "chart",
+		Kind:   "bar",
+		Series: []ChartSeries{{Points: []ChartPoint{{X: "x", Y: 1}}}},
+	}
+	out, err := RenderDoc(
+		Doc{Sections: []Section{{Heading: "S", Blocks: []Block{stepped, plain}}}},
+		"T",
+	)
 	if err != nil {
 		t.Fatalf("RenderDoc: %v", err)
 	}
@@ -797,13 +913,29 @@ func TestRenderDocChartSteps(t *testing.T) {
 func TestRenderDocRibbon(t *testing.T) {
 	series := []ChartSeries{
 		{Name: "search", Points: []ChartPoint{{X: "Q1", Y: 40}, {X: "Q2", Y: 35}}},
-		{Name: "social", Points: []ChartPoint{{X: "Q1", Y: 20}, {X: "Q2", Y: 45}, {X: "Q3", Y: 50}}},
+		{
+			Name:   "social",
+			Points: []ChartPoint{{X: "Q1", Y: 20}, {X: "Q2", Y: 45}, {X: "Q3", Y: 50}},
+		},
 	}
-	steps := []Step{{Caption: "Search leads."}, {Caption: "Social passes it."}, {Caption: "Search drops out."}}
-	frameless := Block{T: "chart", Kind: "ribbon", Title: "Traffic by channel", Series: series, Steps: steps}
+	steps := []Step{
+		{Caption: "Search leads."},
+		{Caption: "Social passes it."},
+		{Caption: "Search drops out."},
+	}
+	frameless := Block{
+		T:      "chart",
+		Kind:   "ribbon",
+		Title:  "Traffic by channel",
+		Series: series,
+		Steps:  steps,
+	}
 	yes := true
 	framed := Block{T: "chart", Kind: "ribbon", Order: "given", Frame: &yes, Series: series}
-	out, err := RenderDoc(Doc{Sections: []Section{{Heading: "S", Blocks: []Block{frameless, framed}}}}, "T")
+	out, err := RenderDoc(
+		Doc{Sections: []Section{{Heading: "S", Blocks: []Block{frameless, framed}}}},
+		"T",
+	)
 	if err != nil {
 		t.Fatalf("RenderDoc: %v", err)
 	}
@@ -821,7 +953,10 @@ func TestRenderDocRibbon(t *testing.T) {
 		t.Errorf("order appears %d times, want 1 (the default rank is not written)", n)
 	}
 	if n := strings.Count(out, "data-frame"); n != 1 {
-		t.Errorf("data-frame appears %d times, want 1 (a chart carries none unless frame is set)", n)
+		t.Errorf(
+			"data-frame appears %d times, want 1 (a chart carries none unless frame is set)",
+			n,
+		)
 	}
 }
 
@@ -883,11 +1018,19 @@ func TestRenderDocDiagram(t *testing.T) {
 			{ID: "web", Label: "Web app", Text: "Next.js", Kind: "person"},
 			{ID: "api", Label: "Checkout API", Group: "prod", Step: 2},
 		},
-		Edges: []DiagramEdge{{From: "web", To: "api", Label: "POST /checkout", Flow: true, Weight: 120, Step: 2}},
-		Steps: []Step{{Caption: "The browser posts the cart."}, {Caption: "The API prices it.", Focus: []string{"api"}}},
+		Edges: []DiagramEdge{
+			{From: "web", To: "api", Label: "POST /checkout", Flow: true, Weight: 120, Step: 2},
+		},
+		Steps: []Step{
+			{Caption: "The browser posts the cart."},
+			{Caption: "The API prices it.", Focus: []string{"api"}},
+		},
 	}
 	plain := Block{T: "diagram", Nodes: []DiagramNode{{ID: "a", Label: "A"}}}
-	out, err := RenderDoc(Doc{Sections: []Section{{Heading: "S", Blocks: []Block{stepped, plain}}}}, "T")
+	out, err := RenderDoc(
+		Doc{Sections: []Section{{Heading: "S", Blocks: []Block{stepped, plain}}}},
+		"T",
+	)
 	if err != nil {
 		t.Fatalf("RenderDoc: %v", err)
 	}
@@ -1048,8 +1191,16 @@ func TestTerminalBlockValidation(t *testing.T) {
 		{"cmd on a code block", Block{T: "code", Cmd: "ls"}, "code block: session, cmd, cwd"},
 		{"cwd on a chart", Block{T: "chart", Cwd: "/tmp"}, "chart block: session, cmd, cwd"},
 		{"rows height on a stat", Block{T: "stat", TerminalRows: 24}, "stat block: session"},
-		{"prefill on a paragraph", Block{T: "p", Prefill: "ls"}, "p block: session, cmd, cwd, prefill"},
-		{"prefill with a newline", prefill("ls\nrm -rf x"), `terminal "s": prefill must be one line`},
+		{
+			"prefill on a paragraph",
+			Block{T: "p", Prefill: "ls"},
+			"p block: session, cmd, cwd, prefill",
+		},
+		{
+			"prefill with a newline",
+			prefill("ls\nrm -rf x"),
+			`terminal "s": prefill must be one line`,
+		},
 		{"prefill with a carriage return", prefill("ls\rrm -rf x"), "prefill must be one line"},
 		{"prefill with a tab", prefill("a\tb"), "prefill must be one line"},
 		{"prefill with an escape", prefill("a\x1b[2Jb"), "prefill must be one line"},
@@ -1105,7 +1256,10 @@ func TestTerminalBlockValidation(t *testing.T) {
 			strings.Repeat("é", TerminalPrefillMaxLen),
 		),
 		"prefill padded with a newline": prefill("  explain this repo\n"),
-		"in a column":                   {T: "columns", Columns: [][]Block{one, {term("demo", 24)}}},
+		"in a column": {
+			T:       "columns",
+			Columns: [][]Block{one, {term("demo", 24)}},
+		},
 	}
 	for name, b := range accepted {
 		out, err := RenderDoc(terminalDoc(b), "T")
@@ -1277,7 +1431,11 @@ func TestTerminalSessionSpecs(t *testing.T) {
 	}{
 		{"same cmd and cwd", term("demo", "claude", "/tmp", 0), term("demo", "claude", "/tmp", 0)},
 		{"rows differ", term("demo", "claude", "", 12), term("demo", "claude", "", 40)},
-		{"whitespace differs", term("demo", " claude\n", "/tmp ", 0), term("demo", "claude", " /tmp", 0)},
+		{
+			"whitespace differs",
+			term("demo", " claude\n", "/tmp ", 0),
+			term("demo", "claude", " /tmp", 0),
+		},
 		{"prefill whitespace differs", typed(" explain this repo\n"), typed("explain this repo")},
 		{"different sessions", term("a", "claude", "", 0), term("b", "htop", "/tmp", 0)},
 		{"in a column", term("demo", "claude", "", 0), column(term("demo", "claude", "", 24))},

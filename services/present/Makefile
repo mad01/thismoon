@@ -12,7 +12,7 @@ KIND_CLUSTER    ?= kind
 KIND_VERSION    ?= v0.32.0
 KIND_NODE_IMAGE ?= kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
 
-.PHONY: build install resign clean test test-js tidy fmt lint cache cache-force image kind-test kind-down
+.PHONY: build install resign clean test test-js tidy fmt lint limits-doc cache cache-force image kind-test kind-down
 
 build:
 	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/present
@@ -60,6 +60,13 @@ fmt:
 
 lint:
 	golangci-lint run ./...
+
+# Regenerate the skill files generated from the limits table:
+# skills/present/references/limits.md, and the lint's fragment pairs in the
+# other reference files once they exist. A plain go test fails when one is
+# stale.
+limits-doc:
+	PRESENT_UPDATE_SKILL=1 go test ./internal/lint -run TestSkillFilesAreCurrent
 
 # Container image for the shared instance, built from the repo root for the
 # host's architecture and loaded into the local docker daemon.

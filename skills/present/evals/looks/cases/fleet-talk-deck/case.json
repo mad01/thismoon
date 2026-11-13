@@ -1,0 +1,12 @@
+{
+  "id": "fleet-talk-deck",
+  "kind": "deck",
+  "ask": "Make me a deck from this for a 10-minute talk to the team in the meeting room about how the fleet fits together.",
+  "stresses": "deck for a room: one idea per slide, legible from the back",
+  "source": {
+    "repo": "github.com/mad01/thismoon",
+    "path": "docs/HOW-IT-FITS-TOGETHER.md",
+    "commit": "b59bd3ff5465c77d74aabe9283df0b05b36b6250",
+    "trimmed": "no"
+  }
+}

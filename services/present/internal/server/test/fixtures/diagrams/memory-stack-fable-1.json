@@ -1,0 +1,105 @@
+{
+  "direction": "LR",
+  "nodes": [
+    {
+      "id": "automem",
+      "label": "auto memory",
+      "text": "~/.claude/projects/<project>/memory/",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "agentmem",
+      "label": "agent-memory",
+      "text": "~/.config/agent-memory/, usually a git clone",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "moondb",
+      "label": "moondb",
+      "text": "~/.local/state/moondb/",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "worklog",
+      "label": "worklog",
+      "text": "~/code/worklog/",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "handoff",
+      "label": "handoff",
+      "text": "~/.handoff/",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "events",
+      "label": "events",
+      "text": "~/.local/share/events/",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "hint",
+      "label": "belt hint session-start",
+      "text": "prints each hint under a belt[<name>]: prefix",
+      "tone": "green"
+    },
+    {
+      "id": "session",
+      "label": "Claude Code session",
+      "text": "starts with an empty context window",
+      "tone": "neutral"
+    }
+  ],
+  "edges": [
+    {
+      "from": "automem",
+      "to": "session",
+      "label": "loads MEMORY.md itself",
+      "flow": true
+    },
+    {
+      "from": "agentmem",
+      "to": "hint",
+      "label": "index lines",
+      "flow": true
+    },
+    {
+      "from": "moondb",
+      "to": "hint",
+      "label": "uncommitted files",
+      "flow": true
+    },
+    {
+      "from": "hint",
+      "to": "session",
+      "label": "at SessionStart",
+      "flow": true
+    },
+    {
+      "from": "moondb",
+      "to": "session",
+      "label": "moondb_why"
+    },
+    {
+      "from": "worklog",
+      "to": "session",
+      "label": "/worklog skill"
+    },
+    {
+      "from": "handoff",
+      "to": "session",
+      "label": "reads the file"
+    },
+    {
+      "from": "events",
+      "to": "session",
+      "label": "events_query"
+    }
+  ]
+}

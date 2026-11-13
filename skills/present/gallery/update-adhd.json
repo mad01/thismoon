@@ -1,0 +1,169 @@
+{
+  "title": "Upgrade notes: what to run now and what can wait",
+  "content": {
+    "summary": "Update toss-bin on every machine with **ralph up** before you add its allow rule. An old toss-bin ignores the temp-only flag and trashes any path.",
+    "meta": "2026-11-10 · Upgrade notes · 2026-10-25 to 2026-11-10",
+    "chips": [
+      {
+        "text": "22 entries",
+        "style": "stat"
+      },
+      {
+        "text": "1 to do now",
+        "style": "a"
+      },
+      {
+        "text": "5 can wait",
+        "style": "c"
+      }
+    ],
+    "sections": [
+      {
+        "h": "Do now",
+        "blocks": [
+          {
+            "t": "list",
+            "ordered": true,
+            "items": [
+              "Run **ralph up** on every machine, so toss-bin has the temp-only flag.",
+              "On each machine, run the **gate**. It must print BLOCKED and exit 1.",
+              "After the gate passes on every machine, add the **allow rule** to the Claude settings template.",
+              "Run ralph up again, then run the two **verify** lines."
+            ]
+          },
+          {
+            "t": "callout",
+            "sev": "warn",
+            "text": "**Do not add the allow rule first.** A toss-bin from before this change ignores the temp-only flag as unknown and trashes any path, without safe mode. The version flag cannot tell old from new: both print 1.3.1."
+          },
+          {
+            "t": "code",
+            "lang": "bash",
+            "text": "# 1. on every machine\nralph up\n\n# 2. the gate: must print BLOCKED: and exit 1 (an old binary prints OK:)\ntoss-bin --temp-only --validate ~/notes.txt\n\n# 3. add to permissions.allow in the consuming repo's Claude settings template:\n#    Bash(toss-bin --temp-only *)\n\n# 4. after the second ralph up\ncommand -v toss-bin                       # ~/.local/bin/toss-bin\ntoss-bin --temp-only --validate /tmp/x    # OK: /tmp/x"
+          },
+          {
+            "t": "p",
+            "text": "This is the newest entry, [PR #415](https://github.com/mad01/thismoon/pull/415). With the rule in place, an agent can trash anything under `/tmp`, `/var/tmp` or `~/.tmp` with no prompt. It stays recoverable from `~/.Trash/my-trash/`."
+          }
+        ]
+      },
+      {
+        "h": "Six of the 22 entries ask for the same moondb import",
+        "blocks": [
+          {
+            "t": "columns",
+            "cols": [
+              [
+                {
+                  "t": "stat",
+                  "value": "22",
+                  "label": "entries",
+                  "sub": "since 2026-10-25"
+                }
+              ],
+              [
+                {
+                  "t": "stat",
+                  "value": "11",
+                  "label": "name moondb",
+                  "sub": "half of all entries"
+                }
+              ],
+              [
+                {
+                  "t": "stat",
+                  "value": "6",
+                  "label": "ask for one forced import",
+                  "sub": "more than half of the moondb entries"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "p",
+            "text": "Run the forced import after ralph up has brought in the newest moondb, with **no Claude Code session active**. A forced import closes in-flight turns. A run on an older build must be repeated: the entry for [PR #395](https://github.com/mad01/thismoon/pull/395) says so."
+          },
+          {
+            "t": "code",
+            "lang": "bash",
+            "text": "moondb import --since 30d --force"
+          },
+          {
+            "t": "p",
+            "text": "The import fills five things for sessions recorded before each change. Sessions older than 30 days need a wider since value."
+          },
+          {
+            "t": "list",
+            "items": [
+              "**Model calls** a turn lost to a queued prompt or to the 4 MiB cap ([#394](https://github.com/mad01/thismoon/pull/394), [#395](https://github.com/mad01/thismoon/pull/395)).",
+              "**The last message** a parent sent a subagent before its edit ([#347](https://github.com/mad01/thismoon/pull/347)).",
+              "**The spawn brief** of each subagent ([#343](https://github.com/mad01/thismoon/pull/343)).",
+              "**The cwd repo and entrypoint** of a session ([#320](https://github.com/mad01/thismoon/pull/320)).",
+              "**Subagent cost** for the last month's sessions ([#298](https://github.com/mad01/thismoon/pull/298))."
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Five checks show whether an older entry still needs you",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Each of these five entries breaks something until its action is done. Run the check with the same number: a clean result means the entry is behind you."
+          },
+          {
+            "t": "list",
+            "ordered": true,
+            "items": [
+              "**brain**: brain doctor exits 0. If not, set the legacy indexes aside ([#401](https://github.com/mad01/thismoon/pull/401)).",
+              "**belt hints**: the grep prints nothing. If not, a hook errors on every csl search and every prompt ([#344](https://github.com/mad01/thismoon/pull/344)).",
+              "**keeper-of-facts**: belt doctor shows no unknown-hint warning. If it does, it exits 1 ([#332](https://github.com/mad01/thismoon/pull/332)).",
+              "**Homebrew tap**: brew tap does not list the tap. If it does, reinstall each tool through mise ([#351](https://github.com/mad01/thismoon/pull/351)).",
+              "**csl JSON**: the jq line prints a number. An older script must read the matches key ([#342](https://github.com/mad01/thismoon/pull/342))."
+            ]
+          },
+          {
+            "t": "code",
+            "lang": "bash",
+            "text": "# 1. exits 0, and index-dir names ~/.local/state/brain/index\nbrain doctor\n\n# 2. prints nothing\ngrep -E 'belt hint (search|prompt)' ~/.claude/settings.json ~/.codex/hooks.json\n\n# 3. no kof probe, no unknown-hint warning\nbelt doctor\n\n# 4. does not list mad01/tap\nbrew tap\n\n# 5. prints a number\ncsl search <q> --json | jq '.matches | length'"
+          }
+        ]
+      },
+      {
+        "h": "Five items can wait, because skipping them breaks nothing",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "**Codex capture** in moondb is opt-in. Nothing changes until Codex runs the hooks ([#408](https://github.com/mad01/thismoon/pull/408)).",
+              "**The read-size matcher** for csl_read. A machine that skips it keeps the Read half of the hint, and belt doctor only warns ([#363](https://github.com/mad01/thismoon/pull/363)).",
+              "**The csl launcher** for csl_ask. A machine that skips it keeps a working csl server, and search works as before ([#359](https://github.com/mad01/thismoon/pull/359)).",
+              "**The brain legacy directories.** Delete the two once brain doctor passes ([#401](https://github.com/mad01/thismoon/pull/401)).",
+              "**The keeper-of-facts store and logs.** Nothing reads them now, and deleting them is your call ([#332](https://github.com/mad01/thismoon/pull/332))."
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Next: check the version after ralph up",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "When the first ralph up finishes, ask the service for its version and compare it with the merged commit. ralph can report ok while an **old binary** keeps running."
+          },
+          {
+            "t": "code",
+            "lang": "bash",
+            "text": "curl -s 127.0.0.1:7433/version    # moondb\ncurl -s 127.0.0.1:7427/version    # brain"
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "docs/UPGRADING.md at b59bd3f",
+      "url": "https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/docs/UPGRADING.md"
+    }
+  ]
+}

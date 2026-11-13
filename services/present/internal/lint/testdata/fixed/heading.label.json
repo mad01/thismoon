@@ -1,0 +1,26 @@
+{
+  "title": "ADR-0028: sandbox-runtime replaces hand-written seatbelt profiles",
+  "content": {
+    "summary": "The fleet now confines its processes with **sandbox-runtime (srt)** instead of hand-written seatbelt profiles: each process starts default-deny and reaches only the hosts its settings name.",
+    "sections": [
+      {
+        "h": "srt replaces one hand-written profile per process",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "srt replaces the one `.sb` file per process that ran under `sandbox-exec`."
+          }
+        ]
+      },
+      {
+        "h": "A revert restores the old profiles and reaches ADR-0027 too",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Restore the deleted `.sb` files from git and point the wrappers back at `sandbox-exec`. ADR-0027 builds on this decision, so a revert reaches it too."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "hooks",
+      "label": "Claude Code hooks",
+      "tone": "amber"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "session",
+      "label": "Claude Code session",
+      "text": "the agent picks the store when it writes",
+      "tone": "neutral"
+    },
+    {
+      "id": "brec",
+      "label": "belt record",
+      "text": "nine lifecycle events",
+      "tone": "green",
+      "group": "hooks"
+    },
+    {
+      "id": "mrec",
+      "label": "moondb record",
+      "text": "every prompt, file edit and stop",
+      "tone": "green",
+      "group": "hooks"
+    },
+    {
+      "id": "others",
+      "label": "Guards, hints, services",
+      "text": "every deny, every hint, the services' audit trails",
+      "tone": "green"
+    },
+    {
+      "id": "automem",
+      "label": "auto memory",
+      "text": "MEMORY.md index plus one file per fact",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "agentmem",
+      "label": "agent-memory",
+      "text": "same layout; belt never writes to it",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "worklog",
+      "label": "worklog",
+      "text": "task state keyed by ticket or topic",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "handoff",
+      "label": "handoff",
+      "text": "a one-off bridge document",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "events",
+      "label": "events",
+      "text": "one queryable timeline",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "moondb",
+      "label": "moondb",
+      "text": "each edit with its turn, prompt and later commit",
+      "kind": "store",
+      "tone": "blue"
+    }
+  ],
+  "edges": [
+    {
+      "from": "session",
+      "to": "automem",
+      "label": "file tools"
+    },
+    {
+      "from": "session",
+      "to": "agentmem",
+      "label": "write, commit, push"
+    },
+    {
+      "from": "session",
+      "to": "worklog",
+      "label": "worklog_checkpoint"
+    },
+    {
+      "from": "session",
+      "to": "handoff",
+      "label": "/handoff skill"
+    },
+    {
+      "from": "session",
+      "to": "brec",
+      "label": "nine lifecycle events"
+    },
+    {
+      "from": "session",
+      "to": "mrec",
+      "label": "prompt, edit, stop"
+    },
+    {
+      "from": "brec",
+      "to": "events",
+      "label": "ledger"
+    },
+    {
+      "from": "others",
+      "to": "events",
+      "label": "denies, audit trails"
+    },
+    {
+      "from": "mrec",
+      "to": "moondb",
+      "label": "before and after"
+    }
+  ]
+}

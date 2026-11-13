@@ -1,0 +1,449 @@
+{
+  "title": "How moondb records an edit and finds it again",
+  "content": {
+    "summary": "moondb records every file edit a Claude Code session makes between commits. Hooks write each edit to a spool on disk and exit. One process, **moondb serve**, stores the edits and answers every question about them.",
+    "meta": "2026-11-13 · explainer · moondb capture, storage and queries",
+    "sections": [
+      {
+        "h": "Two commands write to a spool, and one process reads it",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "TB",
+            "caption": "The whole of moondb. An arrow shows which way data moves. Green is a moondb command, blue is on disk.",
+            "nodes": [
+              {
+                "id": "record",
+                "label": "moondb record",
+                "text": "Run by Claude Code hooks, then exits",
+                "tone": "green"
+              },
+              {
+                "id": "import",
+                "label": "moondb import",
+                "text": "Reads old session transcripts",
+                "tone": "green"
+              },
+              {
+                "id": "spool",
+                "label": "spool/",
+                "text": "Envelopes waiting for serve",
+                "kind": "queue",
+                "tone": "blue"
+              },
+              {
+                "id": "serve",
+                "label": "moondb serve",
+                "text": "Single writer; API and web page",
+                "tone": "green"
+              },
+              {
+                "id": "store",
+                "label": "log/ and objects/",
+                "text": "Records and gzipped chunks",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "mcp",
+                "label": "moondb mcp",
+                "text": "Stdio shim, read-only tools",
+                "tone": "green"
+              },
+              {
+                "id": "cli",
+                "label": "Query commands",
+                "text": "why, history, sessions, trace",
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "record",
+                "to": "spool",
+                "label": "envelopes"
+              },
+              {
+                "from": "import",
+                "to": "spool",
+                "label": "backfill"
+              },
+              {
+                "from": "spool",
+                "to": "serve",
+                "label": "drains"
+              },
+              {
+                "from": "serve",
+                "to": "store",
+                "label": "appends"
+              },
+              {
+                "from": "serve",
+                "to": "mcp",
+                "label": "answers over HTTP"
+              },
+              {
+                "from": "serve",
+                "to": "cli",
+                "label": "answers over HTTP"
+              }
+            ]
+          },
+          {
+            "t": "p",
+            "text": "Start at the spool in the middle. It is the one place capture and storage meet: two commands write envelopes into it, and **moondb serve** is the only process that takes them out. Everything that asks a question is a thin HTTP client of serve and holds no state."
+          }
+        ]
+      },
+      {
+        "h": "Capture writes envelopes to disk and exits",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "A Claude Code hook runs `moondb record` with its payload on stdin. The command spools its envelopes and exits. Only the hook for a file tool is sync; the other four are async. Each hook spools its own kind of envelope:"
+          },
+          {
+            "t": "list",
+            "items": [
+              "**A prompt** spools a turn-open envelope with the prompt text and the transcript offset.",
+              "**A file edit** spools one edit envelope per file. It holds the tool input, the patch, and the bytes the hook observed on disk with their blob id.",
+              "**A Bash command** spools one edit envelope per changed file. A file that git reports clean gets none.",
+              "**A stop** spools a turn-close envelope with the final message and the transcript tail. Each touched worktree whose HEAD moved adds a head-moved envelope.",
+              "**A subagent stop** spools an agent-close envelope with the agent's transcript, each text and tool result cut to a 240-byte head."
+            ]
+          },
+          {
+            "t": "p",
+            "text": "A prompt and a stop also spool a snapshot of each worktree in play: its dirty files and the paths the session touched. A snapshot is skipped when nothing changed. The writer puts each chunk file in place before it renames the envelope, so serve never sees an envelope without its chunks."
+          },
+          {
+            "t": "p",
+            "text": "Capture works inside fixed time budgets:"
+          },
+          {
+            "t": "kv",
+            "kv": [
+              {
+                "k": "Bash edits",
+                "v": "2 s for the files of one hook"
+              },
+              {
+                "k": "Snapshots",
+                "v": "2 s, shared by all snapshots of one hook"
+              },
+              {
+                "k": "Subagent stop",
+                "v": "2 s"
+              },
+              {
+                "k": "Final message",
+                "v": "up to 1 s of waiting for it to reach the transcript tail"
+              }
+            ]
+          },
+          {
+            "t": "h3",
+            "text": "Import writes the same envelopes from old transcripts"
+          },
+          {
+            "t": "p",
+            "text": "`moondb import` reads the session transcripts under `~/.claude/projects` and writes the envelopes the hooks would have written. It uses the hooks' ids and marks every envelope `backfill`. A re-run, or an overlap with live capture, then only fills gaps: a stored edit stays. A transcript has no disk read and no HEAD, so an imported edit carries neither."
+          }
+        ]
+      },
+      {
+        "h": "serve is the only writer, and it polls the spool every second",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "**moondb serve** watches the spool and polls it every second. It reads the envelopes in name order. For each one it stores the chunks, derives each edit and snapshot, appends the records, and deletes the envelope. Ingest is idempotent on the envelope id."
+          },
+          {
+            "t": "p",
+            "text": "Derive gives an edit its content. The after content comes from the tool input. The before content is the first of these sources that the call fits:"
+          },
+          {
+            "t": "list",
+            "ordered": true,
+            "items": [
+              "nothing, for a create",
+              "the original",
+              "the latest earlier after content of the path",
+              "the worktree's latest earlier snapshot",
+              "HEAD",
+              "the observed bytes with the call undone"
+            ]
+          },
+          {
+            "t": "p",
+            "text": "When the observed bytes differ from that result, the difference is kept as an unattributed delta. serve itself is reachable only on this machine:"
+          },
+          {
+            "t": "kv",
+            "kv": [
+              {
+                "k": "Port",
+                "v": "7433"
+              },
+              {
+                "k": "Binds",
+                "v": "loopback only"
+              },
+              {
+                "k": "Runs as",
+                "v": "a t-man agent"
+              },
+              {
+                "k": "Address",
+                "v": "`http://moondb.this/`, fronted by d-man"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Everything sits in plain files under one directory",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "On start, serve replays every log segment into an index in memory. A write appends one line and syncs before the index changes."
+          },
+          {
+            "t": "p",
+            "text": "The local backend keeps four directories under the workdir, `~/.local/state/moondb`. Records go in an append-only log, and content goes in chunks named by its hash. The other two directories hold work in flight."
+          },
+          {
+            "t": "kv",
+            "kv": [
+              {
+                "k": "`log/`",
+                "v": "Append-only records, one per line. A segment rolls at 64 MiB."
+              },
+              {
+                "k": "`objects/`",
+                "v": "Gzipped chunks, named by the SHA-256 of their uncompressed bytes."
+              },
+              {
+                "k": "`spool/`",
+                "v": "Envelopes and their chunk files, waiting for serve."
+              },
+              {
+                "k": "`sessions/`",
+                "v": "The hook's per-session state."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Time and cost are worked out on read, so a new price reprices every past session",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Capture records nothing extra for a trace. serve computes a turn's trace on read, from the transcript lines the turn keeps. It makes a span per assistant message and per tool call, and splits the turn into gaps of model, tool, user or harness time. Cost is tokens times the price of the call's model."
+          },
+          {
+            "t": "p",
+            "text": "The store keeps tokens and never a cost. A price change reprices every row. A change to the rule that splits cost by repo reprices every past session with no migration."
+          },
+          {
+            "t": "p",
+            "text": "Three limits bound a trace:"
+          },
+          {
+            "t": "kv",
+            "kv": [
+              {
+                "k": "Work stretch",
+                "v": "at most 30 minutes; the rest of a longer one is idle time"
+              },
+              {
+                "k": "Trace cache",
+                "v": "at most 512 turns, in memory"
+              },
+              {
+                "k": "Transcript tail",
+                "v": "15 MiB kept per turn"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "h": "A blob id ties each edit to its commit and to the line you ask about",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "One edit, from the spool to an answer. Blue is a record on disk, green is a moondb command, grey is git.",
+            "nodes": [
+              {
+                "id": "env",
+                "label": "Edit envelope",
+                "text": "Tool input, patch, observed bytes",
+                "kind": "queue",
+                "tone": "blue"
+              },
+              {
+                "id": "edit",
+                "label": "Edit record",
+                "text": "Before and after content, after-blob id",
+                "kind": "store",
+                "tone": "blue",
+                "step": 2
+              },
+              {
+                "id": "head",
+                "label": "Head-moved envelope",
+                "text": "Paths and blob ids of the new commits",
+                "kind": "queue",
+                "tone": "blue",
+                "step": 3
+              },
+              {
+                "id": "link",
+                "label": "Commit link",
+                "text": "One per matching blob id",
+                "kind": "store",
+                "tone": "blue",
+                "step": 3
+              },
+              {
+                "id": "blame",
+                "label": "git blame",
+                "text": "Finds the commit behind a line",
+                "kind": "external",
+                "tone": "neutral",
+                "step": 4
+              },
+              {
+                "id": "why",
+                "label": "moondb why",
+                "text": "Returns the edit behind the line",
+                "tone": "green",
+                "step": 4
+              }
+            ],
+            "edges": [
+              {
+                "from": "env",
+                "to": "edit",
+                "label": "ingest and derive",
+                "step": 2
+              },
+              {
+                "from": "edit",
+                "to": "link",
+                "label": "after-blob id",
+                "step": 3
+              },
+              {
+                "from": "head",
+                "to": "link",
+                "label": "blob ids",
+                "step": 3
+              },
+              {
+                "from": "blame",
+                "to": "why",
+                "label": "commit, then blob id",
+                "step": 4
+              },
+              {
+                "from": "edit",
+                "to": "why",
+                "label": "after-blob lookup",
+                "step": 4
+              }
+            ],
+            "steps": [
+              {
+                "caption": "A file-tool hook spools one edit envelope for the file."
+              },
+              {
+                "caption": "serve derives the before and after content and appends an Edit record with its after-blob id.",
+                "focus": [
+                  "edit"
+                ]
+              },
+              {
+                "caption": "When HEAD moves, a head-moved envelope lists the new commits' blob ids. Each one that matches a recorded after-blob becomes a commit link.",
+                "focus": [
+                  "head",
+                  "link"
+                ]
+              },
+              {
+                "caption": "`moondb why` runs git blame on the line, takes the path's blob id at the blamed commit, and looks up the Edit with that after-blob.",
+                "focus": [
+                  "why"
+                ]
+              }
+            ]
+          },
+          {
+            "t": "p",
+            "text": "Follow the after-blob id: the same id links the edit to its commit and answers the question. When the lookup finds nothing, `why` matches the normalized line text against the lines that edits added to the path. There is no write endpoint, so no query can change what was recorded."
+          }
+        ]
+      },
+      {
+        "h": "Each part of the path has its own package",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Every part named on this page is one package under `services/moondb/internal`. The table maps each part to the package to open first."
+          },
+          {
+            "t": "table",
+            "cols": [
+              "Part",
+              "Package"
+            ],
+            "rows": [
+              [
+                "The hook side: payloads, envelope builders, budgets",
+                "[internal/record](https://github.com/mad01/thismoon/tree/b59bd3ff5465c77d74aabe9283df0b05b36b6250/services/moondb/internal/record)"
+              ],
+              [
+                "The transcript import",
+                "[internal/importer](https://github.com/mad01/thismoon/tree/b59bd3ff5465c77d74aabe9283df0b05b36b6250/services/moondb/internal/importer)"
+              ],
+              [
+                "Envelope format, atomic writer, drain reader",
+                "[internal/spool](https://github.com/mad01/thismoon/tree/b59bd3ff5465c77d74aabe9283df0b05b36b6250/services/moondb/internal/spool)"
+              ],
+              [
+                "serve's spool drain: envelopes to records",
+                "[internal/ingest](https://github.com/mad01/thismoon/tree/b59bd3ff5465c77d74aabe9283df0b05b36b6250/services/moondb/internal/ingest)"
+              ],
+              [
+                "Before and after content per edit",
+                "[internal/derive](https://github.com/mad01/thismoon/tree/b59bd3ff5465c77d74aabe9283df0b05b36b6250/services/moondb/internal/derive)"
+              ],
+              [
+                "Git blob ids and commit links",
+                "[internal/gitlink](https://github.com/mad01/thismoon/tree/b59bd3ff5465c77d74aabe9283df0b05b36b6250/services/moondb/internal/gitlink)"
+              ],
+              [
+                "The local disk backend: log, chunks, index",
+                "[internal/store/local](https://github.com/mad01/thismoon/tree/b59bd3ff5465c77d74aabe9283df0b05b36b6250/services/moondb/internal/store/local)"
+              ],
+              [
+                "why and history, and the trace cache",
+                "[internal/query](https://github.com/mad01/thismoon/tree/b59bd3ff5465c77d74aabe9283df0b05b36b6250/services/moondb/internal/query)"
+              ]
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "moondb architecture.md",
+      "url": "https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/services/moondb/architecture.md"
+    }
+  ]
+}

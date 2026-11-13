@@ -1,0 +1,49 @@
+{
+  "title": "A page that sets every text field",
+  "doc": {
+    "summary": "s",
+    "meta": "m",
+    "chips": [{"text": "c", "style": "stat"}],
+    "presenter": "pr",
+    "footer": "f",
+    "sections": [
+      {
+        "h": "Every prose block sets its fields",
+        "notes": "n",
+        "blocks": [
+          {"t": "p", "text": "p"},
+          {"t": "h3", "text": "h"},
+          {"t": "callout", "sev": "info", "text": "c"},
+          {"t": "quote", "text": "q", "cite": "c"},
+          {"t": "table", "cols": ["a", "b"], "rows": [["1", "2"]]},
+          {"t": "kv", "kv": [{"k": "k", "v": "v"}]},
+          {"t": "list", "items": ["i"]},
+          {"t": "panel", "title": "t", "sub": "s"},
+          {"t": "progress", "pct": 50, "label": "l", "note": "n"},
+          {"t": "stat", "value": "1", "label": "l", "sub": "s"},
+          {"t": "image", "src": "https://example.com/a.png", "alt": "a", "caption": "c"},
+          {"t": "details", "summary": "s", "blocks": [{"t": "p", "text": "inner"}]},
+          {"t": "columns", "cols": [[{"t": "p", "text": "left"}], [{"t": "list", "items": ["right"]}]]}
+        ]
+      },
+      {
+        "h": "Every figure block sets its fields",
+        "blocks": [
+          {
+            "t": "chart", "kind": "bar", "title": "t", "unit": "u", "xunit": "x",
+            "series": [{"name": "n", "points": [{"x": "a", "y": 1}]}],
+            "steps": [{"caption": "c"}]
+          },
+          {"t": "chart", "kind": "sankey", "title": "t", "flows": [{"from": "a", "to": "b", "value": 1}]},
+          {
+            "t": "diagram", "caption": "c",
+            "groups": [{"id": "g", "label": "g"}],
+            "nodes": [{"id": "a", "label": "a", "text": "t", "group": "g"}, {"id": "b", "label": "b", "text": "t"}],
+            "edges": [{"from": "a", "to": "b", "label": "e"}],
+            "steps": [{"caption": "c"}]
+          }
+        ]
+      }
+    ]
+  }
+}

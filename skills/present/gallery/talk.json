@@ -1,0 +1,472 @@
+{
+  "title": "ADR-0021: mods add to the screen and guard nothing",
+  "content": {
+    "summary": "Mods are an **additive** layer: a mod keeps a session's signals on screen, and nothing may require one. belt stays the only guard a rule may rely on, because a mod fails open.",
+    "meta": "2026-10-05 · decision record · accepted, Claude-only clause superseded by ADR-0023",
+    "chips": [
+      {
+        "text": "4 mods listed",
+        "style": "stat"
+      },
+      {
+        "text": "3 stubs",
+        "style": "stat"
+      },
+      {
+        "text": "2 deny cases",
+        "style": "stat"
+      }
+    ],
+    "sections": [
+      {
+        "h": "All four planned mods are listed, and none of them may guard",
+        "blocks": [
+          {
+            "t": "columns",
+            "cols": [
+              [
+                {
+                  "t": "stat",
+                  "value": "4",
+                  "label": "planned mods listed from the start",
+                  "sub": "every mod the plan names is in the marketplace file already"
+                }
+              ],
+              [
+                {
+                  "t": "stat",
+                  "value": "3",
+                  "label": "of them are valid stubs",
+                  "sub": "3 of the 4 wait for a builder"
+                }
+              ],
+              [
+                {
+                  "t": "stat",
+                  "value": "2",
+                  "label": "cases where a mod may deny",
+                  "sub": "belt denies whenever a rule says so"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "p",
+            "text": "This architecture decision record (ADR) puts mods at `mods/<name>/`, one complete plugin per directory. The root marketplace `thismoon` lists them. They are additive only: no skill, hook, or service may require a mod."
+          },
+          {
+            "t": "p",
+            "text": "It changes things for two groups. A person who builds a mod may show anything and may enforce nothing. A person who writes a rule keeps it in belt."
+          }
+        ]
+      },
+      {
+        "h": "belt fails closed where a mod fails open",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "The table shows why belt keeps the rules: belt fails closed, and a mod that throws or times out is skipped, so it fails open."
+          },
+          {
+            "t": "table",
+            "cols": [
+              "Layer",
+              "When it fails",
+              "A rule may rely on it"
+            ],
+            "rows": [
+              [
+                "belt",
+                "Fails closed",
+                "Yes, and on nothing else"
+              ],
+              [
+                "A mod",
+                "Skipped on a throw or a timeout",
+                "No"
+              ]
+            ]
+          },
+          {
+            "t": "list",
+            "items": [
+              "belt is the guard layer. It fails closed, and it is the only enforcement a rule may rely on.",
+              "A mod is a module hook. Claude Code skips it on a throw or a timeout, so a guard written as a mod fails open.",
+              "Codex and pi never load a mod at all. Anything they need stays a skill."
+            ]
+          }
+        ]
+      },
+      {
+        "h": "A mod watches the same events belt guards",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "How a mod sits beside belt. Red is the guard, green is the mod layer, and grey is what sits outside both.",
+            "nodes": [
+              {
+                "id": "cc",
+                "label": "Claude Code",
+                "text": "emits turn.complete and tool.call",
+                "tone": "neutral"
+              },
+              {
+                "id": "belt",
+                "label": "belt",
+                "text": "PreToolUse guard, fails closed",
+                "tone": "red",
+                "step": 2
+              },
+              {
+                "id": "mod",
+                "label": "A mod",
+                "text": "TypeScript hook, runs in-process",
+                "tone": "green",
+                "step": 3
+              },
+              {
+                "id": "band",
+                "label": "Band or pane",
+                "text": "keeps the signals on screen",
+                "tone": "green",
+                "step": 4
+              },
+              {
+                "id": "svc",
+                "label": "Localhost service",
+                "text": "probed under a short budget",
+                "kind": "external",
+                "tone": "neutral",
+                "step": 5
+              }
+            ],
+            "edges": [
+              {
+                "from": "cc",
+                "to": "belt",
+                "label": "tool call",
+                "step": 2
+              },
+              {
+                "from": "cc",
+                "to": "mod",
+                "label": "events",
+                "step": 3
+              },
+              {
+                "from": "mod",
+                "to": "band",
+                "label": "draws",
+                "step": 4
+              },
+              {
+                "from": "mod",
+                "to": "svc",
+                "label": "probes",
+                "step": 5
+              }
+            ],
+            "steps": [
+              {
+                "caption": "Claude Code emits an event on every turn and every tool call."
+              },
+              {
+                "caption": "belt checks the tool call and fails closed.",
+                "focus": [
+                  "belt"
+                ]
+              },
+              {
+                "caption": "A mod observes the same events, and a throw or a timeout skips it.",
+                "focus": [
+                  "mod"
+                ]
+              },
+              {
+                "caption": "The mod draws a band above the prompt or opens a pane.",
+                "focus": [
+                  "band"
+                ]
+              },
+              {
+                "caption": "A probe of a localhost service stays silent when the service is down.",
+                "focus": [
+                  "svc"
+                ]
+              }
+            ]
+          },
+          {
+            "t": "p",
+            "text": "Look at the two arrows that leave Claude Code. The one to belt can stop a tool call. The one to the mod only feeds the screen."
+          },
+          {
+            "t": "p",
+            "text": "A session already carries signals nobody sees: belt's PreToolUse denials, worklog keys, work-on phase markers in answers, and present page ids in tool results. Before mods they reached the person only by being read back."
+          }
+        ]
+      },
+      {
+        "h": "A mod may deny in two cases only",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "The first case is the user's own Cancel in a hold dialog.",
+              "The second case is a convenience guard. Such a guard fails open, is off by a config key, and duplicates no belt guard.",
+              "A mod never edits the transcript.",
+              "A mod may change the model of a subagent spawn only behind a config key. It does so only when the caller set no model or a model the key lists, and never for a model the caller chose explicitly."
+            ]
+          }
+        ]
+      },
+      {
+        "h": "A merge to main deploys a mod, with no release line",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Mods are not components. They have no Makefile, no release-please entry, and no tag line of their own. The version sits in `plugin.json`."
+          },
+          {
+            "t": "p",
+            "text": "Loading is machine-private, as ADR-0006 already says of recipes. The consuming repo registers the marketplace from the ralph sources cache and enables mods through `enabledPlugins`."
+          },
+          {
+            "t": "p",
+            "text": "Skills, hooks, and services are unchanged. A machine with no mods enabled behaves exactly as before."
+          }
+        ]
+      },
+      {
+        "h": "The price is a check CI cannot run and an API that moves",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "Continuous integration (CI) runs the mods' `node --test` suites and checks every mod is in the marketplace. It cannot run the plugin validation, because the runner has no Claude Code binary. A hook the engine would refuse is caught on the author's machine.",
+              "The plugin API is early access and moves between releases. The generated `.claude-plugin/types/` beside a loaded mod is the authority.",
+              "Codex and pi see nothing of this layer."
+            ]
+          },
+          {
+            "t": "callout",
+            "sev": "warn",
+            "text": "A release that renames an event breaks the band **silently**, until someone runs it with the debug flag."
+          },
+          {
+            "t": "code",
+            "lang": "bash",
+            "text": "claude plugin validate\nclaude --debug"
+          }
+        ]
+      },
+      {
+        "h": "Next",
+        "blocks": [
+          {
+            "t": "list",
+            "ordered": true,
+            "items": [
+              "The consuming repo registers the marketplace and enables mods through `enabledPlugins`.",
+              "The author of a mod runs the plugin validation before each push, because CI cannot.",
+              "Anyone who relies on the Claude-only clause reads ADR-0023 first, because it supersedes that clause."
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "deck": {
+    "summary": "Mods keep a session's signals on screen; belt stays the only guard a rule may rely on.",
+    "meta": "2026-10-05 · ADR-0021 decision review · mod builders and rule writers",
+    "chips": [
+      {
+        "text": "4 mods listed",
+        "style": "stat"
+      },
+      {
+        "text": "3 stubs",
+        "style": "stat"
+      },
+      {
+        "text": "2 deny cases",
+        "style": "stat"
+      }
+    ],
+    "sections": [
+      {
+        "h": "A mod may show anything and enforce nothing",
+        "layout": "statement",
+        "notes": "This is the whole decision. Everything after it is why, and what it costs.",
+        "blocks": []
+      },
+      {
+        "h": "A session carries four signals nobody sees",
+        "reveal": true,
+        "notes": "They reach the person only by being read back. A mod can keep them on screen. The same mechanism could also carry policy, and that is the risk.",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "belt's PreToolUse denials",
+              "worklog keys",
+              "work-on phase markers in answers",
+              "present page ids in tool results"
+            ]
+          }
+        ]
+      },
+      {
+        "h": "belt fails closed; a mod fails open",
+        "notes": "Walk the tool call first, then the mod. On the last step the whole picture is lit: a guard written as a mod lets the call through. Codex and pi never load a mod at all.",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "Red guards, green is the mod layer, grey sits outside both.",
+            "nodes": [
+              {
+                "id": "cc",
+                "label": "Claude Code",
+                "text": "emits turn.complete and tool.call",
+                "tone": "neutral"
+              },
+              {
+                "id": "belt",
+                "label": "belt",
+                "text": "PreToolUse guard, fails closed",
+                "tone": "red",
+                "step": 2
+              },
+              {
+                "id": "mod",
+                "label": "A mod",
+                "text": "TypeScript hook, runs in-process",
+                "tone": "green",
+                "step": 3
+              },
+              {
+                "id": "band",
+                "label": "Band or pane",
+                "text": "keeps the signals on screen",
+                "tone": "green",
+                "step": 4
+              }
+            ],
+            "edges": [
+              {
+                "from": "cc",
+                "to": "belt",
+                "label": "tool call",
+                "step": 2
+              },
+              {
+                "from": "cc",
+                "to": "mod",
+                "label": "events",
+                "step": 3
+              },
+              {
+                "from": "mod",
+                "to": "band",
+                "label": "draws",
+                "step": 4
+              }
+            ],
+            "steps": [
+              {
+                "caption": "Claude Code emits an event on every turn and tool call."
+              },
+              {
+                "caption": "belt checks the tool call and fails closed.",
+                "focus": [
+                  "belt"
+                ]
+              },
+              {
+                "caption": "A mod sees the same events in-process.",
+                "focus": [
+                  "mod"
+                ]
+              },
+              {
+                "caption": "It draws a band above the prompt or opens a pane.",
+                "focus": [
+                  "band"
+                ]
+              },
+              {
+                "caption": "A throw or a timeout skips the mod, so only belt can stop a call."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "h": "A mod may deny in two cases only",
+        "notes": "A convenience guard fails open, is off by a config key, and duplicates no belt guard. A mod never edits the transcript.",
+        "blocks": [
+          {
+            "t": "stat",
+            "value": "2",
+            "label": "cases where a mod may return a deny",
+            "sub": "the user's own Cancel, or a convenience guard; belt denies whenever a rule says so"
+          }
+        ]
+      },
+      {
+        "h": "Three of the four listed mods are still stubs",
+        "notes": "Mods are not components: no Makefile, no release-please entry, no tag line. plugin.json carries the version, and a merge to main is the deploy.",
+        "blocks": [
+          {
+            "t": "stat",
+            "value": "3 of 4",
+            "label": "planned mods are valid stubs",
+            "sub": "all four are listed from the start, so a new mod needs no edit to the marketplace file"
+          }
+        ]
+      },
+      {
+        "h": "A renamed event breaks the band without a sound",
+        "tone": "amber",
+        "notes": "The plugin API is early access. The generated types beside a loaded mod are the authority. CI has no Claude Code binary, so the plugin validation stays a local gate.",
+        "blocks": [
+          {
+            "t": "callout",
+            "sev": "warn",
+            "text": "The plugin API moves between releases. A broken band stays **silent** until someone runs it with `--debug`."
+          }
+        ]
+      },
+      {
+        "h": "Next",
+        "blocks": [
+          {
+            "t": "list",
+            "ordered": true,
+            "items": [
+              "Consuming repo: enable mods through `enabledPlugins`",
+              "Mod author: run `claude plugin validate` before each push",
+              "Everyone: read ADR-0023, which supersedes the Claude-only clause"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "ADR-0021: mods are an additive, Claude-only interface layer",
+      "url": "https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/docs/adr/0021-mods-additive-claude-ui-layer.md"
+    },
+    {
+      "title": "ADR-0006: recipe layering and platform deps",
+      "url": "https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/docs/adr/0006-recipe-layering-and-platform-deps.md"
+    },
+    {
+      "title": "ADR-0023: a mod may carry a pi face loaded from the same directory",
+      "url": "https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/docs/adr/0023-mods-pi-face.md"
+    }
+  ]
+}
