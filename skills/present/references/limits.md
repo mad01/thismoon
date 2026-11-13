@@ -15,6 +15,7 @@ In the order the lint reports them.
 | `summary.words` | 50 words | the summary of a brief or a deck | house |
 | `heading.label` | 2 words | section headings in a brief, slide headings in a deck | guideline (assertion-evidence studies, one research group) |
 | `brief.figure_gap` | 4 sections | the sections of a brief | house |
+| `brief.paragraph` | 70 words | the paragraphs of a brief, in columns and details too | house |
 | `table.rows` | 8 rows | every table, brief and deck | house |
 | `table.cell` | 160 characters | every table cell, brief and deck | guideline (Google developer style: more than two sentences in a cell belong elsewhere) |
 | `diagram.boxes` | 9 boxes | a diagram in a brief | house |
@@ -31,6 +32,7 @@ In the order the lint reports them.
 - `summary.words`: The summary holds at most 50 words. The summary sits above the first section; a longer one pushes the first heading and figure off the first screen.
 - `heading.label`: A heading is the claim its section proves, a sentence with a verb, not a label of 2 words or fewer or a word on the label list. A reader who skims only the headings should leave with the argument; a label names the topic and nothing else.
 - `brief.figure_gap`: At most 4 sections in a row go without a figure (a chart, diagram, graph, image, or stat). A long run of text-only sections reads as a wall; a figure gives the reader who skims a place to land.
+- `brief.paragraph`: A paragraph (a `p` block) in a brief holds at most 70 words. A reader who skims passes over a long block of text, and one who listens loses its thread before it ends.
 - `table.rows`: A table holds at most 8 body rows. Past that a reader scans instead of comparing; keep the rows the point needs and move the full list into details.
 - `table.cell`: A table cell holds at most 160 characters. A cell is read across a row; a paragraph in it breaks the row, so the prose belongs beside the table.
 - `diagram.boxes`: A diagram in a brief holds at most 9 boxes. A bigger diagram draws taller than a screen at a size the reader can read; split it or show one part.

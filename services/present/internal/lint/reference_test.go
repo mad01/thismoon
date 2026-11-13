@@ -26,7 +26,7 @@ const updateSkill = "PRESENT_UPDATE_SKILL"
 var pairFiles = map[string][]limits.ID{
 	"page-types.md": {
 		limits.SummaryWords, limits.HeadingLabel, limits.BriefFigureGap,
-		limits.TableRows, limits.TableCell,
+		limits.BriefParagraph, limits.TableRows, limits.TableCell,
 	},
 	"diagrams.md": {limits.DiagramBoxes, limits.DiagramChain, limits.DiagramRow},
 	"decks.md": {

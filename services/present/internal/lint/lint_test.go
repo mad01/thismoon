@@ -2,6 +2,7 @@ package lint
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -437,6 +438,48 @@ func TestSlideWordsCountTheLongestCaption(t *testing.T) {
 	}
 	if got := checkSlideWords(p, 75); len(got) != 0 {
 		t.Fatalf("at the limit: findings = %+v, want none", got)
+	}
+}
+
+// TestParagraphCoversBriefParagraphsOnly: a p block over the limit warns in
+// the brief, in columns and details too; a callout, a list item, a quote,
+// and a paragraph on a slide do not.
+func TestParagraphCoversBriefParagraphsOnly(t *testing.T) {
+	n := limits.Number(limits.BriefParagraph)
+	long := strings.Repeat("**word** ", n+1)
+	p := Page{
+		Brief: render.Doc{Sections: []render.Section{{
+			Heading: "Long prose in every block",
+			Blocks: []render.Block{
+				{T: "p", Text: strings.Repeat("word ", n)},
+				{T: "p", Text: long},
+				{T: "callout", Text: long},
+				{T: "quote", Text: long},
+				{T: "list", Items: []string{long}},
+				{T: "columns", Columns: [][]render.Block{{{T: "p", Text: long}}, {}}},
+				{T: "details", Summary: "More", Blocks: []render.Block{{T: "p", Text: long}}},
+			},
+		}}},
+		Deck: render.Doc{Sections: []render.Section{{
+			Heading: "Long prose on a slide",
+			Blocks:  []render.Block{{T: "p", Text: long}},
+		}}},
+	}
+	locate := fmt.Sprintf(`section "Long prose in every block", a paragraph: %d words`, n+1)
+	var got []string
+	for _, f := range checkParagraph(p, n) {
+		got = append(got, f.Where)
+		if !strings.Contains(f.Message, locate) {
+			t.Errorf("message %q lacks the section or the count", f.Message)
+		}
+	}
+	want := []string{
+		"content.sections[0].blocks[1]",
+		"content.sections[0].blocks[5].cols[0][0]",
+		"content.sections[0].blocks[6].blocks[0]",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("findings at %v, want %v", got, want)
 	}
 }
 
