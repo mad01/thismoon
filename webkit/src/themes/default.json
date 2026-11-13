@@ -54,7 +54,7 @@
   },
   "dark": {
     "variant": "Warm gray",
-    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, with two exceptions. Purple is brightened so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple). Red is lifted from 53% to 57% lightness so the page ink reads 4.5 on the danger button and the error toast. White ink reached 4.25 on the old red, and no darker red clears 3:1 as text on the chip, so the ink goes dark and the fill goes up. The tone roles keep the old literals (MAD-376). The graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring keeps the light-mode value the old stylesheet never overrode in dark.",
+    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, with two exceptions. Purple is brightened so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple). Red is lifted from 53% to 57% lightness so the page ink reads 4.5 on the danger button and the error toast. White ink reached 4.25 on the old red, and no darker red clears 3:1 as text on the chip, so the ink goes dark and the fill goes up. The tone roles keep the old literals (MAD-376). The graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary is the page background, which reads 7.48 on the accent fill where the white the old rules put there read 2.35. chip-active-text derives from it and so keeps the old dark literal with no override. The focus ring keeps the light-mode value the old stylesheet never overrode in dark.",
     "bg": "#1A1916",
     "paper": "#252320",
     "chip": "#35322C",
@@ -64,7 +64,7 @@
     "text-2": "#B8B2A7",
     "text-3": "#8C8578",
     "primary": "#E8956A",
-    "on-primary": "#FFFFFF",
+    "on-primary": "#1A1916",
     "red": "#C9695A",
     "green": "#4A9E6B",
     "amber": "#D97706",
@@ -73,7 +73,6 @@
     "purple": "#B294D8",
     "series": ["#E8956A", "#7AAAE8", "#6BC48A", "#8B6BB0"],
     "overrides": {
-      "chip-active-text": "#1A1916",
       "focus-ring": "rgba(196,112,75,0.15)",
       "primary-soft": "#d4855f",
       "text-body": "#B8B2A7",

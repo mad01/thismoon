@@ -55,8 +55,11 @@ Replaces `Webkit.init()`. Renders the `.topbar` with `.topbar-inner`
 width: when the left group and the controls do not fit one row the controls
 drop to a second row on the right, and a control set wider than the bar wraps
 inside itself, so the header never widens the page. Under 720px the controls
-take their own row under the brand, the Fixation, Audio and Reload labels and
-the ⌘K hint hide. Up to 1024px the bar scrolls away with the page. Attributes:
+take one row of their own under the brand, and that row scrolls sideways
+instead of wrapping. The Fixation, Audio and Reload labels and the ⌘K hint
+hide. The brand and nav above the row still wrap, so many nav links take more
+rows. Under 480px the icon controls tighten to 28px
+squares. Up to 1024px the bar scrolls away with the page. Attributes:
 - `brand`, `brand-href` (default `/`) — wordmark (wrap trailing `.`/`·` in `.dot`).
 - `back-label`, `back-href` — optional back link (present's "← All").
 - `title` — small muted label (present's "Brief").
@@ -492,6 +495,38 @@ Both round down to the unit shown (`precise` rounds its milliseconds and
 seconds) and read a future time or a negative span as zero. Missing, invalid
 or Go zero-time input returns `fallback` (default `''`). Unit tests:
 `test/format.test.mjs`, with the strings the old service copies printed.
+
+Absolute dates and clock times, in the browser's local zone, with fixed
+English weekday and month names:
+
+- `Webkit.formatDate(value, { style?, now?, fallback? })`. `style: 'stamp'`
+  (default) prints `Wed Oct 28 15:04`; `'day'` prints `Wed Oct 28`, or
+  `Tue Oct 28, 2025` outside `now`'s year; `'ymd-hm'` prints
+  `2026-10-28 15:04`; `'ymd-hms'` prints `2026-10-28 15:04:05`.
+- `Webkit.formatClock(value, { seconds?, fallback? })` prints `15:04:05`, or
+  `15:04` with `seconds: false`.
+- `Webkit.dayName(value, { now?, fallback? })` prints `Today`, `Yesterday`,
+  or `''` for any other local calendar day.
+
+Missing, invalid or Go zero-time input returns `fallback` here too.
+
+## URL state (JS)
+
+`Webkit.urlState` (`src/url-state.ts`) keeps a page's view state in the query
+string and brings it back on back and forward:
+
+- `read()` returns the current query as an object (first value per param).
+- `write(values, { push?, defaults? })` sets the query: empty values and
+  values equal to their default are left out, lists join with commas, `true`
+  is `1`. It replaces the history entry unless `push` is set, and skips a
+  write that would not change the query.
+- `subscribe(fn)` calls `fn(params)` when back or forward lands on another
+  query of the page (not on a hash-only step) and returns a stop function.
+- `list(value)` splits a comma list param; `parse`, `serialize` and
+  `nextHref` are the pure parts.
+
+Push on a discrete change (a chip, a segment, a submitted search) and replace
+while typing. Unit tests: `test/url-state.test.mjs`.
 
 ## FOUC guard — `/webkit/boot.js`
 `webkit.js` is deferred, so theme + font-size are only applied after it runs —

@@ -1,4 +1,4 @@
-.PHONY: build build-local check test lint fmt
+.PHONY: build build-local check test test-local lint fmt
 
 # Apple container's local exporter writes to <dest>/<platform>/ (e.g.
 # linux_arm64) — export to a staging dir, then copy only the build artifacts
@@ -22,8 +22,16 @@ build-local: ## fallback: build on host (only if the container runtime is unavai
 check: ## typecheck only (host)
 	npm run check
 
-test: ## node unit tests + go embed tests (host)
+test: ## in a throwaway Apple-container VM: committed dist/ must match a fresh build, then node tests (unit + DOM) on it; then go embed tests (host)
+	rm -rf .test-out
+	container build -f Dockerfile.build --target test-export \
+	  --output type=local,dest=./.test-out .
+	rm -rf .test-out
+	go test ./...
+
+test-local: ## fallback: every test on the host (DOM tests need `npm ci` on the host first)
 	npm test
+	npm run test:dom
 	go test ./...
 
 fmt: ## format Go (gofumpt + goimports + golines)

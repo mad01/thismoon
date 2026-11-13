@@ -96,15 +96,11 @@ wk-card.ev{display:block;padding:0.5rem 0.75rem}
     return worst;
   }
 
+  // dayLabel heads a day of the timeline: Today, Yesterday, else Tue Oct 28,
+  // with the year when it is not this one.
   function dayLabel(iso){
-    var d = new Date(iso), now = new Date();
-    var start = function(x){ return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
-    var days = Math.round((start(now) - start(d)) / 86400000);
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    var label = d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
-    if (d.getFullYear() !== now.getFullYear()) label += ' ' + d.getFullYear();
-    return label;
+    var now = new Date();
+    return Webkit.dayName(iso, {now: now}) || Webkit.formatDate(iso, {style: 'day', now: now});
   }
 
   // badge builds a <wk-badge> with text set via textContent (never innerHTML).
@@ -275,30 +271,23 @@ wk-card.ev{display:block;padding:0.5rem 0.75rem}
   }
 
   // Filters live in the URL (?q=&level=&sources=a,b) so a view can be reloaded
-  // or bookmarked. replaceState keeps history clean while filtering.
-  function initFromURL(){
-    var p = new URLSearchParams(location.search);
-    var rawQ = p.get('q') || '';
+  // or bookmarked. A chip, level or tag click adds a history entry, so back
+  // returns to the filters before it; typing replaces the entry.
+  function applyURL(p){
+    var rawQ = p.q || '';
     qInput.value = rawQ;
     q = rawQ.trim();
-    var l = p.get('level') || '';
-    if (l === 'info' || l === 'warn' || l === 'error') level = l;
+    var l = p.level || '';
+    level = l === 'info' || l === 'warn' || l === 'error' ? l : '';
     levelSeg.querySelectorAll('button').forEach(function(b){
       b.classList.toggle('active', b.dataset.level === level);
     });
-    (p.get('sources') || '').split(',').forEach(function(s){
-      if (s) activeSources[s] = true;
-    });
+    activeSources = {};
+    Webkit.urlState.list(p.sources).forEach(function(s){ activeSources[s] = true; });
   }
 
-  function syncURL(){
-    var p = new URLSearchParams();
-    if (qInput.value.trim()) p.set('q', qInput.value.trim());
-    if (level) p.set('level', level);
-    var picked = activeSourceList();
-    if (picked.length) p.set('sources', picked.join(','));
-    var qs = p.toString();
-    history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+  function syncURL(push){
+    Webkit.urlState.write({q: qInput.value.trim(), level: level, sources: activeSourceList()}, {push: push});
   }
 
   function refreshTimes(){
@@ -313,7 +302,7 @@ wk-card.ev{display:block;padding:0.5rem 0.75rem}
     var src = pill.dataset.source;
     activeSources[src] = !activeSources[src];
     if (activeSources[src]) pill.setAttribute('active', ''); else pill.removeAttribute('active');
-    syncURL();
+    syncURL(true);
     resetAndLoad();
   });
 
@@ -322,7 +311,7 @@ wk-card.ev{display:block;padding:0.5rem 0.75rem}
     if (!btn) return;
     level = btn.dataset.level;
     this.querySelectorAll('button').forEach(function(b){ b.classList.toggle('active', b === btn); });
-    syncURL();
+    syncURL(true);
     resetAndLoad();
   });
 
@@ -340,7 +329,7 @@ wk-card.ev{display:block;padding:0.5rem 0.75rem}
     if (tag){
       qInput.value = tag.textContent;
       q = tag.textContent;
-      syncURL();
+      syncURL(true);
       resetAndLoad();
       return;
     }
@@ -448,9 +437,16 @@ wk-card.ev{display:block;padding:0.5rem 0.75rem}
     }
   }, {rootMargin: '200px'}).observe(sentinel);
 
-  initFromURL();
+  applyURL(Webkit.urlState.read());
   resetAndLoad();
   setInterval(tail, TAIL_MS);
+
+  // Back and forward land on another entry's filters: load them.
+  Webkit.urlState.subscribe(function(p){
+    clearTimeout(qTimer);
+    applyURL(p);
+    resetAndLoad();
+  });
 })();
 </script>
 </body>

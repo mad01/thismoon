@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { formatDuration, timeAgo } from '../src/format.ts';
+import { dayName, formatClock, formatDate, formatDuration, timeAgo } from '../src/format.ts';
 
 const NOW = Date.parse('2026-11-13T10:38:30Z');
 const S = 1000, M = 60 * S, H = 60 * M, D = 24 * H;
@@ -164,5 +164,164 @@ test('formatDuration: a value that is not a finite number returns the fallback',
   for (const bad of [undefined, null, NaN, Infinity, '1000']) {
     assert.equal(formatDuration(bad), '', String(bad));
     assert.equal(formatDuration(bad, { style: 'coarse', fallback: '-' }), '-', String(bad));
+  }
+});
+
+// ── dates and clock times (MAD-604) ──
+// The expected strings are what moondb fmtTime, fmtClock, clock, fmtDay and
+// dayName, status fmtBuildTime, fmtGenerated and clock, events dayLabel (bar
+// its locale) and deps scannedText (computed, never shown) printed for the
+// same moment. Values are built in the local zone (new Date(y, m, d, ...)),
+// so the text is the same wherever the tests run; withZone pins a zone for
+// the tests about how an instant reads.
+
+function withZone(tz, fn) {
+  const before = process.env.TZ;
+  process.env.TZ = tz;
+  try { fn(); } finally {
+    if (before === undefined) delete process.env.TZ; else process.env.TZ = before;
+  }
+}
+
+const OCT28 = new Date(2026, 9, 28, 15, 4, 5); // a Wednesday
+const NOV6 = new Date(2026, 10, 6, 9, 5, 7); // one-digit day and hour
+
+test('formatDate: stamp is Go\'s "Mon Jan 2 15:04", what moondb prints', () => {
+  assert.equal(formatDate(OCT28), 'Wed Oct 28 15:04');
+  assert.equal(formatDate(OCT28, { style: 'stamp' }), 'Wed Oct 28 15:04');
+  assert.equal(formatDate(NOV6), 'Fri Nov 6 09:05');
+  assert.equal(formatDate(new Date(2027, 0, 3, 0, 0)), 'Sun Jan 3 00:00');
+  assert.equal(formatDate(new Date(2026, 11, 31, 23, 59, 59)), 'Thu Dec 31 23:59');
+});
+
+test('formatDate: ymd-hm and ymd-hms are what status prints', () => {
+  assert.equal(formatDate(OCT28, { style: 'ymd-hm' }), '2026-10-28 15:04');
+  assert.equal(formatDate(NOV6, { style: 'ymd-hm' }), '2026-11-06 09:05');
+  assert.equal(formatDate(OCT28, { style: 'ymd-hms' }), '2026-10-28 15:04:05');
+  assert.equal(formatDate(NOV6, { style: 'ymd-hms' }), '2026-11-06 09:05:07');
+});
+
+test('formatDate: day is moondb\'s day heading, with the year only outside now\'s', () => {
+  const now = new Date(2026, 10, 13, 10, 0);
+  assert.equal(formatDate(OCT28, { style: 'day', now }), 'Wed Oct 28');
+  assert.equal(formatDate(new Date(2025, 9, 28, 12), { style: 'day', now }), 'Tue Oct 28, 2025');
+  assert.equal(formatDate(new Date(2027, 0, 1), { style: 'day', now }), 'Fri Jan 1, 2027');
+  // now takes every TimeValue shape
+  assert.equal(formatDate(OCT28, { style: 'day', now: now.getTime() }), 'Wed Oct 28');
+  assert.equal(formatDate(OCT28, { style: 'day', now: now.toISOString() }), 'Wed Oct 28');
+  // without now it reads the clock's year
+  assert.equal(formatDate(new Date(new Date().getFullYear(), 0, 1), { style: 'day' }).includes(','), false);
+});
+
+test('formatDate: an unknown style reads as stamp', () => {
+  assert.equal(formatDate(OCT28, { style: 'loud' }), 'Wed Oct 28 15:04');
+});
+
+test('formatClock: HH:MM:SS for status and moondb, HH:MM without seconds', () => {
+  assert.equal(formatClock(OCT28), '15:04:05');
+  assert.equal(formatClock(NOV6), '09:05:07');
+  assert.equal(formatClock(new Date(2026, 0, 1, 0, 0, 0)), '00:00:00');
+  assert.equal(formatClock(OCT28, { seconds: false }), '15:04');
+  assert.equal(formatClock(NOV6, { seconds: false }), '09:05');
+});
+
+test('dayName: Today and Yesterday by local calendar day, else empty', () => {
+  const now = new Date(2026, 10, 13, 0, 30);
+  assert.equal(dayName(new Date(2026, 10, 13, 23, 59), { now }), 'Today');
+  assert.equal(dayName(new Date(2026, 10, 13, 0, 0), { now }), 'Today');
+  assert.equal(dayName(new Date(2026, 10, 12, 23, 59), { now }), 'Yesterday');
+  assert.equal(dayName(new Date(2026, 10, 12, 0, 0), { now }), 'Yesterday');
+  assert.equal(dayName(new Date(2026, 10, 11, 23, 59), { now }), '');
+  assert.equal(dayName(new Date(2026, 10, 14, 1, 0), { now }), '');
+  assert.equal(dayName(new Date(2025, 10, 13), { now }), '');
+  assert.equal(dayName(Date.now()), 'Today');
+});
+
+test('dayName or a day date is the events day separator', () => {
+  const now = new Date(2026, 10, 13, 10, 0);
+  const label = (t) => dayName(t, { now }) || formatDate(t, { style: 'day', now });
+  assert.equal(label(new Date(2026, 10, 13, 8)), 'Today');
+  assert.equal(label(new Date(2026, 10, 12, 8)), 'Yesterday');
+  assert.equal(label(new Date(2026, 10, 10, 8)), 'Tue Nov 10');
+  assert.equal(label(new Date(2025, 11, 31, 8)), 'Wed Dec 31, 2025');
+});
+
+test('dates and clock times read an instant in the local zone', () => {
+  const iso = '2026-11-13T10:38:30Z';
+  withZone('Europe/Stockholm', () => {
+    assert.equal(formatDate(iso), 'Fri Nov 13 11:38');
+    assert.equal(formatDate(iso, { style: 'ymd-hms' }), '2026-11-13 11:38:30');
+    assert.equal(formatClock(iso), '11:38:30');
+  });
+  withZone('America/New_York', () => {
+    assert.equal(formatDate(iso), 'Fri Nov 13 05:38');
+    assert.equal(formatClock(Date.parse(iso), { seconds: false }), '05:38');
+  });
+  withZone('Pacific/Kiritimati', () => {
+    // UTC+14: the same instant is already Saturday
+    assert.equal(formatDate(iso, { style: 'ymd-hm' }), '2026-11-14 00:38');
+    assert.equal(dayName(iso, { now: '2026-11-14T09:00:00Z' }), 'Today');
+  });
+});
+
+test('dayName counts a daylight saving day as one day', () => {
+  withZone('Europe/Stockholm', () => {
+    // 2026-03-29 is 23 hours long, 2026-10-25 is 25.
+    assert.equal(dayName(new Date(2026, 2, 28, 12), { now: new Date(2026, 2, 29, 23, 30) }), 'Yesterday');
+    assert.equal(dayName(new Date(2026, 9, 24, 23, 59), { now: new Date(2026, 9, 25, 0, 1) }), 'Yesterday');
+    assert.equal(dayName(new Date(2026, 9, 25, 0, 0), { now: new Date(2026, 9, 25, 23, 59) }), 'Today');
+  });
+});
+
+test('dates and clock times: missing or invalid input returns the fallback', () => {
+  // Before: status printed the raw value, moondb and deps '' or nothing, and a
+  // Go zero time read as a year-1 date in status.
+  for (const bad of ['', 'not a date', null, undefined, NaN, Infinity, '0001-01-01T00:00:00Z', {}]) {
+    assert.equal(formatDate(bad), '', String(bad));
+    assert.equal(formatDate(bad, { style: 'ymd-hm', fallback: '-' }), '-', String(bad));
+    assert.equal(formatClock(bad), '', String(bad));
+    assert.equal(formatClock(bad, { fallback: '-' }), '-', String(bad));
+    assert.equal(dayName(bad, { fallback: '-' }), '-', String(bad));
+  }
+  assert.equal(formatDate(OCT28, { style: 'day', now: 'not a date', fallback: '?' }), '?');
+  assert.equal(dayName(OCT28, { now: 'not a date', fallback: '?' }), '?');
+  // now only matters to day
+  assert.equal(formatDate(OCT28, { now: 'not a date' }), 'Wed Oct 28 15:04');
+});
+
+test('dates and clock times match the old service copies over a sweep of moments', () => {
+  // The copies as they stood in deps, moondb and status before they moved here.
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const pad = (n) => (n < 10 ? '0' + n : '' + n);
+  const stamp = (d) => DAYS[d.getDay()] + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate() +
+    ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const ymdHm = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+    ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const clock = (d) => pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  const fmtDay = (d, now) => DAYS[d.getDay()] + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate() +
+    (d.getFullYear() !== now.getFullYear() ? ', ' + d.getFullYear() : '');
+  const oldDayName = (d, now) => {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diff = Math.round((start - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
+    return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : '';
+  };
+  const now = new Date(2026, 10, 13, 10, 38, 30);
+  for (const tz of ['Europe/Stockholm', 'UTC', 'America/Los_Angeles']) {
+    withZone(tz, () => {
+      // every 7h 13m 17s across 2025-01-01 to 2027-01-01: all hours, days and both DST edges
+      for (let ms = Date.UTC(2025, 0, 1); ms < Date.UTC(2027, 0, 1); ms += 26_000_000 + 17_000) {
+        const d = new Date(ms);
+        const iso = d.toISOString();
+        assert.equal(formatDate(iso), stamp(d), iso);
+        assert.equal(formatDate(iso, { style: 'ymd-hm' }), ymdHm(d), iso);
+        assert.equal(formatDate(iso, { style: 'ymd-hms' }), ymdHm(d) + ':' + pad(d.getSeconds()), iso);
+        assert.equal(formatClock(iso), clock(d), iso);
+        assert.equal(formatClock(iso, { seconds: false }), clock(d).slice(0, 5), iso);
+        assert.equal(formatDate(d, { style: 'day', now }), fmtDay(d, now), iso);
+        assert.equal(dayName(d, { now: d }), 'Today', iso);
+        assert.equal(dayName(d, { now }), oldDayName(d, now), iso);
+      }
+    });
   }
 });

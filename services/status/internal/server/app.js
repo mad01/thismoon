@@ -106,10 +106,7 @@
   // fmtBuildTime renders an RFC3339 build stamp as local "YYYY-MM-DD HH:MM".
   // Seconds are noise at this altitude; an unparseable value passes through.
   function fmtBuildTime(iso) {
-    var d = new Date(iso);
-    if (isNaN(d)) return iso;
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-      ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    return Webkit.formatDate(iso, { style: 'ymd-hm', fallback: iso });
   }
 
   // metaRows mirrors buildSvcView's kv pairs. HTTP() is derived from port > 0
@@ -132,18 +129,13 @@
   function fixed2(n) { return (typeof n === 'number' ? n : 0).toFixed(2); }
 
   // fmtGenerated / clock format RFC3339 timestamps in local time, matching the
-  // Go layouts "2006-01-02 15:04:05" and "15:04:05".
-  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  // Go layouts "2006-01-02 15:04:05" and "15:04:05"; an unparseable value
+  // passes through.
   function fmtGenerated(iso) {
-    var d = new Date(iso);
-    if (isNaN(d)) return iso || '';
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-      ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    return Webkit.formatDate(iso, { style: 'ymd-hms', fallback: iso || '' });
   }
   function clock(iso) {
-    var d = new Date(iso);
-    if (isNaN(d)) return iso || '';
-    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    return Webkit.formatClock(iso, { fallback: iso || '' });
   }
 
   function svcCard(s, windowDays, id) {

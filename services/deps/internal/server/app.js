@@ -16,7 +16,9 @@
   // ecosystems (Go/npm chips). query live-filters the full inventory. lastData
   // is the most recent /api/deps payload so a filter toggle re-renders without
   // a refetch. All three persist in the URL (?repo=&eco=&q=) — repos by
-  // basename for readable links, resolved back to paths on the first render.
+  // basename for readable links, resolved back to paths on the next render.
+  // A chip click adds a history entry and typing replaces it, so back and
+  // forward step through the filters.
   var selected = {};
   var ecoSel = {};
   var query = '';
@@ -25,23 +27,19 @@
   function selectedRepos() { return Object.keys(selected).filter(function (p) { return selected[p]; }); }
   function selectedEcos() { return Object.keys(ecoSel).filter(function (e) { return ecoSel[e]; }); }
 
-  (function readURL() {
-    var p = new URLSearchParams(location.search);
-    var repos = (p.get('repo') || '').split(',').filter(Boolean);
-    if (repos.length) pendingRepos = repos;
-    (p.get('eco') || '').split(',').filter(Boolean).forEach(function (e) { ecoSel[e] = true; });
-    query = p.get('q') || '';
-  })();
+  // applyURL sets the filters from parsed URL params.
+  function applyURL(p) {
+    var repos = Webkit.urlState.list(p.repo);
+    selected = {};
+    pendingRepos = repos.length ? repos : null;
+    ecoSel = {};
+    Webkit.urlState.list(p.eco).forEach(function (e) { ecoSel[e] = true; });
+    query = p.q || '';
+  }
+  applyURL(Webkit.urlState.read());
 
-  function syncURL() {
-    var p = new URLSearchParams();
-    var repos = selectedRepos().map(basename);
-    if (repos.length) p.set('repo', repos.join(','));
-    var ecos = selectedEcos();
-    if (ecos.length) p.set('eco', ecos.join(','));
-    if (query) p.set('q', query);
-    var qs = p.toString();
-    history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+  function syncURL(push) {
+    Webkit.urlState.write({ repo: selectedRepos().map(basename), eco: selectedEcos(), q: query }, { push: push });
   }
 
   // ── toast / fetch / button helpers (ported verbatim from the old inline
@@ -126,21 +124,11 @@
   }
 
   // ── time helpers (mirror render.go) ──
-  var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  function pad(n) { return n < 10 ? '0' + n : '' + n; }
-
   // hasScan: a zero time.Time serializes as year 0001.
   function hasScan(iso) {
     if (!iso) return false;
     var d = new Date(iso);
     return !isNaN(d) && d.getFullYear() > 1;
-  }
-
-  // scannedText mirrors Go's Local().Format("Mon Jan 2 15:04").
-  function scannedText(d) {
-    return DAYS[d.getDay()] + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate() +
-      ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
 
   // STALE_AFTER is the serve loop's default daily interval, in ms.
@@ -340,7 +328,6 @@
       var when = new Date(data.scanned_at);
       var now = Date.now();
       var age = now - when.getTime();
-      v.scannedText = scannedText(when);
       v.agoText = Webkit.timeAgo(when, { now: now, style: 'long' });
       v.stale = age > STALE_AFTER;
     }
@@ -753,7 +740,7 @@
     if (filterRepo) {
       var p = filterRepo.dataset.repo;
       if (selected[p]) delete selected[p]; else selected[p] = true;
-      syncURL();
+      syncURL(true);
       renderKeepingFocus(filterRepo);
       return;
     }
@@ -761,7 +748,7 @@
     if (filterEco) {
       var eco = filterEco.dataset.eco;
       if (ecoSel[eco]) delete ecoSel[eco]; else ecoSel[eco] = true;
-      syncURL();
+      syncURL(true);
       renderKeepingFocus(filterEco);
       return;
     }
@@ -769,7 +756,7 @@
     if (clearFilter) {
       selected = {};
       ecoSel = {};
-      syncURL();
+      syncURL(true);
       renderKeepingFocus(clearFilter);
       return;
     }
@@ -839,6 +826,13 @@
     if (resolveModal.hasAttribute('hidden')) return;
     if (e.key === 'Escape') { e.preventDefault(); closeResolveModal(); }
     else if (e.key === 'Tab') keepTabInModal(e);
+  });
+
+  // Back and forward land on another entry's filters: show them.
+  Webkit.urlState.subscribe(function (p) {
+    applyURL(p);
+    searchInput.value = query;
+    if (lastData) render(lastData);
   });
 
   // Webkit.poll fetches immediately and then every 60s, replacing the old
