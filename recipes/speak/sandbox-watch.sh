@@ -436,19 +436,30 @@ stream_close() {
 }
 
 # Read one line from fd 3 into $line, waiting at most TICK seconds. Returns
-# 0 on a line, 1 on a tick timeout, 2 when the stream has ended. `read -t`
-# alone can't tell the last two apart on bash 3.2 (both exit 1), so EOF is
-# the producer being gone. A timeout that lands mid-line leaves the bytes
-# read so far in $line on bash 4+ (3.2 drops them); they are kept and
-# prepended to the rest of the line on the next read.
+# 0 on a line, 1 on a tick timeout, 2 when the stream has ended. bash 4+
+# exits above 128 on a timeout, so any other failure there is EOF. bash 3.2
+# (macOS /bin/bash) exits 1 for both. There a read that fails before TICK
+# seconds have passed did not time out, so the producer closed its output:
+# that is EOF even while the producer is still exiting, which the pid check
+# alone read as a run of ticks. SECONDS counts whole seconds, so a failure
+# that crosses a second boundary falls through to the pid check, costs at
+# most one extra tick, and reads as EOF on the next call. A timeout that
+# lands mid-line leaves the bytes read so far in $line on bash 4+ (3.2 drops
+# them); they are kept and prepended to the rest of the line on the next
+# read.
 stream_read() {
+  local rc=0 started=$SECONDS
   line=""
-  if IFS= read -r -t "$TICK" line <&3; then
+  IFS= read -r -t "$TICK" line <&3 || rc=$?
+  if [ "$rc" -eq 0 ]; then
     line="$STREAM_PENDING$line"
     STREAM_PENDING=""
     return 0
   fi
   STREAM_PENDING="$STREAM_PENDING$line"
+  [ "$rc" -gt 128 ] && return 1
+  [ "${BASH_VERSINFO[0]}" -ge 4 ] && return 2
+  [ $((SECONDS - started)) -lt "$TICK" ] && return 2
   kill -0 "$STREAM_PID" 2>/dev/null && return 1
   return 2
 }

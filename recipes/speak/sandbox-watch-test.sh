@@ -413,7 +413,7 @@ LOG_BIN="$TEST_TMP/fake-log"
 TICK=1
 stream_open || fail "stream_open failed"
 seq=""
-for _ in 1 2 3 4 5 6 7 8; do
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
   rc=0
   stream_read || rc=$?
   case $rc in
@@ -423,8 +423,35 @@ for _ in 1 2 3 4 5 6 7 8; do
   esac
 done
 stream_close
-re='^,first(,tick)+,second(,tick)*,eof$'
+# On a loaded machine the producer may start late, so ticks may come first.
+re='^(,tick)*,first(,tick)+,second(,tick)*,eof$'
 [[ $seq =~ $re ]] || fail "stream loop saw $seq (expected first, tick, second, eof)"
+
+# The stream ends when the producer closes its output, which is a moment
+# before the producer is gone. A producer that closes its output and then
+# lingers must still read as EOF on the next read, not as a run of ticks.
+cat > "$TEST_TMP/fake-log" <<'EOF'
+#!/bin/bash
+printf 'first\n'
+exec >&-
+sleep 3
+EOF
+stream_open || fail "stream_open failed"
+seq=""
+for _ in 1 2 3 4 5 6; do
+  rc=0
+  stream_read || rc=$?
+  case $rc in
+    0) seq="$seq,$line" ;;
+    1) seq="$seq,tick" ;;
+    2) seq="$seq,eof"; break ;;
+  esac
+done
+stream_close
+# A slow start may tick before the first line, and bash 3.2 may tick once
+# when the failed read crosses a second boundary.
+re='^(,tick)*,first(,tick)?,eof$'
+[[ $seq =~ $re ]] || fail "closed output saw $seq (expected first, eof while the producer lingers)"
 
 # A tick that fires mid-line must not split the line. bash 4+ hands the
 # partial read back in the variable and stream_read keeps it; bash 3.2
