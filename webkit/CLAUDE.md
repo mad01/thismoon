@@ -13,6 +13,7 @@ src/webkit.ts        # custom element definitions, the theme API, Webkit.bootSni
 src/a11y.ts          # the keyboard path's decisions (page heading, filter badge keys, skip target)
 src/format.ts        # pure text formatters: Webkit.timeAgo, formatDuration, formatDate, formatClock, dayName
 src/url-state.ts     # Webkit.urlState: the query string as view state, with back/forward
+src/settings-sync.ts # settings that follow the reader between .this hosts (d-man's /__this/settings.json)
 src/webkit.css       # topbar chrome, controls, component styles, .wrap layout (reads palette roles only)
 src/themes/*.json    # the theme collection: one family per file, light + dark variants
 src/themes.mjs       # validates the files, derives the full role set, emits palette CSS + themes.json
@@ -439,13 +440,44 @@ reference implementation.
   is identical across consumers built from the same commit.
 - **State keys are global per origin** (`webkit-theme`, `webkit-palette-light`,
   `webkit-palette-dark`, `webkit-font`, `webkit-size`, `webkit-fixation`,
-  `webkit-ra-speed`). They persist across a tool's own pages, and a change in
-  one tab reaches the others through the `storage` event. The one exception
+  `webkit-ra-speed`). They persist across a tool's own pages, and a theme
+  change in one tab reaches the others through the `storage` event. The one exception
   is the audio toggle. Its key is `webkit-audio` by default, but a shell may
   name a per-view key and default on `<html>` (`data-audio-key`,
   `data-audio-default`), and boot.js and the header both read them. That is
   how present's deck opens with the read-aloud controls hidden under
   `webkit-audio-deck` while its brief keeps its own choice.
+- **Six keys follow the reader between `.this` hosts** (`src/settings-sync.ts`):
+  the theme, both palettes, font, size and fixation, not `webkit-audio` or
+  `webkit-ra-speed`. d-man serves one document on every host at
+  `/__this/settings.json`, same-origin, with the localStorage keys as its wire
+  keys. Only on a hostname ending in `.this`, with site storage the page can
+  use, `webkit.js` pulls it at load and again on focus, on the page turning
+  visible and on a back/forward restore (at most once per 2s). Unless that
+  first answer is a `{"v":1,"settings":{...}}` JSON document within 1.5s,
+  sync stays off for the page load and sends nothing more, which keeps the
+  kit safe behind an old d-man. localStorage stays the first-paint cache:
+  boot.js is unchanged, so a pull that changes something repaints after
+  first paint. The server wins for every key it holds; a key it lacks is
+  seeded from a local value that is not the default. The server also wins
+  over a newer value another tab of the same host wrote moments earlier,
+  before that tab's PATCH landed. That shows as a brief flicker, which
+  converges on the next focus. The reader's own changes (the mode and palette setters, reset,
+  the header's font, size and fixation controls) go out as one PATCH per
+  200ms, one in flight. On pagehide the queue goes at once with keepalive,
+  even beside a PATCH in flight or before the first pull has answered. Two
+  PATCHes with the same key can then land out of order, which leaves d-man on
+  the older value until the reader changes that key again. After a jump to
+  another host, the new page's first pull can beat the old page's last push,
+  so the new page shows the old value until the next focus. A failed PATCH
+  is resent before the next pull. A 400 on a patch of several keys is resent
+  key by key, all at once, so the valid keys land. A refused value is not
+  resent: a key refused on its own, or any key of a patch another 4xx
+  refuses. Pulls leave its local value alone until the reader changes that
+  key again or the page reloads. Absent keys read as their defaults
+  (`light`, `default`, `Fira Code`, `16`, `false`). The endpoint cannot delete a key, so a reset
+  sends those defaults, and a pulled `default` palette removes the local key;
+  every other pulled value is stored as sent.
 - **A theme is a file; a rule reads a role.** Never put a colour literal or a
   ramp name back into `src/webkit.css`: add or derive a role in
   `src/themes.mjs` so every family gets it. A role the graph or chart code

@@ -1598,6 +1598,289 @@ var Webkit = (() => {
     return Math.max(SIZE_MIN, Math.min(SIZE_MAX, px));
   }
 
+  // src/settings-sync.ts
+  var SETTINGS_PATH = "/__this/settings.json";
+  var DOC_VERSION = 1;
+  var PUSH_DEBOUNCE_MS = 200;
+  var PULL_THROTTLE_MS = 2e3;
+  var FIRST_PULL_TIMEOUT_MS = 1500;
+  var SYNC_KEYS = [
+    "webkit-theme",
+    "webkit-palette-light",
+    "webkit-palette-dark",
+    "webkit-font",
+    "webkit-size",
+    "webkit-fixation"
+  ];
+  function oneOf(values, fallback) {
+    const accepts = (v) => values.includes(v);
+    return { fallback, accepts, read: (raw) => raw !== null && accepts(raw) ? raw : fallback };
+  }
+  function sizeRule({ min, max, fallback }) {
+    return {
+      fallback: String(fallback),
+      // Written exactly as the kit writes one: no sign, no leading zero, no fraction.
+      accepts: (v) => {
+        const n = Number(v);
+        return Number.isInteger(n) && String(n) === v && n >= min && n <= max;
+      },
+      // Read the way the header and boot.js read it: parseInt, then clamp.
+      read: (raw) => {
+        const n = parseInt(raw ?? "", 10);
+        return String(isNaN(n) ? fallback : Math.max(min, Math.min(max, n)));
+      }
+    };
+  }
+  function rulesFor(c) {
+    const palette = { ...oneOf(["default", ...c.families], "default"), removeAtFallback: true };
+    return {
+      "webkit-theme": oneOf(["light", "dark", "system"], "light"),
+      "webkit-palette-light": palette,
+      "webkit-palette-dark": palette,
+      "webkit-font": oneOf(c.fonts, c.fontFallback),
+      "webkit-size": sizeRule(c.size),
+      "webkit-fixation": oneOf(["true", "false"], "false")
+    };
+  }
+  function hasOwn(o, key) {
+    return Object.prototype.hasOwnProperty.call(o, key);
+  }
+  function isObject(v) {
+    return typeof v === "object" && v !== null && !Array.isArray(v);
+  }
+  function reconcile(server, local, choices) {
+    const rules = rulesFor(choices);
+    const apply = {};
+    const seed = {};
+    for (const key of SYNC_KEYS) {
+      const rule = rules[key];
+      const mine = rule.read(local[key] ?? null);
+      if (!hasOwn(server, key)) {
+        if (mine !== rule.fallback) seed[key] = mine;
+        continue;
+      }
+      const theirs = server[key];
+      if (typeof theirs === "string" && rule.accepts(theirs) && theirs !== mine) apply[key] = theirs;
+    }
+    return { apply, seed };
+  }
+  function syncsOn(hostname) {
+    return hostname.endsWith(".this");
+  }
+  function outcomeOf(res) {
+    if (res.ok) return "done";
+    if (res.status === 400) return "invalid";
+    return res.status > 400 && res.status < 500 ? "refused" : "retry";
+  }
+  function isJSONType(contentType) {
+    return (contentType ?? "").split(";")[0].trim().toLowerCase() === "application/json";
+  }
+  function keysOf(settings) {
+    return SYNC_KEYS.filter((key) => hasOwn(settings, key));
+  }
+  var OFF = Object.freeze({
+    enabled: false,
+    start: () => Promise.resolve(),
+    push: () => {
+    },
+    resume: () => Promise.resolve(),
+    flush: () => {
+    }
+  });
+  function createSettingsSync(deps) {
+    const { storage } = deps;
+    return syncsOn(deps.hostname) && storage !== null ? liveSync(deps, storage) : OFF;
+  }
+  function liveSync(deps, storage) {
+    const rules = rulesFor(deps.choices);
+    let state = "idle";
+    let pending = {};
+    const flights = /* @__PURE__ */ new Map();
+    const held = /* @__PURE__ */ new Set();
+    let timer = null;
+    let pulling = false;
+    let lastPull = -Infinity;
+    let pushSeq = 0;
+    const pushedAt = {};
+    const hasPending = () => Object.keys(pending).length > 0;
+    const pushedSince = (key, seq) => (pushedAt[key] ?? 0) > seq;
+    const inFlight = (key) => [...flights.values()].some((body) => hasOwn(body, key));
+    function cancelTimer() {
+      if (timer === null) return;
+      deps.clearTimeout(timer);
+      timer = null;
+    }
+    function schedule() {
+      cancelTimer();
+      timer = deps.setTimeout(() => {
+        timer = null;
+        void send();
+      }, PUSH_DEBOUNCE_MS);
+    }
+    function take() {
+      const body = pending;
+      pending = {};
+      return body;
+    }
+    function patch(body) {
+      return deps.fetch(SETTINGS_PATH, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ v: DOC_VERSION, settings: body }),
+        keepalive: true
+      }).then(outcomeOf, () => "retry");
+    }
+    function settle(body, outcome, seq) {
+      if (outcome === "done") return false;
+      let requeued = false;
+      for (const key of keysOf(body)) {
+        if (pushedSince(key, seq)) continue;
+        if (outcome !== "retry") held.add(key);
+        else if (!hasOwn(pending, key)) {
+          pending[key] = body[key];
+          requeued = true;
+        }
+      }
+      return requeued;
+    }
+    async function deliver(body, seq) {
+      const outcome = await patch(body);
+      const keys = keysOf(body);
+      if (outcome !== "invalid" || keys.length < 2) return settle(body, outcome, seq);
+      const resends = keys.filter((key) => !pushedSince(key, seq)).map((key) => {
+        const one = { [key]: body[key] };
+        return patch(one).then((answer) => settle(one, answer, seq));
+      });
+      return (await Promise.all(resends)).some((requeued) => requeued);
+    }
+    function dispatch(body) {
+      const flight = deliver(body, pushSeq).then((requeued) => {
+        flights.delete(flight);
+        if (!requeued && hasPending() && timer === null) schedule();
+      });
+      flights.set(flight, body);
+      return flight;
+    }
+    async function idle() {
+      while (flights.size > 0) await Promise.all(flights.keys());
+    }
+    function send() {
+      if (flights.size > 0 || state !== "on" || !hasPending()) return Promise.resolve();
+      return dispatch(take());
+    }
+    function push(changes) {
+      if (state === "off") return;
+      let queued = false;
+      for (const key of SYNC_KEYS) {
+        const value = changes[key];
+        if (typeof value !== "string" || !rules[key].accepts(value)) continue;
+        pending[key] = value;
+        pushedAt[key] = ++pushSeq;
+        held.delete(key);
+        queued = true;
+      }
+      if (queued && state === "on") schedule();
+    }
+    async function getDocument() {
+      try {
+        const res = await deps.fetch(SETTINGS_PATH, { cache: "no-store", headers: { Accept: "application/json" } });
+        if (!res.ok || !isJSONType(res.headers.get("Content-Type"))) return null;
+        const doc = await res.json();
+        return isObject(doc) && doc.v === DOC_VERSION && isObject(doc.settings) ? doc.settings : null;
+      } catch {
+        return null;
+      }
+    }
+    function firstDocument() {
+      return new Promise((resolve) => {
+        const id = deps.setTimeout(() => resolve(null), FIRST_PULL_TIMEOUT_MS);
+        void getDocument().then((doc) => {
+          deps.clearTimeout(id);
+          resolve(doc);
+        });
+      });
+    }
+    function readLocal() {
+      const local = {};
+      for (const key of SYNC_KEYS) local[key] = storage.getItem(key);
+      return local;
+    }
+    function write2(key, value) {
+      const rule = rules[key];
+      try {
+        if (rule.removeAtFallback && value === rule.fallback) storage.removeItem(key);
+        else storage.setItem(key, value);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    function adopt(server, seq) {
+      const mine = (key) => hasOwn(pending, key) || inFlight(key) || pushedSince(key, seq) || held.has(key);
+      const { apply, seed } = reconcile(server, readLocal(), deps.choices);
+      const written = [];
+      let seeded = false;
+      for (const key of SYNC_KEYS) {
+        if (mine(key)) continue;
+        const theirs = apply[key];
+        if (theirs !== void 0 && write2(key, theirs)) written.push(key);
+        const ours = seed[key];
+        if (ours !== void 0) {
+          pending[key] = ours;
+          seeded = true;
+        }
+      }
+      deps.applied(written);
+      return seeded;
+    }
+    async function drain() {
+      cancelTimer();
+      await idle();
+      cancelTimer();
+      await send();
+    }
+    async function pull() {
+      if (pulling) return;
+      pulling = true;
+      try {
+        await drain();
+        const seq = pushSeq;
+        const server = await getDocument();
+        if (server && state === "on" && adopt(server, seq)) schedule();
+      } finally {
+        pulling = false;
+      }
+    }
+    async function start() {
+      if (state !== "idle") return;
+      state = "starting";
+      lastPull = deps.now();
+      const seq = pushSeq;
+      const server = await firstDocument();
+      if (!server) {
+        state = "off";
+        pending = {};
+        cancelTimer();
+        return;
+      }
+      state = "on";
+      adopt(server, seq);
+      if (hasPending()) schedule();
+    }
+    function resume() {
+      if (state !== "on") return Promise.resolve();
+      const t = deps.now();
+      if (t - lastPull < PULL_THROTTLE_MS) return Promise.resolve();
+      lastPull = t;
+      return pull();
+    }
+    function flush() {
+      cancelTimer();
+      if ((state === "on" || state === "starting") && hasPending()) void dispatch(take());
+    }
+    return { enabled: true, start, push, resume, flush };
+  }
+
   // src/prepare.ts
   function figureAlt(el2) {
     if (el2.tagName.toUpperCase() !== "IMG" || !el2.closest("wk-figure")) return "";
@@ -3721,17 +4004,24 @@ var Webkit = (() => {
   }
   function setThemeMode(mode) {
     localStorage.setItem(THEME_KEY, mode);
+    settingsSync.push({ [THEME_KEY]: themeMode() });
     return applyTheme();
   }
   function setPalette(theme, family) {
     if (!family || family === "default" || !isFamily(family)) localStorage.removeItem(PALETTE_KEY_PREFIX + theme);
     else localStorage.setItem(PALETTE_KEY_PREFIX + theme, family);
+    settingsSync.push({ [PALETTE_KEY_PREFIX + theme]: paletteFor(theme) });
     return applyTheme();
   }
   function resetTheme() {
     localStorage.removeItem(THEME_KEY);
     localStorage.removeItem(PALETTE_KEY_PREFIX + "light");
     localStorage.removeItem(PALETTE_KEY_PREFIX + "dark");
+    settingsSync.push({
+      [THEME_KEY]: themeMode(),
+      [PALETTE_KEY_PREFIX + "light"]: paletteFor("light"),
+      [PALETTE_KEY_PREFIX + "dark"]: paletteFor("dark")
+    });
     return applyTheme();
   }
   function initThemeSync() {
@@ -3745,6 +4035,52 @@ var Webkit = (() => {
     }
   }
   initThemeSync();
+  var controlRefreshers = /* @__PURE__ */ new Set();
+  var isThemeKey = (key) => key === THEME_KEY || key.startsWith(PALETTE_KEY_PREFIX);
+  function siteStorage() {
+    try {
+      const storage = window.localStorage;
+      storage.getItem(THEME_KEY);
+      return storage;
+    } catch {
+      return null;
+    }
+  }
+  var settingsSync = createSettingsSync({
+    hostname: location.hostname,
+    fetch: (url, init2) => fetch(url, init2),
+    storage: siteStorage(),
+    setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimeout: (id) => window.clearTimeout(id),
+    now: () => Date.now(),
+    choices: {
+      families: FAMILIES,
+      fonts: Object.keys(FONT_STACKS),
+      fontFallback: "Fira Code",
+      // applyFont's fallback
+      size: { min: SIZE_MIN, max: SIZE_MAX, fallback: SIZE_DEFAULT }
+    },
+    applied: (written) => {
+      if (written.some(isThemeKey)) applyTheme();
+      controlRefreshers.forEach((refresh) => refresh());
+    }
+  });
+  function initSettingsSync() {
+    if (!settingsSync.enabled) return;
+    void settingsSync.start();
+    const resume = () => {
+      void settingsSync.resume();
+    };
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") resume();
+    });
+    window.addEventListener("focus", resume);
+    window.addEventListener("pageshow", (e) => {
+      if (e.persisted) resume();
+    });
+    window.addEventListener("pagehide", () => settingsSync.flush());
+  }
+  initSettingsSync();
   var AUDIO_KEY = "webkit-audio";
   function audioConfig() {
     const root = document.documentElement;
@@ -3787,13 +4123,26 @@ var Webkit = (() => {
     constructor() {
       super(...arguments);
       this._initialized = false;
+      /** Brings font, size and fixation in line with storage after a settings pull; registered while connected. */
+      this._refresh = null;
     }
     connectedCallback() {
-      if (this._initialized) return;
+      if (this._initialized) {
+        if (this._refresh) {
+          controlRefreshers.add(this._refresh);
+          this._refresh();
+        }
+        return;
+      }
       this._render();
       this._applyTheme();
       this._wire();
       this._initialized = true;
+    }
+    // A header taken off the page stops answering pulls; put back, it
+    // registers again in connectedCallback and catches up with storage.
+    disconnectedCallback() {
+      if (this._refresh) controlRefreshers.delete(this._refresh);
     }
     _attr(name, fallback = "") {
       return this.getAttribute(name) ?? fallback;
@@ -3934,17 +4283,23 @@ var Webkit = (() => {
       if (fontEl) {
         const savedFont = localStorage.getItem(FONT_KEY) ?? "Fira Code";
         applyFont(savedFont, fontEl);
-        fontEl.addEventListener("change", () => applyFont(fontEl.value, fontEl));
+        fontEl.addEventListener("change", () => {
+          applyFont(fontEl.value, fontEl);
+          settingsSync.push({ [FONT_KEY]: fontEl.value });
+        });
       }
-      let currentSize = parseInt(localStorage.getItem(SIZE_KEY) ?? "", 10);
-      if (isNaN(currentSize)) currentSize = SIZE_DEFAULT;
+      const storedSize = () => {
+        const px = parseInt(localStorage.getItem(SIZE_KEY) ?? "", 10);
+        return isNaN(px) ? SIZE_DEFAULT : px;
+      };
+      let currentSize = storedSize();
       applySize(currentSize);
-      this.querySelector("#webkit-size-down")?.addEventListener("click", () => {
-        currentSize = applySize(currentSize - SIZE_STEP);
-      });
-      this.querySelector("#webkit-size-up")?.addEventListener("click", () => {
-        currentSize = applySize(currentSize + SIZE_STEP);
-      });
+      const stepSize = (delta) => {
+        currentSize = applySize(currentSize + delta);
+        settingsSync.push({ [SIZE_KEY]: String(currentSize) });
+      };
+      this.querySelector("#webkit-size-down")?.addEventListener("click", () => stepSize(-SIZE_STEP));
+      this.querySelector("#webkit-size-up")?.addEventListener("click", () => stepSize(SIZE_STEP));
       const speedEl = this.querySelector("#webkit-ra-speed");
       if (speedEl) {
         const savedSpeed = localStorage.getItem(SPEED_KEY) ?? "1";
@@ -3998,13 +4353,28 @@ var Webkit = (() => {
       });
       applyFixation(fixationActive);
       if (fixationActive) observe();
-      fixationBtn?.addEventListener("click", () => {
-        fixationActive = !fixationActive;
-        localStorage.setItem(FIXATION_KEY, String(fixationActive));
+      const setFixation = (active) => {
+        fixationActive = active;
         fixationObserver.disconnect();
-        applyFixation(fixationActive);
-        if (fixationActive) observe();
+        applyFixation(active);
+        if (active) observe();
+      };
+      fixationBtn?.addEventListener("click", () => {
+        setFixation(!fixationActive);
+        localStorage.setItem(FIXATION_KEY, String(fixationActive));
+        settingsSync.push({ [FIXATION_KEY]: String(fixationActive) });
       });
+      this._refresh = () => {
+        if (fontEl) {
+          const name = localStorage.getItem(FONT_KEY) ?? "Fira Code";
+          if (name !== fontEl.value) applyFont(name, fontEl);
+        }
+        const size = storedSize();
+        if (size !== currentSize) currentSize = applySize(size);
+        const active = localStorage.getItem(FIXATION_KEY) === "true";
+        if (active !== fixationActive) setFixation(active);
+      };
+      controlRefreshers.add(this._refresh);
       this.querySelector("#webkit-reload")?.addEventListener("click", () => {
         location.reload();
       });

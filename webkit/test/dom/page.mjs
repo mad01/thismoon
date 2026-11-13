@@ -13,17 +13,28 @@ const BUNDLE = new vm.Script(readFileSync(BUNDLE_URL, 'utf8'), { filename: BUNDL
 /**
  * openPage loads `body` into a fresh window, then the kit, so the elements in
  * it upgrade as a page's markup does when webkit.js arrives after it. `storage`
- * seeds localStorage before the kit reads it.
+ * seeds localStorage before the kit reads it. `fetch(window, url, init)`
+ * answers the page's requests in place of the default 404, and
+ * `blockStorage` makes reading localStorage throw, as a browser that blocks
+ * site data does.
  */
-export function openPage(t, body = '', { url = 'http://kit.test/', storage = {} } = {}) {
+export function openPage(t, body = '', { url = 'http://kit.test/', storage = {}, fetch, blockStorage = false } = {}) {
   // A happy-dom window is a VM context, and the bundle runs in it as the
   // classic script it is, so its `var Webkit` lands on the window. The page's
   // own <script> evaluation stays off: nothing else runs.
   const window = new Window({ url });
   // The kit polls /webkit/version and loads the ⌘K site list; a test page
   // answers both with a 404 instead of reaching the network.
-  window.fetch = async () => new window.Response('', { status: 404 });
+  window.fetch = fetch
+    ? (input, init) => fetch(window, String(input), init ?? {})
+    : async () => new window.Response('', { status: 404 });
   for (const [key, value] of Object.entries(storage)) window.localStorage.setItem(key, value);
+  if (blockStorage) {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get() { throw new window.DOMException('site data is blocked', 'SecurityError'); },
+    });
+  }
   window.document.body.innerHTML = body;
   BUNDLE.runInContext(window);
   t.after(() => window.happyDOM.close());
