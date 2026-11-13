@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.0](https://github.com/mad01/thismoon/compare/present/v1.24.3...present/v1.25.0) (2026-11-13)
+
+
+### Features
+
+* **present:** warn on a brief paragraph over 70 words ([#484](https://github.com/mad01/thismoon/issues/484)) ([c789c0f](https://github.com/mad01/thismoon/commit/c789c0f18d02d629a847e79ddfe615b4c86aa98a))
+
 ## [1.24.3](https://github.com/mad01/thismoon/compare/present/v1.24.2...present/v1.24.3) (2026-11-13)
 
 
