@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.19.7](https://github.com/mad01/thismoon/compare/belt/v2.19.6...belt/v2.19.7) (2026-11-13)
+
+
+### Bug Fixes
+
+* **belt:** see a push through a git alias or through text fed to a shell ([#472](https://github.com/mad01/thismoon/issues/472)) ([b7fc4e0](https://github.com/mad01/thismoon/commit/b7fc4e0191a794725544ef1dcb45611d1c6f39ed))
+
 ## [2.19.6](https://github.com/mad01/thismoon/compare/belt/v2.19.5...belt/v2.19.6) (2026-11-13)
 
 
