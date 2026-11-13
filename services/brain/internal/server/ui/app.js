@@ -31,18 +31,23 @@
   var CROSS_EDGE_OPACITY = 0.3;
   // A hover neighbourhood this small shows every neighbour's full title.
   var FOCUS_LABELS_MAX = 40;
-  // Camera zoom bounds, shared by sigma's settings and the wheel handler.
-  // One graph unit is one pixel at ratio 1.
+  // Camera zoom bounds, shared by sigma's settings, the wheel handler and
+  // the zoom buttons. One graph unit is one pixel at ratio 1.
   var MIN_CAMERA_RATIO = 0.1;
   var MAX_CAMERA_RATIO = 20;
+  // One press of a zoom button changes the camera ratio by this factor,
+  // sigma's own step.
+  var ZOOM_BUTTON_STEP = 1.5;
+  var ZOOM_BUTTON_MS = 200;
   // A caption shows once its circle is this many pixels in radius.
   var CAPTION_MIN_RADIUS_PX = 22;
   // The global graph names its edges only when zoomed in past this ratio,
   // as a vault links far more densely than a typical Neo4j result. A local
   // graph and the hovered node's edges always show their names.
   var EDGE_LABEL_RATIO = 0.5;
-  // The full title under a hovered node is this many pixels high.
-  var PILL_PX = 12;
+  // The full title under a hovered node is this many rem high, the size of
+  // the legend's and the side panel's text (captionFont).
+  var PILL_REM = 0.8;
   // A hover from rest draws once the cursor has stayed on a node this long,
   // so a cursor passing over nodes does not dim the graph. Leaving a node
   // clears the hover after HOVER_LINGER_MS, so crossing the gap between two
@@ -69,6 +74,28 @@
   // Fitting a small graph stops at this ratio, so a local graph of a few
   // notes opens at about their natural size instead of filling the screen.
   var FIT_MIN_RATIO = 0.7;
+  // An unresolved link (to a dangling target) draws at this opacity.
+  var UNRESOLVED_EDGE_OPACITY = 0.6;
+  // The font of the node captions and the island labels when the page has
+  // none (pageFont).
+  var LABEL_FONT = 'system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif';
+  // Node captions are drawn in this weight, a step over the page's normal
+  // text: sigma draws them as distance-field glyphs, which come out thinner
+  // than the page's own text at the same weight.
+  var CAPTION_WEIGHT = '500';
+  // A caption is cut to its circle by this text's average glyph width in
+  // the caption font (captionFont).
+  var CAPTION_EM_SAMPLE = 'Postgres failover runbook and the weekly review';
+  // An island label is this many pixels high at any zoom, sits this far
+  // above its island, and may run this wide over a narrower island. Its
+  // ring in the canvas colour keeps it readable over an edge.
+  var ISLAND_LABEL_PX = 13;
+  var ISLAND_LABEL_GAP_PX = 6;
+  var ISLAND_LABEL_MIN_PX = 160;
+  var ISLAND_LABEL_RING_PX = 3;
+  // A label's room is rounded down to a step of this many pixels before
+  // its name is cut, so a zoom cuts the name again only every few pixels.
+  var ISLAND_LABEL_ROOM_STEP_PX = 8;
 
   // ── state ──
   // stateKey is the last /api/state key; a new one refetches everything.
@@ -376,9 +403,13 @@
       var key = e.source + '>' + e.target + '#' + e.kind;
       if (g.hasEdge(key)) return;
       var cross = !!S.community && S.community[e.source] !== S.community[e.target];
+      // alpha is the kind's own opacity (BG.edgeWeight), which the reducers
+      // keep while they fade or dim an edge.
+      var w = BG.edgeWeight(e.kind);
       g.addDirectedEdgeWithKey(key, e.source, e.target, {
         kind: e.kind, resolved: e.resolved, s: e.source, t: e.target, cross: cross,
-        label: BG.edgeCaption(e.kind), size: 1, opacity: e.resolved ? 1 : 0.6,
+        label: BG.edgeCaption(e.kind), size: w.size, alpha: w.alpha,
+        opacity: (e.resolved ? 1 : UNRESOLVED_EDGE_OPACITY) * w.alpha,
       });
     });
     restyle(g);
@@ -407,7 +438,7 @@
       a.borderColor = color(BG.borderRole(role));
       a.labelColor = BG.captionColor(a.color);
       a.labelSize = fs;
-      a.caption = BG.caption(a.title, r, fs);
+      a.caption = BG.caption(a.title, r, fs, captionFont().em);
     });
     var text = color('edge-text');
     var bg = color('graph-bg');
@@ -421,8 +452,6 @@
   var HIDDEN_NODE = { visibility: 'hidden', labelVisibility: 'hidden' };
   var HIDDEN_EDGE = { visibility: 'hidden', labelVisibility: 'hidden' };
   var NO_EDGE_LABEL = { labelVisibility: 'hidden' };
-  var CROSS_EDGE = { opacity: CROSS_EDGE_OPACITY };
-  var CROSS_EDGE_NO_LABEL = { opacity: CROSS_EDGE_OPACITY, labelVisibility: 'hidden' };
   var SHOW_CAPTION = { labelVisibility: 'visible' };
   var NO_CAPTION = { labelVisibility: 'hidden' };
   var PLAIN = {};
@@ -460,7 +489,7 @@
       out.label = attrs.title;
       out.labelPosition = 'below';
       out.labelVisibility = 'visible';
-      out.labelSize = PILL_PX * ratio;
+      out.labelSize = captionFont().pillPx * ratio;
       out.labelColor = color('label-pill-text');
       out.labelBackgroundColor = color('label-pill');
       out.labelBackgroundPadding = 3;
@@ -468,14 +497,59 @@
     return out;
   }
 
+  // edgeReducer keeps each edge's kind weight (attrs.size, attrs.alpha)
+  // through the cross-island fade, the hover's wider edges and the dim. An
+  // edge the hover highlights draws at twice its kind's width and at full
+  // opacity whatever its kind, faded only when its link is unresolved.
   function edgeReducer(key, data, attrs) {
     if (!S.visible[attrs.s] || !S.visible[attrs.t]) return HIDDEN_EDGE;
     if (!S.focus) {
-      if (attrs.cross && S.view === 'global') return edgeLabelsShown() ? CROSS_EDGE : CROSS_EDGE_NO_LABEL;
+      if (attrs.cross && S.view === 'global') return crossEdge(attrs.alpha, edgeLabelsShown());
       return edgeLabelsShown() ? PLAIN : NO_EDGE_LABEL;
     }
-    if (attrs.s === S.hovered || attrs.t === S.hovered) return { size: 2, zIndex: 1, depth: 'topEdges' };
-    return { opacity: BG.dimOpacity(S.fade.value, DIM / 2), labelVisibility: 'hidden' };
+    if (attrs.s === S.hovered || attrs.t === S.hovered) {
+      return { size: 2 * attrs.size, opacity: attrs.resolved ? 1 : UNRESOLVED_EDGE_OPACITY, zIndex: 1, depth: 'topEdges' };
+    }
+    return { opacity: BG.dimOpacity(S.fade.value, DIM / 2) * attrs.alpha, labelVisibility: 'hidden' };
+  }
+
+  // crossEdge is the answer for a link between two communities on the
+  // global graph: CROSS_EDGE_OPACITY of its kind's alpha, its name shown or
+  // not. The answers are shared, one per alpha and label state.
+  var crossEdges = {};
+  function crossEdge(alpha, labelled) {
+    var key = alpha + (labelled ? ':label' : ':plain');
+    if (!crossEdges[key]) {
+      crossEdges[key] = labelled
+        ? { opacity: CROSS_EDGE_OPACITY * alpha }
+        : { opacity: CROSS_EDGE_OPACITY * alpha, labelVisibility: 'hidden' };
+    }
+    return crossEdges[key];
+  }
+
+  // pageFont is the font family of the page's text, which the header's
+  // font control sets on the body.
+  function pageFont() {
+    return getComputedStyle(document.body).fontFamily || LABEL_FONT;
+  }
+
+  // captionFont is what the node captions are drawn in, read when the
+  // first graph is styled and again after each change of the header's font
+  // control: css is the nodes' labelFont style (weight and the page font),
+  // em the font's average glyph width in ems (BG.caption cuts a caption to
+  // its circle by it), and pillPx the hover pill's size in pixels, which
+  // follows the header's text size on the next font change or page load.
+  var captionFontCache = null;
+  function captionFont() {
+    if (captionFontCache) return captionFontCache;
+    var family = pageFont();
+    var css = CAPTION_WEIGHT + ' ' + family;
+    var c = document.createElement('canvas').getContext('2d');
+    c.font = CAPTION_WEIGHT + ' 100px ' + family;
+    var em = c.measureText(CAPTION_EM_SAMPLE).width / (CAPTION_EM_SAMPLE.length * 100);
+    var rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    captionFontCache = { css: css, em: em, pillPx: PILL_REM * rootPx };
+    return captionFontCache;
   }
 
   // The sigma 4 primitives: a circle with a darker ring of its own hue and
@@ -494,7 +568,8 @@
           ],
         })],
         label: {
-          font: { family: 'system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif', size: 10, weight: '500' },
+          // The nodes' labelFont style (captionFont) overrides this font.
+          font: { family: LABEL_FONT, size: 10, weight: CAPTION_WEIGHT },
           margin: 4,
           // Captions are sized in graph units, like the circles they sit in.
           zoomToLabelSizeRatioFunction: function (ratio) { return ratio; },
@@ -521,6 +596,7 @@
           label: { attribute: 'caption' },
           labelColor: { attribute: 'labelColor', defaultValue: '#FFFFFF' },
           labelSize: { attribute: 'labelSize', defaultValue: 8.5 },
+          labelFont: function () { return captionFont().css; },
           labelPosition: 'over',
           labelVisibility: 'auto',
           visibility: 'visible',
@@ -600,6 +676,7 @@
       edgeReducer: edgeReducer,
     });
     markSelected();
+    initIslandLabels();
     // pointer follows sigma's hover even mid-drag; the drawn hover waits
     // for the drop.
     S.sigma.on('enterNode', function (e) {
@@ -640,6 +717,7 @@
     // stopPropagation keeps the event from reaching it.
     sigmaBox.addEventListener('wheel', wheelZoom, { passive: false, capture: true });
     new ResizeObserver(function () {
+      islandFits = {};
       if (S.sigma) S.sigma.scheduleRefresh();
     }).observe(sigmaBox);
   }
@@ -654,6 +732,145 @@
   function refreshNodes() {
     var g = shownGraph();
     if (g) S.sigma.refresh({ partialGraph: { nodes: g.nodes() }, schedule: true });
+  }
+
+  // ── island labels ──
+  // The global graph names each island on a 2D canvas of its own, a sigma
+  // layer under the WebGL stage, so nodes, edges, halos and the hover pill
+  // all draw over a label and a label never covers them. It is drawn again
+  // after every sigma render, so it follows pan, zoom, the simulation and
+  // the hover dim. graph.js picks the islands, places, cuts and fades the
+  // labels (islandBoxes, islandLabels, screenBox, fitLabel, unclutter,
+  // labelFade).
+  var islandCanvas = null;
+  var islandNameCache = { nodes: null, community: null, names: {} };
+  // labelFont is the page font, which the header's font control sets on
+  // the body; the island labels are written in it. It is read when the
+  // graph first draws and after each change of the control, never while
+  // a frame draws.
+  var labelFont = LABEL_FONT;
+  // islandFits keeps each community's cut name, {key, text, w}, so a
+  // frame measures only names whose room or font changed (fittedName).
+  var islandFits = {};
+
+  function initIslandLabels() {
+    islandCanvas = S.sigma.createCanvas('islands', { beforeLayer: 'stage', style: { pointerEvents: 'none' } });
+    readLabelFont();
+    S.sigma.on('afterRender', drawIslandLabels);
+  }
+
+  function readLabelFont() {
+    labelFont = pageFont();
+    islandFits = {};
+  }
+
+  // webkit applies the font in the control's own change listener, which
+  // runs before this one on the document. The node captions are cut again
+  // for the new font's glyph width (restyleShown refreshes sigma).
+  document.addEventListener('change', function (e) {
+    if (!e.target || e.target.id !== 'webkit-font' || !S.sigma) return;
+    readLabelFont();
+    captionFontCache = null;
+    restyleShown();
+  });
+
+  // fittedName is name cut to fit room pixels in context c (fitLabel), with
+  // its width: the one islandFits keeps for community while its name, the
+  // room rounded down to ISLAND_LABEL_ROOM_STEP_PX and the font stay.
+  function fittedName(c, community, name, room) {
+    var step = Math.floor(room / ISLAND_LABEL_ROOM_STEP_PX) * ISLAND_LABEL_ROOM_STEP_PX;
+    var key = name + '\n' + step + '\n' + labelFont;
+    var fit = islandFits[community];
+    if (fit && fit.key === key) return fit;
+    function measure(s) { return c.measureText(s).width; }
+    var text = BG.fitLabel(name, step, measure);
+    fit = { key: key, text: text, w: text ? measure(text) : 0 };
+    islandFits[community] = fit;
+    return fit;
+  }
+
+  // islandNames is communityNames' map for the graph loaded now: the names
+  // the legend and the side panel use, worked out once per load.
+  function islandNames() {
+    var c = islandNameCache;
+    if (c.nodes !== S.data.nodes || c.community !== S.community) {
+      islandNameCache = c = { nodes: S.data.nodes, community: S.community, names: BG.communityNames(S.data.nodes, S.community || {}) };
+    }
+    return c.names;
+  }
+
+  // islandContext sizes the label canvas to sigma's at the screen's pixel
+  // ratio and answers its 2D context, cleared, in CSS pixels. The canvas
+  // gets its CSS size here too: sigma sets a layer's CSS size only when
+  // the container resizes, and this layer is made after sigma's first
+  // resize, so without it the canvas shows one backing pixel per CSS
+  // pixel, twice as large and blurred on a ratio-2 screen.
+  function islandContext() {
+    var dim = S.sigma.getDimensions();
+    var dpr = window.devicePixelRatio || 1;
+    var w = Math.round(dim.width * dpr);
+    var h = Math.round(dim.height * dpr);
+    if (islandCanvas.width !== w) islandCanvas.width = w;
+    if (islandCanvas.height !== h) islandCanvas.height = h;
+    var cssW = dim.width + 'px';
+    var cssH = dim.height + 'px';
+    if (islandCanvas.style.width !== cssW) islandCanvas.style.width = cssW;
+    if (islandCanvas.style.height !== cssH) islandCanvas.style.height = cssH;
+    var c = islandCanvas.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, dim.width, dim.height);
+    return c;
+  }
+
+  // drawIslandLabels draws the labels of the islands the global graph
+  // shows. A local graph has none, and they fade out as the camera zooms in
+  // to where the notes' own captions take over, and with the hover dim.
+  function drawIslandLabels() {
+    var c = islandContext();
+    if (S.view !== 'global' || !S.data || !S.global || shownGraph() !== S.global) return;
+    var alpha = BG.labelFade(cameraRatio(), S.radii, CAPTION_MIN_RADIUS_PX) * BG.dimOpacity(S.fade.value, DIM);
+    if (alpha <= 0) return;
+    c.font = '600 ' + ISLAND_LABEL_PX + 'px ' + labelFont;
+    var labels = placedIslandLabels(c);
+    c.globalAlpha = alpha;
+    c.textAlign = 'center';
+    c.textBaseline = 'bottom';
+    c.lineJoin = 'round';
+    c.lineWidth = 2 * ISLAND_LABEL_RING_PX;
+    c.strokeStyle = color('graph-bg');
+    c.fillStyle = color('island-label');
+    labels.forEach(function (l) {
+      c.strokeText(l.text, l.x, l.y);
+      c.fillText(l.text, l.x, l.y);
+    });
+  }
+
+  // placedIslandLabels answers the labels to draw, in canvas pixels, as
+  // unclutter places them in the view area: each island's name cut to the
+  // island's width on screen (or ISLAND_LABEL_MIN_PX over a narrow one,
+  // and never wider than the area), kept clear of the other islands and
+  // labels. A name cut to nothing is dropped.
+  function placedIslandLabels(c) {
+    var drawn = [];
+    S.global.forEachNode(function (id, a) {
+      if (S.visible[id]) drawn.push({ id: id, x: a.x, y: a.y, r: a.size, note: BG.nodeKind(a.n) === 'note' });
+    });
+    function toScreen(p) { return S.sigma.graphToViewport(p); }
+    var islands = BG.islandBoxes(drawn, S.community || {});
+    var onScreen = {};
+    var obstacles = islands.map(function (i) {
+      onScreen[i.community] = BG.screenBox(i.box, toScreen);
+      return { community: i.community, box: onScreen[i.community] };
+    });
+    var area = viewArea();
+    var labels = [];
+    BG.islandLabels(islands, islandNames()).forEach(function (l) {
+      var box = onScreen[l.community];
+      var room = Math.min(area.width, Math.max(box.maxX - box.minX, ISLAND_LABEL_MIN_PX));
+      var fit = fittedName(c, l.community, l.name, room);
+      if (fit.text) labels.push({ community: l.community, text: fit.text, w: fit.w, h: ISLAND_LABEL_PX, box: box });
+    });
+    return BG.unclutter(labels, obstacles, area, ISLAND_LABEL_GAP_PX);
   }
 
   // markSelected gives the open note's node, the side panel's node and the
@@ -692,7 +909,8 @@
   // is scheduled, so an idle page draws nothing. On the global graph each
   // node is held on its island (S.homes, BG.islandForce) and a link
   // between communities barely pulls; a local graph keeps the plain
-  // forces, so its few notes spread out around the centre.
+  // forces, so its few notes spread out around the centre, and
+  // BG.holdForce keeps that centre where it is.
   var phys = {
     sim: null,
     graph: null,
@@ -700,6 +918,8 @@
     P: null,
     cooled: true,
     pinned: null,
+    // hold is the local graph's holdForce, null on the global graph.
+    hold: null,
     // full says the simulation lays out the whole global layout: it runs
     // on the global graph over every node of S.globalIds, with no search.
     full: false,
@@ -736,6 +956,11 @@
       } else {
         sim.force('x', B.forceX(0).strength(P.gravity)).force('y', B.forceY(0).strength(P.gravity));
       }
+      // A local graph has no island to keep it in place, so its mean is
+      // held: every reheat (a filter, a search, a legend toggle, a drag)
+      // settles its shape without carrying it away from the camera.
+      this.hold = g === S.global ? null : BG.holdForce();
+      if (this.hold) sim.force('hold', this.hold);
       sim.velocityDecay(P.velocityDecay)
         .alphaMin(P.alphaMin)
         .alphaDecay(P.alphaDecay)
@@ -775,6 +1000,7 @@
       this.pinned = null;
       this.full = false;
       this.calm = false;
+      this.hold = null;
     },
 
     hot: function () {
@@ -824,6 +1050,14 @@
       if (!this.sim || this.calm === on) return;
       this.calm = on;
       this.sim.velocityDecay(on ? this.P.calmVelocityDecay : this.P.velocityDecay);
+    },
+
+    // holdMean lets a local graph's mean move while a drag pulls a node
+    // and its neighbours (on false), and on the drop holds it again at the
+    // home it had before the drag, so the graph eases back there (on
+    // true). The global graph has no hold: its islands keep it.
+    holdMean: function (on) {
+      if (this.hold) this.hold.hold(on);
     },
 
     reheat: function (alpha) {
@@ -1003,6 +1237,7 @@
         S.lastClick = null;
         if (phys.sim) {
           phys.soothe(true);
+          phys.holdMean(false);
           phys.sim.alphaTarget(phys.P.dragAlphaTarget);
           phys.reheat(phys.P.dragAlphaTarget);
         }
@@ -1017,6 +1252,7 @@
     if (phys.sim) phys.sim.alphaTarget(0);
     if (drag && drag.press.moved) {
       phys.unpin(id);
+      phys.holdMean(true);
       if (phys.graph === S.global) S.layoutDirty = true;
       phys.reheat(phys.P ? phys.P.alphaMin * 2 : 0);
     }
@@ -1040,8 +1276,9 @@
     var last = S.lastClick;
     if (last && last.node === id && now - last.at <= DOUBLE_CLICK_MS) {
       S.lastClick = null;
-      showLocal(id);
+      // The panel opens first, so the local graph is framed beside it.
       showPanel(id);
+      showLocal(id);
       return;
     }
     S.lastClick = { node: id, at: now };
@@ -1081,17 +1318,24 @@
 
   // ── camera ──
 
+  // camera runs a zoom button: in and out zoom around the middle of the
+  // view area, so the point there stays put with the side panel open too
+  // (sigma's own zoomIn and zoomOut keep the canvas middle); any other
+  // press fits the graph.
   function camera(how) {
     if (!S.sigma) return;
+    if (how !== 'in' && how !== 'out') { fitCamera(true); return; }
     var cam = S.sigma.getCamera();
-    if (how === 'in') cam.animatedZoom({ duration: 200 });
-    else if (how === 'out') cam.animatedUnzoom({ duration: 200 });
-    else fitCamera(true);
+    var ratio = how === 'in' ? cam.ratio / ZOOM_BUTTON_STEP : cam.ratio * ZOOM_BUTTON_STEP;
+    ratio = Math.min(MAX_CAMERA_RATIO, Math.max(MIN_CAMERA_RATIO, ratio));
+    if (ratio === cam.ratio) return;
+    var area = viewArea();
+    cam.animate(S.sigma.getViewportZoomedState({ x: area.x, y: area.y }, ratio), { duration: ZOOM_BUTTON_MS });
   }
 
-  // fitCamera frames the visible nodes. With autoRescale off one graph
-  // unit is one pixel at ratio 1, so the ratio is the visible box over the
-  // viewport.
+  // fitCamera frames the visible nodes in the view area. With autoRescale
+  // off one graph unit is one pixel at ratio 1, so the ratio is the
+  // visible box over the area.
   function fitCamera(animate) {
     if (!S.sigma) return;
     var g = S.sigma.getGraph();
@@ -1100,13 +1344,33 @@
     var b = BG.boundsOf(circles);
     var cam = S.sigma.getCamera();
     if (!b) { cam.setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 }); return; }
-    var dim = S.sigma.getDimensions();
-    if (!dim.width || !dim.height) return;
-    var ratio = BG.fitRatio(b, dim, FIT_MARGIN, FIT_MIN_RATIO, MAX_CAMERA_RATIO);
-    var c = S.sigma.graphToFramedGraph({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
-    var state = { x: c.x, y: c.y, ratio: ratio, angle: 0 };
+    var area = viewArea();
+    if (!area.width || !area.height) return;
+    var ratio = BG.fitRatio(b, area, FIT_MARGIN, FIT_MIN_RATIO, MAX_CAMERA_RATIO);
+    var state = cameraOn({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 }, ratio, area);
     if (animate) cam.animate(state, { duration: FIT_MS, easing: 'quadraticInOut' });
     else cam.setState(state);
+  }
+
+  // viewArea is the part of the canvas the camera centres on (BG.viewArea):
+  // the canvas, or the part of it left of the side panel while it is open.
+  function viewArea() {
+    var left = null;
+    if (!side.hasAttribute('hidden')) left = side.getBoundingClientRect().left - sigmaBox.getBoundingClientRect().left;
+    return BG.viewArea(S.sigma.getDimensions(), left);
+  }
+
+  // cameraOn is the camera state at ratio that shows graph point p at the
+  // middle of area. sigma's camera sits on the framed graph's point at the
+  // canvas middle, so the state starts on p and shifts by the step from
+  // there to the area's middle; that step depends on the ratio alone.
+  function cameraOn(p, ratio, area) {
+    var c = S.sigma.graphToFramedGraph(p);
+    var state = { x: c.x, y: c.y, ratio: ratio, angle: 0 };
+    var at = S.sigma.viewportToFramedGraph({ x: area.x, y: area.y }, { cameraState: state });
+    state.x = 2 * c.x - at.x;
+    state.y = 2 * c.y - at.y;
+    return state;
   }
 
   // ── visibility: filters and search ──
@@ -1139,24 +1403,34 @@
     return out;
   }
 
-  // applyVisibility redraws after a filter or the search changed: the
-  // simulation runs over the nodes still shown, warm for a moment so the
-  // change shows at once, then live; the camera frames the result. A run on
-  // the global graph moves its nodes, so the layout is posted again once a
-  // full run rests (cooled).
+  // applyVisibility redraws after a filter, the legend or the search
+  // changed: when the nodes the view shows changed, the simulation runs
+  // over the ones still shown (relayout); a change that leaves them as they
+  // were moves nothing. With fit the camera frames the result.
   function applyVisibility(fit) {
     if (!S.data) return;
+    var g = shownGraph();
+    var before = g ? shownIds(g) : [];
     computeVisible();
     renderFilterCount();
-    var g = shownGraph();
     if (g) {
-      if (g === S.global) S.layoutDirty = true;
-      phys.start(g, shownIds(g), phys.P ? phys.P.reheatAlpha : 0.3, RESTYLE_WARM_MS);
+      if (!BG.sameIds(before, shownIds(g))) relayout();
       refreshGraph();
       if (fit) fitCamera(true);
     }
     renderStatus();
     renderPanel();
+  }
+
+  // relayout runs the simulation over the nodes the shown graph has
+  // visible, warm for a moment so a change shows at once, then live. A run
+  // on the global graph moves its nodes, so the layout is posted again
+  // once a full run rests (cooled).
+  function relayout() {
+    var g = shownGraph();
+    if (!g) return;
+    if (g === S.global) S.layoutDirty = true;
+    phys.start(g, shownIds(g), phys.P ? phys.P.reheatAlpha : 0.3, RESTYLE_WARM_MS);
   }
 
   function positionsOf(g) {
@@ -1202,6 +1476,7 @@
     data.nodes = data.nodes || [];
     data.edges = data.edges || [];
     S.data = data;
+    islandFits = {};
     S.adj = BG.adjacency(data.edges);
     S.refs = BG.refIndex(data.nodes);
     S.maxDeg = BG.maxDegree(data.nodes);
@@ -1259,14 +1534,15 @@
     }).map(function (n) { return n.id; });
     var set = {};
     notes.forEach(function (id) { set[id] = true; });
+    var links = BG.simLinks(data.edges, set);
     var previous = S.community;
     if (!previous) {
       var placed = {};
       notes.forEach(function (id) { if (known[id]) placed[id] = known[id]; });
-      if (Object.keys(placed).length) previous = BG.islandsFromLayout(placed, radiusOf, P);
+      if (Object.keys(placed).length) previous = BG.islandsFromLayout(placed, links, radiusOf, P);
     }
     performance.mark('brain-communities-start');
-    var community = BG.communities(notes, BG.simLinks(data.edges, set), louvain, previous);
+    var community = BG.communities(notes, links, louvain, previous);
     performance.clearMeasures('brain-communities');
     performance.measure('brain-communities', 'brain-communities-start');
     var rest = data.nodes.filter(function (n) { return community[n.id] === undefined; }).map(function (n) { return n.id; });
@@ -1427,7 +1703,8 @@
       check('Size by links', S.byDegree, function (on) {
         S.byDegree = on;
         restyleShown();
-        applyVisibility(false);
+        // New radii need room even though the same nodes show.
+        relayout();
       }),
       check('Topics', S.topics, function (on) {
         S.topics = on;
@@ -1488,9 +1765,11 @@
     renderLegend();
   }
 
-  // renderLegend draws the legend of the colour mode and the coloured edge
-  // kinds. In the cluster mode each community is a toggle button, and
-  // focus inside the legend stays on its button across the redraw.
+  // renderLegend draws the legend of the colour mode and the edge kinds
+  // drawn unlike a plain link (BG.legendEdgeKinds), each as a line of its
+  // colour at its alpha. In the cluster mode each community is a toggle
+  // button, and focus inside the legend stays on its button across the
+  // redraw.
   function renderLegend() {
     var focused = focusedKey(legendEl);
     legendEl.innerHTML = '';
@@ -1501,10 +1780,9 @@
       legendEl.appendChild(toggles && e.communities ? legendToggle(e) : el('span', {}, [e.role ? swatch(e.role) : null, e.label]));
     });
     if (toggles) legendEl.appendChild(showAllButton());
-    var kinds = {};
-    S.data.edges.forEach(function (e) { kinds[e.kind] = true; });
-    BG.EDGE_KINDS.filter(function (k) { return kinds[k] && BG.edgeRole(k) !== 'edge'; }).forEach(function (k) {
-      legendEl.appendChild(el('span', {}, [el('i', { class: 'line', style: 'background:' + color(BG.edgeRole(k)) }), k]));
+    BG.legendEdgeKinds(S.data.edges).forEach(function (k) {
+      var line = el('i', { class: 'line', style: 'background:' + color(k.role) + ';opacity:' + k.alpha });
+      legendEl.appendChild(el('span', {}, [line, k.kind]));
     });
     refocus(legendEl, focused, null);
   }
@@ -1595,14 +1873,16 @@
   }
 
   // jumpTo moves the side panel and the selected halo to id, and the
-  // camera onto it at the zoom it has.
+  // camera onto it at the zoom it has, in the middle of the part of the
+  // canvas the panel leaves free.
   function jumpTo(id) {
     showPanel(id);
     var g = shownGraph();
     if (!g || !g.hasNode(id)) return;
     var a = g.getNodeAttributes(id);
-    var c = S.sigma.graphToFramedGraph({ x: a.x, y: a.y });
-    S.sigma.getCamera().animate({ x: c.x, y: c.y }, { duration: FIT_MS, easing: 'quadraticInOut' });
+    var cam = S.sigma.getCamera();
+    var state = cameraOn({ x: a.x, y: a.y }, cam.getState().ratio, viewArea());
+    cam.animate({ x: state.x, y: state.y }, { duration: FIT_MS, easing: 'quadraticInOut' });
   }
 
   // renderPanel draws the side panel for S.panelId, or hides it when that
