@@ -302,6 +302,16 @@ func TestValidateRejectsUnusableValues(t *testing.T) {
 			`custom_guards.branch-lint.event is ""`,
 		},
 		{
+			"custom guard without a command",
+			"custom_guards:\n  branch-lint:\n    event: bash\n",
+			"custom_guards.branch-lint.command is empty",
+		},
+		{
+			"custom guard with a blank program",
+			"custom_guards:\n  branch-lint:\n    event: bash\n    command: [\"  \"]\n",
+			"custom_guards.branch-lint.command is empty",
+		},
+		{
 			"soft mode on a guard that ignores it",
 			"guards:\n  git-push-main:\n    mode: soft\n",
 			"guards.git-push-main: mode: soft has no effect",

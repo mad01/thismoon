@@ -846,11 +846,13 @@ func LoadClaudeHooks(event string, paths ...string) []ClaudeHook {
 
 // LoadClaudeAutoMemoryDirectory reads Claude Code's autoMemoryDirectory
 // setting from the given settings files and names the file it came from. A
-// later file wins, as settings.local.json wins over settings.json, and a key
-// set to "" counts as set. A missing file contributes nothing. A file that
-// cannot be read or does not parse, or a value that is not a string, is an
-// error: belt then cannot tell what Claude Code resolved. The agent-memory
-// hint and belt doctor are the only readers.
+// later file wins, so ~/.claude/settings.local.json wins over
+// ~/.claude/settings.json, and a key set to "" counts as set. Claude Code's
+// settings docs list only ~/.claude/settings.json as the user file, and name
+// settings.local.json only inside a project. A missing file contributes
+// nothing. A file that cannot be read or does not parse, or a value that is
+// not a string, is an error: belt then cannot tell what Claude Code
+// resolved. The agent-memory hint and belt doctor are the only readers.
 func LoadClaudeAutoMemoryDirectory(paths ...string) (dir, file string, err error) {
 	for _, path := range paths {
 		raw, readErr := os.ReadFile(path)
@@ -957,22 +959,7 @@ func validated(f File, src Source) (File, Source) {
 // working config from the outside, which is exactly what a guard tool must
 // not ship.
 func (f File) validate() error {
-	var errs []error
-	for _, name := range slices.Sorted(maps.Keys(f.CustomGuards)) {
-		cg := f.CustomGuards[name]
-		if cg.Event != EventBash && cg.Event != EventWrite {
-			errs = append(errs, fmt.Errorf(
-				"custom_guards.%s.event is %q (must be %q or %q)",
-				name,
-				cg.Event,
-				EventBash,
-				EventWrite,
-			))
-		}
-		if err := validMode(cg.Mode); err != nil {
-			errs = append(errs, fmt.Errorf("custom_guards.%s.%w", name, err))
-		}
-	}
+	errs := customGuardErrors(f.CustomGuards)
 	errs = append(errs, customHintErrors(f.CustomHints)...)
 	// The ledger and watch sections are deliberately absent here: their
 	// values are resolved and warned about, never rejected (lifecycle.go).
@@ -1003,6 +990,38 @@ func (f File) validate() error {
 	return errors.Join(errs...)
 }
 
+// customGuardErrors rejects the custom_guards entries that would load and
+// then check nothing: an event no guard runs on, a mode belt cannot read,
+// and a missing command. A guard with no command would let every call
+// through unchecked while the config looks armed.
+func customGuardErrors(guards map[string]CustomGuard) []error {
+	var errs []error
+	for _, name := range slices.Sorted(maps.Keys(guards)) {
+		cg := guards[name]
+		if cg.Event != EventBash && cg.Event != EventWrite {
+			errs = append(errs, fmt.Errorf(
+				"custom_guards.%s.event is %q (must be %q or %q)",
+				name,
+				cg.Event,
+				EventBash,
+				EventWrite,
+			))
+		}
+		if emptyCommand(cg.Command) {
+			errs = append(errs, fmt.Errorf("custom_guards.%s.command is empty", name))
+		}
+		if err := validMode(cg.Mode); err != nil {
+			errs = append(errs, fmt.Errorf("custom_guards.%s.%w", name, err))
+		}
+	}
+	return errs
+}
+
+// emptyCommand reports whether an external command list names no program.
+func emptyCommand(command []string) bool {
+	return len(command) == 0 || strings.TrimSpace(command[0]) == ""
+}
+
 // customHintErrors rejects the custom_hints entries that would load and then
 // advise nothing: an event the binary never runs custom hints on, a missing
 // command, a negative budget, an agent_types gate that cannot match, and a
@@ -1027,7 +1046,7 @@ func customHintErrors(hints map[string]CustomHint) []error {
 				strings.Join(CustomHintEvents, ", "),
 			))
 		}
-		if len(ch.Command) == 0 || strings.TrimSpace(ch.Command[0]) == "" {
+		if emptyCommand(ch.Command) {
 			errs = append(errs, fmt.Errorf("custom_hints.%s.command is empty", name))
 		}
 		if ch.TimeoutMS < 0 {

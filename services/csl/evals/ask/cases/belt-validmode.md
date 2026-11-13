@@ -10,13 +10,13 @@ expected:
   - '\bhard\b'
   - '\bsoft\b'
   - '(?i)empty|""'
-  - '\b1174\b'
+  - '\b1193\b'
   - '(?i)\berror\b'
 forbidden:
   - '(?i)\bmedium\b'
   - '(?i)\bstrict\b'
 oracle: |
-  - validMode (tools/belt/internal/config/config.go:1174) accepts "" (the empty per-rule default), "hard" and "soft".
+  - validMode (tools/belt/internal/config/config.go:1193) accepts "" (the empty per-rule default), "hard" and "soft".
   - Any other value returns an error: mode is %q (must be "hard" or "soft").
 notes: >-
   One large file (1091 lines) and a question with a small answer: the

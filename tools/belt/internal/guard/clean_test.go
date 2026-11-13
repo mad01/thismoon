@@ -39,6 +39,36 @@ func TestRunCleanReportsSoftPasses(t *testing.T) {
 	}
 }
 
+// TestRunCleanRejectsAMisconfiguredCustomGuard: a custom guard that cannot
+// run its command checks nothing, so the pass it gives is not clean and no
+// allow may act on it. Config validation refuses such an entry in a file;
+// this holds for a config built any other way.
+func TestRunCleanRejectsAMisconfiguredCustomGuard(t *testing.T) {
+	tests := []struct {
+		name    string
+		command []string
+	}{
+		{"no command", nil},
+		{"empty command list", []string{}},
+		{"blank program", []string{""}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Config{CustomGuards: map[string]config.CustomGuard{
+				"external": {Event: EventBash, Command: tt.command},
+			}}
+			d, clean := RunClean(Input{Event: EventBash, Command: "git -C . status"}, cfg)
+			if d != nil || clean {
+				t.Errorf(
+					"RunClean = %+v, %v; want no denial and a pass that is not clean",
+					d,
+					clean,
+				)
+			}
+		})
+	}
+}
+
 // TestEveryEmittingGuardIsAWarner: a guard emits an event only to let a
 // call through with a warning, so every guard type with an emit field must
 // report those warnings to RunClean. A new guard that adds one without

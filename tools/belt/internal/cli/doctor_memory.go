@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"strings"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/hint"
@@ -99,7 +98,8 @@ func autoMemoryNote(u hint.MemoryUsage, starts []config.ClaudeHook) string {
 		u.Label, hint.AgentClaudeCode, u.AutoMemorySettings, filepath.Dir(u.Path),
 	)
 	for _, h := range starts {
-		if runs, agent := beltSessionStart(h.Command); runs && agent != hint.AgentClaudeCode {
+		agent, runs := beltHint(h.Command, hint.EventSessionStart)
+		if runs && agent != hint.AgentClaudeCode {
 			return note + fmt.Sprintf(
 				"; the SessionStart entry in %s runs belt hint session-start without --agent %s, "+
 					"so sessions here still load it twice",
@@ -108,27 +108,4 @@ func autoMemoryNote(u hint.MemoryUsage, starts []config.ClaudeHook) string {
 		}
 	}
 	return note
-}
-
-// beltSessionStart reports whether a hook command runs `belt hint
-// session-start`, matched like runsBeltHintRead, and the --agent value it
-// passes, lowercased as the hint command reads it.
-func beltSessionStart(command string) (runs bool, agent string) {
-	words := strings.Fields(command)
-	for i := 0; i+2 < len(words); i++ {
-		if filepath.Base(words[i]) != "belt" || words[i+1] != "hint" ||
-			words[i+2] != hint.EventSessionStart {
-			continue
-		}
-		rest := words[i+3:]
-		for j, word := range rest {
-			if v, ok := strings.CutPrefix(word, "--agent="); ok {
-				agent = v
-			} else if word == "--agent" && j+1 < len(rest) {
-				agent = rest[j+1]
-			}
-		}
-		return true, strings.ToLower(agent)
-	}
-	return false, ""
 }

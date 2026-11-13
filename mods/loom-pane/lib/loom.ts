@@ -200,6 +200,19 @@ export function withCreated(record: readonly string[], paths: readonly string[],
   return next
 }
 
+/**
+ * The worktree an Agent tool call made for its agent: the `worktreePath` the
+ * tool's result names, normalized. Null when the call asked for no worktree
+ * (`isolation` other than `worktree`), or the result names none, as a
+ * background launch's does, or names a path that is not absolute.
+ */
+export function isolationWorktreeFrom(isolation: unknown, result: unknown): string | null {
+  if (isolation !== 'worktree' || typeof result !== 'object' || result === null) return null
+  const path = (result as { worktreePath?: unknown }).worktreePath
+  if (typeof path !== 'string' || !path.startsWith('/')) return null
+  return normalizePath(path)
+}
+
 export function denyReason(path: string, cls: 'canonical' | 'other'): string {
   const holder = cls === 'canonical' ? 'the canonical checkout' : 'another worktree'
   return `loom-pane: ${path} belongs to ${holder}; owners edit only their own worktree`

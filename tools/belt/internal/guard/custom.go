@@ -49,9 +49,12 @@ func (c *Custom) Config() config.CustomGuard { return c.cfg }
 
 // Check runs the external command against the input. The match gate keeps
 // the external from being exec'd on every tool call: when set, the command
-// (bash) or file path (write) must contain it as a substring.
+// (bash) or file path (write) must contain it as a substring. An entry with
+// no command checks nothing, so it fails open with a warning like a broken
+// external, and RunClean then reports the pass as not clean.
 func (c *Custom) Check(in Input) *Denial {
 	if len(c.cfg.Command) == 0 {
+		c.warn("no command configured; allowing")
 		return nil
 	}
 	if c.cfg.Match != "" && !strings.Contains(c.matchTarget(in), c.cfg.Match) {

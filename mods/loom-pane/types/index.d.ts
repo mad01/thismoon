@@ -24,7 +24,7 @@ declare module 'claude-code' {
       members: LoomPaneMember[]
       /** The session the role was last detected for; null until the first detect. */
       sessionId: string | null
-      /** Worktrees this session created with `git worktree add`, in the main loop or a subagent; emptied when the session changes. */
+      /** Worktrees this session created with `git worktree add`, in the main loop or a subagent, or that a foreground Agent call with `isolation: "worktree"` made; emptied when the session changes. */
       createdWorktrees: string[]
     }
   }
