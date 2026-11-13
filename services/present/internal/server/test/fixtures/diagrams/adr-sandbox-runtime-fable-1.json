@@ -1,0 +1,114 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "sandbox",
+      "label": "srt sandbox",
+      "tone": "amber"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "wrapper",
+      "label": "Wrapper",
+      "text": "Resolves secrets, env -i allow-list, cd /",
+      "tone": "green"
+    },
+    {
+      "id": "settings",
+      "label": "Settings file",
+      "text": "~/.config/srt/<label>.json, static policy",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "srtrun",
+      "label": "srt-run",
+      "text": "Merges per-machine hosts, sets and creates TMPDIR",
+      "tone": "green"
+    },
+    {
+      "id": "srt",
+      "label": "srt",
+      "text": "Generates a default-deny profile, starts the proxies",
+      "tone": "neutral"
+    },
+    {
+      "id": "proc",
+      "label": "Confined process",
+      "text": "Runs with SRT_RUN=<label>",
+      "tone": "green",
+      "group": "sandbox"
+    },
+    {
+      "id": "proxy",
+      "label": "Local proxies",
+      "text": "HTTP and SOCKS, listed hosts only",
+      "tone": "neutral"
+    },
+    {
+      "id": "hosts",
+      "label": "Listed hosts",
+      "text": "Named in settings or added at launch",
+      "kind": "external",
+      "tone": "neutral"
+    },
+    {
+      "id": "other",
+      "label": "Any other host",
+      "text": "Direct connections are denied",
+      "kind": "external",
+      "tone": "neutral"
+    },
+    {
+      "id": "watch",
+      "label": "sandbox-watch",
+      "text": "Streams the unified log, decodes the label",
+      "tone": "green"
+    }
+  ],
+  "edges": [
+    {
+      "from": "wrapper",
+      "to": "srtrun",
+      "label": "argv, per-machine hosts"
+    },
+    {
+      "from": "settings",
+      "to": "srtrun",
+      "label": "static policy"
+    },
+    {
+      "from": "srtrun",
+      "to": "srt",
+      "label": "merged settings"
+    },
+    {
+      "from": "srt",
+      "to": "proc",
+      "label": "launches"
+    },
+    {
+      "from": "proc",
+      "to": "proxy",
+      "label": "all egress",
+      "flow": true
+    },
+    {
+      "from": "proxy",
+      "to": "hosts",
+      "label": "allowed",
+      "flow": true
+    },
+    {
+      "from": "proxy",
+      "to": "other",
+      "label": "refused"
+    },
+    {
+      "from": "proc",
+      "to": "watch",
+      "label": "denials"
+    }
+  ]
+}

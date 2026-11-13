@@ -1,0 +1,50 @@
+{
+  "direction": "LR",
+  "nodes": [
+    {
+      "id": "arm",
+      "label": "Without-ask arm",
+      "text": "Fable 5.1, large-file question",
+      "kind": "person",
+      "tone": "purple"
+    },
+    {
+      "id": "mcp",
+      "label": "csl_ask MCP tool",
+      "text": "denied by the case",
+      "tone": "red"
+    },
+    {
+      "id": "bash",
+      "label": "Bash",
+      "text": "not denied",
+      "tone": "amber"
+    },
+    {
+      "id": "cli",
+      "label": "csl ask CLI",
+      "text": "same worker, same answer",
+      "kind": "external",
+      "tone": "amber"
+    }
+  ],
+  "edges": [
+    {
+      "from": "arm",
+      "to": "mcp",
+      "label": "denied"
+    },
+    {
+      "from": "arm",
+      "to": "bash",
+      "label": "csl ask <question>",
+      "flow": true
+    },
+    {
+      "from": "bash",
+      "to": "cli",
+      "label": "runs",
+      "flow": true
+    }
+  ]
+}

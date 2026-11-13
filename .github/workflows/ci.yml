@@ -167,8 +167,19 @@ jobs:
         with:
           node-version: 24
 
+      # The real-ELK layout test reads the bundle from the asset cache, which
+      # cache-assets.sh fills with its pinned sha256; under CI the test fails
+      # rather than skips when the bundle is missing.
+      - name: present asset cache
+        if: matrix.component == 'services/present'
+        env:
+          PRESENT_WORKDIR: ${{ runner.temp }}/present
+        run: services/present/scripts/cache-assets.sh
+
       - name: JS tests
         if: matrix.component == 'services/present'
+        env:
+          PRESENT_WORKDIR: ${{ runner.temp }}/present
         run: node --test services/present/internal/server/test/*.test.mjs
 
       - name: brain UI tests

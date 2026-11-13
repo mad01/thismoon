@@ -91,6 +91,18 @@ change rather than on a timer. A bad edit is undone from
 history: GET /api/p/<id>/history lists versions, present_source with a
 version returns one, and present_update with that source restores it.
 
+## checking a page
+
+The lint warns and never refuses. present_create and present_update return
+warnings (rule, where, message) for the whole page, the first eight with the
+rest counted in more. present_patch_section lists the patched section's
+warnings and counts the page's others in elsewhere. A page stored as raw HTML
+gets none. `present lint <id>` checks a stored page, and `present lint --file
+<args.json>` checks a present_create argument object before it is sent (`-`
+reads stdin); --json prints the warnings with a count per rule, and --strict
+exits 1 on any warning. `present limits` prints every number, warned or
+refused, from the one table the lint and the compiler share.
+
 ## sharing a page
 
 A local present pushes a page to a shared instance when both --shared-url and

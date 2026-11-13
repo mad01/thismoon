@@ -1,0 +1,12 @@
+{
+  "id": "brain-cli-review-deck",
+  "kind": "deck",
+  "ask": "Make me a deck for Thursday's review, where I walk the team through what the brain CLI harness runs found: what passed, what broke, and what we changed because of it.",
+  "stresses": "review deck: findings, the fixes they led to, and pass counts before and after, one finding per slide",
+  "source": {
+    "repo": "github.com/mad01/thismoon",
+    "path": "evals/harness/results/2026-11-05-brain-cli.md",
+    "commit": "b59bd3ff5465c77d74aabe9283df0b05b36b6250",
+    "trimmed": "no"
+  }
+}

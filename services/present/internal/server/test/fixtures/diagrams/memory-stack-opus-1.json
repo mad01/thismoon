@@ -1,0 +1,148 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "belt",
+      "label": "belt hint session-start",
+      "tone": "amber"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "automem",
+      "label": "Auto memory",
+      "text": "MEMORY.md, first 200 lines or 25KB",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "agentmem",
+      "label": "agent-memory",
+      "text": "~/.config/agent-memory, plus -work if present",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "moondb",
+      "label": "moondb",
+      "text": "edits between commits",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "cmd",
+      "label": "Your command",
+      "text": "machine-private context",
+      "kind": "external",
+      "tone": "neutral"
+    },
+    {
+      "id": "ham",
+      "label": "agent-memory hint",
+      "text": "index lines, up to 30 facts per store",
+      "tone": "green",
+      "group": "belt"
+    },
+    {
+      "id": "hmi",
+      "label": "moondb-inflight hint",
+      "text": "up to 10 files others left uncommitted",
+      "tone": "green",
+      "group": "belt"
+    },
+    {
+      "id": "hcustom",
+      "label": "Custom hints",
+      "text": "journal, worker brief; also SubagentStart",
+      "tone": "green",
+      "group": "belt"
+    },
+    {
+      "id": "session",
+      "label": "New agent session",
+      "text": "Claude Code, empty context window",
+      "tone": "neutral"
+    },
+    {
+      "id": "worklog",
+      "label": "worklog",
+      "text": "task state by ticket or topic",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "handoff",
+      "label": "handoff",
+      "text": "~/.handoff bridge document",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "events",
+      "label": "events",
+      "text": "denies, hints, ledger, audit trails",
+      "kind": "store",
+      "tone": "blue"
+    }
+  ],
+  "edges": [
+    {
+      "from": "automem",
+      "to": "session",
+      "label": "Claude Code loads it"
+    },
+    {
+      "from": "agentmem",
+      "to": "ham",
+      "label": "reads index"
+    },
+    {
+      "from": "moondb",
+      "to": "hmi",
+      "label": "others' dirty files"
+    },
+    {
+      "from": "cmd",
+      "to": "hcustom",
+      "label": "runs command"
+    },
+    {
+      "from": "ham",
+      "to": "session",
+      "label": "belt[agent-memory]",
+      "flow": true
+    },
+    {
+      "from": "hmi",
+      "to": "session",
+      "label": "belt[moondb-inflight]",
+      "flow": true
+    },
+    {
+      "from": "hcustom",
+      "to": "session",
+      "label": "belt[<name>]",
+      "flow": true
+    },
+    {
+      "from": "session",
+      "to": "worklog",
+      "label": "worklog_show"
+    },
+    {
+      "from": "session",
+      "to": "handoff",
+      "label": "reads the file"
+    },
+    {
+      "from": "session",
+      "to": "moondb",
+      "label": "moondb_why, _turn"
+    },
+    {
+      "from": "session",
+      "to": "events",
+      "label": "events_query"
+    }
+  ]
+}

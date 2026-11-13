@@ -69,10 +69,6 @@ var (
 	// ribbonOrders is how a ribbon chart orders the categories inside a
 	// column: by rank (value, largest on top; the default) or as given.
 	ribbonOrders = []string{"rank", "given"}
-	// ribbonMaxSeries is the palette's series roles, series-1 to series-4.
-	// A fifth ribbon series would repeat the first colour, and ranks that
-	// reorder every column make two same-coloured bands unreadable.
-	ribbonMaxSeries = 4
 	// diagramKinds is a diagram node's kind vocabulary: the shape the box
 	// takes. An empty kind draws as service, the plain box.
 	diagramKinds = []string{"service", "store", "queue", "person", "external"}
@@ -80,6 +76,13 @@ var (
 	// default), TB top to bottom.
 	diagramDirections = []string{"LR", "TB"}
 )
+
+// ribbonMaxSeries is the palette's series roles, series-1 to series-4. A
+// fifth ribbon series would repeat the first colour, and ranks that reorder
+// every column make two same-coloured bands unreadable. Like every cap
+// below, it equals its entry in the limits table, which TestCapsMatchLimits
+// checks.
+const ribbonMaxSeries = 4
 
 // Caps on a diagram: past them the picture is a hairball on a slide and the
 // layout takes long enough to notice. The skill says to split the picture
@@ -535,68 +538,56 @@ func inlineMd(s string) template.HTML {
 	// needs; after this line every NUL in s is one this function wrote.
 	s = strings.ReplaceAll(s, "\x00", "�")
 
-	// Extract chips and links before escaping so their delimiters survive.
-	// We use placeholder tokens, escape the rest, then restore.
-	type placeholder struct {
-		token string
-		html  string
-	}
-	var phs []placeholder
-	idx := 0
+	var pieces inlinePieces
+	s = pieces.lift(s)
 
-	replace := func(re *regexp.Regexp, fn func([]string) string) {
-		s = re.ReplaceAllStringFunc(s, func(m string) string {
-			parts := re.FindStringSubmatch(m)
-			tok := fmt.Sprintf("\x00PH%d\x00", idx)
-			idx++
-			phs = append(phs, placeholder{tok, fn(parts)})
-			return tok
-		})
-	}
+	// Escape the remaining text and emphasize it while every generated piece
+	// is still a token: italics then never reach into a code span or an href,
+	// and an <em> never straddles a piece's closing tag.
+	s = emphasize(html.EscapeString(s))
 
-	// Chips: @chip(style:text)
-	replace(reChip, func(p []string) string {
-		if p[1] != "" {
-			return fmt.Sprintf(
-				`<wk-badge variant="%s">%s</wk-badge>`,
-				html.EscapeString(p[1]),
-				html.EscapeString(p[2]),
-			)
-		}
-		return fmt.Sprintf(`<wk-badge>%s</wk-badge>`, html.EscapeString(p[2]))
+	return template.HTML(pieces.restore(s))
+}
+
+// inlinePieces holds the generated HTML of the chips, links, code spans,
+// and bold runs inlineMd lifts out of its text, each behind a placeholder
+// token, so escaping and emphasis leave their delimiters and markup alone.
+type inlinePieces []inlinePiece
+
+// inlinePiece is one lifted piece: the token standing in for it and the
+// pre-escaped HTML it is swapped back for.
+type inlinePiece struct {
+	token string
+	html  string
+}
+
+// lift swaps every chip, link, code span, and bold run in s for a token, in
+// that order: a chip's parens would confuse the link pattern, and a bold
+// run may then hold tokens of the pieces before it.
+func (p *inlinePieces) lift(s string) string {
+	s = p.liftAll(s, reChip, chipHTML)
+	s = p.liftAll(s, reLink, linkHTML)
+	s = p.liftAll(s, reCode, codeHTML)
+	return p.liftAll(s, reBold, boldHTML)
+}
+
+// liftAll swaps every match of re in s for a new NUL-delimited token and
+// keeps the HTML piece builds from the match's submatches.
+func (p *inlinePieces) liftAll(s string, re *regexp.Regexp, piece func([]string) string) string {
+	return re.ReplaceAllStringFunc(s, func(m string) string {
+		tok := fmt.Sprintf("\x00PH%d\x00", len(*p))
+		*p = append(*p, inlinePiece{tok, piece(re.FindStringSubmatch(m))})
+		return tok
 	})
+}
 
-	// Links: [text](url). A url outside the allowlist stays literal text, and
-	// so does one holding a placeholder token: the token would be swapped
-	// back inside the href attribute, and generated markup belongs in text
-	// content only.
-	replace(reLink, func(p []string) string {
-		if !LinkHrefAllowed(p[2]) || strings.Contains(p[2], "\x00") {
-			return html.EscapeString(p[0])
-		}
-		return fmt.Sprintf(`<a href="%s">%s</a>`, html.EscapeString(p[2]), html.EscapeString(p[1]))
-	})
-
-	// Code: `text`
-	replace(reCode, func(p []string) string {
-		return fmt.Sprintf(`<code>%s</code>`, html.EscapeString(p[1]))
-	})
-
-	// Bold: **text**. The text may hold tokens of the pieces above (a code
-	// span or a link inside the bold), which escaping leaves intact.
-	replace(reBold, func(p []string) string {
-		return fmt.Sprintf(`<strong>%s</strong>`, html.EscapeString(p[1]))
-	})
-
-	// Escape the remaining text.
-	s = html.EscapeString(s)
-
-	// Restore placeholders (they contain pre-escaped HTML). A restored piece
-	// can carry a token of its own, code inside bold say, so keep going until
-	// a pass swaps nothing. Every token occurs once, so this ends.
+// restore swaps every token in s back for its HTML. A restored piece can
+// carry a token of its own, code inside bold say, so it keeps going until a
+// pass swaps nothing. Every token occurs once, so this ends.
+func (p inlinePieces) restore(s string) string {
 	for swapped := true; swapped; {
 		swapped = false
-		for _, ph := range phs {
+		for _, ph := range p {
 			if !strings.Contains(s, ph.token) {
 				continue
 			}
@@ -604,14 +595,134 @@ func inlineMd(s string) template.HTML {
 			swapped = true
 		}
 	}
-
-	// Italic: *text* — applied after escaping since it doesn't need special chars.
-	// Use a simple regex on the escaped output.
-	reItalicPost := regexp.MustCompile(`\*([^*]+?)\*`)
-	s = reItalicPost.ReplaceAllString(s, `<em>$1</em>`)
-
-	return template.HTML(s)
+	return s
 }
+
+// chipHTML is a chip, @chip(style:text), as a badge.
+func chipHTML(p []string) string {
+	if p[1] != "" {
+		return fmt.Sprintf(
+			`<wk-badge variant="%s">%s</wk-badge>`,
+			html.EscapeString(p[1]),
+			emphasize(html.EscapeString(p[2])),
+		)
+	}
+	return fmt.Sprintf(`<wk-badge>%s</wk-badge>`, emphasize(html.EscapeString(p[2])))
+}
+
+// linkHTML is a link, [text](url). A url outside the allowlist stays
+// literal text, and so does one holding a placeholder token: the token
+// would be swapped back inside the href attribute, and generated markup
+// belongs in text content only.
+func linkHTML(p []string) string {
+	if !LinkHrefAllowed(p[2]) || strings.Contains(p[2], "\x00") {
+		return html.EscapeString(p[0])
+	}
+	return fmt.Sprintf(
+		`<a href="%s">%s</a>`,
+		html.EscapeString(p[2]),
+		emphasize(html.EscapeString(p[1])),
+	)
+}
+
+// codeHTML is a code span, `text`. Its content is never emphasized, so a
+// glob like *.pem prints as written.
+func codeHTML(p []string) string {
+	return fmt.Sprintf(`<code>%s</code>`, html.EscapeString(p[1]))
+}
+
+// boldHTML is a bold run, **text**. The text may hold tokens of the pieces
+// lifted before it (a code span or a link inside the bold), which escaping
+// leaves intact.
+func boldHTML(p []string) string {
+	return fmt.Sprintf(`<strong>%s</strong>`, emphasize(html.EscapeString(p[1])))
+}
+
+// emphasize wraps each pair of single stars in s in an <em> span. s is
+// escaped text that may hold placeholder tokens, which read as word
+// characters. A star pairs by CommonMark's flanking rules: it can open when
+// it is left-flanking, close when it is right-flanking, and a closer takes
+// the nearest opener before it. A star that can do neither, a run of two or
+// more, and an opener no closer follows all stay literal, so a bare glob
+// such as *.pem prints as written. A backslash does not escape a star:
+// present's inline syntax has no escape, so a star after a backslash pairs
+// like any other.
+func emphasize(s string) string {
+	var pairs [][2]int
+	open := -1
+	for i := 0; i < len(s); i++ {
+		if s[i] != '*' {
+			continue
+		}
+		end := i + 1
+		for end < len(s) && s[end] == '*' {
+			end++
+		}
+		if end-i == 1 {
+			before, after := runeBefore(s, i), runeAfter(s, end)
+			switch {
+			case open >= 0 && rightFlanking(before, after):
+				pairs = append(pairs, [2]int{open, i})
+				open = -1
+			case leftFlanking(before, after):
+				open = i
+			}
+		}
+		i = end - 1
+	}
+	if len(pairs) == 0 {
+		return s
+	}
+	var b strings.Builder
+	last := 0
+	for _, p := range pairs {
+		b.WriteString(s[last:p[0]])
+		b.WriteString("<em>")
+		b.WriteString(s[p[0]+1 : p[1]])
+		b.WriteString("</em>")
+		last = p[1] + 1
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}
+
+// runeBefore returns the rune ending at byte i of s, or a space at the start:
+// CommonMark counts the start and end of the text as whitespace.
+func runeBefore(s string, i int) rune {
+	if i == 0 {
+		return ' '
+	}
+	r, _ := utf8.DecodeLastRuneInString(s[:i])
+	return r
+}
+
+// runeAfter returns the rune starting at byte i of s, or a space at the end.
+func runeAfter(s string, i int) rune {
+	if i >= len(s) {
+		return ' '
+	}
+	r, _ := utf8.DecodeRuneInString(s[i:])
+	return r
+}
+
+// leftFlanking reports whether a star between before and after can open
+// emphasis: it is not followed by whitespace, and when punctuation follows
+// it, whitespace or punctuation precedes it.
+func leftFlanking(before, after rune) bool {
+	return !unicode.IsSpace(after) &&
+		(!isMdPunct(after) || unicode.IsSpace(before) || isMdPunct(before))
+}
+
+// rightFlanking reports whether a star between before and after can close
+// emphasis: the mirror image of leftFlanking.
+func rightFlanking(before, after rune) bool {
+	return !unicode.IsSpace(before) &&
+		(!isMdPunct(before) || unicode.IsSpace(after) || isMdPunct(after))
+}
+
+// isMdPunct reports whether r is punctuation as CommonMark defines it: the
+// Unicode punctuation and symbol categories.
+func isMdPunct(r rune) bool { return unicode.IsPunct(r) || unicode.IsSymbol(r) }
 
 // LinkHrefAllowed reports whether an inline `[text](href)` link in a prose
 // field may point at href: http, https, and mailto URLs, plus relative paths
@@ -808,7 +919,7 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
   </tbody>
 </table></wk-table>{{end}}
 
-{{define "block-kv"}}<wk-kv>{{range .KV}}<wk-kv-row><wk-kv-label>{{.K}}</wk-kv-label><wk-kv-value>{{inlineMd .V}}</wk-kv-value></wk-kv-row>
+{{define "block-kv"}}<wk-kv>{{range .KV}}<wk-kv-row><wk-kv-label>{{inlineMd .K}}</wk-kv-label><wk-kv-value>{{inlineMd .V}}</wk-kv-value></wk-kv-row>
 {{end}}</wk-kv>{{end}}
 
 {{define "block-list"}}{{if .Ordered}}<ol class="brief-list">
@@ -1281,7 +1392,8 @@ func validatePrefill(b Block) error {
 // where its rows height would shadow the cells, and frame on anything but a
 // chart or an image.
 func validateFieldHomes(b Block) error {
-	if b.T != "diagram" && (len(b.Nodes) > 0 || len(b.Groups) > 0 || len(b.Edges) > 0 || b.Direction != "") {
+	if b.T != "diagram" &&
+		(len(b.Nodes) > 0 || len(b.Groups) > 0 || len(b.Edges) > 0 || b.Direction != "") {
 		return fmt.Errorf("%s block: nodes, groups, edges, and direction are diagram fields", b.T)
 	}
 	if b.T != "terminal" &&
@@ -1330,7 +1442,11 @@ func validateChart(b Block) error {
 			return fmt.Errorf("chart %q: step %d has no caption", b.Title, k+1)
 		}
 		if len(st.Focus) > 0 {
-			return fmt.Errorf("chart %q: step %d names focus, which only a diagram takes", b.Title, k+1)
+			return fmt.Errorf(
+				"chart %q: step %d names focus, which only a diagram takes",
+				b.Title,
+				k+1,
+			)
 		}
 	}
 	for _, s := range b.Series {
@@ -1338,19 +1454,39 @@ func validateChart(b Block) error {
 			continue
 		}
 		if len(b.Steps) == 0 {
-			return fmt.Errorf("chart %q: series %q names step %d but the chart has no steps", b.Title, s.Name, s.Step)
+			return fmt.Errorf(
+				"chart %q: series %q names step %d but the chart has no steps",
+				b.Title,
+				s.Name,
+				s.Step,
+			)
 		}
 		if s.Step < 1 || s.Step > len(b.Steps) {
-			return fmt.Errorf("chart %q: series %q step %d: want 1 to %d", b.Title, s.Name, s.Step, len(b.Steps))
+			return fmt.Errorf(
+				"chart %q: series %q step %d: want 1 to %d",
+				b.Title,
+				s.Name,
+				s.Step,
+				len(b.Steps),
+			)
 		}
 		if b.Kind == "doughnut" {
-			return fmt.Errorf("chart %q: a doughnut draws its first series only, so a series cannot carry a step", b.Title)
+			return fmt.Errorf(
+				"chart %q: a doughnut draws its first series only, so a series cannot carry a step",
+				b.Title,
+			)
 		}
 		if b.Kind == "sankey" {
-			return fmt.Errorf("chart %q: a sankey draws flows, not series, so a series cannot carry a step", b.Title)
+			return fmt.Errorf(
+				"chart %q: a sankey draws flows, not series, so a series cannot carry a step",
+				b.Title,
+			)
 		}
 		if b.Kind == "ribbon" {
-			return fmt.Errorf("chart %q: a ribbon walks its periods, so a series cannot carry a step", b.Title)
+			return fmt.Errorf(
+				"chart %q: a ribbon walks its periods, so a series cannot carry a step",
+				b.Title,
+			)
 		}
 	}
 	if b.Kind == "ribbon" {
@@ -1395,7 +1531,11 @@ func validateRibbon(b Block) error {
 // (the layout would draw nothing).
 func validateRibbonSeries(series []ChartSeries) error {
 	if len(series) > ribbonMaxSeries {
-		return fmt.Errorf("a ribbon takes at most %d series (the palette's series colours), got %d: fold the rest into one", ribbonMaxSeries, len(series))
+		return fmt.Errorf(
+			"a ribbon takes at most %d series (the palette's series colours), got %d: fold the rest into one",
+			ribbonMaxSeries,
+			len(series),
+		)
 	}
 	names := map[string]bool{}
 	totals := map[string]float64{}
@@ -1448,7 +1588,9 @@ func ribbonPeriods(series []ChartSeries) ([]string, error) {
 			if k < last {
 				return nil, fmt.Errorf(
 					"series %q lists %q before %q, an earlier series the other way round (put every period in the first series, y 0 for a gap)",
-					s.Name, periods[last], p.X,
+					s.Name,
+					periods[last],
+					p.X,
 				)
 			}
 			last = k
@@ -1495,13 +1637,23 @@ func diagramName(b Block) string {
 func validateDiagram(b Block) error {
 	name := diagramName(b)
 	if b.Direction != "" && !slices.Contains(diagramDirections, b.Direction) {
-		return fmt.Errorf("%s: unknown direction %q (want %s)", name, b.Direction, strings.Join(diagramDirections, " or "))
+		return fmt.Errorf(
+			"%s: unknown direction %q (want %s)",
+			name,
+			b.Direction,
+			strings.Join(diagramDirections, " or "),
+		)
 	}
 	if len(b.Nodes) == 0 {
 		return fmt.Errorf("%s: needs at least one node", name)
 	}
 	if len(b.Nodes) > diagramMaxNodes {
-		return fmt.Errorf("%s: %d nodes, at most %d (split the picture over slides)", name, len(b.Nodes), diagramMaxNodes)
+		return fmt.Errorf(
+			"%s: %d nodes, at most %d (split the picture over slides)",
+			name,
+			len(b.Nodes),
+			diagramMaxNodes,
+		)
 	}
 	if len(b.Groups) > diagramMaxGroups {
 		return fmt.Errorf("%s: %d groups, at most %d", name, len(b.Groups), diagramMaxGroups)
@@ -1533,7 +1685,12 @@ func diagramIDs(b Block) (map[string]string, error) {
 			return fmt.Errorf("%s %d has no id", what, k+1)
 		}
 		if !diagramIDPattern.MatchString(id) {
-			return fmt.Errorf("%s %d: id %q is not a plain token (letters, digits, _ and -, starting with a letter or digit)", what, k+1, id)
+			return fmt.Errorf(
+				"%s %d: id %q is not a plain token (letters, digits, _ and -, starting with a letter or digit)",
+				what,
+				k+1,
+				id,
+			)
 		}
 		if ids[id] != "" {
 			return fmt.Errorf("id %q is used twice", id)
@@ -1579,7 +1736,12 @@ func validateDiagramGroups(b Block, ids map[string]string) error {
 			return fmt.Errorf("group %q: label is over %d characters", g.ID, diagramMaxLabel)
 		}
 		if g.Tone != "" && !validTone(g.Tone) {
-			return fmt.Errorf("group %q: unknown tone %q (want one of %s)", g.ID, g.Tone, strings.Join(graphTones, ", "))
+			return fmt.Errorf(
+				"group %q: unknown tone %q (want one of %s)",
+				g.ID,
+				g.Tone,
+				strings.Join(graphTones, ", "),
+			)
 		}
 		if g.Group != "" && ids[g.Group] != "group" {
 			return fmt.Errorf("group %q: parent %q is not a group", g.ID, g.Group)
@@ -1588,7 +1750,11 @@ func validateDiagramGroups(b Block, ids map[string]string) error {
 		for p := g.Group; p != ""; p = parent[p] {
 			depth++
 			if depth >= diagramMaxDepth {
-				return fmt.Errorf("group %q: groups nest at most %d deep (or its parents loop)", g.ID, diagramMaxDepth)
+				return fmt.Errorf(
+					"group %q: groups nest at most %d deep (or its parents loop)",
+					g.ID,
+					diagramMaxDepth,
+				)
 			}
 		}
 		if members[g.ID] == 0 {
@@ -1607,16 +1773,30 @@ func validateDiagramNodes(b Block, ids map[string]string) error {
 			return fmt.Errorf("node %q has no label", n.ID)
 		}
 		if runesOver(n.Label, diagramMaxLabel) {
-			return fmt.Errorf("node %q: label is over %d characters (put the rest in text)", n.ID, diagramMaxLabel)
+			return fmt.Errorf(
+				"node %q: label is over %d characters (put the rest in text)",
+				n.ID,
+				diagramMaxLabel,
+			)
 		}
 		if runesOver(n.Text, diagramMaxText) {
 			return fmt.Errorf("node %q: text is over %d characters", n.ID, diagramMaxText)
 		}
 		if n.Kind != "" && !slices.Contains(diagramKinds, n.Kind) {
-			return fmt.Errorf("node %q: unknown kind %q (want one of %s)", n.ID, n.Kind, strings.Join(diagramKinds, ", "))
+			return fmt.Errorf(
+				"node %q: unknown kind %q (want one of %s)",
+				n.ID,
+				n.Kind,
+				strings.Join(diagramKinds, ", "),
+			)
 		}
 		if n.Tone != "" && !validTone(n.Tone) {
-			return fmt.Errorf("node %q: unknown tone %q (want one of %s)", n.ID, n.Tone, strings.Join(graphTones, ", "))
+			return fmt.Errorf(
+				"node %q: unknown tone %q (want one of %s)",
+				n.ID,
+				n.Tone,
+				strings.Join(graphTones, ", "),
+			)
 		}
 		if n.Group != "" && ids[n.Group] != "group" {
 			return fmt.Errorf("node %q: group %q is not a group", n.ID, n.Group)
@@ -1649,10 +1829,22 @@ func validateDiagramEdges(b Block, ids map[string]string) error {
 		}
 		seen[key] = k + 1
 		if runesOver(e.Label, diagramMaxEdgeLabel) {
-			return fmt.Errorf("edge %d (%s to %s): label is over %d characters", k+1, e.From, e.To, diagramMaxEdgeLabel)
+			return fmt.Errorf(
+				"edge %d (%s to %s): label is over %d characters",
+				k+1,
+				e.From,
+				e.To,
+				diagramMaxEdgeLabel,
+			)
 		}
 		if e.Weight < 0 {
-			return fmt.Errorf("edge %d (%s to %s): weight %v, want 0 or more", k+1, e.From, e.To, e.Weight)
+			return fmt.Errorf(
+				"edge %d (%s to %s): weight %v, want 0 or more",
+				k+1,
+				e.From,
+				e.To,
+				e.Weight,
+			)
 		}
 		if e.Weight != 0 && !e.Flow {
 			return fmt.Errorf("edge %d (%s to %s): weight needs flow", k+1, e.From, e.To)
@@ -1708,7 +1900,12 @@ func validateDiagramSteps(b Block, ids map[string]string) error {
 				return fmt.Errorf("step %d: focus %q names no node or group", k+1, id)
 			}
 			if stepOf[id] > k+1 {
-				return fmt.Errorf("step %d: focus %q is not shown until step %d", k+1, id, stepOf[id])
+				return fmt.Errorf(
+					"step %d: focus %q is not shown until step %d",
+					k+1,
+					id,
+					stepOf[id],
+				)
 			}
 		}
 	}
@@ -1926,7 +2123,9 @@ func ValidateTerminalSessions(docs ...Doc) error {
 			if spec != first {
 				return fmt.Errorf(
 					"terminal %q: blocks naming the session give %s and %s; it starts once, from one cmd, cwd, and prefill",
-					b.Session, first, spec,
+					b.Session,
+					first,
+					spec,
 				)
 			}
 			return nil

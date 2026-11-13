@@ -1,0 +1,165 @@
+{
+  "direction": "TB",
+  "groups": [
+    {
+      "id": "release",
+      "label": "GitHub Release",
+      "tone": "amber"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "main",
+      "label": "Releasable commit on main",
+      "text": "fix, feat, or feat! touching a component path",
+      "tone": "neutral"
+    },
+    {
+      "id": "rp",
+      "label": "release-please",
+      "text": "manifest mode, authenticates as a GitHub App",
+      "tone": "green"
+    },
+    {
+      "id": "relpr",
+      "label": "Release PR",
+      "text": "manifest version bump and generated changelog",
+      "tone": "blue"
+    },
+    {
+      "id": "automerge",
+      "label": "release-pr-automerge",
+      "text": "turns on auto-merge for the release PR",
+      "tone": "green"
+    },
+    {
+      "id": "tag",
+      "label": "Component tag",
+      "text": "name/vX.Y.Z, for example present/v1.2.3",
+      "tone": "blue"
+    },
+    {
+      "id": "artifacts",
+      "label": "artifacts job",
+      "text": "macOS arm64 runner, one leg per released path",
+      "tone": "green"
+    },
+    {
+      "id": "tarball",
+      "label": "Tarball",
+      "text": "name_vX.Y.Z_darwin_arm64.tar.gz",
+      "tone": "blue",
+      "group": "release"
+    },
+    {
+      "id": "sums",
+      "label": "checksums.txt",
+      "text": "sha256 sum of every tarball",
+      "tone": "blue",
+      "group": "release"
+    },
+    {
+      "id": "bundle",
+      "label": "checksums.txt.bundle",
+      "text": "cosign keyless signature, GitHub OIDC identity",
+      "tone": "blue",
+      "group": "release"
+    },
+    {
+      "id": "image",
+      "label": "present image job",
+      "text": "ubuntu runner, linux/amd64 and linux/arm64",
+      "tone": "green"
+    },
+    {
+      "id": "ghcr",
+      "label": "ghcr.io/mad01/present",
+      "text": "tags X.Y.Z and latest, digest signed keyless",
+      "kind": "store",
+      "tone": "blue"
+    }
+  ],
+  "edges": [
+    {
+      "from": "main",
+      "to": "rp",
+      "label": "push to main"
+    },
+    {
+      "from": "rp",
+      "to": "relpr",
+      "label": "opens or updates"
+    },
+    {
+      "from": "automerge",
+      "to": "relpr",
+      "label": "enables auto-merge"
+    },
+    {
+      "from": "relpr",
+      "to": "tag",
+      "label": "merge creates"
+    },
+    {
+      "from": "tag",
+      "to": "artifacts",
+      "label": "each released path"
+    },
+    {
+      "from": "artifacts",
+      "to": "tarball",
+      "label": "builds"
+    },
+    {
+      "from": "artifacts",
+      "to": "sums",
+      "label": "sums"
+    },
+    {
+      "from": "artifacts",
+      "to": "bundle",
+      "label": "signs"
+    },
+    {
+      "from": "tag",
+      "to": "image",
+      "label": "present only"
+    },
+    {
+      "from": "image",
+      "to": "ghcr",
+      "label": "pushes and signs"
+    }
+  ],
+  "steps": [
+    {
+      "caption": "A releasable commit merges to main. The paths it touches decide which component it counts toward.",
+      "focus": [
+        "main"
+      ]
+    },
+    {
+      "caption": "release-please opens or updates that component's release PR with the version bump and the changelog.",
+      "focus": [
+        "rp",
+        "relpr"
+      ]
+    },
+    {
+      "caption": "The release-pr-automerge job turns on auto-merge, so the PR lands once its required checks pass.",
+      "focus": [
+        "automerge",
+        "relpr"
+      ]
+    },
+    {
+      "caption": "Merging the release PR creates the component tag and the GitHub Release.",
+      "focus": [
+        "tag"
+      ]
+    },
+    {
+      "caption": "The artifacts job builds every path released in that run, uploads the tarball and checksums, and signs the checksums. A present release also builds and signs its image."
+    }
+  ]
+}

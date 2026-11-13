@@ -1,0 +1,132 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "hooks",
+      "label": "Claude Code hooks",
+      "tone": "amber"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "session",
+      "label": "Agent session",
+      "text": "writes with file tools, skills, MCP",
+      "tone": "neutral"
+    },
+    {
+      "id": "automem",
+      "label": "Auto memory",
+      "text": "one file per fact plus MEMORY.md",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "agentmem",
+      "label": "agent-memory",
+      "text": "git clone; belt never writes it",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "other",
+      "label": "Other machines",
+      "text": "ralph up with update = true",
+      "kind": "external",
+      "tone": "neutral"
+    },
+    {
+      "id": "worklog",
+      "label": "worklog",
+      "text": "git repo, optional private remote",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "handoff",
+      "label": "handoff",
+      "text": "written when a session ends mid-task",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "mrec",
+      "label": "moondb record",
+      "text": "every prompt, file edit and stop",
+      "tone": "green",
+      "group": "hooks"
+    },
+    {
+      "id": "brec",
+      "label": "belt record",
+      "text": "nine lifecycle events",
+      "tone": "green",
+      "group": "hooks"
+    },
+    {
+      "id": "moondb",
+      "label": "moondb",
+      "text": "before, after, turn, prompt, commit",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "events",
+      "label": "events",
+      "text": "one queryable timeline",
+      "kind": "store",
+      "tone": "blue"
+    }
+  ],
+  "edges": [
+    {
+      "from": "session",
+      "to": "automem",
+      "label": "file tools"
+    },
+    {
+      "from": "session",
+      "to": "agentmem",
+      "label": "write, commit, push"
+    },
+    {
+      "from": "agentmem",
+      "to": "other",
+      "label": "pulled by ralph up"
+    },
+    {
+      "from": "session",
+      "to": "worklog",
+      "label": "worklog_checkpoint"
+    },
+    {
+      "from": "session",
+      "to": "handoff",
+      "label": "/handoff skill"
+    },
+    {
+      "from": "session",
+      "to": "mrec",
+      "label": "prompt, edit, stop",
+      "flow": true
+    },
+    {
+      "from": "mrec",
+      "to": "moondb",
+      "label": "records the edit",
+      "flow": true
+    },
+    {
+      "from": "session",
+      "to": "brec",
+      "label": "lifecycle",
+      "flow": true
+    },
+    {
+      "from": "brec",
+      "to": "events",
+      "label": "ledger",
+      "flow": true
+    }
+  ]
+}

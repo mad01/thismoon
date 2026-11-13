@@ -19,6 +19,7 @@ import (
 	"github.com/mad01/thismoon/services/present/internal/author"
 	"github.com/mad01/thismoon/services/present/internal/baseurl"
 	"github.com/mad01/thismoon/services/present/internal/images"
+	"github.com/mad01/thismoon/services/present/internal/lint"
 	"github.com/mad01/thismoon/services/present/internal/render"
 	"github.com/mad01/thismoon/services/present/internal/sharedclient"
 	"github.com/mad01/thismoon/services/present/internal/store"
@@ -78,7 +79,12 @@ var createAnnotations = &mcp.ToolAnnotations{
 // skillPointer names the guide the create and update descriptions end on.
 // The descriptions carry the shape of the input; the skill carries the
 // rules, so a rule changes in one place.
-const skillPointer = "The present skill (skills/present/SKILL.md in the thismoon repo) is the guide: which block answers which question, the chart kind picker and its limits, the graph engine picker, the colour rules for graphs and diagrams, the deck rules, and worked examples. Load it before writing a page."
+const skillPointer = "The present skill (skills/present/SKILL.md in the thismoon repo) is the guide: which block answers which question, the page types and their skeletons, the chart kind picker and its limits, the colour rules for graphs and diagrams, the deck rules, and worked examples. Load it before writing a page."
+
+// warningsDescription is the part of the create and update descriptions
+// that says what the warnings in the result are and what to do with them.
+const warningsDescription = "The result lists `warnings` when the page passes a house limit, each with its rule, where, and a message that gives the reason and the fix; `more` counts the ones not listed. " +
+	"A warning never refuses the page: fix what applies in one present_update and leave the rest. `present limits` prints every rule. "
 
 // deckDescription is the part of the create and update descriptions that
 // teaches a client what a deck is; the two tools share it so they cannot
@@ -99,7 +105,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 				"Set `ephemeral` to have the page expire 30 days after its last update; otherwise it stays until deleted. " +
 				"The author key this connection sends as its bearer token becomes the page's author; only it can update the page. " +
 				"Keep the returned URL: nothing on this instance lists pages. " +
-				skillPointer,
+				warningsDescription + skillPointer,
 			Annotations: createAnnotations,
 		}, withHint(h.handleCreateShared))
 	} else {
@@ -110,7 +116,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 				"Pass an optional Graph JSON object as `graph` (structured nodes/edges) and optional `references` (source links displayed at the bottom). " +
 				deckDescription + "At least one of `content` and `deck` is required. " +
 				"Keep the returned id; it is the handle for present_update/present_read/present_open. " +
-				skillPointer,
+				warningsDescription + skillPointer,
 			Annotations: createAnnotations,
 		}, withHint(h.handleCreate))
 	}
@@ -145,7 +151,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Only the fields you provide are changed (omit a field to leave it as-is); pass an empty string to clear the graph or to remove the deck. " +
 			"A page always keeps at least one of content and deck: an update that would remove the last one is refused. " +
 			"Bumps the page version so any open browser tab auto-reloads, so you don't need to call present_open again after an update. " +
-			skillPointer,
+			warningsDescription + skillPointer,
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: new(true),
 			IdempotentHint:  false,
@@ -371,7 +377,7 @@ type refInput struct {
 
 type createInput struct {
 	Title      string     `json:"title"                jsonschema:"presentation title (shown in the browser tab and page header)"`
-	Content    string     `json:"content,omitempty"    jsonschema:"Page content (the brief) as a Doc JSON string, or a legacy HTML string. Omit it for a deck-only page (then deck is required).\nDoc: {summary?, meta?, chips?:[{text, style: stat|a|b|c|outline}], sections:[{h, blocks:[{t, ...}], tone?, layout?, notes?, reveal?}]}. Text fields take inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text).\nBlocks by t: p {text}; h3 {text}; callout {text, sev?: info|warn|ok|error}; table {cols, rows}; kv {kv:[{k,v}]}; list {items, ordered?}; panel {title, sub?, accent?: a palette role}; progress {pct, label?, note?}; graph {} (places the page's one graph, at most once, in a column but never in details); chart {kind: bar|line|area|sparkline|stacked-bar|horizontal-bar|doughnut|scatter|sankey|ribbon, title?, unit?, xunit?, series:[{name?, color?, step?, points:[{x,y}]}] for every kind but sankey, flows:[{from,to,value}] for sankey, steps?:[{caption}] (one step per Next on a deck slide; a series with step k joins at step k; a ribbon steps by period), order?: rank|given (ribbon only), frame?: true keeps a card (brief only)}; diagram {nodes:[{id, label, text?, kind?, tone?, group?, step?}] with node kind: service|store|queue|person|external and tone: neutral|green|red|blue|amber|purple, groups?:[{id, label, tone?, group?, step?}] (a group may sit in one other group), edges?:[{from, to, label?, flow?, weight?, step?}] between two nodes, direction: LR|TB, caption?, steps?:[{caption, focus?:[ids]}]}; code {text, lang?} (verbatim, no inline markdown); html {text}; columns {cols: 2 or 3 arrays of blocks}; stat {value, label, sub?}; quote {text, cite?}; details {summary, blocks}; image {src, alt, caption?, frame?: false drops the border}; terminal {session, cmd?, cwd?, prefill?, rows?} (attaches a live terminal to a terminal session present serve owns, so every block naming the session shows the same process, and is the one card a deck slide may keep; session is 1 to 32 of a-z, 0-9, and -, cmd runs in place of a login shell, cwd is an absolute or ~ path and defaults to the home directory, prefill is typed into the session on start, not run, rows 8 to 60; never in details; a shared instance runs no sessions and shows a placeholder in its place; e.g. {t: terminal, session: demo, cmd: claude, cwd: ~/code/shop, prefill: fix the flaky checkout test} on one slide and the same block on a later slide, so the room sees what Claude did meanwhile).\nSection fields beside h and blocks: tone (a palette role: a band in the brief, the heading rule and accent bar on a slide), and deck-only layout (default|center|statement|section), notes (speaker notes), reveal (bool).\nLimits the renderer enforces: columns and details hold any block but columns and details; a ribbon takes at most 4 named series; a diagram at most 24 nodes and 12 groups, two levels deep, no element stepped before what holds it; an image src is an http(s) URL or, on a local instance, an absolute or ~ path to a png, jpeg, gif, or webp file of at most 2 MiB (copied into the page store and rewritten to the /img/<hash>.<ext> path present_source returns; a shared instance takes URLs only), and alt is required. A refused Doc names the block and the rule.\nThe present skill says which block answers which question and holds the chart kind picker; load it before writing a page."`
+	Content    string     `json:"content,omitempty"    jsonschema:"Page content (the brief) as a Doc JSON string, or a legacy HTML string. Omit it for a deck-only page (then deck is required).\nDoc: {summary?, meta?, chips?:[{text, style: stat|a|b|c|outline}], sections:[{h, blocks:[{t, ...}], tone?, layout?, notes?, reveal?}]}. Text fields take inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text).\nBlocks by t: p {text}; h3 {text}; callout {text, sev?: info|warn|ok|error}; table {cols, rows}; kv {kv:[{k,v}]}; list {items, ordered?}; panel {title, sub?, accent?: a palette role}; progress {pct, label?, note?}; graph {} (places the page's one graph, at most once, in a column but never in details); chart {kind: bar|line|area|sparkline|stacked-bar|horizontal-bar|doughnut|scatter|sankey|ribbon, title?, unit?, xunit?, series:[{name?, color?, step?, points:[{x,y}]}] for every kind but sankey, flows:[{from,to,value}] for sankey, steps?:[{caption}] (one step per Next on a deck slide; a series with step k joins at step k; a ribbon steps by period), order?: rank|given (ribbon only), frame?: true keeps a card (brief only)}; diagram {nodes:[{id, label, text?, kind?, tone?, group?, step?}] with node kind: service|store|queue|person|external and tone: neutral|green|red|blue|amber|purple, groups?:[{id, label, tone?, group?, step?}] (a group may sit in one other group), edges?:[{from, to, label?, flow?, weight?, step?}] between two nodes, direction: LR|TB, caption?, steps?:[{caption, focus?:[ids]}]}; code {text, lang?} (verbatim, no inline markdown); html {text}; columns {cols: 2 or 3 arrays of blocks}; stat {value, label, sub?}; quote {text, cite?}; details {summary, blocks}; image {src, alt, caption?, frame?: false drops the border}; terminal {session, cmd?, cwd?, prefill?, rows?} (attaches a live terminal to a terminal session present serve owns, so every block naming the session shows the same process, and is the one card a deck slide may keep; session is 1 to 32 of a-z, 0-9, and -, cmd runs in place of a login shell, cwd is an absolute or ~ path and defaults to the home directory, prefill is typed into the session on start, not run, rows 8 to 60; never in details; a shared instance runs no sessions and shows a placeholder in its place; e.g. {t: terminal, session: demo, cmd: claude, cwd: ~/code/shop, prefill: fix the flaky checkout test} on one slide and the same block on a later slide, so the room sees what Claude did meanwhile).\nSection fields beside h and blocks: tone (a palette role: a band in the brief, the heading rule and accent bar on a slide), and deck-only layout (default|center|statement|section), notes (speaker notes), reveal (bool).\nLimits the renderer enforces: columns and details hold any block but columns and details; a ribbon takes at most 4 named series; a diagram at most 24 nodes and 12 groups, groups nested at most 2 levels deep, no element stepped before what holds it; an image src is an http(s) URL or, on a local instance, an absolute or ~ path to a png, jpeg, gif, or webp file of at most 2 MiB (copied into the page store and rewritten to the /img/<hash>.<ext> path present_source returns; a shared instance takes URLs only), and alt is required. A refused Doc names the block and the rule.\nThe present skill says which block answers which question and holds the chart kind picker; load it before writing a page."`
 	Deck       string     `json:"deck,omitempty"       jsonschema:"Optional slide deck as a Doc JSON string with the same shape and blocks as content: every section is one slide, summary, meta, and chips fill the title slide, references make the last slide. Authored on its own, never converted from content.\nDeck-level chrome beside summary, meta, and chips, all optional: logo (absent = the embedded repo logo; none hides it; an http(s) URL replaces it), logo_position (bottom-right|bottom-left|top-left|top-right), progress (dots|bar|none; dots give way to a bar above 24 slides), presenter (a byline under the meta line and in the footer), footer (absent = the deck title; none suppresses it; the footer line shows only when presenter or footer is set), transition (fade|slide|none).\nPer section: layout (default|center|statement|section), tone (a palette role for the heading rule and accent bar; a slide never paints a filled box), notes (speaker notes shown in a drawer on the N key, never on the slide), reveal (true: list items and top-level blocks appear one per Next; a chart or diagram with steps walks them right after it appears). A lone stat or quote on a slide is the big-number or quote slide.\nThe rules that keep a deck a deck: the heading is the claim, 3 to 5 short items or two sentences per slide, one highlight per slide, one visual (a chart, a diagram, the graph, an image, a terminal, or a lone stat or quote) per slide, alone or beside one short paragraph in columns, 5 to 12 slides, no filled boxes on a slide (no panel, details, code, or frame: true; a terminal block is the one card a slide may keep, since the live terminal is the point of its slide), detail stays in content. The present skill has the full list, a building-a-deck recipe, and worked examples, among them live-terminal-demo.json: a shell and Claude started on two slides with a prefill each, three talk slides, then both sessions shown again.\nServed at deck_url; the page's graph is shared with the content."`
 	Graph      string     `json:"graph,omitempty"      jsonschema:"Optional Cytoscape graph as a structured JSON string {nodes:[{id,label,type?,color?,tone?}], edges:[{from,to,type?,label?,weight?,flow?}], layout?, direction?} or a legacy JS string. One per page, shared by the content and the deck, placed by a graph block.\nNode types: center, module (color: 0 to 3 picks one of four border slots), leaf (the default), registry. Node tones (box background, border, and text as one family, theme-aware): neutral, green, red, blue, amber, purple. Tone every node or none, two or three tones with fixed meanings; use module slots or tones on a graph, never both.\nEdge types: consumes (solid), publishes (dashed). Edge weight (a number, e.g. requests per second) drives line width and tints the busiest edges; flow: true animates dashes from source to target.\nLayouts: dagre (default, layered, for trees and hierarchies), elk (ELK layered with wrapping; folds a long chain into rows to fit the container, for pipelines), elk-layered | elk-mrtree | elk-stress | elk-radial | elk-force (plain layered, tree, stress, radial, force; no folding), cose (no hierarchy, no vendored library needed). Direction (dagre and the ELK engines): TB or LR; omit for auto (LR when the graph has few nodes). The present skill has the engine picker and the colour rules."`
 	References []refInput `json:"references,omitempty" jsonschema:"source links shown in a References section at the bottom of the page: repos, docs, PRs consulted while writing the brief"`
@@ -391,13 +397,15 @@ type sharedCreateInput struct {
 }
 
 type pageOutput struct {
-	ID        string `json:"id"`
-	URL       string `json:"url"                  jsonschema:"where the page opens: its content, or its deck when the page has no content"`
-	HasDeck   bool   `json:"has_deck"`
-	DeckURL   string `json:"deck_url,omitempty"   jsonschema:"where the slide deck opens; set when the page has one"`
-	Version   int    `json:"version"`
-	Ephemeral bool   `json:"ephemeral,omitempty"`
-	ExpiresAt string `json:"expires_at,omitempty"`
+	ID        string         `json:"id"`
+	URL       string         `json:"url"                  jsonschema:"where the page opens: its content, or its deck when the page has no content"`
+	HasDeck   bool           `json:"has_deck"`
+	DeckURL   string         `json:"deck_url,omitempty"   jsonschema:"where the slide deck opens; set when the page has one"`
+	Version   int            `json:"version"`
+	Ephemeral bool           `json:"ephemeral,omitempty"`
+	ExpiresAt string         `json:"expires_at,omitempty"`
+	Warnings  []lint.Finding `json:"warnings,omitempty"   jsonschema:"what the page lint found, by rule, then from the top of the page; the page is stored either way"`
+	More      int            `json:"more,omitempty"       jsonschema:"how many more warnings the lint found than are listed"`
 }
 
 // pageOutputFor describes p at pageURL. A page without content opens on its
@@ -505,7 +513,11 @@ func (h *handlers) create(
 	}
 	notify.EmitEvent("present", "info", "page created: "+p.Title, "",
 		map[string]string{"id": p.ID, "title": p.Title})
-	return nil, pageOutputFor(p, h.url(req, p.ID)), nil
+	out := pageOutputFor(p, h.url(req, p.ID))
+	out.Warnings, out.More = pageWarnings(lint.Check(lint.Page{
+		Title: in.Title, Brief: content.Doc, Deck: deck.Doc,
+	}))
+	return nil, out, nil
 }
 
 func toStoreRefs(in []refInput) []store.Reference {
@@ -647,7 +659,9 @@ func (h *handlers) handleSource(
 
 // errNoHistory is present_source asked for an earlier version on a store
 // that keeps none: a shared instance.
-var errNoHistory = errors.New("this instance keeps no page history; omit version for the current source")
+var errNoHistory = errors.New(
+	"this instance keeps no page history; omit version for the current source",
+)
 
 // sourceAt is present_source for a kept earlier version, from the page's
 // history.
@@ -747,13 +761,16 @@ func (h *handlers) handleUpdate(
 	if err := ing.commit(); err != nil {
 		return nil, pageOutput{}, err
 	}
-	p, err := h.store.Edit(ctx, in.ID, h.renewing(h.updateEdit(in, compiled)))
+	var written store.Snapshot
+	p, err := h.store.Edit(ctx, in.ID, capture(h.renewing(h.updateEdit(in, compiled)), &written))
 	if err != nil {
 		return nil, pageOutput{}, err
 	}
 	notify.EmitEvent("present", "info", "page updated: "+p.Title, "",
 		map[string]string{"id": p.ID, "title": p.Title})
-	return nil, pageOutputFor(p, h.url(req, p.ID)), nil
+	out := pageOutputFor(p, h.url(req, p.ID))
+	out.Warnings, out.More = pageWarnings(writtenFindings(p.Title, written))
+	return nil, out, nil
 }
 
 // updateEdit is the store edit an update runs: the page and its sources

@@ -1,0 +1,65 @@
+{
+  "title": "How the fleet fits together",
+  "deck": {
+    "summary": "Our tools invoke each other: hooks, hints and shared services fire on every session without anyone remembering.",
+    "sections": [
+      {
+        "h": "Three layers keep the repo public and the setup personal",
+        "notes": "thismoon's recipes carry **only what is portable**: build, install, service registration.",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "TB",
+            "caption": "Green is public code, purple is yours; the amber boundary is what stays private.",
+            "groups": [
+              {
+                "id": "public",
+                "label": "public"
+              },
+              {
+                "id": "private",
+                "label": "private",
+                "tone": "amber"
+              }
+            ],
+            "nodes": [
+              {
+                "id": "thismoon",
+                "label": "thismoon",
+                "text": "Components and recipes: the code and its install",
+                "tone": "green",
+                "group": "public"
+              },
+              {
+                "id": "ralph",
+                "label": "ralph",
+                "text": "Installer: reconciles machines against TOML recipes",
+                "tone": "green",
+                "group": "public"
+              },
+              {
+                "id": "config",
+                "label": "Your config repo",
+                "text": "Secrets, hosts, hooks, overlays",
+                "tone": "purple",
+                "group": "private"
+              }
+            ],
+            "edges": [
+              {
+                "from": "thismoon",
+                "to": "ralph",
+                "label": "consumed by"
+              },
+              {
+                "from": "ralph",
+                "to": "config",
+                "label": "configured by"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

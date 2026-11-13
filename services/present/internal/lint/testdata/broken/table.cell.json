@@ -1,0 +1,30 @@
+{
+  "title": "ADR-0028: sandbox-runtime replaces hand-written seatbelt profiles",
+  "content": {
+    "summary": "The fleet now confines its processes with **sandbox-runtime (srt)** instead of hand-written seatbelt profiles: each process starts default-deny and reaches only the hosts its settings name.",
+    "sections": [
+      {
+        "h": "We pay for srt with wider reads and two places for policy",
+        "blocks": [
+          {
+            "t": "table",
+            "cols": [
+              "Cost",
+              "What bounds it"
+            ],
+            "rows": [
+              [
+                "A process that reads source can read any file under the code roots that isn't secret-shaped, a token in a YAML config included. srt globs cannot express \"prose and Go files only\".",
+                "Egress is pinned to named hosts, and the calling agent reads the same files."
+              ],
+              [
+                "The egress policy lives in two places: the settings file and the wrapper that names per-machine hosts.",
+                "A wrapper change gets the same review as a policy change."
+              ]
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

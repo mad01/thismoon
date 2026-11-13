@@ -4,6 +4,8 @@ Cases for `claude plugin eval`. They check that an agent given a work summary wr
 
 The present MCP is not available inside a run, so every prompt asks for the `present_create` arguments as one JSON object in the reply instead of a tool call.
 
+Every rule a case grades lives in SKILL.md itself. A run can also read the files beside it (`references/`, `examples/`, `gallery/`), so a case may grade a rule from a reference file, as long as SKILL.md tells the agent to read that file at the step where it applies.
+
 Run from the repo root:
 
 ```bash

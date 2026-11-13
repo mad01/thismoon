@@ -1,0 +1,12 @@
+{
+  "id": "memory-stack",
+  "kind": "brief",
+  "ask": "Brief me on how the memory stores and the hooks that feed them fit together.",
+  "stresses": "system overview: stores, hooks and the dependency structure between them",
+  "source": {
+    "repo": "github.com/mad01/thismoon",
+    "path": "docs/MEMORY-STACK.md",
+    "commit": "b59bd3ff5465c77d74aabe9283df0b05b36b6250",
+    "trimmed": "no"
+  }
+}

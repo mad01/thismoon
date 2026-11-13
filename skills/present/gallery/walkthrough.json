@@ -1,0 +1,303 @@
+{
+  "title": "Run package builds in a throwaway VM",
+  "content": {
+    "summary": "Five steps move a build that runs third-party install code (npm, pip, gem) into a throwaway **Apple container** VM. Source goes in, and only the files you name come back to the host.",
+    "meta": "2026-11-13 · how-to · anyone adding a package-manager build step",
+    "sections": [
+      {
+        "h": "Five steps take a package build off the host",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "Amber steps are by hand, once per machine. Green steps are files in the repo. The purple step is a review.",
+            "nodes": [
+              {
+                "id": "pkg",
+                "label": "1. Install pkg",
+                "tone": "amber"
+              },
+              {
+                "id": "kernel",
+                "label": "2. Install kernel",
+                "tone": "amber"
+              },
+              {
+                "id": "dockerfile",
+                "label": "3. Write Dockerfile",
+                "tone": "green"
+              },
+              {
+                "id": "make",
+                "label": "4. Build with make",
+                "tone": "green"
+              },
+              {
+                "id": "diff",
+                "label": "5. Review diff",
+                "tone": "purple"
+              }
+            ],
+            "edges": [
+              {
+                "from": "pkg",
+                "to": "kernel"
+              },
+              {
+                "from": "kernel",
+                "to": "dockerfile"
+              },
+              {
+                "from": "dockerfile",
+                "to": "make"
+              },
+              {
+                "from": "make",
+                "to": "diff"
+              }
+            ]
+          },
+          {
+            "t": "p",
+            "text": "Install the runtime and its kernel once on each machine. Then write the Dockerfile, build with make, and review the diff before you commit."
+          }
+        ]
+      },
+      {
+        "h": "A container fits third-party build code that outputs files",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Use a container VM when all three of these hold."
+          },
+          {
+            "t": "list",
+            "items": [
+              "**The step runs third-party code at install or build time.** Any package manager fetch counts: a postinstall hook runs arbitrary code with your user's privileges.",
+              "**It needs no host hardware.** A Linux VM has no Metal, so anything that needs the GPU belongs on the host under a seatbelt profile.",
+              "**Its output is a set of files.** A build produces artifacts. A service holds ports and state, which is t-man and srt territory."
+            ]
+          },
+          {
+            "t": "p",
+            "text": "The two tools compose. The `dist/` directory of webkit is built in a container, and the runtime processes that serve it run under srt, which [the sandboxing guide](https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/docs/SANDBOXING.md) covers."
+          }
+        ]
+      },
+      {
+        "h": "Steps 1 and 2: the runtime goes on each machine by hand",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "No recipe installs the container runtime. Both steps are done once on each machine."
+          },
+          {
+            "t": "h3",
+            "text": "Step 1: install the signed pkg"
+          },
+          {
+            "t": "p",
+            "text": "Get the pkg from the [apple/container releases](https://github.com/apple/container/releases) page. It lands root-owned under `/usr/local` and brings three parts: the container CLI, the container apiserver, and the runtime plugins."
+          },
+          {
+            "t": "p",
+            "text": "Don't use the container entry in mise. It copies the CLI out of that pkg and leaves the apiserver behind."
+          },
+          {
+            "t": "h3",
+            "text": "Step 2: install the kernel on the first start"
+          },
+          {
+            "t": "p",
+            "text": "The first run needs a Linux kernel. This system start command installs it without asking a question."
+          },
+          {
+            "t": "code",
+            "lang": "bash",
+            "text": "container system start --enable-kernel-install"
+          }
+        ]
+      },
+      {
+        "h": "Step 3: only the files a scratch stage names leave the VM",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "The flow is one way, and the host filesystem is never mounted into the VM. Grey boxes are on the host, green boxes are stages of the Dockerfile.",
+            "groups": [
+              {
+                "id": "vm",
+                "label": "Throwaway VM"
+              }
+            ],
+            "nodes": [
+              {
+                "id": "context",
+                "label": "Build context",
+                "text": "Named source files",
+                "tone": "neutral"
+              },
+              {
+                "id": "deps",
+                "label": "deps stage",
+                "text": "npm ci",
+                "tone": "green",
+                "group": "vm"
+              },
+              {
+                "id": "build",
+                "label": "build stage",
+                "text": "npm run build",
+                "tone": "green",
+                "group": "vm"
+              },
+              {
+                "id": "export",
+                "label": "export stage",
+                "text": "Only /app/dist",
+                "tone": "green",
+                "group": "vm"
+              },
+              {
+                "id": "dist",
+                "label": "dist/",
+                "text": "The built files",
+                "kind": "store",
+                "tone": "neutral"
+              }
+            ],
+            "edges": [
+              {
+                "from": "context",
+                "to": "deps",
+                "label": "COPY"
+              },
+              {
+                "from": "deps",
+                "to": "build"
+              },
+              {
+                "from": "build",
+                "to": "export"
+              },
+              {
+                "from": "export",
+                "to": "dist",
+                "label": "export"
+              }
+            ]
+          },
+          {
+            "t": "p",
+            "text": "The Dockerfile has three stages. The first installs the dependencies and the second runs the build. The last starts from scratch and copies in the build output, so the exporter finds nothing else to take."
+          },
+          {
+            "t": "code",
+            "lang": "dockerfile",
+            "text": "FROM node:26-bookworm-slim AS deps\nWORKDIR /app\nCOPY package.json package-lock.json ./\nRUN npm ci\n\nFROM deps AS build\nCOPY tsconfig.json build.mjs ./\nCOPY src ./src\nRUN npm run build\n\n# Export stage: only the named artifacts.\nFROM scratch AS export\nCOPY --from=build /app/dist /"
+          },
+          {
+            "t": "p",
+            "text": "Two rules are baked into that shape."
+          },
+          {
+            "t": "list",
+            "items": [
+              "**Multi-stage with a scratch export stage.** The exporter dumps the filesystem of the final stage, so only the artifacts you name leave the VM.",
+              "**Explicit copies, never `COPY . .`** This keeps the build context tight whatever happens to `.dockerignore` handling ([apple/container#425](https://github.com/apple/container/issues/425)). It also keeps untracked host files, such as credentials and scratch dirs, out of the VM."
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Step 4: make exports to a fresh staging dir, then copies",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "The make target does four things in order. It deletes the staging dir, builds with the export stage as the target, copies the two built files into dist, and deletes the staging dir again."
+          },
+          {
+            "t": "code",
+            "lang": "makefile",
+            "text": "build:\n\trm -rf .build-out\n\tcontainer build -f Dockerfile.build --target export \\\n\t  --output type=local,dest=./.build-out .\n\tcp .build-out/*/webkit.js  dist/webkit.js\n\tcp .build-out/*/webkit.css dist/webkit.css\n\trm -rf .build-out"
+          },
+          {
+            "t": "callout",
+            "sev": "warn",
+            "text": "**Delete the staging dir before every export.** The layout the local exporter writes depends on what is already there. A fresh destination gives `<dest>/<platform>/`, such as `linux_arm64/`. An existing one gives `<dest>/out.tar/<platform>/`. Glob the platform part of the path."
+          },
+          {
+            "t": "p",
+            "text": "The local exporter of BuildKit is the only exit path, set with the output type local flag. Never bind-mount a source or an output directory."
+          }
+        ]
+      },
+      {
+        "h": "Step 5: the diff of dist is the last check before a commit",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Review what the build changed in dist before you commit it. Do this after a container build and after a fallback build alike."
+          },
+          {
+            "t": "code",
+            "lang": "bash",
+            "text": "git diff dist/"
+          }
+        ]
+      },
+      {
+        "h": "Without the runtime, only the unsandboxed fallback builds",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Keep a build-local target for machines without the runtime, and know what it costs: it builds on the host, unsandboxed."
+          },
+          {
+            "t": "details",
+            "summary": "The make build target is not available",
+            "blocks": [
+              {
+                "t": "p",
+                "text": "The machine has no container runtime, so in webkit only the unsandboxed build-local path works. Install the pkg from step 1 rather than getting comfortable with the fallback."
+              }
+            ]
+          },
+          {
+            "t": "details",
+            "summary": "The export landed under out.tar",
+            "blocks": [
+              {
+                "t": "p",
+                "text": "The staging dir already existed when the export ran, and an existing destination gives `<dest>/out.tar/<platform>/`. Delete the staging dir first, as the make target in step 4 does, and glob the platform part of the path."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "docs/CONTAINER-BUILDS.md",
+      "url": "https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/docs/CONTAINER-BUILDS.md"
+    },
+    {
+      "title": "webkit/Makefile, the reference implementation",
+      "url": "https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/webkit/Makefile"
+    },
+    {
+      "title": "docs/SANDBOXING.md",
+      "url": "https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/docs/SANDBOXING.md"
+    },
+    {
+      "title": "Apple container",
+      "url": "https://github.com/apple/container"
+    },
+    {
+      "title": "apple/container releases",
+      "url": "https://github.com/apple/container/releases"
+    }
+  ]
+}

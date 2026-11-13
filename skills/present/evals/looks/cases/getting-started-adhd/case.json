@@ -1,0 +1,13 @@
+{
+  "id": "getting-started-adhd",
+  "kind": "brief",
+  "mode": "adhd",
+  "ask": "adhd mode please. I'm setting up a new Mac this afternoon: brief me from this guide on which install path to take and what I run, in order.",
+  "stresses": "the skill's ADHD briefing mode, asked for in the user's voice: the next action first, numbered steps, short lists, one next step at the end",
+  "source": {
+    "repo": "github.com/mad01/thismoon",
+    "path": "docs/GETTING-STARTED.md",
+    "commit": "b59bd3ff5465c77d74aabe9283df0b05b36b6250",
+    "trimmed": "no"
+  }
+}

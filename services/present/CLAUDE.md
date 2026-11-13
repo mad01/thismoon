@@ -14,7 +14,7 @@ present/
                          share.go adds share, unshare, key new, and sharer(), which turns --shared-url/--author-key into a
                          sharedclient.Client (nil, with a stderr warning, when only one is set); terminal.go adds
                          present terminal on|off|status|list|kill, and serve.go's startTerminals builds the terminal
-                         manager in local mode only
+                         manager in local mode only; lint.go adds present lint and present limits
     terminal/          - the live terminal's sessions: Manager (Attach, Kill, KillAll, List, Close) over named PTY sessions
                          keyed by page id and session name (terminal.go, session.go), the replay ring buffer (ring.go), a
                          subscriber's output queue (subscription.go), the switch file and its watcher (switch.go), and the
@@ -42,6 +42,14 @@ present/
     render/            - Doc-to-HTML renderer (doc.go), Graph-to-JS renderer (graph.go), legacy raw-HTML upgrade (upgrade.go); compile.go
                          holds Compile (Doc JSON in), CompileDoc (parsed Doc in), and CompileGraph (parsed GraphInput in), the one
                          parse → render → canonical JSON step the MCP tools, present rerender, and the import all call
+    limits/            - the one table of the numbers a Doc is held to (limits.go): each Limit's id, number, unit, level
+                         (warn or refuse), scope, source, rule line and reason; render's caps are constants that
+                         TestCapsMatchLimits holds to it, and the lint and the generated skill reference read the rest
+    lint/              - warn-only lint over a page's Docs (lint.go Check, a pure function of the Page; rules.go one
+                         check per warning in the table; walk.go every text field and block, with which fields the
+                         renderer reads as inline markdown, pinned to the compiler by inline_test.go); parse.go reads a
+                         present_create argument object or stored sources without compiling; reference.go renders
+                         skills/present/references/limits.md; testdata/broken and testdata/fixed hold one pair per rule
     mdimport/          - markdown file → title + Doc + optional graph (goldmark, GFM): Convert(name, src); ConvertSection(src) maps
                          one section's markdown for a section patch; pure, no HTTP; the mapping and its losses are under
                          *Importing markdown* below
@@ -136,6 +144,7 @@ make build    # ./present binary
 make install  # build + cp to ~/code/bin/present + codesign (stable local identity, ad-hoc fallback)
 make test     # go test ./... then node --test on internal/server/test (skipped without node)
 make tidy     # go mod tidy
+make limits-doc # rewrite skills/present/references/limits.md from the limits table
 make resign   # re-apply the signature (macOS)
 ```
 
@@ -187,6 +196,18 @@ the CDN` and any notes on stderr. It needs only the workdir and its asset
 cache. A page whose blocks need a library the cache lacks is refused. A
 cache without fonts.css exports with system fonts and a note.
 
+`present lint [<id>] [--file <args.json>] [--json] [--strict]` runs the lint
+over a stored page (its `doc.json` and `deck.json`), or over a
+`present_create` argument object in a file (`-` reads stdin) before it is
+sent. It prints one line per finding, `<where> [<rule>] <message>`, in lint
+order, and nothing for a clean page or one stored as raw HTML. `--json`
+prints `{warnings, counts}` with every warn rule in `counts`; `--strict`
+exits 1 when anything is found. The file form does not compile the Doc, so a
+Doc the renderer would refuse can still lint clean. `present limits` prints
+the same markdown as `skills/present/references/limits.md`; `--json` prints
+the table. `TestSkillFilesAreCurrent` fails when the reference is stale, and
+`make limits-doc` rewrites it.
+
 `present terminal on|off|status` creates, removes, or reports the switch file
 `<workdir>/terminal.enabled`, so they work with serve up or down and need no
 restart; `on` prints a note that only the local serve reads it.
@@ -221,7 +242,7 @@ Mapping (goldmark, GFM plus footnotes so both halves can be dropped):
 | blockquote | one `callout` `info` with all its blocks flattened into one text; `[!WARNING]`/`[!CAUTION]` on the first line make it `warn`, `[!NOTE]`/`[!TIP]`/`[!IMPORTANT]` stay `info`, the marker is removed |
 | raw HTML, `---`, footnotes | dropped |
 
-Limits, all consequences of present's inline syntax having no escape: a bold span that holds a code span or a link loses the bold. (The renderer would print a stray token.) Emphasis inside emphasis keeps only the outer mark, a link label is plain text, and a code span holding a backtick comes out as words. Literal `](` or `@chip(` in an assembled run of prose gets a space inserted so it cannot turn into a link or chip. The run joins text nodes, code spans and dropped nodes included, so nothing can glue the halves together. A literal `*` in the source still italicises when rendered, inside a code span too. Name normalization applies to imported prose like to any Doc (` & ` reads "and", ` - ` reads "minus"); code blocks are exempt.
+Limits, all consequences of present's inline syntax having no escape: a bold span that holds a code span or a link loses the bold. (The renderer would print a stray token.) Emphasis inside emphasis keeps only the outer mark, a link label is plain text, and a code span holding a backtick comes out as words. Literal `](` or `@chip(` in an assembled run of prose gets a space inserted so it cannot turn into a link or chip. The run joins text nodes, code spans and dropped nodes included, so nothing can glue the halves together. A literal `*` in the source still italicises when rendered if it pairs with another star by CommonMark's flanking rules (so `*.pem, *.key` stays literal); inside a code span it never does. Name normalization applies to imported prose like to any Doc (` & ` reads "and", ` - ` reads "minus"); code blocks are exempt.
 
 ## Live terminal
 
@@ -243,7 +264,7 @@ A `terminal` Doc block attaches the browser to a terminal session the local `pre
 
 ## MCP tools
 
-- `present_create(title, content?, deck?, graph?, references?)` → `{id, url, has_deck, deck_url?, version}`; at least one of `content` and `deck` is required, and `url` is the deck URL when the page has no content
+- `present_create(title, content?, deck?, graph?, references?)` → `{id, url, has_deck, deck_url?, version, warnings?, more?}`; at least one of `content` and `deck` is required, and `url` is the deck URL when the page has no content. `warnings` lists the lint's findings for the whole page as `{rule, where, message}`, the first eight (`warningsShown`) in lint order with the rest counted in `more`; a warning never stops the write (`mcpserver/warnings.go`). `present_update` returns the same two fields for the page it wrote, the stored source of a rendition it left alone included. The numbers in the tool descriptions are pinned to the limits table by `TestSchemaTextMatchesLimits`
   - `content`: Doc JSON object `{summary?, meta?, chips?, sections:[{h, blocks}]}` or legacy HTML string (auto-detected)
   - `deck`: a second Doc JSON object with the same schema, Doc JSON only (a non-object is refused); every section is one slide, summary/meta/chips make the title slide, references the last one. The tool description carries the shape and the rules that keep a deck a deck (the heading is the claim, 3 to 5 short items or two sentences per slide, one highlight, one visual alone per slide, 5 to 12 slides, no filled boxes). The skill has the full list, the building-a-deck recipe, and the worked examples under `skills/present/examples/` (MAD-387). The deck Doc may also set the chrome fields `logo`, `logo_position`, `progress`, `presenter`, `footer` (all optional; `render.validateChrome` refuses an unknown position or progress value and a logo that is neither `none` nor an http(s) URL)
   - Section fields beside `h` and `blocks`: `tone` (a role from `webkit.Roles()`, no aliases; rendered as `data-tone` plus `style="--slide-accent: var(--<role>)"`, banding the section in the brief and colouring the slide's heading rule and accent bar; a slide paints no filled box, MAD-389), and deck-only `layout` (default|center|statement|section, emitted as `data-layout` when not default), `notes` (an inert `<template class="deck-notes">` at the end of the section, outside both walkers by construction), `reveal` (`data-reveal`). Deck-level `transition` (fade|slide|none) rides in the chrome island only when set and not fade. `render.validateSection` refuses an unknown layout or tone; a Doc without any of them renders byte-identically (`render/testdata/golden-stage1.html`). `render/testdata/sample-deck.json` exercises all of it and `TestSampleDeckRenders` keeps it compiling
@@ -253,7 +274,7 @@ A `terminal` Doc block attaches the browser to a terminal session the local `pre
 - `present_read(id)` → full page with rendered HTML content and `deck` (includes references, `has_deck`, `deck_url`)
 - `present_source(id, version?)` → editable source: `{content_format: "doc"|"html", content, deck?, graph_format: "json"|"js"|"", graph, references, deck_url?}`: outputs round-trip directly into `present_update` (it auto-detects both formats; `deck` is the canonical deck Doc JSON, empty when the page has none). Use this to mutate a page from a new/restored session. `version`, when it is not the current one, answers from the page's history (`store.Historian`; the newest 20 versions); passing that source to present_update restores it as a new version. A shared instance serves a wrapped store with no history and refuses it (`errNoHistory`)
 - `present_update(id, title?, content?, deck?, graph?, references?)` → patch (omitted fields unchanged; empty graph clears it; empty deck removes the deck and its source; empty array clears refs); bumps version. Doc/graph JSON input refreshes `doc.json`/`deck.json`/`graph.json`; raw HTML/JS input deletes the now-stale source file. An update that would leave neither content nor deck is refused before anything is written
-- `present_patch_section(id, op, anchor?, section?, body_format?, rendition?, base_version?)` → `{id, version, rendition, op, index, anchor, url}`: one section of the brief (`rendition: content`, the default) or the deck, without resending the Doc. Registered in both modes; on a shared instance it is author-checked and restarts an ephemeral page's expiry like present_update
+- `present_patch_section(id, op, anchor?, section?, body_format?, rendition?, base_version?)` → `{id, version, rendition, op, index, anchor, url, warnings?, more?, elsewhere?}` (`warnings` and `more` for the patched section, `elsewhere` a count of the page's other findings; a remove has only `elsewhere`): one section of the brief (`rendition: content`, the default) or the deck, without resending the Doc. Registered in both modes; on a shared instance it is author-checked and restarts an ephemeral page's expiry like present_update
   - `op`: `replace`, `insert_before`, `insert_after`, or `remove` at `anchor`, or `append` with no anchor
   - `anchor`: the section's TOC anchor, `render.SectionAnchor` of its heading (a heading or `#anchor` is normalized to it), or `index:N`, zero-based. A heading with an empty anchor (no ASCII letter or digit) never clashes and is addressed by index. Section ids stay deprecated (MAD-377): anchors come from headings only
   - `section`: one Doc section as a JSON string, or markdown opening with a `#`/`##` heading when `body_format: markdown` (`mdimport.ConvertSection`). A second `#`/`##` is refused, and a mermaid fence stays code
@@ -433,42 +454,47 @@ theme). Do not add those controls manually.
   A chart with `steps` (`data-steps="N"`, the captions as
   `ol.present-steps` after the canvas) builds at the step `data-step-at`
   names. Series with a later `step` start hidden, the value axis is pinned to
-  the full data, and the legend lists only the series shown and ignores
-  clicks. Every build registers `block._presentStep(n)`, which the deck calls
-  to move the chart (no animation under Reduce Motion or `transition: none`).
-  `viz.js` (`window.PresentViz`, served at `/viz.js`) holds the pure helpers
-  (`stepPlan`, `chartStepVisibility`, `ribbonLayout`, and the diagram's
-  `wrapLines`, `diagramBox`, `diagramElk`, `diagramGraph`, `diagramText`,
-  `elkPath`, `routeLabelPoint`, `diagramShown`, `diagramFocus`,
-  `flowSpeed`), tested under node. `d3-7.9.0.min.js` is vendored the same way as Chart.js
-  (docs/adr/0022, `THIRD-PARTY.md`); the ribbon chart and the diagram
-  block read it.
+  the full data (a fitted axis, on a line, sparkline or scatter, pins both
+  ends through `seriesExtent`), and the legend lists only the series shown
+  and ignores clicks. Every build registers `block._presentStep(n)`, which
+  the deck calls to move the chart (no animation under Reduce Motion or
+  `transition: none`). `viz.js` (`window.PresentViz`, served at `/viz.js`)
+  holds the pure helpers (`stepPlan`, `chartStepVisibility`,
+  `seriesExtent`, `ribbonLayout`, and the diagram's `wrapText`,
+  `diagramBox`, `diagramElk`, `diagramLadder`, `diagramPlan`,
+  `diagramLimits`, `diagramShown`, `diagramFocus`, `elkPath`,
+  `flowSpeed`), tested under node. `d3-7.9.0.min.js` is vendored the same
+  way as Chart.js (docs/adr/0022, `THIRD-PARTY.md`); the ribbon chart and
+  the diagram block read it.
 - **Diagram blocks are laid out in the browser.** A `t=diagram` block
   renders `<div class="present-diagram">` with a `script.diagram-spec`
   JSON island (`diagramSpec`: direction, groups, nodes, edges, steps with
   focus), the caption as fixated prose, and the step captions as the same
-  `ol.present-steps` a chart carries. `buildDiagram` in `app.js` measures
-  the labels with a canvas and builds the ELK graph through
-  `PresentViz.diagramGraph` (which wraps `diagramElk`: layered,
-  `INCLUDE_CHILDREN`, orthogonal routes, root coordinates, a layer gap
-  sized from the widest edge label, left to right only, set on the root
-  and on every group since ELK spaces siblings by their parent's
-  options). It runs the
-  vendored elkjs once per spec and draws SVG with D3: groups, boxes by
-  kind, routed edges, labels placed by
-  `routeLabelPoint` on a halo in `--surface`, and flow dots whose speed
-  follows `flowSpeed`. Fills are `var(--tone-<t>-bg)` and friends, so a
-  theme change redraws nothing. The svg scales to its wrapper through
-  the viewBox; a ResizeObserver only refits, never redraws. Steps toggle
-  `off`, `focus`, and `dim` classes through `_presentStep` on the MAD-385
-  contract, and Reduce Motion or a cutting deck swap without transitions
-  (`cutStep`, shared with the ribbon). Flow dots run through
-  `visibleLoop`, which the graph's edge flow shares. It needs
-  `window.ELK` and `d3`; without one it shows a note. Known limit: the
-  header's font control changes the family after the layout, so the
-  boxes keep their measured width until a reload. Every tone
-  list has three consumers now: `graphTones` in graph.go, `GRAPH_TONES`
-  in app.js, and the diagram's CSS, which names the same six roles.
+  `ol.present-steps` a chart carries. `buildDiagram` in `app.js` runs the
+  vendored elkjs once per form of `PresentViz.diagramLadder`: the authored
+  direction full then compact, the other direction the same, and two
+  names-only forms last on a slide. Each run takes the graph `diagramElk`
+  builds: layered, `INCLUDE_CHILDREN`, orthogonal routes, root
+  coordinates, boxes sized from canvas-measured text, each edge label an
+  inline ELK label on its own route, and the spacing set on every group,
+  since ELK spaces siblings by their parent's options. A form that fails
+  is dropped; the note shows only when all fail. `diagramLimits` turns
+  the room into a floor, an aim and a largest scale, `diagramPlan` picks the form and
+  scale, and D3 draws it: groups, boxes by kind, routed edges, labels on
+  a halo in `--surface`, flow dots at `flowSpeed`. The block carries
+  `data-diagram-form` ("TB compact") and `data-under-floor`. A refit
+  (ResizeObserver, the deck's refresh, a theme change) rescales the svg
+  or redraws it from another form; ELK never runs again. Fills are
+  `var(--tone-<t>-bg)` and friends. Steps toggle `off`, `focus`, and
+  `dim` through `_presentStep` on the MAD-385 contract; a jump onto the
+  slide sets `data-step-rest`, every step shown and none focused. Reduce
+  Motion or a cutting deck swap without transitions (`cutStep`, shared
+  with the ribbon). Flow dots run through `visibleLoop`, shared with the
+  graph's edge flow. Without `window.ELK` or `d3` the block shows a note.
+  Known limit: the header's font control changes the family after the
+  layout, so boxes keep their measured width until a reload. Every tone
+  list has three consumers: `graphTones` in graph.go, `GRAPH_TONES` in
+  app.js, and the diagram's CSS, which names the same six roles.
 - **Graph edge flow is split between graph.go and app.js.** A `GraphEdge` in
   the top third of the weight range gets a `hot: 1` data flag from `graph.go`,
   and `flow: true` emits `flow: 1`. `presentGraphStyle` gives hot edges the

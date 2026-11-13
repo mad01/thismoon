@@ -1,0 +1,141 @@
+{
+  "direction": "LR",
+  "nodes": [
+    {
+      "id": "session",
+      "label": "Claude Code session",
+      "text": "The agent, working in a repo",
+      "kind": "person",
+      "tone": "purple"
+    },
+    {
+      "id": "belt",
+      "label": "belt",
+      "text": "Session hooks: guards and hints",
+      "tone": "red"
+    },
+    {
+      "id": "memory",
+      "label": "agent-memory",
+      "text": "Facts you told any agent to keep",
+      "kind": "store",
+      "tone": "blue",
+      "step": 1
+    },
+    {
+      "id": "moondb",
+      "label": "moondb",
+      "text": "Edits no commit has taken yet",
+      "kind": "store",
+      "tone": "blue",
+      "step": 1
+    },
+    {
+      "id": "csl",
+      "label": "csl",
+      "text": "zoekt index, also at csl.this",
+      "tone": "blue",
+      "step": 2
+    },
+    {
+      "id": "suspenders",
+      "label": "suspenders",
+      "text": "Pre-commit hook, same name derivation",
+      "tone": "red",
+      "step": 3
+    },
+    {
+      "id": "humanizer",
+      "label": "humanizer",
+      "text": "Checks prose before it leaves",
+      "tone": "blue",
+      "step": 4
+    },
+    {
+      "id": "events",
+      "label": "events",
+      "text": "One timeline at events.this",
+      "kind": "store",
+      "tone": "blue",
+      "step": 5
+    }
+  ],
+  "edges": [
+    {
+      "from": "session",
+      "to": "belt",
+      "label": "every tool call"
+    },
+    {
+      "from": "memory",
+      "to": "belt",
+      "label": "memory index",
+      "step": 1
+    },
+    {
+      "from": "moondb",
+      "to": "belt",
+      "label": "uncommitted edits",
+      "step": 1
+    },
+    {
+      "from": "session",
+      "to": "csl",
+      "label": "csl_search",
+      "step": 2
+    },
+    {
+      "from": "session",
+      "to": "suspenders",
+      "label": "git commit",
+      "step": 3
+    },
+    {
+      "from": "session",
+      "to": "humanizer",
+      "label": "humanizer_detect",
+      "step": 4
+    },
+    {
+      "from": "belt",
+      "to": "events",
+      "label": "denies and hints",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "caption": "At session start belt injects the memory index and other sessions' uncommitted edits.",
+      "focus": [
+        "belt",
+        "memory",
+        "moondb"
+      ]
+    },
+    {
+      "caption": "The agent searches the index you browse; a recursive grep comes back as the csl_search call.",
+      "focus": [
+        "csl"
+      ]
+    },
+    {
+      "caption": "A push to main is denied with the fix; an internal hostname is denied at Write, with suspenders behind it at commit.",
+      "focus": [
+        "belt",
+        "suspenders"
+      ]
+    },
+    {
+      "caption": "Posting a PR comment earns one nudge: run humanizer_detect first.",
+      "focus": [
+        "humanizer"
+      ]
+    },
+    {
+      "caption": "Every deny and every hint lands on the events timeline.",
+      "focus": [
+        "events"
+      ]
+    }
+  ]
+}

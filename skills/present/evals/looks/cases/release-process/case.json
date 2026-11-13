@@ -1,0 +1,12 @@
+{
+  "id": "release-process",
+  "kind": "brief",
+  "ask": "Make me a page that walks through how a release gets from a merged PR to a signed artifact, and what to check when one gets stuck.",
+  "stresses": "process explainer: ordered steps, checks, failure paths",
+  "source": {
+    "repo": "github.com/mad01/thismoon",
+    "path": "docs/RELEASING.md",
+    "commit": "b59bd3ff5465c77d74aabe9283df0b05b36b6250",
+    "trimmed": "no"
+  }
+}

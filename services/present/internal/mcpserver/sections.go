@@ -9,6 +9,7 @@ import (
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/services/present/internal/author"
 	"github.com/mad01/thismoon/services/present/internal/docedit"
+	"github.com/mad01/thismoon/services/present/internal/lint"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
 
@@ -26,6 +27,7 @@ const patchSectionDescription = "Change one section of a page without resending 
 	"The whole Doc is recompiled, so a section the renderer refuses is refused here. " +
 	"An anchor several sections share is refused with their indices; a heading that would repeat another section's anchor is refused. " +
 	"Returns the new version and where the section landed. " +
+	"The result lists the page lint's `warnings` for the patched section, `more` counting the ones not listed, and `elsewhere` counts the warnings on the rest of the page; a warning never refuses the patch. " +
 	`Example: {"id":"3f2a9c1b7e","op":"replace","anchor":"next-steps","base_version":4,` +
 	`"section":"{\"h\":\"Next steps\",\"blocks\":[{\"t\":\"list\",\"items\":[\"Ship the patch route\",\"Add history\"]}]}"}`
 
@@ -40,13 +42,16 @@ type patchSectionInput struct {
 }
 
 type patchSectionOutput struct {
-	ID        string `json:"id"`
-	Version   int    `json:"version"`
-	Rendition string `json:"rendition"`
-	Op        string `json:"op"`
-	Index     int    `json:"index"     jsonschema:"zero-based index of the section written, or of the one removed"`
-	Anchor    string `json:"anchor"    jsonschema:"anchor of the section written, or of the one removed"`
-	URL       string `json:"url"`
+	ID        string         `json:"id"`
+	Version   int            `json:"version"`
+	Rendition string         `json:"rendition"`
+	Op        string         `json:"op"`
+	Index     int            `json:"index"               jsonschema:"zero-based index of the section written, or of the one removed"`
+	Anchor    string         `json:"anchor"              jsonschema:"anchor of the section written, or of the one removed"`
+	URL       string         `json:"url"`
+	Warnings  []lint.Finding `json:"warnings,omitempty"  jsonschema:"what the page lint found in the patched section; the patch is stored either way"`
+	More      int            `json:"more,omitempty"      jsonschema:"how many more warnings the patched section has than are listed"`
+	Elsewhere int            `json:"elsewhere,omitempty" jsonschema:"how many warnings the rest of the page has"`
 }
 
 func registerSectionTool(s *mcp.Server, h *handlers) {
@@ -90,7 +95,8 @@ func (h *handlers) handlePatchSection(
 		return nil, patchSectionOutput{}, err
 	}
 	var res docedit.Result
-	p, err := h.store.Edit(ctx, in.ID, h.renewing(patch.Edit(&res)))
+	var written store.Snapshot
+	p, err := h.store.Edit(ctx, in.ID, capture(h.renewing(patch.Edit(&res)), &written))
 	if err != nil {
 		return nil, patchSectionOutput{}, err
 	}
@@ -100,10 +106,13 @@ func (h *handlers) handlePatchSection(
 	if patch.Rendition == docedit.Deck {
 		url = deckURL(url)
 	}
-	return nil, patchSectionOutput{
+	out := patchSectionOutput{
 		ID: p.ID, Version: p.Version, Rendition: string(patch.Rendition), Op: string(patch.Op),
 		Index: res.Index, Anchor: res.Anchor, URL: url,
-	}, nil
+	}
+	out.Warnings, out.More, out.Elsewhere = sectionWarnings(writtenFindings(p.Title, written),
+		lint.Rendition(patch.Rendition), res.Index, patch.Op == docedit.OpRemove)
+	return nil, out, nil
 }
 
 // ingestSection turns the section's local image files into stored images

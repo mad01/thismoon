@@ -1,0 +1,153 @@
+{
+  "direction": "LR",
+  "nodes": [
+    {
+      "id": "agent",
+      "label": "Claude Code session",
+      "text": "you and your agent in a repo",
+      "kind": "person",
+      "tone": "purple"
+    },
+    {
+      "id": "belt",
+      "label": "belt",
+      "text": "session hooks: guards and hints",
+      "tone": "red"
+    },
+    {
+      "id": "memory",
+      "label": "agent-memory",
+      "text": "facts you told any agent, any machine",
+      "kind": "store",
+      "tone": "blue",
+      "step": 1
+    },
+    {
+      "id": "moondb",
+      "label": "moondb",
+      "text": "other sessions' uncommitted edits",
+      "kind": "store",
+      "tone": "blue",
+      "step": 1
+    },
+    {
+      "id": "csl",
+      "label": "csl",
+      "text": "zoekt index, also at csl.this",
+      "tone": "green",
+      "step": 2
+    },
+    {
+      "id": "suspenders",
+      "label": "suspenders",
+      "text": "pre-commit hook, same name rules",
+      "tone": "red",
+      "step": 3
+    },
+    {
+      "id": "events",
+      "label": "events",
+      "text": "every deny and hint on one timeline",
+      "kind": "store",
+      "tone": "blue",
+      "step": 4
+    },
+    {
+      "id": "present",
+      "label": "present",
+      "text": "briefing pages at present.this",
+      "tone": "green",
+      "step": 4
+    }
+  ],
+  "edges": [
+    {
+      "from": "memory",
+      "to": "belt",
+      "label": "index",
+      "step": 1
+    },
+    {
+      "from": "moondb",
+      "to": "belt",
+      "label": "open edits",
+      "step": 1
+    },
+    {
+      "from": "belt",
+      "to": "agent",
+      "label": "injected at start",
+      "step": 1
+    },
+    {
+      "from": "agent",
+      "to": "csl",
+      "label": "csl_search",
+      "step": 2
+    },
+    {
+      "from": "belt",
+      "to": "csl",
+      "label": "grep → csl_search",
+      "step": 2
+    },
+    {
+      "from": "agent",
+      "to": "belt",
+      "label": "push to main: denied",
+      "step": 3
+    },
+    {
+      "from": "agent",
+      "to": "suspenders",
+      "label": "commit",
+      "step": 3
+    },
+    {
+      "from": "belt",
+      "to": "events",
+      "label": "denies and hints",
+      "flow": true,
+      "step": 4
+    },
+    {
+      "from": "agent",
+      "to": "present",
+      "label": "findings",
+      "step": 4
+    }
+  ],
+  "steps": [
+    {
+      "caption": "At session start belt injects the memory index and other sessions' open edits.",
+      "focus": [
+        "belt",
+        "memory",
+        "moondb"
+      ]
+    },
+    {
+      "caption": "The agent searches csl; a recursive grep comes back as the csl_search call.",
+      "focus": [
+        "csl"
+      ]
+    },
+    {
+      "caption": "A push to main is denied at the call; suspenders backs it up at commit.",
+      "focus": [
+        "belt",
+        "suspenders"
+      ]
+    },
+    {
+      "caption": "Every deny and hint lands in events; findings go out as a page.",
+      "focus": [
+        "events",
+        "present"
+      ]
+    },
+    {
+      "caption": "None of it needed a line in the prompt."
+    }
+  ]
+}

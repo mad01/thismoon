@@ -1,0 +1,131 @@
+{
+  "title": "The memory stack: six stores and the hooks that feed them",
+  "content": {
+    "summary": "Six stores keep what an agent learns; the agent writes four of them, and hooks fill the other two.",
+    "sections": [
+      {
+        "h": "The agent writes four stores, hooks write the other two",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "What writes each store. The amber boundary holds the Claude Code hooks: they record without the agent deciding anything. Guards, hints, and the services write to events too.",
+            "groups": [
+              {
+                "id": "hooks",
+                "label": "Claude Code hooks",
+                "tone": "amber"
+              }
+            ],
+            "nodes": [
+              {
+                "id": "session",
+                "label": "Claude Code session",
+                "text": "the agent picks the store when it writes",
+                "tone": "neutral"
+              },
+              {
+                "id": "brec",
+                "label": "belt record",
+                "text": "nine lifecycle events",
+                "tone": "green",
+                "group": "hooks"
+              },
+              {
+                "id": "mrec",
+                "label": "moondb record",
+                "text": "every prompt, file edit and stop",
+                "tone": "green",
+                "group": "hooks"
+              },
+              {
+                "id": "automem",
+                "label": "auto memory",
+                "text": "MEMORY.md index plus one file per fact",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "agentmem",
+                "label": "agent-memory",
+                "text": "same layout; belt never writes to it",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "worklog",
+                "label": "worklog",
+                "text": "task state keyed by ticket or topic",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "handoff",
+                "label": "handoff",
+                "text": "a one-off bridge document",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "events",
+                "label": "events",
+                "text": "one queryable timeline",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "moondb",
+                "label": "moondb",
+                "text": "each edit with its turn, prompt and later commit",
+                "kind": "store",
+                "tone": "blue"
+              }
+            ],
+            "edges": [
+              {
+                "from": "session",
+                "to": "automem",
+                "label": "file tools"
+              },
+              {
+                "from": "session",
+                "to": "agentmem",
+                "label": "write, commit, push"
+              },
+              {
+                "from": "session",
+                "to": "worklog",
+                "label": "worklog_checkpoint"
+              },
+              {
+                "from": "session",
+                "to": "handoff",
+                "label": "/handoff skill"
+              },
+              {
+                "from": "session",
+                "to": "brec",
+                "label": "nine lifecycle events"
+              },
+              {
+                "from": "session",
+                "to": "mrec",
+                "label": "prompt, edit, stop"
+              },
+              {
+                "from": "brec",
+                "to": "events",
+                "label": "ledger"
+              },
+              {
+                "from": "mrec",
+                "to": "moondb",
+                "label": "before and after"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -34,7 +34,9 @@ Subcommands:
   key     Mint an author key for the shared instance.
   terminal
           Switch the live terminal for deck slides on or off; list or kill
-          its sessions.`,
+          its sessions.
+  lint    Warn about a page's Doc JSON: a stored page by id, or --file.
+  limits  Print the numbers the lint and the compiler hold a Doc to.`,
 	// Let main print the error once; cobra stays quiet on both usage and errors.
 	SilenceUsage:  true,
 	SilenceErrors: true,

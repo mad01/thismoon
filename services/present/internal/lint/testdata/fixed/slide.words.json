@@ -1,0 +1,40 @@
+{
+  "title": "How the fleet fits together",
+  "deck": {
+    "summary": "Our tools invoke each other: hooks, hints and shared services fire on every session without anyone remembering.",
+    "sections": [
+      {
+        "h": "Five steps bring the fleet up, with one sudo",
+        "notes": "A machine with no profile silently skips every profile-gated recipe and source, and only ralph doctor says so.",
+        "blocks": [
+          {
+            "t": "list",
+            "ordered": true,
+            "items": [
+              "Install ralph: `ralph init`",
+              "Create your config repo from `examples/dotfiles/`",
+              "Set profiles: `ralph profile set personal`",
+              "Add the thismoon source, then `ralph up`",
+              "Write `routes.toml`, register d-man: the one sudo"
+            ]
+          },
+          {
+            "t": "callout",
+            "sev": "warn",
+            "text": "Set profiles **before the first `ralph up`**."
+          }
+        ]
+      },
+      {
+        "h": "One sudo is the whole cost of setup",
+        "blocks": [
+          {
+            "t": "stat",
+            "value": "1",
+            "label": "sudo step in the whole setup"
+          }
+        ]
+      }
+    ]
+  }
+}

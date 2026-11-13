@@ -1,0 +1,17 @@
+{
+  "title": "Releasing: from merged PR to signed artifact",
+  "content": {
+    "summary": "A merged PR reaches a signed artifact with no hand-made tag: release-please opens the release PR, and merging it cuts the tag.",
+    "sections": [
+      {
+        "h": "`commit-search-depth` limits how far release-please looks back",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "release-please walks main back from the head and stops after `commit-search-depth` commits, 200 here. A component whose last tag is further back is not seen."
+          }
+        ]
+      }
+    ]
+  }
+}

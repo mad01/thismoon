@@ -1,0 +1,219 @@
+{
+  "title": "ADR-0024: belt records lifecycle events, and one command wakes sessions",
+  "content": {
+    "summary": "belt now records lifecycle events in a **ledger** and wakes an idle session with `belt watch`, the one belt command that exits 2. The price: both depend on the events service, and a wake is delivered at most once.",
+    "meta": "2026-10-16 · decision record · Accepted, amended by ADR-0026",
+    "sections": [
+      {
+        "h": "belt gains a third concept, the ledger, and one command that exits 2",
+        "blocks": [
+          {
+            "t": "columns",
+            "cols": [
+              [
+                {
+                  "t": "stat",
+                  "value": "3",
+                  "label": "concepts belt carries",
+                  "sub": "ADR-0008 said two: guards and hints"
+                }
+              ],
+              [
+                {
+                  "t": "stat",
+                  "value": "1",
+                  "label": "belt command that exits 2",
+                  "sub": "the watcher; every other outcome exits 0"
+                }
+              ],
+              [
+                {
+                  "t": "stat",
+                  "value": "0",
+                  "label": "new stores or ports",
+                  "sub": "the events service is the inbox"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "p",
+            "text": "A session that hands work to subagents and parallel sessions used to lose sight of them. Now a **ledger entry** records each lifecycle event to the local events service, tagged with the session, the agent, the repo, the worktree and the branch. It never reaches the model. The watcher wakes an idle session when an entry is addressed to it, where before the session slept until a human typed."
+          },
+          {
+            "t": "callout",
+            "sev": "info",
+            "text": "[ADR-0026](https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/docs/adr/0026-software-factory-retired.md) retired the factory orchestrator this was decided for. The ledger is now read by loom-pane's members line and the weaver's survey. The watcher stays, with no writer for its inbox today."
+          }
+        ]
+      },
+      {
+        "h": "The two chosen options cannot break a session and need no new service",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "The table sets the two chosen options beside the three refused ones: a recorder with nothing to write to cannot steer a session by accident, and a watcher on the events service needs no store."
+          },
+          {
+            "t": "table",
+            "cols": [
+              "Option",
+              "What it means",
+              "Verdict"
+            ],
+            "rows": [
+              [
+                "**`belt record` with no output writer**",
+                "Cannot steer: it gets stdin and nothing to write to",
+                "@chip(b:chosen)"
+              ],
+              [
+                "An observing hook that can write output",
+                "One stray line steers: added context keeps a subagent running, and exit 2 blocks a task, an idle or a compaction",
+                "@chip(a:refused)"
+              ],
+              [
+                "Hooks on WorktreeCreate and WorktreeRemove",
+                "Take over worktree creation, and never fire for a `git worktree add` run through Bash",
+                "@chip(a:refused)"
+              ],
+              [
+                "**`belt watch` on the events service**",
+                "Wakes an idle session with no store and no port; delivery is at most once",
+                "@chip(b:chosen)"
+              ],
+              [
+                "A queue with acknowledgement, retry and routing",
+                "Needs a store, and with it a separate tool and a new decision",
+                "@chip(a:refused)"
+              ]
+            ]
+          },
+          {
+            "t": "p",
+            "text": "This is the structural argument [ADR-0008](https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/docs/adr/0008-belt-hints-alongside-guards.md) made for hints, whose interface has no denial path. The recorder also recovers its own panics, because an escaped panic exits 2 and would block the event it meant only to observe."
+          }
+        ]
+      },
+      {
+        "h": "Recording is one-way, and the only path back to the session is the wake",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "What each command reads and writes. Green boxes are belt's commands, blue ones hold data, and grey is outside belt.",
+            "nodes": [
+              {
+                "id": "session",
+                "label": "Claude Code session",
+                "text": "runs belt as its hooks",
+                "tone": "neutral"
+              },
+              {
+                "id": "producer",
+                "label": "Any producer",
+                "text": "posts an entry with a to tag; belt verifies none of it",
+                "kind": "external",
+                "tone": "neutral"
+              },
+              {
+                "id": "record",
+                "label": "belt record",
+                "text": "no output writer; recovers its own panics",
+                "tone": "green"
+              },
+              {
+                "id": "watch",
+                "label": "belt watch",
+                "text": "asyncRewake hook; moves its cursor, then wakes",
+                "tone": "green"
+              },
+              {
+                "id": "events",
+                "label": "events service",
+                "text": "the belt-ledger source, and the inbox",
+                "kind": "store",
+                "tone": "blue"
+              }
+            ],
+            "edges": [
+              {
+                "from": "session",
+                "to": "record",
+                "label": "lifecycle hooks"
+              },
+              {
+                "from": "record",
+                "to": "events",
+                "label": "ledger entry"
+              },
+              {
+                "from": "producer",
+                "to": "events",
+                "label": "entry with a to tag"
+              },
+              {
+                "from": "session",
+                "to": "watch",
+                "label": "Stop, SessionStart"
+              },
+              {
+                "from": "events",
+                "to": "watch",
+                "label": "entries for the session"
+              },
+              {
+                "from": "watch",
+                "to": "session",
+                "label": "exit 2, text on stderr"
+              }
+            ]
+          },
+          {
+            "t": "p",
+            "text": "Follow the two arrows out of the session. The one through the recorder ends in the events service and never comes back. Only the watcher points back at the session. Its exit 2 blocks nothing, because the turn it would have blocked has already ended. It moves its cursor, a cache file, before the wake, so an entry is delivered at most once."
+          },
+          {
+            "t": "p",
+            "text": "The wake text crosses a **trust boundary**. Anything that can reach the events service can address a session and name any sender. The woken session reads the text as data a hook delivered, the way it reads a tool result, and not as an instruction from the user."
+          }
+        ]
+      },
+      {
+        "h": "The price is a dependency on the events service and delivery at most once",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "**The events service must be up.** When it is down, entries are dropped and no session wakes.",
+              "**A wake arrives at most once.** The cursor moves before the wake, and there is no acknowledgement, no retry and no routing beyond the `to` tag.",
+              "**An unread inbox item can age out**, because the events service caps the history it keeps for each source.",
+              "**The watcher holds a process for each idle session**, for up to its max wait. That is why it is opt-in.",
+              "**\"belt always exits 0\" has one exception**, and every doc that states the rule names the watcher as it."
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Next",
+        "blocks": [
+          {
+            "t": "list",
+            "ordered": true,
+            "items": [
+              "To add a lifecycle event, add it to the ledger catalog and to the hooks block. Never write to stdout.",
+              "To use the watcher, set `watch.enabled`, then run `belt doctor`: it warns when an enabled watcher cannot work.",
+              "If you need acknowledgement, retry or routing, write a new decision first: that is a store and a separate tool."
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "ADR-0024: belt records lifecycle events, and one command wakes sessions",
+      "url": "https://github.com/mad01/thismoon/blob/b59bd3ff5465c77d74aabe9283df0b05b36b6250/docs/adr/0024-belt-ledger-and-watcher.md"
+    }
+  ]
+}

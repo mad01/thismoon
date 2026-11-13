@@ -37,7 +37,7 @@
         ]
       },
       {
-        "h": "System context",
+        "h": "Two people and two hosted systems meet at the platform",
         "blocks": [
           {
             "t": "p",
@@ -691,7 +691,7 @@
         "blocks": [
           {
             "t": "p",
-            "text": "Two namespaces, five services, one queue."
+            "text": "Two namespaces, four services, one queue."
           }
         ],
         "layout": "section",
@@ -772,14 +772,6 @@
                 "group": "ns_data",
                 "step": 4,
                 "tone": "blue"
-              },
-              {
-                "id": "mailer",
-                "label": "Mailer",
-                "text": "sends the receipt",
-                "group": "ns_checkout",
-                "step": 5,
-                "tone": "green"
               }
             ],
             "edges": [
@@ -822,14 +814,6 @@
                 "flow": true,
                 "weight": 300,
                 "step": 4
-              },
-              {
-                "from": "events",
-                "to": "mailer",
-                "label": "consume",
-                "flow": true,
-                "weight": 300,
-                "step": 5
               }
             ],
             "steps": [
@@ -858,7 +842,7 @@
                 ]
               },
               {
-                "caption": "The mailer consumes the event and sends the receipt."
+                "caption": "That is the whole write path: one request, two namespaces."
               }
             ]
           }

@@ -2,7 +2,10 @@
 // so it runs against a fake window and the tests read window.PresentViz.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 const src = readFileSync(new URL('../viz.js', import.meta.url), 'utf8');
 const fakeWindow = {};
@@ -215,87 +218,279 @@ const checkout = {
   edges: [
     { from: 'web', to: 'api', label: 'POST /checkout', flow: true, weight: 120, step: 2 },
     { from: 'api', to: 'db', label: 'insert', step: 3 },
+    { from: 'web', to: 'db' },
   ],
   steps: [{ caption: 'one' }, { caption: 'two', focus: ['api'] }, { caption: 'three', focus: ['data'] }],
 };
+// wrapped checks what wrapText promises: no line wider than the limit once
+// its hanging closing marks are left out, and every character kept.
+function wrapped(text, max) {
+  const lines = PresentViz.wrapText(text, max, measure, 'text');
+  lines.forEach((l) => assert.ok(measure(l.replace(/[,.;:)\]]{1,2}$/, '')) <= max, `${JSON.stringify(l)} is wider than ${max}`));
+  assert.equal(lines.join('').replace(/\s+/g, ''), String(text).replace(/\s+/g, ''), 'nothing dropped');
+  return lines;
+}
 
-test('wrapLines: breaks on spaces into at most two lines and cuts the rest', () => {
-  assert.deepEqual(PresentViz.wrapLines('Go, validates and prices', 28), ['Go, validates and prices']);
-  assert.deepEqual(PresentViz.wrapLines('Next.js, renders the checkout page for the browser', 28), ['Next.js, renders the', 'checkout page for the\u2026']);
-  assert.deepEqual(PresentViz.wrapLines('a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb cc dd', 10), ['a b c d e', 'f g h i j\u2026']);
-  assert.deepEqual(PresentViz.wrapLines('', 28), []);
+test('wrapText: fills lines by measured width and keeps every character', () => {
+  assert.deepEqual(wrapped('Go, validates and prices', 28 * 7), ['Go, validates and prices']);
+  assert.deepEqual(wrapped('Next.js, renders the checkout page for the browser', 20 * 7), ['Next.js, renders the', 'checkout page for', 'the browser']);
+  assert.deepEqual(PresentViz.wrapText('', 100, measure, 'text'), []);
+  assert.deepEqual(PresentViz.wrapText(undefined, 100, measure, 'text'), []);
+  const roles = [];
+  PresentViz.wrapText('a b', 100, (s, role) => { roles.push(role); return s.length; }, 'label');
+  assert.ok(roles.every((r) => r === 'label'), 'measures in the role it is given');
 });
 
-test('diagramBox: sized by the widest line within the bounds, one line per text line', () => {
-  const small = PresentViz.diagramBox({ label: 'API' }, measure);
-  assert.deepEqual(small, { width: 120, height: 38, lines: [] });
-  const two = PresentViz.diagramBox(checkout.nodes[0], measure);
-  assert.equal(two.lines.length, 2);
-  assert.equal(two.width, 22 * 7 + 28);
-  assert.equal(two.height, 20 + 18 + 30);
-  const wide = PresentViz.diagramBox({ label: 'x'.repeat(60) }, measure);
-  assert.equal(wide.width, 240);
+test('wrapText: a path or dotted name breaks after a separator in its second half', () => {
+  assert.deepEqual(wrapped('~/.config/present/assets/elk.bundled.js', 18 * 7), ['~/.config/present/', 'assets/elk.bundled.', 'js'], 'the dot hangs');
+  assert.deepEqual(wrapped('services/present/internal', 12 * 7), ['services/', 'present/', 'internal']);
 });
 
-test('diagramElk: groups nest, nodes sit in their group, edges sit at the root without labels', () => {
-  const g = PresentViz.diagramElk(checkout, measure);
-  assert.equal(g.layoutOptions['elk.direction'], 'RIGHT');
-  assert.equal(g.layoutOptions['elk.hierarchyHandling'], 'INCLUDE_CHILDREN');
-  assert.equal(g.layoutOptions['elk.json.edgeCoords'], 'ROOT');
-  assert.deepEqual(g.children.map((c) => c.id), ['prod', 'web']);
-  const prod = g.children[0];
+test('wrapText: one long word with no separator breaks at the last character that fits', () => {
+  assert.deepEqual(wrapped('x'.repeat(25), 10 * 7), ['x'.repeat(10), 'x'.repeat(10), 'x'.repeat(5)]);
+});
+
+test('wrapText: one or two closing marks hang and never start a line', () => {
+  assert.deepEqual(wrapped('abcd efghi),', 10 * 7), ['abcd efghi),']);
+  assert.deepEqual(wrapped('abcdefghij)', 10 * 7), ['abcdefghij)']);
+  assert.deepEqual(wrapped('first second third.', 12 * 7), ['first second', 'third.']);
+  const lines = wrapped('one, two; three: four. five) six] seven,', 6 * 7);
+  lines.forEach((l) => assert.ok(!/^[,.;:)\]]/.test(l), `${JSON.stringify(l)} starts with a closing mark`));
+  assert.deepEqual(wrapped('ab.)cd.)ef', 3 * 7).filter((l) => /^[,.;:)\]]/.test(l)), []);
+});
+
+test('diagramBox: each density wraps inside its widest box', () => {
+  const web = checkout.nodes[0];
+  assert.deepEqual(PresentViz.diagramBox(web, measure, 'full'), {
+    width: 29 * 7 + 28, height: 20 + 18 + 2 * 15,
+    label: ['Web app'], lines: ['Next.js, renders the checkout', 'page for the browser'],
+  });
+  assert.deepEqual(PresentViz.diagramBox(web, measure, 'compact'), {
+    width: 21 * 7 + 28, height: 20 + 18 + 3 * 15,
+    label: ['Web app'], lines: ['Next.js, renders the', 'checkout page for the', 'browser'],
+  });
+  assert.deepEqual(PresentViz.diagramBox(web, measure, 'names'), { width: 120, height: 38, label: ['Web app'], lines: [] });
+  assert.deepEqual(PresentViz.diagramBox({ label: 'API' }, measure), PresentViz.diagramBox({ label: 'API' }, measure, 'full'));
+});
+
+test('diagramBox: a long name takes two lines, and the width stays inside 120 and the density limit', () => {
+  const two = PresentViz.diagramBox({ label: 'Release please manifest config parser' }, measure, 'full');
+  assert.deepEqual(two.label, ['Release please manifest config', 'parser']);
+  assert.equal(two.height, 20 + 2 * 18);
+  [['full', 240], ['compact', 190], ['names', 240]].forEach(([density, max]) => {
+    [{ label: 'A' }, { label: 'x'.repeat(60) }, { label: 'Store', text: 'y '.repeat(40) }].forEach((node) => {
+      const b = PresentViz.diagramBox(node, measure, density);
+      assert.ok(b.width >= 120 && b.width <= max, `${density}: ${b.width}`);
+    });
+  });
+});
+
+test('edgeLabelBox: one line in full; two in compact and names only over 84 px', () => {
+  assert.deepEqual(PresentViz.edgeLabelBox('POST /checkout', measure, 'full'), { lines: ['POST /checkout'], w: 14 * 7 + 8, h: 16 });
+  assert.deepEqual(PresentViz.edgeLabelBox('insert', measure, 'compact'), { lines: ['insert'], w: 6 * 7 + 8, h: 16 });
+  assert.deepEqual(PresentViz.edgeLabelBox('twelve chars', measure, 'compact').lines, ['twelve chars'], '84 px is not over 84');
+  assert.deepEqual(PresentViz.edgeLabelBox('POST /checkout', measure, 'compact'), { lines: ['POST', '/checkout'], w: 9 * 7 + 8, h: 30 });
+  assert.deepEqual(PresentViz.edgeLabelBox('POST /checkout', measure, 'names').lines, ['POST', '/checkout']);
+  assert.deepEqual(PresentViz.edgeLabelBox('unsplittablelabel', measure, 'compact').lines, ['unsplittablelabel']);
+});
+
+test('edgeLabelBox: the split leaves the shorter longest line', () => {
+  assert.deepEqual(PresentViz.edgeLabelBox('writes the event log', measure, 'compact'), { lines: ['writes the', 'event log'], w: 10 * 7 + 8, h: 30 });
+});
+
+test('diagramElk: every labelled edge carries one inline label with its box', () => {
+  const { graph, labels } = PresentViz.diagramElk(checkout, measure, { direction: 'LR', density: 'compact' });
+  assert.deepEqual(graph.edges[0], {
+    id: 'e0', sources: ['web'], targets: ['api'],
+    labels: [{ id: 'l0', text: 'POST /checkout', width: 71, height: 30, layoutOptions: { 'elk.edgeLabels.inline': 'true' } }],
+  });
+  assert.deepEqual(labels[0], PresentViz.edgeLabelBox('POST /checkout', measure, 'compact'));
+  assert.equal(graph.edges[1].labels.length, 1);
+  assert.deepEqual(graph.edges[2], { id: 'e2', sources: ['web'], targets: ['db'] });
+  assert.equal(labels[2], undefined);
+});
+
+test('diagramElk: the form sets the direction, and the spacing set sits on the root and every group', () => {
+  const lr = PresentViz.diagramElk(checkout, measure, { direction: 'LR', density: 'full' }).graph;
+  const tb = PresentViz.diagramElk(checkout, measure, { direction: 'TB', density: 'full' }).graph;
+  assert.equal(lr.layoutOptions['elk.direction'], 'RIGHT');
+  assert.equal(tb.layoutOptions['elk.direction'], 'DOWN');
+  assert.equal(PresentViz.diagramElk({ direction: 'TB', nodes: [] }, measure).graph.layoutOptions['elk.direction'], 'DOWN', 'no form: the authored direction');
+  ['elk.hierarchyHandling', 'elk.edgeRouting', 'elk.json.edgeCoords', 'elk.json.shapeCoords', 'elk.layered.nodePlacement.strategy'].forEach((k) => {
+    assert.deepEqual([k, lr.layoutOptions[k]], [k, { 'elk.hierarchyHandling': 'INCLUDE_CHILDREN', 'elk.edgeRouting': 'ORTHOGONAL', 'elk.json.edgeCoords': 'ROOT', 'elk.json.shapeCoords': 'ROOT', 'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX' }[k]]);
+  });
+  const spacing = {
+    'elk.layered.spacing.nodeNodeBetweenLayers': '32', 'elk.layered.spacing.edgeNodeBetweenLayers': '12',
+    'elk.spacing.nodeNode': '28', 'elk.spacing.edgeNode': '24', 'elk.spacing.edgeEdge': '14',
+  };
+  const prod = lr.children[0], data = prod.children[0];
+  // ELK spaces siblings by their parent's options, so a group, nested or not, carries the root's.
+  [lr, prod, data].forEach((el) => Object.entries(spacing).forEach(([k, v]) => assert.equal(el.layoutOptions[k], v, `${el.id} ${k}`)));
+});
+
+test('diagramElk: groups nest and are at least as wide as their label; boxes grow by their shape room', () => {
+  const { graph, boxes } = PresentViz.diagramElk(checkout, measure, { direction: 'LR', density: 'full' });
+  assert.deepEqual(graph.children.map((c) => c.id), ['prod', 'web']);
+  const prod = graph.children[0];
   assert.deepEqual(prod.children.map((c) => c.id), ['data', 'api']);
   assert.deepEqual(prod.children[0].children.map((c) => c.id), ['db']);
   assert.equal(prod.layoutOptions['elk.padding'], '[top=36,left=16,bottom=16,right=16]');
-  // ELK spaces siblings by their parent's options, so a group, nested or not, carries the root's.
-  ['elk.layered.spacing.nodeNodeBetweenLayers', 'elk.spacing.nodeNode', 'elk.spacing.edgeEdge'].forEach((k) => {
-    assert.equal(prod.layoutOptions[k], g.layoutOptions[k], k);
-    assert.equal(prod.children[0].layoutOptions[k], g.layoutOptions[k], k);
-  });
-  assert.equal(g.children[1].layoutOptions, undefined);
-  assert.equal(g.children[1].width, 182);
-  assert.deepEqual(g.edges[0], { id: 'e0', sources: ['web'], targets: ['api'] });
-  assert.equal(g.layoutOptions['elk.edgeLabels.inline'], undefined);
-  assert.equal(g.layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'], String(14 * 7 + 24));
-  assert.equal(PresentViz.diagramElk({ nodes: [{ id: 'a', label: 'A' }] }, measure).layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'], '56');
-  const tb = PresentViz.diagramElk({ direction: 'TB', nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], edges: [{ from: 'a', to: 'b', label: 'a long label here' }] }, measure);
-  assert.equal(tb.layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'], '56');
-  assert.equal(PresentViz.diagramElk({ direction: 'TB', nodes: [] }, measure).layoutOptions['elk.direction'], 'DOWN');
+  assert.equal(prod.layoutOptions['elk.nodeSize.constraints'], 'MINIMUM_SIZE');
+  assert.equal(prod.layoutOptions['elk.nodeSize.minimum'], '(' + ('prod cluster'.length * 7 + 24) + ',0)', 'measured as written, not in capitals');
+  assert.equal(prod.width, undefined);
+  const web = graph.children[1], db = prod.children[0].children[0];
+  assert.deepEqual(boxes.web, PresentViz.diagramBox(checkout.nodes[0], measure, 'full'));
+  assert.equal(web.width, boxes.web.width + 14, 'a person grows by its figure');
+  assert.equal(web.height, boxes.web.height);
+  assert.equal(db.width, 120);
+  assert.equal(db.height, 38 + 6, 'a store grows by its cap');
+  assert.equal(web.layoutOptions, undefined);
 });
 
-test('routeLabelPoint: the middle of the longest straight run, null without a route', () => {
-  const route = { sections: [
-    { startPoint: { x: 0, y: 10 }, bendPoints: [{ x: 8, y: 10 }, { x: 8, y: 40 }], endPoint: { x: 60, y: 40 } },
-  ] };
-  assert.deepEqual(PresentViz.routeLabelPoint(route), { x: 34, y: 40 });
-  assert.equal(PresentViz.routeLabelPoint({}), null);
-});
-
-test('elkPath: one M/L run per section with the bend points in order', () => {
-  const d = PresentViz.elkPath({ sections: [
-    { startPoint: { x: 0, y: 1 }, bendPoints: [{ x: 10, y: 1 }, { x: 10, y: 20 }], endPoint: { x: 30, y: 20 } },
-    { startPoint: { x: 30, y: 20 }, endPoint: { x: 40, y: 20 } },
+test('diagramLabelSpots: the top left corner ELK gave each label, by edge index', () => {
+  const spots = PresentViz.diagramLabelSpots({ edges: [
+    { id: 'e2', labels: [{ id: 'l2', x: 10, y: 20, width: 5, height: 5 }] },
+    { id: 'e0' },
+    { id: 'e1', labels: [] },
   ] });
-  assert.equal(d, 'M0,1L10,1L10,20L30,20M30,20L40,20');
-  assert.equal(PresentViz.elkPath({}), '');
+  assert.equal(spots.length, 3);
+  assert.deepEqual(spots[2], { x: 10, y: 20 });
+  assert.equal(spots[0], undefined);
+  assert.equal(spots[1], undefined);
+  assert.deepEqual(PresentViz.diagramLabelSpots({}), []);
+});
+
+test('diagramLadder: the authored direction first, then the other, names only on a slide', () => {
+  const tag = (forms) => forms.map((f) => `${f.direction} ${f.density} ${f.group}`);
+  assert.deepEqual(tag(PresentViz.diagramLadder('LR', false)), ['LR full 0', 'LR compact 0', 'TB full 1', 'TB compact 1']);
+  assert.deepEqual(tag(PresentViz.diagramLadder('TB', false)), ['TB full 0', 'TB compact 0', 'LR full 1', 'LR compact 1']);
+  assert.deepEqual(tag(PresentViz.diagramLadder(undefined, false)), tag(PresentViz.diagramLadder('LR', false)), 'no direction is left to right');
+  assert.deepEqual(tag(PresentViz.diagramLadder('TB', true)), ['TB full 0', 'TB compact 0', 'LR full 1', 'LR compact 1', 'TB names 2', 'LR names 2']);
+});
+
+// form builds one laid-out form for diagramPlan: its size, group and density.
+const form = (width, height, group, density) => ({ width, height, group, density });
+const ladder = (sizes, onSlide) => PresentViz.diagramLadder('LR', onSlide).map((f, i) => form(sizes[i][0], sizes[i][1], f.group, f.density));
+const BRIEF = { room: { w: 1000, h: null, soft: 720 }, lim: { floor: 1, aim: 13 / 11.5, max: 16 / 13 } };
+const SLIDE = { room: { w: 1200, h: 400, soft: null }, lim: { floor: 1.4, aim: 1.4, max: 2.4 } };
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+
+test('diagramPlan: picks the form and scale for the room', () => {
+  const cases = [
+    { name: 'the authored form at the aim, capped at the largest scale', at: BRIEF,
+      sizes: [[800, 300], [700, 300], [400, 900], [350, 950]], want: { index: 0, scale: 16 / 13 } },
+    { name: 'compact when full is under the aim', at: BRIEF,
+      sizes: [[950, 300], [850, 400], [400, 900], [350, 950]], want: { index: 1, scale: 1000 / 850 } },
+    { name: "the group's largest when it reaches the floor but not the aim", at: BRIEF,
+      sizes: [[950, 300], [980, 300], [400, 300], [350, 300]], want: { index: 0, scale: 1000 / 950 } },
+    { name: 'the other direction when the authored one is under the floor', at: BRIEF,
+      sizes: [[1500, 300], [1200, 400], [700, 500], [650, 540]], want: { index: 2, scale: 16 / 13 } },
+    { name: 'the brief scrolls at the floor when every form is under it', at: BRIEF,
+      sizes: [[1500, 300], [1300, 400], [1400, 600], [1250, 700]], want: { index: 3, scale: 1, underFloor: true, scroll: true } },
+    { name: 'a tall drawing shrinks toward 45rem, not below the aim', at: BRIEF,
+      sizes: [[500, 1000], [480, 1100], [900, 300], [800, 400]], want: { index: 0, scale: 13 / 11.5 } },
+    { name: 'a tall drawing stops at 45rem when that is above the aim', at: BRIEF,
+      sizes: [[500, 600], [480, 700], [900, 300], [800, 400]], want: { index: 0, scale: 720 / 600 } },
+    { name: 'a slide fits the height too', at: SLIDE,
+      sizes: [[600, 500], [500, 250], [300, 900], [250, 950], [400, 200], [200, 600]], want: { index: 1, scale: 1.6 } },
+    { name: 'a slide grows no further than its largest scale', at: SLIDE,
+      sizes: [[300, 100], [280, 100], [100, 300], [90, 300], [200, 80], [80, 200]], want: { index: 0, scale: 2.4 } },
+    { name: 'a slide draws under the floor at the ratio and marks it', at: SLIDE,
+      sizes: [[2000, 300], [1800, 320], [600, 900], [550, 1000], [1700, 300], [500, 800]], want: { index: 1, scale: 1200 / 1800, underFloor: true, scroll: false } },
+    { name: 'names when only names reaches the floor', at: SLIDE,
+      sizes: [[2000, 300], [1800, 320], [600, 900], [550, 1000], [800, 280], [500, 800]], want: { index: 4, scale: 400 / 280 } },
+    { name: 'under the floor, names only with a 1.15 gain', at: SLIDE,
+      sizes: [[2000, 300], [1800, 320], [600, 900], [550, 1000], [1600, 300], [500, 800]], want: { index: 1, scale: 1200 / 1800, underFloor: true } },
+    { name: 'under the floor, names with more than a 1.15 gain', at: SLIDE,
+      sizes: [[2000, 300], [1800, 320], [600, 900], [550, 1000], [1500, 300], [500, 800]], want: { index: 4, scale: 1200 / 1500, underFloor: true } },
+  ];
+  cases.forEach((c) => {
+    const plan = PresentViz.diagramPlan(ladder(c.sizes, c.at.room.h !== null), c.at.room, c.at.lim);
+    const want = { underFloor: false, scroll: false, ...c.want };
+    assert.equal(plan.index, want.index, `${c.name}: index`);
+    assert.ok(near(plan.scale, want.scale), `${c.name}: scale ${plan.scale}, want ${want.scale}`);
+    assert.equal(plan.underFloor, want.underFloor, `${c.name}: underFloor`);
+    assert.equal(plan.scroll, want.scroll, `${c.name}: scroll`);
+  });
+});
+
+test('diagramPlan: a form whose layout failed is left out, and the pick is among the rest', () => {
+  // laidExcept lays out every rung but the dropped ones, as diagramLayout
+  // does when ELK fails on a form, and keeps each form's name.
+  const laidExcept = (sizes, onSlide, dropped) => PresentViz.diagramLadder('LR', onSlide)
+    .map((f, i) => ({ ...f, width: sizes[i][0], height: sizes[i][1] }))
+    .filter((f) => !dropped.includes(`${f.direction} ${f.density}`));
+  const cases = [
+    { name: 'the authored full form failed: its compact form', at: BRIEF, dropped: ['LR full'],
+      sizes: [[800, 300], [700, 300], [400, 900], [350, 950]], want: 'LR compact' },
+    { name: 'both authored forms failed: the other direction', at: BRIEF, dropped: ['LR full', 'LR compact'],
+      sizes: [[800, 300], [700, 300], [400, 900], [350, 950]], want: 'TB full' },
+    { name: 'one form left, under the floor: drawn at the floor and scrolled', at: BRIEF, dropped: ['LR full', 'LR compact', 'TB full'],
+      sizes: [[800, 300], [700, 300], [400, 900], [1350, 950]], want: 'TB compact', underFloor: true, scroll: true },
+    { name: 'on a slide only the names forms laid out', at: SLIDE, dropped: ['LR full', 'LR compact', 'TB full', 'TB compact'],
+      sizes: [[600, 500], [500, 250], [300, 900], [250, 950], [400, 200], [200, 600]], want: 'LR names' },
+  ];
+  cases.forEach((c) => {
+    const forms = laidExcept(c.sizes, c.at.room.h !== null, c.dropped);
+    const plan = PresentViz.diagramPlan(forms, c.at.room, c.at.lim);
+    const picked = forms[plan.index];
+    assert.equal(picked && `${picked.direction} ${picked.density}`, c.want, `${c.name}: form`);
+    assert.equal(plan.underFloor, !!c.underFloor, `${c.name}: underFloor`);
+    assert.equal(plan.scroll, !!c.scroll, `${c.name}: scroll`);
+  });
+});
+
+test('diagramLimits and canvasWidth: the slide floor and largest box name come from the canvas width', () => {
+  assert.equal(PresentViz.canvasWidth(1440, 900, false), 1440);
+  assert.equal(PresentViz.canvasWidth(1440, 900, true), 1440, 'wider than 16:9 is limited by the width');
+  assert.ok(near(PresentViz.canvasWidth(1440, 700, true), 700 * 16 / 9), 'a short window is limited by the height');
+  assert.equal(PresentViz.canvasWidth(1920, 1080, true), 1920);
+  const at1440 = PresentViz.diagramLimits({ onSlide: true, wrapWidth: 1238, maxHeight: 468, canvasWidth: 1440 });
+  assert.deepEqual(at1440.room, { w: 1238, h: 468, soft: null });
+  assert.equal((11.5 * at1440.lim.floor).toFixed(1), '15.8', 'box text at 1.1% of 1440');
+  assert.equal((13 * at1440.lim.floor).toFixed(1), '17.9');
+  assert.equal(at1440.lim.aim, at1440.lim.floor);
+  assert.equal((13 * at1440.lim.max).toFixed(2), '31.68', 'box names at most 2.2% of 1440');
+  const at1920 = PresentViz.diagramLimits({ onSlide: true, wrapWidth: 1651, maxHeight: 562, canvasWidth: 1920 });
+  assert.equal((11.5 * at1920.lim.floor).toFixed(2), '21.12');
+  assert.equal((13 * at1920.lim.max).toFixed(2), '42.24');
+});
+
+test('diagramLimits: the brief has no height limit, a floor at 1 and an aim of 13 px', () => {
+  const root16 = PresentViz.diagramLimits({ onSlide: false, wrapWidth: 1032, wrapFontPx: 16, rootPx: 16 });
+  assert.deepEqual(root16.room, { w: 1032, h: null, soft: 720 });
+  assert.equal(root16.lim.floor, 1);
+  assert.ok(near(root16.lim.aim, 13 / 11.5));
+  assert.ok(near(root16.lim.max, 16 / 13), 'box names no larger than the wrapper font');
+  const root20 = PresentViz.diagramLimits({ onSlide: false, wrapWidth: 1032, wrapFontPx: 20, rootPx: 20 });
+  assert.equal(root20.room.soft, 900);
+  assert.ok(near(root20.lim.max, 20 / 13));
+  const small = PresentViz.diagramLimits({ onSlide: false, wrapWidth: 600, wrapFontPx: 12, rootPx: 16 });
+  assert.ok(near(small.lim.max, 13 / 11.5), 'never under the aim');
 });
 
 // plain strips the prototype-free maps the helpers return, so deepEqual compares values.
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
 test('diagramShown: step 0 shows the unstepped elements, step n adds the rest in order, null shows all', () => {
-  assert.deepEqual(plain(PresentViz.diagramShown(checkout, 0)), { groups: { prod: true, data: false }, nodes: { web: true, api: false, db: false }, edges: [false, false] });
+  assert.deepEqual(plain(PresentViz.diagramShown(checkout, 0)), { groups: { prod: true, data: false }, nodes: { web: true, api: false, db: false }, edges: [false, false, true] });
   assert.deepEqual(plain(PresentViz.diagramShown(checkout, 2).nodes), { web: true, api: true, db: false });
-  assert.deepEqual(PresentViz.diagramShown(checkout, 2).edges, [true, false]);
-  assert.deepEqual(PresentViz.diagramShown(checkout, null).edges, [true, true]);
+  assert.deepEqual(PresentViz.diagramShown(checkout, 2).edges, [true, false, true]);
+  assert.deepEqual(PresentViz.diagramShown(checkout, null).edges, [true, true, true]);
   assert.deepEqual(plain(PresentViz.diagramShown(checkout, null).groups), { prod: true, data: true });
 });
 
 test('diagramFocus: the focus ids, everything in a focused group, and the edges touching them', () => {
   assert.equal(PresentViz.diagramFocus(checkout, 1), null);
   assert.equal(PresentViz.diagramFocus(checkout, null), null);
-  assert.deepEqual(plain(PresentViz.diagramFocus(checkout, 2)), { groups: { prod: false, data: false }, nodes: { web: false, api: true, db: false }, edges: [true, true] });
-  assert.deepEqual(plain(PresentViz.diagramFocus(checkout, 3)), { groups: { prod: false, data: true }, nodes: { web: false, api: false, db: true }, edges: [false, true] });
+  assert.deepEqual(plain(PresentViz.diagramFocus(checkout, 2)), { groups: { prod: false, data: false }, nodes: { web: false, api: true, db: false }, edges: [true, true, false] });
+  assert.deepEqual(plain(PresentViz.diagramFocus(checkout, 3)), { groups: { prod: false, data: true }, nodes: { web: false, api: false, db: true }, edges: [false, true, true] });
+});
+
+test('diagramFocus: no focus at rest, whatever the step', () => {
+  assert.equal(PresentViz.diagramFocus(checkout, 3, true), null);
+  assert.equal(PresentViz.diagramFocus(checkout, 2, true), null);
+  assert.notEqual(PresentViz.diagramFocus(checkout, 3, false), null);
 });
 
 test('flowSpeed: 6 px/s for the lightest, 20 px/s for the heaviest, the middle without weights', () => {
@@ -304,40 +499,65 @@ test('flowSpeed: 6 px/s for the lightest, 20 px/s for the heaviest, the middle w
   assert.ok(Math.abs(PresentViz.flowSpeed(undefined, 0) - 0.013) < 1e-9);
 });
 
-test('diagramGraph: a person box grows for its figure, a store for its cap', () => {
-  const plain = PresentViz.diagramElk(checkout, measure);
-  const g = PresentViz.diagramGraph(checkout, measure);
-  assert.equal(g.children[1].id, 'web');
-  assert.equal(g.children[1].width, plain.children[1].width + 14);
-  assert.equal(g.children[1].height, plain.children[1].height);
-  const db = g.children[0].children[0].children[0];
-  assert.equal(db.id, 'db');
-  assert.equal(db.height, 38 + 6);
-  assert.equal(db.width, 120);
-  assert.equal(g.children[0].children[1].width, 120);
-  assert.equal(g.children[0].width, undefined);
-  assert.equal(g.children[0].layoutOptions['elk.nodeSize.constraints'], 'MINIMUM_SIZE');
-  assert.equal(g.children[0].layoutOptions['elk.nodeSize.minimum'], '(' + ('PROD CLUSTER'.length * 7 + 24) + ',0)');
-  assert.equal(g.children[0].layoutOptions['elk.padding'], '[top=36,left=16,bottom=16,right=16]');
+test('diagramText: one row per name line, then one per text line, moved past the shape room', () => {
+  const box = (label, lines) => ({ label, lines });
+  assert.deepEqual(PresentViz.diagramText({ kind: 'service' }, box(['A'], ['x', 'y']), 160), { x: 80, label: [19], lines: [35.5, 50.5] });
+  assert.deepEqual(PresentViz.diagramText({}, box(['A'], []), 120), { x: 60, label: [19], lines: [] });
+  assert.deepEqual(PresentViz.diagramText({}, box(['A', 'B'], ['x']), 120), { x: 60, label: [19, 37], lines: [53.5] });
+  assert.deepEqual(PresentViz.diagramText({ kind: 'person' }, box(['A'], ['x']), 196), { x: 105, label: [19], lines: [35.5] });
+  assert.deepEqual(PresentViz.diagramText({ kind: 'store' }, box(['A'], ['x']), 120), { x: 60, label: [25], lines: [41.5] });
+  assert.deepEqual(PresentViz.diagramText({ kind: 'toString' }, box(['A'], []), 120), { x: 60, label: [19], lines: [] });
 });
 
-test('diagramText: the label row then one row per line, moved past the shape room', () => {
-  assert.deepEqual(PresentViz.diagramText({ kind: 'service' }, 2, 160), { x: 80, label: 19, lines: [35.5, 50.5] });
-  assert.deepEqual(PresentViz.diagramText({}, 0, 120), { x: 60, label: 19, lines: [] });
-  assert.deepEqual(PresentViz.diagramText({ kind: 'person' }, 1, 196), { x: 105, label: 19, lines: [35.5] });
-  assert.deepEqual(PresentViz.diagramText({ kind: 'store' }, 1, 120), { x: 60, label: 25, lines: [41.5] });
+test('edgeLabelRows: the middle of each label line inside its halo', () => {
+  assert.deepEqual(PresentViz.edgeLabelRows({ lines: ['a'] }), [8]);
+  assert.deepEqual(PresentViz.edgeLabelRows({ lines: ['a', 'b'] }), [8, 22]);
 });
 
 test('diagram helpers: an id named like an Object.prototype key is just an id', () => {
   const spec = { groups: [{ id: 'constructor', label: 'C' }], nodes: [{ id: 'toString', label: 'T', group: 'constructor' }, { id: '__proto__', label: 'P', step: 2 }], edges: [{ from: 'toString', to: '__proto__' }], steps: [{ caption: 'one' }, { caption: 'two', focus: ['constructor'] }] };
-  const g = PresentViz.diagramElk(spec, (t) => t.length * 7);
-  assert.deepEqual(g.children.map((c) => c.id), ['constructor', '__proto__']);
-  assert.deepEqual(g.children[0].children.map((c) => c.id), ['toString']);
+  const { graph, boxes } = PresentViz.diagramElk(spec, (t) => t.length * 7, { direction: 'LR', density: 'full' });
+  assert.deepEqual(graph.children.map((c) => c.id), ['constructor', '__proto__']);
+  assert.deepEqual(graph.children[0].children.map((c) => c.id), ['toString']);
+  assert.deepEqual(Object.keys(boxes).sort(), ['__proto__', 'toString']);
   const shown = PresentViz.diagramShown(spec, 1).nodes, lit = PresentViz.diagramFocus(spec, 2).nodes;
   assert.equal(shown.toString, true);
   assert.equal(shown['__proto__'], false);
   assert.equal(lit.toString, true);
   assert.equal(lit['__proto__'], false);
+});
+
+// Chart helpers.
+const CHART_KINDS = ['bar', 'stacked-bar', 'horizontal-bar', 'line', 'area', 'sparkline', 'scatter', 'doughnut', 'sankey', 'ribbon'];
+
+test('chartLine: straight lines for every kind drawn with one, nothing for the rest', () => {
+  assert.deepEqual(Object.fromEntries(CHART_KINDS.map((k) => [k, PresentViz.chartLine(k)])), {
+    bar: {}, 'stacked-bar': {}, 'horizontal-bar': {}, line: { tension: 0 }, area: { tension: 0 }, sparkline: { tension: 0 },
+    scatter: {}, doughnut: {}, sankey: {}, ribbon: {},
+  });
+});
+
+test('chartValueAxis: bars and areas from zero, lines and scatters fitted to the data', () => {
+  const zero = { beginAtZero: true }, fitted = { beginAtZero: false, grace: '5%' };
+  assert.deepEqual(Object.fromEntries(CHART_KINDS.map((k) => [k, PresentViz.chartValueAxis(k)])), {
+    bar: zero, 'stacked-bar': zero, 'horizontal-bar': zero, area: zero,
+    line: fitted, sparkline: fitted, scatter: fitted, doughnut: null, sankey: null, ribbon: null,
+  });
+  assert.equal(PresentViz.chartValueAxis('constructor'), null);
+});
+
+test('chartFontSizes: ticks at 0.75 of the root, kept between 11 and 15; the legend at 0.8125', () => {
+  assert.deepEqual(PresentViz.chartFontSizes(16), { tick: 12, legend: 13 });
+  assert.deepEqual(PresentViz.chartFontSizes(12), { tick: 11, legend: 9.75 });
+  assert.deepEqual(PresentViz.chartFontSizes(24), { tick: 15, legend: 19.5 });
+  assert.deepEqual(PresentViz.chartFontSizes(NaN), PresentViz.chartFontSizes(16), 'no root size reads as 16');
+});
+
+test('seriesExtent: the smallest and largest point over every series', () => {
+  assert.deepEqual(PresentViz.seriesExtent([{ points: [{ y: 0.91 }, { y: 0.84 }] }, { points: [{ y: 0.97 }, { y: '0.9' }] }]), { min: 0.84, max: 0.97 });
+  assert.deepEqual(PresentViz.seriesExtent([{ points: [{ y: -3 }] }, {}]), { min: -3, max: -3 });
+  assert.equal(PresentViz.seriesExtent([]), null);
+  assert.equal(PresentViz.seriesExtent(undefined), null);
 });
 
 test('changedSectionTargets: changed and added sections, by id or by index', () => {
@@ -346,4 +566,82 @@ test('changedSectionTargets: changed and added sections, by id or by index', () 
   }), [{ id: 'results' }, { index: 3 }, { id: 'next-steps' }]);
   assert.deepEqual(PresentViz.changedSectionTargets(undefined), []);
   assert.deepEqual(PresentViz.changedSectionTargets({ changed: [], added: [] }), []);
+});
+
+// Layout with the real engine: the 13 diagrams of the looks eval's baseline
+// run (skills/present/evals/looks), each in every form a slide can draw,
+// through the vendored ELK. Skipped on a machine whose asset cache (make
+// cache) has no ELK bundle. CI fetches the bundle with
+// scripts/cache-assets.sh, so there a missing bundle fails the test.
+const elkFile = join(process.env.PRESENT_WORKDIR || join(homedir(), '.config', 'present'), 'assets', 'js', 'elk-0.12.0.bundled.js');
+const elkSkip = existsSync(elkFile) || process.env.CI === 'true' ? false : `no ELK bundle at ${elkFile} (run make cache)`;
+const fixtures = new URL('./fixtures/diagrams/', import.meta.url);
+// faceMeasure stands in for the canvas measure: a width per character close
+// to Fira Code at the diagram's sizes.
+const FACE_PX = { label: 7.8, text: 6.9, group: 6.9 };
+const faceMeasure = (s, role) => String(s).length * (FACE_PX[role] || FACE_PX.text);
+const TOUCH = 0.5; // boxes closer than this do not overlap, and a route this near a label touches it
+
+function overlaps(a, b) {
+  return a.x < b.x + b.w - TOUCH && b.x < a.x + a.w - TOUCH && a.y < b.y + b.h - TOUCH && b.y < a.y + a.h - TOUCH;
+}
+// runsThrough says whether one straight run of a route (orthogonal, so
+// one of its axes is fixed) meets the rectangle r.
+function runsThrough(p, q, r) {
+  const x0 = Math.min(p.x, q.x) - TOUCH, x1 = Math.max(p.x, q.x) + TOUCH, y0 = Math.min(p.y, q.y) - TOUCH, y1 = Math.max(p.y, q.y) + TOUCH;
+  return x0 <= r.x + r.w && r.x <= x1 && y0 <= r.y + r.h && r.y <= y1;
+}
+function touchesRoute(edge, r) {
+  return (edge.sections || []).some((sec) => {
+    const pts = [sec.startPoint, ...(sec.bendPoints || []), sec.endPoint];
+    return pts.slice(1).some((q, i) => runsThrough(pts[i], q, r));
+  });
+}
+// laidOut walks ELK's result into node boxes and group label boxes, in root coordinates.
+function laidOut(layout, spec) {
+  const group = Object.create(null), nodes = [], groupLabels = [];
+  (spec.groups || []).forEach((g) => { group[g.id] = g; });
+  (function walk(children) {
+    (children || []).forEach((c) => {
+      if (group[c.id]) {
+        const at = PresentViz.diagramGroupLabel;
+        groupLabels.push({ id: c.id, x: c.x + at.x, y: c.y + at.y - 12, w: faceMeasure(group[c.id].label || '', 'group'), h: 16 });
+        walk(c.children);
+      } else nodes.push({ id: c.id, x: c.x, y: c.y, w: c.width, h: c.height });
+    });
+  })(layout.children);
+  return { nodes, groupLabels };
+}
+
+test('layout: on every baseline diagram and form, each label sits on its own route and clear of boxes and labels', { skip: elkSkip }, async () => {
+  assert.ok(existsSync(elkFile), `no ELK bundle at ${elkFile}: CI runs scripts/cache-assets.sh with PRESENT_WORKDIR before this test`);
+  const ELK = createRequire(import.meta.url)(elkFile);
+  const elk = new ELK();
+  const files = readdirSync(fixtures).filter((f) => f.endsWith('.json')).sort();
+  assert.equal(files.length, 13);
+  const faults = [];
+  for (const file of files) {
+    const spec = JSON.parse(readFileSync(new URL(file, fixtures), 'utf8'));
+    for (const form of PresentViz.diagramLadder(spec.direction, true)) {
+      const where = `${file} ${form.direction} ${form.density}`;
+      const built = PresentViz.diagramElk(spec, faceMeasure, form);
+      const layout = await elk.layout(built.graph);
+      const spots = PresentViz.diagramLabelSpots(layout);
+      const { nodes, groupLabels } = laidOut(layout, spec);
+      const labels = [];
+      (spec.edges || []).forEach((e, k) => {
+        if (!e.label) return;
+        if (!spots[k]) { faults.push(`${where}: edge ${k} has no label spot`); return; }
+        const box = built.labels[k];
+        labels.push({ k, x: spots[k].x, y: spots[k].y, w: box.w, h: box.h, edge: layout.edges.find((x) => x.id === 'e' + k) });
+      });
+      labels.forEach((a, i) => {
+        if (!touchesRoute(a.edge, a)) faults.push(`${where}: label ${a.k} is off its route`);
+        nodes.forEach((n) => { if (overlaps(a, n)) faults.push(`${where}: label ${a.k} overlaps box ${n.id}`); });
+        groupLabels.forEach((g) => { if (overlaps(a, g)) faults.push(`${where}: label ${a.k} overlaps group label ${g.id}`); });
+        labels.slice(i + 1).forEach((b) => { if (overlaps(a, b)) faults.push(`${where}: label ${a.k} overlaps label ${b.k}`); });
+      });
+    }
+  }
+  assert.deepEqual(faults, []);
 });

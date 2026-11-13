@@ -1,0 +1,102 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "box",
+      "label": "sandbox",
+      "tone": "amber"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "wrapper",
+      "label": "Wrapper",
+      "text": "resolves secrets, env -i allow-list, cd /",
+      "tone": "green"
+    },
+    {
+      "id": "settings",
+      "label": "Settings file",
+      "text": "~/.config/srt/<label>.json",
+      "kind": "store",
+      "tone": "blue"
+    },
+    {
+      "id": "srtrun",
+      "label": "srt-run",
+      "text": "merges per-machine hosts, sets TMPDIR",
+      "tone": "green"
+    },
+    {
+      "id": "srt",
+      "label": "srt",
+      "text": "default-deny seatbelt profile",
+      "tone": "red"
+    },
+    {
+      "id": "proc",
+      "label": "Confined process",
+      "text": "MCP server, install step, Go service",
+      "tone": "green",
+      "group": "box"
+    },
+    {
+      "id": "proxy",
+      "label": "HTTP and SOCKS proxies",
+      "text": "listed hosts only, no direct connections",
+      "tone": "red"
+    },
+    {
+      "id": "hosts",
+      "label": "Allowed hosts",
+      "text": "named in settings or at launch",
+      "kind": "external",
+      "tone": "neutral"
+    },
+    {
+      "id": "watch",
+      "label": "sandbox-watch",
+      "text": "decodes the SRT_RUN label from denials",
+      "tone": "green"
+    }
+  ],
+  "edges": [
+    {
+      "from": "wrapper",
+      "to": "srtrun",
+      "label": "argv + domains"
+    },
+    {
+      "from": "settings",
+      "to": "srtrun",
+      "label": "static policy"
+    },
+    {
+      "from": "srtrun",
+      "to": "srt",
+      "label": "merged settings"
+    },
+    {
+      "from": "srt",
+      "to": "proc",
+      "label": "spawns"
+    },
+    {
+      "from": "proc",
+      "to": "proxy",
+      "label": "all egress",
+      "flow": true
+    },
+    {
+      "from": "proxy",
+      "to": "hosts",
+      "label": "allowlisted",
+      "flow": true
+    },
+    {
+      "from": "proc",
+      "to": "watch",
+      "label": "denials via log"
+    }
+  ]
+}

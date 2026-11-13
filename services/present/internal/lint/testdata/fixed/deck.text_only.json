@@ -1,0 +1,53 @@
+{
+  "title": "How the fleet fits together",
+  "deck": {
+    "summary": "Our tools invoke each other: hooks, hints and shared services fire on every session without anyone remembering.",
+    "sections": [
+      {
+        "h": "Hooks fire every time; prompt instructions get skimmed",
+        "layout": "statement",
+        "tone": "primary",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Standalone, each tool is a thing you invoke. Together, they invoke each other."
+          }
+        ]
+      },
+      {
+        "h": "Three memory stores, one question each",
+        "tone": "blue",
+        "blocks": [
+          {
+            "t": "stat",
+            "value": "3",
+            "label": "stores: facts in agent-memory, task state in worklog, what happened in events"
+          }
+        ]
+      },
+      {
+        "h": "Only t-man and d-man may be hard dependencies across the boundary",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "t-man runs every service as a launchd agent",
+              "d-man gives each service its `<name>.this` address",
+              "Everything else orders across the boundary **by wave**"
+            ]
+          }
+        ]
+      },
+      {
+        "h": "One sudo is the whole cost of setup",
+        "blocks": [
+          {
+            "t": "stat",
+            "value": "1",
+            "label": "sudo step in the whole setup"
+          }
+        ]
+      }
+    ]
+  }
+}
