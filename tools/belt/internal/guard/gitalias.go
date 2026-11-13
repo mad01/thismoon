@@ -23,10 +23,14 @@ func aliasNamesIn(text string) []string {
 	return names
 }
 
+// shellQuoting drops quotes and backslashes. It is built once: a Replacer
+// costs a table to build, and the walk unquotes every word of every command.
+var shellQuoting = strings.NewReplacer(`"`, "", `'`, "", `\`, "")
+
 // unquoteWord drops the quotes and backslashes of a word as written, as the
 // shell drops them.
 func unquoteWord(word string) string {
-	return strings.NewReplacer(`"`, "", `'`, "", `\`, "").Replace(word)
+	return shellQuoting.Replace(word)
 }
 
 // gitBuiltins are git's builtin commands (`git --list-cmds=builtins`). git

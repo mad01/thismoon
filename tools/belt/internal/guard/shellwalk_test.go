@@ -561,6 +561,38 @@ func TestDeepNestingIsBounded(t *testing.T) {
 	}
 }
 
+// TestEvalChainPastTheLimitReadsOnce: a chain of evals that nests past
+// maxShellNesting reads the text after its first eval once, as unread, and
+// a chain up to the limit is still walked eval by eval to a full read.
+func TestEvalChainPastTheLimitReadsOnce(t *testing.T) {
+	t.Setenv("CDPATH", "")
+	tests := []struct {
+		evals, steps int
+		unread       bool
+	}{
+		{maxShellNesting, maxShellNesting + 1, false},
+		{maxShellNesting + 1, 2, true},
+		{20000, 2, true},
+	}
+	for _, tt := range tests {
+		cmd := strings.Repeat("eval ", tt.evals) + "git push origin main"
+		var steps []walkStep
+		walkCommands(cmd, "/tmp", func(s walkStep) { steps = append(steps, s) })
+		last := steps[len(steps)-1]
+		if len(steps) != tt.steps || last.unread != tt.unread ||
+			!strings.HasSuffix(strings.Join(last.tokens, " "), "git push origin main") {
+			t.Errorf(
+				"%d evals: %d steps, last unread %v, want %d steps, unread %v, ending in the push",
+				tt.evals,
+				len(steps),
+				last.unread,
+				tt.steps,
+				tt.unread,
+			)
+		}
+	}
+}
+
 // TestMaskDataNeedsAWholeRead: a command the reader cannot follow to the end
 // is never masked, even where its first lines read cleanly.
 func TestMaskDataNeedsAWholeRead(t *testing.T) {

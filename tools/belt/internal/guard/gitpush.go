@@ -442,7 +442,7 @@ var gitDirFlags = []string{"--git-dir", "--git-common-dir", "--git-path", "--abs
 // the word, or the value belt's own environment holds), or a path built from
 // what rev-parse says the git directory is.
 func gitConfigFile(word, dir string) bool {
-	w := strings.NewReplacer(`"`, "", `'`, "", `\`, "").Replace(word)
+	w := unquoteWord(word)
 	switch {
 	case w == "":
 		return false

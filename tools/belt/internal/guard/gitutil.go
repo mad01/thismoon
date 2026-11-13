@@ -261,7 +261,7 @@ func isGitWord(tok string) bool {
 // mentionsName reports whether text names one of names as a word of its
 // own, once quotes and backslashes are dropped (`"GIT_DIR"=`, `GIT_\DIR=`).
 func mentionsName(text string, names map[string]bool) bool {
-	text = strings.NewReplacer(`"`, "", `'`, "", `\`, "").Replace(text)
+	text = unquoteWord(text)
 	notName := func(r rune) bool { return r > unicode.MaxASCII || !isNameByte(byte(r)) }
 	return slices.ContainsFunc(
 		strings.FieldsFunc(text, notName),

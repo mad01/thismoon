@@ -433,13 +433,35 @@ func definesFunction(text string, c shellCmd, tokens []string) bool {
 // definition in one command (`if x; then function f { ...; }; fi`).
 var functionLeads = wordSet("! { if then elif else while until do time")
 
-// walkEval walks the text eval runs (walkInShell).
+// walkEval walks the text eval runs (walkInShell). An eval that runs another
+// eval reads the same words again, so a chain of evals that nests past
+// maxShellNesting (`eval eval eval ... git push`) reads as unread text at
+// once, instead of once per eval down to the limit.
 func (w *shellWalk) walkEval(c shellCmd, tokens []string, at int, fn func(walkStep)) {
 	script := make([]string, 0, len(c.words)-at)
 	for _, word := range c.words[at+1:] {
 		script = append(script, word.script())
 	}
-	w.walkInShell(tokens[:at], strings.Join(script, " "), false, fn)
+	text := strings.Join(script, " ")
+	if w.depth+1+evalChain(tokens[at+1:]) <= maxShellNesting {
+		w.walkInShell(tokens[:at], text, false, fn)
+		return
+	}
+	inner := w.childFor(w.dir, tokens[:at])
+	inner.walkUnread(text, fn)
+	w.leaveShell(inner)
+}
+
+// evalChain counts the evals that start the command in tokens one inside
+// another (evalAt), up to one past maxShellNesting: the words after the first
+// eval of `eval eval git push` hold one.
+func evalChain(tokens []string) int {
+	n := 0
+	for at := evalAt(tokens); at >= 0 && n <= maxShellNesting; at = evalAt(tokens) {
+		n++
+		tokens = tokens[at+1:]
+	}
+	return n
 }
 
 // walkInShell walks text this shell runs itself, behind the words pre (eval,
@@ -450,6 +472,12 @@ func (w *shellWalk) walkInShell(pre []string, text string, args bool, fn func(wa
 	inner := w.childFor(w.dir, pre)
 	inner.positional = inner.positional || args
 	inner.walkRead(text, true, fn)
+	w.leaveShell(inner)
+}
+
+// leaveShell keeps what a text this shell ran itself (walkInShell) left
+// set: its variables, and an unknown directory where it moved.
+func (w *shellWalk) leaveShell(inner *shellWalk) {
 	w.gitEnv = w.gitEnv || inner.gitEnv
 	w.configEnv = w.configEnv || inner.configEnv
 	w.cdpath = w.cdpath || inner.cdpath
