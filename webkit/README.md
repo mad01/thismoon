@@ -13,8 +13,9 @@ embed everywhere — so the tools look and behave the same.
 - **`dist/webkit.js`** — registers `<wk-header>` as a custom element; wires
   controls and persists state in `localStorage`; exports the theme API
   (`themeState`, `setThemeMode`, `setPalette`, `resetTheme`), `Webkit.bootSnippet`
-  (FOUC (Flash of Unstyled Content) guard) and a thin `Webkit.init(config)` shim
-  for backward compatibility.
+  (FOUC (Flash of Unstyled Content) guard), the render helpers (`el`, `poll`,
+  `escapeHtml`), the format helpers (`timeAgo`, `formatDuration`) and a thin
+  `Webkit.init(config)` shim for backward compatibility.
 - **`dist/themes.json`, `dist/themes.html`, `dist/themes.js`** — the resolved
   theme collection and the picker page served at `GET /webkit/themes`.
 
@@ -72,6 +73,24 @@ Read these from service CSS (`gap: var(--wk-space-2)`,
 `border-radius: var(--wk-radius-surface)`) rather than copying the numbers, so
 a shell stays in line with the kit. The table and the deliberate exceptions are
 in [docs/components.md](docs/components.md#design-tokens-radius-spacing-control-height-motion).
+
+## Format helpers
+
+Two pure functions on the `Webkit` global write the time text the tools share,
+so a page does not keep its own copy:
+
+```js
+const now = Date.parse('2026-11-13T10:38:30Z'); // leave now out to use the clock
+Webkit.timeAgo('2026-11-13T08:21:25Z', { now })                 // '2h ago'
+Webkit.timeAgo('2026-11-13T08:21:25Z', { now, style: 'long' })  // '2 hours ago'
+Webkit.timeAgo('2026-11-12T04:38:30Z', { now, style: 'medium', daysAfterHours: 48 }) // '30 h ago'
+Webkit.formatDuration(192000)                                   // '3m12s'
+Webkit.formatDuration(3900000, { style: 'coarse' })             // '1h 05m'
+```
+
+A time is a Date, an ISO string or epoch milliseconds. A missing or invalid
+value returns `opts.fallback` (default `''`). Every style and option is in
+[docs/components.md](docs/components.md#format-helpers).
 
 ## Consume it (Go)
 

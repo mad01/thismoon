@@ -515,6 +515,67 @@ Webkit.openCmdK();
 
 ---
 
+## Format helpers
+
+Two pure functions on the `Webkit` global, from `src/format.ts`. They touch no
+DOM, and they read the clock only when the caller leaves `now` out, so a test
+passes `now` and stays deterministic.
+
+### `Webkit.timeAgo(value, opts?)`
+
+How long before `now` a moment was. `value` is a Date, an ISO 8601 string or
+epoch milliseconds. A number is always milliseconds; a caller holding epoch
+seconds multiplies by 1000.
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `now` | the current time | The moment to measure from, in the same shapes as `value` |
+| `style` | `short` | `short`, `medium` or `long`, below |
+| `daysAfterHours` | `24` | The hour count at which the text switches to days |
+| `fallback` | `''` | Returned for a missing or invalid `value` or `now` |
+
+| Age | `short` (csl, events) | `medium` (moondb) | `long` (deps) |
+|-----|-----------------------|-------------------|---------------|
+| under 60s | `0s ago` to `59s ago` | `just now` | `just now` |
+| 60s to 59m | `1m ago` | `1 min ago` | `1 minute ago`, `5 minutes ago` |
+| 1h to `daysAfterHours` | `3h ago` | `3 h ago` | `1 hour ago`, `3 hours ago` |
+| after that | `2d ago` | `2 d ago` | `1 day ago`, `2 days ago` |
+
+Counts round down. A moment after `now` reads as no time (`0s ago`, `just
+now`). There are no weeks or dates: a year back is `365d ago`. An unknown
+`style` reads as `short`. moondb passes `daysAfterHours: 48`, so a session
+from yesterday reads `30 h ago`.
+
+```js
+Webkit.timeAgo(ev.time)                                       // '27s ago'
+Webkit.timeAgo(data.scanned_at, { style: 'long' })            // '2 hours ago'
+Webkit.timeAgo(s.last_activity_at, { now, style: 'medium', daysAfterHours: 48 })
+Webkit.timeAgo(e.indexed_at, { fallback: 'never' })
+```
+
+### `Webkit.formatDuration(ms, opts?)`
+
+A span of milliseconds, in one of two styles:
+
+| `style` | Output |
+|---------|--------|
+| `precise` (default) | `850ms`, `4.2s`, `3m12s`, `1h02m`, `50h00m` |
+| `coarse` | `<1m`, `12m`, `1h 05m`, `2d 3h` |
+
+`precise` rounds milliseconds and keeps one decimal of seconds, so 59.95s
+prints `60.0s` as moondb's trace always did; `coarse` rounds down to the
+minute. A negative span counts as zero. `opts.fallback` (default `''`) is
+returned for a value that is not a finite number.
+
+### Invalid input
+
+Neither function throws or prints `NaN`. An empty string, `null`,
+`undefined`, an unparseable string, a number outside the Date range and a Go
+zero time (`0001-01-01T00:00:00Z`, what an unset `time.Time` serializes to)
+all return the fallback.
+
+---
+
 ## Theming
 
 webkit.css defines the palette as CSS custom properties on `:root` and overrides them under `[data-theme="dark"]`. The FOUC (Flash of Unstyled Content) guard in `<head>` sets `data-theme` before paint so persisted preferences don't flash.

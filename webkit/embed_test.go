@@ -197,6 +197,9 @@ func TestHandlerServesJS(t *testing.T) {
 		"wk-skip-link", "skip-link", "Skip to content", "aria-level", "observedAttributes", "wk-chips",
 		// empty state (MAD-563): the no-op registrations
 		"wk-empty", "wk-empty-title",
+		// format helpers (MAD-595): both exports, the long and medium
+		// wording, the medium unit and the coarse floor
+		"timeAgo", "formatDuration", "just now", `" min"`, `"<1m"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("webkit.js missing expected token %q", want)

@@ -1490,6 +1490,7 @@ var Webkit = (() => {
     el: () => el,
     enhanceProse: () => enhanceProse,
     escapeHtml: () => escapeHtml,
+    formatDuration: () => formatDuration,
     init: () => init,
     isFamily: () => isFamily,
     openCmdK: () => openCmdK,
@@ -1504,6 +1505,7 @@ var Webkit = (() => {
     stopReadAloud: () => stopReadAloud,
     themeMode: () => themeMode,
     themeState: () => themeState,
+    timeAgo: () => timeAgo,
     toFixation: () => toFixation
   });
 
@@ -3440,6 +3442,67 @@ var Webkit = (() => {
         window.clearInterval(timer);
       }
     };
+  }
+
+  // src/format.ts
+  var SECOND = 1e3;
+  var MINUTE_S = 60;
+  var HOUR_S = 3600;
+  var DAY_S = 86400;
+  var MINUTE_MS = 60 * SECOND;
+  var HOUR_MIN = 60;
+  var DAY_H = 24;
+  var UNIT_TEXT = {
+    short: { minute: "m", hour: "h", day: "d" },
+    medium: { minute: " min", hour: " h", day: " d" }
+  };
+  function toEpochMs(value) {
+    let ms = NaN;
+    if (value instanceof Date) ms = value.getTime();
+    else if (typeof value === "number") ms = value;
+    else if (typeof value === "string" && value !== "") ms = Date.parse(value);
+    return new Date(ms).getUTCFullYear() > 1 ? ms : NaN;
+  }
+  function pad2(n) {
+    return n < 10 ? "0" + n : "" + n;
+  }
+  function agoPhrase(n, unit, style) {
+    if (style === "long") return n + " " + unit + (n === 1 ? "" : "s") + " ago";
+    return n + UNIT_TEXT[style][unit] + " ago";
+  }
+  function timeAgo(value, opts = {}) {
+    const fallback = opts.fallback ?? "";
+    const style = opts.style === "medium" || opts.style === "long" ? opts.style : "short";
+    const hours = opts.daysAfterHours;
+    const dayFrom = (typeof hours === "number" && hours > 0 ? hours : DAY_H) * HOUR_S;
+    const then = toEpochMs(value);
+    const now = opts.now === void 0 ? Date.now() : toEpochMs(opts.now);
+    if (Number.isNaN(then) || Number.isNaN(now)) return fallback;
+    const secs = Math.floor(Math.max(0, now - then) / SECOND);
+    if (secs < MINUTE_S) return style === "short" ? secs + "s ago" : "just now";
+    if (secs < HOUR_S) return agoPhrase(Math.floor(secs / MINUTE_S), "minute", style);
+    if (secs < dayFrom) return agoPhrase(Math.floor(secs / HOUR_S), "hour", style);
+    return agoPhrase(Math.floor(secs / DAY_S), "day", style);
+  }
+  function preciseDuration(ms) {
+    if (ms < SECOND) return Math.round(ms) + "ms";
+    if (ms < MINUTE_MS) return (ms / SECOND).toFixed(1) + "s";
+    const m = Math.floor(ms / MINUTE_MS);
+    if (m < HOUR_MIN) return m + "m" + pad2(Math.floor(ms / SECOND) % MINUTE_S) + "s";
+    return Math.floor(m / HOUR_MIN) + "h" + pad2(m % HOUR_MIN) + "m";
+  }
+  function coarseDuration(ms) {
+    const m = Math.floor(ms / MINUTE_MS);
+    if (m < 1) return "<1m";
+    if (m < HOUR_MIN) return m + "m";
+    const h = Math.floor(m / HOUR_MIN);
+    if (h < DAY_H) return h + "h " + pad2(m % HOUR_MIN) + "m";
+    return Math.floor(h / DAY_H) + "d " + h % DAY_H + "h";
+  }
+  function formatDuration(ms, opts = {}) {
+    if (typeof ms !== "number" || !Number.isFinite(ms)) return opts.fallback ?? "";
+    const span = Math.max(0, ms);
+    return opts.style === "coarse" ? coarseDuration(span) : preciseDuration(span);
   }
 
   // src/webkit.ts

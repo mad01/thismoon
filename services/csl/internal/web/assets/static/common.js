@@ -46,17 +46,6 @@ function bindCopyButtons(root) {
     btn.addEventListener('click', () => copyText(btn.dataset.copy, btn)));
 }
 
-// timeAgo turns an ISO timestamp into a short "5m ago" string. Empty input
-// yields an empty string.
-function timeAgo(iso) {
-  if (!iso) return '';
-  const secs = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
-  if (secs < 60) return secs + 's ago';
-  if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
-  if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
-  return Math.floor(secs / 86400) + 'd ago';
-}
-
 // TABLE_PAGE_SIZE caps how many table rows the health and refresh views render
 // at once, so a fleet with many repos does not paint thousands of <tr> nodes in
 // one go.
