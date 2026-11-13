@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.2](https://github.com/mad01/thismoon/compare/d-man/v0.9.1...d-man/v0.9.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **d-man:** make a certificate only for a configured host ([#477](https://github.com/mad01/thismoon/issues/477)) ([c84138c](https://github.com/mad01/thismoon/commit/c84138c382c15fef8d5b5b3730bc1c6fb53af65d))
+* **d-man:** run block page games at a fixed 60 steps a second ([#478](https://github.com/mad01/thismoon/issues/478)) ([7a66f23](https://github.com/mad01/thismoon/commit/7a66f23f284438ded8b69d4ba6223fe2ce3dbd82))
+
 ## [0.9.1](https://github.com/mad01/thismoon/compare/d-man/v0.9.0...d-man/v0.9.1) (2026-11-13)
 
 
