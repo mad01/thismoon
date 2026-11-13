@@ -83,7 +83,10 @@
   // simulation over fewer nodes, and cleared once all of globalIds rest.
   // community maps every node of the global graph to its community and
   // homes to its island ([x, y, radius]); both hold across polls, so a
-  // refetch keeps every island where it is (groupIslands).
+  // refetch keeps every island where it is (groupIslands). hiddenCommunities
+  // is the set of community numbers the legend hides in the cluster colour
+  // mode. panelId is the node the side panel shows; it keeps the selected
+  // halo after the popup closes, until the panel closes.
   var S = {
     stateKey: null,
     vaults: [],
@@ -129,6 +132,8 @@
     globalIds: {},
     community: null,
     homes: null,
+    hiddenCommunities: {},
+    panelId: null,
     searchMode: 'literal',
     query: '',
     match: null,
@@ -229,6 +234,7 @@
     palette = {};
     restyleShown();
     renderLegend();
+    renderPanel();
   });
 
   // ── page skeleton ──
@@ -278,13 +284,14 @@
   var sigmaBox = el('div', { class: 'sigma', tabindex: '-1' });
   var statusEl = el('div', { class: 'overlay status' });
   var legendEl = el('div', { class: 'overlay legend' });
+  var side = el('aside', { class: 'side', 'aria-label': 'Selected node', hidden: '' });
   var emptyEl = el('div', { class: 'empty', hidden: '' });
   var zoomEl = el('div', { class: 'overlay zoom' }, [
     el('button', { title: 'Zoom in', 'aria-label': 'Zoom in', onclick: function () { camera('in'); } }, '+'),
     el('button', { title: 'Zoom out', 'aria-label': 'Zoom out', onclick: function () { camera('out'); } }, '−'),
     el('button', { title: 'Fit the graph', 'aria-label': 'Fit the graph', onclick: function () { camera('fit'); } }, '▢'),
   ]);
-  graphBox.append(sigmaBox, statusEl, legendEl, zoomEl, emptyEl);
+  graphBox.append(sigmaBox, statusEl, side, legendEl, zoomEl, emptyEl);
   app.append(toolbar, graphBox);
 
   var pop = el('dialog', { class: 'pop', 'aria-labelledby': 'pop-title' });
@@ -649,13 +656,14 @@
     if (g) S.sigma.refresh({ partialGraph: { nodes: g.nodes() }, schedule: true });
   }
 
-  // markSelected gives the open note's node, and the local graph's centre,
-  // the selected halo.
+  // markSelected gives the open note's node, the side panel's node and the
+  // local graph's centre the selected halo.
   function markSelected() {
     if (!S.sigma) return;
     var g = S.sigma.getGraph();
     var want = {};
     if (S.selected) want[S.selected] = true;
+    if (S.panelId) want[S.panelId] = true;
     if (S.view === 'local' && S.centerId) want[S.centerId] = true;
     var on = [];
     var off = [];
@@ -668,10 +676,12 @@
     if (off.length) S.sigma.setNodesState(off, { isSelected: false });
   }
 
+  // setSelected marks the popup's note. The side panel follows it, and
+  // keeps showing it once the popup closes and id goes back to null.
   function setSelected(id) {
     S.selected = id || null;
-    if (id) S.lastNode = id;
-    markSelected();
+    if (id) showPanel(id);
+    else markSelected();
   }
 
   // ── physics ──
@@ -1031,6 +1041,7 @@
     if (last && last.node === id && now - last.at <= DOUBLE_CLICK_MS) {
       S.lastClick = null;
       showLocal(id);
+      showPanel(id);
       return;
     }
     S.lastClick = { node: id, at: now };
@@ -1050,11 +1061,15 @@
     return false;
   }
 
+  // clickNode acts on a lone click: a note opens in the popup and the side
+  // panel, a topic node toggles the tag filter and a dangling node names
+  // its link in a toast, both beside the side panel.
   function clickNode(id) {
     var n = nodeOf(id);
     if (!n) return;
     var kind = BG.nodeKind(n);
     if (kind === 'note') { openNote(BG.noteRef(n)); return; }
+    showPanel(id);
     if (kind === 'tag') {
       S.filters.tag = S.filters.tag === n.title ? '' : n.title;
       renderToolbar();
@@ -1104,13 +1119,23 @@
   }
 
   function computeVisible() {
-    S.visible = BG.restrictTo(BG.visibleIds(S.data.nodes, S.data.edges, filterSpec()), S.match);
+    var legend = BG.legendFilter(S.colorBy, S.community, S.hiddenCommunities);
+    S.visible = BG.restrictTo(BG.visibleIds(S.data.nodes, S.data.edges, filterSpec(), legend), S.match);
   }
 
   // shownIds lists the nodes of g the simulation moves: the visible ones.
   function shownIds(g) {
     var out = [];
     g.forEachNode(function (id) { if (S.visible[id]) out.push(id); });
+    return out;
+  }
+
+  // inViewIds is the set of nodes sigma draws: visible and in the shown
+  // graph, which a local graph narrows.
+  function inViewIds() {
+    var out = {};
+    var g = shownGraph();
+    if (g) g.forEachNode(function (id) { if (S.visible[id]) out[id] = true; });
     return out;
   }
 
@@ -1131,6 +1156,7 @@
       if (fit) fitCamera(true);
     }
     renderStatus();
+    renderPanel();
   }
 
   function positionsOf(g) {
@@ -1221,7 +1247,8 @@
   // would now split the graph another way; Louvain over the notes the
   // default filters show. Tags and dangling targets join the community
   // most of their neighbours are in. Islands with placed members stay
-  // where those members are.
+  // where those members are. The legend's hidden set keeps only the
+  // communities that still hold notes.
   function groupIslands(data, known) {
     var P = BG.simParams(true);
     var byId = {};
@@ -1245,6 +1272,7 @@
     var rest = data.nodes.filter(function (n) { return community[n.id] === undefined; }).map(function (n) { return n.id; });
     BG.joinCommunities(rest, S.adj, community).forEach(function (id) { community[id] = BG.LOOSE; });
     S.community = community;
+    S.hiddenCommunities = BG.pruneHidden(S.hiddenCommunities, data.nodes, community);
     S.homes = BG.islandHomes(community, radiusOf, known, P, S.globalIds);
   }
 
@@ -1279,6 +1307,7 @@
     syncURL();
     renderToolbar();
     renderStatus();
+    renderPanel();
   }
 
   // showLocal draws the nodes within depth hops of id as their own graph,
@@ -1303,14 +1332,12 @@
     syncURL();
     renderToolbar();
     renderStatus();
+    renderPanel();
   }
 
   function renderStatus() {
     if (!S.data) { setStatus(''); return; }
-    var g = shownGraph();
-    var inView = {};
-    if (g) g.forEachNode(function (id) { if (S.visible[id]) inView[id] = true; });
-    var shown = BG.countNotes(S.data.nodes, inView);
+    var shown = BG.countNotes(S.data.nodes, inViewIds());
     var all = {};
     S.data.nodes.forEach(function (n) { all[n.id] = true; });
     var notes = BG.countNotes(S.data.nodes, all);
@@ -1385,12 +1412,7 @@
     function row(label, control) { return [el('span', {}, label), control]; }
     var grid = el('div', { class: 'f-grid' }, [].concat(
       row('Vault', select('Vault', S.vault, vaults, pickVault)),
-      row('Color', select('Color by', S.colorBy, colors, function (v) {
-        S.colorBy = v;
-        syncURL();
-        restyleShown();
-        renderLegend();
-      })),
+      row('Color', select('Color by', S.colorBy, colors, pickColor)),
       row('Tier', select('Tier', S.filters.tier, anyOf('any tier', fac.tiers), filterSetter('tier'))),
       row('Tag', select('Tag', S.filters.tag, anyOf('any tag', withCurrent(fac.tags, S.filters.tag)), filterSetter('tag'))),
       row('Status', select('Status', S.filters.status, anyOf('any status', fac.statuses), filterSetter('status'))),
@@ -1453,20 +1475,197 @@
     if (S.query.trim()) runSearch();
   }
 
+  // pickColor switches the colour mode. The legend hides communities only
+  // in the cluster mode, so a switch into or out of it with some hidden
+  // shows or hides them again.
+  function pickColor(mode) {
+    var hid = !!BG.legendFilter(S.colorBy, S.community, S.hiddenCommunities);
+    S.colorBy = mode;
+    syncURL();
+    restyleShown();
+    if (hid || BG.legendFilter(S.colorBy, S.community, S.hiddenCommunities)) applyVisibility(false);
+    else renderPanel();
+    renderLegend();
+  }
+
+  // renderLegend draws the legend of the colour mode and the coloured edge
+  // kinds. In the cluster mode each community is a toggle button, and
+  // focus inside the legend stays on its button across the redraw.
   function renderLegend() {
+    var focused = focusedKey(legendEl);
     legendEl.innerHTML = '';
     if (!S.data || !S.data.nodes.length) return;
     var shows = Object.assign(ctx(), { topics: S.topics, dangling: S.dangling });
+    var toggles = S.colorBy === 'cluster';
     BG.legend(S.colorBy, S.data.nodes, shows).forEach(function (e) {
-      if (!e.role) { legendEl.appendChild(el('span', {}, e.label)); return; }
-      var swatch = 'background:' + color(e.role) + ';border-color:' + color(BG.borderRole(e.role));
-      legendEl.appendChild(el('span', {}, [el('i', { style: swatch }), e.label]));
+      legendEl.appendChild(toggles && e.communities ? legendToggle(e) : el('span', {}, [e.role ? swatch(e.role) : null, e.label]));
     });
+    if (toggles) legendEl.appendChild(showAllButton());
     var kinds = {};
     S.data.edges.forEach(function (e) { kinds[e.kind] = true; });
     BG.EDGE_KINDS.filter(function (k) { return kinds[k] && BG.edgeRole(k) !== 'edge'; }).forEach(function (k) {
       legendEl.appendChild(el('span', {}, [el('i', { class: 'line', style: 'background:' + color(BG.edgeRole(k)) }), k]));
     });
+    refocus(legendEl, focused, null);
+  }
+
+  // swatch is the round colour mark of a node role, its fill and its ring.
+  function swatch(role) {
+    return el('i', { style: 'background:' + color(role) + ';border-color:' + color(BG.borderRole(role)) });
+  }
+
+  // legendToggle is the button for one legend entry of the cluster mode:
+  // pressed while its communities show, dimmed once they are hidden.
+  function legendToggle(e) {
+    var off = BG.allHidden(S.hiddenCommunities, e.communities);
+    var which = e.communities.length > 1 ? 'these communities' : 'this community';
+    return el('button', {
+      type: 'button', 'aria-pressed': off ? 'false' : 'true', 'data-key': e.communities.join(','),
+      title: (off ? 'Show' : 'Hide') + ' the notes of ' + which,
+      onclick: function () { setHiddenCommunities(BG.toggleCommunities(S.hiddenCommunities, e.communities)); },
+    }, [e.role ? swatch(e.role) : null, el('span', { class: 'lbl' }, e.label)]);
+  }
+
+  function showAllButton() {
+    return el('button', {
+      type: 'button', class: 'show-all', 'data-key': 'all', title: 'Show the notes of every community',
+      disabled: BG.anyHidden(S.hiddenCommunities) ? null : '',
+      onclick: function () { setHiddenCommunities({}); },
+    }, 'Show all');
+  }
+
+  // setHiddenCommunities applies the legend's hidden set. The camera stays
+  // where it is: the shown notes gather on their islands, the hidden ones
+  // keep their places.
+  function setHiddenCommunities(hidden) {
+    S.hiddenCommunities = hidden;
+    applyVisibility(false);
+    renderLegend();
+  }
+
+  // focusedKey is the data-key of the element focused inside box, '' for
+  // one without a key, or null when focus is outside box.
+  function focusedKey(box) {
+    var a = document.activeElement;
+    return a && box.contains(a) ? a.getAttribute('data-key') || '' : null;
+  }
+
+  // refocus puts focus back inside box after a redraw took it: on the
+  // enabled button with data-key key, else on fallback, else on the first
+  // enabled button. A null key means focus was not in box, so it stays.
+  function refocus(box, key, fallback) {
+    if (key === null || box.contains(document.activeElement)) return;
+    var target = null;
+    box.querySelectorAll('button[data-key]').forEach(function (b) {
+      if (!target && !b.disabled && b.getAttribute('data-key') === key) target = b;
+    });
+    target = target || fallback || box.querySelector('button:not(:disabled)');
+    if (target) target.focus({ preventScroll: true });
+  }
+
+  // ── the side panel: the selected node and its neighbours ──
+  // A panel docked on the right of the graph, outside the popup: it opens
+  // with the popup on a click and stays once the popup closes, so the
+  // popup reads a note and the panel walks the graph. A neighbour's button
+  // moves the camera there and the panel with it; Esc or the close button
+  // closes it. Everything in it comes from the graph the page holds.
+
+  side.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    closePanel();
+  });
+
+  // showPanel opens the side panel on node id, or moves it there.
+  function showPanel(id) {
+    if (nodeOf(id)) {
+      S.panelId = id;
+      S.lastNode = id;
+    }
+    markSelected();
+    renderPanel();
+  }
+
+  function closePanel() {
+    var had = side.contains(document.activeElement);
+    S.panelId = null;
+    markSelected();
+    renderPanel();
+    if (had) sigmaBox.focus({ preventScroll: true });
+  }
+
+  // jumpTo moves the side panel and the selected halo to id, and the
+  // camera onto it at the zoom it has.
+  function jumpTo(id) {
+    showPanel(id);
+    var g = shownGraph();
+    if (!g || !g.hasNode(id)) return;
+    var a = g.getNodeAttributes(id);
+    var c = S.sigma.graphToFramedGraph({ x: a.x, y: a.y });
+    S.sigma.getCamera().animate({ x: c.x, y: c.y }, { duration: FIT_MS, easing: 'quadraticInOut' });
+  }
+
+  // renderPanel draws the side panel for S.panelId, or hides it when that
+  // node is gone. Focus inside the panel stays on the button it was on;
+  // when that button left with the old node, as after a jump, it goes to
+  // the first neighbour, or to the close button when there is none.
+  function renderPanel() {
+    var n = S.panelId ? nodeOf(S.panelId) : null;
+    graphBox.classList.toggle('side-open', !!n);
+    if (!n) {
+      S.panelId = null;
+      side.setAttribute('hidden', '');
+      side.replaceChildren();
+      return;
+    }
+    var focused = focusedKey(side);
+    var inView = inViewIds();
+    var hint = BG.panelHint(S.panelId, inView);
+    var kids = [factsView(n)];
+    if (BG.nodeKind(n) === 'note') {
+      kids.push(el('div', { class: 'side-actions' }, [el('button', {
+        class: 'btn btn-ghost', type: 'button', 'data-key': 'open', onclick: function () { openNote(BG.noteRef(n)); },
+      }, 'Open note')]));
+    }
+    if (hint) kids.push(el('div', { class: 'hint' }, hint));
+    var list = neighboursView(S.panelId, inView);
+    kids.push(list);
+    var close = el('button', {
+      class: 'btn-x', type: 'button', 'data-key': 'close', 'aria-label': 'Close the panel', title: 'Close (Esc)', onclick: closePanel,
+    }, '✕');
+    side.replaceChildren(
+      el('div', { class: 'side-head' }, [el('h2', { class: 'side-title' }, BG.nodeLabel(n)), close]),
+      el('div', { class: 'side-scroll' }, kids),
+    );
+    side.removeAttribute('hidden');
+    refocus(side, focused, list.querySelector('.row') || close);
+  }
+
+  // factsView lists the node's tier or kind, its degree and its community,
+  // with the community's swatch while the colour mode shows communities.
+  function factsView(n) {
+    var names = BG.communityNames(S.data.nodes, S.community || {});
+    var rows = [];
+    BG.panelFacts(n, S.community, names).forEach(function (r) {
+      var mark = r.role && S.colorBy === 'cluster' ? swatch(r.role) : null;
+      rows.push(el('dt', {}, r.label), el('dd', {}, [mark, r.value]));
+    });
+    return el('dl', {}, rows);
+  }
+
+  // neighboursView lists the neighbours of id that inView holds, the nodes
+  // the graph draws, and counts the rest.
+  function neighboursView(id, inView) {
+    var list = BG.neighbourList(id, S.adj, nodeOf, inView);
+    var kids = [el('div', { class: 'sec-title' }, ['Neighbours', el('span', { class: 'n' }, String(list.shown.length))])];
+    if (!list.shown.length && !list.hidden) kids.push(el('div', { class: 'hint' }, 'Nothing links here.'));
+    kids.push(el('div', { class: 'list' }, list.shown.map(function (nb) {
+      return el('button', {
+        class: 'row', type: 'button', 'data-key': nb.id, title: nb.label, onclick: function () { jumpTo(nb.id); },
+      }, [el('span', { class: 't' }, nb.label), nb.meta ? el('span', { class: 'm' }, nb.meta) : null]);
+    })));
+    if (list.hidden) kids.push(el('div', { class: 'hint' }, list.hidden + ' more not shown.'));
+    return el('div', { class: 'sec' }, kids);
   }
 
   // ── search: reduces the graph to the notes it finds ──

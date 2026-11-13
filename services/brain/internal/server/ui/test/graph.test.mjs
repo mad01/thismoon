@@ -285,9 +285,9 @@ test('cluster colours: one palette colour per community, grey for unlinked', () 
 test('cluster legend names each community after its most linked note', () => {
   const ctx = { community: { 'id:a': 0, 'id:b': 0, 'team:notes/c.md': 1, 'id:d': G.LOOSE } };
   assert.deepEqual(G.legend('cluster', nodes, ctx), [
-    { label: 'A', role: G.NODE_ROLES[0] },
-    { label: 'c', role: G.NODE_ROLES[1] },
-    { label: 'unlinked', role: 'node-grey' },
+    { label: 'A', role: G.NODE_ROLES[0], communities: [0] },
+    { label: 'c', role: G.NODE_ROLES[1], communities: [1] },
+    { label: 'unlinked', role: 'node-grey', communities: [G.LOOSE] },
   ]);
   const many = [];
   const community = {};
@@ -297,7 +297,125 @@ test('cluster legend names each community after its most linked note', () => {
   }
   const out = G.legend('cluster', many, { community });
   assert.equal(out.length, G.NODE_ROLES.length + 1);
-  assert.deepEqual(out[out.length - 1], { label: '+2 more', role: '' });
+  const rest = [G.NODE_ROLES.length, G.NODE_ROLES.length + 1];
+  assert.deepEqual(out[out.length - 1], { label: '+2 more', role: '', communities: rest }, 'one entry toggles the rest');
+});
+
+// ── the legend's community toggles and the side panel ──
+
+// a and b share community 0, c is community 1, d is loose; the tag and the
+// dangling target joined community 0, as joinCommunities would have it.
+const community = { 'id:a': 0, 'id:b': 0, 'team:notes/c.md': 1, 'id:d': G.LOOSE, 'tag:db': 0, 'dangling:missing': 0 };
+
+test('communityNames: the most linked note per community, cut long, and unlinked', () => {
+  assert.deepEqual(G.communityNames(nodes, community), { 0: 'A', 1: 'c', [G.LOOSE]: 'unlinked' });
+  const long = [{ id: 'x', title: 'A title well past the legend label limit', degree: 1 }];
+  const name = G.communityNames(long, { x: 0 })[0];
+  assert.ok(name.length <= 24 && name.endsWith('…'), name);
+  assert.deepEqual(G.communityNames([nodes[5]], { 'tag:db': 0 }), {}, 'a topic node names no community');
+});
+
+test('legendFilter: only the cluster mode with something hidden filters', () => {
+  assert.equal(G.legendFilter('cluster', community, {}), null);
+  assert.equal(G.legendFilter('cluster', community, { 1: false }), null);
+  assert.equal(G.legendFilter('tier', community, { 1: true }), null, 'another mode keeps every community');
+  assert.equal(G.legendFilter('cluster', null, { 1: true }), null, 'no communities yet');
+  assert.deepEqual(G.legendFilter('cluster', community, { 1: true }), { community, hidden: { 1: true } });
+});
+
+test('communityShown: hidden communities only, a node with none always shows', () => {
+  assert.equal(G.communityShown('id:a', community, { 1: true }), true);
+  assert.equal(G.communityShown('team:notes/c.md', community, { 1: true }), false);
+  assert.equal(G.communityShown('id:d', community, { [G.LOOSE]: true }), false, 'unlinked hides too');
+  assert.equal(G.communityShown('id:new', community, { 0: true, 1: true }), true);
+  assert.equal(G.communityShown('id:a', community, null), true);
+});
+
+test('noteShown: the filters and the legend must both let a note show', () => {
+  const legend = { community, hidden: { 0: true } };
+  assert.equal(G.noteShown(nodes[0], all, legend), false, 'hidden by the legend');
+  assert.equal(G.noteShown(nodes[2], all, legend), true);
+  assert.equal(G.noteShown(nodes[2], { ...all, vault: 'me' }, legend), false, 'hidden by the filter');
+  assert.equal(G.noteShown(nodes[3], { ...all, orphans: false }, null), false, 'hidden as an orphan');
+  assert.equal(G.noteShown(nodes[0], all, null), true);
+});
+
+test('visibleIds: a hidden community takes its notes, and the tags and targets only they reach', () => {
+  const hide0 = G.visibleIds(nodes, edges, all, { community, hidden: { 0: true } });
+  assert.deepEqual(Object.keys(hide0).sort(), ['id:d', 'team:notes/c.md']);
+  const hide1 = G.visibleIds(nodes, edges, all, { community, hidden: { 1: true } });
+  assert.deepEqual(Object.keys(hide1).sort(), ['dangling:missing', 'id:a', 'id:b', 'id:d', 'tag:db']);
+  const both = G.visibleIds(nodes, edges, { ...all, status: 'disputed' }, { community, hidden: { 1: true } });
+  assert.deepEqual(Object.keys(both), ['id:b'], 'filter and legend combine');
+  assert.deepEqual(G.visibleIds(nodes, edges, all, null), G.visibleIds(nodes, edges, all), 'no legend, no change');
+});
+
+test('allHidden and toggleCommunities: one press hides, the next shows, the input stays', () => {
+  const none = {};
+  const hid = G.toggleCommunities(none, [2]);
+  assert.deepEqual(hid, { 2: true });
+  assert.deepEqual(none, {}, 'the old set is left alone');
+  assert.equal(G.allHidden(hid, [2]), true);
+  assert.deepEqual(G.toggleCommunities(hid, [2]), {});
+  const some = G.toggleCommunities({ 3: true }, [3, 4]);
+  assert.deepEqual(some, { 3: true, 4: true }, 'a partly hidden group hides whole');
+  assert.equal(G.allHidden(some, [3, 4]), true);
+  assert.deepEqual(G.toggleCommunities(some, [3, 4]), {});
+  assert.equal(G.allHidden({}, []), false);
+  assert.equal(G.anyHidden({ 1: false }), false);
+  assert.equal(G.anyHidden({ 1: true }), true);
+});
+
+test('pruneHidden: keeps only the hidden communities some note still falls in', () => {
+  const hidden = { 0: true, 1: true, 7: true, [G.LOOSE]: true };
+  assert.deepEqual(G.pruneHidden(hidden, nodes, community), { 0: true, 1: true, [G.LOOSE]: true }, 'community 7 is gone');
+  assert.deepEqual(hidden, { 0: true, 1: true, 7: true, [G.LOOSE]: true }, 'the old set is left alone');
+  const tagsOnly = { 'tag:db': 3, 'dangling:missing': 3 };
+  assert.deepEqual(G.pruneHidden({ 3: true }, nodes, tagsOnly), {}, 'a community of no note is gone');
+  assert.deepEqual(G.pruneHidden({ 1: false }, nodes, community), {}, 'a shown community drops out');
+  assert.equal(G.anyHidden(G.pruneHidden({ 7: true }, nodes, community)), false, 'Show all turns off');
+  assert.deepEqual(G.pruneHidden(null, nodes, community), {});
+});
+
+test('neighbourList: the neighbours in view sorted by label, the rest counted', () => {
+  const adj = G.adjacency(edges);
+  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  const inView = { 'id:a': true, 'id:b': true, 'tag:db': true, 'team:notes/c.md': true };
+  assert.deepEqual(G.neighbourList('id:a', adj, (id) => byId[id] || null, inView), {
+    shown: [
+      { id: 'id:b', label: 'B', meta: 'notes' },
+      { id: 'tag:db', label: 'db', meta: 'topic node' },
+    ],
+    hidden: 1,
+  });
+  assert.deepEqual(G.neighbourList('team:notes/c.md', adj, (id) => byId[id] || null, inView).shown,
+    [{ id: 'id:b', label: 'B', meta: 'notes' }]);
+  assert.deepEqual(G.neighbourList('id:d', adj, (id) => byId[id] || null, inView), { shown: [], hidden: 0 });
+  assert.deepEqual(G.neighbourList('id:a', adj, () => null, inView), { shown: [], hidden: 0 }, 'unknown ids are skipped');
+});
+
+test('panelFacts: tier or kind, links, and the community by name', () => {
+  const names = G.communityNames(nodes, community);
+  assert.deepEqual(G.panelFacts(nodes[1], community, names), [
+    { label: 'Tier', value: 'notes' },
+    { label: 'Links', value: '2' },
+    { label: 'Community', value: 'A', role: G.NODE_ROLES[0] },
+  ]);
+  assert.deepEqual(G.panelFacts(nodes[3], community, names)[2], { label: 'Community', value: 'unlinked', role: 'node-grey' });
+  assert.deepEqual(G.panelFacts(nodes[5], community, names)[0], { label: 'Kind', value: 'topic node' });
+  assert.deepEqual(G.panelFacts(nodes[4], null, names), [
+    { label: 'Kind', value: 'dangling node' },
+    { label: 'Links', value: '1' },
+  ], 'no community, no row');
+});
+
+test('panelHint: no hint while the graph draws the node, one wording when it does not', () => {
+  assert.equal(G.panelHint('id:a', { 'id:a': true }), '');
+  // A filter, the legend, a search or the local graph each leave the node
+  // out of inView; the hint reads the same for every one.
+  assert.equal(G.panelHint('id:a', { 'id:b': true }), 'Not in the current view.');
+  assert.equal(G.panelHint('id:a', {}), 'Not in the current view.');
+  assert.equal(G.panelHint('id:a', null), 'Not in the current view.');
 });
 
 test('legend adds the tag and dangling colours only with their toggles on', () => {

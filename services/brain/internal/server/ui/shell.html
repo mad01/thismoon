@@ -9,8 +9,8 @@
 <style>
 /* Palette, header chrome, badges, segmented controls and prose come from
    /webkit/webkit.css. Only the brain layout lives here: the toolbar row and
-   the graph stage under the header, and the note popup over them. app.js
-   renders all of it into <div id="app">. */
+   the graph stage under the header, the side panel beside the graph, and
+   the note popup over them. app.js renders all of it into <div id="app">. */
 
 /* The graph palette app.js reads by role (graph.js names the roles): the
    edges, the hover and selection halos, the caption pill, and one fill and
@@ -50,7 +50,7 @@ wk-header .topbar{margin-bottom:0}
 .toolbar label{display:inline-flex;align-items:center;gap:0.3rem;cursor:pointer;white-space:nowrap}
 .toolbar select{appearance:auto;background:var(--paper);border:1px solid var(--border);border-radius:6px;padding:0.2rem 0.35rem;font:inherit;color:var(--text-1);max-width:10rem}
 .toolbar input[type=range]{width:4.5rem;accent-color:var(--primary)}
-.toolbar .off{opacity:0.45}
+.toolbar .off,.legend button[aria-pressed="false"],.legend .show-all:disabled{opacity:0.45}
 .search{flex:0 1 auto;min-width:0;gap:0.5rem}
 .search input{flex:0 1 15rem;width:15rem;min-width:7rem;appearance:none;background:var(--paper);border:1px solid var(--border);border-radius:8px;padding:0.32rem 0.6rem;font:inherit;color:var(--text-1)}
 .search input:focus{outline:none;border-color:var(--primary)}
@@ -72,17 +72,43 @@ wk-header .topbar{margin-bottom:0}
 .filters select{max-width:none;width:100%}
 .filters .f-toggles{display:grid;grid-template-columns:1fr 1fr;gap:0.45rem 0.8rem;margin:0.75rem 0 0;padding:0.65rem 0 0;border-top:1px solid var(--border)}
 
-#graph{position:relative;flex:1;min-height:0;background:var(--graph-bg)}
+/* --zoom-btn is the zoom buttons' size, which the side panel stays above;
+   --side-w is the side panel's width, which the legend keeps clear of. */
+#graph{position:relative;flex:1;min-height:0;background:var(--graph-bg);--zoom-btn:1.9rem;--side-w:18rem}
 #graph .sigma{position:absolute;inset:0;outline:none}
 .overlay{position:absolute;z-index:2;font-size:0.75rem;color:var(--text-3)}
 .status{top:0.6rem;left:0.8rem;background:color-mix(in srgb,var(--paper) 85%,transparent);padding:0.2rem 0.5rem;border-radius:6px}
 .legend{bottom:0.6rem;left:0.8rem;display:flex;flex-wrap:wrap;gap:0.3rem 0.75rem;max-width:70%;background:color-mix(in srgb,var(--paper) 85%,transparent);padding:0.35rem 0.55rem;border-radius:6px}
+#graph.side-open .legend{max-width:calc(100% - var(--side-w) - 3 * var(--wk-space-3))}
 .legend span{display:inline-flex;align-items:center;gap:0.3rem;color:var(--text-2)}
-.legend i{display:inline-block;width:0.7rem;height:0.7rem;border-radius:50%;box-sizing:border-box;border:2px solid transparent}
+.legend i,.side dd i{display:inline-block;flex:none;width:0.7rem;height:0.7rem;border-radius:50%;box-sizing:border-box;border:2px solid transparent}
 .legend i.line{width:0.9rem;height:2px;border:none;border-radius:1px}
+/* In the cluster colour mode each legend entry is a toggle button for its
+   communities: a hidden one is dimmed and struck through, as the
+   toolbar's switched-off depth is dimmed, and Show all brings them back. */
+.legend button{display:inline-flex;align-items:center;gap:0.3rem;appearance:none;background:none;border:none;border-radius:var(--wk-radius-mark);padding:0 var(--wk-space-1);font:inherit;color:var(--text-2);cursor:pointer;transition:background var(--wk-dur-fast),color var(--wk-dur-fast)}
+.legend button:hover:not(:disabled){background:var(--chip-bg);color:var(--text-1)}
+.legend button[aria-pressed="false"] .lbl{text-decoration:line-through}
+.legend .show-all{color:var(--primary)}
+.legend .show-all:disabled{cursor:default}
 .zoom{bottom:0.6rem;right:0.8rem;display:flex;gap:0.25rem}
-.zoom button{appearance:none;background:var(--paper);border:1px solid var(--border);border-radius:6px;width:1.9rem;height:1.9rem;font:inherit;color:var(--text-2);cursor:pointer}
+.zoom button{appearance:none;background:var(--paper);border:1px solid var(--border);border-radius:6px;width:var(--zoom-btn);height:var(--zoom-btn);font:inherit;color:var(--text-2);cursor:pointer}
 .zoom button:hover{color:var(--text-1);border-color:var(--border-hover)}
+/* The side panel: the selected node's facts and its neighbours, docked on
+   the right of the graph above the zoom buttons. It is no dialog, so the
+   graph stays live beside it; the popup's backdrop covers it as it covers
+   the graph. The neighbour rows are the popup's .row buttons. */
+.side{position:absolute;z-index:2;top:var(--wk-space-2-5);right:var(--wk-space-3);box-sizing:border-box;display:flex;flex-direction:column;width:var(--side-w);max-width:calc(100% - 2 * var(--wk-space-3));max-height:calc(100% - 2 * var(--wk-space-2-5) - var(--zoom-btn) - var(--wk-space-2));border:1px solid var(--border);border-radius:var(--wk-radius-surface);background:var(--paper);color:var(--text-2);box-shadow:var(--shadow-md);font-size:0.8rem}
+.side[hidden]{display:none}
+.side-head{flex:none;display:flex;align-items:flex-start;gap:var(--wk-space-2);padding:var(--wk-space-3) var(--wk-space-3) var(--wk-space-2)}
+.side-title{flex:1;min-width:0;margin:0;font-size:0.95rem;font-weight:600;color:var(--text-1);overflow-wrap:anywhere}
+.side-scroll{overflow-y:auto;min-height:0;padding:0 var(--wk-space-3) var(--wk-space-3)}
+.side dl{display:grid;grid-template-columns:auto 1fr;gap:var(--wk-space-1) var(--wk-space-3);margin:0 0 var(--wk-space-3)}
+.side dt{color:var(--text-3)}
+.side dd{display:flex;align-items:center;gap:var(--wk-space-1-5);margin:0;min-width:0;color:var(--text-1);overflow-wrap:anywhere}
+.side-actions{margin:0 0 var(--wk-space-3)}
+.side .hint{margin:0 0 var(--wk-space-3)}
+.side .list{margin:0}
 .empty[hidden]{display:none}
 .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:2rem;text-align:center;color:var(--text-3);z-index:1}
 .empty wk-callout{max-width:34rem;text-align:left}
