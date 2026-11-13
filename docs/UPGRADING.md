@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-11-13 belt: a custom guard with an empty command is a config error
 
-Change: thismoon #TBD. A `custom_guards.<name>.command` that is empty now fails config validation. This holds for a disabled entry too. A config that fails validation makes every `belt hook` call deny, so fix or remove such an entry before `ralph up` installs this belt.
+Change: thismoon #435. A `custom_guards.<name>.command` that is empty now fails config validation. This holds for a disabled entry too. A config that fails validation makes every `belt hook` call deny, so fix or remove such an entry before `ralph up` installs this belt.
 
 Run: `belt doctor` after `ralph up`.
 
