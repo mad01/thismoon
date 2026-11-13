@@ -26,6 +26,15 @@ type walkStep struct {
 	// prose marks a command taken from a comment or a heredoc body no shell
 	// runs (walkProse): its words are only text.
 	prose bool
+	// defines marks a command that defines a shell function
+	// (definesFunction), which may stand in for git or any later command.
+	defines bool
+	// before and after are the joints around the command. chain names the
+	// run of commands joined by && it belongs to in its own shell, so a later
+	// command with the same chain runs only if this one succeeded. A command
+	// from the token walk or a heredoc body has chain 0, in no run.
+	before, after joint
+	chain         int
 }
 
 // walkCommands is walkSegments with the whole step. It reads the command
@@ -43,7 +52,7 @@ type walkStep struct {
 // with a space oddSpace reports, is walked the token way (walkTokens).
 func walkCommands(command, cwd string, fn func(walkStep)) {
 	command = resolveLiteralVars(command)
-	w := shellWalk{dir: cwd, cdpath: os.Getenv("CDPATH") != ""}
+	w := shellWalk{dir: cwd, cdpath: os.Getenv("CDPATH") != "", chains: new(int)}
 	w.walkRead(command, true, fn)
 }
 
@@ -98,18 +107,33 @@ func (w *shellWalk) walkUnread(text string, fn func(walkStep)) {
 	w.walkTokens(loose, true, fn)
 }
 
-// walkCmds walks the commands readShell read from text.
+// walkCmds walks the commands readShell read from text. Each command's
+// heredoc bodies are judged with the command a pipe hands them to, if any.
 func (w *shellWalk) walkCmds(text string, cmds []shellCmd, fn func(walkStep)) {
-	for _, c := range cmds {
+	for i, c := range cmds {
 		if !w.prose {
 			w.join(c.before)
+			w.joinChain(c.before)
 		}
 		w.walkNested(text, c, fn)
 		if tokens := c.tokens(); len(tokens) > 0 {
-			w.walkWords(c, tokens, fn)
+			w.walkWords(text, c, tokens, fn)
 		}
 		w.heredoc = w.heredoc || len(c.docs) > 0
-		w.walkProse(text, c, fn)
+		var reader *shellCmd
+		if c.after == jointPipe && i+1 < len(cmds) {
+			reader = &cmds[i+1]
+		}
+		w.walkProse(text, c, reader, fn)
+	}
+}
+
+// joinChain takes the separator in front of the next command: anything but
+// && starts a new run of commands joined by && (walkStep.chain).
+func (w *shellWalk) joinChain(before joint) {
+	if before != jointAnd || w.chain == 0 {
+		*w.chains++
+		w.chain = *w.chains
 	}
 }
 
@@ -135,11 +159,12 @@ func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) {
 // expands nothing, so a backtick or $( ) in it is text. The shell runs the
 // $( ) and backticks of an unquoted body itself before the command reads it,
 // a ' or # in front of them included, since both are literal in a body, so
-// those bodies are walked as code wherever the body goes.
-func (w *shellWalk) walkProse(text string, c shellCmd, fn func(walkStep)) {
+// those bodies are walked as code wherever the body goes. reader is the
+// command a pipe after c hands its output to, nil when there is none.
+func (w *shellWalk) walkProse(text string, c shellCmd, reader *shellCmd, fn func(walkStep)) {
 	prose := w.prose
 	w.prose = true
-	runs := w.feeds || docRuns(c)
+	runs := w.feeds || docRuns(c, reader)
 	asProse := func(s walkStep) {
 		s.prose = true
 		fn(s)
@@ -166,13 +191,18 @@ func (w *shellWalk) walkProse(text string, c shellCmd, fn func(walkStep)) {
 }
 
 // docRuns reports whether a command may run the heredoc bodies it reads:
-// every command but cat, tee, head, tail, git commit and a gh pr, issue,
-// release, gist or api call, and one of those too when a pipe or a process
-// substitution may hand what it prints to something that runs it.
-func docRuns(c shellCmd) bool {
+// every command but cat, tee, head, tail, a git command that reads them as
+// its message (readsMessage) and a gh pr, issue, release, gist or api call,
+// and one of those too when a process substitution may hand what it prints
+// to something that runs it. A pipe may too, unless it runs from cat to
+// reader, a gh call that reads its standard input as body text (readsBody).
+func docRuns(c shellCmd, reader *shellCmd) bool {
 	words := stripWrappers(c.tokens())
-	if len(words) == 0 || c.after == jointPipe || handsOn(c) {
+	switch {
+	case len(words) == 0 || handsOn(c):
 		return true
+	case c.after == jointPipe:
+		return filepath.Base(words[0]) != "cat" || reader == nil || !readsBody(*reader)
 	}
 	switch filepath.Base(words[0]) {
 	case "cat", "tee", "head", "tail":
@@ -181,7 +211,7 @@ func docRuns(c shellCmd) bool {
 		return len(words) < 2 || !ghTextGroups[words[1]]
 	case "git":
 		g, ok := segmentGitCommand(words, "")
-		return !ok || g.sub != "commit"
+		return !ok || !readsMessage(g)
 	}
 	return true
 }
@@ -189,6 +219,50 @@ func docRuns(c shellCmd) bool {
 // ghTextGroups are the gh command groups whose heredoc input is a body, a
 // note or a request, never a script.
 var ghTextGroups = wordSet("pr issue release gist api")
+
+// ghBodyReaders are the gh subcommands that take their body from standard
+// input with --body-file - or -F -.
+var ghBodyReaders = wordSet("pr/create pr/comment pr/edit issue/create issue/comment")
+
+// readsBody reports whether a command is a ghBodyReaders call that reads its
+// body from standard input and pipes nothing on, so the text a pipe hands it
+// is a body no shell runs.
+func readsBody(c shellCmd) bool {
+	words := stripWrappers(c.tokens())
+	if len(words) < 3 || filepath.Base(words[0]) != "gh" || c.after == jointPipe || handsOn(c) {
+		return false
+	}
+	return ghBodyReaders[words[1]+"/"+words[2]] && readsStdinFile(words[3:], "--body-file", "-F")
+}
+
+// readsMessage reports whether a git command reads a heredoc on its standard
+// input as a message: git commit always, and git tag, git merge and git
+// notes add when -F - or --file=- names standard input as the message file.
+func readsMessage(g gitInvocation) bool {
+	switch g.sub {
+	case "commit":
+		return true
+	case "tag", "merge":
+		return readsStdinFile(g.args, "--file", "-F")
+	case "notes":
+		return len(g.args) > 0 && g.args[0] == "add" && readsStdinFile(g.args[1:], "--file", "-F")
+	}
+	return false
+}
+
+// readsStdinFile reports whether args name standard input as the file of
+// the option long or its short form: `-F -`, `-F-`, `--file -`, `--file=-`.
+func readsStdinFile(args []string, long, short string) bool {
+	for i, arg := range args {
+		switch {
+		case arg == short+"-", arg == long+"=-":
+			return true
+		case (arg == short || arg == long) && i+1 < len(args) && args[i+1] == "-":
+			return true
+		}
+	}
+	return false
+}
 
 // runsText reports whether a command may run the text a substitution in it
 // prints: a shell's -c script, eval, source or ., an interpreter, or a pipe
@@ -221,11 +295,13 @@ func handsOn(c shellCmd) bool {
 	return false
 }
 
-// walkWords handles one command's words: a cd moves the walk, anything else
-// reaches fn, and a shell -c script or an eval text is walked in turn.
-func (w *shellWalk) walkWords(c shellCmd, tokens []string, fn func(walkStep)) {
+// walkWords handles one command's words, read from text: a cd moves the
+// walk, anything else reaches fn, and a shell -c script or an eval text is
+// walked in turn. A function definition moves nothing, even one named cd.
+func (w *shellWalk) walkWords(text string, c shellCmd, tokens []string, fn func(walkStep)) {
 	w.cdpath = w.cdpath || mentionsName(strings.Join(tokens, " "), cdpathNames)
-	if target, ok := parseCd(tokens); ok {
+	defines := definesFunction(text, c, tokens)
+	if target, ok := parseCd(tokens); ok && !defines {
 		if target == "-" {
 			fn(walkStep{tokens: tokens, configEnv: w.configEnv})
 		}
@@ -242,7 +318,13 @@ func (w *shellWalk) walkWords(c shellCmd, tokens []string, fn func(walkStep)) {
 	for _, t := range c.targets {
 		targets = append(targets, t.token())
 	}
-	fn(walkStep{tokens: tokens, dir: dir, configEnv: w.configEnv, targets: targets})
+	step := walkStep{
+		tokens: tokens, dir: dir, configEnv: w.configEnv, targets: targets, defines: defines,
+	}
+	if !w.prose {
+		step.before, step.after, step.chain = c.before, c.after, w.chain
+	}
+	fn(step)
 	if at := inlineScriptAt(tokens); at >= 0 {
 		w.childFor(dir, tokens[:at]).walkRead(c.words[at].script(), true, fn)
 	}
@@ -250,6 +332,24 @@ func (w *shellWalk) walkWords(c shellCmd, tokens []string, fn func(walkStep)) {
 		w.walkEval(c, tokens, at, fn)
 	}
 }
+
+// definesFunction reports whether a command, read from text, defines a shell
+// function: a blank ( ) among its words (`name() { ...; }`, `name ( ) ...`,
+// zsh's `a b () ...` and anonymous `() { ...; }`), or the function keyword
+// where the command starts (`function name { ...; }`).
+func definesFunction(text string, c shellCmd, tokens []string) bool {
+	if slices.ContainsFunc(c.subshells, func(s span) bool {
+		return strings.TrimSpace(text[s.from:s.to]) == ""
+	}) {
+		return true
+	}
+	i := slices.IndexFunc(tokens, func(t string) bool { return !functionLeads[t] })
+	return i >= 0 && tokens[i] == "function"
+}
+
+// functionLeads are the reserved words that may stand in front of a function
+// definition in one command (`if x; then function f { ...; }; fi`).
+var functionLeads = wordSet("! { if then elif else while until do time")
 
 // walkEval walks the text eval runs. eval runs it in this shell, so the
 // variables it sets stay set, and a directory it moves to is unknown here.
@@ -273,7 +373,7 @@ func (w *shellWalk) walkEval(c shellCmd, tokens []string, at int, fn func(walkSt
 func (w *shellWalk) child(dir string) *shellWalk {
 	return &shellWalk{
 		dir: dir, cdpath: w.cdpath, gitEnv: w.gitEnv, configEnv: w.configEnv, heredoc: w.heredoc,
-		feeds: w.feeds, depth: w.depth + 1,
+		feeds: w.feeds, depth: w.depth + 1, chains: w.chains,
 	}
 }
 

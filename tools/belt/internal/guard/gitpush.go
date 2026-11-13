@@ -34,6 +34,9 @@ type GitPushMain struct {
 	// from the repo at dir, or "" when it cannot be determined. Injectable
 	// for tests.
 	resolvePushRemote func(dir, branch string) string
+	// resolveHasBranch reports whether the repo at dir has the local branch
+	// name (pushHeads.verify). Injectable for tests.
+	resolveHasBranch func(dir, name string) bool
 }
 
 // NewGitPushMain builds the guard with the real git-backed resolvers.
@@ -43,6 +46,7 @@ func NewGitPushMain(cfg config.Config) *GitPushMain {
 		resolveBranch:     gitCurrentBranch,
 		resolveRepo:       canonicalPushRepoAt,
 		resolvePushRemote: gitPushRemote,
+		resolveHasBranch:  gitHasBranch,
 	}
 }
 
@@ -85,7 +89,11 @@ func (g *GitPushMain) Check(in Input) *Denial {
 // shell may not be in that directory at all, after a cd that failed before a
 // `;` or one that found its target through CDPATH, and a push from a
 // directory with no repository fails anyway. A push from code the reader
-// could not follow goes to unreadDenial.
+// could not follow goes to unreadDenial. A git checkout or switch earlier in
+// the command may leave another branch checked out, so the push is judged on
+// each branch it may find (pushHeads.candidates). In an exempt repo those
+// switches never turn an allow into a denial: a push they would deny is
+// judged on the branch git reads, as if the command had no switch.
 func (g *GitPushMain) checkPush(push gitPush) *Denial {
 	switch {
 	case push.unread:
@@ -93,20 +101,65 @@ func (g *GitPushMain) checkPush(push gitPush) *Denial {
 	case push.dir == "":
 		return unknownDirDenial(push)
 	}
+	push.heads = push.heads.verified(
+		func(name string) bool { return g.resolveHasBranch(push.dir, name) },
+	)
+	for _, head := range push.heads.candidates() {
+		d := g.checkPushOn(push, head)
+		if d != nil && len(push.heads.switched) > 0 && g.pushExempt(push.dir) {
+			return g.checkPushOn(push, pushHead{fromRepo: true})
+		}
+		if d != nil {
+			return d
+		}
+	}
+	return nil
+}
+
+// checkPushOn judges a push with head as the current branch: the one git
+// reads in the push directory, or one a checkout or switch moved to. One the
+// guard could not read is unreadSwitchDenial; one on a default branch goes to
+// defaultBranchDenial.
+func (g *GitPushMain) checkPushOn(push gitPush, head pushHead) *Denial {
 	noBranch, current := false, ""
 	branch, unsure := push.targetBranch(func() string {
-		current = g.resolveBranch(push.dir)
+		current = head.name
+		if head.fromRepo {
+			current = g.resolveBranch(push.dir)
+		}
 		noBranch = current == ""
 		return current
 	})
 	switch {
+	case noBranch && !head.fromRepo:
+		return unreadSwitchDenial(head.move)
 	case noBranch:
 		return unknownDirDenial(push)
 	case unsure != "":
 		return unsureRefDenial(unsure)
 	case !defaultBranches[branch]:
 		return nil
-	case !g.pushExempt(push.dir):
+	}
+	return g.defaultBranchDenial(push, head, branch, current)
+}
+
+// defaultBranchDenial decides a push that lands on the default branch
+// branch. When that is the current branch, the reason says where it comes
+// from: a switch moved there (switchedDefaultDenial), or git reads it and a
+// switch before the push could not be sure (unsureSwitchDenial). An exempt
+// repo allows the push when it plainly goes to origin.
+func (g *GitPushMain) defaultBranchDenial(
+	push gitPush,
+	head pushHead,
+	branch, current string,
+) *Denial {
+	if !head.fromRepo && current == branch {
+		return switchedDefaultDenial(branch, head.move)
+	}
+	switch exempt := g.pushExempt(push.dir); {
+	case !exempt && current == branch && len(push.heads.switched) > 0:
+		return unsureSwitchDenial(branch, push.heads)
+	case !exempt:
 		return Reasonf(
 			GitPushMainID,
 			"pushing to %q is blocked on this machine (direct pushes to the default branch are never allowed here). "+
@@ -386,6 +439,9 @@ type gitPush struct {
 	// branchVars are the variables the command sets to the current branch
 	// (branchVars), so a refspec "$NAME" reads like HEAD.
 	branchVars map[string]bool
+	// heads are the branches the checkouts and switches before the push may
+	// leave checked out (gitInvocation.heads).
+	heads pushHeads
 }
 
 // targetBranch resolves which branch the push lands on. For explicit refspecs
@@ -488,7 +544,9 @@ var pushFlagsWithValue = map[string]bool{
 
 // parsePushArgs reads the remote and refspecs out of a parsed push.
 func parsePushArgs(c gitInvocation) gitPush {
-	push := gitPush{dir: c.dir, configured: c.configured, unread: c.unread, moved: c.moved}
+	push := gitPush{
+		dir: c.dir, configured: c.configured, unread: c.unread, moved: c.moved, heads: c.heads,
+	}
 	var positional []string
 	for i := 0; i < len(c.args); i++ {
 		tok := c.args[i]

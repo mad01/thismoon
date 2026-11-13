@@ -670,6 +670,42 @@ var heredocBodies = []struct {
 	},
 	{"commit -F -, quoted", "git commit -F - <<'EOF2'\nnever `git push origin main`\nEOF2", false},
 	{"escaped substitution, unquoted", "cat <<EOF2\nDon't \\$(git push origin main)\nEOF2", false},
+	// MAD-579: a body piped from cat into a gh call that reads it as its body,
+	// and the git subcommands that read a message with -F - or --file=-.
+	{
+		"cat piped into gh pr create",
+		"cat <<'EOF2' | gh pr create --title x --body-file -\nNever `git push origin main`.\nEOF2",
+		false,
+	},
+	{
+		"cat piped into gh pr comment",
+		"cat <<'EOF2' | gh pr comment 1 --body-file -\nNever `git push origin main`.\nEOF2",
+		false,
+	},
+	{
+		"cat piped into gh pr edit, -F -",
+		"cat <<'EOF2' | gh pr edit 1 -F -\nNever `git push origin main`.\nEOF2",
+		false,
+	},
+	{
+		"cat piped into gh issue create, = form",
+		"cat <<'EOF2' | gh issue create --title x --body-file=-\nNever `git push origin main`.\nEOF2",
+		false,
+	},
+	{
+		"cat piped into gh issue comment",
+		"cat <<'EOF2' | gh issue comment 1 --body-file -\nNever `git push origin main`.\nEOF2",
+		false,
+	},
+	{"tag -F -", "git tag -a v1 -F - <<'EOF2'\nNever `git push origin main`.\nEOF2", false},
+	{"tag --file=-", "git tag -a v1 --file=- <<'EOF2'\nNever `git push origin main`.\nEOF2", false},
+	{"notes add -F -", "git notes add -F - <<'EOF2'\nNever `git push origin main`.\nEOF2", false},
+	{
+		"commit --amend -F -",
+		"git commit --amend -F - <<'EOF2'\nNever `git push origin main`.\nEOF2",
+		false,
+	},
+	{"merge -F -", "git merge -F - fix/x <<'EOF2'\nNever `git push origin main`.\nEOF2", false},
 
 	{"unquoted, apostrophe then backticks", "cat <<EOF2\nDon't `git push origin main`\nEOF2", true},
 	{
@@ -702,6 +738,22 @@ var heredocBodies = []struct {
 	{"cat into bash -c", "bash -c \"$(cat <<'EOF'\n(git push origin main)\nEOF\n)\"", true},
 	{"cat into eval", "eval \"$(cat <<'EOF'\n`git push origin main`\nEOF\n)\"", true},
 	{"tee into a process substitution", "tee >(sh) <<'EOF'\n(git push origin main)\nEOF", true},
+	{
+		"cat piped into gh, then into sh",
+		"cat <<'EOF2' | gh pr create --title x --body-file - | sh\nNever `git push origin main`.\nEOF2",
+		true,
+	},
+	{
+		"cat piped into gh that reads no body",
+		"cat <<'EOF2' | gh pr create --title x --body y\nNever `git push origin main`.\nEOF2",
+		true,
+	},
+	{
+		"tag -F - piped into sh",
+		"git tag -a v1 -F - <<'EOF2' | sh\n`git push origin main`\nEOF2",
+		true,
+	},
+	{"tag without -F -", "git tag -a v1 <<'EOF2'\nNever `git push origin main`.\nEOF2", true},
 }
 
 func TestGitGuardsHeredocBodies(t *testing.T) {

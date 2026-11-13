@@ -165,13 +165,35 @@ denied like a plain one. In a command it cannot read to the end, the whole
 lines before the broken one are read in full, because bash runs them. A push
 in the rest is denied unless it names a non-default branch in plain text. A
 heredoc body that `cat`, `tee`, `head`, `tail`, `git commit` or `gh` only
-reads is text: a backtick or `$( )` in a quoted body passes, while those in
-an unquoted body run in the shell and are read as code. A body any other
-command reads, or one piped on, is read as code. A refspec with a variable,
+reads is text, and so is one that `git tag`, `git merge` or `git notes add`
+reads with `-F -`: a backtick or `$( )` in a quoted body passes, while those
+in an unquoted body run in the shell and are read as code. A body any other
+command reads, or one piped on, is read as code. The one pipe that keeps it
+text runs from `cat` into a `gh pr` or `gh issue` call that reads its body
+with `--body-file -` and pipes nothing on. A refspec with a variable,
 a substitution, `$'...'`, a brace or a glob is denied too, since it may name
 main. `"$(git branch --show-current)"` reads as the current branch, and so
 does `"$B"` after a lone top-level `B=$(git branch --show-current)` when
-nothing in the command can change B or move the shell. `@` reads as `HEAD`
+nothing in the command can change B or move the shell. A `git checkout` or
+`git switch` earlier in the command, in the push's own directory, changes
+the current branch a later push reads. A switch to main or master counts as
+that branch, and one belt cannot read (a variable, `-`, `--detach`) is
+denied, except in an exempt repo, where a switch never turns an allow into
+a denial. The branch from before the command still counts, unless a sure
+switch (`git switch`, `git checkout -b`, or `git checkout <name>` for a
+branch the repo has) runs as git itself, without `!`, and `&&` alone joins
+it to the push. Every step between them and every step after the push must
+be on one list: git `add`, `commit`, `fetch`, `pull`, `merge`, `status`,
+`log`, `diff`, `rebase` with at most one upstream, a read of the current
+branch, or a read-only command such as `echo` or `cat`. A git step on that
+list does not count with a `-c` override of its own, an `--output` option or
+a word that names a path inside `.git`. Anything else, an unknown command
+included, keeps the branch from before the command, and so does a shell
+function defined anywhere in the command (`name() { ...; }` or
+`function name { ...; }`), since it may stand in for git or a listed step. For
+`git checkout <name>` belt runs one git call, `git for-each-ref` in the
+push's directory with a 2 second timeout; an error or a timeout counts as
+no branch. `@` reads as `HEAD`
 and `heads/main` as `refs/heads/main`. The repo exemption applies only when
 the push target is plainly `origin`: a URL, a second remote,
 `-c remote.origin.pushurl=`, `-c url.*.pushInsteadOf=` or a `GIT_CONFIG*`
