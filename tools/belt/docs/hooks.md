@@ -784,7 +784,8 @@ external command, no Go required.
 - `custom_guards.<name>.event` is required and accepts `bash` and `write`
   only; there is no custom guard on `external-text`. A missing or
   misspelled one is a config error rather than a guard that registers and
-  never fires.
+  never fires. So is an empty `command`: a guard that runs nothing checks
+  nothing.
 
 ## Overriding, allowing, and disabling
 
@@ -1046,8 +1047,10 @@ Injects the shared agent-memory index when a session opens.
   runs `belt hint session-start --agent claude-code`. Claude Code's
   `autoMemoryDirectory` setting makes it load that directory's `MEMORY.md`
   on its own. When the setting names a store's directory, the hint skips
-  that store, so its index does not load twice. `settings.local.json` wins
-  over `settings.json`. A leading `~` is expanded and symlinks are resolved
+  that store, so its index does not load twice. belt lets
+  `~/.claude/settings.local.json` win over `~/.claude/settings.json`. Claude
+  Code's settings docs list only `settings.json` as the user file in
+  `~/.claude`, and name `settings.local.json` only inside a project. A leading `~` is expanded and symlinks are resolved
   on both sides, so a store linked into a synced folder still matches. The
   store left out counts as absent, and the other store gets the whole
   budget. A missing setting, broken JSON, or a path that does not resolve
@@ -1055,9 +1058,11 @@ Injects the shared agent-memory index when a session opens.
   are injected, which is what Codex and pi need. `belt doctor` prints one
   line for a store the flag would leave out. The line also says when a
   SessionStart entry in the Claude settings runs the hint without the flag.
-  Install a belt that knows the flag before a settings entry passes it: an
-  older belt fails on the unknown flag and the session starts with no
-  session-start hints.
+  It reads the entry the way belt parses its arguments, so the flag may sit
+  before or after the event, a `--config` may sit before `hint`, and the
+  binary may be named by a full path. Install a belt that knows the flag
+  before a settings entry passes it: an older belt fails on the unknown flag
+  and the session starts with no session-start hints.
 - **Posts no event** per fire: it injects the same text every session.
 - **No per-session dedupe** on purpose: the index is the thing to see every
   session.

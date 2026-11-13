@@ -74,11 +74,14 @@ type Seat = {
   sessionId: string
   // Stands for belt or the person: a command it refuses never runs.
   deniesBash: (command: string) => boolean
+  // What the Agent tool answers: a finished agent and the worktree it names,
+  // a background launch, or a refusal.
+  agent: 'completed' | 'background' | 'denied'
 }
 
 // The engine beneath the plugin.
 function seat(on: On, repo: Repo, cwd: string, answer: Seat['answer'] = 'Proceed'): Seat {
-  const seated: Seat = { asked: [], answer, sessionId: 's-self', deniesBash: () => false }
+  const seated: Seat = { asked: [], answer, sessionId: 's-self', deniesBash: () => false, agent: 'completed' }
   mock.env(on, { HOME })
   on('session.id', () => ({ value: seated.sessionId }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
@@ -104,6 +107,13 @@ function seat(on: On, repo: Repo, cwd: string, answer: Seat['answer'] = 'Proceed
   on('tool.call', { tool: 'Bash' }, (_$, e) =>
     seated.deniesBash(e.command) ? { deny: 'belt[test]: refused' } : { result: { stdout: '', stderr: '', interrupted: false } },
   )
+  on('tool.call', { tool: 'Agent' }, () => {
+    if (seated.agent === 'denied') return { deny: 'belt[test]: refused' }
+    if (seated.agent === 'background') {
+      return { result: { status: 'async_launched', agentId: 'a2', description: 'build', prompt: 'p', outputFile: '/tmp/a2' } }
+    }
+    return { result: finishedAgent(ISOLATED) }
+  })
   on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
     const question = e.questions[0]?.question ?? ''
     seated.asked.push(question)
@@ -111,6 +121,33 @@ function seat(on: On, repo: Repo, cwd: string, answer: Seat['answer'] = 'Proceed
     return { result: { questions: e.questions, answers: { [question]: seated.answer } } }
   })
   return seated
+}
+
+// The isolation worktree the Agent tool made for agent a2, as its finished
+// result names it.
+const ISOLATED = `${CANONICAL}/.claude/worktrees/agent-a2`
+
+function finishedAgent(worktreePath: string) {
+  return {
+    agentId: 'a2',
+    content: [{ type: 'text' as const, text: 'done' }],
+    totalToolUseCount: 1,
+    totalDurationMs: 1,
+    totalTokens: 1,
+    usage: {
+      input_tokens: 1,
+      output_tokens: 1,
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: null,
+      server_tool_use: null,
+      service_tier: null,
+      cache_creation: null,
+    },
+    status: 'completed' as const,
+    prompt: 'p',
+    worktreePath,
+    worktreeBranch: 'worktree-agent-a2',
+  }
 }
 
 const refusalOf = (ran: { deny?: string; isError?: true; text?: string }): string | undefined =>
@@ -189,6 +226,38 @@ test('another session never inherits the record: after an in-process /resume the
   seated.sessionId = 's-resumed'
   await $.turn.start({ text: '', turnId: 't2' })
   expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BUILDER }))).toMatch(/feat-builder belongs to another worktree/)
+})
+
+const PUSH_ISOLATED = `git -C ${ISOLATED} log origin/main..HEAD && git -C ${ISOLATED} push -u origin worktree-agent-a2`
+const SPAWN = { tool: 'Agent', description: 'build', prompt: 'p', isolation: 'worktree' } as const
+
+test('the main loop pushes from the isolation worktree its Agent call made, and writes nothing there', async ($, on) => {
+  seat(on, { dirty: [], ahead: 0, remoteAhead: 0 }, OWN)
+  await $.session.start({ cwd: OWN, surface: null, isInteractive: true })
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_ISOLATED }))).toMatch(/belongs to the canonical checkout/)
+
+  expect(refusalOf(await $.tool.call(SPAWN))).toBeUndefined()
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_ISOLATED }))).toBeUndefined()
+
+  const commit = await $.tool.call({ tool: 'Bash', command: `git -C ${ISOLATED} commit -m x` })
+  expect(refusalOf(commit)).toMatch(/agent-a2 belongs to the canonical checkout/)
+  const write = await $.tool.call({ tool: 'Write', file_path: `${ISOLATED}/README.md`, content: 'x' })
+  expect(refusalOf(write)).toMatch(/agent-a2\/README.md belongs to the canonical checkout/)
+})
+
+test('an Agent call without isolation, a background launch or a refused spawn records nothing', async ($, on) => {
+  const seated = seat(on, { dirty: [], ahead: 0, remoteAhead: 0 }, OWN)
+  await $.session.start({ cwd: OWN, surface: null, isInteractive: true })
+  await $.tool.call({ tool: 'Agent', description: 'build', prompt: 'p' })
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_ISOLATED }))).toMatch(/belongs to the canonical checkout/)
+
+  seated.agent = 'background'
+  expect(refusalOf(await $.tool.call(SPAWN))).toBeUndefined()
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_ISOLATED }))).toMatch(/belongs to the canonical checkout/)
+
+  seated.agent = 'denied'
+  expect(refusalOf(await $.tool.call(SPAWN))).toMatch(/belt\[test\]/)
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_ISOLATED }))).toMatch(/belongs to the canonical checkout/)
 })
 
 test('guards off lets every call through', { options: { guards: false } }, async ($, on) => {

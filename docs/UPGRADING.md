@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-13 belt: a custom guard with an empty command is a config error
+
+Change: thismoon #435. A `custom_guards.<name>.command` that is empty now fails config validation. This holds for a disabled entry too. A config that fails validation makes every `belt hook` call deny, so fix or remove such an entry before `ralph up` installs this belt.
+
+Run: `belt doctor` after `ralph up`.
+
+Verify: `belt doctor` shows no config error.
+
 ## 2026-11-12 belt: `git-c-read` answers allow for read-only `git -C` calls
 
 Change: thismoon #429. belt gains its first allow (docs/adr/0032). With it on, `belt hook bash` answers allow for a Bash call made only of read-only `git -C <dir> <subcommand>` commands whose dir sits inside the session's repo or a listed root, so the call skips the permission prompt. It is off until a machine's belt config turns it on: `ralph up` alone changes nothing.

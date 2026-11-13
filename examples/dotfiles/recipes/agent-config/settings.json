@@ -62,7 +62,7 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "~/code/bin/belt hint session-start" },
+          { "type": "command", "command": "~/code/bin/belt hint session-start --agent claude-code" },
           { "type": "command", "command": "~/code/bin/belt watch", "asyncRewake": true, "timeout": 590 }
         ]
       }

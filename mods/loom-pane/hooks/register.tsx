@@ -16,6 +16,7 @@ import {
   isLive,
   isRefreshDue,
   isWeaveArgs,
+  isolationWorktreeFrom,
   loomArgsOf,
   membersFrom,
   mergeTreeArgs,
@@ -52,7 +53,8 @@ const members = atom({ plugin: 'loom-pane', key: 'members' } as const, [] as Loo
 // next main-loop turn detects again.
 const detectedSession = atom({ plugin: 'loom-pane', key: 'sessionId' } as const, null as string | null)
 // The worktrees this session created with `git worktree add`, in the main
-// loop or a subagent: the owner guard lets the main loop push from them.
+// loop or a subagent, or that a foreground Agent call with isolation made:
+// the owner guard lets the main loop push from them.
 // Emptied when the session changes, so another session never inherits it.
 const createdWorktrees = atom({ plugin: 'loom-pane', key: 'createdWorktrees' } as const, [] as string[])
 
@@ -460,6 +462,26 @@ export const register: Register = (on, options) => {
       if (isMainLoop) await claimOwner($, analysis.claims)
     } catch (err) {
       $.ui.log(`loom-pane: claim not recorded (${errorText(err)})`, { to: 'debug' })
+    }
+    return ran
+  }).catch(skipOnFailure)
+
+  // An Agent call with `isolation: 'worktree'` makes a worktree for its agent,
+  // and a foreground agent's result names it once the agent is done. It joins
+  // the record a `git worktree add` writes, so the main loop may push the
+  // branch that agent committed. A background launch names no path, so it
+  // records nothing. The agent runs inside next(e): a failure after it is
+  // logged, never handed to .catch, which would run the agent again.
+  on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+    if (e.isolation !== 'worktree') return next(e)
+    const layout = await layoutOf($)
+    const ran = await next(e)
+    if (ran.deny !== undefined || ran.isError === true) return ran
+    try {
+      const path = isolationWorktreeFrom(e.isolation, ran.result)
+      if (path !== null) await recordCreated($, [path], layout)
+    } catch (err) {
+      $.ui.log(`loom-pane: isolation worktree not recorded (${errorText(err)})`, { to: 'debug' })
     }
     return ran
   }).catch(skipOnFailure)

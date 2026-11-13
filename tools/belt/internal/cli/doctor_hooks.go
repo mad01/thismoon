@@ -76,17 +76,84 @@ func readMatcherWarning(reads []config.ClaudeHook) string {
 	)
 }
 
-// runsBeltHintRead reports whether a hook command runs `belt hint read`:
-// a word whose base name is belt, followed by hint and read.
+// runsBeltHintRead reports whether a hook command runs `belt hint read`,
+// read by beltHint.
 func runsBeltHintRead(command string) bool {
+	_, ok := beltHint(command, hint.EventRead)
+	return ok
+}
+
+// beltHint reports whether a hook command runs `belt hint <event>`, with
+// the --agent value lowercased as the hint command reads it. The binary is
+// any word whose base name is belt, quotes trimmed, so a full path counts.
+// After it the words are read the way belt parses its arguments: a flag may
+// sit before hint or before the event, and one written without = takes the
+// next word as its value. A shell operator ends the command, since the
+// words after it belong to another one. A chain of commands is searched
+// past a hint for another event, and the first hint for this one answers.
+func beltHint(command, event string) (agent string, ok bool) {
 	words := strings.Fields(command)
-	for i := 0; i+2 < len(words); i++ {
-		if filepath.Base(words[i]) == "belt" && words[i+1] == "hint" && words[i+2] == "read" {
-			return true
+	for i, word := range words {
+		if filepath.Base(unquote(word)) != "belt" {
+			continue
+		}
+		args, flags := beltArgs(firstCommand(words[i+1:]))
+		if len(args) >= 2 && args[0] == "hint" && strings.EqualFold(args[1], event) {
+			return strings.ToLower(flags["agent"]), true
 		}
 	}
-	return false
+	return "", false
 }
+
+// beltBoolFlags are the belt flags that take no value, so the word after
+// one is an argument.
+var beltBoolFlags = map[string]bool{"h": true, "help": true}
+
+// beltArgs splits the words after the belt binary into positional
+// arguments and flag values by flag name. A word after -- is an argument,
+// and a value written after = has its own quotes trimmed.
+func beltArgs(words []string) (args []string, flags map[string]string) {
+	flags = map[string]string{}
+	for i := 0; i < len(words); i++ {
+		word := unquote(words[i])
+		if word == "--" {
+			for _, w := range words[i+1:] {
+				args = append(args, unquote(w))
+			}
+			break
+		}
+		if len(word) < 2 || word[0] != '-' {
+			args = append(args, word)
+			continue
+		}
+		name, value, inline := strings.Cut(strings.TrimLeft(word, "-"), "=")
+		value = unquote(value)
+		if !inline && !beltBoolFlags[name] && i+1 < len(words) {
+			i++
+			value = unquote(words[i])
+		}
+		flags[name] = value
+	}
+	return args, flags
+}
+
+// firstCommand cuts the words at the first shell operator: &&, ||, a pipe,
+// a background &, or a ; on its own or at the end of a word.
+func firstCommand(words []string) []string {
+	for i, word := range words {
+		switch word {
+		case "&&", "||", "|", "&", ";":
+			return words[:i]
+		}
+		if before, found := strings.CutSuffix(word, ";"); found {
+			return append(slices.Clone(words[:i]), before)
+		}
+	}
+	return words
+}
+
+// unquote trims the shell quotes around a word.
+func unquote(word string) string { return strings.Trim(word, `"'`) }
 
 // matcherSeesCSLRead reports whether a Claude Code hook matcher matches
 // csl_read under some MCP server name. It follows Claude Code's matcher

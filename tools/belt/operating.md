@@ -57,7 +57,8 @@ would silently disarm every guard.
 
 Validation covers the values that parse and then do nothing:
 
-- a `custom_guards.<name>.event` outside bash/write;
+- a `custom_guards.<name>` entry with an event outside bash/write, or an
+  empty command;
 - a `custom_hints.<name>` entry with an event other than session-start or
   subagent-start, an empty command, or a built-in hint's name;
 - an `agent_types` list on a custom hint that is empty, not on

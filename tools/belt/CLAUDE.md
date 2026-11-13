@@ -41,7 +41,7 @@ The config is standalone and has no machine-profile concept (docs/adr/0010). bel
 
 A missing config file yields the armed defaults with no error. A config file that is present and fails to parse or validate is an error `config.Load` returns. So is a names file listed under `internal_names.include` that is missing or broken. `belt hook` turns either into a `belt[config]:` deny on every tool call. belt cannot distinguish "no rules" from "the rules did not load", so it blocks rather than run unarmed (`doctor` and `config` still print, flagging that the state shown is the defaults). Validation covers the keys that parse and then do nothing:
 
-- a `custom_guards.<name>.event` outside `bash`/`write`;
+- a `custom_guards.<name>` entry whose event is outside `bash`/`write` or whose command is empty;
 - a `custom_hints.<name>` entry whose event is not `session-start` or `subagent-start`, whose command is empty, or whose name shadows a built-in hint;
 - a `custom_hints.<name>.agent_types` key on a hint not on `subagent-start`, or one that is empty or holds a blank entry or one with a `*` before its end;
 - `mode:` values that are neither `hard` nor `soft` or that sit on a guard outside `config.SoftModeGuards`;

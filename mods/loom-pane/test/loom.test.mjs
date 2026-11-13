@@ -14,6 +14,7 @@ import {
   detectLayout,
   isIntegratedTree,
   isWeaveArgs,
+  isolationWorktreeFrom,
   loomArgsOf,
   mergeTreeArgs,
   ownerClaimFrom,
@@ -196,6 +197,23 @@ describe('classifyPath', () => {
 
 describe('worktrees the session created', () => {
   const BUILDER = `${ROOT}/feat-builder`
+
+  test('an Agent call with isolation: worktree records the path its result names', () => {
+    const isolated = `${CANONICAL}/.claude/worktrees/agent-a2`
+    assert.equal(isolationWorktreeFrom('worktree', { status: 'completed', worktreePath: `${isolated}/` }), isolated)
+    assert.equal(isolationWorktreeFrom('worktree', { status: 'completed', worktreePath: `${isolated}/../agent-a2` }), isolated)
+  })
+
+  test('no isolation, no path, a background launch or a relative path records nothing', () => {
+    const named = { status: 'completed', worktreePath: `${CANONICAL}/.claude/worktrees/agent-a2` }
+    assert.equal(isolationWorktreeFrom(undefined, named), null)
+    assert.equal(isolationWorktreeFrom('remote', named), null)
+    assert.equal(isolationWorktreeFrom('worktree', { status: 'completed' }), null)
+    assert.equal(isolationWorktreeFrom('worktree', { status: 'async_launched', agentId: 'a2' }), null)
+    assert.equal(isolationWorktreeFrom('worktree', { worktreePath: '.claude/worktrees/agent-a2' }), null)
+    assert.equal(isolationWorktreeFrom('worktree', { worktreePath: 7 }), null)
+    assert.equal(isolationWorktreeFrom('worktree', null), null)
+  })
 
   test('a push from a created worktree is the session own; any other worktree stays another', () => {
     assert.equal(classifyPush(BUILDER, layout, [BUILDER]), 'own')

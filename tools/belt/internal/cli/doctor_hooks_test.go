@@ -145,10 +145,169 @@ func TestRunsBeltHintRead(t *testing.T) {
 		{"suspenders hint read", false},
 		{"belt hint", false},
 		{"", false},
+		{"belt hint session-start; belt hint read", true},
+		{"belt hint session-start && ~/code/bin/belt hint read", true},
 	}
 	for _, tt := range tests {
 		if got := runsBeltHintRead(tt.command); got != tt.want {
 			t.Errorf("runsBeltHintRead(%q) = %v, want %v", tt.command, got, tt.want)
 		}
+	}
+}
+
+// TestBeltHint: a hook command is read the way the belt binary parses its
+// arguments, so a flag before the event, a global flag before hint, and a
+// full path to the binary all count, while words after a shell operator
+// belong to another command. Each case asks for one event, and a chain of
+// commands is searched for that event past a hint for another one.
+func TestBeltHint(t *testing.T) {
+	tests := []struct {
+		name, command string
+		wantOK        bool
+		event, agent  string // event is the one asked for
+	}{
+		{"plain", "belt hint session-start", true, "session-start", ""},
+		{
+			"flag after the event",
+			"belt hint session-start --agent claude-code",
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{
+			"flag as one word",
+			"belt hint session-start --agent=claude-code",
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{
+			"flag before the event",
+			"belt hint --agent claude-code session-start",
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{
+			"one-word flag before the event",
+			"belt hint --agent=claude-code session-start",
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{
+			"global flag before hint",
+			"belt --config /x/config.yaml hint session-start --agent claude-code",
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{
+			"one-word global flag",
+			"belt --config=/x/config.yaml hint --agent claude-code session-start",
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{
+			"full path",
+			"/Users/me/code/bin/belt hint session-start --agent claude-code",
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{
+			"quoted path",
+			`"$HOME/code/bin/belt" hint session-start --agent claude-code`,
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{
+			"agent and event lowercased",
+			"belt hint Session-Start --agent Claude-Code",
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{"env prefix", "env BELT_CONFIG=/x belt hint read", true, "read", ""},
+		{
+			"second command",
+			"belt watch && belt hint session-start --agent claude-code",
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{
+			"flag after an operator",
+			"belt hint session-start && echo --agent claude-code",
+			true,
+			"session-start",
+			"",
+		},
+		{
+			"flag after a semicolon",
+			"belt hint session-start; echo --agent claude-code",
+			true,
+			"session-start",
+			"",
+		},
+		{
+			"double-quoted flag value",
+			`belt hint session-start --agent="claude-code"`,
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{
+			"single-quoted flag value",
+			`belt hint --agent='claude-code' session-start`,
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{
+			"asked event after another hint",
+			"belt hint session-start; belt hint read",
+			true,
+			"read",
+			"",
+		},
+		{
+			"asked event after another hint, no flag",
+			"belt hint read && belt hint session-start",
+			true,
+			"session-start",
+			"",
+		},
+		{
+			"first hint for the asked event wins",
+			"belt hint read && belt hint session-start --agent claude-code && belt hint session-start",
+			true,
+			"session-start",
+			"claude-code",
+		},
+		{"another event", "belt hint read", false, "session-start", ""},
+		{
+			"global flag eats the next word",
+			"belt --config hint session-start",
+			false,
+			"session-start",
+			"",
+		},
+		{"no event", "belt hint", false, "read", ""},
+		{"another command", "belt hook read", false, "read", ""},
+		{"another binary", "suspenders hint read", false, "read", ""},
+		{"binary named like belt", "belt-wrapper hint read", false, "read", ""},
+		{"empty", "", false, "read", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agent, ok := beltHint(tt.command, tt.event)
+			if ok != tt.wantOK || agent != tt.agent {
+				t.Errorf("beltHint(%q, %q) = %q, %v; want %q, %v",
+					tt.command, tt.event, agent, ok, tt.agent, tt.wantOK)
+			}
+		})
 	}
 }
