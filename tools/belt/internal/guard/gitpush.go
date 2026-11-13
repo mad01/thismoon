@@ -402,7 +402,8 @@ func (p gitPush) targetBranch(currentBranch func() string) (branch, unsure strin
 	for _, spec := range p.refspecs {
 		if !plainRefspec(spec) {
 			name, isVar := refspecVar(spec)
-			if p.moved || !(currentBranchWord(spec) || isVar && p.branchVars[name]) {
+			readsAsCurrent := currentBranchWord(spec) || (isVar && p.branchVars[name])
+			if p.moved || !readsAsCurrent {
 				unsure = cmp.Or(unsure, spec)
 				continue
 			}
