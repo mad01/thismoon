@@ -1,0 +1,38 @@
+# Security updates only. Dependabot security updates, a repository setting,
+# open a pull request when an advisory hits a dependency listed here. The zero
+# open-pull-requests-limit turns weekly version updates off, so nothing else
+# arrives. docs/SECURITY-UPDATES.md has the reasoning.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: fix
+      include: scope
+
+  - package-ecosystem: npm
+    directories:
+      - /webkit
+      - /services/brain/web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: fix
+      include: scope
+
+  # "/" covers .github/workflows only, so the composite actions are listed.
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/go-cache
+      - /.github/actions/present-image
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: ci
+      include: scope

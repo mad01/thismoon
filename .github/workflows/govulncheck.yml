@@ -1,0 +1,34 @@
+name: govulncheck
+
+# Reports known vulnerabilities in code thismoon calls, from the Go standard
+# library and from Go modules. It runs on pull requests that change go.mod or
+# go.sum, and weekly, because a new advisory can land with no code change. It
+# stays out of ci-ok, so a new advisory turns this check red without blocking
+# unrelated merges. docs/SECURITY-UPDATES.md says how to respond.
+
+on:
+  pull_request:
+    paths:
+      - go.mod
+      - go.sum
+      - .github/workflows/govulncheck.yml
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    # The darwin build is the one that ships (docs/adr/0007), and csl needs cgo.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...

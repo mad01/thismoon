@@ -46,6 +46,8 @@ docs/MEMORY-STACK.md    memory stores (auto memory, agent-memory, worklog,
 docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
 docs/UPGRADING.md       actions a change needs on consuming machines (newest
              first), added in the same PR as the change
+docs/SECURITY-UPDATES.md how a dependency advisory reaches a fix: govulncheck,
+             Dependabot security updates, and the Go version bump
 docs/SANDBOXING.md      srt sandboxing: a walkthrough for sandboxing a new process,
              then the srt-run launcher, access manifests and the settings
              files rendered from them, the machine-local expansion layer,
