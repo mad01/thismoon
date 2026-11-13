@@ -60,11 +60,69 @@
     return fetch(url, opts);
   }
 
-  async function withButton(btn, label, fn) {
+  // runAction sends one request for the action button btn the user pressed,
+  // then re-renders on success or toasts failText on failure. While the
+  // request runs, btn is marked busy with aria-disabled rather than the
+  // disabled property, which would blur it, and a second press is ignored.
+  // When btn had focus and still holds it once the request returns (or the
+  // poll replaced it and focus fell to the body), focus follows focusPlan
+  // into the new DOM; a press without focus never moves it.
+  async function runAction(btn, label, failText, request) {
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    var plan = document.activeElement === btn ? focusPlan(btn) : null;
     var prev = btn.textContent;
-    btn.disabled = true; btn.textContent = label;
-    try { await fn(); }
-    finally { btn.disabled = false; btn.textContent = prev; }
+    btn.setAttribute('aria-disabled', 'true'); btn.textContent = label;
+    try {
+      var res = await request();
+      if (!res.ok) { toast(failText + ': ' + (await res.text()), 'err'); return; }
+      var keep = plan && (document.activeElement === btn
+        || (!btn.isConnected && document.activeElement === document.body));
+      await refresh();
+      if (keep) restoreFocus(plan);
+    } finally { btn.removeAttribute('aria-disabled'); btn.textContent = prev; }
+  }
+
+  // ── focus across a re-render ──
+  // render() replaces every node, so focus on a control falls to the body and
+  // the next Tab starts at the top of the page. focusPlan, read before the
+  // re-render, lists where focus goes after it, best first: the same control
+  // (same data-action and key), the action controls after it in its list,
+  // the list's heading, the list itself, then Rescan all. Lists carry
+  // data-list and their heading data-list-heading with the same name.
+  var CONTROL_KEYS = ['data-key', 'data-repo', 'data-eco'];
+  var FOCUSABLE = 'a[href], button, summary, input, select, textarea, [tabindex]';
+
+  function controlSelector(el) {
+    return CONTROL_KEYS.reduce(function (sel, attr) {
+      return el.hasAttribute(attr) ? sel + '[' + attr + '="' + CSS.escape(el.getAttribute(attr)) + '"]' : sel;
+    }, '[data-action="' + CSS.escape(el.dataset.action) + '"]');
+  }
+
+  function focusPlan(ctl) {
+    var plan = [controlSelector(ctl)];
+    var list = ctl.closest('[data-list]');
+    if (list) {
+      list.querySelectorAll('[data-action]').forEach(function (el) {
+        if (ctl.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) plan.push(controlSelector(el));
+      });
+      var name = CSS.escape(list.dataset.list);
+      plan.push('[data-list-heading="' + name + '"]', '[data-list="' + name + '"]');
+    }
+    plan.push('[data-action="rescan-all"]');
+    return plan;
+  }
+
+  // restoreFocus focuses the first entry of plan that is in the page and can
+  // take focus. A heading or list that the keyboard does not reach gets
+  // tabindex="-1", so it can hold focus without becoming a tab stop.
+  function restoreFocus(plan) {
+    for (var i = 0; i < plan.length; i++) {
+      var el = document.querySelector(plan[i]);
+      if (!el) continue;
+      if (!el.matches(FOCUSABLE)) el.setAttribute('tabindex', '-1');
+      el.focus();
+      if (document.activeElement === el) return;
+    }
   }
 
   // ── time helpers (mirror render.go) ──
@@ -553,7 +611,7 @@
       })));
 
       if (v.repos.length) {
-        nodes.push(Webkit.el('div', { class: 'repos' }, v.repos.map(repoChip)));
+        nodes.push(Webkit.el('div', { class: 'repos', 'data-list': 'repos' }, v.repos.map(repoChip)));
       }
 
       // Filters compose: selected repos AND selected ecosystems narrow the
@@ -562,7 +620,7 @@
       var ecos = selectedEcos();
       var inFilter = currentFilter();
       if (sel.length || ecos.length) {
-        nodes.push(Webkit.el('div', { class: 'filterbar' }, [
+        nodes.push(Webkit.el('div', { class: 'filterbar', 'data-list': 'filters' }, [
           Webkit.el('span', {}, 'Showing ' + sel.map(basename).concat(ecos).join(', ')),
           Webkit.el('button', { class: 'btn btn-ghost', 'data-action': 'clear-filter' }, 'Clear filter')
         ]));
@@ -579,9 +637,9 @@
       var signalList = v.signals.filter(inFilter);
 
       if (v.active.length) {
-        nodes.push(Webkit.el('div', { class: 'sec-title' }, 'Active findings'));
+        nodes.push(Webkit.el('div', { class: 'sec-title', 'data-list-heading': 'active' }, 'Active findings'));
         if (activeList.length) {
-          nodes.push(Webkit.el('div', { class: 'flag-list' }, activeList.map(activeCard)));
+          nodes.push(Webkit.el('div', { class: 'flag-list', 'data-list': 'active' }, activeList.map(activeCard)));
         } else {
           nodes.push(Webkit.el('div', { class: 'note' }, 'No active findings for the selected repos.'));
         }
@@ -607,10 +665,11 @@
           signalAttrs.open = '';
         }
         nodes.push(Webkit.el('details', signalAttrs, [
-          Webkit.el('summary', { class: 'sec-title ack-summary' }, 'Warning signs · ' + signalList.length),
+          Webkit.el('summary', { class: 'sec-title ack-summary', 'data-list-heading': 'signals' },
+            'Warning signs · ' + signalList.length),
           Webkit.el('div', { class: 'note' },
             'Not advisories: signs worth a look that never alert and never count as active.'),
-          Webkit.el('div', { class: 'flag-list ack-list' }, signalList.map(signalCard))
+          Webkit.el('div', { class: 'flag-list ack-list', 'data-list': 'signals' }, signalList.map(signalCard))
         ]));
       }
 
@@ -677,36 +736,28 @@
     }).then(render);
   }
 
-  // renderKeepingFocus re-renders after a filter toggle the user made. render()
-  // replaces every node, so when the toggled control had focus, focus moves to
-  // the control with the same action and the same value of attr (data-repo,
-  // data-eco) in the new DOM; otherwise it falls to the body and the next Tab
-  // starts at the top of the page. Only click handlers call it: the poll
-  // re-render never moves focus.
-  function renderKeepingFocus(ctl, attr) {
-    var hadFocus = document.activeElement === ctl;
+  // renderKeepingFocus re-renders after a filter change the user made. When
+  // the control had focus, focus follows focusPlan into the new DOM. Only
+  // click handlers call it: the poll re-render never moves focus.
+  function renderKeepingFocus(ctl) {
+    var plan = document.activeElement === ctl ? focusPlan(ctl) : null;
     if (lastData) render(lastData);
-    if (!hadFocus) return;
-    var again = document.querySelector('[data-action="' + ctl.dataset.action + '"]['
-      + attr + '="' + CSS.escape(ctl.getAttribute(attr)) + '"]');
-    if (again) again.focus();
+    if (plan) restoreFocus(plan);
   }
 
   // Action handling via event delegation on document, so it survives re-render.
   document.addEventListener('click', function (e) {
+    // A busy control (runAction) ignores presses, as a disabled one would.
+    if (e.target.closest('[data-action][aria-disabled="true"]')) return;
     var rescanAll = e.target.closest('[data-action="rescan-all"]');
     if (rescanAll) {
-      withButton(rescanAll, 'Scanning…', async function () {
-        var res = await post('/api/check');
-        if (res.ok) { await refresh(); } else { toast('Scan failed: ' + (await res.text()), 'err'); }
-      });
+      runAction(rescanAll, 'Scanning…', 'Scan failed', function () { return post('/api/check'); });
       return;
     }
     var rescan = e.target.closest('button[data-action="rescan-repo"]');
     if (rescan) {
-      withButton(rescan, '…', async function () {
-        var res = await post('/api/check?repo=' + encodeURIComponent(rescan.dataset.repo));
-        if (res.ok) { await refresh(); } else { toast('Rescan failed: ' + (await res.text()), 'err'); }
+      runAction(rescan, '…', 'Rescan failed', function () {
+        return post('/api/check?repo=' + encodeURIComponent(rescan.dataset.repo));
       });
       return;
     }
@@ -715,7 +766,7 @@
       var p = filterRepo.dataset.repo;
       if (selected[p]) delete selected[p]; else selected[p] = true;
       syncURL();
-      renderKeepingFocus(filterRepo, 'data-repo');
+      renderKeepingFocus(filterRepo);
       return;
     }
     var filterEco = e.target.closest('[data-action="filter-eco"]');
@@ -723,7 +774,7 @@
       var eco = filterEco.dataset.eco;
       if (ecoSel[eco]) delete ecoSel[eco]; else ecoSel[eco] = true;
       syncURL();
-      renderKeepingFocus(filterEco, 'data-eco');
+      renderKeepingFocus(filterEco);
       return;
     }
     var clearFilter = e.target.closest('[data-action="clear-filter"]');
@@ -731,7 +782,7 @@
       selected = {};
       ecoSel = {};
       syncURL();
-      if (lastData) render(lastData);
+      renderKeepingFocus(clearFilter);
       return;
     }
     var resolve = e.target.closest('button[data-action="resolve"]');
@@ -750,9 +801,8 @@
   });
 
   function resolveFinding(btn) {
-    withButton(btn, '…', async function () {
-      var res = await post('/api/resolve', { keys: [btn.dataset.key] });
-      if (res.ok) { await refresh(); } else { toast('Resolve failed: ' + (await res.text()), 'err'); }
+    runAction(btn, '…', 'Resolve failed', function () {
+      return post('/api/resolve', { keys: [btn.dataset.key] });
     });
   }
 

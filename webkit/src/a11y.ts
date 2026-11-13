@@ -23,10 +23,16 @@ export const INTERACTIVE_ANCESTORS = 'a, button';
 /** Whether webkit should make a badge keyboard-operable: a filter badge the
  * page left without a tabindex or a role, outside any link or button. A badge
  * that sets either one is the page's to wire (csl and moondb do), and one in a
- * link or button would nest a button in a control that already has the key. */
-export function wantsFilterKeys(badge: Attributes & { closest(selector: string): unknown }): boolean {
+ * link or button would nest a button in a control that already has the key.
+ * For a badge webkit already manages, the role and tabindex are webkit's own
+ * and do not count, so one that moves into a link or button, or stops being a
+ * filter, reads false and is released. */
+export function wantsFilterKeys(
+  badge: Attributes & { closest(selector: string): unknown },
+  managed = false,
+): boolean {
   return badge.getAttribute('variant') === 'filter' &&
-    !badge.hasAttribute('tabindex') && !badge.hasAttribute('role') &&
+    (managed || (!badge.hasAttribute('tabindex') && !badge.hasAttribute('role'))) &&
     badge.closest(INTERACTIVE_ANCESTORS) === null;
 }
 

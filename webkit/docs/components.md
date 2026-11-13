@@ -214,7 +214,7 @@ Chips and kind labels. Variant controls color and behavior.
 | `c` | Blue tag (`--tag-c` / `--tag-c-text`) |
 | `outline` | No fill, muted ink, a 1px `--border` ring drawn inside the box, so it stands as tall as a plain badge |
 | `stat` | Muted stat chip |
-| `accent` | Uses `var(--accent, --primary)`, mixed by the status rule: the ink moves `--accent-ink-share` (45%, 55% or 65%, per variant) toward `--text-1`, so its text reads 4.5:1 on its tint where the variant allows |
+| `accent` | Uses `var(--accent, --primary)`, mixed by the status rule: the ink moves `--accent-ink-share` (45%, 55% or 65%, per variant) toward `--text-1`, so its text reads 4.5:1 on its tint where the variant allows. That share is picked for `--primary`; under a page's own `--accent` the ink moves 65% |
 | `info` / `ok` / `warn` / `error` | Status badge: `--status-<s>-bg` fill, `--status-<s>-text` ink (blue, green, amber, red) |
 | `filter` | Clickable pill; `[active]` fills with `--chip-active-bg` |
 
@@ -224,7 +224,7 @@ Chips and kind labels. Variant controls color and behavior.
 <wk-badge variant="filter">Systems</wk-badge>
 ```
 
-A filter badge is keyboard-operable without page code. When it has `variant="filter"`, neither a `tabindex` nor a `role` attribute, and no link or button around it, webkit gives it `role="button"` and `tabindex="0"`, and Enter or Space dispatches a `click` on it, so the page's click handler serves the keyboard too. A variant set after the badge is in the page counts as well, and a badge that stops being a filter loses the two attributes again. A badge that sets its own `tabindex` or `role` is left to the page, which then wires its own keys (csl and moondb do).
+A filter badge is keyboard-operable without page code. When it has `variant="filter"`, neither a `tabindex` nor a `role` attribute, and no link or button around it, webkit gives it `role="button"` and `tabindex="0"`, and Enter or Space dispatches a `click` on it, so the page's click handler serves the keyboard too. A variant set after the badge is in the page counts as well, and a badge that stops being a filter, or moves into a link or button, loses the two attributes again and stops taking Enter and Space; moved back out, it gets them back. A badge that sets its own `tabindex` or `role` is left to the page, which then wires its own keys (csl and moondb do).
 
 A count inside a filter badge goes in a `<small>`: smaller, tabular figures, in the muted ink.
 

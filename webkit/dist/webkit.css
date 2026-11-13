@@ -2167,10 +2167,14 @@ wk-badge[variant="stat"] {
    --accent-ink-share toward text-1 for the ink. The build picks that share
    per variant as the least of 45%, 55% and 65% at which the ink reads 4.5:1
    on --primary's fill; the three variants the contrast test excepts take
-   65%. */
+   65%. That pick holds for --primary only, so a page's own --accent takes the
+   largest share, 65%: --wk-accent-ink reads var(--accent) with no fallback,
+   which leaves it unset when no --accent is in scope, and the ink then falls
+   back to the primary-tuned mix. */
 wk-badge[variant="accent"] {
+  --wk-accent-ink: color-mix(in srgb, var(--accent), var(--text-1) 65%);
   background: color-mix(in srgb, var(--accent, var(--primary)) 14%, var(--paper));
-  color: color-mix(in srgb, var(--accent, var(--primary)), var(--text-1) var(--accent-ink-share, 65%));
+  color: var(--wk-accent-ink, color-mix(in srgb, var(--primary), var(--text-1) var(--accent-ink-share, 65%)));
   font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;

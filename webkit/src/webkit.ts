@@ -663,6 +663,9 @@ class WkTitle extends HTMLElement {
 // stop that Enter and Space click, so the page's click handler covers the
 // keyboard too. Only a connected badge is checked: el() sets a page's own
 // role and tabindex before it inserts the badge, and those stay the page's.
+// A move disconnects and reconnects, so each connect checks again: a managed
+// badge moved into a link or button is released, and one moved out of one
+// is taken back.
 
 class WkBadge extends HTMLElement {
   static observedAttributes = ['variant'];
@@ -676,15 +679,12 @@ class WkBadge extends HTMLElement {
   }
 
   private _sync(): void {
-    if (this._managed) {
-      if (this.getAttribute('variant') === 'filter') return;
-      // No longer a filter: hand back the attributes webkit added.
-      this.removeAttribute('role');
-      this.removeAttribute('tabindex');
-      this._managed = false;
+    const wanted = wantsFilterKeys(this, this._managed);
+    if (wanted === this._managed) return;
+    if (!wanted) {
+      this._release();
       return;
     }
-    if (!wantsFilterKeys(this)) return;
     this.setAttribute('role', 'button');
     this.setAttribute('tabindex', '0');
     this._managed = true;
@@ -695,6 +695,14 @@ class WkBadge extends HTMLElement {
       e.preventDefault();
       this.click();
     });
+  }
+
+  // Hands back the attributes webkit added, unless the page has since put
+  // its own value there, and stops pressing on Enter and Space.
+  private _release(): void {
+    if (this.getAttribute('role') === 'button') this.removeAttribute('role');
+    if (this.getAttribute('tabindex') === '0') this.removeAttribute('tabindex');
+    this._managed = false;
   }
 }
 
