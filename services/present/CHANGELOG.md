@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/mad01/thismoon/compare/present/v1.21.0...present/v1.22.0) (2026-11-13)
+
+
+### Features
+
+* **webkit:** look and keyboard pass across the kit and the service UIs ([#433](https://github.com/mad01/thismoon/issues/433)) ([bc9acbe](https://github.com/mad01/thismoon/commit/bc9acbec9bf4d4b7628c7e0b4d667ff2d215ad4e))
+
 ## [1.21.0](https://github.com/mad01/thismoon/compare/present/v1.20.0...present/v1.21.0) (2026-10-29)
 
 
