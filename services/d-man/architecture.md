@@ -25,7 +25,7 @@ internal/proxy/      one httputil.ReverseProxy: Host routing, blocklist,
                      the settings.json branch
 internal/settings/   the UI settings document: value table, Store, GET/PATCH handler
 internal/atomicfile/ temp file + rename writer shared by profile and settings
-internal/tlsca/      local CA: persist the root, mint per-SNI leaf certs
+internal/tlsca/      local CA: persist the root, mint leaf certs for configured hosts only
 internal/blockpage/  embedded retro arcade served on blocked hosts (go:embed)
 ```
 
@@ -59,9 +59,11 @@ it once its `Origin` matches the request's own scheme and host.
 Everything else goes through the `ReverseProxy` `Rewrite` to the backend
 resolved from the `Host` header (502 on miss), with `ModifyResponse`
 rewriting backend self-redirects back to the `.this` hostname. The `:443`
-listener shares the same handler and mints a trusted leaf certificate per SNI
-from `internal/tlsca`, so blocked hosts that force HTTPS still reach the block
-page.
+listener shares the same handler and mints a trusted leaf certificate from
+`internal/tlsca`, so blocked hosts that force HTTPS still reach the block
+page. Each routes load hands the CA the route hosts and block-list hosts; a
+server name outside that set gets no certificate and the handshake ends with
+an `unrecognized_name` alert.
 
 `serve` also watches its own executable (`os.Executable()`) and exits cleanly
 when it changes; launchd's KeepAlive relaunches the new build, so upgrades

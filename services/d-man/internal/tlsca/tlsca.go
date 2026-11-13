@@ -1,9 +1,12 @@
 // Package tlsca is a local certificate authority for d-man's TLS listener. It
-// mints short-lived leaf certificates on demand for whatever SNI a client
-// presents, all signed by one long-lived CA whose cert is installed into the
-// system trust store (see `d-man ca install`). That is what lets a blocked
-// HTTPS host (reddit.com and friends, which force https via HSTS) land on the
-// local block page with a valid lock instead of a cert warning.
+// mints leaf certificates on demand for the names d-man answers (its route
+// hosts and block-list hosts, handed over with SetHosts on every routes load),
+// all signed by one long-lived CA whose cert is installed into the system
+// trust store (see `d-man ca install`). That is what lets a blocked HTTPS host
+// (reddit.com and friends, which force https via HSTS) land on the local block
+// page with a valid lock instead of a cert warning. Any other name is refused,
+// so the trusted CA never signs for a name d-man does not serve and the leaf
+// cache never outgrows the routes file.
 package tlsca
 
 import (
@@ -19,6 +22,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,16 +38,22 @@ const (
 	caValidity   = 10 * 365 * 24 * time.Hour // ~10 years
 	leafValidity = 365 * 24 * time.Hour      // ~1 year
 	backdate     = time.Hour                 // tolerate small clock skew
+
+	// fallbackName is the leaf served to a client that sends no server name
+	// (it dialed an IP literal). It is always allowed, and is the only name
+	// outside SetHosts, so the cache holds at most one leaf beyond the config.
+	fallbackName = "localhost"
 )
 
-// CA holds the CA certificate and key and caches minted leaves per SNI.
+// CA holds the CA certificate and key and caches minted leaves per server name.
 type CA struct {
 	cert    *x509.Certificate
 	key     *ecdsa.PrivateKey
 	certPEM []byte
 
 	mu     sync.Mutex
-	leaves map[string]*tls.Certificate
+	hosts  map[string]bool             // names a leaf may be minted for (SetHosts)
+	leaves map[string]*tls.Certificate // every key is in hosts or is fallbackName
 }
 
 // CertPath and KeyPath are where EnsureCA reads or writes the CA material.
@@ -64,18 +74,45 @@ func EnsureCA(dir string) (*CA, error) {
 	return generateCA(dir, certPath, keyPath)
 }
 
+// SetHosts replaces the names the CA mints leaves for: the hosts d-man answers
+// (route hosts and block-list hosts). Names match case-insensitively. A cached
+// leaf for a name that is no longer in the set is dropped, so a routes reload
+// that removes a host also removes its certificate.
+func (ca *CA) SetHosts(names []string) {
+	hosts := make(map[string]bool, len(names))
+	for _, n := range names {
+		if n = normalizeName(n); n != "" {
+			hosts[n] = true
+		}
+	}
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+	ca.hosts = hosts
+	for name := range ca.leaves {
+		if !ca.allowed(name) {
+			delete(ca.leaves, name)
+		}
+	}
+}
+
 // GetCertificate is a tls.Config.GetCertificate callback: it returns a leaf
-// certificate for the client's SNI, minting and caching one on first use. A
-// client that presents no SNI gets a "localhost" leaf.
+// certificate for the client's server name, minting and caching one on first
+// use. A client that presents no server name gets the "localhost" leaf. A name
+// outside SetHosts gets nil and no error: crypto/tls, with no static
+// Certificates to fall back on, then aborts the handshake with a fatal
+// unrecognized_name alert, and nothing is minted or cached.
 func (ca *CA) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	name := hello.ServerName
+	name := normalizeName(hello.ServerName)
 	if name == "" {
-		name = "localhost"
+		name = fallbackName
 	}
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
 	if c, ok := ca.leaves[name]; ok {
 		return c, nil
+	}
+	if !ca.allowed(name) {
+		return nil, nil
 	}
 	leaf, err := ca.mintLeaf(name)
 	if err != nil {
@@ -83,6 +120,19 @@ func (ca *CA) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, erro
 	}
 	ca.leaves[name] = leaf
 	return leaf, nil
+}
+
+// allowed reports whether a leaf may be minted for the normalized name. The
+// caller holds ca.mu.
+func (ca *CA) allowed(name string) bool {
+	return name == fallbackName || ca.hosts[name]
+}
+
+// normalizeName folds a server name the way the proxy folds a Host header:
+// trimmed, trailing dot removed, lowercased. DNS names are case-insensitive, so
+// "Reddit.com" and "reddit.com" share one leaf.
+func normalizeName(name string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
 }
 
 func (ca *CA) mintLeaf(name string) (*tls.Certificate, error) {
@@ -199,7 +249,13 @@ func loadCA(certPath, keyPath string) (*CA, error) {
 }
 
 func newCA(cert *x509.Certificate, key *ecdsa.PrivateKey, certPEM []byte) *CA {
-	return &CA{cert: cert, key: key, certPEM: certPEM, leaves: make(map[string]*tls.Certificate)}
+	return &CA{
+		cert:    cert,
+		key:     key,
+		certPEM: certPEM,
+		hosts:   make(map[string]bool),
+		leaves:  make(map[string]*tls.Certificate),
+	}
 }
 
 func randomSerial() (*big.Int, error) {

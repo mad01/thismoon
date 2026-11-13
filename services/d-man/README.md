@@ -182,8 +182,10 @@ on the next page load; a missing directory simply means no extra games.
 
 Distraction sites force HTTPS via HSTS, so the browser hits port 443 before you
 ever see plain HTTP. `d-man serve` listens on `127.0.0.1:443` too and mints a
-certificate per host from a local certificate authority. Trust that CA once so
-the block page loads without a warning (writing the system keychain needs root):
+certificate from a local certificate authority for each route host and
+block-list host; it refuses the handshake for any other name. Trust that CA
+once so the block page loads without a warning (writing the system keychain
+needs root):
 
 ```bash
 sudo d-man ca install      # generate the CA if needed and trust it

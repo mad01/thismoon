@@ -41,7 +41,8 @@ change it (1) rewrites the managed /etc/hosts block and (2) rebuilds the
 127.0.0.1:80 reverse proxy that routes by Host header to each backend.
 
 It also listens on 127.0.0.1:443 to serve the block page for blocked HTTPS
-hosts, minting a trusted certificate per host from the local CA. Run
+hosts, minting a trusted certificate from the local CA for each route host and
+block-list host. A handshake for any other name is refused. Run
 "sudo d-man ca install" once so those certs are trusted.
 
 Run as a root launchd daemon via t-man (writing /etc/hosts and binding :80/:443
@@ -71,13 +72,9 @@ func init() {
 }
 
 func runServe(_ *cobra.Command, _ []string) error {
-	rh, err := newReloadableHandler()
-	if err != nil {
-		return err
-	}
-
-	// The TLS listener mints a leaf per SNI from this CA; auto-generate it if
-	// absent so serve works before "d-man ca install" trusts it.
+	// The TLS listener mints a leaf per configured host from this CA;
+	// auto-generate it if absent so serve works before "d-man ca install"
+	// trusts it. It comes first so the first routes load can hand it the hosts.
 	caDir, err := resolveCADir()
 	if err != nil {
 		return err
@@ -85,6 +82,11 @@ func runServe(_ *cobra.Command, _ []string) error {
 	ca, err := tlsca.EnsureCA(caDir)
 	if err != nil {
 		return fmt.Errorf("prepare local CA: %w", err)
+	}
+
+	rh, err := newReloadableHandler(ca)
+	if err != nil {
+		return err
 	}
 
 	httpAddr := fmt.Sprintf("127.0.0.1:%d", flagServePort)
@@ -137,9 +139,11 @@ func runServe(_ *cobra.Command, _ []string) error {
 
 // reloadableHandler lets the watch loop swap in a fresh proxy on config change
 // without restarting the HTTP listener. settings is built once and handed to
-// every proxy, so a reload never drops the settings document.
+// every proxy, so a reload never drops the settings document. ca is the TLS
+// listener's CA; every reload hands it the hosts it may mint leaves for.
 type reloadableHandler struct {
 	settings http.Handler
+	ca       *tlsca.CA
 
 	mu sync.RWMutex
 	h  http.Handler
@@ -149,14 +153,14 @@ type reloadableHandler struct {
 // The store outlives every route reload: one document, one file. A bad first
 // routes load fails here, so serve crash-loops visibly rather than serving
 // nothing.
-func newReloadableHandler() (*reloadableHandler, error) {
+func newReloadableHandler(ca *tlsca.CA) (*reloadableHandler, error) {
 	settingsPath, err := resolveSettingsFile()
 	if err != nil {
 		return nil, err
 	}
 	store := settings.Open(settingsPath, log.Default())
 	log.Printf("d-man: UI settings in %s", settingsPath)
-	rh := &reloadableHandler{settings: settings.Handler(store, log.Default())}
+	rh := &reloadableHandler{settings: settings.Handler(store, log.Default()), ca: ca}
 	if err := reloadOnce(rh); err != nil {
 		return nil, err
 	}
@@ -176,9 +180,10 @@ func (rh *reloadableHandler) set(h http.Handler) {
 	rh.mu.Unlock()
 }
 
-// reloadOnce loads the config, syncs /etc/hosts, and rebuilds the proxy. On any
-// error it returns without mutating the running handler, so a bad edit leaves
-// the previous good routes and hosts in place.
+// reloadOnce loads the config, syncs /etc/hosts, rebuilds the proxy, and limits
+// the CA to the same hosts (route hosts plus block-list hosts, the set the
+// proxy answers). On any error it returns without mutating the running handler
+// or the CA, so a bad edit leaves the previous good routes and hosts in place.
 func reloadOnce(rh *reloadableHandler) error {
 	cfg, err := loadRoutes()
 	if err != nil {
@@ -212,6 +217,7 @@ func reloadOnce(rh *reloadableHandler) error {
 		return err
 	}
 	rh.set(h)
+	rh.ca.SetHosts(cfg.Hosts())
 	log.Printf("d-man: routes loaded: %s", strings.Join(cfg.Hosts(), ", "))
 	return nil
 }
