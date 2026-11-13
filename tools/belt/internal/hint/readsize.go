@@ -57,13 +57,17 @@ func (h *ReadSize) Event() string { return EventRead }
 
 // Check fires once per file per agent per session, for a read with no range
 // of a file of minLines or more that csl can outline, inside a
-// csl-indexed repo. A Read names the file by absolute path and a csl_read by
-// repo and path as csl names them; both resolve to the repo and path csl knows
-// the file by, and that pair keys the marker, so a Read and a csl_read of
-// one file share one nudge. Every field it cannot trust (a relative path, an
-// unknown line count, no session id) means silence: csl_outline needs a
-// repo-relative path, and without a session id the once-per-file promise
-// cannot hold.
+// csl-indexed repo or a linked worktree of one. A Read names the file by
+// absolute path and a csl_read by repo and path as csl names them; both
+// resolve to the tree and path csl knows the file by, and that pair keys
+// the marker, so a Read and a csl_read of one file share one nudge. A Read
+// is judged the large-read guard's way: cslindex.Resolve finds the tree,
+// and a file cslindex.Skipped reports, which a csl_ask call cannot answer
+// from, gets no advice. That check reads the file, so it runs only once
+// the marker says the nudge is still due, and it spends no nudge. Every
+// field it cannot trust (a relative path, an unknown line count, no session
+// id) means silence: csl_outline needs a repo-relative path, and without a
+// session id the once-per-file promise cannot hold.
 func (h *ReadSize) Check(in Input) *Advice {
 	if in.Ranged || in.TotalLines < h.minLines {
 		return nil
@@ -73,8 +77,11 @@ func (h *ReadSize) Check(in Input) *Advice {
 		return nil
 	}
 	seenPath := seen.path(in.SessionID)
-	marker := readSizeMarker(in.AgentID, file.repo, file.rel)
+	marker := readSizeMarker(in.AgentID, file.markerScope(), file.loc.Rel)
 	if seenPath == "" || strings.ContainsAny(marker, "\r\n") || seen.load(seenPath)[marker] {
+		return nil
+	}
+	if file.loc.Root != "" && cslindex.Skipped(file.loc.Root, file.loc.Rel) {
 		return nil
 	}
 	seen.record(seenPath, []string{marker})
@@ -82,15 +89,26 @@ func (h *ReadSize) Check(in Input) *Advice {
 }
 
 // readFile is a file a read pulled in whole: the name the advice gives it,
-// how it was read, and the repo and repo-relative path csl knows it by.
+// how it was read, and where csl knows it. A csl_read names no checkout on
+// disk, so its loc has a repo and a path and no Root.
 type readFile struct {
 	name, how string
-	repo, rel string
+	loc       cslindex.Located
+}
+
+// markerScope names the tree the file sits in for the marker: the repo for
+// a main checkout, and the worktree's root for a linked worktree, whose
+// file is not the main checkout's.
+func (f readFile) markerScope() string {
+	if f.loc.Worktree {
+		return f.loc.Root
+	}
+	return f.loc.Repo
 }
 
 // locateRead resolves the file a read named, ok only for a type csl_outline
-// has symbols for, inside a csl-indexed repo. The type is checked first
-// because it needs no filesystem access.
+// has symbols for, inside a csl-indexed repo or a linked worktree of one.
+// The type is checked first because it needs no filesystem access.
 func locateRead(in Input) (readFile, bool) {
 	if in.CSLFile.Known() {
 		return locateCSLRead(in.CSLFile)
@@ -102,8 +120,8 @@ func locateRead(in Input) (readFile, bool) {
 	if !outlineable(file) {
 		return readFile{}, false
 	}
-	repo, rel, ok := cslindex.Locate(file)
-	return readFile{name: file, how: "without a range", repo: repo, rel: rel}, ok
+	loc, ok := cslindex.Resolve(file)
+	return readFile{name: file, how: "without a range", loc: loc}, ok
 }
 
 // locateCSLRead resolves the file a csl_read returned. The path must stay
@@ -122,8 +140,7 @@ func locateCSLRead(f CSLFile) (readFile, bool) {
 	return readFile{
 		name: repo + "/" + rel,
 		how:  "without a range through csl_read",
-		repo: repo,
-		rel:  rel,
+		loc:  cslindex.Located{Repo: repo, Rel: rel},
 	}, true
 }
 
@@ -133,18 +150,19 @@ func outlineable(file string) bool {
 }
 
 // readSizeMarker is the seen-file id for one file read by one agent, named
-// the way csl knows the file: repo and repo-relative path, so a Read and a
-// csl_read of the file share it. The repo is lowercased because csl matches
-// repo names regardless of case, and a checkout's directory names can spell
-// a repo differently from the remote csl names it after. A subagent's tool
-// calls carry its parent's session id, so without the agent id one Explore
+// the way csl knows the file: the tree's scope (the repo, or a linked
+// worktree's root) and the path below it, so a Read and a csl_read of the
+// file share it. The scope is lowercased because csl matches repo names
+// regardless of case, and a checkout's directory names can spell a repo
+// differently from the remote csl names it after. A subagent's tool calls
+// carry its parent's session id, so without the agent id one Explore
 // subagent reading a file whole would spend the nudge for the main thread
 // and every later subagent. The id is trimmed because the seen store trims
 // each line on load: an untrimmed id would never match its own record and
 // the hint would repeat on every read.
-func readSizeMarker(agentID, repo, rel string) string {
+func readSizeMarker(agentID, scope, rel string) string {
 	return strings.TrimSpace(
-		readSizeMarkerPrefix + agentID + ":" + strings.ToLower(repo) + "/" + rel,
+		readSizeMarkerPrefix + agentID + ":" + strings.ToLower(scope) + "/" + rel,
 	)
 }
 
@@ -175,24 +193,41 @@ func splitIndexed(name string, repos map[string]bool) (repo, rel string, ok bool
 
 // readSizeAdvice is the three-line nudge: what was read, then the cheaper
 // ways in, each call filled in. csl_ask comes first: when only an answer is
-// needed, it returns that answer and the file never enters context.
-// csl_outline orients, and csl_read or a ranged Read fetches a region the
-// agent will edit, which needs the real lines. include_tests is always set:
-// csl leaves test files out of an outline by default, and its test-file
-// rules (per-language name conventions plus test directories) are csl's to
-// change. Setting it costs nothing on a file that is not a test, where a
-// copy of the rules here could drift and hand over a call returning nothing.
+// needed, it returns that answer and the file never enters context. The
+// call is the large-read guard's (cslindex.Located.AskCall), sized for the
+// file; a file past csl_ask's line ceiling gets the reason no call can
+// read it and the ranged reads instead. csl_outline orients, and csl_read
+// or a ranged Read fetches a region the agent will edit, which needs the
+// real lines.
 func readSizeAdvice(file readFile, lines int) string {
-	outline := fmt.Sprintf(
-		"csl_outline(repo: %q, path: %q, include_tests: true", file.repo, file.rel,
-	)
-	if headingExts[strings.ToLower(filepath.Ext(file.rel))] {
-		outline += `, kinds: ["section"]`
+	head := fmt.Sprintf("%s is %d lines and was read %s.\n", file.name, lines, file.how)
+	const ranged = "csl_read or Read with offset and limit"
+	outline := outlineCall(file.loc)
+	ask, ok := file.loc.AskCall(lines)
+	if !ok {
+		return head + cslindex.AskTooLong + "; read the region you need with " + ranged + ".\n" +
+			"For orientation use " + outline + "."
 	}
-	return fmt.Sprintf(
-		"%s is %d lines and was read %s.\n"+
-			"When you only need an answer from it, use %s, which returns the answer, not the file.\n"+
-			"For orientation use %s); for a region you will edit use csl_read or Read with offset and limit.",
-		file.name, lines, file.how, cslindex.AskCall(file.repo, file.rel), outline,
-	)
+	return head +
+		"When you only need an answer from it, use " + ask + ", which returns the answer, not the file.\n" +
+		"For orientation use " + outline + "; for a region you will edit use " + ranged + "."
+}
+
+// outlineCall is the csl_outline call for the file: by repo, or by
+// worktree root for a linked worktree, so the outline describes the
+// worktree's files. include_tests is always set: csl leaves test files out
+// of an outline by default, and its test-file rules (per-language name
+// conventions plus test directories) are csl's to change. Setting it costs
+// nothing on a file that is not a test, where a copy of the rules here
+// could drift and hand over a call returning nothing.
+func outlineCall(loc cslindex.Located) string {
+	scope := fmt.Sprintf("repo: %q", loc.Repo)
+	if loc.Worktree {
+		scope = fmt.Sprintf("worktree: %q", loc.Root)
+	}
+	call := fmt.Sprintf("csl_outline(%s, path: %q, include_tests: true", scope, loc.Rel)
+	if headingExts[strings.ToLower(filepath.Ext(loc.Rel))] {
+		call += `, kinds: ["section"]`
+	}
+	return call + ")"
 }

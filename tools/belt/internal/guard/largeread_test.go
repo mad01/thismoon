@@ -86,6 +86,63 @@ func TestLargeReadDeniesAWholeReadOfALargeIndexedFile(t *testing.T) {
 	}
 }
 
+// TestLargeReadSizesTheAskCall: csl_ask reads a file whole or skips it.
+// For a file past its default line budget, the call handed over sets
+// max_lines high enough for the file, in a main checkout and in a linked
+// worktree. For a file past the highest budget no call can read it, so the
+// refusal hands over no csl_ask call and says to read the file in ranges.
+func TestLargeReadSizesTheAskCall(t *testing.T) {
+	root, _, transcript := largeReadHome(t)
+	wt, _ := largeReadWorktree(t, root, "feature")
+	tests := []struct {
+		name, file string
+		lines      int
+		wants      []string
+		ask        bool
+	}{
+		{
+			"past the default", filepath.Join(root, "long.go"), 7421,
+			[]string{`queries: ["f:^long\\.go$"], repo: "^acme/widget$", max_lines: 7500)`},
+			true,
+		},
+		{
+			"worktree, past the default", filepath.Join(wt, "long.go"), 7421,
+			[]string{`queries: ["f:^long\\.go$"], worktree: "` + wt + `", max_lines: 7500)`},
+			true,
+		},
+		{
+			"past the ceiling", filepath.Join(root, "huge.go"), 20001,
+			[]string{
+				"20001 lines",
+				"at most 20000 lines",
+				"offset and limit",
+				"a ranged read passes this guard",
+			},
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writeTestFile(t, tt.file, textLines(tt.lines))
+			d := checkRead(Input{FilePath: tt.file, TranscriptPath: transcript})
+			if d == nil {
+				t.Fatal("Check = nil, want a denial")
+			}
+			for _, want := range tt.wants {
+				if !strings.Contains(d.Reason, want) {
+					t.Errorf("reason %q does not contain %q", d.Reason, want)
+				}
+			}
+			if got := strings.Contains(d.Reason, "csl_ask("); got != tt.ask {
+				t.Errorf("reason %q hands over a csl_ask call: %v, want %v", d.Reason, got, tt.ask)
+			}
+			if n := strings.Count(d.Reason, "\n") + 1; n != 3 {
+				t.Errorf("reason is %d lines, want 3: %q", n, d.Reason)
+			}
+		})
+	}
+}
+
 // largeReadWorktree lays out a linked worktree of the checkout at main by
 // files alone, the shape git worktree add writes, with one file of 400
 // lines. It returns the worktree's root and that file.

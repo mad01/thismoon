@@ -232,9 +232,17 @@ find or read when it looks for an earlier edit of the file. A file in a
 linked worktree counts when the worktree's main checkout is indexed, and
 the refusal then names the worktree root in its csl_ask call. A refusal
 names the way past it: a Read
-with offset and limit always passes. A refusal of a file the agent did
+with offset and limit always passes. Past csl_ask's default of 6000 lines
+the call sets max_lines to fit the file. Past its ceiling of 20000 lines
+the refusal hands over no csl_ask call and says to read in ranges. A
+refusal of a file the agent did
 edit means the edit is in another agent's transcript (a subagent counts
 only its own) or under another spelling of the path.
+
+The read-size hint follows the same rules after a Read. It uses the same
+lookup, so it speaks in a linked worktree too. It uses the same skip
+rules, so it is silent on a file csl's index leaves out. And it hands over
+the same csl_ask call.
 
 The moondb-inflight hint is silent when moondb is down or older than its
 in-flight route, and the doctor moondb line says which. read-size never

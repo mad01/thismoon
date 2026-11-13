@@ -596,7 +596,8 @@ the repo's origin remote.
   under a different parent directory is still covered.
 - `hints.read-size.enabled` (bool, default `true`): PostToolUse (read),
   fires when a Read or a `csl_read` without a range pulls in
-  `large_file_lines` or more (300 by default) from an indexed repo, for a file type `csl_outline` has symbols
+  `large_file_lines` or more (300 by default) from an indexed repo or a
+  linked worktree of one, for a file type `csl_outline` has symbols
   for. It points at `csl_ask`, `csl_outline` or a ranged read, once per
   file per agent per session.
 - **commit-policy**
