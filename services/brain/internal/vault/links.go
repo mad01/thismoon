@@ -275,7 +275,11 @@ func (idx *linkIndex) note(ref Ref) (*indexedNote, error) {
 		return n, nil
 	}
 	if err := ref.Vault.contained(ref.Abs()); err != nil {
-		return &indexedNote{ref: ref, stem: strings.TrimSuffix(filepath.Base(ref.Path), ".md"), parseErr: err}, nil
+		return &indexedNote{
+			ref:      ref,
+			stem:     strings.TrimSuffix(filepath.Base(ref.Path), ".md"),
+			parseErr: err,
+		}, nil
 	}
 	data, err := os.ReadFile(ref.Abs())
 	if err != nil {
@@ -462,7 +466,11 @@ func hasAlias(fm markdown.Frontmatter, name string) bool {
 // note in the vault, skipping tool directories. Unreadable files are
 // skipped. A markdown file that is a symbolic link is never read: linked
 // gets its path instead.
-func walkNotes(vaultRoot string, visit func(path string, data []byte), linked func(path string)) error {
+func walkNotes(
+	vaultRoot string,
+	visit func(path string, data []byte),
+	linked func(path string),
+) error {
 	return filepath.WalkDir(vaultRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err

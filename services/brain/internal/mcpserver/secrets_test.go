@@ -131,7 +131,12 @@ func TestBrainEditClearsEvidence(t *testing.T) {
 			t.Fatal(err)
 		}
 		if out.Frontmatter.Evidence != step.want {
-			t.Errorf("after evidence %q, evidence = %q, want %q", step.evidence, out.Frontmatter.Evidence, step.want)
+			t.Errorf(
+				"after evidence %q, evidence = %q, want %q",
+				step.evidence,
+				out.Frontmatter.Evidence,
+				step.want,
+			)
 		}
 	}
 }

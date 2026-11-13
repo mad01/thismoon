@@ -141,7 +141,8 @@ func assertKeptLines(t *testing.T, note, eol string, touched []string) {
 		pos += i + 1
 	}
 	for _, l := range lines {
-		if l != "" && (!strings.HasSuffix(l, eol) || (eol == "\n" && strings.HasSuffix(l, "\r\n"))) {
+		if l != "" &&
+			(!strings.HasSuffix(l, eol) || (eol == "\n" && strings.HasSuffix(l, "\r\n"))) {
 			t.Fatalf("line %q does not end in %q in:\n%q", l, eol, note)
 		}
 	}

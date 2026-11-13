@@ -34,13 +34,17 @@ func TestWritePathsRefuseANULByte(t *testing.T) {
 			return err
 		},
 		"promote": func() error {
-			_, err := v.Promote(filepath.Join(v.Root, "inbox", "held.md"), PromoteOptions{Now: time.Now()})
+			_, err := v.Promote(
+				filepath.Join(v.Root, "inbox", "held.md"),
+				PromoteOptions{Now: time.Now()},
+			)
 			return err
 		},
 	}
 	for name, change := range changes {
 		err := change()
-		if !errors.Is(err, ErrInvalidContent) || !strings.Contains(err.Error(), "holds a NUL byte at line") {
+		if !errors.Is(err, ErrInvalidContent) ||
+			!strings.Contains(err.Error(), "holds a NUL byte at line") {
 			t.Errorf("%s: err = %v, want ErrInvalidContent naming the NUL", name, err)
 		}
 	}
@@ -60,7 +64,8 @@ func TestSecretsReportsANULByte(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(found) == 0 || found[0].Rule.ID != "nul-byte" || found[0].Line != 4 || found[0].Column != 2 {
+	if len(found) == 0 || found[0].Rule.ID != "nul-byte" || found[0].Line != 4 ||
+		found[0].Column != 2 {
 		t.Fatalf("findings = %+v, want nul-byte at line 4, column 2 first", found)
 	}
 }

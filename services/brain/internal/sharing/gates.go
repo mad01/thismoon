@@ -154,10 +154,17 @@ func copyGates(
 	// policy); the classification gate then reads the lenient default, as
 	// brain check does.
 	policy, _ := check.LoadPolicy(tree.Root)
-	classification, warnings := classificationGate(policy, shared.Name, lifecycle.Read(fm).Classification)
+	classification, warnings := classificationGate(
+		policy,
+		shared.Name,
+		lifecycle.Read(fm).Classification,
+	)
 	gates = append(gates, classification)
 	if secrets.Result != GatePass {
-		return append(gates, skipped(GateCheck, "the copy was not placed, so brain check had nothing to read")),
+		return append(
+				gates,
+				skipped(GateCheck, "the copy was not placed, so brain check had nothing to read"),
+			),
 			warnings, nil
 	}
 	checked, checkWarnings, err := checkGate(lib, tree, shared, ref.Path)
@@ -188,7 +195,10 @@ func placeCopy(
 	skip bool,
 ) (Gate, error) {
 	if skip {
-		return skipped(GateSecrets, "the path is taken, so the copy was not placed and scanned"), nil
+		return skipped(
+			GateSecrets,
+			"the path is taken, so the copy was not placed and scanned",
+		), nil
 	}
 	copyFM := lifecycle.ForShared(fm)
 	copyFM.Status = lifecycle.Validated
@@ -214,14 +224,20 @@ func classificationGate(p check.Policy, shared, classification string) (Gate, []
 			"brain check's missing-field and schema rules cover it"), nil
 	}
 	if p.Allows(classification) {
-		return passed(GateClassification, fmt.Sprintf("classification %s is accepted by %s (accepts: %s)",
-			classification, shared, accepts)), nil
+		return passed(
+			GateClassification,
+			fmt.Sprintf("classification %s is accepted by %s (accepts: %s)",
+				classification, shared, accepts),
+		), nil
 	}
 	msg := fmt.Sprintf("classification %s is not accepted by %s (accepts: %s)",
 		classification, shared, accepts)
 	switch p.Level(check.RuleClassification) {
 	case check.Off:
-		return passed(GateClassification, msg+", but its policy turns the classification rule off"), nil
+		return passed(
+			GateClassification,
+			msg+", but its policy turns the classification rule off",
+		), nil
 	case check.Warning:
 		return passed(GateClassification, msg+", which its policy only warns about"),
 			[]string{check.RuleClassification + ": " + msg}
@@ -240,7 +256,11 @@ func accepted(p check.Policy) []string {
 
 // checkGate runs brain check on the copy at rel in tree. Classification
 // findings are left to the classification gate.
-func checkGate(lib *library.Library, tree, shared *vault.Vault, rel string) (Gate, []string, error) {
+func checkGate(
+	lib *library.Library,
+	tree, shared *vault.Vault,
+	rel string,
+) (Gate, []string, error) {
 	report, err := checkCopy(lib, tree, shared, rel)
 	if err != nil {
 		return Gate{}, nil, err
@@ -255,8 +275,11 @@ func checkGate(lib *library.Library, tree, shared *vault.Vault, rel string) (Gat
 		return gateOf(GateCheck, "", fmt.Errorf("brain check against %s's policy: %s",
 			shared.Name, strings.Join(errs, "; "))), warnings, nil
 	}
-	return passed(GateCheck, fmt.Sprintf("brain check against %s's policy: no errors, %d warning(s)",
-		shared.Name, len(warnings))), warnings, nil
+	return passed(
+		GateCheck,
+		fmt.Sprintf("brain check against %s's policy: no errors, %d warning(s)",
+			shared.Name, len(warnings)),
+	), warnings, nil
 }
 
 // checkCopy runs brain check on the copy at rel in tree, tree standing in

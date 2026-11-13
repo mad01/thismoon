@@ -166,7 +166,8 @@ func fileRef(set *vault.Set, path string) (vault.Ref, bool) {
 // when path is not under root.
 func relWithin(root, path string) (string, bool) {
 	rel, err := filepath.Rel(root, path)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil || rel == "." || rel == ".." ||
+		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", false
 	}
 	return filepath.ToSlash(rel), true

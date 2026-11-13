@@ -68,7 +68,9 @@ give. With -o json, prints {"dry_run", "verdict", "vault", "path", "id",
 				return usageErrorf("--force goes with --to")
 			}
 			if dryRun {
-				return usageErrorf("--dry-run goes with --to: a promote within one vault has no dry run")
+				return usageErrorf(
+					"--dry-run goes with --to: a promote within one vault has no dry run",
+				)
 			}
 			t, err := parseTierFlag(tier)
 			if err != nil {

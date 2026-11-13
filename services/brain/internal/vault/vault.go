@@ -335,7 +335,12 @@ func (v *Vault) notePath(opts WriteOptions, id string) (string, error) {
 	dir := v.TierDir(opts.Tier)
 	path := filepath.Join(dir, noteFilename(opts, id))
 	if filepath.Dir(path) != filepath.Clean(dir) {
-		return "", fmt.Errorf("%w: filename %q leaves the %s tier", ErrInvalidPath, opts.Filename, opts.Tier)
+		return "", fmt.Errorf(
+			"%w: filename %q leaves the %s tier",
+			ErrInvalidPath,
+			opts.Filename,
+			opts.Tier,
+		)
 	}
 	return path, v.contained(path)
 }
@@ -351,7 +356,8 @@ func validFilename(name string) error {
 		strings.ContainsFunc(name, unicode.IsControl) {
 		return fmt.Errorf(
 			"%w: filename %q must be a plain file name, with no path separator, .. or control character",
-			ErrInvalidPath, name,
+			ErrInvalidPath,
+			name,
 		)
 	}
 	return nil
@@ -496,7 +502,12 @@ func (v *Vault) Edit(path string, opts EditOptions) (sha string, err error) {
 // EditStatuses are the statuses an edit may set. Superseded, retracted and
 // withdrawn go through brain supersede, retract and withdraw, which record
 // the replacement, the reason or the tombstone a revocation needs.
-var EditStatuses = []string{lifecycle.Raw, lifecycle.Validated, lifecycle.Promoting, lifecycle.Disputed}
+var EditStatuses = []string{
+	lifecycle.Raw,
+	lifecycle.Validated,
+	lifecycle.Promoting,
+	lifecycle.Disputed,
+}
 
 // checkEditStatus refuses an edit that changes the status of the note at
 // rel from from to anything but one of EditStatuses, with
@@ -509,7 +520,9 @@ func checkEditStatus(rel, from, to string) error {
 	case lifecycle.Revoked(next):
 		return fmt.Errorf(
 			"%w: edit does not set status %s; revoke %s with brain supersede, brain retract or brain withdraw",
-			ErrInvalidStatusChange, next, rel,
+			ErrInvalidStatusChange,
+			next,
+			rel,
 		)
 	}
 	return fmt.Errorf("%w: status %q is not one of %s",
@@ -612,7 +625,11 @@ func (v *Vault) Promote(path string, opts PromoteOptions) (PromoteResult, error)
 }
 
 // promote is Promote writing each rewritten note through write.
-func (v *Vault) promote(path string, opts PromoteOptions, write noteWriter) (res PromoteResult, err error) {
+func (v *Vault) promote(
+	path string,
+	opts PromoteOptions,
+	write noteWriter,
+) (res PromoteResult, err error) {
 	if err := v.writable(); err != nil {
 		return PromoteResult{}, err
 	}

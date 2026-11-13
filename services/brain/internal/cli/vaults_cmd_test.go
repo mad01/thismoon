@@ -56,8 +56,10 @@ func TestVaultsCommandDescribesEveryVault(t *testing.T) {
 		team.Policy == nil || len(team.Policy.Rules) != 0 || team.Notes != 1 {
 		t.Errorf("team = %+v, policy %+v", team, team.Policy)
 	}
-	if pl.Path != plain || pl.Git != gitNone || !pl.AcceptsAny || pl.Notes != 1 || pl.Policy == nil ||
-		pl.Policy.Rules["link-dangling"] != "error" || pl.Policy.Rules["provenance"] != "off" {
+	if pl.Path != plain || pl.Git != gitNone || !pl.AcceptsAny || pl.Notes != 1 ||
+		pl.Policy == nil ||
+		pl.Policy.Rules["link-dangling"] != "error" ||
+		pl.Policy.Rules["provenance"] != "off" {
 		t.Errorf("plain = %+v, policy %+v", pl, pl.Policy)
 	}
 	if gn.Path != gone || gn.Error != "the directory does not exist" {

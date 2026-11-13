@@ -89,28 +89,34 @@ func TestPromoteDryRunChangesNothingAndMatchesThePromote(t *testing.T) {
 		want    string
 	}{
 		{
-			"target not shared", []string{"notes/rollout.md", "--to", "personal"},
+			"target not shared",
+			[]string{"notes/rollout.md", "--to", "personal"},
 			exitReadOnly, sharing.VerdictRefused, sharing.GateTarget, "not a shared vault",
 		},
 		{
-			"not validated", []string{"inbox/idea.md", "--to", "team"},
+			"not validated",
+			[]string{"inbox/idea.md", "--to", "team"},
 			exitUsage, sharing.VerdictRefused, sharing.GateStatus, "only a validated note",
 		},
 		{
-			"path taken", []string{"personal:notes/team-guide.md", "--to", "team"},
+			"path taken",
+			[]string{"personal:notes/team-guide.md", "--to", "team"},
 			exitExists, sharing.VerdictRefused, sharing.GateDuplicate, "team has notes/team-guide.md already",
 		},
 		{
-			"secret", []string{"notes/leak.md", "--to", "team"},
+			"secret",
+			[]string{"notes/leak.md", "--to", "team"},
 			exitSecretFound, sharing.VerdictRefused, sharing.GateSecrets, "github-pat",
 		},
 		{
-			"classification", []string{"notes/secret-plan.md", "--to", "team"},
+			"classification",
+			[]string{"notes/secret-plan.md", "--to", "team"},
 			exitError, sharing.VerdictRefused, sharing.GateClassification,
 			"classification confidential is not accepted by team (accepts: public, internal)",
 		},
 		{
-			"passes", []string{"notes/rollout.md", "--to", "team"},
+			"passes",
+			[]string{"notes/rollout.md", "--to", "team"},
 			exitOK, sharing.VerdictProceed, sharing.GateCheck, "no errors",
 		},
 	}
@@ -120,7 +126,13 @@ func TestPromoteDryRunChangesNothingAndMatchesThePromote(t *testing.T) {
 		args := append([]string{"promote"}, tc.args...)
 		dry := runBrain(t, "", append(args, "--dry-run", "-o", "json")...)
 		if dry.code != tc.code {
-			t.Fatalf("%s: dry run exit %d, want %d; stderr %q", tc.name, dry.code, tc.code, dry.stderr)
+			t.Fatalf(
+				"%s: dry run exit %d, want %d; stderr %q",
+				tc.name,
+				dry.code,
+				tc.code,
+				dry.stderr,
+			)
 		}
 		plan := decodeStrict[sharing.PromotePlan](t, dry.stdout)
 		if !plan.DryRun || plan.Verdict != tc.verdict || len(plan.Gates) != 7 {
@@ -131,8 +143,12 @@ func TestPromoteDryRunChangesNothingAndMatchesThePromote(t *testing.T) {
 			t.Errorf("%s: gate %s = %+v, want %q", tc.name, tc.gate, g, tc.want)
 		}
 		if after := diskState(t, env.sharedRemote, env.private, env.shared); after != before {
-			t.Errorf("%s: the dry run changed the vaults or their git state:\nbefore\n%s\nafter\n%s",
-				tc.name, before, after)
+			t.Errorf(
+				"%s: the dry run changed the vaults or their git state:\nbefore\n%s\nafter\n%s",
+				tc.name,
+				before,
+				after,
+			)
 		}
 		if calls := env.gh.Calls(); len(calls) != 0 {
 			t.Fatalf("%s: the dry run called gh: %q", tc.name, calls)
@@ -141,7 +157,12 @@ func TestPromoteDryRunChangesNothingAndMatchesThePromote(t *testing.T) {
 			t.Errorf("%s: the dry run left %v in the temp dir", tc.name, entries)
 		}
 		if state := strings.Join(stateDirEntries(t), "\n"); state != stateBefore {
-			t.Errorf("%s: the dry run changed the state dir:\n%s\nwas\n%s", tc.name, state, stateBefore)
+			t.Errorf(
+				"%s: the dry run changed the state dir:\n%s\nwas\n%s",
+				tc.name,
+				state,
+				stateBefore,
+			)
 		}
 
 		real := runBrain(t, "", args...)

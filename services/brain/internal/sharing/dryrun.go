@@ -160,7 +160,8 @@ func mirror(root string) (dir string, err error) {
 		if isNote(rel) {
 			return mirrorFile(path, filepath.Join(dir, rel), d, true)
 		}
-		if slashed := filepath.ToSlash(rel); slashed == check.PolicyFile || slashed == vault.SuspendersFile {
+		if slashed := filepath.ToSlash(rel); slashed == check.PolicyFile ||
+			slashed == vault.SuspendersFile {
 			return mirrorFile(path, filepath.Join(dir, rel), d, false)
 		}
 		return nil

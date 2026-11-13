@@ -28,7 +28,9 @@ var styledFrontmatter = []string{
 }
 
 func styledNote(eol string) []byte {
-	return []byte("---" + eol + strings.Join(styledFrontmatter, eol) + eol + "---" + eol + "Body." + eol)
+	return []byte(
+		"---" + eol + strings.Join(styledFrontmatter, eol) + eol + "---" + eol + "Body." + eol,
+	)
 }
 
 // patched parses note, applies change and renders it again.
@@ -116,7 +118,10 @@ func TestRenderPatchesOnlyChangedKeys(t *testing.T) {
 			t.Run(tt.name+" "+strings.ReplaceAll(eol, "\r", "CR"), func(t *testing.T) {
 				out := patched(t, styledNote(eol), tt.change)
 				want := expectedLines(tt.drop, tt.add)
-				wantNote := "---" + eol + strings.Join(want, eol) + eol + "---" + eol + "Body." + eol
+				wantNote := "---" + eol + strings.Join(
+					want,
+					eol,
+				) + eol + "---" + eol + "Body." + eol
 				if string(out) != wantNote {
 					t.Errorf("rendered:\n%q\nwant:\n%q", out, wantNote)
 				}

@@ -140,8 +140,14 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name: "full sha1 and sha512 digests",
-			yml: "sources:\n  - url: https://example.org\n    content_hash: sha1:" + strings.Repeat("a", 40) +
-				"\n  - url: https://example.net\n    content_hash: SHA-512:" + strings.Repeat("B", 128) + "\n",
+			yml: "sources:\n  - url: https://example.org\n    content_hash: sha1:" + strings.Repeat(
+				"a",
+				40,
+			) +
+				"\n  - url: https://example.net\n    content_hash: SHA-512:" + strings.Repeat(
+				"B",
+				128,
+			) + "\n",
 		},
 		{
 			name: "note refs as sources",

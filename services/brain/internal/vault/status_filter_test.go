@@ -24,7 +24,13 @@ func TestListStatusFilterUsesTheTierDefault(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(listing.Notes) != 1 || listing.Notes[0].Path != tt.want {
-			t.Errorf("List(%s, status %s) = %+v, want %s alone", tt.tier, tt.status, listing.Notes, tt.want)
+			t.Errorf(
+				"List(%s, status %s) = %+v, want %s alone",
+				tt.tier,
+				tt.status,
+				listing.Notes,
+				tt.want,
+			)
 		}
 	}
 }
