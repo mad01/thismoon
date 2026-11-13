@@ -3,7 +3,10 @@
    a 3x5 pixel font, WebAudio bleeps, particles, input, and the
    title -> play -> game-over state machine. Each game file registers a
    factory via ARCADE.register(name, factory); one game is picked at
-   random per page load, and N switches to another. */
+   random per page load, and N switches to another. The kit calls a
+   game's update(tick) 60 times a second on any display and its draw(tick)
+   once per display frame, so a game counts steps for speed and timers and
+   changes no state in draw. */
 window.ARCADE = (function () {
   "use strict";
 
@@ -126,17 +129,21 @@ window.ARCADE = (function () {
       });
     }
   }
-  function stepAndDrawParticles() {
+  // Particles move per game step and are drawn per display frame, so they
+  // keep their speed and lifetime on any refresh rate.
+  function stepParticles() {
     for (var i = particles.length - 1; i >= 0; i--) {
       var p = particles[i];
       p.x += p.vx;
       p.y += p.vy;
       p.vy += 0.1;
       p.life -= 1;
-      if (p.life <= 0) {
-        particles.splice(i, 1);
-        continue;
-      }
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+  }
+  function drawParticles() {
+    for (var i = particles.length - 1; i >= 0; i--) {
+      var p = particles[i];
       ctx.fillStyle = p.color;
       ctx.fillRect(Math.floor(p.x), Math.floor(p.y), 2, 2);
     }
@@ -303,7 +310,7 @@ window.ARCADE = (function () {
     }
 
     game.draw(tick);
-    stepAndDrawParticles();
+    drawParticles();
     var hud = "score " + game.score() + " best " + best;
     drawText(hud, W - textWidth(hud, 2) - 5, 5, 2, "#9aa2ad");
 
@@ -317,9 +324,60 @@ window.ARCADE = (function () {
     }
   }
 
-  function loop() {
+  /* --- fixed timestep ---
+     Games count steps, not milliseconds: speed, timers and difficulty are
+     all "per update". So the kit runs update at a fixed 60 steps a second
+     whatever the display's refresh rate, and draws once per display frame. */
+  var STEP_MS = 1000 / 60;
+  // A frame this close to a whole number of steps runs exactly that many, so
+  // timer jitter on a 60 Hz display (or a 30 Hz one) never turns into a
+  // doubled or skipped step. It stays under the 3.3 ms between one step and
+  // a 50 or 75 Hz frame, so those displays still run on the clock.
+  var SNAP_MS = 1.5;
+  // Most steps one frame may run. After a stalled or hidden tab the game
+  // catches up this far and drops the rest of the time.
+  var MAX_STEPS = 4;
+  // The time carried between frames starts, and restarts, a quarter step in:
+  // a 120 Hz frame is half a step, so the carry then sits a quarter step from
+  // the boundary on both of its frames and jitter cannot shift the rhythm.
+  var CARRY_START = STEP_MS / 4;
+
+  // stepsFor is the pure stepping decision: the milliseconds since the last
+  // frame and the carried remainder in, the steps to run and the new carry
+  // out.
+  function stepsFor(elapsed, carry) {
+    if (!(elapsed > 0)) return { steps: 0, carry: carry };
+    var whole = Math.round(elapsed / STEP_MS);
+    if (whole >= 1 && Math.abs(elapsed - whole * STEP_MS) <= SNAP_MS) {
+      return { steps: Math.min(whole, MAX_STEPS), carry: CARRY_START };
+    }
+    carry += elapsed;
+    var steps = 0;
+    while (carry >= STEP_MS && steps < MAX_STEPS) {
+      carry -= STEP_MS;
+      steps += 1;
+    }
+    if (carry >= STEP_MS) carry = CARRY_START;
+    return { steps: steps, carry: carry };
+  }
+
+  function step() {
     tick += 1;
     if (state === "play") game.update(tick);
+    if (state !== "title") stepParticles();
+  }
+
+  var lastFrame = null;
+  var carried = CARRY_START;
+  function loop(now) {
+    var steps = 1; // the first frame has nothing to measure from
+    if (lastFrame !== null) {
+      var next = stepsFor(now - lastFrame, carried);
+      steps = next.steps;
+      carried = next.carry;
+    }
+    lastFrame = now;
+    for (var i = 0; i < steps; i++) step();
     drawFrame();
     requestAnimationFrame(loop);
   }
@@ -327,7 +385,7 @@ window.ARCADE = (function () {
   function boot() {
     if (!names.length) return;
     switchTo(randomName(""));
-    loop();
+    requestAnimationFrame(loop);
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);
@@ -350,7 +408,8 @@ window.ARCADE = (function () {
     burst: burst,
     heart: heart,
     end: end,
-    register: register
+    register: register,
+    stepsFor: stepsFor // the kit's own clock, exposed for its tests
   };
   return api;
 })();
