@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.0](https://github.com/mad01/thismoon/compare/present/v1.23.0...present/v1.24.0) (2026-11-13)
+
+
+### Features
+
+* **present:** brief reading styles, a sized deck canvas, and redraw on face or size change ([#466](https://github.com/mad01/thismoon/issues/466)) ([27efbdc](https://github.com/mad01/thismoon/commit/27efbdc2702554da661ef0f9fdff2fcd9f26d8bb))
+
 ## [1.23.0](https://github.com/mad01/thismoon/compare/present/v1.22.0...present/v1.23.0) (2026-11-13)
 
 
