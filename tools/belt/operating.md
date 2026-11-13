@@ -257,8 +257,13 @@ executable at all.
 A memory store missing from a Claude Code session's start context is
 usually the `--agent claude-code` skip: Claude Code's autoMemoryDirectory
 names that store's directory, so Claude Code loads the MEMORY.md itself.
-The doctor agent memory section prints one line per store the flag leaves
-out. An older belt fails on the flag, and then no session-start hint
+The doctor agent memory section prints one line per store a setting names,
+with the scope and file the setting came from. The line then says that the
+flag leaves the store out, or why auto memory is off and the store stays in.
+When a settings source does not read or git fails, the section prints one
+`cannot tell` line with the error instead, and every store stays in. Doctor reads
+the project files of its own working directory, so run it from the
+directory the session starts in. An older belt fails on the flag, and then no session-start hint
 reaches the session: install the new belt before a settings entry passes
 `--agent`.
 

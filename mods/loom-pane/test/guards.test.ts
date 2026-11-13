@@ -4,6 +4,7 @@
 // memory.
 import { expect, mock, test } from 'claude-code/testing'
 import type { On, ProcessRunResult } from 'claude-code'
+import type { Engine } from 'claude-code/testing'
 
 const HOME = '/home/u'
 const CANONICAL = '/home/u/code/thismoon'
@@ -41,6 +42,8 @@ type Repo = {
   remoteAhead: number | null
   isIntegrated?: boolean
   mergeTreeExit?: number
+  // Worktrees git lists beyond the two above, such as one an Agent call made.
+  extra?: string[]
 }
 
 const MAIN_TREE = 'fe56c1cfe56c1cfe56c1cfe56c1cfe56c1cfe56c'
@@ -59,7 +62,7 @@ function fakeGit(repo: Repo, argv: readonly string[], cwd: string): ProcessRunRe
     const merged = ok(`${repo.isIntegrated === true ? MAIN_TREE : OTHER_TREE}\n`)
     return { ...merged, exitCode: repo.mergeTreeExit ?? 0 }
   }
-  if (line === 'worktree list --porcelain') return ok(porcelain)
+  if (line === 'worktree list --porcelain') return ok(porcelain + (repo.extra ?? []).map(entryOf).join(''))
   if (line.startsWith('symbolic-ref')) return failed()
   if (line === 'status --porcelain') return ok(repo.dirty.includes(cwd) ? ' M x\n' : '')
   if (line.startsWith('rev-list --count origin/')) return repo.remoteAhead === null ? failed() : ok(`${repo.remoteAhead}\n`)
@@ -68,8 +71,14 @@ function fakeGit(repo: Repo, argv: readonly string[], cwd: string): ProcessRunRe
   return failed()
 }
 
+// One porcelain entry for a worktree on a branch of its own.
+const entryOf = (path: string): string =>
+  [`worktree ${path}`, 'HEAD 3333333333333333333333333333333333333333', `branch refs/heads/${path.split('/').pop()}`, '', ''].join('\n')
+
 type Seat = {
   asked: string[]
+  // The directory session.cwd answers: a subagent's own inside its calls.
+  cwd: string
   answer: 'Proceed' | 'Cancel' | 'dismiss'
   sessionId: string
   // Stands for belt or the person: a command it refuses never runs.
@@ -81,7 +90,7 @@ type Seat = {
 
 // The engine beneath the plugin.
 function seat(on: On, repo: Repo, cwd: string, answer: Seat['answer'] = 'Proceed'): Seat {
-  const seated: Seat = { asked: [], answer, sessionId: 's-self', deniesBash: () => false, agent: 'completed' }
+  const seated: Seat = { asked: [], cwd, answer, sessionId: 's-self', deniesBash: () => false, agent: 'completed' }
   mock.env(on, { HOME })
   on('session.id', () => ({ value: seated.sessionId }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
@@ -99,7 +108,7 @@ function seat(on: On, repo: Repo, cwd: string, answer: Seat['answer'] = 'Proceed
     return { value: { isSet: true, version } }
   })
   on('process.run', (_$, e) => ({ value: fakeGit(repo, e.argv, e.init?.cwd ?? cwd) }))
-  on('session.cwd', () => ({ value: cwd }))
+  on('session.cwd', () => ({ value: seated.cwd }))
   on('ui.status', () => ({ value: undefined }))
   on('ui.log', () => ({ value: undefined }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
@@ -110,7 +119,7 @@ function seat(on: On, repo: Repo, cwd: string, answer: Seat['answer'] = 'Proceed
   on('tool.call', { tool: 'Agent' }, () => {
     if (seated.agent === 'denied') return { deny: 'belt[test]: refused' }
     if (seated.agent === 'background') {
-      return { result: { status: 'async_launched', agentId: 'a2', description: 'build', prompt: 'p', outputFile: '/tmp/a2' } }
+      return { result: { status: 'async_launched', agentId: 'a3', description: 'build', prompt: 'p', outputFile: '/tmp/a3' } }
     }
     return { result: finishedAgent(ISOLATED) }
   })
@@ -258,6 +267,94 @@ test('an Agent call without isolation, a background launch or a refused spawn re
   seated.agent = 'denied'
   expect(refusalOf(await $.tool.call(SPAWN))).toMatch(/belt\[test\]/)
   expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_ISOLATED }))).toMatch(/belongs to the canonical checkout/)
+})
+
+// The isolation worktree the Agent tool made for background agent a3; its
+// launch result names no path.
+const BACKGROUND = `${CANONICAL}/.claude/worktrees/agent-a3`
+const PUSH_BACKGROUND = `git -C ${BACKGROUND} push -u origin worktree-agent-a3`
+
+// Launches a3 in the background, then lets git list its worktree, as the
+// Agent tool does once the launch made it.
+async function launchInBackground($: Engine, seated: Seat, repo: Repo) {
+  seated.agent = 'background'
+  expect(refusalOf(await $.tool.call(SPAWN))).toBeUndefined()
+  repo.extra = [BACKGROUND]
+}
+
+// One Bash call from agent `agentId` running in `cwd`.
+async function agentBash($: Engine, seated: Seat, agentId: string, cwd: string) {
+  const home = seated.cwd
+  seated.cwd = cwd
+  try {
+    return await $.tool.call({ tool: 'Bash', command: 'git status', agentId })
+  } finally {
+    seated.cwd = home
+  }
+}
+
+test("the main loop pushes from a background agent's isolation worktree once the agent ran a command there", async ($, on) => {
+  const repo: Repo = { dirty: [], ahead: 0, remoteAhead: 0 }
+  const seated = seat(on, repo, OWN)
+  await $.session.start({ cwd: OWN, surface: null, isInteractive: true })
+  await launchInBackground($, seated, repo)
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BACKGROUND }))).toMatch(/belongs to the canonical checkout/)
+
+  expect(refusalOf(await agentBash($, seated, 'a3', BACKGROUND))).toBeUndefined()
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BACKGROUND }))).toBeUndefined()
+
+  // Push only, as for a foreground agent's worktree.
+  const commit = await $.tool.call({ tool: 'Bash', command: `git -C ${BACKGROUND} commit -m x` })
+  expect(refusalOf(commit)).toMatch(/agent-a3 belongs to/)
+  const write = await $.tool.call({ tool: 'Write', file_path: `${BACKGROUND}/README.md`, content: 'x' })
+  expect(refusalOf(write)).toMatch(/agent-a3\/README.md belongs to/)
+})
+
+test("a background agent's first command counts only in a new worktree of the repo, and only its own", async ($, on) => {
+  const repo: Repo = { dirty: [], ahead: 0, remoteAhead: 0 }
+  const seated = seat(on, repo, OWN)
+  await $.session.start({ cwd: OWN, surface: null, isInteractive: true })
+  await launchInBackground($, seated, repo)
+
+  // Another agent in that worktree, or the main loop there, adds nothing.
+  await agentBash($, seated, 'a9', BACKGROUND)
+  await $.tool.call({ tool: 'Bash', command: `cd ${BACKGROUND} && git status` })
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BACKGROUND }))).toMatch(/belongs to/)
+
+  // The agent's first command runs in a subdirectory: the launch is spent,
+  // and a later command in the worktree itself adds nothing.
+  await agentBash($, seated, 'a3', `${BACKGROUND}/src`)
+  await agentBash($, seated, 'a3', BACKGROUND)
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BACKGROUND }))).toMatch(/belongs to/)
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: `git -C ${BACKGROUND}/src push` }))).toMatch(/belongs to/)
+})
+
+for (const [name, cwd] of [
+  ['the canonical checkout', CANONICAL],
+  ['a directory inside the canonical checkout', `${CANONICAL}/src`],
+  ['a worktree git listed before the launch', OTHER],
+] as const) {
+  test(`a background agent whose first command runs in ${name} widens nothing`, async ($, on) => {
+    const repo: Repo = { dirty: [], ahead: 0, remoteAhead: 0, extra: [OTHER] }
+    const seated = seat(on, repo, OWN)
+    await $.session.start({ cwd: OWN, surface: null, isInteractive: true })
+    seated.agent = 'background'
+    await $.tool.call(SPAWN)
+    await agentBash($, seated, 'a3', cwd)
+    expect(refusalOf(await $.tool.call({ tool: 'Bash', command: `git -C ${cwd} push` }))).toMatch(/belongs to/)
+  })
+}
+
+test('a launch from another session is forgotten after an in-process /resume', async ($, on) => {
+  const repo: Repo = { dirty: [], ahead: 0, remoteAhead: 0 }
+  const seated = seat(on, repo, OWN)
+  await $.session.start({ cwd: OWN, surface: null, isInteractive: true })
+  await $.turn.start({ text: '', turnId: 't1' })
+  await launchInBackground($, seated, repo)
+  seated.sessionId = 's-resumed'
+  await $.turn.start({ text: '', turnId: 't2' })
+  await agentBash($, seated, 'a3', BACKGROUND)
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: PUSH_BACKGROUND }))).toMatch(/belongs to/)
 })
 
 test('guards off lets every call through', { options: { guards: false } }, async ($, on) => {

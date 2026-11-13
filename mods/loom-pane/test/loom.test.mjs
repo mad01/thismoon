@@ -7,6 +7,7 @@ import { after, before, describe, test } from 'node:test'
 
 import {
   analyzeBash,
+  backgroundIsolationAgent,
   canonicalFrom,
   classifyPath,
   classifyPush,
@@ -15,6 +16,7 @@ import {
   isIntegratedTree,
   isWeaveArgs,
   isolationWorktreeFrom,
+  launchedWorktree,
   loomArgsOf,
   mergeTreeArgs,
   ownerClaimFrom,
@@ -213,6 +215,31 @@ describe('worktrees the session created', () => {
     assert.equal(isolationWorktreeFrom('worktree', { worktreePath: '.claude/worktrees/agent-a2' }), null)
     assert.equal(isolationWorktreeFrom('worktree', { worktreePath: 7 }), null)
     assert.equal(isolationWorktreeFrom('worktree', null), null)
+  })
+
+  test('a background Agent call with isolation: worktree names the agent to watch', () => {
+    const launched = { status: 'async_launched', agentId: 'a3', description: 'd', prompt: 'p', outputFile: '/tmp/a3' }
+    assert.equal(backgroundIsolationAgent('worktree', launched), 'a3')
+    assert.equal(backgroundIsolationAgent(undefined, launched), null)
+    assert.equal(backgroundIsolationAgent('remote', launched), null)
+    assert.equal(backgroundIsolationAgent('worktree', { status: 'completed', agentId: 'a3' }), null)
+    assert.equal(backgroundIsolationAgent('worktree', { status: 'remote_launched', taskId: 't' }), null)
+    assert.equal(backgroundIsolationAgent('worktree', { status: 'async_launched', agentId: '' }), null)
+    assert.equal(backgroundIsolationAgent('worktree', { status: 'async_launched', agentId: 7 }), null)
+    assert.equal(backgroundIsolationAgent('worktree', null), null)
+  })
+
+  test("a background agent's directory counts only as a worktree git lists now and did not list at the launch", () => {
+    const isolated = `${CANONICAL}/.claude/worktrees/agent-a3`
+    const before = [CANONICAL, BUILDER]
+    const listed = [...before, isolated]
+    assert.equal(launchedWorktree(`${isolated}/`, listed, before), isolated)
+    assert.equal(launchedWorktree(`${isolated}/../agent-a3`, listed, before), isolated)
+    assert.equal(launchedWorktree(`${isolated}/src`, listed, before), null)
+    assert.equal(launchedWorktree(BUILDER, listed, before), null)
+    assert.equal(launchedWorktree(CANONICAL, listed, before), null)
+    assert.equal(launchedWorktree(isolated, before, before), null)
+    assert.equal(launchedWorktree('.claude/worktrees/agent-a3', listed, before), null)
   })
 
   test('a push from a created worktree is the session own; any other worktree stays another', () => {

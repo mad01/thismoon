@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
@@ -10,22 +11,26 @@ import (
 )
 
 // memoryProbe measures the agent-memory indexes the session-start hint
-// injects. Injected so tests never read the real stores under $HOME.
-type memoryProbe func(cfg config.Config) []hint.MemoryUsage
+// injects, with hint.AgentMemory.Usage's error. Injected so tests never read
+// the real stores under $HOME.
+type memoryProbe func(cfg config.Config) ([]hint.MemoryUsage, error)
 
 // liveMemoryProbe measures the stores at their real paths, reading the
-// Claude settings files cfg allows.
-func liveMemoryProbe(cfg config.Config) []hint.MemoryUsage {
-	return hint.NewAgentMemory(cfg).Usage()
+// Claude settings sources cfg allows as a session started in doctor's own
+// working directory would.
+func liveMemoryProbe(cfg config.Config) ([]hint.MemoryUsage, error) {
+	cwd, _ := os.Getwd()
+	return hint.NewAgentMemory(cfg).Usage(cwd)
 }
 
 // printAgentMemory renders each store's size against its share of the
 // budget. Stores near the budget together get a WARNING line and leave the
 // exit status alone, since every fact still reaches the session. A store
 // over its share also lands in the warnings section, named: its facts are
-// being dropped. A store Claude Code loads itself gets one line saying so.
-// With the hint disabled nothing is injected, so no size can warn and no
-// store is left out.
+// being dropped. A store autoMemoryDirectory names gets one line saying
+// which source names it, and whether Claude Code loads it itself. When belt
+// cannot tell, one line says why. With the hint disabled nothing is
+// injected, so no size can warn and no store is left out.
 func printAgentMemory(w io.Writer, cfg config.Config, probe memoryProbe) []string {
 	fmt.Fprintf(
 		w,
@@ -33,7 +38,7 @@ func printAgentMemory(w io.Writer, cfg config.Config, probe memoryProbe) []strin
 		hint.MemoryBudgetBytes,
 	)
 	enabled := cfg.HintEnabled(hint.NewAgentMemory(cfg).ID())
-	usage := probe(cfg)
+	usage, autoErr := probe(cfg)
 	var warns []string
 	total := 0
 	for _, u := range usage {
@@ -62,14 +67,26 @@ func printAgentMemory(w io.Writer, cfg config.Config, probe memoryProbe) []strin
 		)
 	}
 	if enabled {
-		starts := config.LoadClaudeHooks("SessionStart", cfg.ClaudeSettingsFiles...)
-		for _, u := range usage {
-			if u.AutoMemorySettings != "" {
-				fmt.Fprintf(w, "  %s\n", autoMemoryNote(u, starts))
-			}
-		}
+		printAutoMemory(w, cfg, usage, autoErr)
 	}
 	return warns
+}
+
+// printAutoMemory prints the line for each store autoMemoryDirectory names,
+// or, when err says belt cannot tell, one line with the error: no store is
+// marked then, and a Claude Code session started here keeps every store.
+func printAutoMemory(w io.Writer, cfg config.Config, usage []hint.MemoryUsage, err error) {
+	if err != nil {
+		fmt.Fprintf(w, "  cannot tell which store Claude Code loads itself: %v; "+
+			"a Claude Code session started here keeps every store\n", err)
+		return
+	}
+	starts := config.LoadClaudeHooks("SessionStart", cfg.ClaudeSettingsFiles...)
+	for _, u := range usage {
+		if u.AutoMemory.Directory != "" {
+			fmt.Fprintf(w, "  %s\n", autoMemoryNote(u, starts))
+		}
+	}
 }
 
 func memorySizeNote(u hint.MemoryUsage) string {
@@ -86,16 +103,31 @@ func overNote(u hint.MemoryUsage, enabled bool) string {
 	return fmt.Sprintf("  OVER ITS SHARE (%d facts dropped)", u.Facts-u.Kept)
 }
 
-// autoMemoryNote is the one line for a store Claude Code loads itself: what
-// a Claude Code session started with the flag skips, and why. Doctor has no
-// agent of its own, so the line speaks of such a session. When a
+// autoMemoryNote is the one line for a store autoMemoryDirectory names:
+// which source names it, and what a Claude Code session started with the
+// flag does with the store. Doctor has no agent of its own, so the line
+// speaks of such a session. While auto memory may be off the session keeps
+// the store, and the line says why. Otherwise the session skips it, and when a
 // SessionStart entry in the Claude settings runs belt hint session-start
 // without the flag, the line adds that the store still loads twice there.
 func autoMemoryNote(u hint.MemoryUsage, starts []config.ClaudeHook) string {
+	named := fmt.Sprintf(
+		"autoMemoryDirectory in %s points at %s",
+		u.AutoMemory.Source,
+		filepath.Dir(u.Path),
+	)
+	if !u.LoadedByClaudeCode() {
+		return fmt.Sprintf(
+			"%s: %s, but Claude Code may load none of it: %s; a Claude Code session keeps the store",
+			u.Label,
+			named,
+			u.AutoMemory.Off,
+		)
+	}
 	note := fmt.Sprintf(
 		"%s: a Claude Code session started with --agent %s skips it, "+
-			"because autoMemoryDirectory in %s points at %s and Claude Code loads that MEMORY.md itself",
-		u.Label, hint.AgentClaudeCode, u.AutoMemorySettings, filepath.Dir(u.Path),
+			"because %s and Claude Code loads that MEMORY.md itself",
+		u.Label, hint.AgentClaudeCode, named,
 	)
 	for _, h := range starts {
 		agent, runs := beltHint(h.Command, hint.EventSessionStart)

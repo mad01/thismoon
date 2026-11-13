@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-13 belt: the memory store skip reads only the settings Claude Code reads
+
+Change: thismoon #453. `belt hint session-start --agent claude-code` now reads `autoMemoryDirectory` from the files Claude Code reads it from: `~/.claude/settings.json`, the session's project files and the managed settings files. It reads `~/.claude/settings.local.json` only for a session started in the home directory, since Claude Code treats that file as local scope. It also keeps a store while auto memory is off. A machine that sets `autoMemoryDirectory` only in `~/.claude/settings.local.json` gets that store from belt again: Claude Code never loaded it in project sessions, so its facts reached no session.
+
+Run: to have Claude Code load that store as auto memory, move `autoMemoryDirectory` from the consuming repo's rendering of `~/.claude/settings.local.json` into its `~/.claude/settings.json` template, then `ralph up`. Without the move, nothing is needed: belt injects the store.
+
+Verify: run `belt doctor` from a project directory. With the key moved, the agent memory section names the store and says `autoMemoryDirectory in user settings`, followed by the full path of `~/.claude/settings.json`. With the key left in `settings.local.json`, doctor prints no such line and a new session shows the store's facts in its `belt[agent-memory]` block.
+
 ## 2026-11-13 belt: a custom guard with an empty command is a config error
 
 Change: thismoon #435. A `custom_guards.<name>.command` that is empty now fails config validation. This holds for a disabled entry too. A config that fails validation makes every `belt hook` call deny, so fix or remove such an entry before `ralph up` installs this belt.

@@ -138,12 +138,17 @@ type Config struct {
 	Ledger         Ledger                 // what `belt record` posts, and where
 	Watch          Watch                  // whether and how `belt watch` polls for items
 	Allows         map[string]Allow       // per-allow switch and roots; every allow is off until enabled
-	// ClaudeSettingsFiles lists the Claude settings files a hint may read
-	// on demand, later files winning; nil when the read is disabled. The
-	// agent-memory hint reads autoMemoryDirectory from them, only for a
-	// session started with --agent claude-code, so no other hook pays for
-	// the read.
+	// ClaudeSettingsFiles lists the Claude settings files belt doctor reads
+	// hook entries from on demand (~/.claude/settings.json and
+	// settings.local.json); nil when the read is disabled.
 	ClaudeSettingsFiles []string
+	// ClaudeSources locates the settings sources Claude Code reads auto
+	// memory from; nil when the read is disabled. The agent-memory hint
+	// reads them only for a session started with --agent claude-code, so no
+	// other hook pays for the read. A separate list from
+	// ClaudeSettingsFiles: ~/.claude/settings.local.json adds deny patterns
+	// and hook checks, but it is not a source of autoMemoryDirectory.
+	ClaudeSources *ClaudeSources
 	// LargeFileLines is large_file_lines as written, 0 when unset; read it
 	// through LargeFileThreshold, which applies the default. One value for
 	// the two checks whose subject is a large whole-file read: the
@@ -428,7 +433,8 @@ func ReadIncludes(paths []string) ([]Include, error) {
 // enforces inside scripts so the guard and the permission system share one
 // deny list. belt doctor also reads the PostToolUse hook entries, to check
 // the matcher of the one that runs belt hint read. The agent-memory hint
-// reads autoMemoryDirectory, to leave out a store Claude Code loads itself.
+// reads the auto memory keys from the sources Claude Code reads them from
+// (ClaudeSources), to leave out a store Claude Code loads itself.
 type ClaudeSettings struct {
 	Enabled *bool `toml:"enabled" yaml:"enabled"`
 }
@@ -657,6 +663,10 @@ type Paths struct {
 	BeltYAML       string   // ~/.config/belt/config.yaml
 	BeltTOML       string   // legacy fallback, read only when the YAML file is absent
 	ClaudeSettings []string // ~/.claude/settings.json + settings.local.json (claude_settings gate)
+	// ClaudeUser and ClaudeManagedDir are the auto memory sources that do not
+	// depend on the session directory, behind the same gate.
+	ClaudeUser       string // ~/.claude/settings.json
+	ClaudeManagedDir string // ClaudeManagedDir
 }
 
 // DefaultPaths returns the standard location of every config surface,
@@ -678,6 +688,8 @@ func DefaultPaths() (Paths, error) {
 			filepath.Join(home, ".claude", "settings.json"),
 			filepath.Join(home, ".claude", "settings.local.json"),
 		},
+		ClaudeUser:       filepath.Join(home, ".claude", "settings.json"),
+		ClaudeManagedDir: ClaudeManagedDir,
 	}, nil
 }
 
@@ -744,6 +756,7 @@ func LoadFrom(p Paths) (Config, error) {
 	if cfg.ClaudeSettings.ReadEnabled() {
 		cfg.ClaudeDeny = LoadClaudeDenyPatterns(p.ClaudeSettings...)
 		cfg.ClaudeSettingsFiles = p.ClaudeSettings
+		cfg.ClaudeSources = &ClaudeSources{User: p.ClaudeUser, ManagedDir: p.ClaudeManagedDir}
 	}
 	if src.Broken() {
 		return cfg, src.Err
@@ -842,37 +855,6 @@ func LoadClaudeHooks(event string, paths ...string) []ClaudeHook {
 		}
 	}
 	return hooks
-}
-
-// LoadClaudeAutoMemoryDirectory reads Claude Code's autoMemoryDirectory
-// setting from the given settings files and names the file it came from. A
-// later file wins, so ~/.claude/settings.local.json wins over
-// ~/.claude/settings.json, and a key set to "" counts as set. Claude Code's
-// settings docs list only ~/.claude/settings.json as the user file, and name
-// settings.local.json only inside a project. A missing file contributes
-// nothing. A file that cannot be read or does not parse, or a value that is
-// not a string, is an error: belt then cannot tell what Claude Code
-// resolved. The agent-memory hint and belt doctor are the only readers.
-func LoadClaudeAutoMemoryDirectory(paths ...string) (dir, file string, err error) {
-	for _, path := range paths {
-		raw, readErr := os.ReadFile(path)
-		if errors.Is(readErr, fs.ErrNotExist) {
-			continue
-		}
-		if readErr != nil {
-			return "", "", readErr
-		}
-		var settings struct {
-			AutoMemoryDirectory *string `json:"autoMemoryDirectory"`
-		}
-		if err := json.Unmarshal(raw, &settings); err != nil {
-			return "", "", fmt.Errorf("%s: %w", path, err)
-		}
-		if settings.AutoMemoryDirectory != nil {
-			dir, file = *settings.AutoMemoryDirectory, path
-		}
-	}
-	return dir, file, nil
 }
 
 // File is the parsed shape of the belt config file in either format. An

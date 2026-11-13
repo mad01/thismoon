@@ -10,6 +10,12 @@ export type LoomPaneMember = {
   state: string | null
 }
 
+/** A background agent launched into an isolation worktree, and the worktrees git listed before the launch. */
+export type LoomPaneLaunch = {
+  agentId: string
+  before: string[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'loom-pane': {
@@ -24,8 +30,10 @@ declare module 'claude-code' {
       members: LoomPaneMember[]
       /** The session the role was last detected for; null until the first detect. */
       sessionId: string | null
-      /** Worktrees this session created with `git worktree add`, in the main loop or a subagent, or that a foreground Agent call with `isolation: "worktree"` made; emptied when the session changes. */
+      /** Worktrees this session created with `git worktree add`, in the main loop or a subagent, or that an Agent call with `isolation: "worktree"` made; emptied when the session changes. */
       createdWorktrees: string[]
+      /** Background Agent calls with `isolation: "worktree"` whose agent has run no Bash call yet; emptied when the session changes. */
+      launchedAgents: LoomPaneLaunch[]
     }
   }
 }
