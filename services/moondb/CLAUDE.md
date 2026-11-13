@@ -901,7 +901,8 @@ never the JSON. Authoring guide: `docs/SANDBOXING.md`, "Declaring access".
 make build    # ./moondb binary (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/moondb + codesign
 make test     # go test ./... then test-js  (hermetic: t.TempDir + throwaway git repos, never touches real $HOME)
-make test-js  # node --test pi/test/*.test.mjs: the pi package against a fake pi and a fake moondb on PATH
+make test-js  # node --test: pi/test (the pi package against a fake pi and a fake moondb on PATH) and
+              # internal/server/app.test.mjs (the sessions list in a vm with a DOM stand-in and held fetches)
 make lint     # golangci-lint run ./...
 ```
 

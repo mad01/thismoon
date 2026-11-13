@@ -29,13 +29,14 @@ test:
 	go test ./...
 	$(MAKE) test-js
 
-# The pi package runs under node's test runner. Build and install never need
-# node, so a machine without it skips these tests.
+# The pi package and the page script (internal/server/app.js) run under
+# node's test runner. Build and install never need node, so a machine without
+# it skips these tests.
 test-js:
 	@if command -v node >/dev/null 2>&1; then \
-		node --test pi/test/*.test.mjs; \
+		node --test pi/test/*.test.mjs internal/server/*.test.mjs; \
 	else \
-		echo "moondb: node not found, skipping pi package tests"; \
+		echo "moondb: node not found, skipping the JS tests"; \
 	fi
 
 tidy:
