@@ -37,7 +37,7 @@ test-local: ## fallback: every test on the host (DOM tests need `npm ci` on the 
 fmt: ## format Go (gofumpt + goimports + golines)
 	gofumpt -w .
 	goimports -w .
-	golines -m 100 --base-formatter=gofumpt -w .
+	golines -m 100 --base-formatter=gofumpt --no-reformat-tags -w .
 
 lint: ## golangci-lint over the Go package
 	golangci-lint run ./...
