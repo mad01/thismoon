@@ -1634,12 +1634,19 @@ wk-badge.wk-ra-state {
   border: 1px solid var(--border); border-radius: var(--wk-radius-surface); background: var(--card-bg);
   font-size: 0.8rem; color: var(--text-2);
 }
-.wk-ra-bar-line { color: var(--text-1); font-weight: 500; white-space: nowrap; }
+/* The line and the actions keep one row while the bar has room (the bar
+   breaks between items by their unwrapped width) and wrap inside the bar
+   when it has not, so a long line or both buttons on a phone stay within the
+   border instead of pushing past it. */
+.wk-ra-bar-line { color: var(--text-1); font-weight: 500; }
 .wk-ra-bar-reason {
   flex: 1 1 8rem; min-width: 0; color: var(--red);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.wk-ra-bar-actions { display: inline-flex; gap: var(--wk-space-2); margin-left: auto; }
+.wk-ra-bar-actions {
+  display: inline-flex; flex-wrap: wrap; justify-content: flex-end;
+  gap: var(--wk-space-2); margin-left: auto;
+}
 .wk-ra-bar .wk-ra-btn { float: none; margin: 0; }
 
 /* Respect reduced-motion kit-wide (consumers previously shipped this locally). */
