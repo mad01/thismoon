@@ -319,9 +319,10 @@ Blocks `git push` to `main` or `master` before it happens.
 
 - **Fires on** every `git push` found in the Bash command, including compound
   commands (`cd x && git push`) and pushes behind a global flag
-  (`git --no-pager push`). Bare `git push` and `HEAD` refspecs resolve
+  (`git --no-pager push`). Bare `git push` and `HEAD` or `@` refspecs resolve
   the current branch via `git rev-parse --abbrev-ref HEAD` in the push
-  directory.
+  directory. A `heads/<name>` side reads as `refs/heads/<name>`, as git
+  expands it, so `git push origin heads/main` targets main.
 - **Follows `cd` and `git -C`.** The guard walks the command's segments and
   tracks `cd`/`pushd`, so a push is judged in the directory it runs in, not
   the session cwd. A `git -C` target is resolved against that directory the
@@ -354,13 +355,76 @@ Blocks `git push` to `main` or `master` before it happens.
   `$HOME`, or a variable set to one of those at the start of a plain
   command. belt never runs git in its own process directory to fill the gap:
   that once let a push into a non-exempt repo ride an exempt session cwd.
+- **Reads a wrapped push.** The guard walks a quote-aware reader, so a push
+  inside a `( … )` subshell, a `$(…)` or backtick substitution, an
+  `sh -c`/`bash -c` string, an `eval`, a `\`-continued line, or a `{ … }`
+  group is judged like a plain `git push`. When the reader cannot follow a
+  command, the whole lines before the line it fails on get the full walk,
+  because bash runs them before it meets the syntax error. The rest is read
+  fail-closed: a git word and a push there are denied unless the refspecs
+  name a non-default branch in plain text. Nesting deeper than 32 levels is
+  read the same way.
+- **Heredoc bodies are text unless a shell may run them.** A body read by
+  `cat`, `tee`, `head`, `tail`, `git commit` or a `gh pr`, `issue`,
+  `release`, `gist` or `api` call is prose. Its lines are read the old token
+  way, so a line that starts with a push still counts, but a backtick or
+  `$( )` in a quoted (`<<'EOF'`) body is text: a PR body or commit message
+  that shows a push in a code span passes. In an unquoted body the shell runs
+  every `$( )` and backtick before the command reads it, even after a `'` or
+  `#`, so those are read as code and a push there is denied. Any other
+  command, a pipe, a `>( )` after the reader, and a substitution handed to
+  `sh -c`, `eval`, `source` or an interpreter make the body code, read like
+  the rest of the command. In an unquoted body a line ending in a
+  backslash joins the next one before belt compares it with the delimiter,
+  as bash and zsh do.
+- **A refspec must be plain text.** A refspec that holds a variable, a
+  substitution, a `$'...'` string, a brace or a glob may name `main`, so the
+  push is denied on any branch. Two shapes read as the current branch. The
+  first is `"$(git branch --show-current)"` (or `git rev-parse --abbrev-ref
+  HEAD`, `git symbolic-ref --short HEAD`) as the whole word, with no
+  `git -C`. The second is a variable set to one of those forms:
+  `B=$(git branch --show-current); git push -u origin "$B"`. The assignment
+  must be a command of its own at the top level, before the push, joined by
+  the start, `;`, a newline or `&&` and not piped. The name may appear nowhere
+  else but as a whole refspec (`$B`, `${B}`, quoted or bare), and it may not
+  be one the shell manages (`PATH`, `HOME`, `PWD`, `IFS` and so on). The
+  command may hold no `cd`, `pushd` or `popd`, no `read`, `export`, `unset`,
+  `eval`, `source`, `.`, loop or `if` keyword, no `{ }` group, and the push
+  no `git -C` or `--git-dir`. After `&&` the name must also be unset in the
+  environment, since the assignment may not run. So both shapes pass from a
+  feature branch and are denied on main. `"$BRANCH"` with no assignment is
+  denied.
 - **Allows when** the push directory's origin remote resolves to a repo on
   the top-level `direct_main_repos` list or on
-  `guards.git-push-main.allow_repos`. Both take an exact `host/owner/repo`
+  `guards.git-push-main.allow_repos`, and the push plainly targets `origin`.
+  Both take an exact `host/owner/repo`
   or a trailing `/*` org wildcard, the same patterns `git_identity[].repos`
   takes. A machine class where direct pushes are fine (a personal machine,
   say) disables the guard in its rendered config instead. belt reads no
   machine profile, from ralph or anywhere else (docs/adr/0010).
+- **The exemption is for the repo the session is really on.** A push to a URL
+  or a second remote name, a `--repo`, a `-c remote.origin.pushurl=` or
+  `-c url.*.pushInsteadOf=`, or a `GIT_CONFIG*`/config-env override in front
+  is not exempt and is denied even on an allowlisted repo. A bare push reads
+  its push remote via `git for-each-ref … %(push:remotename)` (empty means
+  origin), and the repo identity comes from `git remote get-url --push
+  origin`.
+- **No exemption after a config change in the same command.** belt reads
+  the config before the command runs. So a step anywhere in the command
+  that can move the push drops the exemption. Such a step is a `git config`
+  write (`--global`, `-f`, `--add`, `--replace-all` and `--unset` included),
+  `git remote add`, `set-url`, `rename` or `remove`, or `git branch -u`. So
+  is a redirect into a `.git/` path, a `.gitconfig`, the XDG `git/config` or
+  a `GIT_CONFIG*` file, and any other command that names one in its words
+  (`cp`, `mv`, `tee`, `sed -i`, a `python3 -c` script). A command that only
+  reads or prints counts only through a redirect: `echo`, `printf`, `cat`,
+  `head`, `tail`, `less`, `more`, `grep`, `rg` (not with `--pre`), `ls`,
+  `stat`, `wc`, `diff` and `file`. So `cat .git/config; git push origin
+  main` keeps the exemption, before the push or after it. Reads such as
+  `git config --get`, `--get-all` or `--list`, `git remote -v`, `git remote
+  show` and `git remote get-url` keep it too. A comment and a heredoc body no
+  shell runs change nothing, so a commit message that names `.git/config`
+  keeps it.
 - **Why it exists**: a session once pushed straight to master and tried to
   self-merge. The permission system sees `git push` as one more shell command;
   this guard reads the target.
@@ -477,6 +541,31 @@ then run the file" bypass.
   So `cat > doc.md <<'EOF'` followed by `git add doc.md` passes, while the
   same file run, sourced, made executable, copied or piped on keeps every
   line checked.
+- **A message or print that only names a command is data, not code.** Before
+  the per-line scan, the guard blanks the text a carrier command carries
+  without running it (`scriptmask.go`): the words of `echo` and `printf`
+  (not `-v`), a `git commit` message (the value of `-m` or `--message`, which
+  may be a `$(cat <<'EOF')` body, and the heredoc only with `-F -`), and a
+  `gh pr`/`issue`/`release`/`gist` title, body or notes value with its
+  `-F -` heredoc. Every other word of the command stays as written. So a
+  denied command named only in a commit message or an echo string passes, a
+  quoted `;` or `| xargs` in the string and an earlier `bash -c` in the same
+  command included. The mask is off when a top-level pipe, a group word
+  (`{`, `if`, `for`, …), `exec` or a `>( )` target could carry the output to
+  something that runs it. It is off when something else in the command could
+  run beside it or after the command ends, since such a job could read a
+  file the echo or the commit writes. That covers a background `&` anywhere
+  (inside a `-c` string too), a `coproc`, a `trap`, and words such as
+  `nohup`, `setsid`, `at`, `open`, `Popen` or `fork`. It is off when the
+  reader cannot follow the whole command. It is off for a heredoc body with
+  a line that starts with its delimiter without being it: inside `$( )` bash
+  ends the body at a line `EOF)` and runs the rest of that line, zsh does
+  not. What can still run is scanned
+  raw: every `$(…)`, backtick or `<( )` body wherever it stands (so
+  `echo "$(rm -rf x)"` and `x=$(rm -rf x)` deny), and an
+  `echo`/`printf` piped through `cat`/`tee` into a stdin-reading interpreter
+  (`echo '…' | sh`). The write-then-run and chmod scans keep reading the raw
+  command, so a file written then run is unaffected.
 - **`curl | bash` is denied outright** (`wget` too): nothing can read what
   would run. Download to a file first, then run the file.
 - **Patterns come from** the `permissions.deny` `Bash(...)` entries of
@@ -679,7 +768,9 @@ Blocks git commands that throw away uncommitted work.
   and checking out over the user's uncommitted work without being asked.
   Worktree changes are in no reflog, so this is damage that is hard to undo.
 - **Fails closed**: a directory only a shell can name, or a `git status`
-  that fails there, denies. `mode: soft` turns a deny into a warn event.
+  that fails there, denies. So does a discarding command in text the reader
+  could not follow, where no directory is certain. `mode: soft` turns a deny
+  into a warn event.
 
 ### rm-temp
 

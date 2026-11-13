@@ -775,6 +775,7 @@ func TestGitPushMainAllowRepos(t *testing.T) {
 			})
 			g.resolveBranch = func(string) string { return tt.currentBranch }
 			g.resolveRepo = func(string) string { return tt.repo }
+			g.resolvePushRemote = func(string, string) string { return "origin" }
 			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/tmp"})
 			if (d != nil) != tt.wantDeny {
 				t.Errorf("Check(%q) denial = %v, wantDeny %v", tt.command, d, tt.wantDeny)
@@ -804,6 +805,7 @@ func TestGitPushMainDirectMainRepos(t *testing.T) {
 			g := NewGitPushMain(config.Config{DirectMainRepos: tt.global})
 			g.resolveBranch = func(string) string { return "main" }
 			g.resolveRepo = func(string) string { return tt.repo }
+			g.resolvePushRemote = func(string, string) string { return "origin" }
 			d := g.Check(Input{Event: EventBash, Command: "git push", Cwd: "/tmp"})
 			if (d != nil) != tt.wantDeny {
 				t.Errorf("denial = %v, wantDeny %v", d, tt.wantDeny)

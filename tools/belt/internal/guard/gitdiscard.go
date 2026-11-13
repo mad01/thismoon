@@ -53,14 +53,19 @@ func (g *GitDiscard) Event() string { return EventBash }
 // Check judges every discarding git invocation in the command in the
 // directory it runs in (the same cd/pushd and `git -C` tracking the other
 // git guards use). An invocation whose directory only a shell can name is
-// denied: there is no tree to check for changes.
+// denied: there is no tree to check for changes. So is one in code the
+// reader could not follow (walkStep.unread), where no directory is certain.
 func (g *GitDiscard) Check(in Input) *Denial {
 	var denial *Denial
-	walkSegments(in.Command, in.Cwd, func(tokens []string, dir string) {
+	walkCommands(in.Command, in.Cwd, func(s walkStep) {
 		if denial != nil {
 			return
 		}
-		c, ok := segmentGitCommand(tokens, dir)
+		dir := s.dir
+		if s.unread {
+			dir = ""
+		}
+		c, ok := segmentGitCommand(s.tokens, dir)
 		if !ok || !discards(c) {
 			return
 		}

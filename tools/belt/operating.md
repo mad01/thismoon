@@ -96,21 +96,35 @@ script or switching tools. If the deny looks wrong, surface it and let the
 user decide.
 
 Known false-positive path for `script-deny-list`: an inline script matches
-as text, the shell after it included. So a heredoc or `-c` string that only
-writes or prints a denied command's name is denied. The one exception is a
-Python heredoc that is the whole command and runs as `python3 -I`. It may
-import only json, re, pathlib, textwrap, datetime or collections, and may
-not name os, sys, exec, eval, getattr, vars or a `_`-prefixed name anywhere.
-The deny reason for a Python heredoc names that shape. A `cat` or `tee`
-heredoc written to a document file (`.md`, `.txt` and a few more) is text,
-and its lines are not read as commands. The file may not sit in a dot
-directory or a system directory, and JSON, YAML and TOML files are never
-text. The temp folders `/tmp`, `/var/tmp` and `~/.tmp` are allowed, with the
-same rules below them. Every other step must be one that cannot run the file (`mkdir`,
-`git add`, `gh pr create` and a few more), with no redirect, and every
-`cd` must be followed by `&&`.
-After a `bash -c` or an interpreter heredoc in the same command it still
-matches, because that inline script scans to the end of the command.
+as text, the shell after it included. So an `eval`, `xargs` or `-c` string
+that names a denied command is denied even when it only prints it. A command
+whose job is to carry text and run none of it is read as data instead:
+the words of `echo` and `printf`, a `git commit` message (the value of `-m`
+or `--message`, and the heredoc only with `-F -`), and a `gh pr`/`issue`
+title or body. That text is blanked before the deny list runs, so a denied
+command named only in a commit message or an echo string passes, a quoted
+`;` or `| xargs` in the string included, and a print after an earlier
+`bash -c` too. The text is still checked where it can run: piped into an
+interpreter (`echo … | sh`), inside a `$(…)` or backtick substitution (which
+runs wherever it stands), or written to a file the same command then runs,
+sources or makes executable. Nothing is blanked when another part of the
+command could run beside it or after the command ends: a background `&`,
+`coproc`, `trap`, `nohup`, `setsid`, `at`, `open`, `Popen` or `fork`. Nothing
+is blanked when the command does not read cleanly to its end either, or when
+a heredoc body has a line that starts with its delimiter without being it.
+So such a command is read the old way and may still be denied.
+
+The Python heredoc exception stays: a heredoc that is the whole command and
+runs as `python3 -I`. It may import only json, re, pathlib, textwrap,
+datetime or collections, and may not name os, sys, exec, eval, getattr, vars
+or a `_`-prefixed name anywhere. The deny reason for a Python heredoc names
+that shape. A `cat` or `tee` heredoc written to a document file (`.md`,
+`.txt` and a few more) is text, and its lines are not read as commands. The
+file may not sit in a dot directory or a system directory, and JSON, YAML and
+TOML files are never text. The temp folders `/tmp`, `/var/tmp` and `~/.tmp`
+are allowed, with the same rules below them. Every other step must be one
+that cannot run the file (`mkdir`, `git add`, `gh pr create` and a few more),
+with no redirect, and every `cd` must be followed by `&&`.
 
 Known false-positive path for `write-internal-names`: exclude_paths entries
 usually name the canonical checkout, and a git worktree at another path
@@ -144,9 +158,31 @@ unwire that `belt hook` entry from the harness settings.
 Missing config fails in two directions, deliberately. Guards and hints
 default to enabled. `git-push-main` fails closed: with no config it denies
 every push to main or master, and only a rendered config that disables it or
-allowlists a repo opens the door. With no internal_names section in the belt
-config, `write-internal-names` and `publish-internal-names` have an empty
-name list and allow every write and publish: those two fail open. They
+allowlists a repo opens the door. It reads the push out of a subshell, a
+`$(…)` or backtick substitution, an `sh -c`/`bash -c` string, an `eval`, a
+`\`-continued line or a `{ … }` group, so a wrapped default-branch push is
+denied like a plain one. In a command it cannot read to the end, the whole
+lines before the broken one are read in full, because bash runs them. A push
+in the rest is denied unless it names a non-default branch in plain text. A
+heredoc body that `cat`, `tee`, `head`, `tail`, `git commit` or `gh` only
+reads is text: a backtick or `$( )` in a quoted body passes, while those in
+an unquoted body run in the shell and are read as code. A body any other
+command reads, or one piped on, is read as code. A refspec with a variable,
+a substitution, `$'...'`, a brace or a glob is denied too, since it may name
+main. `"$(git branch --show-current)"` reads as the current branch, and so
+does `"$B"` after a lone top-level `B=$(git branch --show-current)` when
+nothing in the command can change B or move the shell. `@` reads as `HEAD`
+and `heads/main` as `refs/heads/main`. The repo exemption applies only when
+the push target is plainly `origin`: a URL, a second remote,
+`-c remote.origin.pushurl=`, `-c url.*.pushInsteadOf=` or a `GIT_CONFIG*`
+override in front makes the push non-exempt and it is denied. So does a step
+anywhere in the same command that can move the push: a `git config` write,
+`git remote add`/`set-url`/`rename`/`remove`, `git branch -u`, a redirect
+into `.git/` or a git config file, or another command that names one. A read
+such as `cat`, `grep` or `ls` counts only through a redirect, and a comment or
+a text heredoc body counts not at all. With no internal_names section in the
+belt config, `write-internal-names` and `publish-internal-names` have an
+empty name list and allow every write and publish: those two fail open. They
 block only in public-bound repos: the top-level public_repos list when the
 config has one (a repo missing from it is not guarded), else every
 github.com repo. `belt doctor` reports the mode and the empty-name condition

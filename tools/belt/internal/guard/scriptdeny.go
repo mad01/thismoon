@@ -118,9 +118,14 @@ func (g *ScriptDenyList) Check(in Input) *Denial {
 	return d
 }
 
-// scan carries one check invocation's shared state across segments.
+// scan carries one check invocation's shared state across segments. cmd is
+// the command with its data pieces masked (maskData): the segments and inline
+// scripts are read from it, so a denied command named only in an echo string
+// or a commit message is not read as code. scanTarget and scanMadeExecutable
+// keep reading in.Command, the raw text a written file's content lives in.
 type scan struct {
 	in       Input
+	cmd      string
 	segs     []segment
 	written  map[string]bool
 	patterns []deny
@@ -131,11 +136,19 @@ func (g *ScriptDenyList) check(in Input) *Denial {
 	if len(patterns) == 0 || in.Command == "" {
 		return nil
 	}
-	segs := splitSegments(in.Command)
-	s := scan{in: in, segs: segs, written: redirectTargets(segs, in.Cwd), patterns: patterns}
+	cmd := maskData(in.Command)
+	segs := splitSegments(cmd)
+	s := scan{
+		in:       in,
+		cmd:      cmd,
+		segs:     segs,
+		written:  redirectTargets(segs, in.Cwd),
+		patterns: patterns,
+	}
 	// A Python heredoc proven inert ends the command: its own segment, its
 	// body lines and its terminator need no check. A text heredoc's body
-	// lines are not commands either (scripttext.go).
+	// lines are not commands either (scripttext.go). Both read the raw
+	// command; masking keeps offsets, so their spans still line up.
 	inertFrom, inert := inertPythonHeredoc(in.Command)
 	text := textHeredocBodies(in.Command, in.Cwd)
 	for i := range segs {
@@ -149,7 +162,13 @@ func (g *ScriptDenyList) check(in Input) *Denial {
 			return d
 		}
 	}
-	return nil
+	// A substitution runs where it stands, whatever command it is an argument
+	// of, so its body is code even inside a masked echo. A print piped into an
+	// interpreter is the script that interpreter runs.
+	if d := scanSubstitutions(cmd, patterns); d != nil {
+		return d
+	}
+	return scanPipedPrint(in.Command, patterns)
 }
 
 // checkSegment classifies one segment's head and scans whatever script text
@@ -171,7 +190,7 @@ func (g *ScriptDenyList) checkSegment(s scan, i int) *Denial {
 	case head == "eval":
 		// The eval argument may span separator splits inside quotes; scan
 		// from this segment to the end of the command, like inline scripts.
-		return scanText(s.in.Command[seg.off:], "the eval argument", s.patterns)
+		return scanText(s.cmd[seg.off:], "the eval argument", s.patterns)
 	case head == "xargs":
 		return scanText(strings.Join(tokens[1:], " "), "the xargs command", s.patterns)
 	case head == "find":
@@ -205,7 +224,7 @@ func (g *ScriptDenyList) checkInterpreter(
 		// the script text follows the interpreter and may cross separator
 		// splits inside quotes, but text before the segment belongs to
 		// other commands.
-		if d := scanText(s.in.Command[seg.off:], "the inline script", s.patterns); d != nil {
+		if d := scanText(s.cmd[seg.off:], "the inline script", s.patterns); d != nil {
 			if heredoc && pythonName.MatchString(head) {
 				d.Reason += " " + pyHeredocHint
 			}
