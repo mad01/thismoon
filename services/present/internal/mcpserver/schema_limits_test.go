@@ -28,6 +28,10 @@ func TestSchemaTextMatchesLimits(t *testing.T) {
 		fmt.Sprintf("rows %d to %d", n(limits.TerminalRowsMin), n(limits.TerminalRowsMax)),
 		fmt.Sprintf("a ribbon takes at most %d named series", n(limits.RibbonSeries)),
 		fmt.Sprintf(
+			"split puts the heading and at most %d words in a left column",
+			n(limits.SplitWords),
+		),
+		fmt.Sprintf(
 			"a diagram at most %d nodes and %d groups, groups nested at most %d levels deep",
 			n(limits.DiagramNodes),
 			n(limits.DiagramGroups),

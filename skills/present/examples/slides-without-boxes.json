@@ -636,6 +636,50 @@
         ]
       },
       {
+        "h": "Retries tripled the load on pricing",
+        "layout": "split",
+        "notes": "A split slide: the claim and one sentence on the left, the one chart on the right.",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Each client retried **three times**, with no backoff."
+          },
+          {
+            "t": "chart",
+            "title": "Requests per second to pricing",
+            "kind": "bar",
+            "unit": "req/s",
+            "series": [
+              {
+                "name": "pricing",
+                "points": [
+                  {
+                    "x": "13:55",
+                    "y": 410
+                  },
+                  {
+                    "x": "14:00",
+                    "y": 430
+                  },
+                  {
+                    "x": "14:02",
+                    "y": 1260
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 1310
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 1280
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
         "h": "Part two: the architecture",
         "blocks": [
           {

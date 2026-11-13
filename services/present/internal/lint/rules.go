@@ -439,6 +439,30 @@ const (
 	slideCapStepU = 29
 )
 
+// The room a split slide's right column gives a diagram (shell.html): the
+// body's width less the 6u gap, split 2:3 between the text and the
+// visual, and a height cap of 42u, 36u under steps or a caption.
+const (
+	splitGapU     = 6
+	splitWidthU   = (slideWidthU - splitGapU) * 3 / 5
+	splitCapU     = 42
+	splitCapStepU = 36
+)
+
+// slideRoom is the width and the height cap, in the slide's unit, that a
+// slide gives a diagram: the body, or on a split slide the right column.
+func slideRoom(split, stepped bool) (widthU, capU int) {
+	switch {
+	case split && stepped:
+		return splitWidthU, splitCapStepU
+	case split:
+		return splitWidthU, splitCapU
+	case stepped:
+		return slideWidthU, slideCapStepU
+	}
+	return slideWidthU, slideCapU
+}
+
 // checkSlidePath warns when no form a slide tries draws a diagram's
 // longest path at the slide's smallest text: the row is wider than n px
 // and the column taller than its share of n. Both are floors, so a path
@@ -449,14 +473,17 @@ func checkSlidePath(p Page, n int) []Finding {
 		if at.b.T != "diagram" || at.sec.rend != Deck {
 			return
 		}
-		capU := slideCapU
-		if len(at.b.Steps) > 0 || at.b.Caption != "" {
-			capU = slideCapStepU
-		}
+		split := p.Deck.Sections[at.sec.index].Layout == splitLayout
+		widthU, capU := slideRoom(split, len(at.b.Steps) > 0 || at.b.Caption != "")
+		wide := int(math.Round(float64(n*widthU) / slideWidthU))
 		tall := int(math.Round(float64(n*capU) / slideWidthU))
 		row, column := slidePathSize(at.b)
-		if len(row.nodes) < 2 || row.px <= n || column.px <= tall {
+		if len(row.nodes) < 2 || row.px <= wide || column.px <= tall {
 			return
+		}
+		room := "the slide holds"
+		if split {
+			room = "a split slide's right column holds"
 		}
 		from, to := at.b.Nodes[row.nodes[0]].Label, at.b.Nodes[row.nodes[len(row.nodes)-1]].Label
 		through := ""
@@ -473,15 +500,16 @@ func checkSlidePath(p Page, n int) []Finding {
 				at.sec.place+", a diagram",
 				fmt.Sprintf(
 					"its path of %d boxes, %q to %q%s, is about %d px wide in a row and %d px tall in a column, "+
-						"past the %d by %d px the slide holds at its smallest text",
+						"past the %d by %d px %s at its smallest text",
 					len(row.nodes),
 					from,
 					to,
 					through,
 					row.px,
 					column.px,
-					n,
+					wide,
 					tall,
+					room,
 				),
 				"Drop or shorten the edge labels on that path, fold boxes together, or drop a group; "+
 					"else show part of the flow on this slide and leave the whole to the brief.",
@@ -596,6 +624,50 @@ func checkSlideWords(p Page, n int) []Finding {
 	return out
 }
 
+// checkSplitWords counts the words a split slide shows beside its visual:
+// every text field outside the heading and outside the visual, whose title
+// and caption sit in the right column.
+func checkSplitWords(p Page, n int) []Finding {
+	total := make([]int, len(p.Deck.Sections))
+	visual := map[string]bool{} // the path of each split slide's visual
+	for i, s := range p.Deck.Sections {
+		for j, b := range s.Blocks {
+			if s.Layout == splitLayout && render.IsSplitVisual(b) {
+				visual[fmt.Sprintf("%s.blocks[%d]", sectionOf(Deck, i, s.Heading).where, j)] = true
+			}
+		}
+	}
+	p.texts(func(t text) {
+		if t.rend != Deck || t.section < 0 || t.role != roleProse || visual[t.block] {
+			return
+		}
+		total[t.section] += words(*t.s)
+	})
+	var out []Finding
+	for i, s := range p.Deck.Sections {
+		if s.Layout != splitLayout || total[i] <= n {
+			continue
+		}
+		sec := sectionOf(Deck, i, s.Heading)
+		out = append(out, atSection(
+			limits.SplitWords,
+			sec,
+			sec.where,
+			message(
+				limits.SplitWords,
+				sec.place,
+				fmt.Sprintf("%d words beside the visual", total[i]),
+				fmt.Sprintf("Aim for %d or fewer, and move the rest to the speaker notes.", n),
+			),
+		))
+	}
+	return out
+}
+
+// splitLayout is render's split layout: the claim and its text in a left
+// column, one visual in a right one.
+const splitLayout = "split"
+
 // textOnly reports whether blocks hold only prose or a list, in columns
 // too. A slide with no blocks holds no picture either.
 func textOnly(blocks []render.Block) bool {
@@ -617,7 +689,7 @@ func textOnly(blocks []render.Block) bool {
 func checkTextOnly(p Page, n int) []Finding {
 	slides, text := 0, 0
 	for _, s := range p.Deck.Sections {
-		if s.Layout != "" && s.Layout != "default" {
+		if s.Layout != "" && s.Layout != "default" && s.Layout != splitLayout {
 			continue
 		}
 		slides++
@@ -630,9 +702,16 @@ func checkTextOnly(p Page, n int) []Finding {
 	}
 	return []Finding{{
 		Rule: limits.DeckTextOnly, Where: "deck", Rendition: Deck, First: -1, Last: -1,
-		Message: message(limits.DeckTextOnly, "the deck",
-			fmt.Sprintf("%d of %d default-layout slides hold only prose or a list", text, slides),
-			"Give the strongest of them a chart, a diagram, or one big number."),
+		Message: message(
+			limits.DeckTextOnly,
+			"the deck",
+			fmt.Sprintf(
+				"%d of %d default-layout and split slides hold only prose or a list",
+				text,
+				slides,
+			),
+			"Give the strongest of them a chart, a diagram, or one big number.",
+		),
 	}}
 }
 

@@ -1,0 +1,37 @@
+{
+  "title": "Checkout after the cache",
+  "deck": {
+    "summary": "A read-through cache in front of pricing cut checkout latency by two fifths.",
+    "sections": [
+      {
+        "h": "The pricing cache cut checkout p99 by 40%",
+        "layout": "split",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "We put a read-through cache in front of the pricing service on 2 October. Checkout p99 fell from 1.2 s to 720 ms within a day, and it has held there through two sales since."
+          },
+          {
+            "t": "chart",
+            "kind": "line",
+            "title": "Checkout p99 latency",
+            "unit": "ms",
+            "series": [
+              {
+                "name": "p99",
+                "points": [
+                  {"x": "Sep 29", "y": 1210},
+                  {"x": "Sep 30", "y": 1190},
+                  {"x": "Oct 1", "y": 1230},
+                  {"x": "Oct 2", "y": 940},
+                  {"x": "Oct 3", "y": 730},
+                  {"x": "Oct 4", "y": 720}
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

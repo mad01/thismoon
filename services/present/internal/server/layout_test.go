@@ -97,6 +97,14 @@ func TestDeckSlideUnit(t *testing.T) {
 		// The claim's rule spans the body at every fit; only its text is capped.
 		`.deck .slide:not([data-layout="statement"], [data-layout="section"]) wk-section-heading { padding-right: max(0px, calc(100% - 86 * var(--u0))); }`,
 		".slide.solo-terminal .present-terminal-canvas { --terminal-fill: 1; height: calc(33 * var(--u) - 2.125rem - 2px); }",
+		// Split (MAD-581): 2:3 columns with a 6u gap, stacked on a narrow
+		// window, and the diagram's height caps in the unit; the lint's
+		// splitWidthU and splitCapU (internal/lint/rules.go) read the same
+		// numbers.
+		`.deck .slide[data-layout="split"] .split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); column-gap: calc(6 * var(--u)); align-items: center; }`,
+		`.deck .slide[data-layout="split"] .present-diagram-canvas { max-height: calc(42 * var(--u)); }`,
+		`.deck .slide[data-layout="split"] .present-diagram:is([data-steps], :has(.present-diagram-caption)) .present-diagram-canvas { max-height: calc(36 * var(--u)); }`,
+		`html:not(.presenting) .deck .slide[data-layout="split"] .split { grid-template-columns: minmax(0, 1fr);`,
 	} {
 		if !contains(shell, want) {
 			t.Errorf("shell.html lacks %q", want)

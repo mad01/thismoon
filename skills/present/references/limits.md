@@ -26,7 +26,8 @@ In the order the lint reports them.
 | `diagram.slide_columns` | none | a diagram on a slide | renderer |
 | `diagram.key_unused` | none | a diagram's key, brief and deck | house |
 | `slide.words` | 50 words | a slide, outside its heading | house |
-| `deck.text_only` | 50 percent | the default-layout slides of a deck | study (one study, 110 students) |
+| `split.words` | 15 words | the left column of a split slide, outside its heading | house |
+| `deck.text_only` | 50 percent | the default-layout and split slides of a deck | study (one study, 110 students) |
 | `inline.stray_mark` | none | every text field, brief and deck | renderer |
 | `placeholder.left` | none | every text field, brief and deck | house |
 
@@ -44,7 +45,8 @@ In the order the lint reports them.
 - `diagram.slide_columns`: A diagram on a slide sits alone, not inside columns. In part of the slide's width the diagram's text draws under the size a room can read.
 - `diagram.key_unused`: Every key item names a tone a box or group of its diagram carries. A swatch no box matches sends the reader looking for a colour the picture does not hold.
 - `slide.words`: A slide holds at most 50 words outside its heading; of a stepped chart or diagram only the longest caption counts. A room reads a slide at a glance; the detail belongs in the brief or the speaker notes.
-- `deck.text_only`: At most half (50 percent) of the default-layout slides hold only prose or a list. A claim shown beside a picture is remembered better than the same claim in text alone.
+- `split.words`: A split slide holds at most 15 words beside its visual, outside its heading. The left column is under two fifths of the slide's width. In the default face, 15 words under a four-line claim fill it at full size, and more shrink the claim and the visual with them.
+- `deck.text_only`: At most half (50 percent) of the default-layout and split slides hold only prose or a list. A claim shown beside a picture is remembered better than the same claim in text alone.
 - `inline.stray_mark`: No backtick or pair of stars sits in a field drawn as plain text, and a field that takes inline markdown holds an even number of backticks. The marks print as they are, so the reader sees raw markdown instead of code or bold.
 - `placeholder.left`: No text holds a skeleton placeholder between << and >>. A placeholder left in prints the note to the author on the page.
 
@@ -79,6 +81,7 @@ Findings come by rule in the order of the table, then from the top of the page: 
 | `terminal.rows_max` | 60 rows | a terminal block that sets rows | renderer |
 | `terminal.session` | 32 characters | a terminal block's session name | renderer |
 | `terminal.prefill` | 512 characters | a terminal block's prefill | renderer |
+| `split.visuals` | 1 visual | a split slide | renderer |
 
 - `ribbon.series`: A ribbon chart takes at most 4 series. The palette has four series colours; a fifth repeats the first, and ranks that reorder every column make two bands of one colour unreadable.
 - `diagram.nodes`: A diagram holds at most 24 boxes. Past it the picture is a hairball, and the layout takes long enough to notice.
@@ -93,6 +96,7 @@ Findings come by rule in the order of the table, then from the top of the page: 
 - `terminal.rows_max`: A terminal block's rows is at most 60. With more the terminal outgrows a slide.
 - `terminal.session`: A session name is 1 to 32 of a-z, 0-9, and -. It is a path segment of the attach route and the key serve holds the session under.
 - `terminal.prefill`: A prefill is one line of at most 512 characters. It is typed into the session as keystrokes, so a newline would run it.
+- `split.visuals`: A split slide holds exactly 1 visual (a chart, diagram, graph, image, or terminal) as a top-level block, and no columns block. The right column shows one visual at the column's size: a second has no room, one in details would start hidden, and a columns block would split the slide again.
 
 ## What the lint does not see
 

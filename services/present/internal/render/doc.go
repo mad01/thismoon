@@ -59,7 +59,7 @@ var (
 	logoPositions = []string{"bottom-right", "bottom-left", "top-left", "top-right"}
 	progressKinds = []string{"dots", "bar", "none"}
 	transitions   = []string{"fade", "slide", "none"}
-	layouts       = []string{"default", "center", "statement", "section"}
+	layouts       = []string{"default", "center", "statement", "section", splitLayout}
 	// chartKinds is the chart block's kind vocabulary. An empty kind draws
 	// as bar, the client's default; any other name outside the list is
 	// refused at compile time instead of drawing as a line chart.
@@ -139,7 +139,7 @@ type Section struct {
 	// Slide fields, all optional. The deck view reads Layout, Notes, and
 	// Reveal and the brief ignores them; Tone is honoured by both. Unset
 	// fields emit nothing, so a section without them renders as before.
-	Layout string `json:"layout,omitempty"` // default, center, statement, section
+	Layout string `json:"layout,omitempty"` // default, center, statement, section, split
 	Tone   string `json:"tone,omitempty"`   // a palette role (webkit.Roles): colours the slide's accent, bands the brief's section
 	Notes  string `json:"notes,omitempty"`  // speaker notes, inline markdown, shown in the deck's drawer
 	Reveal bool   `json:"reveal,omitempty"` // list items and top-level blocks appear one per Next
@@ -2087,10 +2087,11 @@ func validateChrome(d Doc) error {
 	return nil
 }
 
-// validateSection refuses a layout outside its vocabulary and a tone that is
-// not a palette role. A tone is a role name only: the panel accent's legacy
-// alias is not one, because the slide reads the role as var(--<tone>) and
-// an alias would pin the page to one family's choice.
+// validateSection refuses a layout outside its vocabulary, a tone that is
+// not a palette role, and a split section validateSplit refuses. A tone is
+// a role name only: the panel accent's legacy alias is not one, because the
+// slide reads the role as var(--<tone>) and an alias would pin the page to
+// one family's choice.
 func validateSection(s Section) error {
 	if s.Layout != "" && !slices.Contains(layouts, s.Layout) {
 		return fmt.Errorf(
@@ -2102,6 +2103,57 @@ func validateSection(s Section) error {
 		return fmt.Errorf(
 			"section %q: unknown tone %q (want one of %s)",
 			s.Heading, s.Tone, strings.Join(webkit.Roles(), ", "),
+		)
+	}
+	if s.Layout == splitLayout {
+		return validateSplit(s)
+	}
+	return nil
+}
+
+// splitLayout puts a slide's heading and text blocks in a left column and
+// its one visual in a right column (MAD-581).
+const splitLayout = "split"
+
+// splitVisuals is how many visuals a split slide holds: the one its right
+// column shows.
+const splitVisuals = 1
+
+// splitVisualKinds are the blocks a split slide's right column takes: the
+// ones the deck view sizes as a visual.
+var splitVisualKinds = []string{"chart", "diagram", "graph", "image", "terminal"}
+
+// IsSplitVisual reports whether b is a block a split slide shows in its
+// right column.
+func IsSplitVisual(b Block) bool { return slices.Contains(splitVisualKinds, b.T) }
+
+// validateSplit refuses a split section without exactly splitVisuals visual
+// as a top-level block, where the deck view finds it, and one with a
+// columns block, since the slide is two columns already. A visual inside a
+// details block counts as misplaced, not as the slide's visual.
+func validateSplit(s Section) error {
+	top := 0
+	for _, b := range s.Blocks {
+		if b.T == "columns" {
+			return fmt.Errorf(
+				`section %q: layout "split" is two columns already, so it takes no columns block`,
+				s.Heading,
+			)
+		}
+		if k := slices.IndexFunc(b.Blocks, IsSplitVisual); k >= 0 {
+			return fmt.Errorf(
+				`section %q: layout "split" takes its %s as a top-level block, not inside details`,
+				s.Heading, b.Blocks[k].T,
+			)
+		}
+		if IsSplitVisual(b) {
+			top++
+		}
+	}
+	if top != splitVisuals {
+		return fmt.Errorf(
+			`section %q: layout "split" takes exactly %d visual (%s) beside its text, found %d`,
+			s.Heading, splitVisuals, strings.Join(splitVisualKinds, ", "), top,
 		)
 	}
 	return nil

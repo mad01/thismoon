@@ -58,6 +58,7 @@ const (
 	DiagramSlideColumns ID = "diagram.slide_columns"
 	DiagramKeyUnused    ID = "diagram.key_unused"
 	SlideWords          ID = "slide.words"
+	SplitWords          ID = "split.words"
 	DeckTextOnly        ID = "deck.text_only"
 	InlineStrayMark     ID = "inline.stray_mark"
 	PlaceholderLeft     ID = "placeholder.left"
@@ -78,6 +79,7 @@ const (
 	TerminalRowsMax  ID = "terminal.rows_max"
 	TerminalSession  ID = "terminal.session"
 	TerminalPrefill  ID = "terminal.prefill"
+	SplitVisuals     ID = "split.visuals"
 )
 
 // Limit is one entry of the table.
@@ -201,10 +203,17 @@ var table = []Limit{
 		Reason: "A room reads a slide at a glance; the detail belongs in the brief or the speaker notes.",
 	},
 	{
+		ID: SplitWords, Number: 15, Unit: "words", Level: Warn,
+		Scope:  "the left column of a split slide, outside its heading",
+		Source: House,
+		Rule:   "A split slide holds at most 15 words beside its visual, outside its heading.",
+		Reason: "The left column is under two fifths of the slide's width. In the default face, 15 words under a four-line claim fill it at full size, and more shrink the claim and the visual with them.",
+	},
+	{
 		ID: DeckTextOnly, Number: 50, Unit: "percent", Level: Warn,
-		Scope:  "the default-layout slides of a deck",
+		Scope:  "the default-layout and split slides of a deck",
 		Source: Study, Basis: "one study, 110 students",
-		Rule:   "At most half (50 percent) of the default-layout slides hold only prose or a list.",
+		Rule:   "At most half (50 percent) of the default-layout and split slides hold only prose or a list.",
 		Reason: "A claim shown beside a picture is remembered better than the same claim in text alone.",
 	},
 	{
@@ -312,6 +321,13 @@ var table = []Limit{
 		Source: Renderer,
 		Rule:   "A prefill is one line of at most 512 characters.",
 		Reason: "It is typed into the session as keystrokes, so a newline would run it.",
+	},
+	{
+		ID: SplitVisuals, Number: 1, Unit: "visual", Level: Refuse,
+		Scope:  "a split slide",
+		Source: Renderer,
+		Rule:   "A split slide holds exactly 1 visual (a chart, diagram, graph, image, or terminal) as a top-level block, and no columns block.",
+		Reason: "The right column shows one visual at the column's size: a second has no room, one in details would start hidden, and a columns block would split the slide again.",
 	},
 }
 

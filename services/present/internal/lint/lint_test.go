@@ -504,6 +504,127 @@ func TestSlidePathNumber(t *testing.T) {
 	}
 }
 
+// TestSplitRoom holds the split slide's right column to the slide it sits
+// on: three fifths of the body's 86u once the 6u gap is out, 48u, and
+// height caps under the 46.75u body with room left for a caption.
+func TestSplitRoom(t *testing.T) {
+	if splitWidthU != 48 || splitGapU+splitWidthU*5/3 != slideWidthU {
+		t.Errorf(
+			"split column %du with a %du gap, want 48u of the %du body",
+			splitWidthU,
+			splitGapU,
+			slideWidthU,
+		)
+	}
+	for _, c := range []struct {
+		split, stepped bool
+		w, h           int
+	}{
+		{false, false, slideWidthU, slideCapU},
+		{false, true, slideWidthU, slideCapStepU},
+		{true, false, splitWidthU, splitCapU},
+		{true, true, splitWidthU, splitCapStepU},
+	} {
+		if w, h := slideRoom(c.split, c.stepped); w != c.w || h != c.h {
+			t.Errorf(
+				"slideRoom(split %v, stepped %v) = %du by %du, want %du by %du",
+				c.split,
+				c.stepped,
+				w,
+				h,
+				c.w,
+				c.h,
+			)
+		}
+	}
+}
+
+// splitDeck is a deck of one split slide holding blocks.
+func splitDeck(blocks ...render.Block) Page {
+	return Page{Deck: render.Doc{Sections: []render.Section{
+		{Heading: "The cache cut p99 latency by 40%", Layout: "split", Blocks: blocks},
+	}}}
+}
+
+// TestSplitWordsLeaveTheVisualOut: the words beside a split slide's visual
+// count, its title and caption do not, and a default slide never trips the
+// rule.
+func TestSplitWordsLeaveTheVisualOut(t *testing.T) {
+	n := limits.Number(limits.SplitWords)
+	long := strings.TrimSpace(strings.Repeat("word ", n+1))
+	image := render.Block{T: "image", Src: "https://example.com/a.png", Alt: "a", Caption: long}
+	if got := checkSplitWords(splitDeck(render.Block{T: "p", Text: "Short."}, image), n); len(
+		got,
+	) != 0 {
+		t.Errorf("a long caption on the visual: %+v, want none", got)
+	}
+	got := checkSplitWords(splitDeck(render.Block{T: "p", Text: long}, image), n)
+	if len(got) != 1 ||
+		!strings.Contains(got[0].Message, fmt.Sprintf("%d words beside the visual", n+1)) {
+		t.Errorf("a long paragraph: %+v, want one finding of %d words", got, n+1)
+	}
+	p := splitDeck(render.Block{T: "p", Text: long}, image)
+	p.Deck.Sections[0].Layout = ""
+	if got := checkSplitWords(p, n); len(got) != 0 {
+		t.Errorf("a default slide: %+v, want none", got)
+	}
+}
+
+// TestSplitSlidePathUsesTheColumn: a diagram path that fits a full slide's
+// body can still be too long for a split slide's right column.
+func TestSplitSlidePathUsesTheColumn(t *testing.T) {
+	// Five stores named by one long word each: about 750 px in a row and
+	// 460 px in a column, which a full slide's 899 px row holds and the
+	// right column's 502 by 439 px does not.
+	var nodes []render.DiagramNode
+	var edges []render.DiagramEdge
+	for k, id := range []string{"a", "b", "c", "d", "e"} {
+		nodes = append(nodes, render.DiagramNode{
+			ID: id, Kind: "store", Label: fmt.Sprintf("payments-reconciliation-step-%d", k),
+		})
+		if k > 0 {
+			edges = append(edges, render.DiagramEdge{From: nodes[k-1].ID, To: id})
+		}
+	}
+	diagram := render.Block{T: "diagram", Direction: "LR", Nodes: nodes, Edges: edges}
+	n := limits.Number(limits.DiagramSlidePath)
+	full := splitDeck(diagram)
+	full.Deck.Sections[0].Layout = ""
+	if got := checkSlidePath(full, n); len(got) != 0 {
+		t.Fatalf("a full-width slide: %+v, want none", got)
+	}
+	got := checkSlidePath(splitDeck(diagram), n)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "a split slide's right column holds") {
+		t.Errorf("a split slide: %+v, want one finding about the right column", got)
+	}
+}
+
+// TestTextOnlyCountsSplitSlides: a split slide holds a picture, so it
+// counts beside the default-layout slides and lowers the text-only share.
+func TestTextOnlyCountsSplitSlides(t *testing.T) {
+	text := render.Section{
+		Heading: "Two changes close the gap",
+		Blocks:  []render.Block{{T: "p", Text: "x"}},
+	}
+	split := render.Section{
+		Heading: "The cache cut p99 by 40%",
+		Layout:  "split",
+		Blocks: []render.Block{
+			{T: "image", Src: "https://example.com/a.png", Alt: "a"},
+		},
+	}
+	n := limits.Number(limits.DeckTextOnly)
+	if got := checkTextOnly(Page{Deck: render.Doc{Sections: []render.Section{text, text}}}, n); len(
+		got,
+	) != 1 {
+		t.Fatalf("two text slides: %d findings, want 1", len(got))
+	}
+	p := Page{Deck: render.Doc{Sections: []render.Section{text, split, split}}}
+	if got := checkTextOnly(p, n); len(got) != 0 {
+		t.Errorf("one text slide of three with two split: %+v, want none", got)
+	}
+}
+
 // TestHeadingLabelExemptions: the closing sections, the page title, the
 // ADHD mode's headings, and a divider slide are labels on purpose.
 func TestHeadingLabelExemptions(t *testing.T) {

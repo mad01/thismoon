@@ -2685,6 +2685,32 @@
       entry.el.setAttribute('data-step', String(fragments));
     });
     if (plan.length) slide._steps = plan;
+    if (section.getAttribute('data-layout') === 'split') splitColumns(section, blocks);
+  }
+  // splitColumns lays a split slide's section out in its two columns: the
+  // heading and the text blocks in .split-text, the one visual the
+  // renderer lets the slide hold in .split-visual, each in authored order,
+  // both inside one .split row. It runs after the steps are planned, so a
+  // reveal or a stepped block keeps its place in the order whichever
+  // column it lands in. The row, not the section, is the grid, because
+  // read-aloud later puts its buttons first in the section; they stay
+  // above the row as on any slide. The notes template stays where the
+  // renderer put it.
+  function splitColumns(section, blocks) {
+    var visual = blocks.filter(isSplitVisual)[0];
+    if (!visual) return;
+    var text = Webkit.el('div', { class: 'split-text' });
+    var heading = section.querySelector('wk-section-heading');
+    if (heading) text.appendChild(heading);
+    blocks.forEach(function (b) { if (b !== visual) text.appendChild(b); });
+    var row = Webkit.el('div', { class: 'split' }, [text, Webkit.el('div', { class: 'split-visual' }, [visual])]);
+    section.insertBefore(row, section.firstChild);
+  }
+  // isSplitVisual says a top-level block is a visual a split slide shows
+  // on the right: a chart, a diagram, an image, a terminal, or the panel
+  // holding the page's graph (render.IsSplitVisual's kinds).
+  function isSplitVisual(el) {
+    return el.matches('.present-chart, .present-diagram, wk-figure, .present-terminal') || !!el.querySelector('#cy-graph');
   }
   function stepCount(el) {
     return parseInt(el.getAttribute('data-steps'), 10) || 0;

@@ -391,6 +391,51 @@
       ]
     },
     {
+      "h": "The resolver kept a dead address for 40 minutes",
+      "layout": "split",
+      "tone": "amber",
+      "notes": "The split slide: the claim and one line on the left, the chart on the right.",
+      "blocks": [
+        {
+          "t": "p",
+          "text": "The TTL was **one hour**, so every pod kept the old address."
+        },
+        {
+          "t": "chart",
+          "title": "Pods resolving the old address",
+          "kind": "line",
+          "unit": "pods",
+          "series": [
+            {
+              "name": "stale",
+              "points": [
+                {
+                  "x": "14:00",
+                  "y": 0
+                },
+                {
+                  "x": "14:05",
+                  "y": 38
+                },
+                {
+                  "x": "14:20",
+                  "y": 40
+                },
+                {
+                  "x": "14:40",
+                  "y": 40
+                },
+                {
+                  "x": "14:45",
+                  "y": 0
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "h": "How a checkout request travels",
       "blocks": [
         {

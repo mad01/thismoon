@@ -70,6 +70,23 @@ only, so every stored page changes look at its next load. The rendered
 HTML of a Doc without the new fields stays byte-identical, which the
 golden fixtures keep pinning.
 
+Amended 2026-11-13 (MAD-581): a section may name a fifth layout,
+`split`. The heading and the slide's text blocks stand in a left column
+and exactly one chart, diagram, graph, image, or terminal in a right
+one, at 2:3. It is the claim beside its evidence, which a `columns`
+block cannot give: its columns share the width evenly, under the
+heading. The renderer refuses a split slide with no visual, a second
+one, one inside `details`, or a `columns` block, and the lint warns past
+15 words beside the visual. The browser builds the two columns, so the
+rendered HTML gains only the `data-layout` value.
+
+The cost: an older binary refuses a deck Doc that uses `split`, and an
+older shared instance draws a pushed split slide as a default one, so a
+shared instance must run this version before such a deck is shared to
+it. And
+the claim gets two fifths of the slide's width, so it wraps sooner. The
+rest of the decision stands.
+
 ## Consequences
 
 - Every new field and block is optional. A Doc without them renders
