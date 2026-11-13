@@ -1,11 +1,17 @@
 package guard
 
 import (
+	"bytes"
 	"cmp"
+	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/mad01/thismoon/kit/gitloc"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
@@ -201,20 +207,21 @@ func (g *GitPushMain) toPlainOrigin(push gitPush, current string) bool {
 }
 
 // opaqueDenial decides a command that runs text the walk could not read
-// (walkStep.opaque). An alias body or an interpreter script that names a
-// push may push to a default branch from any branch, so it is denied
-// wherever it runs, an exempt repo included. Shell text alone (text printed
-// into a shell from a variable or a command, anything but a printer piped
-// into one) is denied only where the guard would deny a default-branch
-// push: in a repo (resolveInRepo) with no direct-push exemption, or in a
-// directory belt cannot tell.
+// (walkStep.opaque). An alias body belt cannot read, or text past what belt
+// reads in one command, may push to a default branch from any branch, so it
+// is denied wherever it runs, an exempt repo included. Scoped text (shell
+// text printed into a shell from a variable or a command, anything but a
+// printer piped into one, or an interpreter script that may run a push) is
+// denied only where the guard would deny a default-branch push: in a repo
+// (resolveInRepo) with no direct-push exemption, or in a directory belt
+// cannot tell.
 func (g *GitPushMain) opaqueDenial(push gitPush) *Denial {
-	if !push.opaque.textOnly {
+	if !push.opaque.scoped {
 		return Reasonf(
 			GitPushMainID,
 			"cannot read %s, so a git push in it cannot be checked. Write the push as a plain "+
-				"command (git push origin <branch>), not through a git alias, text printed into a "+
-				"shell, or a script.",
+				"command (git push origin <branch>), not through a git alias or text the command "+
+				"builds and runs.",
 			push.opaque.what,
 		)
 	}
@@ -231,9 +238,49 @@ func (g *GitPushMain) opaqueDenial(push gitPush) *Denial {
 }
 
 // gitInRepo reports whether dir is inside a git repository, one with no
-// commit yet included.
+// commit yet included (resolveInRepo), bounded by branchLookupTimeout.
 func gitInRepo(dir string) bool {
-	return gitOutput(dir, "rev-parse", "--git-dir") != ""
+	return gitInRepoWithin(dir, branchLookupTimeout)
+}
+
+// gitInRepoWithin runs `git rev-parse --git-dir` in the nearest directory on
+// the way up from dir that exists, since a command may cd into a directory
+// it creates first. Only git's own answer that this is not a git repository
+// (exit 128 with that message) reads as outside a repo. Any other failure,
+// such as a repo git refuses for its owner, git missing, or the timeout,
+// reads as inside one, so the push guard fails closed.
+func gitInRepoWithin(dir string, timeout time.Duration) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-dir")
+	cmd.Dir = existingAncestor(dir)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	cmd.WaitDelay = rootLookupGrace
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	var exit *exec.ExitError
+	notRepo := errors.As(err, &exit) && exit.ExitCode() == 128 && ctx.Err() == nil &&
+		strings.Contains(stderr.String(), "not a git repository")
+	return !notRepo
+}
+
+// rootLookupGrace bounds how long gitInRepoWithin waits for git's pipes to
+// close after git exits, as kit/gitloc does.
+const rootLookupGrace = 100 * time.Millisecond
+
+// existingAncestor returns the nearest directory on the way up from dir
+// that exists, dir itself when it does. An empty or relative dir stays as
+// it is.
+func existingAncestor(dir string) string {
+	if !filepath.IsAbs(dir) {
+		return dir
+	}
+	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
+		if info, err := os.Stat(d); (err == nil && info.IsDir()) || d == filepath.Dir(d) {
+			return d
+		}
+	}
 }
 
 // unreadDenial decides a push the walk found in code readShell could not

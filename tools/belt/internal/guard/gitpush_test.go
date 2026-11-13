@@ -15,6 +15,7 @@ func newGitPushGuard(currentBranch string) *GitPushMain {
 	g.resolveBranch = func(dir string) string { return currentBranch }
 	g.resolveRepo = func(dir string) string { return "" }
 	g.resolveHasBranch = func(string, string) bool { return false }
+	g.resolveInRepo = func(string) bool { return true }
 	return g
 }
 

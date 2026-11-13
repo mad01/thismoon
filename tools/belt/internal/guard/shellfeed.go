@@ -12,17 +12,19 @@ import (
 )
 
 // walkMemory is what one walk learns from the commands it has met that a
-// later command may run as a script: the git aliases the command names or
-// sets, the variables it sets to text the walk can read, and the files it
+// later command may run as a script: the git aliases the command sets config
+// for, the variables it sets to text the walk can read, and the files it
 // writes. Every walk of one command shares it, nested ones included. A
 // config write or a file outlives a subshell, and a variable that seems set
 // where the shell would not keep it only makes the walk read more.
 type walkMemory struct {
-	aliasNames  map[string]bool     // names the command mentions as alias.<name>
-	aliasBodies map[string][]script // bodies git config writes set, by name
-	vars        map[string]string   // variables set to text read whole
+	aliasNames  map[string]bool     // names the command sets config for (noteAliasConfig)
+	aliasBodies map[string][]script // bodies git config writes and -c options set, by name
+	anyAlias    bool                // a config key belt cannot read may name any alias
+	vars        map[string]script   // variables set to text read whole, or past maxDerivedText
 	files       map[string]script   // files written, by fileKeys
 	budget      int                 // derived texts the walk may still read
+	bytes       int                 // derived bytes the walk may still keep or read
 }
 
 // maxDerivedTexts bounds how many texts one command's walk reads that it
@@ -31,27 +33,52 @@ type walkMemory struct {
 // multiply the walk. Past the bound the text counts as unread.
 const maxDerivedTexts = 64
 
-// newWalkMemory starts the memory of one command's walk, with the alias
-// names its texts mention.
-func newWalkMemory(texts ...string) *walkMemory {
-	m := &walkMemory{
+// maxDerivedText bounds the text one variable or one written file keeps,
+// and any one text the walk builds; maxDerivedBytes bounds all the text one
+// command's walk keeps and reads that it built itself. A variable doubled a
+// few times over grows past any size, so past either bound the text counts
+// as unread (keep).
+const (
+	maxDerivedText  = 64 << 10
+	maxDerivedBytes = 512 << 10
+)
+
+// newWalkMemory starts the memory of one command's walk.
+func newWalkMemory() *walkMemory {
+	return &walkMemory{
 		aliasNames:  map[string]bool{},
 		aliasBodies: map[string][]script{},
-		vars:        map[string]string{},
+		vars:        map[string]script{},
 		files:       map[string]script{},
 		budget:      maxDerivedTexts,
+		bytes:       maxDerivedBytes,
 	}
-	for _, t := range texts {
-		m.noteAliasNames(t)
-	}
-	return m
 }
 
 // script is text a shell or an interpreter may run; ok is false when the
-// walk could not read it.
+// walk could not read it. capped marks text the walk did not read because
+// it grew past maxDerivedText or the command's byte budget.
 type script struct {
-	text string
-	ok   bool
+	text   string
+	ok     bool
+	capped bool
+}
+
+// overCap is the script for text past maxDerivedText or the byte budget.
+var overCap = script{capped: true}
+
+// keep charges a text the walk keeps or reads to the command's byte budget,
+// and returns it unread (overCap) when it is past maxDerivedText or the
+// budget left.
+func (m *walkMemory) keep(s script) script {
+	switch {
+	case !s.ok:
+		return s
+	case len(s.text) > maxDerivedText || len(s.text) > m.bytes:
+		return overCap
+	}
+	m.bytes -= len(s.text)
+	return s
 }
 
 // feed is text a command hands to a shell or an interpreter to run, beyond
@@ -61,17 +88,23 @@ type feed struct {
 	runner string // what runs the text, for a denial
 	text   string
 	ok     bool
-	interp bool     // an interpreter runs it: only a push named in it counts
+	interp bool     // an interpreter runs it: only a push it may run counts
+	lang   string   // the interpreter's language (interpreterLang), "" when unknown
 	source bool     // source, . or eval runs it in this shell
 	alias  string   // the git alias it is a body of, or whose body is unread
 	dir    string   // the directory it runs in
 	pre    []string // the words in front of what runs it
+	// positional marks a script run with arguments, which $1, "$@" and the
+	// rest name (shellWalk.positional).
+	positional bool
 }
 
 // feedsOf returns the feeds of one command: what a git alias runs, what a
 // shell or an interpreter reads as its script (readsScript), a script file
-// the command wrote and runs by path, and the -c, eval and interpreter
-// scripts whose substitutions print text the walk can read (inlineFeeds).
+// the command wrote and runs by path, the command a variable the command set
+// holds when it stands as the command word (varCommandFeed), and the -c,
+// eval and interpreter scripts whose substitutions print text the walk can
+// read (inlineFeeds).
 func (w *shellWalk) feedsOf(
 	text string,
 	c shellCmd,
@@ -90,44 +123,77 @@ func (w *shellWalk) feedsOf(
 	if r, ok := readsScript(c, tokens); ok {
 		out = append(out, w.runnerFeeds(text, c, in.from, r, dir)...)
 	}
-	if head := len(tokens) - len(stripWrappers(tokens)); head < len(tokens) &&
-		strings.Contains(tokens[head], "/") {
+	head := len(tokens) - len(stripWrappers(tokens))
+	if head < len(tokens) && strings.Contains(tokens[head], "/") {
 		if s, ok := w.mem.file(dir, tokens[head]); ok {
+			lang, interp := shebangInterpreter(s.text)
 			out = append(out, feed{
 				runner: fmt.Sprintf("the script %s", tokens[head]),
-				text:   s.text, ok: s.ok, interp: interpreterShebang(s.text), dir: dir,
+				text:   s.text, ok: s.ok, interp: interp, lang: lang, dir: dir,
+				positional: head+1 < len(tokens),
 			})
 		}
+	}
+	if f, ok := w.varCommandFeed(c, tokens, head, dir); ok {
+		out = append(out, f)
 	}
 	return append(out, w.inlineFeeds(text, c, tokens, dir)...)
 }
 
+// varCommandFeed returns the command a variable the command set holds, when
+// it stands as the command word (`X='git push origin main'; $X`): the shell
+// splits it into words and runs them, so the walk reads the value, with the
+// words after it, as code in this shell. A variable the command did not set
+// adds nothing.
+func (w *shellWalk) varCommandFeed(c shellCmd, tokens []string, head int, dir string) (feed, bool) {
+	if head >= len(c.words) || len(c.words[head].parts) != 1 ||
+		c.words[head].parts[0].kind != partVar {
+		return feed{}, false
+	}
+	name := c.words[head].parts[0].text
+	s, set := w.mem.vars[name]
+	if !set {
+		return feed{}, false
+	}
+	f := feed{
+		runner: fmt.Sprintf("the command in $%s", name), source: true, dir: dir, pre: tokens[:head],
+	}
+	return f.with(script{text: s.text + " " + rawWords(c.words[head+1:]), ok: s.ok}), true
+}
+
 // opacity is what a command runs that the walk could not read
-// (walkStep.opaque). textOnly marks a command whose only such text is shell
-// text a shell reads (feed.alias empty, not an interpreter's), which the
-// push guard denies only in a repo it guards (GitPushMain.opaqueDenial).
+// (walkStep.opaque). scoped marks a command whose only such text is shell
+// text a shell reads or an interpreter script that may run a git push, which
+// the push guard denies only in a repo it guards (GitPushMain.opaqueDenial);
+// an alias body it cannot read and text past the per-command budget are
+// denied anywhere.
 type opacity struct {
-	what     string
-	textOnly bool
+	what   string
+	scoped bool
 }
 
 // claim decides what the walk does with a command's feeds: it reads every
 // shell text, and a shell text it cannot read, an alias body it cannot
-// read, or an interpreter script that names a git push makes the command
-// opaque. An interpreter script the walk cannot read counts as one on disk
-// does: the walk never reads the language, so it has nothing to look in.
-// Past maxDerivedTexts the walk reads none of them and the command is
-// opaque. A cause other than unread shell text names the opacity first.
+// read, or an interpreter script that may run a git push (mentionsPush)
+// makes the command opaque. An interpreter script the walk cannot read
+// counts as one on disk does: the walk never reads the language, so it has
+// nothing to look in. A shell text past the byte budget (keep) counts as
+// unread. Past maxDerivedTexts the walk reads none of them and the command
+// is opaque. A cause that is not scoped names the opacity first.
 func (m *walkMemory) claim(feeds []feed) (opacity, bool) {
-	var text, other string
+	var scoped, other string
 	walkable := 0
-	for _, f := range feeds {
+	for i, f := range feeds {
+		if f.ok && !f.interp {
+			f = f.with(m.keep(script{text: f.text, ok: true}))
+			feeds[i] = f
+		}
 		switch {
-		case f.interp && f.ok && mentionsPush(f.text):
-			other = cmp.Or(other, f.runner+", which names a git push")
+		case f.interp && f.ok && mentionsPush(f.lang, f.text):
+			scoped = cmp.Or(scoped, f.runner+", which names a git push")
 		case f.interp:
 		case !f.ok && f.alias == "":
-			text = cmp.Or(text, f.runner)
+			scoped = cmp.Or(scoped, f.runner)
 		case !f.ok:
 			other = cmp.Or(other, f.runner)
 		default:
@@ -140,7 +206,7 @@ func (m *walkMemory) claim(feeds []feed) (opacity, bool) {
 	} else {
 		other = cmp.Or(other, "the text this command builds and runs, past what belt reads in one command")
 	}
-	return opacity{what: cmp.Or(other, text), textOnly: other == "" && text != ""}, walk
+	return opacity{what: cmp.Or(other, scoped), scoped: other == "" && scoped != ""}, walk
 }
 
 // walkFeeds walks the shell texts of a command's feeds as code: in a child
@@ -153,12 +219,12 @@ func (w *shellWalk) walkFeeds(feeds []feed, fn func(walkStep)) {
 		if !f.ok || f.interp {
 			continue
 		}
-		w.mem.noteAliasNames(f.text)
 		if f.source {
-			w.walkInShell(f.pre, f.text, fn)
+			w.walkInShell(f.pre, f.text, f.positional, fn)
 			continue
 		}
 		inner := w.childFor(f.dir, f.pre)
+		inner.positional = f.positional
 		if f.alias != "" {
 			inner.configEnv = true
 			inner.expanding = append(slices.Clone(w.expanding), f.alias)
@@ -174,6 +240,7 @@ type runner struct {
 	shell   bool   // a shell, whose script the walk reads as code
 	source  bool   // source or ., which run it in this shell
 	operand int    // the script operand's index in the tokens, -1 for standard input
+	args    bool   // words after the script, which it reads as $1 and the rest
 }
 
 // readsScript reports whether a command runs a script from a file operand or
@@ -192,7 +259,7 @@ func readsScript(c shellCmd, tokens []string) (runner, bool) {
 		if i+1 >= len(tokens) {
 			return runner{}, false
 		}
-		r := runner{name: head, shell: true, source: true, operand: i + 1}
+		r := runner{name: head, shell: true, source: true, operand: i + 1, args: i+2 < len(tokens)}
 		if stdinPaths[tokens[i+1]] {
 			r.operand = -1
 		}
@@ -215,6 +282,11 @@ func readsScript(c shellCmd, tokens []string) (runner, bool) {
 	r.operand = operand
 	if operand >= 0 {
 		r.operand = i + 1 + operand
+		r.args = r.operand+1 < len(tokens)
+	} else {
+		r.args = slices.ContainsFunc(tokens[i+1:], func(t string) bool {
+			return !strings.HasPrefix(t, "-") && !strings.HasPrefix(t, "+")
+		})
 	}
 	return r, true
 }
@@ -263,10 +335,11 @@ func (w *shellWalk) runnerFeeds(
 ) []feed {
 	base := feed{
 		runner: fmt.Sprintf("the text `%s` runs", r.name),
-		interp: !r.shell, source: r.source, dir: dir,
+		interp: !r.shell, source: r.source, dir: dir, positional: r.args,
 	}
 	if base.interp {
 		base.runner = fmt.Sprintf("the `%s` script", r.name)
+		base.lang = interpreterLang(r.name)
 	}
 	if r.operand >= 0 {
 		return w.operandFeeds(text, c.words[r.operand], base)
@@ -340,7 +413,10 @@ func (w *shellWalk) inlineFeeds(text string, c shellCmd, tokens []string, dir st
 	var out []feed
 	if at := inlineScriptAt(tokens); at >= 0 {
 		if s, changed := w.scriptOf(text, c.words[at:at+1]); changed {
-			f := feed{runner: "the script a shell's -c runs", dir: dir, pre: tokens[:at]}
+			f := feed{
+				runner: "the script a shell's -c runs", dir: dir, pre: tokens[:at],
+				positional: at+1 < len(tokens),
+			}
 			out = append(out, f.with(s))
 		}
 	}
@@ -353,7 +429,10 @@ func (w *shellWalk) inlineFeeds(text string, c shellCmd, tokens []string, dir st
 	if at := interpreterScriptAt(tokens); at >= 0 {
 		s, _ := w.scriptOf(text, c.words[at:at+1])
 		head := tokens[len(tokens)-len(stripWrappers(tokens))]
-		f := feed{runner: fmt.Sprintf("the `%s` script", head), interp: true, dir: dir}
+		f := feed{
+			runner: fmt.Sprintf("the `%s` script", head), interp: true,
+			lang: interpreterLang(head), dir: dir,
+		}
 		out = append(out, f.with(s))
 	}
 	return out
@@ -407,8 +486,9 @@ func (w *shellWalk) scriptOf(text string, words []placedWord) (script, bool) {
 // scriptText reads one word as script text. A substitution whose command
 // prints text the walk can read (bodyProduced) is that text, and a variable
 // the command set to read text is that text: both read more than script
-// does. A printer whose text the walk cannot read leaves the word unread
-// (ok false). Any other expansion stays as script writes it.
+// does. A printer whose text the walk cannot read, a variable past
+// maxDerivedText, and a word that grows past it leave the word unread (ok
+// false). Any other expansion stays as script writes it.
 func (w *shellWalk) scriptText(text string, word placedWord) (out string, more, ok bool) {
 	var b strings.Builder
 	ok = true
@@ -418,10 +498,14 @@ func (w *shellWalk) scriptText(text string, word placedWord) (out string, more, 
 			b.WriteString(p.text)
 		case partVar:
 			v, set := w.mem.vars[p.text]
-			if !set {
-				v = "${" + p.text + "}"
+			switch {
+			case !set:
+				b.WriteString("${" + p.text + "}")
+			case !v.ok:
+				ok = false
+			default:
+				b.WriteString(v.text)
 			}
-			b.WriteString(v)
 			more = more || set
 		case partSubst:
 			s, known := w.bodyProduced(text[p.body.from:p.body.to])
@@ -437,34 +521,38 @@ func (w *shellWalk) scriptText(text string, word placedWord) (out string, more, 
 		default:
 			b.WriteString("$?")
 		}
+		if b.Len() > maxDerivedText {
+			return "", true, false
+		}
 	}
 	return b.String(), more, ok
 }
 
 // strictText reads one word as printed text: literal text, a variable the
 // command set to read text, and a substitution of a printer whose text the
-// walk can read. Any other expansion leaves the text unread. trailing keeps
-// the newline a here-string adds.
+// walk can read. Any other expansion leaves the text unread, and so does a
+// text that grows past maxDerivedText or holds a variable that did
+// (overCap). trailing keeps the newline a here-string adds.
 func (w *shellWalk) strictText(text string, word placedWord, trailing bool) script {
 	var b strings.Builder
 	for _, p := range word.parts {
+		var s script
 		switch p.kind {
 		case partLit:
-			b.WriteString(p.text)
+			s = script{text: p.text, ok: true}
 		case partVar:
-			v, set := w.mem.vars[p.text]
-			if !set {
-				return script{}
-			}
-			b.WriteString(v)
+			s = w.mem.vars[p.text]
 		case partSubst:
-			s, known := w.bodyProduced(text[p.body.from:p.body.to])
-			if !known || !s.ok {
-				return script{}
+			if body, known := w.bodyProduced(text[p.body.from:p.body.to]); known {
+				s = body
 			}
-			b.WriteString(s.text)
-		default:
-			return script{}
+		}
+		if !s.ok {
+			return script{capped: s.capped}
+		}
+		b.WriteString(s.text)
+		if b.Len() > maxDerivedText {
+			return overCap
 		}
 	}
 	if trailing {
@@ -558,10 +646,14 @@ func (w *shellWalk) echoText(text string, words []placedWord) script {
 		words = words[1:]
 	}
 	parts := make([]string, 0, len(words))
+	size := 0
 	for _, word := range words {
 		s := w.strictText(text, word, false)
 		if !s.ok {
-			return script{}
+			return script{capped: s.capped}
+		}
+		if size += len(s.text) + 1; size > maxDerivedText {
+			return overCap
 		}
 		parts = append(parts, s.text)
 	}
@@ -579,17 +671,25 @@ func (w *shellWalk) printfText(text string, words []placedWord) script {
 		words = words[1:]
 	}
 	values := make([]string, 0, len(words))
+	size := 0
 	for _, word := range words {
 		s := w.strictText(text, word, false)
 		if !s.ok {
-			return script{}
+			return script{capped: s.capped}
+		}
+		if size += len(s.text); size > maxDerivedText {
+			return overCap
 		}
 		values = append(values, s.text)
 	}
 	if len(values) == 0 {
 		return script{ok: true}
 	}
-	return script{text: unescape(formatPrintf(values[0], values[1:])), ok: true}
+	out := formatPrintf(values[0], values[1:])
+	if len(out) > maxDerivedText {
+		return overCap
+	}
+	return script{text: unescape(out), ok: true}
 }
 
 // maxPrintfPasses bounds how often formatPrintf runs the format again for
@@ -598,10 +698,11 @@ const maxPrintfPasses = 64
 
 // formatPrintf fills a printf format's directives with args in order, as
 // printf does, and runs the format again while arguments remain. A
-// directive with no argument left prints nothing; %% prints %.
+// directive with no argument left prints nothing; %% prints %. It stops once
+// the text is past maxDerivedText, which the caller reads as unread.
 func formatPrintf(format string, args []string) string {
 	var b strings.Builder
-	for pass := 0; pass < maxPrintfPasses; pass++ {
+	for pass := 0; pass < maxPrintfPasses && b.Len() <= maxDerivedText; pass++ {
 		used := false
 		for i := 0; i < len(format); i++ {
 			if format[i] != '%' || i+1 == len(format) {
@@ -693,39 +794,106 @@ func escapeDigits(s string, maxDigits, base int) int {
 // push: git's global options and their values come between them.
 const pushWindow = 8
 
-// mentionsPush reports whether an interpreter's script names a git push: a
-// git word followed within pushWindow words by push, with quotes, commas,
-// brackets and parentheses read as spaces, so a Python
+// mentionsPush reports whether an interpreter's script may run a git push:
+// it holds a word that starts a process in its language (processCalls) and
+// a git word (scriptGitWord) followed within pushWindow words by push, with
+// quotes, commas, brackets and parentheses read as spaces, so a Python
 // `subprocess.run(["git", "push"])` or a Perl `system("git push")` counts.
-// The walk cannot read the language, so a script that only prints those
-// words counts too.
-func mentionsPush(text string) bool {
+// The walk cannot read the language, so a script that starts a process and
+// only names a push, in a comment say, counts too; one that starts none,
+// such as a Perl substitution or a print of usage text, does not.
+func mentionsPush(lang, text string) bool {
+	calls, ok := processCalls[lang]
+	if !ok {
+		calls = anyProcessCall
+	}
+	if !calls.MatchString(text) {
+		return false
+	}
 	words := strings.FieldsFunc(text, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("_-./", r)
 	})
 	for i, word := range words {
-		if isGitWord(word) && slices.Contains(words[i+1:min(len(words), i+1+pushWindow)], "push") {
+		if scriptGitWord(word) &&
+			slices.Contains(words[i+1:min(len(words), i+1+pushWindow)], "push") {
 			return true
 		}
 	}
 	return false
 }
 
-// interpreterShebang reports whether a script's #! line names an
-// interpreter that is no shell, so the walk only looks for a push in it.
-func interpreterShebang(text string) bool {
+// scriptGitWord reports whether a word of an interpreter's script names
+// git: the word itself, or a path to it from the root, . or .. (/usr/bin/git,
+// ./git; ~/bin/git reads as /bin/git, since ~ splits the word). A sed-style
+// s/git or y/git is no path, and neither is any other relative one.
+func scriptGitWord(word string) bool {
+	if word == "git" {
+		return true
+	}
+	return strings.HasSuffix(word, "/git") &&
+		(strings.HasPrefix(word, "/") || strings.HasPrefix(word, "./") ||
+			strings.HasPrefix(word, "../"))
+}
+
+// processCalls are, per interpreter language (interpreterLang), the words
+// that start another process from a script: only a script with one of them
+// can run git.
+var processCalls = map[string]*regexp.Regexp{
+	"python": regexp.MustCompile(
+		`\bsubprocess\b|\bos\s*\.\s*(system|popen|exec|spawn|posix_spawn)|\bpty\s*\.\s*spawn\b|` +
+			`\bfrom\s+(os|pty)\s+import\b`,
+	),
+	"perl": regexp.MustCompile(
+		"\\bsystem\\b|\\bexec\\b|`|\\bqx\\b|\\breadpipe\\b|\\bIPC::Open|\\bopen[0-9]?\\b[^\\n]*\\|",
+	),
+	"ruby": regexp.MustCompile(
+		"\\bsystem\\b|\\bexec\\b|`|%x|\\bspawn\\b|\\bIO\\s*\\.\\s*popen\\b|\\bOpen3\\b|\\bPTY\\s*\\.\\s*spawn\\b",
+	),
+	"node":      regexp.MustCompile(`\bchild_process\b|\bexec\w*|\bspawn\w*`),
+	"osascript": regexp.MustCompile(`(?i)\bdo\s+shell\s+script\b|\bdoShellScript\b`),
+}
+
+// anyProcessCall is every language's process words, for a script whose
+// language belt cannot tell.
+var anyProcessCall = func() *regexp.Regexp {
+	alts := make([]string, 0, len(processCalls))
+	for _, re := range processCalls {
+		alts = append(alts, "(?:"+re.String()+")")
+	}
+	slices.Sort(alts)
+	return regexp.MustCompile(strings.Join(alts, "|"))
+}()
+
+// interpreterLang returns the language of an interpreter word that is no
+// shell: python for any python name, else the name itself (perl, ruby,
+// node, osascript), "" for anything else.
+func interpreterLang(word string) string {
+	name := filepath.Base(word)
+	switch {
+	case pythonName.MatchString(name):
+		return "python"
+	case inlineEInterpreters[name]:
+		return name
+	}
+	return ""
+}
+
+// shebangInterpreter returns the language (interpreterLang) of the
+// interpreter a script's #! line names, and whether that interpreter is no
+// shell, so the walk only looks for a push in it.
+func shebangInterpreter(text string) (string, bool) {
 	line, _, _ := strings.Cut(text, "\n")
 	rest, ok := strings.CutPrefix(line, "#!")
 	if !ok {
-		return false
+		return "", false
 	}
 	for _, word := range strings.Fields(rest) {
 		name := filepath.Base(word)
 		if _, isInterp := isInterpreter(name); isInterp {
-			return !shellInterpreters[name]
+			return interpreterLang(name), !shellInterpreters[name]
 		}
 	}
-	return false
+	return "", false
 }
 
 // redirectOp returns the operator in front of a redirection target as
@@ -767,23 +935,39 @@ func (m *walkMemory) file(dir, word string) (script, bool) {
 }
 
 // write records what a command wrote to the file a word names in dir,
-// after what an earlier write left there when appending.
+// after what an earlier write left there when appending. A file past
+// maxDerivedText or the byte budget is unread (keep).
 func (m *walkMemory) write(dir, word string, s script, appending bool) {
+	s = m.keep(s)
 	if old, ok := m.file(dir, word); ok && appending {
-		s = script{text: old.text + s.text, ok: old.ok && s.ok}
+		s = joinScripts(old, s)
 	}
 	for _, key := range fileKeys(dir, word) {
 		m.files[key] = s
 	}
 }
 
+// joinScripts returns the text of a followed by b, unread when either is or
+// when the two together are past maxDerivedText.
+func joinScripts(a, b script) script {
+	switch {
+	case !a.ok || !b.ok:
+		return script{capped: a.capped || b.capped}
+	case len(a.text)+len(b.text) > maxDerivedText:
+		return overCap
+	}
+	return script{text: a.text + b.text, ok: true}
+}
+
 // remember records what a command leaves for a later one to run: a git
-// alias a git config write sets, a variable set to text the walk can read,
-// and a file it writes with a redirection or tee. A file written by any
-// command but a printer is unread, so running it is opaque.
+// alias a git config write or the invocation's own -c sets, a variable set
+// to text the walk can read, and a file it writes with a redirection or tee.
+// A file written by any command but a printer is unread, so running it is
+// opaque.
 func (w *shellWalk) remember(text string, c shellCmd, tokens []string, in pipeIn, dir string) {
 	if call, ok := readGitCall(tokens, c.words); ok {
 		w.mem.rememberAliasWrite(call)
+		w.mem.rememberOwnAliases(call)
 	}
 	w.rememberVars(text, c, tokens)
 	out, _ := w.produced(text, c)
@@ -813,7 +997,9 @@ var varBuiltins = wordSet("export local declare typeset readonly")
 
 // rememberVars records the variables a command sets to text the walk can
 // read whole (strictText): a command of assignments only, or one of
-// varBuiltins. Any other value forgets the variable.
+// varBuiltins. NAME+= appends to a value the command set. A value past
+// maxDerivedText or the byte budget is kept as unread (overCap), so a
+// script that runs it is opaque; any other value forgets the variable.
 func (w *shellWalk) rememberVars(text string, c shellCmd, tokens []string) {
 	i := 0
 	switch {
@@ -830,11 +1016,18 @@ func (w *shellWalk) rememberVars(text string, c shellCmd, tokens []string) {
 		if !ok {
 			continue
 		}
-		if s := w.strictText(text, value, false); s.ok && !strings.HasSuffix(name, "+") {
-			w.mem.vars[name] = s.text
+		s := w.strictText(text, value, false)
+		name, appends := strings.CutSuffix(name, "+")
+		if old, set := w.mem.vars[name]; appends && set {
+			s = joinScripts(old, s)
+		} else if appends {
+			s = script{}
+		}
+		if s.ok || s.capped {
+			w.mem.vars[name] = w.mem.keep(s)
 			continue
 		}
-		delete(w.mem.vars, strings.TrimSuffix(name, "+"))
+		delete(w.mem.vars, name)
 	}
 }
 

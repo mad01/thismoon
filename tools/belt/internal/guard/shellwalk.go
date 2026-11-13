@@ -61,12 +61,10 @@ type walkStep struct {
 // (feedsOf): a git alias body, text printed into a shell, a file or a
 // variable the command filled with text.
 func walkCommands(command, cwd string, fn func(walkStep)) {
-	resolved := resolveLiteralVars(command)
 	w := shellWalk{
-		dir: cwd, cdpath: os.Getenv("CDPATH") != "", chains: new(int),
-		mem: newWalkMemory(command, resolved),
+		dir: cwd, cdpath: os.Getenv("CDPATH") != "", chains: new(int), mem: newWalkMemory(),
 	}
-	w.walkRead(resolved, true, fn)
+	w.walkRead(resolveLiteralVars(command), true, fn)
 }
 
 // walkRead walks one text. code says the shell runs it as commands; with
@@ -374,13 +372,19 @@ func (w *shellWalk) walkWords(
 	if !w.prose {
 		step.before, step.after, step.chain = c.before, c.after, w.chain
 	}
+	w.mem.noteAliasConfig(tokens)
 	feeds := w.feedsOf(text, c, tokens, in, dir)
 	opaque, walk := w.mem.claim(feeds)
+	if opaque.what == "" && w.positional && runsPositional(c, tokens) {
+		opaque = opacity{what: "a script argument the script runs as code", scoped: true}
+	}
 	step.opaque = opaque
 	fn(step)
 	w.remember(text, c, tokens, in, dir)
 	if at := inlineScriptAt(tokens); at >= 0 {
-		w.childFor(dir, tokens[:at]).walkRead(c.words[at].script(), true, fn)
+		inner := w.childFor(dir, tokens[:at])
+		inner.positional = at+1 < len(tokens)
+		inner.walkRead(c.words[at].script(), true, fn)
 	}
 	if at := evalAt(tokens); at >= 0 {
 		w.walkEval(c, tokens, at, fn)
@@ -388,6 +392,27 @@ func (w *shellWalk) walkWords(
 	if walk {
 		w.walkFeeds(feeds, fn)
 	}
+}
+
+// positionalRef is a reference to a script argument: $1 to $9, ${10}, $@
+// or $*.
+var positionalRef = regexp.MustCompile(`\$\{?[0-9@*]`)
+
+// runsPositional reports whether a command runs a script argument as code:
+// its command word is one, or eval or a shell's -c takes one as its text
+// (`sh -c 'eval "$1"' _ 'git push'`). The walk cannot see the argument from
+// inside the script, so the text is unread.
+func runsPositional(c shellCmd, tokens []string) bool {
+	refers := func(w placedWord) bool { return positionalRef.MatchString(w.raw) }
+	head := len(tokens) - len(stripWrappers(tokens))
+	switch {
+	case head < len(c.words) && refers(c.words[head]):
+		return true
+	case evalAt(tokens) >= 0:
+		return slices.ContainsFunc(c.words[evalAt(tokens)+1:], refers)
+	}
+	at := inlineScriptAt(tokens)
+	return at >= 0 && refers(c.words[at])
 }
 
 // definesFunction reports whether a command, read from text, defines a shell
@@ -414,14 +439,16 @@ func (w *shellWalk) walkEval(c shellCmd, tokens []string, at int, fn func(walkSt
 	for _, word := range c.words[at+1:] {
 		script = append(script, word.script())
 	}
-	w.walkInShell(tokens[:at], strings.Join(script, " "), fn)
+	w.walkInShell(tokens[:at], strings.Join(script, " "), false, fn)
 }
 
 // walkInShell walks text this shell runs itself, behind the words pre (eval,
 // source): the variables it sets stay set, and a directory it moves to is
-// unknown here.
-func (w *shellWalk) walkInShell(pre []string, text string, fn func(walkStep)) {
+// unknown here. args marks a source with arguments of its own, which the
+// text reads as $1 and the rest.
+func (w *shellWalk) walkInShell(pre []string, text string, args bool, fn func(walkStep)) {
 	inner := w.childFor(w.dir, pre)
+	inner.positional = inner.positional || args
 	inner.walkRead(text, true, fn)
 	w.gitEnv = w.gitEnv || inner.gitEnv
 	w.configEnv = w.configEnv || inner.configEnv
@@ -437,6 +464,7 @@ func (w *shellWalk) child(dir string) *shellWalk {
 	return &shellWalk{
 		dir: dir, cdpath: w.cdpath, gitEnv: w.gitEnv, configEnv: w.configEnv, heredoc: w.heredoc,
 		feeds: w.feeds, depth: w.depth + 1, chains: w.chains, mem: w.mem, expanding: w.expanding,
+		positional: w.positional,
 	}
 }
 
@@ -514,6 +542,7 @@ func (w *shellWalk) walkTokens(command string, unread bool, fn func(walkStep)) {
 			w.move(target, seg.text, before, after, w.prose || inText(command, seg.off))
 		} else {
 			w.noteGitEnv(tokens)
+			w.mem.noteAliasConfig(tokens)
 			fn(walkStep{
 				tokens: tokens, dir: w.gitDir(tokens), configEnv: w.configEnv, unread: unread,
 				opaque: opacity{what: w.tokenAlias(tokens)},

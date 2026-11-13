@@ -140,6 +140,10 @@ type shellWalk struct {
 	// expanding are the git aliases whose bodies the walk is inside, so it
 	// never reads one inside itself (aliasFeeds).
 	expanding []string
+	// positional marks a script run with arguments of its own (a -c script,
+	// a file or a source with words after it, a ! alias body): a command
+	// there that runs one of them as code is opaque (runsPositional).
+	positional bool
 }
 
 // joint is the separator in front of a command or segment.
