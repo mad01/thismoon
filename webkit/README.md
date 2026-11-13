@@ -34,7 +34,7 @@ See [`COMPONENTS.md`](COMPONENTS.md) for the full design spec. Summary:
 | `<wk-badge variant="a\|b\|c\|outline\|stat\|accent\|filter">` | CSS-only | Chips / badges; `variant="filter"` is a clickable pill; `[active]` fills it |
 | `<wk-badge variant="info\|ok\|warn\|error">` | CSS-only | Status badges on the status fill and ink roles, the ink at 4.5:1 on its fill |
 | `<wk-chips>` | CSS-only | A wrapping row of filter badges |
-| `<wk-button variant="primary\|ghost\|danger">` | CSS-only | Action button; no or an unknown variant gets the ghost look |
+| `<wk-button variant="primary\|ghost\|danger" [size="md"]>` | CSS-only | Action button, `--wk-control-h` tall; no or an unknown variant gets the ghost look; `size="md"` is the taller dialog size |
 | `<wk-search>` | CSS-only | Search bar; optional first-child `<svg>` becomes a leading icon |
 | `<wk-seg>` | CSS-only | Segmented control; `<button class="active">` marks selected |
 | `<wk-table>` | CSS-only | Wraps a descendant `<table>` as a data table |
@@ -54,6 +54,24 @@ See [`COMPONENTS.md`](COMPONENTS.md) for the full design spec. Summary:
 
 All components use **light DOM** only (no Shadow DOM) — CSS vars and fixation
 text-walk work normally.
+
+## Tokens
+
+`webkit.css` declares its shape, rhythm and motion on `:root`, and its rules
+read them:
+
+- Radius by role: `--wk-radius-mark` (4px), `-control` (6px), `-field` (8px),
+  `-surface` (10px), `-overlay` (14px), `-pill` (999px).
+- Spacing: `--wk-space-N` is N × `0.25rem`, for N in `0-5`, `1`, `1-5`, `2`,
+  `2-5`, `3`, `4`, `5`, `6`, `8` and `10`.
+- `--wk-control-h` (`1.75rem`): the height of a button, a header control and a
+  `wk-seg`.
+- Motion: `--wk-dur-fast` (0.15s), `--wk-dur` (0.2s), `--wk-dur-theme` (0.3s).
+
+Read these from service CSS (`gap: var(--wk-space-2)`,
+`border-radius: var(--wk-radius-surface)`) rather than copying the numbers, so
+a shell stays in line with the kit. The table and the deliberate exceptions are
+in [docs/components.md](docs/components.md#design-tokens-radius-spacing-control-height-motion).
 
 ## Consume it (Go)
 

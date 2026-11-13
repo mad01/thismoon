@@ -99,6 +99,55 @@ func TestHandlerServesCSS(t *testing.T) {
 	}
 }
 
+// TestCSSDeclaresDesignTokens holds the design tokens (MAD-567) to their
+// names and values, since service CSS reads them by name, and checks that the
+// kit's own rules read each one.
+func TestCSSDeclaresDesignTokens(t *testing.T) {
+	body := serve(t, "/webkit/webkit.css").Body.String()
+	for name, value := range map[string]string{
+		"--wk-radius-mark":    "4px",
+		"--wk-radius-control": "6px",
+		"--wk-radius-field":   "8px",
+		"--wk-radius-surface": "10px",
+		"--wk-radius-overlay": "14px",
+		"--wk-radius-pill":    "999px",
+		"--wk-space-0-5":      "0.125rem",
+		"--wk-space-1":        "0.25rem",
+		"--wk-space-1-5":      "0.375rem",
+		"--wk-space-2":        "0.5rem",
+		"--wk-space-2-5":      "0.625rem",
+		"--wk-space-3":        "0.75rem",
+		"--wk-space-4":        "1rem",
+		"--wk-space-5":        "1.25rem",
+		"--wk-space-6":        "1.5rem",
+		"--wk-space-8":        "2rem",
+		"--wk-space-10":       "2.5rem",
+		"--wk-control-h":      "1.75rem",
+		"--wk-dur-fast":       "0.15s",
+		"--wk-dur":            "0.2s",
+		"--wk-dur-theme":      "0.3s",
+	} {
+		if decl := name + ": " + value + ";"; !strings.Contains(body, decl) {
+			t.Errorf("webkit.css does not declare %q", decl)
+		}
+		if !strings.Contains(body, "var("+name+")") {
+			t.Errorf("no rule in webkit.css reads var(%s)", name)
+		}
+	}
+	// The sizes the tokens set: buttons and the segmented control at the
+	// control height, the larger dialog button, and the outline badge's
+	// inset ring that keeps it level with a plain badge.
+	for _, want := range []string{
+		"min-height: var(--wk-control-h)",
+		`wk-button[size="md"]`, ".btn-md",
+		"box-shadow: inset 0 0 0 1px var(--border)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("webkit.css missing %q", want)
+		}
+	}
+}
+
 func TestHandlerServesJS(t *testing.T) {
 	rec := serve(t, "/webkit/webkit.js")
 	if rec.Code != http.StatusOK {
