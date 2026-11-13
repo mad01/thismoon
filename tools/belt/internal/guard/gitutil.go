@@ -27,6 +27,9 @@ type gitInvocation struct {
 	unread     bool
 	moved      bool
 	heads      pushHeads
+	// opaque names text a command runs that the walk could not read
+	// (walkStep.opaque); such a command counts as a possible push.
+	opaque opacity
 }
 
 // gitCommandsAt extracts bare `git <sub>` invocations from a shell command,
@@ -53,6 +56,11 @@ type gitInvocation struct {
 // one that keepsHead does not vouch for leaves it unsure (pushHeads.afterPush),
 // and so does a shell function defined anywhere in the command
 // (headTracker.settle).
+//
+// For sub push, a command that runs text the walk could not read
+// (walkStep.opaque) counts as one more push, marked opaque, outside comments
+// and text bodies. The commit guards fail open, so for them it counts as
+// nothing.
 func gitCommandsAt(command, cwd, sub string) []gitInvocation {
 	var cmds []gitInvocation
 	var seen []int // len(headTracker.changed) after each invocation
@@ -65,6 +73,10 @@ func gitCommandsAt(command, cwd, sub string) []gitInvocation {
 			c.heads = heads.at(s, c)
 		}
 		heads.see(s)
+		if s.opaque.what != "" && !s.prose && sub == "push" {
+			cmds = append(cmds, gitInvocation{dir: s.dir, sub: sub, opaque: s.opaque})
+			seen = append(seen, len(heads.changed))
+		}
 		if !ok {
 			return
 		}
@@ -122,6 +134,16 @@ type shellWalk struct {
 	// included, so no two runs share a number.
 	chain  int
 	chains *int
+	// mem is what the walk has learned that a later command may run
+	// (walkMemory), shared by every walk of one command.
+	mem *walkMemory
+	// expanding are the git aliases whose bodies the walk is inside, so it
+	// never reads one inside itself (aliasFeeds).
+	expanding []string
+	// positional marks a script run with arguments of its own (a -c script,
+	// a file or a source with words after it, a ! alias body): a command
+	// there that runs one of them as code is opaque (runsPositional).
+	positional bool
 }
 
 // joint is the separator in front of a command or segment.
@@ -239,7 +261,7 @@ func isGitWord(tok string) bool {
 // mentionsName reports whether text names one of names as a word of its
 // own, once quotes and backslashes are dropped (`"GIT_DIR"=`, `GIT_\DIR=`).
 func mentionsName(text string, names map[string]bool) bool {
-	text = strings.NewReplacer(`"`, "", `'`, "", `\`, "").Replace(text)
+	text = unquoteWord(text)
 	notName := func(r rune) bool { return r > unicode.MaxASCII || !isNameByte(byte(r)) }
 	return slices.ContainsFunc(
 		strings.FieldsFunc(text, notName),

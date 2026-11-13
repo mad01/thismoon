@@ -1,11 +1,17 @@
 package guard
 
 import (
+	"bytes"
 	"cmp"
+	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/mad01/thismoon/kit/gitloc"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
@@ -37,6 +43,9 @@ type GitPushMain struct {
 	// resolveHasBranch reports whether the repo at dir has the local branch
 	// name (pushHeads.verify). Injectable for tests.
 	resolveHasBranch func(dir, name string) bool
+	// resolveInRepo reports whether dir is inside a git repository
+	// (opaqueDenial). Injectable for tests.
+	resolveInRepo func(dir string) bool
 }
 
 // NewGitPushMain builds the guard with the real git-backed resolvers.
@@ -47,6 +56,7 @@ func NewGitPushMain(cfg config.Config) *GitPushMain {
 		resolveRepo:       canonicalPushRepoAt,
 		resolvePushRemote: gitPushRemote,
 		resolveHasBranch:  gitHasBranch,
+		resolveInRepo:     gitInRepo,
 	}
 }
 
@@ -96,6 +106,8 @@ func (g *GitPushMain) Check(in Input) *Denial {
 // judged on the branch git reads, as if the command had no switch.
 func (g *GitPushMain) checkPush(push gitPush) *Denial {
 	switch {
+	case push.opaque.what != "":
+		return g.opaqueDenial(push)
 	case push.unread:
 		return unreadDenial(push)
 	case push.dir == "":
@@ -194,6 +206,83 @@ func (g *GitPushMain) toPlainOrigin(push gitPush, current string) bool {
 	return g.resolvePushRemote(push.dir, current) == "origin"
 }
 
+// opaqueDenial decides a command that runs text the walk could not read
+// (walkStep.opaque). An alias body belt cannot read, or text past what belt
+// reads in one command, may push to a default branch from any branch, so it
+// is denied wherever it runs, an exempt repo included. Scoped text (shell
+// text printed into a shell from a variable or a command, anything but a
+// printer piped into one, or an interpreter script that may run a push) is
+// denied only where the guard would deny a default-branch push: in a repo
+// (resolveInRepo) with no direct-push exemption, or in a directory belt
+// cannot tell.
+func (g *GitPushMain) opaqueDenial(push gitPush) *Denial {
+	if !push.opaque.scoped {
+		return Reasonf(
+			GitPushMainID,
+			"cannot read %s, so a git push in it cannot be checked. Write the push as a plain "+
+				"command (git push origin <branch>), not through a git alias or text the command "+
+				"builds and runs.",
+			push.opaque.what,
+		)
+	}
+	if push.dir != "" && (!g.resolveInRepo(push.dir) || g.pushExempt(push.dir)) {
+		return nil
+	}
+	return Reasonf(
+		GitPushMainID,
+		"cannot read %s, so a git push in it cannot be checked in a repo that blocks direct "+
+			"pushes. Write that text to a file and run it in a command of its own, or run the "+
+			"command directly.",
+		push.opaque.what,
+	)
+}
+
+// gitInRepo reports whether dir is inside a git repository, one with no
+// commit yet included (resolveInRepo), bounded by branchLookupTimeout.
+func gitInRepo(dir string) bool {
+	return gitInRepoWithin(dir, branchLookupTimeout)
+}
+
+// gitInRepoWithin runs `git rev-parse --git-dir` in the nearest directory on
+// the way up from dir that exists, since a command may cd into a directory
+// it creates first. Only git's own answer that this is not a git repository
+// (exit 128 with that message) reads as outside a repo. Any other failure,
+// such as a repo git refuses for its owner, git missing, or the timeout,
+// reads as inside one, so the push guard fails closed.
+func gitInRepoWithin(dir string, timeout time.Duration) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-dir")
+	cmd.Dir = existingAncestor(dir)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	cmd.WaitDelay = rootLookupGrace
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	var exit *exec.ExitError
+	notRepo := errors.As(err, &exit) && exit.ExitCode() == 128 && ctx.Err() == nil &&
+		strings.Contains(stderr.String(), "not a git repository")
+	return !notRepo
+}
+
+// rootLookupGrace bounds how long gitInRepoWithin waits for git's pipes to
+// close after git exits, as kit/gitloc does.
+const rootLookupGrace = 100 * time.Millisecond
+
+// existingAncestor returns the nearest directory on the way up from dir
+// that exists, dir itself when it does. An empty or relative dir stays as
+// it is.
+func existingAncestor(dir string) string {
+	if !filepath.IsAbs(dir) {
+		return dir
+	}
+	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
+		if info, err := os.Stat(d); (err == nil && info.IsDir()) || d == filepath.Dir(d) {
+			return d
+		}
+	}
+}
+
 // unreadDenial decides a push the walk found in code readShell could not
 // follow, so its words come from the token split and a quote may hide where
 // it goes. It is denied unless its refspecs name non-default branches in
@@ -245,9 +334,10 @@ func unknownDirDenial(push gitPush) *Denial {
 // it has run: a git config write (gitConfigWrites), a git remote add,
 // set-url, rename or remove, a git branch upstream change, a redirection
 // into a git config file (gitConfigFile), or any other command that names
-// one in its words. A command that only reads or prints (readOnlyCommand)
-// writes through its redirections alone, and a comment or a heredoc body no
-// shell runs (walkStep.prose) changes nothing.
+// one in its words or takes the output of one that does through a pipe
+// (`grep -l x .git/config | xargs sed -i ...`). A command that only reads or
+// prints (readOnlyCommand) writes through its redirections alone, and a
+// comment or a heredoc body no shell runs (walkStep.prose) changes nothing.
 func retargetsPush(s walkStep) bool {
 	if s.prose {
 		return false
@@ -271,7 +361,8 @@ func retargetsPush(s walkStep) bool {
 	if len(words) == 0 || readOnlyCommand(words) {
 		return false
 	}
-	return slices.ContainsFunc(words, func(w string) bool { return gitConfigFile(w, s.dir) })
+	return s.pipedConfig ||
+		slices.ContainsFunc(words, func(w string) bool { return gitConfigFile(w, s.dir) })
 }
 
 // readOnlyCommands only read the files they name, or print their words.
@@ -351,7 +442,7 @@ var gitDirFlags = []string{"--git-dir", "--git-common-dir", "--git-path", "--abs
 // the word, or the value belt's own environment holds), or a path built from
 // what rev-parse says the git directory is.
 func gitConfigFile(word, dir string) bool {
-	w := strings.NewReplacer(`"`, "", `'`, "", `\`, "").Replace(word)
+	w := unquoteWord(word)
 	switch {
 	case w == "":
 		return false
@@ -442,6 +533,9 @@ type gitPush struct {
 	// heads are the branches the checkouts and switches before the push may
 	// leave checked out (gitInvocation.heads).
 	heads pushHeads
+	// opaque names text the command runs that the walk could not read
+	// (gitInvocation.opaque).
+	opaque opacity
 }
 
 // targetBranch resolves which branch the push lands on. For explicit refspecs
@@ -546,6 +640,7 @@ var pushFlagsWithValue = map[string]bool{
 func parsePushArgs(c gitInvocation) gitPush {
 	push := gitPush{
 		dir: c.dir, configured: c.configured, unread: c.unread, moved: c.moved, heads: c.heads,
+		opaque: c.opaque,
 	}
 	var positional []string
 	for i := 0; i < len(c.args); i++ {
