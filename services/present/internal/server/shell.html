@@ -64,19 +64,24 @@
 .brief-presenter { font-size: 0.8125rem; color: var(--text-3); margin: -0.125rem 0 0.5rem; letter-spacing: 0.02em; }
 .brief-summary { font-size: 1.0625rem; color: var(--text-2); line-height: 1.75; margin-bottom: 2.5rem; max-width: 640px; }
 /* Read-aloud puts its play button and status badge inside the summary as
-   right floats, which sit at the 640px edge and cut into its first lines.
-   Where the column has room for them, they leave the text's flow (an empty
-   shape-outside) and shift by the column's spare width to its edge, where
-   the section headings carry theirs. The cap stays on the text. A narrower
-   column keeps them as plain floats. 100cqw is the brief's content width;
-   100% (for left) is the summary's. */
+   right floats, which cut into its first lines wherever the text reaches
+   them: in any column the summary fills, from a phone up. So they leave the
+   text's flow (an empty shape-outside) and rise into a band the summary
+   keeps above its text while they show, at any width. A summary narrower
+   than the column moves them on to the column's edge, where the section
+   headings carry theirs: 100cqw is the brief's content width, 100% (for
+   left) is the summary's, and the two are equal in a column the summary
+   fills. The band takes half the dateline's gap. The badge leaves room in
+   the band for the play and Retry buttons, so the row stays one row. */
 .brief:not(.deck) { container: brief / inline-size; }
-@container brief (min-width: 960px) {
-  .brief > .brief-summary > .wk-ra-btn,
-  .brief > .brief-summary > wk-badge.wk-ra-state {
-    position: relative; left: calc(100cqw - 100%); shape-outside: inset(50%);
-  }
+.brief:not(.deck) > .brief-summary:has(> .wk-ra-btn):not(html[data-audio="off"] *) {
+  margin-top: -0.75rem; padding-top: calc(var(--wk-control-h) + 0.5rem);
 }
+.brief:not(.deck) > .brief-summary > :is(.wk-ra-btn, wk-badge.wk-ra-state) {
+  position: relative; top: calc(-1 * (var(--wk-control-h) + 0.5rem));
+  left: calc(100cqw - 100%); shape-outside: inset(50%);
+}
+.brief:not(.deck) > .brief-summary > wk-badge.wk-ra-state { max-width: min(16rem, 100% - 8rem); }
 
 .chip-row { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-top: 0.5rem; }
 
@@ -202,7 +207,11 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
    follows .dim so an element a step has not reached stays hidden. */
 .present-diagram { margin: 1rem 0 1.5rem; }
 .present-diagram-canvas { display: flex; justify-content: center; max-height: 420px; }
-.brief:not(.deck) .present-diagram-canvas { max-height: none; justify-content: flex-start; }
+/* In the brief a diagram has the page width and no height cap, and one
+   drawn narrower than the page sits in its middle; safe keeps the start of
+   a drawing wider than the page in reach of the sideways scroll. The
+   wrapper's font is the body size, which caps a box name's scale. */
+.brief:not(.deck) .present-diagram-canvas { max-height: none; justify-content: safe center; font-size: var(--fs-body); }
 .present-diagram-svg { --diagram-fade: 350ms; display: block; overflow: visible; font-family: inherit; }
 .present-diagram-caption { font-size: 0.875rem; color: var(--text-2); margin: 0.5rem 0 0; }
 /* A caption and a step list are prose: they end where the section's
@@ -249,8 +258,13 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
    wk-code-block gives (border, radius, the header bar with its dots and
    badge), with the terminal under the bar. app.js sets the canvas height
    from the block's rows; a slide whose only block is the terminal sets
-   --terminal-fill and a height instead, which a block naming no rows
-   fills. --terminal-font-size is the px size xterm draws at, larger while
+   --terminal-fill and a height in the slide unit instead, which a block
+   naming no rows fills. The block, its header bar (2.125rem) and border
+   (2px) included, is 33u, a diagram's cap, so a two-line claim and the
+   block fit the 46.75u the body leaves at fit 1, and the fit shrinks the
+   canvas with the rest of the slide. The unit grows while presenting, so
+   no rule sets another height there.
+   --terminal-font-size is the px size xterm draws at, larger while
    presenting. The padding sits on xterm's element, in whole pixels,
    because the fit addon subtracts it as integers. It comes from
    --terminal-pad-y, which app.js adds to the canvas height, so the
@@ -286,9 +300,8 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
   padding: 1rem; text-align: center; background: var(--code-bg);
   font-size: 0.8125rem; color: var(--text-2);
 }
-.slide.solo-terminal .present-terminal-canvas { --terminal-fill: 1; height: 48vh; }
+.slide.solo-terminal .present-terminal-canvas { --terminal-fill: 1; height: calc(33 * var(--u) - 2.125rem - 2px); }
 html.presenting .slide .present-terminal { --terminal-font-size: 16; }
-html.presenting .slide.solo-terminal .present-terminal-canvas { height: 64vh; }
 
 .refs-section { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid var(--border); }
 .refs-list { list-style: none; display: flex; flex-direction: column; gap: 0.625rem; }
@@ -296,6 +309,14 @@ html.presenting .slide.solo-terminal .present-terminal-canvas { height: 64vh; }
 .refs-item a { font-size: 0.875rem; font-weight: 500; color: var(--primary); text-decoration: none; transition: color 0.15s; }
 .refs-item a:hover { text-decoration: underline; }
 .refs-url { font-size: 0.75rem; color: var(--text-3); }
+/* The reading probe (app.js watchReading): one hidden line in the page's
+   face at the root size, whose box moves with the reader's face and size.
+   Fixed, so it takes no room in the page and adds no scroll. */
+.present-reading-probe {
+  position: fixed; top: 0; left: 0; visibility: hidden; pointer-events: none;
+  white-space: pre; font-size: 1rem; font-weight: 400; font-style: normal;
+  line-height: normal; letter-spacing: normal;
+}
 
 @media (max-width: 600px) {
   .brief { padding: 0 1rem 4rem; }
@@ -305,28 +326,254 @@ html.presenting .slide.solo-terminal .present-terminal-canvas { height: 64vh; }
   .cy-wrapper.cy-fullscreen { top: 0; left: 0; right: 0; bottom: 0; border-radius: 0; }
   .cy-wrapper.cy-fullscreen .cy-container { border-radius: 0; }
 }
+/* The brief's reading styles. Two token rules open the block, :root and
+   #root (the type scale), and set only custom properties; every other
+   selector in it carries .brief:not(.deck), so the deck keeps its own
+   sizes. TestBriefStylesStayInTheBrief pins both. Colours are palette roles.
+   --ink-strong is the palette's text-1 resolved on :root, before #root
+   softens it to the body ink: headings keep the true ink. */
+:root { --ink-strong: var(--text-1); }
+#root {
+  --fs-micro: 0.8125rem;
+  --fs-small: 0.9375rem;
+  --fs-body: 1.125rem;
+  --fs-h3: 1.25rem;
+  --fs-lede: 1.375rem;
+  --fs-h2: 1.75rem;
+  --fs-title: 2.75rem;
+}
+/* The measure is the kit's --wk-measure, in ch of each block's own font.
+   A block set at another size than the paragraph's --fs-body scales it by
+   the paragraph's size over its own (1.125 / 0.9375 for a 15px caption,
+   1.125 for a block that keeps the 1rem root size), so every block on the
+   measure ends where the paragraphs do, as the kit's callout rule does. */
+
+/* Opening: title, dateline, summary, read-aloud bar, chips, contents. The
+   title runs the page width: a 44px monospace line holds about 39
+   characters, and a cap would wrap most titles to three lines. */
+.brief:not(.deck) .brief-title {
+  font-size: var(--fs-title); font-weight: 700; line-height: 1.1; letter-spacing: 0;
+  text-wrap: balance; color: var(--ink-strong); margin: 0 0 0.875rem;
+}
+.brief:not(.deck) .brief-meta {
+  font-family: var(--mono); font-size: var(--fs-micro); font-weight: 500; line-height: 1.4;
+  letter-spacing: 0; color: var(--text-2); margin: 0 0 1.5rem;
+}
+.brief:not(.deck) .brief-summary {
+  font-size: var(--fs-lede); line-height: 1.45; color: var(--text-1); text-wrap: pretty;
+  max-width: calc(var(--wk-measure) * 1.125 / 1.375); margin: 0 0 1.5rem;
+}
+.brief:not(.deck) .chip-row { gap: 0.5rem; margin: 0 0 1.5rem; }
+.brief:not(.deck) .chip-row wk-badge { padding: 0.3125rem 0.625rem; }
+.brief:not(.deck) :is(.chip-row, wk-section) wk-badge:not(.wk-ra-state) { font-family: var(--mono); font-size: var(--fs-micro); }
+/* The contents list: no card, no numbers, no capitals, and none under four
+   sections. Stacked, it sits under the chips in two columns on the measure. */
+.brief:not(.deck) wk-toc {
+  font-size: var(--fs-small); background: none; border: 0; border-radius: 0; box-shadow: none;
+  padding: 0; margin: 0 0 2.5rem; max-width: calc(var(--wk-measure) * 1.125 / 0.9375);
+}
+.brief:not(.deck) wk-toc:not(:has(li:nth-child(4))) { display: none; }
+.brief:not(.deck) wk-toc-title {
+  font-size: var(--fs-small); font-weight: 600; text-transform: none; letter-spacing: 0;
+  color: var(--text-1); margin-bottom: 0.5rem;
+}
+.brief:not(.deck) wk-toc ul { display: block; columns: 2 16rem; column-gap: 2.5rem; }
+.brief:not(.deck) wk-toc li { break-inside: avoid; padding: 0.25rem 0; line-height: 1.4; }
+.brief:not(.deck) wk-toc a { font-size: inherit; font-weight: 400; color: var(--text-2); }
+.brief:not(.deck) wk-toc a:hover { color: var(--primary); text-decoration: none; }
+/* On a wide window the contents list stands beside the opening, under the
+   title, with a rule on its left. Monospace entries wrap more than
+   proportional ones, so the opening column leaves the list about 25rem of a
+   1080px page; the summary still holds about 43 characters a line. The last
+   opening row is the flexible one, so a list taller than the opening adds
+   its height under the chips, not between the dateline and the summary.
+   Grid items keep their margins, so the first section's is the rest of the
+   2.5rem the opening ends with. The read-aloud controls stay at the
+   summary's edge, in its band: the shift to the page edge would land them
+   on the list. */
+@media (min-width: 64rem) {
+  .brief:not(.deck):has(> wk-toc li:nth-child(4)) {
+    display: grid; grid-template-columns: minmax(0, 36rem) minmax(0, 1fr);
+    grid-template-rows: repeat(4, auto) 1fr; column-gap: 3rem; align-items: start;
+  }
+  .brief:not(.deck):has(> wk-toc li:nth-child(4)) > * { grid-column: 1 / -1; min-width: 0; }
+  .brief:not(.deck):has(> wk-toc li:nth-child(4)) > :is(.brief-meta, .brief-summary, wk-read-aloud, .chip-row) { grid-column: 1; }
+  .brief:not(.deck):has(> wk-toc li:nth-child(4)) > wk-toc {
+    grid-column: 2; grid-row: 2 / span 4; max-width: none;
+    margin: 0 0 1.5rem; padding-left: 1.25rem; border-left: 1px solid var(--border);
+  }
+  .brief:not(.deck):has(> wk-toc li:nth-child(4)) > wk-toc ul { columns: auto; }
+  .brief:not(.deck):has(> wk-toc li:nth-child(4)) > wk-section:first-of-type { margin-top: 1rem; }
+  .brief:not(.deck):has(> wk-toc li:nth-child(4)) > .brief-summary > :is(.wk-ra-btn, wk-badge.wk-ra-state) { left: auto; }
+}
+
+/* Sections: a rule across the page, the accent moved onto it, no rule under
+   the heading. A toned section keeps its band, and the accent starts at the
+   band's outer edge. */
+.brief:not(.deck) > wk-section:first-of-type { margin-top: 2.5rem; }
+.brief:not(.deck) wk-section { position: relative; margin-bottom: 4.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
+.brief:not(.deck) wk-section-heading {
+  position: static; font-size: var(--fs-h2); font-weight: 650; line-height: 1.2; letter-spacing: 0;
+  color: var(--ink-strong); text-wrap: balance;
+  border-bottom: 0; padding-bottom: 0; margin-bottom: 1.25rem;
+}
+.brief:not(.deck) wk-section-heading::after { top: -2px; bottom: auto; left: 0; width: 2.5rem; height: 3px; border-radius: 0; }
+.brief:not(.deck) wk-section[data-tone] wk-section-heading::after { left: -3px; }
+.brief:not(.deck) wk-section.section-changed > wk-section-heading::before { font-size: var(--fs-micro); }
+.brief:not(.deck) wk-section-subheading {
+  font-size: var(--fs-h3); font-weight: 600; line-height: 1.3; color: var(--ink-strong);
+  max-width: calc(var(--wk-measure) * 1.125 / 1.25); margin: 2rem 0 0.625rem;
+}
+
+/* Prose */
+.brief:not(.deck) wk-section p { font-size: var(--fs-body); line-height: 1.6; margin-bottom: 1rem; }
+.brief:not(.deck) wk-section p + p { margin-top: 0; }
+/* The indent holds a monospace "1. " inside the page edge. */
+.brief:not(.deck) .brief-list {
+  font-size: var(--fs-body); line-height: 1.55; color: var(--text-1);
+  padding-left: 1.75rem; margin: 0.25rem 0 1.25rem;
+}
+.brief:not(.deck) ol.brief-list { padding-left: 2rem; }
+.brief:not(.deck) ol.brief-list:has(> li:nth-child(10)) { padding-left: 2.75rem; }
+.brief:not(.deck) .brief-list li { margin-bottom: 0.5rem; padding-left: 0.25rem; }
+.brief:not(.deck) .brief-list li::marker { color: var(--text-3); }
+.brief:not(.deck) wk-section > blockquote { font-size: var(--fs-body); }
+.brief:not(.deck) wk-section blockquote cite { font-size: var(--fs-small); color: var(--text-2); }
+.brief:not(.deck) wk-columns { gap: 2rem; margin: 1.75rem 0 2rem; }
+.brief:not(.deck) wk-columns[cols="3"] wk-col p { font-size: var(--fs-small); }
+
+/* Blocks */
+.brief:not(.deck) wk-callout {
+  font-size: var(--fs-body); line-height: 1.6; color: var(--text-1); box-shadow: none;
+  padding: 1rem 1.25rem; margin: 1.75rem 0 2rem; max-width: var(--wk-measure);
+}
+.brief:not(.deck) wk-panel { box-shadow: none; }
+/* A panel is a measure block; the one that frames the graph is a figure. */
+.brief:not(.deck) wk-section > wk-panel:not(:has(.cy-container)) { max-width: calc(var(--wk-measure) * 1.125); }
+.brief:not(.deck) wk-panel-title { font-size: var(--fs-body); letter-spacing: 0; }
+.brief:not(.deck) wk-panel-subtitle { font-size: var(--fs-small); }
+.brief:not(.deck) wk-stat { box-shadow: none; }
+.brief:not(.deck) wk-section > wk-stat { max-width: calc(var(--wk-measure) * 1.125); }
+.brief:not(.deck) wk-stat-value { font-size: var(--fs-title); font-weight: 650; letter-spacing: 0; color: var(--ink-strong); }
+.brief:not(.deck) wk-stat-label, .brief:not(.deck) wk-stat-sub { font-size: var(--fs-small); }
+.brief:not(.deck) wk-stat-label { margin-top: 0.5rem; color: var(--text-1); }
+/* Key-value rows: the key column holds about 20 characters and wraps a
+   longer key inside it, with a clear gap before the value. */
+.brief:not(.deck) wk-kv { margin: 1.25rem 0 1.75rem; }
+.brief:not(.deck) wk-section > wk-kv { max-width: calc(var(--wk-measure) * 1.125); }
+.brief:not(.deck) wk-kv-row { font-size: var(--fs-body); line-height: 1.5; gap: 1.5rem; padding: 0.5rem 0; }
+.brief:not(.deck) wk-kv-label { flex: 0 0 min(14rem, 35%); min-width: 0; overflow-wrap: anywhere; }
+/* Progress: the bar takes the whole row and the label wraps under it, so
+   bars on one page share a length to compare, and no label widens the page
+   (the kit's label does not wrap). */
+.brief:not(.deck) wk-section > wk-progress { max-width: calc(var(--wk-measure) * 1.125); margin: 0.75rem 0 1rem; }
+.brief:not(.deck) wk-progress { flex-wrap: wrap; row-gap: 0.375rem; }
+.brief:not(.deck) wk-progress-bar { flex: 1 0 100%; }
+.brief:not(.deck) wk-progress-label { font-size: var(--fs-small); line-height: 1.45; white-space: normal; min-width: 0; overflow-wrap: anywhere; }
+.brief:not(.deck) wk-section details { box-shadow: none; }
+.brief:not(.deck) wk-section > details { max-width: calc(var(--wk-measure) * 1.125); }
+.brief:not(.deck) wk-section details > summary { font-size: var(--fs-body); }
+/* Tables: body-size cells in the main ink. Three columns or fewer sit on
+   the measure; four or more take the page. */
+.brief:not(.deck) wk-table { margin: 1.75rem 0 2rem; }
+.brief:not(.deck) wk-table:not(:has(th:nth-child(4))) { max-width: calc(var(--wk-measure) * 1.125); }
+.brief:not(.deck) wk-table table { font-size: var(--fs-body); line-height: 1.45; margin: 0; }
+.brief:not(.deck) wk-table th {
+  font-size: var(--fs-small); font-weight: 600; text-transform: none; letter-spacing: 0;
+  color: var(--text-2); background: none; vertical-align: bottom;
+  border-bottom: 1.5px solid var(--text-3); padding: 0.5rem 1.25rem 0.5rem 0;
+}
+.brief:not(.deck) wk-table td { padding: 0.625rem 1.25rem 0.625rem 0; vertical-align: top; font-variant-numeric: tabular-nums; }
+.brief:not(.deck) wk-table :is(th, td):last-child { padding-right: 0; }
+.brief:not(.deck) wk-table tr:hover td { background: none; }
+
+/* Code: monospace at the small size, and no ligatures, so ==, !=, := and ||
+   read as the characters typed. The live terminal draws its own. */
+.brief:not(.deck) code, .brief:not(.deck) pre { font-variant-ligatures: none; }
+.brief:not(.deck) :not(pre) > code { font-size: 0.85em; }
+.brief:not(.deck) pre.wk-code-block > code { font-size: var(--fs-small); }
+
+/* Figures: charts, diagrams and the graph take the page; captions, notes
+   and step lists are prose on the measure. */
+.brief:not(.deck) .present-chart { margin: 1.75rem 0 2rem; }
+.brief:not(.deck) .present-chart[data-chart-title]::before {
+  font-size: var(--fs-small); font-weight: 600; color: var(--ink-strong); letter-spacing: 0; margin-bottom: 0.625rem;
+}
+.brief:not(.deck) .present-chart-canvas { height: 21rem; }
+.brief:not(.deck) .present-chart.is-sparkline .present-chart-canvas { height: 3.5rem; }
+.brief:not(.deck) .present-chart-note { font-size: var(--fs-small); color: var(--text-2); max-width: calc(var(--wk-measure) * 1.125 / 0.9375); }
+.brief:not(.deck) .present-diagram { margin: 1.75rem 0 2rem; }
+.brief:not(.deck) .present-diagram-caption, .brief:not(.deck) wk-figcaption {
+  font-size: var(--fs-small); line-height: 1.5; color: var(--text-2);
+  max-width: calc(var(--wk-measure) * 1.125 / 0.9375);
+}
+.brief:not(.deck) .present-diagram-caption { margin-top: 0.75rem; }
+.brief:not(.deck) .present-steps {
+  font-size: var(--fs-body); line-height: 1.55; color: var(--text-1);
+  max-width: var(--wk-measure); margin-top: 1rem; padding-left: 2rem;
+}
+.brief:not(.deck) .present-steps li { margin: 0.25rem 0; padding-left: 0.25rem; }
+.brief:not(.deck) .cy-container { height: 32rem; }
+.brief:not(.deck) wk-col .cy-container { height: 25rem; }
+/* The heading's own margin is the space under it, whatever block comes
+   first; the larger space a figure or table keeps above it is for prose. */
+.brief:not(.deck) wk-section-heading + * { margin-top: 0; }
+
+/* References */
+.brief:not(.deck) .refs-section { margin-top: 0; padding-top: 1.5rem; }
+.brief:not(.deck) .refs-item a { font-size: var(--fs-body); }
+.brief:not(.deck) .refs-url { font-family: var(--mono); font-size: var(--fs-small); color: var(--text-2); overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+  .brief:not(.deck) .brief-title { font-size: 2rem; }
+  .brief:not(.deck) .brief-summary { font-size: 1.25rem; }
+  .brief:not(.deck) wk-section-heading { font-size: 1.5rem; }
+  .brief:not(.deck) wk-section { margin-bottom: 3.5rem; }
+}
+/* End of the brief's reading styles. */
 /* Deck view (/p/{id}/deck). The deck's compiled fragment is split into
    .slide sections client-side; only the active one is displayed. The bar
-   is present-specific chrome, so it lives here rather than in webkit. The
-   top padding keeps a slide where it sat when the brief carried 2rem of its
-   own above webkit's old 2.5rem header margin: the slide heights below
-   (100vh less 12rem, 9rem, 10rem) count that space. A slide sets its own
-   text widths, so the reading measure is off in the deck. */
-.deck { padding-top: 2.5rem; padding-bottom: 5.5rem; --wk-measure: none; }
+   is present-specific chrome, so it lives here rather than in webkit. A
+   slide sets its own text widths, so the reading measure is off in the
+   deck. */
+.deck { max-width: none; padding-top: 1.25rem; padding-bottom: 5.5rem; --wk-measure: none; }
 .slide { display: none; }
-.slide.active {
-  display: flex; flex-direction: column;
-  min-height: calc(100vh - 12rem); max-height: calc(100vh - 9rem);
-  overflow: auto; animation: briefEnter 0.25s ease-out;
+
+/* The slide canvas. The active slide is a size container and its body,
+   one level down, declares the unit every size on the slide is written in
+   (a container unit on the container itself would resolve against its
+   parent). --u0 is 1% of the width of a 16:9 canvas fitted in the slide,
+   never fitted; --u is the unit sizes are written in, --u0 times the fit
+   app.js sets per slide (--fit, 1 by default); --floor is the smallest
+   text after the fit, 1.1% of the canvas width. The three are registered
+   lengths, so app.js reads them resolved for charts and diagrams. --bump
+   is the reader's size control: large text adds two of it, small text one,
+   and every size of 1.8u or less is held at the floor. The canvas is 100u
+   by 56.25u; the body's padding leaves 86u by 46.75u for the slide. */
+@property --u0 { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --u { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --floor { syntax: '<length>'; inherits: true; initial-value: 0px; }
+:root { --bump: calc(1rem - 16px); }
+.deck .slide.active { container-type: size; display: block; position: relative; overflow: hidden; animation: briefEnter 0.25s ease-out; }
+.deck .slide-body {
+  --u0: min(1cqw, 1.7778cqh);
+  --u: calc(var(--u0) * var(--fit, 1));
+  --floor: calc(1.1 * var(--u0));
+  box-sizing: border-box; width: 100%; height: 100%; margin: 0;
+  display: flex; flex-direction: column; justify-content: safe center;
+  padding: calc(4 * var(--u)) calc(7 * var(--u)) calc(5.5 * var(--u));
+  font-size: calc(3 * var(--u) + 2 * var(--bump)); line-height: 1.4;
 }
-/* Auto margins centre the body without clipping its top when it overflows,
-   which justify-content: center would do. */
-.slide-body { margin: auto 0; width: 100%; }
-.slide .brief-summary { margin-bottom: 1.25rem; }
-.slide wk-section { margin-bottom: 0; }
-.slide-title .brief-title { font-size: 2.75rem; }
-.slide-title .brief-summary { font-size: 1.25rem; max-width: 760px; }
-.slide .refs-section { margin-top: 0; padding-top: 0; border-top: 0; }
+/* A slide that still overflows at the smallest fit scrolls (app.js sets
+   the class); safe center above keeps its top in reach. */
+.deck .slide.active.slide-overflow { overflow: auto; }
+/* Not presenting, the active slide is a 16:9 stage in the page: the same
+   container as the presenting slide, so the author sees the real slide.
+   Its frame is chrome around the slide, not a box on it. */
+html:not(.presenting) .deck .slide.active {
+  box-sizing: border-box; width: min(100%, calc((100vh - 13.5rem) * 16 / 9)); aspect-ratio: 16 / 9;
+  margin: 0 auto; border: 1px solid var(--border); border-radius: 12px; background: var(--bg);
+}
 .deck-bar {
   position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 30;
   display: flex; align-items: center; gap: 0.375rem;
@@ -339,28 +586,16 @@ html.presenting .slide.solo-terminal .present-terminal-canvas { height: 64vh; }
 .deck-counter { font-size: 0.75rem; color: var(--text-2); font-variant-numeric: tabular-nums; padding: 0 0.375rem; min-width: 3.5rem; text-align: center; }
 .deck-hint { font-size: 0.75rem; color: var(--text-3); text-align: center; margin: 0.75rem 0 0; }
 .deck-hint kbd { font-family: var(--mono, ui-monospace, monospace); font-size: 0.6875rem; background: var(--chip-bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.0625rem 0.3125rem; }
-/* Presenting: the chrome goes, one slide fills the window at a larger size.
-   The bar stays reachable under the pointer at the bottom edge. */
+/* Presenting: the chrome goes and the slide fills the window; the unit
+   grows with it, so no rule here sets a size. The bar stays reachable
+   under the pointer at the bottom edge. */
 html.presenting wk-header { display: none; }
 html.presenting body { overflow: hidden; }
-html.presenting .deck { max-width: none; padding: 0; animation: none; }
-html.presenting .slide.active {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 40;
-  min-height: 0; max-height: none; padding: 5vh 7vw; background: var(--bg);
-}
-html.presenting .slide.active:not(.has-viz) .slide-body { zoom: var(--deck-zoom, 1.3); }
-html.presenting .slide.has-viz .cy-container { height: 62vh; }
-html.presenting .slide.has-viz .present-chart-canvas { height: 52vh; }
-html.presenting .slide.has-viz wk-section-heading { font-size: 1.75rem; }
+html.presenting .deck { padding: 0; animation: none; }
+html.presenting .deck .slide.active { position: fixed; inset: 0; z-index: 40; background: var(--bg); }
 /* An image drops its border with frame: false (a transparent PNG from
    another tool); the radius stays. */
 wk-figure[data-frame="false"] img { border: 0; }
-/* An image on a slide (MAD-375) stays inside it: bounded by the viewport's
-   height and scaled with its aspect kept, centred when it stands alone.
-   In a column it fills the column's width up to its own size. */
-.slide wk-figure img { max-height: 55vh; width: auto; max-width: 100%; object-fit: contain; margin: 0 auto; }
-.slide wk-col wk-figure img { margin: 0; }
-html.presenting .slide.has-viz wk-figure img { max-height: 62vh; }
 html.presenting .deck-bar { opacity: 0; z-index: 41; }
 html.presenting .deck-bar:hover, html.presenting .deck-bar:focus-within { opacity: 1; }
 /* Deck chrome: a strip along the bottom edge built by app.js from the
@@ -402,40 +637,135 @@ html.presenting .deck-bar:hover, html.presenting .deck-bar:focus-within { opacit
 .deck-progress-fill { height: 100%; width: 0; background: var(--primary); transition: width 0.15s; }
 html.presenting .deck-strip, html.presenting .deck-logo-corner { z-index: 41; }
 html.presenting .deck-logo-corner { top: 1.25rem; }
-html.has-deck-strip.presenting .slide.active { padding-bottom: max(5vh, 3.25rem); }
+html.has-deck-strip.presenting .deck .slide-body { padding-bottom: max(calc(5.5 * var(--u)), 3.25rem); }
+/* The slide scale, in u. Large text adds two bumps, small text one; every
+   size of 1.8u or less is held at the floor. Line height 1.4 for body text
+   and lists, 1.15 for claims; tracking zero. */
+.deck .slide wk-section { margin: 0; }
+.deck .slide wk-section > :last-child { margin-bottom: 0; }
+.deck .slide wk-section-heading {
+  font-size: calc(4 * var(--u) + 2 * var(--bump)); font-weight: 650; line-height: 1.15; letter-spacing: 0;
+  color: var(--ink-strong); text-wrap: balance;
+  padding-bottom: calc(1.3 * var(--u)); margin-bottom: calc(2.6 * var(--u));
+}
+/* A claim's rule spans the body at every fit; only its text is capped, at
+   86u0, the body's text width at fit 1, so a lower fit never widens it.
+   Statement and section headings carry no rule and cap their own box. */
+.deck .slide:not([data-layout="statement"], [data-layout="section"]) wk-section-heading { padding-right: max(0px, calc(100% - 86 * var(--u0))); }
+.deck .slide[data-layout="center"] wk-section-heading { padding-inline: max(0px, calc((100% - 86 * var(--u0)) / 2)); }
+.deck .slide wk-section-heading::after { width: calc(5 * var(--u)); height: max(2px, calc(0.35 * var(--u))); bottom: calc(-0.175 * var(--u)); }
+.deck .slide wk-section-subheading { font-size: calc(3 * var(--u) + 2 * var(--bump)); font-weight: 600; line-height: 1.3; color: var(--ink-strong); margin: calc(1.6 * var(--u)) 0 calc(0.8 * var(--u)); }
+.deck .slide wk-section p { font-size: 1em; line-height: 1.4; color: var(--text-1); max-width: 27em; margin: 0 0 0.7em; }
+.deck .slide .brief-list { font-size: 1em; line-height: 1.4; color: var(--text-1); max-width: 27em; padding-left: 1.1em; margin: 0 0 0.7em; }
+.deck .slide .brief-list li { margin-bottom: 0.6em; padding-left: 0.25em; }
+.deck .slide .brief-list li:last-child { margin-bottom: 0; }
+.deck .slide .brief-list li::marker { color: var(--slide-accent, var(--primary)); }
+.deck .slide :not(pre) > code { font-size: 0.85em; }
+.deck .slide pre.wk-code-block > code { font-size: max(var(--floor), calc(1.8 * var(--u) + var(--bump))); }
+.deck .slide wk-section wk-badge { font-size: max(var(--floor), calc(1.5 * var(--u) + var(--bump))); }
+/* A visual on a default slide sits under the heading at the top; a text
+   slide centres heading and body as a group. */
+.deck .slide.has-viz:not([data-layout]) .slide-body, .deck .slide.has-viz[data-layout="default"] .slide-body { justify-content: flex-start; }
+
+/* The title slide: left-aligned and centred on the vertical. From the
+   top: an accent bar, the dateline, the title, the summary, the chips,
+   the presenter; order moves the bar and the dateline above the title. */
+.deck .slide-title .slide-body::before { content: ''; order: -2; flex: none; width: calc(6 * var(--u)); height: max(3px, calc(0.5 * var(--u))); background: var(--primary); margin-bottom: calc(3 * var(--u)); }
+.deck .slide-title .brief-meta { order: -1; font-family: var(--mono); font-size: max(var(--floor), calc(1.5 * var(--u) + var(--bump))); line-height: 1.4; color: var(--text-2); letter-spacing: 0; margin: 0 0 calc(1.6 * var(--u)); }
+.deck .slide-title .brief-title { font-size: calc(6.4 * var(--u) + 2 * var(--bump)); font-weight: 700; line-height: 1.05; letter-spacing: 0; color: var(--ink-strong); max-width: 13em; text-wrap: balance; margin: 0 0 calc(2.2 * var(--u)); }
+.deck .slide-title .brief-summary { font-size: calc(2.8 * var(--u) + 2 * var(--bump)); line-height: 1.35; color: var(--text-2); max-width: 25em; margin: 0 0 calc(2.4 * var(--u)); }
+.deck .slide-title .chip-row { gap: calc(0.8 * var(--u)); margin: 0; }
+.deck .slide-title .chip-row wk-badge { font-family: var(--mono); font-size: max(var(--floor), calc(1.5 * var(--u) + var(--bump))); padding: 0.4em 0.8em; border-radius: 0.45em; }
+.deck .slide-title .brief-presenter { order: 5; font-size: max(var(--floor), calc(1.8 * var(--u) + var(--bump))); line-height: 1.4; color: var(--text-2); letter-spacing: 0; margin: calc(3 * var(--u)) 0 0; }
+
 /* Slide layouts (data-layout, copied from the wk-section by the splitter):
-   center keeps today's sizes and centres them; statement is the heading as
-   the slide; section is a divider: a large centred heading with its
-   accent bar in the tone. A lone stat or quote is the big-number or quote
-   slide through the solo class, no field needed. A tone (data-tone with
-   --slide-accent as var(--<role>), set by the renderer) colours the
-   slide's heading rule and accent bar in the deck and bands the section
-   in the brief, and on a statement slide it is the same centred bar. A
-   slide never paints a filled box: the slide is already the container, so
-   a stat sits plain on it too, alone or in a row (MAD-389). Every colour
-   here mixes a role, never a literal. */
-.slide[data-layout="center"] .slide-body { text-align: center; }
-.slide[data-layout="center"] wk-section-heading::after { left: 50%; transform: translateX(-50%); }
-.slide[data-layout="center"] .brief-list { display: inline-block; text-align: left; }
-.slide[data-layout="statement"] .slide-body { text-align: center; }
-.slide[data-layout="statement"] wk-section-heading { font-size: 2.75rem; line-height: 1.15; letter-spacing: -0.02em; border-bottom: 0; padding-bottom: 0; margin-bottom: 1.25rem; }
-.slide[data-layout="statement"] wk-section-heading::after { content: none; }
-.slide[data-layout="statement"] wk-section p { font-size: 1.125rem; color: var(--text-2); max-width: 760px; margin: 0 auto 1rem; }
-.slide[data-layout="section"] .slide-body { text-align: center; padding: 2rem; }
-.slide[data-layout="section"] wk-section-heading { font-size: 2.5rem; line-height: 1.15; border-bottom: 0; padding-bottom: 1rem; margin-bottom: 0.75rem; }
-.slide[data-layout="section"] wk-section-heading::after, .slide[data-layout="statement"][data-tone] wk-section-heading::after { content: ''; bottom: 0; left: 50%; transform: translateX(-50%); width: 3rem; height: 3px; background: var(--slide-accent, var(--primary)); }
-.slide[data-layout="statement"][data-tone] wk-section-heading { padding-bottom: 1rem; }
-.slide[data-layout="section"] wk-section p { font-size: 1.125rem; color: var(--text-2); margin: 0 auto; max-width: 760px; }
-.slide wk-stat { border: 0; background: none; box-shadow: none; padding: 0.5rem 0; text-align: center; }
-.slide.solo-stat wk-stat { padding: 0; margin: 2rem 0; }
-.slide.solo-stat wk-stat-value { font-size: 5.5rem; letter-spacing: -0.03em; }
-.slide.solo-stat wk-stat-label { font-size: 1.125rem; margin-top: 0.75rem; }
-.slide.solo-stat wk-stat-sub { font-size: 0.9375rem; }
-.slide.solo-quote blockquote { border: 0; padding: 0; margin: 2rem auto; max-width: 820px; text-align: center; }
-.slide.solo-quote blockquote p { font-size: 1.75rem; line-height: 1.4; }
-.slide.solo-quote blockquote cite { font-size: 1rem; margin-top: 1rem; }
-.slide[data-tone] wk-section-heading { border-bottom-color: color-mix(in srgb, var(--slide-accent) 40%, var(--border)); }
-.slide[data-tone] wk-section-heading::after { background: var(--slide-accent); }
+   center is the default centred on the horizontal; statement is the
+   heading as the slide; section is a divider: a large centred heading with
+   its accent bar in the tone. A lone stat or quote is the big-number or
+   quote slide through the solo class, no field needed. A tone (data-tone
+   with --slide-accent as var(--<role>), set by the renderer) colours the
+   slide's heading rule and accent bar in the deck and bands the section in
+   the brief, and on a statement slide it is the same centred bar. A slide
+   never paints a filled box: the slide is already the container, so a stat
+   sits plain on it too, alone or in a row (MAD-389). Every colour here
+   mixes a role, never a literal. */
+.deck .slide[data-layout="center"] .slide-body { text-align: center; }
+.deck .slide[data-layout="center"] :is(wk-section-heading, wk-section p) { margin-left: auto; margin-right: auto; }
+.deck .slide[data-layout="center"] wk-section-heading::after { left: 50%; transform: translateX(-50%); }
+.deck .slide[data-layout="center"] .brief-list { display: inline-block; text-align: left; }
+.deck .slide[data-layout="statement"] .slide-body { text-align: center; }
+.deck .slide[data-layout="statement"] wk-section-heading { font-size: calc(5.6 * var(--u) + 2 * var(--bump)); line-height: 1.1; border-bottom: 0; padding-bottom: 0; max-width: 15em; margin: 0 auto calc(2.4 * var(--u)); }
+.deck .slide[data-layout="statement"] wk-section-heading::after { content: none; }
+.deck .slide[data-layout="statement"] wk-section p { font-size: calc(2.8 * var(--u) + 2 * var(--bump)); color: var(--text-2); max-width: 24em; margin: 0 auto 0.6em; }
+.deck .slide[data-layout="section"] .slide-body { text-align: center; }
+.deck .slide[data-layout="section"] wk-section-heading { font-size: calc(5.6 * var(--u) + 2 * var(--bump)); line-height: 1.1; border-bottom: 0; max-width: 15em; padding-bottom: calc(2 * var(--u)); margin: 0 auto calc(2 * var(--u)); }
+.deck .slide[data-layout="section"] wk-section-heading::after, .deck .slide[data-layout="statement"][data-tone] wk-section-heading::after { content: ''; bottom: 0; left: 50%; transform: translateX(-50%); width: calc(6 * var(--u)); height: max(3px, calc(0.5 * var(--u))); background: var(--slide-accent, var(--primary)); }
+.deck .slide[data-layout="statement"][data-tone] wk-section-heading { padding-bottom: calc(2 * var(--u)); }
+.deck .slide[data-layout="section"] wk-section p { font-size: calc(2.6 * var(--u) + 2 * var(--bump)); color: var(--text-2); max-width: 24em; margin: 0 auto; }
+.deck .slide wk-stat { border: 0; background: none; box-shadow: none; padding: 0; margin: 0; text-align: center; }
+/* A figure reads as one piece: a value too wide for its box stays on one
+   line, and the fit step shrinks the slide until it fits. One still too
+   wide at the smallest fit may break at a space again. */
+.deck .slide:not(.slide-overflow) wk-stat-value { white-space: nowrap; }
+.deck .slide.solo-stat wk-stat { margin-top: calc(2 * var(--u)); }
+.deck .slide.solo-stat wk-stat-value { font-size: calc(16 * var(--u) + 2 * var(--bump)); line-height: 1; letter-spacing: 0; color: var(--ink-strong); }
+.deck .slide.solo-stat wk-stat-label { font-size: calc(3 * var(--u) + 2 * var(--bump)); margin-top: calc(1.5 * var(--u)); }
+.deck .slide.solo-stat wk-stat-sub { font-size: calc(2.2 * var(--u) + var(--bump)); margin-top: calc(0.8 * var(--u)); }
+.deck .slide wk-columns { gap: calc(4 * var(--u)); margin: 0; }
+.deck .slide wk-col wk-stat-value { font-size: calc(7.5 * var(--u) + 2 * var(--bump)); line-height: 1; letter-spacing: 0; color: var(--ink-strong); }
+.deck .slide wk-col wk-stat-label { font-size: calc(2.2 * var(--u) + var(--bump)); margin-top: var(--u); }
+.deck .slide wk-col wk-stat-sub { font-size: max(var(--floor), calc(1.8 * var(--u) + var(--bump))); margin-top: calc(0.5 * var(--u)); }
+.deck .slide blockquote p { font-size: 1em; line-height: 1.4; }
+.deck .slide blockquote cite { font-size: calc(2.2 * var(--u) + var(--bump)); margin-top: calc(1 * var(--u)); }
+.deck .slide.solo-quote blockquote { border: 0; padding: 0; margin: 0 auto; text-align: center; }
+.deck .slide.solo-quote blockquote p { font-size: calc(4.2 * var(--u) + 2 * var(--bump)); line-height: 1.25; max-width: 22em; margin: 0 auto; }
+.deck .slide.solo-quote blockquote cite { margin-top: calc(2 * var(--u)); }
+.deck .slide[data-tone] wk-section-heading { border-bottom-color: color-mix(in srgb, var(--slide-accent) 40%, var(--border)); }
+.deck .slide[data-tone] wk-section-heading::after { background: var(--slide-accent); }
+
+/* Blocks on a slide: tables, pairs, callouts, panels, progress, details. */
+.deck .slide wk-callout { font-size: calc(2.6 * var(--u) + 2 * var(--bump)); line-height: 1.4; max-width: none; padding: 0.6em 0.9em; margin: 0 0 calc(2 * var(--u)); }
+.deck .slide wk-kv { margin: 0 0 calc(2 * var(--u)); }
+.deck .slide wk-kv-row { font-size: calc(2.4 * var(--u) + var(--bump)); line-height: 1.4; gap: 1em; padding: 0.4em 0; }
+.deck .slide wk-kv-label { min-width: 8em; }
+.deck .slide wk-table { margin: 0 0 calc(2 * var(--u)); }
+.deck .slide wk-table table { font-size: calc(2.2 * var(--u) + var(--bump)); line-height: 1.35; margin: 0; }
+.deck .slide wk-table th { font-size: max(var(--floor), calc(1.8 * var(--u) + var(--bump))); text-transform: none; letter-spacing: 0; background: none; padding: 0.5em 1em 0.5em 0; }
+.deck .slide wk-table td { padding: 0.55em 1em 0.55em 0; }
+.deck .slide wk-panel-title { font-size: calc(2.4 * var(--u) + var(--bump)); }
+.deck .slide wk-panel-subtitle, .deck .slide wk-progress-label, .deck .slide .present-chart-note { font-size: calc(2.2 * var(--u) + var(--bump)); }
+.deck .slide details > summary { font-size: calc(2.4 * var(--u) + var(--bump)); }
+
+/* Visuals: heights sized so a two-line claim and the visual fit in the
+   46.75u the body leaves. Captions under a visual are centred and capped
+   at 36em. On a slide a diagram's largest scale reads the wrapper's font
+   (2.2u) over 13, so it shrinks with the fit; its floor does not. */
+.deck .slide :is(.present-steps, .present-diagram-caption, wk-figcaption) {
+  font-size: calc(2.2 * var(--u) + var(--bump)); line-height: 1.3; color: var(--text-2);
+  max-width: 36em; margin: calc(1.2 * var(--u)) auto 0; text-align: center;
+}
+.deck .slide .present-chart { margin: 0; }
+.deck .slide .present-chart[data-chart-title]::before { font-size: calc(2 * var(--u) + var(--bump)); font-weight: 600; color: var(--ink-strong); letter-spacing: 0; margin-bottom: var(--u); }
+.deck .slide .present-chart-canvas { height: calc(30 * var(--u)); overflow: hidden; }
+.deck .slide .present-chart[data-steps] .present-chart-canvas, .deck .slide wk-col .present-chart-canvas { height: calc(26 * var(--u)); }
+.deck .slide .present-diagram { margin: 0; }
+.deck .slide .present-diagram-canvas { max-height: calc(33 * var(--u)); font-size: calc(2.2 * var(--u)); }
+.deck .slide .present-diagram:is([data-steps], :has(.present-diagram-caption)) .present-diagram-canvas { max-height: calc(29 * var(--u)); }
+.deck .slide .cy-container { height: calc(34 * var(--u)); }
+/* An image on a slide (MAD-375) stays inside it, scaled with its aspect
+   kept and centred when it stands alone. In a column it fills the
+   column's width up to its own size. */
+.deck .slide wk-figure { margin: 0; }
+.deck .slide wk-figure img { max-height: calc(33 * var(--u)); width: auto; max-width: 100%; object-fit: contain; margin: 0 auto; }
+.deck .slide wk-col wk-figure img { margin: 0; }
+
+/* References: two columns; the title in the text ink, the address in mono
+   on one line, cut with an ellipsis. */
+.deck .slide .refs-section { margin: 0; padding: 0; border: 0; }
+.deck .slide .refs-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: calc(4 * var(--u)); row-gap: calc(1.6 * var(--u)); padding: 0; margin: 0; }
+.deck .slide .refs-item { min-width: 0; gap: calc(0.3 * var(--u)); }
+.deck .slide .refs-item a { font-size: calc(2 * var(--u) + var(--bump)); line-height: 1.3; color: var(--text-1); }
+.deck .slide .refs-url { font-family: var(--mono); font-size: max(var(--floor), calc(1.5 * var(--u) + var(--bump))); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brief:not(.deck) wk-section[data-tone] { border-left: 3px solid var(--slide-accent); padding-left: 1.125rem; }
 .brief:not(.deck) wk-section[data-tone] wk-section-heading::after { background: var(--slide-accent); }
 /* Reveal steps: hidden by visibility, not display, so read-aloud and
@@ -454,15 +784,6 @@ html[data-transition="none"] .deck .fragment.shown { animation: none; }
 .deck .present-steps li { grid-area: 1 / 1; visibility: hidden; }
 .deck .present-steps li.current { visibility: visible; animation: fragmentIn 0.2s ease-out; }
 html[data-transition="none"] .deck .present-steps li.current { animation: none; }
-html.presenting .slide.has-viz .present-chart[data-steps] .present-chart-canvas { height: 44vh; }
-/* A diagram on a slide: the canvas caps its height by the viewport, lower
-   with a step caption under it, and a diagram alone on its slide (solo)
-   takes the room the heading leaves. */
-html.presenting .slide.has-viz .present-diagram-canvas { max-height: 52vh; }
-html.presenting .slide.has-viz .present-diagram[data-steps] .present-diagram-canvas { max-height: 44vh; }
-.slide.solo-diagram .present-diagram-canvas { max-height: 62vh; }
-html.presenting .slide.solo-diagram.has-viz .present-diagram-canvas { max-height: 66vh; }
-html.presenting .slide.solo-diagram.has-viz .present-diagram[data-steps] .present-diagram-canvas { max-height: 56vh; }
 /* Speaker notes: a drawer at the lower left, outside every slide, over the
    chrome and, while presenting, over the fixed slide. */
 .deck-notes-drawer {
@@ -472,7 +793,7 @@ html.presenting .slide.solo-diagram.has-viz .present-diagram[data-steps] .presen
   border-radius: 10px; box-shadow: var(--shadow-md); color: var(--text-2); font-size: 0.875rem; line-height: 1.6;
 }
 .deck-notes-drawer[hidden] { display: none; }
-.deck-notes-title { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); margin-bottom: 0.375rem; }
+.deck-notes-title { font-size: 0.75rem; font-weight: 600; color: var(--text-3); margin-bottom: 0.375rem; }
 .deck-notes-empty { color: var(--text-3); margin: 0; }
 .deck-notes-drawer strong { color: var(--text-1); }
 /* Slide transitions through the View Transitions API. The active slide
@@ -519,17 +840,15 @@ html[data-transition="slide"].deck-prev::view-transition-new(deck-slide) { anima
 .cy-container { opacity: 0; transition: opacity 0.2s ease-out; }
 .cy-container.ready { opacity: 1; }
 html[data-transition="none"] .cy-container { transition: none; }
+/* A narrow window, not presenting: no stage; the slide flows at a fixed
+   unit, and the floor is the kit's smallest text, since 1.1u would be
+   6px there. */
+@media (max-width: 700px) {
+  html:not(.presenting) .deck .slide.active { container-type: normal; width: 100%; aspect-ratio: auto; overflow: visible; }
+  html:not(.presenting) .deck .slide-body { --u0: 0.36rem; --floor: 0.75rem; height: auto; padding: 1.5rem 1.25rem 2rem; }
+}
 @media (max-width: 600px) {
-  .slide-title .brief-title { font-size: 1.875rem; }
-  .deck { padding-top: 1.5rem; }
-  .slide.active { min-height: calc(100vh - 10rem); }
-  html.presenting .slide.active { padding: 1.5rem 1rem; }
-  html.has-deck-strip.presenting .slide.active { padding-bottom: 3.25rem; }
   .deck-strip { left: 0.75rem; right: 0.75rem; }
-  .slide[data-layout="statement"] wk-section-heading { font-size: 1.875rem; }
-  .slide[data-layout="section"] wk-section-heading { font-size: 1.75rem; }
-  .slide.solo-stat wk-stat-value { font-size: 3.5rem; }
-  .slide.solo-quote blockquote p { font-size: 1.25rem; }
 }
 #share-result code { word-break: break-all; }
 #share-status { color: var(--text-3); }

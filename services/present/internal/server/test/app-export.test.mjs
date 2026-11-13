@@ -2,7 +2,8 @@
 // classic browser script, so it runs here against a small fake DOM holding
 // what an exported file holds: <html data-present-mode="export">, the body
 // in #root, and the page data in #present-export. No library is defined,
-// which is the file opened with cdn.jsdelivr.net out of reach.
+// which is the file opened with cdn.jsdelivr.net out of reach. The same fake
+// DOM, served from a page URL, also covers the state a failed load shows.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -167,4 +168,76 @@ test('export: no read-aloud control or other server call, even when the page dat
   assert.equal(document.querySelector('wk-read-aloud'), null, 'the TTS control is in the page');
   assert.deepEqual(created.filter((e) => e.tagName === 'WK-READ-ALOUD'), [], 'app.js built a TTS control');
   assert.deepEqual(fetches, [], 'an exported page asks no server for anything');
+});
+
+// servedPage runs app.js the way a served shell does: no export island, the
+// page URL in location, and /api/p/{id} answering status. Webkit.el builds
+// nodes as the kit's does. It resolves to #root once the load has settled.
+async function servedPage(path, status, mode) {
+  const root = new El('main', { id: 'root' });
+  const attrs = mode ? { 'data-present-mode': mode } : {};
+  const html = new El('html', attrs, [new El('body', {}, [root])]);
+  const document = {
+    documentElement: html,
+    body: html.children[0],
+    title: '',
+    getElementById: (id) => html.descendants().find((e) => e.id === id) || null,
+    querySelector: (sel) => html.querySelector(sel),
+    querySelectorAll: (sel) => html.querySelectorAll(sel),
+    createElement: (tag) => new El(tag),
+    createTextNode: (text) => new El('#text', {}, [], text),
+    addEventListener() {},
+  };
+  const Webkit = {
+    el(tag, attrs = {}, children = []) {
+      const node = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) {
+        if (k === 'class') node.className = String(v);
+        else if (v != null) node.setAttribute(k, String(v));
+      }
+      for (const c of [].concat(children)) {
+        if (c == null) continue;
+        node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+      }
+      return node;
+    },
+  };
+  const fetch = () => Promise.resolve({ ok: false, status, json: () => Promise.resolve({}) });
+  new Function('window', 'document', 'fetch', 'location', 'Webkit', appSrc)(
+    { addEventListener() {} }, document, fetch, { pathname: path }, Webkit,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return root;
+}
+
+function textOf(e) {
+  return e.textContent + e.children.map(textOf).join('');
+}
+
+test('load: an unknown page shows the error state with a link to the page list', async () => {
+  for (const path of ['/p/gone', '/p/gone/deck']) {
+    const root = await servedPage(path, 404);
+    const box = root.querySelector('wk-empty');
+    assert.ok(box, path + ': no wk-empty');
+    assert.equal(box.parentNode.className, 'brief', path + ': not inside the page wrapper');
+    assert.equal(box.getAttribute('variant'), 'error');
+    assert.equal(textOf(box.querySelector('wk-empty-title')), 'No page at this address');
+    assert.match(textOf(box), /This page may have been deleted\. Back to all pages$/);
+    assert.equal(box.querySelector('a').getAttribute('href'), '/');
+  }
+});
+
+test('load: on a shared instance the unknown page offers no page list', async () => {
+  const box = (await servedPage('/p/gone', 404, 'shared')).querySelector('wk-empty');
+  assert.equal(textOf(box.querySelector('wk-empty-title')), 'No page at this address');
+  assert.equal(box.querySelector('a'), null, 'a shared instance has no page list to link');
+  assert.match(textOf(box), /This page may have been deleted\.$/);
+});
+
+test('load: any other failure shows its error under a title', async () => {
+  const box = (await servedPage('/p/abc', 500)).querySelector('wk-empty');
+  assert.equal(box.getAttribute('variant'), 'error');
+  assert.equal(textOf(box.querySelector('wk-empty-title')), 'Could not load this page');
+  assert.match(textOf(box), /load failed \(500\)$/);
+  assert.equal(box.querySelector('a'), null);
 });

@@ -189,11 +189,52 @@ func TestPageSetsNoStoreCacheHeader(t *testing.T) {
 	}
 }
 
+// An unknown page answers 404 with its view's shell, not a bare text line, so
+// the reader keeps the header and app.js shows the not-found state. The deck
+// view sends the deck shell and a shared instance its own shell.
 func TestUnknownPageIs404(t *testing.T) {
-	ts, _ := setup(t)
-	code, _ := get(t, ts.URL+"/p/doesnotexist")
-	if code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", code)
+	local, _ := setup(t)
+	shared := setupShared(t).ts.URL
+	const deck = `data-audio-default="off"`
+	const mode = `data-present-mode="shared"`
+	shell := []string{`id="root"`, "/app.js", "<wk-header"}
+	for _, tc := range []struct {
+		name, url   string
+		want, avoid []string
+	}{
+		{"brief", local.URL + "/p/doesnotexist", nil, []string{deck, mode}},
+		{"deck", local.URL + "/p/doesnotexist/deck", []string{deck}, []string{mode}},
+		{"shared brief", shared + "/p/doesnotexist", []string{mode}, []string{deck}},
+		{"shared deck", shared + "/p/doesnotexist/deck", []string{deck, mode}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := http.Get(tc.url)
+			if err != nil {
+				t.Fatalf("GET: %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			raw, _ := io.ReadAll(resp.Body)
+			body := string(raw)
+			if resp.StatusCode != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404", resp.StatusCode)
+			}
+			if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+				t.Errorf("Cache-Control = %q, want no-store", got)
+			}
+			if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
+				t.Errorf("Content-Type = %q, want text/html", got)
+			}
+			for _, want := range append(shell, tc.want...) {
+				if !contains(body, want) {
+					t.Errorf("404 body missing %q", want)
+				}
+			}
+			for _, avoid := range tc.avoid {
+				if contains(body, avoid) {
+					t.Errorf("404 body carries %q, the wrong shell", avoid)
+				}
+			}
+		})
 	}
 }
 

@@ -464,14 +464,16 @@ func clampPage(page, totalPages int) int {
 
 // handlePage serves the static shell for an existing page. The browser fetches
 // the page data from GET /api/p/{id} and renders the body client-side. We still
-// resolve the id here so an unknown page is a 404 rather than an empty shell.
-// A page that has a deck and no brief has nothing to show here, so it sends
-// the browser on to the deck view; the metadata carries both flags.
+// resolve the id here so an unknown page answers 404; its body is the same
+// shell, so the reader keeps the header and app.js shows the not-found state
+// when the page data answers 404 too. A page that has a deck and no brief has
+// nothing to show here, so it sends the browser on to the deck view; the
+// metadata carries both flags.
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	p, err := s.store.GetMeta(r.Context(), r.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.NotFound(w, r)
+			writeShell(w, s.shell, http.StatusNotFound)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -481,11 +483,17 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/p/"+p.ID+"/deck", http.StatusFound)
 		return
 	}
+	writeShell(w, s.shell, http.StatusOK)
+}
+
+// writeShell writes a page shell with the status. no-store: the version poll
+// triggers location.reload() on a bump; a cached document would keep the
+// stale embedded version and reload forever.
+func writeShell(w http.ResponseWriter, shell []byte, status int) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// no-store: the version poll triggers location.reload() on a bump; a cached
-	// document would keep the stale embedded version and reload forever.
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(s.shell)
+	w.WriteHeader(status)
+	_, _ = w.Write(shell)
 }
 
 // apiReference is the JSON shape of a reference in the page API.

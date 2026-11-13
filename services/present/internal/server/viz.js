@@ -176,7 +176,6 @@
   var DIAGRAM_AIM_PX = 13; // the brief aims for every text at this size
   var DIAGRAM_TALL_REM = 45; // a brief drawing taller than this shrinks toward it, not below the aim
   var DIAGRAM_SLIDE_FLOOR = 0.011; // the smallest slide text, as a share of the canvas width
-  var DIAGRAM_SLIDE_MAX = 0.022; // the largest box name on a slide, as a share of the canvas width
   var DIAGRAM_NAMES_GAIN = 1.15; // how much larger a names form must draw to replace one with box text
   var DIAGRAM_RATIO_EPS = 0.005; // ratios closer than this count as equal, and the earlier form wins
 
@@ -436,8 +435,8 @@
   // no larger than the wrapper's font (never under the aim); a drawing
   // taller than DIAGRAM_TALL_REM shrinks toward it. A slide: the canvas's
   // height cap, the floor and the aim at the smallest text
-  // DIAGRAM_SLIDE_FLOOR of the canvas width, and box names at most
-  // DIAGRAM_SLIDE_MAX of it.
+  // DIAGRAM_SLIDE_FLOOR of the canvas width, and box names no larger than
+  // the wrapper's font, which the slide sets in its fitted unit (2.2u).
   function diagramLimits(fit) {
     if (!fit.onSlide) {
       var aim = DIAGRAM_AIM_PX / DIAGRAM_TEXT_PX;
@@ -449,15 +448,25 @@
     var floor = DIAGRAM_SLIDE_FLOOR * fit.canvasWidth / DIAGRAM_TEXT_PX;
     return {
       room: { w: fit.wrapWidth, h: fit.maxHeight, soft: null },
-      lim: { floor: floor, aim: floor, max: Math.max(floor, DIAGRAM_SLIDE_MAX * fit.canvasWidth / DIAGRAM_NAME_PX) }
+      lim: { floor: floor, aim: floor, max: Math.max(floor, fit.wrapFontPx / DIAGRAM_NAME_PX) }
     };
   }
 
-  // canvasWidth is the width a slide is composed in: while presenting the
-  // 16:9 area the slide holds (the smaller of its width and its height
-  // times 16/9), otherwise the slide's width.
-  function canvasWidth(slideW, slideH, presenting) {
-    return presenting ? Math.min(slideW, slideH * 16 / 9) : slideW;
+  // ── Slide fit ──
+  // SLIDE_FIT is the range of a slide's fit, the scale on its unit: from
+  // max down to min in steps of step.
+  var SLIDE_FIT = { max: 1, min: 0.7, step: 0.05 };
+  // fitSteps finds the largest fit at which a slide holds its content.
+  // measure(fit) applies the fit and says whether the slide still
+  // overflows; it is tried at max, then one step lower each time, and the
+  // first fit that holds wins. A slide that overflows at min reports it.
+  function fitSteps(measure) {
+    var passes = Math.round((SLIDE_FIT.max - SLIDE_FIT.min) / SLIDE_FIT.step);
+    for (var k = 0; k <= passes; k++) {
+      var fit = Math.round((SLIDE_FIT.max - k * SLIDE_FIT.step) * 100) / 100;
+      if (!measure(fit)) return { fit: fit, overflow: false };
+    }
+    return { fit: SLIDE_FIT.min, overflow: true };
   }
 
   // elkPath turns an ELK edge's sections (start, bend points, end) into one
@@ -551,6 +560,7 @@
   var CHART_GRACE = '5%'; // the air a fitted value axis keeps around the data
   var CHART_TICK = { share: 0.75, min: 11, max: 15 }; // ticks and axis titles against the root size
   var CHART_LEGEND_SHARE = 0.8125; // the legend and sankey labels against the root size
+  var CHART_SLIDE = { tick: 1.5, legend: 1.7 }; // ticks and the legend on a slide, in the slide's unit
   var ROOT_PX = 16; // the browser's root font size, when none is read
 
   // chartLine is how a chart drawn with lines joins its points: straight,
@@ -572,12 +582,63 @@
 
   // chartFontSizes is the size of chart text in px for a root font size:
   // ticks and axis titles at CHART_TICK's share of it, kept between its
-  // bounds, and the legend and sankey labels at CHART_LEGEND_SHARE.
-  function chartFontSizes(rootPx) {
+  // bounds, and the legend and sankey labels at CHART_LEGEND_SHARE. On a
+  // slide (slide: the slide's unit in px, {u0, u, floor}, as the
+  // stylesheet resolves it) they follow the canvas as small text does:
+  // CHART_SLIDE's share of the fitted unit plus the reader's bump (the root
+  // size over 16), never under the floor (1.1 u0 when none is given).
+  function chartFontSizes(rootPx, slide) {
     var root = Number(rootPx) || ROOT_PX;
+    if (slide) {
+      var bump = root - ROOT_PX, floor = slide.floor || DIAGRAM_SLIDE_FLOOR * 100 * slide.u0;
+      return {
+        tick: Math.max(floor, CHART_SLIDE.tick * slide.u + bump),
+        legend: Math.max(floor, CHART_SLIDE.legend * slide.u + bump)
+      };
+    }
     return {
       tick: Math.min(CHART_TICK.max, Math.max(CHART_TICK.min, CHART_TICK.share * root)),
       legend: CHART_LEGEND_SHARE * root
+    };
+  }
+
+  // chartFontsChanged says whether a chart built with the fonts was (the
+  // {tick, legend} pair of {family, size} app.js's chartFonts gives) would
+  // draw its text otherwise with the fonts now: another face, or a size
+  // more than CHART_FONT_EPSILON px off, which a lower slide fit, the
+  // presenting unit, or the reader's size gives. A chart with no fonts on
+  // record counts as changed.
+  var CHART_FONT_EPSILON = 0.01;
+  function chartFontsChanged(was, now) {
+    if (!was || !now) return true;
+    return ['tick', 'legend'].some(function (role) {
+      var a = was[role] || {}, b = now[role] || {};
+      return a.family !== b.family || !(Math.abs(a.size - b.size) <= CHART_FONT_EPSILON);
+    });
+  }
+
+  // ── The reader's face and size ──
+  // READING_SAMPLE is the text app.js measures to tell whether text
+  // measures otherwise than before: capitals, lower case with ascenders and
+  // descenders, and figures, so a new face moves it whatever its widths.
+  var READING_SAMPLE = 'Hamburgefonstiv QWMjpy 0123456789';
+  // readingChanged says whether the reading probe's box (app.js
+  // watchReading) moved between two reads, was and now as {width, height}
+  // in px. READING_EPSILON absorbs float noise only: a new face or size
+  // moves the box by far more. No earlier read counts as changed.
+  var READING_EPSILON = 0.01;
+  function readingChanged(was, now) {
+    if (!was) return true;
+    return Math.abs(was.width - now.width) > READING_EPSILON || Math.abs(was.height - now.height) > READING_EPSILON;
+  }
+  // settle returns a function that calls fn once, ms after the last call
+  // of a burst: three presses on the size control, or a face and then its
+  // file loading, call fn once.
+  function settle(fn, ms) {
+    var timer = null;
+    return function () {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(function () { timer = null; fn(); }, ms);
     };
   }
 
@@ -614,10 +675,11 @@
     changedSectionTargets: changedSectionTargets,
     stepPlan: stepPlan, blockStepsAt: blockStepsAt, chartStepVisibility: chartStepVisibility, seriesMax: seriesMax,
     seriesExtent: seriesExtent, ribbonLayout: ribbonLayout,
-    chartLine: chartLine, chartValueAxis: chartValueAxis, chartFontSizes: chartFontSizes,
+    chartLine: chartLine, chartValueAxis: chartValueAxis, chartFontSizes: chartFontSizes, chartFontsChanged: chartFontsChanged,
+    readingSample: READING_SAMPLE, readingChanged: readingChanged, settle: settle,
     wrapText: wrapText, diagramBox: diagramBox, edgeLabelBox: edgeLabelBox, edgeLabelRows: edgeLabelRows,
     diagramElk: diagramElk, diagramLabelSpots: diagramLabelSpots, elkPath: elkPath,
-    diagramLadder: diagramLadder, diagramPlan: diagramPlan, diagramLimits: diagramLimits, canvasWidth: canvasWidth,
+    diagramLadder: diagramLadder, diagramPlan: diagramPlan, diagramLimits: diagramLimits, fitSteps: fitSteps,
     diagramShown: diagramShown, diagramFocus: diagramFocus, flowSpeed: flowSpeed,
     diagramText: diagramText, diagramGroupLabel: DIAGRAM_GROUP_LABEL
   };

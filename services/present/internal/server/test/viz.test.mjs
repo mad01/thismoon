@@ -440,20 +440,44 @@ test('diagramPlan: a form whose layout failed is left out, and the pick is among
   });
 });
 
-test('diagramLimits and canvasWidth: the slide floor and largest box name come from the canvas width', () => {
-  assert.equal(PresentViz.canvasWidth(1440, 900, false), 1440);
-  assert.equal(PresentViz.canvasWidth(1440, 900, true), 1440, 'wider than 16:9 is limited by the width');
-  assert.ok(near(PresentViz.canvasWidth(1440, 700, true), 700 * 16 / 9), 'a short window is limited by the height');
-  assert.equal(PresentViz.canvasWidth(1920, 1080, true), 1920);
-  const at1440 = PresentViz.diagramLimits({ onSlide: true, wrapWidth: 1238, maxHeight: 468, canvasWidth: 1440 });
+test('diagramLimits: the slide floor comes from the canvas width, the largest box name from a 2.2u wrapper', () => {
+  const at1440 = PresentViz.diagramLimits({ onSlide: true, wrapWidth: 1238, maxHeight: 468, canvasWidth: 1440, wrapFontPx: 2.2 * 14.4 });
   assert.deepEqual(at1440.room, { w: 1238, h: 468, soft: null });
   assert.equal((11.5 * at1440.lim.floor).toFixed(1), '15.8', 'box text at 1.1% of 1440');
   assert.equal((13 * at1440.lim.floor).toFixed(1), '17.9');
   assert.equal(at1440.lim.aim, at1440.lim.floor);
   assert.equal((13 * at1440.lim.max).toFixed(2), '31.68', 'box names at most 2.2% of 1440');
-  const at1920 = PresentViz.diagramLimits({ onSlide: true, wrapWidth: 1651, maxHeight: 562, canvasWidth: 1920 });
+  const at1920 = PresentViz.diagramLimits({ onSlide: true, wrapWidth: 1651, maxHeight: 562, canvasWidth: 1920, wrapFontPx: 2.2 * 19.2 });
   assert.equal((11.5 * at1920.lim.floor).toFixed(2), '21.12');
   assert.equal((13 * at1920.lim.max).toFixed(2), '42.24');
+});
+
+test('diagramLimits: on a slide the largest box name follows the wrapper font, so it shrinks with the fit and the floor does not', () => {
+  const room = { onSlide: true, wrapWidth: 1238, maxHeight: 468, canvasWidth: 1440 };
+  const fit1 = PresentViz.diagramLimits({ ...room, wrapFontPx: 2.2 * 14.4 });
+  const fit08 = PresentViz.diagramLimits({ ...room, wrapFontPx: 2.2 * 14.4 * 0.8 });
+  assert.equal((13 * fit1.lim.max).toFixed(2), '31.68', 'a 2.2u wrapper at fit 1 is the 2.2% cap');
+  assert.equal((13 * fit08.lim.max).toFixed(2), '25.34');
+  assert.equal(fit08.lim.floor, fit1.lim.floor);
+  assert.equal((11.5 * fit08.lim.floor).toFixed(1), '15.8');
+  const tiny = PresentViz.diagramLimits({ ...room, wrapFontPx: 4 });
+  assert.equal(tiny.lim.max, tiny.lim.floor, 'never under the floor');
+});
+
+test('fitSteps: the first fit that holds wins, from 1 down in steps of 0.05', () => {
+  const tried = [];
+  assert.deepEqual(PresentViz.fitSteps((fit) => { tried.push(fit); return false; }), { fit: 1, overflow: false });
+  assert.deepEqual(tried, [1], 'a slide that holds at 1 is measured once');
+  tried.length = 0;
+  assert.deepEqual(PresentViz.fitSteps((fit) => { tried.push(fit); return fit > 0.85; }), { fit: 0.85, overflow: false });
+  assert.deepEqual(tried, [1, 0.95, 0.9, 0.85]);
+});
+
+test('fitSteps: stops at 0.7 and reports a slide that still overflows', () => {
+  const tried = [];
+  assert.deepEqual(PresentViz.fitSteps((fit) => { tried.push(fit); return true; }), { fit: 0.7, overflow: true });
+  assert.deepEqual(tried, [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7], 'six steps down, no further');
+  assert.deepEqual(PresentViz.fitSteps((fit) => fit > 0.7), { fit: 0.7, overflow: false }, 'holding at 0.7 is no overflow');
 });
 
 test('diagramLimits: the brief has no height limit, a floor at 1 and an aim of 13 px', () => {
@@ -551,6 +575,70 @@ test('chartFontSizes: ticks at 0.75 of the root, kept between 11 and 15; the leg
   assert.deepEqual(PresentViz.chartFontSizes(12), { tick: 11, legend: 9.75 });
   assert.deepEqual(PresentViz.chartFontSizes(24), { tick: 15, legend: 19.5 });
   assert.deepEqual(PresentViz.chartFontSizes(NaN), PresentViz.chartFontSizes(16), 'no root size reads as 16');
+});
+
+test('chartFontSizes: on a slide, ticks at 1.5u and the legend at 1.7u, held at the floor', () => {
+  const near2 = (got, want, msg) => assert.ok(Math.abs(got - want) < 1e-9, (msg ? msg + ': ' : '') + got + ' != ' + want);
+  const at1440 = PresentViz.chartFontSizes(16, { u0: 14.4, u: 14.4, floor: 15.84 });
+  near2(at1440.tick, 21.6);
+  near2(at1440.legend, 24.48);
+  const fitted = PresentViz.chartFontSizes(16, { u0: 14.4, u: 14.4 * 0.7, floor: 15.84 });
+  near2(fitted.tick, 15.84);
+  near2(fitted.legend, 17.136);
+  const bumped = PresentViz.chartFontSizes(20, { u0: 14.4, u: 14.4, floor: 15.84 });
+  near2(bumped.tick, 25.6);
+  near2(bumped.legend, 28.48);
+  const small = PresentViz.chartFontSizes(12, { u0: 14.4, u: 14.4 * 0.8 });
+  near2(small.tick, 1.1 * 14.4, 'small text at a low fit: the floor from u0 when none is given');
+});
+
+// slideFonts is what chartFonts in app.js gives on a slide of u0 at fit.
+function slideFonts(rootPx, fit, family = 'Fira Code', floor = 15.84) {
+  const s = PresentViz.chartFontSizes(rootPx, { u0: 14.4, u: 14.4 * fit, floor });
+  return { tick: { family, size: s.tick }, legend: { family, size: s.legend } };
+}
+
+test('chartFontsChanged: a lower fit, the reader\'s size or face rebuilds a slide chart; the same fit does not', () => {
+  const { chartFontsChanged } = PresentViz;
+  assert.equal(chartFontsChanged(slideFonts(16, 1), slideFonts(16, 0.9)), true, 'the fit went from 1 to 0.9');
+  assert.equal(chartFontsChanged(slideFonts(16, 0.9), slideFonts(16, 0.9)), false, 'the same fit');
+  assert.equal(chartFontsChanged(slideFonts(16, 0.9), slideFonts(19, 0.9)), true, 'three size steps up');
+  assert.equal(chartFontsChanged(slideFonts(16, 0.9), slideFonts(16, 0.9, 'Inter')), true, 'another face');
+  assert.equal(chartFontsChanged(slideFonts(16, 0.75, 'Fira Code', 20), slideFonts(16, 0.7, 'Fira Code', 20)), false,
+    'a fit that leaves every size at the floor');
+  const a = slideFonts(16, 0.9), b = slideFonts(16, 0.9);
+  b.tick.size += 0.005;
+  assert.equal(chartFontsChanged(a, b), false, 'float noise');
+  assert.equal(chartFontsChanged(undefined, a), true, 'no fonts on record');
+});
+
+test('readingChanged: the probe box moved in either direction; float noise and a held box did not', () => {
+  const { readingChanged } = PresentViz;
+  const box = { width: 412.5, height: 19 };
+  assert.equal(readingChanged(null, box), true, 'no earlier read');
+  assert.equal(readingChanged(box, { width: 412.5, height: 19 }), false);
+  assert.equal(readingChanged(box, { width: 412.505, height: 19 }), false, 'float noise');
+  assert.equal(readingChanged(box, { width: 389.2, height: 19 }), true, 'a narrower face');
+  assert.equal(readingChanged(box, { width: 412.5, height: 22 }), true, 'a face with taller lines');
+  assert.ok(PresentViz.readingSample.length > 20, 'the sample is a line, not a glyph');
+});
+
+test('settle: a burst of calls runs fn once, ms after the last; a later call runs it again', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let runs = 0;
+  const later = PresentViz.settle(() => { runs++; }, 150);
+  later();
+  t.mock.timers.tick(80);
+  later();
+  t.mock.timers.tick(80);
+  later();
+  t.mock.timers.tick(149);
+  assert.equal(runs, 0, 'three presses 80 ms apart are one burst');
+  t.mock.timers.tick(1);
+  assert.equal(runs, 1);
+  later();
+  t.mock.timers.tick(150);
+  assert.equal(runs, 2);
 });
 
 test('seriesExtent: the smallest and largest point over every series', () => {

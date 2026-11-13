@@ -19,7 +19,7 @@ func TestDeckLayoutWiring(t *testing.T) {
 		"PresentViz.chartStepVisibility", "PresentViz.blockStepsAt", "PresentViz.seriesMax", "setDatasetVisibility", "legend.onClick = function () {}",
 		// Diagram blocks (MAD-382): a visual, a solo slide, built on the
 		// slide's first showing and refitted after, never laid out twice.
-		"'#cy-graph, .present-chart, wk-figure, .present-diagram'", "solo-diagram",
+		"'#cy-graph, .present-chart, wk-figure, .present-diagram'",
 		"buildDiagram(b, { duration: transition === 'none' ? 0 : 400 })", "b._diagramFit()",
 		"initPresentDiagrams(document, { builtOnly: true })", "PresentViz.diagramElk(spec, measure, form)",
 	} {
@@ -40,16 +40,17 @@ func TestDeckLayoutWiring(t *testing.T) {
 		"prefers-reduced-motion", ".cy-container.ready",
 		".deck .present-steps li { grid-area: 1 / 1; visibility: hidden; }", ".deck .present-steps li.current { visibility: visible;",
 		`html[data-transition="none"] .deck .present-steps li.current { animation: none; }`,
-		".present-diagram-svg { --diagram-fade: 350ms; display: block;", ".slide.solo-diagram .present-diagram-canvas",
+		".present-diagram-svg { --diagram-fade: 350ms; display: block;",
+		".deck .slide .present-diagram:is([data-steps], :has(.present-diagram-caption)) .present-diagram-canvas { max-height: calc(29 * var(--u)); }",
 		":root { --surface: var(--bg); }", ".present-chart[data-frame=\"true\"] {",
-		"html.presenting .slide.has-viz .present-diagram-canvas { max-height: 52vh; }",
+		".deck .slide .present-diagram-canvas { max-height: calc(33 * var(--u));",
 		".present-diagram-svg .dedge-label rect { fill: var(--surface); }",
 		"@media (prefers-reduced-motion: reduce) {\n  .present-diagram-svg .dgroup, .present-diagram-svg .dnode, .present-diagram-svg .dedge { transition: none; }",
 		// Frameless slides (MAD-389): a stat sits plain, a section divider
 		// and a toned statement carry a centred accent bar, no band.
 		".slide wk-stat { border: 0; background: none;",
-		`.slide[data-layout="section"] .slide-body { text-align: center; padding: 2rem; }`,
-		`.slide[data-layout="section"] wk-section-heading::after, .slide[data-layout="statement"][data-tone] wk-section-heading::after { content: '';`,
+		`.deck .slide[data-layout="section"] .slide-body { text-align: center; }`,
+		`.deck .slide[data-layout="section"] wk-section-heading::after, .deck .slide[data-layout="statement"][data-tone] wk-section-heading::after { content: '';`,
 	} {
 		if !contains(shell, want) {
 			t.Errorf("shell.html lacks %q", want)
@@ -67,6 +68,45 @@ func TestDeckLayoutWiring(t *testing.T) {
 	for _, literal := range []string{"#C4704B", "#E8956A", "#1A1916", "#FAF9F7"} {
 		if contains(shell, literal) {
 			t.Errorf("shell.html carries a palette literal %q; read a role", literal)
+		}
+	}
+}
+
+// The deck canvas (MAD-559): every size on a slide is written in one unit
+// the slide body declares from the slide, a size container, and the fit
+// step scales it. Pin the unit, the floor, the centring that keeps an
+// overflowing slide's top, the 16:9 stage, and the solo terminal's height
+// in the unit; the fixed presenting zoom and the viewport heights for
+// visuals stay gone. The fit step itself is PresentViz.fitSteps, which
+// test/viz.test.mjs covers.
+func TestDeckSlideUnit(t *testing.T) {
+	shell := string(shellHTML)
+	for _, want := range []string{
+		".deck .slide.active { container-type: size;",
+		"--u0: min(1cqw, 1.7778cqh);",
+		"--u: calc(var(--u0) * var(--fit, 1));",
+		"--floor: calc(1.1 * var(--u0));",
+		"@property --u0 { syntax: '<length>'; inherits: true; initial-value: 0px; }",
+		"@property --u { syntax: '<length>'; inherits: true; initial-value: 0px; }",
+		":root { --bump: calc(1rem - 16px); }",
+		"display: flex; flex-direction: column; justify-content: safe center;",
+		".deck .slide.active.slide-overflow { overflow: auto; }",
+		"width: min(100%, calc((100vh - 13.5rem) * 16 / 9)); aspect-ratio: 16 / 9;",
+		"max(var(--floor), calc(1.5 * var(--u) + var(--bump)))",
+		".deck .slide:not(.slide-overflow) wk-stat-value { white-space: nowrap; }",
+		// The claim's rule spans the body at every fit; only its text is capped.
+		`.deck .slide:not([data-layout="statement"], [data-layout="section"]) wk-section-heading { padding-right: max(0px, calc(100% - 86 * var(--u0))); }`,
+		".slide.solo-terminal .present-terminal-canvas { --terminal-fill: 1; height: calc(33 * var(--u) - 2.125rem - 2px); }",
+	} {
+		if !contains(shell, want) {
+			t.Errorf("shell.html lacks %q", want)
+		}
+	}
+	for _, gone := range []string{
+		"zoom:", "--deck-zoom", "44vh", "48vh", "52vh", "55vh", "56vh", "62vh", "64vh", "66vh", "max-width: 26em",
+	} {
+		if contains(shell, gone) {
+			t.Errorf("shell.html sizes a slide by %q again; slide sizes are in the unit", gone)
 		}
 	}
 }
