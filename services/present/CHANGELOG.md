@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.0](https://github.com/mad01/thismoon/compare/present/v1.26.0...present/v1.27.0) (2026-11-13)
+
+
+### Features
+
+* **present:** diagram key, a row that says what each tone means ([#488](https://github.com/mad01/thismoon/issues/488)) ([e97afac](https://github.com/mad01/thismoon/commit/e97afac0aa0bddb4f9618310a8d37b8cdde29b1a))
+
 ## [1.26.0](https://github.com/mad01/thismoon/compare/present/v1.25.0...present/v1.26.0) (2026-11-13)
 
 
