@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.2](https://github.com/mad01/thismoon/compare/deps/v0.18.1...deps/v0.18.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **deps:** keep keyboard focus after resolve, rescan and clear filter ([#441](https://github.com/mad01/thismoon/issues/441)) ([1510452](https://github.com/mad01/thismoon/commit/151045283cc3df9e74fa27ae3081969b8900e70f))
+
 ## [0.18.1](https://github.com/mad01/thismoon/compare/deps/v0.18.0...deps/v0.18.1) (2026-11-13)
 
 
