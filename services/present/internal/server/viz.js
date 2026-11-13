@@ -291,23 +291,29 @@
   function diagramElk(spec, measure, form) {
     var density = form && form.density, labels = [], boxes = Object.create(null);
     var direction = form && form.direction ? form.direction : spec.direction;
+    var returns = diagramReturnEdges(spec);
     var edges = (spec.edges || []).map(function (e, i) {
       var el = { id: 'e' + i, sources: [e.from], targets: [e.to] };
       if (!e.label) return el;
-      var box = edgeLabelBox(e.label, measure, density);
+      var box = edgeLabelBox(e.label, measure, density), options = { 'elk.edgeLabels.inline': 'true' };
+      // A return edge spans the layers it loops back over; its label goes
+      // in the layer next to the box it leaves, not the middle one.
+      if (returns[i]) options['elk.layered.edgeLabels.centerLabelPlacementStrategy'] = 'TAIL_LAYER';
       labels[i] = box;
-      el.labels = [{ id: 'l' + i, text: String(e.label), width: box.w, height: box.h,
-        layoutOptions: { 'elk.edgeLabels.inline': 'true' } }];
+      el.labels = [{ id: 'l' + i, text: String(e.label), width: box.w, height: box.h, layoutOptions: options }];
       return el;
     });
     var byParent = Object.create(null);
     function child(parent, el) { (byParent[parent || ''] = byParent[parent || ''] || []).push(el); }
     (spec.groups || []).forEach(function (g) {
       var w = Math.ceil(measure(String(g.label || ''), 'group')) + 2 * DIAGRAM_GROUP_LABEL.x;
+      // ELK (elkjs 0.12) turns a group's minimum size with the layout, so
+      // top to bottom the width goes second; first, it would make the
+      // group as tall as its label is wide, empty under its boxes.
       child(g.group, { id: g.id, group: true, layoutOptions: diagramSpaced({
         'elk.padding': DIAGRAM_GROUP_PAD,
         'elk.nodeSize.constraints': 'MINIMUM_SIZE',
-        'elk.nodeSize.minimum': '(' + w + ',0)'
+        'elk.nodeSize.minimum': direction === 'TB' ? '(0,' + w + ')' : '(' + w + ',0)'
       }) });
     });
     (spec.nodes || []).forEach(function (n) {
@@ -336,6 +342,26 @@
       edges: edges
     };
     return { graph: graph, labels: labels, boxes: boxes };
+  }
+
+  // diagramReturnEdges says, by edge index, which edges loop back: those a
+  // depth-first search from the nodes in order finds pointing into its own
+  // path, the edges a layered layout turns around and the lint drops from
+  // a diagram's longest path.
+  function diagramReturnEdges(spec) {
+    var out = Object.create(null), state = Object.create(null), returns = [];
+    (spec.edges || []).forEach(function (e, i) { (out[e.from] = out[e.from] || []).push(i); });
+    function visit(id) {
+      state[id] = 'open';
+      (out[id] || []).forEach(function (i) {
+        var to = spec.edges[i].to;
+        if (state[to] === 'open') returns[i] = true;
+        else if (!state[to]) visit(to);
+      });
+      state[id] = 'done';
+    }
+    (spec.nodes || []).forEach(function (n) { if (!state[n.id]) visit(n.id); });
+    return (spec.edges || []).map(function (_, i) { return !!returns[i]; });
   }
 
   // diagramLabelSpots is where ELK put each edge's label, by edge index:
@@ -534,6 +560,69 @@
   // left corner: x the left inset (kept on the right too), y the baseline,
   // inside the top padding diagramElk gives every group.
   var DIAGRAM_GROUP_LABEL = { x: 12, y: 20 };
+  // DIAGRAM_GROUP_LABEL_BAND is the strip a group's label covers above and
+  // below its baseline, and DIAGRAM_GROUP_LABEL_CLEAR the room it keeps
+  // from a route or an edge label beside it.
+  var DIAGRAM_GROUP_LABEL_BAND = { above: 12, below: 4 };
+  var DIAGRAM_GROUP_LABEL_CLEAR = 6;
+
+  // diagramRuns lists the straight runs of every route in a laid-out
+  // graph, each as its two end points.
+  function diagramRuns(layout) {
+    var runs = [];
+    ((layout && layout.edges) || []).forEach(function (e) {
+      (e.sections || []).forEach(function (sec) {
+        var pts = [sec.startPoint].concat(sec.bendPoints || [], [sec.endPoint]);
+        for (var i = 1; i < pts.length; i++) runs.push([pts[i - 1], pts[i]]);
+      });
+    });
+    return runs;
+  }
+
+  // groupLabelX is where a group's label of width w starts, from the
+  // group's left edge: DIAGRAM_GROUP_LABEL.x, or, when something in the
+  // label's strip (blocks, each {x0, x1} in root coordinates) covers it
+  // there, just right of the first block that leaves it clear inside the
+  // group's right inset. A label with no clear place stays at the start.
+  function groupLabelX(box, w, blocks) {
+    var lo = DIAGRAM_GROUP_LABEL.x, hi = box.width - DIAGRAM_GROUP_LABEL.x - w, gap = DIAGRAM_GROUP_LABEL_CLEAR;
+    function clear(x) {
+      var a = box.x + x, b = a + w;
+      return blocks.every(function (k) { return k.x1 + gap <= a || k.x0 - gap >= b; });
+    }
+    var tries = [lo].concat(blocks.map(function (k) { return k.x1 + gap - box.x; }).sort(function (a, b) { return a - b; }));
+    for (var i = 0; i < tries.length; i++) {
+      if (tries[i] >= lo && tries[i] <= hi && clear(tries[i])) return tries[i];
+    }
+    return lo;
+  }
+
+  // diagramGroupLabelSpots is where each group's label sits, by group id:
+  // x and the baseline y from the group's top left corner. It sits at
+  // DIAGRAM_GROUP_LABEL unless a route or an edge label crosses its strip
+  // there, and then moves right (groupLabelX). layout is ELK's result in
+  // root coordinates; measure is the one diagramElk sized the graph with.
+  function diagramGroupLabelSpots(spec, layout, measure) {
+    var boxes = Object.create(null), spots = Object.create(null), band = DIAGRAM_GROUP_LABEL_BAND;
+    (function walk(children) {
+      (children || []).forEach(function (c) { boxes[c.id] = c; walk(c.children); });
+    })(layout && layout.children);
+    var spans = diagramRuns(layout).map(function (r) {
+      return { x0: Math.min(r[0].x, r[1].x), x1: Math.max(r[0].x, r[1].x), y0: Math.min(r[0].y, r[1].y), y1: Math.max(r[0].y, r[1].y) };
+    });
+    ((layout && layout.edges) || []).forEach(function (e) {
+      (e.labels || []).forEach(function (l) { spans.push({ x0: l.x, x1: l.x + l.width, y0: l.y, y1: l.y + l.height }); });
+    });
+    (spec.groups || []).forEach(function (g) {
+      var box = boxes[g.id];
+      if (!box) return;
+      var top = box.y + DIAGRAM_GROUP_LABEL.y - band.above, bottom = box.y + DIAGRAM_GROUP_LABEL.y + band.below;
+      var blocks = spans.filter(function (s) { return s.y1 >= top && s.y0 <= bottom; });
+      var w = Math.ceil(measure(String(g.label || ''), 'group'));
+      spots[g.id] = { x: groupLabelX(box, w, blocks), y: DIAGRAM_GROUP_LABEL.y };
+    });
+    return spots;
+  }
 
   // diagramText places a node's lines in its drawn box of width w: the
   // centre line x, then the middle of each name line and of each text
@@ -766,7 +855,8 @@
     chartTicks: chartTicks, barAxisLabels: barAxisLabels, chartPoint: chartPoint, chartPointRoom: chartPointRoom,
     readingSample: READING_SAMPLE, readingChanged: readingChanged, settle: settle,
     wrapText: wrapText, diagramBox: diagramBox, edgeLabelBox: edgeLabelBox, edgeLabelRows: edgeLabelRows,
-    diagramElk: diagramElk, diagramLabelSpots: diagramLabelSpots, elkPath: elkPath,
+    diagramElk: diagramElk, diagramLabelSpots: diagramLabelSpots, diagramGroupLabelSpots: diagramGroupLabelSpots,
+    diagramReturnEdges: diagramReturnEdges, elkPath: elkPath,
     diagramLadder: diagramLadder, diagramPlan: diagramPlan, diagramLimits: diagramLimits, fitSteps: fitSteps,
     diagramShown: diagramShown, diagramFocus: diagramFocus, flowSpeed: flowSpeed,
     diagramText: diagramText, diagramGroupLabel: DIAGRAM_GROUP_LABEL

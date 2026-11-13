@@ -1,0 +1,68 @@
+{
+  "title": "The nightly cost report: five steps from the vendor feed to the channel",
+  "content": {
+    "summary": "The cost report runs once a night: it reads the vendor feed, types and tags each record, stores the rows, and posts a digest to the team channel.",
+    "sections": [
+      {
+        "h": "Five steps turn the vendor feed into the morning digest",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "One nightly run, left to right.",
+            "nodes": [
+              {
+                "id": "ingest",
+                "label": "Ingest",
+                "text": "reads the feed"
+              },
+              {
+                "id": "parse",
+                "label": "Parse",
+                "text": "splits records"
+              },
+              {
+                "id": "enrich",
+                "label": "Enrich",
+                "text": "adds the owner"
+              },
+              {
+                "id": "store",
+                "label": "Store",
+                "text": "writes rows",
+                "kind": "store"
+              },
+              {
+                "id": "report",
+                "label": "Report",
+                "text": "daily digest"
+              }
+            ],
+            "edges": [
+              {
+                "from": "ingest",
+                "to": "parse",
+                "label": "raw json lines"
+              },
+              {
+                "from": "parse",
+                "to": "enrich",
+                "label": "typed record rows"
+              },
+              {
+                "from": "enrich",
+                "to": "store",
+                "label": "tagged record rows"
+              },
+              {
+                "from": "store",
+                "to": "report",
+                "label": "nightly sql query"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

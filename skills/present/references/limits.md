@@ -19,6 +19,7 @@ In the order the lint reports them.
 | `table.cell` | 160 characters | every table cell, brief and deck | guideline (Google developer style: more than two sentences in a cell belong elsewhere) |
 | `diagram.boxes` | 9 boxes | a diagram in a brief | house |
 | `diagram.chain` | 5 boxes | a diagram, brief and deck | renderer |
+| `diagram.row` | 1032 px | a left-to-right diagram in a brief | renderer |
 | `diagram.slide_boxes` | 6 boxes | a diagram on a slide | house |
 | `diagram.slide_columns` | none | a diagram on a slide | renderer |
 | `slide.words` | 50 words | a slide, outside its heading | house |
@@ -33,6 +34,7 @@ In the order the lint reports them.
 - `table.cell`: A table cell holds at most 160 characters. A cell is read across a row; a paragraph in it breaks the row, so the prose belongs beside the table.
 - `diagram.boxes`: A diagram in a brief holds at most 9 boxes. A bigger diagram draws taller than a screen at a size the reader can read; split it or show one part.
 - `diagram.chain`: The longest path through a diagram passes at most 5 boxes. Each box on the path is one layer of the layout, and every layer adds height in any direction.
+- `diagram.row`: A left-to-right diagram's longest path, laid out in a row in the compact form, is at most 1032 px wide, the brief's widest. A wider row may draw top to bottom instead, a column as tall as the path is long; the reader's browser picks the form, so the lint can only estimate. It estimates the width from the box text and edge labels on the path in the page's default face; groups, branches, and return edges widen a row further, so a row it passes can still turn.
 - `diagram.slide_boxes`: A diagram on a slide holds at most 6 boxes. A slide shrinks a diagram to fit, so a fuller diagram draws its text under the size a room can read.
 - `diagram.slide_columns`: A diagram on a slide sits alone, not inside columns. In part of the slide's width the diagram's text draws under the size a room can read.
 - `slide.words`: A slide holds at most 50 words outside its heading; of a stepped chart or diagram only the longest caption counts. A room reads a slide at a glance; the detail belongs in the brief or the speaker notes.
@@ -74,7 +76,7 @@ Findings come by rule in the order of the table, then from the top of the page: 
 - `diagram.nodes`: A diagram holds at most 24 boxes. Past it the picture is a hairball, and the layout takes long enough to notice.
 - `diagram.groups`: A diagram holds at most 12 groups. Past it the boundaries crowd out the boxes they hold.
 - `diagram.depth`: Groups nest at most 2 levels deep: a group inside a group inside the diagram. Each level adds a boundary and its label around the boxes.
-- `diagram.label`: A box or group label is at most 32 characters. A box label draws on one line in a box at most 240 px wide, and a group label sets the group's least width.
+- `diagram.label`: A box or group label is at most 32 characters. A box label wraps inside its box, about 27 characters a line in a full box (240 px) and 20 in a compact one (190 px), so it keeps to two lines, three when a long word falls badly; a group label sets the group's least width.
 - `diagram.text`: A box's text is at most 60 characters. It wraps under the label, and the cap keeps a box to a few lines.
 - `diagram.edge_label`: An edge label is at most 24 characters. The widest label sets the gap between two layers.
 - `terminal.rows_min`: A terminal block's rows is at least 8. With fewer a full-screen program has no room to draw.

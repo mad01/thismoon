@@ -21,7 +21,7 @@ The diagram sits straight on the page or slide with no card of its own. Boxes ca
 
 ## Which form it draws
 
-`direction` is the renderer's first choice, not a promise. A row holds about five boxes when each box is a label of three words or fewer with no `text` line, and each edge label is one or two words. Longer box text or edge labels make the renderer draw a column instead. A diagram with a fan-out, or with more than about five boxes, usually draws top to bottom, so set `direction` to `TB` and write the boxes for that. A back edge (an arrow that returns) adds height and puts its label mid-loop, so say the return in the caption instead.
+`direction` is the renderer's first choice, not a promise. In a brief, a left-to-right row holds five boxes, each a short name over a `text` of three or four words, when its arrows carry no labels. Each edge label on the row adds its own width plus about 32 px, so a row of five with every arrow labelled may draw as a column. The lint estimates the row and warns (`diagram.row`) when it is wider than the brief; groups and branches widen a row past the estimate, so a row it passes can still turn. A diagram with a fan-out, or with more than about five boxes, usually draws top to bottom, so set `direction` to `TB` and write the boxes for that. A back edge (an arrow that returns) adds a lane around the boxes, and its label sits next to the box it leaves.
 
 ## Colour that reads
 
@@ -351,7 +351,7 @@ This trips `diagram.chain`:
         "blocks": [
           {
             "t": "diagram",
-            "direction": "LR",
+            "direction": "TB",
             "caption": "Launching one confined process. Green boxes are our launch and watch code, red ones enforce the policy, blue holds it, and grey is outside.",
             "groups": [
               {
@@ -477,7 +477,7 @@ Repaired:
         "blocks": [
           {
             "t": "diagram",
-            "direction": "LR",
+            "direction": "TB",
             "caption": "Launching one confined process. Green boxes are our launch and watch code, red ones enforce the policy, blue holds it, and grey is outside.",
             "groups": [
               {
@@ -565,6 +565,156 @@ Repaired:
                 "from": "proc",
                 "to": "watch",
                 "label": "denials via log"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+<!-- pair:end -->
+
+### A row too wide for the brief
+
+<!-- pair:diagram.row -->
+This trips `diagram.row`:
+
+```json
+{
+  "title": "The nightly cost report: five steps from the vendor feed to the channel",
+  "content": {
+    "summary": "The cost report runs once a night: it reads the vendor feed, types and tags each record, stores the rows, and posts a digest to the team channel.",
+    "sections": [
+      {
+        "h": "Five steps turn the vendor feed into the morning digest",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "One nightly run, left to right.",
+            "nodes": [
+              {
+                "id": "ingest",
+                "label": "Ingest",
+                "text": "reads the feed"
+              },
+              {
+                "id": "parse",
+                "label": "Parse",
+                "text": "splits records"
+              },
+              {
+                "id": "enrich",
+                "label": "Enrich",
+                "text": "adds the owner"
+              },
+              {
+                "id": "store",
+                "label": "Store",
+                "text": "writes rows",
+                "kind": "store"
+              },
+              {
+                "id": "report",
+                "label": "Report",
+                "text": "daily digest"
+              }
+            ],
+            "edges": [
+              {
+                "from": "ingest",
+                "to": "parse",
+                "label": "raw json lines"
+              },
+              {
+                "from": "parse",
+                "to": "enrich",
+                "label": "typed record rows"
+              },
+              {
+                "from": "enrich",
+                "to": "store",
+                "label": "tagged record rows"
+              },
+              {
+                "from": "store",
+                "to": "report",
+                "label": "nightly sql query"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The lint says:
+
+> `content.sections[0].blocks[0]` section "Five steps turn the vendor feed into the morning digest", a left-to-right diagram: its path of 5 boxes, "Ingest" to "Report", is about 1198 px wide in a row, past the brief's 1032. A wider row may draw top to bottom instead, a column as tall as the path is long; the reader's browser picks the form, so the lint can only estimate. It estimates the width from the box text and edge labels on the path in the page's default face; groups, branches, and return edges widen a row further, so a row it passes can still turn. To keep the row, cut the box text and edge labels on that path to a few words or fold boxes together; else set direction to TB and write the boxes for a column.
+
+Repaired:
+
+```json
+{
+  "title": "The nightly cost report: five steps from the vendor feed to the channel",
+  "content": {
+    "summary": "The cost report runs once a night: it reads the vendor feed, types and tags each record, stores the rows, and posts a digest to the team channel.",
+    "sections": [
+      {
+        "h": "Five steps turn the vendor feed into the morning digest",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "One nightly run, left to right.",
+            "nodes": [
+              {
+                "id": "ingest",
+                "label": "Ingest",
+                "text": "reads raw json"
+              },
+              {
+                "id": "parse",
+                "label": "Parse",
+                "text": "types each record"
+              },
+              {
+                "id": "enrich",
+                "label": "Enrich",
+                "text": "tags the owner"
+              },
+              {
+                "id": "store",
+                "label": "Store",
+                "text": "writes the rows",
+                "kind": "store"
+              },
+              {
+                "id": "report",
+                "label": "Report",
+                "text": "posts the digest"
+              }
+            ],
+            "edges": [
+              {
+                "from": "ingest",
+                "to": "parse"
+              },
+              {
+                "from": "parse",
+                "to": "enrich"
+              },
+              {
+                "from": "enrich",
+                "to": "store"
+              },
+              {
+                "from": "store",
+                "to": "report"
               }
             ]
           }

@@ -67,6 +67,7 @@ var checks = map[limits.ID]check{
 	limits.TableCell:           checkTableCell,
 	limits.DiagramBoxes:        checkDiagramBoxes,
 	limits.DiagramChain:        checkDiagramChain,
+	limits.DiagramRow:          checkDiagramRow,
 	limits.DiagramSlideBoxes:   checkSlideBoxes,
 	limits.DiagramSlideColumns: checkSlideColumns,
 	limits.SlideWords:          checkSlideWords,

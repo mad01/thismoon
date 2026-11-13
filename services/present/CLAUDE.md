@@ -461,7 +461,8 @@ theme). Do not add those controls manually.
   `transition: none`). `viz.js` (`window.PresentViz`, served at `/viz.js`)
   holds the pure helpers (`stepPlan`, `chartStepVisibility`,
   `seriesExtent`, `ribbonLayout`, and the diagram's `wrapText`,
-  `diagramBox`, `diagramElk`, `diagramLadder`, `diagramPlan`,
+  `diagramBox`, `diagramElk`, `diagramReturnEdges`,
+  `diagramGroupLabelSpots`, `diagramLadder`, `diagramPlan`,
   `diagramLimits`, `diagramShown`, `diagramFocus`, `elkPath`,
   `flowSpeed`), tested under node. `d3-7.9.0.min.js` is vendored the same
   way as Chart.js (docs/adr/0022, `THIRD-PARTY.md`); the ribbon chart and
@@ -477,7 +478,14 @@ theme). Do not add those controls manually.
   builds: layered, `INCLUDE_CHILDREN`, orthogonal routes, root
   coordinates, boxes sized from canvas-measured text, each edge label an
   inline ELK label on its own route, and the spacing set on every group,
-  since ELK spaces siblings by their parent's options. A form that fails
+  since ELK spaces siblings by their parent's options. A return edge
+  (`diagramReturnEdges`, the back edges of a walk in node order, as the
+  lint's longest path drops them) puts its label in the layer next to the
+  box it leaves (`TAIL_LAYER`), not mid-loop. A group's least width is
+  its label's; ELK turns that minimum with a top-to-bottom layout, so a
+  TB form passes it as `(0,w)`, or the group grows as tall as its label is
+  wide. `diagramGroupLabelSpots` moves a group label right past a route or
+  an edge label that crosses its strip. A form that fails
   is dropped; the note shows only when all fail. `diagramLimits` turns
   the room into a floor, an aim and a largest scale, `diagramPlan` picks the form and
   scale, and D3 draws it: groups, boxes by kind, routed edges, labels on

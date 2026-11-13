@@ -279,6 +279,37 @@ func checkDiagramChain(p Page, n int) []Finding {
 	return out
 }
 
+func checkDiagramRow(p Page, n int) []Finding {
+	var out []Finding
+	p.blocks(func(at block) {
+		if at.b.T != "diagram" || at.sec.rend != Content || at.b.Direction == "TB" {
+			return
+		}
+		path := longestPath(at.b)
+		w := rowWidth(at.b, path)
+		if len(path) < 2 || w <= n {
+			return
+		}
+		from, to := at.b.Nodes[path[0]].Label, at.b.Nodes[path[len(path)-1]].Label
+		out = append(out, atSection(limits.DiagramRow, at.sec, at.where,
+			message(
+				limits.DiagramRow,
+				at.sec.place+", a left-to-right diagram",
+				fmt.Sprintf(
+					"its path of %d boxes, %q to %q, is about %d px wide in a row, past the brief's %d",
+					len(path),
+					from,
+					to,
+					w,
+					n,
+				),
+				"To keep the row, cut the box text and edge labels on that path to a few words or fold "+
+					"boxes together; else set direction to TB and write the boxes for a column.",
+			)))
+	})
+	return out
+}
+
 // longestPath returns the node indices on the longest path along a
 // diagram's edges, first node first. Cycles are broken the way a layered
 // layout breaks them: an edge a depth-first search in node order finds

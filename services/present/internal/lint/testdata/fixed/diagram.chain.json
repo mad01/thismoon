@@ -8,7 +8,7 @@
         "blocks": [
           {
             "t": "diagram",
-            "direction": "LR",
+            "direction": "TB",
             "caption": "Launching one confined process. Green boxes are our launch and watch code, red ones enforce the policy, blue holds it, and grey is outside.",
             "groups": [
               {
