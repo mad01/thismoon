@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.1](https://github.com/mad01/thismoon/compare/csl/v0.39.0...csl/v0.39.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* build on Go 1.27.4 for the net/http server crash (GO-2026-6859) ([#489](https://github.com/mad01/thismoon/issues/489)) ([a35778d](https://github.com/mad01/thismoon/commit/a35778db21b0d788cde3e18bd5aecdfddd1a2f97))
+
 ## [0.39.0](https://github.com/mad01/thismoon/compare/csl/v0.38.2...csl/v0.39.0) (2026-11-13)
 
 

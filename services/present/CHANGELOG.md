@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.1](https://github.com/mad01/thismoon/compare/present/v1.27.0...present/v1.27.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* build on Go 1.27.4 for the net/http server crash (GO-2026-6859) ([#489](https://github.com/mad01/thismoon/issues/489)) ([a35778d](https://github.com/mad01/thismoon/commit/a35778db21b0d788cde3e18bd5aecdfddd1a2f97))
+
 ## [1.27.0](https://github.com/mad01/thismoon/compare/present/v1.26.0...present/v1.27.0) (2026-11-13)
 
 
