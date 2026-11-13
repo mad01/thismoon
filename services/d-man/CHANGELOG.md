@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/mad01/thismoon/compare/d-man/v0.8.0...d-man/v0.9.0) (2026-11-13)
+
+
+### Features
+
+* **d-man:** same-origin settings endpoint for the web kit ([#455](https://github.com/mad01/thismoon/issues/455)) ([4dd24de](https://github.com/mad01/thismoon/commit/4dd24dedfec8543aee6e767e9c66be40d08c7e40))
+
 ## [0.8.0](https://github.com/mad01/thismoon/compare/d-man/v0.7.0...d-man/v0.8.0) (2026-10-25)
 
 
