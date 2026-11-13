@@ -3,7 +3,9 @@
 // API (themeState, applyTheme, setThemeMode, setPalette, resetTheme)
 
 import { unwrapFixation, wrapFixation } from './fixation-dom.js';
-import { clampSize, SIZE_STEP, SIZE_DEFAULT } from './size.js';
+import { clampSize, SIZE_STEP, SIZE_DEFAULT, SIZE_MIN, SIZE_MAX } from './size.js';
+import { createSettingsSync } from './settings-sync.js';
+import type { SyncKey } from './settings-sync.js';
 import { WkReadAloud } from './read-aloud.js';
 import { rankSites } from './fuzzy.js';
 import type { Site, SiteMatch } from './fuzzy.js';
@@ -186,6 +188,7 @@ export function applyTheme(): ThemeState {
 /** Persists a mode (light, dark, or system) and applies it. */
 export function setThemeMode(mode: ThemeMode): ThemeState {
   localStorage.setItem(THEME_KEY, mode);
+  settingsSync.push({ [THEME_KEY]: themeMode() });
   return applyTheme();
 }
 
@@ -193,6 +196,7 @@ export function setThemeMode(mode: ThemeMode): ThemeState {
 export function setPalette(theme: Theme, family: string): ThemeState {
   if (!family || family === 'default' || !isFamily(family)) localStorage.removeItem(PALETTE_KEY_PREFIX + theme);
   else localStorage.setItem(PALETTE_KEY_PREFIX + theme, family);
+  settingsSync.push({ [PALETTE_KEY_PREFIX + theme]: paletteFor(theme) });
   return applyTheme();
 }
 
@@ -201,6 +205,13 @@ export function resetTheme(): ThemeState {
   localStorage.removeItem(THEME_KEY);
   localStorage.removeItem(PALETTE_KEY_PREFIX + 'light');
   localStorage.removeItem(PALETTE_KEY_PREFIX + 'dark');
+  // The endpoint cannot delete a key, so a reset sends the defaults the
+  // removed keys read as.
+  settingsSync.push({
+    [THEME_KEY]: themeMode(),
+    [PALETTE_KEY_PREFIX + 'light']: paletteFor('light'),
+    [PALETTE_KEY_PREFIX + 'dark']: paletteFor('dark'),
+  });
   return applyTheme();
 }
 
@@ -217,6 +228,52 @@ function initThemeSync(): void {
   }
 }
 initThemeSync();
+
+// ── Settings that follow the reader between .this hosts ──
+// d-man serves one settings document on every .this host (see
+// settings-sync.ts). The first pull starts here, at module load, and never
+// blocks paint: boot.js already painted from localStorage. A pull that wrote
+// a theme key applies it through applyTheme, so wk-themechange fires as for
+// any other change; each header then brings its font, size and fixation in
+// line with storage. Pushes come only from user actions: the mode and palette
+// setters, reset, and the header's font, size and fixation controls.
+
+/** Each wired header's way to re-read font, size and fixation from storage. */
+const controlRefreshers = new Set<() => void>();
+
+const isThemeKey = (key: SyncKey): boolean => key === THEME_KEY || key.startsWith(PALETTE_KEY_PREFIX);
+
+const settingsSync = createSettingsSync({
+  hostname: location.hostname,
+  fetch: (url, init) => fetch(url, init),
+  storage: localStorage,
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+  clearTimeout: id => window.clearTimeout(id),
+  now: () => Date.now(),
+  choices: {
+    families: FAMILIES,
+    fonts: Object.keys(FONT_STACKS),
+    fontFallback: 'Fira Code', // applyFont's fallback
+    size: { min: SIZE_MIN, max: SIZE_MAX, fallback: SIZE_DEFAULT },
+  },
+  applied: written => {
+    if (written.some(isThemeKey)) applyTheme();
+    controlRefreshers.forEach(refresh => refresh());
+  },
+});
+
+function initSettingsSync(): void {
+  if (!settingsSync.enabled) return;
+  void settingsSync.start();
+  const resume = (): void => { void settingsSync.resume(); };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') resume();
+  });
+  window.addEventListener('focus', resume);
+  window.addEventListener('pageshow', e => { if (e.persisted) resume(); });
+  window.addEventListener('pagehide', () => settingsSync.flush());
+}
+initSettingsSync();
 
 // ── Audio: whether the read-aloud controls show ──
 // One attribute on <html>, data-audio; "off" hides every control
@@ -501,20 +558,26 @@ class WkHeader extends HTMLElement {
     if (fontEl) {
       const savedFont = localStorage.getItem(FONT_KEY) ?? 'Fira Code';
       applyFont(savedFont, fontEl);
-      fontEl.addEventListener('change', () => applyFont(fontEl.value, fontEl));
+      fontEl.addEventListener('change', () => {
+        applyFont(fontEl.value, fontEl);
+        settingsSync.push({ [FONT_KEY]: fontEl.value });
+      });
     }
 
     // Size
-    let currentSize = parseInt(localStorage.getItem(SIZE_KEY) ?? '', 10);
-    if (isNaN(currentSize)) currentSize = SIZE_DEFAULT;
+    const storedSize = (): number => {
+      const px = parseInt(localStorage.getItem(SIZE_KEY) ?? '', 10);
+      return isNaN(px) ? SIZE_DEFAULT : px;
+    };
+    let currentSize = storedSize();
     applySize(currentSize);
 
-    this.querySelector('#webkit-size-down')?.addEventListener('click', () => {
-      currentSize = applySize(currentSize - SIZE_STEP);
-    });
-    this.querySelector('#webkit-size-up')?.addEventListener('click', () => {
-      currentSize = applySize(currentSize + SIZE_STEP);
-    });
+    const stepSize = (delta: number): void => {
+      currentSize = applySize(currentSize + delta);
+      settingsSync.push({ [SIZE_KEY]: String(currentSize) });
+    };
+    this.querySelector('#webkit-size-down')?.addEventListener('click', () => stepSize(-SIZE_STEP));
+    this.querySelector('#webkit-size-up')?.addEventListener('click', () => stepSize(SIZE_STEP));
 
     // Speech speed
     const speedEl = this.querySelector('#webkit-ra-speed') as HTMLSelectElement | null;
@@ -594,14 +657,31 @@ class WkHeader extends HTMLElement {
     applyFixation(fixationActive);
     if (fixationActive) observe();
 
-    fixationBtn?.addEventListener('click', () => {
-      // A read-aloud session plays on through the toggle: the walk keeps the
-      // blocks and sentence spans it highlights, and the buttons it injected.
-      fixationActive = !fixationActive;
-      localStorage.setItem(FIXATION_KEY, String(fixationActive));
+    // A read-aloud session plays on through the toggle: the walk keeps the
+    // blocks and sentence spans it highlights, and the buttons it injected.
+    const setFixation = (active: boolean): void => {
+      fixationActive = active;
       fixationObserver.disconnect();
-      applyFixation(fixationActive);
-      if (fixationActive) observe();
+      applyFixation(active);
+      if (active) observe();
+    };
+    fixationBtn?.addEventListener('click', () => {
+      setFixation(!fixationActive);
+      localStorage.setItem(FIXATION_KEY, String(fixationActive));
+      settingsSync.push({ [FIXATION_KEY]: String(fixationActive) });
+    });
+
+    // A settings pull (from another .this host, or another tab of this one)
+    // rewrote storage: bring the font, size and fixation in line with it.
+    controlRefreshers.add(() => {
+      if (fontEl) {
+        const name = localStorage.getItem(FONT_KEY) ?? 'Fira Code';
+        if (name !== fontEl.value) applyFont(name, fontEl);
+      }
+      const size = storedSize();
+      if (size !== currentSize) currentSize = applySize(size);
+      const active = localStorage.getItem(FIXATION_KEY) === 'true';
+      if (active !== fixationActive) setFixation(active);
     });
 
     // Reload

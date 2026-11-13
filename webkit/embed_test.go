@@ -177,6 +177,8 @@ func TestHandlerServesJS(t *testing.T) {
 		"wk-fixation-run",
 		// ⌘K site picker
 		"wk-cmdk:open", "__this/sites.json", "webkit-cmdk",
+		// settings that follow the reader between .this hosts: d-man's endpoint
+		"__this/settings.json",
 		// feature guide (help modal)
 		"webkit-help", "data-wk-help", "Feature guide",
 		// rich markdown / prose (issue #37): client-side highlight + copy enhancer,

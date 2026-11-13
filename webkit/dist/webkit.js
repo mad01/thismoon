@@ -1598,6 +1598,228 @@ var Webkit = (() => {
     return Math.max(SIZE_MIN, Math.min(SIZE_MAX, px));
   }
 
+  // src/settings-sync.ts
+  var SETTINGS_PATH = "/__this/settings.json";
+  var DOC_VERSION = 1;
+  var PUSH_DEBOUNCE_MS = 200;
+  var PULL_THROTTLE_MS = 2e3;
+  var SYNC_KEYS = [
+    "webkit-theme",
+    "webkit-palette-light",
+    "webkit-palette-dark",
+    "webkit-font",
+    "webkit-size",
+    "webkit-fixation"
+  ];
+  function oneOf(values, fallback) {
+    const accepts = (v) => values.includes(v);
+    return { fallback, accepts, read: (raw) => raw !== null && accepts(raw) ? raw : fallback };
+  }
+  function sizeRule({ min, max, fallback }) {
+    return {
+      fallback: String(fallback),
+      // Written exactly as the kit writes one: no sign, no leading zero, no fraction.
+      accepts: (v) => {
+        const n = Number(v);
+        return Number.isInteger(n) && String(n) === v && n >= min && n <= max;
+      },
+      // Read the way the header and boot.js read it: parseInt, then clamp.
+      read: (raw) => {
+        const n = parseInt(raw ?? "", 10);
+        return String(isNaN(n) ? fallback : Math.max(min, Math.min(max, n)));
+      }
+    };
+  }
+  function rulesFor(c) {
+    const palette = { ...oneOf(["default", ...c.families], "default"), removeAtFallback: true };
+    return {
+      "webkit-theme": oneOf(["light", "dark", "system"], "light"),
+      "webkit-palette-light": palette,
+      "webkit-palette-dark": palette,
+      "webkit-font": oneOf(c.fonts, c.fontFallback),
+      "webkit-size": sizeRule(c.size),
+      "webkit-fixation": oneOf(["true", "false"], "false")
+    };
+  }
+  function hasOwn(o, key) {
+    return Object.prototype.hasOwnProperty.call(o, key);
+  }
+  function isObject(v) {
+    return typeof v === "object" && v !== null && !Array.isArray(v);
+  }
+  function reconcile(server, local, choices) {
+    const rules = rulesFor(choices);
+    const apply = {};
+    const seed = {};
+    for (const key of SYNC_KEYS) {
+      const rule = rules[key];
+      const mine = rule.read(local[key] ?? null);
+      if (!hasOwn(server, key)) {
+        if (mine !== rule.fallback) seed[key] = mine;
+        continue;
+      }
+      const theirs = server[key];
+      if (typeof theirs === "string" && rule.accepts(theirs) && theirs !== mine) apply[key] = theirs;
+    }
+    return { apply, seed };
+  }
+  function syncsOn(hostname) {
+    return hostname.endsWith(".this");
+  }
+  function refused(status) {
+    return status >= 400 && status < 500;
+  }
+  function isJSONType(contentType) {
+    return (contentType ?? "").split(";")[0].trim().toLowerCase() === "application/json";
+  }
+  function createSettingsSync(deps) {
+    const enabled = syncsOn(deps.hostname);
+    const rules = rulesFor(deps.choices);
+    let state = enabled ? "idle" : "off";
+    let pending = {};
+    let sending = {};
+    let inFlight = null;
+    let timer = null;
+    let pulling = false;
+    let lastPull = -Infinity;
+    let pushSeq = 0;
+    const pushedAt = {};
+    const hasPending = () => Object.keys(pending).length > 0;
+    function cancelTimer() {
+      if (timer === null) return;
+      deps.clearTimeout(timer);
+      timer = null;
+    }
+    function schedule() {
+      cancelTimer();
+      timer = deps.setTimeout(() => {
+        timer = null;
+        void send();
+      }, PUSH_DEBOUNCE_MS);
+    }
+    function send() {
+      if (inFlight) return inFlight;
+      if (state !== "on" || !hasPending()) return Promise.resolve();
+      const body = pending;
+      pending = {};
+      sending = body;
+      inFlight = deps.fetch(SETTINGS_PATH, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ v: DOC_VERSION, settings: body }),
+        keepalive: true
+      }).then(
+        (res) => res.ok || refused(res.status) ? "done" : "retry",
+        () => "retry"
+      ).then((outcome) => {
+        inFlight = null;
+        sending = {};
+        if (outcome === "retry") pending = { ...body, ...pending };
+        else if (hasPending() && timer === null) schedule();
+      });
+      return inFlight;
+    }
+    function push(changes) {
+      if (state === "off") return;
+      let queued = false;
+      for (const key of SYNC_KEYS) {
+        const value = changes[key];
+        if (typeof value !== "string" || !rules[key].accepts(value)) continue;
+        pending[key] = value;
+        pushedAt[key] = ++pushSeq;
+        queued = true;
+      }
+      if (queued && state === "on") schedule();
+    }
+    async function getDocument() {
+      try {
+        const res = await deps.fetch(SETTINGS_PATH, { cache: "no-store", headers: { Accept: "application/json" } });
+        if (!res.ok || !isJSONType(res.headers.get("Content-Type"))) return null;
+        const doc = await res.json();
+        return isObject(doc) && doc.v === DOC_VERSION && isObject(doc.settings) ? doc.settings : null;
+      } catch {
+        return null;
+      }
+    }
+    function readLocal() {
+      const local = {};
+      for (const key of SYNC_KEYS) local[key] = deps.storage.getItem(key);
+      return local;
+    }
+    function write2(key, value) {
+      const rule = rules[key];
+      if (rule.removeAtFallback && value === rule.fallback) deps.storage.removeItem(key);
+      else deps.storage.setItem(key, value);
+    }
+    function adopt(server, seq) {
+      const mine = (key) => hasOwn(pending, key) || hasOwn(sending, key) || (pushedAt[key] ?? 0) > seq;
+      const { apply, seed } = reconcile(server, readLocal(), deps.choices);
+      const written = [];
+      let seeded = false;
+      for (const key of SYNC_KEYS) {
+        if (mine(key)) continue;
+        const theirs = apply[key];
+        if (theirs !== void 0) {
+          write2(key, theirs);
+          written.push(key);
+        }
+        const ours = seed[key];
+        if (ours !== void 0) {
+          pending[key] = ours;
+          seeded = true;
+        }
+      }
+      deps.applied(written);
+      return seeded;
+    }
+    async function drain() {
+      cancelTimer();
+      if (inFlight) await inFlight;
+      cancelTimer();
+      await send();
+    }
+    async function pull() {
+      if (pulling) return;
+      pulling = true;
+      try {
+        await drain();
+        const seq = pushSeq;
+        const server = await getDocument();
+        if (server && state === "on" && adopt(server, seq)) schedule();
+      } finally {
+        pulling = false;
+      }
+    }
+    async function start() {
+      if (state !== "idle") return;
+      state = "starting";
+      lastPull = deps.now();
+      const seq = pushSeq;
+      const server = await getDocument();
+      if (!server) {
+        state = "off";
+        pending = {};
+        cancelTimer();
+        return;
+      }
+      state = "on";
+      adopt(server, seq);
+      if (hasPending()) schedule();
+    }
+    function resume() {
+      if (state !== "on") return Promise.resolve();
+      const t = deps.now();
+      if (t - lastPull < PULL_THROTTLE_MS) return Promise.resolve();
+      lastPull = t;
+      return pull();
+    }
+    function flush() {
+      cancelTimer();
+      void send();
+    }
+    return { enabled, start, push, resume, flush };
+  }
+
   // src/prepare.ts
   function figureAlt(el2) {
     if (el2.tagName.toUpperCase() !== "IMG" || !el2.closest("wk-figure")) return "";
@@ -3721,17 +3943,24 @@ var Webkit = (() => {
   }
   function setThemeMode(mode) {
     localStorage.setItem(THEME_KEY, mode);
+    settingsSync.push({ [THEME_KEY]: themeMode() });
     return applyTheme();
   }
   function setPalette(theme, family) {
     if (!family || family === "default" || !isFamily(family)) localStorage.removeItem(PALETTE_KEY_PREFIX + theme);
     else localStorage.setItem(PALETTE_KEY_PREFIX + theme, family);
+    settingsSync.push({ [PALETTE_KEY_PREFIX + theme]: paletteFor(theme) });
     return applyTheme();
   }
   function resetTheme() {
     localStorage.removeItem(THEME_KEY);
     localStorage.removeItem(PALETTE_KEY_PREFIX + "light");
     localStorage.removeItem(PALETTE_KEY_PREFIX + "dark");
+    settingsSync.push({
+      [THEME_KEY]: themeMode(),
+      [PALETTE_KEY_PREFIX + "light"]: paletteFor("light"),
+      [PALETTE_KEY_PREFIX + "dark"]: paletteFor("dark")
+    });
     return applyTheme();
   }
   function initThemeSync() {
@@ -3745,6 +3974,43 @@ var Webkit = (() => {
     }
   }
   initThemeSync();
+  var controlRefreshers = /* @__PURE__ */ new Set();
+  var isThemeKey = (key) => key === THEME_KEY || key.startsWith(PALETTE_KEY_PREFIX);
+  var settingsSync = createSettingsSync({
+    hostname: location.hostname,
+    fetch: (url, init2) => fetch(url, init2),
+    storage: localStorage,
+    setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimeout: (id) => window.clearTimeout(id),
+    now: () => Date.now(),
+    choices: {
+      families: FAMILIES,
+      fonts: Object.keys(FONT_STACKS),
+      fontFallback: "Fira Code",
+      // applyFont's fallback
+      size: { min: SIZE_MIN, max: SIZE_MAX, fallback: SIZE_DEFAULT }
+    },
+    applied: (written) => {
+      if (written.some(isThemeKey)) applyTheme();
+      controlRefreshers.forEach((refresh) => refresh());
+    }
+  });
+  function initSettingsSync() {
+    if (!settingsSync.enabled) return;
+    void settingsSync.start();
+    const resume = () => {
+      void settingsSync.resume();
+    };
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") resume();
+    });
+    window.addEventListener("focus", resume);
+    window.addEventListener("pageshow", (e) => {
+      if (e.persisted) resume();
+    });
+    window.addEventListener("pagehide", () => settingsSync.flush());
+  }
+  initSettingsSync();
   var AUDIO_KEY = "webkit-audio";
   function audioConfig() {
     const root = document.documentElement;
@@ -3934,17 +4200,23 @@ var Webkit = (() => {
       if (fontEl) {
         const savedFont = localStorage.getItem(FONT_KEY) ?? "Fira Code";
         applyFont(savedFont, fontEl);
-        fontEl.addEventListener("change", () => applyFont(fontEl.value, fontEl));
+        fontEl.addEventListener("change", () => {
+          applyFont(fontEl.value, fontEl);
+          settingsSync.push({ [FONT_KEY]: fontEl.value });
+        });
       }
-      let currentSize = parseInt(localStorage.getItem(SIZE_KEY) ?? "", 10);
-      if (isNaN(currentSize)) currentSize = SIZE_DEFAULT;
+      const storedSize = () => {
+        const px = parseInt(localStorage.getItem(SIZE_KEY) ?? "", 10);
+        return isNaN(px) ? SIZE_DEFAULT : px;
+      };
+      let currentSize = storedSize();
       applySize(currentSize);
-      this.querySelector("#webkit-size-down")?.addEventListener("click", () => {
-        currentSize = applySize(currentSize - SIZE_STEP);
-      });
-      this.querySelector("#webkit-size-up")?.addEventListener("click", () => {
-        currentSize = applySize(currentSize + SIZE_STEP);
-      });
+      const stepSize = (delta) => {
+        currentSize = applySize(currentSize + delta);
+        settingsSync.push({ [SIZE_KEY]: String(currentSize) });
+      };
+      this.querySelector("#webkit-size-down")?.addEventListener("click", () => stepSize(-SIZE_STEP));
+      this.querySelector("#webkit-size-up")?.addEventListener("click", () => stepSize(SIZE_STEP));
       const speedEl = this.querySelector("#webkit-ra-speed");
       if (speedEl) {
         const savedSpeed = localStorage.getItem(SPEED_KEY) ?? "1";
@@ -3998,12 +4270,26 @@ var Webkit = (() => {
       });
       applyFixation(fixationActive);
       if (fixationActive) observe();
-      fixationBtn?.addEventListener("click", () => {
-        fixationActive = !fixationActive;
-        localStorage.setItem(FIXATION_KEY, String(fixationActive));
+      const setFixation = (active) => {
+        fixationActive = active;
         fixationObserver.disconnect();
-        applyFixation(fixationActive);
-        if (fixationActive) observe();
+        applyFixation(active);
+        if (active) observe();
+      };
+      fixationBtn?.addEventListener("click", () => {
+        setFixation(!fixationActive);
+        localStorage.setItem(FIXATION_KEY, String(fixationActive));
+        settingsSync.push({ [FIXATION_KEY]: String(fixationActive) });
+      });
+      controlRefreshers.add(() => {
+        if (fontEl) {
+          const name = localStorage.getItem(FONT_KEY) ?? "Fira Code";
+          if (name !== fontEl.value) applyFont(name, fontEl);
+        }
+        const size = storedSize();
+        if (size !== currentSize) currentSize = applySize(size);
+        const active = localStorage.getItem(FIXATION_KEY) === "true";
+        if (active !== fixationActive) setFixation(active);
       });
       this.querySelector("#webkit-reload")?.addEventListener("click", () => {
         location.reload();
