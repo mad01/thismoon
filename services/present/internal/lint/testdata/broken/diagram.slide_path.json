@@ -1,0 +1,73 @@
+{
+  "title": "How a change reaches the fleet",
+  "deck": {
+    "summary": "Every machine pulls main and rebuilds, so a merge is the release.",
+    "sections": [
+      {
+        "h": "Merging to main deploys the change to every machine",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "Purple is the developer, blue is GitHub, green the fleet.",
+            "nodes": [
+              {
+                "id": "dev",
+                "label": "Developer",
+                "text": "opens a pull request",
+                "kind": "person",
+                "tone": "purple"
+              },
+              {
+                "id": "pr",
+                "label": "Pull request",
+                "text": "review and checks",
+                "tone": "blue"
+              },
+              {
+                "id": "main",
+                "label": "main",
+                "text": "squash merge",
+                "tone": "blue"
+              },
+              {
+                "id": "ralph",
+                "label": "ralph up",
+                "text": "pulls main and rebuilds",
+                "tone": "green"
+              },
+              {
+                "id": "svc",
+                "label": "present service",
+                "text": "restarted by t-man",
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "dev",
+                "to": "pr",
+                "label": "push"
+              },
+              {
+                "from": "pr",
+                "to": "main",
+                "label": "merge"
+              },
+              {
+                "from": "main",
+                "to": "ralph",
+                "label": "pull"
+              },
+              {
+                "from": "ralph",
+                "to": "svc",
+                "label": "restart"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

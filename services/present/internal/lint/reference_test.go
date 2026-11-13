@@ -31,7 +31,7 @@ var pairFiles = map[string][]limits.ID{
 	"diagrams.md": {limits.DiagramBoxes, limits.DiagramChain, limits.DiagramRow},
 	"decks.md": {
 		limits.SlideWords, limits.DeckTextOnly, limits.DiagramSlideBoxes,
-		limits.DiagramSlideColumns,
+		limits.DiagramSlidePath, limits.DiagramSlideColumns,
 	},
 	"blocks.md": {limits.InlineStrayMark},
 }

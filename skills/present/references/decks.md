@@ -34,7 +34,7 @@ A slide is one entry in the deck Doc's `sections`. Copy the skeleton for the sli
 }
 ```
 
-**Claim over a diagram.** The diagram stands alone and fills the slide; it stays within `diagram.slide_boxes`. Give it `steps` when the room should watch a request move through it. The slide opens with no step caption, and the first Next shows caption 1. End the walk on a step with no `focus`, so the whole picture lights under the conclusion.
+**Claim over a diagram.** The diagram stands alone and fills the slide; it stays within `diagram.slide_boxes`, and its longest path within `diagram.slide_path`. Give it `steps` when the room should watch a request move through it. The slide opens with no step caption, and the first Next shows caption 1. End the walk on a step with no `focus`, so the whole picture lights under the conclusion.
 
 ```json
 {
@@ -538,7 +538,7 @@ This trips `diagram.slide_boxes`:
             "nodes": [
               {
                 "id": "agent",
-                "label": "Claude Code session",
+                "label": "Your session",
                 "text": "you and your agent in a repo",
                 "kind": "person",
                 "tone": "purple"
@@ -603,12 +603,12 @@ This trips `diagram.slide_boxes`:
               {
                 "from": "belt",
                 "to": "agent",
-                "label": "injected at start"
+                "label": "injects"
               },
               {
                 "from": "agent",
                 "to": "csl",
-                "label": "csl_search"
+                "label": "search"
               },
               {
                 "from": "agent",
@@ -657,7 +657,7 @@ Repaired:
             "nodes": [
               {
                 "id": "agent",
-                "label": "Claude Code session",
+                "label": "Your session",
                 "text": "you and your agent in a repo",
                 "kind": "person",
                 "tone": "purple"
@@ -709,17 +709,167 @@ Repaired:
               {
                 "from": "belt",
                 "to": "agent",
-                "label": "injected at start"
+                "label": "injects"
               },
               {
                 "from": "agent",
                 "to": "csl",
-                "label": "csl_search"
+                "label": "search"
               },
               {
                 "from": "agent",
                 "to": "suspenders",
                 "label": "commit"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+<!-- pair:end -->
+
+<!-- pair:diagram.slide_path -->
+This trips `diagram.slide_path`:
+
+```json
+{
+  "title": "How a change reaches the fleet",
+  "deck": {
+    "summary": "Every machine pulls main and rebuilds, so a merge is the release.",
+    "sections": [
+      {
+        "h": "Merging to main deploys the change to every machine",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "Purple is the developer, blue is GitHub, green the fleet.",
+            "nodes": [
+              {
+                "id": "dev",
+                "label": "Developer",
+                "text": "opens a pull request",
+                "kind": "person",
+                "tone": "purple"
+              },
+              {
+                "id": "pr",
+                "label": "Pull request",
+                "text": "review and checks",
+                "tone": "blue"
+              },
+              {
+                "id": "main",
+                "label": "main",
+                "text": "squash merge",
+                "tone": "blue"
+              },
+              {
+                "id": "ralph",
+                "label": "ralph up",
+                "text": "pulls main and rebuilds",
+                "tone": "green"
+              },
+              {
+                "id": "svc",
+                "label": "present service",
+                "text": "restarted by t-man",
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "dev",
+                "to": "pr",
+                "label": "push"
+              },
+              {
+                "from": "pr",
+                "to": "main",
+                "label": "merge"
+              },
+              {
+                "from": "main",
+                "to": "ralph",
+                "label": "pull"
+              },
+              {
+                "from": "ralph",
+                "to": "svc",
+                "label": "restart"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The lint says:
+
+> `deck.sections[0].blocks[0]` slide 2 "Merging to main deploys the change to every machine", a diagram: its path of 5 boxes, "Developer" to "present service", is about 1093 px wide in a row and 534 px tall in a column, past the 899 by 303 px the slide holds at its smallest text. A slide shrinks a diagram until it fits. Every box and labelled arrow on the path adds a layer, so a path too long for a row and a column draws its labels under the size a room can read. The lint estimates the path from its box text and edge labels in the page's default face. Groups and branches add to it, so a path it passes can still draw small. Drop or shorten the edge labels on that path, or fold boxes together; else show part of the flow on this slide and leave the whole to the brief.
+
+Repaired:
+
+```json
+{
+  "title": "How a change reaches the fleet",
+  "deck": {
+    "summary": "Every machine pulls main and rebuilds, so a merge is the release.",
+    "sections": [
+      {
+        "h": "Merging to main deploys the change to every machine",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "Purple is the developer, blue is GitHub, green the fleet.",
+            "nodes": [
+              {
+                "id": "dev",
+                "label": "Developer",
+                "text": "opens a pull request",
+                "kind": "person",
+                "tone": "purple"
+              },
+              {
+                "id": "pr",
+                "label": "Pull request",
+                "text": "review and checks",
+                "tone": "blue"
+              },
+              {
+                "id": "main",
+                "label": "main",
+                "text": "squash merge",
+                "tone": "blue"
+              },
+              {
+                "id": "fleet",
+                "label": "ralph up",
+                "text": "rebuilds and restarts",
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "dev",
+                "to": "pr"
+              },
+              {
+                "from": "pr",
+                "to": "main",
+                "label": "merge"
+              },
+              {
+                "from": "main",
+                "to": "fleet",
+                "label": "pull"
               }
             ]
           }

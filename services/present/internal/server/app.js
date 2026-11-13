@@ -662,9 +662,6 @@
   // motion (entry, steps, hover) is CSS opacity on classes: s-<i> names an
   // element's series and col-<k> the column it shows with.
   var RIBBON_STAGGER_MS = 60; // between columns in the entry animation
-  var RIBBON_CHAR_PX = 6.5; // estimated width of one 11 px character
-  var RIBBON_LABEL_MIN_PX = 16; // the shortest segment that carries its name
-  var RIBBON_LEFT_MIN_PX = 40; // the value axis's margin before its labels widen it
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
   // ribbonSeriesVar is a series' fill as a palette variable, series-1 to
@@ -677,27 +674,28 @@
   function ribbonFadeMs(svg) {
     return parseFloat(getComputedStyle(svg).getPropertyValue('--ribbon-fade')) || 350;
   }
-  // ribbonMargins leaves room for the value axis's widest tick label, the
-  // unit above it, and the period labels under the columns.
-  function ribbonMargins(spec, y) {
-    var fmt = y.tickFormat(4), widest = 0;
-    y.ticks(4).forEach(function (t) { widest = Math.max(widest, fmt(t).length); });
-    return {
-      top: spec.unit ? 22 : 8, right: 4, bottom: 22,
-      left: Math.max(RIBBON_LEFT_MIN_PX, Math.ceil(widest * RIBBON_CHAR_PX) + 10)
-    };
+  // ribbonFonts is the type a ribbon draws its text in: the block's own
+  // face at the sizes PresentViz.ribbonFontSizes gives, fixed in the brief
+  // and following the slide's unit on a slide, in chartFonts' shape so
+  // PresentViz.chartFontsChanged can tell when a redraw would draw it
+  // otherwise.
+  function ribbonFonts(block) {
+    var family = getComputedStyle(block).fontFamily || undefined;
+    var sizes = PresentViz.ribbonFontSizes(parseFloat(getComputedStyle(document.documentElement).fontSize), slideUnits(block));
+    return { tick: { family: family, size: sizes.tick }, legend: { family: family, size: sizes.legend } };
   }
   // ribbonElements are the parts of the chart that step and dim: segments,
   // ribbons, and the names inside segments. Each carries its layout datum.
   function ribbonElements(svg) {
     return Array.prototype.slice.call(svg.querySelectorAll('.seg, .rib, .seg-label'));
   }
-  // ribbonGeometry places the layout in a w by h svg: the margins, the
-  // scales (the value axis pinned to the full data so steps never rescale),
-  // every segment in pixels, and the path of a ribbon between two columns.
-  function ribbonGeometry(spec, layout, w, h) {
+  // ribbonGeometry places the layout in a w by h svg for the lengths
+  // metrics gives (PresentViz.ribbonMetrics): the margins, the scales (the
+  // value axis pinned to the full data so steps never rescale), every
+  // segment in pixels, and the path of a ribbon between two columns.
+  function ribbonGeometry(spec, layout, w, h, metrics) {
     var y = d3.scaleLinear().domain([0, layout.max || 1]).nice(4);
-    var m = ribbonMargins(spec, y);
+    var m = PresentViz.ribbonMargins(y.ticks(4).map(y.tickFormat(4)), !!spec.unit, metrics);
     var iw = Math.max(0, w - m.left - m.right), ih = Math.max(0, h - m.top - m.bottom);
     y.range([ih, 0]);
     var x = d3.scaleBand().domain(layout.periods).range([0, iw]).padding(0.5);
@@ -746,31 +744,30 @@
     };
   }
   // drawRibbon draws the chart into svg at w by h pixels, replacing what was
-  // there: grid and axis, ribbons, columns, then labels. An element whose
-  // column hidden(col) names starts with off, set before it enters the page
-  // so its first paint plays no transition.
-  function drawRibbon(svg, spec, layout, w, h, hidden) {
-    var series = spec.series || [];
-    var geo = ribbonGeometry(spec, layout, w, h), x = geo.x, bw = geo.bw;
+  // there: grid and axis, ribbons, columns, then labels, its text textPx
+  // tall and every length that follows the text scaled to it. An element
+  // whose column hidden(col) names starts with off, set before it enters
+  // the page so its first paint plays no transition.
+  function drawRibbon(svg, spec, layout, w, h, hidden, textPx) {
+    var series = spec.series || [], metrics = PresentViz.ribbonMetrics(textPx);
+    var geo = ribbonGeometry(spec, layout, w, h, metrics), x = geo.x, bw = geo.bw;
     var titles = ribbonTitles(spec, layout);
     function name(d) { return seriesName(series, d.series); }
     function fill(d) { return 'fill: ' + ribbonSeriesVar(series[d.series], d.series); }
     function cls(kind) {
       return function (d) { return kind + ' s-' + d.series + ' col-' + d.col + (hidden(d.col) ? ' off' : ''); };
     }
-    function fits(d) {
-      return d.bottom - d.top >= RIBBON_LABEL_MIN_PX && name(d).length * RIBBON_CHAR_PX <= bw - 8;
-    }
+    function fits(d) { return PresentViz.ribbonLabelFits(name(d), d.top, d.bottom, bw, metrics); }
     function centre(period) { return x(period) + bw / 2; }
 
     var g = d3.create('svg:g').attr('transform', 'translate(' + geo.m.left + ',' + geo.m.top + ')');
-    // The axis's own font attributes go, so its labels take the page font
-    // from shell.html like every other label in the chart.
+    // The axis's own font attributes go, so its labels take the svg's size
+    // and the page font from shell.html like every other label in the chart.
     g.append('g').attr('class', 'grid')
-      .call(d3.axisLeft(geo.y).ticks(4).tickSize(-geo.iw).tickPadding(6))
+      .call(d3.axisLeft(geo.y).ticks(4).tickSize(-geo.iw).tickPadding(metrics.tickPadPx))
       .attr('font-family', null).attr('font-size', null)
       .call(function (a) { a.select('.domain').remove(); });
-    if (spec.unit) g.append('text').attr('class', 'unit').attr('x', -geo.m.left).attr('y', -10).text(spec.unit);
+    if (spec.unit) g.append('text').attr('class', 'unit').attr('x', -geo.m.left).attr('y', metrics.unitYPx).text(spec.unit);
     g.append('g').attr('class', 'ribbons').selectAll('path').data(layout.ribbons).join('path')
       .attr('class', cls('rib')).attr('style', fill).attr('d', geo.ribbonPath)
       .append('title').text(titles.rib);
@@ -780,13 +777,14 @@
       .attr('y', function (d) { return d.top; }).attr('height', function (d) { return d.bottom - d.top; })
       .append('title').text(titles.seg);
     g.append('g').attr('class', 'periods').selectAll('text').data(layout.periods).join('text')
-      .attr('x', centre).attr('y', geo.ih + 16).attr('text-anchor', 'middle').text(function (p) { return p; });
+      .attr('x', centre).attr('y', geo.ih + metrics.periodYPx).attr('text-anchor', 'middle').text(function (p) { return p; });
     g.append('g').attr('class', 'seg-labels').selectAll('text').data(geo.segs.filter(fits)).join('text')
       .attr('class', cls('seg-label')).attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
       .attr('x', function (d) { return centre(d.period); }).attr('y', function (d) { return (d.top + d.bottom) / 2; })
       .text(name);
 
     svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    svg.style.fontSize = textPx + 'px';
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     svg.appendChild(g.node());
   }
@@ -878,7 +876,11 @@
   // rebuild: the svg sized to its wrapper, the legend, the deck's step hook,
   // and a ResizeObserver that redraws, unanimated, when presenting changes
   // the wrapper's size. A wrapper with no size yet (a slide not showing)
-  // draws when the observer first sees one.
+  // draws when the observer first sees one. Each draw sizes the text
+  // (ribbonFonts) and the legend's with it; block._ribbonResize redraws
+  // when the wrapper or that text would change, so a slide fit, the
+  // presenting unit, or the reader's face or size redraws it too
+  // (rebuildStaleCharts).
   function buildRibbon(block, spec, opts) {
     if (typeof d3 === 'undefined') {
       chartNote(block, needsAsset('Ribbon', 'd3 asset'));
@@ -897,14 +899,18 @@
     function draw(entering) {
       var w = wrap.clientWidth, h = wrap.clientHeight;
       if (w < 1 || h < 1) return false;
+      var fonts = ribbonFonts(block), legend = block.querySelector('.present-ribbon-legend');
       block._ribbonSize = { w: w, h: h };
+      block._chartFonts = fonts;
+      if (legend) legend.style.fontSize = fonts.legend.size + 'px';
       var at = chartStepAt(block);
-      drawRibbon(svg, spec, layout, w, h, function (col) { return entering || (at !== null && col >= at); });
+      drawRibbon(svg, spec, layout, w, h, function (col) { return entering || (at !== null && col >= at); }, fonts.tick.size);
       return true;
     }
     block._ribbonResize = function () {
       var s = block._ribbonSize;
-      if (s && Math.abs(s.w - wrap.clientWidth) <= 1 && Math.abs(s.h - wrap.clientHeight) <= 1) return;
+      if (s && Math.abs(s.w - wrap.clientWidth) <= 1 && Math.abs(s.h - wrap.clientHeight) <= 1 &&
+        !PresentViz.chartFontsChanged(block._chartFonts, ribbonFonts(block))) return;
       if (block._ribbonEntering) { if (draw(true)) ribbonEnter(block, svg, layout.periods.length); return; }
       draw(false);
     };
@@ -932,9 +938,10 @@
   // presenting unit changed its size (PresentViz.chartFontsChanged), or
   // the reader's face or size marked it stale, whose file may have loaded
   // since. The rebuild plays no entry and keeps the step (data-step-at).
-  // A ribbon sizes its text in the stylesheet and is never stale.
+  // A ribbon redraws on the same test through its _ribbonResize.
   function rebuildStaleCharts(root) {
     root.querySelectorAll('.present-chart').forEach(function (block) {
+      if (block._ribbonResize) { block._ribbonResize(); return; }
       if (!block._chart) return;
       if (block._chartStale || PresentViz.chartFontsChanged(block._chartFonts, chartFonts(block))) buildChart(block);
     });

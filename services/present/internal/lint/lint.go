@@ -69,6 +69,7 @@ var checks = map[limits.ID]check{
 	limits.DiagramChain:        checkDiagramChain,
 	limits.DiagramRow:          checkDiagramRow,
 	limits.DiagramSlideBoxes:   checkSlideBoxes,
+	limits.DiagramSlidePath:    checkSlidePath,
 	limits.DiagramSlideColumns: checkSlideColumns,
 	limits.SlideWords:          checkSlideWords,
 	limits.DeckTextOnly:        checkTextOnly,

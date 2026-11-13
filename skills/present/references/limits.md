@@ -21,6 +21,7 @@ In the order the lint reports them.
 | `diagram.chain` | 5 boxes | a diagram, brief and deck | renderer |
 | `diagram.row` | 1032 px | a left-to-right diagram in a brief | renderer |
 | `diagram.slide_boxes` | 6 boxes | a diagram on a slide | house |
+| `diagram.slide_path` | 899 px | a diagram on a slide | renderer |
 | `diagram.slide_columns` | none | a diagram on a slide | renderer |
 | `slide.words` | 50 words | a slide, outside its heading | house |
 | `deck.text_only` | 50 percent | the default-layout slides of a deck | study (one study, 110 students) |
@@ -36,6 +37,7 @@ In the order the lint reports them.
 - `diagram.chain`: The longest path through a diagram passes at most 5 boxes. Each box on the path is one layer of the layout, and every layer adds height in any direction.
 - `diagram.row`: A left-to-right diagram's longest path, laid out in a row in the compact form, is at most 1032 px wide, the brief's widest. A wider row may draw top to bottom instead, a column as tall as the path is long; the reader's browser picks the form, so the lint can only estimate. It estimates the width from the box text and edge labels on the path in the page's default face; groups, branches, and return edges widen a row further, so a row it passes can still turn.
 - `diagram.slide_boxes`: A diagram on a slide holds at most 6 boxes. A slide shrinks a diagram to fit, so a fuller diagram draws its text under the size a room can read.
+- `diagram.slide_path`: A slide diagram's longest path fits the slide at its smallest text. A row holds at most 899 px, a column 345 px, or 303 px under steps or a caption. A slide shrinks a diagram until it fits. Every box and labelled arrow on the path adds a layer, so a path too long for a row and a column draws its labels under the size a room can read. The lint estimates the path from its box text and edge labels in the page's default face. Groups and branches add to it, so a path it passes can still draw small.
 - `diagram.slide_columns`: A diagram on a slide sits alone, not inside columns. In part of the slide's width the diagram's text draws under the size a room can read.
 - `slide.words`: A slide holds at most 50 words outside its heading; of a stepped chart or diagram only the longest caption counts. A room reads a slide at a glance; the detail belongs in the brief or the speaker notes.
 - `deck.text_only`: At most half (50 percent) of the default-layout slides hold only prose or a list. A claim shown beside a picture is remembered better than the same claim in text alone.

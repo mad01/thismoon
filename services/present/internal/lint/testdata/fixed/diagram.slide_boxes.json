@@ -13,7 +13,7 @@
             "nodes": [
               {
                 "id": "agent",
-                "label": "Claude Code session",
+                "label": "Your session",
                 "text": "you and your agent in a repo",
                 "kind": "person",
                 "tone": "purple"
@@ -65,12 +65,12 @@
               {
                 "from": "belt",
                 "to": "agent",
-                "label": "injected at start"
+                "label": "injects"
               },
               {
                 "from": "agent",
                 "to": "csl",
-                "label": "csl_search"
+                "label": "search"
               },
               {
                 "from": "agent",

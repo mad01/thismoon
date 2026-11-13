@@ -2,6 +2,7 @@ package lint
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -286,7 +287,7 @@ func checkDiagramRow(p Page, n int) []Finding {
 			return
 		}
 		path := longestPath(at.b)
-		w := rowWidth(at.b, path)
+		w := rowWidth(at.b, path, compactForm)
 		if len(path) < 2 || w <= n {
 			return
 		}
@@ -401,6 +402,75 @@ func checkSlideBoxes(p Page, n int) []Finding {
 				fmt.Sprintf("Aim for %d or fewer, and leave the full picture to the brief.", n))))
 	})
 	return out
+}
+
+// The room a slide gives a diagram, in the slide's unit (shell.html): the
+// body is the 100u canvas less 7u of padding either side, and the
+// diagram's height cap is 33u, 29u under steps or a caption. The
+// diagram.slide_path number is the body's width in px at scale 1 when the
+// diagram's text draws at the slide's smallest size (TestSlidePathNumber),
+// so a column holds that number times its cap over the width.
+const (
+	slideWidthU   = 86
+	slideCapU     = 33
+	slideCapStepU = 29
+)
+
+// checkSlidePath warns when no form a slide tries draws a diagram's
+// longest path at the slide's smallest text: the row is wider than n px
+// and the column taller than its share of n. Both are floors, so a path
+// it passes can still draw small.
+func checkSlidePath(p Page, n int) []Finding {
+	var out []Finding
+	p.blocks(func(at block) {
+		if at.b.T != "diagram" || at.sec.rend != Deck {
+			return
+		}
+		path := longestPath(at.b)
+		if len(path) < 2 {
+			return
+		}
+		capU := slideCapU
+		if len(at.b.Steps) > 0 || at.b.Caption != "" {
+			capU = slideCapStepU
+		}
+		tall := int(math.Round(float64(n*capU) / slideWidthU))
+		w, h := slidePathSize(at.b, path)
+		if w <= n || h <= tall {
+			return
+		}
+		from, to := at.b.Nodes[path[0]].Label, at.b.Nodes[path[len(path)-1]].Label
+		out = append(out, atSection(limits.DiagramSlidePath, at.sec, at.where,
+			message(
+				limits.DiagramSlidePath,
+				at.sec.place+", a diagram",
+				fmt.Sprintf(
+					"its path of %d boxes, %q to %q, is about %d px wide in a row and %d px tall in a column, "+
+						"past the %d by %d px the slide holds at its smallest text",
+					len(path),
+					from,
+					to,
+					w,
+					h,
+					n,
+					tall,
+				),
+				"Drop or shorten the edge labels on that path, or fold boxes together; "+
+					"else show part of the flow on this slide and leave the whole to the brief.",
+			)))
+	})
+	return out
+}
+
+// slidePathSize is the smallest a slide can draw path in: the narrowest
+// row and the shortest column over the forms a slide tries.
+func slidePathSize(b *render.Block, path []int) (w, h int) {
+	w, h = math.MaxInt, math.MaxInt
+	for _, d := range []density{fullForm, compactForm, namesForm} {
+		w = min(w, rowWidth(b, path, d))
+		h = min(h, columnHeight(b, path, d))
+	}
+	return w, h
 }
 
 func checkSlideColumns(p Page, _ int) []Finding {

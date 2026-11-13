@@ -428,7 +428,14 @@ theme). Do not add those controls manually.
   bottom-aligned column per period, segments ordered by rank or as given,
   a ribbon per category between adjacent columns). It draws SVG into the
   canvas wrapper with `var(--series-N)` fills, so the theme rebuild redraws
-  it in place with no colour to resolve. The template gives the block
+  it in place with no colour to resolve. Its text is 11 px in the brief.
+  On a slide it takes a slide chart's size (`PresentViz.ribbonFontSizes`),
+  set on the svg and the legend at each draw. `ribbonMetrics` scales the
+  lengths that follow the text from their 11 px numbers: the character
+  estimate, the margins (`ribbonMargins`), the axis offsets, and the
+  segment-name test (`ribbonLabelFits`). `_ribbonResize` redraws when the
+  wrapper or that text would change, and `rebuildStaleCharts` calls it
+  after a fit. The template gives the block
   `is-ribbon` (no rule keys on it today). `validateRibbon` refuses an unknown
   `order`, a fifth series (`ribbonMaxSeries`, the palette's four series
   roles), a series without a name or with a name another series has, a
@@ -460,7 +467,8 @@ theme). Do not add those controls manually.
   the deck calls to move the chart (no animation under Reduce Motion or
   `transition: none`). `viz.js` (`window.PresentViz`, served at `/viz.js`)
   holds the pure helpers (`stepPlan`, `chartStepVisibility`,
-  `seriesExtent`, `ribbonLayout`, and the diagram's `wrapText`,
+  `seriesExtent`, `ribbonLayout`, `ribbonFontSizes`, `ribbonMetrics`,
+  `ribbonMargins`, `ribbonLabelFits`, and the diagram's `wrapText`,
   `diagramBox`, `diagramElk`, `diagramReturnEdges`,
   `diagramGroupLabelSpots`, `diagramLadder`, `diagramPlan`,
   `diagramLimits`, `diagramShown`, `diagramFocus`, `elkPath`,
@@ -521,7 +529,8 @@ theme). Do not add those controls manually.
   screen cannot draw, so its diagrams lay out again (`refreshDiagram`) on
   its next showing. After any fit, `rebuildStaleCharts` rebuilds a
   chart that is stale or whose text the fit now sizes otherwise
-  (`chartFontsChanged`: a lower fit, presenting, the reader's size).
+  (`chartFontsChanged`: a lower fit, presenting, the reader's size),
+  and redraws a ribbon on the same test.
   Rebuilds keep the step and play no entry; an entry still running
   restarts on the new layout.
 - **Graph edge flow is split between graph.go and app.js.** A `GraphEdge` in
