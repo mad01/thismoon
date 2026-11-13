@@ -73,7 +73,7 @@
               {
                 "from": "moondb",
                 "to": "belt",
-                "label": "open edits"
+                "label": "edits"
               },
               {
                 "from": "belt",

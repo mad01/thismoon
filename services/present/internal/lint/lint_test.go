@@ -289,7 +289,6 @@ func TestRowWidth(t *testing.T) {
 // in the full form and on two past 84 px in the others, and the box text
 // left out of the names form.
 func TestColumnHeight(t *testing.T) {
-	path := []int{0, 1, 2, 3, 4}
 	cases := []struct {
 		name string
 		b    *render.Block
@@ -304,9 +303,161 @@ func TestColumnHeight(t *testing.T) {
 		{"short labels, names", chainOfFive("a", "bb", "ccc", "dddd"), namesForm, 540},
 	}
 	for _, tc := range cases {
-		if got := columnHeight(tc.b, path, tc.d); got != tc.want {
+		if got := flowStretch(tc.b, tc.d, true).px; got != tc.want {
 			t.Errorf("%s: %d px, ELK lays it out at %d", tc.name, got, tc.want)
 		}
+	}
+}
+
+// grouped is chainOfFive with its boxes in the groups member names, by box
+// id, and the groups given.
+func grouped(member map[string]string, groups ...render.DiagramGroup) *render.Block {
+	b := chainOfFive()
+	for k := range b.Nodes {
+		b.Nodes[k].Group = member[b.Nodes[k].ID]
+	}
+	b.Groups = groups
+	return b
+}
+
+// letters is a diagram of boxes named by the ids in ids, with the edges
+// given as "from>to", each labelled label.
+func letters(ids, edges, label string) *render.Block {
+	b := &render.Block{T: "diagram"}
+	for _, id := range strings.Fields(ids) {
+		b.Nodes = append(b.Nodes, render.DiagramNode{ID: id, Label: strings.ToUpper(id)})
+	}
+	for _, e := range strings.Fields(edges) {
+		from, to, _ := strings.Cut(e, ">")
+		b.Edges = append(b.Edges, render.DiagramEdge{From: from, To: to, Label: label})
+	}
+	return b
+}
+
+// diagramJSON reads a diagram block from its JSON.
+func diagramJSON(t *testing.T, s string) *render.Block {
+	t.Helper()
+	var b render.Block
+	if err := json.Unmarshal([]byte(s), &b); err != nil {
+		t.Fatal(err)
+	}
+	return &b
+}
+
+// platform is the example deck's context diagram: two people into a
+// group, and a two-way pair between the group and a provider.
+const platform = `{"t":"diagram","direction":"LR",
+"groups":[{"id":"platform","label":"the platform"}],
+"nodes":[
+ {"id":"shopper","label":"Shopper","text":"a browser on a phone","kind":"person"},
+ {"id":"support","label":"Support agent","text":"the back office app","kind":"person"},
+ {"id":"gateway","label":"Gateway","text":"Envoy, TLS and routing","group":"platform"},
+ {"id":"checkout","label":"Checkout","text":"orders, pricing, stock","group":"platform"},
+ {"id":"psp","label":"Payment provider","text":"cards and wallets, hosted","kind":"external"},
+ {"id":"mail","label":"Mail service","text":"receipts, hosted","kind":"external"}],
+"edges":[
+ {"from":"shopper","to":"gateway","label":"buys"},{"from":"support","to":"gateway","label":"refunds"},
+ {"from":"gateway","to":"checkout","label":"routes"},{"from":"checkout","to":"psp","label":"charges"},
+ {"from":"psp","to":"checkout","label":"webhooks"},{"from":"checkout","to":"mail","label":"sends receipts"}]}`
+
+// cluster is the example deck's cluster diagram: two namespaces in a
+// cluster, the second after the first because one box fans out to both.
+const cluster = `{"t":"diagram","direction":"LR",
+"groups":[{"id":"prod","label":"prod cluster"},
+ {"id":"ns_checkout","label":"checkout namespace","group":"prod"},
+ {"id":"ns_data","label":"data namespace","group":"prod"}],
+"nodes":[
+ {"id":"gw","label":"Gateway","text":"Envoy, terminates TLS","group":"prod"},
+ {"id":"api","label":"Checkout API","text":"Go, validates the cart","group":"ns_checkout"},
+ {"id":"pricing","label":"Pricing","text":"Go, quotes and discounts","group":"ns_checkout"},
+ {"id":"stock","label":"Stock","text":"Go, reserves units","group":"ns_checkout"},
+ {"id":"orders","label":"Orders DB","text":"Postgres, one row per order","kind":"store","group":"ns_data"},
+ {"id":"events","label":"Order events","text":"Kafka, one topic","kind":"queue","group":"ns_data"}],
+"edges":[
+ {"from":"gw","to":"api","label":"route"},{"from":"api","to":"pricing","label":"quote"},
+ {"from":"pricing","to":"api","label":"price"},{"from":"api","to":"stock","label":"reserve"},
+ {"from":"api","to":"orders","label":"insert"},{"from":"api","to":"events","label":"order placed"}]}`
+
+// TestFlowStretch holds the flow estimate to what the vendored ELK lays
+// out with Fira Code's widths: exactly for groups on a chain and for
+// cycles whose every way round draws the same, and at or under it where
+// ELK's way round a cycle or a box beside the run draws longer.
+func TestFlowStretch(t *testing.T) {
+	g := func(id, label, in string) render.DiagramGroup {
+		return render.DiagramGroup{ID: id, Label: label, Group: in}
+	}
+	middle := grouped(map[string]string{"b": "g", "c": "g"}, g("g", "x", ""))
+	nested := grouped(
+		map[string]string{"b": "out", "c": "in", "d": "out"},
+		g("out", "x", ""),
+		g("in", "y", "out"),
+	)
+	label := grouped(map[string]string{"c": "g"}, g("g", "a very long group label here ok", ""))
+	cases := []struct {
+		name      string
+		b         *render.Block
+		d         density
+		tb        bool
+		want, elk int
+	}{
+		// 767 and 423 with no group, plus the padding and 7 px where each arrow meets a border.
+		{"a group in the middle, row", middle, compactForm, false, 813, 813},
+		{"a group in the middle, column", middle, compactForm, true, 489, 489},
+		{"a group in a group, row", nested, compactForm, false, 859, 859},
+		{"a group in a group, column", nested, compactForm, true, 555, 555},
+		{"a group's label wider than its box, row", label, compactForm, false, 894, 894},
+		{"a group's label wider than its box, column", label, compactForm, true, 489, 489},
+		{
+			"a two-way pair between two boxes",
+			letters("a u v b", "a>u u>v v>u v>b", "lbl"),
+			namesForm,
+			false,
+			357,
+			357,
+		},
+		{
+			"a loop with a way in and out",
+			letters("x a b c d y", "x>a a>b b>c c>d d>a d>y", ""),
+			namesForm,
+			false,
+			600,
+			600,
+		},
+		{
+			"a loop closed by a return",
+			letters("s p r w e", "s>r r>e p>e s>w e>w w>s", ""),
+			namesForm,
+			false,
+			600,
+			600,
+		},
+		{"a two-way pair beside a group", diagramJSON(t, platform), namesForm, false, 955, 955},
+		{"a fan out across two groups, row", diagramJSON(t, cluster), namesForm, false, 1008, 1237},
+		{"a fan out across two groups, column", diagramJSON(t, cluster), namesForm, true, 599, 719},
+	}
+	for _, tc := range cases {
+		got := flowStretch(tc.b, tc.d, tc.tb).px
+		if got != tc.want {
+			t.Errorf("%s: %d px, want %d", tc.name, got, tc.want)
+		}
+		if got > tc.elk {
+			t.Errorf("%s: %d px, past the %d px ELK lays it out at", tc.name, got, tc.elk)
+		}
+	}
+}
+
+// TestSlidePathCountsGroups: the cluster's longest single path fits a
+// slide, but its groups put the data namespace after the checkout one, so
+// no form draws it at the slide's smallest text.
+func TestSlidePathCountsGroups(t *testing.T) {
+	b := diagramJSON(t, cluster)
+	p := Page{Deck: render.Doc{Sections: []render.Section{{
+		Heading: "A request walks the cluster",
+		Blocks:  []render.Block{*b},
+	}}}}
+	got := checkSlidePath(p, limits.Number(limits.DiagramSlidePath))
+	if len(got) != 1 || !strings.Contains(got[0].Message, "through 3 groups") {
+		t.Fatalf("findings = %+v, want one naming its 3 groups", got)
 	}
 }
 
@@ -323,6 +474,22 @@ func TestWrappedLongWord(t *testing.T) {
 	}
 	if widest < inner/2 || widest > 22*textCharPx {
 		t.Errorf("widest = %.1f px, want between %.1f and %.1f", widest, inner/2, 22*textCharPx)
+	}
+}
+
+// TestWrappedHangsClosingMarks: a comma that ends a word hangs past the
+// line, so "turn," stays on the first line the way viz.js wraps it, and
+// the text takes two lines in a compact box, not three.
+func TestWrappedHangsClosingMarks(t *testing.T) {
+	inner := compactForm.boxPx - 2*boxPadPx
+	if _, lines := wrapped("each edit with its turn, prompt and later commit", inner, textCharPx); lines != 2 {
+		t.Errorf("lines = %d, want 2", lines)
+	}
+	cases := map[string]int{"turn,": 1, "end).": 2, "a,,,": 2, ",,": 1, "word": 0}
+	for word, want := range cases {
+		if got := hangingMarks(word); got != want {
+			t.Errorf("hangingMarks(%q) = %d, want %d", word, got, want)
+		}
 	}
 }
 

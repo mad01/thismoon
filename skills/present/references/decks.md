@@ -598,7 +598,7 @@ This trips `diagram.slide_boxes`:
               {
                 "from": "moondb",
                 "to": "belt",
-                "label": "open edits"
+                "label": "edits"
               },
               {
                 "from": "belt",
@@ -812,7 +812,7 @@ This trips `diagram.slide_path`:
 
 The lint says:
 
-> `deck.sections[0].blocks[0]` slide 2 "Merging to main deploys the change to every machine", a diagram: its path of 5 boxes, "Developer" to "present service", is about 1093 px wide in a row and 534 px tall in a column, past the 899 by 303 px the slide holds at its smallest text. A slide shrinks a diagram until it fits. Every box and labelled arrow on the path adds a layer, so a path too long for a row and a column draws its labels under the size a room can read. The lint estimates the path from its box text and edge labels in the page's default face. Groups and branches add to it, so a path it passes can still draw small. Drop or shorten the edge labels on that path, or fold boxes together; else show part of the flow on this slide and leave the whole to the brief.
+> `deck.sections[0].blocks[0]` slide 2 "Merging to main deploys the change to every machine", a diagram: its path of 5 boxes, "Developer" to "present service", is about 1093 px wide in a row and 534 px tall in a column, past the 899 by 303 px the slide holds at its smallest text. A slide shrinks a diagram until it fits. Every box and labelled arrow on the path adds a layer, and a group adds its border and lays out whole, so a path too long for a row and a column draws its labels under the size a room can read. The lint estimates the path from its box text, edge labels, and groups in the page's default face. A wider box beside the path adds to it, so a path it passes can still draw small. Drop or shorten the edge labels on that path, fold boxes together, or drop a group; else show part of the flow on this slide and leave the whole to the brief.
 
 Repaired:
 

@@ -177,7 +177,7 @@ var table = []Limit{
 		Scope:  "a diagram on a slide",
 		Source: Renderer,
 		Rule:   "A slide diagram's longest path fits the slide at its smallest text. A row holds at most 899 px, a column 345 px, or 303 px under steps or a caption.",
-		Reason: "A slide shrinks a diagram until it fits. Every box and labelled arrow on the path adds a layer, so a path too long for a row and a column draws its labels under the size a room can read. The lint estimates the path from its box text and edge labels in the page's default face. Groups and branches add to it, so a path it passes can still draw small.",
+		Reason: "A slide shrinks a diagram until it fits. Every box and labelled arrow on the path adds a layer, and a group adds its border and lays out whole, so a path too long for a row and a column draws its labels under the size a room can read. The lint estimates the path from its box text, edge labels, and groups in the page's default face. A wider box beside the path adds to it, so a path it passes can still draw small.",
 	},
 	{
 		ID: DiagramSlideColumns, Level: Warn,

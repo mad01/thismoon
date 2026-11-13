@@ -727,7 +727,6 @@
               {
                 "from": "gw",
                 "to": "api",
-                "label": "route",
                 "flow": true,
                 "weight": 300,
                 "step": 1
@@ -735,31 +734,26 @@
               {
                 "from": "api",
                 "to": "pricing",
-                "label": "quote",
                 "step": 2
               },
               {
                 "from": "pricing",
                 "to": "api",
-                "label": "price",
                 "step": 2
               },
               {
                 "from": "api",
                 "to": "stock",
-                "label": "reserve",
                 "step": 3
               },
               {
                 "from": "api",
                 "to": "orders",
-                "label": "insert",
                 "step": 4
               },
               {
                 "from": "api",
                 "to": "events",
-                "label": "order placed",
                 "flow": true,
                 "weight": 300,
                 "step": 4
