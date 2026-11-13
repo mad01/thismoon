@@ -9,5 +9,7 @@ hints:
       via merge or rebase, never squash.
   lint-policy:
     message: >-
-      run make fmt && make lint in each touched component directory before
-      pushing (every component Makefile has both targets).
+      run make fmt-changed at the repo root, then make lint in each touched
+      component directory, before pushing. A component's own make fmt
+      rewraps files the change never touched, since components are not
+      golines-clean on main.

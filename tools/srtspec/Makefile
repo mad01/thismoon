@@ -35,7 +35,7 @@ tidy:
 	go mod tidy
 
 fmt:
-	golines -m 100 --base-formatter=gofumpt -w .
+	golines -m 100 --base-formatter=gofumpt --no-reformat-tags -w .
 
 lint:
 	golangci-lint run ./...

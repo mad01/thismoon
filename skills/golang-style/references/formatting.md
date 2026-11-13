@@ -92,7 +92,7 @@ This keeps the bare call form readable and reserves `_ =` for genuine one-offs. 
 
 ## Gap to fix: no `-race` in the test targets
 
-Every component Makefile has `fmt` and `lint` targets beside `test`, and the rule is to run `make fmt && make lint` in each touched component before pushing. What none of them has is `-race`: `make test` runs the plain suite. When touching a component with goroutines, run `go test -race ./...` in it before calling the change safe. Don't claim a tool is lint-clean unless you ran its lint target.
+Every component Makefile has `fmt` and `lint` targets beside `test`, and the rule is to run `make fmt-changed` at the repo root and `make lint` in each touched component before pushing. A component's own `make fmt` rewraps files the change never touched, since components are not golines-clean on main. What none of them has is `-race`: `make test` runs the plain suite. When touching a component with goroutines, run `go test -race ./...` in it before calling the change safe. Don't claim a tool is lint-clean unless you ran its lint target.
 
 ## In-source formatting rules
 
