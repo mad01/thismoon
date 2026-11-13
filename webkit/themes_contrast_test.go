@@ -189,8 +189,13 @@ func TestStatusTextReadsOnStatusFill(t *testing.T) {
 				if exception, ok := statusFloorExceptions[key]; ok {
 					visited[key] = true
 					if got >= minInkContrast {
-						t.Errorf("%s %s: --status-%s-text reads %.2f on its fill; drop its exception",
-							f.Name, mode, s, got)
+						t.Errorf(
+							"%s %s: --status-%s-text reads %.2f on its fill; drop its exception",
+							f.Name,
+							mode,
+							s,
+							got,
+						)
 					}
 					floor = exception
 				}
@@ -217,7 +222,12 @@ var inkShares = []float64{0.45, 0.55, 0.65}
 const statusFillShare = 0.14
 
 // statusColours names the semantic colour each status derives from.
-var statusColours = map[string]string{"info": "blue", "ok": "green", "warn": "amber", "error": "red"}
+var statusColours = map[string]string{
+	"info":  "blue",
+	"ok":    "green",
+	"warn":  "amber",
+	"error": "red",
+}
 
 // The status inks take the first share at which all four read 4.5 on their
 // fills, so a variant keeps as much hue as the bar allows: every earlier
@@ -310,12 +320,24 @@ func TestAccentBadgeInkReadsOnItsFill(t *testing.T) {
 			if exception, ok := accentFloorExceptions[key]; ok {
 				visited[key] = true
 				if got >= minInkContrast {
-					t.Errorf("%s %s: the accent ink reads %.2f; drop its exception", f.Name, mode, got)
+					t.Errorf(
+						"%s %s: the accent ink reads %.2f; drop its exception",
+						f.Name,
+						mode,
+						got,
+					)
 				}
 				floor = exception
 			}
 			if got < floor {
-				t.Errorf("%s %s: the accent ink at %.2f reads %.2f, want >= %.1f", f.Name, mode, share, got, floor)
+				t.Errorf(
+					"%s %s: the accent ink at %.2f reads %.2f, want >= %.1f",
+					f.Name,
+					mode,
+					share,
+					got,
+					floor,
+				)
 			}
 			for _, earlier := range inkShares {
 				if earlier >= share {

@@ -46,7 +46,8 @@ func nodeMapping(t *testing.T) map[string]map[string]string {
 	t.Helper()
 	shell := read(t, "shell.html")
 	block := func(selector string) string {
-		m := regexp.MustCompile(regexp.QuoteMeta(selector) + `\{([^}]*)\}`).FindStringSubmatch(shell)
+		m := regexp.MustCompile(regexp.QuoteMeta(selector) + `\{([^}]*)\}`).
+			FindStringSubmatch(shell)
 		if m == nil {
 			t.Fatalf("shell.html has no %s rule", selector)
 		}
@@ -75,7 +76,10 @@ func TestNodeColoursStayApart(t *testing.T) {
 	}
 	for _, r := range nodeRoles[:6] {
 		if !checked[r] {
-			t.Errorf("NODE_ROLES leads with %s, which is not a meaning colour this test keeps apart", r)
+			t.Errorf(
+				"NODE_ROLES leads with %s, which is not a meaning colour this test keeps apart",
+				r,
+			)
 		}
 	}
 	cluster := []string{"grey"}
@@ -124,11 +128,21 @@ func nodePalettes(t *testing.T) []nodePalette {
 			if mv.v == nil {
 				continue
 			}
-			p := nodePalette{name: f.Name + " " + mv.mode, canvas: mv.v.Roles["graph-bg"], colours: map[string]string{}}
+			p := nodePalette{
+				name:    f.Name + " " + mv.mode,
+				canvas:  mv.v.Roles["graph-bg"],
+				colours: map[string]string{},
+			}
 			for name, role := range mapping[mv.mode] {
 				hex := mv.v.Roles[role]
 				if !hexRE.MatchString(hex) {
-					t.Fatalf("%s: --node-%s reads --%s = %q, not a hex colour", p.name, name, role, hex)
+					t.Fatalf(
+						"%s: --node-%s reads --%s = %q, not a hex colour",
+						p.name,
+						name,
+						role,
+						hex,
+					)
 				}
 				p.colours[name] = hex
 			}
@@ -148,12 +162,24 @@ func closestPair(t *testing.T, palettes []nodePalette, names []string, floor flo
 			for _, b := range names[i+1:] {
 				ca, cb := p.colour(t, a), p.colour(t, b)
 				d := deltaE2000(t, ca, cb)
-				line := fmt.Sprintf("%s: --node-%s %s and --node-%s %s differ by %.2f", p.name, a, ca, b, cb, d)
+				line := fmt.Sprintf(
+					"%s: --node-%s %s and --node-%s %s differ by %.2f",
+					p.name,
+					a,
+					ca,
+					b,
+					cb,
+					d,
+				)
 				if d < worst {
 					worst, desc = d, line
 				}
 				if d < floor {
-					t.Errorf("%s, want >= %.1f; remap the --node-* roles in services/brain/internal/server/ui/shell.html", line, floor)
+					t.Errorf(
+						"%s, want >= %.1f; remap the --node-* roles in services/brain/internal/server/ui/shell.html",
+						line,
+						floor,
+					)
 				}
 			}
 		}
