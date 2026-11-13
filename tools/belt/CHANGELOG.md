@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.19.3](https://github.com/mad01/thismoon/compare/belt/v2.19.2...belt/v2.19.3) (2026-11-13)
+
+
+### Bug Fixes
+
+* **belt:** read wrapped commands in the git guards and treat message text as data ([#444](https://github.com/mad01/thismoon/issues/444)) ([ed5b21b](https://github.com/mad01/thismoon/commit/ed5b21bcdd0641364a4979fbb45da99e6754fa2c))
+
 ## [2.19.2](https://github.com/mad01/thismoon/compare/belt/v2.19.1...belt/v2.19.2) (2026-11-13)
 
 
