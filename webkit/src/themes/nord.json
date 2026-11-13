@@ -48,7 +48,7 @@
   },
   "dark": {
     "variant": "Polar Night",
-    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2 (MAD-372). amber (nord12) and purple (nord15) are lifted from 63% to 65% so nord0 ink reads 4.5 on them, where white sat at 2.8 (MAD-376). The roles derived from the three stay pinned to the published values, and the ink rule picks nord0 for on-red, on-amber, and on-purple",
+    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2 (MAD-372). amber (nord12) and purple (nord15) are lifted from 63% to 65% so nord0 ink reads 4.5 on them, where white sat at 2.8 (MAD-376). The roles derived from the three stay pinned to the published values, and the ink rule picks nord0 for on-red, on-amber, and on-purple. Series two is nord12 as published: nord9 sat 12.6 from nord8 in CIEDE2000, and no other frost colour clears both 20 from nord8 and 3:1 on nord1 (MAD-582)",
     "bg": "#2e3440",
     "paper": "#3b4252",
     "chip": "#434c5e",
@@ -65,7 +65,7 @@
     "yellow": "#ebcb8b",
     "blue": "#81a1c1",
     "purple": "#b894b1",
-    "series": ["#88c0d0", "#81a1c1", "#a3be8c", "#b48ead"],
+    "series": ["#88c0d0", "#d08770", "#a3be8c", "#b48ead"],
     "overrides": {
       "tag-a": "#595058",
       "tag-a-text": "#debbb2",
