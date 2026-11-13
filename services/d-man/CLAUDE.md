@@ -104,12 +104,17 @@ route lookup. `normalizeHost` strips case / trailing dot / port so
 rewrites a backend self-redirect `Location` back to the client's hostname so
 redirects don't leak `127.0.0.1:<port>`.
 
-The proxy also answers `GET /__this/sites.json` itself (any host) for the
-webkit ⌘K site picker. Pages behind d-man reach it same-origin. A page on a
-localhost port gets it cross-origin only when its `Origin` is loopback or ends
-in `.this` (`internal/proxy/cors.go`, reflected with `Vary: Origin`). **Never
-widen that to `*`**. The response enumerates the local services running on
-this machine.
+The proxy also answers `GET /__this/sites.json` itself for the webkit ⌘K
+site picker, on configured route hosts only: it sits after the block check
+and the route lookup, so an unknown host gets the 502 and a blocked host the
+block page. **Keep every path d-man answers itself below those two checks**:
+a page that points its own name at 127.0.0.1 (DNS rebinding) arrives with
+that name as its `Host`, and the 502 is what stops it reading the answer
+same-origin. Pages behind d-man reach it same-origin. A page on a localhost
+port gets it cross-origin from a configured host only when its `Origin` is
+loopback or ends in `.this` (`internal/proxy/cors.go`, reflected with
+`Vary: Origin`). **Never widen that to `*`**. The response enumerates the
+local services running on this machine.
 
 The list is live-filtered: each fetch probes every port-backed route's backend
 (`GET /`, anything `<500` = up) and lists only the ones responding. So a
@@ -120,7 +125,7 @@ shows only the ones actually present.
 
 `/__this/settings.json` is the other path d-man answers itself: the webkit
 UI settings (theme, palette per mode, font, size, fixation) that follow the
-user from one `.this` host to the next. Unlike `sites.json` it sits after the
+user from one `.this` host to the next. Like `sites.json` it sits after the
 block check and the route lookup in `ServeHTTP`. It never carries a CORS
 header: every page reaches it same-origin, and a write must prove that with
 its `Origin`. `serve` opens the store (`internal/settings`) once and hands the
@@ -148,8 +153,10 @@ go test ./...
 ## HTTP API
 
 - `GET /__this/sites.json`: navigable site list as JSON for the webkit ⌘K
-  picker, live-filtered to backends currently responding (30s cache, any
-  host). Answered by d-man itself, not proxied.
+  picker, live-filtered to backends currently responding (30s cache).
+  Answered by d-man itself, not proxied, and only on a configured route
+  host, after the block check: an unknown host gets the 502 and a blocked
+  host the block page.
 - `GET /__this/settings.json`: the webkit UI settings document,
   `{"v":1,"settings":{...}}` with only the keys ever set. `Cache-Control:
   no-store`, `X-Content-Type-Options: nosniff`. Answered only on a configured

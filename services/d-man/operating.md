@@ -73,10 +73,13 @@ Start with `d-man docs` for this doc, then `d-man doctor`: four read-only
 checks, one line each. config-loads parses and validates the resolved routes
 file. hosts-entries-present confirms the managed /etc/hosts block exists and
 names every configured host. proxy-answers fetches d-man's own
-/__this/sites.json on 127.0.0.1:80, the one path serve answers itself on any
-host. settings-answers fetches /__this/settings.json on 127.0.0.1:80 as the
-first configured route's host and wants a version 1 document. Doctor checks
-the wiring this machine has, not the wiring it should have.
+/__this/sites.json on 127.0.0.1:80 as the first configured route's host,
+because serve answers its own paths on configured hosts only.
+settings-answers fetches /__this/settings.json the same way and wants a
+version 1 document. With no route configured, settings-answers skips and
+proxy-answers sends a placeholder host instead, which d-man answers with its
+no-route 502. Doctor checks the wiring this machine has, not the wiring it
+should have.
 
 One host fails while others work: almost always the route, not the daemon.
 `d-man list` shows what is routed; a 502 means the route exists but the
@@ -87,11 +90,14 @@ A proxy-answers FAIL with connection refused means serve is down; an answer
 that is not the sites list means another process holds the port.
 
 The command-K site picker is empty on a page not behind d-man: the picker
-falls back to fetching /__this/sites.json cross-origin. d-man answers that
-only for this machine's own origins, a page whose Origin is loopback or
-ends in .this. Any other origin gets no CORS headers and the browser
-drops the response. Open the page through its .this host or its localhost
-port; there is no setting that widens this.
+falls back to fetching /__this/sites.json cross-origin. That fallback URL is
+fixed at http://present.this/__this/sites.json, so it works only when
+routes.toml has a route for present.this; without one the fetch fails and
+the picker stays empty. d-man answers the fallback only for this machine's
+own origins, a page whose Origin is loopback or ends in .this. Any other
+origin gets no CORS headers and the browser drops the response. Open the
+page through its .this host or its localhost port; there is no setting that
+widens this.
 
 A blocked host still loads over https: the block-page CA is not trusted yet.
 `sudo d-man ca install` fixes it once. The CA key is root-owned by design; a

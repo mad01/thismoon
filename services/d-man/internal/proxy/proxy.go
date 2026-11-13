@@ -22,16 +22,18 @@ type ctxKey int
 
 const origHostKey ctxKey = 0
 
-// SitesPath is a reserved path d-man answers itself (instead of proxying) on any
-// configured host: it returns the navigable site list as JSON for the ⌘K picker.
-// Because it resolves on whatever ".this" host the page is on, the picker's fetch
-// is same-origin.
+// SitesPath is a reserved path d-man answers itself (instead of proxying) on
+// every configured route host: it returns the navigable site list as JSON for
+// the ⌘K picker. Because it resolves on whatever ".this" host the page is on,
+// the picker's fetch is same-origin. It is answered after the block check and
+// the route lookup, so an unknown host gets the 502 and a blocked host the
+// block page: a page that rebinds its own name to 127.0.0.1 arrives with its
+// own Host and never reads the list.
 const SitesPath = "/__this/sites.json"
 
 // SettingsPath is the reserved path for the UI settings that follow the user
-// between .this hosts. Unlike SitesPath it is answered only on a configured
-// route host, after the block check: an unknown host still gets the 502 and a
-// blocked host the block page.
+// between .this hosts. Like SitesPath it is answered only on a configured
+// route host, after the block check.
 const SettingsPath = "/__this/settings.json"
 
 // probeTimeout caps a single backend liveness probe. Backends are on loopback,
@@ -139,18 +141,6 @@ func New(
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// d-man owns SitesPath on every host — serve the site list instead of
-	// proxying. Same-origin from the page's perspective; the CORS allowlist in
-	// cors.go lets a page not behind d-man (localhost dev) use it as a
-	// cross-origin fallback, and no one else.
-	if r.URL.Path == SitesPath {
-		w.Header().Set("Content-Type", "application/json")
-		setSitesCORS(w, r)
-		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = w.Write(h.sitesBody())
-		return
-	}
-
 	host := normalizeHost(r.Host)
 	// Blocked hosts never reach a backend — d-man owns them and serves the
 	// block-page minigame on every path.
@@ -158,18 +148,34 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.block.ServeHTTP(w, r)
 		return
 	}
+	// Every path d-man answers itself sits below this check, so a Host that is
+	// not a configured route (a rebound name, a bare 127.0.0.1) gets only this.
 	if _, ok := h.routes[host]; !ok {
 		http.Error(w,
 			fmt.Sprintf("d-man: no route for %q (add it to routes.toml)", host),
 			http.StatusBadGateway)
 		return
 	}
-	// The settings document is d-man's own, so it never reaches a backend.
-	if r.URL.Path == SettingsPath && h.settings != nil {
+	switch {
+	case r.URL.Path == SitesPath:
+		h.serveSites(w, r)
+	case r.URL.Path == SettingsPath && h.settings != nil:
+		// The settings document is d-man's own, so it never reaches a backend.
 		h.settings.ServeHTTP(w, r)
-		return
+	default:
+		h.rp.ServeHTTP(w, r)
 	}
-	h.rp.ServeHTTP(w, r)
+}
+
+// serveSites writes the site list instead of proxying. Pages behind d-man
+// fetch it same-origin; the CORS allowlist in cors.go lets a page not behind
+// d-man (localhost dev) read it cross-origin from a configured host, and no
+// one else.
+func (h *Handler) serveSites(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	setSitesCORS(w, r)
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(h.sitesBody())
 }
 
 // sitesBody returns the JSON body for SitesPath: the configured sites filtered

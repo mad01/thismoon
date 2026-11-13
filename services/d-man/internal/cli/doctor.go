@@ -23,10 +23,6 @@ import (
 // production port :80.
 const proxyBaseURL = "http://127.0.0.1:80"
 
-// proxyProbeURL is SitesPath on the daemon: the one path d-man answers itself
-// on any host, so a 200 there proves the proxy without involving a backend.
-const proxyProbeURL = proxyBaseURL + proxy.SitesPath
-
 // maxProbeBody caps how much of a probe answer doctor reads.
 const maxProbeBody = 64 << 10
 
@@ -101,56 +97,132 @@ func hostsEntriesPresent() doctor.Check {
 	}
 }
 
-// proxyAnswers GETs the daemon's own sites endpoint on the production port.
-// A refused connection means serve is not running; any answer that is not
-// the sites list means something other than d-man holds :80.
+// proxyAnswers GETs the daemon's own sites endpoint on the production port,
+// as the first configured route's host: the proxy answers it on no other.
+// With no route configured it probes as unroutedHost instead. A refused
+// connection means serve is not running; any answer that is not the sites
+// list (or, with no route, d-man's no-route 502) means something other than
+// d-man holds :80.
 func proxyAnswers() doctor.Check {
 	return doctor.Check{
 		Name: "proxy-answers",
 		Run: func(ctx context.Context) error {
-			ctx, cancel := context.WithTimeout(ctx, doctorProbeTimeout)
-			defer cancel()
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, proxyProbeURL, nil)
+			host, err := probeHost(flagConfig)
 			if err != nil {
 				return err
 			}
-			res, err := http.DefaultClient.Do(req)
-			if err != nil {
-				return fmt.Errorf("d-man serve is not answering on 127.0.0.1:80: %w", err)
+			if host == "" {
+				return probeUnrouted(ctx, proxyBaseURL)
 			}
-			defer func() { _ = res.Body.Close() }()
-			if res.StatusCode != http.StatusOK {
-				return fmt.Errorf(
-					"GET %s returned %d, want 200: something other than d-man may hold :80",
-					proxyProbeURL, res.StatusCode)
-			}
-			return nil
+			return probeSites(ctx, proxyBaseURL, host)
 		},
 	}
+}
+
+// probeSites fetches SitesPath from the daemon at baseURL as host and wants a
+// 200. A 502 carrying the proxy's no-route text means the daemon runs with
+// another routes file than doctor's.
+func probeSites(ctx context.Context, baseURL, host string) error {
+	ctx, cancel := context.WithTimeout(ctx, doctorProbeTimeout)
+	defer cancel()
+	url := baseURL + proxy.SitesPath
+	res, err := getAs(ctx, baseURL, proxy.SitesPath, host)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode == http.StatusBadGateway && bodyHas(res.Body, noRouteText) {
+		return noRouteError(url, host)
+	}
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf(
+			"GET %s as %s returned %d, want 200: something other than d-man may hold :80",
+			url, host, res.StatusCode)
+	}
+	return nil
+}
+
+// unroutedHost is the Host proxy-answers probes as when the routes file has
+// no route. The .invalid top-level domain is reserved, so no routes file
+// routes it and d-man answers it with its own no-route 502.
+const unroutedHost = "d-man-doctor.invalid"
+
+// probeUnrouted checks the daemon at baseURL for a routes file with no
+// route, where no host serves the sites list. It GETs / as unroutedHost and
+// wants d-man's no-route 502, an answer only d-man sends. Every serve
+// answers / that way, including one that predates route-only sites.
+func probeUnrouted(ctx context.Context, baseURL string) error {
+	ctx, cancel := context.WithTimeout(ctx, doctorProbeTimeout)
+	defer cancel()
+	res, err := getAs(ctx, baseURL, "/", unroutedHost)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode == http.StatusBadGateway && bodyHas(res.Body, noRouteText) {
+		return nil
+	}
+	return fmt.Errorf("GET %s/ as %s returned %d, want d-man's no-route 502: "+
+		"something other than d-man may hold :80", baseURL, unroutedHost, res.StatusCode)
+}
+
+// getAs GETs path from the daemon at baseURL with host as the Host header.
+// A transport error means serve is not answering. The caller closes the body.
+func getAs(ctx context.Context, baseURL, path, host string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Host = host
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("d-man serve is not answering on %s: %w", baseURL, err)
+	}
+	return res, nil
+}
+
+// probeHost is the Host doctor probes the daemon's own paths as: the first
+// route in the routes file at path, the only kind of host that serves them.
+// Validate keeps a route host off the block list, so a daemon running this
+// routes file never answers it with the block page. It is empty when the file
+// has no route, and a file that does not load skips the check.
+func probeHost(path string) (string, error) {
+	cfg, err := config.Load(path)
+	if err != nil {
+		return "", doctor.Skip("routes file does not load; config-loads says why")
+	}
+	if len(cfg.Routes) == 0 {
+		return "", nil
+	}
+	return cfg.Routes[0].Host(cfg.Suffix), nil
 }
 
 // noRouteText starts the body of the 502 the proxy answers for a host it has
 // no route for (proxy.Handler.ServeHTTP). A test pins the two together.
 const noRouteText = "d-man: no route for"
 
-// settingsAnswers GETs the settings document with the Host of the first
-// configured route, the only kind of host that serves it. Validate keeps a
-// route host off the block list, so a daemon running this routes file never
-// answers it with the block page. A serve built before the endpoint proxies
-// the path to that route's backend instead, so this catches an old daemon
-// still running after an upgrade.
+// noRouteError reports a no-route 502 for host: the daemon loaded another
+// routes file than the one doctor read.
+func noRouteError(url, host string) error {
+	return fmt.Errorf("GET %s as %s returned 502: the daemon has no route for %s, "+
+		"so it runs with another routes file than doctor's --config", url, host, host)
+}
+
+// settingsAnswers GETs the settings document as the probe host. A serve built
+// before the endpoint proxies the path to that route's backend instead, so
+// this catches an old daemon still running after an upgrade.
 func settingsAnswers() doctor.Check {
 	return doctor.Check{
 		Name: "settings-answers",
 		Run: func(ctx context.Context) error {
-			cfg, err := config.Load(flagConfig)
+			host, err := probeHost(flagConfig)
 			if err != nil {
-				return doctor.Skip("routes file does not load; config-loads says why")
+				return err
 			}
-			if len(cfg.Routes) == 0 {
+			if host == "" {
 				return doctor.Skip("no routes configured, so no host serves the settings")
 			}
-			return probeSettings(ctx, proxyBaseURL, cfg.Routes[0].Host(cfg.Suffix))
+			return probeSettings(ctx, proxyBaseURL, host)
 		},
 	}
 }
@@ -164,19 +236,13 @@ func probeSettings(ctx context.Context, baseURL, host string) error {
 	ctx, cancel := context.WithTimeout(ctx, doctorProbeTimeout)
 	defer cancel()
 	url := baseURL + proxy.SettingsPath
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	res, err := getAs(ctx, baseURL, proxy.SettingsPath, host)
 	if err != nil {
 		return err
 	}
-	req.Host = host
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("d-man serve is not answering on %s: %w", baseURL, err)
-	}
 	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode == http.StatusBadGateway && bodyHas(res.Body, noRouteText) {
-		return fmt.Errorf("GET %s as %s returned 502: the daemon has no route for %s, "+
-			"so it runs with another routes file than doctor's --config", url, host, host)
+		return noRouteError(url, host)
 	}
 	const stale = "the running serve may predate the settings endpoint; " +
 		"kill it so KeepAlive starts the current binary"

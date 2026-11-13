@@ -117,15 +117,18 @@ both, or neither, is a validation error.
 
 ## Cross-origin access
 
-`GET /__this/sites.json` is the one path d-man answers itself, on every
-configured host. Pages behind the front door fetch it same-origin and need
-no CORS header at all. For the localhost-port case (a page opened at
-`http://127.0.0.1:<port>` rather than through `<name>.this`), d-man reflects
-the request `Origin` in `Access-Control-Allow-Origin` alongside
-`Vary: Origin`. It does so only when that origin is an `http`/`https` URL whose
-host is loopback (`localhost`, `127.0.0.0/8`, `::1`, on any port) or ends in
-`.this`. Any other origin gets no CORS headers, so a page from the internet
-cannot read the list of services running on this machine.
+`GET /__this/sites.json` is answered by d-man itself, on every configured
+route host and no other: an unknown host gets the 502 and a blocked host the
+block page. So a page that points its own name at 127.0.0.1 cannot read the
+list as a same-origin request. Pages behind the front door fetch it
+same-origin and need no CORS header at all. For the localhost-port case (a
+page opened at `http://127.0.0.1:<port>` rather than through `<name>.this`),
+d-man reflects the request `Origin` in `Access-Control-Allow-Origin`
+alongside `Vary: Origin`. It does so only when that origin is an
+`http`/`https` URL whose host is loopback (`localhost`, `127.0.0.0/8`,
+`::1`, on any port) or ends in `.this`. Any other origin gets no CORS
+headers, so a page from the internet cannot read the list of services
+running on this machine.
 
 The allowlist is fixed: no config key or flag widens it.
 

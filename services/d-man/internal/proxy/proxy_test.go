@@ -86,6 +86,75 @@ func TestServesEmptySitesJSON(t *testing.T) {
 	}
 }
 
+// The site list names this machine's local services, so d-man answers it only
+// on a configured route host. A page that rebinds its own name to 127.0.0.1
+// reaches d-man with that name as its Host: it gets the 502 and no CORS
+// header, and a blocked host gets the block page, never the list.
+func TestSitesOnlyOnConfiguredHosts(t *testing.T) {
+	var backendHits, settingsHits atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		backendHits.Add(1)
+	}))
+	defer backend.Close()
+	addr := strings.TrimPrefix(backend.URL, "http://")
+	settings := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { settingsHits.Add(1) })
+
+	sites := []config.Site{
+		{Name: "csl", Host: "csl.this", URL: "http://csl.this/", Backend: addr},
+		{Name: "present", Host: "present.this", URL: "http://present.this/", Backend: addr},
+	}
+	routes := map[string]string{"csl.this": addr, "present.this": addr}
+	h, err := New(routes, sites, []string{"reddit.com"}, "", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.probe = alwaysUp
+
+	const origin = "http://localhost:7424"
+	get := func(host string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "http://csl.this"+SitesPath, nil)
+		req.Host = host
+		req.Header.Set("Origin", origin)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	for _, host := range []string{"csl.this", "present.this", "PRESENT.this:80", "present.this."} {
+		rec := get(host)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"present.this"`) {
+			t.Errorf("host %q: %d %q, want the site list", host, rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != origin {
+			t.Errorf("host %q: ACAO = %q, want the origin reflected", host, got)
+		}
+	}
+
+	for _, host := range []string{"evil.example", "evil.example:80", "127.0.0.1", "localhost", ""} {
+		rec := get(host)
+		if rec.Code != http.StatusBadGateway {
+			t.Errorf("host %q: code = %d, want 502", host, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), `"csl.this"`) {
+			t.Errorf("host %q: body = %q, want no site list", host, rec.Body.String())
+		}
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("host %q: ACAO = %q, want no CORS header", host, got)
+		}
+	}
+
+	rec := get("reddit.com")
+	if body := rec.Body.String(); !strings.Contains(body, "is blocked") ||
+		strings.Contains(body, `"csl.this"`) {
+		t.Errorf("blocked host: %d %q, want the block page and no site list", rec.Code, body)
+	}
+
+	if backendHits.Load() != 0 || settingsHits.Load() != 0 {
+		t.Errorf("backend hits %d, settings hits %d; want sites answered by the proxy alone",
+			backendHits.Load(), settingsHits.Load())
+	}
+}
+
 // A blocked host is served the local block-page minigame on every path, never
 // proxied and never a 502 — even when normalization is needed (case, port).
 func TestServesBlockPageForBlockedHost(t *testing.T) {
@@ -155,10 +224,11 @@ func TestRewritesBackendSelfRedirect(t *testing.T) {
 	}
 }
 
-func sitesBody(t *testing.T, h *Handler) string {
+// sitesBody fetches SitesPath as host, which must be a configured route.
+func sitesBody(t *testing.T, h *Handler, host string) string {
 	t.Helper()
-	req := httptest.NewRequest("GET", "http://csl.this"+SitesPath, nil)
-	req.Host = "csl.this"
+	req := httptest.NewRequest("GET", "http://"+host+SitesPath, nil)
+	req.Host = host
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec.Body.String()
@@ -185,7 +255,7 @@ func TestSitesFilteredByLiveness(t *testing.T) {
 	h.ttl = 0 // re-probe every request
 	h.probe = func(backend string) bool { return backend == "127.0.0.1:1" }
 
-	body := sitesBody(t, h)
+	body := sitesBody(t, h, "up.this")
 	if !strings.Contains(body, `"up.this"`) {
 		t.Errorf("body = %q, want the live site listed", body)
 	}
@@ -208,7 +278,7 @@ func TestSitesProbeCached(t *testing.T) {
 	h.probe = func(string) bool { probes.Add(1); return true }
 
 	for range 3 {
-		sitesBody(t, h)
+		sitesBody(t, h, "csl.this")
 	}
 	if got := probes.Load(); got != 1 {
 		t.Errorf("probe calls = %d, want 1 (cached within TTL)", got)

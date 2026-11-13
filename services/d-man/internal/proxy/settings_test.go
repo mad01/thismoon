@@ -99,26 +99,3 @@ func TestNilSettingsHandlerProxiesThePath(t *testing.T) {
 			rec.Body.String(), f.backendHits.Load())
 	}
 }
-
-// The settings branch must not move sites.json: it still answers on any
-// host, unknown and blocked ones included, with its CORS allowlist.
-func TestSitesUnchangedBySettings(t *testing.T) {
-	f := newSettingsFixture(t, true)
-	for _, host := range []string{"csl.this", "nope.this", "reddit.com"} {
-		req := httptest.NewRequest(http.MethodGet, "http://"+host+SitesPath, nil)
-		req.Host = host
-		req.Header.Set("Origin", "http://localhost:7424")
-		rec := httptest.NewRecorder()
-		f.h.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"csl.this"`) {
-			t.Errorf("host %q: %d %q, want the site list", host, rec.Code, rec.Body.String())
-		}
-		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:7424" {
-			t.Errorf("host %q: ACAO = %q, want the origin reflected", host, got)
-		}
-	}
-	if f.settingsHits.Load() != 0 || f.backendHits.Load() != 0 {
-		t.Errorf("settings hits %d, backend hits %d; want sites answered by the proxy alone",
-			f.settingsHits.Load(), f.backendHits.Load())
-	}
-}
