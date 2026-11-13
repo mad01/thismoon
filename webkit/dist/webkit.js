@@ -3382,8 +3382,8 @@ var Webkit = (() => {
     return !title.hasAttribute("role") && title.closest(TITLE_CONTAINERS) === null;
   }
   var INTERACTIVE_ANCESTORS = "a, button";
-  function wantsFilterKeys(badge) {
-    return badge.getAttribute("variant") === "filter" && !badge.hasAttribute("tabindex") && !badge.hasAttribute("role") && badge.closest(INTERACTIVE_ANCESTORS) === null;
+  function wantsFilterKeys(badge, managed = false) {
+    return badge.getAttribute("variant") === "filter" && (managed || !badge.hasAttribute("tabindex") && !badge.hasAttribute("role")) && badge.closest(INTERACTIVE_ANCESTORS) === null;
   }
   function isActivationKey(key) {
     return key === "Enter" || key === " ";
@@ -3864,14 +3864,12 @@ var Webkit = (() => {
       if (this.isConnected) this._sync();
     }
     _sync() {
-      if (this._managed) {
-        if (this.getAttribute("variant") === "filter") return;
-        this.removeAttribute("role");
-        this.removeAttribute("tabindex");
-        this._managed = false;
+      const wanted = wantsFilterKeys(this, this._managed);
+      if (wanted === this._managed) return;
+      if (!wanted) {
+        this._release();
         return;
       }
-      if (!wantsFilterKeys(this)) return;
       this.setAttribute("role", "button");
       this.setAttribute("tabindex", "0");
       this._managed = true;
@@ -3882,6 +3880,13 @@ var Webkit = (() => {
         e.preventDefault();
         this.click();
       });
+    }
+    // Hands back the attributes webkit added, unless the page has since put
+    // its own value there, and stops pressing on Enter and Space.
+    _release() {
+      if (this.getAttribute("role") === "button") this.removeAttribute("role");
+      if (this.getAttribute("tabindex") === "0") this.removeAttribute("tabindex");
+      this._managed = false;
     }
   };
   WkBadge.observedAttributes = ["variant"];

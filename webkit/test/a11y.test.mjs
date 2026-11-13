@@ -48,6 +48,26 @@ test('wantsFilterKeys: a filter badge inside a link or button stays a label', ()
   assert.match(INTERACTIVE_ANCESTORS, /\bbutton\b/);
 });
 
+// The role and tabindex webkit set on a badge it manages.
+const MANAGED = { variant: 'filter', role: 'button', tabindex: '0' };
+
+test('wantsFilterKeys: a managed badge keeps the keyboard despite the role and tabindex webkit set', () => {
+  assert.equal(wantsFilterKeys(element(MANAGED), true), true);
+  assert.equal(wantsFilterKeys(element({ ...MANAGED, active: '' }), true), true);
+  // Unmanaged, the same attributes read as the page's own wiring.
+  assert.equal(wantsFilterKeys(element(MANAGED)), false);
+});
+
+test('wantsFilterKeys: a managed badge moved into a link or button is released', () => {
+  assert.equal(wantsFilterKeys(element(MANAGED, { [INTERACTIVE_ANCESTORS]: { tagName: 'A' } }), true), false);
+  assert.equal(wantsFilterKeys(element(MANAGED, { [INTERACTIVE_ANCESTORS]: { tagName: 'BUTTON' } }), true), false);
+});
+
+test('wantsFilterKeys: a managed badge that is no longer a filter is released', () => {
+  assert.equal(wantsFilterKeys(element({ ...MANAGED, variant: 'stat' }), true), false);
+  assert.equal(wantsFilterKeys(element({ role: 'button', tabindex: '0' }), true), false);
+});
+
 test('isActivationKey: Enter and Space press, other keys do not', () => {
   assert.equal(isActivationKey('Enter'), true);
   assert.equal(isActivationKey(' '), true);

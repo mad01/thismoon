@@ -62,7 +62,8 @@ sets `role="heading"` + `aria-level="1"` when it has no role and sits outside
 `wk-card`, `.wk-card` and `wk-panel`; `wk-badge variant="filter"` without its
 own `tabindex` or `role`, outside any link or button, gets `role="button"` +
 `tabindex="0"`, and Enter and Space click it (badges that set either are the
-page's to wire).
+page's to wire). Each connect checks again, so a badge moved into a link or
+button hands both back.
 
 Layout/content: `<wk-page-header>` / `<wk-title>` / `<wk-subtitle>`,
 `<wk-card>` (`--accent` left bar; the lift on hover only for `a.wk-card`,
@@ -80,7 +81,8 @@ status variants `info|ok|warn|error` on the `status-<s>-bg`/`-text` roles;
 `variant="filter"` is a clickable pill, `[active]` fills it with
 `--chip-active-bg`, and a `<small>` inside holds a count; `accent` binds
 `var(--accent, --primary)`, mixed by the status rule in the stylesheet with the
-variant's `--accent-ink-share`, so its text reads 4.5:1. `<wk-chips>` lays
+variant's `--accent-ink-share`, so its text reads 4.5:1; under a page's own
+`--accent` the ink takes 65%, since the share is picked for `--primary`. `<wk-chips>` lays
 filter badges out in a wrapping row.
 
 Shared looks: one focus ring for everything the keyboard reaches except text

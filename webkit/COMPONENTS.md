@@ -259,7 +259,8 @@ section.
   stands as tall as a plain badge.
   `accent` mixes `--accent` (else `--primary`) by the status rule below, the ink
   moved `--accent-ink-share` toward `--text-1`, so its text reads 4.5:1 on its
-  tint where the variant allows.
+  tint where the variant allows. That share is picked for `--primary`, so under
+  a page's own `--accent` the ink moves the largest share, 65%.
 - `<wk-badge variant="info|ok|warn|error">` — semantic status badges on the
   `--status-<s>-bg` fill with `--status-<s>-text` ink, derived from
   `--blue|--green|--amber|--red` so the ink reads 4.5:1 on the fill. Use these for
