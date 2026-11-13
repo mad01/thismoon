@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-11-13 belt: the memory store skip reads only the settings Claude Code reads
 
-Change: thismoon #TBD. `belt hint session-start --agent claude-code` now reads `autoMemoryDirectory` from the files Claude Code reads it from: `~/.claude/settings.json`, the session's project files and the managed settings files. It reads `~/.claude/settings.local.json` only for a session started in the home directory, since Claude Code treats that file as local scope. It also keeps a store while auto memory is off. A machine that sets `autoMemoryDirectory` only in `~/.claude/settings.local.json` gets that store from belt again: Claude Code never loaded it in project sessions, so its facts reached no session.
+Change: thismoon #453. `belt hint session-start --agent claude-code` now reads `autoMemoryDirectory` from the files Claude Code reads it from: `~/.claude/settings.json`, the session's project files and the managed settings files. It reads `~/.claude/settings.local.json` only for a session started in the home directory, since Claude Code treats that file as local scope. It also keeps a store while auto memory is off. A machine that sets `autoMemoryDirectory` only in `~/.claude/settings.local.json` gets that store from belt again: Claude Code never loaded it in project sessions, so its facts reached no session.
 
 Run: to have Claude Code load that store as auto memory, move `autoMemoryDirectory` from the consuming repo's rendering of `~/.claude/settings.local.json` into its `~/.claude/settings.json` template, then `ralph up`. Without the move, nothing is needed: belt injects the store.
 
