@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/mad01/thismoon/compare/status/v0.10.0...status/v0.11.0) (2026-11-13)
+
+
+### Features
+
+* **webkit:** date, clock and URL state helpers, DOM tests, narrow header ([#457](https://github.com/mad01/thismoon/issues/457)) ([c79d4b6](https://github.com/mad01/thismoon/commit/c79d4b68cb2fed5de6fa137a53c871e080b15af0))
+
 ## [0.10.0](https://github.com/mad01/thismoon/compare/status/v0.9.0...status/v0.10.0) (2026-11-13)
 
 
