@@ -94,12 +94,12 @@ See [`docs/commands.md`](docs/commands.md) for every subcommand in detail.
 ## Endpoints
 
 - `GET /__this/sites.json`: navigable site list as JSON for the webkit ⌘K
-  picker, live-filtered to backends currently responding (any host; answered
-  by d-man itself, not proxied). If a running site is missing from the list,
-  confirm its backend is actually up on the declared port: a dead backend is
-  dropped, not shown as down. Cross-origin, it answers only pages on this
-  machine: an `Origin` on loopback or under `.this` (see
-  [config.md](config.md)).
+  picker, live-filtered to backends currently responding (any configured
+  host; answered by d-man itself, not proxied; an unknown host gets the 502).
+  If a running site is missing from the list, confirm its backend is actually
+  up on the declared port: a dead backend is dropped, not shown as down.
+  Cross-origin, it answers only pages on this machine: an `Origin` on loopback
+  or under `.this` (see [config.md](config.md)).
 - `GET` and `PATCH /__this/settings.json`: the webkit UI settings (theme,
   palette, font, size, fixation reading), one document for every `.this`
   host, so a theme picked on one host shows on the next. Answered by d-man on

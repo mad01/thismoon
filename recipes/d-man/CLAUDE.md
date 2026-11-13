@@ -46,7 +46,7 @@ Machine-specific wiring is deliberately not here (see `docs/adr/0006`):
 ralph up                         # sync the source, build + install
 t-man status d-man               # check the daemon (after one-time SETUP.md registration)
 t-man logs d-man
-curl http://localhost/__this/sites.json   # live-filtered site list (webkit ⌘K palette)
+curl -H 'Host: <route>.this' http://localhost/__this/sites.json   # live-filtered site list (webkit ⌘K palette); answered on a configured host only
 ```
 
 Editing routes needs no ralph run at all: the daemon watches its routes file

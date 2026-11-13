@@ -48,13 +48,14 @@ via temp file plus atomic rename. The same routes build the proxy's route map.
 A request on `:80` enters `internal/proxy.ServeHTTP`: `normalizeHost` strips
 case, trailing dot, and port. A blocklisted host is answered directly with the
 embedded block page from `internal/blockpage` (one game per visit, plus
-optional plugin games read per request from `games_dir`). d-man answers
-`/__this/sites.json` itself, live-filtered by probing each port-backed backend
-(30 s cache, shared probe round) and reflecting only a loopback or `.this`
-`Origin` back as `Access-Control-Allow-Origin`. After the block check and the
-route lookup, `/__this/settings.json` on a configured host goes to the
-settings handler instead of the backend: GET returns the document, PATCH
-merges into it once its `Origin` matches the request's own scheme and host.
+optional plugin games read per request from `games_dir`). A host with no
+route gets a 502. Only after the block check and the route lookup does d-man
+answer its own paths on a configured host. `/__this/sites.json` is
+live-filtered by probing each port-backed backend (30 s cache, shared probe
+round) and reflects only a loopback or `.this` `Origin` back as
+`Access-Control-Allow-Origin`. `/__this/settings.json` goes to the settings
+handler instead of the backend: GET returns the document, PATCH merges into
+it once its `Origin` matches the request's own scheme and host.
 Everything else goes through the `ReverseProxy` `Rewrite` to the backend
 resolved from the `Host` header (502 on miss), with `ModifyResponse`
 rewriting backend self-redirects back to the `.this` hostname. The `:443`
@@ -85,7 +86,7 @@ need no sudo.
 
 ## Interfaces
 
-HTTP: `GET /__this/sites.json` (answered by d-man on any host),
+HTTP: `GET /__this/sites.json` (answered by d-man on configured hosts),
 `GET`/`PATCH /__this/settings.json` (answered by d-man on configured hosts,
 no CORS headers), everything else proxied by `Host` header, on both `:80` and
 `:443`.
