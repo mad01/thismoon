@@ -46,6 +46,27 @@ test('every colour mode and edge kind maps to a role', () => {
   assert.equal(G.edgeRole('unknown'), G.edgeRole('link'));
 });
 
+test('edgeWeight: the relations the author wrote draw at full weight, a tag edge thinner and fainter', () => {
+  const full = { size: 1, alpha: 1 };
+  const light = { size: G.LIGHT_EDGE_SIZE, alpha: G.LIGHT_EDGE_ALPHA };
+  const got = Object.fromEntries(G.EDGE_KINDS.map((k) => [k, { ...G.edgeWeight(k) }]));
+  assert.deepEqual(got, { link: full, tag: light, supersedes: full, source: full, moc: full });
+  assert.ok(G.LIGHT_EDGE_SIZE < 1 && G.LIGHT_EDGE_ALPHA < 1, 'light is lighter than full');
+  assert.deepEqual({ ...G.edgeWeight('unknown') }, full, 'an unknown kind draws as a link');
+});
+
+test('legendEdgeKinds: the kinds drawn unlike a link, in kind order, only when the graph has them', () => {
+  const kinds = (es) => G.legendEdgeKinds(es).map((k) => k.kind);
+  // The fixture has link, source and tag edges.
+  assert.deepEqual(G.legendEdgeKinds(edges), [
+    { kind: 'tag', role: 'edge', alpha: G.LIGHT_EDGE_ALPHA },
+    { kind: 'source', role: 'node-blue', alpha: 1 },
+  ]);
+  assert.deepEqual(kinds([{ kind: 'link' }, { kind: 'moc' }]), [], 'a MOC link draws as a link');
+  assert.deepEqual(kinds([{ kind: 'supersedes' }, { kind: 'link' }]), ['supersedes']);
+  assert.deepEqual(kinds([]), []);
+});
+
 test('nodeKind, nodeLabel and noteRef', () => {
   assert.equal(G.nodeKind(nodes[0]), 'note');
   assert.equal(G.nodeKind(nodes[4]), 'dangling');
@@ -206,6 +227,11 @@ test('caption fits the circle and cuts with an ellipsis', () => {
   assert.equal(G.caption('ab, cdefghijk', 10, 6), 'ab\u2026', 'trailing punctuation goes before the ellipsis');
   assert.equal(G.caption('anything', 2, 13), '', 'no room for even one letter and the ellipsis');
   assert.equal(G.caption(undefined, 25, 8.5), '');
+});
+
+test('caption is cut by the glyph width of the font it is drawn in', () => {
+  assert.equal(G.caption('Postgres failover runbook', 25, 8.5, 0.6), 'Postgre…', 'a monospace font, cut shorter');
+  assert.equal(G.caption('Postgres failover runbook', 25, 8.5, 0.44), 'Postgres f…', 'a narrow font, cut longer');
 });
 
 test('staleness: stale, due within 30 days, fresh, none', () => {
@@ -586,6 +612,193 @@ test('boundsOf and fitRatio frame circles in the viewport', () => {
   assert.equal(G.fitRatio({ minX: 0, minY: 0, maxX: 1e6, maxY: 1 }, { width: 100, height: 100 }, 0, 0.1, 20), 20);
 });
 
+test('viewArea: the whole canvas, or the part left of an open side panel', () => {
+  const wide = { width: 1440, height: 800 };
+  assert.deepEqual(G.viewArea(wide, null), { x: 720, y: 400, width: 1440, height: 800 });
+  // The panel docked on the right of a wide window, and of a narrow one
+  // where it covers more.
+  assert.deepEqual(G.viewArea(wide, 1140), { x: 570, y: 400, width: 1140, height: 800 });
+  assert.deepEqual(G.viewArea({ width: 1000, height: 700 }, 700), { x: 350, y: 350, width: 700, height: 700 });
+  // A panel that leaves nothing free, or sits outside the canvas, counts
+  // as closed.
+  assert.deepEqual(G.viewArea(wide, 0), G.viewArea(wide, null));
+  assert.deepEqual(G.viewArea(wide, 1440), G.viewArea(wide, null));
+});
+
+// Two communities and the unlinked notes, as the global graph draws them:
+// community 0 is a hub, a note and the topic node it carries; community 1
+// a pair far to the right; u is an unlinked note.
+const islandNodes = [
+  { id: 'hub', title: 'Kubernetes networking and service mesh notes', degree: 9 },
+  { id: 'n1', title: 'Pods', degree: 2 },
+  { id: 'p', title: 'Postgres', degree: 3 },
+  { id: 'q', title: 'Replication', degree: 1 },
+  { id: 'u', title: 'Loose', degree: 0 },
+  { id: 'tag:k8s', title: 'k8s', degree: 2 },
+];
+const islandCommunity = { hub: 0, n1: 0, 'tag:k8s': 0, p: 1, q: 1, u: G.LOOSE };
+const islandNamesMap = G.communityNames(islandNodes, islandCommunity);
+const drawnAll = [
+  { id: 'hub', x: 0, y: 0, r: 40, note: true },
+  { id: 'n1', x: 100, y: 50, r: 20, note: true },
+  { id: 'tag:k8s', x: -60, y: -80, r: 20, note: false },
+  { id: 'p', x: 1000, y: 0, r: 30, note: true },
+  { id: 'q', x: 1080, y: 20, r: 16, note: true },
+  { id: 'u', x: 500, y: 900, r: 16, note: true },
+];
+
+const labelsOf = (drawn) => G.islandLabels(G.islandBoxes(drawn, islandCommunity), islandNamesMap);
+
+test('islandBoxes: every island drawn, the unlinked notes as one, boxed around its drawn nodes', () => {
+  const got = G.islandBoxes(drawnAll, islandCommunity);
+  assert.deepEqual(got.map((i) => i.community), [G.LOOSE, 0, 1], 'in community order');
+  assert.deepEqual(got[0].box, { minX: 484, minY: 884, maxX: 516, maxY: 916 });
+  assert.ok(got.every((i) => i.noted));
+  const topicOnly = G.islandBoxes(drawnAll.filter((d) => d.id !== 'hub' && d.id !== 'n1'), islandCommunity);
+  assert.deepEqual(topicOnly.map((i) => [i.community, i.noted]), [[G.LOOSE, true], [0, false], [1, true]],
+    'an island with only its topic node left is still drawn');
+  assert.deepEqual(G.islandBoxes([{ id: 'x', x: 0, y: 0, r: 5, note: true }], islandCommunity), [], 'a node with no community');
+});
+
+test('islandLabels: one per community with a note drawn, named as the legend names it, boxed around its drawn nodes', () => {
+  const got = labelsOf(drawnAll);
+  assert.deepEqual(got.map((l) => l.community), [0, 1], 'in community order, and the unlinked notes get none');
+  const legendNames = G.legend('cluster', islandNodes, { community: islandCommunity })
+    .filter((e) => e.communities.length === 1 && e.communities[0] !== G.LOOSE).map((e) => e.label);
+  assert.deepEqual(got.map((l) => l.name), legendNames, 'the label is the legend entry');
+  assert.ok(got[0].name.endsWith('…'), 'a long title is cut as the legend cuts it');
+  // The topic node sits on the island, so the box takes it in.
+  assert.deepEqual(got[0].box, { minX: -80, minY: -100, maxX: 120, maxY: 70 });
+  assert.deepEqual(got[1].box, { minX: 970, minY: -30, maxX: 1096, maxY: 36 });
+});
+
+test('islandLabels: a community hidden or filtered away has no label, nor one with only a topic node left', () => {
+  const without = (ids) => drawnAll.filter((d) => !ids.includes(d.id));
+  // Community 1 hidden by the legend: its notes are not drawn.
+  assert.deepEqual(labelsOf(without(['p', 'q'])).map((l) => l.community), [0],
+    'community 0 and the unlinked island still make two islands');
+  // Community 0's notes filtered away; its topic node still drawn.
+  assert.deepEqual(labelsOf(without(['hub', 'n1'])).map((l) => l.community), [1]);
+});
+
+test('islandLabels: a view of fewer than two islands has no labels', () => {
+  const only = (ids) => drawnAll.filter((d) => ids.includes(d.id));
+  assert.deepEqual(labelsOf(only(['hub', 'n1', 'tag:k8s'])), [], 'one community');
+  assert.deepEqual(labelsOf(only(['u'])), [], 'the unlinked notes alone');
+  assert.deepEqual(labelsOf([]), []);
+  assert.equal(labelsOf(only(['p', 'u'])).length, 1, 'one community and the unlinked island');
+});
+
+test('screenBox: the island box on screen, whichever way y points', () => {
+  const box = { minX: -80, minY: -100, maxX: 120, maxY: 70 };
+  // y down, as the DOM.
+  const down = (p) => ({ x: p.x / 2 + 300, y: p.y / 2 + 200 });
+  assert.deepEqual(G.screenBox(box, down), { minX: 260, minY: 150, maxX: 360, maxY: 235 });
+  // y up, as sigma's graph: the box's maxY lands on top.
+  const up = (p) => ({ x: p.x / 2 + 300, y: 200 - p.y / 2 });
+  assert.deepEqual(G.screenBox(box, up), { minX: 260, minY: 165, maxX: 360, maxY: 250 });
+});
+
+test('fitLabel: a name that fits stays, a long one is cut with an ellipsis to fit, none fits gives nothing', () => {
+  const measure = (s) => s.length * 10;
+  assert.equal(G.fitLabel('Postgres', 80, measure), 'Postgres');
+  const cut = G.fitLabel('Kubernetes networking', 120, measure);
+  assert.equal(cut, 'Kubernetes…');
+  assert.ok(measure(cut) <= 120);
+  assert.equal(G.fitLabel('Ops, notes', 60, measure), 'Ops…', 'no comma or space before the ellipsis');
+  assert.equal(G.fitLabel('Postgres', 15, measure), '');
+});
+
+// A canvas of 1000 by 600 with no side panel open, and islands and labels
+// on it in screen pixels: an island is {community, box}, a label of w
+// pixels names the island of its community.
+const canvas = G.viewArea({ width: 1000, height: 600 }, null);
+const isle = (community, minX, minY, maxX, maxY) => ({ community, box: { minX, minY, maxX, maxY } });
+const labelFor = (i, w) => ({ community: i.community, text: 'L' + i.community, w, h: 13, box: i.box });
+const spots = (kept) => kept.map((k) => [k.community, k.x, k.y]);
+
+test('unclutter: a label sits centred above its island, below it when that covers another island, above anyway when both do', () => {
+  const big = isle(0, 400, 300, 600, 400);
+  const lone = isle(3, 100, 300, 200, 400);
+  assert.deepEqual(spots(G.unclutter([labelFor(big, 100), labelFor(lone, 80)], [big, lone], canvas, 6)),
+    [[0, 500, 294], [3, 150, 294]], 'the gap above the island, nothing in the way');
+
+  // An island just above the big one: its label goes under its own island.
+  const above = isle(1, 420, 200, 580, 290);
+  assert.deepEqual(spots(G.unclutter([labelFor(big, 100), labelFor(above, 100)], [big, above], canvas, 6)),
+    [[0, 500, 419], [1, 500, 194]]);
+  // And one just below it too: both places cover an island and no label,
+  // so the label keeps the place above, over the island there.
+  const below = isle(2, 420, 410, 580, 500);
+  const all = [big, above, below];
+  assert.deepEqual(spots(G.unclutter([labelFor(big, 100), labelFor(above, 100), labelFor(below, 100)], all, canvas, 6)),
+    [[0, 500, 294], [1, 500, 194], [2, 500, 519]]);
+  assert.deepEqual(G.unclutter([], all, canvas, 6), []);
+});
+
+test('unclutter: a label is dropped only when both its places cover a kept label', () => {
+  // Two islands on the left, one over the other, and a narrow one to their
+  // right whose wide label meets the upper one's label above it and the
+  // lower one's label below it.
+  const upper = isle(0, 100, 100, 200, 160);
+  const lower = isle(1, 100, 200, 200, 260);
+  const narrow = isle(2, 220, 100, 260, 175);
+  const islands = [upper, lower, narrow];
+  assert.deepEqual(spots(G.unclutter([labelFor(narrow, 120)], islands, canvas, 6)), [[2, 240, 94]],
+    'alone, it sits above: no island is in the way');
+  assert.deepEqual(spots(G.unclutter(islands.map((i) => labelFor(i, 120)), islands, canvas, 6)),
+    [[0, 150, 94], [1, 150, 194]]);
+});
+
+test('unclutter: a label that would cover an earlier one goes below its island, within the gap counts', () => {
+  const left = isle(0, 100, 100, 200, 160);
+  const right = (minX) => isle(1, minX, 100, minX + 100, 160);
+  const place = (r) => spots(G.unclutter([labelFor(left, 120), labelFor(r, 120)], [left, r], canvas, 6));
+  assert.deepEqual(place(right(300)), [[0, 150, 94], [1, 350, 94]], 'apart, both above');
+  // The labels come 3 pixels apart, inside the gap: the later one moves.
+  assert.deepEqual(place(right(223)), [[0, 150, 94], [1, 273, 179]]);
+  assert.deepEqual(place(right(226)), [[0, 150, 94], [1, 276, 94]], 'just clear of the gap');
+});
+
+test('unclutter: a label stays inside the view area while its island shows there, and goes with it', () => {
+  // The island's top is off the canvas: its label holds the top edge, over
+  // its own island.
+  const top = isle(0, 400, -100, 600, 50);
+  // Partly off the left edge, and wholly off it.
+  const edge = isle(1, -150, 300, 50, 400);
+  const gone = isle(2, -300, 450, -100, 550);
+  const islands = [top, edge, gone];
+  const labels = islands.map((i) => labelFor(i, 100));
+  assert.deepEqual(spots(G.unclutter(labels, islands, canvas, 6)), [[0, 500, 13], [1, 50, 294]]);
+
+  // The side panel covers the canvas right of 700: an island half under it
+  // keeps its label left of the panel, one wholly under it loses it.
+  const panelOpen = G.viewArea({ width: 1000, height: 600 }, 700);
+  const half = isle(3, 650, 300, 800, 400);
+  const under = isle(4, 750, 100, 900, 200);
+  assert.deepEqual(spots(G.unclutter([labelFor(half, 100), labelFor(under, 100)], [half, under], panelOpen, 6)),
+    [[3, 650, 294]]);
+});
+
+test('labelFade: full while no caption shows, gone once every caption does, between as they take over', () => {
+  const radii = [16, 25, 40];
+  const minPx = 22;
+  const hubCaption = 40 / minPx;
+  const allCaptions = 16 / minPx;
+  assert.equal(G.labelFade(4.5, radii, minPx), 1, 'the global graph at fit');
+  assert.equal(G.labelFade(hubCaption, radii, minPx), 1);
+  assert.equal(G.labelFade(allCaptions, radii, minPx), 0);
+  assert.equal(G.labelFade(0.2, radii, minPx), 0);
+  const mid = G.labelFade((hubCaption + allCaptions) / 2, radii, minPx);
+  assert.ok(near(mid, 0.5), 'half way: ' + mid);
+  // Captions agree: at the ratio the fade ends every circle shows its caption.
+  assert.ok(radii.every((r) => G.captionShown(r, allCaptions, minPx)));
+  // One radius (Size by links off) switches at once.
+  assert.equal(G.labelFade(25 / minPx + 0.01, [25], minPx), 1);
+  assert.equal(G.labelFade(25 / minPx - 0.01, [25], minPx), 0);
+  assert.equal(G.labelFade(1, [], minPx), 1);
+});
+
 test('easeOut, tweenValue and dimOpacity drive the hover fade', () => {
   assert.equal(G.easeOut(0), 0);
   assert.equal(G.easeOut(1), 1);
@@ -757,11 +970,150 @@ test('islandsFromLayout: circles close together share an island, a lone one has 
   known.d = [2000, 0];
   known.e = [2080, 0];
   known.f = [5000, 5000];
-  const got = G.islandsFromLayout(known, r, P);
+  const links = [L('a', 'f'), L('b', 'c'), L('d', 'e')];
+  const got = G.islandsFromLayout(known, links, r, P);
   assert.deepEqual(got, { a: 0, b: 0, c: 0, d: 1, e: 1 });
   // Bigger circles at the same centres touch: the border gap counts.
-  assert.equal(G.islandsFromLayout({ p: [0, 0], q: [300, 0] }, () => 120, P).q, 0);
-  assert.deepEqual(G.islandsFromLayout({}, r, P), {});
+  assert.equal(G.islandsFromLayout({ p: [0, 0], q: [300, 0] }, [L('p', 'q')], () => 120, P).q, 0);
+  assert.deepEqual(G.islandsFromLayout({}, [], r, P), {});
+});
+
+test('islandsFromLayout: the unlinked notes\' island takes no number, so a reload numbers the communities without a gap', () => {
+  const P = G.simParams(true);
+  const r = () => 20;
+  const known = {};
+  // A linked group of four, the unlinked notes on an island of three, and
+  // a linked pair: by size the unlinked island would come second.
+  ['a1', 'a2', 'a3', 'a4'].forEach((id, i) => { known[id] = [i * 80, 0]; });
+  ['u1', 'u2', 'u3'].forEach((id, i) => { known[id] = [2000 + i * 80, 0]; });
+  ['b1', 'b2'].forEach((id, i) => { known[id] = [4000 + i * 80, 0]; });
+  const links = [L('a1', 'a2'), L('a2', 'a3'), L('a3', 'a4'), L('b1', 'b2')];
+  const ids = Object.keys(known);
+  const islands = G.islandsFromLayout(known, links, r, P);
+  assert.equal(islands.u1, undefined, 'an unlinked note keeps no island number');
+  const got = G.communities(ids, links, components, islands);
+  assert.deepEqual(got, { a1: 0, a2: 0, a3: 0, a4: 0, u1: G.LOOSE, u2: G.LOOSE, u3: G.LOOSE, b1: 1, b2: 1 });
+  const keys = G.legend('cluster', ids.map((id) => ({ id, title: id, degree: 1 })), { community: got })
+    .map((e) => e.communities.join(','));
+  assert.deepEqual(keys, ['0', '1', String(G.LOOSE)], 'the legend counts from 0 with no number skipped');
+});
+
+// tick runs one tick the way d3-force does: every force at alpha, then
+// each node moves by its velocity after the decay, or sits at fx and fy
+// when it has them.
+function tick(nodes, forces, alpha, decay) {
+  forces.forEach((f) => f(alpha));
+  nodes.forEach((d) => {
+    if (d.fx == null) d.x += (d.vx *= decay);
+    else {
+      d.x = d.fx;
+      d.vx = 0;
+    }
+    if (d.fy == null) d.y += (d.vy *= decay);
+    else {
+      d.y = d.fy;
+      d.vy = 0;
+    }
+  });
+}
+
+const meanOf = (nodes) => [nodes.reduce((s, d) => s + d.x, 0) / nodes.length, nodes.reduce((s, d) => s + d.y, 0) / nodes.length];
+
+// lopsided pushes the first node away from the others and the others not
+// at all, as d3's degree-weighted link force does to a stretched link, so
+// on its own it carries the mean off.
+function lopsided(nodes) {
+  return (alpha) => {
+    nodes[0].vx += 40 * alpha;
+    nodes[0].vy -= 15 * alpha;
+  };
+}
+
+// reheats runs the forces from alpha 0.3 down to 0.02, rounds times, and
+// answers the mean after each round.
+function reheats(nodes, forces, rounds) {
+  const means = [];
+  for (let r = 0; r < rounds; r++) {
+    for (let alpha = 0.3; alpha >= 0.02; alpha *= 0.98) tick(nodes, forces, alpha, 0.7);
+    means.push(meanOf(nodes));
+  }
+  return means;
+}
+
+function localNodes() {
+  return [[100, 200], [140, 260], [60, 250], [120, 150]].map(([x, y], i) => ({ id: 'n' + i, x, y, vx: 0, vy: 0 }));
+}
+
+test('holdForce: over several reheats the shape settles but the mean stays put', () => {
+  const free = localNodes();
+  const drift = reheats(free, [lopsided(free)], 4);
+  assert.ok(drift[3][0] - 125 > 100, 'without the hold the mean travels');
+
+  const nodes = localNodes();
+  const hold = G.holdForce();
+  hold.initialize(nodes);
+  const means = reheats(nodes, [lopsided(nodes), hold], 4);
+  means.forEach(([x, y]) => {
+    assert.ok(near(x, 105) && near(y, 215), 'the mean stays at (105, 215), got ' + x + ', ' + y);
+  });
+  assert.ok(nodes[0].x - nodes[1].x > 40, 'the push still moves the first node away from the rest');
+});
+
+// follow pulls every node but the first toward it, as the links of a
+// dragged hub pull its neighbours along.
+function follow(nodes) {
+  return (alpha) => nodes.slice(1).forEach((d) => {
+    d.vx += (nodes[0].x - d.x) * alpha;
+    d.vy += (nodes[0].y - d.y) * alpha;
+  });
+}
+
+test('holdForce: a drag carries the mean along, and after the drop it eases back to where it was before', () => {
+  const nodes = localNodes();
+  const forces = [follow(nodes), G.holdForce()];
+  const hold = forces[1];
+  hold.initialize(nodes);
+  // The drag: the hold lets go, and the hub is pinned 10 pixels further
+  // right on each of 40 ticks.
+  hold.hold(false);
+  const hub = nodes[0];
+  const fromX = hub.x;
+  for (let i = 1; i <= 40; i++) {
+    hub.fx = fromX + 10 * i;
+    hub.fy = hub.y;
+    tick(nodes, forces, 0.1, 0.4);
+  }
+  const dropped = meanOf(nodes);
+  assert.ok(dropped[0] - 105 > 200, 'the neighbours follow the hub, so the mean moves: ' + dropped[0]);
+  assert.ok(near(hub.x, fromX + 400), 'the hub is where the drag left it');
+
+  // The drop: the hub goes free and the hold takes the mean back home.
+  hub.fx = null;
+  hub.fy = null;
+  hold.hold(true);
+  tick(nodes, forces, 0.1, 0.4);
+  const first = meanOf(nodes);
+  assert.ok(first[0] < dropped[0] && first[0] - 105 > (dropped[0] - 105) / 2, 'it eases back, it does not jump: ' + first[0]);
+  for (let i = 0; i < 90; i++) tick(nodes, forces, 0.1, 0.4);
+  const [x, y] = meanOf(nodes);
+  assert.ok(Math.abs(x - 105) < 0.5 && Math.abs(y - 215) < 0.5, 'home again at (105, 215), got ' + x + ', ' + y);
+
+  // A hold(true) with no drag before it moves nothing.
+  hold.hold(true);
+  reheats(nodes, [lopsided(nodes), hold], 2).forEach(([mx, my]) => {
+    assert.ok(Math.abs(mx - 105) < 0.5 && Math.abs(my - 215) < 0.5, 'still at home');
+  });
+  const empty = G.holdForce();
+  empty.initialize([]);
+  assert.doesNotThrow(() => empty(0.3), 'a graph with no node shown');
+});
+
+test('sameIds: the same ids in any order need no relayout, one more, one less or another does', () => {
+  assert.equal(G.sameIds(['a', 'b', 'c'], ['c', 'a', 'b']), true);
+  assert.equal(G.sameIds([], []), true);
+  assert.equal(G.sameIds(['a', 'b'], ['a', 'b', 'c']), false, 'a node shown again');
+  assert.equal(G.sameIds(['a', 'b', 'c'], ['a', 'c']), false, 'a node hidden');
+  assert.equal(G.sameIds(['a', 'b'], ['a', 'd']), false, 'one hidden and another shown');
 });
 
 function discsOf(homes) {

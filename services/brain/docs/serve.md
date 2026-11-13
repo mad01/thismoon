@@ -166,15 +166,44 @@ space between the islands:
 - A poll keeps every note's community, so the islands stay where they are.
   A new note joins the community most of its neighbours are in; new notes
   linked only among themselves form a new island.
-- A reload reads the islands back out of the positions: nodes whose
-  circles are less than 100 units apart share an island. A graph that
+- A reload reads the islands back out of the positions: linked notes
+  whose circles are less than 100 units apart share an island. The
+  unlinked notes take no part, so the communities still count from 0
+  with no number skipped. A graph that
   changed while the page was closed keeps its islands, even when Louvain
   would now split it another way.
 - A filter, a search or a community hidden in the legend keeps the
   communities and the islands: the nodes still shown gather on their own
   islands, and the hidden ones keep their places.
-- A local graph has no islands: its notes spread around the centre with the
-  plain forces.
+- The global graph writes each community's name over its island, in every
+  colour mode. The label is the name the legend gives the community,
+  centred just above the island's drawn nodes, in the font picked in the
+  header. It keeps one size at any zoom and has a ring in the canvas
+  colour, so it reads over an edge. The labels sit under the nodes and
+  edges, so they never cover one. A community the legend hides or the
+  filters empty has no label, the unlinked notes have none, and a view of
+  fewer than two islands has none. A label that would cover another
+  island, or the label of a larger island, moves just below its own
+  island. When both places cover another island, it stays above anyway.
+  Two labels never overlap: a label is left out only when both places
+  cover the label of a larger island. A label stays
+  inside the part of the canvas left of an open side panel: an island
+  partly off that part keeps its label at the edge, and one wholly off it
+  has none. A long name is cut to its island's width, or to 160 pixels
+  over a narrower island. The labels fade as the camera zooms in and the
+  notes' captions appear, and are gone once every note shows its caption.
+  A hover dims them with the rest of the graph.
+- A local graph has no islands and no island labels: its notes spread
+  around the centre with the plain forces, and a force holds the mean of
+  its notes in place, so a filter, a search or a legend toggle settles its
+  shape without carrying it away from the camera. A drag lets the mean go,
+  so the graph follows the dragged node; after the drop the graph eases
+  back to where its mean was before the drag.
+
+A filter, a search or a legend press runs the simulation again over the
+nodes still shown. One that leaves the shown nodes as they were, such as
+hiding a community with no note in a local graph, runs nothing, so the
+graph does not move.
 
 The simulation stays live. Dragging a node on the global graph pulls its
 linked neighbours along; on release the node springs back among them, and
@@ -194,10 +223,10 @@ run over the whole graph rests.
   (`forceSimulation`, `forceLink`, `forceManyBody`, `forceCollide`,
   `forceX`, `forceY`), and `louvain`, which finds the communities.
 - `graph.js` sets `window.BrainGraph` to pure helpers with no DOM access:
-  filters, colour roles, node radii and captions, depth search, the
-  simulation settings, where a new node starts, camera framing, search
-  hits, community names, the legend's community toggles and the side
-  panel's facts and neighbour list.
+  filters, colour roles, edge weights, node radii and captions, depth
+  search, the simulation settings, where a new node starts, camera
+  framing, search hits, community names, the island labels, the legend's
+  community toggles and the side panel's facts and neighbour list.
 - `app.js` is an IIFE over `window.Webkit`, `window.BrainSigma` and
   `window.BrainGraph`. It polls `/api/state` every 10 seconds and refetches
   when the key changes.
@@ -210,6 +239,20 @@ run over the whole graph rests.
   staleness or cluster: each community in its own colour, named in the
   legend after its note with the most links. Review counts what needs action: promotions, the stale queue
   and check errors. Check warnings show in its Check tab only.
+- An edge shows its kind by colour and weight. A link, a MOC's link, a
+  source and a supersedes are relations the author wrote and draw at full
+  weight: supersedes orange, source blue, the other two grey. A tag edge
+  joins a note to a topic node, which is no link the author wrote. It
+  draws grey at half the width and 45% of the opacity, also between
+  islands. A hover draws every edge of the hovered node at twice its
+  width, and a tag edge then at full opacity like a link. The legend
+  lists the kinds drawn unlike a plain link, each as a line in its colour
+  and opacity.
+- A note's caption is in the font picked in the header, a step heavier
+  than the page's text. The pill under a hovered node is as large as the
+  legend's text. A change of the font cuts the captions again to fit the
+  new font's letters. A change of the text size reaches the pill on the
+  next font change or reload.
 - In the cluster colour mode each community in the legend is a toggle
   button: a press hides that community's notes and their edges and dims
   the entry, the next press shows them again. The entry for the
@@ -243,6 +286,10 @@ run over the whole graph rests.
   link followed inside the popup moves the panel too. Esc inside the
   panel, or its close button, closes it. The panel reads the graph the
   page already holds and makes no request of its own.
+- While the side panel is open, the camera works in the part of the
+  graph left of it: a neighbour's button centres its node there, and a
+  fit (the Fit button, a filter, a search, a local graph) frames the
+  nodes there, so nothing it moves to lands under the panel.
 - A search reduces the graph to the notes it finds and the edges among
   them; Esc in the search box clears it.
 - The UI fetches the whole graph (`/api/graph` with only `topics`) and

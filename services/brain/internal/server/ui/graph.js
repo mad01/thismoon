@@ -44,6 +44,16 @@
   // Edges are one neutral grey, as their captions name the kind; the two
   // kinds that point at another note's lifecycle keep a hue.
   var EDGE_ROLES = { link: 'edge', tag: 'edge', supersedes: 'node-orange', source: 'node-blue', moc: 'edge' };
+  // How strongly each edge kind is drawn: size scales its width, alpha its
+  // opacity. A wikilink, a MOC's link, a source and a supersedes are
+  // relations the author wrote, so they draw at full weight. A tag edge
+  // joins a note to the topic node of a tag it carries, which is no link
+  // the author wrote, so it draws thinner and fainter.
+  var LIGHT_EDGE_SIZE = 0.5;
+  var LIGHT_EDGE_ALPHA = 0.45;
+  var EDGE_FULL = { size: 1, alpha: 1 };
+  var EDGE_LIGHT = { size: LIGHT_EDGE_SIZE, alpha: LIGHT_EDGE_ALPHA };
+  var EDGE_WEIGHTS = { link: EDGE_FULL, tag: EDGE_LIGHT, supersedes: EDGE_FULL, source: EDGE_FULL, moc: EDGE_FULL };
   var NONE_ROLE = 'node-grey';
   var DANGLING_ROLE = 'node-beige';
   var TAG_ROLE = 'node-teal';
@@ -134,6 +144,16 @@
   // the ones DEFAULT_FILTERS shows.
   function coversAll(have, need) {
     return Object.keys(need).every(function (id) { return !!have[id]; });
+  }
+
+  // sameIds says whether two lists hold the same ids, in any order. A
+  // filter, legend or search change that leaves the ids a view shows as
+  // they were needs no relayout, so the graph does not move.
+  function sameIds(a, b) {
+    if (a.length !== b.length) return false;
+    var had = {};
+    a.forEach(function (id) { had[id] = true; });
+    return b.every(function (id) { return had[id]; });
   }
 
   // matchesFilters says whether a note node passes the vault, tier, tag and
@@ -341,17 +361,19 @@
     return Math.max(6, Math.min(13, radius * 0.34));
   }
 
-  // CHAR_EM is an average sans-serif glyph width in ems; captions are
-  // measured with it, since this file has no canvas to measure text on.
+  // CHAR_EM is an average sans-serif glyph width in ems, which captions
+  // are measured with when the caller has not measured its font.
   var CHAR_EM = 0.52;
   // A caption may span this share of the circle's diameter.
   var CAPTION_FILL = 0.88;
 
   // caption is the text drawn inside a node: the label, cut with an
   // ellipsis to the width the circle leaves at the caption's font size.
-  function caption(text, radius, fontSize) {
+  // charEm is the caption font's average glyph width in ems (CHAR_EM when
+  // not given), so a wide font such as a monospace one is cut shorter.
+  function caption(text, radius, fontSize, charEm) {
     var s = String(text || '').replace(/\s+/g, ' ').trim();
-    var fit = Math.floor((2 * radius * CAPTION_FILL) / (fontSize * CHAR_EM));
+    var fit = Math.floor((2 * radius * CAPTION_FILL) / (fontSize * (charEm || CHAR_EM)));
     if (s.length <= fit) return s;
     if (fit < 2) return '';
     return s.slice(0, fit - 1).replace(/[\s.,;:-]+$/, '') + '\u2026';
@@ -456,6 +478,26 @@
 
   function edgeRole(kind) {
     return EDGE_ROLES[kind] || EDGE_ROLES.link;
+  }
+
+  // edgeWeight is the {size, alpha} an edge of kind draws with
+  // (EDGE_WEIGHTS); an unknown kind draws as a link.
+  function edgeWeight(kind) {
+    return EDGE_WEIGHTS[kind] || EDGE_WEIGHTS.link;
+  }
+
+  // legendEdgeKinds lists the edge kinds among edges that are drawn unlike
+  // a plain link, in EDGE_KINDS order, as {kind, role, alpha}: a kind with
+  // a hue of its own, or one drawn lighter. The legend shows each as a
+  // line of its colour at its alpha.
+  function legendEdgeKinds(edges) {
+    var has = {};
+    edges.forEach(function (e) { has[e.kind] = true; });
+    return EDGE_KINDS.filter(function (k) {
+      return has[k] && (edgeRole(k) !== EDGE_ROLES.link || edgeWeight(k) !== EDGE_WEIGHTS.link);
+    }).map(function (k) {
+      return { kind: k, role: edgeRole(k), alpha: edgeWeight(k).alpha };
+    });
   }
 
   // legend lists {label, role} for a colour mode: every value the mode
@@ -960,13 +1002,18 @@
   // islandsFromLayout reads the islands back out of a laid out graph, so a
   // reload keeps the groups the layout shows even when the graph changed
   // and Louvain would split it another way. known maps ids to positions,
-  // radiusOf(id) is a node's circle radius. Two nodes whose circles are
-  // less than P.islandJoin apart sit on one island: inside an island the
-  // circles are about 2 * collidePad apart, between islands at least
-  // islandGapMin. Islands are numbered by size from 0; a node alone keeps
-  // no number, so it joins its neighbours' community (communities).
-  function islandsFromLayout(known, radiusOf, P) {
-    var ids = Object.keys(known);
+  // links are the links among them (simLinks), radiusOf(id) is a node's
+  // circle radius. Two nodes whose circles are less than P.islandJoin
+  // apart sit on one island: inside an island the circles are about 2 *
+  // collidePad apart, between islands at least islandGapMin. Islands are
+  // numbered by size from 0; a node alone keeps no number, so it joins its
+  // neighbours' community (communities). A node with no link takes no part:
+  // communities makes it LOOSE whatever island it sits on, so the island
+  // the unlinked notes share would keep a number no node holds, a gap in
+  // the numbers that skips a palette colour.
+  function islandsFromLayout(known, links, radiusOf, P) {
+    var linked = adjacency(links);
+    var ids = Object.keys(known).filter(function (id) { return linked[id]; });
     var maxR = 0;
     ids.forEach(function (id) { maxR = Math.max(maxR, radiusOf(id)); });
     var cell = 2 * maxR + P.islandJoin;
@@ -1153,6 +1200,58 @@
     return force;
   }
 
+  // A held mean that is off its home moves this share of the way back on
+  // each tick, so after a drag the graph eases home over a second or so
+  // instead of jumping there.
+  var HOLD_EASE = 0.1;
+
+  // holdForce is a d3-force force that keeps the mean of its nodes at its
+  // home, the mean they had when the simulation took them. Each tick it
+  // takes the shared part out of their velocities, so the shape still
+  // settles but the whole does not travel, and moves every node by the
+  // same step, HOLD_EASE of the way from the mean to the home. A local
+  // graph needs it: it has no islands, and d3's link force weights each
+  // pull by degree, so links and charge together carry the graph off as
+  // one block on every reheat while the camera stays. force.hold(false)
+  // lets the mean go, as while a drag pulls a node and its neighbours
+  // along; force.hold(true) holds it again at the same home, so after the
+  // drop the graph eases back to where it was before the drag. It goes
+  // after the other forces, so it sees their pushes.
+  function holdForce() {
+    var nodes = [];
+    var home = null;
+    var held = true;
+    function meanOf() {
+      var m = { x: 0, y: 0, vx: 0, vy: 0 };
+      nodes.forEach(function (d) {
+        m.x += d.x;
+        m.y += d.y;
+        m.vx += d.vx || 0;
+        m.vy += d.vy || 0;
+      });
+      Object.keys(m).forEach(function (k) { m[k] /= nodes.length; });
+      return m;
+    }
+    function force() {
+      if (!held || !home) return;
+      var m = meanOf();
+      var dx = (m.x - home.x) * HOLD_EASE;
+      var dy = (m.y - home.y) * HOLD_EASE;
+      nodes.forEach(function (d) {
+        d.x -= dx;
+        d.y -= dy;
+        d.vx = (d.vx || 0) - m.vx;
+        d.vy = (d.vy || 0) - m.vy;
+      });
+    }
+    force.hold = function (on) { held = !!on; };
+    force.initialize = function (n) {
+      nodes = n;
+      home = n.length ? meanOf() : null;
+    };
+    return force;
+  }
+
   // ── camera ──
 
   // boundsOf is the box around circles [{x, y, r}], or null for none.
@@ -1178,6 +1277,159 @@
     var r = Math.max(w / span.width, h / span.height) * m;
     if (!isFinite(r) || r <= 0) r = 1;
     return Math.min(max, Math.max(min, r));
+  }
+
+  // viewArea is the part of the canvas the camera centres a node or frames
+  // a graph in: the whole canvas, or while the side panel is open the part
+  // left of it, so nothing lands under the panel. dim is the canvas
+  // {width, height}; panelLeft is the panel's left edge in canvas pixels,
+  // or null while it is closed. It answers the area's middle {x, y} and its
+  // {width, height}; a panel that leaves no part free counts as closed.
+  function viewArea(dim, panelLeft) {
+    var width = dim.width;
+    if (panelLeft !== null && panelLeft !== undefined && panelLeft > 0 && panelLeft < width) width = panelLeft;
+    return { x: width / 2, y: dim.height / 2, width: width, height: dim.height };
+  }
+
+  // ── island labels ──
+  // The global graph writes each community's name over its island, so the
+  // map reads without the legend. app.js draws the labels on a canvas of
+  // their own; these helpers decide which islands get one, where, how long
+  // and how faded.
+
+  // islandBoxes lists every island the view draws, as {community, box,
+  // noted}, in community order: box is around the island's drawn nodes in
+  // graph units, and noted says whether one of them is a note. drawn is
+  // every node the view draws, as {id, x, y, r, note} with r its radius
+  // and note whether it is a note node; community maps ids to communities.
+  // The unlinked notes (LOOSE) share one island; a node with no community
+  // is on none.
+  function islandBoxes(drawn, community) {
+    var members = {};
+    drawn.forEach(function (d) {
+      var c = community[d.id];
+      if (c === undefined || c === null) return;
+      (members[c] = members[c] || []).push(d);
+    });
+    return Object.keys(members).map(Number).sort(function (a, b) { return a - b; }).map(function (c) {
+      return { community: c, box: boundsOf(members[c]), noted: members[c].some(function (d) { return d.note; }) };
+    });
+  }
+
+  // islandLabels lists the islands to label, as {community, name, box},
+  // out of islandBoxes' islands; names is communityNames' map, so a label
+  // reads as the legend does. An island gets a label when one of its notes
+  // is drawn; the unlinked notes' island gets none. A view that draws
+  // fewer than two islands with a note, LOOSE counted as one, gets no
+  // labels: a lone label names nothing the eye cannot see. Labels come in
+  // community order, so the largest islands come first.
+  function islandLabels(islands, names) {
+    var noted = islands.filter(function (i) { return i.noted; });
+    if (noted.length < 2) return [];
+    return noted.filter(function (i) { return i.community !== LOOSE && names[i.community] !== undefined; })
+      .map(function (i) { return { community: i.community, name: names[i.community], box: i.box }; });
+  }
+
+  // screenBox is box (graph units) on screen, as {minX, minY, maxX, maxY}
+  // in screen pixels. toScreen maps a graph point to a screen point; the
+  // graph's y axis may point either way on screen, so the corners are
+  // sorted.
+  function screenBox(box, toScreen) {
+    var a = toScreen({ x: box.minX, y: box.minY });
+    var b = toScreen({ x: box.maxX, y: box.maxY });
+    return { minX: Math.min(a.x, b.x), minY: Math.min(a.y, b.y), maxX: Math.max(a.x, b.x), maxY: Math.max(a.y, b.y) };
+  }
+
+  // fitLabel cuts text with an ellipsis to the longest start that fits in
+  // maxPx, as measure(text) gives a text's width in pixels; '' when not
+  // even one letter and the ellipsis fit.
+  function fitLabel(text, maxPx, measure) {
+    var s = String(text || '');
+    if (measure(s) <= maxPx) return s;
+    for (var n = s.length - 1; n >= 1; n--) {
+      var cut = s.slice(0, n).replace(/[\s.,;:-]+$/, '') + '…';
+      if (measure(cut) <= maxPx) return cut;
+    }
+    return '';
+  }
+
+  // unclutter places the island labels on screen and keeps the ones that
+  // find room. labels are {community, text, w, h, box}, largest island
+  // first, with box the label's own island on screen (screenBox); islands
+  // are every island the view draws, as {community, box} on screen; area
+  // is the free view area (viewArea); gap is the room a label keeps from
+  // another island and another label. A label whose island lies wholly
+  // outside the area is dropped. The others go centred above their
+  // island, or just below it where that covers another island or a label
+  // kept before. Where both places cover another island, the first one
+  // clear of the kept labels is taken anyway: an island's box is wider
+  // than its round cluster, and a missing name is worse than one over a
+  // neighbour's corner. Two labels never meet, so a label is dropped only
+  // when both places cover a kept label. Either place is first moved
+  // inside the area, so a label never leaves the canvas or runs under the
+  // side panel. The kept labels come out as {community, text, x, y, w, h}:
+  // centred on x, with the bottom at y.
+  function unclutter(labels, islands, area, gap) {
+    var view = {
+      minX: area.x - area.width / 2, minY: area.y - area.height / 2,
+      maxX: area.x + area.width / 2, maxY: area.y + area.height / 2,
+    };
+    var kept = [];
+    var taken = [];
+    labels.forEach(function (l) {
+      if (!boxesMeet(l.box, view, 0)) return;
+      var others = islands.filter(function (i) { return i.community !== l.community; })
+        .map(function (i) { return i.box; });
+      var free = labelSpots(l, view, gap).filter(function (s) { return !meetsAny(s.box, taken, gap); });
+      var spot = free.filter(function (s) { return !meetsAny(s.box, others, gap); })[0] || free[0];
+      if (!spot) return;
+      kept.push({ community: l.community, text: l.text, x: spot.x, y: spot.y, w: l.w, h: l.h });
+      taken.push(spot.box);
+    });
+    return kept;
+  }
+
+  // labelSpots lists the places label l may take, in the order unclutter
+  // tries them, as {x, y, box}: centred just above its island, then just
+  // below it, each moved inside view.
+  function labelSpots(l, view, gap) {
+    var x = clampInto((l.box.minX + l.box.maxX) / 2, view.minX + l.w / 2, view.maxX - l.w / 2);
+    return [l.box.minY - gap, l.box.maxY + gap + l.h].map(function (bottom) {
+      var y = clampInto(bottom, view.minY + l.h, view.maxY);
+      return { x: x, y: y, box: { minX: x - l.w / 2, minY: y - l.h, maxX: x + l.w / 2, maxY: y } };
+    });
+  }
+
+  // meetsAny says whether box meets one of boxes (boxesMeet).
+  function meetsAny(box, boxes, gap) {
+    return boxes.some(function (b) { return boxesMeet(box, b, gap); });
+  }
+
+  // boxesMeet says whether boxes a and b, as {minX, minY, maxX, maxY},
+  // overlap or come closer than gap.
+  function boxesMeet(a, b, gap) {
+    return a.minX < b.maxX + gap && b.minX < a.maxX + gap && a.minY < b.maxY + gap && b.minY < a.maxY + gap;
+  }
+
+  // clampInto is v moved the least way into lo..hi, or the middle of the
+  // two when the range is empty (a label wider than the view is centred).
+  function clampInto(v, lo, hi) {
+    if (lo > hi) return (lo + hi) / 2;
+    return Math.min(hi, Math.max(lo, v));
+  }
+
+  // labelFade is the opacity of the island labels at camera ratio: full
+  // while no circle shows its caption, none once every circle does, and
+  // in between as the captions take over. radii are the circles' radii,
+  // sorted (radiiOf); minPx is the on-screen radius a caption needs
+  // (captionShown).
+  function labelFade(ratio, radii, minPx) {
+    if (!radii.length) return 1;
+    var from = radii[radii.length - 1] / minPx;
+    var to = radii[0] / minPx;
+    if (ratio >= from) return 1;
+    if (ratio <= to) return 0;
+    return (ratio - to) / (from - to);
   }
 
   // ── hover tween ──
@@ -1354,6 +1606,10 @@
     luminance: luminance,
     captionColor: captionColor,
     edgeRole: edgeRole,
+    edgeWeight: edgeWeight,
+    legendEdgeKinds: legendEdgeKinds,
+    LIGHT_EDGE_SIZE: LIGHT_EDGE_SIZE,
+    LIGHT_EDGE_ALPHA: LIGHT_EDGE_ALPHA,
     edgeCaption: edgeCaption,
     legend: legend,
     communityNames: communityNames,
@@ -1378,12 +1634,21 @@
     islandAnchors: islandAnchors,
     islandHomes: islandHomes,
     islandForce: islandForce,
+    holdForce: holdForce,
+    sameIds: sameIds,
     simParams: simParams,
     startAlpha: startAlpha,
     simLinks: simLinks,
     linkStrengths: linkStrengths,
     boundsOf: boundsOf,
     fitRatio: fitRatio,
+    viewArea: viewArea,
+    islandBoxes: islandBoxes,
+    islandLabels: islandLabels,
+    screenBox: screenBox,
+    fitLabel: fitLabel,
+    unclutter: unclutter,
+    labelFade: labelFade,
     easeOut: easeOut,
     tweenValue: tweenValue,
     dimOpacity: dimOpacity,

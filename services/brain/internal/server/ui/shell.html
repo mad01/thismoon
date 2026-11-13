@@ -13,10 +13,11 @@
    the note popup over them. app.js renders all of it into <div id="app">. */
 
 /* The graph palette app.js reads by role (graph.js names the roles): the
-   edges, the hover and selection halos, the caption pill, and one fill and
-   border pair per node colour. Each role points at a webkit role, so the
-   graph follows the theme family and its light and dark variants, and the
-   canvas is webkit's own --graph-bg. Those roles hold #rrggbb (the halos
+   edges, the island labels, the hover and selection halos, the caption
+   pill, and one fill and border pair per node colour. Each role points at
+   a webkit role, so the graph follows the theme family and its light and
+   dark variants, and the canvas is webkit's own --graph-bg. Those roles
+   hold #rrggbb (the halos
    rgba) in every family, which sigma and graph.js's luminance() parse. A
    node's border is a thin ring in the canvas colour, which keeps touching
    nodes apart.
@@ -31,7 +32,7 @@
    the roles that keep all twelve cluster colours furthest apart, so their
    names are slots rather than hues (light brown is the ink); the test holds
    the twelve to a lower floor. */
-:root{--edge:var(--border-hover);--edge-text:var(--text-3);--halo-hover:var(--focus-ring);--halo-selected:var(--ra-highlight);--label-pill:var(--paper);--label-pill-text:var(--text-1);
+:root{--edge:var(--border-hover);--edge-text:var(--text-3);--island-label:var(--text-2);--halo-hover:var(--focus-ring);--halo-selected:var(--ra-highlight);--label-pill:var(--paper);--label-pill-text:var(--text-1);
 --node-blue:var(--blue);--node-orange:var(--amber);--node-green:var(--green);--node-purple:var(--tone-purple-text);--node-yellow:var(--tag-a-text);--node-red:var(--red);--node-grey:var(--text-2);--node-teal:var(--tone-green-text);--node-beige:var(--border-hover);--node-cyan:var(--primary-soft);--node-pink:var(--tone-red-text);--node-rose:var(--graph-module-4);--node-brown:var(--graph-leaf-text);
 --node-blue-border:var(--graph-bg);--node-orange-border:var(--graph-bg);--node-cyan-border:var(--graph-bg);--node-green-border:var(--graph-bg);--node-purple-border:var(--graph-bg);--node-yellow-border:var(--graph-bg);--node-red-border:var(--graph-bg);--node-beige-border:var(--graph-bg);--node-pink-border:var(--graph-bg);--node-rose-border:var(--graph-bg);--node-teal-border:var(--graph-bg);--node-brown-border:var(--graph-bg);--node-grey-border:var(--graph-bg)}
 [data-theme="dark"]{--node-orange:var(--tag-a-text);--node-yellow:var(--yellow);--node-purple:var(--purple);--node-grey:var(--text-3);--node-beige:var(--text-2);--node-rose:var(--tone-purple-text);--node-brown:var(--status-info-text)}
