@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.1](https://github.com/mad01/thismoon/compare/csl/v0.38.0...csl/v0.38.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **belt:** read-size hint covers worktrees and the csl_ask call fits the file ([#451](https://github.com/mad01/thismoon/issues/451)) ([5e089ea](https://github.com/mad01/thismoon/commit/5e089ea045b023ba8a309a5d0843449cdbccdef3))
+
 ## [0.38.0](https://github.com/mad01/thismoon/compare/csl/v0.37.2...csl/v0.38.0) (2026-11-13)
 
 
