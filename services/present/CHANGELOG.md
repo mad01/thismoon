@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.2](https://github.com/mad01/thismoon/compare/present/v1.27.1...present/v1.27.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **present:** count groups and branches in the slide diagram size estimate ([#492](https://github.com/mad01/thismoon/issues/492)) ([169dcd0](https://github.com/mad01/thismoon/commit/169dcd090c3d46bc559a9acfac7d86515154e33b))
+
 ## [1.27.1](https://github.com/mad01/thismoon/compare/present/v1.27.0...present/v1.27.1) (2026-11-13)
 
 
