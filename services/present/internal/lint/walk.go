@@ -296,6 +296,16 @@ func diagramTexts(f fieldFunc, b *render.Block) {
 			&e.Label,
 		)
 	}
+	for k := range b.Key {
+		item := &b.Key[k]
+		f(
+			fmt.Sprintf("key[%d].label", k),
+			fmt.Sprintf("key item %d (%s) label", k+1, item.Tone),
+			false,
+			roleFigure,
+			&item.Label,
+		)
+	}
 	stepTexts(f, b)
 }
 

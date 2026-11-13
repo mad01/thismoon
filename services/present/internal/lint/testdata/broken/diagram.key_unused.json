@@ -1,0 +1,62 @@
+{
+  "title": "How a page reaches the browser",
+  "content": {
+    "summary": "The MCP tool writes a page to the store, and serve reads it back for the browser.",
+    "sections": [
+      {
+        "h": "Serve reads the page the tool writes",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "key": [
+              {
+                "tone": "green",
+                "label": "present commands"
+              },
+              {
+                "tone": "blue",
+                "label": "on disk"
+              },
+              {
+                "tone": "amber",
+                "label": "by hand"
+              }
+            ],
+            "caption": "One page, from the tool call to the screen.",
+            "nodes": [
+              {
+                "id": "mcp",
+                "label": "present mcp",
+                "tone": "green"
+              },
+              {
+                "id": "store",
+                "label": "Page store",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "serve",
+                "label": "present serve",
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "mcp",
+                "to": "store",
+                "label": "writes"
+              },
+              {
+                "from": "store",
+                "to": "serve",
+                "label": "reads"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

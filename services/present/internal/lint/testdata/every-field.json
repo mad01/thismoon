@@ -38,8 +38,9 @@
           {
             "t": "diagram", "caption": "c",
             "groups": [{"id": "g", "label": "g"}],
-            "nodes": [{"id": "a", "label": "a", "text": "t", "group": "g"}, {"id": "b", "label": "b", "text": "t"}],
+            "nodes": [{"id": "a", "label": "a", "text": "t", "group": "g", "tone": "green"}, {"id": "b", "label": "b", "text": "t"}],
             "edges": [{"from": "a", "to": "b", "label": "e"}],
+            "key": [{"tone": "green", "label": "k"}],
             "steps": [{"caption": "c"}]
           }
         ]

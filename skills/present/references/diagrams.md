@@ -10,12 +10,13 @@ SKILL.md's **Diagram format** says when a diagram is the right picture and how m
 | `edges` | array? | The arrows, `{from, to, label?, flow?, weight?, step?}`, between two different nodes (never a group), one per pair and direction; a label past `diagram.edge_label` is refused |
 | `groups` | array? | The boundaries, `{id, label, tone?, group?, step?}`, up to `diagram.groups`. `group` names the group this one sits in, up to `diagram.depth` levels |
 | `direction` | string? | One of `LR`, `TB`, left to right or top to bottom; `LR` when left out. The renderer's first choice of layout: when the diagram would not be readable that way in the space it has, it draws another form |
-| `caption` | string? | Prose under the diagram, with inline markdown |
+| `key` | array? | `[{tone, label}]`, a row of swatches under the diagram, one per tone, each drawn in the colours a box of that tone takes, so the caption need not name colours. A key holds up to `diagram.key_items` items and no tone twice; a label past `diagram.key_label` is refused. Name only tones a box or group carries (`diagram.key_unused`). Read-aloud says "Key", then each tone's colour (grey for `neutral`) with its label |
+| `caption` | string? | Prose under the diagram and its key, with inline markdown |
 | `steps` | array? | `[{caption, focus?}]`, one per step a deck slide walks through the diagram. `focus` lists the node and group ids that light up at that step. See **Stepping a diagram** below |
 
 A node's `label` is its name, in bold. `text` is the short line under it (the technology, a one-line purpose); it wraps to the box's width and is never cut. `kind` picks the shape, one of `service`, `store`, `queue`, `person`, `external`: `service` is the default plain box, `store` a cylinder, `queue` a pipe, `person` a box with a figure, and `external` a dashed box. `tone` tints a node or a group with one of the six node tones from the graph (`neutral`, `green`, `red`, `blue`, `amber`, `purple`; see **Node tones** in SKILL.md). Use at most two or three tones on one diagram, each with a fixed meaning.
 
-An edge's `label` sits on the line with a halo, and the layout leaves room for it. `flow: true` marks an edge that carries traffic. The line is dashed, and dots move along it in the brief and on a slide, faster for a larger `weight` against the heaviest flow edge on the diagram. Under Reduce Motion the dots go and the dash stays. Ids are plain tokens (letters, digits, `_` and `-`) you only use to connect things; labels are what the room reads. Labels and texts are plain text, never inline markdown.
+An edge's `label` sits on the line with a halo, and the layout leaves room for it. `flow: true` marks an edge that carries traffic. The line is dashed, and dots move along it in the brief and on a slide, faster for a larger `weight` against the heaviest flow edge on the diagram. Under Reduce Motion the dots go and the dash stays. Ids are plain tokens (letters, digits, `_` and `-`) you only use to connect things; labels are what the room reads. Labels, texts, and key labels are plain text, never inline markdown.
 
 The diagram sits straight on the page or slide with no card of its own. Boxes carry their own border and fill, so they stand out on every theme. In a brief it shows its final state with the step captions as a numbered list under it. Alone on a slide it fills the slide with its caption under it.
 
@@ -29,7 +30,7 @@ A diagram of plain boxes inside toned boundaries is the common mistake. In dark 
 
 - **Boxes carry the tone, boundaries carry the structure.** A toned node is a filled box with a coloured border and label. A toned group is a half-transparent wash under a dashed line, drawn behind its members. So tone the nodes by what they are. Tone a group only when the boundary itself is the point (a trust zone, a namespace the room must see), in a tone none of its members use. `amber` is the boundary tone in the worked examples, since few boxes in an architecture are pending. A group in the same tone as its members swallows them.
 - **No plain boxes in a toned picture.** Every node has a tone or none has. An untoned box is the card colour on the page colour, a shade apart in dark mode.
-- **Two or three node tones with the meanings in Node tones, plus at most one boundary tone, named in the caption.** `kind` says the shape (a store is a cylinder, a queue a pipe, an external system a dashed box). So the shape says what a box does and the tone says whose it is.
+- **Two or three node tones with the meanings in Node tones, plus at most one boundary tone, named in the `key`.** One short label per tone (`{"tone": "green", "label": "belt's commands"}`) frees the caption for the claim. `kind` says the shape (a store is a cylinder, a queue a pipe, an external system a dashed box). So the shape says what a box does and the tone says whose it is.
 - **Nested groups alternate.** A group inside a group gets a different tone or none; two washes of one tone stack into one.
 - **Focus and flow are colours already.** On a stepped diagram the focused box glows in the accent and the rest dim; a flow edge is dashed with accent dots moving on it. Do not spend a tone on "the current step" or "the busy path".
 - **Check both modes** with the theme toggle in the page header before sharing. The worked example [diagram-block.json](../examples/diagram-block.json) tones its nodes this way; the groups that keep a tone are the boundaries the story is about.
@@ -715,6 +716,144 @@ Repaired:
               {
                 "from": "store",
                 "to": "report"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+<!-- pair:end -->
+
+### A key item no box carries
+
+<!-- pair:diagram.key_unused -->
+This trips `diagram.key_unused`:
+
+```json
+{
+  "title": "How a page reaches the browser",
+  "content": {
+    "summary": "The MCP tool writes a page to the store, and serve reads it back for the browser.",
+    "sections": [
+      {
+        "h": "Serve reads the page the tool writes",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "key": [
+              {
+                "tone": "green",
+                "label": "present commands"
+              },
+              {
+                "tone": "blue",
+                "label": "on disk"
+              },
+              {
+                "tone": "amber",
+                "label": "by hand"
+              }
+            ],
+            "caption": "One page, from the tool call to the screen.",
+            "nodes": [
+              {
+                "id": "mcp",
+                "label": "present mcp",
+                "tone": "green"
+              },
+              {
+                "id": "store",
+                "label": "Page store",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "serve",
+                "label": "present serve",
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "mcp",
+                "to": "store",
+                "label": "writes"
+              },
+              {
+                "from": "store",
+                "to": "serve",
+                "label": "reads"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The lint says:
+
+> `content.sections[0].blocks[0].key` section "Serve reads the page the tool writes", a diagram's key: it names amber, which no box or group carries. A swatch no box matches sends the reader looking for a colour the picture does not hold. Tone the boxes the key means, or drop the items no box carries.
+
+Repaired:
+
+```json
+{
+  "title": "How a page reaches the browser",
+  "content": {
+    "summary": "The MCP tool writes a page to the store, and serve reads it back for the browser.",
+    "sections": [
+      {
+        "h": "Serve reads the page the tool writes",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "key": [
+              {
+                "tone": "green",
+                "label": "present commands"
+              },
+              {
+                "tone": "blue",
+                "label": "on disk"
+              }
+            ],
+            "caption": "One page, from the tool call to the screen.",
+            "nodes": [
+              {
+                "id": "mcp",
+                "label": "present mcp",
+                "tone": "green"
+              },
+              {
+                "id": "store",
+                "label": "Page store",
+                "kind": "store",
+                "tone": "blue"
+              },
+              {
+                "id": "serve",
+                "label": "present serve",
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "mcp",
+                "to": "store",
+                "label": "writes"
+              },
+              {
+                "from": "store",
+                "to": "serve",
+                "label": "reads"
               }
             ]
           }

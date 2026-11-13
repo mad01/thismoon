@@ -101,7 +101,21 @@
           {
             "t": "diagram",
             "direction": "TB",
-            "caption": "What each command reads and writes. Green boxes are belt's commands, blue ones hold data, and grey is outside belt.",
+            "key": [
+              {
+                "tone": "green",
+                "label": "belt's commands"
+              },
+              {
+                "tone": "blue",
+                "label": "holds data"
+              },
+              {
+                "tone": "neutral",
+                "label": "outside belt"
+              }
+            ],
+            "caption": "What each command reads and writes.",
             "nodes": [
               {
                 "id": "session",

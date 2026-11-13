@@ -233,3 +233,74 @@ func TestSourceReturnsAnEarlierVersion(t *testing.T) {
 		t.Errorf("earlier version on a shared instance: err = %v, want errNoHistory", err)
 	}
 }
+
+// keyedSection is one Doc section under heading whose diagram has a key:
+// label names the green item, and extra adds an item for a tone no box
+// carries.
+func keyedSection(heading, label string, extra bool) string {
+	key := `{"tone":"green","label":"` + label + `"}`
+	if extra {
+		key += `,{"tone":"amber","label":"by hand"}`
+	}
+	return `{"h":"` + heading + `","blocks":[{"t":"diagram",` +
+		`"nodes":[{"id":"a","label":"present mcp","tone":"green"},{"id":"b","label":"store","tone":"blue"}],` +
+		`"edges":[{"from":"a","to":"b"}],"key":[` + key + `,{"tone":"blue","label":"on disk"}]}]}`
+}
+
+// TestDiagramKeyReachesEveryWritePath sends a keyed diagram through
+// present_create, present_update (as the deck), and present_patch_section:
+// each stores the key in the source and draws it in the rendered page, and
+// a key item no box carries comes back as a lint warning.
+func TestDiagramKeyReachesEveryWritePath(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	ctx := context.Background()
+	doc := func(label string) string {
+		return `{"sections":[` + keyedSection(
+			"The tool writes what serve reads",
+			label,
+			false,
+		) + `]}`
+	}
+	_, created, err := h.handleCreate(ctx, nil, createInput{Title: "T", Content: doc("created")})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(created.Warnings) != 0 {
+		t.Errorf("create warnings = %+v, want none", created.Warnings)
+	}
+	if _, _, err := h.handleUpdate(ctx, nil, updateInput{ID: created.ID, Deck: ptrStr(doc("updated"))}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	_, patched, err := h.handlePatchSection(ctx, nil, patchSectionInput{
+		ID: created.ID, Op: "append", Section: keyedSection("Serve reads what the tool wrote", "patched", true),
+	})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if len(patched.Warnings) != 1 || patched.Warnings[0].Rule != "diagram.key_unused" {
+		t.Errorf("patch warnings = %+v, want one diagram.key_unused", patched.Warnings)
+	}
+	_, read, err := h.handleRead(ctx, nil, readInput{ID: created.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, src, err := h.handleSource(ctx, nil, sourceInput{ID: created.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ where, html, src, label string }{
+		{"content", read.Content, src.Content, "created"},
+		{"deck", read.Deck, src.Deck, "updated"},
+		{"patched content", read.Content, src.Content, "patched"},
+	} {
+		if !strings.Contains(
+			c.html,
+			`<span class="present-sr-only">green, </span>`+c.label+`</li>`,
+		) {
+			t.Errorf("%s: rendered page lacks the %q key item", c.where, c.label)
+		}
+		if !strings.Contains(c.src, `{"tone":"green","label":"`+c.label+`"}`) {
+			t.Errorf("%s: source lacks the %q key item", c.where, c.label)
+		}
+	}
+}

@@ -103,7 +103,21 @@
           {
             "t": "diagram",
             "direction": "LR",
-            "caption": "How a mod sits beside belt. Red is the guard, green is the mod layer, and grey is what sits outside both.",
+            "key": [
+              {
+                "tone": "red",
+                "label": "the guard"
+              },
+              {
+                "tone": "green",
+                "label": "the mod layer"
+              },
+              {
+                "tone": "neutral",
+                "label": "outside both"
+              }
+            ],
+            "caption": "How a mod sits beside belt.",
             "nodes": [
               {
                 "id": "cc",
@@ -324,7 +338,20 @@
           {
             "t": "diagram",
             "direction": "LR",
-            "caption": "Red guards, green is the mod layer, grey sits outside both.",
+            "key": [
+              {
+                "tone": "red",
+                "label": "the guard"
+              },
+              {
+                "tone": "green",
+                "label": "the mod layer"
+              },
+              {
+                "tone": "neutral",
+                "label": "outside both"
+              }
+            ],
             "nodes": [
               {
                 "id": "cc",

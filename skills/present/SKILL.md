@@ -101,7 +101,7 @@ Block =                                  // discriminated on `t`
   | {t: "code", text, lang?}             | {t: "html", text}
   | {t: "columns", cols}                 | {t: "stat", value, label, sub?}
   | {t: "quote", text, cite?}            | {t: "details", summary, blocks}
-  | {t: "image", src, alt, caption?, frame?} | {t: "diagram", nodes, edges?, groups?, direction?, caption?, steps?}
+  | {t: "image", src, alt, caption?, frame?} | {t: "diagram", nodes, edges?, groups?, direction?, key?, caption?, steps?}
   | {t: "terminal", session, cmd?, cwd?, prefill?, rows?}
 
 Graph = {                                // the `graph` argument, one per page, shared by brief and deck
@@ -258,7 +258,7 @@ A star inside a code span is literal. Outside one, a single `*` italicises only 
 | `progress` | `pct`, `label?`, `note?` | Progress bar (0-100); `note` is a short line after the label ("Index: 12 of 20") |
 | `graph` | (none) | Placement marker for the Cytoscape graph container |
 | `chart` | `kind`, `series` or `flows`, `title?`, `unit?`, `xunit?`, `steps?`, `order?`, `frame?` | Metric chart (Chart.js, or D3 for `ribbon`). `kind` is one of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`, `ribbon`. Inline: use as many as you like per page. `steps` makes a deck slide walk the chart one step per Next. See **Chart format** |
-| `diagram` | `nodes`, `edges?`, `groups?`, `direction?`, `caption?`, `steps?` | Architecture picture laid out in the browser by ELK and drawn as SVG (D3): boxes with a name and a short text, labelled boundaries, labelled arrows. A node `kind` is one of `service`, `store`, `queue`, `person`, `external`; `direction` is one of `LR`, `TB`. Many per page, never the page graph. `steps` walks it one step per Next on a deck slide. See **Diagram format** |
+| `diagram` | `nodes`, `edges?`, `groups?`, `direction?`, `key?`, `caption?`, `steps?` | Architecture picture laid out by ELK and drawn as SVG (D3): boxes with a name and a short text, labelled boundaries, labelled arrows. A node `kind` is one of `service`, `store`, `queue`, `person`, `external`; `direction` is one of `LR`, `TB`. `key` names its tones. Many per page. `steps` walks it one step per Next on a deck slide. See **Diagram format** |
 | `code` | `text`, `lang?` | Fenced code block with language badge and copy button. `text` is verbatim code with no inline markdown: backticks, `**`, and `<` all render literally. `lang` sets the badge and the highlighting: `go`, `bash`, `json`, `python`, `typescript`, `yaml`, `sql` highlight; any other `lang` shows in the badge as given (DOCKERFILE) over plain text, and none shows `text` |
 | `html` | `text` | Raw HTML passthrough for one-off custom content |
 | `columns` | `cols: [[blocks], [blocks]]` | Two or three equal-width columns of blocks, one column under 700 px. A column holds any block but `columns` and `details`. Three `stat` blocks in it make a row of figures; a `chart` beside a `p` puts the caption next to the chart. The page's one `graph` may sit in a column too, beside the paragraph that says what to look at |

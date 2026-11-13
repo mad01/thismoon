@@ -517,6 +517,44 @@ func checkSlideColumns(p Page, _ int) []Finding {
 	return out
 }
 
+// checkKeyUnused warns once per diagram whose key names a tone none of its
+// boxes or groups carries, listing those tones in key order.
+func checkKeyUnused(p Page, _ int) []Finding {
+	var out []Finding
+	p.blocks(func(at block) {
+		if at.b.T != "diagram" || len(at.b.Key) == 0 {
+			return
+		}
+		used := map[string]bool{}
+		for _, n := range at.b.Nodes {
+			used[n.Tone] = true
+		}
+		for _, g := range at.b.Groups {
+			used[g.Tone] = true
+		}
+		var unused []string
+		for _, item := range at.b.Key {
+			if !used[item.Tone] {
+				unused = append(unused, item.Tone)
+			}
+		}
+		if len(unused) == 0 {
+			return
+		}
+		out = append(out, atSection(limits.DiagramKeyUnused, at.sec, at.where+".key",
+			message(
+				limits.DiagramKeyUnused,
+				at.sec.place+", a diagram's key",
+				fmt.Sprintf(
+					"it names %s, which no box or group carries",
+					strings.Join(unused, " and "),
+				),
+				"Tone the boxes the key means, or drop the items no box carries.",
+			)))
+	})
+	return out
+}
+
 func checkSlideWords(p Page, n int) []Finding {
 	total := make([]int, len(p.Deck.Sections))
 	captions := map[string]int{} // a stepped block's longest caption

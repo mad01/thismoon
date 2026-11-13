@@ -248,11 +248,14 @@ type Block struct {
 	// drawn as SVG (D3), many per page. Nodes are boxes with a name and a
 	// short text, Groups are labelled boundaries around them (a group may
 	// sit inside another), Edges are labelled arrows between nodes, and
-	// Direction is LR (default) or TB. Caption is the prose under it.
-	Direction string         `json:"direction,omitempty"`
-	Groups    []DiagramGroup `json:"groups,omitempty"`
-	Nodes     []DiagramNode  `json:"nodes,omitempty"`
-	Edges     []DiagramEdge  `json:"edges,omitempty"`
+	// Direction is LR (default) or TB. Key is a row of tone swatches with
+	// what each tone means, under the diagram; Caption is the prose under
+	// that.
+	Direction string           `json:"direction,omitempty"`
+	Groups    []DiagramGroup   `json:"groups,omitempty"`
+	Nodes     []DiagramNode    `json:"nodes,omitempty"`
+	Edges     []DiagramEdge    `json:"edges,omitempty"`
+	Key       []DiagramKeyItem `json:"key,omitempty"`
 
 	// Steps makes a chart or a diagram walk through its data on a deck
 	// slide, one step per Next: each entry is the caption shown under the
@@ -301,6 +304,14 @@ type DiagramEdge struct {
 	Flow   bool    `json:"flow,omitempty"`
 	Weight float64 `json:"weight,omitempty"`
 	Step   int     `json:"step,omitempty"`
+}
+
+// DiagramKeyItem is one entry of a diagram's key: a swatch drawn in the
+// colours a box of Tone takes (a graph tone), and Label, what the tone
+// means on this diagram, in plain text.
+type DiagramKeyItem struct {
+	Tone  string `json:"tone"`
+	Label string `json:"label"`
 }
 
 // blockFields is Block without its methods, so the (un)marshalers below can
@@ -849,6 +860,7 @@ func init() {
 		"rawHTML":      func(s string) template.HTML { return template.HTML(s) },
 		"chartSpec":    chartSpec,
 		"diagramSpec":  diagramSpec,
+		"spokenTone":   spokenTone,
 		"frameAttr":    frameAttr,
 		"renderBlock":  func(b Block) template.HTML { return renderBlockAt(b, 0) },
 		"renderNested": func(b Block) template.HTML { return renderBlockAt(b, 1) },
@@ -1008,6 +1020,16 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 {{define "block-diagram"}}<div class="present-diagram"{{with .Steps}} data-steps="{{len .}}"{{end}}>
   <div class="present-diagram-canvas"></div>
   <script type="application/json" class="diagram-spec">{{diagramSpec .}}</script>
+{{- with .Key}}
+  <div class="present-diagram-key">
+    <span class="present-sr-only">Key</span>
+    <ul role="list">
+{{- range .}}
+      <li><span class="present-diagram-swatch tone-{{.Tone}}" aria-hidden="true"></span><span class="present-sr-only">{{spokenTone .Tone}}, </span>{{.Label}}</li>
+{{- end}}
+    </ul>
+  </div>
+{{- end}}
 {{- with .Caption}}
   <p class="present-diagram-caption" data-fixation>{{inlineMd .}}</p>
 {{- end}}
@@ -1188,6 +1210,15 @@ func diagramSpec(b Block) template.JS {
 		return template.JS(`{"nodes":[]}`)
 	}
 	return template.JS(out)
+}
+
+// spokenTone is the colour a key item's tone is read aloud as: the tone's
+// name, but grey for neutral, which names no colour a listener sees.
+func spokenTone(tone string) string {
+	if tone == "neutral" {
+		return "grey"
+	}
+	return tone
 }
 
 // accentAliases are accent names older pages carry outside the palette
@@ -1386,15 +1417,17 @@ func validatePrefill(b Block) error {
 
 // validateFieldHomes refuses a field set on a block type that does not
 // read it, so an author learns the field moved nothing: the diagram's
-// nodes, groups, edges, and direction on any other block, the terminal's
+// nodes, groups, edges, direction, and key on any other block, the terminal's
 // session, cmd, cwd, prefill, and rows height on any other block, the cols
 // and the rows of cells a terminal shares wire keys with on a terminal,
 // where its rows height would shadow the cells, and frame on anything but a
 // chart or an image.
 func validateFieldHomes(b Block) error {
 	if b.T != "diagram" &&
-		(len(b.Nodes) > 0 || len(b.Groups) > 0 || len(b.Edges) > 0 || b.Direction != "") {
-		return fmt.Errorf("%s block: nodes, groups, edges, and direction are diagram fields", b.T)
+		(len(b.Nodes) > 0 || len(b.Groups) > 0 || len(b.Edges) > 0 || b.Direction != "" || len(b.Key) > 0) {
+		return fmt.Errorf(
+			"%s block: nodes, groups, edges, direction, and key are diagram fields", b.T,
+		)
 	}
 	if b.T != "terminal" &&
 		(b.Session != "" || b.Cmd != "" || b.Cwd != "" || b.Prefill != "" || b.TerminalRows != 0) {
@@ -1601,12 +1634,14 @@ func ribbonPeriods(series []ChartSeries) ([]string, error) {
 
 // Caps on a diagram's text, in runes: a node label keeps to two lines in
 // its box (at most 240 px wide, 190 in the compact form), a node text
-// wraps to two lines, an edge label sets the gap between two layers, and
-// a group label sets the group's least width.
+// wraps to two lines, an edge label sets the gap between two layers, a
+// group label sets the group's least width, and a key label keeps the key
+// to one or two rows under the diagram.
 const (
 	diagramMaxLabel     = 32
 	diagramMaxText      = 60
 	diagramMaxEdgeLabel = 24
+	diagramMaxKeyLabel  = 24
 )
 
 // diagramIDPattern is what a diagram id may be: a plain token, since ids
@@ -1632,8 +1667,8 @@ func diagramName(b Block) string {
 // an unknown direction, no nodes or more than diagramMaxNodes, more than
 // diagramMaxGroups groups, a frame (a diagram never has a card), an id used
 // twice across nodes and groups, and whatever validateDiagramGroups,
-// validateDiagramNodes, validateDiagramEdges, and validateDiagramSteps
-// refuse.
+// validateDiagramNodes, validateDiagramEdges, validateDiagramKey, and
+// validateDiagramSteps refuse.
 func validateDiagram(b Block) error {
 	name := diagramName(b)
 	if b.Direction != "" && !slices.Contains(diagramDirections, b.Direction) {
@@ -1666,7 +1701,8 @@ func validateDiagram(b Block) error {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	for _, check := range []func(Block, map[string]string) error{
-		validateDiagramGroups, validateDiagramNodes, validateDiagramEdges, validateDiagramSteps,
+		validateDiagramGroups, validateDiagramNodes, validateDiagramEdges, validateDiagramKey,
+		validateDiagramSteps,
 	} {
 		if err := check(b, ids); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
@@ -1848,6 +1884,46 @@ func validateDiagramEdges(b Block, ids map[string]string) error {
 		}
 		if e.Weight != 0 && !e.Flow {
 			return fmt.Errorf("edge %d (%s to %s): weight needs flow", k+1, e.From, e.To)
+		}
+	}
+	return nil
+}
+
+// validateDiagramKey refuses a key with more items than there are tones,
+// an item without a tone, with an unknown one, or with one an earlier item
+// names, and a label that is blank or past diagramMaxKeyLabel runes. The
+// ids are not used: a key names tones, not boxes.
+func validateDiagramKey(b Block, _ map[string]string) error {
+	if len(b.Key) > len(graphTones) {
+		return fmt.Errorf("key: %d items, at most %d (one per tone)", len(b.Key), len(graphTones))
+	}
+	seen := map[string]int{}
+	for k, item := range b.Key {
+		if item.Tone == "" {
+			return fmt.Errorf("key item %d has no tone", k+1)
+		}
+		if !validTone(item.Tone) {
+			return fmt.Errorf(
+				"key item %d: unknown tone %q (want one of %s)",
+				k+1,
+				item.Tone,
+				strings.Join(graphTones, ", "),
+			)
+		}
+		if j, dup := seen[item.Tone]; dup {
+			return fmt.Errorf("key item %d: tone %q is already item %d's", k+1, item.Tone, j)
+		}
+		seen[item.Tone] = k + 1
+		if strings.TrimSpace(item.Label) == "" {
+			return fmt.Errorf("key item %d (%s) has no label", k+1, item.Tone)
+		}
+		if runesOver(item.Label, diagramMaxKeyLabel) {
+			return fmt.Errorf(
+				"key item %d (%s): label is over %d characters (put the rest in the caption)",
+				k+1,
+				item.Tone,
+				diagramMaxKeyLabel,
+			)
 		}
 	}
 	return nil
