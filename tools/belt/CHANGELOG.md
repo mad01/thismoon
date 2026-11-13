@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.19.2](https://github.com/mad01/thismoon/compare/belt/v2.19.1...belt/v2.19.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **belt:** large-read covers linked worktrees and passes files csl skips ([#437](https://github.com/mad01/thismoon/issues/437)) ([986e748](https://github.com/mad01/thismoon/commit/986e748fd5af69c81ca279cbbd6e927245bb6817))
+
 ## [2.19.1](https://github.com/mad01/thismoon/compare/belt/v2.19.0...belt/v2.19.1) (2026-11-13)
 
 

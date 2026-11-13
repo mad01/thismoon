@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/mad01/thismoon/compare/deps/v0.18.0...deps/v0.18.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **deps:** keep keyboard focus on filters and in the resolve dialog ([#440](https://github.com/mad01/thismoon/issues/440)) ([0dc1661](https://github.com/mad01/thismoon/commit/0dc16611c1c41d4b62f066e83e9762b726b6aa41))
+
 ## [0.18.0](https://github.com/mad01/thismoon/compare/deps/v0.17.0...deps/v0.18.0) (2026-11-13)
 
 
