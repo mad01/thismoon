@@ -19,7 +19,7 @@ mise use -g "csl[version_prefix=csl/]"
 
 The tarball and the mise install carry a binary with the tree-sitter grammars compiled in, so neither needs Go or a C toolchain.
 
-Building from source needs the Go toolchain pinned in the repo's `go.mod` (1.27.3) and the Xcode Command Line Tools, because code chunking compiles tree-sitter grammars via cgo with no build-tag opt-out. That is also why `go install .../csl@latest` isn't a supported install path:
+Building from source needs the Go toolchain pinned in the repo's `go.mod` (1.27.4) and the Xcode Command Line Tools, because code chunking compiles tree-sitter grammars via cgo with no build-tag opt-out. That is also why `go install .../csl@latest` isn't a supported install path:
 
 ```sh
 git clone https://github.com/mad01/thismoon.git
