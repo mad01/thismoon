@@ -191,11 +191,14 @@ The share path starts local and ends on a shared instance. The Share button
 posts to the local serve's `POST /p/{id}/share`; `present share` and
 `present_share` call the same function directly. `sharedclient.Share` loads
 the page and its sources from the local store and bundles them (title,
-content, graph, references, doc, graph_source, ephemeral). It sends the
+content, deck, graph, references, doc, deck_source, graph_source, ephemeral,
+render_level). It sends the
 bundle with the author key as a bearer token to the shared instance's
 `POST /api/pages`, or to `PUT /api/p/{id}` when the page was shared before.
 So the link stays the same (when the instance has purged the copy, Share
-creates it afresh).
+creates it afresh). The instance answers with its own render level, and
+Share adds a warning to its result when that is lower than the bundle's or
+missing: the instance's client code may not draw everything the page uses.
 The result (shared id, URL, expiry, time of the share) lands in the local page's
 `meta.json` through `store.SetShared`. It touches metadata only and never
 bumps the version, so the open tab keeps its place. `GET /api/p/{id}` then

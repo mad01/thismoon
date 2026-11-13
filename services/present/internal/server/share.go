@@ -20,6 +20,9 @@ type apiShare struct {
 	Ephemeral bool       `json:"ephemeral,omitempty"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	SharedAt  *time.Time `json:"shared_at,omitempty"`
+	// Warning comes only in the reply to a share, never from the stored
+	// record: the shared instance's client code is older than this binary's.
+	Warning string `json:"warning,omitempty"`
 }
 
 func (s *Server) shareState(p store.Page) apiShare {
@@ -90,6 +93,7 @@ func (s *Server) handleShare(w http.ResponseWriter, r *http.Request) {
 		Ephemeral: info.Ephemeral,
 		ExpiresAt: info.ExpiresAt,
 		SharedAt:  &info.SharedAt,
+		Warning:   info.Warning,
 	})
 }
 

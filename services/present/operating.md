@@ -119,6 +119,15 @@ lost one is replaced rather than recovered: `present key new`, then share
 every page again. On any shared write path, whatever store the instance runs
 on, a page over 1 MiB is refused: 413 over HTTP, a tool error over MCP.
 
+A share that ends in a render level warning still worked: the copy exists
+under its link. The warning means the shared instance's client code is older
+than this binary's. A block, layout, or diagram form newer than the instance
+may then draw wrong there, or not at all. It names both render levels, or
+says the instance predates render levels. `present share` prints it on stderr,
+present_share returns it in `warnings` (rule render-level), and the Share
+modal shows it after the status. The fix is on the instance: update it, then
+share the page again. The instance logs a page pushed above its own level.
+
 Deleting a local page that has a shared copy removes the copy first when
 --shared-url and --author-key are set. It refuses the local delete with 502
 when the instance is unreachable, so the two cannot drift apart. Without

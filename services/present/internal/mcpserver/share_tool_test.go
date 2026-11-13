@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"slices"
@@ -107,6 +108,9 @@ func TestShareToolPushesAndRecordsTheLink(t *testing.T) {
 	if want := now.Format(time.RFC3339); out.SharedAt != want {
 		t.Errorf("shared_at = %q, want the fixed clock %q", out.SharedAt, want)
 	}
+	if len(out.Warnings) != 0 {
+		t.Errorf("share to an instance at this render level warned: %+v", out.Warnings)
+	}
 
 	p, err := h.store.Get(ctx, created.ID)
 	if err != nil {
@@ -128,5 +132,57 @@ func TestShareToolPushesAndRecordsTheLink(t *testing.T) {
 	_, _, err = h.handleShare(ctx, nil, shareInput{ID: store.NewID()})
 	if !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("share of a missing page: err = %v, want ErrNotFound", err)
+	}
+}
+
+// A share to an instance from before render levels lands, and the result
+// carries one warning in the lint's shape that says so.
+func TestShareToolWarnsWhenTheInstancePredatesRenderLevels(t *testing.T) {
+	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/pages" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		id := strings.Repeat("d", 32)
+		_, _ = w.Write(
+			[]byte(`{"id":"` + id + `","url":"http://old.example/p/` + id + `","version":1}`),
+		)
+	}))
+	t.Cleanup(old.Close)
+	local, err := store.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &handlers{
+		store:   local,
+		mode:    ModeLocal,
+		baseURL: "http://localhost:7423",
+		now:     time.Now,
+		open:    func(string) error { return nil },
+		sharer:  sharedclient.New(old.URL, "k"),
+	}
+	ctx := t.Context()
+	_, created, err := h.handleCreate(ctx, nil, createInput{Title: "T", Content: "<p>x</p>"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, out, err := h.handleShare(ctx, nil, shareInput{ID: created.ID})
+	if err != nil {
+		t.Fatalf("share: %v", err)
+	}
+	if out.URL == "" || len(out.Warnings) != 1 {
+		t.Fatalf("share result = %+v, want the link and one warning", out)
+	}
+	w := out.Warnings[0]
+	if w.Rule != ruleRenderLevel || w.Where != old.URL ||
+		!strings.Contains(w.Message, "predates render levels") {
+		t.Errorf(
+			"warning = %+v, want rule %s at %s naming the predating instance",
+			w,
+			ruleRenderLevel,
+			old.URL,
+		)
 	}
 }

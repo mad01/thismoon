@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	present "github.com/mad01/thismoon/services/present"
 )
 
 // Errors mapped from the shared instance's status codes.
@@ -43,6 +45,19 @@ type Client struct {
 	BaseURL string
 	Key     string
 	HTTP    *http.Client
+
+	// level stands in for present.RenderLevel when set, so a test can play
+	// a binary ahead of the instance it talks to.
+	level int
+}
+
+// renderLevel is the render level the pages this client pushes were
+// rendered at: this binary's.
+func (c *Client) renderLevel() int {
+	if c.level != 0 {
+		return c.level
+	}
+	return present.RenderLevel
 }
 
 // New returns a Client for baseURL (no trailing slash needed) using key.
@@ -73,6 +88,9 @@ type Bundle struct {
 	DeckSource  json.RawMessage `json:"deck_source,omitempty"`
 	GraphSource json.RawMessage `json:"graph_source,omitempty"`
 	Ephemeral   bool            `json:"ephemeral"`
+	// RenderLevel is the render level the page was rendered at. An instance
+	// from before render levels ignores it.
+	RenderLevel int `json:"render_level,omitempty"`
 }
 
 // Result is where a pushed page lives on the shared instance.
@@ -85,6 +103,9 @@ type Result struct {
 	// HasDeck is whether the copy holds the deck the bundle carried; an
 	// instance from before decks never sets it.
 	HasDeck bool `json:"has_deck"`
+	// RenderLevel is the render level the instance's client code draws; an
+	// instance from before render levels never sets it.
+	RenderLevel int `json:"render_level,omitempty"`
 }
 
 // Create pushes a new page and returns where it landed.
