@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.2](https://github.com/mad01/thismoon/compare/csl/v0.38.1...csl/v0.38.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **belt:** read auto memory settings from every source Claude Code reads ([#453](https://github.com/mad01/thismoon/issues/453)) ([cd7f2e5](https://github.com/mad01/thismoon/commit/cd7f2e581de5c216727a389d98662a1a35d77744))
+
 ## [0.38.1](https://github.com/mad01/thismoon/compare/csl/v0.38.0...csl/v0.38.1) (2026-11-13)
 
 

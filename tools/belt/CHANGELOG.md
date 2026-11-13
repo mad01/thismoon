@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.19.5](https://github.com/mad01/thismoon/compare/belt/v2.19.4...belt/v2.19.5) (2026-11-13)
+
+
+### Bug Fixes
+
+* **belt:** read auto memory settings from every source Claude Code reads ([#453](https://github.com/mad01/thismoon/issues/453)) ([cd7f2e5](https://github.com/mad01/thismoon/commit/cd7f2e581de5c216727a389d98662a1a35d77744))
+
 ## [2.19.4](https://github.com/mad01/thismoon/compare/belt/v2.19.3...belt/v2.19.4) (2026-11-13)
 
 
