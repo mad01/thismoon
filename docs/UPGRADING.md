@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-13 present: the split slide layout
+
+Change: thismoon, present (MAD-581). A deck section may set `layout: "split"`: the heading and up to 15 words in a left column, exactly one chart, diagram, graph, image, or terminal in a right one. An older present refuses a deck Doc that uses it (`unknown layout "split"`). A share push carries the rendered deck, so an older shared instance takes the page but draws each split slide as a default one, the visual under the text. With the render level in place (#486), the share warns that the instance is older than the page.
+
+Run: on the fleet, nothing; `ralph up` rebuilds the local present. Roll the shared instance to this present or newer before you share a deck that uses `split` to it.
+
+Verify: `/version` on the local present and on the shared instance both report this release or newer. Then open a shared split slide: the visual sits beside the text.
+
 ## 2026-11-13 every Go component: rebuild on Go 1.27.4
 
 Change: thismoon #489. Go 1.27.4 fixes GO-2026-6859, an HTTP/1 server crash in `net/http` that most services reach, and `go.mod` now requires it. A machine with an older Go downloads the 1.27.4 toolchain for the build, so this change and the consuming repo's Go pin can land in either order. A plain `ralph up` rebuilds only the components whose own directory changed, so most binaries would keep the old Go.

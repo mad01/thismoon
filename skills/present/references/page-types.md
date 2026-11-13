@@ -389,7 +389,7 @@ The room wants one claim per slide, most of them carried by a picture, and the a
 }
 ```
 
-Five to twelve slides. Slides that hold only prose or a list stay within `deck.text_only`, so most points get a chart, a diagram, a stat, or an image. The rule counts default-layout slides only: a centred row of stats does not lower the count, while a lone big-number slide or a figure on a default-layout slide does.
+Five to twelve slides. Slides that hold only prose or a list stay within `deck.text_only`, so most points get a chart, a diagram, a stat, or an image. The rule counts default-layout and split slides only: a centred row of stats does not lower the count, while a lone big-number slide, a figure on a default-layout slide, or a split slide does.
 
 The title slide's `summary` says what the talk is about, and the statement slide makes the claim, so they are never the same sentence. `presenter` is optional: leave it out when the source names no speaker.
 

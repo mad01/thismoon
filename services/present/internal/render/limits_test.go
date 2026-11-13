@@ -27,6 +27,7 @@ func TestCapsMatchLimits(t *testing.T) {
 		{limits.TerminalRowsMax, TerminalMaxRows},
 		{limits.TerminalSession, TerminalSessionMaxLen},
 		{limits.TerminalPrefill, TerminalPrefillMaxLen},
+		{limits.SplitVisuals, splitVisuals},
 	}
 	for _, c := range caps {
 		if got := limits.Number(c.id); got != c.cap {

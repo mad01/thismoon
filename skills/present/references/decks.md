@@ -54,6 +54,21 @@ A slide is one entry in the deck Doc's `sections`. Copy the skeleton for the sli
 }
 ```
 
+**Claim beside a visual.** `layout: "split"` puts the heading and a few words in a left column, two fifths of the slide, and one visual in the right column. The words stay within `split.words`, and the heading wraps in its column, so keep it short. The visual is a `chart`, a `diagram`, the `graph`, an `image`, or a `terminal`: exactly one, at the top level, never in `details`, and the slide takes no `columns` block (`split.visuals`). It sizes to the column, and a diagram's longest path stays within the column's `diagram.slide_path`. A narrow window stacks the text above the visual.
+
+```json
+{
+  "h": "<<what the visual proves, short>>",
+  "layout": "split",
+  "blocks": [
+    {"t": "p", "text": "<<a line or two the visual does not say>>"},
+    {"t": "chart", "kind": "bar", "title": "<<the measure and its unit>>", "series": [
+      {"name": "<<series>>", "points": [{"x": "<<label>>", "y": 0}, {"x": "<<label>>", "y": 0}]}
+    ]}
+  ]
+}
+```
+
 **Big number.** One `stat` alone is the big-number slide. The `sub` line gives it a comparison the room already knows.
 
 ```json
@@ -65,7 +80,7 @@ A slide is one entry in the deck Doc's `sections`. Copy the skeleton for the sli
 }
 ```
 
-**Stats in a row.** Two or three `stat` blocks in one `columns` block, centred. `deck.text_only` counts default-layout slides only, so this centred slide does not lower the count; a lone big-number slide or a figure on a default-layout slide does.
+**Stats in a row.** Two or three `stat` blocks in one `columns` block, centred. `deck.text_only` counts default-layout and split slides only, so this centred slide does not lower the count; a lone big-number slide, a figure on a default-layout slide, or a split slide does.
 
 ```json
 {
@@ -160,6 +175,7 @@ A slide is one entry in the deck Doc's `sections`. Copy the skeleton for the sli
 | `layout: "center"` | one short thing centred: a row of figures, a single line | a list, a chart |
 | `layout: "statement"` | the one sentence the deck exists to say, the heading as the slide, once or twice a deck | a slide with body under it beyond one line |
 | `layout: "section"` | a divider opening a part of a longer deck, with a `tone` | a deck under nine slides |
+| `layout: "split"` | a claim with a line or two beside the one visual that proves it; the visual takes three fifths of the slide | two visuals, a list longer than three short items, a diagram with a long path |
 | `tone` | colouring a part's heading rule and accent bar so the room sees where it is; a saturated role, the same one for the whole part | decoration on every slide, a `-bg` role |
 | `reveal: true` | a list that is an argument built one line at a time | a list the room should read whole, a slide whose one block is not a list |
 | chart or diagram `steps` | a picture that should form while you talk, three to five captions | a chart the room reads at a glance |
@@ -390,6 +406,99 @@ Repaired:
 ```
 <!-- pair:end -->
 
+### Words beside a split slide's visual
+
+<!-- pair:split.words -->
+This trips `split.words`:
+
+```json
+{
+  "title": "Checkout after the cache",
+  "deck": {
+    "summary": "A read-through cache in front of pricing cut checkout latency by two fifths.",
+    "sections": [
+      {
+        "h": "The pricing cache cut checkout p99 by 40%",
+        "layout": "split",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "We put a read-through cache in front of the pricing service on 2 October. Checkout p99 fell from 1.2 s to 720 ms within a day, and it has held there through two sales since."
+          },
+          {
+            "t": "chart",
+            "kind": "line",
+            "title": "Checkout p99 latency",
+            "unit": "ms",
+            "series": [
+              {
+                "name": "p99",
+                "points": [
+                  {"x": "Sep 29", "y": 1210},
+                  {"x": "Sep 30", "y": 1190},
+                  {"x": "Oct 1", "y": 1230},
+                  {"x": "Oct 2", "y": 940},
+                  {"x": "Oct 3", "y": 730},
+                  {"x": "Oct 4", "y": 720}
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The lint says:
+
+> `deck.sections[0]` slide 2 "The pricing cache cut checkout p99 by 40%": 35 words beside the visual. The left column is under two fifths of the slide's width. In the default face, 15 words under a four-line claim fill it at full size, and more shrink the claim and the visual with them. Aim for 15 or fewer, and move the rest to the speaker notes.
+
+Repaired:
+
+```json
+{
+  "title": "Checkout after the cache",
+  "deck": {
+    "summary": "A read-through cache in front of pricing cut checkout latency by two fifths.",
+    "sections": [
+      {
+        "h": "The pricing cache cut checkout p99 by 40%",
+        "layout": "split",
+        "notes": "We put the cache in front of pricing on 2 October, and p99 has held at 720 ms through two sales since.",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Live since **2 October**: checkout p99 went from 1.2 s to 720 ms."
+          },
+          {
+            "t": "chart",
+            "kind": "line",
+            "title": "Checkout p99 latency",
+            "unit": "ms",
+            "series": [
+              {
+                "name": "p99",
+                "points": [
+                  {"x": "Sep 29", "y": 1210},
+                  {"x": "Sep 30", "y": 1190},
+                  {"x": "Oct 1", "y": 1230},
+                  {"x": "Oct 2", "y": 940},
+                  {"x": "Oct 3", "y": 730},
+                  {"x": "Oct 4", "y": 720}
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+<!-- pair:end -->
+
 ### Slides without a picture
 
 <!-- pair:deck.text_only -->
@@ -456,7 +565,7 @@ This trips `deck.text_only`:
 
 The lint says:
 
-> `deck` the deck: 2 of 3 default-layout slides hold only prose or a list. A claim shown beside a picture is remembered better than the same claim in text alone. Give the strongest of them a chart, a diagram, or one big number.
+> `deck` the deck: 2 of 3 default-layout and split slides hold only prose or a list. A claim shown beside a picture is remembered better than the same claim in text alone. Give the strongest of them a chart, a diagram, or one big number.
 
 Repaired:
 

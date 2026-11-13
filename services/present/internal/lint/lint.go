@@ -74,6 +74,7 @@ var checks = map[limits.ID]check{
 	limits.DiagramSlideColumns: checkSlideColumns,
 	limits.DiagramKeyUnused:    checkKeyUnused,
 	limits.SlideWords:          checkSlideWords,
+	limits.SplitWords:          checkSplitWords,
 	limits.DeckTextOnly:        checkTextOnly,
 	limits.InlineStrayMark:     checkStrayMarks,
 	limits.PlaceholderLeft:     checkPlaceholders,

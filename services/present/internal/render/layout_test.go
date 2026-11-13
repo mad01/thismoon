@@ -1306,7 +1306,7 @@ func TestRenderDocSectionValidation(t *testing.T) {
 		sec  Section
 		want string
 	}{
-		{"layout", Section{Heading: "S", Layout: "split"}, `section "S": unknown layout "split"`},
+		{"layout", Section{Heading: "S", Layout: "grid"}, `section "S": unknown layout "grid"`},
 		{"tone", Section{Heading: "S", Tone: "wg600"}, `section "S": unknown tone "wg600"`},
 		{"tone alias", Section{Heading: "S", Tone: "terracotta"}, `unknown tone "terracotta"`},
 	}
@@ -1314,6 +1314,83 @@ func TestRenderDocSectionValidation(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := RenderDoc(oneSection(c.sec), "T")
 			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+}
+
+// splitVisualBlocks is one block of each kind a split slide's right column
+// takes, each one the renderer accepts on its own.
+func splitVisualBlocks() []Block {
+	return []Block{
+		{T: "chart", Kind: "bar", Series: []ChartSeries{{Points: []ChartPoint{{X: "a", Y: 1}}}}},
+		{T: "diagram", Nodes: []DiagramNode{{ID: "a", Label: "A"}}},
+		{T: "graph"},
+		{T: "image", Src: "https://example.com/a.png", Alt: "a"},
+		{T: "terminal", Session: "demo"},
+	}
+}
+
+// A split slide holds its one visual at the top level, beside text or
+// alone, and renders like any layout: data-layout on the wk-section and the
+// blocks in their authored order, which the deck view moves into its two
+// columns.
+func TestRenderDocSplitLayout(t *testing.T) {
+	text := Block{T: "p", Text: "Two lines on what the picture shows."}
+	for _, visual := range splitVisualBlocks() {
+		t.Run(visual.T, func(t *testing.T) {
+			for _, blocks := range [][]Block{{text, visual}, {visual, text}, {visual}} {
+				doc := Doc{
+					Sections: []Section{{Heading: "The claim", Layout: "split", Blocks: blocks}},
+				}
+				out, err := RenderDeck(doc, "T")
+				if err != nil {
+					t.Fatalf("RenderDeck %d blocks: %v", len(blocks), err)
+				}
+				if !strings.Contains(out, `<wk-section id="the-claim" data-layout="split">`) {
+					t.Errorf("no split wk-section in: %s", out)
+				}
+			}
+		})
+	}
+}
+
+// A split slide refuses no visual, two, one inside details, and a columns
+// block, each with a message naming the layout.
+func TestRenderDocSplitValidation(t *testing.T) {
+	p := Block{T: "p", Text: "x"}
+	visuals := splitVisualBlocks()
+	chart, image := visuals[0], visuals[3]
+	cases := []struct {
+		name   string
+		blocks []Block
+		want   string
+	}{
+		{
+			"no blocks",
+			nil,
+			`layout "split" takes exactly 1 visual (chart, diagram, graph, image, terminal) beside its text, found 0`,
+		},
+		{"text only", []Block{p, {T: "stat", Value: "40%", Label: "less"}}, "found 0"},
+		{"two visuals", []Block{chart, p, image}, "found 2"},
+		{
+			"visual in details",
+			[]Block{p, {T: "details", Summary: "More", Blocks: []Block{image}}},
+			`layout "split" takes its image as a top-level block, not inside details`,
+		},
+		{
+			"columns",
+			[]Block{chart, {T: "columns", Columns: [][]Block{{p}, {p}}}},
+			`layout "split" is two columns already, so it takes no columns block`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			doc := Doc{Sections: []Section{{Heading: "S", Layout: "split", Blocks: c.blocks}}}
+			_, err := RenderDeck(doc, "T")
+			if err == nil || !strings.Contains(err.Error(), `section "S": `) ||
+				!strings.Contains(err.Error(), c.want) {
 				t.Errorf("err = %v, want %q", err, c.want)
 			}
 		})
@@ -1380,7 +1457,7 @@ func TestSampleDeckRenders(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"transition":"slide"`, `"presenter":"Alex, platform · 2026-10-01"`,
-		`data-layout="statement"`, `data-layout="section"`, `data-layout="center"`,
+		`data-layout="statement"`, `data-layout="section"`, `data-layout="center"`, `data-layout="split"`,
 		`data-tone="blue" style="--slide-accent: var(--blue)"`, `data-tone="amber"`, `data-tone="green"`, `data-tone="tone-neutral-bg"`,
 		`data-reveal="true"`, `<template class="deck-notes">`,
 		`<wk-columns cols="3">`, `<wk-stat-value>41 min</wk-stat-value>`, `<blockquote>`, `<details>`,
@@ -1404,8 +1481,8 @@ func TestSampleDeckRenders(t *testing.T) {
 			t.Errorf("sample deck lacks %q", want)
 		}
 	}
-	if n := len(c.Doc.Sections); n != 18 {
-		t.Errorf("sample deck has %d sections, want 18", n)
+	if n := len(c.Doc.Sections); n != 19 {
+		t.Errorf("sample deck has %d sections, want 19", n)
 	}
 	// The four reveal sections: two lists, the mixed slide, and the stepped
 	// chart that walks its steps after its paragraph (MAD-385).

@@ -784,6 +784,27 @@ html.has-deck-strip.presenting .deck .slide-body { padding-bottom: max(calc(5.5 
 .deck .slide wk-figure { margin: 0; }
 .deck .slide wk-figure img { max-height: calc(33 * var(--u)); width: auto; max-width: 100%; object-fit: contain; margin: 0 auto; }
 .deck .slide wk-col wk-figure img { margin: 0; }
+/* Split (MAD-581): the claim and a few words on the left, the one visual
+   on the right. decorateSlide in app.js moves the heading and the text
+   blocks into .split-text and the visual into .split-visual, side by side
+   in one .split row, so read-aloud's buttons sit above it. The columns
+   stand 2:3 with a 6u gap, 32u and 48u of the body's 86u at fit 1: the
+   visual gets a near-square 48u by the body's 46.75u, the shape a chart
+   or a diagram fills, and the claim keeps a column it wraps in, where the
+   86u0 cap above comes to nothing. Both columns centre on the vertical.
+   The visual's heights take the column's height in the unit, as a full
+   slide's take theirs, with room for a title or a caption; the lint's
+   splitWidthU and splitCapU are these numbers. */
+.deck .slide[data-layout="split"] .split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); column-gap: calc(6 * var(--u)); align-items: center; }
+.deck .slide[data-layout="split"] .split-text > :last-child { margin-bottom: 0; }
+.deck .slide[data-layout="split"] .present-chart-canvas { height: calc(38 * var(--u)); }
+.deck .slide[data-layout="split"] .present-chart[data-steps] .present-chart-canvas { height: calc(32 * var(--u)); }
+.deck .slide[data-layout="split"] .present-diagram-canvas { max-height: calc(42 * var(--u)); }
+.deck .slide[data-layout="split"] .present-diagram:is([data-steps], :has(.present-diagram-caption)) .present-diagram-canvas { max-height: calc(36 * var(--u)); }
+.deck .slide[data-layout="split"] wk-figure img { max-height: calc(42 * var(--u)); }
+.deck .slide[data-layout="split"] wk-figure:has(wk-figcaption) img { max-height: calc(36 * var(--u)); }
+.deck .slide[data-layout="split"] .cy-container { height: calc(42 * var(--u)); }
+.deck .slide[data-layout="split"] .present-terminal-canvas { --terminal-fill: 1; height: calc(42 * var(--u) - 2.125rem - 2px); }
 
 /* References: two columns; the title in the text ink, the address in mono
    on one line, cut with an ellipsis. */
@@ -872,6 +893,8 @@ html[data-transition="none"] .cy-container { transition: none; }
 @media (max-width: 700px) {
   html:not(.presenting) .deck .slide.active { container-type: normal; width: 100%; aspect-ratio: auto; overflow: visible; }
   html:not(.presenting) .deck .slide-body { --u0: 0.36rem; --floor: 0.75rem; height: auto; padding: 1.5rem 1.25rem 2rem; }
+  /* A split slide stacks its columns: the text, then the visual. */
+  html:not(.presenting) .deck .slide[data-layout="split"] .split { grid-template-columns: minmax(0, 1fr); row-gap: calc(4 * var(--u)); }
 }
 @media (max-width: 600px) {
   .deck-strip { left: 0.75rem; right: 0.75rem; }

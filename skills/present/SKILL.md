@@ -87,7 +87,7 @@ Section = {                              // one slide in a deck
   h: string,                             // heading (table of contents anchor; on a slide, the claim)
   blocks: Block[],
   tone?: string,                         // a palette role: a band in the brief, the accent on a slide
-  layout?: "default" | "center" | "statement" | "section",   // deck only
+  layout?: "default" | "center" | "statement" | "section" | "split",   // deck only
   notes?: string,                        // deck only: speaker notes
   reveal?: boolean                       // deck only: items appear one per Next
 }
@@ -275,7 +275,7 @@ A star inside a code span is literal. Outside one, a single `*` italicises only 
 | `h` | string | Section heading (used for TOC anchor): the claim the section proves, see **Headings are claims** |
 | `blocks` | array | Content blocks |
 | `tone` | string? | A palette role name (see **Colours available**). In a brief it gives the section a band in that colour; on a slide it colours the heading rule and the accent bar, never a filled background. Pick a saturated role (`blue`, `green`, `amber`, `red`, `purple`, `primary`): a `-bg` role is nearly invisible as a rule. An unknown name is refused |
-| `layout` | string? | Deck only: `default`, `center`, `statement` (the heading is the slide), or `section` (a divider). A slide whose only block is a `stat` or a `quote` is the big-number or quote slide with no layout set |
+| `layout` | string? | Deck only: `default`, `center`, `statement` (the heading is the slide), `section` (a divider), or `split` (the claim beside one visual). A lone `stat` or `quote` is the big-number or quote slide with no layout set |
 | `notes` | string? | Deck only: speaker notes with inline markdown. Never on the slide, never read aloud; the deck shows them in a drawer on the N key |
 | `reveal` | bool? | Deck only: the slide's list items and top-level blocks appear one per Next; a jump lands with all shown |
 
@@ -349,7 +349,7 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 10. **No agenda, no "questions?" slide.** Under nine slides an agenda is noise. The last authored slide is the ask (**Building a deck**, step 5).
 11. **Cut the spoken sentences.** If a line only makes sense when said aloud, it is the speaker's, not the slide's. The slide carries the claim; the speaker carries the argument. No sentence appears both on the slide and in `notes`.
 12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. The `sub` line gives the figure a comparison the room already knows ("2 of every 5 checkouts"). Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart`, the `graph`, or an `image` beside its caption paragraph in `columns`. A `diagram` stands alone (rule 16). An image alone on a slide fills it, bounded by the slide's height.
-13. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for a slide that is one short thing, a row of figures say. Everything else stays `default`; the heading and the blocks carry the slide.
+13. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for one short thing, a row of figures say. `split` for a claim beside its one visual. Everything else stays `default`.
 14. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
 15. **A chart that builds up gets steps.** Give a `chart` `steps` when the room should watch the picture form: one caption per step, and `step` on each series for the step it joins at. Three to five steps, each caption one short sentence. A `ribbon` steps by period, so keep a stepped ribbon to three to five periods. The shapes are in [references/charts.md](references/charts.md).
 16. **An architecture gets a diagram, and a diagram alone fills its slide.** Use a `diagram` block, not the graph, when the slide explains how parts fit. That is boxes with a name and a short text, boundaries around the parts that share a host or a trust level, and labelled arrows. Alone on a slide it fills the slide with its caption under it; inside `columns` its text draws too small for the room (`diagram.slide_columns`). A request walkthrough gets `steps`: four or five, each caption one sentence, with `focus` on the box the step is about. Keep it within `diagram.slide_boxes` and two or three tones per slide, and split a bigger picture over slides. See **Diagram format**.

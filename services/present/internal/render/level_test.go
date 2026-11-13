@@ -18,6 +18,7 @@ import (
 var vocabularyLevels = map[string]int{
 	"c1f83b1e51def023": 1,
 	"6dbb4a0ac6561418": 2, // diagram key
+	"b4f70fee7ccf7ab8": 3, // split slide layout
 }
 
 // TestRenderLevelFollowsTheVocabulary holds present.RenderLevel to the
