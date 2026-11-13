@@ -1747,13 +1747,11 @@ var Webkit = (() => {
       const outcome = await patch(body);
       const keys = keysOf(body);
       if (outcome !== "invalid" || keys.length < 2) return settle(body, outcome, seq);
-      let requeued = false;
-      for (const key of keys) {
-        if (pushedSince(key, seq)) continue;
+      const resends = keys.filter((key) => !pushedSince(key, seq)).map((key) => {
         const one = { [key]: body[key] };
-        if (settle(one, await patch(one), seq)) requeued = true;
-      }
-      return requeued;
+        return patch(one).then((answer) => settle(one, answer, seq));
+      });
+      return (await Promise.all(resends)).some((requeued) => requeued);
     }
     function dispatch(body) {
       const flight = deliver(body, pushSeq).then((requeued) => {
@@ -4130,7 +4128,10 @@ var Webkit = (() => {
     }
     connectedCallback() {
       if (this._initialized) {
-        if (this._refresh) controlRefreshers.add(this._refresh);
+        if (this._refresh) {
+          controlRefreshers.add(this._refresh);
+          this._refresh();
+        }
         return;
       }
       this._render();
@@ -4139,7 +4140,7 @@ var Webkit = (() => {
       this._initialized = true;
     }
     // A header taken off the page stops answering pulls; put back, it
-    // registers again in connectedCallback.
+    // registers again in connectedCallback and catches up with storage.
     disconnectedCallback() {
       if (this._refresh) controlRefreshers.delete(this._refresh);
     }

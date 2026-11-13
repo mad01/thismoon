@@ -547,6 +547,38 @@ test('push: a 400 on a patch of several keys resends them one by one, so the val
   assert.equal(h.patches().length, 3);
 });
 
+test('push: after a 400 the key-by-key resend sends every key before any of them answers', async () => {
+  // The page may go away during the resend, and a pagehide flush cannot save
+  // keys that belong to a flight, so each one has to be out already.
+  const answers = [];
+  const h = harness({
+    respond: c => {
+      if (c.method === 'GET') return doc({});
+      if (Object.keys(c.settings).length > 1) return answer({ status: 400, type: 'text/plain' });
+      const d = deferred();
+      answers.push(d);
+      return d.promise;
+    },
+  });
+  await h.sync.start();
+  h.user({ 'webkit-theme': 'dark', 'webkit-palette-dark': 'gruvbox', 'webkit-size': '18' });
+  await h.advance(PUSH_DEBOUNCE_MS);
+  assert.deepEqual(h.patches(), [
+    { 'webkit-theme': 'dark', 'webkit-palette-dark': 'gruvbox', 'webkit-size': '18' },
+    { 'webkit-theme': 'dark' },
+    { 'webkit-palette-dark': 'gruvbox' },
+    { 'webkit-size': '18' },
+  ]);
+
+  // Once they answer, the flight ends and the next change goes out.
+  for (const d of answers) d.resolve(doc({}));
+  await settle();
+  h.user({ 'webkit-font': 'Inter' });
+  await h.advance(PUSH_DEBOUNCE_MS);
+  assert.deepEqual(h.patches().at(-1), { 'webkit-font': 'Inter' });
+  assert.equal(h.patches().length, 5);
+});
+
 test('push: another 4xx drops the patch whole, and pulls leave its keys alone', async () => {
   for (const status of [403, 413, 415]) {
     const h = harness({

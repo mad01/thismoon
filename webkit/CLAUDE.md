@@ -465,9 +465,13 @@ reference implementation.
   converges on the next focus. The reader's own changes (the mode and palette setters, reset,
   the header's font, size and fixation controls) go out as one PATCH per
   200ms, one in flight. On pagehide the queue goes at once with keepalive,
-  even beside a PATCH in flight or before the first pull has answered. A
-  failed PATCH is resent before the next pull. A 400 on a patch of several
-  keys is resent key by key, so the valid keys land. A refused value is not
+  even beside a PATCH in flight or before the first pull has answered. Two
+  PATCHes with the same key can then land out of order, which leaves d-man on
+  the older value until the reader changes that key again. After a jump to
+  another host, the new page's first pull can beat the old page's last push,
+  so the new page shows the old value until the next focus. A failed PATCH
+  is resent before the next pull. A 400 on a patch of several keys is resent
+  key by key, all at once, so the valid keys land. A refused value is not
   resent: a key refused on its own, or any key of a patch another 4xx
   refuses. Pulls leave its local value alone until the reader changes that
   key again or the page reloads. Absent keys read as their defaults

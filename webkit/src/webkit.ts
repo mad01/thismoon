@@ -364,7 +364,10 @@ class WkHeader extends HTMLElement {
     // re-run _render() — it reads the now-consumed [data-nav]/[data-extra]
     // light-DOM children and would overwrite the built header with empties.
     if (this._initialized) {
-      if (this._refresh) controlRefreshers.add(this._refresh);
+      if (this._refresh) {
+        controlRefreshers.add(this._refresh);
+        this._refresh(); // a pull may have landed while it was off the page
+      }
       return;
     }
     this._render();
@@ -374,7 +377,7 @@ class WkHeader extends HTMLElement {
   }
 
   // A header taken off the page stops answering pulls; put back, it
-  // registers again in connectedCallback.
+  // registers again in connectedCallback and catches up with storage.
   disconnectedCallback(): void {
     if (this._refresh) controlRefreshers.delete(this._refresh);
   }

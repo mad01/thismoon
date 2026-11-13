@@ -77,6 +77,24 @@ for (const putBack of [false, true]) {
   });
 }
 
+test('settings sync: a header put back after a pull landed while it was off the page applies that pull', async t => {
+  const answer = deferred();
+  const { document, localStorage } = openPage(t, '<div id="slot"><wk-header controls="size"></wk-header></div>', {
+    url: THIS_HOST, fetch: settingsFetch(answer.promise),
+  });
+  const header = document.querySelector('wk-header');
+  header.remove();
+  answer.resolve({ 'webkit-size': '20' });
+  assert.equal(await until(() => localStorage.getItem('webkit-size') === '20'), true, 'the pull wrote the size');
+  assert.equal(document.documentElement.style.fontSize, '16px');
+
+  document.getElementById('slot').append(header);
+  assert.equal(document.documentElement.style.fontSize, '20px');
+  // The header's own size moved with it: one step up goes from 20, not 16.
+  document.getElementById('webkit-size-up').click();
+  assert.equal(document.documentElement.style.fontSize, '21px');
+});
+
 test('settings sync: with site storage blocked the kit still evaluates and sends no settings request', t => {
   const seen = [];
   const window = openPage(t, '', { url: THIS_HOST, fetch: settingsFetch(Promise.resolve({}), seen), blockStorage: true });

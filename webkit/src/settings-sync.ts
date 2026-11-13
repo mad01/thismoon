@@ -16,6 +16,9 @@
 // d-man that PATCH reaches the service's own backend, which routes nothing
 // at /__this/ and answers 404 or 405.
 //
+// A known limit: two PATCHes with the same key can land out of order, leaving
+// d-man on the older value until the reader changes that key again.
+//
 // The module holds no DOM: fetch, storage, the timers, the clock, the
 // hostname and the apply callback are passed in, so the node tests drive it
 // with stubs. It has no imports either, for the same reason: node runs the
@@ -307,18 +310,20 @@ function liveSync(deps: SyncDeps, storage: SyncStorage): SettingsSync {
 
   // One refused value fails a whole patch with a 400, so a patch of several
   // keys that gets one goes again key by key: the valid keys land and only
-  // the refused one is held.
+  // the refused one is held. The single-key PATCHes all go out at once: a
+  // page that goes away meanwhile cannot flush them, since they belong to
+  // this flight and not to the queue.
   async function deliver(body: Settings, seq: number): Promise<boolean> {
     const outcome = await patch(body);
     const keys = keysOf(body);
     if (outcome !== 'invalid' || keys.length < 2) return settle(body, outcome, seq);
-    let requeued = false;
-    for (const key of keys) {
-      if (pushedSince(key, seq)) continue;
-      const one: Settings = { [key]: body[key] };
-      if (settle(one, await patch(one), seq)) requeued = true;
-    }
-    return requeued;
+    const resends = keys
+      .filter(key => !pushedSince(key, seq))
+      .map(key => {
+        const one: Settings = { [key]: body[key] };
+        return patch(one).then(answer => settle(one, answer, seq));
+      });
+    return (await Promise.all(resends)).some(requeued => requeued);
   }
 
   function dispatch(body: Settings): Promise<void> {
