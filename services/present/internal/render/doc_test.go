@@ -1069,6 +1069,79 @@ func TestRenderDocDiagramScriptSafe(t *testing.T) {
 	}
 }
 
+// TestRenderDocDiagramKey renders a diagram's key between the canvas and
+// the caption: a list under a hidden "Key" heading, one item per entry in
+// key order, each a decorative swatch in the entry's tone class, the tone's
+// colour hidden for read-aloud (grey for neutral), and the label as escaped
+// plain text.
+func TestRenderDocDiagramKey(t *testing.T) {
+	keyed := Block{
+		T: "diagram", Caption: "What each command reads and writes.",
+		Nodes: []DiagramNode{
+			{ID: "cmd", Label: "belt guard", Tone: "green"},
+			{ID: "log", Label: "ledger", Kind: "store", Tone: "blue"},
+			{ID: "cc", Label: "Claude Code", Tone: "neutral"},
+		},
+		Key: []DiagramKeyItem{
+			{Tone: "green", Label: "belt's commands"},
+			{Tone: "blue", Label: "holds <data>"},
+			{Tone: "neutral", Label: "outside belt"},
+		},
+	}
+	for name, render := range map[string]func(Doc, string) (string, error){
+		"brief": RenderDoc, "deck": RenderDeck,
+	} {
+		out, err := render(Doc{Sections: []Section{{Heading: "S", Blocks: []Block{keyed}}}}, "T")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		want := `  <div class="present-diagram-key">
+    <span class="present-sr-only">Key</span>
+    <ul role="list">
+      <li><span class="present-diagram-swatch tone-green" aria-hidden="true"></span><span class="present-sr-only">green, </span>belt&#39;s commands</li>
+      <li><span class="present-diagram-swatch tone-blue" aria-hidden="true"></span><span class="present-sr-only">blue, </span>holds &lt;data&gt;</li>
+      <li><span class="present-diagram-swatch tone-neutral" aria-hidden="true"></span><span class="present-sr-only">grey, </span>outside belt</li>
+    </ul>
+  </div>
+  <p class="present-diagram-caption" data-fixation>What each command reads and writes.</p>`
+		if !strings.Contains(out, want) {
+			t.Errorf(
+				"%s output lacks the key under the canvas and over the caption:\n%s",
+				name,
+				out,
+			)
+		}
+		spec := out[strings.Index(out, `class="diagram-spec">`):]
+		if strings.Contains(spec[:strings.Index(spec, "</script>")], "belt's commands") {
+			t.Errorf("%s: the key rides in the layout island; it is markup only", name)
+		}
+	}
+}
+
+// TestDiagramKeyDecodes reads a key from Doc JSON and keeps it in the
+// canonical JSON the store writes. A field this binary does not know is
+// dropped without an error, the way an older binary drops key.
+func TestDiagramKeyDecodes(t *testing.T) {
+	raw := `{"sections":[{"h":"S","blocks":[{"t":"diagram",
+		"nodes":[{"id":"a","label":"A","tone":"green"}],
+		"key":[{"tone":"green","label":"ours"}],
+		"legend":[{"colour":"green"}]}]}]}`
+	c, err := Compile([]byte(raw), "T")
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	got := c.Doc.Sections[0].Blocks[0].Key
+	if len(got) != 1 || got[0] != (DiagramKeyItem{Tone: "green", Label: "ours"}) {
+		t.Errorf("key = %+v, want one green item labelled ours", got)
+	}
+	if !strings.Contains(string(c.JSON), `"key":[{"tone":"green","label":"ours"}]`) {
+		t.Errorf("canonical JSON lacks the key: %s", c.JSON)
+	}
+	if strings.Contains(string(c.JSON), "legend") {
+		t.Errorf("canonical JSON keeps the unknown field: %s", c.JSON)
+	}
+}
+
 // terminalDoc wraps blocks in a one-section Doc.
 func terminalDoc(blocks ...Block) Doc {
 	return Doc{Sections: []Section{{Heading: "S", Blocks: blocks}}}

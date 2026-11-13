@@ -10,7 +10,17 @@
           {
             "t": "diagram",
             "direction": "TB",
-            "caption": "The whole of moondb. An arrow shows which way data moves. Green is a moondb command, blue is on disk.",
+            "key": [
+              {
+                "tone": "green",
+                "label": "a moondb command"
+              },
+              {
+                "tone": "blue",
+                "label": "on disk"
+              }
+            ],
+            "caption": "The whole of moondb. An arrow shows which way data moves.",
             "nodes": [
               {
                 "id": "record",
@@ -276,7 +286,21 @@
           {
             "t": "diagram",
             "direction": "LR",
-            "caption": "One edit, from the spool to an answer. Blue is a record on disk, green is a moondb command, grey is git.",
+            "key": [
+              {
+                "tone": "blue",
+                "label": "a record on disk"
+              },
+              {
+                "tone": "green",
+                "label": "a moondb command"
+              },
+              {
+                "tone": "neutral",
+                "label": "git"
+              }
+            ],
+            "caption": "One edit, from the spool to an answer.",
             "nodes": [
               {
                 "id": "env",

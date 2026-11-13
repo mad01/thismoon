@@ -56,6 +56,7 @@ const (
 	DiagramSlideBoxes   ID = "diagram.slide_boxes"
 	DiagramSlidePath    ID = "diagram.slide_path"
 	DiagramSlideColumns ID = "diagram.slide_columns"
+	DiagramKeyUnused    ID = "diagram.key_unused"
 	SlideWords          ID = "slide.words"
 	DeckTextOnly        ID = "deck.text_only"
 	InlineStrayMark     ID = "inline.stray_mark"
@@ -71,6 +72,8 @@ const (
 	DiagramLabel     ID = "diagram.label"
 	DiagramText      ID = "diagram.text"
 	DiagramEdgeLabel ID = "diagram.edge_label"
+	DiagramKeyItems  ID = "diagram.key_items"
+	DiagramKeyLabel  ID = "diagram.key_label"
 	TerminalRowsMin  ID = "terminal.rows_min"
 	TerminalRowsMax  ID = "terminal.rows_max"
 	TerminalSession  ID = "terminal.session"
@@ -184,6 +187,13 @@ var table = []Limit{
 		Reason: "In part of the slide's width the diagram's text draws under the size a room can read.",
 	},
 	{
+		ID: DiagramKeyUnused, Level: Warn,
+		Scope:  "a diagram's key, brief and deck",
+		Source: House,
+		Rule:   "Every key item names a tone a box or group of its diagram carries.",
+		Reason: "A swatch no box matches sends the reader looking for a colour the picture does not hold.",
+	},
+	{
 		ID: SlideWords, Number: 50, Unit: "words", Level: Warn,
 		Scope:  "a slide, outside its heading",
 		Source: House,
@@ -260,6 +270,20 @@ var table = []Limit{
 		Source: Renderer,
 		Rule:   "An edge label is at most 24 characters.",
 		Reason: "The widest label sets the gap between two layers.",
+	},
+	{
+		ID: DiagramKeyItems, Number: 6, Unit: "items", Level: Refuse,
+		Scope:  "a diagram's key",
+		Source: Renderer,
+		Rule:   "A key holds at most 6 items, one per tone, and no tone twice.",
+		Reason: "There are six node tones, and a swatch says what one tone means.",
+	},
+	{
+		ID: DiagramKeyLabel, Number: 24, Unit: "characters", Level: Refuse,
+		Scope:  "a diagram key item's label",
+		Source: Renderer,
+		Rule:   "A key label is at most 24 characters.",
+		Reason: "The key is a row under the diagram at the caption's size, and each long label pushes another item onto a second row; the rest of what a tone means goes in the caption.",
 	},
 	{
 		ID: TerminalRowsMin, Number: 8, Unit: "rows", Level: Refuse,

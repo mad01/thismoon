@@ -223,12 +223,30 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
    the deck's --wk-measure: none lifts it. */
 .present-diagram-caption, .present-steps { max-width: calc(var(--wk-measure) * 0.9375 / 0.875); }
 .deck .present-diagram-caption, .deck .present-diagram .present-steps { text-align: center; }
-.present-diagram-svg .tone-neutral { --dtone-bg: var(--tone-neutral-bg); --dtone-border: var(--tone-neutral-border); --dtone-text: var(--tone-neutral-text); }
-.present-diagram-svg .tone-green { --dtone-bg: var(--tone-green-bg); --dtone-border: var(--tone-green-border); --dtone-text: var(--tone-green-text); }
-.present-diagram-svg .tone-red { --dtone-bg: var(--tone-red-bg); --dtone-border: var(--tone-red-border); --dtone-text: var(--tone-red-text); }
-.present-diagram-svg .tone-blue { --dtone-bg: var(--tone-blue-bg); --dtone-border: var(--tone-blue-border); --dtone-text: var(--tone-blue-text); }
-.present-diagram-svg .tone-amber { --dtone-bg: var(--tone-amber-bg); --dtone-border: var(--tone-amber-border); --dtone-text: var(--tone-amber-text); }
-.present-diagram-svg .tone-purple { --dtone-bg: var(--tone-purple-bg); --dtone-border: var(--tone-purple-border); --dtone-text: var(--tone-purple-text); }
+/* A diagram's key (MAD-580): a centred row under the canvas, one swatch
+   and label per tone, wrapping on a narrow screen. A swatch is a box of
+   its tone in small, its fill and border the same --dtone-* pair a box
+   reads, so the key follows every theme the boxes do. The text is the
+   caption's size; the "Key" heading and each tone's name are for
+   read-aloud and screen readers only, and the swatch is decorative. */
+.present-diagram-key { margin: 0.5rem 0 0; font-size: 0.875rem; line-height: 1.4; color: var(--text-2); }
+.present-diagram-key ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25em 1.25em; list-style: none; margin: 0; padding: 0; }
+.present-diagram-key li { margin: 0; padding: 0; }
+.present-diagram-swatch {
+  display: inline-block; box-sizing: border-box; width: 0.9em; height: 0.9em; border-radius: 0.2em;
+  margin-right: 0.4em; vertical-align: -0.08em;
+  background: var(--dtone-bg, var(--card-bg)); border: 1.5px solid var(--dtone-border, var(--border));
+}
+.present-sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+:is(.present-diagram-svg, .present-diagram-key) .tone-neutral { --dtone-bg: var(--tone-neutral-bg); --dtone-border: var(--tone-neutral-border); --dtone-text: var(--tone-neutral-text); }
+:is(.present-diagram-svg, .present-diagram-key) .tone-green { --dtone-bg: var(--tone-green-bg); --dtone-border: var(--tone-green-border); --dtone-text: var(--tone-green-text); }
+:is(.present-diagram-svg, .present-diagram-key) .tone-red { --dtone-bg: var(--tone-red-bg); --dtone-border: var(--tone-red-border); --dtone-text: var(--tone-red-text); }
+:is(.present-diagram-svg, .present-diagram-key) .tone-blue { --dtone-bg: var(--tone-blue-bg); --dtone-border: var(--tone-blue-border); --dtone-text: var(--tone-blue-text); }
+:is(.present-diagram-svg, .present-diagram-key) .tone-amber { --dtone-bg: var(--tone-amber-bg); --dtone-border: var(--tone-amber-border); --dtone-text: var(--tone-amber-text); }
+:is(.present-diagram-svg, .present-diagram-key) .tone-purple { --dtone-bg: var(--tone-purple-bg); --dtone-border: var(--tone-purple-border); --dtone-text: var(--tone-purple-text); }
 .present-diagram-svg .dgroup-box {
   fill: var(--dtone-bg, var(--chip-bg)); fill-opacity: 0.5;
   stroke: var(--dtone-border, var(--border)); stroke-width: 1px; stroke-dasharray: 4 3;
@@ -511,6 +529,7 @@ html.presenting .slide .present-terminal { --terminal-font-size: 16; }
   max-width: calc(var(--wk-measure) * 1.125 / 0.9375);
 }
 .brief:not(.deck) .present-diagram-caption { margin-top: 0.75rem; }
+.brief:not(.deck) .present-diagram-key { font-size: var(--fs-small); line-height: 1.5; margin-top: 0.75rem; }
 .brief:not(.deck) .present-steps {
   font-size: var(--fs-body); line-height: 1.55; color: var(--text-1);
   max-width: var(--wk-measure); margin-top: 1rem; padding-left: 2rem;
@@ -746,6 +765,10 @@ html.has-deck-strip.presenting .deck .slide-body { padding-bottom: max(calc(5.5 
 .deck .slide :is(.present-steps, .present-diagram-caption, wk-figcaption) {
   font-size: calc(2.2 * var(--u) + var(--bump)); line-height: 1.3; color: var(--text-2);
   max-width: 36em; margin: calc(1.2 * var(--u)) auto 0; text-align: center;
+}
+.deck .slide .present-diagram-key {
+  font-size: max(var(--floor), calc(2.2 * var(--u) + var(--bump))); line-height: 1.3;
+  margin: calc(1.2 * var(--u)) 0 0;
 }
 .deck .slide .present-chart { margin: 0; }
 .deck .slide .present-chart[data-chart-title]::before { font-size: calc(2 * var(--u) + var(--bump)); font-weight: 600; color: var(--ink-strong); letter-spacing: 0; margin-bottom: var(--u); }

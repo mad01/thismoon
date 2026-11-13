@@ -21,6 +21,8 @@ func TestCapsMatchLimits(t *testing.T) {
 		{limits.DiagramLabel, diagramMaxLabel},
 		{limits.DiagramText, diagramMaxText},
 		{limits.DiagramEdgeLabel, diagramMaxEdgeLabel},
+		{limits.DiagramKeyItems, len(graphTones)},
+		{limits.DiagramKeyLabel, diagramMaxKeyLabel},
 		{limits.TerminalRowsMin, TerminalMinRows},
 		{limits.TerminalRowsMax, TerminalMaxRows},
 		{limits.TerminalSession, TerminalSessionMaxLen},

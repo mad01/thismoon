@@ -17,6 +17,7 @@ import (
 // level and keeps the lines before it, so the raise shows in the diff.
 var vocabularyLevels = map[string]int{
 	"c1f83b1e51def023": 1,
+	"6dbb4a0ac6561418": 2, // diagram key
 }
 
 // TestRenderLevelFollowsTheVocabulary holds present.RenderLevel to the

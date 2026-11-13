@@ -28,7 +28,9 @@ var pairFiles = map[string][]limits.ID{
 		limits.SummaryWords, limits.HeadingLabel, limits.BriefFigureGap,
 		limits.BriefParagraph, limits.TableRows, limits.TableCell,
 	},
-	"diagrams.md": {limits.DiagramBoxes, limits.DiagramChain, limits.DiagramRow},
+	"diagrams.md": {
+		limits.DiagramBoxes, limits.DiagramChain, limits.DiagramRow, limits.DiagramKeyUnused,
+	},
 	"decks.md": {
 		limits.SlideWords, limits.DeckTextOnly, limits.DiagramSlideBoxes,
 		limits.DiagramSlidePath, limits.DiagramSlideColumns,

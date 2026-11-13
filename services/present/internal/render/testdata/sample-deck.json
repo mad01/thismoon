@@ -396,6 +396,16 @@
         {
           "t": "diagram",
           "direction": "LR",
+          "key": [
+            {
+              "tone": "neutral",
+              "label": "the edge"
+            },
+            {
+              "tone": "blue",
+              "label": "our cluster"
+            }
+          ],
           "caption": "One checkout request, from the browser to the orders table.",
           "groups": [
             {

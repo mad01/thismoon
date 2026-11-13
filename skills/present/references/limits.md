@@ -24,6 +24,7 @@ In the order the lint reports them.
 | `diagram.slide_boxes` | 6 boxes | a diagram on a slide | house |
 | `diagram.slide_path` | 899 px | a diagram on a slide | renderer |
 | `diagram.slide_columns` | none | a diagram on a slide | renderer |
+| `diagram.key_unused` | none | a diagram's key, brief and deck | house |
 | `slide.words` | 50 words | a slide, outside its heading | house |
 | `deck.text_only` | 50 percent | the default-layout slides of a deck | study (one study, 110 students) |
 | `inline.stray_mark` | none | every text field, brief and deck | renderer |
@@ -41,6 +42,7 @@ In the order the lint reports them.
 - `diagram.slide_boxes`: A diagram on a slide holds at most 6 boxes. A slide shrinks a diagram to fit, so a fuller diagram draws its text under the size a room can read.
 - `diagram.slide_path`: A slide diagram's longest path fits the slide at its smallest text. A row holds at most 899 px, a column 345 px, or 303 px under steps or a caption. A slide shrinks a diagram until it fits. Every box and labelled arrow on the path adds a layer, so a path too long for a row and a column draws its labels under the size a room can read. The lint estimates the path from its box text and edge labels in the page's default face. Groups and branches add to it, so a path it passes can still draw small.
 - `diagram.slide_columns`: A diagram on a slide sits alone, not inside columns. In part of the slide's width the diagram's text draws under the size a room can read.
+- `diagram.key_unused`: Every key item names a tone a box or group of its diagram carries. A swatch no box matches sends the reader looking for a colour the picture does not hold.
 - `slide.words`: A slide holds at most 50 words outside its heading; of a stepped chart or diagram only the longest caption counts. A room reads a slide at a glance; the detail belongs in the brief or the speaker notes.
 - `deck.text_only`: At most half (50 percent) of the default-layout slides hold only prose or a list. A claim shown beside a picture is remembered better than the same claim in text alone.
 - `inline.stray_mark`: No backtick or pair of stars sits in a field drawn as plain text, and a field that takes inline markdown holds an even number of backticks. The marks print as they are, so the reader sees raw markdown instead of code or bold.
@@ -71,6 +73,8 @@ Findings come by rule in the order of the table, then from the top of the page: 
 | `diagram.label` | 32 characters | a diagram box or group label | renderer |
 | `diagram.text` | 60 characters | a diagram box's text | renderer |
 | `diagram.edge_label` | 24 characters | a diagram edge label | renderer |
+| `diagram.key_items` | 6 items | a diagram's key | renderer |
+| `diagram.key_label` | 24 characters | a diagram key item's label | renderer |
 | `terminal.rows_min` | 8 rows | a terminal block that sets rows | renderer |
 | `terminal.rows_max` | 60 rows | a terminal block that sets rows | renderer |
 | `terminal.session` | 32 characters | a terminal block's session name | renderer |
@@ -83,6 +87,8 @@ Findings come by rule in the order of the table, then from the top of the page: 
 - `diagram.label`: A box or group label is at most 32 characters. A box label wraps inside its box, about 27 characters a line in a full box (240 px) and 20 in a compact one (190 px), so it keeps to two lines, three when a long word falls badly; a group label sets the group's least width.
 - `diagram.text`: A box's text is at most 60 characters. It wraps under the label, and the cap keeps a box to a few lines.
 - `diagram.edge_label`: An edge label is at most 24 characters. The widest label sets the gap between two layers.
+- `diagram.key_items`: A key holds at most 6 items, one per tone, and no tone twice. There are six node tones, and a swatch says what one tone means.
+- `diagram.key_label`: A key label is at most 24 characters. The key is a row under the diagram at the caption's size, and each long label pushes another item onto a second row; the rest of what a tone means goes in the caption.
 - `terminal.rows_min`: A terminal block's rows is at least 8. With fewer a full-screen program has no room to draw.
 - `terminal.rows_max`: A terminal block's rows is at most 60. With more the terminal outgrows a slide.
 - `terminal.session`: A session name is 1 to 32 of a-z, 0-9, and -. It is a path segment of the attach route and the key serve holds the session under.
