@@ -154,22 +154,38 @@
     return nodeKind(n) === 'dangling';
   }
 
+  // communityShown says whether the legend lets node id show: not when its
+  // community is in hidden, a set of community numbers. A node with no
+  // community always shows.
+  function communityShown(id, community, hidden) {
+    if (!hidden || !community) return true;
+    var c = community[id];
+    return c === undefined || c === null || !hidden[c];
+  }
+
+  // noteShown says whether a note node shows: it passes the filters f,
+  // touches an edge when orphans are off, and its community is not one
+  // the legend hides (legend is {community, hidden}, or null).
+  function noteShown(n, f, legend) {
+    if (!matchesFilters(n, f)) return false;
+    if (!f.orphans && isOrphan(n)) return false;
+    return !legend || communityShown(n.id, legend.community, legend.hidden);
+  }
+
   // visibleIds returns the set of node ids to draw. Hiding never moves a
   // node: app.js keeps every node in the sigma graph and hides the rest.
-  //   - A note shows when it passes the filters, and, with orphans off, when
-  //     it touches at least one edge.
+  //   - A note shows when noteShown says so: the filters and the legend
+  //     both let it.
   //   - A dangling target shows with dangling on, when a shown note links to it.
   //   - A tag shows when a shown note carries it.
-  // f is {vault, tier, tag, status, orphans, dangling}.
-  function visibleIds(nodes, edges, f) {
+  // f is {vault, tier, tag, status, orphans, dangling}; legend is
+  // legendFilter's answer, or null when the legend hides nothing.
+  function visibleIds(nodes, edges, f, legend) {
     var byId = {};
     nodes.forEach(function (n) { byId[n.id] = n; });
     var shown = {};
     nodes.forEach(function (n) {
-      if (nodeKind(n) !== 'note') return;
-      if (!matchesFilters(n, f)) return;
-      if (!f.orphans && isOrphan(n)) return;
-      shown[n.id] = true;
+      if (nodeKind(n) === 'note' && noteShown(n, f, legend)) shown[n.id] = true;
     });
     edges.forEach(function (e) {
       if (!shown[e.source]) return;
@@ -201,6 +217,72 @@
 
   function neighbours(adj, id) {
     return Object.keys(adj[id] || {});
+  }
+
+  // ── the side panel ──
+
+  // KIND_LABELS name the nodes that are not notes in CONTEXT.md's words: a
+  // topic node, and the dangling node the graph draws for a dangling link.
+  var KIND_LABELS = { tag: 'topic node', dangling: 'dangling node' };
+
+  // neighbourMeta is the grey text beside a node in a list: a note's tier,
+  // else what kind of node it is.
+  function neighbourMeta(n) {
+    var kind = nodeKind(n);
+    return kind === 'note' ? n.tier || '' : KIND_LABELS[kind];
+  }
+
+  function byLabel(a, b) {
+    var x = a.label.toLowerCase();
+    var y = b.label.toLowerCase();
+    if (x !== y) return x < y ? -1 : 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  }
+
+  // neighbourList lists the neighbours of id for the side panel. shown holds
+  // the ones in view (inView, a set of node ids) as {id, label, meta},
+  // sorted by label; hidden counts the rest. adj is adjacency's map and
+  // nodeOf(id) answers a node or null.
+  function neighbourList(id, adj, nodeOf, inView) {
+    var shown = [];
+    var hidden = 0;
+    neighbours(adj, id).forEach(function (nb) {
+      var n = nodeOf(nb);
+      if (!n) return;
+      if (!inView[nb]) { hidden++; return; }
+      shown.push({ id: nb, label: nodeLabel(n), meta: neighbourMeta(n) });
+    });
+    shown.sort(byLabel);
+    return { shown: shown, hidden: hidden };
+  }
+
+  // panelFacts lists the {label, value} rows the side panel shows for node
+  // n: its tier (or its kind when it is no note), its degree as Links (the
+  // edges that touch it, so a link both ways counts twice), and its
+  // community by name with that community's colour role. names is
+  // communityNames' map; a node with no community gets no community row.
+  function panelFacts(n, community, names) {
+    var kind = nodeKind(n);
+    var rows = [kind === 'note'
+      ? { label: 'Tier', value: n.tier || 'none' }
+      : { label: 'Kind', value: KIND_LABELS[kind] }];
+    rows.push({ label: 'Links', value: String(n.degree || 0) });
+    var c = community ? community[n.id] : undefined;
+    if (c !== undefined && c !== null) {
+      rows.push({ label: 'Community', value: names[c] || String(c), role: clusterRole(c) });
+    }
+    return rows;
+  }
+
+  // OUT_OF_VIEW_HINT is the side panel's hint for a node the graph does not
+  // draw. A filter, the legend, a search or the local graph can keep it
+  // out, and the wording holds for each.
+  var OUT_OF_VIEW_HINT = 'Not in the current view.';
+
+  // panelHint answers the side panel's hint for node id: '' while inView,
+  // the set of node ids the graph draws, holds it, else OUT_OF_VIEW_HINT.
+  function panelHint(id, inView) {
+    return inView && inView[id] ? '' : OUT_OF_VIEW_HINT;
   }
 
   function clampDepth(depth) {
@@ -377,7 +459,8 @@
   }
 
   // legend lists {label, role} for a colour mode: every value the mode
-  // knows, then "none" when some note has no value. Tag nodes and dangling
+  // knows, then "none" when some note has no value. A cluster entry also
+  // carries communities, the numbers it toggles. Tag nodes and dangling
   // targets keep one colour in every mode; ctx.topics and ctx.dangling (the
   // toggles that show them) add those entries when the graph holds any.
   function legend(mode, nodes, ctx) {
@@ -408,28 +491,94 @@
     }
   }
 
-  // clusterLegend names each community after its note with the most links,
-  // in community order, one entry per palette colour; the rest are counted
-  // in a last entry with no swatch. "unlinked" is the grey of LOOSE notes.
+  // communityNames names each community the notes among nodes fall in
+  // after its note with the most links, cut to LEGEND_LABEL_MAX, and LOOSE
+  // "unlinked". The legend and the side panel both name communities so.
   var LEGEND_LABEL_MAX = 24;
-  function clusterLegend(notes, community) {
+  var LOOSE_NAME = 'unlinked';
+  function communityNames(nodes, community) {
     var hub = {};
-    var loose = false;
-    notes.forEach(function (n) {
+    var names = {};
+    nodes.forEach(function (n) {
       var c = community[n.id];
-      if (c === undefined) return;
-      if (c === LOOSE) { loose = true; return; }
+      if (c === undefined || nodeKind(n) !== 'note') return;
+      if (c === LOOSE) { names[LOOSE] = LOOSE_NAME; return; }
       if (!hub[c] || (n.degree || 0) > (hub[c].degree || 0)) hub[c] = n;
     });
-    var keys = Object.keys(hub).map(Number).sort(function (a, b) { return a - b; });
-    var out = keys.slice(0, NODE_ROLES.length).map(function (c) {
+    Object.keys(hub).forEach(function (c) {
       var label = nodeLabel(hub[c]);
       if (label.length > LEGEND_LABEL_MAX) label = label.slice(0, LEGEND_LABEL_MAX - 1).trim() + '\u2026';
-      return { label: label, role: clusterRole(c) };
+      names[c] = label;
     });
-    var more = keys.length - out.length;
-    if (more > 0) out.push({ label: '+' + more + ' more', role: '' });
-    if (loose) out.push({ label: 'unlinked', role: NONE_ROLE });
+    return names;
+  }
+
+  // clusterLegend lists the communities in community order, one entry per
+  // palette colour; the rest share a last entry with no swatch, and
+  // "unlinked" is the grey of LOOSE notes. Each entry carries the
+  // community numbers it stands for, which its legend toggle hides.
+  function clusterLegend(notes, community) {
+    var names = communityNames(notes, community);
+    var keys = Object.keys(names).map(Number).filter(function (c) { return c !== LOOSE; })
+      .sort(function (a, b) { return a - b; });
+    var out = keys.slice(0, NODE_ROLES.length).map(function (c) {
+      return { label: names[c], role: clusterRole(c), communities: [c] };
+    });
+    var rest = keys.slice(NODE_ROLES.length);
+    if (rest.length) out.push({ label: '+' + rest.length + ' more', role: '', communities: rest });
+    if (names[LOOSE] !== undefined) out.push({ label: LOOSE_NAME, role: NONE_ROLE, communities: [LOOSE] });
+    return out;
+  }
+
+  // \u2500\u2500 the legend's community toggles \u2500\u2500
+  // In the cluster colour mode each community entry of the legend hides
+  // and shows its notes. The set of hidden community numbers lives in
+  // app.js; these helpers answer from it.
+
+  // legendFilter is the {community, hidden} visibleIds takes, or null when
+  // the legend hides nothing: the toggles act only in the cluster colour
+  // mode, so another mode shows every community and keeps the set for when
+  // cluster comes back.
+  function legendFilter(mode, community, hidden) {
+    if (mode !== 'cluster' || !community || !anyHidden(hidden)) return null;
+    return { community: community, hidden: hidden };
+  }
+
+  function anyHidden(hidden) {
+    return !!hidden && Object.keys(hidden).some(function (c) { return hidden[c]; });
+  }
+
+  // allHidden says whether every community of list is in hidden: the
+  // dimmed state of the legend entry for list.
+  function allHidden(hidden, list) {
+    return list.length > 0 && list.every(function (c) { return !!(hidden && hidden[c]); });
+  }
+
+  // toggleCommunities answers the hidden set after a press on the legend
+  // entry for list: all shown again when every one was hidden, else all
+  // hidden. It returns a new set and leaves hidden as it was.
+  function toggleCommunities(hidden, list) {
+    var show = allHidden(hidden, list);
+    var out = {};
+    Object.keys(hidden || {}).forEach(function (c) { if (hidden[c]) out[c] = true; });
+    list.forEach(function (c) {
+      if (show) delete out[c];
+      else out[c] = true;
+    });
+    return out;
+  }
+
+  // pruneHidden answers the hidden set cut to the communities the notes
+  // among nodes fall in, the ones the legend lists, so a community a
+  // refetch took away is no longer hidden. It returns a new set.
+  function pruneHidden(hidden, nodes, community) {
+    var live = {};
+    nodes.forEach(function (n) {
+      var c = community[n.id];
+      if (c !== undefined && c !== null && nodeKind(n) === 'note') live[c] = true;
+    });
+    var out = {};
+    Object.keys(hidden || {}).forEach(function (c) { if (hidden[c] && live[c]) out[c] = true; });
     return out;
   }
 
@@ -1178,11 +1327,16 @@
     activeFilters: activeFilters,
     coversAll: coversAll,
     matchesFilters: matchesFilters,
+    communityShown: communityShown,
+    noteShown: noteShown,
     visibleIds: visibleIds,
     isOrphan: isOrphan,
     isDangling: isDangling,
     adjacency: adjacency,
     neighbours: neighbours,
+    neighbourList: neighbourList,
+    panelFacts: panelFacts,
+    panelHint: panelHint,
     depthSearch: depthSearch,
     clampDepth: clampDepth,
     maxDegree: maxDegree,
@@ -1202,6 +1356,12 @@
     edgeRole: edgeRole,
     edgeCaption: edgeCaption,
     legend: legend,
+    communityNames: communityNames,
+    legendFilter: legendFilter,
+    anyHidden: anyHidden,
+    allHidden: allHidden,
+    toggleCommunities: toggleCommunities,
+    pruneHidden: pruneHidden,
     knownPositions: knownPositions,
     anchorsFor: anchorsFor,
     groupByAnchor: groupByAnchor,

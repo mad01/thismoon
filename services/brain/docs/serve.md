@@ -138,7 +138,8 @@ their place. The browser then:
 5. POSTs the positions with the key it was given once it rests.
 
 Only the global layout is posted: a run over every node the default
-filters show (dangling targets stay hidden by default), with no search. A
+filters show (dangling targets stay hidden by default), with no search and
+no community hidden in the legend. A
 page opened with a vault filter, or on a local graph, settles what it
 shows and posts nothing; the next run over the whole graph picks up the
 settling that is left and posts once it rests. With every node cached the
@@ -169,9 +170,9 @@ space between the islands:
   circles are less than 100 units apart share an island. A graph that
   changed while the page was closed keeps its islands, even when Louvain
   would now split it another way.
-- A filter or a search keeps the communities and the islands: the nodes
-  still shown gather on their own islands, and the hidden ones keep their
-  places.
+- A filter, a search or a community hidden in the legend keeps the
+  communities and the islands: the nodes still shown gather on their own
+  islands, and the hidden ones keep their places.
 - A local graph has no islands: its notes spread around the centre with the
   plain forces.
 
@@ -194,8 +195,9 @@ run over the whole graph rests.
   `forceX`, `forceY`), and `louvain`, which finds the communities.
 - `graph.js` sets `window.BrainGraph` to pure helpers with no DOM access:
   filters, colour roles, node radii and captions, depth search, the
-  simulation settings, where a new node starts, camera framing and search
-  hits.
+  simulation settings, where a new node starts, camera framing, search
+  hits, community names, the legend's community toggles and the side
+  panel's facts and neighbour list.
 - `app.js` is an IIFE over `window.Webkit`, `window.BrainSigma` and
   `window.BrainGraph`. It polls `/api/state` every 10 seconds and refetches
   when the key changes.
@@ -208,11 +210,39 @@ run over the whole graph rests.
   staleness or cluster: each community in its own colour, named in the
   legend after its note with the most links. Review counts what needs action: promotions, the stale queue
   and check errors. Check warnings show in its Check tab only.
+- In the cluster colour mode each community in the legend is a toggle
+  button: a press hides that community's notes and their edges and dims
+  the entry, the next press shows them again. The entry for the
+  communities past the twelfth colour toggles them all, and Show all
+  brings back every hidden community. A note shows only when the filters
+  and the legend both let it; topic nodes and dangling targets follow the
+  notes still shown, as they do for a filter. The camera stays where it
+  is. Another colour mode shows every community and keeps the hidden set
+  for when cluster comes back. The set lasts until the page reloads.
 - A click on a note opens it in a popup over the dimmed graph, which Esc,
   the close button or a click outside closes; a double click opens its
   local graph. A press that moves 5 px or more is a drag, never a click.
   The review queues open in the same popup. When the vault changes, the
   open note is read again in place, keeping its scroll position.
+- A click on any node also opens the side panel, docked on the right of
+  the graph, and a double click moves the panel to the node it makes the
+  local graph's centre. The panel shows the node's title, its tier (or,
+  for a topic node or a dangling node, its kind), its links (its degree:
+  the edges that touch it, so a link both ways counts twice), the name of
+  its community, and its neighbours sorted by title, with a count of
+  those the filters, the legend, a search or the local graph keep out of
+  view. When the graph does not draw the node itself, the panel says it
+  is not in the current view. A click on a topic node still toggles the
+  tag filter, and on a dangling node still names its link in a toast.
+  The panel is no dialog: while the popup is open its backdrop covers the
+  panel, and the panel stays open when the popup closes, with the node's
+  selected halo. A neighbour's button moves the camera onto that node at
+  the zoom it has, selects it and shows it in the panel, without opening
+  the popup; focus moves to the first of the new neighbours, or to the
+  close button when there is none. Open note opens it in the popup. A
+  link followed inside the popup moves the panel too. Esc inside the
+  panel, or its close button, closes it. The panel reads the graph the
+  page already holds and makes no request of its own.
 - A search reduces the graph to the notes it finds and the edges among
   them; Esc in the search box clears it.
 - The UI fetches the whole graph (`/api/graph` with only `topics`) and
