@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.0](https://github.com/mad01/thismoon/compare/present/v1.22.0...present/v1.23.0) (2026-11-13)
+
+
+### Features
+
+* **present:** readable figures, a page lint, and a skill built on page types ([0a3fd6a](https://github.com/mad01/thismoon/commit/0a3fd6a4d3fc3b1f1c7aac2f3554e9eb4ef13575))
+
 ## [1.22.0](https://github.com/mad01/thismoon/compare/present/v1.21.0...present/v1.22.0) (2026-11-13)
 
 
