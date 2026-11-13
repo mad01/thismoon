@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mad01/thismoon/kit/cslignore"
 	"github.com/mad01/thismoon/services/csl"
-	"github.com/mad01/thismoon/services/csl/internal/cslignore"
 	"github.com/mad01/thismoon/services/csl/internal/grammar"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"

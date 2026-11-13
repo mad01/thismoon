@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/kit/cslignore"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
 
@@ -104,6 +105,34 @@ func TestIndexRepo(t *testing.T) {
 	}
 	if shards == 0 {
 		t.Fatalf("expected .zoekt shard files in %s, found none", indexDir)
+	}
+}
+
+// TestIndexRepoFilesTakesTheSharedSizeLimit pins the lexical index to
+// kit/cslignore's SizeMax, the limit belt's large-read guard reads to pass
+// a file csl leaves out: a file of exactly SizeMax bytes goes to the index,
+// and one byte more does not.
+func TestIndexRepoFilesTakesTheSharedSizeLimit(t *testing.T) {
+	root := t.TempDir()
+	at := strings.Repeat("x\n", cslignore.SizeMax/2)
+	for name, content := range map[string]string{"at.txt": at, "over.txt": at + "x"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, err := IndexRepoFiles(t.TempDir(), finder.Repo{Name: "test/size", Path: root}, nil)
+	if err != nil {
+		t.Fatalf("IndexRepoFiles: %v", err)
+	}
+	indexed := make(map[string]bool, len(files))
+	for _, f := range files {
+		indexed[f.Rel] = true
+	}
+	if !indexed["at.txt"] || indexed["over.txt"] {
+		t.Errorf(
+			"indexed %v, want at.txt (SizeMax bytes) and not over.txt (one byte more)",
+			indexed,
+		)
 	}
 }
 

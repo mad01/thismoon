@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -85,6 +86,127 @@ func TestLargeReadDeniesAWholeReadOfALargeIndexedFile(t *testing.T) {
 	}
 }
 
+// largeReadWorktree lays out a linked worktree of the checkout at main by
+// files alone, the shape git worktree add writes, with one file of 400
+// lines. It returns the worktree's root and that file.
+func largeReadWorktree(t *testing.T, main, name string) (root, big string) {
+	t.Helper()
+	gitDir := filepath.Join(main, ".git", "worktrees", name)
+	writeTestFile(t, filepath.Join(gitDir, "commondir"), "../..\n")
+	root = filepath.Join(os.Getenv("HOME"), ".worktrees", filepath.Base(main), name)
+	writeTestFile(t, filepath.Join(root, ".git"), "gitdir: "+gitDir+"\n")
+	big = filepath.Join(root, "internal", "big.go")
+	writeTestFile(t, big, textLines(400))
+	return root, big
+}
+
+// TestLargeReadDeniesAWholeReadInALinkedWorktree: a linked worktree of an
+// indexed repo has no shard of its own, but csl builds it an index on the
+// first call that names it. The refusal hands over the csl_ask call with
+// worktree set to the worktree's root and the path relative to it, and no
+// repo, which would answer from the main checkout.
+func TestLargeReadDeniesAWholeReadInALinkedWorktree(t *testing.T) {
+	main, _, transcript := largeReadHome(t)
+	wt, big := largeReadWorktree(t, main, "feature")
+	d := checkRead(Input{FilePath: big, TranscriptPath: transcript})
+	if d == nil {
+		t.Fatal("Check = nil, want a denial")
+	}
+	want := `csl_ask(question: "<what you need from it>", queries: ["f:^internal/big\\.go$"], worktree: "` +
+		wt + `")`
+	if !strings.Contains(d.Reason, want) {
+		t.Errorf("reason %q does not contain %q", d.Reason, want)
+	}
+	if strings.Contains(d.Reason, "repo:") {
+		t.Errorf("reason %q names a repo; the call would answer from the main checkout", d.Reason)
+	}
+}
+
+// TestLargeReadDeniesAGitignoredFile: csl's walk reads no .gitignore outside
+// an allowed hidden directory, so a gitignored file is indexed and refused.
+func TestLargeReadDeniesAGitignoredFile(t *testing.T) {
+	root, _, transcript := largeReadHome(t)
+	writeTestFile(t, filepath.Join(root, ".gitignore"), "out.log\n")
+	writeTestFile(t, filepath.Join(root, "out.log"), textLines(400))
+	if d := checkRead(Input{FilePath: filepath.Join(root, "out.log"), TranscriptPath: transcript}); d == nil {
+		t.Error("Check = nil, want a denial")
+	}
+}
+
+// noisyLines is n lines of base-36 numbers spread over the int64 range:
+// text with far more distinct trigrams than zoekt keeps, the shape of an
+// encoded blob.
+func noisyLines(n int) string {
+	var b strings.Builder
+	for i := range n {
+		for j := range 8 {
+			x := uint64(i*8+j+1) * 0x9E3779B97F4A7C15
+			fmt.Fprintf(&b, "%s ", strconv.FormatUint(x, 36))
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// TestLargeReadDeniesAFileZoektKeepsByName: zoekt leaves out the content of
+// a text file with too many distinct trigrams but keeps its name, so the f:
+// query in the refusal matches it, and csl_ask reads the file from disk.
+// The read is refused like any other large indexed file.
+func TestLargeReadDeniesAFileZoektKeepsByName(t *testing.T) {
+	root, _, transcript := largeReadHome(t)
+	noise := filepath.Join(root, "noise.txt")
+	writeTestFile(t, noise, noisyLines(400))
+	if d := checkRead(Input{FilePath: noise, TranscriptPath: transcript}); d == nil {
+		t.Error("Check = nil, want a denial")
+	}
+}
+
+// TestLargeReadPassesWhatCSLSkips: a large file the csl_ask call could not
+// answer from passes. Each kind csl's walk leaves out gets a case, in a main
+// checkout and in a linked worktree, where the worktree's own .cslignore
+// counts, and so does a file with a NUL byte, which csl_ask refuses as
+// binary wherever the byte sits.
+func TestLargeReadPassesWhatCSLSkips(t *testing.T) {
+	root, big, transcript := largeReadHome(t)
+	wt, _ := largeReadWorktree(t, root, "feature")
+	files := map[string]string{
+		".cslignore":               "generated/\n",
+		"generated/big.go":         textLines(400),
+		".cache/big.go":            textLines(400),
+		".github/workflows/ci.yml": textLines(400),
+		"huge.txt":                 textLines(400) + strings.Repeat("x", 2<<20),
+		"late-nul.go":              textLines(2000) + "\x00",
+		"nul-first.go":             "\x00" + textLines(400),
+	}
+	for _, dir := range []string{"node_modules", "vendor", "__pycache__", "build", "dist", "target"} {
+		files[dir+"/big.go"] = textLines(400)
+	}
+	var paths []string
+	for rel, content := range files {
+		writeTestFile(t, filepath.Join(root, filepath.FromSlash(rel)), content)
+		paths = append(paths, filepath.Join(root, filepath.FromSlash(rel)))
+	}
+	writeTestFile(t, filepath.Join(wt, ".cslignore"), "internal/\n")
+	paths = append(paths, filepath.Join(wt, "internal", "big.go"))
+	link := filepath.Join(root, "link.go")
+	if err := os.Symlink(big, link); err != nil {
+		t.Fatal(err)
+	}
+	linkedDir := filepath.Join(root, "linked")
+	if err := os.Symlink(filepath.Dir(big), linkedDir); err != nil {
+		t.Fatal(err)
+	}
+	paths = append(paths, link, filepath.Join(linkedDir, "big.go"))
+	for _, p := range paths {
+		if filepath.Base(p) == ".cslignore" {
+			continue
+		}
+		if d := checkRead(Input{FilePath: p, TranscriptPath: transcript}); d != nil {
+			t.Errorf("Check(%s) = %q, want allow", p, d.Reason)
+		}
+	}
+}
+
 // TestLargeReadAllows covers every read the guard lets through: anything
 // short, ranged, outside the index, or not lines of text.
 func TestLargeReadAllows(t *testing.T) {
@@ -93,6 +215,7 @@ func TestLargeReadAllows(t *testing.T) {
 	unindexed := filepath.Join(home, "code", "beta", "other")
 	writeTestFile(t, filepath.Join(unindexed, ".git", "HEAD"), "")
 	writeTestFile(t, filepath.Join(unindexed, "big.go"), textLines(400))
+	_, unindexedWT := largeReadWorktree(t, unindexed, "feature")
 	writeTestFile(t, filepath.Join(home, "loose", "big.go"), textLines(400))
 	writeTestFile(t, filepath.Join(root, "small.go"), textLines(299))
 	writeTestFile(t, filepath.Join(root, "image.png"), textLines(400))
@@ -108,13 +231,13 @@ func TestLargeReadAllows(t *testing.T) {
 		_ = f.Close()
 		t.Log("running with permission to read a mode-0 file; the unreadable case checks nothing")
 	}
-	worktree := filepath.Join(home, ".worktrees", "widget", "feature")
+	submodule := filepath.Join(home, ".worktrees", "widget", "submodule")
 	writeTestFile(
 		t,
-		filepath.Join(worktree, ".git"),
-		"gitdir: "+filepath.Join(root, ".git", "worktrees", "feature")+"\n",
+		filepath.Join(submodule, ".git"),
+		"gitdir: "+filepath.Join(root, ".git", "modules", "submodule")+"\n",
 	)
-	writeTestFile(t, filepath.Join(worktree, "big.go"), textLines(400))
+	writeTestFile(t, filepath.Join(submodule, "big.go"), textLines(400))
 
 	tests := []struct {
 		name string
@@ -125,7 +248,11 @@ func TestLargeReadAllows(t *testing.T) {
 		{"relative path", Input{FilePath: "internal/big.go"}},
 		{"repo csl does not index", Input{FilePath: filepath.Join(unindexed, "big.go")}},
 		{"outside any repo", Input{FilePath: filepath.Join(home, "loose", "big.go")}},
-		{"linked worktree, which has no shard", Input{FilePath: filepath.Join(worktree, "big.go")}},
+		{"linked worktree of a repo csl does not index", Input{FilePath: unindexedWT}},
+		{
+			"submodule-style pointer, not a worktree",
+			Input{FilePath: filepath.Join(submodule, "big.go")},
+		},
 		{"image", Input{FilePath: filepath.Join(root, "image.png")}},
 		{"pdf, extension in capitals", Input{FilePath: filepath.Join(root, "paper.PDF")}},
 		{"notebook", Input{FilePath: filepath.Join(root, "notes.ipynb")}},

@@ -38,12 +38,13 @@ var toolUseMarker = []byte(`"tool_use"`)
 const lineCountChunk = 32 << 10
 
 // LargeRead refuses a Read with no offset and no limit of a text file of
-// large_file_lines or more inside a csl-indexed repo, and hands over the
-// csl_ask call for that file instead. The read-size hint said the same
-// after the read, when the tokens were already spent; this says it before.
-// A ranged read always passes, and so does a file this agent already edited
-// or wrote in the session. Everything the guard cannot judge passes: a
-// wrong refusal blocks work, a missed one costs tokens.
+// large_file_lines or more that csl indexes, in a csl-indexed repo or a
+// linked worktree of one, and hands over the csl_ask call for that file
+// instead. The read-size hint said the same after the read, when the tokens
+// were already spent; this says it before. A ranged read always passes, and
+// so does a file that call cannot answer from and a file this agent already
+// edited or wrote in the session. Everything the guard cannot judge passes:
+// a wrong refusal blocks work, a missed one costs tokens.
 type LargeRead struct {
 	minLines int
 }
@@ -59,8 +60,9 @@ func (g *LargeRead) ID() string    { return LargeReadID }
 func (g *LargeRead) Event() string { return EventRead }
 
 // Check runs the cheap tests first: the range and the path need no
-// filesystem, the line count stops at the threshold, and the transcript is
-// read only for a read that would otherwise be refused.
+// filesystem, and the line count stops at the threshold. Only after the
+// line count and the index lookup pass is the whole file read for
+// csl_ask's NUL check, and the transcript only after that.
 func (g *LargeRead) Check(in Input) *Denial {
 	if in.Ranged || !filepath.IsAbs(in.FilePath) {
 		return nil
@@ -69,8 +71,8 @@ func (g *LargeRead) Check(in Input) *Denial {
 	if nonTextExts[strings.ToLower(filepath.Ext(file))] || !hasLines(file, g.minLines) {
 		return nil
 	}
-	repo, rel, ok := cslindex.Locate(file)
-	if !ok {
+	loc, ok := cslindex.Resolve(file)
+	if !ok || cslindex.Skipped(loc.Root, loc.Rel) {
 		return nil
 	}
 	if edited, known := editedByAgent(in.TranscriptPath, in.AgentID, file); edited || !known {
@@ -83,7 +85,7 @@ func (g *LargeRead) Check(in Input) *Denial {
 			"When you will edit it, Read the region with offset and limit: a ranged read passes this guard.",
 		file,
 		g.minLines,
-		cslindex.AskCall(repo, rel),
+		loc.AskCall(),
 	)
 }
 

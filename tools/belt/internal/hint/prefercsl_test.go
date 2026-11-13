@@ -10,6 +10,7 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
+	"github.com/mad01/thismoon/tools/belt/internal/cslindex"
 )
 
 func TestSegments(t *testing.T) {
@@ -731,7 +732,7 @@ func TestCheckPointsAWorktreeAtItsOwnIndex(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sub, ".git"), []byte("gitdir: ../modules/x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if root, ok := linkedWorktreeRoot(sub); ok {
+	if root, _, ok := cslindex.LinkedWorktree(sub); ok {
 		t.Errorf("submodule pointer read as the worktree %s", root)
 	}
 }

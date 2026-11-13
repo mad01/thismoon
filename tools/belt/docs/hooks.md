@@ -728,21 +728,47 @@ Sends deletes of temp paths to `toss-bin` instead of `rm`.
 Refuses a whole-file Read of a large file before the tokens are spent.
 
 - **Fires on** a Read with no `offset` and no `limit` of a text file of
-  `large_file_lines` or more (300 by default) inside a repo csl indexes.
-  The index check is the shard listing read-size and prefer-csl read.
-  The line count stops reading at the threshold, so a large file costs
-  one bounded read. Every file type counts, not only the ones
-  `csl_outline` knows, because `csl_ask` reads any indexed text file.
+  `large_file_lines` or more (300 by default) that csl indexes: a file in
+  a repo csl indexes, or in a linked worktree of one. The index check is
+  the shard listing read-size and prefer-csl read. The line count stops
+  reading at the threshold, so a large file costs one bounded read. Every
+  file type counts, not only the ones `csl_outline` knows, because
+  `csl_ask` reads any indexed text file.
+- **A linked worktree** has no shard of its own, but csl builds it an
+  index on the first call that names it. The guard finds the worktree from
+  its files alone, as prefer-csl does (`cslindex.LinkedWorktree`): the
+  `.git` pointer file, then the `commondir` file in the git dir it names,
+  which leads to the main checkout. The worktree counts when its main
+  checkout has a shard. A worktree of a repo csl does not index passes.
 - **The reason** names the file and hands over the `csl_ask` call for it,
   built by the same code as the read-size hint's: a placeholder question,
-  the path as an anchored `f:` query and the repo as an anchored regex. Its
-  last line says that a ranged read passes. That is the way in for a file
-  the agent will edit, since an edit needs the real lines.
+  the path as an anchored `f:` query and the repo as an anchored regex. In
+  a linked worktree the call sets `worktree` to the worktree's root instead
+  of a repo, with the path relative to that root, so csl answers from the
+  worktree's files and not the main checkout's. Its last line says that a
+  ranged read passes. That is the way in for a file the agent will edit,
+  since an edit needs the real lines.
+- **Passes a file the `csl_ask` call cannot answer from.** csl's walk
+  keeps some files out of the index, name and all, so the call's `f:`
+  query finds nothing. Those rules are csl's own. The directory names, the
+  `.cslignore` matcher and the 2 MiB size limit come from `kit/cslignore`,
+  the package csl's walk uses, so the two cannot drift apart. A file passes
+  when a directory on its path is `node_modules`, `vendor`, `__pycache__`,
+  `build`, `dist`, `target`, a hidden directory, or a symlink. It passes
+  when the checkout's `.cslignore` matches it, when it is a symlink, and
+  when it is over 2 MiB. zoekt keeps every other file at least by name, and
+  `csl_ask` reads it from disk. So a text file zoekt skips the content of,
+  such as one with too many distinct trigrams, is refused. `csl_ask`
+  refuses a file with a NUL byte anywhere as binary, so such a file passes.
+  Every hidden directory counts, `.github` and `.claude` too: csl indexes a
+  file there only when git tracks it, and the guard runs no git. A
+  gitignored file anywhere else is refused, because csl's walk reads no
+  `.gitignore`. The NUL check reads the whole file. It runs after the line
+  count and the index lookup, and before the transcript check.
 - **Allows** any Read with an `offset` or a `limit`, a relative path, an
   image, PDF or notebook, a missing file, a directory, a file it cannot
   read, a file with a NUL byte, a file under the threshold, and a file
-  outside the index. A loom worktree has no shard of its own, so reads
-  there pass, as read-size stays silent there.
+  outside the index.
 - **Allows a file the agent already edited.** Only on a read it would
   refuse, the guard reads the calling agent's transcript and passes when it
   holds an `Edit`, `Write` or `MultiEdit` call on the same path. The main
@@ -1542,7 +1568,8 @@ cannot afford discovery:
   and `large-read` never ask csl anything; they list csl's shard directory
   (`~/.config/csl/search-index/`) to learn which repos are indexed, and
   name the repo containing a path as `<parent-dir>/<repo-dir>` to match
-  csl's shard naming.
+  csl's shard naming. `large-read` names a linked worktree's main checkout
+  the same way, found through the worktree's `commondir` file.
 - **Locate, for the ledger.** `belt record` runs one
   `git rev-parse --show-toplevel --git-dir --git-common-dir --abbrev-ref HEAD`
   in the payload's working directory, plus the origin lookup. A linked
@@ -1582,6 +1609,7 @@ missing key:
 | session dedupe store | `~/.cache/belt/seen-<session>` | all once-per-session hints |
 | agent-memory store paths | `~/.config/agent-memory[-work]/MEMORY.md` | agent-memory |
 | csl shard listing | `~/.config/csl/search-index/` | prefer-csl, read-size, large-read |
+| csl index file size limit | 2 MiB (`kit/cslignore.SizeMax`, the limit csl's index takes) | large-read |
 | ledger message cap | 500 bytes | belt record |
 | record budgets | 1 s to locate in git, 300 ms to post | belt record |
 | watcher request timeout | 2 s per poll | belt watch |

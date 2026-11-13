@@ -3,14 +3,11 @@ package search
 import (
 	"fmt"
 	"io/fs"
-	"maps"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/sourcegraph/zoekt/index"
-
-	"github.com/mad01/thismoon/services/csl/internal/cslignore"
+	"github.com/mad01/thismoon/kit/cslignore"
 )
 
 // WalkFile is one regular file the repo walk visits.
@@ -23,41 +20,22 @@ type WalkFile struct {
 	Size int64
 }
 
-// skipDirs are the directory names the walk never enters, on top of every
-// hidden directory outside the allowlist.
-var skipDirs = map[string]bool{
-	"node_modules": true,
-	"vendor":       true,
-	"__pycache__":  true,
-	"build":        true,
-	"dist":         true,
-	"target":       true,
-}
-
-// allowedHiddenDirs are the hidden directory names the walk enters by
-// default: CI workflows and agent configuration a developer searches for,
-// never a cache, a virtualenv, or build output. A machine adds names with
-// the index.allow_hidden_dirs config key; nothing removes one, and .git
-// never joins. A file under an allowed hidden directory counts only when
-// git tracks it, so local-only litter (a gitignored
-// .claude/settings.local.json) stays out.
-var allowedHiddenDirs = map[string]bool{
-	".github": true,
-	".claude": true,
-}
-
 // WalkRepo visits every file of a working tree the lexical index holds, in
-// lexical path order. It is the one place the skip rules live: hidden
-// directories other than the allowed ones (.git among them), the skipDirs
-// trees, a linked worktree's .git pointer file, untracked files under an
-// allowed hidden directory, anything that is not a regular file, files over
-// sizeMax bytes, and paths the repo's .cslignore matches. hiddenDirs names
+// lexical path order. It is the one place the skip rules are applied:
+// hidden directories other than the allowed ones (.git among them), the
+// generated trees, a linked worktree's .git pointer file, untracked files
+// under an allowed hidden directory, anything that is not a regular file,
+// files over sizeMax bytes, and paths the repo's .cslignore matches. The
+// directory names and the .cslignore matcher live in kit/cslignore, which
+// belt's large-read guard reads too. A file under an allowed hidden
+// directory counts only when git tracks it, so local-only litter (a
+// gitignored .claude/settings.local.json) stays out. hiddenDirs names
 // further hidden directories to enter (the config's index.allow_hidden_dirs).
 // Entries that cannot be read are skipped rather than reported. An error
 // from visit stops the walk and is returned unchanged.
 func WalkRepo(root string, sizeMax int64, hiddenDirs []string, visit func(WalkFile) error) error {
 	ignore := cslignore.Load(root)
-	allow := hiddenAllowlist(hiddenDirs)
+	allow := cslignore.HiddenAllowlist(hiddenDirs)
 	tracked := &trackedFiles{root: root}
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -86,26 +64,13 @@ func WalkRepo(root string, sizeMax int64, hiddenDirs []string, visit func(WalkFi
 	})
 }
 
-// hiddenAllowlist merges the built-in allowed hidden directories with the
-// configured extras. .git is never entered whatever the config says.
-func hiddenAllowlist(extra []string) map[string]bool {
-	allow := make(map[string]bool, len(allowedHiddenDirs)+len(extra))
-	maps.Copy(allow, allowedHiddenDirs)
-	for _, name := range extra {
-		allow[name] = true
-	}
-	delete(allow, ".git")
-	return allow
-}
-
 // dirAction skips generated directories and hidden ones outside allow; the
 // root is entered whatever its name.
 func dirAction(root, path string, allow map[string]bool) error {
 	if path == root {
 		return nil
 	}
-	base := filepath.Base(path)
-	if skipDirs[base] || (strings.HasPrefix(base, ".") && !allow[base]) {
+	if cslignore.SkipDir(filepath.Base(path), allow) {
 		return filepath.SkipDir
 	}
 	return nil
@@ -170,10 +135,8 @@ func TrackedFiles(root string) (map[string]bool, error) {
 }
 
 // IndexSizeMax is the largest file, in bytes, the lexical index takes:
-// zoekt's own default, so a walk made outside the indexer sees the same
-// files the index holds.
+// kit/cslignore's SizeMax, which IndexRepoFiles hands zoekt's builder too,
+// so a walk made outside the indexer sees the same files the index holds.
 func IndexSizeMax() int64 {
-	var opts index.Options
-	opts.SetDefaults()
-	return int64(opts.SizeMax)
+	return cslignore.SizeMax
 }

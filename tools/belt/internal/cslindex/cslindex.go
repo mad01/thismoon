@@ -1,9 +1,13 @@
 // Package cslindex answers "does csl index this file, and under which repo
-// name" from csl's shard listing on disk, and builds the csl_ask call scoped
-// to one file. A hook runs on every matching tool call and cannot afford to
-// launch csl, so nothing here runs a process. The read-size hint and the
-// large-read guard both use it, so the guard's refusal hands over the same
-// call the hint does.
+// name" from csl's shard listing on disk, follows a linked worktree to its
+// main checkout (worktree.go), tells a file a csl_ask call cannot answer
+// from (skip.go), and builds the csl_ask call scoped to one file.
+// git's small bookkeeping files are read through SmallFile, which the
+// guard's git discovery shares, so no read blocks or runs on. A hook
+// runs on every matching tool call and cannot afford to launch csl, so
+// nothing here runs a process. The read-size hint and the large-read guard
+// both use it, so the guard's refusal hands over the same call the hint
+// does, and the prefer-csl hint shares its worktree lookup.
 package cslindex
 
 import (
@@ -97,13 +101,19 @@ func RepoName(root string) string {
 // Locate resolves file to the repo name and repo-relative path csl knows it
 // by, ok only when csl has a shard for that repo. A loom worktree is named
 // after its own directory, which has no shard, so it resolves to not
-// indexed.
+// indexed; Resolve is the lookup that follows a worktree to its main
+// checkout.
 func Locate(file string) (repo, rel string, ok bool) {
 	root := RepoRoot(file)
 	if root == "" {
 		return "", "", false
 	}
-	repo = RepoName(root)
+	return locateIn(root, RepoName(root), file)
+}
+
+// locateIn returns repo and file's slash path below root, ok only when csl
+// has a shard for repo.
+func locateIn(root, repo, file string) (string, string, bool) {
 	if !Repos()[strings.ToLower(repo)] {
 		return "", "", false
 	}
