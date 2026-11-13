@@ -2,6 +2,7 @@ package lint
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -222,40 +223,54 @@ func TestLongestPath(t *testing.T) {
 	}
 }
 
-// TestRowWidth holds the estimate to what the vendored ELK lays out for
-// the same rows in the compact form with Fira Code's widths: five short
-// boxes, the same with every arrow labelled, and a person with wrapped
-// text.
-func TestRowWidth(t *testing.T) {
-	row := func(labels ...string) *render.Block {
-		b := &render.Block{T: "diagram", Nodes: []render.DiagramNode{
-			{ID: "a", Label: "Ingest", Text: "reads the feed"},
-			{ID: "b", Label: "Parse", Text: "splits records"},
-			{ID: "c", Label: "Enrich", Text: "adds the owner"},
-			{ID: "d", Label: "Store", Text: "writes rows", Kind: "store"},
-			{ID: "e", Label: "Report", Text: "daily digest"},
-		}}
-		for k := range 4 {
-			e := render.DiagramEdge{From: b.Nodes[k].ID, To: b.Nodes[k+1].ID}
-			if k < len(labels) {
-				e.Label = labels[k]
-			}
-			b.Edges = append(b.Edges, e)
+// chainOfFive is five short boxes in a row, the arrows labelled in order
+// with labels.
+func chainOfFive(labels ...string) *render.Block {
+	b := &render.Block{T: "diagram", Nodes: []render.DiagramNode{
+		{ID: "a", Label: "Ingest", Text: "reads the feed"},
+		{ID: "b", Label: "Parse", Text: "splits records"},
+		{ID: "c", Label: "Enrich", Text: "adds the owner"},
+		{ID: "d", Label: "Store", Text: "writes rows", Kind: "store"},
+		{ID: "e", Label: "Report", Text: "daily digest"},
+	}}
+	for k := range 4 {
+		e := render.DiagramEdge{From: b.Nodes[k].ID, To: b.Nodes[k+1].ID}
+		if k < len(labels) {
+			e.Label = labels[k]
 		}
-		return b
+		b.Edges = append(b.Edges, e)
 	}
+	return b
+}
+
+var chainLabels = []string{
+	"raw json lines",
+	"typed record rows",
+	"tagged record rows",
+	"nightly sql query",
+}
+
+// TestRowWidth holds the estimate to what the vendored ELK lays out for
+// the same rows with Fira Code's widths: five short boxes, the same with
+// every arrow labelled, in each form, and a person with wrapped text.
+func TestRowWidth(t *testing.T) {
 	path := []int{0, 1, 2, 3, 4}
-	if got := rowWidth(row(), path); got != 767 {
-		t.Errorf("unlabelled row: %d px, ELK lays it out at 767", got)
+	cases := []struct {
+		name string
+		b    *render.Block
+		d    density
+		want int
+	}{
+		{"unlabelled, compact", chainOfFive(), compactForm, 767},
+		{"unlabelled, names", chainOfFive(), namesForm, 752},
+		{"labelled, compact", chainOfFive(chainLabels...), compactForm, 1198},
+		{"labelled, full", chainOfFive(chainLabels...), fullForm, 1385},
+		{"labelled, names", chainOfFive(chainLabels...), namesForm, 1183},
 	}
-	labelled := row(
-		"raw json lines",
-		"typed record rows",
-		"tagged record rows",
-		"nightly sql query",
-	)
-	if got := rowWidth(labelled, path); got != 1198 {
-		t.Errorf("labelled row: %d px, ELK lays it out at 1198", got)
+	for _, tc := range cases {
+		if got := rowWidth(tc.b, path, tc.d); got != tc.want {
+			t.Errorf("%s: %d px, ELK lays it out at %d", tc.name, got, tc.want)
+		}
 	}
 	person := &render.Block{T: "diagram", Nodes: []render.DiagramNode{
 		{ID: "u", Label: "Reader", Kind: "person"},
@@ -263,8 +278,61 @@ func TestRowWidth(t *testing.T) {
 	}, Edges: []render.DiagramEdge{{From: "u", To: "w", Label: "ledger entry"}}}
 	// 120 + 14, then 23 characters on the widest wrapped line: 159 + 28 = 187,
 	// and the one-line label's 83 + 8 between two gaps.
-	if got, want := rowWidth(person, []int{0, 1}), 24+134+187+32+91+32; got != want {
+	if got, want := rowWidth(person, []int{0, 1}, compactForm), 24+134+187+32+91+32; got != want {
 		t.Errorf("person and wrapped text: %d px, want %d", got, want)
+	}
+}
+
+// TestColumnHeight holds the column estimate to what the vendored ELK lays
+// out top to bottom for the same chain: a store's lid, labels on one line
+// in the full form and on two past 84 px in the others, and the box text
+// left out of the names form.
+func TestColumnHeight(t *testing.T) {
+	path := []int{0, 1, 2, 3, 4}
+	cases := []struct {
+		name string
+		b    *render.Block
+		d    density
+		want int
+	}{
+		{"unlabelled, full", chainOfFive(), fullForm, 423},
+		{"unlabelled, names", chainOfFive(), namesForm, 348},
+		{"labelled, full", chainOfFive(chainLabels...), fullForm, 615},
+		{"labelled, compact", chainOfFive(chainLabels...), compactForm, 671},
+		{"labelled, names", chainOfFive(chainLabels...), namesForm, 596},
+		{"short labels, names", chainOfFive("a", "bb", "ccc", "dddd"), namesForm, 540},
+	}
+	for _, tc := range cases {
+		if got := columnHeight(tc.b, path, tc.d); got != tc.want {
+			t.Errorf("%s: %d px, ELK lays it out at %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestWrappedLongWord: a word wider than a line fills whole lines and
+// leaves its last piece to the next, and counts at least half a line wide,
+// since the browser may break it at a separator. Both stay at or under
+// what the browser draws for "services/present/internal/server/viz.js is
+// read" in a compact box: three lines, the widest 22 characters.
+func TestWrappedLongWord(t *testing.T) {
+	inner := compactForm.boxPx - 2*boxPadPx
+	widest, lines := wrapped("services/present/internal/server/viz.js is read", inner, textCharPx)
+	if lines != 3 {
+		t.Errorf("lines = %d, want 3", lines)
+	}
+	if widest < inner/2 || widest > 22*textCharPx {
+		t.Errorf("widest = %.1f px, want between %.1f and %.1f", widest, inner/2, 22*textCharPx)
+	}
+}
+
+// TestSlidePathNumber holds diagram.slide_path's number to the slide it
+// stands for: the body's 86u in px at scale 1 when box text, 11.5 px at
+// scale 1, draws at the smallest slide text, 1.1u (shell.html's --floor
+// and viz.js's DIAGRAM_SLIDE_FLOOR and DIAGRAM_TEXT_PX).
+func TestSlidePathNumber(t *testing.T) {
+	const floorU, textPx = 1.1, 11.5
+	if got, want := limits.Number(limits.DiagramSlidePath), int(math.Round(slideWidthU*textPx/floorU)); got != want {
+		t.Errorf("diagram.slide_path is %d px, the slide holds %d", got, want)
 	}
 }
 

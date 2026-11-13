@@ -778,6 +778,66 @@
     };
   }
 
+  // ── Ribbon text and geometry ──
+  // RIBBON_TEXT_PX is a ribbon's text in the brief, where it stays at that
+  // size. RIBBON_AT_TEXT is every length of its layout that follows the
+  // text, written for RIBBON_TEXT_PX; on a slide the text follows the
+  // slide's unit and ribbonMetrics scales them all with it.
+  var RIBBON_TEXT_PX = 11;
+  var RIBBON_AT_TEXT = {
+    charPx: 6.5, // one character's estimated width
+    labelMinPx: 16, // the shortest segment that carries its name
+    labelPadPx: 8, // a segment name's room across its column
+    leftMinPx: 40, // the value axis's margin before its labels widen it
+    axisAirPx: 10, // between the widest tick label's estimate and the plot
+    tickPadPx: 6, // between a tick label and the plot
+    topPx: 8, // above the plot, for half the top tick label
+    unitTopPx: 22, // above the plot when the unit sits over the axis
+    unitYPx: -10, // the unit's baseline, from the plot's top
+    bottomPx: 22, // under the plot, for the period labels
+    periodYPx: 16 // a period label's baseline, from the plot's bottom
+  };
+  var RIBBON_RIGHT_PX = 4; // right of the plot, whatever the text
+
+  // ribbonFontSizes is the size of a ribbon's text in px: {tick, legend},
+  // tick for every label in the svg. In the brief both stay at
+  // RIBBON_TEXT_PX; on a slide (slide as chartFontSizes takes it) they
+  // are a slide chart's, so they follow the unit and never go under the
+  // floor.
+  function ribbonFontSizes(rootPx, slide) {
+    if (slide) return chartFontSizes(rootPx, slide);
+    return { tick: RIBBON_TEXT_PX, legend: RIBBON_TEXT_PX };
+  }
+
+  // ribbonMetrics is the ribbon's layout lengths for text textPx tall:
+  // RIBBON_AT_TEXT scaled by textPx over RIBBON_TEXT_PX, and the right
+  // margin.
+  function ribbonMetrics(textPx) {
+    var k = (Number(textPx) || RIBBON_TEXT_PX) / RIBBON_TEXT_PX, m = { rightPx: RIBBON_RIGHT_PX };
+    Object.keys(RIBBON_AT_TEXT).forEach(function (key) { m[key] = RIBBON_AT_TEXT[key] * k; });
+    return m;
+  }
+
+  // ribbonMargins is the room around the plot: the value axis as wide as
+  // its widest tick label (tickLabels, the strings the axis prints) needs,
+  // the unit above it when there is one, and the period labels under the
+  // columns. m is ribbonMetrics.
+  function ribbonMargins(tickLabels, hasUnit, m) {
+    var widest = 0;
+    (tickLabels || []).forEach(function (t) { widest = Math.max(widest, String(t).length); });
+    return {
+      top: hasUnit ? m.unitTopPx : m.topPx, right: m.rightPx, bottom: m.bottomPx,
+      left: Math.max(m.leftMinPx, Math.ceil(widest * m.charPx) + m.axisAirPx)
+    };
+  }
+
+  // ribbonLabelFits says whether a segment top to bottom px tall, in a
+  // column bandPx wide, carries its series name: tall enough for a line
+  // and wide enough for the name. m is ribbonMetrics.
+  function ribbonLabelFits(name, top, bottom, bandPx, m) {
+    return bottom - top >= m.labelMinPx && String(name).length * m.charPx <= bandPx - m.labelPadPx;
+  }
+
   // chartFontsChanged says whether a chart built with the fonts was (the
   // {tick, legend} pair of {family, size} app.js's chartFonts gives) would
   // draw its text otherwise with the fonts now: another face, or a size
@@ -850,7 +910,8 @@
   root.PresentViz = {
     changedSectionTargets: changedSectionTargets,
     stepPlan: stepPlan, blockStepsAt: blockStepsAt, chartStepVisibility: chartStepVisibility, seriesMax: seriesMax,
-    seriesExtent: seriesExtent, ribbonLayout: ribbonLayout,
+    seriesExtent: seriesExtent, ribbonLayout: ribbonLayout, ribbonFontSizes: ribbonFontSizes, ribbonMetrics: ribbonMetrics,
+    ribbonMargins: ribbonMargins, ribbonLabelFits: ribbonLabelFits,
     chartLine: chartLine, chartValueAxis: chartValueAxis, chartFontSizes: chartFontSizes, chartFontsChanged: chartFontsChanged,
     chartTicks: chartTicks, barAxisLabels: barAxisLabels, chartPoint: chartPoint, chartPointRoom: chartPointRoom,
     readingSample: READING_SAMPLE, readingChanged: readingChanged, settle: settle,

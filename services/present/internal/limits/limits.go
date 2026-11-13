@@ -53,6 +53,7 @@ const (
 	DiagramChain        ID = "diagram.chain"
 	DiagramRow          ID = "diagram.row"
 	DiagramSlideBoxes   ID = "diagram.slide_boxes"
+	DiagramSlidePath    ID = "diagram.slide_path"
 	DiagramSlideColumns ID = "diagram.slide_columns"
 	SlideWords          ID = "slide.words"
 	DeckTextOnly        ID = "deck.text_only"
@@ -159,6 +160,13 @@ var table = []Limit{
 		Source: House,
 		Rule:   "A diagram on a slide holds at most 6 boxes.",
 		Reason: "A slide shrinks a diagram to fit, so a fuller diagram draws its text under the size a room can read.",
+	},
+	{
+		ID: DiagramSlidePath, Number: 899, Unit: "px", Level: Warn,
+		Scope:  "a diagram on a slide",
+		Source: Renderer,
+		Rule:   "A slide diagram's longest path fits the slide at its smallest text. A row holds at most 899 px, a column 345 px, or 303 px under steps or a caption.",
+		Reason: "A slide shrinks a diagram until it fits. Every box and labelled arrow on the path adds a layer, so a path too long for a row and a column draws its labels under the size a room can read. The lint estimates the path from its box text and edge labels in the page's default face. Groups and branches add to it, so a path it passes can still draw small.",
 	},
 	{
 		ID: DiagramSlideColumns, Level: Warn,

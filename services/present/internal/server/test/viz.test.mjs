@@ -205,6 +205,49 @@ test('ribbonLayout: the period order matches the Go side (testdata/ribbon-order.
   assert.deepEqual(PresentViz.ribbonLayout(vec.series).periods, vec.periods);
 });
 
+// The ribbon's text and the lengths that follow it. A slide's unit at
+// 1440x900 framed: u0 12.13 px, the floor 1.1 u0.
+const slideAt1440 = { u0: 12.13, u: 12.13, floor: 13.343 };
+
+test('ribbonFontSizes: the brief stays at 11 px whatever the root; a slide sizes like a slide chart', () => {
+  assert.deepEqual(PresentViz.ribbonFontSizes(16, null), { tick: 11, legend: 11 });
+  assert.deepEqual(PresentViz.ribbonFontSizes(24, null), { tick: 11, legend: 11 }, 'the reader size leaves the brief alone');
+  assert.deepEqual(PresentViz.ribbonFontSizes(16, slideAt1440), PresentViz.chartFontSizes(16, slideAt1440));
+  const low = PresentViz.ribbonFontSizes(16, { u0: 12.13, u: 12.13 * 0.7, floor: 13.343 });
+  assert.ok(low.tick >= 13.343 && low.legend >= 13.343, 'a low fit holds the text at the floor');
+});
+
+test('ribbonMetrics: at 11 px the brief layout, and every text length scales with the text', () => {
+  const brief = {
+    rightPx: 4, charPx: 6.5, labelMinPx: 16, labelPadPx: 8, leftMinPx: 40, axisAirPx: 10, tickPadPx: 6,
+    topPx: 8, unitTopPx: 22, unitYPx: -10, bottomPx: 22, periodYPx: 16
+  };
+  assert.deepEqual(PresentViz.ribbonMetrics(11), brief);
+  assert.deepEqual(PresentViz.ribbonMetrics(undefined), brief, 'no size reads as the brief');
+  const twice = PresentViz.ribbonMetrics(22);
+  Object.keys(brief).forEach((k) => assert.equal(twice[k], k === 'rightPx' ? 4 : 2 * brief[k], k));
+});
+
+test('ribbonMargins: the axis widens for its widest tick label, the top for the unit', () => {
+  const m11 = PresentViz.ribbonMetrics(11);
+  const ticks = ['0', '50', '100', '150', '200'];
+  assert.deepEqual(PresentViz.ribbonMargins(ticks, true, m11), { top: 22, right: 4, bottom: 22, left: 40 });
+  assert.deepEqual(PresentViz.ribbonMargins(ticks, false, m11), { top: 8, right: 4, bottom: 22, left: 40 });
+  assert.equal(PresentViz.ribbonMargins(['0', '500,000', '1,000,000'], false, m11).left, Math.ceil(9 * 6.5) + 10);
+  const m22 = PresentViz.ribbonMetrics(22);
+  assert.deepEqual(PresentViz.ribbonMargins(ticks, true, m22), { top: 44, right: 4, bottom: 44, left: 80 });
+  assert.equal(PresentViz.ribbonMargins(['1,000,000'], true, m22).left, Math.ceil(9 * 13) + 20);
+});
+
+test('ribbonLabelFits: a segment names its series when a line fits its height and the name its width', () => {
+  const m11 = PresentViz.ribbonMetrics(11), m22 = PresentViz.ribbonMetrics(22);
+  assert.equal(PresentViz.ribbonLabelFits('search', 10, 26, 60, m11), true);
+  assert.equal(PresentViz.ribbonLabelFits('search', 10, 25, 60, m11), false, 'one px short of a line');
+  assert.equal(PresentViz.ribbonLabelFits('search', 10, 26, 46, m11), false, 'the name is wider than the column');
+  assert.equal(PresentViz.ribbonLabelFits('search', 10, 26, 60, m22), false, 'twice the text needs twice the room');
+  assert.equal(PresentViz.ribbonLabelFits('search', 10, 42, 94, m22), true);
+});
+
 // Diagram helpers.
 const measure = (t) => String(t).length * 7;
 const checkout = {

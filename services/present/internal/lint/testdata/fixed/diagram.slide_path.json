@@ -1,0 +1,61 @@
+{
+  "title": "How a change reaches the fleet",
+  "deck": {
+    "summary": "Every machine pulls main and rebuilds, so a merge is the release.",
+    "sections": [
+      {
+        "h": "Merging to main deploys the change to every machine",
+        "blocks": [
+          {
+            "t": "diagram",
+            "direction": "LR",
+            "caption": "Purple is the developer, blue is GitHub, green the fleet.",
+            "nodes": [
+              {
+                "id": "dev",
+                "label": "Developer",
+                "text": "opens a pull request",
+                "kind": "person",
+                "tone": "purple"
+              },
+              {
+                "id": "pr",
+                "label": "Pull request",
+                "text": "review and checks",
+                "tone": "blue"
+              },
+              {
+                "id": "main",
+                "label": "main",
+                "text": "squash merge",
+                "tone": "blue"
+              },
+              {
+                "id": "fleet",
+                "label": "ralph up",
+                "text": "rebuilds and restarts",
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "dev",
+                "to": "pr"
+              },
+              {
+                "from": "pr",
+                "to": "main",
+                "label": "merge"
+              },
+              {
+                "from": "main",
+                "to": "fleet",
+                "label": "pull"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
