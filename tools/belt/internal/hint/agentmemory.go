@@ -1,8 +1,10 @@
 package hint
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -54,10 +56,12 @@ const AgentClaudeCode = "claude-code"
 // of either is silence, so personal machines never see or need the work store.
 //
 // A session started with --agent claude-code leaves out a store whose
-// directory Claude Code's autoMemoryDirectory setting names: Claude Code
-// loads that MEMORY.md itself, so injecting it too would load it twice. The
-// store left out takes no share of the budget. Any other agent, and a
-// session started without the flag, keeps both stores.
+// directory Claude Code's autoMemoryDirectory setting names, while auto
+// memory is on: Claude Code loads that MEMORY.md itself, so injecting it too
+// would load it twice. The setting is read from the sources Claude Code
+// reads for the session's directory (config.ClaudeSources.For). The store
+// left out takes no share of the budget. Any other agent, and a session
+// started without the flag, keeps both stores.
 type AgentMemory struct {
 	cfg config.Config
 	// path locates the personal index; overridable for tests.
@@ -105,15 +109,22 @@ type MemoryUsage struct {
 	// Share is the part of the budget this store may fill, after the
 	// prefix and the other store's share.
 	Share int
-	// AutoMemorySettings names the Claude settings file whose
-	// autoMemoryDirectory is this store's directory, so Claude Code loads
-	// the index itself. Empty when no setting names it. A session started
-	// with --agent claude-code leaves the store out.
-	AutoMemorySettings string
-	facts              []string
+	// AutoMemory is set when Claude Code's autoMemoryDirectory names this
+	// store's directory: the source that names it, and why Claude Code
+	// may still load none of it (Off). Directory is "" when no setting
+	// names the store.
+	AutoMemory config.AutoMemory
+	facts      []string
 	// hidden is set when the share cannot hold even the header and the
 	// truncation note: the store then renders nothing.
 	hidden bool
+}
+
+// LoadedByClaudeCode reports a store Claude Code loads itself: a setting
+// names it and auto memory is on. A session started with --agent
+// claude-code leaves it out.
+func (u MemoryUsage) LoadedByClaudeCode() bool {
+	return u.AutoMemory.Directory != "" && u.AutoMemory.Off == ""
 }
 
 // Over reports whether facts were dropped to fit the store's share.
@@ -134,13 +145,15 @@ func MemoryNear(usage []MemoryUsage) bool {
 
 // Usage measures each store's index, personal first, and fits each into its
 // share of the budget, as a session that keeps both stores sees it. It also
-// marks a store Claude Code loads itself (AutoMemorySettings). belt doctor
-// reports it.
-func (h *AgentMemory) Usage() []MemoryUsage {
+// marks a store autoMemoryDirectory names (AutoMemory), as Claude Code
+// resolves the setting for a session in cwd. The error says why belt cannot
+// tell which store Claude Code loads itself; the usage is still whole, with
+// no store marked. belt doctor reports both.
+func (h *AgentMemory) Usage(cwd string) ([]MemoryUsage, error) {
 	usage := h.readStores()
-	h.markAutoMemory(usage)
+	err := h.markAutoMemory(usage, cwd)
 	h.fitStores(usage)
-	return usage
+	return usage, err
 }
 
 func (h *AgentMemory) readStores() []MemoryUsage {
@@ -159,29 +172,85 @@ func (h *AgentMemory) fitStores(usage []MemoryUsage) {
 	usage[1].fit(work)
 }
 
-// markAutoMemory sets AutoMemorySettings on each present store whose
-// directory is the one Claude Code's autoMemoryDirectory names. Both sides
-// are compared after ~ expansion and symlink resolution, since a store is
-// often a link into a synced folder. A missing key, a broken settings file,
-// or a path that is relative or does not resolve marks nothing. In doubt the
-// store stays in: an index loaded twice costs less than one never loaded.
-func (h *AgentMemory) markAutoMemory(usage []MemoryUsage) {
-	setting, file, err := config.LoadClaudeAutoMemoryDirectory(h.cfg.ClaudeSettingsFiles...)
-	if err != nil || setting == "" {
-		return
+// markAutoMemory sets AutoMemory on each present store whose directory is
+// the one Claude Code's autoMemoryDirectory names for a session in cwd. Both
+// sides are compared after ~ expansion and symlink resolution, since a store
+// is often a link into a synced folder. A missing key, or a path that is
+// relative or does not resolve, marks nothing. So does an error, which it
+// returns. In doubt the store stays in: an index loaded twice costs less
+// than one never loaded.
+func (h *AgentMemory) markAutoMemory(usage []MemoryUsage, cwd string) error {
+	am, err := h.claudeAutoMemory(cwd)
+	if err != nil || am.Directory == "" {
+		return err
 	}
-	dir, ok := resolvedDir(setting)
+	dir, ok := resolvedDir(am.Directory)
 	if !ok {
-		return
+		return nil
 	}
 	for i := range usage {
 		if !usage[i].Present {
 			continue
 		}
 		if store, ok := resolvedDir(filepath.Dir(usage[i].Path)); ok && store == dir {
-			usage[i].AutoMemorySettings = file
+			usage[i].AutoMemory = am
 		}
 	}
+	return nil
+}
+
+// claudeAutoMemory resolves Claude Code's auto memory settings for a
+// session in cwd. With the claude_settings gate off it resolves nothing. An
+// error means belt cannot tell what Claude Code resolved: a source it
+// cannot read, or a git call that cannot place cwd.
+func (h *AgentMemory) claudeAutoMemory(cwd string) (config.AutoMemory, error) {
+	if h.cfg.ClaudeSources == nil {
+		return config.AutoMemory{}, nil
+	}
+	root, err := mainCheckoutRoot(cwd)
+	if err != nil {
+		return config.AutoMemory{}, err
+	}
+	sources, err := h.cfg.ClaudeSources.For(cwd, root)
+	if err != nil {
+		return config.AutoMemory{}, err
+	}
+	return config.ResolveAutoMemory(sources, os.Getenv)
+}
+
+// gitNotARepository is the status git exits with when a directory is in no
+// repository. git exits with it on every fatal error, so a repository git
+// refuses to open (one with an unsafe owner, say) also counts as none.
+const gitNotARepository = 128
+
+// mainCheckoutRoot is the root of the main checkout of the git repository
+// holding dir, where Claude Code keeps the project local settings file: the
+// main checkout's root for a linked worktree too. "" outside a repository,
+// which git reports with gitNotARepository. Any other failure is an error,
+// a timeout kill and a missing git binary included: the local file at the
+// root could then be missed. A common dir not named .git (a submodule, a
+// bare repository) yields the working tree's own root.
+func mainCheckoutRoot(dir string) (string, error) {
+	if dir == "" {
+		return "", nil
+	}
+	out, err := gitWithin(dir, "rev-parse", "--path-format=absolute",
+		"--show-toplevel", "--git-common-dir")
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == gitNotARepository {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse in %s: %w", dir, err)
+	}
+	top, common, ok := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	if !ok || !filepath.IsAbs(top) || !filepath.IsAbs(common) {
+		return "", fmt.Errorf("git rev-parse in %s: unexpected output %q", dir, out)
+	}
+	if common = filepath.Clean(common); filepath.Base(common) == ".git" {
+		return filepath.Dir(common), nil
+	}
+	return top, nil
 }
 
 // resolvedDir expands a leading ~ and resolves symlinks, so two spellings of
@@ -232,9 +301,10 @@ func memoryShares(personal, work MemoryUsage, room int) (int, int) {
 func (h *AgentMemory) Check(in Input) *Advice {
 	usage := h.readStores()
 	if in.Agent == AgentClaudeCode {
-		h.markAutoMemory(usage)
+		// An error marks no store, so every store stays in.
+		_ = h.markAutoMemory(usage, in.Cwd)
 		for i := range usage {
-			if usage[i].AutoMemorySettings != "" {
+			if usage[i].LoadedByClaudeCode() {
 				usage[i].leaveOut()
 			}
 		}

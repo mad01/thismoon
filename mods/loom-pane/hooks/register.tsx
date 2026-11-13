@@ -1,13 +1,14 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { LoomPaneMember, LoomPaneRole } from '../types'
+import type { LoomPaneLaunch, LoomPaneMember, LoomPaneRole } from '../types'
 import {
   AGENTS_ARGV,
   GIT_BUDGET_MS,
   LEDGER_URL,
   PROBE_BUDGET_MS,
   analyzeBash,
+  backgroundIsolationAgent,
   classifyPath,
   composeStatus,
   denyReason,
@@ -17,6 +18,7 @@ import {
   isRefreshDue,
   isWeaveArgs,
   isolationWorktreeFrom,
+  launchedWorktree,
   loomArgsOf,
   membersFrom,
   mergeTreeArgs,
@@ -53,10 +55,14 @@ const members = atom({ plugin: 'loom-pane', key: 'members' } as const, [] as Loo
 // next main-loop turn detects again.
 const detectedSession = atom({ plugin: 'loom-pane', key: 'sessionId' } as const, null as string | null)
 // The worktrees this session created with `git worktree add`, in the main
-// loop or a subagent, or that a foreground Agent call with isolation made:
-// the owner guard lets the main loop push from them.
+// loop or a subagent, or that an Agent call with isolation made: the owner
+// guard lets the main loop push from them.
 // Emptied when the session changes, so another session never inherits it.
 const createdWorktrees = atom({ plugin: 'loom-pane', key: 'createdWorktrees' } as const, [] as string[])
+// The background Agent calls with isolation whose agent has run no Bash call
+// yet, each with the worktrees git listed before the launch. Emptied with
+// createdWorktrees.
+const launchedAgents = atom({ plugin: 'loom-pane', key: 'launchedAgents' } as const, [] as LoomPaneLaunch[])
 
 type Logger = { ui: { log: (text: string, options: { to: 'debug' }) => void } }
 type Failed<E, R> = ((e: E) => R) & { event: string; error: { kind: string; message?: string } }
@@ -268,7 +274,10 @@ async function detect($: EngineInterface, cwd: string): Promise<void> {
 // when the id is not the one detected last.
 async function redetect($: EngineInterface, cwd: string, id: string | null, isListing: boolean): Promise<void> {
   if (!isListing) await update($, members, () => [])
-  if (id !== (await read($, detectedSession))) await update($, createdWorktrees, () => [])
+  if (id !== (await read($, detectedSession))) {
+    await update($, createdWorktrees, () => [])
+    await update($, launchedAgents, () => [])
+  }
   await detect($, cwd)
   await update($, detectedSession, () => id)
   if (isListing) await refreshMembers($)
@@ -294,6 +303,41 @@ async function recordCreated($: EngineInterface, paths: readonly string[], befor
   if (paths.length === 0) return
   const record = await update($, createdWorktrees, known => withCreated(known, paths, before))
   $.ui.log(`loom-pane: created by this session: ${record.join(', ')}`, { to: 'debug' })
+}
+
+// Remembers a background agent launched into an isolation worktree, with the
+// worktrees git listed before the launch.
+async function rememberLaunch($: EngineInterface, agentId: string, before: Layout): Promise<void> {
+  await update($, launchedAgents, known => [
+    ...known.filter(launch => launch.agentId !== agentId),
+    { agentId, before: [...before.worktrees] },
+  ])
+}
+
+// A background agent's first Bash call runs in its isolation worktree, so its
+// directory then joins the record when git lists it now and did not at the
+// launch. The launch is spent either way: a later command elsewhere adds
+// nothing.
+async function adoptLaunched($: EngineInterface, agentId: string, cwd: string): Promise<void> {
+  const launch = (await read($, launchedAgents)).find(known => known.agentId === agentId)
+  if (launch === undefined) return
+  await update($, launchedAgents, known => known.filter(other => other.agentId !== agentId))
+  const canon = await read($, canonical)
+  const entries = canon === null ? null : await listWorktrees($, canon)
+  if (entries === null) return
+  const path = launchedWorktree(cwd, entries.map(entry => entry.path), launch.before)
+  if (path === null) return
+  await recordCreated($, [path], { ...(await layoutOf($)), worktrees: launch.before })
+}
+
+// adoptLaunched for the Bash hook: a failure is logged, and the call goes on
+// to the rest of the hook.
+async function adoptLaunchedSafely($: EngineInterface, agentId: string, cwd: string): Promise<void> {
+  try {
+    await adoptLaunched($, agentId, cwd)
+  } catch (err) {
+    $.ui.log(`loom-pane: background worktree not recorded (${errorText(err)})`, { to: 'debug' })
+  }
 }
 
 async function markWeave($: EngineInterface, cwd: string): Promise<void> {
@@ -439,12 +483,15 @@ export const register: Register = (on, options) => {
   // The owner guard judges the main loop's calls only. A subagent's call
   // passes untouched, except that a `git worktree add` it ran, like one the
   // main loop ran, goes into the session's record of created worktrees: the
-  // main loop may push from those.
+  // main loop may push from those. So does the directory of a background
+  // isolation agent's first call.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const isMainLoop = e.agentId === undefined
     const home = await $.env.get('HOME')
     // In a subagent's call this is the subagent's own directory.
-    const analysis = analyzeBash(e.command, { cwd: await $.session.cwd(), home: home ?? null })
+    const cwd = await $.session.cwd()
+    if (e.agentId !== undefined) await adoptLaunchedSafely($, e.agentId, cwd)
+    const analysis = analyzeBash(e.command, { cwd, home: home ?? null })
     if (analysis.isUncertain || (!isMainLoop && analysis.creates.length === 0)) return next(e)
     const layout = await layoutOf($)
     if (isMainLoop && isGuarding && (await read($, role)) === 'owner') {
@@ -469,9 +516,10 @@ export const register: Register = (on, options) => {
   // An Agent call with `isolation: 'worktree'` makes a worktree for its agent,
   // and a foreground agent's result names it once the agent is done. It joins
   // the record a `git worktree add` writes, so the main loop may push the
-  // branch that agent committed. A background launch names no path, so it
-  // records nothing. The agent runs inside next(e): a failure after it is
-  // logged, never handed to .catch, which would run the agent again.
+  // branch that agent committed. A background launch names only its agent,
+  // whose first Bash call shows the worktree (adoptLaunched). The agent runs
+  // inside next(e): a failure after it is logged, never handed to .catch,
+  // which would run the agent again.
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     if (e.isolation !== 'worktree') return next(e)
     const layout = await layoutOf($)
@@ -480,6 +528,8 @@ export const register: Register = (on, options) => {
     try {
       const path = isolationWorktreeFrom(e.isolation, ran.result)
       if (path !== null) await recordCreated($, [path], layout)
+      const launched = backgroundIsolationAgent(e.isolation, ran.result)
+      if (launched !== null) await rememberLaunch($, launched, layout)
     } catch (err) {
       $.ui.log(`loom-pane: isolation worktree not recorded (${errorText(err)})`, { to: 'debug' })
     }

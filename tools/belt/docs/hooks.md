@@ -1173,22 +1173,48 @@ Injects the shared agent-memory index when a session opens.
   runs `belt hint session-start --agent claude-code`. Claude Code's
   `autoMemoryDirectory` setting makes it load that directory's `MEMORY.md`
   on its own. When the setting names a store's directory, the hint skips
-  that store, so its index does not load twice. belt lets
-  `~/.claude/settings.local.json` win over `~/.claude/settings.json`. Claude
-  Code's settings docs list only `settings.json` as the user file in
-  `~/.claude`, and name `settings.local.json` only inside a project. A leading `~` is expanded and symlinks are resolved
-  on both sides, so a store linked into a synced folder still matches. The
-  store left out counts as absent, and the other store gets the whole
-  budget. A missing setting, broken JSON, or a path that does not resolve
-  keeps the store. Without the flag, or with any other value, both stores
-  are injected, which is what Codex and pi need. `belt doctor` prints one
-  line for a store the flag would leave out. The line also says when a
-  SessionStart entry in the Claude settings runs the hint without the flag.
+  that store, so its index does not load twice. belt reads the setting
+  from the files Claude Code reads it from for the session's `cwd`, with
+  Claude Code's precedence: the managed settings files win, then the
+  project local `.claude/settings.local.json`, then the shared
+  `.claude/settings.json` in the cwd, then `~/.claude/settings.json`. Inside
+  a git repository the local file sits at the main checkout root, also for
+  a linked worktree. Claude Code keeps the local file in the cwd when you
+  do not own the repository root or its `.git` or `.claude` entry. git
+  refuses a repository you do not own, so belt reads the cwd file there as
+  well. belt does not check ownership itself: when `safe.directory` lets
+  git open such a repository, belt reads the root file.
+  `~/.claude/settings.local.json` is local scope, so it counts only for a
+  session started in the home directory. A leading `~` is expanded and
+  symlinks are resolved on both sides, so a store linked into a synced
+  folder still matches. The store left out counts as absent, and the other
+  store gets the whole budget. A missing setting, broken JSON or a wrongly
+  typed key in any of those files, or a path that does not resolve keeps
+  the store. So does a `git rev-parse` that fails for any reason but status
+  128 (not a git repository), a timeout or a missing git included. Without
+  the flag, or with any other value, both stores are injected, which is
+  what Codex and pi need. `belt doctor` prints one line for a store a
+  setting names, read for doctor's own working directory. The line names
+  the scope and file the setting came from, then says either that the flag
+  leaves the store out or why auto memory may be off. When belt cannot
+  tell, doctor prints one `cannot tell` line with the error instead. The
+  skip line also says when a SessionStart entry in the Claude settings
+  runs the hint without the flag.
   It reads the entry the way belt parses its arguments, so the flag may sit
   before or after the event, a `--config` may sit before `hint`, and the
   binary may be named by a full path. Install a belt that knows the flag
   before a settings entry passes it: an older belt fails on the unknown flag
   and the session starts with no session-start hints.
+- **Keeps the store while auto memory is off**, since Claude Code then loads
+  nothing from the directory. One switch is `autoMemoryEnabled: false` in
+  the highest file that sets it. Another is `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`
+  in the session's environment, where `0` keeps auto memory on whatever the
+  files say. The last is `permissions.blockReadsOutsideWorkingDirectories`
+  on in any file, when the directory came from a project file. belt does not run git to tell a
+  local file you own from one the repository supplies, so under that block
+  every project value keeps the store. belt cannot see `--settings`,
+  `--bare`, a device management profile or server-managed settings. It
+  ignores `CLAUDE_CONFIG_DIR` too and always reads `~/.claude/settings.json`.
 - **Posts no event** per fire: it injects the same text every session.
 - **No per-session dedupe** on purpose: the index is the thing to see every
   session.

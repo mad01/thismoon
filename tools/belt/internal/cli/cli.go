@@ -125,8 +125,8 @@ context, and only custom hints run there). Wire them in
 
 --agent names the agent the hook runs for. Only claude-code changes
 anything: the session-start memory injection then leaves out a store
-whose directory Claude Code's autoMemoryDirectory setting names, because
-Claude Code loads that MEMORY.md itself. Any other value, and no flag,
+whose directory Claude Code's autoMemoryDirectory setting names, while
+auto memory is on, because Claude Code loads that MEMORY.md itself. Any other value, and no flag,
 keeps every store, so a Codex or pi entry leaves the flag off. Install a
 belt that knows the flag before a settings entry passes it: an older belt
 fails on the unknown flag.`,

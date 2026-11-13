@@ -9,7 +9,7 @@ import (
 )
 
 func usageProbe(u ...hint.MemoryUsage) memoryProbe {
-	return func(config.Config) []hint.MemoryUsage { return u }
+	return func(config.Config) ([]hint.MemoryUsage, error) { return u, nil }
 }
 
 func TestDoctorReportsAgentMemoryBudget(t *testing.T) {
@@ -120,7 +120,13 @@ func TestDoctorNamesAStoreClaudeCodeLoadsItself(t *testing.T) {
 	work := hint.MemoryUsage{
 		Label: "work agent memory", Path: "/w/MEMORY.md", Present: true,
 		Facts: 8, Kept: 8, Bytes: 1500, Share: 2250,
-		AutoMemorySettings: "/h/.claude/settings.json",
+		AutoMemory: config.AutoMemory{
+			Directory: "~/w",
+			Source: config.SettingsSource{
+				Scope: config.ScopeUser,
+				Path:  "/h/.claude/settings.json",
+			},
+		},
 	}
 	off := false
 	tests := []struct {
@@ -203,7 +209,7 @@ func TestDoctorNamesAStoreClaudeCodeLoadsItself(t *testing.T) {
 				t.Errorf("warnings = %q, want none: a skipped store is no fault", warns)
 			}
 			line := "work agent memory: a Claude Code session started with --agent claude-code skips it, " +
-				"because autoMemoryDirectory in /h/.claude/settings.json points at /w"
+				"because autoMemoryDirectory in user settings (/h/.claude/settings.json) points at /w"
 			if got := strings.Contains(b.String(), line); got != tt.wantLine {
 				t.Errorf("section %q has the skip line: %v, want %v", b.String(), got, tt.wantLine)
 			}
@@ -215,6 +221,78 @@ func TestDoctorNamesAStoreClaudeCodeLoadsItself(t *testing.T) {
 					got,
 					tt.wantTwice,
 				)
+			}
+		})
+	}
+}
+
+// TestDoctorNamesTheSourceAndWhyAStoreStaysIn: the line names the scope and
+// file autoMemoryDirectory came from. When auto memory is off, the line says
+// so and that a Claude Code session keeps the store, with no load-twice
+// ending, since nothing loads it twice.
+func TestDoctorNamesTheSourceAndWhyAStoreStaysIn(t *testing.T) {
+	project := config.SettingsSource{Scope: config.ScopeProject, Path: "/p/.claude/settings.json"}
+	work := hint.MemoryUsage{
+		Label: "work agent memory", Path: "/w/MEMORY.md", Present: true, Facts: 8, Kept: 8,
+		AutoMemory: config.AutoMemory{Directory: "~/w", Source: project},
+	}
+	cfg := config.Config{
+		ClaudeSettingsFiles: []string{writeFile(t, t.TempDir(), "settings.json",
+			`{"hooks": {"SessionStart": [{"hooks": [{"command": "belt hint session-start"}]}]}}`)},
+	}
+	var b strings.Builder
+	printAgentMemory(&b, cfg, usageProbe(work))
+	if !strings.Contains(
+		b.String(),
+		"autoMemoryDirectory in project settings (/p/.claude/settings.json)",
+	) {
+		t.Errorf("section %q does not name the project source", b.String())
+	}
+
+	work.AutoMemory.Off = "auto memory is off: CLAUDE_CODE_DISABLE_AUTO_MEMORY=1"
+	b.Reset()
+	printAgentMemory(&b, cfg, usageProbe(work))
+	want := "work agent memory: autoMemoryDirectory in project settings (/p/.claude/settings.json) " +
+		"points at /w, but Claude Code may load none of it: auto memory is off: " +
+		"CLAUDE_CODE_DISABLE_AUTO_MEMORY=1; a Claude Code session keeps the store"
+	if !strings.Contains(b.String(), want) {
+		t.Errorf("section %q is missing %q", b.String(), want)
+	}
+	if strings.Contains(b.String(), "load it twice") || strings.Contains(b.String(), "skips it") {
+		t.Errorf(
+			"section %q says the store is skipped or loads twice while auto memory is off",
+			b.String(),
+		)
+	}
+}
+
+// TestDoctorSaysWhenItCannotTell: a settings source belt cannot read, or a
+// key of the wrong type, marks no store, so doctor prints one line with the
+// error instead of saying nothing about auto memory. The probe reads the
+// real sources with no working directory, so no git call can time out.
+func TestDoctorSaysWhenItCannotTell(t *testing.T) {
+	probe := func(cfg config.Config) ([]hint.MemoryUsage, error) {
+		return hint.NewAgentMemory(cfg).Usage("")
+	}
+	for _, tt := range []struct{ name, settings, want string }{
+		{"broken JSON", `{"autoMemoryDirectory": `, "unexpected end of JSON input"},
+		{"wrong type", `{"autoMemoryEnabled": "no"}`, "cannot unmarshal string"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			user := writeFile(t, t.TempDir(), "settings.json", tt.settings)
+			cfg := config.Config{ClaudeSources: &config.ClaudeSources{User: user}}
+			var b strings.Builder
+			if warns := printAgentMemory(&b, cfg, probe); len(warns) != 0 {
+				t.Errorf("warnings = %q, want none: every store stays in", warns)
+			}
+			line := "cannot tell which store Claude Code loads itself: " + user
+			if !strings.Contains(b.String(), line) || !strings.Contains(b.String(), tt.want) ||
+				!strings.Contains(
+					b.String(),
+					"a Claude Code session started here keeps every store",
+				) {
+				t.Errorf("section %q is missing the cannot tell line for %s", b.String(), user)
 			}
 		})
 	}

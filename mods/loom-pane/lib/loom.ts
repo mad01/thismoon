@@ -213,6 +213,35 @@ export function isolationWorktreeFrom(isolation: unknown, result: unknown): stri
   return normalizePath(path)
 }
 
+/**
+ * The agent a background Agent call with `isolation: 'worktree'` launched:
+ * the `agentId` its `async_launched` result names, the id the agent's own
+ * tool calls carry. Null for any other call or result. That result names no
+ * worktree, so the mod learns it from the agent's first Bash call
+ * (launchedWorktree).
+ */
+export function backgroundIsolationAgent(isolation: unknown, result: unknown): string | null {
+  if (isolation !== 'worktree' || typeof result !== 'object' || result === null) return null
+  const { status, agentId } = result as { status?: unknown; agentId?: unknown }
+  if (status !== 'async_launched' || typeof agentId !== 'string' || agentId === '') return null
+  return agentId
+}
+
+/**
+ * The isolation worktree of a background agent, judged on the agent's first
+ * Bash call: `cwd`, the agent's own directory then, when it is a worktree git
+ * lists now (`listed`) and did not list at the launch (`before`). A
+ * subdirectory, the canonical checkout or a worktree that already existed is
+ * null, so the record never gains a path the launch did not create.
+ */
+export function launchedWorktree(cwd: string, listed: readonly string[], before: readonly string[]): string | null {
+  if (!cwd.startsWith('/')) return null
+  const path = normalizePath(cwd)
+  if (!listed.some(entry => isSamePath(entry, path))) return null
+  if (before.some(entry => isSamePath(entry, path))) return null
+  return path
+}
+
 export function denyReason(path: string, cls: 'canonical' | 'other'): string {
   const holder = cls === 'canonical' ? 'the canonical checkout' : 'another worktree'
   return `loom-pane: ${path} belongs to ${holder}; owners edit only their own worktree`

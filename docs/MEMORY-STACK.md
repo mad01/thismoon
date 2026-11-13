@@ -67,7 +67,11 @@ machines and across agents.
   `belt hint session-start --agent claude-code` and belt leaves that store
   out, so the index does not load twice. The other store gets the whole
   budget. Codex and pi entries leave the flag off and get both stores.
-  `belt doctor` names a store the flag leaves out.
+  Set the key in `~/.claude/settings.json` or a project's settings: Claude
+  Code reads `~/.claude/settings.local.json` only in a session started in
+  the home directory, and belt follows it. With auto memory off, belt keeps
+  the store. `belt doctor` names a store a setting points at and the file
+  that names it.
 - To add a fact, the agent writes the fact file and its index line in the
   clone, then commits and pushes there. belt never writes to it. With the
   clone's ralph item set to `update = true`, the next `ralph up` on every

@@ -51,6 +51,7 @@ func TestHintCmdAgentFlag(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv(config.EnvConfig, "")
+	t.Setenv(config.EnvDisableAutoMemory, "")
 	for _, dir := range []string{".config/agent-memory", ".config/agent-memory-work", ".claude"} {
 		if err := os.MkdirAll(filepath.Join(home, dir), 0o755); err != nil {
 			t.Fatal(err)
