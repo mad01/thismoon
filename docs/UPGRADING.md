@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-11-13 every Go component: rebuild on Go 1.27.4
 
-Change: thismoon #PR. Go 1.27.4 fixes GO-2026-6859, an HTTP/1 server crash in `net/http` that most services reach, and `go.mod` now requires it. A machine with an older Go downloads the 1.27.4 toolchain for the build, so this change and the consuming repo's Go pin can land in either order. A plain `ralph up` rebuilds only the components whose own directory changed, so most binaries would keep the old Go.
+Change: thismoon #489. Go 1.27.4 fixes GO-2026-6859, an HTTP/1 server crash in `net/http` that most services reach, and `go.mod` now requires it. A machine with an older Go downloads the 1.27.4 toolchain for the build, so this change and the consuming repo's Go pin can land in either order. A plain `ralph up` rebuilds only the components whose own directory changed, so most binaries would keep the old Go.
 
 Run, in order:
 
