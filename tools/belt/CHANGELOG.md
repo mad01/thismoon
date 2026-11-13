@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.19.6](https://github.com/mad01/thismoon/compare/belt/v2.19.5...belt/v2.19.6) (2026-11-13)
+
+
+### Bug Fixes
+
+* **belt:** read heredoc message bodies as text and track branch switches ([#462](https://github.com/mad01/thismoon/issues/462)) ([67e9575](https://github.com/mad01/thismoon/commit/67e9575cefb6b92162c9d89b456892f8dd723ca8))
+
 ## [2.19.5](https://github.com/mad01/thismoon/compare/belt/v2.19.4...belt/v2.19.5) (2026-11-13)
 
 
