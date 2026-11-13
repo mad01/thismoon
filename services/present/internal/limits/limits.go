@@ -47,6 +47,7 @@ const (
 	SummaryWords        ID = "summary.words"
 	HeadingLabel        ID = "heading.label"
 	BriefFigureGap      ID = "brief.figure_gap"
+	BriefParagraph      ID = "brief.paragraph"
 	TableRows           ID = "table.rows"
 	TableCell           ID = "table.cell"
 	DiagramBoxes        ID = "diagram.boxes"
@@ -118,6 +119,13 @@ var table = []Limit{
 		Source: House,
 		Rule:   "At most 4 sections in a row go without a figure (a chart, diagram, graph, image, or stat).",
 		Reason: "A long run of text-only sections reads as a wall; a figure gives the reader who skims a place to land.",
+	},
+	{
+		ID: BriefParagraph, Number: 70, Unit: "words", Level: Warn,
+		Scope:  "the paragraphs of a brief, in columns and details too",
+		Source: House,
+		Rule:   "A paragraph (a `p` block) in a brief holds at most 70 words.",
+		Reason: "A reader who skims passes over a long block of text, and one who listens loses its thread before it ends.",
 	},
 	{
 		ID: TableRows, Number: 8, Unit: "rows", Level: Warn,

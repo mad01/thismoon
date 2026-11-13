@@ -705,6 +705,68 @@ Repaired:
 ```
 <!-- pair:end -->
 
+### Paragraphs
+
+<!-- pair:brief.paragraph -->
+This trips `brief.paragraph`:
+
+```json
+{
+  "title": "ADR-0028: sandbox-runtime replaces hand-written seatbelt profiles",
+  "content": {
+    "summary": "The fleet now confines its processes with **sandbox-runtime (srt)** instead of hand-written seatbelt profiles: each process starts default-deny and reaches only the hosts its settings name.",
+    "sections": [
+      {
+        "h": "A process moves onto srt in four steps",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Moving a process onto srt takes four steps, and each one has to land before the next. First write the settings file that names the hosts the process may reach and the paths it may write. Then swap the launcher so it starts the process under `srt-run` instead of `sandbox-exec`. Then run the process for a day and read every denial the log records, adding a host or a path only when the denial is a real need. Last, delete the old `.sb` profile so nothing can start the process unconfined."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The lint says:
+
+> `content.sections[0].blocks[0]` section "A process moves onto srt in four steps", a paragraph: 91 words. A reader who skims passes over a long block of text, and one who listens loses its thread before it ends. Aim for 70 or fewer: split it, or make the longer thought a list, a table, or a figure.
+
+Repaired:
+
+```json
+{
+  "title": "ADR-0028: sandbox-runtime replaces hand-written seatbelt profiles",
+  "content": {
+    "summary": "The fleet now confines its processes with **sandbox-runtime (srt)** instead of hand-written seatbelt profiles: each process starts default-deny and reaches only the hosts its settings name.",
+    "sections": [
+      {
+        "h": "A process moves onto srt in four steps",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Each step lands before the next one starts."
+          },
+          {
+            "t": "list",
+            "ordered": true,
+            "items": [
+              "Write the settings file that names the hosts the process may reach and the paths it may write.",
+              "Swap the launcher so it starts the process under `srt-run` instead of `sandbox-exec`.",
+              "Run the process for a day and read every denial the log records. Add a host or a path only for a real need.",
+              "Delete the old `.sb` profile, so nothing can start the process unconfined."
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+<!-- pair:end -->
+
 ### Tables
 
 <!-- pair:table.rows -->

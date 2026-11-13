@@ -1,0 +1,17 @@
+{
+  "title": "ADR-0028: sandbox-runtime replaces hand-written seatbelt profiles",
+  "content": {
+    "summary": "The fleet now confines its processes with **sandbox-runtime (srt)** instead of hand-written seatbelt profiles: each process starts default-deny and reaches only the hosts its settings name.",
+    "sections": [
+      {
+        "h": "A process moves onto srt in four steps",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Moving a process onto srt takes four steps, and each one has to land before the next. First write the settings file that names the hosts the process may reach and the paths it may write. Then swap the launcher so it starts the process under `srt-run` instead of `sandbox-exec`. Then run the process for a day and read every denial the log records, adding a host or a path only when the denial is a real need. Last, delete the old `.sb` profile so nothing can start the process unconfined."
+          }
+        ]
+      }
+    ]
+  }
+}

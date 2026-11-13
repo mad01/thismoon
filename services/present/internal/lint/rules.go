@@ -191,6 +191,29 @@ func checkFigureGap(p Page, n int) []Finding {
 	return out
 }
 
+// checkParagraph warns on a p block in the brief over n words, wherever it
+// sits. A callout, quote, list item, or table cell is not a paragraph, and
+// slide text has slide.words.
+func checkParagraph(p Page, n int) []Finding {
+	var out []Finding
+	p.blocks(func(at block) {
+		if at.b.T != "p" || at.sec.rend != Content {
+			return
+		}
+		w := words(at.b.Text)
+		if w <= n {
+			return
+		}
+		out = append(out, atSection(limits.BriefParagraph, at.sec, at.where,
+			message(limits.BriefParagraph, at.sec.place+", a paragraph", fmt.Sprintf("%d words", w),
+				fmt.Sprintf(
+					"Aim for %d or fewer: split it, or make the longer thought a list, a table, or a figure.",
+					n,
+				))))
+	})
+	return out
+}
+
 func checkTableRows(p Page, n int) []Finding {
 	var out []Finding
 	p.blocks(func(at block) {

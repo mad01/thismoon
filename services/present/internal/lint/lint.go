@@ -63,6 +63,7 @@ var checks = map[limits.ID]check{
 	limits.SummaryWords:        checkSummaryWords,
 	limits.HeadingLabel:        checkHeadingLabel,
 	limits.BriefFigureGap:      checkFigureGap,
+	limits.BriefParagraph:      checkParagraph,
 	limits.TableRows:           checkTableRows,
 	limits.TableCell:           checkTableCell,
 	limits.DiagramBoxes:        checkDiagramBoxes,
