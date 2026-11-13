@@ -51,6 +51,7 @@ const (
 	TableCell           ID = "table.cell"
 	DiagramBoxes        ID = "diagram.boxes"
 	DiagramChain        ID = "diagram.chain"
+	DiagramRow          ID = "diagram.row"
 	DiagramSlideBoxes   ID = "diagram.slide_boxes"
 	DiagramSlideColumns ID = "diagram.slide_columns"
 	SlideWords          ID = "slide.words"
@@ -146,6 +147,13 @@ var table = []Limit{
 		Reason: "Each box on the path is one layer of the layout, and every layer adds height in any direction.",
 	},
 	{
+		ID: DiagramRow, Number: 1032, Unit: "px", Level: Warn,
+		Scope:  "a left-to-right diagram in a brief",
+		Source: Renderer,
+		Rule:   "A left-to-right diagram's longest path, laid out in a row in the compact form, is at most 1032 px wide, the brief's widest.",
+		Reason: "A wider row may draw top to bottom instead, a column as tall as the path is long; the reader's browser picks the form, so the lint can only estimate. It estimates the width from the box text and edge labels on the path in the page's default face; groups, branches, and return edges widen a row further, so a row it passes can still turn.",
+	},
+	{
 		ID: DiagramSlideBoxes, Number: 6, Unit: "boxes", Level: Warn,
 		Scope:  "a diagram on a slide",
 		Source: House,
@@ -221,7 +229,7 @@ var table = []Limit{
 		Scope:  "a diagram box or group label",
 		Source: Renderer,
 		Rule:   "A box or group label is at most 32 characters.",
-		Reason: "A box label draws on one line in a box at most 240 px wide, and a group label sets the group's least width.",
+		Reason: "A box label wraps inside its box, about 27 characters a line in a full box (240 px) and 20 in a compact one (190 px), so it keeps to two lines, three when a long word falls badly; a group label sets the group's least width.",
 	},
 	{
 		ID: DiagramText, Number: 60, Unit: "characters", Level: Refuse,

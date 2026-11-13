@@ -347,6 +347,51 @@ test('diagramElk: groups nest and are at least as wide as their label; boxes gro
   assert.equal(web.layoutOptions, undefined);
 });
 
+test('diagramElk: top to bottom a group carries its least width second, since ELK turns the minimum with the layout', () => {
+  const tb = PresentViz.diagramElk(checkout, measure, { direction: 'TB', density: 'full' }).graph;
+  assert.equal(tb.children[0].layoutOptions['elk.nodeSize.minimum'], '(0,' + ('prod cluster'.length * 7 + 24) + ')');
+});
+
+test('diagramReturnEdges: the edges a depth-first walk from the nodes in order finds pointing back into its path', () => {
+  const spec = (ids, ...edges) => ({
+    nodes: ids.split(' ').map((id) => ({ id })),
+    edges: edges.map((e) => ({ from: e[0], to: e[2] })),
+  });
+  assert.deepEqual(PresentViz.diagramReturnEdges(spec('a b c', 'a>b', 'b>c', 'c>a')), [false, false, true]);
+  assert.deepEqual(PresentViz.diagramReturnEdges(spec('a b c', 'a>b', 'a>c', 'b>c')), [false, false, false], 'two ways down is no loop');
+  assert.deepEqual(PresentViz.diagramReturnEdges(spec('c a b', 'a>b', 'b>c', 'c>a')), [false, true, false], 'the walk starts at the first node');
+  assert.deepEqual(PresentViz.diagramReturnEdges({ nodes: [{ id: 'a' }] }), []);
+});
+
+test('diagramElk: a labelled return edge puts its label in the layer next to the box it leaves', () => {
+  const loop = {
+    nodes: [{ id: 'a', label: 'Build' }, { id: 'b', label: 'Test' }, { id: 'c', label: 'Deploy' }],
+    edges: [{ from: 'a', to: 'b', label: 'image' }, { from: 'b', to: 'c' }, { from: 'c', to: 'a', label: 'rollback' }],
+  };
+  const { graph } = PresentViz.diagramElk(loop, measure, { direction: 'LR', density: 'full' });
+  assert.deepEqual(graph.edges[0].labels[0].layoutOptions, { 'elk.edgeLabels.inline': 'true' });
+  assert.deepEqual(graph.edges[2].labels[0].layoutOptions, {
+    'elk.edgeLabels.inline': 'true', 'elk.layered.edgeLabels.centerLabelPlacementStrategy': 'TAIL_LAYER',
+  });
+});
+
+test('diagramGroupLabelSpots: a group label moves right past a route or an edge label in its strip', () => {
+  const group = (x) => ({ id: 'g', x, y: 100, width: 300, height: 120, children: [] });
+  const spec = { groups: [{ id: 'g', label: 'Backend' }] }; // 7 * 7 = 49 px wide
+  const down = (x) => ({ sections: [{ startPoint: { x, y: 40 }, endPoint: { x, y: 140 } }] });
+  const at = (layout) => PresentViz.diagramGroupLabelSpots(spec, layout, measure).g;
+  assert.deepEqual(at({ children: [group(0)], edges: [] }), PresentViz.diagramGroupLabel, 'nothing crosses: the corner');
+  assert.deepEqual(at({ children: [group(0)], edges: [down(200)] }), { x: 12, y: 20 }, 'a route clear of it leaves it');
+  assert.deepEqual(at({ children: [group(50)], edges: [down(80)] }), { x: 36, y: 20 }, 'past the route, 6 px clear, from the group edge');
+  assert.deepEqual(at({ children: [group(0)], edges: [down(30), down(90)] }), { x: 96, y: 20 }, 'past the second when the first gap is too narrow');
+  const label = { sections: [], labels: [{ x: 10, y: 110, width: 60, height: 16 }] };
+  assert.deepEqual(at({ children: [group(0)], edges: [label] }), { x: 76, y: 20 }, 'past an edge label in the strip');
+  const below = { sections: [{ startPoint: { x: 0, y: 130 }, endPoint: { x: 300, y: 130 } }] };
+  assert.deepEqual(at({ children: [group(0)], edges: [below] }), { x: 12, y: 20 }, 'a run under the strip leaves it');
+  const across = { sections: [{ startPoint: { x: 0, y: 115 }, endPoint: { x: 300, y: 115 } }] };
+  assert.deepEqual(at({ children: [group(0)], edges: [across] }), { x: 12, y: 20 }, 'no clear place: the corner');
+});
+
 test('diagramLabelSpots: the top left corner ELK gave each label, by edge index', () => {
   const spots = PresentViz.diagramLabelSpots({ edges: [
     { id: 'e2', labels: [{ id: 'l2', x: 10, y: 20, width: 5, height: 5 }] },
@@ -740,23 +785,29 @@ function touchesRoute(edge, r) {
     return pts.slice(1).some((q, i) => runsThrough(pts[i], q, r));
   });
 }
-// laidOut walks ELK's result into node boxes and group label boxes, in root coordinates.
+// GROUP_PAD_BOTTOM is the padding under a group's lowest box (DIAGRAM_GROUP_PAD).
+const GROUP_PAD_BOTTOM = 16;
+// laidOut walks ELK's result into node boxes, group label boxes where
+// diagramGroupLabelSpots puts them, and the room under each group's lowest
+// box, in root coordinates.
 function laidOut(layout, spec) {
-  const group = Object.create(null), nodes = [], groupLabels = [];
+  const group = Object.create(null), nodes = [], groupLabels = [], rooms = [];
+  const spots = PresentViz.diagramGroupLabelSpots(spec, layout, faceMeasure);
   (spec.groups || []).forEach((g) => { group[g.id] = g; });
   (function walk(children) {
     (children || []).forEach((c) => {
       if (group[c.id]) {
-        const at = PresentViz.diagramGroupLabel;
+        const at = spots[c.id];
         groupLabels.push({ id: c.id, x: c.x + at.x, y: c.y + at.y - 12, w: faceMeasure(group[c.id].label || '', 'group'), h: 16 });
+        rooms.push({ id: c.id, under: c.y + c.height - Math.max(...(c.children || []).map((k) => k.y + k.height)) });
         walk(c.children);
       } else nodes.push({ id: c.id, x: c.x, y: c.y, w: c.width, h: c.height });
     });
   })(layout.children);
-  return { nodes, groupLabels };
+  return { nodes, groupLabels, rooms };
 }
 
-test('layout: on every baseline diagram and form, each label sits on its own route and clear of boxes and labels', { skip: elkSkip }, async () => {
+test('layout: on every baseline diagram and form, each label sits on its own route and clear of boxes and labels, no route crosses a group label, and no group leaves room under its boxes', { skip: elkSkip }, async () => {
   assert.ok(existsSync(elkFile), `no ELK bundle at ${elkFile}: CI runs scripts/cache-assets.sh with PRESENT_WORKDIR before this test`);
   const ELK = createRequire(import.meta.url)(elkFile);
   const elk = new ELK();
@@ -770,7 +821,9 @@ test('layout: on every baseline diagram and form, each label sits on its own rou
       const built = PresentViz.diagramElk(spec, faceMeasure, form);
       const layout = await elk.layout(built.graph);
       const spots = PresentViz.diagramLabelSpots(layout);
-      const { nodes, groupLabels } = laidOut(layout, spec);
+      const { nodes, groupLabels, rooms } = laidOut(layout, spec);
+      rooms.forEach((r) => { if (r.under > GROUP_PAD_BOTTOM + TOUCH) faults.push(`${where}: group ${r.id} has ${Math.round(r.under)} px under its boxes`); });
+      layout.edges.forEach((e) => groupLabels.forEach((g) => { if (touchesRoute(e, g)) faults.push(`${where}: route ${e.id} crosses group label ${g.id}`); }));
       const labels = [];
       (spec.edges || []).forEach((e, k) => {
         if (!e.label) return;

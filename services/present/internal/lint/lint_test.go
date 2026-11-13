@@ -222,6 +222,52 @@ func TestLongestPath(t *testing.T) {
 	}
 }
 
+// TestRowWidth holds the estimate to what the vendored ELK lays out for
+// the same rows in the compact form with Fira Code's widths: five short
+// boxes, the same with every arrow labelled, and a person with wrapped
+// text.
+func TestRowWidth(t *testing.T) {
+	row := func(labels ...string) *render.Block {
+		b := &render.Block{T: "diagram", Nodes: []render.DiagramNode{
+			{ID: "a", Label: "Ingest", Text: "reads the feed"},
+			{ID: "b", Label: "Parse", Text: "splits records"},
+			{ID: "c", Label: "Enrich", Text: "adds the owner"},
+			{ID: "d", Label: "Store", Text: "writes rows", Kind: "store"},
+			{ID: "e", Label: "Report", Text: "daily digest"},
+		}}
+		for k := range 4 {
+			e := render.DiagramEdge{From: b.Nodes[k].ID, To: b.Nodes[k+1].ID}
+			if k < len(labels) {
+				e.Label = labels[k]
+			}
+			b.Edges = append(b.Edges, e)
+		}
+		return b
+	}
+	path := []int{0, 1, 2, 3, 4}
+	if got := rowWidth(row(), path); got != 767 {
+		t.Errorf("unlabelled row: %d px, ELK lays it out at 767", got)
+	}
+	labelled := row(
+		"raw json lines",
+		"typed record rows",
+		"tagged record rows",
+		"nightly sql query",
+	)
+	if got := rowWidth(labelled, path); got != 1198 {
+		t.Errorf("labelled row: %d px, ELK lays it out at 1198", got)
+	}
+	person := &render.Block{T: "diagram", Nodes: []render.DiagramNode{
+		{ID: "u", Label: "Reader", Kind: "person"},
+		{ID: "w", Label: "belt watch", Text: "asyncRewake hook; moves its cursor, then wakes"},
+	}, Edges: []render.DiagramEdge{{From: "u", To: "w", Label: "ledger entry"}}}
+	// 120 + 14, then 23 characters on the widest wrapped line: 159 + 28 = 187,
+	// and the one-line label's 83 + 8 between two gaps.
+	if got, want := rowWidth(person, []int{0, 1}), 24+134+187+32+91+32; got != want {
+		t.Errorf("person and wrapped text: %d px, want %d", got, want)
+	}
+}
+
 // TestHeadingLabelExemptions: the closing sections, the page title, the
 // ADHD mode's headings, and a divider slide are labels on purpose.
 func TestHeadingLabelExemptions(t *testing.T) {

@@ -1031,14 +1031,15 @@
   }
   // diagramLayoutForm lays one form out: the form, ELK's graph with every
   // position filled in (relative to the root), the node and edge label
-  // boxes it was built from, where ELK put each label, and the size
-  // diagramPlan weighs.
+  // boxes it was built from, where ELK put each edge label, where each
+  // group label clears the routes, and the size diagramPlan weighs.
   function diagramLayoutForm(spec, measure, form) {
     var built = PresentViz.diagramElk(spec, measure, form);
     return diagramEngine.layout(built.graph).then(function (graph) {
       return {
         form: form, group: form.group, density: form.density, graph: graph,
         boxes: built.boxes, labels: built.labels, spots: PresentViz.diagramLabelSpots(graph),
+        groupSpots: PresentViz.diagramGroupLabelSpots(spec, graph, measure),
         width: graph.width, height: graph.height
       };
     });
@@ -1140,9 +1141,11 @@
     }
   };
   // drawDiagramGroups draws the boundaries, parents before the groups
-  // they hold: a tinted box with its label in the top padding.
-  function drawDiagramGroups(layer, spec, boxes, flags) {
-    var depth = diagramDepth(spec), at = PresentViz.diagramGroupLabel;
+  // they hold: a tinted box with its label in the top padding, where
+  // spots puts it (clear of the routes) or at the default corner.
+  function drawDiagramGroups(layer, spec, boxes, flags, spots) {
+    var depth = diagramDepth(spec), corner = PresentViz.diagramGroupLabel;
+    function at(d) { return (spots && spots[d.key]) || corner; }
     var data = (spec.groups || []).map(function (g, i) {
       return { kind: 'groups', key: g.id, item: g, box: boxes[g.id], order: i };
     }).sort(function (a, b) { return depth(a.key) - depth(b.key) || a.order - b.order; });
@@ -1151,7 +1154,8 @@
       .attr('transform', function (d) { return 'translate(' + d.box.x + ',' + d.box.y + ')'; });
     g.append('rect').attr('class', 'dgroup-box').attr('rx', DIAGRAM_GROUP_RX)
       .attr('width', function (d) { return d.box.width; }).attr('height', function (d) { return d.box.height; });
-    g.append('text').attr('class', 'dgroup-label').attr('x', at.x).attr('y', at.y)
+    g.append('text').attr('class', 'dgroup-label')
+      .attr('x', function (d) { return at(d).x; }).attr('y', function (d) { return at(d).y; })
       .text(function (d) { return d.item.label; });
   }
   // drawDiagramNodes draws the boxes: the shape by kind, the name lines,
@@ -1215,7 +1219,7 @@
   // classes.
   function drawDiagram(svg, spec, laid, flags) {
     var root = d3.select(svg), boxes = diagramBoxes(laid.graph);
-    drawDiagramGroups(root.append('g').attr('class', 'dgroups'), spec, boxes, flags);
+    drawDiagramGroups(root.append('g').attr('class', 'dgroups'), spec, boxes, flags, laid.groupSpots);
     var arrowId = svg.querySelector('marker').id;
     drawDiagramEdges(root.append('g').attr('class', 'dedges'), spec, laid.graph, flags, arrowId, laid);
     drawDiagramNodes(root.append('g').attr('class', 'dnodes'), spec, boxes, flags, laid.boxes);

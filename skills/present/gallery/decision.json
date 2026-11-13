@@ -100,7 +100,7 @@
         "blocks": [
           {
             "t": "diagram",
-            "direction": "LR",
+            "direction": "TB",
             "caption": "What each command reads and writes. Green boxes are belt's commands, blue ones hold data, and grey is outside belt.",
             "nodes": [
               {

@@ -1599,10 +1599,10 @@ func ribbonPeriods(series []ChartSeries) ([]string, error) {
 	return periods, nil
 }
 
-// Caps on a diagram's text, in runes: a node label draws on one line in
-// a box at most 240 px wide, a node text wraps to two lines, an edge label
-// sets the gap between two layers, and a group label sets the group's
-// least width.
+// Caps on a diagram's text, in runes: a node label keeps to two lines in
+// its box (at most 240 px wide, 190 in the compact form), a node text
+// wraps to two lines, an edge label sets the gap between two layers, and
+// a group label sets the group's least width.
 const (
 	diagramMaxLabel     = 32
 	diagramMaxText      = 60
