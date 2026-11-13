@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/mad01/thismoon/compare/suspenders/v0.11.2...suspenders/v0.11.3) (2026-11-13)
+
+
+### Bug Fixes
+
+* build on Go 1.27.4 for the net/http server crash (GO-2026-6859) ([#489](https://github.com/mad01/thismoon/issues/489)) ([a35778d](https://github.com/mad01/thismoon/commit/a35778db21b0d788cde3e18bd5aecdfddd1a2f97))
+
 ## [0.11.2](https://github.com/mad01/thismoon/compare/suspenders/v0.11.1...suspenders/v0.11.2) (2026-11-03)
 
 
