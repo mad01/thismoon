@@ -677,6 +677,21 @@
     }).then(render);
   }
 
+  // renderKeepingFocus re-renders after a filter toggle the user made. render()
+  // replaces every node, so when the toggled control had focus, focus moves to
+  // the control with the same action and the same value of attr (data-repo,
+  // data-eco) in the new DOM; otherwise it falls to the body and the next Tab
+  // starts at the top of the page. Only click handlers call it: the poll
+  // re-render never moves focus.
+  function renderKeepingFocus(ctl, attr) {
+    var hadFocus = document.activeElement === ctl;
+    if (lastData) render(lastData);
+    if (!hadFocus) return;
+    var again = document.querySelector('[data-action="' + ctl.dataset.action + '"]['
+      + attr + '="' + CSS.escape(ctl.getAttribute(attr)) + '"]');
+    if (again) again.focus();
+  }
+
   // Action handling via event delegation on document, so it survives re-render.
   document.addEventListener('click', function (e) {
     var rescanAll = e.target.closest('[data-action="rescan-all"]');
@@ -700,21 +715,15 @@
       var p = filterRepo.dataset.repo;
       if (selected[p]) delete selected[p]; else selected[p] = true;
       syncURL();
-      if (lastData) render(lastData);
+      renderKeepingFocus(filterRepo, 'data-repo');
       return;
     }
     var filterEco = e.target.closest('[data-action="filter-eco"]');
     if (filterEco) {
       var eco = filterEco.dataset.eco;
-      var hadFocus = document.activeElement === filterEco;
       if (ecoSel[eco]) delete ecoSel[eco]; else ecoSel[eco] = true;
       syncURL();
-      if (lastData) render(lastData);
-      // render() replaced the badge; keep the keyboard on the same ecosystem.
-      if (hadFocus) {
-        var again = document.querySelector('[data-action="filter-eco"][data-eco="' + CSS.escape(eco) + '"]');
-        if (again) again.focus();
-      }
+      renderKeepingFocus(filterEco, 'data-eco');
       return;
     }
     var clearFilter = e.target.closest('[data-action="clear-filter"]');
@@ -735,8 +744,7 @@
       return;
     }
     if (e.target.closest('#resolve-confirm')) {
-      var btn = pendingResolve;
-      closeResolveModal();
+      var btn = closeResolveModal();
       if (btn) resolveFinding(btn);
     }
   });
@@ -753,18 +761,46 @@
   // modal in shell.html first; every other kind resolves on one click.
   // pendingResolve is the Resolve button awaiting the answer.
   var resolveModal = document.getElementById('resolve-modal');
+  var resolvePanel = resolveModal.querySelector('wk-modal-panel');
   var pendingResolve = null;
+  // Focus opens on Cancel, not Resolve: an Enter meant for the page must not
+  // silence a malicious alert.
   function openResolveModal(btn) {
     pendingResolve = btn;
     document.getElementById('resolve-pkg').textContent = btn.dataset.label;
     resolveModal.removeAttribute('hidden');
+    document.getElementById('resolve-cancel').focus();
   }
+  // closeResolveModal hides the modal, gives focus back to the Resolve button
+  // that opened it and returns that button. A poll re-render while the modal
+  // was open replaces the button, so the one with the same key stands in.
   function closeResolveModal() {
+    var opener = pendingResolve;
     pendingResolve = null;
     resolveModal.setAttribute('hidden', '');
+    if (!opener) return null;
+    var live = opener.isConnected ? opener : document.querySelector(
+      'button[data-action="resolve"][data-key="' + CSS.escape(opener.dataset.key) + '"]');
+    if (live) live.focus();
+    return live || opener;
+  }
+  // The panel is aria-modal, so Tab and Shift+Tab cycle through its buttons
+  // instead of leaving for the page behind the scrim.
+  function keepTabInModal(e) {
+    var items = resolvePanel.querySelectorAll('button:not([disabled])');
+    if (!items.length) return;
+    var first = items[0];
+    var last = items[items.length - 1];
+    var inside = resolvePanel.contains(document.activeElement);
+    var edge = e.shiftKey ? first : last;
+    if (inside && document.activeElement !== edge) return;
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus();
   }
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && !resolveModal.hasAttribute('hidden')) closeResolveModal();
+    if (resolveModal.hasAttribute('hidden')) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeResolveModal(); }
+    else if (e.key === 'Tab') keepTabInModal(e);
   });
 
   // Webkit.poll fetches immediately and then every 60s, replacing the old
