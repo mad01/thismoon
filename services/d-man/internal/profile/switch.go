@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/mad01/thismoon/services/d-man/internal/atomicfile"
 	"github.com/mad01/thismoon/services/d-man/internal/config"
 )
 
@@ -42,10 +43,10 @@ func Switch(routes, name, home string) error {
 		return fmt.Errorf("profile %s would write invalid routes, %s left unchanged: %w",
 			name, routes, err)
 	}
-	if err := writeFileAtomic(routes, out); err != nil {
+	if err := atomicfile.Write(routes, out, fileMode); err != nil {
 		return err
 	}
-	return writeFileAtomic(filepath.Join(dir, RecordFile), []byte(name+"\n"))
+	return atomicfile.Write(filepath.Join(dir, RecordFile), []byte(name+"\n"), fileMode)
 }
 
 // Current returns the active profile recorded beside routes, or Default when
@@ -102,36 +103,4 @@ func readBlocklist(dir, name string) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("read block list: %w", err)
 	}
-}
-
-// writeFileAtomic replaces path with data through a temp file in the same
-// directory and a rename, so the daemon's file watch never reads a half
-// written file. A symlink at path is replaced by a regular file, not
-// followed.
-func writeFileAtomic(path string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return fmt.Errorf("create temp file for %s: %w", path, err)
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }() // a no-op once the rename succeeds
-
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("write %s: %w", tmpName, err)
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("sync %s: %w", tmpName, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", tmpName, err)
-	}
-	if err := os.Chmod(tmpName, fileMode); err != nil {
-		return fmt.Errorf("chmod %s: %w", tmpName, err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("replace %s: %w", path, err)
-	}
-	return nil
 }

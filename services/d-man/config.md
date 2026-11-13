@@ -101,12 +101,16 @@ both, or neither, is a validation error.
   block-page CA's `ca.pem` and `ca-key.pem`. The CA key is root-owned once
   installed; a non-root `serve` run for local testing needs its own
   `--ca-dir`.
+- `--settings-file` (serve only, default: `ui-settings.json` beside the
+  resolved routes config, e.g. `~/.config/d-man/ui-settings.json`): where
+  serve keeps the UI settings document. A leading `~` is expanded. See
+  [UI settings](#ui-settings).
 
 ## Environment variables
 
 - `DMAN_CONFIG`: overrides the routes file path; see resolution order above.
 - `XDG_CONFIG_HOME`: relocates the per-user config directory (step 3 above)
-  and, with it, the default `--ca-dir`.
+  and, with it, the default `--ca-dir` and `--settings-file`.
 - `EVENTS_BASE_URL`: where route-reload events are archived (default
   `http://127.0.0.1:7430`). Emitting is best effort: an unreachable events
   service drops the event and never affects a reload.
@@ -124,6 +128,47 @@ host is loopback (`localhost`, `127.0.0.0/8`, `::1`, on any port) or ends in
 cannot read the list of services running on this machine.
 
 The allowlist is fixed: no config key or flag widens it.
+
+`/__this/settings.json` has no allowlist at all. It never sends a CORS
+header, so only a page on the same host can read it. A PATCH whose `Origin`
+is not the request's own scheme and host gets a 403.
+
+## UI settings
+
+serve keeps the webkit UI settings (theme mode, palette per mode, font, size,
+fixation reading) in one JSON document, so a choice made on one `.this` host
+shows on every other. The file is `ui-settings.json` beside the routes file,
+or wherever `--settings-file` points:
+
+```json
+{
+  "v": 1,
+  "settings": {
+    "webkit-size": "18",
+    "webkit-theme": "dark"
+  }
+}
+```
+
+The file is state the daemon writes, not config to edit: serve reads it once
+at start and rewrites it on every change. It holds only keys that were set,
+each with a value the kit accepts:
+
+| Key | Values |
+|-----|--------|
+| `webkit-theme` | `light`, `dark`, `system` |
+| `webkit-palette-light`, `webkit-palette-dark` | `default` or a palette family the kit ships |
+| `webkit-font` | `Fira Code`, `Inter`, `Lexend`, `Work Sans` |
+| `webkit-size` | a whole number from `12` to `24` |
+| `webkit-fixation` | `true`, `false` |
+
+A missing file means no settings. A file that does not parse is logged on
+stderr and serve starts with no settings; entries with an unknown key or a
+refused value are dropped with a warning.
+
+Settings sync only on pages served through d-man under the `.this` suffix. A
+page on a localhost port, or a machine with a custom `suffix`, keeps its
+settings in that origin's own browser storage.
 
 ## Example
 

@@ -20,14 +20,17 @@ import (
 
 	"github.com/mad01/thismoon/kit/confdir"
 	"github.com/mad01/thismoon/kit/notify"
+	dman "github.com/mad01/thismoon/services/d-man"
 	"github.com/mad01/thismoon/services/d-man/internal/hosts"
 	"github.com/mad01/thismoon/services/d-man/internal/proxy"
+	"github.com/mad01/thismoon/services/d-man/internal/settings"
 	"github.com/mad01/thismoon/services/d-man/internal/tlsca"
 )
 
 var (
-	flagServePort int
-	flagTLSPort   int
+	flagServePort    int
+	flagTLSPort      int
+	flagSettingsFile string
 )
 
 var serveCmd = &cobra.Command{
@@ -45,6 +48,10 @@ Run as a root launchd daemon via t-man (writing /etc/hosts and binding :80/:443
 all need root):
   sudo t-man --daemon add --name d-man -- d-man serve --config ~/.config/d-man/routes.toml
 
+It answers GET and PATCH /__this/settings.json on every configured host itself:
+the webkit UI settings (theme, palette, font, size, fixation) that follow the
+user between .this hosts, saved to ui-settings.json beside the routes file.
+
 It also watches its own binary and exits cleanly when the file changes, so a
 ralph rebuild is picked up by launchd's KeepAlive relaunch: no manual restart
 or sudo required.`,
@@ -58,14 +65,14 @@ func init() {
 		IntVar(&flagTLSPort, "tls-port", 443, "port the TLS block-page listener uses (loopback only)")
 	serveCmd.Flags().StringVar(&flagCADir, "ca-dir", "",
 		"directory holding the CA cert/key (default: <config dir>/ca)")
+	serveCmd.Flags().StringVar(&flagSettingsFile, "settings-file", "",
+		"file the UI settings are saved to (default: <config dir>/"+dman.SettingsFile+")")
 	rootCmd.AddCommand(serveCmd)
 }
 
 func runServe(_ *cobra.Command, _ []string) error {
-	rh := &reloadableHandler{}
-	// Fail fast if the very first load is bad — better to crash-loop visibly
-	// than to serve nothing.
-	if err := reloadOnce(rh); err != nil {
+	rh, err := newReloadableHandler()
+	if err != nil {
 		return err
 	}
 
@@ -129,10 +136,31 @@ func runServe(_ *cobra.Command, _ []string) error {
 }
 
 // reloadableHandler lets the watch loop swap in a fresh proxy on config change
-// without restarting the HTTP listener.
+// without restarting the HTTP listener. settings is built once and handed to
+// every proxy, so a reload never drops the settings document.
 type reloadableHandler struct {
+	settings http.Handler
+
 	mu sync.RWMutex
 	h  http.Handler
+}
+
+// newReloadableHandler opens the settings store and loads the first routes.
+// The store outlives every route reload: one document, one file. A bad first
+// routes load fails here, so serve crash-loops visibly rather than serving
+// nothing.
+func newReloadableHandler() (*reloadableHandler, error) {
+	settingsPath, err := resolveSettingsFile()
+	if err != nil {
+		return nil, err
+	}
+	store := settings.Open(settingsPath, log.Default())
+	log.Printf("d-man: UI settings in %s", settingsPath)
+	rh := &reloadableHandler{settings: settings.Handler(store, log.Default())}
+	if err := reloadOnce(rh); err != nil {
+		return nil, err
+	}
+	return rh, nil
 }
 
 func (rh *reloadableHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -179,13 +207,23 @@ func reloadOnce(rh *reloadableHandler) error {
 	if err != nil {
 		return err
 	}
-	h, err := proxy.New(cfg.RouteMap(), cfg.Sites(), cfg.BlockedHosts(), gamesDir)
+	h, err := proxy.New(cfg.RouteMap(), cfg.Sites(), cfg.BlockedHosts(), gamesDir, rh.settings)
 	if err != nil {
 		return err
 	}
 	rh.set(h)
 	log.Printf("d-man: routes loaded: %s", strings.Join(cfg.Hosts(), ", "))
 	return nil
+}
+
+// resolveSettingsFile returns the UI settings file: --settings-file when set,
+// else SettingsFile beside the routes file. The root daemon has no user HOME,
+// so the routes file's directory is the one user path it can keep them in.
+func resolveSettingsFile() (string, error) {
+	if flagSettingsFile != "" {
+		return confdir.Expand(flagSettingsFile)
+	}
+	return filepath.Join(filepath.Dir(flagConfig), dman.SettingsFile), nil
 }
 
 // watchLoop reloads on routes.toml changes and SIGHUP, and exits(0) when the

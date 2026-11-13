@@ -28,6 +28,12 @@ const origHostKey ctxKey = 0
 // is same-origin.
 const SitesPath = "/__this/sites.json"
 
+// SettingsPath is the reserved path for the UI settings that follow the user
+// between .this hosts. Unlike SitesPath it is answered only on a configured
+// route host, after the block check: an unknown host still gets the 502 and a
+// blocked host the block page.
+const SettingsPath = "/__this/settings.json"
+
 // probeTimeout caps a single backend liveness probe. Backends are on loopback,
 // so a live one answers in microseconds; this only bounds the wait on a dead
 // port whose connection never completes.
@@ -45,10 +51,11 @@ type Prober func(backend string) bool
 // Handler routes by Host header using a host -> backend map. It is safe to
 // build a fresh Handler and swap it in on config reload.
 type Handler struct {
-	routes  map[string]*url.URL
-	rp      *httputil.ReverseProxy
-	blocked map[string]bool // hosts served the block page instead of proxied
-	block   http.Handler    // renders the block-page minigame
+	routes   map[string]*url.URL
+	rp       *httputil.ReverseProxy
+	blocked  map[string]bool // hosts served the block page instead of proxied
+	block    http.Handler    // renders the block-page minigame
+	settings http.Handler    // answers SettingsPath; nil proxies it like any path
 
 	sites []config.Site // all port-backed sites; filtered by liveness on serve
 	probe Prober        // injectable for tests; defaults to an HTTP loopback probe
@@ -64,11 +71,13 @@ type Handler struct {
 // the ones whose backend currently responds, re-probed at most every sitesTTL.
 // blocked hosts are served the local block page instead of being proxied;
 // gamesDir optionally names a directory of plugin block-page games.
+// settings answers SettingsPath on configured hosts; nil turns that off.
 func New(
 	routeMap map[string]string,
 	sites []config.Site,
 	blocked []string,
 	gamesDir string,
+	settings http.Handler,
 ) (*Handler, error) {
 	routes := make(map[string]*url.URL, len(routeMap))
 	for host, backend := range routeMap {
@@ -83,12 +92,13 @@ func New(
 		blockSet[normalizeHost(host)] = true
 	}
 	h := &Handler{
-		routes:  routes,
-		blocked: blockSet,
-		block:   blockpage.Handler(gamesDir),
-		sites:   sites,
-		probe:   httpProbe(probeTimeout),
-		ttl:     sitesTTL,
+		routes:   routes,
+		blocked:  blockSet,
+		block:    blockpage.Handler(gamesDir),
+		settings: settings,
+		sites:    sites,
+		probe:    httpProbe(probeTimeout),
+		ttl:      sitesTTL,
 	}
 	h.rp = &httputil.ReverseProxy{
 		// Rewrite picks the backend by the inbound Host and stashes the original
@@ -152,6 +162,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w,
 			fmt.Sprintf("d-man: no route for %q (add it to routes.toml)", host),
 			http.StatusBadGateway)
+		return
+	}
+	// The settings document is d-man's own, so it never reaches a backend.
+	if r.URL.Path == SettingsPath && h.settings != nil {
+		h.settings.ServeHTTP(w, r)
 		return
 	}
 	h.rp.ServeHTTP(w, r)

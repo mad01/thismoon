@@ -13,7 +13,8 @@ d-man/
   operating.md           agent-facing operating doc, embedded via embed.go and
                          rendered by `d-man docs` from the facts in facts.go
                          (kit/agentdoc; facts.go also holds the routes-file
-                         path constants internal/cli resolves with)
+                         path constants internal/cli resolves with and the
+                         UI settings file name)
   cmd/d-man/
     main.go              entrypoint, delegates to internal/cli.Execute
   internal/
@@ -23,7 +24,8 @@ d-man/
                            cascade, whose ~/.config leg resolves through kit/confdir
                            (so XDG_CONFIG_HOME relocates it)
       serve.go             the daemon: reload loop, fsnotify watch, binary self-watch,
-                           :80 proxy + :443 block-page TLS listener
+                           :80 proxy + :443 block-page TLS listener, the UI settings
+                           store opened once and kept across route reloads
       sync.go              one-shot managed-block write
       list.go              print resolved host -> backend routes
       config.go            print the resolved routes file + the effective config
@@ -41,8 +43,15 @@ d-man/
     hosts/                pure Validate/Render/Splice + the Sync shell (+ hosts_test.go);
                            the fail-safe hosts-file writer
     proxy/                one httputil.ReverseProxy; Host-header routing + the
-                           sites.json endpoint + block-page interception (+ proxy_test.go);
+                           sites.json endpoint + block-page interception + the
+                           settings.json branch (+ proxy_test.go, settings_test.go);
                            cors.go is the sites.json cross-origin allowlist
+    settings/             the UI settings that follow the user between .this hosts:
+                           settings.go is the document, the value table and the
+                           Store (open, read, patch, save); handler.go is GET/PATCH,
+                           the same-origin check, content type and body cap;
+                           drift_test.go pins the table to the webkit source
+    atomicfile/           temp file + rename writer shared by profile and settings
     tlsca/                local CA: persist + mint per-SNI leaf certs (+ tlsca_test.go)
     blockpage/            embedded retro arcade served on blocked hosts, random
                            pick per visit; more games load as plugins from the
@@ -109,6 +118,14 @@ cached `sitesTTL` (30s) and a mutex makes a burst of fetches share one probe
 round. `routes.toml` stays the full catalog of possible sites, and the picker
 shows only the ones actually present.
 
+`/__this/settings.json` is the other path d-man answers itself: the webkit
+UI settings (theme, palette per mode, font, size, fixation) that follow the
+user from one `.this` host to the next. Unlike `sites.json` it sits after the
+block check and the route lookup in `ServeHTTP`. It never carries a CORS
+header: every page reaches it same-origin, and a write must prove that with
+its `Origin`. `serve` opens the store (`internal/settings`) once and hands the
+same handler to every proxy it builds, so a route reload keeps the document.
+
 ### Sudo model (the whole point)
 Two one-time sudos: `t-man --daemon add` (root daemon for `:80`/`:443` +
 `/etc/hosts`) and, only if you use the block list, `d-man ca install` (trust the
@@ -133,6 +150,19 @@ go test ./...
 - `GET /__this/sites.json`: navigable site list as JSON for the webkit ⌘K
   picker, live-filtered to backends currently responding (30s cache, any
   host). Answered by d-man itself, not proxied.
+- `GET /__this/settings.json`: the webkit UI settings document,
+  `{"v":1,"settings":{...}}` with only the keys ever set. `Cache-Control:
+  no-store`, `X-Content-Type-Options: nosniff`. Answered only on a configured
+  route host, after the block check: an unknown host gets the 502 and a
+  blocked host the block page.
+- `PATCH /__this/settings.json`: merges `{"v":1,"settings":{...}}` key by key
+  and returns the full document. Needs `Content-Type: application/json`
+  (else 415) and an `Origin` equal to the request's own scheme and host (else
+  403); body capped at 4 KiB (413). A known key with a value the kit does not
+  accept, or `v` other than 1, is a 400 and changes nothing. Unknown keys are
+  dropped. A failed save is a 500 and memory stays as it was. Any other
+  method, `OPTIONS` included, is a 405 with `Allow: GET, PATCH`. The path
+  never sends an `Access-Control-*` header.
 - Everything else: proxied to the matching route's backend by `Host` header
   (502 if no route matches).
 
@@ -141,7 +171,8 @@ go test ./...
 ```bash
 d-man serve [--port 80] [--tls-port 443]  # the long-running daemon: sync /etc/hosts, serve the
                                            # reverse proxy (:80) and block-page TLS listener (:443),
-                                           # watch routes.toml + own binary
+                                           # watch routes.toml + own binary; --settings-file moves
+                                           # the UI settings file
 sudo d-man sync                           # write the managed /etc/hosts block once and exit (manual fallback)
 sudo d-man ca install                     # generate the block-page CA (if absent) and trust it in the
                                            # system keychain; uninstall/path too
@@ -178,6 +209,14 @@ d-man docs                                # print the embedded operating doc: fa
   touches nothing outside the scratch directory. The golden files in
   `internal/profile/testdata/` match the shell generator the command replaced,
   byte for byte; changing them changes what every machine's daemon reads.
+- **The UI settings file sits beside the routes file**, as `ui-settings.json`
+  (`--settings-file` moves it), not under `XDG_STATE_HOME`. serve runs as
+  root with no user HOME, and the routes file's directory is the only user
+  path it holds. The root daemon writes the file `0644`. The value table in
+  `internal/settings` copies what the kit accepts (theme modes, palette
+  families, fonts, size bounds); `drift_test.go` reads the webkit source and
+  `webkit.Themes()` and fails when they part. The webkit import stays in that
+  test: d-man never links the kit.
 - **`httputil.ReverseProxy` handles WebSocket upgrades natively**, so no
   custom Upgrade handling is needed.
 - **Events go through `kit/notify`** (async emit; the per-tool

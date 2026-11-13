@@ -21,14 +21,19 @@ internal/config/     pure routes.toml model: parse, validate, resolve cname chai
 internal/profile/    pure Render of a profile's routes file plus the Switch writer
 internal/hosts/      pure Validate/Render/Splice plus the fail-safe Sync writer
 internal/proxy/      one httputil.ReverseProxy: Host routing, blocklist,
-                     sites.json + its cross-origin allowlist (cors.go)
+                     sites.json + its cross-origin allowlist (cors.go),
+                     the settings.json branch
+internal/settings/   the UI settings document: value table, Store, GET/PATCH handler
+internal/atomicfile/ temp file + rename writer shared by profile and settings
 internal/tlsca/      local CA: persist the root, mint per-SNI leaf certs
 internal/blockpage/  embedded retro arcade served on blocked hosts (go:embed)
 ```
 
-d-man is not a webkit consumer: it serves no webkit-chromed page of its own.
-It answers `GET /__this/sites.json`, which webkit's command-K site picker in
-the other services fetches to list navigable `.this` sites.
+d-man is not a webkit consumer: it serves no webkit-chromed page of its own
+and never links the kit. It answers `GET /__this/sites.json`, which webkit's
+command-K site picker in the other services fetches to list navigable `.this`
+sites, and `/__this/settings.json`, where the kit keeps the UI settings that
+follow the user between `.this` hosts.
 
 ## Data flow
 
@@ -46,12 +51,16 @@ embedded block page from `internal/blockpage` (one game per visit, plus
 optional plugin games read per request from `games_dir`). d-man answers
 `/__this/sites.json` itself, live-filtered by probing each port-backed backend
 (30 s cache, shared probe round) and reflecting only a loopback or `.this`
-`Origin` back as `Access-Control-Allow-Origin`. Everything else goes through the
-`ReverseProxy` `Rewrite` to the backend resolved from the `Host` header (502
-on miss), with `ModifyResponse` rewriting backend self-redirects back to the
-`.this` hostname. The `:443` listener shares the same handler and mints a
-trusted leaf certificate per SNI from `internal/tlsca`, so blocked hosts that
-force HTTPS still reach the block page.
+`Origin` back as `Access-Control-Allow-Origin`. After the block check and the
+route lookup, `/__this/settings.json` on a configured host goes to the
+settings handler instead of the backend: GET returns the document, PATCH
+merges into it once its `Origin` matches the request's own scheme and host.
+Everything else goes through the `ReverseProxy` `Rewrite` to the backend
+resolved from the `Host` header (502 on miss), with `ModifyResponse`
+rewriting backend self-redirects back to the `.this` hostname. The `:443`
+listener shares the same handler and mints a trusted leaf certificate per SNI
+from `internal/tlsca`, so blocked hosts that force HTTPS still reach the block
+page.
 
 `serve` also watches its own executable (`os.Executable()`) and exits cleanly
 when it changes; launchd's KeepAlive relaunches the new build, so upgrades
@@ -69,15 +78,20 @@ need no sudo.
   the same directory, with the active name recorded in `profile` there. The
   config directory comes from `kit/confdir`, so `XDG_CONFIG_HOME` relocates
   all of these paths.
+- `~/.config/d-man/ui-settings.json`: the UI settings document, beside the
+  routes file (`--settings-file` moves it). Written by serve through a temp
+  file and a rename, mode `0644`; read once at start.
 - `/var/log/d-man/`: logs of the root LaunchDaemon registered by t-man.
 
 ## Interfaces
 
-HTTP: `GET /__this/sites.json` (answered by d-man), everything else proxied by
-`Host` header, on both `:80` and `:443`.
+HTTP: `GET /__this/sites.json` (answered by d-man on any host),
+`GET`/`PATCH /__this/settings.json` (answered by d-man on configured hosts,
+no CORS headers), everything else proxied by `Host` header, on both `:80` and
+`:443`.
 
-CLI: `d-man serve [--port] [--tls-port]`, `sudo d-man sync` (one-shot hosts
-write), `d-man list`, `d-man profile [name]`, `sudo d-man ca
+CLI: `d-man serve [--port] [--tls-port] [--settings-file]`, `sudo d-man sync`
+(one-shot hosts write), `d-man list`, `d-man profile [name]`, `sudo d-man ca
 install|uninstall|path`, `d-man version [-o json]`.
 
 Config: `routes.toml` (path via `--config` or `DMAN_CONFIG`) with top-level

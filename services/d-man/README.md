@@ -81,6 +81,7 @@ d-man version [-o json]    # build sha; -o json adds commit, tag, build time
 | `--port` (serve) | _(none)_ | `80` | Port the proxy listens on (loopback only). |
 | `--tls-port` (serve) | _(none)_ | `443` | Port the block-page TLS listener uses (loopback only). |
 | `--ca-dir` (serve, ca) | _(none)_ | `<config dir>/ca` | Directory holding the block-page CA cert and key. |
+| `--settings-file` (serve) | _(none)_ | `<config dir>/ui-settings.json` | File the UI settings that follow you between `.this` hosts are saved to. |
 
 If a hostname isn't resolving, confirm the entry landed in `/etc/hosts`:
 
@@ -99,6 +100,12 @@ See [`docs/commands.md`](docs/commands.md) for every subcommand in detail.
   dropped, not shown as down. Cross-origin, it answers only pages on this
   machine: an `Origin` on loopback or under `.this` (see
   [config.md](config.md)).
+- `GET` and `PATCH /__this/settings.json`: the webkit UI settings (theme,
+  palette, font, size, fixation reading), one document for every `.this`
+  host, so a theme picked on one host shows on the next. Answered by d-man on
+  any configured host and saved to `ui-settings.json` beside the routes file.
+  It sends no CORS headers, and a `PATCH` must come from the page's own host
+  (see [config.md](config.md#ui-settings)).
 - Everything else: proxied to the matching route's backend by `Host` header.
   A `502` means the backend isn't running, or the port in `routes.toml`
   doesn't match the backend's listen port; check with
@@ -195,6 +202,8 @@ sudo d-man ca install      # generate the CA if needed and trust it
 - Backup: `/etc/hosts.d-man.bak`, written before each change
 - Block-page CA: a `ca/` directory beside the routes config (`ca.pem` +
   `ca-key.pem`), or `--ca-dir`
+- UI settings: `ui-settings.json` beside the routes config, or
+  `--settings-file`
 - Daemon logs: `/var/log/d-man/` (the root launchd daemon registered by t-man)
 
 ## Develop
