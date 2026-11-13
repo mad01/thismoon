@@ -1372,7 +1372,8 @@
   // every later call: PresentViz.diagramPlan picks the form for the room
   // and its scale. Another form draws a new svg from that form's layout,
   // with the step's classes before it enters the page, so the first paint
-  // plays no transition; the entry plays on the first draw only. Another
+  // plays no transition; the entry plays on the first draw, and starts
+  // over on a form that replaces one still entering. Another
   // scale only resizes the svg. Under the floor the brief scrolls the
   // wrapper sideways. The block carries data-diagram-form ("TB compact")
   // and data-under-floor for tests and the eval. The refits come from the
@@ -1393,12 +1394,16 @@
       last = key;
       if (plan.index === drawn) diagramSize(svg, laid, plan.scale);
       else {
-        var first = drawn < 0, next = diagramDraw(block, spec, laid, plan.scale, first && animate);
+        // The entry carries over to a form that replaces one still
+        // entering (the slide fit right after the first draw), or it
+        // would be cut.
+        var enter = animate && (drawn < 0 || svg.classList.contains('entering'));
+        var next = diagramDraw(block, spec, laid, plan.scale, enter);
         if (svg) svg.replaceWith(next); else wrap.appendChild(next);
         svg = next;
         drawn = plan.index;
         block._diagramSvg = svg;
-        if (first && animate) diagramEnter(block, svg, spec, diagramBoxes(laid.graph), laid.form.direction);
+        if (enter) diagramEnter(block, svg, spec, diagramBoxes(laid.graph), laid.form.direction);
         diagramFlow(block, svg, spec);
       }
       wrap.style.overflowX = plan.scroll ? 'auto' : '';
@@ -1467,6 +1472,15 @@
     if (!block._diagramSpec || !wrap) return;
     if (block._diagramKey !== diagramMeasureKey(block)) layDiagram(block, wrap);
     else if (block._diagramFit) block._diagramFit();
+  }
+  // refreshDiagram brings a built diagram on a showing slide up to date:
+  // relayoutDiagram when the reader's face or size marked it stale while
+  // its slide was not showing, a refit to its room otherwise.
+  function refreshDiagram(block) {
+    if (block._diagramStale) {
+      block._diagramStale = false;
+      relayoutDiagram(block);
+    } else if (block._diagramFit) block._diagramFit();
   }
   // initPresentDiagrams builds every diagram block under root (the
   // document by default); with opts.builtOnly it only refits the ones
@@ -2459,10 +2473,14 @@
   // container. A fit is kept per slide under the slide's size, the root
   // font size and the body's face, so a change of any of them fits again;
   // force fits again regardless, after a chart or diagram mounts or the
-  // reader's face or size changes. A chart whose text the new fit sizes
+  // reader's face or size changes. An image that loads after its slide
+  // was fitted clears that slide's key. A burst of window resizes, or of
+  // images loading together, fits the slide on screen once,
+  // FIT_SETTLE_MS after the last. A chart whose text the new fit sizes
   // otherwise is rebuilt after it (rebuildStaleCharts); it keeps its
   // container's height, so the fit stands.
-  //
+  var FIT_SETTLE_MS = 100;
+
   // slideBodyOverflows is the measure. The body is a flex column, and once
   // its items overflow, its scrollHeight leaves out the bottom padding, so
   // the items' heights (the title slide's bar included) are added to both
@@ -2566,11 +2584,12 @@
   // decorateSlide carries a section's layout onto its slide: the
   // data-layout, data-tone (with its --slide-accent variable), and
   // data-reveal attributes the renderer put on the wk-section; a solo class
-  // when the only block is a stat, a quote, or a diagram, which is the
-  // big-number, quote, or picture slide with no field to set; the speaker notes template, read from
-  // its inert content; and the slide's steps, one per Next: on a reveal
-  // slide every item of a top-level list and every other top-level block
-  // is a fragment, and a stepped chart adds its own steps on any slide.
+  // when the only block is a stat, a quote, or a terminal, which is the
+  // big-number, quote, or terminal slide with no field to set; the
+  // speaker notes template, read from its inert content; and the slide's
+  // steps, one per Next: on a reveal slide every item of a top-level list
+  // and every other top-level block is a fragment, and a stepped chart
+  // adds its own steps on any slide.
   function decorateSlide(slide, section) {
     ['data-layout', 'data-tone', 'data-reveal'].forEach(function (a) {
       if (section.hasAttribute(a)) slide.setAttribute(a, section.getAttribute(a));
@@ -2582,7 +2601,6 @@
       var tag = blocks[0].tagName.toLowerCase();
       if (tag === 'wk-stat') slide.classList.add('solo', 'solo-stat');
       else if (tag === 'blockquote') slide.classList.add('solo', 'solo-quote');
-      else if (blocks[0].classList.contains('present-diagram')) slide.classList.add('solo', 'solo-diagram');
       else if (blocks[0].classList.contains('present-terminal')) slide.classList.add('solo', 'solo-terminal');
     }
     var notes = null;
@@ -2874,10 +2892,11 @@
       });
       if (mounted) fitSlide(slide, true);
       // A diagram draws in the same way; built, it refits to the height cap
-      // presenting sets, which no resize observer sees.
+      // presenting sets, which no resize observer sees, or is laid out
+      // again when the reader's face changed while its slide was away.
       slide.querySelectorAll('.present-diagram').forEach(function (b) {
         if (!b._built) buildDiagram(b, { duration: transition === 'none' ? 0 : 400 });
-        else if (b._diagramFit) b._diagramFit();
+        else refreshDiagram(b);
       });
       // A terminal attaches on its slide's first showing and refits to the
       // size and font presenting sets.
@@ -3127,16 +3146,30 @@
       if (n) show(n - 1);
     });
     // A resize (fullscreen included) changes the slide's size, which the
-    // fit's key sees. The reader's face and size, and the face's file
-    // loading after the first fit, come through watchReading: every slide
-    // fits again on its next showing and every built chart rebuilds there,
-    // every diagram lays out again or refits (relayoutDiagram), and the
-    // slide on screen fits now, on the step it stands at.
-    window.addEventListener('resize', function () { fitActiveSlide(); });
+    // fit's key sees; a burst fits once, after it settles. An image that
+    // loads after its slide was fitted (one with no size, fetched late)
+    // changes the slide's height, which the key misses, so it clears its
+    // slide's key, and the slide on screen fits through the same settle;
+    // load does not bubble, so the deck listens in the capture phase. The
+    // reader's face and size, and the face's file loading after the first
+    // fit, come through watchReading: every slide's key clears and every
+    // built chart and diagram is marked stale. A slide off screen cannot
+    // draw, so its charts rebuild and its diagrams lay out again
+    // (refreshDiagram) on its next showing; the slide on screen does that
+    // now, on the step it stands at.
+    var fitSoon = PresentViz.settle(fitActiveSlide, FIT_SETTLE_MS);
+    window.addEventListener('resize', fitSoon);
+    deck.addEventListener('load', function (e) {
+      var slide = e.target.tagName === 'IMG' && e.target.closest('.slide');
+      if (!slide) return;
+      slide._fitKey = '';
+      if (slide === slides[current]) fitSoon();
+    }, true);
     watchReading(function () {
       slides.forEach(function (s) { s._fitKey = ''; });
       deck.querySelectorAll('.present-chart').forEach(function (b) { if (b._chart) b._chartStale = true; });
-      deck.querySelectorAll('.present-diagram').forEach(relayoutDiagram);
+      deck.querySelectorAll('.present-diagram').forEach(function (b) { if (b._diagramSpec) b._diagramStale = true; });
+      if (slides[current]) slides[current].querySelectorAll('.present-diagram').forEach(refreshDiagram);
       fitActiveSlide(true);
     });
 
@@ -3258,7 +3291,10 @@
   // redrawBrief follows the reader's face or size in the brief: every
   // built chart rebuilds, without its entry, and every diagram lays out
   // again or refits (relayoutDiagram). A chart keeps its height, so the
-  // reader's place holds.
+  // reader's place holds. Every diagram is in the flow and can draw, so
+  // the ones off screen lay out now too: waiting until each scrolls into
+  // view would change its height, and move the page, while the reader
+  // scrolls.
   function redrawBrief() {
     initPresentCharts(document, { builtOnly: true });
     document.querySelectorAll('.present-diagram').forEach(relayoutDiagram);

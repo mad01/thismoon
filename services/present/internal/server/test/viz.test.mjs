@@ -440,14 +440,14 @@ test('diagramPlan: a form whose layout failed is left out, and the pick is among
   });
 });
 
-test('diagramLimits: the slide floor and largest box name come from the canvas width', () => {
-  const at1440 = PresentViz.diagramLimits({ onSlide: true, wrapWidth: 1238, maxHeight: 468, canvasWidth: 1440 });
+test('diagramLimits: the slide floor comes from the canvas width, the largest box name from a 2.2u wrapper', () => {
+  const at1440 = PresentViz.diagramLimits({ onSlide: true, wrapWidth: 1238, maxHeight: 468, canvasWidth: 1440, wrapFontPx: 2.2 * 14.4 });
   assert.deepEqual(at1440.room, { w: 1238, h: 468, soft: null });
   assert.equal((11.5 * at1440.lim.floor).toFixed(1), '15.8', 'box text at 1.1% of 1440');
   assert.equal((13 * at1440.lim.floor).toFixed(1), '17.9');
   assert.equal(at1440.lim.aim, at1440.lim.floor);
   assert.equal((13 * at1440.lim.max).toFixed(2), '31.68', 'box names at most 2.2% of 1440');
-  const at1920 = PresentViz.diagramLimits({ onSlide: true, wrapWidth: 1651, maxHeight: 562, canvasWidth: 1920 });
+  const at1920 = PresentViz.diagramLimits({ onSlide: true, wrapWidth: 1651, maxHeight: 562, canvasWidth: 1920, wrapFontPx: 2.2 * 19.2 });
   assert.equal((11.5 * at1920.lim.floor).toFixed(2), '21.12');
   assert.equal((13 * at1920.lim.max).toFixed(2), '42.24');
 });

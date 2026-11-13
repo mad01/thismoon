@@ -19,7 +19,7 @@ func TestDeckLayoutWiring(t *testing.T) {
 		"PresentViz.chartStepVisibility", "PresentViz.blockStepsAt", "PresentViz.seriesMax", "setDatasetVisibility", "legend.onClick = function () {}",
 		// Diagram blocks (MAD-382): a visual, a solo slide, built on the
 		// slide's first showing and refitted after, never laid out twice.
-		"'#cy-graph, .present-chart, wk-figure, .present-diagram'", "solo-diagram",
+		"'#cy-graph, .present-chart, wk-figure, .present-diagram'",
 		"buildDiagram(b, { duration: transition === 'none' ? 0 : 400 })", "b._diagramFit()",
 		"initPresentDiagrams(document, { builtOnly: true })", "PresentViz.diagramElk(spec, measure, form)",
 	} {
@@ -75,8 +75,10 @@ func TestDeckLayoutWiring(t *testing.T) {
 // The deck canvas (MAD-559): every size on a slide is written in one unit
 // the slide body declares from the slide, a size container, and the fit
 // step scales it. Pin the unit, the floor, the centring that keeps an
-// overflowing slide's top, the 16:9 stage, and the fit step's wiring; the
-// fixed presenting zoom and the viewport heights for visuals stay gone.
+// overflowing slide's top, the 16:9 stage, and the solo terminal's height
+// in the unit; the fixed presenting zoom and the viewport heights for
+// visuals stay gone. The fit step itself is PresentViz.fitSteps, which
+// test/viz.test.mjs covers.
 func TestDeckSlideUnit(t *testing.T) {
 	shell := string(shellHTML)
 	for _, want := range []string{
@@ -94,25 +96,17 @@ func TestDeckSlideUnit(t *testing.T) {
 		".deck .slide:not(.slide-overflow) wk-stat-value { white-space: nowrap; }",
 		// The claim's rule spans the body at every fit; only its text is capped.
 		`.deck .slide:not([data-layout="statement"], [data-layout="section"]) wk-section-heading { padding-right: max(0px, calc(100% - 86 * var(--u0))); }`,
+		".slide.solo-terminal .present-terminal-canvas { --terminal-fill: 1; height: calc(33 * var(--u) - 2.125rem - 2px); }",
 	} {
 		if !contains(shell, want) {
 			t.Errorf("shell.html lacks %q", want)
 		}
 	}
-	for _, gone := range []string{"zoom:", "--deck-zoom", "44vh", "52vh", "55vh", "56vh", "62vh", "66vh", "max-width: 26em"} {
+	for _, gone := range []string{
+		"zoom:", "--deck-zoom", "44vh", "48vh", "52vh", "55vh", "56vh", "62vh", "64vh", "66vh", "max-width: 26em",
+	} {
 		if contains(shell, gone) {
 			t.Errorf("shell.html sizes a slide by %q again; slide sizes are in the unit", gone)
-		}
-	}
-	app := string(appJS)
-	for _, want := range []string{
-		"PresentViz.fitSteps(function (fit) {", "body.style.setProperty('--fit', String(fit));",
-		"slide.classList.toggle('slide-overflow', result.overflow);", "if (b._diagramFit) b._diagramFit();",
-		"function fitActiveSlide(force)", "cs.getPropertyValue('--u0')", "body.querySelectorAll('wk-stat-value')",
-		"PresentViz.chartFontSizes(parseFloat(getComputedStyle(document.documentElement).fontSize), slideUnits(block))",
-	} {
-		if !contains(app, want) {
-			t.Errorf("app.js lacks %q", want)
 		}
 	}
 }

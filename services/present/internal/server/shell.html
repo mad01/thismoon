@@ -258,8 +258,13 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
    wk-code-block gives (border, radius, the header bar with its dots and
    badge), with the terminal under the bar. app.js sets the canvas height
    from the block's rows; a slide whose only block is the terminal sets
-   --terminal-fill and a height instead, which a block naming no rows
-   fills. --terminal-font-size is the px size xterm draws at, larger while
+   --terminal-fill and a height in the slide unit instead, which a block
+   naming no rows fills. The block, its header bar (2.125rem) and border
+   (2px) included, is 33u, a diagram's cap, so a two-line claim and the
+   block fit the 46.75u the body leaves at fit 1, and the fit shrinks the
+   canvas with the rest of the slide. The unit grows while presenting, so
+   no rule sets another height there.
+   --terminal-font-size is the px size xterm draws at, larger while
    presenting. The padding sits on xterm's element, in whole pixels,
    because the fit addon subtracts it as integers. It comes from
    --terminal-pad-y, which app.js adds to the canvas height, so the
@@ -295,9 +300,8 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
   padding: 1rem; text-align: center; background: var(--code-bg);
   font-size: 0.8125rem; color: var(--text-2);
 }
-.slide.solo-terminal .present-terminal-canvas { --terminal-fill: 1; height: 48vh; }
+.slide.solo-terminal .present-terminal-canvas { --terminal-fill: 1; height: calc(33 * var(--u) - 2.125rem - 2px); }
 html.presenting .slide .present-terminal { --terminal-font-size: 16; }
-html.presenting .slide.solo-terminal .present-terminal-canvas { height: 64vh; }
 
 .refs-section { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid var(--border); }
 .refs-list { list-style: none; display: flex; flex-direction: column; gap: 0.625rem; }
@@ -322,9 +326,10 @@ html.presenting .slide.solo-terminal .present-terminal-canvas { height: 64vh; }
   .cy-wrapper.cy-fullscreen { top: 0; left: 0; right: 0; bottom: 0; border-radius: 0; }
   .cy-wrapper.cy-fullscreen .cy-container { border-radius: 0; }
 }
-/* The brief's reading styles. One type scale on #root, and every selector
-   in this block carries .brief:not(.deck), so the deck keeps its own sizes;
-   TestBriefStylesStayInTheBrief pins both. Colours are palette roles.
+/* The brief's reading styles. Two token rules open the block, :root and
+   #root (the type scale), and set only custom properties; every other
+   selector in it carries .brief:not(.deck), so the deck keeps its own
+   sizes. TestBriefStylesStayInTheBrief pins both. Colours are palette roles.
    --ink-strong is the palette's text-1 resolved on :root, before #root
    softens it to the body ink: headings keep the true ink. */
 :root { --ink-strong: var(--text-1); }

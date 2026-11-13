@@ -176,7 +176,6 @@
   var DIAGRAM_AIM_PX = 13; // the brief aims for every text at this size
   var DIAGRAM_TALL_REM = 45; // a brief drawing taller than this shrinks toward it, not below the aim
   var DIAGRAM_SLIDE_FLOOR = 0.011; // the smallest slide text, as a share of the canvas width
-  var DIAGRAM_SLIDE_MAX = 0.022; // the largest box name on a slide, as a share of the canvas width
   var DIAGRAM_NAMES_GAIN = 1.15; // how much larger a names form must draw to replace one with box text
   var DIAGRAM_RATIO_EPS = 0.005; // ratios closer than this count as equal, and the earlier form wins
 
@@ -437,8 +436,7 @@
   // taller than DIAGRAM_TALL_REM shrinks toward it. A slide: the canvas's
   // height cap, the floor and the aim at the smallest text
   // DIAGRAM_SLIDE_FLOOR of the canvas width, and box names no larger than
-  // the wrapper's font, which the slide sets in its fitted unit (without
-  // one, DIAGRAM_SLIDE_MAX of the canvas width).
+  // the wrapper's font, which the slide sets in its fitted unit (2.2u).
   function diagramLimits(fit) {
     if (!fit.onSlide) {
       var aim = DIAGRAM_AIM_PX / DIAGRAM_TEXT_PX;
@@ -448,10 +446,9 @@
       };
     }
     var floor = DIAGRAM_SLIDE_FLOOR * fit.canvasWidth / DIAGRAM_TEXT_PX;
-    var largest = fit.wrapFontPx || DIAGRAM_SLIDE_MAX * fit.canvasWidth;
     return {
       room: { w: fit.wrapWidth, h: fit.maxHeight, soft: null },
-      lim: { floor: floor, aim: floor, max: Math.max(floor, largest / DIAGRAM_NAME_PX) }
+      lim: { floor: floor, aim: floor, max: Math.max(floor, fit.wrapFontPx / DIAGRAM_NAME_PX) }
     };
   }
 
