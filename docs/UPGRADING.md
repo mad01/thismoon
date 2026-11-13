@@ -6,7 +6,7 @@ Entries name this repo and the consuming repo's Claude settings template only; t
 
 ## 2026-11-13 present: a share warns when the shared instance's client code is older
 
-Change: thismoon #NNN. A share sends the page's render level, and the shared instance answers with its own. A shared instance built before this change answers none, so every share to it carries a warning that the copy may draw wrong there. Nothing is refused and the `Page` custom resource definition is unchanged, so the local presents and the instance can roll in either order.
+Change: thismoon #486. A share sends the page's render level, and the shared instance answers with its own. A shared instance built before this change answers none, so every share to it carries a warning that the copy may draw wrong there. Nothing is refused and the `Page` custom resource definition is unchanged, so the local presents and the instance can roll in either order.
 
 Run: roll the shared instance to an image built from a main that includes this change (a `main` or `sha-*` tag), through the consuming repo's deployment.
 
