@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.2](https://github.com/mad01/thismoon/compare/present/v1.24.1...present/v1.24.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **present:** tighter diagram groups, clear group labels, and a lint for rows that flip ([#473](https://github.com/mad01/thismoon/issues/473)) ([25f095b](https://github.com/mad01/thismoon/commit/25f095b93d96347e05883efc153498773b636a4c))
+
 ## [1.24.1](https://github.com/mad01/thismoon/compare/present/v1.24.0...present/v1.24.1) (2026-11-13)
 
 
