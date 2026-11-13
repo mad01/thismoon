@@ -25,8 +25,8 @@
     notgit: ['not a git repo', 'warn'],
   };
 
-  // ago is the shared timeAgo helper (common.js), aliased for local call sites.
-  const ago = timeAgo;
+  // ago is webkit's shared "5m ago" helper; '' for a missing time.
+  const ago = iso => Webkit.timeAgo(iso);
 
   function untilLabel(iso) {
     const secs = Math.floor((Date.parse(iso) - Date.now()) / 1000);

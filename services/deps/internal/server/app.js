@@ -143,21 +143,8 @@
       ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
 
-  var MIN = 60000, HR = 3600000, DAY = 86400000;
-  // humanizeSince mirrors render.go's coarse "x ago" string.
-  function humanizeSince(ms) {
-    if (ms < MIN) return 'just now';
-    if (ms < HR) return plural(Math.floor(ms / MIN), 'minute');
-    if (ms < DAY) return plural(Math.floor(ms / HR), 'hour');
-    return plural(Math.floor(ms / DAY), 'day');
-  }
-  function plural(n, unit) {
-    if (n < 0) n = 0;
-    return n + ' ' + unit + (n !== 1 ? 's' : '') + ' ago';
-  }
-
-  // staleAfter matches render.go (the serve loop's default daily interval).
-  var STALE_AFTER = DAY;
+  // STALE_AFTER is the serve loop's default daily interval, in ms.
+  var STALE_AFTER = 86400000;
 
   // basename shortens a repo path to its last segment. A mise tool label
   // ("mise:npm:@googleworkspace/cli") is no path and shows whole.
@@ -351,9 +338,10 @@
     };
     if (v.hasScan) {
       var when = new Date(data.scanned_at);
-      var age = Date.now() - when.getTime();
+      var now = Date.now();
+      var age = now - when.getTime();
       v.scannedText = scannedText(when);
-      v.agoText = humanizeSince(age);
+      v.agoText = Webkit.timeAgo(when, { now: now, style: 'long' });
       v.stale = age > STALE_AFTER;
     }
 

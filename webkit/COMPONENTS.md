@@ -473,6 +473,26 @@ section.
 Update `<wk-header>` default `fixation-targets` to be component-aware, e.g.
 `[data-fixation], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td`.
 
+## Format helpers (JS, pure)
+
+The time text the consumers wrote by hand lives in `src/format.ts`, exported on
+the global beside `el`, `poll` and `escapeHtml`:
+
+- `Webkit.timeAgo(value, { now?, style?, daysAfterHours?, fallback? })`.
+  `value` and `now` take a Date, an ISO string or epoch ms; `now` defaults to
+  the clock. `style: 'short'` (default) prints `42s ago`, `5m ago`, `3h ago`,
+  `2d ago`; `'medium'` prints `just now`, `5 min ago`, `3 h ago`, `2 d ago`;
+  `'long'` prints `just now`, `1 minute ago`, `5 minutes ago`, `2 days ago`.
+  Hours switch to days at `daysAfterHours` (default 24).
+- `Webkit.formatDuration(ms, { style?, fallback? })`. `style: 'precise'`
+  (default) prints `850ms`, `4.2s`, `3m12s`, `1h02m`; `'coarse'` prints `<1m`,
+  `12m`, `1h 05m`, `2d 3h`.
+
+Both round down to the unit shown (`precise` rounds its milliseconds and
+seconds) and read a future time or a negative span as zero. Missing, invalid
+or Go zero-time input returns `fallback` (default `''`). Unit tests:
+`test/format.test.mjs`, with the strings the old service copies printed.
+
 ## FOUC guard — `/webkit/boot.js`
 `webkit.js` is deferred, so theme + font-size are only applied after it runs —
 persisted dark/large preferences flash on load otherwise. The kit serves one

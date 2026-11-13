@@ -1256,22 +1256,14 @@
   }
 
   // ago is how long before now t was: just now, 12 min ago, 3 h ago, 4 d ago.
+  // Hours run to 47, so a session from yesterday reads in hours.
   function ago(t, now) {
-    var min = Math.floor((now - t) / 60000);
-    if (min < 1) return 'just now';
-    if (min < 60) return min + ' min ago';
-    if (min < 48 * 60) return Math.floor(min / 60) + ' h ago';
-    return Math.floor(min / 1440) + ' d ago';
+    return Webkit.timeAgo(t, { now: now, style: 'medium', daysAfterHours: 48 });
   }
 
   // fmtSpan is a duration for a list: <1m, 12m, 1h 05m, 2d 3h.
   function fmtSpan(ms) {
-    var m = Math.floor(ms / 60000);
-    if (m < 1) return '<1m';
-    if (m < 60) return m + 'm';
-    var h = Math.floor(m / 60);
-    if (h < 24) return h + 'h ' + pad(m % 60) + 'm';
-    return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+    return Webkit.formatDuration(ms, { style: 'coarse' });
   }
 
   // money is USD for a list: two decimals, a dash when no price covers the
@@ -1588,11 +1580,7 @@
   // fmtDuration renders milliseconds the way the CLI does: 850ms, 4.2s,
   // 3m12s, 1h02m.
   function fmtDuration(ms) {
-    if (ms < 1000) return Math.round(ms) + 'ms';
-    if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
-    var m = Math.floor(ms / 60000);
-    if (m < 60) return m + 'm' + pad(Math.floor(ms / 1000) % 60) + 's';
-    return Math.floor(m / 60) + 'h' + pad(m % 60) + 'm';
+    return Webkit.formatDuration(ms);
   }
 
   function fmtTokens(n) {

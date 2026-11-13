@@ -11,6 +11,7 @@ in consumers via `go:embed` and served at `GET /webkit/`.
 ```
 src/webkit.ts        # custom element definitions, the theme API, Webkit.bootSnippet FOUC guard
 src/a11y.ts          # the keyboard path's decisions (page heading, filter badge keys, skip target)
+src/format.ts        # pure text formatters: Webkit.timeAgo, Webkit.formatDuration
 src/webkit.css       # topbar chrome, controls, component styles, .wrap layout (reads palette roles only)
 src/themes/*.json    # the theme collection: one family per file, light + dark variants
 src/themes.mjs       # validates the files, derives the full role set, emits palette CSS + themes.json
@@ -136,6 +137,30 @@ Overlays: `<wk-modal [hidden]>` / `<wk-modal-panel>` / `<wk-modal-head>` /
 `<wk-toast-host>` + `<wk-toast variant="ok|warn|err">` (fixed bottom-right stack).
 
 Full spec with markup examples: `COMPONENTS.md`.
+
+## Format helpers
+
+`src/format.ts` holds the time and duration text the consumers used to write
+by hand (MAD-595), on the global beside `el`, `poll` and `escapeHtml`. Both are
+pure: no DOM, and the clock is read only when the caller leaves `now` out.
+
+- `Webkit.timeAgo(value, opts?)`: how long before `opts.now` a moment was.
+  `value` and `now` take a Date, an ISO string or epoch ms; a number is always
+  ms, so a caller with epoch seconds multiplies by 1000. `style` is `short`
+  (default; csl, events: `42s ago`, `5m ago`, `3h ago`, `2d ago`), `medium`
+  (moondb: `just now`, `5 min ago`, `3 h ago`, `2 d ago`) or `long` (deps:
+  `just now`, `1 minute ago`, `5 minutes ago`). `daysAfterHours` (default 24)
+  is where hours give way to days; moondb passes 48. Counts round down, a
+  future moment reads as no time, and there are no weeks or dates.
+- `Webkit.formatDuration(ms, opts?)`: `style` is `precise` (default; `850ms`,
+  `4.2s`, `3m12s`, `1h02m`) or `coarse` (`<1m`, `12m`, `1h 05m`, `2d 3h`). A
+  negative span counts as zero.
+
+A missing, unparseable or Go zero time (year 1), and a duration that is not a
+finite number, return `opts.fallback` (default `''`), never `NaN` text and
+never a throw. `test/format.test.mjs` pins the strings each old copy printed.
+Money, token counts and byte sizes stay in moondb, the only service that
+writes them; fold one in when a second service needs the same text.
 
 ## Themes
 

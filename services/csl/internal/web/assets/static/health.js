@@ -62,7 +62,7 @@
 
   function statusLine() {
     let line = attention + ' of ' + entries.length + ' repos need attention';
-    if (computedAt) line += ' · checked ' + timeAgo(computedAt);
+    if (computedAt) line += ' · checked ' + Webkit.timeAgo(computedAt);
     if (computing) line += ' · refreshing…';
     return line;
   }

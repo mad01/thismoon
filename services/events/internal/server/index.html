@@ -96,14 +96,6 @@ wk-card.ev{display:block;padding:0.5rem 0.75rem}
     return worst;
   }
 
-  function relTime(iso){
-    var d = new Date(iso), s = Math.max(0, (Date.now() - d.getTime()) / 1000);
-    if (s < 60) return Math.floor(s) + 's ago';
-    if (s < 3600) return Math.floor(s/60) + 'm ago';
-    if (s < 86400) return Math.floor(s/3600) + 'h ago';
-    return Math.floor(s/86400) + 'd ago';
-  }
-
   function dayLabel(iso){
     var d = new Date(iso), now = new Date();
     var start = function(x){ return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
@@ -123,13 +115,13 @@ wk-card.ev{display:block;padding:0.5rem 0.75rem}
     return b;
   }
 
-  // timeEl renders a relative timestamp carrying its ISO time in data-iso so
-  // refreshTimes() can re-derive "Xs ago" on every tail tick.
+  // timeEl renders a relative timestamp (webkit's "5m ago") carrying its ISO
+  // time in data-iso so refreshTimes() can re-derive it on every tail tick.
   function timeEl(iso){
     var t = document.createElement('span');
     t.className = 'ev-time';
     t.dataset.iso = iso;
-    t.textContent = relTime(iso);
+    t.textContent = Webkit.timeAgo(iso);
     t.title = iso;
     return t;
   }
@@ -311,7 +303,7 @@ wk-card.ev{display:block;padding:0.5rem 0.75rem}
 
   function refreshTimes(){
     timeline.querySelectorAll('[data-iso]').forEach(function(el){
-      el.textContent = relTime(el.dataset.iso);
+      el.textContent = Webkit.timeAgo(el.dataset.iso);
     });
   }
 

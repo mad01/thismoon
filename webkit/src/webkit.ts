@@ -17,6 +17,8 @@ export { stopReadAloud } from './read-aloud.js';
 export { enhanceProse } from './prose.js';
 export { escapeHtml, el, poll } from './render.js';
 export type { ElChild, ElAttrs, PollHandle } from './render.js';
+export { timeAgo, formatDuration } from './format.js';
+export type { TimeValue, TimeAgoStyle, TimeAgoOptions, DurationStyle, DurationOptions } from './format.js';
 
 export type Control = 'cmdk' | 'fixation' | 'font' | 'size' | 'audio' | 'speed' | 'reload' | 'theme' | 'help';
 
