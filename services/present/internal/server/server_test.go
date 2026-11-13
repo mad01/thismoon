@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/present/internal/store"
@@ -364,6 +365,29 @@ func TestAPIPagesListsPages(t *testing.T) {
 	}
 	if !hasID(pages, a.ID) || !hasID(pages, b.ID) {
 		t.Errorf("api pages missing one of %q / %q", a.ID, b.ID)
+	}
+}
+
+// TestAPIPagesUpdatedAtIsRFC3339UTC: the index prints updated_at in the
+// reader's zone (Webkit.formatDate), so the API sends the instant, in UTC.
+func TestAPIPagesUpdatedAtIsRFC3339UTC(t *testing.T) {
+	ts, st := setup(t)
+	a, _ := st.Create(t.Context(), store.Draft{Title: "Alpha", Content: "<p>a</p>"})
+
+	pages := getAPIPages(t, ts.URL+"/api/pages")
+	if len(pages.Pages) != 1 {
+		t.Fatalf("pages = %d, want 1", len(pages.Pages))
+	}
+	got := pages.Pages[0].UpdatedAt
+	at, err := time.Parse(time.RFC3339, got)
+	if err != nil {
+		t.Fatalf("updated_at %q is not RFC 3339: %v", got, err)
+	}
+	if !strings.HasSuffix(got, "Z") {
+		t.Errorf("updated_at = %q, want UTC (a Z suffix)", got)
+	}
+	if want := a.UpdatedAt.Truncate(time.Second); !at.Equal(want) {
+		t.Errorf("updated_at = %v, want %v", at, want)
 	}
 }
 

@@ -637,7 +637,7 @@ This trips `diagram.slide_boxes`:
 
 The lint says:
 
-> `deck.sections[0].blocks[0]` slide 2 "A wired session uses tools nobody asked for", a diagram: 8 boxes. A slide cannot scroll, so a fuller diagram draws its text under the size a room can read. Aim for 6 or fewer, and leave the full picture to the brief.
+> `deck.sections[0].blocks[0]` slide 2 "A wired session uses tools nobody asked for", a diagram: 8 boxes. A slide shrinks a diagram to fit, so a fuller diagram draws its text under the size a room can read. Aim for 6 or fewer, and leave the full picture to the brief.
 
 Repaired:
 

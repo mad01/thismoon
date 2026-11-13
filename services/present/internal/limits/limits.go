@@ -150,7 +150,7 @@ var table = []Limit{
 		Scope:  "a diagram on a slide",
 		Source: House,
 		Rule:   "A diagram on a slide holds at most 6 boxes.",
-		Reason: "A slide cannot scroll, so a fuller diagram draws its text under the size a room can read.",
+		Reason: "A slide shrinks a diagram to fit, so a fuller diagram draws its text under the size a room can read.",
 	},
 	{
 		ID: DiagramSlideColumns, Level: Warn,

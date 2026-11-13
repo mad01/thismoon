@@ -343,7 +343,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(indexShellHTML)
 }
 
-// apiPageMeta is the JSON shape of a single index entry.
+// apiPageMeta is the JSON shape of a single index entry. UpdatedAt is RFC
+// 3339 in UTC; index.js prints it in the reader's zone.
 type apiPageMeta struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
@@ -407,7 +408,7 @@ func (s *Server) handleAPIPages(w http.ResponseWriter, r *http.Request) {
 			ID:        p.ID,
 			Title:     p.Title,
 			Version:   p.Version,
-			UpdatedAt: p.UpdatedAt.Format("2006-01-02 15:04 MST"),
+			UpdatedAt: p.UpdatedAt.UTC().Format(time.RFC3339),
 			HasBrief:  p.HasBrief,
 			HasDeck:   p.HasDeck,
 		})
