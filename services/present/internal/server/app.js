@@ -387,11 +387,29 @@
     var n = parseInt(block.getAttribute('data-step-at'), 10);
     return isNaN(n) ? null : n;
   }
+  // wrapBarLabels stacks a bar axis's long category names on lines that
+  // fit their category (PresentViz.barAxisLabels), measured in the axis's
+  // own tick font, rather than rotate them. Chart.js calls it each time it
+  // lays the axis out, so a resize wraps them again.
+  function wrapBarLabels(scale) {
+    var font = Chart.helpers.toFont(scale.options.ticks.font), ctx = scale.ctx;
+    ctx.save();
+    ctx.font = font.string;
+    var labels = scale.ticks.map(function (t) { return t.label; });
+    var wrapped = PresentViz.barAxisLabels(labels, scale.width, font.size, function (s) { return ctx.measureText(s).width; });
+    ctx.restore();
+    if (wrapped) scale.ticks.forEach(function (t, i) { t.label = wrapped[i]; });
+  }
   // cartesianOptions are the axes, legend and tooltip of a cartesian
   // chart. The value axis takes its range rule from
   // PresentViz.chartValueAxis: from zero for bars and areas, fitted to the
-  // data for lines and scatters.
-  function cartesianOptions(kind, spec, colors, fonts, animate) {
+  // data for lines and scatters, and its ticks from PresentViz.chartTicks:
+  // whole for whole-number data. A vertical bar chart wraps long category
+  // names (wrapBarLabels), and a kind that draws points keeps at least
+  // PresentViz.chartPointRoom right of the plot, which a short last x
+  // label alone does not, so a point at the x axis's end draws whole.
+  // The other sides hold the axes, the legend or the top tick label.
+  function cartesianOptions(kind, spec, colors, fonts, animate, line) {
     var spark = kind === 'sparkline';
     var multi = (spec.series || []).length > 1;
     var horizontal = kind === 'horizontal-bar';
@@ -404,15 +422,22 @@
       grid: { color: colors.grid, display: !horizontal }, border: { display: false },
       ticks: { color: colors.text, font: fonts.tick }
     };
+    if (kind === 'bar' || stacked) scales[categoryAxis].afterTickToLabelConversion = wrapBarLabels;
     scales[valueAxis] = Object.assign({
       display: !spark, stacked: stacked,
       grid: { color: colors.grid }, border: { display: false },
-      ticks: { color: colors.text, font: fonts.tick },
+      ticks: Object.assign({ color: colors.text, font: fonts.tick }, PresentViz.chartTicks(spec.series, 'y')),
       title: axisTitle(colors, fonts, spec.unit)
     }, PresentViz.chartValueAxis(kind));
-    if (scatter) { scales.x.type = 'linear'; scales.x.title = axisTitle(colors, fonts, spec.xunit); }
+    if (scatter) {
+      scales.x.type = 'linear';
+      scales.x.title = axisTitle(colors, fonts, spec.xunit);
+      Object.assign(scales.x.ticks, PresentViz.chartTicks(spec.series, 'x'));
+    }
+    var room = PresentViz.chartPointRoom(kind, pointRing(kind, line));
     return {
       responsive: true, maintainAspectRatio: false, animation: entryAnimation(animate),
+      layout: { padding: { right: room } },
       indexAxis: horizontal ? 'y' : 'x',
       interaction: scatter ? { mode: 'nearest', intersect: true } : { mode: 'index', intersect: false },
       plugins: {
@@ -423,22 +448,32 @@
       scales: scales
     };
   }
+  // SCATTER_RING_PX is the surface-coloured ring round a scatter point. A
+  // line's or an area's points take the line's width as their ring.
+  var SCATTER_RING_PX = 1;
+  function pointRing(kind, line) {
+    return kind === 'scatter' ? SCATTER_RING_PX : line;
+  }
   // cartesianDatasets are a cartesian chart's series, drawn by kind; a
   // line joins its points straight (PresentViz.chartLine), and a line or
-  // area strokes at line px.
+  // area strokes at line px. Points draw at PresentViz.chartPoint's radii
+  // and the plot's clip leaves them PresentViz.chartPointRoom, so a point
+  // on the plot's edge is not cut in half.
   function cartesianDatasets(kind, spec, colors, line) {
+    var point = PresentViz.chartPoint(kind), room = PresentViz.chartPointRoom(kind, pointRing(kind, line));
     return (spec.series || []).map(function (s, i) {
       var col = chartSeriesColor(colors, s.color, i);
       var pts = s.points || [];
       var ds = { label: s.name || '', borderColor: col, backgroundColor: col };
+      if (point) { ds.pointRadius = point.radius; ds.pointHoverRadius = point.hover; ds.clip = room; }
       if (kind === 'scatter') {
         ds.data = pts.map(function (p) { return { x: parseFloat(p.x), y: p.y }; });
-        ds.borderColor = colors.surface; ds.borderWidth = 1; ds.pointRadius = 5; ds.pointHoverRadius = 7;
+        ds.borderColor = colors.surface; ds.borderWidth = SCATTER_RING_PX;
         return ds;
       }
       ds.data = pts.map(function (p) { return p.y; });
-      if (kind === 'area') { ds.fill = true; ds.backgroundColor = col + '33'; ds.pointRadius = 2; ds.borderWidth = line; }
-      else if (kind === 'line') { ds.fill = false; ds.pointRadius = 0; ds.pointHoverRadius = 5; ds.borderWidth = line; }
+      if (kind === 'area') { ds.fill = true; ds.backgroundColor = col + '33'; ds.borderWidth = line; }
+      else if (kind === 'line') { ds.fill = false; ds.borderWidth = line; }
       else if (kind === 'sparkline') { ds.fill = false; ds.pointRadius = 0; ds.borderWidth = 1.5; }
       else if (kind === 'stacked-bar') { ds.borderColor = colors.surface; ds.borderWidth = 2; ds.borderRadius = 3; }
       else { ds.borderWidth = 0; ds.borderRadius = 3; } // bar, horizontal-bar
@@ -451,7 +486,7 @@
     return {
       type: chartTypeFor(kind),
       data: { labels: labels, datasets: cartesianDatasets(kind, spec, colors, line) },
-      options: cartesianOptions(kind, spec, colors, fonts, animate)
+      options: cartesianOptions(kind, spec, colors, fonts, animate, line)
     };
   }
   // Doughnut: one series, one slice per point, slice colors in fixed palette order.

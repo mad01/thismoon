@@ -570,6 +570,61 @@ test('chartValueAxis: bars and areas from zero, lines and scatters fitted to the
   assert.equal(PresentViz.chartValueAxis('constructor'), null);
 });
 
+test('chartTicks: whole ticks when every value on the axis is a whole number', () => {
+  const runs = [{ points: [{ x: 'a', y: 3 }, { x: 'b', y: 0 }] }, { points: [{ x: 'a', y: 2 }, { x: 'b', y: 1 }] }];
+  assert.deepEqual(PresentViz.chartTicks(runs, 'y'), { precision: 0 }, 'runs passed out of 3');
+  assert.deepEqual(PresentViz.chartTicks([{ points: [{ y: 0.031 }, { y: 2 }] }], 'y'), {}, 'one share is enough for steps');
+  assert.deepEqual(PresentViz.chartTicks([{ points: [{ x: '1998', y: 0.5 }, { x: '656', y: 1 }] }], 'x'), { precision: 0 },
+    'a scatter x arrives as a decimal string');
+  assert.deepEqual(PresentViz.chartTicks([{ points: [{ x: '12.5', y: 1 }] }], 'x'), {});
+  assert.deepEqual(PresentViz.chartTicks([], 'y'), {}, 'no values');
+  assert.deepEqual(PresentViz.chartTicks(undefined, 'y'), {});
+});
+
+// mono measures like a monospaced face: 10 px a character.
+const mono = (s) => s.length * 10;
+
+test('barAxisLabels: a name that fits its category stays one line', () => {
+  // 2 categories on 240 px at 12 px ticks: 120 - 6 - 12 = 102 px, 10 characters.
+  assert.deepEqual(PresentViz.barAxisLabels(['speak', 'csl-index'], 240, 12, mono), ['speak', 'csl-index']);
+});
+
+test('barAxisLabels: a long name wraps after its separators to its category', () => {
+  const names = ['belt-soft-mode-guards', 'belt-sweep-readsize-cross', 'present-chart-diagram-kinds', 'speak-pause'];
+  const room = 1000 / names.length - 6 - 12; // 232 px: 23 characters
+  const got = PresentViz.barAxisLabels(names, 1000, 12, mono);
+  assert.deepEqual(got, ['belt-soft-mode-guards', ['belt-sweep-readsize-', 'cross'], ['present-chart-diagram-', 'kinds'], 'speak-pause']);
+  got.flat().forEach((line) => assert.ok(mono(line) <= room, line + ' is wider than its category'));
+  assert.equal(got.flat().join(''), names.join(''), 'nothing cut, nothing added');
+  assert.deepEqual(PresentViz.barAxisLabels(['two words here'], 112, 12, mono), [['two words', 'here']]);
+});
+
+test('barAxisLabels: a line never starts with a separator; a piece wider than a line is cut', () => {
+  // One category, 90 px of room: 9 characters.
+  assert.deepEqual(PresentViz.barAxisLabels(['csl-index-flags'], 108, 12, mono), [['csl-', 'index-', 'flags']],
+    'not csl-index and -flags, which reads as a flag');
+  assert.deepEqual(PresentViz.barAxisLabels(['src/web/app.go'], 108, 12, mono), [['src/web/', 'app.go']]);
+  // 50 px of room: 5 characters; the space after the cut word stays.
+  assert.deepEqual(PresentViz.barAxisLabels(['longword x'], 68, 12, mono), [['longw', 'ord x']]);
+});
+
+test('barAxisLabels: past four lines the axis keeps its rotation', () => {
+  assert.equal(PresentViz.barAxisLabels(['present-chart-diagram-kinds'], 60, 12, mono), null, '4 characters a line');
+  assert.deepEqual(PresentViz.barAxisLabels([], 600, 12, mono), []);
+  assert.deepEqual(PresentViz.barAxisLabels([undefined, 7], 600, 12, mono), ['', '7']);
+});
+
+test('chartPointRoom: a point keeps its hover radius and ring free; kinds without points none', () => {
+  assert.deepEqual(Object.fromEntries(CHART_KINDS.map((k) => [k, PresentViz.chartPointRoom(k, 2)])), {
+    bar: 0, 'stacked-bar': 0, 'horizontal-bar': 0, line: 7, area: 6, sparkline: 0,
+    scatter: 9, doughnut: 0, sankey: 0, ribbon: 0,
+  });
+  assert.equal(PresentViz.chartPointRoom('scatter', 1), 8, 'the scatter draws a 1 px ring');
+  assert.equal(PresentViz.chartPointRoom('line'), 5, 'no ring');
+  assert.deepEqual(PresentViz.chartPoint('line'), { radius: 0, hover: 5 }, 'a line marks a point on hover only');
+  assert.equal(PresentViz.chartPoint('constructor'), null);
+});
+
 test('chartFontSizes: ticks at 0.75 of the root, kept between 11 and 15; the legend at 0.8125', () => {
   assert.deepEqual(PresentViz.chartFontSizes(16), { tick: 12, legend: 13 });
   assert.deepEqual(PresentViz.chartFontSizes(12), { tick: 11, legend: 9.75 });

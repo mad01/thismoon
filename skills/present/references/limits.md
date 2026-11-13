@@ -33,7 +33,7 @@ In the order the lint reports them.
 - `table.cell`: A table cell holds at most 160 characters. A cell is read across a row; a paragraph in it breaks the row, so the prose belongs beside the table.
 - `diagram.boxes`: A diagram in a brief holds at most 9 boxes. A bigger diagram draws taller than a screen at a size the reader can read; split it or show one part.
 - `diagram.chain`: The longest path through a diagram passes at most 5 boxes. Each box on the path is one layer of the layout, and every layer adds height in any direction.
-- `diagram.slide_boxes`: A diagram on a slide holds at most 6 boxes. A slide cannot scroll, so a fuller diagram draws its text under the size a room can read.
+- `diagram.slide_boxes`: A diagram on a slide holds at most 6 boxes. A slide shrinks a diagram to fit, so a fuller diagram draws its text under the size a room can read.
 - `diagram.slide_columns`: A diagram on a slide sits alone, not inside columns. In part of the slide's width the diagram's text draws under the size a room can read.
 - `slide.words`: A slide holds at most 50 words outside its heading; of a stepped chart or diagram only the longest caption counts. A room reads a slide at a glance; the detail belongs in the brief or the speaker notes.
 - `deck.text_only`: At most half (50 percent) of the default-layout slides hold only prose or a list. A claim shown beside a picture is remembered better than the same claim in text alone.

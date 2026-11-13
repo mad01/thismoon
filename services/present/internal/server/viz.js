@@ -580,6 +580,93 @@
     return null;
   }
 
+  // chartTicks is the tick rule of a value axis for the series' values on
+  // key ('y', or 'x' for a scatter): whole ticks when every value is a
+  // whole number, since a count of 2.5 runs is not a count; Chart.js's own
+  // steps otherwise. Stacked sums of whole numbers stay whole.
+  function chartTicks(series, key) {
+    var whole = true, any = false;
+    (series || []).forEach(function (s) {
+      ((s && s.points) || []).forEach(function (p) {
+        var v = Number(p[key]);
+        if (isNaN(v)) return;
+        any = true;
+        if (!Number.isInteger(v)) whole = false;
+      });
+    });
+    return any && whole ? { precision: 0 } : {};
+  }
+
+  // CHART_LABEL_LINES is how many lines a bar axis label may wrap to;
+  // CHART_LABEL_MARGIN_PX is the margin Chart.js keeps beside a label
+  // before it rotates them all.
+  var CHART_LABEL_LINES = 4;
+  var CHART_LABEL_MARGIN_PX = 6;
+  // LABEL_PIECE is a piece of a label a line may end after, with the
+  // spaces after it: a run ending in DIAGRAM_BREAK_AFTER's separators, or
+  // a word.
+  var LABEL_PIECE = /[^\s\/._\-:]*[\/._\-:]+\s*|[^\s\/._\-:]+\s*/g;
+
+  // wrapLabel breaks a chart label into lines no wider than room: as many
+  // pieces to a line as fit, so a name breaks after any separator and a
+  // line never starts with one, and a piece wider than a line through
+  // wrapText.
+  function wrapLabel(label, room, measure) {
+    var lines = [], line = '';
+    (label.trim().match(LABEL_PIECE) || []).forEach(function (piece) {
+      if (measure((line + piece).trim()) <= room) { line += piece; return; }
+      if (line.trim()) lines.push(line.trim());
+      line = piece;
+      if (measure(piece.trim()) <= room) return;
+      var cut = wrapText(piece, room, measure);
+      line = cut.pop() + (/\s$/.test(piece) ? ' ' : '');
+      lines = lines.concat(cut);
+    });
+    if (line.trim()) lines.push(line.trim());
+    return lines;
+  }
+
+  // barAxisLabels wraps the labels of a bar chart's category axis, width
+  // px long at a tick size of fontPx, to their category's share of the
+  // axis less Chart.js's margin and one em of air (wrapLabel). A label
+  // that fits stays a string; a wrapped one is its lines, which Chart.js
+  // draws stacked. Null when a label needs more than CHART_LABEL_LINES
+  // lines: the axis then rotates its labels as before, rather than stack
+  // them taller than the bars.
+  function barAxisLabels(labels, width, fontPx, measure) {
+    var room = width / Math.max(1, labels.length) - CHART_LABEL_MARGIN_PX - fontPx;
+    var out = [];
+    for (var i = 0; i < labels.length; i++) {
+      var label = String(labels[i] == null ? '' : labels[i]);
+      if (measure(label) <= room) { out.push(label); continue; }
+      var lines = wrapLabel(label, room, measure);
+      if (lines.length > CHART_LABEL_LINES) return null;
+      out.push(lines.length === 1 ? lines[0] : lines);
+    }
+    return out;
+  }
+
+  // CHART_POINT is how large a kind draws its points, in px: the radius
+  // at rest and on hover. A kind not listed draws none.
+  var CHART_POINT = { scatter: { radius: 5, hover: 7 }, line: { radius: 0, hover: 5 }, area: { radius: 2, hover: 4 } };
+
+  // chartPoint is the point radii a kind draws with, null for a kind
+  // without points.
+  function chartPoint(kind) {
+    return Object.prototype.hasOwnProperty.call(CHART_POINT, kind) ? CHART_POINT[kind] : null;
+  }
+
+  // chartPointRoom is how far past its centre the largest point a kind
+  // draws reaches, in px: its hover radius and its ring (ringPx, the
+  // border Chart.js draws round it). A point sits on the edge of the plot
+  // when its value is an axis end, so the plot's clip and the chart's
+  // padding keep this much room for it to draw whole. 0 for a kind
+  // without points.
+  function chartPointRoom(kind, ringPx) {
+    var point = chartPoint(kind);
+    return point ? point.hover + (Number(ringPx) || 0) : 0;
+  }
+
   // chartFontSizes is the size of chart text in px for a root font size:
   // ticks and axis titles at CHART_TICK's share of it, kept between its
   // bounds, and the legend and sankey labels at CHART_LEGEND_SHARE. On a
@@ -676,6 +763,7 @@
     stepPlan: stepPlan, blockStepsAt: blockStepsAt, chartStepVisibility: chartStepVisibility, seriesMax: seriesMax,
     seriesExtent: seriesExtent, ribbonLayout: ribbonLayout,
     chartLine: chartLine, chartValueAxis: chartValueAxis, chartFontSizes: chartFontSizes, chartFontsChanged: chartFontsChanged,
+    chartTicks: chartTicks, barAxisLabels: barAxisLabels, chartPoint: chartPoint, chartPointRoom: chartPointRoom,
     readingSample: READING_SAMPLE, readingChanged: readingChanged, settle: settle,
     wrapText: wrapText, diagramBox: diagramBox, edgeLabelBox: edgeLabelBox, edgeLabelRows: edgeLabelRows,
     diagramElk: diagramElk, diagramLabelSpots: diagramLabelSpots, elkPath: elkPath,

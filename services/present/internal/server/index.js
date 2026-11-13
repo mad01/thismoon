@@ -23,7 +23,7 @@
     var title = p.title || '(untitled)';
     var subParts = [
       Webkit.el('span', { class: 'row-id' }, p.id),
-      document.createTextNode(' · v' + p.version + ' · updated ' + (p.updated_at || ''))
+      document.createTextNode(' · v' + p.version + ' · updated ' + Webkit.formatDate(p.updated_at, { style: 'ymd-hm' }))
     ];
     // A page with a deck says so; the card still links to /p/{id}, which
     // the server sends on to the deck view when there is no brief.
