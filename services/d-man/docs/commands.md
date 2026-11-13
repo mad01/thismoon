@@ -30,8 +30,9 @@ d-man serve --config ~/.config/d-man/routes.toml
 
 On start it writes the managed `/etc/hosts` block and builds the proxy. It also
 listens on `127.0.0.1:443` to serve the block page for blocked HTTPS hosts,
-minting a certificate per host from the local CA (see [`ca`](#ca)). While
-running it:
+minting a certificate from the local CA (see [`ca`](#ca)) for each route host
+and block-list host. A handshake for any other name is refused with an
+`unrecognized_name` alert. While running it:
 
 - watches the routes file and re-syncs + reloads when it changes,
 - reloads on `SIGHUP`,
@@ -103,8 +104,9 @@ d-man ca path             # print the CA directory
 
 `install` and `uninstall` write the system keychain, which needs root; without
 it they report a permission error and suggest `sudo`. Run `install` once per
-machine — `serve` reuses the same CA to sign per-host leaf certificates on the
-fly. A host reaches the block page only when it is in the config `blocklist`.
+machine: `serve` reuses the same CA to sign leaf certificates on the fly, for
+the configured route hosts and block-list hosts only. A host reaches the block
+page only when it is in the config `blocklist`.
 
 ## list
 

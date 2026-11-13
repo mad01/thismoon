@@ -6,8 +6,9 @@ long-running process, `d-man serve`, does two jobs from one routes file. It
 keeps a marker-delimited managed block in /etc/hosts mapping every configured
 host to 127.0.0.1, and runs a reverse proxy on 127.0.0.1:80 that picks the
 backend port by Host header. A second listener on 127.0.0.1:443 shares the
-same handler. It mints a per-host certificate from a local CA, so hosts on the
-block list reach the block page over https too. d-man has no `.this` address
+same handler. It mints a certificate from a local CA for each route host and
+block-list host, so hosts on the block list reach the block page over https
+too, and refuses the handshake for any other name. d-man has no `.this` address
 of its own; when it is down, every `.this` host is down at once.
 
 ## how it runs
@@ -102,6 +103,15 @@ widens this.
 A blocked host still loads over https: the block-page CA is not trusted yet.
 `sudo d-man ca install` fixes it once. The CA key is root-owned by design; a
 non-root process cannot read it.
+
+An https request fails in the handshake with an unrecognized_name alert (TLS
+alert 112; a Go client reports "remote error: tls: unrecognized name"). The
+name is neither a route host nor a block-list host in the routes file serve
+loaded, and serve mints certificates for those names only. The daemon logs
+it as a TLS handshake error ending in "tls: no certificates configured". Add
+the name as a route or to the blocklist; the reload picks it up with no
+restart. A client that sends no server name (it dialed 127.0.0.1) still gets
+the localhost certificate, then the no-route 502.
 
 UI settings do not follow between hosts: run `d-man doctor`. A
 settings-answers FAIL with a 404, or with a page that is not a settings

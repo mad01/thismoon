@@ -52,7 +52,8 @@ d-man/
                            the same-origin check, content type and body cap;
                            drift_test.go pins the table to the webkit source
     atomicfile/           temp file + rename writer shared by profile and settings
-    tlsca/                local CA: persist + mint per-SNI leaf certs (+ tlsca_test.go)
+    tlsca/                local CA: persist + mint leaf certs for the configured
+                           hosts only, set on every routes load (+ tlsca_test.go)
     blockpage/            embedded retro arcade served on blocked hosts, random
                            pick per visit; more games load as plugins from the
                            optional games_dir config key (go:embed assets/ +
@@ -80,8 +81,17 @@ using a wildcard.
 
 `serve` also runs a second listener on `127.0.0.1:443` sharing the same handler.
 So a blocked host reaches the block page over **both** http and https (the
-`:443` listener mints a trusted leaf per SNI from `internal/tlsca`). No scheme
+`:443` listener mints a trusted leaf from `internal/tlsca`). No scheme
 redirect is involved — each port serves the page directly.
+
+The CA is system-trusted, so it signs only for names d-man answers:
+`reloadOnce` hands it `cfg.Hosts()` (route hosts plus block-list hosts, the
+same names `/etc/hosts` gets) after every good load. Any other server name
+gets `nil, nil` from `GetCertificate`, which crypto/tls turns into a fatal
+`unrecognized_name` alert; a reload that drops a host drops its cached leaf.
+A client with no server name gets the one fixed `localhost` leaf. **Never
+mint for an arbitrary server name**: the cache would grow without bound and
+the trusted CA would sign names d-man does not serve.
 
 `internal/config` is the pure route model: a route is either port-backed
 (`port`) or a CNAME alias (`cname` → another route's name); `resolve`/
