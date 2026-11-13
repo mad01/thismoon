@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.1](https://github.com/mad01/thismoon/compare/csl/v0.37.0...csl/v0.37.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **belt:** close follow-ups in doctor, custom guards and loom-pane ([#435](https://github.com/mad01/thismoon/issues/435)) ([483cf68](https://github.com/mad01/thismoon/commit/483cf687d744ce5a04e27a4f33a72b1e4cdd4d9c))
+
 ## [0.37.0](https://github.com/mad01/thismoon/compare/csl/v0.36.0...csl/v0.37.0) (2026-11-13)
 
 
