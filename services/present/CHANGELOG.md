@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.0](https://github.com/mad01/thismoon/compare/present/v1.25.0...present/v1.26.0) (2026-11-13)
+
+
+### Features
+
+* **present:** warn on share when the shared instance draws at an older render level ([#486](https://github.com/mad01/thismoon/issues/486)) ([12c27db](https://github.com/mad01/thismoon/commit/12c27dbf7c1a5e9ed2373b55d76eccc87c44265c))
+
 ## [1.25.0](https://github.com/mad01/thismoon/compare/present/v1.24.3...present/v1.25.0) (2026-11-13)
 
 
