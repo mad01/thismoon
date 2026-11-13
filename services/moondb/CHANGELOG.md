@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/mad01/thismoon/compare/moondb/v0.17.0...moondb/v0.18.0) (2026-11-13)
+
+
+### Features
+
+* **webkit:** shared relative time and duration format helpers ([#445](https://github.com/mad01/thismoon/issues/445)) ([e67364a](https://github.com/mad01/thismoon/commit/e67364ab3e201499055754ebea2f385b5cfc63bd))
+
 ## [0.17.0](https://github.com/mad01/thismoon/compare/moondb/v0.16.0...moondb/v0.17.0) (2026-11-13)
 
 

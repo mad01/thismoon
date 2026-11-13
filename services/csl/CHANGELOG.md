@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/mad01/thismoon/compare/csl/v0.37.2...csl/v0.38.0) (2026-11-13)
+
+
+### Features
+
+* **webkit:** shared relative time and duration format helpers ([#445](https://github.com/mad01/thismoon/issues/445)) ([e67364a](https://github.com/mad01/thismoon/commit/e67364ab3e201499055754ebea2f385b5cfc63bd))
+
 ## [0.37.2](https://github.com/mad01/thismoon/compare/csl/v0.37.1...csl/v0.37.2) (2026-11-13)
 
 
