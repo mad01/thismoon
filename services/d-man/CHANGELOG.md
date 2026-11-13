@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/mad01/thismoon/compare/d-man/v0.9.0...d-man/v0.9.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **d-man:** answer sites.json only on a configured host ([#469](https://github.com/mad01/thismoon/issues/469)) ([26d4979](https://github.com/mad01/thismoon/commit/26d497953d89289d8a49eeb8a7c81bcc3ff0dc95))
+
 ## [0.9.0](https://github.com/mad01/thismoon/compare/d-man/v0.8.0...d-man/v0.9.0) (2026-11-13)
 
 

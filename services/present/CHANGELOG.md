@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.1](https://github.com/mad01/thismoon/compare/present/v1.24.0...present/v1.24.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **present:** whole ticks on count charts, wrapped bar labels, and local time on the page list ([#470](https://github.com/mad01/thismoon/issues/470)) ([1795e32](https://github.com/mad01/thismoon/commit/1795e32cbcb9a2bec7676b6b02a6a0d4f42e83cb))
+
 ## [1.24.0](https://github.com/mad01/thismoon/compare/present/v1.23.0...present/v1.24.0) (2026-11-13)
 
 
