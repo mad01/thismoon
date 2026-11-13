@@ -269,7 +269,7 @@
      "blue": "#1e66f5",
      "purple": "#8839ef",
      "series-1": "#8839ef",
-     "series-2": "#1e66f5",
+     "series-2": "#179299",
      "series-3": "#40a02b",
      "series-4": "#fe640b",
      "card-bg": "#eff1f5",
@@ -355,7 +355,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. Latte's text ink is a mid grey, so no ink reaches 4.5 on green, peach, or yellow. A fill dark enough for white ink would be a different colour from the published one, a Lab distance of 13.8 or more, so the three stay as published: white reads 3.34 on green and 2.98 on peach, and the text ink 3.05 on yellow (MAD-378)"
+    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. Latte's text ink is a mid grey, so no ink reaches 4.5 on green, peach, or yellow. A fill dark enough for white ink would be a different colour from the published one, a Lab distance of 13.8 or more, so the three stay as published: white reads 3.34 on green and 2.98 on peach, and the text ink 3.05 on yellow (MAD-378). Series two is teal: blue sat 16.7 from mauve in CIEDE2000, and sapphire reads under 3:1 on mantle (MAD-582)"
    },
    "dark": {
     "variant": "Mocha",
@@ -377,7 +377,7 @@
      "blue": "#89b4fa",
      "purple": "#cba6f7",
      "series-1": "#cba6f7",
-     "series-2": "#89b4fa",
+     "series-2": "#74c7ec",
      "series-3": "#a6e3a1",
      "series-4": "#fab387",
      "card-bg": "#1e1e2e",
@@ -463,7 +463,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "same ladder as Latte: bg mantle, paper base, chip surface0, border-hover surface1"
+    "notes": "same ladder as Latte: bg mantle, paper base, chip surface0, border-hover surface1. Series two is sapphire: blue sat 18.9 from mauve in CIEDE2000, and teal sits 15.6 from green (MAD-582)"
    }
   },
   {
@@ -821,7 +821,7 @@
      "blue": "#81a1c1",
      "purple": "#b894b1",
      "series-1": "#88c0d0",
-     "series-2": "#81a1c1",
+     "series-2": "#d08770",
      "series-3": "#a3be8c",
      "series-4": "#b48ead",
      "card-bg": "#3b4252",
@@ -907,7 +907,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2 (MAD-372). amber (nord12) and purple (nord15) are lifted from 63% to 65% so nord0 ink reads 4.5 on them, where white sat at 2.8 (MAD-376). The roles derived from the three stay pinned to the published values, and the ink rule picks nord0 for on-red, on-amber, and on-purple"
+    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2 (MAD-372). amber (nord12) and purple (nord15) are lifted from 63% to 65% so nord0 ink reads 4.5 on them, where white sat at 2.8 (MAD-376). The roles derived from the three stay pinned to the published values, and the ink rule picks nord0 for on-red, on-amber, and on-purple. Series two is nord12 as published: nord9 sat 12.6 from nord8 in CIEDE2000, and no other frost colour clears both 20 from nord8 and 3:1 on nord1 (MAD-582)"
    }
   },
   {
@@ -935,7 +935,7 @@
      "blue": "#326ef1",
      "purple": "#a626a4",
      "series-1": "#4078f2",
-     "series-2": "#0184bc",
+     "series-2": "#986801",
      "series-3": "#50a14f",
      "series-4": "#a626a4",
      "card-bg": "#fafafa",
@@ -1021,7 +1021,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan. blue is darkened three points of lightness so white ink reads 4.5 on it, and the roles derived from it stay pinned to the published value (MAD-378). The rule takes white on red and mono-1 on green and yellow, at 3.7, 3.5, and 3.6. A fill that reaches 4.5 with either ink is a different colour, a Lab distance of 11.6 or more. Green alone has a near option, nine points lighter at 8.9, but that drops green as text on paper from 3.1 to 2.4. So the three stay as published"
+    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is amber, as cyan sat 12.6 from blue in CIEDE2000 (MAD-582). blue is darkened three points of lightness so white ink reads 4.5 on it, and the roles derived from it stay pinned to the published value (MAD-378). The rule takes white on red and mono-1 on green and yellow, at 3.7, 3.5, and 3.6. A fill that reaches 4.5 with either ink is a different colour, a Lab distance of 11.6 or more. Green alone has a near option, nine points lighter at 8.9, but that drops green as text on paper from 3.1 to 2.4. So the three stay as published"
    },
    "dark": {
     "variant": "One Dark",
@@ -1043,7 +1043,7 @@
      "blue": "#61afef",
      "purple": "#c678dd",
      "series-1": "#61afef",
-     "series-2": "#56b6c2",
+     "series-2": "#d19a66",
      "series-3": "#98c379",
      "series-4": "#c678dd",
      "card-bg": "#282c34",
@@ -1129,7 +1129,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "paper is the syntax background hsl(220,13%,18%); bg and chip are the One Dark UI panel steps; border the selection colour, border-hover the gutter; ink mono-1, mono-2, mono-3"
+    "notes": "paper is the syntax background hsl(220,13%,18%); bg and chip are the One Dark UI panel steps; border the selection colour, border-hover the gutter; ink mono-1, mono-2, mono-3; series two is amber, as cyan sat 16.6 from blue in CIEDE2000 (MAD-582)"
    }
   },
   {
@@ -1601,7 +1601,7 @@
      "blue": "#1c72e7",
      "purple": "#954ff1",
      "series-1": "#2e7de9",
-     "series-2": "#007197",
+     "series-2": "#b15c00",
      "series-3": "#587539",
      "series-4": "#9854f1",
      "card-bg": "#e1e2e7",
@@ -1687,7 +1687,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is cyan. Day's ink never beats white, so red, blue, and magenta are darkened nine, four, and one points of lightness for white ink to read 4.5 on them, where it read 3.9, 4.0, and 4.3. Red is the largest move in the collection, a Lab distance of 9.9. The roles derived from the three stay pinned to the published values (MAD-378)"
+    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is orange, as cyan sat 14.5 from blue in CIEDE2000 (MAD-582). Day's ink never beats white, so red, blue, and magenta are darkened nine, four, and one points of lightness for white ink to read 4.5 on them, where it read 3.9, 4.0, and 4.3. Red is the largest move in the collection, a Lab distance of 9.9. The roles derived from the three stay pinned to the published values (MAD-378)"
    },
    "dark": {
     "variant": "Night",
@@ -1709,7 +1709,7 @@
      "blue": "#7aa2f7",
      "purple": "#bb9af7",
      "series-1": "#7aa2f7",
-     "series-2": "#7dcfff",
+     "series-2": "#ff9e64",
      "series-3": "#9ece6a",
      "series-4": "#bb9af7",
      "card-bg": "#1a1b26",
@@ -1795,7 +1795,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover terminal_black; text-3 comment"
+    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover terminal_black; text-3 comment; series two is orange, as cyan sat 14.8 from blue in CIEDE2000 (MAD-582)"
    }
   }
  ]

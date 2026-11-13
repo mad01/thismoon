@@ -5,7 +5,7 @@
   "license": "MIT",
   "light": {
     "variant": "One Light",
-    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan. blue is darkened three points of lightness so white ink reads 4.5 on it, and the roles derived from it stay pinned to the published value (MAD-378). The rule takes white on red and mono-1 on green and yellow, at 3.7, 3.5, and 3.6. A fill that reaches 4.5 with either ink is a different colour, a Lab distance of 11.6 or more. Green alone has a near option, nine points lighter at 8.9, but that drops green as text on paper from 3.1 to 2.4. So the three stay as published",
+    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is amber, as cyan sat 12.6 from blue in CIEDE2000 (MAD-582). blue is darkened three points of lightness so white ink reads 4.5 on it, and the roles derived from it stay pinned to the published value (MAD-378). The rule takes white on red and mono-1 on green and yellow, at 3.7, 3.5, and 3.6. A fill that reaches 4.5 with either ink is a different colour, a Lab distance of 11.6 or more. Green alone has a near option, nine points lighter at 8.9, but that drops green as text on paper from 3.1 to 2.4. So the three stay as published",
     "bg": "#eaeaeb",
     "paper": "#fafafa",
     "chip": "#e5e5e6",
@@ -22,7 +22,7 @@
     "yellow": "#c18401",
     "blue": "#326ef1",
     "purple": "#a626a4",
-    "series": ["#4078f2", "#0184bc", "#50a14f", "#a626a4"],
+    "series": ["#4078f2", "#986801", "#50a14f", "#a626a4"],
     "overrides": {
       "tag-c": "#d5e0f8",
       "tag-c-text": "#3c599a",
@@ -35,7 +35,7 @@
   },
   "dark": {
     "variant": "One Dark",
-    "notes": "paper is the syntax background hsl(220,13%,18%); bg and chip are the One Dark UI panel steps; border the selection colour, border-hover the gutter; ink mono-1, mono-2, mono-3",
+    "notes": "paper is the syntax background hsl(220,13%,18%); bg and chip are the One Dark UI panel steps; border the selection colour, border-hover the gutter; ink mono-1, mono-2, mono-3; series two is amber, as cyan sat 16.6 from blue in CIEDE2000 (MAD-582)",
     "bg": "#21252b",
     "paper": "#282c34",
     "chip": "#2c313a",
@@ -52,6 +52,6 @@
     "yellow": "#e5c07b",
     "blue": "#61afef",
     "purple": "#c678dd",
-    "series": ["#61afef", "#56b6c2", "#98c379", "#c678dd"]
+    "series": ["#61afef", "#d19a66", "#98c379", "#c678dd"]
   }
 }

@@ -5,7 +5,7 @@
   "license": "MIT",
   "light": {
     "variant": "Latte",
-    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. Latte's text ink is a mid grey, so no ink reaches 4.5 on green, peach, or yellow. A fill dark enough for white ink would be a different colour from the published one, a Lab distance of 13.8 or more, so the three stay as published: white reads 3.34 on green and 2.98 on peach, and the text ink 3.05 on yellow (MAD-378)",
+    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. Latte's text ink is a mid grey, so no ink reaches 4.5 on green, peach, or yellow. A fill dark enough for white ink would be a different colour from the published one, a Lab distance of 13.8 or more, so the three stay as published: white reads 3.34 on green and 2.98 on peach, and the text ink 3.05 on yellow (MAD-378). Series two is teal: blue sat 16.7 from mauve in CIEDE2000, and sapphire reads under 3:1 on mantle (MAD-582)",
     "bg": "#e6e9ef",
     "paper": "#eff1f5",
     "chip": "#dce0e8",
@@ -22,11 +22,11 @@
     "yellow": "#df8e1d",
     "blue": "#1e66f5",
     "purple": "#8839ef",
-    "series": ["#8839ef", "#1e66f5", "#40a02b", "#fe640b"]
+    "series": ["#8839ef", "#179299", "#40a02b", "#fe640b"]
   },
   "dark": {
     "variant": "Mocha",
-    "notes": "same ladder as Latte: bg mantle, paper base, chip surface0, border-hover surface1",
+    "notes": "same ladder as Latte: bg mantle, paper base, chip surface0, border-hover surface1. Series two is sapphire: blue sat 18.9 from mauve in CIEDE2000, and teal sits 15.6 from green (MAD-582)",
     "bg": "#181825",
     "paper": "#1e1e2e",
     "chip": "#313244",
@@ -43,6 +43,6 @@
     "yellow": "#f9e2af",
     "blue": "#89b4fa",
     "purple": "#cba6f7",
-    "series": ["#cba6f7", "#89b4fa", "#a6e3a1", "#fab387"]
+    "series": ["#cba6f7", "#74c7ec", "#a6e3a1", "#fab387"]
   }
 }

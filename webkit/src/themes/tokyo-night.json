@@ -5,7 +5,7 @@
   "license": "MIT (values via folke/tokyonight.nvim, Apache-2.0)",
   "light": {
     "variant": "Day",
-    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is cyan. Day's ink never beats white, so red, blue, and magenta are darkened nine, four, and one points of lightness for white ink to read 4.5 on them, where it read 3.9, 4.0, and 4.3. Red is the largest move in the collection, a Lab distance of 9.9. The roles derived from the three stay pinned to the published values (MAD-378)",
+    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is orange, as cyan sat 14.5 from blue in CIEDE2000 (MAD-582). Day's ink never beats white, so red, blue, and magenta are darkened nine, four, and one points of lightness for white ink to read 4.5 on them, where it read 3.9, 4.0, and 4.3. Red is the largest move in the collection, a Lab distance of 9.9. The roles derived from the three stay pinned to the published values (MAD-378)",
     "bg": "#d0d5e3",
     "paper": "#e1e2e7",
     "chip": "#c4c8da",
@@ -22,7 +22,7 @@
     "yellow": "#8c6c3e",
     "blue": "#1c72e7",
     "purple": "#954ff1",
-    "series": ["#2e7de9", "#007197", "#587539", "#9854f1"],
+    "series": ["#2e7de9", "#b15c00", "#587539", "#9854f1"],
     "overrides": {
       "tag-c": "#bdcee7",
       "tag-c-text": "#336fd4",
@@ -42,7 +42,7 @@
   },
   "dark": {
     "variant": "Night",
-    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover terminal_black; text-3 comment",
+    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover terminal_black; text-3 comment; series two is orange, as cyan sat 14.8 from blue in CIEDE2000 (MAD-582)",
     "bg": "#16161e",
     "paper": "#1a1b26",
     "chip": "#292e42",
@@ -59,6 +59,6 @@
     "yellow": "#e0af68",
     "blue": "#7aa2f7",
     "purple": "#bb9af7",
-    "series": ["#7aa2f7", "#7dcfff", "#9ece6a", "#bb9af7"]
+    "series": ["#7aa2f7", "#ff9e64", "#9ece6a", "#bb9af7"]
   }
 }
