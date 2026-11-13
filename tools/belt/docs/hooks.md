@@ -323,6 +323,64 @@ Blocks `git push` to `main` or `master` before it happens.
   the current branch via `git rev-parse --abbrev-ref HEAD` in the push
   directory. A `heads/<name>` side reads as `refs/heads/<name>`, as git
   expands it, so `git push origin heads/main` targets main.
+- **A checkout or switch earlier in the command counts.** belt reads the
+  current branch before the command runs. So a `git checkout` or `git switch`
+  before the push changes what the current branch means. A switch to `main`
+  or `master` counts as that branch, so `git checkout main && git push` is
+  denied from a feature branch, and the denial names the checkout. A switch
+  belt cannot read counts as unknown, and a push that needs the current
+  branch after it is denied. That is a variable or substitution, `-`,
+  `--detach`, or an option belt does not know. A bundle of short options
+  such as `-qc` reads letter by letter when belt knows every letter. The
+  branch git reads before the command still counts too, since the switch may
+  fail. The exception is a sure switch: `git switch`, or `git checkout` with
+  `-b`, `-B`, `--orphan` or `--track`. A plain `git checkout <name>` is sure
+  too when the repo has a local branch `<name>`, because git then always
+  reads it as that branch. Without one, `<name>` may be a path and the
+  checkout a file checkout. To check, belt runs one git call, `git
+  for-each-ref refs/heads/<name>` in the push's own directory, with a 2
+  second timeout. An error or a timeout counts as no branch. A sure switch
+  replaces the branch only when all of these hold:
+  - It runs as git itself. Only assignments or a wrapper such as `env` stand
+    before the git word, not `echo` or `:`, and no `!` negates it, since
+    `! git switch -c x && git push` pushes only when the switch failed.
+  - It is not itself after `||` or in a pipeline, and only `&&` joins it to
+    the push, so the push runs only after the switch worked.
+  - It is the last switch in the command, and every step between it and the
+    push is on the list below.
+  - Every step after the push is on the list too, since one after a `&` or
+    in a pipeline runs beside the push.
+  - No shell function is defined anywhere in the command, as
+    `name() { ...; }` or `function name { ...; }`, since one may stand in
+    for git or for a step on the list.
+
+  One list says which steps leave HEAD alone, before the push and after it:
+  git `add`, `commit`, `fetch`, `pull`, `merge`, `status`, `log` and `diff`
+  run as git itself, `git rebase` with at most one upstream and no `--root`,
+  `--exec` or `-i`, a whole `git branch --show-current`, `git rev-parse
+  --abbrev-ref HEAD` or `git symbolic-ref --short HEAD`, and the read-only
+  commands belt knows (`echo`, `printf`, `cat`, `head`, `tail`, `less`,
+  `more`, `grep`, `rg`, `ls`, `stat`, `wc`, `diff`, `file`). A git step on
+  the list does not count when it carries a `-c` override of its own, an
+  `--output` option, or a word that names a path inside `.git`. Anything
+  else keeps the branch from before the command as a candidate, a command
+  belt does not know included: a git alias, `git branch -M`, a script, a
+  test run. So does a step that writes into `.git`. The denial names the
+  step.
+
+  So `git switch -c feature && git push -u origin HEAD` passes on main, and
+  the same with `;` is denied. So is `git switch -c feature && git push -u
+  origin HEAD && gh pr create`: open the PR in a command of its own. A file
+  checkout (`git checkout -- <path>`, `git checkout <ref> -- <path>`) moves
+  no branch. A switch counts only for a push in the same directory, the same
+  `git -C` target or the same `cd` state. One in a subshell counts, because
+  it moves the repository and not the shell. One in another directory or in
+  one belt cannot tell adds no branch for the push. When it is the last
+  switch in the command, though, an earlier switch in the push's own
+  directory is no longer sure, so the branch from before the command counts
+  again. In an exempt repo a switch never turns an allow into a denial: belt
+  judges such a push on the branch git reads, as if the command had no
+  switch. A switch in a comment or a text heredoc body counts not at all.
 - **Follows `cd` and `git -C`.** The guard walks the command's segments and
   tracks `cd`/`pushd`, so a push is judged in the directory it runs in, not
   the session cwd. A `git -C` target is resolved against that directory the
@@ -366,13 +424,17 @@ Blocks `git push` to `main` or `master` before it happens.
   read the same way.
 - **Heredoc bodies are text unless a shell may run them.** A body read by
   `cat`, `tee`, `head`, `tail`, `git commit` or a `gh pr`, `issue`,
-  `release`, `gist` or `api` call is prose. Its lines are read the old token
-  way, so a line that starts with a push still counts, but a backtick or
-  `$( )` in a quoted (`<<'EOF'`) body is text: a PR body or commit message
-  that shows a push in a code span passes. In an unquoted body the shell runs
-  every `$( )` and backtick before the command reads it, even after a `'` or
-  `#`, so those are read as code and a push there is denied. Any other
-  command, a pipe, a `>( )` after the reader, and a substitution handed to
+  `release`, `gist` or `api` call is prose. So is a body `git tag`, `git
+  merge` or `git notes add` reads as its message with `-F -` or `--file=-`,
+  and one piped from `cat` into `gh pr create`, `comment` or `edit` or `gh
+  issue create` or `comment` that reads its body with `--body-file -` or
+  `-F -` and pipes nothing on. Its lines are read the old token way, so a
+  line that starts with a push still counts, but a backtick or `$( )` in a
+  quoted (`<<'EOF'`) body is text: a PR body or commit message that shows a
+  push in a code span passes. In an unquoted body the shell runs every `$( )`
+  and backtick before the command reads it, even after a `'` or `#`, so those
+  are read as code and a push there is denied. Any other command, any other
+  pipe, a `>( )` after the reader, and a substitution handed to
   `sh -c`, `eval`, `source` or an interpreter make the body code, read like
   the rest of the command. In an unquoted body a line ending in a
   backslash joins the next one before belt compares it with the delimiter,
@@ -757,7 +819,8 @@ Blocks git commands that throw away uncommitted work.
   `--worktree`), and `clean` with `-f` (a `-n` dry run passes). `stash
   list|show|apply|pop|branch` are allowed. Each invocation is judged in the
   directory it runs in: a tracked `cd`/`pushd`, a `git -C` target, else the
-  session cwd.
+  session cwd. Heredoc bodies are read as git-push-main reads them, so a PR
+  body or tag message that names `reset --hard` in a code span passes.
 - **Decides by** the working tree there. A clean tree (`git status
   --porcelain` empty, with `--ignored` added for `clean -x`/`-X`) allows,
   since nothing would be lost. `allow_repos` exempts repos by canonical

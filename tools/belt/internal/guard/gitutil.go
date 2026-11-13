@@ -17,7 +17,8 @@ import (
 // configured marks a -c or --config-env option, or an environment that may
 // change git's config (gitCommandsAt); unread marks an invocation taken from
 // code readShell could not follow (walkStep); moved marks a -C, which runs
-// git somewhere other than the shell's directory.
+// git somewhere other than the shell's directory. heads are the branches the
+// checkouts and switches before it may leave checked out (headTracker).
 type gitInvocation struct {
 	dir        string
 	sub        string
@@ -25,6 +26,7 @@ type gitInvocation struct {
 	configured bool
 	unread     bool
 	moved      bool
+	heads      pushHeads
 }
 
 // gitCommandsAt extracts bare `git <sub>` invocations from a shell command,
@@ -45,22 +47,36 @@ type gitInvocation struct {
 // A step anywhere in the command that can change where a push goes
 // (retargetsPush) marks every invocation configured: the resolvers read the
 // config before the command runs, and a step after a push may run beside it.
+// A git checkout or switch before an invocation changes the branch it may
+// find checked out (headTracker), read before the invocation itself counts as
+// a step. A step after it may run beside it, behind a & or in a pipeline, so
+// one that keepsHead does not vouch for leaves it unsure (pushHeads.afterPush),
+// and so does a shell function defined anywhere in the command
+// (headTracker.settle).
 func gitCommandsAt(command, cwd, sub string) []gitInvocation {
 	var cmds []gitInvocation
+	var seen []int // len(headTracker.changed) after each invocation
 	retargets := false
+	var heads headTracker
 	walkCommands(command, cwd, func(s walkStep) {
 		retargets = retargets || retargetsPush(s)
 		c, ok := segmentGitCommand(s.tokens, s.dir)
-		if !ok || c.sub != sub {
+		if ok = ok && c.sub == sub; ok {
+			c.heads = heads.at(s, c)
+		}
+		heads.see(s)
+		if !ok {
 			return
 		}
 		pre, _ := beforeGit(s.tokens)
 		c.configured = c.configured || s.configEnv || overridesConfig(pre)
 		c.unread = s.unread
 		cmds = append(cmds, c)
+		seen = append(seen, len(heads.changed))
 	})
 	for i := range cmds {
 		cmds[i].configured = cmds[i].configured || retargets
+		cmds[i].heads = heads.settle(cmds[i].heads, seen[i])
 	}
 	return cmds
 }
@@ -101,6 +117,11 @@ type shellWalk struct {
 	// is read as code (walkProse).
 	feeds bool
 	depth int // how many subshells, -c scripts and evals deep the walk is
+	// chain is the run of commands joined by && the walk is in (walkStep.chain),
+	// and chains counts the runs one walkCommands call has seen, nested walks
+	// included, so no two runs share a number.
+	chain  int
+	chains *int
 }
 
 // joint is the separator in front of a command or segment.
