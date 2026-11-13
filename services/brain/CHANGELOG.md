@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/mad01/thismoon/compare/brain/v0.6.0...brain/v0.7.0) (2026-11-13)
+
+
+### Features
+
+* **brain:** community labels, lighter tag edges and graph view fixes ([#460](https://github.com/mad01/thismoon/issues/460)) ([c0f0c1a](https://github.com/mad01/thismoon/commit/c0f0c1aaa69aa30ec3303b6e1f5eaf2fd185c8f3))
+
 ## [0.6.0](https://github.com/mad01/thismoon/compare/brain/v0.5.0...brain/v0.6.0) (2026-11-13)
 
 
