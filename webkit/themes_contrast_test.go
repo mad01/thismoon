@@ -142,6 +142,59 @@ func inkReadsOnFill(t *testing.T, mode string, exceptions map[string]float64) {
 	}
 }
 
+// primaryInkFloorExceptions names the variants whose on-primary ink reads
+// under 4.5 on primary, keyed family/mode. on-primary is authored, not
+// derived: it is the ink on every accent fill (primary buttons, the search
+// button, an active header toggle, a pressed size button, the playing
+// read-aloud button, the focused skip link, the current theme card). On
+// these accents neither white nor the family's text-1 reaches 4.5, so only a
+// different fill would, a change to the family's look; they keep the
+// published pair at the floor measured.
+var primaryInkFloorExceptions = map[string]float64{
+	"default/light":     3.6, // #FFFFFF on #C4704B, measured 3.64
+	"nord/light":        3.4, // #eceff4 on #5e81ac, measured 3.496
+	"one/light":         3.8, // #fafafa on #4078f2, measured 3.88
+	"rose-pine/light":   2.7, // #fffaf3 on #d7827e, measured 2.74
+	"solarized/light":   3.4, // #fdf6e3 on #268bd2, measured 3.41
+	"solarized/dark":    3.4, // #fdf6e3 on #268bd2, measured 3.41
+	"tokyo-night/light": 3.1, // #e1e2e7 on #2e7de9, measured 3.11
+}
+
+// Every variant's on-primary ink reads as body text on its primary fill,
+// with primaryInkFloorExceptions as the only carve-out. As with the other
+// maps, an exception whose pair now clears 4.5 or that names no variant fails.
+func TestPrimaryInkReadsOnPrimary(t *testing.T) {
+	visited := map[string]bool{}
+	for _, f := range webkit.Themes() {
+		for mode, v := range map[string]*webkit.Variant{"light": f.Light, "dark": f.Dark} {
+			if v == nil {
+				continue
+			}
+			fill, ink := v.Roles["primary"], v.Roles["on-primary"]
+			got := contrast(t, ink, fill)
+			floor := minInkContrast
+			key := f.Name + "/" + mode
+			if exception, ok := primaryInkFloorExceptions[key]; ok {
+				visited[key] = true
+				if got >= minInkContrast {
+					t.Errorf("%s %s: --on-primary reads %.2f on --primary; drop its exception",
+						f.Name, mode, got)
+				}
+				floor = exception
+			}
+			if got < floor {
+				t.Errorf("%s %s: --on-primary %s on --primary %s = %.2f, want >= %.1f",
+					f.Name, mode, ink, fill, got, floor)
+			}
+		}
+	}
+	for key := range primaryInkFloorExceptions {
+		if !visited[key] {
+			t.Errorf("primaryInkFloorExceptions[%q] names no family and mode", key)
+		}
+	}
+}
+
 // statuses are the semantic badge variants and callout tints; each reads its
 // text from status-<s>-text on its fill status-<s>-bg.
 var statuses = []string{"info", "ok", "warn", "error"}

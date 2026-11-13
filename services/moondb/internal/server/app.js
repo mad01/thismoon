@@ -23,7 +23,9 @@
 (function () {
   var app = document.getElementById('app');
   var el = Webkit.el;
-  var params = new URLSearchParams(location.search);
+  // params is the parsed query of the entry the page shows; back and forward
+  // replace it (see route at the end).
+  var params = Webkit.urlState.read();
 
   // Caps that keep one huge record from freezing the page.
   var DIFF_ROWS = 400; // diff rows drawn before a "show all" button
@@ -32,6 +34,11 @@
   var HISTORY_LIMIT = 200; // edits in a file's history timeline
   var PAGE = 50; // sessions per page of the listing, the API default
   var TRACE_LANES = 25; // turn lanes drawn in a session's trace before a "show all" button
+  var POLL_MS = 60000; // how often the sessions list refetches
+
+  // poll is the sessions list's refetch timer. route clears it, so each
+  // render starts with none and only the list view sets one.
+  var poll = null;
 
   // Turn bands in the file view cycle through these webkit roles.
   var BANDS = ['--series-1', '--series-2', '--series-3', '--series-4',
@@ -114,28 +121,21 @@
 
   // ── formatting ──
 
-  var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  function pad(n) { return n < 10 ? '0' + n : '' + n; }
-
   function parseTime(iso) {
     if (!iso) return null;
     var d = new Date(iso);
     return isNaN(d) || d.getFullYear() <= 1 ? null : d;
   }
 
-  // fmtTime renders an ISO timestamp in the browser's local zone, or '' for
-  // an absent or zero time.
+  // fmtTime renders an ISO timestamp in the browser's local zone as
+  // Tue Oct 28 15:04, or '' for an absent or zero time.
   function fmtTime(iso) {
-    var d = parseTime(iso);
-    if (!d) return '';
-    return DAYS[d.getDay()] + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate() +
-      ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    return Webkit.formatDate(iso);
   }
 
+  // fmtClock is a time of day, HH:MM:SS, '' for an absent time.
   function fmtClock(iso) {
-    var d = parseTime(iso);
-    return d ? pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) : '';
+    return Webkit.formatClock(iso);
   }
 
   // MARKUP mirrors trace.markup: an XML-like tag, which a prompt line
@@ -585,33 +585,31 @@
   function renderSessions() {
     document.title = 'Sessions · moondb';
     var state = {
-      repo: params.get('repo') || '',
-      cwd: params.get('cwd') || '',
-      since: params.get('since') || DEFAULT_SINCE,
-      limit: parseInt(params.get('limit'), 10) || PAGE
+      repo: params.repo || '',
+      cwd: params.cwd || '',
+      since: params.since || DEFAULT_SINCE,
+      limit: parseInt(params.limit, 10) || PAGE
     };
     var controls = el('div', { class: 'ls-controls' });
     var strip = el('div', { class: 'ls-strip' });
     var list = el('div', {}, el('wk-empty', {}, 'Loading…'));
 
-    function sync() {
-      var q = qs({
-        repo: state.repo,
-        cwd: state.cwd,
-        since: state.since === DEFAULT_SINCE ? '' : state.since,
-        limit: state.limit === PAGE ? '' : state.limit
-      });
-      history.replaceState(null, '', q ? '?' + q : '/');
+    // sync puts the state in the URL. A filter change adds a history entry,
+    // so back returns to the list before it; "show more" replaces it.
+    function sync(push) {
+      Webkit.urlState.write(
+        { repo: state.repo, cwd: state.cwd, since: state.since, limit: state.limit },
+        { push: push, defaults: { since: DEFAULT_SINCE, limit: String(PAGE) } });
     }
     function set(change) {
       Object.keys(change).forEach(function (k) { state[k] = change[k]; });
       state.limit = PAGE;
-      sync();
+      sync(true);
       load();
     }
     function more() {
       state.limit += PAGE;
-      sync();
+      sync(false);
       load();
     }
     function load() {
@@ -640,7 +638,7 @@
       list
     ]);
     load();
-    setInterval(load, 60000);
+    poll = setInterval(load, POLL_MS);
   }
 
   // sinceControl is the time window switch. A window the URL names that
@@ -971,17 +969,13 @@
 
   // dayName is Today or Yesterday, '' for an older day.
   function dayName(d, now) {
-    var start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    var diff = Math.round((start - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
-    return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : '';
+    return Webkit.dayName(d, { now: now });
   }
 
   // fmtDay is a date as a day heading reads it: Tue Oct 28, with the year
   // when it is not this one.
   function fmtDay(d, now) {
-    var date = DAYS[d.getDay()] + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate();
-    if (d.getFullYear() !== now.getFullYear()) date += ', ' + d.getFullYear();
-    return date;
+    return Webkit.formatDate(d, { style: 'day', now: now });
   }
 
   // sessionRow is one session on one day: the session's repo and title,
@@ -1211,8 +1205,7 @@
 
   // clock is a time of day, HH:MM, '' for an absent time.
   function clock(iso) {
-    var d = parseTime(iso);
-    return d ? pad(d.getHours()) + ':' + pad(d.getMinutes()) : '';
+    return Webkit.formatClock(iso, { seconds: false });
   }
 
   // continuedDot marks a row on a day the session went on after.
@@ -2382,13 +2375,28 @@
     ]);
   }
 
-  if (params.get('turn')) {
-    renderTurn(params.get('turn'));
-  } else if (params.get('session')) {
-    renderSession(params.get('session'));
-  } else if (params.get('path')) {
-    renderFile(params.get('worktree') || '', params.get('path'), params.get('repo') || '');
-  } else {
-    renderSessions();
+  // route renders the view the query picks. It runs again on back and
+  // forward, so it first stops the timer the last render left behind.
+  function route() {
+    clearInterval(poll);
+    poll = null;
+    if (params.turn) {
+      renderTurn(params.turn);
+    } else if (params.session) {
+      renderSession(params.session);
+    } else if (params.path) {
+      renderFile(params.worktree || '', params.path, params.repo || '');
+    } else {
+      renderSessions();
+    }
   }
+
+  route();
+
+  // Back and forward between the list's filters stay on this page: render
+  // the entry they land on.
+  Webkit.urlState.subscribe(function (p) {
+    params = p;
+    route();
+  });
 })();

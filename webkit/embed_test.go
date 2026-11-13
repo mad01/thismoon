@@ -200,6 +200,11 @@ func TestHandlerServesJS(t *testing.T) {
 		// format helpers (MAD-595): both exports, the long and medium
 		// wording, the medium unit and the coarse floor
 		"timeAgo", "formatDuration", "just now", `" min"`, `"<1m"`,
+		// date helpers (MAD-604): the exports, the day name and the fixed
+		// English weekday and month names
+		"formatDate", "formatClock", "dayName", "Yesterday", `"Wed"`, `"Oct"`,
+		// URL state (MAD-548): the global object and its popstate listener
+		"urlState", "subscribe", "popstate", "pushState", "replaceState",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("webkit.js missing expected token %q", want)

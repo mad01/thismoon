@@ -54,9 +54,10 @@ var defaultLight = map[string]string{
 }
 
 var defaultDark = map[string]string{
-	// on-primary stays white: the old rules put #fff on every accent fill in
-	// dark too, while --chip-active-text alone was the dark bg literal.
-	"primary": "#E8956A", "on-primary": "#FFFFFF", "bg": "#1A1916", "paper": "#252320",
+	// on-primary is the page background on purpose: white, the ink the old
+	// rules put on every accent fill, read 2.35 on #E8956A, and #1A1916 reads
+	// 7.48. --chip-active-text, the dark bg literal before, now derives from it.
+	"primary": "#E8956A", "on-primary": "#1A1916", "bg": "#1A1916", "paper": "#252320",
 	"text-1": "#D8D4CD", "text-2": "#B8B2A7", "text-3": "#8C8578",
 	"border": "#35322C", "border-hover": "#4A453D",
 	"card-bg": "#252320", "chip-bg": "#35322C",

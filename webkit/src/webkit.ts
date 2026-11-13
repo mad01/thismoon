@@ -17,8 +17,11 @@ export { stopReadAloud } from './read-aloud.js';
 export { enhanceProse } from './prose.js';
 export { escapeHtml, el, poll } from './render.js';
 export type { ElChild, ElAttrs, PollHandle } from './render.js';
-export { timeAgo, formatDuration } from './format.js';
+export { timeAgo, formatDuration, formatDate, formatClock, dayName } from './format.js';
 export type { TimeValue, TimeAgoStyle, TimeAgoOptions, DurationStyle, DurationOptions } from './format.js';
+export type { DateStyle, DateOptions, ClockOptions, DayNameOptions } from './format.js';
+export { urlState } from './url-state.js';
+export type { UrlValue, UrlValues, UrlParams, UrlWriteOptions, UrlLocation } from './url-state.js';
 
 export type Control = 'cmdk' | 'fixation' | 'font' | 'size' | 'audio' | 'speed' | 'reload' | 'theme' | 'help';
 

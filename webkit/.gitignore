@@ -1,3 +1,4 @@
 /node_modules/
 # dist/ is intentionally committed — go:embed needs it at build time.
 .build-out/
+.test-out/

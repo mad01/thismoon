@@ -11,7 +11,8 @@ in consumers via `go:embed` and served at `GET /webkit/`.
 ```
 src/webkit.ts        # custom element definitions, the theme API, Webkit.bootSnippet FOUC guard
 src/a11y.ts          # the keyboard path's decisions (page heading, filter badge keys, skip target)
-src/format.ts        # pure text formatters: Webkit.timeAgo, Webkit.formatDuration
+src/format.ts        # pure text formatters: Webkit.timeAgo, formatDuration, formatDate, formatClock, dayName
+src/url-state.ts     # Webkit.urlState: the query string as view state, with back/forward
 src/webkit.css       # topbar chrome, controls, component styles, .wrap layout (reads palette roles only)
 src/themes/*.json    # the theme collection: one family per file, light + dark variants
 src/themes.mjs       # validates the files, derives the full role set, emits palette CSS + themes.json
@@ -38,10 +39,16 @@ after the header. The bar wraps at any width: when the left group and the
 controls do not fit one row, the controls drop to a second row on the right,
 and a control set wider than the bar wraps inside itself, so the header never
 widens the page; a header that fits stays one row, as before. Under 720px the
-bar is always two rows (left group, then controls under the brand), the
+controls take one row of their own under the left group, starting under the
+brand (the left group still wraps, so many nav links take more rows), the
 `.ctrl-label` text of Fixation, Audio and Reload and the ⌘K hint hide (each
-control keeps its `aria-label`). Up to 1024px the bar scrolls with the page
-instead of sticking, so a wrapped bar never holds part of the screen.
+control keeps its `aria-label`). The controls row there never wraps: a set
+wider than the screen scrolls sideways, edge to edge, and Tab scrolls each
+control into view with room for its focus ring. Under 480px the icon controls
+tighten to 28px squares with no gap, so the default set plus one framed
+button fits 390px without scrolling; present's full set with Slides and Share
+scrolls. Up to 1024px the bar scrolls with the page instead of sticking, so a
+wrapped bar never holds part of the screen.
 
 Light-DOM children it relocates:
 - `<a data-nav>…</a>` → nav links area.
@@ -140,9 +147,10 @@ Full spec with markup examples: `COMPONENTS.md`.
 
 ## Format helpers
 
-`src/format.ts` holds the time and duration text the consumers used to write
-by hand (MAD-595), on the global beside `el`, `poll` and `escapeHtml`. Both are
-pure: no DOM, and the clock is read only when the caller leaves `now` out.
+`src/format.ts` holds the time, duration and date text the consumers used to
+write by hand (MAD-595, MAD-604), on the global beside `el`, `poll` and
+`escapeHtml`. All are pure: no DOM, and the clock is read only when the caller
+leaves `now` out.
 
 - `Webkit.timeAgo(value, opts?)`: how long before `opts.now` a moment was.
   `value` and `now` take a Date, an ISO string or epoch ms; a number is always
@@ -155,12 +163,58 @@ pure: no DOM, and the clock is read only when the caller leaves `now` out.
 - `Webkit.formatDuration(ms, opts?)`: `style` is `precise` (default; `850ms`,
   `4.2s`, `3m12s`, `1h02m`) or `coarse` (`<1m`, `12m`, `1h 05m`, `2d 3h`). A
   negative span counts as zero.
+- `Webkit.formatDate(value, opts?)` (MAD-604): a moment in the local zone.
+  `style` is `stamp` (default; moondb: `Wed Oct 28 15:04`, Go's
+  `Mon Jan 2 15:04`), `day` (moondb's and events' day headings:
+  `Wed Oct 28`, plus `, 2025` when the year is not `opts.now`'s), `ymd-hm`
+  (status, present's index: `2026-10-28 15:04`) or `ymd-hms` (status:
+  `2026-10-28 15:04:05`). Weekday and month names are fixed English, never
+  the browser's locale.
+- `Webkit.formatClock(value, opts?)`: `15:04:05`, or `15:04` with
+  `seconds: false` (status, moondb).
+- `Webkit.dayName(value, opts?)`: `Today` or `Yesterday` by local calendar
+  day against `opts.now`, `''` for any other day; days count between local
+  midnights, so a daylight saving day is one day. events composes
+  `dayName(t) || formatDate(t, { style: 'day' })`.
 
 A missing, unparseable or Go zero time (year 1), and a duration that is not a
 finite number, return `opts.fallback` (default `''`), never `NaN` text and
-never a throw. `test/format.test.mjs` pins the strings each old copy printed.
-Money, token counts and byte sizes stay in moondb, the only service that
-writes them; fold one in when a second service needs the same text.
+never a throw. `test/format.test.mjs` pins the strings each old copy printed,
+and runs the old date copies beside the helpers over two years of moments in
+three zones. Money, token counts and byte sizes stay in moondb, the only
+service that writes them; fold one in when a second service needs the same
+text.
+
+## URL state
+
+`src/url-state.ts` is `Webkit.urlState`, the query string as a page's view
+state (MAD-548), folded from the readURL/syncURL pairs in deps, events,
+moondb and csl:
+
+- `read()` parses `location.search` into an object: the first value per
+  param, an absent one `undefined`, no prototype. `list(value)` splits a
+  comma list param into its non-empty items.
+- `write(values, { push?, defaults? })` sets the whole query, keeping the path
+  and hash. `''`, `null`, `undefined`, `false`, a non-finite number and an
+  empty list are left out, `true` is `1`, a list joins with commas, and a
+  value equal to its `defaults` entry is left out. It replaces the current
+  history entry unless `push` is set, and does nothing (returns `false`) when
+  the query is already the one in the address bar, compared as a set of
+  params, so a re-render or an old link in another order adds no entry.
+- `subscribe(fn)` calls `fn(params)` on a `popstate` that lands on another
+  query of the same page, so the page shows that view again; a step that
+  only moves the hash (an in-page anchor) is not one. It returns a stop
+  function. Pages that subscribe write through `write`, which keeps the
+  query it last showed.
+- `parse`, `serialize` and `nextHref` are the pure parts; `test/url-state.test.mjs`
+  covers them, and runs read, write and subscribe against a stand-in tab.
+
+The rule the consumers follow: a discrete change (a chip, a segment, a
+submitted search) pushes, typing replaces. Param names and encoding are the
+ones each page wrote before, so old links still load. brain and present keep
+their own URL code: brain's view (graph data, camera, popup, local graph)
+has no restore path to hook back/forward into, and present's deck already
+follows its `#N` slide hash on `hashchange`.
 
 ## Themes
 
@@ -315,9 +369,40 @@ make build        # SANDBOXED build (default): npm ci + npm run build inside a
                   # throwaway Apple-container VM; artifacts extracted via the
                   # BuildKit local exporter. Needs `container system start`.
 make build-local  # fallback: npm run build on the host (container runtime down)
-npm test          # node --test; pure-function unit tests (toFixation, clampSize, theme derivation) in test/
+make test         # SANDBOXED: in the container VM, fail if the committed dist/ differs from a fresh build,
+                  # then npm test + npm run test:dom against it; then go test on the host
+make test-local   # fallback: the same on the host (test:dom needs `npm ci` there first)
+npm test          # node --test test/*.test.mjs; pure-function unit tests, no dependencies, safe on the host
+npm run test:dom  # node --test test/dom/*.test.mjs; the DOM tests (needs happy-dom from npm ci)
 go test ./...     # asserts Handler() serves /webkit/webkit.css + .js + the themes page; pins the default palette
 ```
+
+### DOM tests
+
+`test/dom/` renders the custom elements. `page.mjs` opens a happy-dom
+(`happy-dom`, pinned exact in `devDependencies`) window per test, runs the
+built `dist/webkit.js` in it as the classic script a consumer loads, and
+answers the version poll and the site list fetch with a 404, so nothing
+reaches the network. The tests cover the header's controls, skip link,
+relocated children and theme toggle, the theme API and `wk-themechange`,
+`wk-title`'s heading role, the filter `wk-badge` keys and their hand-back,
+and `Webkit.urlState` against a real history. They read the committed
+`dist/webkit.js`, the file the services embed. `make test` builds the sources
+in the VM and fails when the committed `dist/` differs from that build, so a
+source edit without `make build` fails there. It then runs the unit and DOM
+tests against the committed files. On the host, run `make build` before them.
+
+They run in the container because happy-dom is npm code: the host keeps its
+dependency-free `npm test`, and only the throwaway VM installs and runs it.
+The export stage never reads the test stage, so the dependency cannot reach
+`dist/`.
+
+Add a DOM test when the behaviour lives in a connected element (a callback,
+an attribute the kit sets, an event it fires, focus it moves); keep the
+decision itself a pure function under `test/`, as `a11y.ts` is. Assert what a
+page or a screen reader sees (attributes, focus, events, storage), not
+private fields. happy-dom has no layout, so widths, rows and contrast are
+screenshot and Go-test territory, not DOM-test territory.
 
 **Why the container build:** `npm ci` runs arbitrary install-time code
 (postinstall scripts and the dep tree itself: esbuild, tsc, prismjs +

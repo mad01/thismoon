@@ -342,17 +342,17 @@ async function initSearchPage() {
   }
 
   // updateURL mirrors the query, search kind, and scope filters into the
-  // address bar so any search — in any mode — is a shareable deep link.
+  // address bar so any search — in any mode — is a shareable deep link. A
+  // search the user starts adds a history entry, so back returns to the one
+  // before; a search restored from the URL (urlPush false) only replaces it.
+  let urlPush = true;
   function updateURL(q) {
-    const url = new URL(location.href);
-    url.searchParams.set('q', q);
-    if (searchKind === 'lexical') url.searchParams.delete('kind');
-    else url.searchParams.set('kind', searchKind);
-    for (const [key, sel] of [['repo', repoSelect], ['lang', langSelect]]) {
-      if (sel && sel.value) url.searchParams.set(key, sel.value);
-      else url.searchParams.delete(key);
-    }
-    history.replaceState(null, '', url);
+    Webkit.urlState.write({
+      q,
+      kind: searchKind === 'lexical' ? '' : searchKind,
+      repo: repoSelect && repoSelect.value,
+      lang: langSelect && langSelect.value,
+    }, { push: urlPush });
   }
 
   // Query syntax highlighting: redraw the overlay copy of the input and keep
@@ -399,6 +399,11 @@ async function initSearchPage() {
   let baseParams = null;
   let pageOffset = 0;
   let fetching = false;
+  // searchGen numbers the latest search in any mode. Each search and the
+  // return to the examples bump it, and a response that lands under an older
+  // number is dropped, so a slow earlier search (easy to hit with back and
+  // forward) never paints over a later one.
+  let searchGen = 0;
 
   // Quick-filter state: facets from the last unfiltered search (so all chips
   // stay visible while filtering), and the multi-select set of selected
@@ -584,6 +589,8 @@ async function initSearchPage() {
   // results / status / facets cleared. Called on load and when the query is
   // emptied. runSearch hides the examples again as soon as a query is run.
   function showExamples() {
+    searchGen++;
+    fetching = false;
     if (examplesEl) examplesEl.hidden = false;
     results.innerHTML = '';
     status.textContent = '';
@@ -613,15 +620,17 @@ async function initSearchPage() {
     baseParams = params;
     pageOffset = 0;
     updateURL(q);
-    await fetchPage(true, { q, narrowed });
+    await fetchPage(true, { q, narrowed, gen: ++searchGen });
   }
 
   // fetchPage requests one server page of lexical results at the current
   // pageOffset. reset=true starts a new query (clears the view and refreshes the
   // facet chips); reset=false appends the next page onto the accumulated result
-  // set for a server-side "Load more".
+  // set for a server-side "Load more". A new query always goes ahead and
+  // supersedes any fetch in flight; only "Load more" waits for one to finish.
   async function fetchPage(reset, ctx) {
-    if (fetching) return;
+    if (!reset && fetching) return;
+    const gen = reset ? ctx.gen : searchGen;
     fetching = true;
     const params = new URLSearchParams(baseParams);
     params.set('limit', String(PAGE_FETCH));
@@ -636,6 +645,7 @@ async function initSearchPage() {
     try {
       const res = await fetch('/api/search?' + params.toString());
       const data = await res.json();
+      if (gen !== searchGen) return;
       if (!res.ok) { status.innerHTML = '<span class="err">' + Webkit.escapeHtml(data.error || 'error') + '</span>'; return; }
       if (reset) {
         pushHistory(ctx.q);
@@ -660,9 +670,9 @@ async function initSearchPage() {
         renderPage();
       }
     } catch (err) {
-      status.innerHTML = '<span class="err">' + Webkit.escapeHtml(String(err)) + '</span>';
+      if (gen === searchGen) status.innerHTML = '<span class="err">' + Webkit.escapeHtml(String(err)) + '</span>';
     } finally {
-      fetching = false;
+      if (gen === searchGen) fetching = false;
     }
   }
 
@@ -688,6 +698,7 @@ async function initSearchPage() {
   async function runSemanticSearch() {
     const q = input.value.trim();
     if (!q) return;
+    const gen = ++searchGen;
     if (examplesEl) examplesEl.hidden = true;
     facetBar.innerHTML = '';
     document.getElementById('modeToggle').hidden = true;
@@ -702,11 +713,12 @@ async function initSearchPage() {
     try {
       const res = await fetch('/api/semantic_search?' + params.toString());
       const data = await res.json();
+      if (gen !== searchGen) return;
       if (!res.ok) { status.innerHTML = '<span class="err">' + Webkit.escapeHtml(data.error || 'error') + '</span>'; return; }
       pushHistory(q);
       renderSemantic(data);
     } catch (err) {
-      status.innerHTML = '<span class="err">' + Webkit.escapeHtml(String(err)) + '</span>';
+      if (gen === searchGen) status.innerHTML = '<span class="err">' + Webkit.escapeHtml(String(err)) + '</span>';
     }
   }
 
@@ -730,6 +742,7 @@ async function initSearchPage() {
   async function runHybridSearch() {
     const q = input.value.trim();
     if (!q) return;
+    const gen = ++searchGen;
     if (examplesEl) examplesEl.hidden = true;
     facetBar.innerHTML = '';
     document.getElementById('modeToggle').hidden = true;
@@ -744,11 +757,12 @@ async function initSearchPage() {
     try {
       const res = await fetch('/api/hybrid_search?' + params.toString());
       const data = await res.json();
+      if (gen !== searchGen) return;
       if (!res.ok) { status.innerHTML = '<span class="err">' + Webkit.escapeHtml(data.error || 'error') + '</span>'; return; }
       pushHistory(q);
       renderHybridResults(data);
     } catch (err) {
-      status.innerHTML = '<span class="err">' + Webkit.escapeHtml(String(err)) + '</span>';
+      if (gen === searchGen) status.innerHTML = '<span class="err">' + Webkit.escapeHtml(String(err)) + '</span>';
     }
   }
 
@@ -1149,15 +1163,28 @@ async function initSearchPage() {
   // ?kind=semantic deep link can't select a mode the backend won't serve.
   await loadCapabilities();
 
-  // Restore state from the URL (?q, ?kind, ?repo, ?lang) so searches in any
-  // mode are shareable deep links; then run the query if one came along.
-  const urlParams = new URLSearchParams(location.search);
-  const urlKind = urlParams.get('kind');
-  if ((urlKind === 'semantic' || urlKind === 'hybrid') && semanticEnabled) applyKind(urlKind);
-  ensureOption(repoSelect, urlParams.get('repo'));
-  ensureOption(langSelect, urlParams.get('lang'));
-  const initial = urlParams.get('q');
-  if (initial) { input.value = initial; renderQueryHl(); runActiveSearch(); }
+  // restoreFromURL shows the search parsed URL params name (?q, ?kind, ?repo,
+  // ?lang), so searches in any mode are shareable deep links and back and
+  // forward step through them. It runs the query when there is one, else
+  // returns to the examples; the run rewrites the URL without a new entry.
+  function restoreFromURL(p) {
+    const kind = (p.kind === 'semantic' || p.kind === 'hybrid') && semanticEnabled ? p.kind : 'lexical';
+    if (kind !== searchKind) applyKind(kind);
+    for (const [sel, value] of [[repoSelect, p.repo], [langSelect, p.lang]]) {
+      if (value) ensureOption(sel, value);
+      else if (sel) sel.value = '';
+    }
+    input.value = p.q || '';
+    renderQueryHl();
+    urlPush = false;
+    if (input.value.trim()) runActiveSearch();
+    else showExamples();
+    urlPush = true;
+  }
+
+  // Restore state from the URL, then run the query if one came along.
+  restoreFromURL(Webkit.urlState.read());
+  Webkit.urlState.subscribe(restoreFromURL);
   input.focus();
 }
 

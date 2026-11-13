@@ -1487,9 +1487,12 @@ var Webkit = (() => {
     applyTheme: () => applyTheme,
     audioState: () => audioState,
     bootSnippet: () => bootSnippet,
+    dayName: () => dayName,
     el: () => el,
     enhanceProse: () => enhanceProse,
     escapeHtml: () => escapeHtml,
+    formatClock: () => formatClock,
+    formatDate: () => formatDate,
     formatDuration: () => formatDuration,
     init: () => init,
     isFamily: () => isFamily,
@@ -1506,7 +1509,8 @@ var Webkit = (() => {
     themeMode: () => themeMode,
     themeState: () => themeState,
     timeAgo: () => timeAgo,
-    toFixation: () => toFixation
+    toFixation: () => toFixation,
+    urlState: () => urlState
   });
 
   // src/fixation.ts
@@ -3466,6 +3470,27 @@ var Webkit = (() => {
   function pad2(n) {
     return n < 10 ? "0" + n : "" + n;
   }
+  function toDate(value) {
+    const ms = toEpochMs(value);
+    return Number.isNaN(ms) ? null : new Date(ms);
+  }
+  var WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function weekdayDate(d) {
+    return WEEKDAYS[d.getDay()] + " " + MONTHS[d.getMonth()] + " " + d.getDate();
+  }
+  function ymd(d) {
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+  function hm(d) {
+    return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  }
+  function hms(d) {
+    return hm(d) + ":" + pad2(d.getSeconds());
+  }
+  function localMidnight(d) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  }
   function agoPhrase(n, unit, style) {
     if (style === "long") return n + " " + unit + (n === 1 ? "" : "s") + " ago";
     return n + UNIT_TEXT[style][unit] + " ago";
@@ -3504,6 +3529,112 @@ var Webkit = (() => {
     const span = Math.max(0, ms);
     return opts.style === "coarse" ? coarseDuration(span) : preciseDuration(span);
   }
+  function formatDate(value, opts = {}) {
+    const fallback = opts.fallback ?? "";
+    const d = toDate(value);
+    if (!d) return fallback;
+    switch (opts.style) {
+      case "day": {
+        const now = opts.now === void 0 ? /* @__PURE__ */ new Date() : toDate(opts.now);
+        if (!now) return fallback;
+        return weekdayDate(d) + (d.getFullYear() === now.getFullYear() ? "" : ", " + d.getFullYear());
+      }
+      case "ymd-hm":
+        return ymd(d) + " " + hm(d);
+      case "ymd-hms":
+        return ymd(d) + " " + hms(d);
+      default:
+        return weekdayDate(d) + " " + hm(d);
+    }
+  }
+  function formatClock(value, opts = {}) {
+    const d = toDate(value);
+    if (!d) return opts.fallback ?? "";
+    return opts.seconds === false ? hm(d) : hms(d);
+  }
+  function dayName(value, opts = {}) {
+    const fallback = opts.fallback ?? "";
+    const d = toDate(value);
+    const now = opts.now === void 0 ? /* @__PURE__ */ new Date() : toDate(opts.now);
+    if (!d || !now) return fallback;
+    const days = Math.round((localMidnight(now) - localMidnight(d)) / (DAY_S * SECOND));
+    return days === 0 ? "Today" : days === 1 ? "Yesterday" : "";
+  }
+
+  // src/url-state.ts
+  function own(obj, key) {
+    return Object.prototype.hasOwnProperty.call(obj, key);
+  }
+  function parse(search) {
+    const out = /* @__PURE__ */ Object.create(null);
+    new URLSearchParams(search).forEach((value, key) => {
+      if (!own(out, key)) out[key] = value;
+    });
+    return out;
+  }
+  function valueText(v) {
+    if (v === null || v === void 0 || v === false) return "";
+    if (v === true) return "1";
+    if (typeof v === "number") return Number.isFinite(v) ? String(v) : "";
+    if (typeof v === "string") return v;
+    return v.filter(Boolean).join(",");
+  }
+  function serialize(values, defaults = {}) {
+    const p = new URLSearchParams();
+    Object.keys(values).forEach((key) => {
+      const text = valueText(values[key]);
+      if (text === "" || own(defaults, key) && defaults[key] === text) return;
+      p.set(key, text);
+    });
+    return p.toString();
+  }
+  function splitList(value) {
+    return (value || "").split(",").filter(Boolean);
+  }
+  function sortedQuery(search) {
+    const p = new URLSearchParams(search);
+    p.sort();
+    return p.toString();
+  }
+  function nextHref(values, loc, defaults) {
+    const query = serialize(values, defaults);
+    if (sortedQuery(query) === sortedQuery(loc.search)) return null;
+    return loc.pathname + (query ? "?" + query : "") + loc.hash;
+  }
+  var seen = "";
+  var listeners = [];
+  function onPopState() {
+    const now = sortedQuery(location.search);
+    if (now === seen) return;
+    seen = now;
+    const params = read();
+    listeners.slice().forEach((fn) => fn(params));
+  }
+  function read() {
+    return parse(location.search);
+  }
+  function write(values, opts = {}) {
+    const href = nextHref(values, location, opts.defaults);
+    if (href === null) return false;
+    if (opts.push) history.pushState(null, "", href);
+    else history.replaceState(null, "", href);
+    seen = sortedQuery(location.search);
+    return true;
+  }
+  function subscribe(fn) {
+    if (!listeners.length) {
+      seen = sortedQuery(location.search);
+      window.addEventListener("popstate", onPopState);
+    }
+    listeners.push(fn);
+    return () => {
+      const i = listeners.indexOf(fn);
+      if (i < 0) return;
+      listeners.splice(i, 1);
+      if (!listeners.length) window.removeEventListener("popstate", onPopState);
+    };
+  }
+  var urlState = { parse, serialize, list: splitList, nextHref, read, write, subscribe };
 
   // src/webkit.ts
   var THEME_KEY = "webkit-theme";

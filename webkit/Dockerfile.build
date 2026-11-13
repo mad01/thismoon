@@ -24,3 +24,22 @@ RUN npm run build
 #   container build --target export --output type=local,dest=./dist
 FROM scratch AS export
 COPY --from=build /app/dist /
+
+# Test stage (see Makefile `test`): the node tests, unit and DOM, against the
+# committed dist/, the files the services embed. The fresh build moves aside
+# and the stage fails when the committed dist/ differs from it, so a source
+# edit without `make build` fails here. The DOM tests import happy-dom, a dev
+# dependency, so they run here and not on the host. The export stage never
+# reads this one, so it cannot change dist/.
+FROM build AS test
+RUN mv dist dist-built
+COPY dist ./dist
+RUN diff -rq dist-built dist || { echo 'webkit: committed dist/ differs from what the sources build to; run make build' >&2; exit 1; }
+COPY test ./test
+COPY examples ./examples
+RUN npm test && npm run test:dom
+
+# The test run's only output: a marker that it passed, so the Makefile can
+# extract it the way it extracts dist/ instead of leaving an image behind.
+FROM scratch AS test-export
+COPY --from=test /app/package.json /tested

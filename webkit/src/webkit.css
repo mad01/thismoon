@@ -1654,11 +1654,15 @@ wk-badge.wk-ra-state {
 
 /* ── Responsive ── */
 
-/* Narrow header: the brand and nav on one row, the controls on the next,
-   starting under the brand. Fixation, Audio and Reload drop to their icons
-   and the ⌘K hint goes (each keeps its aria-label), spacing tightens so
-   csl's full set fits one row at 390px, and anything wider wraps to another
-   row. */
+/* Narrow header: the controls take one row of their own, under the brand and
+   nav, starting under the brand. The brand and nav still wrap, so a brand
+   with many nav links takes more rows above the controls. Fixation, Audio and
+   Reload drop to their icons and the ⌘K hint goes (each keeps its
+   aria-label). The controls row never wraps: a set wider than the bar
+   (present's, with Slides and Share) scrolls sideways, and Tab brings each
+   control into view. Under
+   480px the icon controls tighten to squares, so the default set plus one
+   framed button fits a 390px phone without scrolling. */
 
 /* A bar that may wrap scrolls away with the page: two or three rows held on
    screen would take too much of it. From 1024px up every consumer's control
@@ -1674,8 +1678,22 @@ wk-badge.wk-ra-state {
   .topbar-left { gap: 0.25rem 0.5rem; }
   .topbar-nav { flex-wrap: wrap; min-width: 0; }
   .topbar-controls { justify-content: flex-start; gap: 0.25rem; }
+  /* The row scrolls, and a scroller clips what overflows its padding box.
+     It runs out to both screen edges, so a control cut by the edge says the
+     row goes on, and its padding puts the first control back where it was,
+     its icon under the brand. 4px above and below hold the focus ring (2px
+     plus a 2px offset) and the margins give it back, so the row stays 30px.
+     A row that overflows grows by its thin scrollbar where the platform
+     shows classic, always-on scrollbars; overlay scrollbars take no room. */
+  .topbar-controls {
+    flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    padding: 4px 1rem 4px calc(1rem - 0.5625rem);
+    scroll-padding-inline: calc(1rem - 0.5625rem) 1rem;
+  }
   .topbar-controls,
-  .topbar-controls:not(:has(> .btn:not([hidden]))) { margin-right: 0; margin-left: -0.5625rem; }
+  .topbar-controls:not(:has(> .btn:not([hidden]))) { margin: -3px -1rem; }
+  .topbar-controls > * { flex-shrink: 0; }
   .topbar-controls > .btn { margin-left: 0; }
   .topbar-link, .topbar-brand, .topbar-title,
   .nav-link, .topbar-nav a[data-nav] { white-space: nowrap; }
@@ -1684,6 +1702,17 @@ wk-badge.wk-ra-state {
   .topbar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .ctrl-btn { padding-left: 0.5rem; padding-right: 0.5rem; }
   .ctrl-label, .ctrl-kbd { display: none; }
+}
+
+/* Phone widths: an icon control is a control-height square (28px, past the
+   24px target minimum), the row loses its gaps (the quiet controls' own
+   padding spaces them), and the row's start padding follows the smaller
+   padding so the first icon still starts under the brand. */
+@media (max-width: 480px) {
+  .topbar-controls { gap: 0; padding-left: calc(1rem - 0.4375rem); scroll-padding-inline-start: calc(1rem - 0.4375rem); }
+  .topbar-controls .ctrl-btn { padding-left: 0.375rem; padding-right: 0.375rem; }
+  .topbar-controls .ctrl-select { padding-left: 0.375rem; }
+  .topbar-controls > .btn { margin-left: 0.25rem; }
 }
 
 @media (max-width: 600px) {

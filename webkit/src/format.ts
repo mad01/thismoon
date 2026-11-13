@@ -1,8 +1,11 @@
 // format.ts — pure text formatters for times and durations, shared by the CSR
 // consumers. Folded from the hand-written copies in csl, events, deps and
-// moondb (MAD-595). Re-exported from webkit.ts, so they land on the global as
-// Webkit.timeAgo / Webkit.formatDuration. No DOM access; the clock is read only
-// when the caller leaves `now` out, so tests pass it and stay deterministic.
+// moondb (MAD-595), and the date and clock text of moondb, status,
+// events and present (MAD-604). Re-exported from webkit.ts, so they land on
+// the global as Webkit.timeAgo / formatDuration / formatDate / formatClock /
+// dayName. No DOM access; the clock is read only when the caller leaves `now`
+// out, so tests pass it and stay deterministic. Dates and clock times read in
+// the browser's local zone, as every copy did.
 
 /** A moment: a Date, an ISO 8601 string, or epoch milliseconds. */
 export type TimeValue = Date | string | number;
@@ -38,6 +41,38 @@ export interface DurationOptions {
   fallback?: string;
 }
 
+/**
+ * The layout of formatDate, in the local zone:
+ * - `stamp` (default; moondb): Tue Oct 28 15:04, Go's "Mon Jan 2 15:04"
+ * - `day` (moondb's and events' day headings): Tue Oct 28, and
+ *   Tue Oct 28, 2025 when the year is not `now`'s
+ * - `ymd-hm` (status's build time, present's index): 2026-10-28 15:04
+ * - `ymd-hms` (status's generated line): 2026-10-28 15:04:05
+ */
+export type DateStyle = 'stamp' | 'day' | 'ymd-hm' | 'ymd-hms';
+
+export interface DateOptions {
+  style?: DateStyle;
+  /** The moment whose year `day` leaves out. Default: the current time. */
+  now?: TimeValue;
+  /** Returned for a missing or invalid value. Default ''. */
+  fallback?: string;
+}
+
+export interface ClockOptions {
+  /** false drops the seconds: 15:04. Default true: 15:04:05. */
+  seconds?: boolean;
+  /** Returned for a missing or invalid value. Default ''. */
+  fallback?: string;
+}
+
+export interface DayNameOptions {
+  /** The moment whose calendar day is Today. Default: the current time. */
+  now?: TimeValue;
+  /** Returned for a missing or invalid value or `now`. Default ''. */
+  fallback?: string;
+}
+
 type Unit = 'minute' | 'hour' | 'day';
 
 const SECOND = 1000;
@@ -70,6 +105,38 @@ function toEpochMs(value: unknown): number {
 
 function pad2(n: number): string {
   return n < 10 ? '0' + n : '' + n;
+}
+
+// toDate is toEpochMs as a Date, null when the value is missing or invalid.
+function toDate(value: unknown): Date | null {
+  const ms = toEpochMs(value);
+  return Number.isNaN(ms) ? null : new Date(ms);
+}
+
+// The names Go's "Mon" and "Jan" print, fixed English like the rest of the
+// pages, never the browser's locale.
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function weekdayDate(d: Date): string {
+  return WEEKDAYS[d.getDay()] + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate();
+}
+
+function ymd(d: Date): string {
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+
+function hm(d: Date): string {
+  return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+
+function hms(d: Date): string {
+  return hm(d) + ':' + pad2(d.getSeconds());
+}
+
+// localMidnight is the start of d's local calendar day, in epoch ms.
+function localMidnight(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
 function agoPhrase(n: number, unit: Unit, style: TimeAgoStyle): string {
@@ -129,4 +196,59 @@ export function formatDuration(ms: number | null | undefined, opts: DurationOpti
   if (typeof ms !== 'number' || !Number.isFinite(ms)) return opts.fallback ?? '';
   const span = Math.max(0, ms);
   return opts.style === 'coarse' ? coarseDuration(span) : preciseDuration(span);
+}
+
+/**
+ * formatDate prints a moment as a local date, in one of the DateStyle layouts.
+ * An unknown style reads as `stamp`. A missing or invalid value, or for `day`
+ * an invalid `now`, returns `fallback`.
+ *
+ *   formatDate(new Date(2026, 9, 28, 15, 4))                    // 'Wed Oct 28 15:04'
+ *   formatDate('2025-10-28T12:00:00Z', { style: 'day' })       // 'Tue Oct 28, 2025'
+ */
+export function formatDate(value: TimeValue | null | undefined, opts: DateOptions = {}): string {
+  const fallback = opts.fallback ?? '';
+  const d = toDate(value);
+  if (!d) return fallback;
+  switch (opts.style) {
+    case 'day': {
+      const now = opts.now === undefined ? new Date() : toDate(opts.now);
+      if (!now) return fallback;
+      return weekdayDate(d) + (d.getFullYear() === now.getFullYear() ? '' : ', ' + d.getFullYear());
+    }
+    case 'ymd-hm':
+      return ymd(d) + ' ' + hm(d);
+    case 'ymd-hms':
+      return ymd(d) + ' ' + hms(d);
+    default:
+      return weekdayDate(d) + ' ' + hm(d);
+  }
+}
+
+/**
+ * formatClock prints a moment's local time of day: 15:04:05, or 15:04 with
+ * `seconds: false`. A missing or invalid value returns `fallback`.
+ */
+export function formatClock(value: TimeValue | null | undefined, opts: ClockOptions = {}): string {
+  const d = toDate(value);
+  if (!d) return opts.fallback ?? '';
+  return opts.seconds === false ? hm(d) : hms(d);
+}
+
+/**
+ * dayName names a moment's local calendar day against `now`'s: 'Today',
+ * 'Yesterday', or '' for any other day, a later one included. A missing or
+ * invalid value or `now` returns `fallback`. Days are counted between local
+ * midnights, so a day that daylight saving makes 23 or 25 hours long still
+ * counts as one.
+ *
+ *   dayName(t) || formatDate(t, { style: 'day' })   // 'Today', 'Yesterday', 'Tue Oct 28'
+ */
+export function dayName(value: TimeValue | null | undefined, opts: DayNameOptions = {}): string {
+  const fallback = opts.fallback ?? '';
+  const d = toDate(value);
+  const now = opts.now === undefined ? new Date() : toDate(opts.now);
+  if (!d || !now) return fallback;
+  const days = Math.round((localMidnight(now) - localMidnight(d)) / (DAY_S * SECOND));
+  return days === 0 ? 'Today' : days === 1 ? 'Yesterday' : '';
 }

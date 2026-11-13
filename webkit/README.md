@@ -14,8 +14,10 @@ embed everywhere — so the tools look and behave the same.
   controls and persists state in `localStorage`; exports the theme API
   (`themeState`, `setThemeMode`, `setPalette`, `resetTheme`), `Webkit.bootSnippet`
   (FOUC (Flash of Unstyled Content) guard), the render helpers (`el`, `poll`,
-  `escapeHtml`), the format helpers (`timeAgo`, `formatDuration`) and a thin
-  `Webkit.init(config)` shim for backward compatibility.
+  `escapeHtml`), the format helpers (`timeAgo`, `formatDuration`,
+  `formatDate`, `formatClock`, `dayName`), the URL state helper
+  (`urlState`) and a thin `Webkit.init(config)` shim for backward
+  compatibility.
 - **`dist/themes.json`, `dist/themes.html`, `dist/themes.js`** — the resolved
   theme collection and the picker page served at `GET /webkit/themes`.
 
@@ -76,8 +78,8 @@ in [docs/components.md](docs/components.md#design-tokens-radius-spacing-control-
 
 ## Format helpers
 
-Two pure functions on the `Webkit` global write the time text the tools share,
-so a page does not keep its own copy:
+Pure functions on the `Webkit` global write the time and date text the tools
+share, so a page does not keep its own copy:
 
 ```js
 const now = Date.parse('2026-11-13T10:38:30Z'); // leave now out to use the clock
@@ -86,11 +88,31 @@ Webkit.timeAgo('2026-11-13T08:21:25Z', { now, style: 'long' })  // '2 hours ago'
 Webkit.timeAgo('2026-11-12T04:38:30Z', { now, style: 'medium', daysAfterHours: 48 }) // '30 h ago'
 Webkit.formatDuration(192000)                                   // '3m12s'
 Webkit.formatDuration(3900000, { style: 'coarse' })             // '1h 05m'
+const t = new Date(2026, 9, 28, 15, 4, 5);                      // local time
+Webkit.formatDate(t)                                            // 'Wed Oct 28 15:04'
+Webkit.formatDate(t, { style: 'ymd-hms' })                      // '2026-10-28 15:04:05'
+Webkit.formatClock(t, { seconds: false })                       // '15:04'
+Webkit.dayName(t, { now: t })                                   // 'Today'
 ```
 
-A time is a Date, an ISO string or epoch milliseconds. A missing or invalid
-value returns `opts.fallback` (default `''`). Every style and option is in
+A time is a Date, an ISO string or epoch milliseconds, and dates read in the
+browser's local zone. A missing or invalid value returns `opts.fallback`
+(default `''`). Every style and option is in
 [docs/components.md](docs/components.md#format-helpers).
+
+## URL state
+
+`Webkit.urlState` keeps a page's filters in the query string and brings them
+back on back and forward:
+
+```js
+var p = Webkit.urlState.read();                         // { q: 'x', sources: 'a,b' }
+Webkit.urlState.list(p.sources)                          // ['a', 'b']
+Webkit.urlState.write({ q: 'x', sources: ['a'] }, { push: true }) // a new history entry
+Webkit.urlState.subscribe(function (p) { /* show the view p names */ });
+```
+
+Details: [docs/components.md](docs/components.md#url-state).
 
 ## Consume it (Go)
 

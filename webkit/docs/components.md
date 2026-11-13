@@ -30,7 +30,7 @@ The fixation text-walk works in place: each text node under a target that holds 
 
 **Wrapping.** At any width, when the left group and the controls do not fit one row, the controls drop to a second row, still on the right, and a control set wider than the bar wraps inside itself, so the header never widens the page. A header that fits stays one row, laid out as before.
 
-**Narrow screens.** Under 720px wide the bar is always two rows: the back link, brand, title and nav, then the controls, starting under the brand. The Fixation, Audio and Reload labels hide behind their icons and the ⌘K hint goes; each control keeps its `aria-label`. Text in the first row never wraps mid-label, a long `title` ends in an ellipsis, and a row that still does not fit wraps onto another row. A `data-extra` button keeps its text. Up to 1024px wide the bar scrolls away with the page instead of sticking, so a wrapped bar of two or three rows never holds part of the screen.
+**Narrow screens.** Under 720px wide the controls take one row of their own, starting under the brand. Above it sit the back link, brand, title and nav, and those still wrap, so a brand with many nav links takes more rows above the controls. The Fixation, Audio and Reload labels hide behind their icons and the ⌘K hint goes; each control keeps its `aria-label`. Text above the controls never wraps mid-label, and a long `title` ends in an ellipsis. The controls row never wraps: when it is wider than the screen it scrolls sideways, running to both screen edges so a control cut by the edge shows there is more, and Tab scrolls each control into view with room for its focus ring. Under 480px wide the icon controls tighten to 28px squares with no gap between them, so the default set plus one framed button fits a 390px phone; present's full set with Slides and Share scrolls. A `data-extra` button keeps its text. Up to 1024px wide the bar scrolls away with the page instead of sticking, so a wrapped bar never holds part of the screen.
 
 **Quiet controls.** The header's own controls rest without a fill or a visible border (the 1px border stays, transparent, so nothing moves) and take the chip fill on hover. An active toggle and a pressed size button keep the primary fill, and the selects keep their arrow, drawn in `--text-3`. A select is as wide as the option it shows, so its arrow sits by the text, and the size stepper's two buttons sit together with a 1rem glyph. The dividers between control groups are hidden. Above 720px a `.btn` passed as `data-extra` sits 0.5rem from the controls, and with no visible `.btn` the row pulls out by the last control's padding, so its icon ends on the content's right edge. The quiet look is scoped to `.topbar-controls`, so `.size-btn` and `.btn` elsewhere on a page keep their frame.
 
@@ -517,7 +517,7 @@ Webkit.openCmdK();
 
 ## Format helpers
 
-Two pure functions on the `Webkit` global, from `src/format.ts`. They touch no
+Five pure functions on the `Webkit` global, from `src/format.ts`. They touch no
 DOM, and they read the clock only when the caller leaves `now` out, so a test
 passes `now` and stays deterministic.
 
@@ -567,12 +567,96 @@ prints `60.0s` as moondb's trace always did; `coarse` rounds down to the
 minute. A negative span counts as zero. `opts.fallback` (default `''`) is
 returned for a value that is not a finite number.
 
+### `Webkit.formatDate(value, opts?)`
+
+A moment as a date in the browser's local zone. `value` takes the same shapes
+as `timeAgo`. Weekday and month names are fixed English, never the browser's
+locale, like the rest of the pages.
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `style` | `stamp` | The layout, below |
+| `now` | the current time | The moment whose year `day` leaves out |
+| `fallback` | `''` | Returned for a missing or invalid `value`, or for `day` an invalid `now` |
+
+| `style` | Output | Used by |
+|---------|--------|---------|
+| `stamp` (default) | `Wed Oct 28 15:04` (Go's `Mon Jan 2 15:04`) | moondb |
+| `day` | `Wed Oct 28`, or `Tue Oct 28, 2025` outside `now`'s year | moondb and events day headings |
+| `ymd-hm` | `2026-10-28 15:04` | status build time, present's index |
+| `ymd-hms` | `2026-10-28 15:04:05` | status generated line |
+
+The day of the month is not padded (`Fri Nov 6`); hours, minutes and seconds
+are. An unknown `style` reads as `stamp`.
+
+### `Webkit.formatClock(value, opts?)`
+
+A moment's local time of day: `15:04:05`, or `15:04` with
+`seconds: false`. `opts.fallback` (default `''`) is returned for a missing or
+invalid value.
+
+### `Webkit.dayName(value, opts?)`
+
+`Today` when the moment falls on `opts.now`'s local calendar day, `Yesterday`
+on the day before, and `''` on any other day, a later one included. Days are
+counted between local midnights, so the 23- and 25-hour days of daylight
+saving still count as one.
+
+```js
+Webkit.formatDate(data.scanned_at)                             // 'Fri Nov 13 09:21'
+Webkit.formatDate(s.build_time, { style: 'ymd-hm', fallback: s.build_time })
+Webkit.formatClock(e.at)                                       // '09:21:07'
+Webkit.dayName(t) || Webkit.formatDate(t, { style: 'day' })    // 'Today', 'Tue Nov 10'
+```
+
 ### Invalid input
 
-Neither function throws or prints `NaN`. An empty string, `null`,
+None of them throws or prints `NaN`. An empty string, `null`,
 `undefined`, an unparseable string, a number outside the Date range and a Go
 zero time (`0001-01-01T00:00:00Z`, what an unset `time.Time` serializes to)
 all return the fallback.
+
+---
+
+## URL state
+
+`Webkit.urlState`, from `src/url-state.ts`, keeps a page's view state (filters,
+tabs, a search) in the query string, so a view can be reloaded, bookmarked and
+stepped through with back and forward.
+
+| Function | What it does |
+|----------|--------------|
+| `read()` | The current query as an object: the first value per param, an absent one `undefined` |
+| `write(values, opts?)` | Sets the whole query, keeping the path and hash; returns `false` when nothing changed |
+| `subscribe(fn)` | Calls `fn(params)` when back or forward lands on another query of the page; returns a stop function |
+| `list(value)` | Splits a comma list param into its non-empty items |
+| `parse(search)`, `serialize(values, defaults?)`, `nextHref(values, location, defaults?)` | The pure parts the others use |
+
+`write` leaves out `''`, `null`, `undefined`, `false`, a non-finite number, an
+empty list and any value equal to its entry in `opts.defaults`. It writes
+`true` as `1` and joins a list with commas, encoded as `URLSearchParams`
+encodes it. It replaces the current history entry; `opts.push` adds one
+instead. A write whose query is already in the address bar, compared as a set
+of params, does nothing, so a re-render, or an old link with its params in
+another order, adds no entry.
+
+`subscribe` ignores a step that only moves the hash, so an in-page anchor does
+not re-render the view. A page that subscribes writes through `write`, which
+records the query the page last showed.
+
+```js
+var p = Webkit.urlState.read();
+var sources = Webkit.urlState.list(p.sources);
+
+// a chip click: back returns to the filters before it
+Webkit.urlState.write({ q: q, level: level, sources: sources }, { push: true });
+// typing: replace the entry
+Webkit.urlState.write({ q: q, level: level, sources: sources });
+// moondb's list: a default view keeps a bare URL
+Webkit.urlState.write({ since: since, limit: limit }, { push: true, defaults: { since: '7d', limit: '50' } });
+
+Webkit.urlState.subscribe(function (p) { applyFilters(p); reload(); });
+```
 
 ---
 
@@ -590,7 +674,7 @@ webkit.css defines the palette as CSS custom properties on `:root` and overrides
 | `--border` | `#D8D4CD` | `#35322C` |
 | `--border-hover` | `#B8B2A7` | `#4A453D` |
 | `--text-1` / `--text-2` / `--text-3` | `#252320` / `#6B6459` / `#8C8578` | `#D8D4CD` / `#B8B2A7` / `#8C8578` |
-| `--primary` / `--on-primary` | `#C4704B` / `#FFFFFF` | `#E8956A` / `#FFFFFF` |
+| `--primary` / `--on-primary` | `#C4704B` / `#FFFFFF` | `#E8956A` / `#1A1916`, the page background (white read 2.35 on the dark accent) |
 | `--red` `--green` `--amber` `--yellow` `--blue` `--purple` | the semantic set | the same values (decision 7), except `--purple` `#B294D8`, brightened for contrast on chips |
 | `--series-1` to `--series-4` | `#C4704B` `#5B8EC4` `#4A9E6B` `#8B6BB0` | `#E8956A` `#7AAAE8` `#6BC48A` `#8B6BB0` |
 

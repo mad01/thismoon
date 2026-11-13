@@ -7,11 +7,13 @@
   "scripts": {
     "check": "tsc --noEmit",
     "build": "tsc --noEmit && node build.mjs",
-    "test": "node --test"
+    "test": "node --test test/*.test.mjs",
+    "test:dom": "node --test test/dom/*.test.mjs"
   },
   "devDependencies": {
     "@types/prismjs": "^1.26.6",
     "esbuild": "^0.25.0",
+    "happy-dom": "21.0.4",
     "prismjs": "^1.30.0",
     "typescript": "^6.0.3"
   }
