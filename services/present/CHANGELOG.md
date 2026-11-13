@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.3](https://github.com/mad01/thismoon/compare/present/v1.24.2...present/v1.24.3) (2026-11-13)
+
+
+### Bug Fixes
+
+* **present:** scale ribbon chart text with the slide and warn on a path too long for a slide ([#482](https://github.com/mad01/thismoon/issues/482)) ([269b622](https://github.com/mad01/thismoon/commit/269b622feaf2d11c512fc79270db42650c64451a))
+
 ## [1.24.2](https://github.com/mad01/thismoon/compare/present/v1.24.1...present/v1.24.2) (2026-11-13)
 
 
