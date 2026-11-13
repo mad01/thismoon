@@ -1039,14 +1039,12 @@
               {
                 "from": "browser",
                 "to": "gw",
-                "label": "POST /checkout",
                 "flow": true,
                 "weight": 120
               },
               {
                 "from": "gw",
                 "to": "api",
-                "label": "route",
                 "flow": true,
                 "weight": 120,
                 "step": 2
@@ -1054,19 +1052,16 @@
               {
                 "from": "api",
                 "to": "pricing",
-                "label": "quote",
                 "step": 3
               },
               {
                 "from": "pricing",
                 "to": "api",
-                "label": "price",
                 "step": 3
               },
               {
                 "from": "api",
                 "to": "orders",
-                "label": "insert order",
                 "step": 4
               }
             ],
