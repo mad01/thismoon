@@ -74,7 +74,9 @@ var bom = []byte("\xEF\xBB\xBF")
 // ErrUnclosed means a note opens a frontmatter fence that no later line
 // closes. ParseFrontmatter reads such a note as body alone; a change to it
 // would stack a second frontmatter block on top, so writers refuse it.
-var ErrUnclosed = errors.New("frontmatter is not closed: the note opens with --- and no line closes it")
+var ErrUnclosed = errors.New(
+	"frontmatter is not closed: the note opens with --- and no line closes it",
+)
 
 // fences is a note cut at its frontmatter fences. open holds the byte order
 // mark, if any, and the opening fence line; close the closing fence line.

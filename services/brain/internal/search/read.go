@@ -21,7 +21,10 @@ func readNote(root, rel string) ([]byte, error) {
 			return nil, err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return nil, fmt.Errorf("%s is a symbolic link; brain reads no note through a link", path)
+			return nil, fmt.Errorf(
+				"%s is a symbolic link; brain reads no note through a link",
+				path,
+			)
 		}
 	}
 	return os.ReadFile(path)

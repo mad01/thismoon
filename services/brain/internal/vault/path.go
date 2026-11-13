@@ -47,8 +47,11 @@ func (v *Vault) contained(abs string) error {
 		info, err := os.Lstat(p)
 		switch {
 		case err == nil && info.Mode()&fs.ModeSymlink != 0 && p == abs:
-			return fmt.Errorf("%w: %s is a symbolic link; brain reads and writes no note through a link",
-				ErrInvalidPath, v.Rel(abs))
+			return fmt.Errorf(
+				"%w: %s is a symbolic link; brain reads and writes no note through a link",
+				ErrInvalidPath,
+				v.Rel(abs),
+			)
 		case err != nil && !errors.Is(err, fs.ErrNotExist):
 			return err
 		case err == nil:
@@ -60,7 +63,12 @@ func (v *Vault) contained(abs string) error {
 				return err
 			}
 			if !within(root, real) {
-				return fmt.Errorf("%w: %s resolves outside the vault, to %s", ErrInvalidPath, v.Rel(abs), real)
+				return fmt.Errorf(
+					"%w: %s resolves outside the vault, to %s",
+					ErrInvalidPath,
+					v.Rel(abs),
+					real,
+				)
 			}
 			return nil
 		}

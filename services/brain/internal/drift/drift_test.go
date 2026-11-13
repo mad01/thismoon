@@ -157,7 +157,10 @@ func TestCodeRefOverTheBlobCapIsNotRead(t *testing.T) {
 	f := newCodeFixture(t)
 	c := New(Options{CodeRoots: []string{f.root}})
 	c.git.maxBlob = 8
-	got := c.Sources(context.Background(), []lifecycle.Source{f.ref("acme/app", "pkg/same.go", "Same")})
+	got := c.Sources(
+		context.Background(),
+		[]lifecycle.Source{f.ref("acme/app", "pkg/same.go", "Same")},
+	)
 	if kinds := kindsOf(got); strings.Join(kinds, ",") != KindTooLarge {
 		t.Fatalf("kinds = %v, want %s (%+v)", kinds, KindTooLarge, got)
 	}
@@ -165,7 +168,9 @@ func TestCodeRefOverTheBlobCapIsNotRead(t *testing.T) {
 		t.Errorf("a blob over the cap counts as drift: %+v", got[0])
 	}
 	// Without a symbol nothing reads the blob, so the cap does not apply.
-	if got := c.Sources(context.Background(), []lifecycle.Source{f.ref("acme/app", "pkg/same.go", "")}); len(got) != 0 {
+	if got := c.Sources(context.Background(), []lifecycle.Source{f.ref("acme/app", "pkg/same.go", "")}); len(
+		got,
+	) != 0 {
 		t.Errorf("findings without a symbol = %+v, want none", got)
 	}
 }
@@ -215,7 +220,11 @@ func TestGitCallsAreBoundedAndPromptless(t *testing.T) {
 	// The first exec of a new script can take seconds on macOS under load;
 	// pay it here so the timeout below only measures the hung call.
 	warm := exec.Command(fake)
-	warm.Env = append(os.Environ(), "FAKE_GIT_WARM=1", "FAKE_GIT_ENV="+filepath.Join(bin, "warm-env"))
+	warm.Env = append(
+		os.Environ(),
+		"FAKE_GIT_WARM=1",
+		"FAKE_GIT_ENV="+filepath.Join(bin, "warm-env"),
+	)
 	if err := warm.Run(); err != nil {
 		t.Fatalf("warm up fake git: %v", err)
 	}
@@ -232,7 +241,8 @@ func TestGitCallsAreBoundedAndPromptless(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 8*time.Second {
 		t.Errorf("drift waited %s on a hung git", elapsed)
 	}
-	if len(got) != 1 || got[0].Kind != KindUnresolved || !strings.Contains(got[0].Message, "timed out") {
+	if len(got) != 1 || got[0].Kind != KindUnresolved ||
+		!strings.Contains(got[0].Message, "timed out") {
 		t.Errorf("findings = %+v, want unresolved: timed out", got)
 	}
 	env, err := os.ReadFile(envFile)
@@ -271,7 +281,9 @@ func TestContentHashIsComparedInFull(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			source := lifecycle.Source{URL: srv.URL + "/page", ContentHash: tt.contentHash}
-			got := New(Options{Online: true, AllowLocal: true}).Sources(context.Background(), []lifecycle.Source{source})
+			got := New(
+				Options{Online: true, AllowLocal: true},
+			).Sources(context.Background(), []lifecycle.Source{source})
 			if kinds := strings.Join(kindsOf(got), ","); kinds != tt.want {
 				t.Errorf("kinds = %q, want %q (%+v)", kinds, tt.want, got)
 			}
@@ -303,7 +315,9 @@ func TestOnlineRefusesLocalAddressesUnlessAllowed(t *testing.T) {
 		!strings.Contains(got[0].Message, "private address") {
 		t.Errorf("findings = %+v, want unresolved: a local address is refused", got)
 	}
-	if got := New(Options{Online: true, AllowLocal: true}).Sources(context.Background(), source); len(got) != 0 {
+	if got := New(Options{Online: true, AllowLocal: true}).Sources(context.Background(), source); len(
+		got,
+	) != 0 {
 		t.Errorf("findings with AllowLocal = %+v, want none", got)
 	}
 }

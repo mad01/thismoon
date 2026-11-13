@@ -58,7 +58,13 @@ func nulAt(content []byte) (line, col int, ok bool) {
 	if i < 0 {
 		return 0, 0, false
 	}
-	return bytes.Count(content[:i], []byte("\n")) + 1, i - bytes.LastIndexByte(content[:i], '\n'), true
+	return bytes.Count(
+			content[:i],
+			[]byte("\n"),
+		) + 1, i - bytes.LastIndexByte(
+			content[:i],
+			'\n',
+		), true
 }
 
 // refuseContent refuses content bound for path that is not a text note
@@ -69,7 +75,10 @@ func (v *Vault) refuseContent(path string, content []byte) error {
 	if line, col, ok := nulAt(content); ok {
 		return fmt.Errorf(
 			"%w: %s holds a NUL byte at line %d, column %d; a note is text, and nothing was written",
-			ErrInvalidContent, v.Rel(path), line, col,
+			ErrInvalidContent,
+			v.Rel(path),
+			line,
+			col,
 		)
 	}
 	return v.refuseSecrets(path, content)

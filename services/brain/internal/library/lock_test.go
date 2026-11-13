@@ -48,7 +48,9 @@ func TestIndexLocksTimeOut(t *testing.T) {
 		Vaults:   []config.Vault{{Name: "personal", Path: f.root, Default: true}},
 		Semantic: config.SemanticConfig{Enabled: true, EmbedModel: "model-a"},
 	}
-	lib, err := Open(Options{Config: cfg, Embed: f.embed.embed, LockTimeout: 100 * time.Millisecond})
+	lib, err := Open(
+		Options{Config: cfg, Embed: f.embed.embed, LockTimeout: 100 * time.Millisecond},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -202,7 +202,11 @@ func policyOf(root string) *vaultRules {
 	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(check.PolicyFile))); err != nil {
 		return nil
 	}
-	rules := &vaultRules{File: check.PolicyFile, Classifications: []string{}, Rules: map[string]string{}}
+	rules := &vaultRules{
+		File:            check.PolicyFile,
+		Classifications: []string{},
+		Rules:           map[string]string{},
+	}
 	p, err := check.LoadPolicy(root)
 	if err != nil {
 		rules.Error = err.Error()

@@ -34,7 +34,11 @@ func TestIndexVaultKeepsThePreviousIndexOnAWalkError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "vault")
-			writeTestNote(t, filepath.Join(root, "notes", "kept.md"), "---\ntitle: Kept\n---\nwalrus\n")
+			writeTestNote(
+				t,
+				filepath.Join(root, "notes", "kept.md"),
+				"---\ntitle: Kept\n---\nwalrus\n",
+			)
 			target := Target{Name: "v", Root: root, IndexDir: t.TempDir()}
 			if err := IndexVault(target, nil); err != nil {
 				t.Fatal(err)

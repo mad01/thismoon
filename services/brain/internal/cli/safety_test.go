@@ -36,14 +36,30 @@ func TestRefusedWritesExitUsage(t *testing.T) {
 			wantStderr: "frontmatter is not closed",
 		},
 		{
-			name:       "write filename outside the vault",
-			args:       []string{"write", "--title", "Esc", "--filename", "../../escaped", "--body", "x"},
+			name: "write filename outside the vault",
+			args: []string{
+				"write",
+				"--title",
+				"Esc",
+				"--filename",
+				"../../escaped",
+				"--body",
+				"x",
+			},
 			wantStderr: "vault: invalid path",
 			outside:    []string{"escaped.md", "../escaped.md"},
 		},
 		{
-			name:       "write filename into another tier",
-			args:       []string{"write", "--tier", "notes", "--title", "Esc", "--filename", "../inbox/esc"},
+			name: "write filename into another tier",
+			args: []string{
+				"write",
+				"--tier",
+				"notes",
+				"--title",
+				"Esc",
+				"--filename",
+				"../inbox/esc",
+			},
 			wantStderr: "vault: invalid path",
 		},
 		{
@@ -100,7 +116,8 @@ func TestRefusedWritesExitUsage(t *testing.T) {
 			if got.code != exitUsage {
 				t.Fatalf("exit = %d, want %d; stderr %q", got.code, exitUsage, got.stderr)
 			}
-			if strings.Count(got.stderr, "\n") != 1 || !strings.Contains(got.stderr, tc.wantStderr) {
+			if strings.Count(got.stderr, "\n") != 1 ||
+				!strings.Contains(got.stderr, tc.wantStderr) {
 				t.Errorf("stderr = %q, want one line containing %q", got.stderr, tc.wantStderr)
 			}
 			for rel, content := range tc.files {
@@ -141,7 +158,12 @@ func TestLinkedNotesAreRefusedAndChecked(t *testing.T) {
 	got := runBrain(t, "", "read", "notes/leak.md")
 	if got.code != exitUsage || strings.Contains(got.stdout+got.stderr, "hunter2") ||
 		!strings.Contains(got.stderr, "symbolic link") {
-		t.Errorf("read = %d %q %q, want exit 2 naming the link, no content", got.code, got.stdout, got.stderr)
+		t.Errorf(
+			"read = %d %q %q, want exit 2 naming the link, no content",
+			got.code,
+			got.stdout,
+			got.stderr,
+		)
 	}
 	got = runBrain(t, "", "check", "-o", "json")
 	if got.code != exitError {
@@ -156,7 +178,10 @@ func TestLinkedNotesAreRefusedAndChecked(t *testing.T) {
 		}
 	}
 	if !found || strings.Contains(got.stdout, "hunter2") {
-		t.Errorf("check findings %+v, want an error for notes/leak.md and no content", report.Findings)
+		t.Errorf(
+			"check findings %+v, want an error for notes/leak.md and no content",
+			report.Findings,
+		)
 	}
 }
 
@@ -182,14 +207,30 @@ func TestCheckFlagsALinkedNoteNamedByPath(t *testing.T) {
 	}
 	for _, rel := range []string{"notes/leak.md", "notes/dangling.md", "notes/away/credentials.md"} {
 		t.Run(rel, func(t *testing.T) {
-			got := runBrain(t, "", "check", "-o", "json", filepath.Join(root, filepath.FromSlash(rel)))
+			got := runBrain(
+				t,
+				"",
+				"check",
+				"-o",
+				"json",
+				filepath.Join(root, filepath.FromSlash(rel)),
+			)
 			if got.code != exitError {
-				t.Fatalf("check exit = %d, want 1; stdout %s stderr %s", got.code, got.stdout, got.stderr)
+				t.Fatalf(
+					"check exit = %d, want 1; stdout %s stderr %s",
+					got.code,
+					got.stdout,
+					got.stderr,
+				)
 			}
 			report := decodeStrict[check.Report](t, got.stdout)
 			if len(report.Skipped) != 0 || len(report.Findings) != 1 ||
 				report.Findings[0].Path != rel || report.Findings[0].Rule != check.RuleSymlink {
-				t.Errorf("report = %+v, want one symlink finding for %s and nothing skipped", report, rel)
+				t.Errorf(
+					"report = %+v, want one symlink finding for %s and nothing skipped",
+					report,
+					rel,
+				)
 			}
 			if strings.Contains(got.stdout, "hunter2") {
 				t.Error("check printed the linked file's content")
@@ -267,8 +308,12 @@ func TestConcurrentWritesOfOneTitle(t *testing.T) {
 				defer wg.Done()
 				<-start
 				var stdout, stderr bytes.Buffer
-				code := run([]string{"write", "--title", "Same Race", "--filename", name, "--body", "x"},
-					strings.NewReader(""), &stdout, &stderr)
+				code := run(
+					[]string{"write", "--title", "Same Race", "--filename", name, "--body", "x"},
+					strings.NewReader(""),
+					&stdout,
+					&stderr,
+				)
 				results[i] = result{stdout: stdout.String(), stderr: stderr.String(), code: code}
 			}()
 		}

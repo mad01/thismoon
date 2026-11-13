@@ -84,7 +84,10 @@ func TestSemanticStatusFilterMatchesTheTierDefault(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	if got, want := paths("validated"), []string{"notes/a.md", "notes/b.md"}; !slices.Equal(got, want) {
+	if got, want := paths("validated"), []string{"notes/a.md", "notes/b.md"}; !slices.Equal(
+		got,
+		want,
+	) {
 		t.Errorf("status validated = %q, want %q", got, want)
 	}
 	if got, want := paths("Raw"), []string{"inbox/c.md"}; !slices.Equal(got, want) {

@@ -15,7 +15,10 @@ const outsideSecret = "---\ntitle: Credentials\n---\naws_secret=hunter2\n"
 // whose notes/away/ links to a directory outside it.
 func linkedVault(t *testing.T) (*Vault, string) {
 	t.Helper()
-	v := newTestVault(t, map[string]string{"notes/real.md": "---\ntitle: Real\n---\nSee [[leak]].\n"})
+	v := newTestVault(
+		t,
+		map[string]string{"notes/real.md": "---\ntitle: Real\n---\nSee [[leak]].\n"},
+	)
 	outside := t.TempDir()
 	secret := filepath.Join(outside, "credentials")
 	if err := os.WriteFile(secret, []byte(outsideSecret), 0o600); err != nil {
@@ -72,7 +75,10 @@ func TestWriteRefusesALinkedTierDirectory(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(v.Root, "outputs")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := v.Write(WriteOptions{Tier: TierOutputs, Title: "Away"}); !errors.Is(err, ErrInvalidPath) {
+	if _, err := v.Write(WriteOptions{Tier: TierOutputs, Title: "Away"}); !errors.Is(
+		err,
+		ErrInvalidPath,
+	) {
 		t.Fatalf("Write err = %v, want ErrInvalidPath", err)
 	}
 	if entries, _ := os.ReadDir(outside); len(entries) != 0 {

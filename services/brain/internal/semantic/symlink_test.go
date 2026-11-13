@@ -38,7 +38,8 @@ func TestSyncSkipsLinkedNotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := report.Notes["notes/real.md"]; !ok || len(report.Notes) != 1 || report.Embedded != 1 {
+	if _, ok := report.Notes["notes/real.md"]; !ok || len(report.Notes) != 1 ||
+		report.Embedded != 1 {
 		t.Errorf("sync = %+v, want notes/real.md alone embedded", report)
 	}
 }

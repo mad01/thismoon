@@ -163,7 +163,10 @@ func (s *source) patch(fm Frontmatter) ([]byte, error) {
 // again to the same value keeps its text.
 func (s *source) unchanged(fm Frontmatter, key string) bool {
 	if i, ok := typedFields[key]; ok {
-		return sameField(reflect.ValueOf(s.typed).Field(i), reflect.ValueOf(fieldsOnly(fm)).Field(i))
+		return sameField(
+			reflect.ValueOf(s.typed).Field(i),
+			reflect.ValueOf(fieldsOnly(fm)).Field(i),
+		)
 	}
 	value := fm.extraValue(key)
 	if value == nil {
@@ -179,7 +182,11 @@ func (s *source) unchanged(fm Frontmatter, key string) bool {
 
 // writeEntry writes key: value as 2-space YAML in the source's line endings.
 func (s *source) writeEntry(out *bytes.Buffer, key string, value *yaml.Node) error {
-	entry := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: []*yaml.Node{keyNode(key), value}}
+	entry := &yaml.Node{
+		Kind:    yaml.MappingNode,
+		Tag:     "!!map",
+		Content: []*yaml.Node{keyNode(key), value},
+	}
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(yamlIndent)

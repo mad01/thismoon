@@ -50,7 +50,12 @@ func TestBundleMatchesSHA256SUMS(t *testing.T) {
 	for name, sum := range want {
 		got := sha256.Sum256([]byte(read(t, "assets/"+name)))
 		if hex.EncodeToString(got[:]) != sum {
-			t.Errorf("assets/%s sha256 = %x, SHA256SUMS says %s; rebuild with make bundle", name, got, sum)
+			t.Errorf(
+				"assets/%s sha256 = %x, SHA256SUMS says %s; rebuild with make bundle",
+				name,
+				got,
+				sum,
+			)
 		}
 	}
 	if _, ok := want["brain-graph.bundle.js"]; !ok {

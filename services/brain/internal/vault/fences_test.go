@@ -61,7 +61,8 @@ func TestEditReadsLooseFences(t *testing.T) {
 				t.Fatal(err)
 			}
 			raw, body := markdown.Split(data)
-			if strings.Contains(string(body), "title: A") || !strings.Contains(string(raw), "title: A") {
+			if strings.Contains(string(body), "title: A") ||
+				!strings.Contains(string(raw), "title: A") {
 				t.Errorf("edit stacked a second frontmatter block:\n%q", data)
 			}
 			if !strings.HasSuffix(string(body), "Body.\nMore.\n") {

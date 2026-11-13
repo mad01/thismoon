@@ -22,7 +22,11 @@ func TestEditRefusesRevokingAndUnknownStatuses(t *testing.T) {
 		{"patch superseded", patchStatus(lifecycle.Superseded), "brain supersede"},
 		{"patch retracted", patchStatus(lifecycle.Retracted), "brain retract"},
 		{"patch withdrawn", patchStatus(lifecycle.Withdrawn), "brain withdraw"},
-		{"patch unknown", patchStatus("bogus"), "is not one of raw, validated, promoting, disputed"},
+		{
+			"patch unknown",
+			patchStatus("bogus"),
+			"is not one of raw, validated, promoting, disputed",
+		},
 		{"patch expired", patchStatus("expired"), "is not one of"},
 		{"set superseded", setStatus(lifecycle.Superseded), "brain supersede"},
 		{"set unknown", setStatus("Finished"), "is not one of"},
@@ -45,7 +49,10 @@ func TestEditRefusesRevokingAndUnknownStatuses(t *testing.T) {
 func TestEditSetsTheLiveStatuses(t *testing.T) {
 	for _, status := range EditStatuses {
 		t.Run(status, func(t *testing.T) {
-			v := newTestVault(t, map[string]string{"inbox/x.md": "---\ntitle: X\nstatus: raw\n---\nBody.\n"})
+			v := newTestVault(
+				t,
+				map[string]string{"inbox/x.md": "---\ntitle: X\nstatus: raw\n---\nBody.\n"},
+			)
 			path := filepath.Join(v.Root, "inbox", "x.md")
 			if _, err := v.Edit(path, patchStatus(status)(t)); err != nil {
 				t.Fatal(err)

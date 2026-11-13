@@ -10,7 +10,13 @@ import (
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
 )
 
-var controlTitles = []string{"two\nlines", "carriage\rreturn", "red \x1b[31mtext", "nul\x00", "del\x7f"}
+var controlTitles = []string{
+	"two\nlines",
+	"carriage\rreturn",
+	"red \x1b[31mtext",
+	"nul\x00",
+	"del\x7f",
+}
 
 func TestTitlesRefuseControlCharacters(t *testing.T) {
 	const note = "---\ntitle: Clean\nstatus: raw\n---\nBody.\n"
@@ -31,7 +37,10 @@ func TestTitlesRefuseControlCharacters(t *testing.T) {
 					return err
 				},
 				"edit --title": func() error {
-					_, err := v.Edit(path, EditOptions{FrontmatterPatch: &markdown.Frontmatter{Title: title}})
+					_, err := v.Edit(
+						path,
+						EditOptions{FrontmatterPatch: &markdown.Frontmatter{Title: title}},
+					)
 					return err
 				},
 				"edit --set title": func() error {
@@ -74,11 +83,16 @@ func TestPromoteRefusesAControlTitleIntoAMOC(t *testing.T) {
 		"inbox/bad.md":  note,
 		"MOCs/topic.md": "# Topic\n",
 	})
-	_, err := v.Promote(filepath.Join(v.Root, "inbox", "bad.md"), PromoteOptions{MOC: "MOCs/topic.md"})
+	_, err := v.Promote(
+		filepath.Join(v.Root, "inbox", "bad.md"),
+		PromoteOptions{MOC: "MOCs/topic.md"},
+	)
 	if !errors.Is(err, ErrInvalidContent) {
 		t.Fatalf("err = %v, want ErrInvalidContent", err)
 	}
-	if data, _ := os.ReadFile(filepath.Join(v.Root, "MOCs", "topic.md")); string(data) != "# Topic\n" {
+	if data, _ := os.ReadFile(filepath.Join(v.Root, "MOCs", "topic.md")); string(
+		data,
+	) != "# Topic\n" {
 		t.Errorf("MOC changed to %q", data)
 	}
 	if _, err := os.Stat(filepath.Join(v.Root, "inbox", "bad.md")); err != nil {
@@ -101,11 +115,17 @@ func TestPromoteMOCMustBeInTheMOCsTier(t *testing.T) {
 				"inbox/ready.md": note,
 				"notes/other.md": "---\ntitle: Other\n---\nOther.\n",
 			})
-			_, err := v.Promote(filepath.Join(v.Root, "inbox", "ready.md"), PromoteOptions{MOC: moc})
+			_, err := v.Promote(
+				filepath.Join(v.Root, "inbox", "ready.md"),
+				PromoteOptions{MOC: moc},
+			)
 			if !errors.Is(err, ErrInvalidPath) {
 				t.Fatalf("err = %v, want ErrInvalidPath", err)
 			}
-			if data, _ := os.ReadFile(filepath.Join(v.Root, "notes", "other.md")); strings.Contains(string(data), "[[") {
+			if data, _ := os.ReadFile(filepath.Join(v.Root, "notes", "other.md")); strings.Contains(
+				string(data),
+				"[[",
+			) {
 				t.Errorf("notes/other.md got a bullet: %q", data)
 			}
 			for _, p := range []string{filepath.Join(filepath.Dir(v.Root), "outside.md"), "/tmp/brain-moc-outside.md"} {
@@ -128,7 +148,10 @@ func TestPromoteMOCInsideTheTier(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			v := newTestVault(t, map[string]string{"inbox/ready.md": note})
-			res, err := v.Promote(filepath.Join(v.Root, "inbox", "ready.md"), PromoteOptions{MOC: moc(v.Root)})
+			res, err := v.Promote(
+				filepath.Join(v.Root, "inbox", "ready.md"),
+				PromoteOptions{MOC: moc(v.Root)},
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -145,6 +168,21 @@ func TestPromoteMOCInsideTheTier(t *testing.T) {
 
 // quoteYAML returns s as a double-quoted YAML scalar.
 func quoteYAML(s string) string {
-	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\x1b", `\e`, "\x00", `\0`, "\x7f", `\x7f`)
+	r := strings.NewReplacer(
+		`\`,
+		`\\`,
+		`"`,
+		`\"`,
+		"\n",
+		`\n`,
+		"\r",
+		`\r`,
+		"\x1b",
+		`\e`,
+		"\x00",
+		`\0`,
+		"\x7f",
+		`\x7f`,
+	)
 	return `"` + r.Replace(s) + `"`
 }

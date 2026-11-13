@@ -47,7 +47,11 @@ func (v *Vault) apply(p promotion, write noteWriter) (PromoteResult, error) {
 				v.Rel(p.oldPath), err, rollbackErr,
 			)
 		}
-		return PromoteResult{}, fmt.Errorf("promote %s: %w; nothing was changed", v.Rel(p.oldPath), err)
+		return PromoteResult{}, fmt.Errorf(
+			"promote %s: %w; nothing was changed",
+			v.Rel(p.oldPath),
+			err,
+		)
 	}
 	res := PromoteResult{OldPath: p.oldPath, NewPath: p.newPath}
 	for _, c := range p.rewrites {
@@ -135,7 +139,10 @@ func linkChanges(edits map[string]noteEdits) ([]fileChange, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", rel, err)
 		}
-		out = append(out, fileChange{path: e.note.ref.Abs(), was: e.note.data, existed: true, data: data})
+		out = append(
+			out,
+			fileChange{path: e.note.ref.Abs(), was: e.note.data, existed: true, data: data},
+		)
 	}
 	return out, nil
 }
@@ -144,7 +151,12 @@ func linkChanges(edits map[string]noteEdits) ([]fileChange, error) {
 // YYYY-MM-DD -->" line added at its end. A MOC that does not exist yet is
 // created with the line alone.
 func mocChange(mocPath, title, stem string, now time.Time) (*fileChange, error) {
-	line := fmt.Sprintf("- [[%s|%s]]  <!-- added %s -->\n", stem, title, now.UTC().Format("2006-01-02"))
+	line := fmt.Sprintf(
+		"- [[%s|%s]]  <!-- added %s -->\n",
+		stem,
+		title,
+		now.UTC().Format("2006-01-02"),
+	)
 	was, err := os.ReadFile(mocPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return &fileChange{path: mocPath, data: []byte(line)}, nil

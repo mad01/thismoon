@@ -52,14 +52,22 @@ func TestLiteralIndexSkipsLinkedNotes(t *testing.T) {
 	if err := IndexVault(Target{Name: "v", Root: root, IndexDir: indexDir}, nil); err != nil {
 		t.Fatal(err)
 	}
-	matches, err := Search(context.Background(), indexDir, SearchOptions{Pattern: "outsideword", Limit: 50})
+	matches, err := Search(
+		context.Background(),
+		indexDir,
+		SearchOptions{Pattern: "outsideword", Limit: 50},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(matches) != 0 {
 		t.Errorf("search found linked notes: %v", pathsOf(matches))
 	}
-	matches, err = Search(context.Background(), indexDir, SearchOptions{Pattern: "insideword", Limit: 50})
+	matches, err = Search(
+		context.Background(),
+		indexDir,
+		SearchOptions{Pattern: "insideword", Limit: 50},
+	)
 	if err != nil || len(matches) != 1 {
 		t.Errorf("search insideword = %v, %v; want notes/real.md", pathsOf(matches), err)
 	}
