@@ -8,6 +8,9 @@
 present recipe (`recipes/present`). The catalog service keeps its own
 model.
 
+**Amended by PR #332 (2026-10-28):** the catalog service left the repo, and
+its committed Cytoscape file went with it.
+
 ## Context
 
 The page shell loads its browser libraries and fonts from `/assets/`.

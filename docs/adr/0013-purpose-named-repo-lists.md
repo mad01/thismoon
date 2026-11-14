@@ -71,7 +71,7 @@ Exemptions stay enumerated, never derived.
   path-based match. Only kof-assertions, which sees index-side search
   results with no path, matches the pattern tail (host dropped,
   case-insensitive), and that tail matching is confined to its own
-  per-hint list.
+  per-hint list. The hint left with keeper-of-facts in PR #332 (2026-10-28).
 - commit-guard keeps `commit_guards[].always_allow` and takes no toggle
   key; a `direct_main_repos` entry does not exempt it, since being a
   direct-main repo says nothing about work-hours discipline.

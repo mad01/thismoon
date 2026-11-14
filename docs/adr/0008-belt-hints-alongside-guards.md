@@ -15,6 +15,9 @@ at all, and `belt watch` is the one command that exits 2.
 may answer allow at PreToolUse once every guard passed, and is off until a
 config turns it on.
 
+**Amended by PR #332 (2026-10-28):** keeper-of-facts left the repo, and
+belt's kof hints went with it, `kof-assertions` included.
+
 ## Context
 
 belt has one shape: a guard inspects a tool call before it runs and either

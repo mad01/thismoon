@@ -120,6 +120,9 @@ settings name the binary, the service's own workdir and the code roots the
 fleet works in (`~/code`, `~/.worktrees`, the ralph sources cache). Nothing
 in them differs per machine.
 
+**Amended by PR #332 (2026-10-28):** keeper-of-facts and catalog-web left
+the repo with their recipes. Neither runs now.
+
 So generic, machine-independent settings for a public-layer service may ship
 beside its recipe as `<label>.srt.json`, linked to
 `~/.config/srt/<label>.json` by that recipe. Since ADR-0027 that file is
