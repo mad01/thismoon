@@ -56,3 +56,7 @@ into `kit/` waits for a third consumer.
 - The catalog service is unaffected: it still scans `service-info.yaml`
   only, so `.csl-catalog.yaml` and a root `catalog-info.yaml` never register
   anything there.
+
+**Amended by PR #332 (2026-10-28):** the catalog service and its strict
+parser in `services/catalog` left the repo, so the last consequence no longer
+applies. csl still reads descriptors from checkouts as decided here.

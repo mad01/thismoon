@@ -84,6 +84,9 @@ speak-web. Their risk is module dependencies rather than code they
 execute; the gain is egress default-deny and writes confined to the
 service's own directory.
 
+**Amended by PR #332 (2026-10-28):** keeper-of-facts and catalog-web left
+the repo with their recipes. Neither runs now.
+
 ## Consequences
 
 - A compromised dependency reaches only the hosts its settings name.
