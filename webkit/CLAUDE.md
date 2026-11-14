@@ -387,7 +387,8 @@ answers the version poll and the site list fetch with a 404, so nothing
 reaches the network. The tests cover the header's controls, skip link,
 relocated children and theme toggle, the theme API and `wk-themechange`,
 `wk-title`'s heading role, the filter `wk-badge` keys and their hand-back,
-and `Webkit.urlState` against a real history. They read the committed
+`Webkit.urlState` against a real history, and Escape closing the ⌘K picker
+wherever focus sits. They read the committed
 `dist/webkit.js`, the file the services embed. `make test` builds the sources
 in the VM and fails when the committed `dist/` differs from that build, so a
 source edit without `make build` fails there. It then runs the unit and DOM

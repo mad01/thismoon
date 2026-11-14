@@ -1003,7 +1003,6 @@ function cmdkOnKey(e: KeyboardEvent): void {
     case 'ArrowDown': e.preventDefault(); cmdkMove(1); break;
     case 'ArrowUp':   e.preventDefault(); cmdkMove(-1); break;
     case 'Enter':     e.preventDefault(); cmdkCommit(); break;
-    case 'Escape':    e.preventDefault(); cmdkClose(); break;
     case 'n': if (e.ctrlKey) { e.preventDefault(); cmdkMove(1); } break;  // vim-ish
     case 'p': if (e.ctrlKey) { e.preventDefault(); cmdkMove(-1); } break;
   }
@@ -1049,7 +1048,11 @@ function initCmdK(): void {
       if (!cmdkWanted()) return;
       e.preventDefault();
       if (cmdkIsOpen()) cmdkClose(); else void cmdkOpen();
+      return;
     }
+    // Escape closes from the document, not the input: a click on the panel
+    // or a Tab moves focus off the input, and the picker must still close.
+    if (e.key === 'Escape' && cmdkIsOpen()) { e.preventDefault(); cmdkClose(); }
   });
   document.addEventListener('wk-cmdk:open', () => { void cmdkOpen(); });
 }

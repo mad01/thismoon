@@ -4653,10 +4653,6 @@ var Webkit = (() => {
         e.preventDefault();
         cmdkCommit();
         break;
-      case "Escape":
-        e.preventDefault();
-        cmdkClose();
-        break;
       case "n":
         if (e.ctrlKey) {
           e.preventDefault();
@@ -4706,6 +4702,11 @@ var Webkit = (() => {
         e.preventDefault();
         if (cmdkIsOpen()) cmdkClose();
         else void cmdkOpen();
+        return;
+      }
+      if (e.key === "Escape" && cmdkIsOpen()) {
+        e.preventDefault();
+        cmdkClose();
       }
     });
     document.addEventListener("wk-cmdk:open", () => {
