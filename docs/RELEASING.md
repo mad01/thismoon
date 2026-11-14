@@ -47,6 +47,23 @@ and turns it back on.
 
 On every run release-please walks main backwards from the head, fetching each commit's file list to map it to a component, and stops once it has passed every component's last release tag or reaches `commit-search-depth` (set to 200 in `release-please-config.json`; the tool's default is 500). A component whose last tag is deeper than that gets only the commits inside the window, which is also what happens to it today past 500: nothing is lost unless an unreleased change sits beyond the window. The window exists because the walk is hundreds of GitHub API calls, each of which can time out, and a release run was failing on that alone. If a component you expect to release does not show up in the release PR, check that its last tag is within the window; `commit-batch-size` (default 10 commits per request) is the other knob the tool offers.
 
+## Upgrade notes
+
+A change that needs an action on a machine that already runs the tools has an
+entry in [UPGRADING.md](UPGRADING.md), written in the PR that made the change.
+Its `Since:` line reads `unreleased` at that point, because the version does
+not exist yet.
+
+The release PR merges itself, so nothing fills that line in at release time.
+After a component's release, open a `docs:` PR that replaces `unreleased` with
+the component and its new version (`belt 2.12.0`) in every entry that names
+the component. A `docs:` commit triggers no release. Until that PR lands, the
+entry's date tells a reader whether a release carries the change.
+
+The GitHub Release notes are the changelog release-please generates from the
+commits, and they do not link to these entries. The README and the `Since:`
+lines carry that link instead.
+
 ## Artifacts
 
 Each released component gets, on its GitHub Release:
