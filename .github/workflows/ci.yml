@@ -38,6 +38,20 @@ jobs:
             <(for dir in services/*/ tools/*/; do [ -f "${dir}Makefile" ] && echo "${dir%/}"; done | sort) \
             || { echo "::error::release-please-config.json packages out of sync with services/*, tools/*"; exit 1; }
 
+      # llms.txt is the docs index agents and LLM crawlers read. A component,
+      # skill or guide with no line there is invisible to them, and a link to
+      # a moved file is dead: fail the PR on either.
+      - name: llms.txt covers all components, skills and guides
+        run: |
+          fail=0
+          for f in services/*/README.md tools/*/README.md skills/*/SKILL.md docs/*.md; do
+            grep -qF "/main/${f})" llms.txt || { echo "::error file=llms.txt::${f} has no line in llms.txt"; fail=1; }
+          done
+          for p in $(grep -o '/main/[^)]*' llms.txt | sed 's|^/main/||'); do
+            [ -e "$p" ] || { echo "::error file=llms.txt::llms.txt links to ${p}, which does not exist"; fail=1; }
+          done
+          exit "$fail"
+
       # Serve-bearing components must ship a doctor subcommand (ADR-0009,
       # docs/adr/0009-agent-facing-operating-docs.md). The list is explicit,
       # not inferred from directories: some tools carry MCP subcommands with
