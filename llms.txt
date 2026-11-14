@@ -47,6 +47,7 @@ Everything is one Go module, `github.com/mad01/thismoon`, under the BSD-3-Clause
 - [humanizer](https://raw.githubusercontent.com/mad01/thismoon/main/skills/humanizer/SKILL.md): removes AI-writing tells from prose
 - [loom](https://raw.githubusercontent.com/mad01/thismoon/main/skills/loom/SKILL.md): parallel agent sessions on one repo with git worktrees
 - [present](https://raw.githubusercontent.com/mad01/thismoon/main/skills/present/SKILL.md): builds a briefing page or slide deck
+- [upgrade-note](https://raw.githubusercontent.com/mad01/thismoon/main/skills/upgrade-note/SKILL.md): writes and checks an entry in the upgrade page
 - [worklog](https://raw.githubusercontent.com/mad01/thismoon/main/skills/worklog/SKILL.md): saves and resumes work state across sessions
 
 ## Optional

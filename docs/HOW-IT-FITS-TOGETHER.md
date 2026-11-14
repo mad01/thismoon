@@ -194,11 +194,11 @@ the hook behind each.
 
 ## Skills
 
-Seven agent skills ship in `skills/` at the repo root, one directory per
+Eight agent skills ship in `skills/` at the repo root, one directory per
 skill. Each recipe symlinks its skill into `~/.claude/skills` and
 `~/.agents/skills`, so a provisioned machine has them in every session (for
 Claude Code and Codex both). Invoke one by name (`/golang-pro`, `/golang-style`, `/handoff`,
-`/humanizer`, `/loom`, `/present`, `/worklog`) or let the agent load it when
+`/humanizer`, `/loom`, `/present`, `/upgrade-note`, `/worklog`) or let the agent load it when
 a task matches its description.
 
 | Skill | Use it when | Needs |
@@ -209,6 +209,7 @@ a task matches its description.
 | `humanizer` | prose is about to land in docs, a PR description, or a commit body | the humanizer MCP registered |
 | `loom` | several sessions work one repo in parallel, each in its own git worktree | nothing |
 | `present` | a work summary or research result deserves a readable briefing page | the present service running |
+| `upgrade-note` | a change needs an action on machines that already run the tools | nothing |
 | `worklog` | a long task needs checkpointing across sessions | the worklog MCP registered |
 
 The skill is the workflow; the MCP server is its hands. Without the backing
