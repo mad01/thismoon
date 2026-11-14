@@ -6,7 +6,10 @@
 
 Give your coding agent the same tools you use, on your own disk.
 
-thismoon is a fleet of local-first developer tools for Apple Silicon Macs.
+thismoon is a fleet of local-first developer tools for macOS on Apple
+Silicon, built to share with coding agents such as Claude Code and Codex.
+It covers code search, agent memory, guard hooks, secret and dependency
+scanning, briefing pages, and text to speech.
 Each one is a small web service on its own `http://<name>.this/` address and
 a CLI; most are also [MCP](https://modelcontextprotocol.io) servers, so you
 and your agent work against the same local data. The code search you run in
@@ -326,6 +329,7 @@ component, is in [docs/RELEASING.md](docs/RELEASING.md).
 | `skills/` | Agent skills (Claude Code + Codex), symlinked in by their recipes |
 | `mods/` | Claude Code mods: optional status lines and hooks, installed from the `thismoon` plugin marketplace |
 | `examples/dotfiles/` | Worked private config repo: overlays + example CLAUDE.md |
+| `llms.txt` | Index of the docs for agents and LLM crawlers, one line per component and guide |
 | `docs/adr/` | Architecture decision records |
 | `docs/GETTING-STARTED.md` | Install guide: one tool vs the fleet |
 | `docs/HOW-IT-FITS-TOGETHER.md` | The fleet pitch, ralph vocabulary, rollout order |

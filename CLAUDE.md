@@ -71,6 +71,10 @@ docs/CONTAINER-BUILDS.md package-manager build steps (npm, pip, gem) in a throwa
 - Mods under `mods/` are additive, not components: no skill, hook, or service may require one, and they carry no Makefile or release line. The consuming repo registers their marketplace, never this one (docs/adr/0021).
 - Every change lands through a PR: branch, push, PR, CI green, merge. For CI green, wait on the `ci-ok` job's conclusion, not the full check list: `gh pr checks --watch` can exit before the matrix jobs register. Never push to main directly; a GitHub ruleset and belt's `git-push-main` guard both refuse it, and merging to main is the deploy (ralph pulls main on every `ralph up`).
 - Stores are plain JSON or JSONL files: single-writer serve, full state in memory, atomic temp-and-rename saves. An embedded database solves nothing the fleet has and costs git-diffable files you can read with cat and jq; bbolt was assessed and declined in 2026-07. Revisit only if a store outgrows memory, such as an unbounded events history. When several services need the same load and save code, share a package instead.
+- Discovery surfaces stay in step with the code. Three places tell search engines and agents what the repo holds:
+  - The root `llms.txt` indexes the docs for agents and LLM crawlers. A new, renamed, or removed component, skill, or `docs/*.md` guide changes its line there in the same PR. CI fails the PR when a line is missing or a link is dead. Keep each line to what the component does, in the words of its row in the README tables.
+  - The README opening names what the tools cover in plain search words. Update that sentence when a component adds or drops a whole area (a new kind of scanner, a new store).
+  - The GitHub description and topics are set by hand with `gh repo edit` and no check covers them. Revisit them when the README opening changes.
 - Install the secret-scanning pre-commit hook after cloning: `suspenders hook install`.
 - Every `CLAUDE.md` in the repo has a sibling `AGENTS.md` symlink pointing at it, so non-Claude agents (Codex and others that read `AGENTS.md`) discover the same instructions. New components get the symlink alongside the `CLAUDE.md`.
 
@@ -98,7 +102,7 @@ Full reference: `docs/RELEASING.md`. The short version for working here:
 - Release PRs merge themselves: release.yml turns on auto-merge, so one lands once its required checks pass, and merge = release. Never hand-edit `.release-please-manifest.json`.
 - Merge with squash. A PR whose commits bump different components by different types lands with a rebase merge, so release-please reads each commit with its own files; merge commits are off.
 - The workflow authenticates with a token minted from the `mad01-release-please` GitHub App (secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`, via actions/create-github-app-token). "Error adding to tree" or a missing release PR usually means the App lost Contents or Pull requests write access on this repo. Or the private-key secret no longer matches the App.
-- New component → must be added to `release-please-config.json`; CI fails the PR otherwise.
+- New component → must be added to `release-please-config.json` and to `llms.txt`; CI fails the PR otherwise.
 
 ## Shipping a change to machines
 
@@ -133,7 +137,8 @@ in order; each step earned its place:
    temp dir, build and test there.
 6. **Register for release.** Add the component to the `packages` map in
    `release-please-config.json` — CI fails the PR if a Makefile-bearing
-   component is missing from it.
+   component is missing from it. Add its line to `llms.txt` and its row to
+   the README table in the same commit; CI checks `llms.txt` too.
 7. **Recipe beside the service.** `recipes/<svc>/recipe.toml` with a
    sources-cache `working_dir` (see Conventions). Then the scratch-config
    `ralph up --dry-run` gate: commit first, move the real sources cache aside,

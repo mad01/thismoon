@@ -1,0 +1,59 @@
+# thismoon
+
+> Local-first developer tools for macOS on Apple Silicon, built to share with coding agents such as Claude Code and Codex. Each component is a CLI. Most are also a local web service, a Model Context Protocol (MCP) server, or both. All of them work on files on your own disk, with no cloud and no accounts.
+
+Everything is one Go module, `github.com/mad01/thismoon`, under the BSD-3-Clause license. Builds target darwin/arm64 only. Each component installs on its own through mise or `go install`, and [ralph](https://github.com/mad01/ralph) installs the whole set. Every CLI prints its agent-facing docs with `<bin> docs`.
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/mad01/thismoon/main/README.md): what each component does, how settled it is, and the short install
+- [Getting started](https://raw.githubusercontent.com/mad01/thismoon/main/docs/GETTING-STARTED.md): install one tool with mise or the whole set with ralph, plus the port table
+- [How it fits together](https://raw.githubusercontent.com/mad01/thismoon/main/docs/HOW-IT-FITS-TOGETHER.md): what the full setup adds over standalone tools, and the rollout order
+- [Memory stack](https://raw.githubusercontent.com/mad01/thismoon/main/docs/MEMORY-STACK.md): which store holds what an agent should remember, and the hook behind each
+- [Sandboxing](https://raw.githubusercontent.com/mad01/thismoon/main/docs/SANDBOXING.md): how services and MCP servers run under sandbox-runtime, and how to sandbox a new process
+- [Upgrading](https://raw.githubusercontent.com/mad01/thismoon/main/docs/UPGRADING.md): actions a change needs on machines that already run the tools, newest first
+- [Releasing](https://raw.githubusercontent.com/mad01/thismoon/main/docs/RELEASING.md): per-component tags, artifacts, and how to verify a download
+
+## Services
+
+- [csl](https://raw.githubusercontent.com/mad01/thismoon/main/services/csl/README.md): code search over local git checkouts on a zoekt index (web, CLI, MCP)
+- [d-man](https://raw.githubusercontent.com/mad01/thismoon/main/services/d-man/README.md): the `.this` front door, with managed `/etc/hosts` entries and a reverse proxy (CLI)
+- [deps](https://raw.githubusercontent.com/mad01/thismoon/main/services/deps/README.md): supply-chain scanner that checks dependencies against OSV.dev advisories (web, CLI, MCP)
+- [events](https://raw.githubusercontent.com/mad01/thismoon/main/services/events/README.md): local event and audit log in an archive-only JSONL store (web, CLI, MCP)
+- [present](https://raw.githubusercontent.com/mad01/thismoon/main/services/present/README.md): single-page HTML briefings and slide decks, authored as structured JSON (web, CLI, MCP)
+- [speak](https://raw.githubusercontent.com/mad01/thismoon/main/services/speak/README.md): reads markdown aloud through a local text-to-speech model (web, CLI, MCP)
+- [status](https://raw.githubusercontent.com/mad01/thismoon/main/services/status/README.md): status page with 30-day uptime history for the services (web, CLI)
+- [brain](https://raw.githubusercontent.com/mad01/thismoon/main/services/brain/README.md): markdown knowledge base with literal and semantic search over an Obsidian-style vault (web, CLI, MCP)
+- [moondb](https://raw.githubusercontent.com/mad01/thismoon/main/services/moondb/README.md): edit history between commits, linking every file edit an agent session makes to the turn and prompt behind it (web, CLI, MCP)
+
+## Tools
+
+- [belt](https://raw.githubusercontent.com/mad01/thismoon/main/tools/belt/README.md): Claude Code guard and hint hooks that deny risky tool calls and inject context (CLI)
+- [suspenders](https://raw.githubusercontent.com/mad01/thismoon/main/tools/suspenders/README.md): git secret scanner and pre-commit hook orchestrator (CLI)
+- [worklog](https://raw.githubusercontent.com/mad01/thismoon/main/tools/worklog/README.md): resumable cross-session work state, keyed by ticket or topic (CLI, MCP)
+- [humanizer](https://raw.githubusercontent.com/mad01/thismoon/main/tools/humanizer/README.md): AI-writing detection and voice profiling (CLI, MCP)
+- [t-man](https://raw.githubusercontent.com/mad01/thismoon/main/tools/t-man/README.md): declarative launchd agent and daemon manager (CLI)
+- [toss-bin](https://raw.githubusercontent.com/mad01/thismoon/main/tools/toss-bin/README.md): safe `rm` replacement that moves files to a dated folder in the Trash (CLI)
+- [clipboard](https://raw.githubusercontent.com/mad01/thismoon/main/tools/clipboard/README.md): macOS clipboard bridge over pbcopy and pbpaste (CLI, MCP)
+- [opener](https://raw.githubusercontent.com/mad01/thismoon/main/tools/opener/README.md): macOS open bridge for URLs, files, apps, and Finder reveal (CLI, MCP)
+- [agent-sync](https://raw.githubusercontent.com/mad01/thismoon/main/tools/agent-sync/README.md): syncs Claude Code settings, mods, and MCP servers from a data repo onto the machine (CLI)
+- [srtspec](https://raw.githubusercontent.com/mad01/thismoon/main/tools/srtspec/README.md): renders each component's access manifest to the sandbox settings file (CLI)
+
+## Skills
+
+- [golang-style](https://raw.githubusercontent.com/mad01/thismoon/main/skills/golang-style/SKILL.md): writing and reviewing idiomatic Go
+- [golang-pro](https://raw.githubusercontent.com/mad01/thismoon/main/skills/golang-pro/SKILL.md): Go concurrency, generics, profiling, and gRPC
+- [handoff](https://raw.githubusercontent.com/mad01/thismoon/main/skills/handoff/SKILL.md): a cold-start document for the next session
+- [humanizer](https://raw.githubusercontent.com/mad01/thismoon/main/skills/humanizer/SKILL.md): removes AI-writing tells from prose
+- [loom](https://raw.githubusercontent.com/mad01/thismoon/main/skills/loom/SKILL.md): parallel agent sessions on one repo with git worktrees
+- [present](https://raw.githubusercontent.com/mad01/thismoon/main/skills/present/SKILL.md): builds a briefing page or slide deck
+- [worklog](https://raw.githubusercontent.com/mad01/thismoon/main/skills/worklog/SKILL.md): saves and resumes work state across sessions
+
+## Optional
+
+- [Example config repo](https://raw.githubusercontent.com/mad01/thismoon/main/examples/dotfiles/README.md): a worked private config repo with overlay recipes and an example global CLAUDE.md
+- [Mods](https://raw.githubusercontent.com/mad01/thismoon/main/mods/CLAUDE.md): optional Claude Code mods, installed from the `thismoon` plugin marketplace
+- [Glossary](https://raw.githubusercontent.com/mad01/thismoon/main/CONTEXT.md): the repo-wide terms and the words to avoid
+- [Architecture decision records](https://github.com/mad01/thismoon/tree/main/docs/adr): why the structural decisions went the way they did
+- [Container builds](https://raw.githubusercontent.com/mad01/thismoon/main/docs/CONTAINER-BUILDS.md): package-manager build steps in a throwaway Apple container VM
+- [Security updates](https://raw.githubusercontent.com/mad01/thismoon/main/docs/SECURITY-UPDATES.md): how a dependency advisory reaches a fix
