@@ -49,7 +49,7 @@ action = "symlink"
 # Idempotent; run = "always" keeps it registered and self-heals if it was removed.
 # It runs sandboxed (docs/SANDBOXING.md, "Sandboxing a t-man service"). serve
 # runs no git, so it needs none of the git environment moondb's agent sets.
-# depends_on names builds.speak_chmod_scripts, which keeps srt-run executable,
+# depends_on names builds.srtspec_chmod_srt_run, which keeps srt-run executable,
 # and packages.srtspec, the launcher the shim execs.
 # ralph links dotfiles items before any build or package in every run, so the
 # srt-run and settings links exist before this registration; depends_on could
@@ -60,4 +60,4 @@ commands = [
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/brain"
 run = "always"
-depends_on = ["packages.brain", "packages.t_man", "builds.speak_chmod_scripts", "packages.srtspec"]
+depends_on = ["packages.brain", "packages.t_man", "builds.srtspec_chmod_srt_run", "packages.srtspec"]

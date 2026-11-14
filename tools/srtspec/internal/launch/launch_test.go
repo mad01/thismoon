@@ -14,7 +14,7 @@ import (
 
 // fixtures is shared with the layers tests, so run and explain agree on what
 // the expansion layer may do.
-const fixtures = "../../../../recipes/speak/testdata/srt-local"
+const fixtures = "../../../../recipes/srtspec/testdata/srt-local"
 
 // newHome lays out a scratch HOME: a stand-in srt under mise's shims dir, an
 // empty pathbin, a TMPDIR, and base.json as the settings for label svc.

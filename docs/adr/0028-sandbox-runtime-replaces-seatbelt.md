@@ -53,6 +53,9 @@ srt replaces the hand-written profiles.
   settings file's name. A wrapper in front of it resolves secrets outside
   the sandbox, rebuilds the environment with an `env -i` allow-list, and
   runs `cd /` first.
+  **Amended by PR #500 (2026-11-14):** the launcher is now
+  `recipes/srtspec/srt-run.sh`. It moved from the speak recipe to the
+  srtspec recipe, and the link target `~/code/bin/srt-run` is unchanged.
 - **Egress by hostname, with per-machine hosts chosen at launch.** The
   settings name the hosts every machine uses. A host that differs per
   machine (an LLM proxy, a GitHub Enterprise instance, a shared present)

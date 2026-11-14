@@ -7,9 +7,9 @@
 # expansion layer and SRT_RUN_ALLOW_DOMAINS into the settings, picks bun or
 # node, and execs srt with the command tagged `env SRT_RUN=<label> <argv>`.
 # Every sandboxed MCP server and t-man service still execs ~/code/bin/srt-run,
-# which the speak recipe links to this file, so the launch path, the marker
+# which the srtspec recipe links to this file, so the launch path, the marker
 # sandbox-watch attributes denials by, and the exit codes (2 usage, 127
-# missing runtime, 1 refused layer) are unchanged. The srtspec recipe installs
+# missing runtime, 1 refused layer) are unchanged. The same recipe installs
 # the binary to ~/code/bin; launchd carries no login PATH, so the path is
 # spelled out. No cd here: wrappers keep their own `cd /`.
 set -eu

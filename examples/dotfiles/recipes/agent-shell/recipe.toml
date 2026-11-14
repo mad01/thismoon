@@ -19,8 +19,8 @@
 # merges. A root only this machine has goes in
 # ~/.config/srt/agent-shell.local.json, the expansion layer, not here.
 #
-# srt-run comes from thismoon's speak recipe (~/code/bin/srt-run), srtspec
-# from thismoon's srtspec recipe, and srt itself from mise (recipes/mise/
+# srt-run (~/code/bin/srt-run) and srtspec come from thismoon's srtspec
+# recipe, and srt itself from mise (recipes/mise/
 # here, wave 0). Wave 1 like agent-config: the settings link and the ignore
 # list are dotfiles, laid down before any build hook runs.
 [recipe]

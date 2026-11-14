@@ -109,9 +109,9 @@ func TestRunPasses(t *testing.T) {
 			t,
 			darkNotifyManifest,
 		),
-		"recipes/speak-tts/access.yaml":                               "sandbox: seatbelt\nreason: Metal\n",
-		"recipes/speak/speak-web.local.json":                          `{"network": {"allowedDomains": ["share.example.net"]}}`,
-		"recipes/speak/testdata/srt-local/refuse-deny-key.local.json": `{"filesystem": {"denyRead": []}}`,
+		"recipes/speak-tts/access.yaml":                                 "sandbox: seatbelt\nreason: Metal\n",
+		"recipes/speak/speak-web.local.json":                            `{"network": {"allowedDomains": ["share.example.net"]}}`,
+		"recipes/srtspec/testdata/srt-local/refuse-deny-key.local.json": `{"filesystem": {"denyRead": []}}`,
 	})
 	results, err := Run(root, "/home/x")
 	if err != nil {

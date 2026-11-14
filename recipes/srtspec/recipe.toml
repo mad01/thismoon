@@ -1,15 +1,16 @@
-# srtspec: public layer, build + install only. The settings files it renders
-# are committed beside each recipe, so nothing here runs at apply time. On the
-# machine the binary is the launcher: `srtspec run` is what ~/code/bin/srt-run
-# (speak recipe) execs for every sandboxed service and MCP server, and
-# `srtspec explain` shows the policy a label launches under.
+# srtspec: public layer. It builds and installs the binary and links the
+# launcher path. The settings files srtspec renders are committed beside each
+# recipe, so nothing is rendered at apply time. On the machine the binary is
+# the launcher: `srtspec run` is what ~/code/bin/srt-run execs for every
+# sandboxed service and MCP server, and `srtspec explain` shows the policy a
+# label launches under.
 [recipe]
 name = "srtspec"
 description = "srtspec: the sandbox launcher behind srt-run; renders access manifests to srt settings, verifies them, explains the effective policy"
 # wave 0 with the service recipes: their t-man registrations start agents
 # that exec srt-run, so the binary must exist in the same ralph run. Each of
-# those hooks also names packages.srtspec in depends_on, which is what orders
-# them after this build within the wave.
+# those hooks also names packages.srtspec and builds.srtspec_chmod_srt_run in
+# depends_on, which is what orders them after this recipe within the wave.
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a
@@ -23,3 +24,31 @@ version_check = true
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/srtspec"]
+
+# -- srt-run: the sandbox launcher path --
+# `srt-run <settings-file> <argv...>` is a shim that execs `srtspec run`,
+# which merges the machine's layers into the settings, picks bun or node and
+# runs the command under srt with an SRT_RUN=<label> marker that sandbox-watch
+# attributes denials by. MCP wrappers and t-man services exec it by this path,
+# so the target and the item key stay as they were when the speak recipe
+# carried the link. The per-process settings (~/.config/srt/<tool>.json) ship
+# beside a service's recipe when they are generic, from the consuming repo
+# otherwise (docs/adr/0006). srt itself is a mise tool the consuming repo
+# declares (npm:@anthropic-ai/sandbox-runtime); srtspec run finds it through
+# the mise shims dir.
+[dotfiles.srt_run]
+source = "srt-run.sh"
+target = "~/code/bin/srt-run"
+action = "symlink"
+
+# Keep the shim executable inside the sources cache: every sandbox wrapper
+# and t-man service execs it through the ~/code/bin/srt-run symlink. Git
+# carries the mode bit; this is the belt-and-braces the service recipes use
+# for their launchers too. It is also the step a registration hook orders
+# against: depends_on takes only builds. and packages. keys, so a hook that
+# starts a process through srt-run names this build and packages.srtspec.
+[hooks.builds.srtspec_chmod_srt_run]
+commands = ["chmod +x srt-run.sh"]
+working_dir = "~/.config/ralph/sources/thismoon/recipes/srtspec"
+run = "always"
+idempotent = true

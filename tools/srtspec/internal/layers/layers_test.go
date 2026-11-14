@@ -12,7 +12,7 @@ import (
 
 // fixtures is shared with the launch package's tests, so run and explain
 // agree on what the expansion layer may do.
-const fixtures = "../../../../recipes/speak/testdata/srt-local"
+const fixtures = "../../../../recipes/srtspec/testdata/srt-local"
 
 // install lays base.json and an optional layer into a scratch home as label
 // svc, the way a machine would have them.

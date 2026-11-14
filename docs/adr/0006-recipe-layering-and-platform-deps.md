@@ -110,6 +110,9 @@ written into the file. The public layer keeps what is portable: the shared
 `srt-run` launcher (speak recipe) and each tool's spawn wrapper, which
 names the settings path and fails closed when the file is absent.
 
+**Amended by PR #500 (2026-11-14):** the `srt-run` launcher moved from the
+speak recipe to the srtspec recipe. The installed path is unchanged.
+
 ## Amendment (2026-10-25, t-man services)
 
 The amendment above put every srt settings file in the consuming repo. That

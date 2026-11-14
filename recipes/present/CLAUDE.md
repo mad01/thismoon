@@ -74,7 +74,7 @@ environment with `env -i` (only `HOME`, the three `PRESENT_*` config vars,
 and, when set, the two sharing vars, `TMPDIR`, `SRT_DEBUG` and
 `SRT_RUN_ALLOW_DOMAINS` pass through). Then it
 execs `~/code/bin/srt-run ~/.config/srt/present.json ~/code/bin/present mcp`.
-`srt-run` ships with the speak recipe; it tags the process with the label
+`srt-run` ships with the srtspec recipe; it tags the process with the label
 `present`, which is how `sandbox-watch` attributes its denials.
 
 The settings file is not in this repo. The consuming repo provides

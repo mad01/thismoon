@@ -72,8 +72,8 @@ for f in "${files[@]}"; do
       *) fail "${recipe#"$ROOT"/}: a t-man add lacks $LEDGER_LOG" ;;
     esac
   done < <(grep -F 't-man add --name' "$recipe")
-  grep -qF '"builds.speak_chmod_scripts"' "$recipe" ||
-    fail "${recipe#"$ROOT"/}: the service hook must depend on builds.speak_chmod_scripts"
+  grep -qF '"builds.srtspec_chmod_srt_run"' "$recipe" ||
+    fail "${recipe#"$ROOT"/}: the service hook must depend on builds.srtspec_chmod_srt_run"
 done
 
 printf 'PASS: srt settings and t-man wiring for %d sandboxed services\n' "${#files[@]}"

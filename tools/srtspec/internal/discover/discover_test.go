@@ -52,7 +52,7 @@ func TestFind(t *testing.T) {
 		"recipes/humanizer/recipe.toml":          "",
 		"recipes/humanizer/humanizer.txt":        "",
 		"recipes/themes/dark-notify/access.yaml": "sandbox: srt\n",
-		"recipes/speak/testdata/x/access.yaml":   "sandbox: srt\n",
+		"recipes/srtspec/testdata/x/access.yaml": "sandbox: srt\n",
 	})
 	targets, err := Find(root)
 	if err != nil {
@@ -151,10 +151,10 @@ func TestOrphans(t *testing.T) {
 
 func TestLayers(t *testing.T) {
 	root := tree(t, map[string]string{
-		"recipes/speak/speak-web.local.json":                   "{}",
-		"recipes/themes/dark-notify/dark-notify.local.json":    "{}",
-		"recipes/speak/testdata/srt-local/ok-widen.local.json": "{}",
-		"recipes/speak/speak-web.srt.json":                     "{}",
+		"recipes/speak/speak-web.local.json":                     "{}",
+		"recipes/themes/dark-notify/dark-notify.local.json":      "{}",
+		"recipes/srtspec/testdata/srt-local/ok-widen.local.json": "{}",
+		"recipes/speak/speak-web.srt.json":                       "{}",
 	})
 	got, err := Layers(root)
 	if err != nil {

@@ -1,6 +1,6 @@
 [recipe]
 name = "speak"
-description = "speak: the Go text-to-speech service at http://speak.this (document audio for present, CORS speech proxy) + the fleet's sandbox tooling: the srt-run launcher and the sandbox-watch denial notifier. The Kokoro TTS engine lives in the consuming repo's speak-tts recipe."
+description = "speak: the Go text-to-speech service at http://speak.this (document audio for present, CORS speech proxy) + the fleet's sandbox-watch denial notifier. The Kokoro TTS engine lives in the consuming repo's speak-tts recipe."
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a
@@ -18,12 +18,12 @@ wave = 0
 # secrets file and runs `speak serve` under srt; with no config it is the
 # local engine and loopback only.
 #
-# srt-run + sandbox-watch: the launcher path every sandboxed process execs
-# through (anthropics/sandbox-runtime, one settings JSON per process; the work
-# is `srtspec run`, tools/srtspec) and the watcher that streams their denials.
-# They live here rather than with the engine: they are wanted on every machine
-# that runs a sandboxed process, not just the ones with the TTS engine.
-# docs/SANDBOXING.md has the pattern.
+# sandbox-watch: the watcher that streams the denials of every process
+# launched through srt-run (anthropics/sandbox-runtime, one settings JSON per
+# process). It lives here rather than with the engine: it is wanted on every
+# machine that runs a sandboxed process, not just the ones with the TTS
+# engine. The launcher path itself, ~/code/bin/srt-run, is the srtspec
+# recipe's. docs/SANDBOXING.md has the pattern.
 
 [packages.speak]
 source = "local"
@@ -48,16 +48,19 @@ pre_uninstall = [
 ]
 
 # Keep the scripts executable inside the sources cache: the sandbox-watch
-# agent execs sandbox-watch.sh, speak-web execs speak-serve.sh, the consuming
-# repo's MCP registration execs speak-env.sh, and every sandbox wrapper execs
-# srt-run.sh through the ~/code/bin/srt-run symlink, all straight from this
-# directory. speak-provider-env.sh is sourced by the two speak launchers and
-# needs no mode bit.
+# agent execs sandbox-watch.sh, speak-web execs speak-serve.sh and the
+# consuming repo's MCP registration execs speak-env.sh, all straight from
+# this directory. speak-provider-env.sh is sourced by the two speak launchers
+# and needs no mode bit.
+# The depends_on edge is for hooks outside this repo: this build kept srt-run
+# executable until the shim moved to the srtspec recipe, so a hook that still
+# orders against this key keeps running after the step that does it now.
 [hooks.builds.speak_chmod_scripts]
-commands = ["chmod +x sandbox-watch.sh sandbox-audit.sh speak-env.sh speak-serve.sh srt-run.sh"]
+commands = ["chmod +x sandbox-watch.sh sandbox-audit.sh speak-env.sh speak-serve.sh"]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/speak"
 run = "always"
 idempotent = true
+depends_on = ["builds.srtspec_chmod_srt_run"]
 
 # srt settings for the speak-web agent, linked to
 # ~/.config/srt/speak-web.json. They name no host and no machine path, so they
@@ -80,33 +83,18 @@ action = "symlink"
 # the sandbox and execs speak serve through srt-run (docs/SANDBOXING.md,
 # "Sandboxing a t-man service"). --state-dir pins the state dir the settings
 # allow, so serve never falls back to the legacy ~/.local/share/speak.
-# depends_on names builds.speak_chmod_scripts, which keeps srt-run and the
-# launcher executable, and packages.srtspec, the launcher the shim execs. ralph links dotfiles items before any build or package
-# in every run, so the srt-run and settings links exist before this
-# registration.
+# depends_on names builds.speak_chmod_scripts, which keeps speak-serve.sh
+# executable, builds.srtspec_chmod_srt_run, which keeps srt-run executable,
+# and packages.srtspec, the launcher the shim execs. ralph links dotfiles
+# items before any build or package in every run, so the srt-run and settings
+# links exist before this registration.
 [hooks.builds.speak_web_service]
 commands = [
   "if command -v t-man >/dev/null; then t-man add --name speak-web --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log -- $HOME/.config/ralph/sources/thismoon/recipes/speak/speak-serve.sh --port 7425 --state-dir $HOME/.local/state/speak; else echo 'speak: skip speak-web service (t-man not on PATH; install t-man then run: t-man add --name speak-web -- speak serve --port 7425)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/speak"
 run = "always"
-depends_on = ["packages.speak", "packages.t_man", "builds.speak_chmod_scripts", "packages.srtspec"]
-
-# ── srt-run: the sandbox launcher ──
-# `srt-run <settings-file> <argv...>` is a shim that execs `srtspec run`,
-# which merges the machine's layers into the settings, picks bun or node and
-# runs the command under srt with an SRT_RUN=<label> marker that sandbox-watch
-# attributes denials by. MCP wrappers and t-man services exec it by this path.
-# The per-process settings (~/.config/srt/<tool>.json) ship beside a service's
-# recipe when they are generic, from the consuming repo otherwise
-# (docs/adr/0006). srt itself is a mise tool the consuming repo declares
-# (npm:@anthropic-ai/sandbox-runtime); srtspec run finds it through the mise
-# shims dir. The srtspec recipe (wave 0) builds the binary, and every service
-# registration above depends on packages.srtspec.
-[dotfiles.srt_run]
-source = "srt-run.sh"
-target = "~/code/bin/srt-run"
-action = "symlink"
+depends_on = ["packages.speak", "packages.t_man", "builds.speak_chmod_scripts", "builds.srtspec_chmod_srt_run", "packages.srtspec"]
 
 # ── sandbox-watch: sandbox denial notifications ──
 # Streams unified-log Sandbox denials, keeps the ones srt-run tagged (decoding
