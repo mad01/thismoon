@@ -106,8 +106,8 @@ in the consuming repo's mise config).
 Three pieces, split along the recipe layering in
 [docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.md):
 
-1. `srt-run`, shipped here by the speak recipe as `~/code/bin/srt-run`
-   ([`recipes/speak/srt-run.sh`](../recipes/speak/srt-run.sh)): a shim
+1. `srt-run`, shipped here by the srtspec recipe as `~/code/bin/srt-run`
+   ([`recipes/srtspec/srt-run.sh`](../recipes/srtspec/srt-run.sh)): a shim
    that execs `srtspec run` ([`tools/srtspec`](../tools/srtspec/)). Usage:
    `srt-run <settings-file> <argv...>`. It expands a leading `~` in the
    settings path, merges the machine's layers into a copy srt reads, finds
@@ -375,7 +375,7 @@ one entry with the layer it came from: `base` (the settings file), `local`
 calling shell). Where `srtspec run` would refuse to launch, explain says
 why and exits 1. The two commands merge through one package, and both run
 the cases in
-[`recipes/speak/testdata/srt-local`](../recipes/speak/testdata/srt-local).
+[`recipes/srtspec/testdata/srt-local`](../recipes/srtspec/testdata/srt-local).
 
 ### srt keys
 
@@ -491,7 +491,7 @@ carries over to the next one:
   per machine, the service declares `spec.access` in its `service-info.yaml`
   and `make sandbox-settings` renders `recipes/<svc>/<label>.srt.json`,
   linked to `~/.config/srt/<label>.json` by a `[dotfiles.<svc>_srt_settings]`
-  item. `recipes/speak/srt-settings-test.sh`, part of `make test-recipes`,
+  item. `recipes/srtspec/srt-settings-test.sh`, part of `make test-recipes`,
   checks every shipped file and its wiring.
 - **A wrapper only when there is something to resolve.** launchd starts an
   agent in `/` with a small environment, so the cwd and env reasons for an
@@ -505,10 +505,10 @@ carries over to the next one:
 - **Ordering.** ralph links every dotfiles item before any build or
   package runs, so the settings link and `~/code/bin/srt-run` exist before
   the registration hook. ralph's `depends_on` accepts only `builds.` and
-  `packages.` keys, so the hook depends on `builds.speak_chmod_scripts`,
+  `packages.` keys, so the hook depends on `builds.srtspec_chmod_srt_run`,
   which keeps `srt-run.sh` executable, and on `packages.srtspec`, the
-  binary the shim execs; the srtspec recipe sits in wave 0 with the
-  services for that reason.
+  binary the shim execs. Both are the srtspec recipe's, which sits in wave 0
+  with the services for that reason.
 - **Start minimal.** `listen` with the port (and `local: [events]` if it
   posts to events), `reads: [~/code/bin, workdir]`, `writes: [workdir,
   temp]`, no `egress`. Add only what a probe shows the service needs.

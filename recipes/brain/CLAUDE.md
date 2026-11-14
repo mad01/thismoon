@@ -27,7 +27,7 @@ package `working_dir` names the source cache
   srt-run ~/.config/srt/brain-serve.json brain serve --port 7427`.
   Idempotent; `run = "always"` self-heals if the agent was removed. Guarded
   on t-man being on PATH. `depends_on` is `packages.brain`, `packages.t_man`,
-  `builds.speak_chmod_scripts` (keeps srt-run executable) and
+  `builds.srtspec_chmod_srt_run` (keeps srt-run executable) and
   `packages.srtspec` (the launcher srt-run execs).
 - `dotfiles.brain_serve_srt_settings`: links `brain-serve.srt.json` to
   `~/.config/srt/brain-serve.json`. The file is rendered from `spec.access`

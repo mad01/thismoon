@@ -1,9 +1,10 @@
 # `speak` recipe
 
 Builds and installs the `speak` binary, registers the `speak-web` agent behind
-`http://speak.this/`, links the `srt-run` sandbox launcher, and registers the
-`sandbox-watch` denial notifier. Source lives in this repo: `services/speak/` (see
-`services/speak/CLAUDE.md`).
+`http://speak.this/`, and registers the `sandbox-watch` denial notifier. Source
+lives in this repo: `services/speak/` (see `services/speak/CLAUDE.md`). The
+`srt-run` launcher path speak-web starts through is the srtspec recipe's
+(`recipes/srtspec/CLAUDE.md`).
 
 This recipe is consumed remotely: a machine's ralph config declares a
 `[[recipe_sources]]` stanza pointing at this repo (source name `thismoon`), and
@@ -21,7 +22,8 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   guard skips the restart on first install (before registration).
 - **`hooks.builds.speak_web_service`**: registration only: `t-man add …
   speak-serve.sh --port 7425 --state-dir ~/.local/state/speak`, with the
-  sandbox ledger as an extra log. speak-web serves the document audio routes
+  sandbox ledger as an extra log. Like every sandboxed service it orders
+  after `builds.srtspec_chmod_srt_run` and `packages.srtspec`. speak-web serves the document audio routes
   present pages register with and play from, the CORS-guarded
   `/v1/audio/speech`, and a static landing page, all through the provider
   `~/.config/speak/config.yaml` selects. On the default local provider, a
@@ -56,36 +58,6 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   caller's own entry), a local provider adds none, only the provider's
   variable may cross from the secrets file, and `speak-env.sh` must exec
   speak directly.
-- **`dotfiles.srt_run`**: symlinks `srt-run.sh` to `~/code/bin/srt-run`, the
-  launcher path every sandboxed MCP server and t-man service execs through:
-  `srt-run <settings-file> <argv...>`. The script is a shim over
-  `srtspec run` (`tools/srtspec`, built by the srtspec recipe in wave 0),
-  which runs the command under srt (anthropics/sandbox-runtime, a mise tool
-  the consuming repo declares) as `env SRT_RUN=<label> <argv...>`, where the
-  label is the settings file's name (`~/.config/srt/present.json` gives
-  `present`). It sets the child's `TMPDIR` and merges the machine-local
-  expansion layer `~/.config/srt/<label>.local.json` and
-  `SRT_RUN_ALLOW_DOMAINS` into the copy srt reads. A layer that does more
-  than widen is refused (exit 1). srt itself runs under bun when mise has
-  one, else node; `SRT_RUN_RUNTIME` overrides, and a missing runtime exits
-  127. Each launch prints `srt-run: <label> runtime
-  <bun|node>` to stderr. `srtspec explain <label>` shows the merged result.
-  Settings that are the same on every machine are rendered from each
-  service's `spec.access` manifest and ship beside its recipe in this repo:
-  events, moondb, present serve, deps, status and speak-web. The rest come
-  from the consuming repo. The launcher's rules and the bun measurements:
-  `tools/srtspec/CLAUDE.md` and `docs/SANDBOXING.md`, "bun or node".
-- **`testdata/srt-local/`**: the expansion-layer cases (`ok-*` must launch,
-  `refuse-*` must exit 1 before srt starts) that srtspec's launch and layers
-  tests both run (`go test ./tools/srtspec/...`). Add a case there, not in
-  a test.
-- **`srt-settings-test.sh`**: run by `make test-recipes`, it checks every
-  shipped `recipes/*/*.srt.json`. Each file needs the six lists srt
-  requires, no host, and `denyRead` from `~`. No `allowWrite` may cover
-  `~/.config/srt` or the sources cache. Its recipe must link it to
-  `~/.config/srt/<label>.json` and launch through `srt-run`. Each t-man
-  registration there needs the ledger `--extra-log` and the
-  `builds.speak_chmod_scripts` edge.
 - **`hooks.builds.sandbox_watch_service`** — registers `sandbox-watch`, which
   execs `sandbox-watch.sh` straight from this directory in the sources cache.
   Turns sandbox denials into Notification Center banners (batched per 60s)
@@ -101,8 +73,10 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   (`SANDBOX_WATCH_LOG_KEEP`). `sandbox-audit.sh ledger [label]` reads them
   all, oldest first.
 - **`hooks.builds.speak_chmod_scripts`** — keeps `sandbox-watch.sh`,
-  `sandbox-audit.sh`, `speak-env.sh`, `speak-serve.sh` and `srt-run.sh`
-  executable inside the sources cache.
+  `sandbox-audit.sh`, `speak-env.sh` and `speak-serve.sh` executable inside
+  the sources cache. It depends on `builds.srtspec_chmod_srt_run`, so a hook
+  outside this repo that still orders against this key runs after the step
+  that keeps `srt-run` executable.
 - **`pre_uninstall`** — removes both agents before cleanup deletes the binary.
 
 ## What stays in the consuming repo (private overlay)

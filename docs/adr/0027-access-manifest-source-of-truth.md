@@ -9,6 +9,10 @@ Adds `kit/access` and `tools/srtspec`, changes `recipes/speak/srt-run.sh`,
 and makes `catalog validate` require the manifest. Builds on the
 2026-10-25 amendments to ADR-0006.
 
+**Amended by PR #500 (2026-11-14):** the launcher is now
+`recipes/srtspec/srt-run.sh`. It moved from the speak recipe to the srtspec
+recipe, and the installed path is unchanged.
+
 ## Context
 
 Each sandboxed process ran under a hand-written srt settings file, the JSON

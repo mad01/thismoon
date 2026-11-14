@@ -63,5 +63,5 @@ of every entry.
 - `verify` passes on a tree `generate` just wrote and fails on any byte
   `generate` would rewrite.
 - run and explain share `layers`: what explain shows is what run hands
-  srt, and `recipes/speak/testdata/srt-local` holds the cases the launch
+  srt, and `recipes/srtspec/testdata/srt-local` holds the cases the launch
   and layers tests both run.

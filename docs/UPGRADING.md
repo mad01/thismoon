@@ -4,6 +4,14 @@ Actions a change needs on a consuming machine, newest first. `ralph up` pulls ma
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
 
+## 2026-11-14 srtspec, speak: the srt-run launcher path moves to the srtspec recipe
+
+Change: thismoon #500. The `srt-run` shim and the `dotfiles.srt_run` link move from the speak recipe to the srtspec recipe, with a new build, `builds.srtspec_chmod_srt_run`, that keeps the shim executable. Every sandboxed service here orders against that build. `~/code/bin/srt-run`, its command line and the denial log path are unchanged. `builds.speak_chmod_scripts` stays and depends on the new build, so a consuming repo's hook that names it still validates and still runs after the shim is executable.
+
+Run: `ralph up`. It points `~/code/bin/srt-run` at `recipes/srtspec/srt-run.sh` in the sources cache and renames the old link to `~/code/bin/srt-run.bak.<timestamp>`. That backup points at a file that is gone; delete it. Between the sources pull and the relink the launcher path dangles for a moment, so a sandboxed process that starts right then fails once; running processes are not affected. In the consuming repo, a hook that orders against `builds.speak_chmod_scripts` only for `srt-run` can name `builds.srtspec_chmod_srt_run` instead. Make that edit after this change is on main: ralph validates the config before it pulls the sources cache, so on the first run pull the cache by hand.
+
+Verify: `readlink ~/code/bin/srt-run` ends in `recipes/srtspec/srt-run.sh`, and `test -x ~/code/bin/srt-run` succeeds.
+
 ## 2026-11-13 present: the split slide layout
 
 Change: thismoon #494. A deck section may set `layout: "split"`: the heading and up to 15 words in a left column, exactly one chart, diagram, graph, image, or terminal in a right one. An older present refuses a deck Doc that uses it (`unknown layout "split"`). A share push carries the rendered deck, so an older shared instance takes the page but draws each split slide as a default one, the visual under the text. With the render level in place (#486), the share warns that the instance is older than the page.

@@ -25,8 +25,8 @@
 # profile-gated work source that brings an Enterprise instance of the same
 # server: its own drop-in, the same wrapper, its host as the argument.
 #
-# srt-run comes from thismoon's speak recipe (~/code/bin/srt-run), srtspec
-# from thismoon's srtspec recipe, and srt itself from mise (recipes/mise/
+# srt-run (~/code/bin/srt-run) and srtspec come from thismoon's srtspec
+# recipe, and srt itself from mise (recipes/mise/
 # here, wave 0).
 #
 # Wave 1 like agent-config. The drop-in and the settings link are dotfiles,
