@@ -1,0 +1,22 @@
+# upgrade-note: skill-only recipe. The skill has no companion binary; it ships
+# the procedure for writing a docs/UPGRADING.md entry from the repo-root
+# skills/ dir into the agent skill directories on every machine. The check it
+# names is a Go test in kit/upgradenotes, run from a checkout of this repo.
+[recipe]
+name = "upgrade-note"
+description = "upgrade-note: agent skill for writing and checking an entry in docs/UPGRADING.md"
+
+# The skill lives in the repo-root skills/ dir (discoverable by browsing the
+# repo); link just this skill's directory into place. Relative sources resolve
+# against the recipe dir and are path-cleaned, so ../../ reaches the
+# source-checkout root.
+[dotfiles.upgrade_note_skill]
+source = "../../skills/upgrade-note"
+target = "~/.claude/skills/upgrade-note"
+action = "symlink_dir"
+
+# Codex discovers user skills from ~/.agents/skills; mirror the same dir there.
+[dotfiles.upgrade_note_codex_skill]
+source = "../../skills/upgrade-note"
+target = "~/.agents/skills/upgrade-note"
+action = "symlink_dir"

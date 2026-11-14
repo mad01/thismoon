@@ -80,7 +80,7 @@ docs/CONTAINER-BUILDS.md package-manager build steps (npm, pip, gem) in a throwa
 
 ## Skills
 
-The repo ships seven agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand. The paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
+The repo ships eight agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand. The paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
 
 | Skill | What it does | Backed by |
 |-------|--------------|-----------|
@@ -90,9 +90,10 @@ The repo ships seven agent skills under `skills/`, one directory per skill. Each
 | `humanizer` | Strips AI-writing tells from prose before it lands in docs, PR descriptions, or commit bodies. | the `humanizer` MCP for detection and voice profiling, plus `humanizer_judge` (LLM backend, Haiku 5.5 via a LiteLLM proxy or OpenRouter) for holistic judgment |
 | `loom` | Coordinates parallel sessions on one repo with git worktrees: each session claims its own worktree under `~/.worktrees/` and commits there. A single weaver session rebases the finished branches and lands them in order. | nothing (guidance only; creates worktrees under `~/.worktrees/`) |
 | `present` | Generates a scrollable briefing page with fixation reading, graphs, and inline charts for digesting a work summary or research. | the `present` service (`services/present`) |
+| `upgrade-note` | Writes and checks an entry in `docs/UPGRADING.md`: the input to collect, when an entry is needed, the entry form and the result to report. | nothing (guidance only; `go test ./kit/upgradenotes/` checks the form from a checkout) |
 | `worklog` | Saves and resumes cross-session work state keyed by ticket or topic, not by working directory. | the `worklog` MCP, with the `worklog` CLI as fallback |
 
-Prerequisites: `golang-pro`, `golang-style`, `handoff`, and `loom` need nothing beyond the checkout. The other three need their backing MCP or service registered: that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
+Prerequisites: `golang-pro`, `golang-style`, `handoff`, `loom`, and `upgrade-note` need nothing beyond the checkout. The other three need their backing MCP or service registered: that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
 
 ## Release process
 
@@ -110,7 +111,7 @@ Two delivery paths, independent of each other:
 
 - **Fleet (ralph):** consuming machines point a `[[recipe_sources]]` stanza at this repo (`ref = "main"`, `update = true`), so recipes merge as `thismoon/<recipe>` and every `ralph up` pulls main, rebuilds from source, and restarts services via t-man. Merging to main IS the deploy; no release tag needed. After merging recipe changes, verify with the service's `/version` — ralph can report ok while an old binary keeps running.
 - **Artifacts (releases):** the per-component tags/tarballs above serve `go install` and manual downloads; the fleet does not consume them.
-- **Changes that need an action on consuming machines** (a migration, a re-import, a new hook entry in the consuming repo's settings template, an ordered `ralph up`) ship with three things in the same PR. An entry in `docs/UPGRADING.md`, newest first, in the form that page describes: a dated heading, then `Change`, `Run`, `Verify` and `Since`. `Run` gets a "With ralph:" and a "Without ralph:" part when the steps differ. `Since` reads `unreleased` at merge, or `main only` when no component release carries the change. The same steps in the PR body. A doctor check when the missing action is detectable. The fleet pulls main without reading release notes, so a CHANGELOG line alone reaches nobody.
+- **Changes that need an action on consuming machines** (a migration, a re-import, a new hook entry in the consuming repo's settings template, an ordered `ralph up`) ship with three things in the same PR. An entry in `docs/UPGRADING.md`, newest first, in the form that page describes: a dated heading, then `Change`, `Run`, `Verify` and `Since`. `Run` gets a "With ralph:" and a "Without ralph:" part when the steps differ. `Since` reads `unreleased` at merge, or `main only` when no component release carries the change. The `upgrade-note` skill walks through it, and `go test ./kit/upgradenotes/` checks the form in CI. The same steps in the PR body. A doctor check when the missing action is detectable. The fleet pulls main without reading release notes, so a CHANGELOG line alone reaches nobody.
 
 Machine-private wiring (which `.this` hosts exist, MCP registration, env/secrets, config overlays) lives in the consuming repo as companion recipes layered over these — never add it here (docs/adr/0006).
 

@@ -16,6 +16,8 @@ Every entry has a heading with the date, the components and a title, then these 
 - `Verify:` a command, and the output that shows the step worked. It also passes on a machine where the step was already done.
 - `Since:` each component with the first version that carries the change, for example `belt 2.12.0`. It reads `unreleased` until that release exists (`docs/RELEASING.md`, "Upgrade notes"), and `main only` when no component release carries the change, as with a change to a recipe.
 
+`go test ./kit/upgradenotes/` checks this form on every entry dated 2026-11-14 or later, and CI runs it. The `upgrade-note` skill walks an agent through writing an entry.
+
 ## 2026-11-14 srtspec, speak: the srt-run launcher path moves to the srtspec recipe
 
 Change: thismoon #500. The `srt-run` shim and the `dotfiles.srt_run` link move from the speak recipe to the srtspec recipe, with a new build, `builds.srtspec_chmod_srt_run`, that keeps the shim executable. Every sandboxed service here orders against that build. `~/code/bin/srt-run`, its command line and the denial log path are unchanged. `builds.speak_chmod_scripts` stays and depends on the new build, so a consuming repo's hook that names it still validates and still runs after the shim is executable.

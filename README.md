@@ -115,7 +115,7 @@ rather than a copy of them.
 
 ## Skills
 
-Alongside the binaries, `skills/` ships seven agent skills: instructions
+Alongside the binaries, `skills/` ships eight agent skills: instructions
 Claude Code and Codex load on demand. Invoke one by name (`/golang-style`)
 or let the agent pick it up when a task matches its description. Each
 skill's ralph recipe symlinks it into `~/.claude/skills` and
@@ -130,6 +130,7 @@ ralph, symlink the skill directory there yourself.
 | [humanizer](skills/humanizer/SKILL.md) | prose is headed for docs, PR descriptions, or commit bodies and should not read as AI-written | the humanizer MCP |
 | [loom](skills/loom/SKILL.md) | several agent sessions work one repo in parallel: each claims its own git worktree and commits there, one weaver session lands the branches in order | nothing — guidance only |
 | [present](skills/present/SKILL.md) | a work summary or research result deserves a scrollable briefing page with graphs and charts | the present service |
+| [upgrade-note](skills/upgrade-note/SKILL.md) | a change to this repo needs an action on machines that already run the tools, and the entry in `docs/UPGRADING.md` has to be written or reviewed | nothing (guidance only) |
 | [worklog](skills/worklog/SKILL.md) | a long task spans sessions and repos and needs to be resumable by ticket or topic | the worklog MCP |
 
 The skill is the workflow; the MCP server or service behind it is its hands.
