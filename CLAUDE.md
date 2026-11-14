@@ -61,7 +61,7 @@ docs/CONTAINER-BUILDS.md package-manager build steps (npm, pip, gem) in a throwa
 
 - Single Go module: `github.com/mad01/thismoon`, go 1.27.4. No nested go.mod files.
 - A component is a directory under `services/` or `tools/` with its own Makefile exposing `build`, `test`, and `install` targets. The root Makefile discovers and delegates to them.
-- Releases are per-component semver with `svc/vX.Y.Z` tags, cut by release-please manifest mode on merge to main. Artifact builds are a plain CI matrix job.
+- Releases are per-component semver with `name/vX.Y.Z` tags, cut by release-please manifest mode on merge to main. Artifact builds are a plain CI matrix job.
 - Build metadata is shared: a component Makefile sets `COMPONENT := <name>`, does `include ../../buildinfo.mk`, and links with `$(BUILDINFO_LDFLAGS)`. Every component then reports the same four-key object (`version`, `commit`, `tag`, `build_time`) from `GET /version` and `<binary> version -o json`, while plain `<binary> version` stays a bare token that status parses.
 - Build targets: darwin/arm64 only — the platform is macOS-focused (see docs/adr/0007; supersedes the target list in 0004).
 - Release artifacts ship with checksums.txt and cosign keyless signatures; local installs use the "mad01 Local Signing" codesign identity, which `recipes/codesign` creates.
@@ -110,7 +110,7 @@ Two delivery paths, independent of each other:
 
 - **Fleet (ralph):** consuming machines point a `[[recipe_sources]]` stanza at this repo (`ref = "main"`, `update = true`), so recipes merge as `thismoon/<recipe>` and every `ralph up` pulls main, rebuilds from source, and restarts services via t-man. Merging to main IS the deploy; no release tag needed. After merging recipe changes, verify with the service's `/version` — ralph can report ok while an old binary keeps running.
 - **Artifacts (releases):** the per-component tags/tarballs above serve `go install` and manual downloads; the fleet does not consume them.
-- **Changes that need an action on consuming machines** (a migration, a re-import, a new hook entry in the consuming repo's settings template, an ordered `ralph up`) ship with three things in the same PR. An entry in `docs/UPGRADING.md`, newest first: component, PR, what to run, how to verify. The same steps in the PR body. A doctor check when the missing action is detectable. The fleet pulls main without reading release notes, so a CHANGELOG line alone reaches nobody.
+- **Changes that need an action on consuming machines** (a migration, a re-import, a new hook entry in the consuming repo's settings template, an ordered `ralph up`) ship with three things in the same PR. An entry in `docs/UPGRADING.md`, newest first, in the form that page describes: a dated heading, then `Change`, `Run`, `Verify` and `Since`. `Run` gets a "With ralph:" and a "Without ralph:" part when the steps differ. `Since` reads `unreleased` at merge, or `main only` when no component release carries the change. The same steps in the PR body. A doctor check when the missing action is detectable. The fleet pulls main without reading release notes, so a CHANGELOG line alone reaches nobody.
 
 Machine-private wiring (which `.this` hosts exist, MCP registration, env/secrets, config overlays) lives in the consuming repo as companion recipes layered over these — never add it here (docs/adr/0006).
 

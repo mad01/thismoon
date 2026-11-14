@@ -308,6 +308,15 @@ combined reference. Config files live under `~/.config/<tool>/`
 the port table. `<name>.this` addresses need d-man running; every service
 also answers on `http://localhost:<port>` with no `.this` setup at all.
 
+## Upgrading
+
+After you update, read [docs/UPGRADING.md](docs/UPGRADING.md). It lists the
+actions a change needs on a machine that already runs the tools: an import to
+run once, a hook to move, a leftover to delete. If you follow main, read every
+entry dated after your last update. If you install releases, read the entries
+for your component whose `Since:` version is newer than the one you had.
+`<name> version -o json` prints the tag and build time of the build you run.
+
 ## Releases
 
 Components release independently: per-component semver tags in the form

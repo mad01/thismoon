@@ -1,8 +1,20 @@
 # Upgrading
 
-Actions a change needs on a consuming machine, newest first. `ralph up` pulls main and rebuilds, but it cannot run an import, add a hook entry to a private settings template, or order two merges. Each entry names the component, the PR, what to run, and how to verify it. The entry lands in the same PR as the change (root `CLAUDE.md`, "Shipping a change to machines"), and a doctor check backs it when the missing action is detectable.
+Actions a change needs on a consuming machine, newest first. `ralph up` pulls main and rebuilds, but it cannot run an import, add a hook entry to a private settings template, or order two merges. The entry lands in the same PR as the change (root `CLAUDE.md`, "Shipping a change to machines"), and a doctor check backs it when the missing action is detectable.
 
 Entries name this repo and the consuming repo's Claude settings template only; the machine-private wiring itself stays in the consuming repo (docs/adr/0006). After any `ralph up`, check the service's `/version`: ralph can report ok while an old binary keeps running.
+
+Which entries to read depends on how you install:
+
+- You follow main, through a ralph recipe source or a checkout you rebuild: read every entry dated after your last update. `<name> version -o json` prints the `build_time` of the build you run.
+- You install releases, with `go install` or a tarball: read the entries that name your component and whose `Since:` version is newer than the one you had. An entry marked `Since: unreleased` is in no release yet. An entry with no `Since:` line predates that line; compare its date with the date of the release you had.
+
+Every entry has a heading with the date, the components and a title, then these lines in order:
+
+- `Change:` the PR and what changed.
+- `Run:` what to run. When the steps differ, a "With ralph:" part and a "Without ralph:" part.
+- `Verify:` a command, and the output that shows the step worked. It also passes on a machine where the step was already done.
+- `Since:` each component with the first version that carries the change, for example `belt 2.12.0`. It reads `unreleased` until that release exists (`docs/RELEASING.md`, "Upgrade notes"), and `main only` when no component release carries the change, as with a change to a recipe.
 
 ## 2026-11-14 srtspec, speak: the srt-run launcher path moves to the srtspec recipe
 
@@ -11,6 +23,8 @@ Change: thismoon #500. The `srt-run` shim and the `dotfiles.srt_run` link move f
 Run: `ralph up`. It points `~/code/bin/srt-run` at `recipes/srtspec/srt-run.sh` in the sources cache and renames the old link to `~/code/bin/srt-run.bak.<timestamp>`. That backup points at a file that is gone; delete it. Between the sources pull and the relink the launcher path dangles for a moment, so a sandboxed process that starts right then fails once; running processes are not affected. In the consuming repo, a hook that orders against `builds.speak_chmod_scripts` only for `srt-run` can name `builds.srtspec_chmod_srt_run` instead. Make that edit after this change is on main: ralph validates the config before it pulls the sources cache, so on the first run pull the cache by hand.
 
 Verify: `readlink ~/code/bin/srt-run` ends in `recipes/srtspec/srt-run.sh`, and `test -x ~/code/bin/srt-run` succeeds.
+
+Since: main only.
 
 ## 2026-11-13 present: the split slide layout
 
