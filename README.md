@@ -115,7 +115,7 @@ rather than a copy of them.
 
 ## Skills
 
-Alongside the binaries, `skills/` ships eight agent skills: instructions
+Alongside the binaries, `skills/` ships nine agent skills: instructions
 Claude Code and Codex load on demand. Invoke one by name (`/golang-style`)
 or let the agent pick it up when a task matches its description. Each
 skill's ralph recipe symlinks it into `~/.claude/skills` and
@@ -124,6 +124,7 @@ ralph, symlink the skill directory there yourself.
 
 | Skill | Use it when | Backed by |
 |-------|-------------|-----------|
+| [ask](skills/ask/SKILL.md) | a question should be answered from the brain vault, with the notes behind the answer cited | the brain MCP |
 | [golang-pro](skills/golang-pro/SKILL.md) | Go work needs specialist depth on concurrency, generics, profiling, or gRPC (vendored from [jeffallan/claude-skills](https://github.com/jeffallan/claude-skills), MIT) | nothing — guidance only |
 | [golang-style](skills/golang-style/SKILL.md) | writing or reviewing Go: naming, package layout, error handling, the HTTP/CLI/store patterns this codebase uses | nothing — guidance only |
 | [handoff](skills/handoff/SKILL.md) | a session is ending mid-task and the next one must continue from a cold start | nothing — guidance only |
