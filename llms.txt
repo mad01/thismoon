@@ -41,6 +41,7 @@ Everything is one Go module, `github.com/mad01/thismoon`, under the BSD-3-Clause
 
 ## Skills
 
+- [ask](https://raw.githubusercontent.com/mad01/thismoon/main/skills/ask/SKILL.md): answers a question from the brain vault and cites the notes
 - [golang-style](https://raw.githubusercontent.com/mad01/thismoon/main/skills/golang-style/SKILL.md): writing and reviewing idiomatic Go
 - [golang-pro](https://raw.githubusercontent.com/mad01/thismoon/main/skills/golang-pro/SKILL.md): Go concurrency, generics, profiling, and gRPC
 - [handoff](https://raw.githubusercontent.com/mad01/thismoon/main/skills/handoff/SKILL.md): a cold-start document for the next session
