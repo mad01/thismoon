@@ -65,6 +65,73 @@ func TestEveryBrainChangeCommits(t *testing.T) {
 	}
 }
 
+// TestFailedCommitsAreReported runs every write path that commits, in a
+// vault whose commits fail two ways: a pre-commit hook refuses them, and git
+// cannot read its global config. Each command fails, says the note is
+// changed on disk but not committed, and leaves nothing staged.
+func TestFailedCommitsAreReported(t *testing.T) {
+	tests := []struct {
+		name   string
+		breaks func(t *testing.T, root string)
+		want   string
+	}{
+		{
+			"hook refuses",
+			func(t *testing.T, root string) {
+				testgit.Hook(t, root, "pre-commit", "echo 'hook says no' >&2\nexit 1\n")
+			},
+			"hook says no",
+		},
+		{
+			"git cannot read its config",
+			func(t *testing.T, _ string) { testgit.UnreadableGlobalConfig(t) },
+			"unable to access",
+		},
+	}
+	steps := []struct {
+		args []string
+		file string // the note the step leaves changed on disk
+	}{
+		{
+			[]string{"capture", "--title", "Quick Thought", "--body", "quick"},
+			"inbox/quick-thought.md",
+		},
+		{
+			[]string{"write", "--tier", "notes", "--title", "Fresh Note", "--body", "fresh"},
+			"notes/fresh-note.md",
+		},
+		{[]string{"edit", "notes/alpha.md", "--append", "more"}, "notes/alpha.md"},
+		{[]string{"promote", "inbox/raw.md", "--title", "Raw Promoted"}, "notes/raw-promoted.md"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := gitVault(t, "")
+			tt.breaks(t, root)
+			for _, step := range steps {
+				got := runBrain(t, "", append(step.args, "-o", "json")...)
+				if got.code != exitError ||
+					!strings.Contains(
+						got.stdout,
+						step.file+" is changed on disk, but the git commit failed",
+					) ||
+					!strings.Contains(got.stdout, tt.want) {
+					t.Errorf("%v: exit %d, stdout %q; want exit %d naming %s and %q",
+						step.args, got.code, got.stdout, exitError, step.file, tt.want)
+				}
+				if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(step.file))); err != nil {
+					t.Errorf("%v: %s is not on disk: %v", step.args, step.file, err)
+				}
+			}
+			if got := testgit.Subjects(t, root); !slices.Equal(got, []string{"seed"}) {
+				t.Errorf("commits = %q, want the seed alone", got)
+			}
+			if staged := testgit.Staged(t, root); len(staged) != 0 {
+				t.Errorf("staged = %q, want nothing", staged)
+			}
+		})
+	}
+}
+
 func TestAutocommitOffAndPlainVaults(t *testing.T) {
 	testgit.Isolate(t)
 	root := setupCLI(t, "")
