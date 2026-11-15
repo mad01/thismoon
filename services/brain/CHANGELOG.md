@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/mad01/thismoon/compare/brain/v0.7.0...brain/v0.7.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* **brain:** report a commit that cannot run and unstage after a failed one ([#507](https://github.com/mad01/thismoon/issues/507)) ([9b3bed3](https://github.com/mad01/thismoon/commit/9b3bed33fecc9d252a3df6b20316538f0cc146ca))
+
 ## [0.7.0](https://github.com/mad01/thismoon/compare/brain/v0.6.0...brain/v0.7.0) (2026-11-13)
 
 
