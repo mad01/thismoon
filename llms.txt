@@ -38,6 +38,7 @@ Everything is one Go module, `github.com/mad01/thismoon`, under the BSD-3-Clause
 - [opener](https://raw.githubusercontent.com/mad01/thismoon/main/tools/opener/README.md): macOS open bridge for URLs, files, apps, and Finder reveal (CLI, MCP)
 - [agent-sync](https://raw.githubusercontent.com/mad01/thismoon/main/tools/agent-sync/README.md): syncs Claude Code settings, mods, and MCP servers from a data repo onto the machine (CLI)
 - [srtspec](https://raw.githubusercontent.com/mad01/thismoon/main/tools/srtspec/README.md): renders each component's access manifest to the sandbox settings file (CLI)
+- [harvest](https://raw.githubusercontent.com/mad01/thismoon/main/tools/harvest/README.md): saves what a Claude Code session learned to the brain vault inbox, from a SessionEnd hook (CLI)
 
 ## Skills
 
@@ -45,6 +46,7 @@ Everything is one Go module, `github.com/mad01/thismoon`, under the BSD-3-Clause
 - [golang-style](https://raw.githubusercontent.com/mad01/thismoon/main/skills/golang-style/SKILL.md): writing and reviewing idiomatic Go
 - [golang-pro](https://raw.githubusercontent.com/mad01/thismoon/main/skills/golang-pro/SKILL.md): Go concurrency, generics, profiling, and gRPC
 - [handoff](https://raw.githubusercontent.com/mad01/thismoon/main/skills/handoff/SKILL.md): a cold-start document for the next session
+- [harvest](https://raw.githubusercontent.com/mad01/thismoon/main/skills/harvest/SKILL.md): saves a session's findings to the brain vault inbox as raw captures
 - [humanizer](https://raw.githubusercontent.com/mad01/thismoon/main/skills/humanizer/SKILL.md): removes AI-writing tells from prose
 - [loom](https://raw.githubusercontent.com/mad01/thismoon/main/skills/loom/SKILL.md): parallel agent sessions on one repo with git worktrees
 - [present](https://raw.githubusercontent.com/mad01/thismoon/main/skills/present/SKILL.md): builds a briefing page or slide deck

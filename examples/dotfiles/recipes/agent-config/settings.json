@@ -104,7 +104,12 @@
       { "hooks": [{ "type": "command", "command": "~/code/bin/belt record post-compact" }] }
     ],
     "SessionEnd": [
-      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record session-end" }] }
+      {
+        "hooks": [
+          { "type": "command", "command": "~/code/bin/belt record session-end" },
+          { "type": "command", "command": "~/code/bin/harvest-env session-end" }
+        ]
+      }
     ],
     "StopFailure": [
       { "hooks": [{ "type": "command", "command": "~/code/bin/belt record stop-failure" }] }

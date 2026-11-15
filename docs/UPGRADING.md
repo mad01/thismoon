@@ -18,6 +18,16 @@ Every entry has a heading with the date, the components and a title, then these 
 
 `go test ./kit/upgradenotes/` checks this form on every entry dated 2026-11-14 or later, and CI runs it. The `upgrade-note` skill walks an agent through writing an entry.
 
+## 2026-11-15 harvest: a new tool saves session knowledge to the brain inbox
+
+Change: thismoon #505. `harvest` is a new tool with a skill of the same name. When a Claude Code session ends, it reads what the user and the assistant wrote, asks a model which facts are worth keeping, and writes those to the brain inbox as raw captures. `ralph up` installs the binary, its two launchers, its sandbox settings and the skill. Nothing runs until the consuming repo adds the hook, so a machine that skips the steps below has the tool installed and idle.
+
+Run: only on a machine that should harvest. With ralph: in the consuming repo, add a `SessionEnd` command hook that runs `~/code/bin/harvest-env session-end` to the Claude settings template. Add a belt `custom_hints.harvest` entry with `event: session-start` and `command: [harvest, hint]`. Add the machine's sandbox layer for the label `harvest`, with the grants `recipes/harvest/CLAUDE.md` lists under "What the consuming repo adds". Then run `ralph up` and start a new session. Without ralph: run `make -C tools/harvest install`, then link `recipes/harvest/harvest-env.sh` to `~/code/bin/harvest-env`, `recipes/harvest/harvest-step.sh` to `~/code/bin/harvest-step`, `recipes/harvest/harvest.srt.json` to `~/.config/srt/harvest.json` and `skills/harvest` to `~/.claude/skills/harvest`, and add the same hook, hint and layer by hand.
+
+Verify: `harvest doctor` prints `all checks passed`. After the next session ends, `tail -3 ~/.local/state/harvest/harvest.log` shows a `done` or `skip` line with that session's id.
+
+Since: harvest unreleased.
+
 ## 2026-11-14 srtspec, speak: the srt-run launcher path moves to the srtspec recipe
 
 Change: thismoon #500. The `srt-run` shim and the `dotfiles.srt_run` link move from the speak recipe to the srtspec recipe, with a new build, `builds.srtspec_chmod_srt_run`, that keeps the shim executable. Every sandboxed service here orders against that build. `~/code/bin/srt-run`, its command line and the denial log path are unchanged. `builds.speak_chmod_scripts` stays and depends on the new build, so a consuming repo's hook that names it still validates and still runs after the shim is executable.
