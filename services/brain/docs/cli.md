@@ -75,7 +75,7 @@ promote never change. With several vaults, text output prints `vault:path`.
 | `sync` | pull each git vault (fast-forward only), settle promotions, push private vaults | `--vault` |
 | `index` | refresh indexes; semantic re-embeds changed notes only (queries refresh too) | `--force --literal-only` |
 | `migrate --ids` | give every note without an id one; skips shared vaults unless named | `--dry-run` |
-| `doctor` | checks `config`, `vault`, `index-dir`, `index`, `ids` (an id on two notes), `ollama` (only with the semantic layer on), then a serve on `BRAIN_PORT` or 7427: `serve-reachable`, `version-skew`, `serve-vaults`, `serve-state-dir` (skipped when nothing listens); prints the paths in effect | |
+| `doctor` | checks `config`, `vault`, `index-dir`, `index`, `ids` (an id on two notes), `ollama` and `embeddings` (both only with the semantic layer on; `embeddings` fails on a note the last semantic sync left out), then a serve on `BRAIN_PORT` or 7427: `serve-reachable`, `version-skew`, `serve-vaults`, `serve-state-dir` (skipped when nothing listens); prints the paths in effect | |
 | `serve` | read-only web view of every vault (graph, notes, search, review queues) on 127.0.0.1; API in `brain docs serve` | `--port` (else `BRAIN_PORT`, else 7427) |
 | `docs [topic]` | print this guide, or `lifecycle`, `sharing` or `serve` | |
 
@@ -86,6 +86,8 @@ and replace the whole list on edit.
 semantic-search and hybrid-search sync a stale semantic index first. With
 Ollama down the index stays as it was, a `warning:` line on stderr (and
 `warnings[]` in JSON) says so, and hybrid-search fuses the literal hits alone.
+A note Ollama refuses to embed is left out of the index instead of failing
+the search, and every search names it in a warning until a sync embeds it.
 
 A wikilink resolves by stem or path, then by title or alias, ignoring case
 and never by prefix. A private vault's links look in that vault first, then in

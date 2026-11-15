@@ -1,9 +1,11 @@
 // Package chunk splits a brain markdown note into retrieval-friendly chunks.
 //
 // Chunking is markdown-aware: headings carve the note into sections, fenced
-// code blocks are treated as atomic paragraphs (never split mid-fence), and
-// chunks within a section share a configurable word-overlap so context near
-// chunk boundaries is preserved for the retriever.
+// code blocks are treated as atomic paragraphs, and chunks within a section
+// share a configurable word-overlap so context near chunk boundaries is
+// preserved for the retriever. No chunk is longer than maxChunkBytes, the
+// most the embed model is sure to take: a longer paragraph or fence is cut
+// at a line break, else a space, else a character boundary.
 //
 // Frontmatter is parsed once per note and propagated to every emitted chunk
 // so downstream filters (tier / tag / evidence) work without re-reading
@@ -19,6 +21,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mad01/thismoon/services/brain/internal/markdown"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
@@ -70,10 +73,12 @@ type Chunk struct {
 // Options tune the chunker. Zero values fall back to defaults (800/100).
 type Options struct {
 	// TargetWords is the soft upper bound on words per chunk. Used as the
-	// pack-until size when accumulating paragraphs.
+	// pack-until size when accumulating paragraphs. maxChunkBytes caps a
+	// chunk too, and prose reaches it first at about 330 words.
 	TargetWords int
 	// OverlapWords is the number of trailing words from the previous chunk
-	// to prepend to the next chunk within the same section.
+	// to prepend to the next chunk within the same section, at most
+	// maxOverlapBytes of them.
 	OverlapWords int
 }
 
@@ -81,6 +86,25 @@ const (
 	defaultTargetWords  = 600
 	defaultOverlapWords = 75
 )
+
+// maxChunkBytes caps a chunk's body, overlap included, so the embed model
+// always takes it. nomic-embed-text, the default model, has a 2048-token
+// context in Ollama, and Ollama refuses a longer prompt outright ("the input
+// length exceeds the context length"). Its WordPiece tokenizer, like
+// byte-level BPE, makes at most one token of each byte, so 2000 bytes fit
+// whatever the text is, with room for the two tokens the model adds.
+const maxChunkBytes = 2000
+
+// maxOverlapBytes caps the overlap carried into the next chunk, so at least
+// three quarters of a chunk is its own text.
+const maxOverlapBytes = maxChunkBytes / 4
+
+// paraSep joins the paragraphs of a chunk.
+const paraSep = "\n\n"
+
+// maxPartBytes is the size of the parts a paragraph over maxChunkBytes is cut
+// into: small enough that each part still takes a full overlap.
+const maxPartBytes = maxChunkBytes - maxOverlapBytes - len(paraSep)
 
 func (o Options) resolved() Options {
 	if o.TargetWords <= 0 {
@@ -316,78 +340,132 @@ type chunkPiece struct {
 	charEnd   int
 }
 
-// chunkSection packs a section's text into chunks, keeping fenced code
-// blocks atomic and applying overlap between adjacent chunks.
+// chunkSection packs a section's paragraphs into chunks of at most
+// opts.TargetWords words and maxChunkBytes bytes, applying overlap between
+// adjacent chunks. A paragraph over maxChunkBytes is cut into parts first; a
+// paragraph or part at the word target or over it is a chunk of its own.
 func chunkSection(s section, opts Options) []chunkPiece {
-	paras := splitParagraphs(s.text)
-	if len(paras) == 0 {
-		return nil
-	}
-
-	var pieces []chunkPiece
-	var buf []paragraph
-	bufWords := 0
-
-	emit := func() {
-		if len(buf) == 0 {
-			return
+	k := packer{opts: opts}
+	for _, p := range splitParagraphs(s.text) {
+		for _, part := range boundParagraph(p) {
+			k.add(part)
 		}
-		text := joinParas(buf)
-		pieces = append(pieces, chunkPiece{
-			text:      text,
-			charStart: buf[0].start,
-			charEnd:   buf[len(buf)-1].end,
-		})
-		// Carry overlap into the next chunk: take trailing words from the
-		// emitted text and prepend them to a synthetic "overlap paragraph"
-		// that does not advance section bounds.
-		if opts.OverlapWords > 0 {
-			over := tailWords(text, opts.OverlapWords)
-			if over != "" {
-				buf = []paragraph{{text: over, words: countWords(over), overlap: true}}
-				bufWords = buf[0].words
-				return
-			}
-		}
-		buf = nil
-		bufWords = 0
 	}
+	k.emit()
+	return k.pieces
+}
 
-	for _, p := range paras {
-		// If a single paragraph exceeds the target on its own (typical for a
-		// big code fence), emit any accumulated buffer first, then emit the
-		// paragraph as its own chunk. We don't split inside fences.
-		if p.words >= opts.TargetWords {
-			if bufWords > 0 {
-				emit()
-			}
-			pieces = append(pieces, chunkPiece{
-				text:      p.text,
-				charStart: p.start,
-				charEnd:   p.end,
+// packer accumulates a section's paragraphs into chunk pieces.
+type packer struct {
+	opts   Options
+	pieces []chunkPiece
+	buf    []paragraph
+	words  int // words in buf
+	size   int // bytes of joinParas(buf)
+}
+
+// add appends p to the chunk being packed, first emitting that chunk when p
+// does not fit beside it, and dropping the overlap when p does not fit
+// beside that either.
+func (k *packer) add(p paragraph) {
+	if !k.fits(p) {
+		k.emit()
+	}
+	if !k.fits(p) {
+		k.reset()
+	}
+	if len(k.buf) > 0 {
+		k.size += len(paraSep)
+	}
+	k.buf = append(k.buf, p)
+	k.words += p.words
+	k.size += len(p.text)
+}
+
+// fits reports whether p joins the chunk being packed within both bounds.
+func (k *packer) fits(p paragraph) bool {
+	return len(k.buf) == 0 ||
+		(k.words+p.words <= k.opts.TargetWords &&
+			k.size+len(paraSep)+len(p.text) <= maxChunkBytes)
+}
+
+// emit turns the packed paragraphs into a chunk piece and carries its
+// trailing words into the next chunk as a synthetic overlap paragraph,
+// which does not move the section bounds. A buffer holding only overlap is
+// dropped, never emitted.
+func (k *packer) emit() {
+	own := k.buf
+	if len(own) > 0 && own[0].overlap {
+		own = own[1:]
+	}
+	if len(own) == 0 {
+		k.reset()
+		return
+	}
+	text := joinParas(k.buf)
+	k.pieces = append(k.pieces, chunkPiece{
+		text:      text,
+		charStart: own[0].start,
+		charEnd:   own[len(own)-1].end,
+	})
+	k.reset()
+	if over := tailWords(text, k.opts.OverlapWords, maxOverlapBytes); over != "" {
+		k.buf = []paragraph{{text: over, words: countWords(over), overlap: true}}
+		k.words, k.size = k.buf[0].words, len(over)
+	}
+}
+
+func (k *packer) reset() {
+	k.buf, k.words, k.size = nil, 0, 0
+}
+
+// boundParagraph returns p whole when it fits maxChunkBytes, else cut into
+// consecutive parts of at most maxPartBytes (see cutPoint). A fence is cut
+// like any other paragraph, since a chunk the model refuses is not indexed
+// at all.
+func boundParagraph(p paragraph) []paragraph {
+	if len(p.text) <= maxChunkBytes {
+		return []paragraph{p}
+	}
+	var parts []paragraph
+	for text, start := p.text, p.start; text != ""; {
+		cut, next := cutPoint(text, maxPartBytes)
+		if part := text[:cut]; strings.TrimSpace(part) != "" {
+			parts = append(parts, paragraph{
+				text:  part,
+				start: start,
+				end:   start + cut,
+				words: countWords(part),
 			})
-			continue
 		}
-		if bufWords+p.words > opts.TargetWords && bufWords > 0 {
-			emit()
-		}
-		buf = append(buf, p)
-		bufWords += p.words
+		text, start = text[next:], start+next
 	}
-	if bufWords > 0 {
-		// Drop trailing chunk that is pure overlap (no original content).
-		nonOverlap := false
-		for _, b := range buf {
-			if !b.overlap {
-				nonOverlap = true
-				break
-			}
-		}
-		if nonOverlap {
-			emit()
-		}
+	return parts
+}
+
+// cutPoint returns where the first part of text ends (cut) and the rest
+// begins (next) for a part of at most limit bytes: the whole text when it
+// fits, else at the last line break within the limit, else the last space or
+// tab, dropping that byte, else the last character boundary, so a table, a
+// long list and a line with no spaces are all cut. limit is well over
+// utf8.UTFMax; text that is not UTF-8 is cut where the search for a
+// boundary gives up.
+func cutPoint(text string, limit int) (cut, next int) {
+	if len(text) <= limit {
+		return len(text), len(text)
 	}
-	return pieces
+	window := text[:limit+1]
+	if i := strings.LastIndexByte(window, '\n'); i > 0 {
+		return i, i + 1
+	}
+	if i := strings.LastIndexAny(window, " \t"); i > 0 {
+		return i, i + 1
+	}
+	cut = limit
+	for cut > limit-utf8.UTFMax+1 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return cut, cut
 }
 
 // paragraph is one block of text (a regular paragraph, a list, or a fenced
@@ -491,7 +569,7 @@ func joinParas(paras []paragraph) string {
 	var b strings.Builder
 	for i, p := range paras {
 		if i > 0 {
-			b.WriteString("\n\n")
+			b.WriteString(paraSep)
 		}
 		b.WriteString(p.text)
 	}
@@ -503,15 +581,21 @@ func countWords(s string) int {
 	return len(strings.Fields(s))
 }
 
-// tailWords returns the trailing n whitespace-separated tokens of s, joined
-// with single spaces. Returns "" when n <= 0 or s is empty.
-func tailWords(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
+// tailWords returns the trailing whitespace-separated tokens of s, at most n
+// of them and at most maxBytes bytes once joined with single spaces. Returns
+// "" when n <= 0, s is empty or its last token alone is over maxBytes.
+func tailWords(s string, n, maxBytes int) string {
 	fields := strings.Fields(s)
-	if len(fields) <= n {
-		return strings.Join(fields, " ")
+	start, size := len(fields), 0
+	for start > 0 && len(fields)-start < n {
+		grown := size + len(fields[start-1])
+		if start < len(fields) {
+			grown++ // the joining space
+		}
+		if grown > maxBytes {
+			break
+		}
+		start, size = start-1, grown
 	}
-	return strings.Join(fields[len(fields)-n:], " ")
+	return strings.Join(fields[start:], " ")
 }

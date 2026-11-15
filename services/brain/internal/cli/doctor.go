@@ -17,7 +17,8 @@ func newDoctorCmd(a *app) *cobra.Command {
 		Long: `Check that brain can work: the config resolves (config), every vault exists
 (vault), the index directory is writable (index-dir), the literal indexes are
 fresh (index), no two notes share an id (ids), and, only when
-semantic.enabled is true, Ollama answers (ollama).
+semantic.enabled is true, Ollama answers (ollama) and the last semantic sync
+embedded every note (embeddings), naming each note it left out and why.
 
 Then check brain serve on 127.0.0.1 (port $` + brain.PortEnv + `, else ` + fmt.Sprint(brain.DefaultPort) + `): it
 answers (serve-reachable), it runs this build (version-skew), it sees the

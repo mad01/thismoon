@@ -207,8 +207,8 @@ func (q *HybridQuery) applyDefaults() {
 
 // HybridSearch fuses literal and semantic hits by Reciprocal Rank Fusion,
 // then optionally reranks them with the LLM. When the semantic side fails
-// (Ollama unreachable, say) the result fuses literal hits alone and says so
-// in Warnings.
+// (Ollama unreachable, or the refresh of a semantic index failing, say) the
+// result fuses literal hits alone and says so in Warnings.
 func (l *Library) HybridSearch(
 	ctx context.Context,
 	vaults *vault.Set,
@@ -231,17 +231,17 @@ func (l *Library) HybridSearch(
 	}
 
 	warnings, err := l.refreshSemantic(ctx, vaults)
-	if err != nil {
-		return hybrid.Result{}, err
+	var semHits []semantic.Hit
+	if err == nil {
+		semHits, err = l.semanticHits(ctx, vaults, q.Text, semantic.QueryOptions{
+			K:        q.KVector,
+			Tier:     q.Tier,
+			Tag:      q.Tag,
+			Type:     q.Type,
+			Status:   q.Status,
+			Evidence: q.Evidence,
+		}, q.IncludeRevoked)
 	}
-	semHits, err := l.semanticHits(ctx, vaults, q.Text, semantic.QueryOptions{
-		K:        q.KVector,
-		Tier:     q.Tier,
-		Tag:      q.Tag,
-		Type:     q.Type,
-		Status:   q.Status,
-		Evidence: q.Evidence,
-	}, q.IncludeRevoked)
 	if err != nil {
 		warnings = append(
 			warnings,

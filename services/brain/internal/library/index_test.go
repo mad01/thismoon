@@ -71,11 +71,20 @@ func (f *semanticFixture) write(rel, content string) {
 // open opens a library over the fixture vault embedding with model.
 func (f *semanticFixture) open(model string) (*Library, *vault.Vault) {
 	f.t.Helper()
+	return f.openWith(model, f.embed.embed)
+}
+
+// openWith opens a library over the fixture vault whose embedder is embed.
+func (f *semanticFixture) openWith(
+	model string,
+	embed semantic.EmbedFunc,
+) (*Library, *vault.Vault) {
+	f.t.Helper()
 	cfg := &config.Config{
 		Vaults:   []config.Vault{{Name: "personal", Path: f.root, Default: true}},
 		Semantic: config.SemanticConfig{Enabled: true, EmbedModel: model},
 	}
-	lib, err := Open(Options{Config: cfg, Embed: f.embed.embed})
+	lib, err := Open(Options{Config: cfg, Embed: embed})
 	if err != nil {
 		f.t.Fatal(err)
 	}

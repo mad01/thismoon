@@ -34,7 +34,11 @@ so concurrent brain processes wait instead of building the same index.
 
 Ollama health is probed before the semantic pass. When ollama is unreachable
 the semantic pass is skipped with a warning and the literal pass still runs;
-brain index exits 0. Pass --strict-semantic to fail the command instead.`,
+brain index exits 0. Pass --strict-semantic to fail the command instead.
+
+A note Ollama refuses to embed is left out of the semantic index with a
+warning naming it, and the rest are indexed; brain doctor lists it until a
+sync embeds it. The next change to the vault retries it, --force at once.`,
 		Args: exactArgs(0),
 		RunE: func(cmd *cobra.Command, _ []string) error { return a.runIndex(cmd, flags) },
 	}
@@ -83,6 +87,7 @@ func (a *app) runIndex(cmd *cobra.Command, flags indexFlags) error {
 			if err != nil {
 				return fmt.Errorf("semantic: %w", err)
 			}
+			warn(cmd, res.Warnings())
 			if res.Built {
 				built = true
 				fmt.Fprintf(out, "indexed %d file(s), %d chunk(s) in %s (semantic)\n",

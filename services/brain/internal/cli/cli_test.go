@@ -480,6 +480,13 @@ func TestJSONOutput(t *testing.T) {
 // semantic commands run without a real Ollama.
 func fakeOllama(t *testing.T) *httptest.Server {
 	t.Helper()
+	return fakeOllamaLimit(t, 0)
+}
+
+// fakeOllamaLimit is fakeOllama answering a prompt over maxPrompt bytes the
+// way Ollama answers one longer than the model's context; 0 sets no limit.
+func fakeOllamaLimit(t *testing.T, maxPrompt int) *httptest.Server {
+	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"models":[]}`)
@@ -490,6 +497,11 @@ func fakeOllama(t *testing.T) *httptest.Server {
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if maxPrompt > 0 && len(req.Prompt) > maxPrompt {
+			http.Error(w, `{"error":"the input length exceeds the context length"}`,
+				http.StatusInternalServerError)
 			return
 		}
 		if err := json.NewEncoder(w).Encode(map[string][]float32{"embedding": hashVector(req.Prompt)}); err != nil {
@@ -588,6 +600,45 @@ func TestSemanticRefreshesAStaleIndex(t *testing.T) {
 	}
 	if got.code != exitOK || !strings.Contains(got.stdout, "notes/later.md") {
 		t.Errorf("hybrid-search without Ollama: exit %d, stdout %q", got.code, got.stdout)
+	}
+}
+
+// writeLongLineNote writes notes/long.md, whose one line with no break fits
+// a chunk but not the 1000 bytes fakeOllamaLimit(t, 1000) takes.
+func writeLongLineNote(t *testing.T, root string) {
+	t.Helper()
+	note := "---\ntitle: Long\n---\nwalrus " + strings.Repeat("w", 1500) + "\n"
+	if err := os.WriteFile(filepath.Join(root, "notes", "long.md"), []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestSemanticSkipsANoteOllamaRefuses covers the CLI side of a note the
+// embedder refuses: brain index indexes the rest and names it, and the
+// searches answer with a warning naming it instead of failing.
+func TestSemanticSkipsANoteOllamaRefuses(t *testing.T) {
+	srv := fakeOllamaLimit(t, 1000)
+	root := setupCLI(t, "semantic:\n  enabled: true\n  ollama_url: "+srv.URL+"\n")
+	writeLongLineNote(t, root)
+	const warning = "default: notes/long.md is not in the semantic index, embedding it failed: "
+	got := runBrain(t, "", "index")
+	if got.code != exitOK || !strings.Contains(got.stderr, "brain index: warning: "+warning) ||
+		!strings.Contains(got.stderr, "exceeds the context length") {
+		t.Errorf("index: exit %d, stderr %q; want 0 and the note named", got.code, got.stderr)
+	}
+	for _, cmd := range []string{"semantic-search", "hybrid-search"} {
+		got = runBrain(t, "", cmd, "kubernetes", "-o", "json")
+		var res struct {
+			Total    int      `json:"total"`
+			Warnings []string `json:"warnings"`
+		}
+		if err := json.Unmarshal([]byte(got.stdout), &res); err != nil {
+			t.Fatalf("%s: %v in %q", cmd, err, got.stdout)
+		}
+		if got.code != exitOK || res.Total == 0 || len(res.Warnings) != 1 ||
+			!strings.HasPrefix(res.Warnings[0], warning) {
+			t.Errorf("%s: exit %d, %+v; want hits and the note named", cmd, got.code, res)
+		}
 	}
 }
 
@@ -745,7 +796,7 @@ func TestDoctor(t *testing.T) {
 			},
 			wantCode: exitOK,
 			wantStatus: map[string]string{
-				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusOK, "ids": doctor.StatusOK, "ollama": doctor.StatusSkip,
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusOK, "ids": doctor.StatusOK, "ollama": doctor.StatusSkip, "embeddings": doctor.StatusSkip,
 			},
 		},
 		{
@@ -753,7 +804,7 @@ func TestDoctor(t *testing.T) {
 			setup:    func(t *testing.T) { setupCLI(t, "") },
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusFail, "ids": doctor.StatusOK, "ollama": doctor.StatusSkip,
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusFail, "ids": doctor.StatusOK, "ollama": doctor.StatusSkip, "embeddings": doctor.StatusSkip,
 			},
 		},
 		{
@@ -766,7 +817,7 @@ func TestDoctor(t *testing.T) {
 			},
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": doctor.StatusOK, "vault": doctor.StatusFail, "index-dir": doctor.StatusOK, "index": doctor.StatusSkip, "ids": doctor.StatusSkip, "ollama": doctor.StatusSkip,
+				"config": doctor.StatusOK, "vault": doctor.StatusFail, "index-dir": doctor.StatusOK, "index": doctor.StatusSkip, "ids": doctor.StatusSkip, "ollama": doctor.StatusSkip, "embeddings": doctor.StatusSkip,
 			},
 		},
 		{
@@ -774,7 +825,7 @@ func TestDoctor(t *testing.T) {
 			setup:    func(t *testing.T) { testhome.Isolate(t) },
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": doctor.StatusFail, "vault": doctor.StatusSkip, "index-dir": doctor.StatusSkip, "index": doctor.StatusSkip, "ids": doctor.StatusSkip, "ollama": doctor.StatusSkip,
+				"config": doctor.StatusFail, "vault": doctor.StatusSkip, "index-dir": doctor.StatusSkip, "index": doctor.StatusSkip, "ids": doctor.StatusSkip, "ollama": doctor.StatusSkip, "embeddings": doctor.StatusSkip,
 			},
 		},
 		{
@@ -794,7 +845,7 @@ func TestDoctor(t *testing.T) {
 			},
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusOK, "ids": doctor.StatusFail, "ollama": doctor.StatusSkip,
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusOK, "ids": doctor.StatusFail, "ollama": doctor.StatusSkip, "embeddings": doctor.StatusSkip,
 			},
 		},
 		{
@@ -802,7 +853,22 @@ func TestDoctor(t *testing.T) {
 			setup:    func(t *testing.T) { setupCLI(t, "semantic:\n  enabled: true\n  ollama_url: "+dead.URL+"\n") },
 			wantCode: exitError,
 			wantStatus: map[string]string{
-				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusFail, "ids": doctor.StatusOK, "ollama": doctor.StatusFail,
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusFail, "ids": doctor.StatusOK, "ollama": doctor.StatusFail, "embeddings": doctor.StatusOK,
+			},
+		},
+		{
+			name: "a note ollama refused",
+			setup: func(t *testing.T) {
+				srv := fakeOllamaLimit(t, 1000)
+				root := setupCLI(t, "semantic:\n  enabled: true\n  ollama_url: "+srv.URL+"\n")
+				writeLongLineNote(t, root)
+				if got := runBrain(t, "", "index"); got.code != exitOK {
+					t.Fatalf("index: %q", got.stderr)
+				}
+			},
+			wantCode: exitError,
+			wantStatus: map[string]string{
+				"config": doctor.StatusOK, "vault": doctor.StatusOK, "index-dir": doctor.StatusOK, "index": doctor.StatusOK, "ids": doctor.StatusOK, "ollama": doctor.StatusOK, "embeddings": doctor.StatusFail,
 			},
 		},
 	}

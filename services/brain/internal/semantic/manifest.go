@@ -42,13 +42,15 @@ func SettingsFor(model string, opts chunk.Options) Settings {
 
 // Manifest records what a vault's semantic index holds: the settings its
 // chunks were made with, the vault fingerprint it was last synced against,
-// and the content hash of every note it embedded.
+// the content hash of every note it embedded, and the notes the last sync
+// could not embed, each with the reason (SyncReport.Failed).
 type Manifest struct {
 	Version     int               `json:"version"`
 	Settings    Settings          `json:"settings"`
 	Fingerprint string            `json:"fingerprint"`
 	IndexedAt   time.Time         `json:"indexed_at"`
 	Notes       map[string]string `json:"notes"`
+	Failed      map[string]string `json:"failed,omitempty"`
 }
 
 // LoadManifest reads the manifest in dir. found is false when there is none.
