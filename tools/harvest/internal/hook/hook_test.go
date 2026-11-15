@@ -8,9 +8,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 var fixed = time.Date(2026, 11, 14, 9, 30, 0, 0, time.Local)
@@ -36,7 +37,13 @@ func TestHandle(t *testing.T) {
 		{
 			name:      "an ended session starts a run",
 			payload:   payload("hook-1", ""),
-			wantStart: []string{"run", transcript, "hook-1", "/repo"},
+			wantStart: []string{"run", "--", transcript, "hook-1", "/repo"},
+		},
+		{
+			name: "a cwd that looks like a flag comes after the --",
+			payload: fmt.Sprintf(`{"session_id":"hook-dash","transcript_path":%q,"cwd":"-x"}`,
+				transcript),
+			wantStart: []string{"run", "--", transcript, "hook-dash", "-x"},
 		},
 		{
 			name:    "the harvest's own child",
@@ -65,7 +72,19 @@ func TestHandle(t *testing.T) {
 		{
 			name:    "no session id",
 			payload: fmt.Sprintf(`{"transcript_path":%q}`, transcript),
-			wantLog: "skip: no transcript for session ''",
+			wantLog: `skip: state: session id is not a plain file name: ""`,
+		},
+		{
+			name: "a session id with a newline is refused before it is logged",
+			payload: fmt.Sprintf(`{"session_id":"s1\n2026-11-14T09:30:00+0100 done x",`+
+				`"transcript_path":%q}`, transcript),
+			wantLog: `skip: state: session id is not a plain file name: ` +
+				`"s1\n2026-11-14T09:30:00+0100 done x"`,
+		},
+		{
+			name:    "a session id that is a path",
+			payload: fmt.Sprintf(`{"session_id":"../escape","transcript_path":%q}`, transcript),
+			wantLog: `skip: state: session id is not a plain file name: "../escape"`,
 		},
 		{
 			name:    "a payload that is not JSON",
@@ -147,11 +166,12 @@ func TestDetached(t *testing.T) {
 	}
 
 	pid := waitForPID(t, pidFile)
-	sid, err := syscall.Getsid(pid)
+	// syscall has no Getsid on linux, where CI vets; x/sys has it on both.
+	sid, err := unix.Getsid(pid)
 	if err != nil {
 		t.Fatalf("Getsid(run) error = %v", err)
 	}
-	own, err := syscall.Getsid(0)
+	own, err := unix.Getsid(0)
 	if err != nil {
 		t.Fatal(err)
 	}

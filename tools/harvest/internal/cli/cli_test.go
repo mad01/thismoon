@@ -62,7 +62,9 @@ func testApp(t *testing.T, env map[string]string) (*app, string) {
 		brain:         filepath.Join(t.TempDir(), "no-such-brain"),
 	}
 	a.runStep = func(_ context.Context, s sandbox.Step) error {
-		_, _, err := execute(t, a, "", append([]string{"step", s.Name}, s.Args...)...)
+		// The argv the sandbox starts the step with, so its -- goes
+		// through cobra too.
+		_, _, err := execute(t, a, "", sandbox.Build(sandbox.Config{}, s).Args...)
 		return err
 	}
 	return a, stateDir
@@ -179,6 +181,30 @@ func TestRunLogsBadSettings(t *testing.T) {
 		`fail s1: settings: HARVEST_MAX_BYTES="lots"`,
 	) {
 		t.Errorf("log = %q, want the settings failure", log)
+	}
+}
+
+// TestRunTakesArgumentsThatLookLikeFlags runs `run --` with a session id and
+// a cwd that start with -, as the hook starts it; the steps get them after
+// their own --.
+func TestRunTakesArgumentsThatLookLikeFlags(t *testing.T) {
+	a, stateDir := testApp(t, map[string]string{"HARVEST_MIN_BYTES": "10"})
+	_, _, err := execute(t, a, "", "run", "--", writeTranscript(t), "-s1", "--cwd")
+	if err != nil {
+		t.Fatalf("run -- error = %v", err)
+	}
+	if n, err := state.New(stateDir, time.Now).Mark("-s1"); err != nil || n != 1 {
+		t.Errorf("mark = %d, %v; want 1", n, err)
+	}
+}
+
+func TestRunQuotesABadSessionIDInTheLog(t *testing.T) {
+	a, stateDir := testApp(t, map[string]string{"HARVEST_MAX_BYTES": "lots"})
+	if _, _, err := execute(t, a, "", "run", "/t.jsonl", "s1\nforged", "/repo"); err == nil {
+		t.Fatal("run with a bad setting returned nil")
+	}
+	if log := readLog(t, stateDir); !strings.Contains(log, `fail "s1\nforged": settings:`) {
+		t.Errorf("log = %q, want the id quoted", log)
 	}
 }
 

@@ -10,8 +10,9 @@
 //     moves the mark and logs the outcome.
 //
 // Session is the orchestrator `harvest run` calls. It reads no session text
-// and no model output itself: it copies the skill file into the job dir,
-// starts the steps through a StepFunc, and removes the job dir at the end.
+// and no model output itself: it takes the session's lock, copies the skill
+// file into the job dir, starts the steps through a StepFunc, and removes
+// the job dir at the end.
 // A step that fails leaves the mark where it was, so the next end of the
 // same session tries those lines again.
 //
@@ -61,11 +62,33 @@ type Config struct {
 
 // Session harvests the lines of in.Transcript after the session's mark. A
 // skip returns nil; a failure is logged and returned.
+//
+// It holds the session's lock for the whole run. A second run of the same
+// session, which a session resumed and ended again during the model call
+// starts, logs a skip and touches nothing: sharing the job dir, it could
+// apply one run's reply with the other's line count. Before it resets its
+// own job dir it sweeps the ones killed runs left.
 func Session(ctx context.Context, cfg Config, in Input) (err error) {
 	st := cfg.State
 	if err := st.Ensure(); err != nil {
 		return err
 	}
+	// A bad id is logged only through the quoted form the error carries.
+	if err := state.CheckSession(in.Session); err != nil {
+		return logged(st, "fail: "+err.Error(), err)
+	}
+	release, err := st.Lock(in.Session)
+	if errors.Is(err, state.ErrRunning) {
+		return st.Log(fmt.Sprintf("skip %s: a harvest of this session is running", in.Session))
+	}
+	if err != nil {
+		return fail(st, in.Session, err)
+	}
+	defer release()
+	if err := st.SweepJobs(); err != nil {
+		return fail(st, in.Session, err)
+	}
+
 	job, err := st.Job(in.Session)
 	if err != nil {
 		return fail(st, in.Session, err)
@@ -73,12 +96,20 @@ func Session(ctx context.Context, cfg Config, in Input) (err error) {
 	if err := job.Reset(); err != nil {
 		return fail(st, in.Session, err)
 	}
+	// Registered after release, so it runs first: the lock outlives the dir.
 	defer func() {
 		if rmErr := job.Remove(); rmErr != nil {
 			err = errors.Join(err, fail(st, in.Session, rmErr))
 		}
 	}()
+	return steps(ctx, cfg, in, job)
+}
 
+// steps copies the skill file into the empty job dir and runs the three
+// steps in order. It stops after prepare when prepare wrote no user text,
+// and at the first step that fails, which it logs.
+func steps(ctx context.Context, cfg Config, in Input, job state.Job) error {
+	st := cfg.State
 	if err := copyFile(cfg.Skill, job.System()); err != nil {
 		return fail(st, in.Session, fmt.Errorf("skill file: %w", err))
 	}
@@ -138,7 +169,12 @@ func failStep(st *state.Dir, session, step string, err error) error {
 
 // fail logs err as the session's outcome and returns it.
 func fail(st *state.Dir, session string, err error) error {
-	if logErr := st.Log(fmt.Sprintf("fail %s: %v", session, err)); logErr != nil {
+	return logged(st, fmt.Sprintf("fail %s: %v", session, err), err)
+}
+
+// logged logs line and returns err, joined with the log's own failure.
+func logged(st *state.Dir, line string, err error) error {
+	if logErr := st.Log(line); logErr != nil {
 		return errors.Join(err, logErr)
 	}
 	return err

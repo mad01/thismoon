@@ -79,8 +79,9 @@ The hook: `HARVEST_OFF`. See
 
 `~/.local/state/harvest` holds `harvest.log` (one line per outcome),
 `sessions/<session-id>.lines` (how much of each transcript was harvested),
-`hint-day` (the day the hint last spoke), and `jobs/<session-id>/` while a
-run is on.
+`hint-day` (the day the hint last spoke), `jobs/<session-id>/` while a run
+is on, and `locks/<session-id>.lock` (the lock a run of the session holds).
+Only its owner can read any of it.
 
 ## Develop
 

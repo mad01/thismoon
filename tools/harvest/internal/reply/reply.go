@@ -7,6 +7,10 @@
 //
 //	{"captures": [{"title": "...", "body": "...", "tags": ["..."], "source": "https://..."}],
 //	 "dropped": [{"candidate": "...", "reason": "..."}]}
+//
+// The candidates the model dropped are never kept. The skill tells it to
+// drop a secret, so a candidate can hold one, and the plan ends up in the
+// log.
 package reply
 
 import (
@@ -15,6 +19,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 )
 
 // The limits Parse applies.
@@ -24,6 +29,17 @@ const (
 	MaxCaptures = 5
 	// MaxTopicTags is how many of the model's tags a capture keeps.
 	MaxTopicTags = 3
+	// MaxTitleBytes is the longest title a capture may have; a capture
+	// with a longer one is dropped. A title is a short claim, and brain
+	// names the note's file after it.
+	MaxTitleBytes = 200
+	// MaxBodyBytes is the largest body a capture may have; a capture with
+	// a larger one is dropped. A body is a claim and three short lines.
+	MaxBodyBytes = 16 << 10
+	// MaxReasons is how many of the model's drop reasons a plan keeps.
+	MaxReasons = 20
+	// MaxReasonBytes is where a drop reason is cut.
+	MaxReasonBytes = 160
 	// Tag is the tag every capture carries, the one the hint counts.
 	Tag = "harvest"
 )
@@ -39,16 +55,26 @@ type Capture struct {
 	Source string   // an http or https URL, or ""
 }
 
-// Drop is a candidate that is not written, with the reason.
+// Drop is a capture Parse will not write: its title, cut to MaxTitleBytes,
+// and the reason.
 type Drop struct {
-	Candidate string
-	Reason    string
+	Title  string
+	Reason string
+}
+
+// Declined is what the plan keeps of the candidates the model dropped: how
+// many there were and the first MaxReasons reasons, each on one line and cut
+// to MaxReasonBytes. The candidates themselves are not kept.
+type Declined struct {
+	Count   int
+	Reasons []string
 }
 
 // Plan is what a reply asks for once Parse has checked it.
 type Plan struct {
 	Captures []Capture
-	Dropped  []Drop // the model's own drops, then the ones Parse made
+	Dropped  []Drop   // the captures Parse dropped
+	Declined Declined // the candidates the model dropped
 }
 
 // wire is the JSON shape of a reply.
@@ -65,39 +91,46 @@ type wire struct {
 	} `json:"dropped"`
 }
 
-// Parse reads the reply. It takes the text from the first { through the
-// last }, so the object may stand alone, sit in a code fence, or have prose
-// around it. A reply with no object, or one that does not decode, is an
-// error. A capture with no title or no body is dropped, and so is every
-// capture past MaxCaptures.
+// Parse reads the reply. It decodes one JSON object from the first {, and
+// ignores what follows it, so the object may stand alone, sit in a code
+// fence, or have prose around it. A reply with no {, or an object that does
+// not decode, is an error. A capture with no title or no body is dropped,
+// and so is one over MaxTitleBytes or MaxBodyBytes and every capture past
+// MaxCaptures.
 func Parse(text string) (Plan, error) {
-	start, end := strings.Index(text, "{"), strings.LastIndex(text, "}")
-	if start < 0 || end < start {
+	start := strings.Index(text, "{")
+	if start < 0 {
 		return Plan{}, ErrNoObject
 	}
 	var w wire
-	if err := json.Unmarshal([]byte(text[start:end+1]), &w); err != nil {
+	if err := json.NewDecoder(strings.NewReader(text[start:])).Decode(&w); err != nil {
 		return Plan{}, fmt.Errorf("reply: decode: %w", err)
 	}
 
-	var p Plan
-	for _, d := range w.Dropped {
-		p.Dropped = append(
-			p.Dropped,
-			Drop{Candidate: oneLine(d.Candidate), Reason: oneLine(d.Reason)},
-		)
+	p := Plan{Declined: Declined{Count: len(w.Dropped)}}
+	for _, d := range w.Dropped[:min(len(w.Dropped), MaxReasons)] {
+		reason := cut(oneLine(d.Reason), MaxReasonBytes)
+		if reason == "" {
+			reason = "(no reason)"
+		}
+		p.Declined.Reasons = append(p.Declined.Reasons, reason)
 	}
 	for _, c := range w.Captures {
 		title := oneLine(c.Title)
+		drop := func(reason string) {
+			p.Dropped = append(p.Dropped, Drop{Title: cut(title, MaxTitleBytes), Reason: reason})
+		}
 		switch {
 		case title == "":
-			p.Dropped = append(p.Dropped, Drop{Candidate: "(untitled)", Reason: "no title"})
+			p.Dropped = append(p.Dropped, Drop{Title: "(untitled)", Reason: "no title"})
+		case len(title) > MaxTitleBytes:
+			drop(fmt.Sprintf("title over %d bytes", MaxTitleBytes))
 		case strings.TrimSpace(c.Body) == "":
-			p.Dropped = append(p.Dropped, Drop{Candidate: title, Reason: "no body"})
+			drop("no body")
+		case len(c.Body) > MaxBodyBytes:
+			drop(fmt.Sprintf("body over %d bytes", MaxBodyBytes))
 		case len(p.Captures) == MaxCaptures:
-			p.Dropped = append(p.Dropped, Drop{
-				Candidate: title, Reason: fmt.Sprintf("over the cap of %d", MaxCaptures),
-			})
+			drop(fmt.Sprintf("over the cap of %d", MaxCaptures))
 		default:
 			p.Captures = append(p.Captures, Capture{
 				Title:  title,
@@ -153,3 +186,15 @@ func source(raw string) string {
 // oneLine collapses every run of whitespace, newlines included, into one
 // space, so a value reads as one line in the log.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// cut returns s when it fits in n bytes, and otherwise its first n bytes or
+// fewer, on a rune boundary, with "..." after them.
+func cut(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "..."
+}

@@ -57,7 +57,7 @@ func TestBuild(t *testing.T) {
 			wantPath: "/home/u/code/bin/harvest-step",
 			wantArgs: []string{
 				"/home/u/code/bin/harvest",
-				"step", "prepare", "/t.jsonl", "s1", "/repo",
+				"step", "prepare", "--", "/t.jsonl", "s1", "/repo",
 			},
 			wantEnv: append(slices.Clone(base),
 				"HARVEST_BACKEND=openrouter", "HARVEST_MODEL=m", "HARVEST_CHILD=1"),
@@ -66,7 +66,7 @@ func TestBuild(t *testing.T) {
 			name:     "apply with the sandbox off runs the binary directly",
 			step:     Step{Name: "apply", Args: []string{"s1"}},
 			wantPath: "/home/u/code/bin/harvest",
-			wantArgs: []string{"step", "apply", "s1"},
+			wantArgs: []string{"step", "apply", "--", "s1"},
 			wantEnv: append(slices.Clone(base),
 				"HARVEST_BACKEND=openrouter", "HARVEST_MODEL=m", "HARVEST_CHILD=1"),
 		},
@@ -77,7 +77,7 @@ func TestBuild(t *testing.T) {
 			wantPath: "/home/u/code/bin/harvest-step",
 			wantArgs: []string{
 				"/home/u/code/bin/harvest",
-				"step", "complete", "s1",
+				"step", "complete", "--", "s1",
 			},
 			wantEnv: append(
 				slices.Clone(base),
@@ -94,7 +94,7 @@ func TestBuild(t *testing.T) {
 			name:     "complete on openrouter with the sandbox off allows no host",
 			step:     Step{Name: "complete", Args: []string{"s1"}, Backend: llm.OpenRouter},
 			wantPath: "/home/u/code/bin/harvest",
-			wantArgs: []string{"step", "complete", "s1"},
+			wantArgs: []string{"step", "complete", "--", "s1"},
 			wantEnv: append(
 				slices.Clone(base),
 				"HARVEST_MODEL=m",
@@ -110,7 +110,7 @@ func TestBuild(t *testing.T) {
 			on:       true,
 			step:     Step{Name: "complete", Args: []string{"s1"}, Backend: llm.Claude},
 			wantPath: "/home/u/code/bin/harvest",
-			wantArgs: []string{"step", "complete", "s1"},
+			wantArgs: []string{"step", "complete", "--", "s1"},
 			wantEnv: append(slices.DeleteFunc(slices.Clone(parent), func(kv string) bool {
 				return strings.HasPrefix(kv, "HARVEST_BACKEND=")
 			}), "HARVEST_CHILD=1", "HARVEST_BACKEND=claude"),
@@ -154,6 +154,11 @@ func TestProviderHost(t *testing.T) {
 		{llm.LiteLLM, "proxy.local:8080/v1", "proxy.local:8080"},
 		{llm.LiteLLM, "https://proxy.example.com#frag", "proxy.example.com"},
 		{llm.LiteLLM, "", ""},
+		// A comma or whitespace would name a second host: none is allowed.
+		{llm.LiteLLM, "https://proxy.example.com,evil.example.com", ""},
+		{llm.LiteLLM, "https://proxy.example.com evil.example.com", ""},
+		{llm.LiteLLM, "https://proxy.example.com\tevil.example.com/v1", ""},
+		{llm.LiteLLM, "https://u:p@proxy.example.com,evil.example.com:4000", ""},
 		{llm.OpenRouter, "https://ignored", "openrouter.ai"},
 		{llm.Claude, "https://ignored", ""},
 	}
@@ -234,7 +239,7 @@ func TestRunStartsTheStepThroughTheLauncher(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := string(b)
-	if !strings.HasPrefix(got, self+"\nstep\napply\ns1\n") {
+	if !strings.HasPrefix(got, self+"\nstep\napply\n--\ns1\n") {
 		t.Errorf("launcher argv:\n%s", got)
 	}
 	if strings.Contains(got, "gh-secret") {
@@ -245,29 +250,65 @@ func TestRunStartsTheStepThroughTheLauncher(t *testing.T) {
 	}
 }
 
-func TestRunReportsTheLastStderrLine(t *testing.T) {
-	dir := t.TempDir()
-	self := script(t, dir, "harvest",
-		"echo 'some noise' >&2\necho 'harvest: reply: no JSON object in the reply' >&2\nexit 1\n")
-	err := Run(context.Background(), Config{Self: self}, Step{Name: "apply"})
-	if err == nil || err.Error() != "reply: no JSON object in the reply" {
-		t.Errorf("Run() error = %v, want the step's own error", err)
+// TestRunReportsTheStepsError runs a script that prints to stderr as a
+// failed step does, main's "harvest: " line last, and checks the error Run
+// returns, which is what the run logs.
+func TestRunReportsTheStepsError(t *testing.T) {
+	tests := []struct {
+		name   string
+		stderr string // what the step prints on stderr before it exits 1
+		want   string
+	}{
+		{
+			name:   "one line after some noise",
+			stderr: "some noise\nharvest: reply: no JSON object in the reply\n",
+			want:   "reply: no JSON object in the reply",
+		},
+		{
+			// kit/llm puts the body of a failed call in its error, and a
+			// proxy answers with indented JSON.
+			name: "an error that spans lines keeps its start",
+			stderr: "harvest: llm: litellm HTTP 500: {\n" +
+				"  \"error\": {\n    \"message\": \"upstream down\"\n  }\n}\n",
+			want: `llm: litellm HTTP 500: { "error": { "message": "upstream down" } }`,
+		},
+		{
+			name:   "no harvest line: the launcher's last line",
+			stderr: "srt-run: starting\nsrt-run: no settings file at /x.json\n",
+			want:   "srt-run: no settings file at /x.json",
+		},
 	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			out := filepath.Join(dir, "stderr")
+			if err := os.WriteFile(out, []byte(tc.stderr), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			self := script(t, dir, "harvest", "cat "+out+" >&2\nexit 1\n")
+			err := Run(context.Background(), Config{Self: self}, Step{Name: "complete"})
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("Run() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
 
-	quiet := script(t, dir, "quiet", "exit 3\n")
-	err = Run(context.Background(), Config{Self: quiet}, Step{Name: "apply"})
+func TestRunReportsTheExitStatusOfAQuietStep(t *testing.T) {
+	quiet := script(t, t.TempDir(), "quiet", "exit 3\n")
+	err := Run(context.Background(), Config{Self: quiet}, Step{Name: "apply"})
 	if err == nil || !strings.Contains(err.Error(), "exit status 3") {
 		t.Errorf("Run() error = %v, want the exit status", err)
 	}
 }
 
-func TestLastLineCutsLongLines(t *testing.T) {
+func TestStepErrorCutsALongError(t *testing.T) {
 	long := strings.Repeat("é", maxErrLine)
-	got := lastLine(long)
+	got := stepError("harvest: " + long)
 	if len(got) > maxErrLine+len("...") || !strings.HasSuffix(got, "...") {
-		t.Errorf("lastLine() = %d bytes, want at most %d and a ... suffix", len(got), maxErrLine+3)
+		t.Errorf("stepError() = %d bytes, want at most %d and a ... suffix", len(got), maxErrLine+3)
 	}
 	if !strings.HasPrefix(long, strings.TrimSuffix(got, "...")) {
-		t.Error("lastLine() split a character")
+		t.Error("stepError() split a character or lost the start")
 	}
 }

@@ -20,12 +20,19 @@ There is no serve process. Three entry points, each a short process:
 The hook returns with no log line in three cases. `HARVEST_CHILD` is set
 (a process the harvest itself started), `HARVEST_OFF` is set, or the payload
 carries an `agent_id` (a subagent ended, not the session). It logs a skip
-when the payload is not JSON or names no transcript file.
+when the payload is not JSON or names no transcript file, or when its
+session id cannot name a file: empty, a path, or with a control character.
+That skip line quotes the id, so it stays one line.
 
 ## the steps
 
-`{{.Bin}} run` makes a job dir for the session in the state dir and copies
-the skill file into it. Then it starts the steps with `{{.Bin}} step`:
+`{{.Bin}} run` takes the session's lock and holds it to the end. A session
+resumed and ended again while its harvest still runs starts a second run;
+that one logs `skip <session>: a harvest of this session is running` and
+touches nothing. Its new lines wait for the next end of the session. The
+run then removes the job dirs that killed runs left behind, makes a job dir
+for the session and copies the skill file into it. Then it starts the steps
+with `{{.Bin}} step`:
 
 1. `prepare` reads the transcript lines after the session's mark and builds
    the digest. It logs a skip when nothing is new or the digest is under
@@ -49,8 +56,12 @@ Haiku 5.5. A call that runs past 10 minutes fails.
 
 The reply is one JSON object: the captures, each with a title, a body, up to
 three tags and an optional source URL, and the candidates the model
-dropped. apply keeps at most five captures and adds the `harvest` tag to
-each.
+dropped. apply reads the first object in the reply and ignores the text
+after it. It keeps at most five captures and adds the `harvest` tag to
+each. A capture with a title over 200 bytes or a body over 16 KiB is
+dropped. Of the model's drops it keeps only the count and the first 20
+reasons, each cut to 160 bytes. It never keeps a candidate: the model
+drops secrets, so a candidate can hold one.
 
 ## the sandbox
 
@@ -87,11 +98,14 @@ without a newline is still being written; it is left for the next harvest.
 ## state
 
 Everything lives in the state dir, `{{.StorePath}}` unless
-`HARVEST_STATE_DIR` says otherwise:
+`HARVEST_STATE_DIR` says otherwise. The dir and the log are readable by
+their owner only; harvest narrows a wider mode an older version left.
 
 - `{{.LogPath}}`: one timestamped line per outcome. `skip <session>: ...`
-  for a session with nothing new or a short digest, and
-  `fail <session>: <step>: ...` for an error. A harvest logs
+  for a session with nothing new, a short digest or a harvest already
+  running, and `fail <session>: <step>: ...` for an error, on one line.
+  `fail: state: session id is not a plain file name: "<id>"` is a run
+  started by hand with a bad id. A harvest logs
   `done <session>: model= digest= cost= backend= sandbox=`, with the report
   indented under it. `cost=?` means the backend reported no cost.
   `sandbox=on` means apply ran under srt.
@@ -101,17 +115,26 @@ Everything lives in the state dir, `{{.StorePath}}` unless
   session again from its start.
 - `hint-day`: the day the hint last spoke.
 - `jobs/<session-id>/`: the files one run's steps hand on. It exists only
-  while the run does.
+  while the run does. A run that was killed leaves it, and the next run of
+  any session removes it.
+- `locks/<session-id>.lock`: the lock a run of the session holds. The file
+  stays; the lock goes with the process that held it, so a killed run
+  blocks nothing.
 
 The report under a done line has one line per decision:
 
 - `captured: <vault>:<path>`: the note was written.
 - `dropped: likely duplicate: <title>`: brain found the claim already in the
   vault.
-- `dropped: secret found: <title>`: brain refused a body with a secret.
-- `dropped: <reason>: <candidate>`: the model, or the cap of five, dropped it.
+- `dropped: secret found`: brain refused a capture with a secret. The title
+  is left out: brain scans it too, so it can be where the secret is.
+- `dropped: <reason>: <title>`: harvest dropped the capture: no title, no
+  body, a title or body over its cap, or past the cap of five.
 - `failed: <title>: <error>`: brain failed for another reason.
 - `captured: none`: the model found nothing to keep.
+- `dropped by the model: <n>`: how many candidates the model dropped, with
+  the reason for each indented under it. Past 20 the line adds
+  `(the first 20 reasons)`.
 
 ## failure modes
 
@@ -120,7 +143,8 @@ means the hook did not run or a guard returned early. Look for
 `HARVEST_OFF` in the settings env, or a hook entry missing from the Claude
 Code settings.
 
-A `fail` line names the step and its cause. A failed harvest writes no mark,
+A `fail` line names the step and its cause: the error the step printed,
+from its start, on one line and cut to 300 bytes. A failed harvest writes no mark,
 so the next end of the same session tries the same lines again.
 `{{.Bin}} run` with the three values from the hook payload retries one
 session by hand. Common causes:

@@ -13,15 +13,14 @@ import (
 	"github.com/mad01/thismoon/tools/harvest"
 )
 
-// maxErrLine bounds the stderr line a failed step reports, so one long
-// message cannot swamp the log line it lands in.
+// maxErrLine bounds the error a failed step reports, so one long message
+// cannot swamp the log line it lands in.
 const maxErrLine = 300
 
 // Run starts step as Build describes it and waits for it. A confined step
 // whose launcher is missing fails before anything starts:
 // a step never falls back to running unconfined. A step that fails reports
-// the last line it printed to stderr, which is where a harvest step prints
-// its error.
+// the error it printed to stderr, as stepError reads it.
 func Run(ctx context.Context, cfg Config, step Step) error {
 	if cfg.Confined(step) {
 		if err := Check(cfg); err != nil {
@@ -35,8 +34,8 @@ func Run(ctx context.Context, cfg Config, step Step) error {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		if line := lastLine(stderr.String()); line != "" {
-			return errors.New(line)
+		if msg := stepError(stderr.String()); msg != "" {
+			return errors.New(msg)
 		}
 		return fmt.Errorf("sandbox: %s: %w", c.Path, err)
 	}
@@ -58,18 +57,32 @@ func Check(cfg Config) error {
 	return nil
 }
 
-// lastLine is the last non-empty line of s, without the "harvest: " that
-// main puts before an error, cut to maxErrLine bytes.
-func lastLine(s string) string {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	line := strings.TrimSpace(lines[len(lines)-1])
-	line = strings.TrimPrefix(line, harvest.Name+": ")
-	if len(line) > maxErrLine {
+// stepError is the error a failed step printed on stderr, as one line. main
+// prints an error as "harvest: <err>", and an error can span lines: kit/llm
+// puts the body of a failed HTTP call in it. So it is the text from the last
+// line that starts with that prefix through the end, without the prefix. A
+// stderr with no such line, from the launcher or srt, gives its last
+// non-empty line. Either way runs of whitespace become one space and the
+// text is cut to maxErrLine bytes, so the start, which names the cause,
+// stays.
+func stepError(stderr string) string {
+	const prefix = harvest.Name + ": "
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	start := len(lines) - 1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(lines[i], prefix) {
+			start = i
+			break
+		}
+	}
+	msg := strings.Join(strings.Fields(strings.Join(lines[start:], " ")), " ")
+	msg = strings.TrimPrefix(msg, prefix)
+	if len(msg) > maxErrLine {
 		n := maxErrLine
-		for n > 0 && !utf8.RuneStart(line[n]) {
+		for n > 0 && !utf8.RuneStart(msg[n]) {
 			n--
 		}
-		line = line[:n] + "..."
+		msg = msg[:n] + "..."
 	}
-	return line
+	return msg
 }

@@ -93,7 +93,8 @@ When a write is refused:
 Run with no argument. The session itself is the material.
 
 Report the captures as a short list: each title and its note path. Add one
-line with how many candidates were dropped and the main reason. Close with
+line with how many candidates were dropped and the main reason, never a
+secret value from a dropped one. Close with
 the reminder that captures expire in 30 days: `brain inbox list` shows them,
 `brain promote <note>` moves one to `notes/`, and `brain inbox keep <note>`
 gives one more time.
@@ -128,3 +129,7 @@ reply.
   only when the claim came from a page. `dropped` gives each candidate you
   did not keep and the reason. A session with nothing to keep answers
   `{"captures": [], "dropped": [...]}`.
+- The tool writes each `reason` to its log; it keeps no `candidate`. Never
+  put a secret value in a `candidate` or a `reason`, and no private detail
+  about a person. Name the kind instead: `"candidate": "an API token from
+  the deploy step"`, `"reason": "a secret"`. A reason is a few words.

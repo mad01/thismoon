@@ -2,10 +2,12 @@ package run
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/tools/harvest/internal/reply"
 	"github.com/mad01/thismoon/tools/harvest/internal/state"
 )
 
@@ -51,11 +53,20 @@ func TestApplyReportsEachOutcome(t *testing.T) {
 	want := "done s1: model=claude-haiku-5-5 digest=5000B cost=? backend=claude sandbox=off\n" +
 		"  captured: main:inbox/note.md\n" +
 		"  dropped: likely duplicate: dup claim\n" +
-		"  dropped: secret found: secret claim\n" +
+		"  dropped: secret found\n" +
 		"  failed: broken claim: brain capture: the vault is gone\n" +
-		"  dropped: work state: a plan\n"
-	if log := f.log(); !strings.HasSuffix(log, want) {
+		"  dropped by the model: 1\n" +
+		"    work state\n"
+	log := f.log()
+	if !strings.HasSuffix(log, want) {
 		t.Errorf("log =\n%s\nwant it to end with\n%s", log, want)
+	}
+	// brain scans the title too, and the model drops secrets: neither the
+	// refused title nor a dropped candidate may reach the log.
+	for _, leak := range []string{"secret claim", "a plan"} {
+		if strings.Contains(log, leak) {
+			t.Errorf("the log carries %q:\n%s", leak, log)
+		}
 	}
 	if got := f.mark("s1"); got != 12 {
 		t.Errorf("mark = %d, want the line count prepare recorded, 12", got)
@@ -84,14 +95,36 @@ func TestApplyWithNothingToKeep(t *testing.T) {
 	if err := f.apply("s1"); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	if !strings.HasSuffix(f.log(), "\n  captured: none\n  dropped: no evidence: a guess\n") {
-		t.Errorf("log lacks captured: none:\n%s", f.log())
+	if !strings.HasSuffix(f.log(),
+		"\n  captured: none\n  dropped by the model: 1\n    no evidence\n") {
+		t.Errorf("log lacks captured: none and the model's drop:\n%s", f.log())
+	}
+	if strings.Contains(f.log(), "a guess") {
+		t.Errorf("the log carries the dropped candidate:\n%s", f.log())
 	}
 	if f.read("calls") != "" {
 		t.Error("brain was called with nothing to capture")
 	}
 	if got := f.mark("s1"); got != 12 {
 		t.Errorf("mark = %d, want 12", got)
+	}
+}
+
+func TestApplyCountsEveryModelDrop(t *testing.T) {
+	f := newFixture(t)
+	drops := make([]string, reply.MaxReasons+2)
+	for i := range drops {
+		drops[i] = `{"candidate":"c","reason":"r"}`
+	}
+	f.job("s1", `{"captures":[],"dropped":[`+strings.Join(drops, ",")+`]}`)
+	if err := f.apply("s1"); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	want := fmt.Sprintf("\n  dropped by the model: %d (the first %d reasons)\n",
+		reply.MaxReasons+2, reply.MaxReasons)
+	if log := f.log(); !strings.Contains(log, want) ||
+		strings.Count(log, "    r\n") != reply.MaxReasons {
+		t.Errorf("log =\n%s\nwant %q and %d reasons", log, want, reply.MaxReasons)
 	}
 }
 

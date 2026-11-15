@@ -118,12 +118,75 @@ func TestMarkRejectsGarbage(t *testing.T) {
 
 func TestMarkRejectsBadSession(t *testing.T) {
 	d := newDir(t)
-	for _, id := range []string{"", ".", "..", "../escape", "a/b"} {
+	for _, id := range []string{
+		"", ".", "..", "../escape", "a/b", "a\nb", "a\rb", "a\x00b", "a\x1bb", "a\x7fb", "a\u0085b",
+	} {
 		if _, err := d.Mark(id); !errors.Is(err, ErrBadSession) {
 			t.Errorf("Mark(%q) error = %v, want ErrBadSession", id, err)
 		}
 		if err := d.SetMark(id, 1); !errors.Is(err, ErrBadSession) {
 			t.Errorf("SetMark(%q) error = %v, want ErrBadSession", id, err)
+		}
+	}
+}
+
+func TestCheckSessionTakesAPlainID(t *testing.T) {
+	for _, id := range []string{"0b6c1f0e-4d1a-4e0b-9c4f-1a2b3c4d5e6f", "-s1", "a b", "é"} {
+		if err := CheckSession(id); err != nil {
+			t.Errorf("CheckSession(%q) = %v, want nil", id, err)
+		}
+	}
+}
+
+// TestModes checks that the state dir, its sessions dir and the log are
+// their owner's alone, and that a state dir an earlier harvest made with
+// wider modes is narrowed.
+func TestModes(t *testing.T) {
+	d := newDir(t)
+	if err := os.MkdirAll(filepath.Join(d.Path(), "sessions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{d.Path(), filepath.Join(d.Path(), "sessions")} {
+		if err := os.Chmod(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(d.LogPath(), []byte("old line\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Ensure(); err != nil {
+		t.Fatalf("Ensure() error = %v", err)
+	}
+	if err := d.Log("skip s1: nothing new since line 4"); err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+	for path, want := range map[string]os.FileMode{
+		d.Path():                            0o700,
+		filepath.Join(d.Path(), "sessions"): 0o700,
+		d.LogPath():                         0o600,
+	} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Errorf("mode of %s = %o, want %o", path, got, want)
+		}
+	}
+}
+
+func TestNewLogIsTheOwnersAlone(t *testing.T) {
+	d := newDir(t)
+	if err := d.Log("skip s1: nothing new since line 4"); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]os.FileMode{d.Path(): 0o700, d.LogPath(): 0o600} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Errorf("mode of %s = %o, want %o", path, got, want)
 		}
 	}
 }

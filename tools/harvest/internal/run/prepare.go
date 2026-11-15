@@ -3,6 +3,7 @@ package run
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,6 +13,10 @@ import (
 
 // dateLayout is the date in the user text, as `date '+%Y-%m-%d'` prints it.
 const dateLayout = "2006-01-02"
+
+// closingDigest matches a closing digest tag in any case, with the
+// whitespace an XML end tag allows before its >.
+var closingDigest = regexp.MustCompile(`(?i)</digest\s*>`)
 
 // PrepareConfig is what Prepare needs besides the input.
 type PrepareConfig struct {
@@ -62,10 +67,11 @@ func Prepare(cfg PrepareConfig, in Input) error {
 
 // userText is what the model reads after the skill file: three header lines
 // that name the session, then the digest in a <digest> block. A closing tag
-// inside the digest is broken up, so session text cannot end the block
-// early and pass for something outside it.
+// inside the digest, in any case or spacing, is broken up as "</ digest>",
+// which no end tag can be, so session text cannot end the block early and
+// pass for something outside it.
 func userText(in Input, date, digestText string) string {
-	text := strings.ReplaceAll(strings.TrimRight(digestText, "\n"), "</digest>", "</ digest>")
+	text := closingDigest.ReplaceAllString(strings.TrimRight(digestText, "\n"), "</ digest>")
 	return fmt.Sprintf(
 		"Session id: %s\nWorking directory: %s\nDate: %s\n\n<digest>\n%s\n</digest>\n",
 		in.Session,

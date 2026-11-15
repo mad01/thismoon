@@ -13,7 +13,8 @@ starts.
 ### The digest
 
 - `HARVEST_STATE_DIR` (path, default `~/.local/state/harvest`): the log, the
-  per-session marks, the hint's stamp and the job dirs. A leading `~`
+  per-session marks, the hint's stamp, the job dirs and the session locks.
+  harvest makes the dir readable by its owner only. A leading `~`
   expands to `$HOME`. The path must be absolute. The sandbox settings allow
   only the default; grant another path in
   `~/.config/srt/harvest.local.json`.

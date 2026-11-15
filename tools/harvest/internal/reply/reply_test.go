@@ -37,9 +37,25 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			name:  "trailing prose with braces is ignored",
+			reply: one + "\nNote: the {go} tag is a guess.}",
+			want: Plan{
+				Captures: []Capture{{Title: "t1", Body: "b1", Tags: []string{"go", "harvest"}}},
+			},
+		},
+		{
 			name:  "nothing to keep",
 			reply: `{"captures":[],"dropped":[{"candidate":"a plan","reason":"work state"}]}`,
-			want:  Plan{Dropped: []Drop{{Candidate: "a plan", Reason: "work state"}}},
+			want:  Plan{Declined: Declined{Count: 1, Reasons: []string{"work state"}}},
+		},
+		{
+			name: "a dropped candidate is not kept, only its reason",
+			reply: `{"captures":[],"dropped":[
+				{"candidate":"the token is SECRET-VALUE","reason":"a secret\nnot kept"},
+				{"candidate":"a plan"}]}`,
+			want: Plan{Declined: Declined{
+				Count: 2, Reasons: []string{"a secret not kept", "(no reason)"},
+			}},
 		},
 		{
 			name:  "an empty object keeps nothing",
@@ -59,7 +75,7 @@ func TestParse(t *testing.T) {
 		{
 			name:    "a closing brace before the opening one",
 			reply:   "} nothing {",
-			wantErr: ErrNoObject.Error(),
+			wantErr: "reply: decode:",
 		},
 		{
 			name: "a capture needs a title and a body",
@@ -68,8 +84,8 @@ func TestParse(t *testing.T) {
 			want: Plan{
 				Captures: []Capture{{Title: "kept", Body: "b", Tags: []string{"harvest"}}},
 				Dropped: []Drop{
-					{Candidate: "(untitled)", Reason: "no title"},
-					{Candidate: "t", Reason: "no body"},
+					{Title: "(untitled)", Reason: "no title"},
+					{Title: "t", Reason: "no body"},
 				},
 			},
 		},
@@ -148,12 +164,71 @@ func TestParseCapsTheCaptures(t *testing.T) {
 		t.Errorf("captures = %+v, want the first %d", got.Captures, MaxCaptures)
 	}
 	want := []Drop{
-		{Candidate: "c", Reason: "r"},
-		{Candidate: "t6", Reason: "over the cap of 5"},
-		{Candidate: "t7", Reason: "over the cap of 5"},
+		{Title: "t6", Reason: "over the cap of 5"},
+		{Title: "t7", Reason: "over the cap of 5"},
 	}
 	if !reflect.DeepEqual(got.Dropped, want) {
 		t.Errorf("dropped = %+v, want %+v", got.Dropped, want)
+	}
+	if want := (Declined{Count: 1, Reasons: []string{"r"}}); !reflect.DeepEqual(
+		got.Declined,
+		want,
+	) {
+		t.Errorf("declined = %+v, want %+v", got.Declined, want)
+	}
+}
+
+// TestParseDropsAnOversizedCapture checks that a capture over a size cap is
+// dropped with a reason and the rest of the reply still counts.
+func TestParseDropsAnOversizedCapture(t *testing.T) {
+	longTitle := strings.Repeat("t", MaxTitleBytes+1)
+	bigBody := strings.Repeat("b", MaxBodyBytes+1)
+	reply := `{"captures":[{"title":"` + longTitle + `","body":"b"},` +
+		`{"title":"big","body":"` + bigBody + `"},` +
+		`{"title":"fits","body":"` + strings.Repeat("b", MaxBodyBytes) + `"}]}`
+
+	got, err := Parse(reply)
+	if err != nil {
+		t.Fatalf("Parse() error = %v, want the oversized captures dropped", err)
+	}
+	if len(got.Captures) != 1 || got.Captures[0].Title != "fits" {
+		t.Errorf("captures = %d, want only the one that fits", len(got.Captures))
+	}
+	want := []Drop{
+		{Title: longTitle[:MaxTitleBytes] + "...", Reason: "title over 200 bytes"},
+		{Title: "big", Reason: "body over 16384 bytes"},
+	}
+	if !reflect.DeepEqual(got.Dropped, want) {
+		t.Errorf("dropped = %+v, want %+v", got.Dropped, want)
+	}
+}
+
+func TestParseCapsTheDropReasons(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"captures":[],"dropped":[`)
+	for i := range MaxReasons + 5 {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(`{"candidate":"c","reason":"` + strings.Repeat("r", MaxReasonBytes+10) + `"}`)
+	}
+	b.WriteString(`]}`)
+
+	got, err := Parse(b.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Declined.Count != MaxReasons+5 {
+		t.Errorf("count = %d, want every drop counted, %d", got.Declined.Count, MaxReasons+5)
+	}
+	if len(got.Declined.Reasons) != MaxReasons {
+		t.Errorf("reasons = %d, want the first %d", len(got.Declined.Reasons), MaxReasons)
+	}
+	wantReason := strings.Repeat("r", MaxReasonBytes) + "..."
+	for _, r := range got.Declined.Reasons {
+		if r != wantReason {
+			t.Fatalf("reason = %d bytes, want it cut to %d and ...", len(r), MaxReasonBytes)
+		}
 	}
 }
 

@@ -76,7 +76,10 @@ func Apply(ctx context.Context, cfg ApplyConfig, session string) error {
 }
 
 // writeAll writes the plan's captures and returns the report: one line per
-// capture, "captured: none" when there were none, then one line per drop.
+// capture, "captured: none" when there were none, one line per capture
+// Parse dropped, then how many candidates the model dropped, with their
+// reasons indented under it. A candidate's own text never reaches the
+// report: the model drops secrets, so a candidate can hold one.
 func writeAll(ctx context.Context, brain, session string, plan reply.Plan) (string, error) {
 	var lines []string
 	var failures []string
@@ -91,12 +94,30 @@ func writeAll(ctx context.Context, brain, session string, plan reply.Plan) (stri
 		lines = append(lines, "captured: none")
 	}
 	for _, d := range plan.Dropped {
-		lines = append(lines, fmt.Sprintf("dropped: %s: %s", d.Reason, d.Candidate))
+		lines = append(lines, fmt.Sprintf("dropped: %s: %s", d.Reason, d.Title))
 	}
+	lines = append(lines, declined(plan.Declined)...)
 	if n := len(plan.Captures); n > 0 && len(failures) == n {
 		return "", fmt.Errorf("run: all %d captures failed; the first %s", n, failures[0])
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+// declined is the report of the model's drops: a count line, then each
+// reason the plan kept, indented. It is nothing when the model dropped none.
+func declined(d reply.Declined) []string {
+	if d.Count == 0 {
+		return nil
+	}
+	head := fmt.Sprintf("dropped by the model: %d", d.Count)
+	if len(d.Reasons) < d.Count {
+		head += fmt.Sprintf(" (the first %d reasons)", len(d.Reasons))
+	}
+	lines := []string{head}
+	for _, r := range d.Reasons {
+		lines = append(lines, "  "+r)
+	}
+	return lines
 }
 
 // write runs one `brain capture` and returns its report line, and whether
@@ -133,7 +154,9 @@ func write(ctx context.Context, brain, session string, c reply.Capture) (string,
 	case code == brainLikelyDuplicate:
 		return "dropped: likely duplicate: " + c.Title, false
 	case code == brainSecretFound:
-		return "dropped: secret found: " + c.Title, false
+		// brain scans the whole note, title included, so the title can be
+		// where the secret is.
+		return "dropped: secret found", false
 	default:
 		return "failed: " + c.Title + ": " + firstLine(stderr.String(), err), true
 	}

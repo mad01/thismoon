@@ -5,10 +5,12 @@
 //	<dir>/sessions/<id>.lines   how many transcript lines a harvest already read
 //	<dir>/hint-day              the day the hint last spoke, YYYY-MM-DD
 //	<dir>/jobs/<id>/            the files the steps of one harvest hand on
+//	<dir>/locks/<id>.lock       the lock a run of the session holds
 //
 // Marks and the stamp are written to a temp file and renamed into place, so a
 // reader never sees half a number. Log entries are appended in one write each.
-// A job dir lives only while its harvest runs.
+// A job dir lives only while its harvest runs. Everything is its owner's
+// alone: the log names sessions and the job dirs hold their text.
 package state
 
 import (
@@ -21,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/mad01/thismoon/tools/harvest"
 )
@@ -28,8 +31,13 @@ import (
 const (
 	sessionsDir = "sessions"
 	jobsDir     = "jobs"
+	locksDir    = "locks"
 	markSuffix  = ".lines"
+	lockSuffix  = ".lock"
 	stampFile   = "hint-day"
+	// dirMode and fileMode are the modes of what the state dir holds.
+	dirMode  fs.FileMode = 0o700
+	fileMode fs.FileMode = 0o600
 	// logTimeLayout matches `date '+%Y-%m-%dT%H:%M:%S%z'`.
 	logTimeLayout = "2006-01-02T15:04:05-0700"
 	// tailWindow is how far back from the end of the log LogTail reads. A
@@ -37,8 +45,9 @@ const (
 	tailWindow = 64 << 10
 )
 
-// ErrBadSession means a session id cannot name a mark file: it is empty, or
-// it would reach outside the sessions directory.
+// ErrBadSession means a session id cannot name a mark file: it is empty, it
+// would reach outside the sessions directory, or it holds a control
+// character, which would break the log line it lands in.
 var ErrBadSession = errors.New("state: session id is not a plain file name")
 
 // Dir is one state directory.
@@ -59,9 +68,32 @@ func (d *Dir) Path() string { return d.path }
 // LogPath is the log file inside the state dir.
 func (d *Dir) LogPath() string { return filepath.Join(d.path, harvest.LogFile) }
 
-// Ensure creates the state dir and its sessions directory.
+// Ensure creates the state dir and its sessions directory, readable by their
+// owner only, and narrows the mode of either when an earlier harvest made it
+// wider.
 func (d *Dir) Ensure() error {
-	if err := os.MkdirAll(filepath.Join(d.path, sessionsDir), 0o755); err != nil {
+	sessions := filepath.Join(d.path, sessionsDir)
+	if err := os.MkdirAll(sessions, dirMode); err != nil {
+		return fmt.Errorf("state: %w", err)
+	}
+	if err := tighten(d.path, dirMode); err != nil {
+		return err
+	}
+	return tighten(sessions, dirMode)
+}
+
+// tighten sets the permission bits of path to perm when they differ. It
+// changes nothing when they match, so a confined step, whose state dir the
+// unconfined run already narrowed, makes no chmod.
+func tighten(path string, perm fs.FileMode) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("state: %w", err)
+	}
+	if info.Mode().Perm() == perm {
+		return nil
+	}
+	if err := os.Chmod(path, perm); err != nil {
 		return fmt.Errorf("state: %w", err)
 	}
 	return nil
@@ -85,12 +117,17 @@ func (d *Dir) LogBlock(msg, block string) error {
 			b.WriteByte('\n')
 		}
 	}
-	if err := os.MkdirAll(d.path, 0o755); err != nil {
+	if err := os.MkdirAll(d.path, dirMode); err != nil {
 		return fmt.Errorf("state: %w", err)
 	}
-	f, err := os.OpenFile(d.LogPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(d.LogPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, fileMode)
 	if err != nil {
 		return fmt.Errorf("state: open log: %w", err)
+	}
+	// A log an earlier harvest created readable to all becomes its owner's.
+	if err := tighten(d.LogPath(), fileMode); err != nil {
+		f.Close()
+		return err
 	}
 	if _, err := f.WriteString(b.String()); err != nil {
 		f.Close()
@@ -193,23 +230,25 @@ func (d *Dir) Stamp() (string, error) {
 
 // SetStamp records day as the day the hint last spoke.
 func (d *Dir) SetStamp(day string) error {
-	if err := os.MkdirAll(d.path, 0o755); err != nil {
+	if err := os.MkdirAll(d.path, dirMode); err != nil {
 		return fmt.Errorf("state: %w", err)
 	}
 	return writeAtomic(filepath.Join(d.path, stampFile), day+"\n")
 }
 
 func (d *Dir) markPath(session string) (string, error) {
-	if err := checkSession(session); err != nil {
+	if err := CheckSession(session); err != nil {
 		return "", err
 	}
 	return filepath.Join(d.path, sessionsDir, session+markSuffix), nil
 }
 
-// checkSession refuses a session id that cannot name a file of its own.
-func checkSession(session string) error {
+// CheckSession refuses a session id that cannot name a file of its own or
+// cannot stand in a log line: it wraps ErrBadSession, with the id quoted so
+// the message is one line whatever the id holds.
+func CheckSession(session string) error {
 	if session == "" || session == "." || session == ".." ||
-		strings.ContainsAny(session, "/\x00") {
+		strings.ContainsRune(session, '/') || strings.ContainsFunc(session, unicode.IsControl) {
 		return fmt.Errorf("%w: %q", ErrBadSession, session)
 	}
 	return nil

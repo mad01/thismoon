@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -179,13 +180,18 @@ func (a *app) stepFunc(s settings.Settings) run.StepFunc {
 }
 
 // logRunFailure logs a run that could not start, when the state dir itself
-// still resolves, and returns err.
+// still resolves, and returns err. A session id that is not one is quoted,
+// so it cannot break the log line.
 func (a *app) logRunFailure(session string, err error) error {
 	dir, dirErr := settings.StateDir(a.getenv)
 	if dirErr != nil {
 		return err
 	}
-	if logErr := state.New(dir, a.now).Log(fmt.Sprintf("fail %s: %v", session, err)); logErr != nil {
+	label := session
+	if state.CheckSession(session) != nil {
+		label = strconv.Quote(session)
+	}
+	if logErr := state.New(dir, a.now).Log(fmt.Sprintf("fail %s: %v", label, err)); logErr != nil {
 		return errors.Join(err, logErr)
 	}
 	return err

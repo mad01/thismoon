@@ -68,10 +68,17 @@ func Handle(cfg Config, stdin io.Reader) error {
 	if p.AgentID != "" {
 		return nil
 	}
-	if p.SessionID == "" || !isFile(p.TranscriptPath) {
+	// The id goes into every log line after this, so it is checked first;
+	// the error quotes it.
+	if err := state.CheckSession(p.SessionID); err != nil {
+		return st.Log(fmt.Sprintf("skip: %v", err))
+	}
+	if !isFile(p.TranscriptPath) {
 		return st.Log(fmt.Sprintf("skip: no transcript for session '%s'", p.SessionID))
 	}
-	if err := cfg.Start([]string{"run", p.TranscriptPath, p.SessionID, p.Cwd}); err != nil {
+	// -- ends the flags, so a path that starts with - stays an argument.
+	args := []string{"run", "--", p.TranscriptPath, p.SessionID, p.Cwd}
+	if err := cfg.Start(args); err != nil {
 		if logErr := st.Log(fmt.Sprintf("fail %s: %v", p.SessionID, err)); logErr != nil {
 			return logErr
 		}

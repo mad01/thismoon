@@ -18,6 +18,7 @@ package sandbox
 import (
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/mad01/thismoon/kit/llm"
 	"github.com/mad01/thismoon/tools/harvest/internal/settings"
@@ -75,11 +76,11 @@ type Command struct {
 func (c Config) Confined(step Step) bool { return c.On && step.Backend != llm.Claude }
 
 // Build returns the command that starts step. Every step runs `<self> step
-// <name> <args...>` from /, so a working directory inside a read-denied tree
-// cannot fail it. Under srt the command is the launcher followed by that
-// whole command line.
+// <name> -- <args...>` from /, so a working directory inside a read-denied
+// tree cannot fail it, and an argument that starts with - is not a flag.
+// Under srt the command is the launcher followed by that whole command line.
 func Build(cfg Config, step Step) Command {
-	argv := append([]string{"step", step.Name}, step.Args...)
+	argv := append([]string{"step", step.Name, "--"}, step.Args...)
 	c := Command{Path: cfg.Self, Args: argv, Env: env(cfg, step), Dir: "/"}
 	if cfg.Confined(step) {
 		c.Path = cfg.Launcher
@@ -134,7 +135,10 @@ func env(cfg Config, step Step) []string {
 // ProviderHost is the host a backend's model call goes to, as host or
 // host:port: the LiteLLM base URL without its scheme, userinfo, path, query
 // and fragment, or OpenRouter's host. It is "" for any other backend and for
-// a LiteLLM backend with no base URL.
+// a LiteLLM backend with no base URL. It is "" too for a host with a comma
+// or whitespace, which SRT_RUN_ALLOW_DOMAINS would read as more than one
+// host: the step then gets no network and fails, rather than reach a host
+// nobody named.
 func ProviderHost(backend string, env map[string]string) string {
 	switch backend {
 	case llm.LiteLLM:
@@ -147,6 +151,9 @@ func ProviderHost(backend string, env map[string]string) string {
 		}
 		if i := strings.LastIndex(h, "@"); i >= 0 {
 			h = h[i+1:]
+		}
+		if strings.ContainsFunc(h, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+			return ""
 		}
 		return h
 	case llm.OpenRouter:

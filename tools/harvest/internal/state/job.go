@@ -27,7 +27,8 @@ const (
 
 // Job is one session's job dir: the files the steps of one harvest hand to
 // each other. The run creates it before the first step and removes it after
-// the last, whatever the outcome.
+// the last, whatever the outcome, and holds the session's lock (Lock) all
+// that time.
 type Job struct {
 	path string
 }
@@ -42,7 +43,7 @@ type Counts struct {
 // Job returns the job dir of session. It refuses a session id that cannot
 // name a directory, as Mark does. Nothing is created.
 func (d *Dir) Job(session string) (Job, error) {
-	if err := checkSession(session); err != nil {
+	if err := CheckSession(session); err != nil {
 		return Job{}, err
 	}
 	return Job{path: filepath.Join(d.path, jobsDir, session)}, nil
@@ -70,7 +71,7 @@ func (j Job) Reset() error {
 	if err := j.Remove(); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(j.path, 0o700); err != nil {
+	if err := os.MkdirAll(j.path, dirMode); err != nil {
 		return fmt.Errorf("state: %w", err)
 	}
 	return nil

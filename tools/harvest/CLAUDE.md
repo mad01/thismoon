@@ -21,7 +21,7 @@ harvest/
   internal/
     cli/            cobra commands, the hidden step group, doctor checks
     settings/       the HARVEST_* environment, parsed once
-    state/          the state dir: log, per-session marks, hint stamp, job dirs
+    state/          the state dir: log, per-session marks, hint stamp, job dirs, locks
     digest/         transcript JSONL to digest text (pure)
     run/            the orchestrator and the prepare, complete and apply steps
     reply/          the model's reply to checked captures (pure)
@@ -39,8 +39,10 @@ harvest/
 `hook.Handle` reads the payload (`transcript_path`, `session_id`, `cwd`,
 `agent_id`). It returns early with no log line when `HARVEST_CHILD` or
 `HARVEST_OFF` is set or `agent_id` is present. It logs a skip when the
-payload is not JSON or names no transcript file. Otherwise it starts
-`harvest run <transcript> <session-id> <cwd>` through `hook.Detached`, which
+payload is not JSON, when `state.CheckSession` refuses the session id
+(checked before the id reaches any log line), or when it names no
+transcript file. Otherwise it starts
+`harvest run -- <transcript> <session-id> <cwd>` through `hook.Detached`, which
 calls setsid, gives the child the null device for stdin, stdout and stderr,
 and does not wait for it. SessionEnd
 hooks share about a second and a half, so nothing heavy happens here. The
@@ -49,7 +51,12 @@ command always exits 0.
 ### run
 
 `run.Session` is the orchestrator. It runs outside the sandbox and reads no
-session text and no model output. It resets the job dir
+session text and no model output. It takes the session's lock
+(`state.Lock`, a flock on `<state>/locks/<session>.lock`) and holds it to
+the end; when another run holds it, it logs
+`skip <session>: a harvest of this session is running` and stops. Then
+`state.SweepJobs` removes every job dir whose lock no process holds, which
+is what a killed run leaves. It resets the job dir
 `<state>/jobs/<session>`, copies the skill file (`HARVEST_SKILL`) to
 `system.md` in it, and starts the steps through `run.StepFunc`. The CLI's
 StepFunc is `sandbox.Run`; tests run the steps in-process.
@@ -69,19 +76,24 @@ StepFunc is `sandbox.Run`; tests run the steps in-process.
    `reply.Parse`, writes each capture with `brain capture`, moves the mark to
    `lines`, and logs the `done` line with the report under it.
 
-The run removes the job dir at the end, on success and on failure. A failed
-step logs `fail <session>: <step>: <err>`, where err is the last line the
-step printed to stderr, and moves no mark.
+The run removes the job dir at the end, on success and on failure, and
+then releases the lock. A failed step logs `fail <session>: <step>: <err>`
+and moves no mark. err is what the step printed to stderr from the last
+line that starts with `harvest: ` to the end (an error from kit/llm can
+span lines), collapsed to one line and cut to 300 bytes; with no such
+line, the last line.
 
 ### the sandbox
 
 `sandbox.Build` is pure: the argv and environment of one step. A confined
-step runs `<launcher> <self> step <name> <args...>` from `/` with a
+step runs `<launcher> <self> step <name> -- <args...>` from `/` with a
 clean environment: `HOME`, `PATH`, `TMPDIR`, the `HARVEST_*` settings that
 are set, and `HARVEST_CHILD=1`. Only complete also gets the set
 `llm.ProviderEnv` variables, `HARVEST_BACKEND` forced to the backend the run
-selected, and `SRT_RUN_ALLOW_DOMAINS` with the provider's host. The run
-learns the backend by calling `llm.Select` itself, which makes no call.
+selected, and `SRT_RUN_ALLOW_DOMAINS` with the provider's host. A LiteLLM
+host with a comma or whitespace in it is refused: the step gets no allowed
+host and fails. The run learns the backend by calling `llm.Select` itself,
+which makes no call.
 
 The launcher is `recipes/harvest/harvest-step.sh`, linked to
 `~/code/bin/harvest-step`: it execs srt-run with harvest's settings file and
@@ -101,13 +113,18 @@ file fails the step. Neither falls back to running a step unconfined.
 
 ### reply
 
-`reply.Parse` takes the text from the first `{` through the last `}`, so a
-code fence or prose around the object is fine. It keeps at most five
-captures, each with a title and a body. It lowercases the tags, keeps up to
-three made only of `a-z`, `0-9`, `/` and `-`, and adds `harvest`. A source
-must be an http or https URL. Titles and drop reasons are collapsed to one
-line. apply passes every value to brain as one `--flag=value` argument
-through exec, never a shell, and the body on stdin.
+`reply.Parse` decodes one object with `json.Decoder` from the first `{` and
+ignores what follows, so a code fence or prose around the object is fine.
+It keeps at most five captures, each with a title of at most
+`MaxTitleBytes` and a body of at most `MaxBodyBytes`; it drops the others
+with a reason, by title. It lowercases the tags, keeps up to three made
+only of `a-z`, `0-9`, `/` and `-`, and adds `harvest`. A source must be an
+http or https URL. Of the model's own drops it keeps only `Declined`: the
+count and the first `MaxReasons` reasons, cut to `MaxReasonBytes`. The
+candidate text is never kept, since the model drops secrets. Titles and
+reasons are collapsed to one line. apply passes every value to brain as
+one `--flag=value` argument through exec, never a shell, and the body on
+stdin. A capture brain refuses for a secret is logged without its title.
 
 ### digest
 
@@ -134,12 +151,15 @@ harvest.log               one timestamped line per outcome (skip, fail, done)
 sessions/<id>.lines       transcript lines the last successful harvest read
 hint-day                  the day the hint last spoke, YYYY-MM-DD
 jobs/<id>/                one run's job dir, removed when the run ends
+locks/<id>.lock           the flock a run of the session holds; the file stays
 ```
 
 Marks, the stamp and the counts are written with temp-and-rename. Log
-entries are one append each. A session id with a `/` or that is `.` or `..`
-is refused before it names a file. The job dir and its files are readable by
-their owner only.
+entries are one append each. A session id that is empty, `.` or `..`, or
+holds a `/` or a control character is refused before it names a file or
+reaches a log line. Everything in the state dir is readable by its owner
+only: dirs 0700, files 0600. `Ensure` and the log write narrow a wider mode
+an older version left.
 
 ## Build / install / test
 
