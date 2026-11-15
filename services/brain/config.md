@@ -107,7 +107,10 @@ list; setting both is invalid. The single-path form loads as one vault named
   `brain: <verb> <path>`, staging and committing only the paths it changed.
   Your own uncommitted edits stay as they were, and brain never pushes on
   its own. `false` turns the commits off. A vault that is not a git repo, or
-  sits inside another repo's work tree, gets no commits either way.
+  sits inside another repo's work tree, gets no commits either way. When git
+  cannot run in the vault (it may not read its config, say), every change
+  there fails its commit with exit 1. The change stays on disk, unstaged,
+  until git works again or this is `false`.
 
 List order matters: search lists vaults in it, and a wikilink that is not
 found in its own vault resolves in the shared vaults in this order.

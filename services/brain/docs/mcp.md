@@ -55,7 +55,7 @@ body text with [[wikilinks]]
 Several vaults can be configured. A private vault is one you write directly. A shared vault (`shared: true`) is one a team keeps in its own repo.
 
 - A shared vault is read-only here: `brain_write`, `brain_edit` and `brain_promote` fail on it with a read-only error. Its notes change through a pull request, which the CLI opens: `brain promote <note> --to <shared vault>` shares a private note and `brain edit <note> --pr` edits a shared one (`brain docs sharing`).
-- In a vault that is a git repo, every write, edit and promote is committed at once as `brain: <verb> <path>`, as from the CLI. Nothing is pushed; `brain sync` does that.
+- In a vault that is a git repo, every write, edit and promote is committed at once as `brain: <verb> <path>`, as from the CLI. Nothing is pushed; `brain sync` does that. A commit can fail because a hook refuses it or git cannot run. The tool then fails with an error saying the note is changed on disk but not committed, and the note is left unstaged.
 - Writes go to the default vault (the one marked `default: true`, else the first private vault) unless the `vault` input names another.
 - Search (literal, semantic and hybrid), count, list and graph cover every vault unless the `vault` input narrows them. Every hit and note result names its `vault`.
 

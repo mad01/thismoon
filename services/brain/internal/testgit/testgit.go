@@ -32,6 +32,33 @@ func Isolate(t testing.TB) {
 	}
 }
 
+// UnreadableGlobalConfig points the git processes brain starts at a global
+// config git cannot open, a symbolic link to itself, so each one stops with
+// "fatal: unable to access", as git does when a sandbox denies
+// ~/.gitconfig. Run and the helpers built on it keep working, since they
+// set their own config. Call it after Isolate.
+func UnreadableGlobalConfig(t testing.TB) {
+	t.Helper()
+	loop := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.Symlink(loop, loop); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", loop)
+}
+
+// Hook installs script, run by /bin/sh, as the hook name (pre-commit, say)
+// of the repo at dir.
+func Hook(t testing.TB, dir, name, script string) {
+	t.Helper()
+	path := filepath.Join(dir, ".git", "hooks", name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Run runs git -C dir with args and returns its trimmed stdout, failing the
 // test on an error.
 func Run(t testing.TB, dir string, args ...string) string {
@@ -105,6 +132,12 @@ func Subjects(t testing.TB, dir string) []string {
 		return nil
 	}
 	return strings.Split(out, "\n")
+}
+
+// Staged returns the paths whose index entry differs from HEAD in dir.
+func Staged(t testing.TB, dir string) []string {
+	t.Helper()
+	return strings.Fields(Run(t, dir, "diff", "--cached", "--name-only"))
 }
 
 // Status returns dir's short status, untracked files included.

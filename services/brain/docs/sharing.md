@@ -20,10 +20,16 @@ supersede, retract, withdraw, flag, `inbox keep`, `inbox archive`,
   untracked edits stay as they were.
 - brain never pushes on a commit; `brain sync` pushes.
 - A failed commit leaves the change on disk and fails the command (exit 1)
-  with a message saying so.
+  with a message saying so. That covers a hook that refuses the commit and
+  a git that cannot run at all, such as one that may not read
+  `~/.gitconfig`. brain then unstages the paths it staged and puts their
+  index entries back as they were, so your next commit does not carry
+  them. If that fails too, the message names the paths still staged.
 - `autocommit: false` on the vault's config entry turns the commits off. A
   vault that is not a git repo, or sits inside a larger repo, works as
-  before, with no commits.
+  before, with no commits. brain asks git, and only git's own "not a git
+  repository" answer, or no git on `PATH`, means no repo; any other git
+  failure fails the commit.
 
 A private vault with no remote is a supported setup: brain commits there and
 never pulls or pushes it.

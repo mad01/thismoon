@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -35,13 +36,19 @@ const localTimeout = 30 * time.Second
 // brain does not know what to pull from or push to.
 var ErrNoUpstream = errors.New("gitvault: no upstream branch")
 
+// notARepo starts what git prints, in the C locale, when no repository
+// holds the directory it runs in. With exit status 128 it is the one git
+// failure that means "not a repo"; any other failure is git not working.
+const notARepo = "fatal: not a git repository"
+
 // Repo is one vault checkout. The zero value is not usable; call New.
 type Repo struct {
 	// Root is the vault root, the directory git runs in.
 	Root string
 
-	once sync.Once
-	top  bool
+	mu     sync.Mutex
+	probed bool // git answered whether Root is a top level
+	top    bool
 }
 
 // New returns the Repo of the vault at root. It runs no git until a method
@@ -51,45 +58,154 @@ func New(root string) *Repo {
 }
 
 // IsRepo reports whether the vault root is the top level of a git work
-// tree. A missing git binary reads as false. The answer is cached.
+// tree. A git that fails, or is missing, reads as false here; Commit
+// reports that failure instead.
 func (r *Repo) IsRepo() bool {
-	r.once.Do(func() {
-		out, err := r.output(context.Background(), localTimeout, "rev-parse", "--show-toplevel")
-		if err != nil {
-			return
-		}
-		top, err1 := filepath.EvalSymlinks(out)
-		root, err2 := filepath.EvalSymlinks(r.Root)
-		r.top = err1 == nil && err2 == nil && top == root
-	})
-	return r.top
+	top, _ := r.isRepo()
+	return top
+}
+
+// isRepo is IsRepo with git's failure kept. git's answer is cached; a
+// failure is not, so the next call asks again.
+func (r *Repo) isRepo() (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.probed {
+		return r.top, nil
+	}
+	top, err := r.probe()
+	if err != nil {
+		return false, err
+	}
+	r.probed, r.top = true, top
+	return top, nil
+}
+
+// probe asks git for the top level of the work tree holding the vault
+// root. git's own "not a git repository" is a clean no; any other failure,
+// such as a global config git may not read, is an error. git runs in the C
+// locale, so its answer reads the same under every language setting.
+func (r *Repo) probe() (bool, error) {
+	var out bytes.Buffer
+	err := r.run(context.Background(), localTimeout,
+		gitIO{stdout: &out, env: []string{"LC_ALL=C"}}, "rev-parse", "--show-toplevel")
+	if exitCode(err) == 128 && strings.Contains(err.Error(), notARepo) {
+		return false, nil
+	}
+	// No git on PATH: a plain-directory vault on a machine without git must
+	// still take writes, and there is nothing to commit with either way.
+	if errors.Is(err, exec.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	top, err := filepath.EvalSymlinks(strings.TrimSpace(out.String()))
+	if err != nil {
+		return false, err
+	}
+	root, err := filepath.EvalSymlinks(r.Root)
+	if err != nil {
+		return false, err
+	}
+	return top == root, nil
 }
 
 // Commit commits exactly paths, vault-relative, with message. It stages
 // only them (git add -- paths) and commits only them (git commit -- paths),
 // so changes a person left in other files, staged or not, stay as they
 // were. A path that is neither on disk nor tracked (a note created and
-// moved again before any commit) is left out. Commit does nothing when
-// the vault is not a repo or none of the paths changed, and never pushes.
+// moved again before any commit) is left out. Commit does nothing when git
+// says the vault is not a repo or none of the paths changed, and never
+// pushes. Any other git failure is an error. When the commit fails after
+// the paths were staged, Commit puts their index entries back as they were
+// and leaves the files on disk; if that fails too, the error says the paths
+// are still staged.
 func (r *Repo) Commit(message string, paths []string) error {
-	if !r.IsRepo() || len(paths) == 0 {
+	if len(paths) == 0 {
 		return nil
+	}
+	if isRepo, err := r.isRepo(); err != nil || !isRepo {
+		return err
 	}
 	ctx := context.Background()
 	keep, err := r.known(ctx, paths)
 	if err != nil || len(keep) == 0 {
 		return err
 	}
+	before, err := r.indexEntries(ctx, keep)
+	if err != nil {
+		return err
+	}
+	// A git add that fails writes no index, so there is nothing to unstage.
 	if _, err := r.output(ctx, localTimeout, append([]string{"add", "--"}, keep...)...); err != nil {
 		return err
 	}
-	changed, err := r.stagedChanges(ctx, keep)
+	if err := r.commitStaged(ctx, message, keep); err != nil {
+		return r.unstage(ctx, keep, before, err)
+	}
+	return nil
+}
+
+// commitStaged commits paths, which git add has just staged, unless the
+// index holds no change to them.
+func (r *Repo) commitStaged(ctx context.Context, message string, paths []string) error {
+	changed, err := r.stagedChanges(ctx, paths)
 	if err != nil || !changed {
 		return err
 	}
-	args := append([]string{"commit", "--quiet", "-m", message, "--"}, keep...)
+	args := append([]string{"commit", "--quiet", "-m", message, "--"}, paths...)
 	_, err = r.output(ctx, localTimeout, args...)
 	return err
+}
+
+// unstage puts the index entries of paths back to before, their listing
+// from ahead of git add, once committing them failed with err. It returns
+// err, and says the paths are still staged when the restore fails too.
+func (r *Repo) unstage(ctx context.Context, paths []string, before []byte, err error) error {
+	if restoreErr := r.restoreIndex(ctx, paths, before); restoreErr != nil {
+		return fmt.Errorf("%w; %s still staged (unstage failed: %w)",
+			err, strings.Join(paths, ", "), restoreErr)
+	}
+	return err
+}
+
+// restoreIndex replaces every index entry of paths with the entries in
+// before. In one git update-index, a mode 0 line drops each path the index
+// now holds, every stage of it, and before's lines put back what was
+// there. Only the index changes; the files on disk stay as they are.
+func (r *Repo) restoreIndex(ctx context.Context, paths []string, before []byte) error {
+	after, err := r.indexEntries(ctx, paths)
+	if err != nil {
+		return err
+	}
+	var in bytes.Buffer
+	for rec := range strings.SplitSeq(string(after), "\x00") {
+		if rec == "" {
+			continue
+		}
+		meta, path, ok := strings.Cut(rec, "\t")
+		fields := strings.Fields(meta)
+		if !ok || len(fields) != 3 {
+			return fmt.Errorf("git ls-files --stage printed %q", rec)
+		}
+		// The zero object id has the length of the repo's object ids.
+		fmt.Fprintf(&in, "0 %s\t%s\x00", strings.Repeat("0", len(fields[1])), path)
+	}
+	in.Write(before)
+	return r.run(ctx, localTimeout, gitIO{stdin: &in}, "update-index", "-z", "--index-info")
+}
+
+// indexEntries returns git ls-files --stage -z for paths: one
+// "<mode> <object> <stage>\t<path>" record per index entry, each ending in
+// a NUL byte, the form git update-index --index-info reads back.
+func (r *Repo) indexEntries(ctx context.Context, paths []string) ([]byte, error) {
+	var out bytes.Buffer
+	args := append([]string{"ls-files", "--stage", "-z", "--"}, paths...)
+	if err := r.run(ctx, localTimeout, gitIO{stdout: &out}, args...); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 // known returns the paths that are on disk or tracked by git.
@@ -114,15 +230,19 @@ func (r *Repo) known(ctx context.Context, paths []string) ([]string, error) {
 }
 
 // stagedChanges reports whether the index differs from HEAD for paths. A
-// repo without a commit yet has everything to commit.
+// repo without a commit yet has everything to commit: rev-parse --verify
+// --quiet exits 1, and only 1, when HEAD names no commit.
 func (r *Repo) stagedChanges(ctx context.Context, paths []string) (bool, error) {
-	if _, err := r.output(ctx, localTimeout, "rev-parse", "--verify", "--quiet", "HEAD"); err != nil {
-		return true, nil //nolint:nilerr // no HEAD yet: the first commit
+	err := r.run(ctx, localTimeout, gitIO{}, "rev-parse", "--verify", "--quiet", "HEAD")
+	if exitCode(err) == 1 {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
 	}
 	args := append([]string{"diff", "--cached", "--quiet", "--"}, paths...)
-	err := r.run(ctx, localTimeout, nil, args...)
-	var exit *exec.ExitError
-	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+	err = r.run(ctx, localTimeout, gitIO{}, args...)
+	if exitCode(err) == 1 {
 		return true, nil
 	}
 	return false, err
@@ -163,7 +283,7 @@ func (r *Repo) Upstream() (remote, branch string, err error) {
 // Untracked files do not count: a pull never touches them.
 func (r *Repo) Dirty() ([]string, error) {
 	var out bytes.Buffer
-	err := r.run(context.Background(), localTimeout, &out,
+	err := r.run(context.Background(), localTimeout, gitIO{stdout: &out},
 		"status", "--porcelain", "--untracked-files=no")
 	if err != nil {
 		return nil, err
@@ -259,27 +379,31 @@ func (r *Repo) RemoveWorktree(dir string) error {
 // output runs git in the vault root and returns its trimmed stdout.
 func (r *Repo) output(ctx context.Context, timeout time.Duration, args ...string) (string, error) {
 	var stdout bytes.Buffer
-	if err := r.run(ctx, timeout, &stdout, args...); err != nil {
+	if err := r.run(ctx, timeout, gitIO{stdout: &stdout}, args...); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-// run runs git in the vault root, writing stdout to out when it is set.
+// gitIO is what one git command reads and writes besides its arguments.
+// The zero value gives git no input and drops its output.
+type gitIO struct {
+	stdin  io.Reader
+	stdout *bytes.Buffer
+	env    []string // set over brain's own environment
+}
+
+// run runs git in the vault root with gio's input, output and environment.
 // A failure carries git's stderr.
-func (r *Repo) run(
-	ctx context.Context,
-	timeout time.Duration,
-	out *bytes.Buffer,
-	args ...string,
-) error {
+func (r *Repo) run(ctx context.Context, timeout time.Duration, gio gitIO, args ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", r.Root}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if out != nil {
-		cmd.Stdout = out
+	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0"), gio.env...)
+	cmd.Stdin = gio.stdin
+	if gio.stdout != nil {
+		cmd.Stdout = gio.stdout
 	}
 	cmd.Stderr = &stderr
 	err := cmd.Run()
@@ -293,6 +417,16 @@ func (r *Repo) run(
 		return fmt.Errorf("git %s: %w: %s", args[0], err, msg)
 	}
 	return fmt.Errorf("git %s: %w", args[0], err)
+}
+
+// exitCode returns the exit status of a git that ran and failed, or -1 for
+// no error or one where git never finished (not started, timed out).
+func exitCode(err error) int {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode()
+	}
+	return -1
 }
 
 // dedupe drops repeated paths, keeping the first of each.
