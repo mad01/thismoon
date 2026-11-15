@@ -4,7 +4,8 @@
 // metadata carries the path, note id, tier, tags (flattened as t_<name>=1),
 // evidence, type and status. A Manifest beside it records each embedded
 // note's content hash, so Sync re-embeds only the notes that changed and
-// purges the chunks of notes that vanished.
+// purges the chunks of notes that vanished, and the notes a sync could not
+// embed, which it leaves out instead of failing.
 package semantic
 
 import (

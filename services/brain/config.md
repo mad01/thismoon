@@ -41,8 +41,10 @@ indexes there, named after the vault:
 - `semantic/<vault>/`: the chromem-go vector store, unless
   `semantic.index_dir` moves the parent, and `manifest.json`: the embed
   model and chunk sizes the store was made with, the fingerprint it was
-  synced against, and a content hash per note. A sync re-embeds only the
-  notes whose hash changed and drops the chunks of deleted notes. A store
+  synced against, a content hash per note, and the notes the last sync
+  could not embed, with the reason. A sync re-embeds only the notes whose
+  hash changed or that it could not embed, and drops the chunks of
+  deleted notes. A store
   made with another model, chunk size or manifest version, or one without a
   manifest, is rebuilt, which re-embeds every note.
 - `locks/`: lock files. A build of one vault's literal index holds
@@ -130,7 +132,10 @@ found in its own vault resolves in the shared vaults in this order.
 - `semantic.index_dir` (string, default `semantic/` in the state directory):
   the parent of each vault's vector store (`<index_dir>/<vault>/`). A
   leading `~` is expanded.
-- `semantic.chunk_size` (int, default `800`): target tokens per chunk.
+- `semantic.chunk_size` (int, default `800`): target tokens per chunk. A
+  chunk is also at most 2000 bytes, so that the embed model's context holds
+  it whatever the text is, and prose reaches that bound first, at about 330
+  words.
 - `semantic.chunk_overlap` (int, default `100`): tokens adjacent chunks
   share.
 - `semantic.rerank_default` (bool, default `false`): rerank hybrid results

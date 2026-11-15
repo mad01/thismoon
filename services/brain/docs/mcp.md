@@ -662,7 +662,7 @@ Run the checks `brain doctor` runs and return the same report. Read-only: it cre
 
 **Input:** none.
 
-**Output:** `ok` (false when any check failed) and `checks[] {name, status, detail, fix}`. `name` is `config`, `vault`, `index-dir`, `index`, `ids` (two notes holding one note id) or `ollama`. The checks of a running `brain serve` follow: `serve-reachable`, `version-skew`, `serve-vaults` and `serve-state-dir`, all skipped when nothing listens. `status` is `ok`, `fail` or `skip`, where `skip` means an earlier failure (or no serve) left the check nothing to examine; `fix` names the next step for a failure. A failing check is a result, never a tool error.
+**Output:** `ok` (false when any check failed) and `checks[] {name, status, detail, fix}`. `name` is `config`, `vault`, `index-dir`, `index`, `ids` (two notes holding one note id), `ollama` or `embeddings` (the notes the last semantic sync could not embed, each with the reason). The checks of a running `brain serve` follow: `serve-reachable`, `version-skew`, `serve-vaults` and `serve-state-dir`, all skipped when nothing listens. `status` is `ok`, `fail` or `skip`, where `skip` means an earlier failure (or no serve) left the check nothing to examine; `fix` names the next step for a failure. A failing check is a result, never a tool error.
 
 ## Zoekt query syntax
 
@@ -695,6 +695,8 @@ Indexes are per vault. Each vault's zoekt index lives at `index/<vault>/` in the
 A markdown change in one vault makes only that vault's index stale on the next search. A build holds that vault's index lock, so the CLI and the MCP server never build the same index at once.
 
 The semantic index syncs incrementally. Its `manifest.json` records the embed model, the chunk sizes and a content hash per note. A sync re-embeds only the notes whose hash changed and purges the chunks of deleted notes; a store made with another model or chunk size is rebuilt. `brain_semantic_search` and `brain_hybrid_search` sync a stale semantic index before they query. When Ollama does not answer, the stale index stays as it was and the result carries `warnings[]` saying so. `brain_hybrid_search` then fuses the literal hits alone and adds a warning. `brain_semantic_search` still needs Ollama to embed the query, so with Ollama down it returns an error.
+
+No chunk is longer than 2000 bytes, which the 2048-token context of `nomic-embed-text` always holds, so a long paragraph, table, list or line is embedded in parts. A note the embedder still refuses fails neither the sync nor the search. It is left out of the index, and the manifest records it with the reason. Every `brain_semantic_search` and `brain_hybrid_search` result names it in `warnings[]` until a sync embeds it. The next change to the vault retries it. `brain_doctor` lists it under `embeddings`. When the embedder stops answering during a sync, the index stays stale and the warning says so, as with Ollama down. `brain_hybrid_search` also falls back to the literal hits when a semantic index cannot be refreshed for any other reason.
 
 To rebuild manually (e.g. after a config change):
 

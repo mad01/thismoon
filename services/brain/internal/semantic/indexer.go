@@ -35,6 +35,10 @@ type SyncReport struct {
 	Embedded, Chunks int
 	// Removed counts the notes that vanished, whose chunks were purged.
 	Removed int
+	// Failed maps each note that could not be split or embedded to the
+	// reason, on one line. Such a note holds no chunks and is not in Notes,
+	// so the next sync tries it again.
+	Failed map[string]string
 }
 
 // Sync brings idx in line with the notes under vaultRoot's tiers. A note
@@ -44,8 +48,13 @@ type SyncReport struct {
 // exists has its chunks purged, so no ghost hits remain. Notes outside the
 // four tiers, hidden directories, .git, .obsidian, .trash, attachments and
 // node_modules are never read.
+//
+// A note that cannot be split or embedded (the embedder refuses it, say)
+// does not stop the sync: its chunks are purged, it lands in
+// SyncReport.Failed and the rest are synced. A failure to purge chunks, or a
+// done ctx, stops it with an error.
 func Sync(ctx context.Context, idx *Index, vaultRoot string, opts SyncOptions) (SyncReport, error) {
-	report := SyncReport{Notes: map[string]string{}}
+	report := SyncReport{Notes: map[string]string{}, Failed: map[string]string{}}
 	walkErr := filepath.Walk(vaultRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -65,35 +74,16 @@ func Sync(ctx context.Context, idx *Index, vaultRoot string, opts SyncOptions) (
 		if err != nil {
 			return nil
 		}
-		sum := sha256.Sum256(content)
-		hash := hex.EncodeToString(sum[:])
-		report.Notes[rel] = hash
-		if opts.Held[rel] == hash {
-			return nil
-		}
-		if withdrawn(content) {
-			if err := idx.DeleteByPath(ctx, rel); err != nil {
-				return fmt.Errorf("semantic.Sync: purge %s: %w", rel, err)
-			}
-			return nil
-		}
-		n, err := embedNote(ctx, idx, rel, content, opts.Chunk)
-		if err != nil {
-			return err
-		}
-		report.Embedded++
-		report.Chunks += n
-		if opts.Progress != nil {
-			opts.Progress(rel, n)
-		}
-		return nil
+		return report.syncNote(ctx, idx, rel, content, opts)
 	})
 	if walkErr != nil {
 		return report, fmt.Errorf("semantic.Sync: walk %s: %w", vaultRoot, walkErr)
 	}
 	vanished := make([]string, 0)
 	for rel := range opts.Held {
-		if _, ok := report.Notes[rel]; !ok {
+		_, held := report.Notes[rel]
+		_, failed := report.Failed[rel]
+		if !held && !failed {
 			vanished = append(vanished, rel)
 		}
 	}
@@ -105,6 +95,51 @@ func Sync(ctx context.Context, idx *Index, vaultRoot string, opts SyncOptions) (
 		report.Removed++
 	}
 	return report, nil
+}
+
+// syncNote brings the chunks of the note at rel in line with content and
+// records the outcome: held when its hash matches opts.Held, re-embedded,
+// or failed, with its chunks purged. Only a purge that fails or a done ctx
+// returns an error.
+func (r *SyncReport) syncNote(
+	ctx context.Context,
+	idx *Index,
+	rel string,
+	content []byte,
+	opts SyncOptions,
+) error {
+	sum := sha256.Sum256(content)
+	hash := hex.EncodeToString(sum[:])
+	r.Notes[rel] = hash
+	if opts.Held[rel] == hash {
+		return nil
+	}
+	// The purge comes first so a removed section leaves no chunk.
+	if err := idx.DeleteByPath(ctx, rel); err != nil {
+		return fmt.Errorf("semantic.Sync: purge %s: %w", rel, err)
+	}
+	if withdrawn(content) {
+		return nil
+	}
+	n, err := embedNote(ctx, idx, rel, content, opts.Chunk)
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("semantic.Sync: %s: %w", rel, err)
+		}
+		// Some chunks may have gone in before the one that failed.
+		if err := idx.DeleteByPath(ctx, rel); err != nil {
+			return fmt.Errorf("semantic.Sync: purge %s: %w", rel, err)
+		}
+		delete(r.Notes, rel)
+		r.Failed[rel] = strings.Join(strings.Fields(err.Error()), " ")
+		return nil
+	}
+	r.Embedded++
+	r.Chunks += n
+	if opts.Progress != nil {
+		opts.Progress(rel, n)
+	}
+	return nil
 }
 
 // withdrawn reports whether content is a withdrawn note's tombstone, which
@@ -132,8 +167,8 @@ func noteRel(vaultRoot, path string, info os.FileInfo) (string, bool) {
 	return rel, tierOfPath(rel) != ""
 }
 
-// embedNote replaces the note's chunks with fresh ones and returns how many
-// it made. The purge comes first so a removed section leaves no chunk.
+// embedNote splits a note whose old chunks are purged, embeds the chunks and
+// returns how many it made.
 func embedNote(
 	ctx context.Context,
 	idx *Index,
@@ -143,13 +178,10 @@ func embedNote(
 ) (int, error) {
 	chunks, err := chunk.Split(rel, tierOfPath(rel), content, opts)
 	if err != nil {
-		return 0, fmt.Errorf("semantic.Sync: split %s: %w", rel, err)
-	}
-	if err := idx.DeleteByPath(ctx, rel); err != nil {
-		return 0, fmt.Errorf("semantic.Sync: purge %s: %w", rel, err)
+		return 0, fmt.Errorf("split: %w", err)
 	}
 	if err := idx.Upsert(ctx, chunks, 0); err != nil {
-		return 0, fmt.Errorf("semantic.Sync: upsert %s: %w", rel, err)
+		return 0, err
 	}
 	return len(chunks), nil
 }

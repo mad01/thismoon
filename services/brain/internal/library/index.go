@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/mad01/thismoon/services/brain"
@@ -19,6 +21,11 @@ import (
 // healthTimeout bounds the embedder probe before a semantic refresh.
 const healthTimeout = 5 * time.Second
 
+// errEmbedderLost marks a semantic sync the embedder stopped answering
+// during. Its failures say nothing about the notes, so the index is left
+// stale, as when the embedder is down before the sync.
+var errEmbedderLost = errors.New("the embedder stopped answering during the sync")
+
 // Refresh reports one index check of one vault.
 type Refresh struct {
 	// Vault is the vault's name.
@@ -31,6 +38,28 @@ type Refresh struct {
 	Chunks int
 	// Removed counts the vanished notes a semantic refresh purged.
 	Removed int
+	// Failed maps each note a semantic refresh could not embed to the
+	// reason. The note is missing from semantic hits until a later sync
+	// embeds it.
+	Failed map[string]string
+}
+
+// Warnings returns one line per note the refresh could not embed.
+func (r Refresh) Warnings() []string {
+	return embedWarnings(r.Vault, r.Failed)
+}
+
+// embedWarnings names each note in failed, in path order, with its reason.
+func embedWarnings(vaultName string, failed map[string]string) []string {
+	paths := slices.Sorted(maps.Keys(failed))
+	warnings := make([]string, 0, len(paths))
+	for _, rel := range paths {
+		warnings = append(warnings, fmt.Sprintf(
+			"%s: %s is not in the semantic index, embedding it failed: %s",
+			vaultName, rel, failed[rel],
+		))
+	}
+	return warnings
 }
 
 // RefreshLiteral rebuilds the vault's literal index when the vault changed
@@ -112,19 +141,26 @@ func (l *Library) literalDir(v *vault.Vault) (string, error) {
 // SemanticStale reports whether the vault changed since its semantic index
 // was synced, or the index was made with other settings.
 func (l *Library) SemanticStale(v *vault.Vault) (bool, error) {
+	stale, _, err := l.semanticState(v)
+	return stale, err
+}
+
+// semanticState reports whether the vault's semantic index is stale, and
+// the notes its last sync could not embed.
+func (l *Library) semanticState(v *vault.Vault) (stale bool, failed map[string]string, err error) {
 	dir, err := l.cfg.Semantic.ResolvedIndexDir(v.Name)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	fingerprint, _, err := search.ComputeFingerprint(v.Root)
 	if err != nil {
-		return false, fmt.Errorf("fingerprint %s: %w", v.Name, err)
+		return false, nil, fmt.Errorf("fingerprint %s: %w", v.Name, err)
 	}
 	m, _, err := semantic.LoadManifest(dir)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
-	return !m.Fresh(fingerprint, l.semanticSettings()), nil
+	return !m.Fresh(fingerprint, l.semanticSettings()), m.Failed, nil
 }
 
 // RefreshSemantic syncs the vault's semantic index when the vault changed
@@ -133,6 +169,12 @@ func (l *Library) SemanticStale(v *vault.Vault) (bool, error) {
 // chunks of vanished ones. An index made with other settings, or one with
 // chunks and no manifest (built before manifests existed), is rebuilt.
 // progress, when set, sees each re-embedded note and its chunk count.
+//
+// A note the embedder refuses is left out, named in Refresh.Failed and in
+// the manifest, and tried again by the next sync, which the next change to
+// the vault starts. When the embedder no longer answers after a sync with
+// failures, they are the outage's, not the notes': the manifest keeps what
+// was embedded, the index stays stale and the error wraps errEmbedderLost.
 func (l *Library) RefreshSemantic(
 	ctx context.Context,
 	v *vault.Vault,
@@ -191,11 +233,20 @@ func (l *Library) RefreshSemantic(
 		Fingerprint: fingerprint,
 		IndexedAt:   time.Now().UTC(),
 		Notes:       report.Notes,
+		Failed:      report.Failed,
+	}
+	if len(report.Failed) > 0 {
+		if healthErr := l.Health(ctx); healthErr != nil {
+			m.Fingerprint, m.Failed = "", nil
+			lost := fmt.Errorf("semantic index of %s: %w: %w", v.Name, errEmbedderLost, healthErr)
+			return res, errors.Join(lost, m.Save(dir))
+		}
 	}
 	if err := m.Save(dir); err != nil {
 		return res, err
 	}
 	res.Built, res.Notes, res.Chunks, res.Removed = true, report.Embedded, report.Chunks, report.Removed
+	res.Failed = report.Failed
 	return res, nil
 }
 
@@ -219,10 +270,12 @@ func (l *Library) Health(ctx context.Context) error {
 }
 
 // refreshSemantic refreshes the stale semantic indexes of vaults before a
-// query. When the embedder does not answer, or another brain process holds
-// a vault's semantic lock past the lock timeout (a long embedding run), the
-// stale indexes stay as they are and each one adds a warning instead of
-// failing the query.
+// query. When the embedder does not answer, stops answering during the
+// sync, or another brain process holds a vault's semantic lock past the
+// lock timeout (a long embedding run), the stale indexes stay as they are
+// and each one adds a warning instead of failing the query. Each note the
+// index left out because embedding it failed adds a warning too, on every
+// query until a sync embeds it.
 func (l *Library) refreshSemantic(ctx context.Context, vaults *vault.Set) ([]string, error) {
 	var (
 		warnings  []string
@@ -230,32 +283,33 @@ func (l *Library) refreshSemantic(ctx context.Context, vaults *vault.Set) ([]str
 		healthErr error
 	)
 	for _, v := range vaults.Vaults() {
-		stale, err := l.SemanticStale(v)
+		stale, failed, err := l.semanticState(v)
 		if err != nil {
 			return warnings, err
 		}
-		if !stale {
-			continue
-		}
-		if !probed {
+		if stale && !probed {
 			healthErr, probed = l.Health(ctx), true
 		}
-		if healthErr != nil {
-			warnings = append(warnings, fmt.Sprintf(
-				"%s: semantic index is stale and was not refreshed: %v", v.Name, healthErr,
-			))
-			continue
-		}
-		if _, err := l.RefreshSemantic(ctx, v, false, nil); err != nil {
-			if !errors.Is(err, lockfile.ErrTimeout) {
+		if stale && healthErr != nil {
+			warnings = append(warnings, staleWarning(v, healthErr))
+		} else if stale {
+			res, err := l.RefreshSemantic(ctx, v, false, nil)
+			switch {
+			case errors.Is(err, lockfile.ErrTimeout), errors.Is(err, errEmbedderLost):
+				warnings = append(warnings, staleWarning(v, err))
+			case err != nil:
 				return warnings, err
+			case res.Built:
+				failed = res.Failed
 			}
-			warnings = append(warnings, fmt.Sprintf(
-				"%s: semantic index is stale and was not refreshed: %v", v.Name, err,
-			))
 		}
+		warnings = append(warnings, embedWarnings(v.Name, failed)...)
 	}
 	return warnings, nil
+}
+
+func staleWarning(v *vault.Vault, err error) string {
+	return fmt.Sprintf("%s: semantic index is stale and was not refreshed: %v", v.Name, err)
 }
 
 // Purge drops notes that left search (a withdrawn note, archived inbox
@@ -300,6 +354,7 @@ func (l *Library) purgeSemantic(ctx context.Context, v *vault.Vault, rels []stri
 	}
 	for _, rel := range rels {
 		delete(m.Notes, rel)
+		delete(m.Failed, rel)
 	}
 	return m.Save(dir)
 }

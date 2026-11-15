@@ -1,9 +1,10 @@
 // Package doctor runs brain's self-checks: the config resolves, every vault
 // exists, the index directory is writable, each vault's literal index is
 // fresh, no two notes share an id and, when the semantic layer is on, Ollama
-// answers. When brain serve listens, it also checks that serve runs this
-// build, reads every configured vault and shares the CLI's state
-// directory. `brain doctor` prints the report and the brain_doctor MCP tool
+// answers and the last semantic sync embedded every note. When brain serve
+// listens, it also checks that serve runs this build, reads every
+// configured vault and shares the CLI's state directory. `brain doctor`
+// prints the report and the brain_doctor MCP tool
 // returns it, so both read the same checks in the same shape.
 package doctor
 
@@ -12,8 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,6 +24,7 @@ import (
 	"github.com/mad01/thismoon/services/brain/internal/config"
 	"github.com/mad01/thismoon/services/brain/internal/embedding"
 	"github.com/mad01/thismoon/services/brain/internal/search"
+	"github.com/mad01/thismoon/services/brain/internal/semantic"
 	"github.com/mad01/thismoon/services/brain/internal/vault"
 )
 
@@ -80,6 +84,7 @@ func localChecks(ctx context.Context, configPath string) (*config.Config, []Chec
 			skipped("index", "needs a config"),
 			skipped("ids", "needs a config"),
 			skipped("ollama", "needs a config"),
+			skipped("embeddings", "needs a config"),
 		)
 	}
 	vaultCheck := checkVaults(cfg)
@@ -98,7 +103,7 @@ func localChecks(ctx context.Context, configPath string) (*config.Config, []Chec
 	} else {
 		checks = append(checks, skipped("ids", "needs every vault"))
 	}
-	return cfg, append(checks, checkOllama(ctx, cfg))
+	return cfg, append(checks, checkOllama(ctx, cfg), checkEmbeddings(cfg))
 }
 
 func newReport(checks []Check) Report {
@@ -325,4 +330,46 @@ func checkOllama(ctx context.Context, cfg *config.Config) Check {
 		}
 	}
 	return Check{Name: "ollama", Status: StatusOK, Detail: cfg.Semantic.OllamaURL + " answers"}
+}
+
+// checkEmbeddings fails when the last semantic sync of a vault could not
+// embed some notes, naming each with its reason from the manifest beside
+// the vault's semantic index. A vault with no semantic index yet passes.
+func checkEmbeddings(cfg *config.Config) Check {
+	if !cfg.Semantic.Enabled {
+		return skipped("embeddings", "semantic.enabled is false")
+	}
+	var held, failed []string
+	for _, v := range cfg.Vaults {
+		dir, err := cfg.Semantic.ResolvedIndexDir(v.Name)
+		if err != nil {
+			failed = append(failed, v.Name+": "+err.Error())
+			continue
+		}
+		m, found, err := semantic.LoadManifest(dir)
+		switch {
+		case err != nil:
+			failed = append(
+				failed,
+				v.Name+": "+err.Error()+" (move "+dir+" aside, then run brain index)",
+			)
+		case !found:
+			held = append(held, v.Name+": no semantic index yet")
+		default:
+			held = append(held, fmt.Sprintf("%s: %d note(s) embedded", v.Name, len(m.Notes)))
+			for _, rel := range slices.Sorted(maps.Keys(m.Failed)) {
+				failed = append(failed, fmt.Sprintf("%s: %s (%s)", v.Name, rel, m.Failed[rel]))
+			}
+		}
+	}
+	if len(failed) > 0 {
+		return Check{
+			Name:   "embeddings",
+			Status: StatusFail,
+			Detail: "not in the semantic index: " + strings.Join(failed, "; "),
+			Fix: "shorten or split each note named, or read the Ollama log for the reason; " +
+				"the next change to the vault retries them, brain index --force at once",
+		}
+	}
+	return Check{Name: "embeddings", Status: StatusOK, Detail: strings.Join(held, "; ")}
 }

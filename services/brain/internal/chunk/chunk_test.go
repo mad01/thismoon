@@ -1,8 +1,10 @@
 package chunk
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestChunk_SmallNote_OneChunk(t *testing.T) {
@@ -215,6 +217,95 @@ func TestChunk_FromTokens(t *testing.T) {
 	if o.OverlapWords != 75 {
 		t.Errorf("OverlapWords = %d, want 75", o.OverlapWords)
 	}
+}
+
+// TestChunk_NoChunkOutgrowsTheEmbedInput pins that every chunk fits the
+// embed model's input, whatever shape the text has: a block with no blank
+// line in it is one paragraph, and a line with no space is one word, so
+// neither the paragraph packing nor the word target bounds them.
+func TestChunk_NoChunkOutgrowsTheEmbedInput(t *testing.T) {
+	repeat := func(n int, line func(i int) string) string {
+		var b strings.Builder
+		for i := range n {
+			b.WriteString(line(i))
+			b.WriteByte('\n')
+		}
+		return b.String()
+	}
+	tests := []struct {
+		name, body string
+	}{
+		{"list of wikilinks", repeat(300, func(i int) string {
+			return fmt.Sprintf("- [[solo-founder-topic-%03d]] pricing and positioning notes", i)
+		})},
+		{"table", "| topic | owner | notes |\n|---|---|---|\n" + repeat(300, func(i int) string {
+			return fmt.Sprintf(
+				"| topic %d | team %d | reviewed in the quarterly planning cycle |",
+				i,
+				i,
+			)
+		})},
+		{"long prose paragraph", repeat(1, func(int) string {
+			return strings.Repeat("The rollout drains each zone before the next one starts. ", 300)
+		})},
+		{"line without spaces", strings.Repeat("aGVsbG8gd29ybGQ", 1000) + "\n"},
+		{"multibyte line without spaces", strings.Repeat("日本語のテキスト", 600) + "\n"},
+		{"fenced code", "```go\n" + repeat(400, func(i int) string {
+			return fmt.Sprintf("\tvalue%d := compute(%d) // keep", i, i)
+		}) + "```\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			note := []byte("---\ntitle: Long\n---\n# Heading\n" + tt.body)
+			chunks, err := Split("MOCs/long.md", "MOCs", note, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(chunks) < 2 {
+				t.Fatalf(
+					"got %d chunk(s) for %d bytes, want the text split",
+					len(chunks),
+					len(tt.body),
+				)
+			}
+			total := 0
+			for i, c := range chunks {
+				total += len(c.Body)
+				if len(c.Body) > maxChunkBytes {
+					t.Errorf(
+						"chunk %d has %d bytes, over the %d-byte bound",
+						i,
+						len(c.Body),
+						maxChunkBytes,
+					)
+				}
+				if !utf8.ValidString(c.Body) {
+					t.Errorf("chunk %d is not valid UTF-8", i)
+				}
+			}
+			if total < len(strings.Join(strings.Fields(tt.body), "")) {
+				t.Errorf("chunks hold %d bytes, fewer than the body's %d", total, len(tt.body))
+			}
+			for _, w := range strings.Fields(tt.body) {
+				if len(w) > maxOverlapBytes {
+					continue // a word cut into parts
+				}
+				if !containsWord(chunks, w) {
+					t.Errorf("no chunk holds %q", w)
+					break
+				}
+			}
+		})
+	}
+}
+
+func containsWord(chunks []Chunk, w string) bool {
+	for _, c := range chunks {
+		if strings.Contains(c.Body, w) {
+			return true
+		}
+	}
+	return false
 }
 
 func lastTokens(s string, n int) string {
