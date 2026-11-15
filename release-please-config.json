@@ -19,6 +19,7 @@
     "tools/agent-sync": { "component": "agent-sync" },
     "tools/belt": { "component": "belt" },
     "tools/clipboard": { "component": "clipboard" },
+    "tools/harvest": { "component": "harvest" },
     "tools/humanizer": { "component": "humanizer" },
     "tools/opener": { "component": "opener" },
     "tools/srtspec": { "component": "srtspec" },

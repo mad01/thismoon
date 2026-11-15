@@ -1,0 +1,28 @@
+{
+  "enableWeakerNetworkIsolation": true,
+  "filesystem": {
+    "allowRead": [
+      "~/.claude/projects",
+      "~/.config/brain",
+      "~/.local/state/brain",
+      "~/.gitconfig",
+      "~/code/bin",
+      "~/.local/state/harvest"
+    ],
+    "allowWrite": [
+      "~/.local/state/harvest",
+      "~/.local/state/brain",
+      "/private/tmp",
+      "/private/var/folders"
+    ],
+    "denyRead": [
+      "~"
+    ],
+    "denyWrite": []
+  },
+  "network": {
+    "allowLocalBinding": true,
+    "allowedDomains": [],
+    "deniedDomains": []
+  }
+}
