@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/mad01/thismoon/compare/brain/v0.7.1...brain/v0.7.2) (2026-11-15)
+
+
+### Bug Fixes
+
+* **brain:** split oversize chunks and skip a note that fails to embed ([#509](https://github.com/mad01/thismoon/issues/509)) ([ddad99a](https://github.com/mad01/thismoon/commit/ddad99ae5bbfcf7aec44f4c2e96ec091d13657a2))
+
 ## [0.7.1](https://github.com/mad01/thismoon/compare/brain/v0.7.0...brain/v0.7.1) (2026-11-15)
 
 
