@@ -1600,12 +1600,33 @@ origin/main` drops the local default branch back onto the remote.
   identity must also be on neither the shared `direct_main_repos` list (this
   hint is one of its two readers, docs/adr/0013) nor
   `hints.commit-policy.exclude_repos`.
+- **Only a commit that landed**: the advice names a commit, so the
+  repo's newest HEAD reflog entry (`git reflog -1`, bounded at one
+  second) must be a commit (`commit:`, or `commit (amend)`, `(initial)`,
+  `(merge)`, `(cherry-pick)`) from the last minute. A commit that
+  failed, found nothing staged, or that a pre-commit hook stopped leaves
+  the reflog as it was, so it draws nothing. The hook payload cannot say
+  so: a Bash `tool_response` carries stdout and stderr, not an exit
+  code, and a commit inside a chain (`git commit -m x; echo done`) exits
+  on its own anyway. A dry run (`--dry-run`, or `--short`,
+  `--porcelain`, `--long`, `-z`/`--null`, which imply it, also inside a
+  short bundle such as `-qz`) is skipped from the command, so it stays silent right after an earlier commit
+  too. `-n` is `--no-verify` for commit, not a dry run. The minute
+  covers what ran after the commit in the same call. A failed commit
+  within a minute of a landed one still draws the advice, which then
+  names that earlier commit, still on the branch.
 - **Deliberately silent** on feature branches, opted-out repos, detached
   HEAD, and repos with no resolvable origin remote. A scratch `git init`
   repo lives its whole life on its default branch and has no upstream to
   protect. Silent too on a commit whose directory only a shell can name (a
   variable, `cd -`, a substitution): a hint that cannot tell says nothing,
-  where the push guard fails closed.
+  where the push guard fails closed. Silent as well when the call moved
+  HEAD again after its commit (`git commit && git pull --rebase`), and
+  in a repo with no HEAD reflog (`core.logAllRefUpdates` off). Silent
+  also when what ran after the commit in the same call took over a
+  minute (`git commit -m x && make test`), and when `GIT_COMMITTER_DATE`
+  dates the commit in the past, because the reflog entry carries that
+  date. In each case the push guard still stops the push.
 - **Repo-local overlay**: a `.belt.yaml` at the repo root lets the repo
   version its own policy (docs/adr/0012). `hints.commit-policy.exclude`
   opts the repo out or back in over the machine's lists, and

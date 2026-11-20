@@ -636,7 +636,8 @@ the repo's origin remote.
 - **commit-policy**
   - `hints.commit-policy.enabled` (bool, default `true`): PostToolUse
     (bash), states the branch + PR commit policy after a `git commit` lands
-    on main or master.
+    on main or master. A dry run, or a commit that failed or a hook
+    stopped, records no commit and draws nothing.
   - `hints.commit-policy.exclude_repos` (list of string, default: empty):
     repos opted out of this hint only. A repo whose main is committed to
     directly by design belongs on the top-level `direct_main_repos` list

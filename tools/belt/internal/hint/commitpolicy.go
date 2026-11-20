@@ -2,6 +2,9 @@ package hint
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
@@ -34,6 +37,9 @@ type CommitPolicy struct {
 	// the .belt.yaml overlay lives, or "" outside a repo. Injectable for
 	// tests.
 	resolveRoot func(dir string) string
+	// landed reports whether a commit just landed in the repo at dir.
+	// Injectable for tests.
+	landed func(dir string) bool
 }
 
 // NewCommitPolicy builds the hint with the real git-backed resolvers.
@@ -43,6 +49,7 @@ func NewCommitPolicy(cfg config.Config) *CommitPolicy {
 		resolveBranch: gitCurrentBranch,
 		resolveRepo:   guard.CanonicalRepoAt,
 		resolveRoot:   gitTopLevel,
+		landed:        gitCommitLanded,
 	}
 }
 
@@ -62,11 +69,18 @@ func (h *CommitPolicy) Event() string { return EventBash }
 // linked worktree is judged by the worktree's branch, not the session
 // checkout's. git answers for the worktree on its own; nothing
 // worktree-specific is needed once the directory is right.
+//
+// The advice says the commit landed, so it needs one: a dry run is skipped
+// from the command, and any other commit only counts when the repo's newest
+// HEAD reflog entry is a commit from the last landedWindow (gitCommitLanded).
+// That covers a commit that failed or that a hook stopped, whose exit status
+// the hook payload does not carry: Claude Code's Bash tool_response holds
+// stdout and stderr, and a commit inside a chain exits on its own anyway.
 func (h *CommitPolicy) Check(in Input) *Advice {
 	if in.Command == "" {
 		return nil
 	}
-	for _, dir := range guard.GitCommitDirs(in.Command, in.Cwd) {
+	for _, dir := range guard.GitRecordingCommitDirs(in.Command, in.Cwd) {
 		if dir == "" {
 			// The commit ran in a directory only a shell can name: a cd or
 			// git -C with a variable, `cd -`, or a substitution. A hint
@@ -106,6 +120,10 @@ func (h *CommitPolicy) Check(in Input) *Advice {
 			// list's only hint-side reader (docs/adr/0013).
 			continue
 		}
+		if !h.landed(dir) {
+			// Last, because it is the one check that reads the reflog.
+			continue
+		}
 		return &Advice{Hint: CommitPolicyID, Text: commitAdvice(repo, branch, local.Message)}
 	}
 	return nil
@@ -133,4 +151,39 @@ func commitAdvice(repo, branch, message string) string {
 // git fails — all of which degrade to silence.
 func gitCurrentBranch(dir string) string {
 	return gitLine(dir, "rev-parse", "--abbrev-ref", "HEAD")
+}
+
+// landedWindow is how old the newest commit in a HEAD reflog may be and still
+// count as the one the command made. The hint runs once the whole Bash call
+// returns, so the window has to cover what ran after the commit in the same
+// call. A call that commits and fails within the window of an earlier commit
+// still draws the advice, and that earlier commit is on the branch.
+const landedWindow = time.Minute
+
+// gitCommitLanded reports whether the newest HEAD reflog entry of the repo at
+// dir is a commit from the last landedWindow. A commit that failed, that a
+// hook stopped, or that the command never reached leaves the reflog as it
+// was. A command that moves HEAD again after its commit (a pull --rebase)
+// reads as no commit, as does a repo with no reflog or a git that does not
+// answer within inflightGitTimeout: silence, never a guess.
+func gitCommitLanded(dir string) bool {
+	out, err := gitWithin(dir, "reflog", "-1", "--date=unix", "--format=%gd%x09%gs")
+	if err != nil {
+		return false
+	}
+	return recentCommitEntry(strings.TrimSpace(string(out)), time.Now().Add(-landedWindow))
+}
+
+// recentCommitEntry reports whether a reflog line, as `HEAD@{<unix
+// seconds>}<tab><subject>`, records a commit no older than cutoff. git
+// commit writes the subject as `commit: <message>`, or `commit (amend):`,
+// `commit (initial):`, `commit (merge):` and `commit (cherry-pick):`.
+func recentCommitEntry(line string, cutoff time.Time) bool {
+	selector, subject, ok := strings.Cut(line, "\t")
+	if !ok || !strings.HasPrefix(subject, "commit:") && !strings.HasPrefix(subject, "commit (") {
+		return false
+	}
+	_, stamp, _ := strings.Cut(selector, "@{")
+	secs, err := strconv.ParseInt(strings.TrimSuffix(stamp, "}"), 10, 64)
+	return err == nil && !time.Unix(secs, 0).Before(cutoff)
 }
