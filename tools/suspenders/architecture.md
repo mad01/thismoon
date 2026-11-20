@@ -36,7 +36,9 @@ kit/secretscan/      the scanner (shared package at the repo root): 84
 
 Scan: `commands/scan.go` loads config, resolves the per-repo `.suspenders.yaml`,
 and calls `secretscan.ScanDir` over git-tracked files (from `git ls-files`) or
-`secretscan.ScanStaged`, which reads content from the index via `git show :<path>`.
+`secretscan.ScanStaged`, which reads content from the index: one `git diff --cached
+--raw` lists the staged blobs, then one `git cat-file --batch-check` and one
+`git cat-file --batch` read their sizes and content.
 That way the scan sees exactly what would be committed
 (tools/suspenders/docs/adr/0001). Every line runs through all rules, then
 entropy gates, allowlists, and inline `suspenders:ignore` markers; findings are

@@ -14,9 +14,10 @@ rev-parse --git-path hooks`, so core.hooksPath and worktrees are honored), a
 thin script that calls `{{.Bin}} hook run pre-commit`. A pre-existing foreign
 hook is backed up as `pre-commit.backup` and chained first. The pipeline per
 commit: external hooks from config, then the guard, then the scan; any failing
-step blocks the commit. Staged content is read from the git index (`git show
-:<path>`), so the scan sees exactly what would be committed. A staged file
-it cannot read fails the scan instead of being skipped.
+step blocks the commit. Staged content is read from the git index (one `git
+cat-file --batch` for every staged blob), so the scan sees exactly what would
+be committed. A staged file it cannot read fails the scan instead of being
+skipped.
 
 `{{.Bin}} scan --staged` runs the same checks outside git; `{{.Bin}} scan
 [path]` checks every tracked file in a working tree. A blocked commit exits 1;

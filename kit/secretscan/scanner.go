@@ -23,7 +23,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -491,51 +490,69 @@ func walkPaths(root string) ([]string, error) {
 }
 
 // ScanStaged scans the files currently staged in the git index at repoPath.
-// Content is read from the index (`git show :<path>`), not the working tree,
-// so what gets scanned is exactly what would be committed. Errors fail the
-// scan rather than silently passing a file.
+// Content is read from the index, not the working tree, so what gets scanned
+// is exactly what would be committed. Three git processes do the reading
+// whatever the number of files: one diff lists the staged blobs, one
+// `cat-file --batch-check` sizes them and one `cat-file --batch` streams the
+// ones under the size cap. Errors fail the scan rather than silently passing
+// a file.
 func (s *Scanner) ScanStaged(repoPath string) ([]Finding, error) {
 	ic, err := s.loadIgnoreOnce()
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := exec.Command(
-		"git",
-		"-C",
-		repoPath,
-		"diff",
-		"--cached",
-		"--name-only",
-		"--diff-filter=ACMR",
-		"-z",
-	)
-	out, err := cmd.Output()
+	entries, err := stagedEntries(repoPath)
 	if err != nil {
-		return nil, fmt.Errorf("git diff --cached: %w", err)
+		return nil, err
 	}
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	// Bound work the same way ScanDir does, but read the size from the
+	// index. A blob we cannot read fails closed (returns an error, per
+	// ADR 0001); one that merely exceeds the cap is surfaced as a skip.
+	if err := blobSizes(repoPath, entries); err != nil {
+		return nil, err
+	}
+	var readable []stagedEntry
+	for _, e := range entries {
+		if e.size <= maxFileBytes {
+			readable = append(readable, e)
+		}
+	}
+	blobs, err := openBlobStream(repoPath, readable)
+	if err != nil {
+		return nil, err
+	}
+	findings, err := s.scanStagedEntries(repoPath, entries, blobs, ic)
+	if closeErr := blobs.close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	return findings, nil
+}
 
+// scanStagedEntries runs the file-name rules over every entry and the content
+// rules over each one under the size cap, whose content blobs streams in
+// entry order.
+func (s *Scanner) scanStagedEntries(
+	repoPath string,
+	entries []stagedEntry,
+	blobs *blobStream,
+	ic *IgnoreConfig,
+) ([]Finding, error) {
 	var findings []Finding
-	for rel := range strings.SplitSeq(string(out), "\000") {
-		if rel == "" {
-			continue
-		}
-		abs := filepath.Join(repoPath, rel)
-		findings = append(findings, s.checkFileRules(rel, abs, ic)...)
-
-		// Bound work the same way ScanDir does, but read the size from the
-		// index. A blob we cannot read fails closed (returns an error, per
-		// ADR 0001); one that merely exceeds the cap is surfaced as a skip.
-		size, err := stagedBlobSize(repoPath, rel)
-		if err != nil {
-			return nil, err
-		}
-		if size > maxFileBytes {
+	for _, e := range entries {
+		abs := filepath.Join(repoPath, e.rel)
+		findings = append(findings, s.checkFileRules(e.rel, abs, ic)...)
+		if e.size > maxFileBytes {
 			s.reportSkip(abs, fmt.Sprintf("staged blob exceeds %d bytes", maxFileBytes))
 			continue
 		}
-
-		content, err := stagedContent(repoPath, rel)
+		content, err := blobs.next(e)
 		if err != nil {
 			return nil, err
 		}
@@ -546,30 +563,4 @@ func (s *Scanner) ScanStaged(repoPath string) ([]Finding, error) {
 		findings = append(findings, ff...)
 	}
 	return findings, nil
-}
-
-// stagedBlobSize returns the byte size of a file's staged blob, read from the
-// git index without materializing its content. Lets ScanStaged cap oversize
-// files before buffering them.
-func stagedBlobSize(repoPath, rel string) (int64, error) {
-	cmd := exec.Command("git", "-C", repoPath, "cat-file", "-s", ":"+rel)
-	out, err := cmd.Output()
-	if err != nil {
-		return 0, fmt.Errorf("git cat-file -s :%s: %w", rel, err)
-	}
-	n, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("parse staged size for :%s: %w", rel, err)
-	}
-	return n, nil
-}
-
-// stagedContent reads a file's content from the git index.
-func stagedContent(repoPath, rel string) ([]byte, error) {
-	cmd := exec.Command("git", "-C", repoPath, "show", ":"+rel)
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("git show :%s: %w", rel, err)
-	}
-	return out, nil
 }
