@@ -735,3 +735,39 @@ func TestPlaceDir(t *testing.T) {
 		}
 	}
 }
+
+// TestGitRecordingCommitDirs pins which commits can record one: a dry run,
+// spelled out or implied by a status format, cannot, while -n (--no-verify
+// for commit), a message that reads like a flag and a pathspec after --
+// leave the commit as it was.
+func TestGitRecordingCommitDirs(t *testing.T) {
+	tests := []struct {
+		command string
+		want    []string
+	}{
+		{"git commit -m x", []string{"/repo"}},
+		{"git commit --dry-run -m x", nil},
+		{"git commit --short", nil},
+		{"git commit --porcelain -m x", nil},
+		{"git commit --long -m x", nil},
+		{"git commit -z -m x", nil},
+		{"git commit --null -m x", nil},
+		{"git commit -zm x", nil},
+		{"git commit -qz -m x", nil},
+		{"git commit -mz", []string{"/repo"}},
+		{"git commit -am x", []string{"/repo"}},
+		{"git -C /other commit --dry-run -m x", nil},
+		{"git commit -n -m x", []string{"/repo"}},
+		{"git commit --branch -m x", []string{"/repo"}},
+		{"git commit -m --dry-run", []string{"/repo"}},
+		{"git commit --message=--short", []string{"/repo"}},
+		{"git commit -m x -- --dry-run", []string{"/repo"}},
+		{"git commit --dry-run -m x; git -C /other commit -m y", []string{"/other"}},
+		{"git add -A && git commit -m x", []string{"/repo"}},
+	}
+	for _, tt := range tests {
+		if got := GitRecordingCommitDirs(tt.command, "/repo"); !slices.Equal(got, tt.want) {
+			t.Errorf("GitRecordingCommitDirs(%q) = %v, want %v", tt.command, got, tt.want)
+		}
+	}
+}

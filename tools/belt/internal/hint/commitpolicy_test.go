@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
@@ -17,6 +18,7 @@ func newCommitPolicyHint(branch, repo string, exclude []string) *CommitPolicy {
 	h.resolveBranch = func(string) string { return branch }
 	h.resolveRepo = func(string) string { return repo }
 	h.resolveRoot = func(string) string { return "" } // no overlay unless a test sets one
+	h.landed = func(string) bool { return true }
 	return h
 }
 
@@ -179,6 +181,7 @@ func TestCommitPolicyDirectMainRepos(t *testing.T) {
 		h.resolveBranch = func(string) string { return "main" }
 		h.resolveRepo = func(string) string { return dotfiles }
 		h.resolveRoot = func(string) string { return "" }
+		h.landed = func(string) bool { return true }
 		return h
 	}
 	in := Input{Event: EventBash, Command: "git commit -m 'x'", Cwd: "/some/repo"}
@@ -283,16 +286,7 @@ func TestCommitPolicyWorktreeCommit(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	// Keep the user's and the system's gitconfig out of the fixture: a
-	// commit.gpgsign or hooksPath there would break the setup commits.
-	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("GIT_AUTHOR_NAME", "t")
-	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
-	t.Setenv("GIT_COMMITTER_NAME", "t")
-	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
+	home := isolateGit(t)
 	canonical := filepath.Join(home, "canonical")
 	worktree := filepath.Join(home, ".worktrees", "repo", "slug")
 	initRepoOnMain(t, canonical, "git@github.com:mad01/thismoon.git")
@@ -300,6 +294,9 @@ func TestCommitPolicyWorktreeCommit(t *testing.T) {
 		t.Fatalf("git worktree add: %v\n%s", err, out)
 	}
 
+	// The commits initRepoOnMain made seconds ago are the landed commits the
+	// firing cases are judged by; this test pins the directory, not the
+	// reflog (TestCommitPolicyOnlyLanded).
 	h := NewCommitPolicy(config.Config{})
 	tests := []struct {
 		name    string
@@ -337,4 +334,173 @@ func TestCommitPolicyWorktreeCommit(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRecentCommitEntry pins how a HEAD reflog line reads: every subject git
+// commit writes counts when it is no older than the cutoff, and any other
+// entry, an old commit, or a line it cannot parse does not.
+func TestRecentCommitEntry(t *testing.T) {
+	cutoff := time.Unix(1_700_000_000, 0)
+	tests := []struct {
+		line string
+		want bool
+	}{
+		{"HEAD@{1700000000}\tcommit: add x", true},
+		{"HEAD@{1700000005}\tcommit (amend): add x", true},
+		{"HEAD@{1700000005}\tcommit (initial): init", true},
+		{"HEAD@{1700000005}\tcommit (merge): Merge branch 'x'", true},
+		{"HEAD@{1700000005}\tcommit (cherry-pick): add x", true},
+		{"HEAD@{1700000005}\tcommit:", true},
+		{"HEAD@{1699999999}\tcommit: add x", false},
+		{"HEAD@{1700000005}\tcheckout: moving from feat to main", false},
+		{"HEAD@{1700000005}\tpull --rebase (finish): returning to refs/heads/main", false},
+		{"HEAD@{1700000005}\treset: moving to HEAD~1", false},
+		{"HEAD@{1700000005}\tcommitted: not git's", false},
+		{"HEAD@{yesterday}\tcommit: add x", false},
+		{"HEAD@{1700000005} commit: add x", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := recentCommitEntry(tt.line, cutoff); got != tt.want {
+			t.Errorf("recentCommitEntry(%q) = %v, want %v", tt.line, got, tt.want)
+		}
+	}
+}
+
+// TestCommitPolicyNotLanded pins that the advice needs a landed commit: with
+// everything else firing, a repo whose reflog shows none stays silent.
+func TestCommitPolicyNotLanded(t *testing.T) {
+	h := newCommitPolicyHint("main", "github.com/mad01/thismoon", nil)
+	h.landed = func(string) bool { return false }
+	if a := h.Check(Input{Event: EventBash, Command: "git commit -m x", Cwd: "/some/repo"}); a != nil {
+		t.Errorf("Check without a landed commit = %+v, want silence", a)
+	}
+}
+
+// TestCommitPolicyOnlyLanded runs each command for real in a repo on main
+// and then the hint with its real git-backed resolvers: the advice names a
+// commit, so only a commit that landed draws it. A dry run, a commit with
+// nothing staged, one a pre-commit hook stops, and one whose failure a chain
+// hides behind a later exit 0 stay silent. A commit in a chain, an amend,
+// one with -n (--no-verify, not a dry run) and one that git -C or a cd
+// places still fire. Each case starts from a repo whose newest commit is
+// old, so no fixture commit counts as the command's own.
+func TestCommitPolicyOnlyLanded(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	_ = isolateGit(t)
+	const hook = "printf '#!/bin/sh\\nexit 1\\n' > .git/hooks/pre-commit && " +
+		"chmod +x .git/hooks/pre-commit"
+	tests := []struct {
+		name    string
+		setup   string // run in the repo first
+		command string // {repo} names the repo; run in the parent dir when outside is set
+		outside bool
+		fails   bool // the command's own exit status, so a case fails for its reason
+		fires   bool
+	}{
+		{name: "dry run on a clean tree", command: "git commit --dry-run -m x", fails: true},
+		{
+			name:    "dry run with staged changes",
+			setup:   "echo a > f && git add f",
+			command: "git commit --dry-run -m x",
+		},
+		{
+			name:    "dry run right after a commit",
+			setup:   "echo a > f && git add f && git commit -q -m first && echo b > f && git add f",
+			command: "git commit --dry-run -m x",
+		},
+		{name: "nothing staged", command: "git commit -m x", fails: true},
+		{
+			name:    "pre-commit hook stops it",
+			setup:   "echo a > f && git add f && " + hook,
+			command: "git commit -m x",
+			fails:   true,
+		},
+		{name: "failed commit inside a chain that exits 0", command: "git commit -m x; echo done"},
+		{
+			name:    "commit in a chain",
+			command: "echo a > f && git add f && git commit -q -m x",
+			fires:   true,
+		},
+		{name: "amend", command: "git commit -q --amend --allow-empty -m x", fires: true},
+		{name: "-n is not a dry run", command: "git commit -q -n --allow-empty -m x", fires: true},
+		{
+			name:    "git -C",
+			command: "git -C {repo} commit -q --allow-empty -m x",
+			outside: true,
+			fires:   true,
+		},
+		{
+			name:    "cd then commit",
+			command: "cd {repo} && git commit -q --allow-empty -m x",
+			outside: true,
+			fires:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parent := t.TempDir()
+			repo := filepath.Join(parent, "repo")
+			initRepoOnMain(t, repo, "git@github.com:mad01/thismoon.git")
+			ageHead(t, repo)
+			if tt.setup != "" {
+				if out, err := shell(repo, tt.setup).CombinedOutput(); err != nil {
+					t.Fatalf("setup %q: %v\n%s", tt.setup, err, out)
+				}
+			}
+			cwd := repo
+			if tt.outside {
+				cwd = parent
+			}
+			command := strings.ReplaceAll(tt.command, "{repo}", repo)
+			out, err := shell(cwd, command).CombinedOutput()
+			if failed := err != nil; failed != tt.fails {
+				t.Fatalf("%q failed = %v, want %v\n%s", command, failed, tt.fails, out)
+			}
+			a := NewCommitPolicy(
+				config.Config{},
+			).Check(Input{Event: EventBash, Command: command, Cwd: cwd})
+			if got := a != nil; got != tt.fires {
+				t.Fatalf("Check(%q) fired = %v, want %v (advice: %+v)", command, got, tt.fires, a)
+			}
+		})
+	}
+}
+
+// isolateGit keeps the user's and the system's gitconfig out of a fixture,
+// where a commit.gpgsign or hooksPath would break the setup commits or skip
+// the repo's own hooks, and names the committer. It returns the temp dir it
+// sets as HOME.
+func isolateGit(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_AUTHOR_NAME", "t")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
+	return home
+}
+
+// ageHead adds an empty commit dated long ago, so the newest HEAD reflog
+// entry is a commit older than landedWindow: git stamps the entry with the
+// committer date.
+func ageHead(t *testing.T, repo string) {
+	t.Helper()
+	cmd := gitCommand(repo, "commit", "-q", "--allow-empty", "-m", "aged")
+	cmd.Env = append(os.Environ(), "GIT_COMMITTER_DATE=@1700000000 +0000")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("aged commit: %v\n%s", err, out)
+	}
+}
+
+// shell runs a command line in dir the way the Bash tool would.
+func shell(dir, command string) *exec.Cmd {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = dir
+	return cmd
 }

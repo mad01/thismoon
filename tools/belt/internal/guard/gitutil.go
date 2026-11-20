@@ -1039,6 +1039,68 @@ func GitCommitDirs(command, cwd string) []string {
 	return dirs
 }
 
+// GitRecordingCommitDirs is GitCommitDirs without the commits that never
+// record one: a dry run only prints what would be committed. The
+// commit-policy hint reads it, so its advice never names a commit a dry run
+// could not have made. A commit it keeps may still fail, which only the repo
+// can tell after it ran.
+func GitRecordingCommitDirs(command, cwd string) []string {
+	var dirs []string
+	for _, c := range gitCommandsAt(command, cwd, "commit") {
+		if !commitDryRun(c.args) {
+			dirs = append(dirs, c.dir)
+		}
+	}
+	return dirs
+}
+
+// commitDryRunFlags are the git commit options that make it a dry run:
+// --dry-run itself and the status formats git documents as implying it.
+// -n is not one of them: for commit it is --no-verify.
+var commitDryRunFlags = []string{"--dry-run", "--short", "--porcelain", "--long", "--null", "-z"}
+
+// commitDryRun reports whether a git commit's arguments ask for a dry run.
+// The value of a message flag (-m --dry-run) is text, and the words after
+// -- are pathspecs, so neither counts. An abbreviated long option (--dry)
+// is not read; the hint's reflog check still finds that no commit landed.
+func commitDryRun(args []string) bool {
+	if i := slices.Index(args, "--"); i >= 0 {
+		args = args[:i]
+	}
+	text, _ := commitFlags.values(args, 0)
+	for i, a := range args {
+		name, _, _ := strings.Cut(a, "=")
+		dryRun := slices.Contains(commitDryRunFlags, name) || bundleHasZ(a)
+		if dryRun && !slices.Contains(text, i) {
+			return true
+		}
+	}
+	return false
+}
+
+// commitValueShorts are the git commit short options that take the rest of
+// a bundled word as their value (-mmsg, -Cref), or an optional glued value
+// (-uno, -Skey), so no option letter follows them in the word.
+const commitValueShorts = "mFCctuS"
+
+// bundleHasZ reports whether a short-option bundle such as -qz or -zm holds
+// -z before an option that takes the rest of the word as its value: -mz is
+// the message "z", not a dry run.
+func bundleHasZ(word string) bool {
+	if strings.HasPrefix(word, "--") || !strings.HasPrefix(word, "-") {
+		return false
+	}
+	for _, c := range word[1:] {
+		switch {
+		case c == 'z':
+			return true
+		case strings.ContainsRune(commitValueShorts, c):
+			return false
+		}
+	}
+	return false
+}
+
 // CanonicalRepoAt resolves the repo at dir to the canonical host/owner/repo
 // identity allow_repos patterns match, or "" when there is no resolvable
 // origin remote.
