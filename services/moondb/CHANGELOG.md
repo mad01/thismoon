@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/mad01/thismoon/compare/moondb/v0.19.2...moondb/v0.20.0) (2026-11-20)
+
+
+### Features
+
+* **moondb:** split the main conversation's cost per turn across repos ([#515](https://github.com/mad01/thismoon/issues/515)) ([18093b1](https://github.com/mad01/thismoon/commit/18093b1e4baf5c3490b3ad523a65a602254cc9d8))
+
 ## [0.19.2](https://github.com/mad01/thismoon/compare/moondb/v0.19.1...moondb/v0.19.2) (2026-11-20)
 
 
