@@ -17,8 +17,9 @@ import (
 // configured marks a -c or --config-env option, or an environment that may
 // change git's config (gitCommandsAt); unread marks an invocation taken from
 // code readShell could not follow (walkStep); moved marks a -C, which runs
-// git somewhere other than the shell's directory. heads are the branches the
-// checkouts and switches before it may leave checked out (headTracker).
+// git somewhere other than the shell's directory; optioned marks any other
+// global option before the subcommand. heads are the branches the checkouts
+// and switches before it may leave checked out (headTracker).
 type gitInvocation struct {
 	dir        string
 	sub        string
@@ -26,6 +27,7 @@ type gitInvocation struct {
 	configured bool
 	unread     bool
 	moved      bool
+	optioned   bool
 	heads      pushHeads
 	// opaque names text a command runs that the walk could not read
 	// (walkStep.opaque); such a command counts as a possible push.
@@ -441,13 +443,15 @@ func segmentGitCommand(tokens []string, cwd string) (gitInvocation, bool) {
 // another push destination (remote.origin.pushurl, url.X.pushInsteadOf).
 // Every other global flag before the subcommand is skipped, together with
 // its value when it takes one (gitValueFlags), so `git --no-pager push` is
-// still a push. ok is false when no subcommand follows the flags.
+// still a push; every flag but -C sets optioned. ok is false when no
+// subcommand follows the flags.
 func parseGitCmd(tokens []string, cwd string) (gitInvocation, bool) {
 	c := gitInvocation{dir: cwd}
 	otherTree := false
 	i := 0
 	for i < len(tokens) {
 		tok := tokens[i]
+		c.optioned = c.optioned || (tok != "-C" && strings.HasPrefix(tok, "-"))
 		switch {
 		case tok == "-C" && i+1 < len(tokens):
 			c.dir = placeDir(c.dir, tokens[i+1])

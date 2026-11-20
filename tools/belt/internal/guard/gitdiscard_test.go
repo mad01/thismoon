@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,10 +23,12 @@ type discardFixture struct {
 }
 
 // newDiscardGuard builds the guard with injected resolvers and a warning
-// recorder, so no test shells out to git or dials the events service.
+// recorder, so no test shells out to git or dials the events service. The
+// nothing-lost proof never holds here: a dirty fixture tree has unique work.
 func newDiscardGuard(cfg config.Config, f discardFixture, warned *[]string) *GitDiscard {
 	g := NewGitDiscard(cfg)
 	g.resolveRepo = func(string) string { return f.repo }
+	g.prove = func(gitInvocation) error { return errors.New("`file.go` holds unique work") }
 	g.status = func(dir string, extra ...string) (string, bool) {
 		if f.broken[dir] {
 			return "", false
@@ -101,7 +104,7 @@ func TestGitDiscardCommands(t *testing.T) {
 				t.Fatalf("Check(%q) denial = %v, wantDeny %v", tt.command, d, tt.wantDeny)
 			}
 			if d != nil &&
-				!strings.HasPrefix(d.Reason, "belt[git-discard]: this discards uncommitted work.") {
+				!strings.HasPrefix(d.Reason, "belt[git-discard]: this discards uncommitted work") {
 				t.Errorf("reason = %q, want the git-discard prefix and message", d.Reason)
 			}
 		})

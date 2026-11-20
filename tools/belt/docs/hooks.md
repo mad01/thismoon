@@ -885,18 +885,67 @@ Blocks git commands that throw away uncommitted work.
   session cwd. Heredoc bodies are read as git-push-main reads them, so a PR
   body or tag message that names `reset --hard` in a code span passes.
 - **Decides by** the working tree there. A clean tree (`git status
-  --porcelain` empty, with `--ignored` added for `clean -x`/`-X`) allows,
+  --porcelain` empty, with `--ignored` added for `clean -x`/`-X`/`-e`) allows,
   since nothing would be lost. `allow_repos` exempts repos by canonical
-  identity. Otherwise the reason tells the model to run the command only
-  when the user's latest message asked for it, and to ask first or hand the
-  user `! <command>` when it did not.
+  identity.
+- **Passes a dirty tree when nothing is lost.** A checkout or restore of
+  paths, a `clean -f` and a `reset --hard [<commit>]` pass when every file
+  version they drop is already committed at the same path. The commits that
+  count are HEAD, its upstream (`@{u}`) and origin's default branch
+  (`refs/remotes/origin/HEAD`, only while it points at a branch under
+  `refs/remotes/origin/`), plus what the command itself writes there.
+  That covers the leftovers of a half-finished pull: untracked files or
+  edits that match upstream. The check covers the worktree file and, where
+  the command replaces the index, the staged copy. Both are compared byte
+  for byte as git blob ids; only content counts, so a mode change alone is
+  not a loss. A `reset --hard` to another commit must also keep every
+  commit HEAD reaches reachable from the target, the upstream or origin's
+  default branch.
+- **Lists the paths through git.** A restore checks the index paths it
+  matches, or the source tree's paths when it restores from a tree. A
+  clean checks `git ls-files --others` under the same ignore rules: `-x`
+  adds ignored files, `-X` lists only them. A reset checks the paths `git
+  status` reports changed and, for another commit, any untracked or ignored
+  file at a path the target adds. Every form also checks a file or symlink
+  that stands where a path it writes needs a directory, since git replaces
+  it with the directory.
+- **Proves only a discard that runs on its own.** The proof reads the tree
+  before the command runs, so another step in the same command that may
+  change the tree first leaves the clean-tree rule alone. That is any step
+  before the discard, and any step after it when the command holds a pipe
+  or a lone `&` that may run it beside the discard. A read-only command
+  (`cat`, `ls`, `grep` and the like) or a plain `git status`, `log`,
+  `diff`, `show`, `rev-parse` or `ls-files`, with no redirection, does not
+  count. Without a pipe or a lone `&`, a step after the discard, such as
+  `&& git pull`, runs only once the discard is done and does not count
+  either.
+- **Still denies** a command whose losses it cannot list exactly. That is
+  an option it does not read (`-p`, `--ours`, `checkout -f`, `clean -i`),
+  a glob, pathspec magic or a word the shell may still rewrite. A `clean
+  -e` is one: a `!` pattern brings an ignored file in, and with `-X` a
+  plain one adds untracked files. So is a global git option other than
+  `-C`, a config override or a word in front of `git`
+  (`GIT_ICASE_PATHSPECS=1`, `env`), since the proof runs git with literal
+  pathspecs. So is an index entry marked assume-unchanged or
+  skip-worktree, which `git status` skips; for a reset, one anywhere in
+  the index counts. It is also a conflicted path, a submodule (a dirty one
+  shows even under `ignore = dirty`, and a reset is refused whenever
+  `submodule.recurse` is on and the index holds a submodule), a nested
+  repository, more than 256 paths, or a proof that runs past its 2-second
+  budget. `git stash` and `switch` keep the clean-tree rule alone. The reason names the first file
+  that would lose content, or why the losses could not be listed. It also
+  says that belt cannot see the user's message, so a go-ahead does not
+  pass the check: save the work first, or hand the user `! <command>`.
 - **Why it exists**: a session audit found agents stashing, hard-resetting,
   and checking out over the user's uncommitted work without being asked.
   Worktree changes are in no reflog, so this is damage that is hard to undo.
+  The nothing-lost pass came later: the clean-tree rule alone refused the
+  cleanup after a half-finished pull, files equal to upstream, even after
+  the user asked for it.
 - **Fails closed**: a directory only a shell can name, or a `git status`
   that fails there, denies. So does a discarding command in text the reader
-  could not follow, where no directory is certain. `mode: soft` turns a deny
-  into a warn event.
+  could not follow, where no directory is certain, and a nothing-lost proof
+  that cannot finish. `mode: soft` turns a deny into a warn event.
 
 ### rm-temp
 
