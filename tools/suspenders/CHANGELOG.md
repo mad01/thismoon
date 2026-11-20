@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.4](https://github.com/mad01/thismoon/compare/suspenders/v0.11.3...suspenders/v0.11.4) (2026-11-20)
+
+
+### Bug Fixes
+
+* **suspenders:** detect Google OAuth client secrets and quoted JSON keys ([#513](https://github.com/mad01/thismoon/issues/513)) ([820f1b2](https://github.com/mad01/thismoon/commit/820f1b256df7f9843c4f7dc05a1d6514ea0289bd))
+
 ## [0.11.3](https://github.com/mad01/thismoon/compare/suspenders/v0.11.2...suspenders/v0.11.3) (2026-11-13)
 
 

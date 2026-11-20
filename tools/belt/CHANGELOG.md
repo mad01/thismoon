@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.20.0](https://github.com/mad01/thismoon/compare/belt/v2.19.7...belt/v2.20.0) (2026-11-20)
+
+
+### Features
+
+* **belt:** add a main-checkout guard that points changes at a worktree ([75d2655](https://github.com/mad01/thismoon/commit/75d26553e739eeeca1899d48bd7ad6c6cdc8c23d))
+
 ## [2.19.7](https://github.com/mad01/thismoon/compare/belt/v2.19.6...belt/v2.19.7) (2026-11-13)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.2](https://github.com/mad01/thismoon/compare/moondb/v0.19.1...moondb/v0.19.2) (2026-11-20)
+
+
+### Bug Fixes
+
+* **moondb:** add list prices for Fable 5.2 and Mythos 5.2 ([#512](https://github.com/mad01/thismoon/issues/512)) ([b41b485](https://github.com/mad01/thismoon/commit/b41b485c53454aa563c95e79a1995e8effc18714))
+
 ## [0.19.1](https://github.com/mad01/thismoon/compare/moondb/v0.19.0...moondb/v0.19.1) (2026-11-13)
 
 
