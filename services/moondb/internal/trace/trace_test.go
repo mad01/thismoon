@@ -495,6 +495,8 @@ func TestPricesLookup(t *testing.T) {
 		{"claude-sonnet-4-20250514", 3},
 		{"us.anthropic.claude-sonnet-4-6", 3},
 		{"claude-fable-5-1[1m]", 10},
+		{"claude-fable-5-2", 8}, // not claude-fable-5's $10
+		{"claude-mythos-5-2[1m]", 8},
 		{"anthropic/claude-haiku-5.5", 0.10}, // OpenRouter's id, as pi records it
 		{"claude-opus-5.5", 4},
 		{"openai/gpt-4o", 0},
@@ -561,6 +563,14 @@ func TestPricesCost(t *testing.T) {
 				Tokens: Tokens{Input: 1_000_000, Output: 1_000_000},
 			},
 			want: new(8.0 + 40.0),
+		},
+		{
+			name: "fast mode doubles fable 5.2",
+			call: Call{
+				Model: "claude-fable-5-2", Speed: "fast",
+				Tokens: Tokens{Input: 1_000_000, Output: 1_000_000, CacheRead: 1_000_000},
+			},
+			want: new(16.0 + 80.0 + 0.40),
 		},
 		{
 			name: "fast mode without a fast price has no cost",
