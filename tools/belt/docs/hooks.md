@@ -398,9 +398,32 @@ Blocks `git push` to `main` or `master` before it happens.
   or after a `;` or newline, with no quote before it. And the command holds
   no heredoc, subshell, brace group, comment, backslash, glob, keyword,
   other variable, zsh modifier like `$S:h`, or builtin such as `eval`,
-  `read`, or `source`. A target only a shell can resolve (any other
-  variable, `cd -`, a command substitution, a glob) leaves the directory
-  unknown. So do `popd`
+  `read`, or `source`. Two words that name where the shell is are placed
+  too, at the start of a cd or `-C` target. `$PWD` (or `${PWD}`) is the
+  directory belt tracks at that point. `$(git rev-parse --show-toplevel)`,
+  with or without its own `-C`, is the top of the repository there, found
+  the way git finds it without running git. Each stays unknown where belt
+  cannot tell: from an unknown directory, outside a repository it can read,
+  as an unquoted `$PWD` whose value holds a space, or as a top whose name
+  holds a newline or other control character, which the shell strips from
+  the end of a substitution. It also stays unknown
+  in a command that names `PWD` other than as `$PWD` or `${PWD}`, since an
+  assignment may give it another value. Belt places either word only in the
+  top-level command text. In nested script text it stays unknown: a
+  subshell, a `-c` script, an `eval`, or a heredoc or here-string a shell
+  runs. There the outer shell may expand it before the script's own cd
+  runs. It also stays unknown after any command other than a `cd`,
+  `pushd`, `popd`, a git call or a plain read such as `echo` or `ls`.
+  Another command may move the shell where belt does not see it: a
+  function, `trap`, `source`, `emulate` or `setopt autocd`. `printf -v`
+  may set `PWD` under a name built at run time, so `printf` counts as
+  another command. Any `${...}` other than a plain `${PWD}`, and any
+  `$((...))` or `$[...]`, anywhere in the command keeps both words
+  unknown. Such an expansion may cd or assign `PWD` in the shell itself:
+  bash's `${ cmd; }`, a `:=` or `::=` default, zsh's `(P)` flag.
+  A target only a shell can
+  resolve (any other variable, `cd -`, any other command substitution, a
+  glob) leaves the directory unknown. So do `popd`
   and a bare `pushd`, since belt keeps no directory stack, `cd -P`, whose
   physical mode resolves symlinks before `..`, and
   `--git-dir`/`--work-tree`, which point git at a tree only git can name.
@@ -877,13 +900,45 @@ Blocks git commands that throw away uncommitted work.
 
 - **Fires on** `git stash` (bare, flag-led like `-u`, `push`, `save`),
   `reset --hard`, a path checkout (`checkout -- <path>`, `checkout <ref> --
-  <path>`, `checkout .`) or a forced one, `switch --discard-changes`/`-f`,
-  `restore` unless the only target is the index (`--staged` without
-  `--worktree`), and `clean` with `-f` (a `-n` dry run passes). `stash
-  list|show|apply|pop|branch` are allowed. Each invocation is judged in the
-  directory it runs in: a tracked `cd`/`pushd`, a `git -C` target, else the
-  session cwd. Heredoc bodies are read as git-push-main reads them, so a PR
-  body or tag message that names `reset --hard` in a code span passes.
+  <path>`, `checkout .`, a patch checkout) or a forced one, `switch
+  --discard-changes`/`-f`, `restore` unless the only target is the index
+  (`--staged` without `--worktree`), and `clean` with `-f` (a `-n` dry run
+  passes). `stash list|show|apply|pop|branch` are allowed. A force counts
+  the way git reads it. In a bundle of short options (`-qf`, `-fb new`), it
+  counts up to a letter that takes the rest of the word as its value, so
+  `-bf` creates a branch named `f`. Any prefix of the long option counts
+  too (`--forc`, `switch --disc`), since git takes one. Each invocation is
+  judged in the directory it runs in: a tracked `cd`/`pushd`, a `git -C`
+  target, else the session cwd, with `$PWD` and `$(git rev-parse
+  --show-toplevel)` read as git-push-main reads them. Heredoc bodies are
+  read as git-push-main reads them, so a PR body or tag message that names
+  `reset --hard` in a code span passes.
+- **Reads a checkout without `--` as git does.** belt asks git whether the
+  first operand names a branch, tag or commit (`git rev-parse --verify
+  <operand>^{tree}`). All the lookups of one call share a 2 second budget,
+  so many checkouts in one command cannot run the hook past its timeout.
+  If the operand is a ref and stands alone, the checkout is a switch. If
+  it is a ref and more operands follow, they are paths restored from it,
+  as in `git checkout HEAD f`. If it is not, every operand is a path
+  restored from the index, as in `git checkout f`. An
+  operand that is both a branch and a file reads as the branch: git switches
+  to it when it stands alone and refuses it as ambiguous otherwise. An
+  operand belt cannot look up reads as a path: a word the shell may rewrite,
+  a directory belt cannot name, a lookup past the budget. Alone that
+  reading drops the most, since a switch drops nothing. In patch mode or
+  with more operands git may restore from it instead, so the proof cannot
+  vouch and only a clean tree passes. A branch only a remote has also
+  reads as a path; git creates it from `origin/<name>`. On its own that
+  checkout still passes, since the proof finds no file of that name to
+  drop. A checkout whose paths belt cannot see is a path checkout too:
+  `--pathspec-from-file`, or one a command in front of git may hand more
+  words, such as `xargs git checkout`.
+- **Reads a patch checkout as taking every hunk.** `-p` (`--patch`, or in a
+  bundle like `-qp`) with no path walks the whole tree, so belt reads
+  `git checkout -p` as `git checkout -- .` and `git checkout -p HEAD` as
+  `git checkout HEAD -- .`. Taking every hunk is the most it drops. From a
+  tree it also deletes a file only the index has, so the proof checks
+  those files too.
 - **Decides by** the working tree there. A clean tree (`git status
   --porcelain` empty, with `--ignored` added for `clean -x`/`-X`/`-e`) allows,
   since nothing would be lost. `allow_repos` exempts repos by canonical
@@ -920,13 +975,13 @@ Blocks git commands that throw away uncommitted work.
   `&& git pull`, runs only once the discard is done and does not count
   either.
 - **Still denies** a command whose losses it cannot list exactly. That is
-  an option it does not read (`-p`, `--ours`, `checkout -f`, `clean -i`),
-  a glob, pathspec magic or a word the shell may still rewrite. A `clean
-  -e` is one: a `!` pattern brings an ignored file in, and with `-X` a
-  plain one adds untracked files. So is a global git option other than
-  `-C`, a config override or a word in front of `git`
-  (`GIT_ICASE_PATHSPECS=1`, `env`), since the proof runs git with literal
-  pathspecs. So is an index entry marked assume-unchanged or
+  an option it does not read (`--ours`, `checkout -f`, `checkout -m`,
+  `--pathspec-from-file`, `clean -i`), a glob, pathspec magic or a word the
+  shell may still rewrite. A `clean -e` is one: a `!` pattern brings an
+  ignored file in, and with `-X` a plain one adds untracked files. So is a
+  global git option other than `-C`, a config override or a word in front
+  of `git` (`GIT_ICASE_PATHSPECS=1`, `env`, `xargs`), since the proof runs
+  git with literal pathspecs. So is an index entry marked assume-unchanged or
   skip-worktree, which `git status` skips; for a reset, one anywhere in
   the index counts. It is also a conflicted path, a submodule (a dirty one
   shows even under `ignore = dirty`, and a reset is refused whenever

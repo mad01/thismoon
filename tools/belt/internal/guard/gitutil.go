@@ -126,6 +126,8 @@ type shellWalk struct {
 	configEnv bool // a gitConfigEnv variable may be set for the rest of the command
 	heredoc   bool // a heredoc began, so a later line may be its body
 	prose     bool // walking a heredoc body or comment (walkProse)
+	pwdSet    bool // the command may give PWD a value of its own (rewritesPWD)
+	cdHidden  bool // the command may have moved the shell unseen (keepsShellPlaced)
 	// feeds marks text whose output a shell or interpreter may run (a
 	// substitution in a -c script or piped on), so every heredoc body in it
 	// is read as code (walkProse).
@@ -185,21 +187,23 @@ func (w *shellWalk) join(before joint) {
 	}
 }
 
-// move applies one cd, pushd, or popd to the walk. On top of what parseCd
-// and resolveDir cannot place, the destination is unknown when the shell may
-// not run the move in this shell or at all (after ||, in a pipeline, which
-// bash runs in subshells, or sent to the background with &), may not read it
-// as a command (inside a string, a comment, or a heredoc body the segment
-// split cut up), splits its words elsewhere (a space oddSpace reports, which
-// strings.Fields splits at and the shell does not), or may look its target
-// up in CDPATH (searchesCdpath).
+// move applies one cd, pushd, or popd to the walk. A target that starts
+// with $PWD or the repository top a substitution prints is expanded first
+// (expandShellDir). On top of what parseCd and resolveDir cannot place, the
+// destination is unknown when the shell may not run the move in this shell
+// or at all (after ||, in a pipeline, which bash runs in subshells, or sent
+// to the background with &), may not read it as a command (inside a string,
+// a comment, or a heredoc body the segment split cut up), splits its words
+// elsewhere (a space oddSpace reports, which strings.Fields splits at and
+// the shell does not), may look its target up in CDPATH (searchesCdpath),
+// or names a directory word the walk cannot place (hereKnown).
 func (w *shellWalk) move(target, text string, before, after joint, inText bool) {
 	if before == jointOr || before == jointPipe || after == jointPipe || after == jointBg ||
-		inText || w.heredoc ||
+		inText || w.heredoc || (!w.hereKnown() && namesHere(target)) ||
 		strings.IndexFunc(text, oddSpace) >= 0 || (w.cdpath && searchesCdpath(target)) {
 		target = "-"
 	}
-	w.dir = resolveDir(w.dir, target)
+	w.dir = resolveDir(w.dir, expandShellDir(w.dir, target))
 	if before == jointAnd {
 		w.andOnly = true
 	}
@@ -231,10 +235,14 @@ func (w *shellWalk) noteGitEnv(tokens []string) {
 // the shell's, or "" when git may use another repository there. That is so
 // after a noteGitEnv variable, when one prefixes the git word (`GIT_DIR=/r
 // git`, `env GIT_DIR=/r git`), and when a -C or --chdir before it (`env -C`)
-// runs git elsewhere.
+// runs git elsewhere. It is so too for a segment that names a directory
+// word the walk cannot place (hereKnown): after a command that may set PWD
+// or move the shell unseen, or in nested script text. A $PWD in its -C
+// target is then unknown.
 func (w *shellWalk) gitDir(tokens []string) string {
 	pre, _ := beforeGit(tokens)
-	if w.gitEnv || mentionsName(strings.Join(pre, " "), gitRepoEnvNames) {
+	if w.gitEnv || mentionsName(strings.Join(pre, " "), gitRepoEnvNames) ||
+		(!w.hereKnown() && namesHere(strings.Join(tokens, " "))) {
 		return ""
 	}
 	for _, tok := range pre {
@@ -429,10 +437,11 @@ func segmentGitCommand(tokens []string, cwd string) (gitInvocation, bool) {
 
 // parseGitCmd parses the tokens after `git`: global flags first, then the
 // subcommand and its arguments. cwd is the directory the shell is in when
-// git runs. A -C target gets the expansions a cd target gets and is placed
-// under cwd (placeDir), so `git -C ~/repo`, `git -C $HOME/repo`, and the
-// absolute path all name one directory, and a target only a shell can expand
-// leaves dir "" rather than a path git would never see. Unlike a cd target
+// git runs, which a $PWD in a -C target names (expandShellDir). A -C target
+// gets the expansions a cd target gets and is placed under cwd (placeDir),
+// so `git -C ~/repo`, `git -C $HOME/repo`, and the absolute path all name
+// one directory, and a target only a shell can expand leaves dir "" rather
+// than a path git would never see. Unlike a cd target
 // the path is not cleaned: git chdirs into it and the OS resolves `..`
 // physically, so `link/..` is the link target's parent there, where a
 // lexical clean would name the link's own parent and judge the wrong repo.
@@ -454,7 +463,7 @@ func parseGitCmd(tokens []string, cwd string) (gitInvocation, bool) {
 		c.optioned = c.optioned || (tok != "-C" && strings.HasPrefix(tok, "-"))
 		switch {
 		case tok == "-C" && i+1 < len(tokens):
-			c.dir = placeDir(c.dir, tokens[i+1])
+			c.dir = placeDir(c.dir, expandShellDir(cwd, tokens[i+1]))
 			c.moved = true
 			i += 2
 		case tok == "-c" || tok == "--config-env":
