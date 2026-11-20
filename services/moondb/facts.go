@@ -308,11 +308,12 @@ func standardRates(input, output float64) Rates {
 // DefaultPrices is the Claude API list price per model id, USD per million
 // tokens, from the pricing page the claude-api skill names as its pricing
 // source (platform.claude.com/docs/en/about-claude/pricing, read
-// 2026-10-25). Cache reads cost 0.1x input except on Fable 5.1 and Mythos
-// 5.1 (0.025x, $0.25) and on Opus 5.5 ($0.20) and Sonnet 5.5 ($0.10), both
-// 0.05x. Haiku 5.5 bills a second tier above 100,000 prompt tokens. Fast
-// mode costs 2x on Opus 5.5 ($8 in, $40 out), Opus 5 and Opus 4.8 ($10 in,
-// $50 out), cache multipliers on top. US-only inference costs
+// 2026-11-20). Cache reads cost 0.1x input except on Fable 5.2 and Mythos
+// 5.2 ($0.20), Fable 5.1 and Mythos 5.1 ($0.25), all 0.025x, and on Opus
+// 5.5 ($0.20) and Sonnet 5.5 ($0.10), both 0.05x. Haiku 5.5 bills a second
+// tier above 100,000 prompt tokens. Fast mode costs 2x on Fable 5.2 and
+// Mythos 5.2 ($16 in, $80 out), Opus 5.5 ($8 in, $40 out), Opus 5 and Opus
+// 4.8 ($10 in, $50 out), cache multipliers on top. US-only inference costs
 // USOnlyMultiplier more on the rows of Claude 4.6 and later.
 //
 // A trace matches a model id exactly first, then by family: the longest id
@@ -324,6 +325,12 @@ func standardRates(input, output float64) Rates {
 // bump: a stored turn's usage keeps the side of the threshold it was
 // computed on, and only the totals backfill computes it again.
 var DefaultPrices = map[string]Price{
+	"claude-fable-5-2": {
+		Rates: RatesFrom(8, 40, 0.20), FastMultiplier: 2, USMultiplier: USOnlyMultiplier,
+	},
+	"claude-mythos-5-2": {
+		Rates: RatesFrom(8, 40, 0.20), FastMultiplier: 2, USMultiplier: USOnlyMultiplier,
+	},
 	"claude-fable-5-1": {
 		Rates: RatesFrom(10, 50, 0.25), USMultiplier: USOnlyMultiplier,
 	},
