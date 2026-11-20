@@ -70,8 +70,13 @@ func walkCommands(command, cwd string, fn func(walkStep)) {
 // walkRead walks one text. code says the shell runs it as commands; with
 // code false it is a heredoc body a shell may run (walkProse), and one the
 // reader cannot follow is walked the token way. Code nested past
-// maxShellNesting is read fail-closed.
+// maxShellNesting is read fail-closed. A text that may set PWD makes every
+// $PWD from there on unknown (rewritesPWD), and one that may cd or assign in
+// this shell from inside a word (expandsInShell) does the same for every
+// directory word expandShellDir places.
 func (w *shellWalk) walkRead(text string, code bool, fn func(walkStep)) {
+	w.pwdSet = w.pwdSet || rewritesPWD(text)
+	w.cdHidden = w.cdHidden || expandsInShell(text)
 	if code && w.depth > maxShellNesting {
 		w.walkUnread(text, fn)
 		return
@@ -359,6 +364,7 @@ func (w *shellWalk) walkWords(
 		w.move(target, strings.Join(raw, " "), c.before, c.after, w.prose)
 		return
 	}
+	w.cdHidden = w.cdHidden || (!w.prose && !keepsShellPlaced(defines, tokens))
 	w.noteGitEnv(tokens)
 	dir := w.gitDir(tokens)
 	targets := make([]string, 0, len(c.targets))
@@ -476,11 +482,13 @@ func (w *shellWalk) walkInShell(pre []string, text string, args bool, fn func(wa
 }
 
 // leaveShell keeps what a text this shell ran itself (walkInShell) left
-// set: its variables, and an unknown directory where it moved.
+// set: its variables, a move belt did not see (cdHidden), and an unknown
+// directory where it moved.
 func (w *shellWalk) leaveShell(inner *shellWalk) {
 	w.gitEnv = w.gitEnv || inner.gitEnv
 	w.configEnv = w.configEnv || inner.configEnv
 	w.cdpath = w.cdpath || inner.cdpath
+	w.cdHidden = w.cdHidden || inner.cdHidden
 	if inner.dir != w.dir || inner.andOnly {
 		w.dir, w.andOnly = "", false
 	}
@@ -492,7 +500,7 @@ func (w *shellWalk) child(dir string) *shellWalk {
 	return &shellWalk{
 		dir: dir, cdpath: w.cdpath, gitEnv: w.gitEnv, configEnv: w.configEnv, heredoc: w.heredoc,
 		feeds: w.feeds, depth: w.depth + 1, chains: w.chains, mem: w.mem, expanding: w.expanding,
-		positional: w.positional,
+		positional: w.positional, pwdSet: w.pwdSet, cdHidden: w.cdHidden,
 	}
 }
 

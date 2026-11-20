@@ -76,15 +76,21 @@ func readDiscardSpec(c gitInvocation) (discardSpec, error) {
 	return discardSpec{}, errNoProof
 }
 
-// readCheckout reads `checkout [-q] [<tree>] -- <paths>` and `checkout
-// [-q] .`. A tree writes index and worktree; without one the worktree comes
-// back from the index. Any other flag, `-f` and `-p` included, is not read.
+// readCheckout reads `checkout [-q] [-p] [<tree>] -- <paths>` and
+// `checkout [-q] .`. A tree writes index and worktree; without one the
+// worktree comes back from the index. Patch mode (-p) is read as taking
+// every hunk, the most it drops, and from a tree it also deletes the paths
+// the tree lacks, as git does for a file only the index has. Any other
+// flag, `-f` included, is not read.
 func readCheckout(args []string) (discardSpec, error) {
 	before, paths, dashed := splitAtDashes(args)
 	var words []string
+	patch := false
 	for _, a := range before {
+		read, p := readCheckoutFlag(a)
 		switch {
-		case a == "-q" || a == "--quiet":
+		case read:
+			patch = patch || p
 		case strings.HasPrefix(a, "-"):
 			return discardSpec{}, fmt.Errorf("option %s", a)
 		default:
@@ -94,7 +100,7 @@ func readCheckout(args []string) (discardSpec, error) {
 	spec := discardSpec{kind: pathRestore, overlay: true, pathspecs: paths}
 	switch {
 	case dashed && len(words) == 1:
-		spec.source, spec.staged = words[0], true
+		spec.source, spec.staged, spec.overlay = words[0], true, !patch
 	case dashed && len(words) == 0:
 	case !dashed && len(words) == 1 && words[0] == ".":
 		spec.pathspecs = words
@@ -102,6 +108,21 @@ func readCheckout(args []string) (discardSpec, error) {
 		return discardSpec{}, errNotRead
 	}
 	return spec, checkOperands(spec)
+}
+
+// readCheckoutFlag reports whether readCheckout reads a checkout option,
+// and whether it selects patch mode: -q, -p, a bundle of the two, --quiet
+// and --patch.
+func readCheckoutFlag(a string) (read, patch bool) {
+	switch {
+	case a == "--quiet":
+		return true, false
+	case a == "--patch":
+		return true, true
+	case len(a) < 2 || a[0] != '-' || strings.Trim(a[1:], "qp") != "":
+		return false, false
+	}
+	return true, strings.Contains(a, "p")
 }
 
 // readRestore reads `restore [-q] [-W] [-S] [-s <tree>] [--] <paths>`.

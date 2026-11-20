@@ -337,6 +337,52 @@ func TestGitPushMainCdTracking(t *testing.T) {
 			wantDeny:   true,
 			wantReason: unknownDirHint,
 		},
+		{
+			name:     "git -C $PWD after a top-level cd into an exempt repo allowed",
+			command:  `cd /repos/dotfiles && git -C "$PWD" push origin main`,
+			cwd:      "/repos/other",
+			wantDeny: false,
+		},
+		// The outer shell expands $PWD in a double-quoted script before its cd
+		// runs, so the push goes from the non-exempt session cwd: nested script
+		// text keeps $PWD unknown.
+		{
+			name:       "git -C $PWD in a sh -c script fails closed",
+			command:    `sh -c "cd /repos/dotfiles && git -C $PWD push origin main"`,
+			cwd:        "/repos/other",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
+		{
+			name:       "git -C $PWD in a bash -c script fails closed",
+			command:    `bash -c "cd /repos/dotfiles; git -C \"$PWD\" push origin main"`,
+			cwd:        "/repos/other",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
+		{
+			name:       "git -C $PWD in an eval fails closed",
+			command:    `eval "cd /repos/dotfiles; git -C $PWD push origin main"`,
+			cwd:        "/repos/other",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
+		// A function, a trap or a sourced file may cd where the walk does not
+		// see, so $PWD after one is unknown.
+		{
+			name:       "git -C $PWD after a function that cds fails closed",
+			command:    `f() { cd /repos/other; }; f; git -C "$PWD" push origin main`,
+			cwd:        "/repos/dotfiles",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
+		{
+			name:       "git -C $PWD in a single-quoted sh -c script fails closed",
+			command:    `sh -c 'cd /repos/dotfiles && git -C "$PWD" push origin main'`,
+			cwd:        "/repos/other",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

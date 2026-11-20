@@ -2,6 +2,7 @@ package guard
 
 import (
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -733,6 +734,125 @@ func TestPlaceDir(t *testing.T) {
 		if got := placeDir(tt.cwd, tt.target); got != tt.want {
 			t.Errorf("placeDir(%q, %q) = %q, want %q", tt.cwd, tt.target, got, tt.want)
 		}
+	}
+}
+
+// TestShellDirWords pins the two words agents write for "here" in a cd or
+// -C target. $PWD is the directory the walk holds there. It is unknown when
+// the command may set PWD itself, and in nested script text (a -c script, an
+// eval, a subshell, a heredoc or here-string a shell runs), where the outer
+// shell may expand it before the script's own cd runs. $(git rev-parse
+// --show-toplevel) is the top of the repository git finds from there, as git
+// prints it.
+func TestShellDirWords(t *testing.T) {
+	if gitEnvRedirected() {
+		t.Skip("a GIT_DIR-style variable is set; the toplevel is unknown by design")
+	}
+	t.Setenv("HOME", "/Users/tester")
+	top, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := gitCmd(top, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	if err := os.Mkdir(filepath.Join(top, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	// The shell strips trailing newlines from a substitution's output, so a
+	// top whose name ends in one is not the directory the shell lands in.
+	nlTop := filepath.Join(outside, "c\n")
+	if out, err := gitCmd(outside, "init", "-q", nlTop).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	tests := []struct{ command, cwd, want string }{
+		{`git -C "$PWD" push`, "/session", "/session"},
+		{`git -C "${PWD}" push`, "/session", "/session"},
+		{`git -C $PWD/sub push`, "/session", "/session/sub"},
+		{`git -C "$PWD/sub" push`, "/session", "/session/sub"},
+		{`cd /other && git -C "$PWD" push`, "/session", "/other"},
+		{`cd "$PWD/sub" && git push`, "/session", "/session/sub"},
+		{`git -C sub -C "$PWD" push`, "/session", "/session"},
+		{`git -C "$PWD" push`, "/my dir", "/my dir"},
+		{`git -C $PWD push`, "/my dir", ""},
+		{`cd "$(mktemp -d)" && git -C "$PWD" push`, "/session", ""},
+		{`git -C '$PWD' push`, "/session", ""},
+		{`git -C "$PWDX" push`, "/session", ""},
+		{`git -C "${PWD}x" push`, "/session", ""},
+		{`git -C $PWD:h push`, "/session", ""},
+		{`export PWD=/x; git -C "$PWD" push`, "/session", ""},
+		{`cd /x; PWD=/y; cd "$PWD" && git push`, "/session", ""},
+		{`sh -c "cd /other && git -C $PWD push"`, "/session", ""},
+		{`bash -c "cd /other; git -C \"$PWD\" push"`, "/session", ""},
+		{`sh -c 'cd /other && git -C "$PWD" push'`, "/session", ""},
+		{`eval "cd /other; git -C $PWD push"`, "/session", ""},
+		{`(cd /other && git -C "$PWD" push)`, "/session", ""},
+		{`sh -c "cd $PWD/sub && git push"`, "/session", ""},
+		{"bash <<EOF\ngit -C $PWD push\nEOF", "/session", ""},
+		{`bash <<< 'cd /other && git -C "$PWD" push'`, "/session", ""},
+		{`sh -c 'echo x'; git -C "$PWD" push`, "/session", ""},
+		{`echo x; git -C "$PWD" push`, "/session", "/session"},
+		{`git status && git -C "$PWD" push`, "/session", "/session"},
+		{`cd /other && ls && git -C "$PWD" push`, "/session", "/other"},
+		{`x=1 git -C "$PWD" push`, "/session", "/session"},
+		{"# a comment\ngit -C \"$PWD\" push", "/session", "/session"},
+		{`emulate sh -c 'cd /other'; git -C "$PWD" push`, "/session", ""},
+		{`nocorrect source s.sh; git -C "$PWD" push`, "/session", ""},
+		{`noglob source s.sh; cd "$PWD" && git push`, "/session", ""},
+		{`functions[f]='cd /other'; f; git -C "$PWD" push`, "/session", ""},
+		{"setopt autocd; /other; git -C \"$PWD\" push", "/session", ""},
+		{`autoload -Uz f; f; git -C "$PWD" push`, "/session", ""},
+		{`fc -e -; git -C "$PWD" push`, "/session", ""},
+		{`printf -v "${X:-P}WD" %s /other; git -C "$PWD" push`, "/session", ""},
+		{`echo ${ cd /other; }; git -C "$PWD" push`, "/session", ""},
+		{`echo ${| cd /other; }; git -C "$PWD" push`, "/session", ""},
+		{`echo ${X::=P${Y}WD}${(P)X::=/other}; git -C "$PWD" push`, "/session", ""},
+		{`echo ${(P)${:-P${Y}WD}::=/other}; git -C "$PWD" push`, "/session", ""},
+		{`echo $(( ${X:-P}WD=1 )); git -C "$PWD" push`, "/session", ""},
+		{`echo $[1]; git -C "$PWD" push`, "/session", ""},
+		{`echo "${HOME}"; git -C "$PWD" push`, "/session", ""},
+		{`cd "${PWD}/sub" && git push`, "/session", "/session/sub"},
+		{`echo "$(git rev-parse --show-toplevel)"; git -C "$PWD" push`, "/session", "/session"},
+		{`ls; git -C "$(git rev-parse --show-toplevel)" push; echo ${ cd /other; }`, top, ""},
+		{`setopt autocd; /other; cd "$(git rev-parse --show-toplevel)" && git push`, top, ""},
+		{`f() { cd /other; }; f; git -C "$PWD" push`, "/session", ""},
+		{`function f { cd /other; }; f; git -C "$PWD" push`, "/session", ""},
+		{`cd() { builtin cd /other; }; cd /x; git -C "$PWD" push`, "/session", ""},
+		{`trap "cd /other" DEBUG; git -C "$PWD" push`, "/session", ""},
+		{`source s.sh; git -C "$PWD" push`, "/session", ""},
+		{`. s.sh; git -C "$PWD" push`, "/session", ""},
+		{`builtin source s.sh; git -C "$PWD" push`, "/session", ""},
+		{"alias g='cd /other'\ng; git -C \"$PWD\" push", "/session", ""},
+		{`{ source s.sh; }; git -C "$PWD" push`, "/session", ""},
+		{`{ cd /other; }; git -C "$PWD" push`, "/session", ""},
+		{`command trap "cd /other" EXIT; git -C "$PWD" push`, "/session", ""},
+		{`if true; then source s.sh; fi; git -C "$PWD" push`, "/session", ""},
+		{`echo source; git -C "$PWD" push`, "/session", "/session"},
+		{`git -C "$PWD" push; f() { cd /other; }`, "/session", "/session"},
+		{`f() { cd ` + outside + `; }; f; cd "$(git rev-parse --show-toplevel)" && git push`, top + "/sub", ""},
+		{`sh -c "cd ` + top + `/sub && git -C $(git rev-parse --show-toplevel) push"`, outside, ""},
+		{`(cd ` + top + `/sub && git -C "$(git rev-parse --show-toplevel)" push)`, outside, ""},
+		{`cd "$(git rev-parse --show-toplevel)" && git push`, top + "/sub", top},
+		{`git -C "$(git rev-parse --show-toplevel)" push`, top + "/sub", top},
+		{`cd "$(git -C sub rev-parse --show-toplevel)" && git push`, top, top},
+		{`cd "$(git rev-parse --show-toplevel)/sub" && git push`, top, top + "/sub"},
+		{`cd $(git rev-parse --show-toplevel) && git push`, top + "/sub", top},
+		{`cd "$(git rev-parse --show-toplevel)" && git push`, outside, ""},
+		{`cd "$(git rev-parse --show-toplevel)" && git push`, nlTop, ""},
+		{`git -C "$(git rev-parse --show-toplevel)" push`, nlTop, ""},
+		{`git -C "$PWD" push`, nlTop, nlTop},
+		{`cd "$(git rev-parse --git-dir)" && git push`, top, ""},
+		{`cd "$(git rev-parse --show-toplevel)" && git push`, "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			got := invocationDirs(gitCommandsAt(tt.command, tt.cwd, "push"))
+			if want := []string{tt.want}; !slices.Equal(got, want) {
+				t.Errorf("gitCommandsAt(%q) from %q dirs = %q, want %q",
+					tt.command, tt.cwd, got, want)
+			}
+		})
 	}
 }
 

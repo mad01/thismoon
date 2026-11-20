@@ -1,11 +1,14 @@
 package guard
 
 import (
+	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
@@ -51,6 +54,12 @@ type GitDiscard struct {
 	// status returns `git status --porcelain` output for the repo at dir
 	// (extra args appended) and whether git succeeded. Injectable for tests.
 	status func(dir string, extra ...string) (string, bool)
+	// isTree reports whether rev names a tree-ish in the repo at dir, which
+	// sorts a checkout's operands (sortCheckoutOperands); err is set when
+	// ctx ran out first. Injectable for tests.
+	isTree func(ctx context.Context, dir, rev string) (bool, error)
+	// lookupBudget bounds every isTree call of one Check together.
+	lookupBudget time.Duration
 	// prove returns nil when a discard provably loses nothing, else the
 	// first loss. Injectable for tests.
 	prove func(c gitInvocation) error
@@ -62,11 +71,13 @@ type GitDiscard struct {
 // NewGitDiscard builds the guard with the real git and events backends.
 func NewGitDiscard(cfg config.Config) *GitDiscard {
 	return &GitDiscard{
-		cfg:         cfg,
-		resolveRepo: CanonicalRepoAt,
-		status:      gitStatusPorcelain,
-		prove:       newProver().prove,
-		emit:        notify.EmitEventSync,
+		cfg:          cfg,
+		resolveRepo:  CanonicalRepoAt,
+		status:       gitStatusPorcelain,
+		isTree:       gitIsTree,
+		lookupBudget: treeLookupBudget,
+		prove:        newProver().prove,
+		emit:         notify.EmitEventSync,
 	}
 }
 
@@ -78,22 +89,30 @@ func (g *GitDiscard) Event() string { return EventBash }
 // git guards use). An invocation whose directory only a shell can name is
 // denied: there is no tree to check for changes. So is one in code the
 // reader could not follow (walkStep.unread), where no directory is certain.
-// The walk is read whole first, since a step after a discard may run beside
-// it (proofBlocker).
+// A checkout is judged in the form git reads it as (sortCheckoutOperands),
+// with one lookupBudget for all its ref lookups. The walk is read whole
+// first, since a step after a discard may run beside it (proofBlocker).
 func (g *GitDiscard) Check(in Input) *Denial {
 	var steps []walkStep
 	walkCommands(in.Command, in.Cwd, func(s walkStep) { steps = append(steps, s) })
 	beside := runsBeside(in.Command)
+	lookups, cancel := context.WithTimeout(context.Background(), g.lookupBudget)
+	defer cancel()
 	for i, s := range steps {
 		dir := s.dir
 		if s.unread {
 			dir = ""
 		}
 		c, ok := segmentGitCommand(s.tokens, dir)
-		if !ok || !discards(c) {
+		if !ok {
 			continue
 		}
-		if d := g.checkDiscard(c, proofBlocker(steps, i, beside)); d != nil {
+		c, unsorted := g.sortCheckoutOperands(lookups, c)
+		if !discards(c, fedOperands(s.tokens)) {
+			continue
+		}
+		unsure := cmp.Or(proofBlocker(steps, i, beside), unsorted)
+		if d := g.checkDiscard(c, unsure); d != nil {
 			return d
 		}
 	}
@@ -250,16 +269,18 @@ func statusExtra(c gitInvocation) []string {
 }
 
 // discards reports whether one git invocation throws away uncommitted work.
-func discards(c gitInvocation) bool {
+// fed marks one a command in front of git may hand more words (xargs,
+// fedOperands).
+func discards(c gitInvocation, fed bool) bool {
 	switch c.sub {
 	case "stash":
 		return stashDiscards(c.args)
 	case "reset":
 		return slices.Contains(c.args, "--hard")
 	case "checkout":
-		return checkoutDiscards(c.args)
+		return checkoutDiscards(c.args, fed)
 	case "switch":
-		return hasFlag(c.args, "--discard-changes", "--force", "-f")
+		return setsOption(c.args, 'f', switchBundleEnds, "--force", "--discard-changes")
 	case "restore":
 		return restoreDiscards(c.args)
 	case "clean":
@@ -293,13 +314,19 @@ func stashDiscards(args []string) bool {
 }
 
 // checkoutDiscards: a path checkout (`checkout -- <path>`, `checkout <ref>
-// -- <path>`, `checkout .`) overwrites the worktree copy, and a forced
-// branch switch drops local changes on the way.
-func checkoutDiscards(args []string) bool {
+// -- <path>`, the forms sortCheckoutOperands gives one without `--` or in
+// patch mode, and `checkout .`) overwrites the worktree copy, and a forced
+// branch switch (-f in any bundle, setsOption) drops local changes on the
+// way. Paths read from a file (--pathspec-from-file) or handed over by a
+// command in front of git (fed) may be any, so either counts as a path
+// checkout too.
+func checkoutDiscards(args []string, fed bool) bool {
 	if i := slices.Index(args, "--"); i >= 0 && i+1 < len(args) {
 		return true
 	}
-	return slices.Contains(args, ".") || hasFlag(args, "--force", "-f")
+	return fed || slices.Contains(args, ".") ||
+		setsOption(args, 'f', checkoutBundleEnds, "--force") ||
+		slices.ContainsFunc(args, pathspecFromFile)
 }
 
 // restoreDiscards: restore touches the worktree unless only --staged is

@@ -170,6 +170,139 @@ func TestGitDiscardNothingLost(t *testing.T) {
 			wantDeny: "`a.txt` holds content no commit has",
 		},
 		{
+			name: "a checkout of paths without --, equal to upstream",
+			setup: func(r discardRepos) {
+				r.upstream(pulled)
+				r.local(map[string]string{"a.txt": "a2\n", "d/f.txt": "f2\n"})
+			},
+			commands: []string{
+				"git checkout a.txt",
+				"git checkout a.txt d/f.txt",
+				"git checkout a.txt -q",
+				"git checkout HEAD a.txt",
+				"git checkout origin/main a.txt",
+				"cd d && git checkout f.txt",
+			},
+		},
+		{
+			name:  "a checkout of paths without -- over unique content",
+			setup: func(r discardRepos) { r.local(map[string]string{"a.txt": "mine\n"}) },
+			commands: []string{
+				"git checkout a.txt",
+				"git checkout a.txt -q",
+				"git checkout HEAD a.txt",
+				"git checkout main b.txt a.txt",
+				"cd d && git checkout ../a.txt",
+			},
+			wantDeny: "`a.txt` holds content no commit has",
+		},
+		{
+			name: "a branch switch over a dirty tree",
+			setup: func(r discardRepos) {
+				r.git(r.seed, "push", "-q", "origin", "main:feature")
+				r.git(r.clone, "fetch", "-q")
+				r.git(r.clone, "branch", "other")
+				r.git(r.clone, "branch", "b.txt")
+				r.local(map[string]string{"a.txt": "mine\n"})
+			},
+			commands: []string{
+				"git checkout other",
+				"git checkout -q other",
+				"git checkout -b fresh",
+				"git checkout -b fresh origin/main",
+				"git checkout origin/main",
+				"git checkout feature", // only origin/feature: git creates the branch
+				"git checkout b.txt",   // a branch and a file: git switches
+				"git checkout -bf",     // a branch named f
+				`cd "$(git rev-parse --show-toplevel)" && git checkout other`,
+				`git -C "$PWD" checkout other`,
+			},
+		},
+		{
+			name:  "a forced switch over a dirty tree",
+			setup: func(r discardRepos) { r.local(map[string]string{"a.txt": "mine\n"}) },
+			commands: []string{
+				"git checkout -qf main",
+				"git checkout -fb fresh",
+				"git checkout --forc main",
+				"git switch -qf main",
+				"git switch --disc main",
+			},
+			wantDeny: "this discards uncommitted work",
+		},
+		{
+			name: "a patch checkout of the whole tree, equal to upstream",
+			setup: func(r discardRepos) {
+				r.upstream(pulled)
+				r.local(map[string]string{"a.txt": "a2\n", "d/f.txt": "f2\n"})
+			},
+			commands: []string{
+				"git checkout -p",
+				"git checkout -qp --",
+				"git checkout -p HEAD",
+				"git checkout --patch origin/main",
+				"git checkout -p -- a.txt",
+				"cd d && git checkout -p",
+			},
+		},
+		{
+			name:  "a patch checkout of the whole tree over unique content",
+			setup: func(r discardRepos) { r.local(map[string]string{"d/f.txt": "mine\n"}) },
+			commands: []string{
+				"git checkout -p",
+				"git checkout -qp",
+				"git checkout -p HEAD",
+				"git checkout -p HEAD --",
+			},
+			wantDeny: "`d/f.txt` holds content no commit has",
+		},
+		{
+			name: "a patch checkout from a tree drops a file only the index has",
+			setup: func(r discardRepos) {
+				r.local(map[string]string{"n.txt": "mine\n"})
+				r.git(r.clone, "add", "n.txt")
+			},
+			commands: []string{"git checkout -p HEAD"},
+			wantDeny: "`n.txt`",
+		},
+		{
+			name: "a discard in a directory only the shell names, equal to upstream",
+			setup: func(r discardRepos) {
+				r.upstream(pulled)
+				r.local(map[string]string{"a.txt": "a2\n", "d/f.txt": "f2\n"})
+			},
+			commands: []string{
+				`cd "$(git rev-parse --show-toplevel)" && git checkout -- a.txt`,
+				`cd d && cd "$(git rev-parse --show-toplevel)" && git checkout -- a.txt`,
+				`git -C "$(git -C d rev-parse --show-toplevel)" checkout -- a.txt`,
+				`git -C "$PWD" checkout -- a.txt`,
+				`cd d && git -C "${PWD}" checkout -- f.txt`,
+			},
+		},
+		{
+			name:  "a discard in a directory only the shell names, over unique content",
+			setup: func(r discardRepos) { r.local(map[string]string{"a.txt": "mine\n"}) },
+			commands: []string{
+				`cd d && cd "$(git rev-parse --show-toplevel)" && git checkout -- a.txt`,
+				`git -C "$PWD" checkout -- a.txt`,
+			},
+			wantDeny: "`a.txt` holds content no commit has",
+		},
+		{
+			name: "a checkout fed paths belt cannot list",
+			setup: func(r discardRepos) {
+				r.upstream(pulled)
+				r.local(map[string]string{"a.txt": "a2\n"})
+			},
+			commands: []string{
+				"echo a.txt | xargs git checkout --",
+				"echo a.txt | xargs git checkout",
+				"git checkout --pathspec-from-file=list.txt",
+				"git checkout --pathspec-from-file list.txt",
+			},
+			wantDeny: "belt could not list what it drops",
+		},
+		{
 			name: "a mix names the unique file",
 			setup: func(r discardRepos) {
 				r.upstream(pulled)
@@ -236,7 +369,7 @@ func TestGitDiscardNothingLost(t *testing.T) {
 				"git checkout -- '*.txt'",
 				"git checkout -- ':(glob)a.txt'",
 				`git restore "$F"`,
-				"git checkout -p -- a.txt",
+				"git checkout -m -- a.txt",
 				"git restore --ours a.txt",
 				"git clean -fi",
 			},
@@ -474,6 +607,16 @@ func TestReadDiscardSpec(t *testing.T) {
 			kind: pathRestore, overlay: true, pathspecs: []string{"."},
 		}},
 		{sub: "checkout", args: "-f main", wantErr: true},
+		{sub: "checkout", args: "-p -- .", want: discardSpec{
+			kind: pathRestore, overlay: true, pathspecs: []string{"."},
+		}},
+		{sub: "checkout", args: "-qp HEAD -- .", want: discardSpec{
+			kind: pathRestore, source: "HEAD", staged: true, pathspecs: []string{"."},
+		}},
+		{sub: "checkout", args: "--patch main -- a", want: discardSpec{
+			kind: pathRestore, source: "main", staged: true, pathspecs: []string{"a"},
+		}},
+		{sub: "checkout", args: "-pf main -- a", wantErr: true},
 		{sub: "checkout", args: "main .", wantErr: true},
 		{sub: "restore", args: "--source=HEAD~1 a", want: discardSpec{
 			kind: pathRestore, source: "HEAD~1", pathspecs: []string{"a"},
