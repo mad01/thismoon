@@ -58,8 +58,10 @@ Makefile                     part of module github.com/mad01/thismoon (no own go
 kit/secretscan/              the scanner, at the repo root (shared package)
   rules.go                   86 content rules (DefaultRules) + 7 filename rules (DefaultFileRules)
                              Rule fields: MinEntropy, ExcludeFiles, SkipOverlapping, Filter
-  scanner.go                 New, ScanDir, ScanStaged (reads index via git show :<path>),
+  scanner.go                 New, ScanDir, ScanStaged (reads the index through staged.go),
                              AddAllowance; inline `suspenders:ignore` marker; fail-closed errors
+  staged.go                  Index reads for ScanStaged: one `git diff --cached --raw`, then
+                             one cat-file --batch-check (sizes) and one --batch (content)
   entropy.go                 shannonEntropy: entropy gating for generic rules
   ignore.go                  Per-repo .suspenders.yaml suppression
   result.go                  Finding type, Redact function, ErrFindingsFound

@@ -120,7 +120,7 @@ and disabling".
 6. Skips lines that carry a `suspenders:ignore` comment
 7. Redacts every match on a line before printing, so one finding's context never exposes another finding's secret
 
-In `--staged` mode, the file list comes from `git diff --cached --name-only --diff-filter=ACMR` and the content is read from the index (`git show :<path>`), not the working tree. The scan sees exactly what would be committed: staging a secret and then scrubbing the working copy without re-staging still gets caught. A file that can't be read fails the scan instead of being silently skipped.
+In `--staged` mode, the file list and each file's index blob id come from `git diff --cached --raw --diff-filter=ACMR`, and the content is read from the index, not the working tree. One `git cat-file --batch-check` reads the blob sizes and one `git cat-file --batch` streams the blobs under the size cap, so the number of git processes stays at three however many files are staged. The scan sees exactly what would be committed: staging a secret and then scrubbing the working copy without re-staging still gets caught. A file that can't be read fails the scan instead of being silently skipped.
 
 ### Hook orchestration
 
