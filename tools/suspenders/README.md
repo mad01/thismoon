@@ -87,7 +87,7 @@ and disabling".
 
 ## Features
 
-- 85 built-in detection rules covering AWS, GitHub, GitLab, Google, Slack, Stripe, OpenAI, Anthropic, HuggingFace, and dozens more
+- 86 built-in detection rules covering AWS, GitHub, GitLab, Google, Slack, Stripe, OpenAI, Anthropic, HuggingFace, and dozens more
 - 7 filename rules that flag sensitive files (`id_rsa`, `*.p12`, `.env`, `*.tfstate`, ...) even when the content is binary
 - Shannon-entropy gating on generic rules, plus a standalone high-entropy string detector
 - Staged scans read content from the git index, so the scan sees exactly what would be committed
@@ -339,7 +339,7 @@ Plain output is the version and nothing else, so a probe can read the line as-is
 
 ## Detection rules
 
-Suspenders ships with 84 built-in content rules validated against GitLeaks, GitHub Secret Scanning, and TruffleHog, plus 7 filename rules. Custom rules can be added via the `watch` config section.
+Suspenders ships with 86 built-in content rules validated against GitLeaks, GitHub Secret Scanning, and TruffleHog, plus 7 filename rules. Custom rules can be added via the `watch` config section.
 
 ### Cloud providers
 
@@ -351,6 +351,7 @@ Suspenders ships with 84 built-in content rules validated against GitLeaks, GitH
 | `gcp-service-account-json` | GCP service account key (JSON) | high |
 | `google-api-key` | Google API key (`AIza...`) | high |
 | `google-oauth-client-secret` | Google OAuth client secret | high |
+| `google-oauth-client-secret-gocspx` | Google OAuth client secret (`GOCSPX-...`), as in a downloaded client JSON | high |
 | `azure-client-secret` | Azure client secret | high |
 | `digitalocean-pat` | DigitalOcean personal access token (`dop_v1_`) | high |
 | `cloudflare-api-token` | Cloudflare API token | high |
@@ -458,9 +459,9 @@ Suspenders ships with 84 built-in content rules validated against GitLeaks, GitH
 | `pem-certificate-with-key` | PEM certificate block | low |
 | `age-secret-key` | age encryption secret key (`AGE-SECRET-KEY-1`) | high |
 | `jwt-token` | JSON Web Token (`eyJ...`) | medium |
-| `generic-secret-assignment` | Generic secret assignment in code (entropy-gated; a value that is only a variable reference such as `"${API_KEY}"` passes) | medium |
+| `generic-secret-assignment` | Generic secret assignment in code (entropy-gated; a value that is only a variable reference such as `"${API_KEY}"`, an `<angle-bracketed>` placeholder, or a word under a quoted JSON key such as `"password": "Lösenord"` passes) | medium |
 | `unquoted-secret-assignment` | Unquoted secret assignment, `.env`/YAML style (entropy-gated) | medium |
-| `hardcoded-password-string` | Hardcoded password in string literal (entropy-gated) | medium |
+| `hardcoded-password-string` | Hardcoded password in string literal (entropy-gated; an `<angle-bracketed>` placeholder or a word under a quoted JSON key passes) | medium |
 | `authorization-bearer` | Authorization header with Bearer token | high |
 | `db-connection-string` | Database connection string with credentials | high |
 | `url-basic-auth` | Credentials embedded in a URL, any scheme | medium |

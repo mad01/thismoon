@@ -280,6 +280,26 @@ func TestNewRulePatterns(t *testing.T) {
 // Entropy gating
 // ---------------------------------------------------------------------------
 
+// fakeGoogleClientJSON returns a desktop OAuth client file in the one-line
+// shape the Google Cloud console downloads, with a fake secret. The secret
+// is built at run time so this file never holds a whole GOCSPX- token.
+func fakeGoogleClientJSON() string {
+	secret := "GOCSPX-" + strings.Repeat("aB3-xY9_", 3) + "Qz7k"
+	return `{"installed":{"client_id":"123456789012-fake.apps.googleusercontent.com",` +
+		`"project_id":"fake-project","auth_uri":"https://accounts.google.com/o/oauth2/auth",` +
+		`"token_uri":"https://oauth2.googleapis.com/token",` +
+		`"client_secret":"` + secret + `","redirect_uris":["http://localhost"]}}` + "\n"
+}
+
+// ruleIDs returns the set of rule IDs among findings.
+func ruleIDs(findings []Finding) map[string]bool {
+	ids := make(map[string]bool, len(findings))
+	for _, f := range findings {
+		ids[f.Rule.ID] = true
+	}
+	return ids
+}
+
 func TestEntropyGating(t *testing.T) {
 	scan := func(t *testing.T, name, content string) []Finding {
 		t.Helper()
@@ -348,6 +368,24 @@ func TestEntropyGating(t *testing.T) {
 			if f.Rule.ID == "high-entropy-string" {
 				t.Errorf("high-entropy-string should not fire on %q", f.Context)
 			}
+		}
+	})
+
+	t.Run("downloaded Google client JSON is flagged", func(t *testing.T) {
+		findings := scan(t, "client_secret.json", fakeGoogleClientJSON())
+		ids := ruleIDs(findings)
+		for _, want := range []string{"google-oauth-client-secret-gocspx", "generic-secret-assignment"} {
+			if !ids[want] {
+				t.Errorf("expected %s finding, got rules %v", want, ids)
+			}
+		}
+	})
+
+	t.Run("tokenizer special tokens are not flagged", func(t *testing.T) {
+		content := `  "eos_token": "<|im_end|>",` + "\n" + `  "pad_token": "<|endoftext|>",` + "\n"
+		findings := scan(t, "tokenizer_config.json", content)
+		if len(findings) != 0 {
+			t.Errorf("expected no findings for special tokens, got %+v", findings)
 		}
 	})
 
@@ -643,6 +681,25 @@ func TestScanStaged(t *testing.T) {
 		}
 		if !found {
 			t.Error("expected staged secret to be detected even though working tree is clean")
+		}
+	})
+
+	t.Run("staged Google client JSON is flagged", func(t *testing.T) {
+		dir := t.TempDir()
+		initGitRepo(t, dir, map[string]string{"app.txt": "clean\n"})
+
+		name := "client_secret_123456789012-fake.apps.googleusercontent.com.json"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(fakeGoogleClientJSON()), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		gitRun(t, dir, "add", name)
+
+		findings, err := New(DefaultRules).ScanStaged(dir)
+		if err != nil {
+			t.Fatalf("ScanStaged error: %v", err)
+		}
+		if ids := ruleIDs(findings); !ids["google-oauth-client-secret-gocspx"] {
+			t.Errorf("expected google-oauth-client-secret-gocspx finding, got rules %v", ids)
 		}
 	})
 

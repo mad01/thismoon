@@ -264,6 +264,25 @@ func TestDefaultRulesDetection(t *testing.T) {
 			input:     `access_key: "Wb7Yd6Xk9Lm2Qp4Rz8Nv3"`,
 			wantMatch: true,
 		},
+		// A quoted JSON or YAML key: the closing quote sits before the colon.
+		{
+			name:      "generic-secret-assignment quoted JSON key matches",
+			ruleID:    "generic-secret-assignment",
+			input:     `{"client_secret":"Yd6Xk9Lm2Qp4Rz8Nv3Wb7"}`,
+			wantMatch: true,
+		},
+		{
+			name:      "generic-secret-assignment quoted JSON key spaced matches",
+			ruleID:    "generic-secret-assignment",
+			input:     `  "api_key" : "Lm2Qp4Rz8Nv3Wb7Yd6Xk9",`,
+			wantMatch: true,
+		},
+		{
+			name:      "generic-secret-assignment no match on struct tag",
+			ruleID:    "generic-secret-assignment",
+			input:     "Token string `json:\"token\" yaml:\"token\"`",
+			wantMatch: false,
+		},
 
 		// DB connection string
 		{
@@ -368,6 +387,30 @@ func TestDefaultRulesDetection(t *testing.T) {
 			name:      "google-oauth-client-secret no match on unrelated key",
 			ruleID:    "google-oauth-client-secret",
 			input:     `stripe_secret="AbCdEfGhIjKlMnOpQrStUvWx"`,
+			wantMatch: false,
+		},
+		{
+			name:      "google-oauth-client-secret quoted JSON key matches",
+			ruleID:    "google-oauth-client-secret",
+			input:     `"google_client_secret": "AbCdEfGhIjKlMnOpQrStUvWx"`,
+			wantMatch: true,
+		},
+		{
+			name:      "google-oauth-client-secret-gocspx matches",
+			ruleID:    "google-oauth-client-secret-gocspx",
+			input:     `"client_secret":"GOCSPX-` + strings.Repeat("A", 28) + `"`,
+			wantMatch: true,
+		},
+		{
+			name:      "google-oauth-client-secret-gocspx no match on short value",
+			ruleID:    "google-oauth-client-secret-gocspx",
+			input:     "GOCSPX-" + strings.Repeat("A", 27),
+			wantMatch: false,
+		},
+		{
+			name:      "google-oauth-client-secret-gocspx no match on lowercase prefix",
+			ruleID:    "google-oauth-client-secret-gocspx",
+			input:     "gocspx-" + strings.Repeat("A", 28),
 			wantMatch: false,
 		},
 
@@ -609,6 +652,12 @@ func TestDefaultRulesDetection(t *testing.T) {
 			ruleID:    "azure-client-secret",
 			input:     `client_secret="AbCdEfGhIjKlMnOpQrStUvWxYzABCDEFG"`,
 			wantMatch: false,
+		},
+		{
+			name:      "azure-client-secret quoted JSON key matches",
+			ruleID:    "azure-client-secret",
+			input:     `"azure_client_secret": "` + strings.Repeat("A", 34) + `"`,
+			wantMatch: true,
 		},
 
 		// Datadog API key
@@ -1190,6 +1239,12 @@ func TestDefaultRulesDetection(t *testing.T) {
 			input:     "Authorization: Bearer short",
 			wantMatch: false,
 		},
+		{
+			name:      "authorization-bearer quoted JSON header matches",
+			ruleID:    "authorization-bearer",
+			input:     `"Authorization": "Bearer abcdefghijklmnopqrstu"`,
+			wantMatch: true,
+		},
 
 		// Hardcoded password string
 		{
@@ -1203,6 +1258,12 @@ func TestDefaultRulesDetection(t *testing.T) {
 			ruleID:    "hardcoded-password-string",
 			input:     `password = "short"`,
 			wantMatch: false,
+		},
+		{
+			name:      "hardcoded-password-string quoted JSON key matches",
+			ruleID:    "hardcoded-password-string",
+			input:     `"password": "mysecretpassword123"`,
+			wantMatch: true,
 		},
 
 		// No match: normal code patterns
@@ -2043,6 +2104,84 @@ func TestProviderKeyReferencesPass(t *testing.T) {
 				"a committed OpenRouter key in %q was not caught",
 				strings.Replace(line, key, "<key>", 1),
 			)
+		}
+	}
+}
+
+// TestQuotedKeyWordsPass pins that a word under a quoted JSON key passes
+// every rule: locale files label the password field, and fixtures name a
+// secret instead of holding it. A secret-shaped value under the same key,
+// the downloaded Google client JSON, and a word under a bare key are still
+// caught.
+func TestQuotedKeyWordsPass(t *testing.T) {
+	sc := New(DefaultRules)
+	for _, line := range []string{
+		`  "password": "Lösenord",`,
+		`  "password": "Contraseña",`,
+		`  "password": "Wachtwoord",`,
+		`  "secret": "db-credentials",`,
+		`  "password": "login.password",`,
+	} {
+		findings, err := sc.ScanLine("locales/sv.json", 1, line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range findings {
+			t.Errorf("%q flagged by %s; a word is not a secret", line, f.Rule.ID)
+		}
+	}
+
+	secret := "Xk9Lm2Qp" + "4Rz8Nv3W"
+	for _, tc := range []struct {
+		name string
+		line string
+		want []string
+	}{
+		{
+			"secret-shaped value under a quoted key",
+			`  "password": "` + secret + `",`,
+			[]string{"generic-secret-assignment", "hardcoded-password-string"},
+		},
+		{
+			"downloaded Google client JSON",
+			strings.TrimSuffix(fakeGoogleClientJSON(), "\n"),
+			[]string{"google-oauth-client-secret-gocspx", "generic-secret-assignment"},
+		},
+		{
+			"word under a bare key",
+			`password = "mysecretpassword"`,
+			[]string{"generic-secret-assignment", "hardcoded-password-string"},
+		},
+	} {
+		findings, err := sc.ScanLine("fixtures/client.json", 1, tc.line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := ruleIDs(findings)
+		for _, want := range tc.want {
+			if !ids[want] {
+				t.Errorf("%s: expected %s finding, got rules %v", tc.name, want, ids)
+			}
+		}
+	}
+}
+
+// TestAngleBracketedPlaceholdersPass pins that a value wrapped in angle
+// brackets passes both password rules, under a quoted key or a bare one.
+func TestAngleBracketedPlaceholdersPass(t *testing.T) {
+	sc := New(DefaultRules)
+	placeholder := "<" + "Xk9Lm2Qp" + "4Rz8Nv3Wb7" + ">"
+	for _, line := range []string{
+		`"password": "` + placeholder + `"`,
+		`password = "` + placeholder + `"`,
+		`password = "<your-db-password>"`,
+	} {
+		findings, err := sc.ScanLine("config.json", 1, line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range findings {
+			t.Errorf("%q flagged by %s; a placeholder is not a secret", line, f.Rule.ID)
 		}
 	}
 }

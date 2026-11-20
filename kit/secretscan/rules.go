@@ -27,9 +27,10 @@ type Rule struct {
 	// rules that would otherwise duplicate specific ones.
 	SkipOverlapping bool
 
-	// Filter, when set, can veto a match. It receives the secret (capture
-	// group 1 if present, otherwise the full match); returning false drops it.
-	Filter func(secret string) bool
+	// Filter, when set, can veto a match. It receives the full match and the
+	// secret (capture group 1 if present, otherwise the full match); returning
+	// false drops it.
+	Filter func(match, secret string) bool
 }
 
 // envReference matches a value that is only a shell or env variable
@@ -39,6 +40,39 @@ type Rule struct {
 var envReference = regexp.MustCompile(
 	`^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*(?::?[-=?+][^}]*)?\})$`,
 )
+
+// angleBracketed matches a value wrapped whole in angle brackets: a
+// placeholder (<your-api-key>) or a tokenizer special token
+// ("eos_token": "<|endoftext|>"), never a secret.
+var angleBracketed = regexp.MustCompile(`^<[^<>]*>$`)
+
+// wordValue matches a value made only of letters, in any script, joined by
+// single -, _ or . separators: a label (Lösenord), a name (db-credentials)
+// or a message key (login.password).
+var wordValue = regexp.MustCompile(`^\p{L}+(?:[-_.]\p{L}+)*$`)
+
+// quotedKey reports whether the key of an assignment match ends in a quote
+// before its = or : separator, as a JSON key does: "password": "...".
+func quotedKey(match string) bool {
+	i := strings.IndexAny(match, "=:")
+	if i < 0 {
+		return false
+	}
+	key := strings.TrimSpace(match[:i])
+	return strings.HasSuffix(key, `"`) || strings.HasSuffix(key, "'")
+}
+
+// notPlaceholderOrQuotedWord vetoes an angle-bracketed placeholder, and a
+// word under a quoted key. JSON locale files and API fixtures pair a
+// password or secret key with a label or a name ("password": "Lösenord",
+// "secret": "db-credentials"). An unquoted key keeps its word values, which
+// these rules flagged before quoted keys were accepted.
+func notPlaceholderOrQuotedWord(match, secret string) bool {
+	if angleBracketed.MatchString(secret) {
+		return false
+	}
+	return !quotedKey(match) || !wordValue.MatchString(secret)
+}
 
 var DefaultRules = []Rule{
 	{
@@ -51,7 +85,7 @@ var DefaultRules = []Rule{
 		ID:          "aws-secret-access-key",
 		Description: "AWS secret access key",
 		Pattern: regexp.MustCompile(
-			`(?i)aws[_\-\s]*secret[_\-\s]*(?:access[_\-\s]*)?key[\s]*[=:]["']?\s*([A-Za-z0-9/+]{40})`,
+			`(?i)aws[_\-\s]*secret[_\-\s]*(?:access[_\-\s]*)?key["']?[\s]*[=:]["']?\s*([A-Za-z0-9/+]{40})`,
 		),
 		Severity: "high",
 	},
@@ -83,9 +117,18 @@ var DefaultRules = []Rule{
 		ID:          "google-oauth-client-secret",
 		Description: "Google OAuth client secret",
 		Pattern: regexp.MustCompile(
-			`(?i)(?:google|gcp|oauth)[_\-\s]*(?:client[_\-\s]*)?secret[\s]*[=:]["'\s]*([A-Za-z0-9\-_]{24,64})`,
+			`(?i)(?:google|gcp|oauth)[_\-\s]*(?:client[_\-\s]*)?secret["']?[\s]*[=:]["'\s]*([A-Za-z0-9\-_]{24,64})`,
 		),
 		Severity: "high",
+	},
+	{
+		// Current client secrets carry a fixed prefix, so the downloaded
+		// client JSON ("client_secret": "GOCSPX-...") is caught without a
+		// google/gcp/oauth word in the key.
+		ID:          "google-oauth-client-secret-gocspx",
+		Description: "Google OAuth client secret (GOCSPX-)",
+		Pattern:     regexp.MustCompile(`(GOCSPX-[A-Za-z0-9_\-]{28})`),
+		Severity:    "high",
 	},
 	{
 		ID:          "slack-bot-token",
@@ -147,18 +190,25 @@ var DefaultRules = []Rule{
 	{
 		ID:          "generic-secret-assignment",
 		Description: "Generic high-entropy secret assignment in code",
+		// ["']? before the separator accepts a quoted JSON or YAML key:
+		// "client_secret": "...".
 		Pattern: regexp.MustCompile(
-			`(?i)(?:password|passwd|secret|token|api[_\-]?key|auth[_\-]?key|access[_\-]?key)[\s]*[=:]\s*["']([^"'\s]{8,}?)["']`,
+			`(?i)(?:password|passwd|secret|token|api[_\-]?key|auth[_\-]?key|access[_\-]?key)["']?[\s]*[=:]\s*["']([^"'\s]{8,}?)["']`,
 		),
 		Severity:   "medium",
 		MinEntropy: 3.0,
 		// A quoted reference to another variable is where the secret comes
 		// from, not the secret: export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}".
-		Filter: func(secret string) bool { return !envReference.MatchString(secret) },
+		Filter: func(match, secret string) bool {
+			return !envReference.MatchString(secret) && notPlaceholderOrQuotedWord(match, secret)
+		},
 	},
 	{
 		ID:          "unquoted-secret-assignment",
 		Description: "Unquoted secret assignment (.env / YAML style)",
+		// Unlike the quoted-value rules, this one does not accept a quoted
+		// key: a quoted key with a bare value is mostly a code literal such
+		// as "password": cfg.Password, not a config value.
 		Pattern: regexp.MustCompile(
 			`(?i)(?:password|passwd|pwd|secret|token|api[_\-]?key|auth[_\-]?key|access[_\-]?key|client[_\-]?secret|private[_\-]?key)\s*[=:]\s*([A-Za-z0-9_\-+/=.@#!%^&*]{8,})(?:[\s;,)]|$)`,
 		),
@@ -177,7 +227,7 @@ var DefaultRules = []Rule{
 		ID:          "heroku-api-key",
 		Description: "Heroku API key",
 		Pattern: regexp.MustCompile(
-			`(?i)heroku[_\-\s]*(?:api[_\-\s]*)?(?:key|token)[\s]*[=:]["'\s]*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`,
+			`(?i)heroku[_\-\s]*(?:api[_\-\s]*)?(?:key|token)["']?[\s]*[=:]["'\s]*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`,
 		),
 		Severity: "high",
 	},
@@ -273,7 +323,7 @@ var DefaultRules = []Rule{
 		ID:          "cloudflare-api-token",
 		Description: "Cloudflare API token",
 		Pattern: regexp.MustCompile(
-			`(?i)(?:cloudflare|cf)[_\-\s]*(?:api[_\-\s]*)?token[\s]*[=:]["'\s]*([a-zA-Z0-9_\-]{40})`,
+			`(?i)(?:cloudflare|cf)[_\-\s]*(?:api[_\-\s]*)?token["']?[\s]*[=:]["'\s]*([a-zA-Z0-9_\-]{40})`,
 		),
 		Severity: "high",
 	},
@@ -281,7 +331,7 @@ var DefaultRules = []Rule{
 		ID:          "azure-client-secret",
 		Description: "Azure client secret",
 		Pattern: regexp.MustCompile(
-			`(?i)azure[_\-\s]*client[_\-\s]*secret[\s]*[=:]["'\s]*([a-zA-Z0-9~._\-]{34,40})`,
+			`(?i)azure[_\-\s]*client[_\-\s]*secret["']?[\s]*[=:]["'\s]*([a-zA-Z0-9~._\-]{34,40})`,
 		),
 		Severity: "high",
 	},
@@ -291,7 +341,7 @@ var DefaultRules = []Rule{
 		ID:          "datadog-api-key",
 		Description: "Datadog API key",
 		Pattern: regexp.MustCompile(
-			`(?i)(?:datadog|dd)[_\-\s]*api[_\-\s]*key[\s]*[=:]["'\s]*([a-f0-9]{32})`,
+			`(?i)(?:datadog|dd)[_\-\s]*api[_\-\s]*key["']?[\s]*[=:]["'\s]*([a-f0-9]{32})`,
 		),
 		Severity: "high",
 	},
@@ -335,7 +385,7 @@ var DefaultRules = []Rule{
 		ID:          "cohere-api-key",
 		Description: "Cohere API key",
 		Pattern: regexp.MustCompile(
-			`(?i)cohere[_\-\s]*(?:api[_\-\s]*)?key[\s]*[=:]["'\s]*([a-zA-Z0-9]{40,})`,
+			`(?i)cohere[_\-\s]*(?:api[_\-\s]*)?key["']?[\s]*[=:]["'\s]*([a-zA-Z0-9]{40,})`,
 		),
 		Severity: "high",
 	},
@@ -365,7 +415,7 @@ var DefaultRules = []Rule{
 		ID:          "bitbucket-app-password",
 		Description: "Bitbucket app password or API token",
 		Pattern: regexp.MustCompile(
-			`(?i)bitbucket[_\-\s]*(?:app[_\-\s]*)?(?:password|token|secret)[\s]*[=:]["'\s]*([A-Za-z0-9]{18,64})`,
+			`(?i)bitbucket[_\-\s]*(?:app[_\-\s]*)?(?:password|token|secret)["']?[\s]*[=:]["'\s]*([A-Za-z0-9]{18,64})`,
 		),
 		Severity: "high",
 	},
@@ -373,7 +423,7 @@ var DefaultRules = []Rule{
 		ID:          "azure-devops-pat",
 		Description: "Azure DevOps personal access token",
 		Pattern: regexp.MustCompile(
-			`(?i)(?:azure[_\-\s]*devops|ado|vsts)[_\-\s]*(?:pat|token)[\s]*[=:]["'\s]*([a-z2-7]{52})`,
+			`(?i)(?:azure[_\-\s]*devops|ado|vsts)[_\-\s]*(?:pat|token)["']?[\s]*[=:]["'\s]*([a-z2-7]{52})`,
 		),
 		Severity: "high",
 	},
@@ -383,7 +433,7 @@ var DefaultRules = []Rule{
 		ID:          "circleci-token",
 		Description: "CircleCI personal API token",
 		Pattern: regexp.MustCompile(
-			`(?i)(?:circle[_\-\s]*ci|circleci)[_\-\s]*token[\s]*[=:]["'\s]*([a-f0-9]{40})`,
+			`(?i)(?:circle[_\-\s]*ci|circleci)[_\-\s]*token["']?[\s]*[=:]["'\s]*([a-f0-9]{40})`,
 		),
 		Severity: "high",
 	},
@@ -410,7 +460,7 @@ var DefaultRules = []Rule{
 		ID:          "firebase-web-api-key",
 		Description: "Firebase web API key",
 		Pattern: regexp.MustCompile(
-			`(?i)firebase[_\-\s]*(?:api[_\-\s]*)?key[\s]*[=:]["'\s]*(AIza[0-9A-Za-z\-_]{35})`,
+			`(?i)firebase[_\-\s]*(?:api[_\-\s]*)?key["']?[\s]*[=:]["'\s]*(AIza[0-9A-Za-z\-_]{35})`,
 		),
 		Severity: "medium",
 	},
@@ -440,7 +490,7 @@ var DefaultRules = []Rule{
 		ID:          "mailgun-api-key",
 		Description: "Mailgun API key",
 		Pattern: regexp.MustCompile(
-			`(?i)mailgun[_\-\s]*(?:api[_\-\s]*)?(?:key|token)[\s]*[=:]["'\s]*(key-[a-f0-9]{32})`,
+			`(?i)mailgun[_\-\s]*(?:api[_\-\s]*)?(?:key|token)["']?[\s]*[=:]["'\s]*(key-[a-f0-9]{32})`,
 		),
 		Severity: "high",
 	},
@@ -554,7 +604,7 @@ var DefaultRules = []Rule{
 		ID:          "authorization-bearer",
 		Description: "Authorization header with Bearer token",
 		Pattern: regexp.MustCompile(
-			`(?i)(?:authorization|auth)\s*[:=]\s*["']?Bearer\s+([A-Za-z0-9_\-\.]{20,})`,
+			`(?i)(?:authorization|auth)["']?\s*[:=]\s*["']?Bearer\s+([A-Za-z0-9_\-\.]{20,})`,
 		),
 		Severity: "high",
 	},
@@ -562,10 +612,11 @@ var DefaultRules = []Rule{
 		ID:          "hardcoded-password-string",
 		Description: "Hardcoded password in string literal",
 		Pattern: regexp.MustCompile(
-			`(?i)(?:password|passwd|pwd)\s*[:=]\s*` + "`" + `?"([^"'\` + "`" + `\s]{8,})"?`,
+			`(?i)(?:password|passwd|pwd)["']?\s*[:=]\s*` + "`" + `?"([^"'\` + "`" + `\s]{8,})"?`,
 		),
 		Severity:   "medium",
 		MinEntropy: 3.0,
+		Filter:     notPlaceholderOrQuotedWord,
 	},
 
 	// Payments and webhooks
@@ -621,7 +672,7 @@ var DefaultRules = []Rule{
 		ID:          "azure-storage-account-key",
 		Description: "Azure storage account key",
 		Pattern: regexp.MustCompile(
-			`(?i)(?:account[_\-\s]*key|storage[_\-\s]*key)[\s]*[=:;]["'\s]*([A-Za-z0-9+/]{86}==)`,
+			`(?i)(?:account[_\-\s]*key|storage[_\-\s]*key)["']?[\s]*[=:;]["'\s]*([A-Za-z0-9+/]{86}==)`,
 		),
 		Severity: "high",
 	},
@@ -655,7 +706,7 @@ var DefaultRules = []Rule{
 
 // notKnownHashOrPublicKey vetoes high-entropy matches that are well-known
 // non-secret blobs: subresource-integrity hashes and SSH public key material.
-func notKnownHashOrPublicKey(secret string) bool {
+func notKnownHashOrPublicKey(_, secret string) bool {
 	for _, prefix := range []string{"sha256-", "sha384-", "sha512-", "AAAAB3NzaC1", "AAAAC3NzaC1"} {
 		if strings.HasPrefix(secret, prefix) {
 			return false
