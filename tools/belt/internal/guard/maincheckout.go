@@ -30,8 +30,10 @@ const MainCheckoutID = "main-checkout"
 // call goes through and the reason reaches the model as advice; in deny mode
 // it is refused. allow_repos (canonical host/owner/repo) and exclude_paths
 // (a checkout path, for a local store with no remote) exempt the repos where
-// direct work in the main checkout is the workflow. A path or directory the
-// guard cannot place, and a layout that is not a git checkout, pass.
+// direct work in the main checkout is the workflow. The reason hands over
+// `git worktree add`, or, for the checkouts under a worktree_commands path,
+// the command of the tool that makes their worktrees. A path or directory
+// the guard cannot place, and a layout that is not a git checkout, pass.
 type MainCheckout struct {
 	cfg   config.Config
 	event string
@@ -104,11 +106,11 @@ func (g *MainCheckout) writeReason(file string) string {
 	if err != nil {
 		return ""
 	}
-	worktree := g.worktreePath(root)
+	h := g.handover(root)
 	return fmt.Sprintf(
 		"%s is in the main checkout %s, which stays on its default branch with no changes. "+
 			"Make a linked worktree and edit the file there: `%s`, then edit %s.",
-		file, root, worktreeAdd(root, worktree), filepath.Join(worktree, rel),
+		file, root, h.command, h.file(rel),
 	)
 }
 
@@ -132,15 +134,15 @@ func (g *MainCheckout) bashReason(command, cwd string) string {
 		if !ok || g.keepsCheckout(c, root) {
 			return
 		}
-		worktree := g.worktreePath(root)
+		h := g.handover(root)
 		reason = fmt.Sprintf(
 			"git %s changes the main checkout %s, which stays on its default branch with no changes. "+
 				"Run it in a linked worktree: `%s`, then cd %s. Read-only git and a fast-forward pull "+
 				"of the default branch still run in the main checkout.",
 			c.sub,
 			root,
-			worktreeAdd(root, worktree),
-			worktree,
+			h.command,
+			h.dir(),
 		)
 	})
 	return reason
@@ -186,7 +188,56 @@ func (g *MainCheckout) exempt(p, root string) bool {
 	return len(t.AllowRepos) > 0 && g.cfg.RepoAllowed(MainCheckoutID, g.resolveRepo(root))
 }
 
-// worktreePath is where the handed-over command puts the new worktree:
+// handover is the command the reason hands over to make a linked worktree
+// of a main checkout, and the path of that worktree when belt knows it. A
+// worktree_commands entry's tool picks the folder itself, so worktree is ""
+// for one, and the reason names the new worktree without a path.
+type handover struct {
+	command, worktree string
+}
+
+// file names the file at rel in the new worktree.
+func (h handover) file(rel string) string {
+	if h.worktree == "" {
+		return rel + " in the new worktree"
+	}
+	return filepath.Join(h.worktree, rel)
+}
+
+// dir names the new worktree as the place to cd to.
+func (h handover) dir() string {
+	if h.worktree == "" {
+		return "into the new worktree"
+	}
+	return h.worktree
+}
+
+// handover picks the worktree command for the main checkout at root: the
+// worktree_commands entry whose path holds it, else `git worktree add`.
+func (g *MainCheckout) handover(root string) handover {
+	if w, ok := g.worktreeCommand(root); ok {
+		return handover{command: w.Render(root)}
+	}
+	worktree := g.worktreePath(root)
+	return handover{command: worktreeAdd(root, worktree), worktree: worktree}
+}
+
+// worktreeCommand returns the worktree_commands entry whose path is root or
+// a directory above it, the longest such path when several are. A path is
+// resolved through its symlinks first, as root already is (physical).
+func (g *MainCheckout) worktreeCommand(root string) (config.WorktreeCommand, bool) {
+	var match config.WorktreeCommand
+	longest := -1
+	for _, w := range g.toggle().WorktreeCommands {
+		dir := physical(w.Dir())
+		if len(dir) > longest && pathUnder(root, dir) {
+			match, longest = w, len(dir)
+		}
+	}
+	return match, longest >= 0
+}
+
+// worktreePath is where the handed-over git command puts the new worktree:
 // worktree_root, the checkout's directory name, and a slug for the agent to
 // fill in.
 func (g *MainCheckout) worktreePath(root string) string {

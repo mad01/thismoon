@@ -500,6 +500,43 @@ func TestDoctorReportsLegacyTOMLAndParseErrors(t *testing.T) {
 			t.Errorf("invalid custom guard event not named:\n%s", out)
 		}
 	})
+
+	t.Run("worktree command with an unknown placeholder", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "config.yaml", "guards:\n  main-checkout:\n    worktree_commands:\n"+
+			"      - path: ~/work\n        command: mkwt {nope}\n")
+		out := runDoctorString(t, doctorPaths(dir))
+		for _, want := range []string{
+			"DENIES every guarded tool call",
+			"guards.main-checkout.worktree_commands[0].command: unknown placeholder {nope}",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("invalid worktree command report missing %q:\n%s", want, out)
+			}
+		}
+	})
+}
+
+// TestDoctorReportsMainCheckout pins the main-checkout line: its mode, the
+// worktree root, how many worktree commands are set, and the exemptions.
+func TestDoctorReportsMainCheckout(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "config.yaml", `
+guards:
+  main-checkout:
+    worktree_commands:
+      - path: ~/work
+        command: mkwt new {slug} {repo}
+      - path: ~/work/team
+        command: mkwt team {repo}
+    exclude_paths:
+      - ~/notes
+`)
+	out := runDoctorString(t, doctorPaths(dir))
+	want := "(mode: hint, worktree_root: ~/.worktrees, worktree_commands: 2, exempt: 0 repos, 1 paths)"
+	if !strings.Contains(out, want) {
+		t.Errorf("output missing %q:\n%s", want, out)
+	}
 }
 
 // TestDoctorReportsIncludes pins the include lines: one per listed names

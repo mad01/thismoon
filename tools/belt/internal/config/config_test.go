@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -366,6 +367,44 @@ func TestValidateRejectsUnusableValues(t *testing.T) {
 			"guards:\n  git-push-main:\n    worktree_root: ~/wt\n",
 			"guards.git-push-main: worktree_root has no effect (git-push-main reads: allow_repos)",
 		},
+		{
+			"worktree_commands on a guard that ignores it",
+			"guards:\n  git-discard:\n    worktree_commands:\n      - path: ~/w\n        command: x\n",
+			"guards.git-discard: worktree_commands has no effect (git-discard reads: allow_repos)",
+		},
+		{
+			"worktree command with no path",
+			"guards:\n  main-checkout:\n    worktree_commands:\n      - command: mkwt {repo}\n",
+			"guards.main-checkout.worktree_commands[0].path is empty",
+		},
+		{
+			"worktree command with a relative path",
+			"guards:\n  main-checkout:\n    worktree_commands:\n      - path: code\n        command: x\n",
+			`guards.main-checkout.worktree_commands[0].path is "code" (must be ~, or start with ~/ or /)`,
+		},
+		{
+			"worktree command with another user's home",
+			"guards:\n  main-checkout:\n    worktree_commands:\n      - path: ~work\n        command: x\n",
+			`guards.main-checkout.worktree_commands[0].path is "~work" (must be ~, or start with ~/ or /)`,
+		},
+		{
+			"worktree command with no command",
+			"guards:\n  main-checkout:\n    worktree_commands:\n      - path: ~/w\n        command: \" \"\n",
+			"guards.main-checkout.worktree_commands[0].command is empty",
+		},
+		{
+			"worktree command with an unknown placeholder",
+			"guards:\n  main-checkout:\n    worktree_commands:\n" +
+				"      - path: ~/w\n        command: mkwt {repo} {name}\n",
+			"guards.main-checkout.worktree_commands[0].command: unknown placeholder {name} " +
+				"(known: {repo}, {checkout}, {slug}, {branch})",
+		},
+		{
+			"two worktree commands for one path",
+			"guards:\n  main-checkout:\n    worktree_commands:\n" +
+				"      - path: ~/w\n        command: a\n      - path: ~/w/\n        command: b\n",
+			`guards.main-checkout.worktree_commands[1].path "~/w/" is listed twice`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -454,7 +493,8 @@ func TestMainCheckoutKeys(t *testing.T) {
 	dir := t.TempDir()
 	content := "guards:\n  main-checkout:\n    mode: deny\n    worktree_root: ~/wt/\n" +
 		"    allow_repos:\n      - github.com/you/store\n" +
-		"    exclude_paths:\n      - ~/notes\n"
+		"    exclude_paths:\n      - ~/notes\n" +
+		"    worktree_commands:\n      - path: ~/work\n        command: mkwt new {slug} {repo}\n"
 	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml", content)}
 	cfg, err := LoadFrom(p)
 	if err != nil {
@@ -470,6 +510,16 @@ func TestMainCheckoutKeys(t *testing.T) {
 	if !cfg.RepoAllowed("main-checkout", "github.com/you/store") {
 		t.Error("allow_repos not loaded")
 	}
+	want := []WorktreeCommand{{Path: "~/work", Command: "mkwt new {slug} {repo}"}}
+	if !slices.Equal(got.WorktreeCommands, want) {
+		t.Errorf("worktree_commands = %+v, want %+v", got.WorktreeCommands, want)
+	}
+	shell := Paths{BeltYAML: writeFile(t, dir, "shell.yaml",
+		"guards:\n  main-checkout:\n    worktree_commands:\n      - path: ~/work\n"+
+			"        command: 'cd ${HOME}/{a,b} && awk \"{print $1}\" {repo}'\n")}
+	if _, err := LoadFrom(shell); err != nil {
+		t.Errorf("shell braces in a command rejected: %v", err)
+	}
 	hint := Paths{
 		BeltYAML: writeFile(t, dir, "hint.yaml", "guards:\n  main-checkout:\n    mode: hint\n"),
 	}
@@ -479,6 +529,53 @@ func TestMainCheckoutKeys(t *testing.T) {
 			err,
 			cfg.Guards["main-checkout"].Denies(),
 		)
+	}
+}
+
+// TestWorktreeCommandsLoadFromTOML: the legacy TOML file carries the same
+// list of tables as the YAML file.
+func TestWorktreeCommandsLoadFromTOML(t *testing.T) {
+	dir := t.TempDir()
+	cfg := mustLoad(t, Paths{
+		BeltYAML: filepath.Join(dir, "config.yaml"),
+		BeltTOML: writeFile(t, dir, "config.toml", `
+[[guards.main-checkout.worktree_commands]]
+path = "~/work"
+command = "mkwt new {slug} {repo}"
+`),
+	})
+	want := []WorktreeCommand{{Path: "~/work", Command: "mkwt new {slug} {repo}"}}
+	if got := cfg.Guards["main-checkout"].WorktreeCommands; !slices.Equal(got, want) {
+		t.Errorf("toml worktree_commands = %+v, want %+v", got, want)
+	}
+}
+
+// TestWorktreeCommandRender pins what each placeholder renders to: the
+// checkout's directory name and path, and <slug> and <branch> left for the
+// agent, with text around them kept as written.
+func TestWorktreeCommandRender(t *testing.T) {
+	w := WorktreeCommand{Command: "mkwt new {slug} {repo} -C {checkout} -b {branch} {repo}"}
+	got := w.Render("/src/acme/app")
+	want := "mkwt new <slug> app -C /src/acme/app -b <branch> app"
+	if got != want {
+		t.Errorf("Render = %q, want %q", got, want)
+	}
+	if dir := (WorktreeCommand{Path: "/src/acme/"}).Dir(); dir != "/src/acme" {
+		t.Errorf("Dir = %q, want the trailing slash dropped", dir)
+	}
+}
+
+// TestUnknownMainCheckoutKeysStayLax pins the rollout order for a new
+// main-checkout key: the YAML decode is not strict, so a key this binary
+// does not know (as worktree_commands is to an older belt) loads as if it
+// were absent instead of failing the config.
+func TestUnknownMainCheckoutKeysStayLax(t *testing.T) {
+	dir := t.TempDir()
+	content := "guards:\n  main-checkout:\n    mode: hint\n" +
+		"    future_commands:\n      - path: ~/work\n        command: mkwt\n"
+	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml", content)}
+	if _, err := LoadFrom(p); err != nil {
+		t.Fatalf("an unknown main-checkout key failed the config: %v", err)
 	}
 }
 

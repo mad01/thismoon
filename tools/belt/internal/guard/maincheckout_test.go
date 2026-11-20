@@ -301,6 +301,96 @@ func TestMainCheckoutBash(t *testing.T) {
 	}
 }
 
+// TestMainCheckoutWorktreeCommands: a main checkout at or under a
+// worktree_commands path gets that entry's command, filled in for the
+// checkout, with the longest path winning; the reason names the new
+// worktree without a path, since the tool picks it. Every other checkout
+// still gets git worktree add.
+func TestMainCheckoutWorktreeCommands(t *testing.T) {
+	tree := newMainCheckoutTree(t)
+	home := filepath.Dir(filepath.Dir(tree.main))
+	src := filepath.Join(home, "src")
+	symlink(t, src, filepath.Join(home, "linked-src"))
+	cmds := []config.WorktreeCommand{
+		{Path: home, Command: "outer {repo}"},
+		{Path: src + "/", Command: "mkwt new {slug} {repo} --from {checkout} --branch {branch}"},
+	}
+	tests := []struct {
+		name  string
+		cmds  []config.WorktreeCommand
+		event string
+		in    Input
+		want  []string
+		not   []string
+	}{
+		{
+			"an edit under the longest path", cmds, EventWrite,
+			Input{Event: EventWrite, FilePath: filepath.Join(tree.main, "docs", "x.md")},
+			[]string{
+				"edit the file there: `mkwt new <slug> repo --from " + tree.main +
+					" --branch <branch>`, then edit docs/x.md in the new worktree.",
+			},
+			[]string{"outer", "git -C", "~/.worktrees"},
+		},
+		{
+			"a git command under the longest path", cmds, EventBash,
+			bashCall("git commit -m x", tree.main),
+			[]string{
+				"Run it in a linked worktree: `mkwt new <slug> repo --from " + tree.main +
+					" --branch <branch>`, then cd into the new worktree.",
+			},
+			[]string{"outer", "git -C"},
+		},
+		{
+			"a checkout under the shorter path only", cmds, EventWrite,
+			Input{Event: EventWrite, FilePath: filepath.Join(tree.store, "fact.md")},
+			[]string{"`outer store`, then edit fact.md in the new worktree."},
+			nil,
+		},
+		{
+			"a path reached through a link",
+			[]config.WorktreeCommand{
+				{Path: filepath.Join(home, "linked-src"), Command: "mkwt {repo}"},
+			},
+			EventWrite,
+			Input{Event: EventWrite, FilePath: filepath.Join(tree.main, "README.md")},
+			[]string{"`mkwt repo`"},
+			nil,
+		},
+		{
+			"a checkout under no path",
+			[]config.WorktreeCommand{
+				{Path: filepath.Join(home, "elsewhere"), Command: "mkwt {repo}"},
+			},
+			EventWrite,
+			Input{Event: EventWrite, FilePath: filepath.Join(tree.main, "README.md")},
+			[]string{
+				"git -C " + tree.main + " worktree add ~/.worktrees/repo/<slug> -b <branch>",
+				"then edit ~/.worktrees/repo/<slug>/README.md",
+			},
+			[]string{"mkwt", "in the new worktree"},
+		},
+		{
+			"a git command under no path", nil, EventBash,
+			bashCall("git commit -m x", tree.main),
+			[]string{"then cd ~/.worktrees/repo/<slug>."},
+			[]string{"into the new worktree"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			toggle := config.Toggle{Mode: config.ModeDeny, WorktreeCommands: tt.cmds}
+			d := mainCheckoutGuard(tt.event, toggle, "main").Check(tt.in)
+			wantDenial(t, d, tt.want)
+			for _, n := range tt.not {
+				if strings.Contains(d.Reason, n) {
+					t.Errorf("reason %q holds %q", d.Reason, n)
+				}
+			}
+		})
+	}
+}
+
 // TestMainCheckoutHintMode: with no mode set the guard lets the call
 // through and gives the reason as advice, saying the call ran; RunAdvised
 // reports that pass as not clean, so no allow acts on it.

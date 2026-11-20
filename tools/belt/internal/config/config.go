@@ -28,6 +28,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -347,6 +348,58 @@ type Toggle struct {
 	// Machines keep worktrees in different places, so it is config, and
 	// DefaultWorktreeRoot applies when it is unset.
 	WorktreeRoot string `toml:"worktree_root"  yaml:"worktree_root,omitempty"`
+	// WorktreeCommands replaces that `git worktree add` command for the main
+	// checkouts under a path, where another tool makes the worktrees; only
+	// the main-checkout guard reads it. Validated at load (worktreeCommandErrors).
+	WorktreeCommands []WorktreeCommand `toml:"worktree_commands" yaml:"worktree_commands,omitempty"`
+}
+
+// WorktreeCommand is one guards.main-checkout.worktree_commands entry: the
+// command the main-checkout guard hands over, in place of `git worktree
+// add`, for a main checkout at or under Path. Command is a template over
+// the placeholders in worktreePlaceholders; the tool it names picks the new
+// worktree's folder itself, so the guard cannot name it.
+type WorktreeCommand struct {
+	Path    string `toml:"path"    yaml:"path"`
+	Command string `toml:"command" yaml:"command"`
+}
+
+// worktreePlaceholder is one placeholder a worktree_commands command may
+// hold, with what it renders to for the main checkout at checkout.
+type worktreePlaceholder struct {
+	name  string
+	value func(checkout string) string
+}
+
+// worktreePlaceholders are every placeholder a command may hold: the
+// checkout's directory name and absolute path, and {slug} and {branch},
+// which stay for the agent to fill in, as they do in the git command.
+var worktreePlaceholders = []worktreePlaceholder{
+	{"{repo}", filepath.Base},
+	{"{checkout}", func(checkout string) string { return checkout }},
+	{"{slug}", func(string) string { return "<slug>" }},
+	{"{branch}", func(string) string { return "<branch>" }},
+}
+
+// placeholderPattern finds the brace groups in a command shaped like a
+// placeholder, so a misspelt one is caught at load, not printed. Other
+// braces are plain command text: a shell list ({a,b}), an awk program
+// ({print $1}), and a variable (${HOME}, matched with its $ so
+// unknownPlaceholders can skip it).
+var placeholderPattern = regexp.MustCompile(`\$?\{[a-z_]+\}`)
+
+// Dir is the entry's path with a leading ~ expanded and any trailing slash
+// dropped.
+func (w WorktreeCommand) Dir() string { return filepath.Clean(ExpandHome(w.Path)) }
+
+// Render fills the command's placeholders for the main checkout at the
+// absolute path checkout.
+func (w WorktreeCommand) Render(checkout string) string {
+	pairs := make([]string, 0, 2*len(worktreePlaceholders))
+	for _, p := range worktreePlaceholders {
+		pairs = append(pairs, p.name, p.value(checkout))
+	}
+	return strings.NewReplacer(pairs...).Replace(w.Command)
 }
 
 // Soft reports whether the toggle downgrades denials to warn events instead
@@ -989,6 +1042,7 @@ func (f File) validate() error {
 	errs = append(errs, toggleModeErrors("hints", f.Hints)...)
 	errs = append(errs, toggleFieldErrors("guards", f.Guards, GuardFields)...)
 	errs = append(errs, toggleFieldErrors("hints", f.Hints, HintFields)...)
+	errs = append(errs, worktreeCommandErrors(f.Guards["main-checkout"].WorktreeCommands)...)
 	for i, r := range f.GitIdentity {
 		if err := validMode(r.Mode); err != nil {
 			errs = append(errs, fmt.Errorf("git_identity[%d].%w", i, err))
@@ -1037,6 +1091,68 @@ func customGuardErrors(guards map[string]CustomGuard) []error {
 		}
 	}
 	return errs
+}
+
+// worktreeCommandErrors rejects the guards.main-checkout.worktree_commands
+// entries the guard cannot use: an empty path or command, a path that is
+// not absolute or under the home directory (it starts with neither ~/ nor
+// /; ExpandHome leaves ~name as written), a path a second entry lists
+// again, and a brace group that names no placeholder, which would reach the
+// agent as written.
+func worktreeCommandErrors(cmds []WorktreeCommand) []error {
+	const key = "guards.main-checkout.worktree_commands"
+	var errs []error
+	seen := map[string]bool{}
+	for i, w := range cmds {
+		switch {
+		case strings.TrimSpace(w.Path) == "":
+			errs = append(errs, fmt.Errorf("%s[%d].path is empty", key, i))
+		case w.Path != "~" && !strings.HasPrefix(w.Path, "~/") && !strings.HasPrefix(w.Path, "/"):
+			errs = append(errs, fmt.Errorf(
+				"%s[%d].path is %q (must be ~, or start with ~/ or /)", key, i, w.Path,
+			))
+		case seen[w.Dir()]:
+			errs = append(errs, fmt.Errorf("%s[%d].path %q is listed twice", key, i, w.Path))
+		}
+		seen[w.Dir()] = true
+		if strings.TrimSpace(w.Command) == "" {
+			errs = append(errs, fmt.Errorf("%s[%d].command is empty", key, i))
+		}
+		for _, p := range unknownPlaceholders(w.Command) {
+			errs = append(errs, fmt.Errorf(
+				"%s[%d].command: unknown placeholder %s (known: %s)",
+				key, i, p, knownPlaceholders(),
+			))
+		}
+	}
+	return errs
+}
+
+// unknownPlaceholders returns the brace groups in command that
+// worktreePlaceholders does not name, in the order they appear.
+func unknownPlaceholders(command string) []string {
+	var unknown []string
+	for _, group := range placeholderPattern.FindAllString(command, -1) {
+		if strings.HasPrefix(group, "$") {
+			continue
+		}
+		known := slices.ContainsFunc(worktreePlaceholders, func(p worktreePlaceholder) bool {
+			return p.name == group
+		})
+		if !known {
+			unknown = append(unknown, group)
+		}
+	}
+	return unknown
+}
+
+// knownPlaceholders lists the placeholder names for an error message.
+func knownPlaceholders() string {
+	names := make([]string, 0, len(worktreePlaceholders))
+	for _, p := range worktreePlaceholders {
+		names = append(names, p.name)
+	}
+	return strings.Join(names, ", ")
 }
 
 // emptyCommand reports whether an external command list names no program.
@@ -1141,7 +1257,9 @@ var (
 		"publish-internal-names": {"allow_repos"},
 		"git-discard":            {"allow_repos"},
 		"rm-temp":                {},
-		"main-checkout":          {"allow_repos", "exclude_paths", "worktree_root"},
+		"main-checkout": {
+			"allow_repos", "exclude_paths", "worktree_root", "worktree_commands",
+		},
 	}
 	HintFields = map[string][]string{
 		"agent-memory":    {},
@@ -1159,6 +1277,7 @@ var (
 // in the order an error names them.
 var toggleFields = []string{
 	"exclude_paths", "extra_patterns", "allow_repos", "exclude_repos", "exclude_tools", "worktree_root",
+	"worktree_commands",
 }
 
 // toggleFieldErrors reports toggles on known ids carrying a key the id does
@@ -1172,12 +1291,13 @@ func toggleFieldErrors(kind string, toggles map[string]Toggle, schema map[string
 		}
 		t := toggles[id]
 		set := map[string]bool{
-			"exclude_paths":  len(t.ExcludePaths) > 0,
-			"extra_patterns": len(t.ExtraPatterns) > 0,
-			"allow_repos":    len(t.AllowRepos) > 0,
-			"exclude_repos":  len(t.ExcludeRepos) > 0,
-			"exclude_tools":  len(t.ExcludeTools) > 0,
-			"worktree_root":  t.WorktreeRoot != "",
+			"exclude_paths":     len(t.ExcludePaths) > 0,
+			"extra_patterns":    len(t.ExtraPatterns) > 0,
+			"allow_repos":       len(t.AllowRepos) > 0,
+			"exclude_repos":     len(t.ExcludeRepos) > 0,
+			"exclude_tools":     len(t.ExcludeTools) > 0,
+			"worktree_root":     t.WorktreeRoot != "",
+			"worktree_commands": len(t.WorktreeCommands) > 0,
 		}
 		for _, field := range toggleFields {
 			if !set[field] || slices.Contains(allowed, field) {

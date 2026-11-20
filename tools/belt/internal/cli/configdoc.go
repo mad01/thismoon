@@ -262,6 +262,16 @@ guards:
     # The directory the handed-over git worktree add command puts worktrees
     # under, as <worktree_root>/<repo>/<slug>. Default ~/.worktrees.
     worktree_root: ~/.worktrees
+    # The command to hand over instead of git worktree add for the main
+    # checkouts at or under path, where another tool makes the worktrees;
+    # the longest matching path wins. Placeholders: {repo} (the checkout's
+    # directory name), {checkout} (its absolute path), {slug} and {branch}
+    # (printed as <slug> and <branch> for the agent). Any other lowercase
+    # {name}, or an empty path or command, is a config error; shell braces
+    # such as ${HOME} or {a,b} are left alone.
+    worktree_commands:
+      - path: ~/work
+        command: mkwt new {slug} {repo}
     # Repos where direct work in the main checkout is the workflow: by
     # canonical host/owner/repo from the origin remote, and by checkout path
     # for a local store with no remote (a ~/ or absolute entry matches as a
