@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.5](https://github.com/mad01/thismoon/compare/suspenders/v0.11.4...suspenders/v0.11.5) (2026-11-20)
+
+
+### Performance Improvements
+
+* **suspenders:** read staged files in three git calls ([#520](https://github.com/mad01/thismoon/issues/520)) ([7f1e09a](https://github.com/mad01/thismoon/commit/7f1e09abd759c8f72153807ee1e574d45b32052e))
+
 ## [0.11.4](https://github.com/mad01/thismoon/compare/suspenders/v0.11.3...suspenders/v0.11.4) (2026-11-20)
 
 
