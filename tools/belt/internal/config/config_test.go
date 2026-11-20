@@ -351,6 +351,21 @@ func TestValidateRejectsUnusableValues(t *testing.T) {
 			"internal_names:\n  include:\n    - \"\"\n",
 			"internal_names.include[0] is empty",
 		},
+		{
+			"soft mode on the main-checkout guard",
+			"guards:\n  main-checkout:\n    mode: soft\n",
+			`guards.main-checkout.mode is "soft" (must be "hint" or "deny")`,
+		},
+		{
+			"deny mode on a guard that reads hard or soft",
+			"guards:\n  git-discard:\n    mode: deny\n",
+			`guards.git-discard.mode is "deny" (must be "hard" or "soft")`,
+		},
+		{
+			"worktree_root on a guard that ignores it",
+			"guards:\n  git-push-main:\n    worktree_root: ~/wt\n",
+			"guards.git-push-main: worktree_root has no effect (git-push-main reads: allow_repos)",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -423,6 +438,47 @@ func TestValidateAcceptsTheSupportedSoftGuard(t *testing.T) {
 	}
 	if !cfg.Guards["script-deny-list"].Soft() {
 		t.Error("script-deny-list should have decoded as soft")
+	}
+}
+
+// TestMainCheckoutKeys pins the keys the main-checkout guard reads and
+// their defaults: hint mode and ~/.worktrees when unset, and every key
+// accepted when set. A key rejected here would deny every tool call on a
+// machine whose rendering sets it.
+func TestMainCheckoutKeys(t *testing.T) {
+	var unset Toggle
+	if unset.Denies() || unset.WorktreeRootOrDefault() != DefaultWorktreeRoot {
+		t.Errorf("unset toggle: Denies = %v, worktree root %q; want hint mode and %q",
+			unset.Denies(), unset.WorktreeRootOrDefault(), DefaultWorktreeRoot)
+	}
+	dir := t.TempDir()
+	content := "guards:\n  main-checkout:\n    mode: deny\n    worktree_root: ~/wt/\n" +
+		"    allow_repos:\n      - github.com/you/store\n" +
+		"    exclude_paths:\n      - ~/notes\n"
+	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml", content)}
+	cfg, err := LoadFrom(p)
+	if err != nil {
+		t.Fatalf("main-checkout keys rejected: %v", err)
+	}
+	got := cfg.Guards["main-checkout"]
+	if !got.Denies() {
+		t.Error("mode: deny not loaded")
+	}
+	if root := got.WorktreeRootOrDefault(); root != "~/wt" {
+		t.Errorf("worktree root = %q, want ~/wt (trailing slash dropped)", root)
+	}
+	if !cfg.RepoAllowed("main-checkout", "github.com/you/store") {
+		t.Error("allow_repos not loaded")
+	}
+	hint := Paths{
+		BeltYAML: writeFile(t, dir, "hint.yaml", "guards:\n  main-checkout:\n    mode: hint\n"),
+	}
+	if cfg, err := LoadFrom(hint); err != nil || cfg.Guards["main-checkout"].Denies() {
+		t.Errorf(
+			"mode: hint: err %v, Denies %v; want it loaded as hint",
+			err,
+			cfg.Guards["main-checkout"].Denies(),
+		)
 	}
 }
 

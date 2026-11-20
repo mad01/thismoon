@@ -18,6 +18,19 @@ Every entry has a heading with the date, the components and a title, then these 
 
 `go test ./kit/upgradenotes/` checks this form on every entry dated 2026-11-14 or later, and CI runs it. The `upgrade-note` skill walks an agent through writing an entry.
 
+## 2026-11-20 belt: the main-checkout guard keeps main checkouts read-only
+
+Change: thismoon #511. `belt hook write` and `belt hook bash` run a new guard, main-checkout. It judges an Edit or Write of a file in a repo's main checkout, and a git command that changes one: commit, checkout or switch to another branch, reset, merge, rebase, stash and the like. Its reason hands over the `git worktree add` command for a linked worktree. Read-only git and a fast-forward pull of the default branch still run there, and a linked worktree is never judged. The guard is on by default in `hint` mode: the call goes through and the reason reaches the model beside the result. It applies to subagents too. A store that commits straight to its default branch gets the hint on every write until the belt config exempts it, and `direct_main_repos` does not exempt it.
+
+Run: two steps, in this order.
+
+1. With ralph: `ralph up` on every machine, so `~/code/bin/belt` knows the guard and its two modes. Without ralph: `make -C tools/belt install`. An older belt rejects `guards.main-checkout.mode` with either value and then denies every tool call, so the binary goes first.
+2. In the consuming repo's belt config, list the repos whose workflow is direct work in the main checkout under `guards.main-checkout.allow_repos` (canonical `host/owner/repo`), and a store with no origin remote under `guards.main-checkout.exclude_paths`. Set `worktree_root` where worktrees live somewhere other than `~/.worktrees`, and `mode: deny` on a machine class that should enforce the rule. Then `ralph up` again, or edit `~/.config/belt/config.yaml` by hand without ralph.
+
+Verify: `belt doctor` lists `main-checkout` on `bash` and on `write`, each with `(mode: hint, worktree_root: ~/.worktrees, exempt: <n> repos, <n> paths)` or the values you set. `belt check write --file <a file in a main checkout> --content x` prints a `hint  main-checkout` line and exits 0, and for a file in an exempt store it prints `allow main-checkout`.
+
+Since: belt unreleased.
+
 ## 2026-11-15 harvest: a new tool saves session knowledge to the brain inbox
 
 Change: thismoon #505. `harvest` is a new tool with a skill of the same name. When a Claude Code session ends, it reads what the user and the assistant wrote, asks a model which facts are worth keeping, and writes those to the brain inbox as raw captures. `ralph up` installs the binary, its two launchers, its sandbox settings and the skill. Nothing runs until the consuming repo adds the hook, so a machine that skips the steps below has the tool installed and idle.

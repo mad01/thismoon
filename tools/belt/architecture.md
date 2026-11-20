@@ -45,7 +45,8 @@ internal/cache/     per-session file names under ~/.cache/belt with the
 internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     guards (git-push-main, git-discard, git-identity, commit-guard,
                     script-deny-list, write-internal-names,
-                    publish-internal-names, rm-temp, large-read), and the Custom guard that execs
+                    publish-internal-names, rm-temp, large-read,
+                    main-checkout), and the Custom guard that execs
                     config-registered external commands; the Allow
                     interface, the Allows registry, the git-c-read allow,
                     and its strict shell reader
@@ -53,7 +54,8 @@ internal/cslindex/  csl index lookup from the shard listing, the linked
                     worktree lookup, csl's skip rules (kit/cslignore plus
                     zoekt's pinned limits) and the csl_ask call for one
                     file (max_lines sized by kit/cslask), shared by
-                    large-read, read-size and prefer-csl
+                    large-read, read-size and prefer-csl; main-checkout
+                    reuses its checkout and linked worktree lookup
 internal/hint/      the Hint interface and the hints (prefer-csl,
                     read-size, commit-policy, lint-policy, moondb-inflight,
                     agent-memory, humanizer-check, em-dash), the Custom

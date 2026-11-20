@@ -20,7 +20,9 @@ shape has consequences worth knowing before reading about any single hook:
 - **Guards can deny, hints cannot.** A guard runs on PreToolUse and can return
   `permissionDecision: deny` with a reason the model reads. A hint has no
   denial path in its interface; the worst a broken hint can do is add a few
-  lines of ignored text.
+  lines of ignored text. A guard in hint mode (main-checkout) lets the call
+  through and writes its reason as PreToolUse `additionalContext` instead,
+  with no permission decision.
 - **Allows answer allow, and only after the guards.** An enabled allow runs
   in the same PreToolUse hook once every guard passed cleanly, with no
   denial and no warning, and may return `permissionDecision: allow`. It has
@@ -40,9 +42,10 @@ shape has consequences worth knowing before reading about any single hook:
   timeline exist.
 - **Every deny and every hint is attributable and audited.** Output is
   prefixed `belt[<id>]:`, and each fire POSTs an event to the local events
-  service (`events.this`): denies and soft-mode hits as `warn`, hints as
-  `info`. Each event is tagged with the session id on every real call, and
-  with the agent id and type when the call came from inside a subagent.
+  service (`events.this`): denies and soft-mode hits as `warn`, hints and
+  hint-mode guard advice as `info`. Each event is tagged with the session
+  id on every real call, and with the agent id and type when the call came
+  from inside a subagent.
   When a guard seems silent, the timeline is where to look. An approval is
   prefixed `belt[<id>]:` too, but posts no event: it would be the most
   frequent one and push denials out of the source's capped history.
@@ -1009,6 +1012,70 @@ Refuses a whole-file Read of a large file before the tokens are spent.
   allows unless `--transcript` names a transcript to read (`/dev/null` for
   one with no edits).
 
+### main-checkout
+
+Keeps a repo's main checkout read-only and points the change at a linked
+worktree. One id on two events: `write` and `bash`.
+
+- **Fires on** an Edit or Write of a file inside a main checkout, and on a
+  git command that changes one: `commit`, `add`, `rm`, `mv`, `reset`,
+  `restore`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `bisect`,
+  `update-index`, `stash` (all but `list` and `show`), `apply` (all but
+  `--check` and the report-only `--stat`, `--numstat`, `--summary`),
+  `sparse-checkout` (all but `list` and `check-rules`), `submodule` (all
+  but bare, `status` and `summary`), `clean` with `-f`, a `branch -m` or
+  `-M` that renames the checked-out branch, a `checkout` or `switch` to
+  anything but a default branch, and a `pull` that is not a sync. Each git
+  invocation is judged in the directory it runs in. The walk git-push-main
+  and git-discard share finds it: a tracked `cd`/`pushd`, a `git -C`
+  target, a subshell, a substitution, an `sh -c` script. Heredoc bodies and
+  quoted text are not commands.
+- **A main checkout** is git's own test: in a linked worktree `git
+  rev-parse --git-dir` and `--git-common-dir` differ. belt reads that from
+  files, with the lookup the csl checks use (`cslindex.RepoRoot` and
+  `cslindex.LinkedWorktree`), so no git runs. Every checkout that is not a
+  linked worktree counts as main, a submodule included. A path is resolved
+  through its symlinks first, so an edit of a dotfile linked from the home
+  directory is judged in the checkout it lands in.
+- **Lets through** read-only git and anything that does not change the
+  checkout: `status`, `log`, `diff`, `fetch`, `branch`, `tag`, `push` (that
+  is git-push-main's), and `worktree add`, the command the reason hands
+  over. A `checkout` or `switch` to `main` or `master`, with at most `-q`,
+  passes, since it puts the default branch back; when the checkout's
+  `refs/remotes/origin/HEAD` file names one of the two, only that one. A
+  `branch -m old new` passes when `old` is not the checked-out branch. A
+  `pull` passes when the checkout is on `main` or `master`, the operands
+  name at most the remote and that same branch, and no option merges any
+  other way (`--no-ff`, `--squash`, `--no-commit`, `--edit`, a strategy,
+  `-Xtheirs` and `-sours` attached included). The value of an option that
+  takes one, such as `--depth 1`, is not an operand. A checkout that keeps
+  the rule has no commits of its own, so such a pull fast-forwards. A
+  branch git cannot read within 2 seconds passes.
+- **The reason** names the checkout and hands over the command for a
+  worktree: `git -C <checkout> worktree add <worktree_root>/<repo>/<slug>
+  -b <branch>`. For an edit it also names the same file under the new
+  worktree. `worktree_root` defaults to `~/.worktrees`.
+- **Mode.** `hint` (the default) lets the call through. The hook writes the
+  reason as PreToolUse `additionalContext` with no permission decision, so
+  Claude Code's own permission check still runs and the model reads the
+  advice beside the result. The event is archived at `info`. `deny`
+  refuses the call with the reason. A hint is not a clean pass, so no allow
+  approves the call.
+- **Exempt**: `allow_repos` lists repos by canonical identity, for the
+  stores whose workflow is direct work on the default branch. A local store
+  with no origin remote has no identity, so `exclude_paths` lists checkout
+  paths too. The guard does not read `direct_main_repos`: a repo can push
+  straight to main and still take its changes in worktrees.
+- **Subagents**: PreToolUse runs for a subagent's tool calls with the same
+  payload plus its agent fields, so the guard judges them the same way.
+- **Why it exists**: an edit in a main checkout collides with other
+  sessions on the same repo. A checkout left dirty or on another branch is
+  one the next sync skips. Prose asking agents to use worktrees did not
+  hold every time.
+- **Fails open**: a relative path, a path outside any checkout, a directory
+  only a shell can name, and a command in text the reader could not follow
+  all pass. So does git with `--git-dir`, `--work-tree` or `GIT_DIR`.
+
 ### Custom guards
 
 A `custom_guards.<name>` config entry registers a guard implemented as any
@@ -1105,10 +1172,9 @@ reversibility criterion behind that line.
 
 Both resolve the repo from its **origin remote**, never its filesystem path,
 so a second checkout or a cached clone of the same repo behaves identically.
-Path-based exceptions use
-`exclude_paths` (write-internal-names, script-deny-list): a `~/`- or
-`/`-prefixed entry matches as a directory prefix, anything else as a
-substring. `belt config` prints every list in effect after fallbacks, and
+Path-based exceptions use `exclude_paths` (write-internal-names,
+script-deny-list, main-checkout): a `~/`- or `/`-prefixed entry matches as
+a directory prefix, anything else as a substring. `belt config` prints every list in effect after fallbacks, and
 `belt doctor` shows the blocked-name set they produce.
 
 ## Allows

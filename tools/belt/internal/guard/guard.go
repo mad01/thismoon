@@ -128,6 +128,10 @@ func All(cfg config.Config) []Guard {
 		NewPublishInternalNames(cfg, EventExternalText),
 		NewRmTemp(),
 		NewLargeRead(cfg),
+		// One id on two events as well: Edit and Write of a file in a main
+		// checkout, and the git commands that change one.
+		NewMainCheckout(cfg, EventBash),
+		NewMainCheckout(cfg, EventWrite),
 	}
 	for _, name := range slices.Sorted(maps.Keys(cfg.CustomGuards)) {
 		guards = append(guards, NewCustom(name, cfg.CustomGuards[name]))

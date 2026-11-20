@@ -248,6 +248,29 @@ guards:
     # the reading agent already edited or wrote in the session. Runs only
     # where the Claude settings wire belt hook read on PreToolUse (Read).
 
+  main-checkout:
+    enabled: true
+    # Keeps a repo's main checkout read-only: an Edit or Write of a file in
+    # one, and a git command that changes one (commit, checkout or switch to
+    # another branch, reset, merge, rebase, stash, ...), get the git worktree
+    # add command for a linked worktree. Read-only git, worktree add and a
+    # fast-forward pull of the default branch still run there. A linked
+    # worktree is never judged. "hint" (the default) lets the call through
+    # with the advice beside it; "deny" refuses it. A belt older than this
+    # guard rejects both values, so ralph up before setting one.
+    mode: hint
+    # The directory the handed-over git worktree add command puts worktrees
+    # under, as <worktree_root>/<repo>/<slug>. Default ~/.worktrees.
+    worktree_root: ~/.worktrees
+    # Repos where direct work in the main checkout is the workflow: by
+    # canonical host/owner/repo from the origin remote, and by checkout path
+    # for a local store with no remote (a ~/ or absolute entry matches as a
+    # directory prefix, anything else as a substring).
+    allow_repos:
+      - github.com/you/notes
+    exclude_paths:
+      - ~/.local/share/journal
+
   script-deny-list:
     enabled: true
     # "soft" downgrades every denial to a warn event on the events service

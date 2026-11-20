@@ -52,7 +52,8 @@ nothing:
 - a `custom_hints.<name>.agent_types` key on a hint whose `event` is not
   `subagent-start` (only a subagent has a type to match), or one that is
   empty or holds a blank entry;
-- a `mode:` anywhere other than `hard` or `soft`;
+- a `mode:` anywhere other than `hard` or `soft`, except on
+  `guards.main-checkout`, which takes only `hint` or `deny`;
 - `mode: soft` under `guards:` or `hints:` on any id except
   `script-deny-list` and `publish-internal-names`, the two that read a
   toggle mode. Use `enabled: false` to switch a different guard off;
@@ -479,7 +480,7 @@ allows:
 
 A map keyed by built-in guard id (`git-push-main`, `git-discard`, `git-identity`,
 `commit-guard`, `script-deny-list`, `write-internal-names`,
-`publish-internal-names`, `rm-temp`, `large-read`) or a
+`publish-internal-names`, `rm-temp`, `large-read`, `main-checkout`) or a
 `custom_guards` name. Every guard, built-in or custom, defaults to enabled
 when the file or its entry is missing. The toggle shape is shared across
 guards, but which fields have an effect depends on the guard. `allow_repos`
@@ -571,6 +572,33 @@ entries match the same way as `git_identity[].repos` and
     threshold is the top-level `large_file_lines`. It runs only where the
     Claude settings wire `belt hook read` on PreToolUse with matcher
     `Read`.
+- **main-checkout**
+  - `guards.main-checkout.enabled` (bool, default `true`): one toggle for
+    both of the guard's events (`write` and `bash`). The guard judges an
+    Edit or Write of a file in a repo's main checkout, and a git command
+    that changes one, and hands over the `git worktree add` command for a
+    linked worktree. A linked worktree is never judged.
+  - `guards.main-checkout.mode` (string, default `hint`): `hint` lets the
+    call through and gives the reason as advice the model reads beside the
+    result; `deny` refuses the call. This guard takes no `hard` or `soft`,
+    and no other guard takes `hint` or `deny`. A belt older than the guard
+    rejects both values and denies every call, so install the new belt
+    before a rendering sets the key.
+  - `guards.main-checkout.worktree_root` (string, default `~/.worktrees`):
+    the directory the handed-over command puts the worktree under, as
+    `<worktree_root>/<repo>/<slug>`. It is printed as written, so a `~`
+    stays for the shell to expand.
+  - `guards.main-checkout.allow_repos` (list of string, default: empty):
+    canonical `host/owner/repo` entries (or a trailing `/*` org wildcard)
+    where direct work in the main checkout is the workflow, such as a store
+    that commits straight to its default branch. Matched against the
+    checkout's origin remote. `direct_main_repos` is not read here: a repo
+    can push straight to main and still take its changes in worktrees.
+  - `guards.main-checkout.exclude_paths` (list of string, default: empty):
+    checkout paths the guard skips, for a local store with no origin remote
+    to match. Same prefix-or-substring matching as
+    `script-deny-list.exclude_paths`, checked against the file or git
+    directory and the checkout root.
 - **custom guard entries**
   - `guards.<name>.enabled` (bool, default `true`): a secondary toggle for a
     custom guard, used only when that guard's own
@@ -797,6 +825,15 @@ guards:
 
   large-read:
     enabled: true
+
+  main-checkout:
+    enabled: true
+    mode: hint
+    worktree_root: ~/.worktrees
+    allow_repos:
+      - github.com/you/notes
+    exclude_paths:
+      - ~/.local/share/journal
 
 hints:
   agent-memory:
