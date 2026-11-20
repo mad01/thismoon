@@ -1,6 +1,6 @@
 # suspenders, offline git secret scanner and hook orchestrator
 
-A Go CLI tool for offline git secret scanning and hook orchestration. Detects checked-in secrets using 84 built-in content rules plus 7 filename rules, manages pre-commit and post-merge hooks across repositories, and guards against leaking internal repository names into public repos. `suspenders history scan` runs the same checks over every commit on the public branch (attributed to the introducing commit); `suspenders history clean` rewrites history to remove flagged strings via a native fast-export/fast-import pipeline (see docs/adr/0002). Strings can be blanket-replaced with `***REDACTED***` or mapped to specific replacements via a replace table (`--replace-map` / config `history.replace_table`); table entries are processed longest-key-first to avoid partial matches. Files that are secrets wholesale (key/token files) are redacted in place via `--redact-file` globs / config `history.redact_files`. The blob content becomes `***REDACTED***` in every commit while the path stays in the tree. Auto-collected file-name findings feed this list.
+A Go CLI tool for offline git secret scanning and hook orchestration. Detects checked-in secrets using 86 built-in content rules plus 7 filename rules, manages pre-commit and post-merge hooks across repositories, and guards against leaking internal repository names into public repos. `suspenders history scan` runs the same checks over every commit on the public branch (attributed to the introducing commit); `suspenders history clean` rewrites history to remove flagged strings via a native fast-export/fast-import pipeline (see docs/adr/0002). Strings can be blanket-replaced with `***REDACTED***` or mapped to specific replacements via a replace table (`--replace-map` / config `history.replace_table`); table entries are processed longest-key-first to avoid partial matches. Files that are secrets wholesale (key/token files) are redacted in place via `--redact-file` globs / config `history.redact_files`. The blob content becomes `***REDACTED***` in every commit while the path stays in the tree. Auto-collected file-name findings feed this list.
 
 ## Module layout
 
@@ -56,7 +56,7 @@ internal/
 Makefile                     part of module github.com/mad01/thismoon (no own go.mod)
 
 kit/secretscan/              the scanner, at the repo root (shared package)
-  rules.go                   84 content rules (DefaultRules) + 7 filename rules (DefaultFileRules)
+  rules.go                   86 content rules (DefaultRules) + 7 filename rules (DefaultFileRules)
                              Rule fields: MinEntropy, ExcludeFiles, SkipOverlapping, Filter
   scanner.go                 New, ScanDir, ScanStaged (reads index via git show :<path>),
                              AddAllowance; inline `suspenders:ignore` marker; fail-closed errors

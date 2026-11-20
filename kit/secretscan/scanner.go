@@ -273,7 +273,7 @@ func (s *Scanner) scanLine(
 			if rule.MinEntropy > 0 && shannonEntropy(secret) < rule.MinEntropy {
 				continue
 			}
-			if rule.Filter != nil && !rule.Filter(secret) {
+			if rule.Filter != nil && !rule.Filter(match, secret) {
 				continue
 			}
 			if s.isAllowed(match, path) {
