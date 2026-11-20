@@ -588,6 +588,23 @@ entries match the same way as `git_identity[].repos` and
     the directory the handed-over command puts the worktree under, as
     `<worktree_root>/<repo>/<slug>`. It is printed as written, so a `~`
     stays for the shell to expand.
+  - `guards.main-checkout.worktree_commands` (list of `{path, command}`,
+    default: empty): the command to hand over instead of `git worktree add`
+    for the main checkouts at or under `path`, on a machine where another
+    tool makes their worktrees. `path` is a directory, absolute or starting
+    with `~/`, resolved through its symlinks; when several paths hold a
+    checkout, the longest wins, and of two that resolve to the same
+    directory, the first listed wins. `command` is printed with these
+    placeholders filled in: `{repo}` (the checkout's directory name),
+    `{checkout}` (its absolute path), and `{slug}` and `{branch}`, which
+    print as `<slug>` and `<branch>` for the agent to fill in. That tool
+    picks the new worktree's folder, so the reason says to edit the same
+    file, or run the git command, in the new worktree without naming its
+    path. An empty `path` or `command`, a relative `path`, a `path` listed
+    twice and any other lowercase `{name}` in `command` are config errors
+    (shell braces such as `${HOME}` or `{a,b}` are left alone), which make
+    belt deny every call until fixed; `belt doctor` names the key. A belt
+    older than this key ignores it and hands over the git command.
   - `guards.main-checkout.allow_repos` (list of string, default: empty):
     canonical `host/owner/repo` entries (or a trailing `/*` org wildcard)
     where direct work in the main checkout is the workflow, such as a store
@@ -830,6 +847,9 @@ guards:
     enabled: true
     mode: hint
     worktree_root: ~/.worktrees
+    worktree_commands:
+      - path: ~/work
+        command: mkwt new {slug} {repo}
     allow_repos:
       - github.com/you/notes
     exclude_paths:

@@ -1054,7 +1054,13 @@ worktree. One id on two events: `write` and `bash`.
 - **The reason** names the checkout and hands over the command for a
   worktree: `git -C <checkout> worktree add <worktree_root>/<repo>/<slug>
   -b <branch>`. For an edit it also names the same file under the new
-  worktree. `worktree_root` defaults to `~/.worktrees`.
+  worktree. `worktree_root` defaults to `~/.worktrees`. On a machine where
+  another tool makes the worktrees, `worktree_commands` names that tool's
+  command for the checkouts at or under a path (the longest wins). The
+  reason then hands over that command, with `{repo}`, `{checkout}`,
+  `{slug}` and `{branch}` filled in. That tool picks the folder, so the
+  reason says to edit the file, or run the git command, in the new worktree
+  without naming a path.
 - **Mode.** `hint` (the default) lets the call through. The hook writes the
   reason as PreToolUse `additionalContext` with no permission decision, so
   Claude Code's own permission check still runs and the model reads the

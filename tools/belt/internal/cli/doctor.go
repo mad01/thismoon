@@ -426,8 +426,10 @@ func ruleNote(cfg config.Config, id string) string {
 		if t.Denies() {
 			mode = config.ModeDeny
 		}
-		return fmt.Sprintf("  (mode: %s, worktree_root: %s, exempt: %d repos, %d paths)",
-			mode, t.WorktreeRootOrDefault(), len(t.AllowRepos), len(t.ExcludePaths))
+		return fmt.Sprintf(
+			"  (mode: %s, worktree_root: %s, worktree_commands: %d, exempt: %d repos, %d paths)",
+			mode, t.WorktreeRootOrDefault(), len(t.WorktreeCommands),
+			len(t.AllowRepos), len(t.ExcludePaths))
 	}
 	return ""
 }
