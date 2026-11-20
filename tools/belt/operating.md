@@ -222,6 +222,17 @@ to the events service — check there when a guard seems silent. A hard
 hatch, not rewording the commit command. set/extend archive the reason as
 a warn event, a suppressed block leaves one too, and it expires on its own.
 
+`main-checkout` fails open as well, and by default it only advises. In
+hint mode the call runs and the reason reaches the model as PreToolUse
+additionalContext, with an info event on the timeline. In deny mode it
+refuses an Edit or Write in a main checkout and a git command that changes
+one, naming the `git worktree add` command. A relative path, a path outside
+any checkout, a directory only a shell can name, a command the reader
+could not follow, a pull or branch rename in a checkout whose branch git
+cannot read, and a linked worktree all pass. A refusal in a store
+that works on its default branch by design means the repo is missing from
+`allow_repos`, or its path from `exclude_paths` when it has no remote.
+
 `rm-temp` fails open as well. An rm with one target it cannot place
 inside a temp folder, a call where one rm of several does not qualify,
 and every rm on a machine without `toss-bin` on PATH get no answer, so

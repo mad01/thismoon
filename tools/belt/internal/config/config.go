@@ -105,6 +105,26 @@ const DefaultLargeFileLines = 300
 // pins this list to the ids that actually call Toggle.Soft.
 var SoftModeGuards = []string{"script-deny-list", "publish-internal-names", "git-discard"}
 
+// The modes of the guards in HintModeGuards. "hint" (the default) lets the
+// call through and puts the guard's reason in the model's context beside it;
+// "deny" refuses the call with that reason.
+const (
+	ModeHint = "hint"
+	ModeDeny = "deny"
+)
+
+// HintModeGuards lists the built-in guards whose mode is hint or deny rather
+// than hard or soft. Their subject is a working habit, not lost work, so the
+// default lets the call through and tells the model, and deny is the setting
+// for a machine that wants the habit enforced. Validation holds each id to
+// its own pair of values.
+var HintModeGuards = []string{"main-checkout"}
+
+// DefaultWorktreeRoot is the directory the main-checkout guard names for a
+// new linked worktree when worktree_root is unset, the root the loom skill
+// claims worktrees under.
+const DefaultWorktreeRoot = "~/.worktrees"
+
 // Config is everything a guard or hint needs to decide.
 type Config struct {
 	Guards map[string]Toggle
@@ -304,7 +324,8 @@ type Toggle struct {
 	// Mode downgrades a guard's denials to warn events when set to "soft";
 	// "hard" (the default) blocks. Read by the guards in SoftModeGuards
 	// only, and setting it on any other id is a config error rather than a
-	// key that quietly does nothing.
+	// key that quietly does nothing. The guards in HintModeGuards read
+	// "hint" (the default) or "deny" here instead.
 	Mode          string   `toml:"mode"           yaml:"mode,omitempty"`
 	ExcludePaths  []string `toml:"exclude_paths"  yaml:"exclude_paths,omitempty"`
 	ExtraPatterns []string `toml:"extra_patterns" yaml:"extra_patterns,omitempty"`
@@ -321,11 +342,30 @@ type Toggle struct {
 	// another check already covers, so the once-per-session nudge is kept
 	// for text nothing else scanned.
 	ExcludeTools []string `toml:"exclude_tools"  yaml:"exclude_tools,omitempty"`
+	// WorktreeRoot is the directory the main-checkout guard names in the
+	// `git worktree add` command it hands over; only that guard reads it.
+	// Machines keep worktrees in different places, so it is config, and
+	// DefaultWorktreeRoot applies when it is unset.
+	WorktreeRoot string `toml:"worktree_root"  yaml:"worktree_root,omitempty"`
 }
 
 // Soft reports whether the toggle downgrades denials to warn events instead
 // of blocking.
 func (t Toggle) Soft() bool { return t.Mode == "soft" }
+
+// Denies reports whether a guard in HintModeGuards refuses the call. Any
+// other value, the unset default included, is hint.
+func (t Toggle) Denies() bool { return t.Mode == ModeDeny }
+
+// WorktreeRootOrDefault is worktree_root as written, or DefaultWorktreeRoot
+// when it is unset, with any trailing slash dropped.
+func (t Toggle) WorktreeRootOrDefault() string {
+	root := strings.TrimRight(t.WorktreeRoot, "/")
+	if root == "" {
+		return DefaultWorktreeRoot
+	}
+	return root
+}
 
 // ExcludesPath reports whether the toggle's exclude_paths cover the given
 // file path: prefix match for absolute and ~-prefixed entries, substring
@@ -1081,7 +1121,8 @@ func agentTypesErrors(name string, ch CustomHint) []error {
 
 // GuardFields and HintFields declare which optional Toggle keys each
 // built-in id reads (`enabled` is universal, `mode` is owned by
-// SoftModeGuards). validate() rejects a set key missing from the id's row —
+// SoftModeGuards and HintModeGuards). validate() rejects a set key missing
+// from the id's row —
 // the key would parse and then do nothing. Ids absent from the tables stay
 // lax on purpose: custom guard and hint names are user-defined, and a
 // rendered config may target a newer belt than this binary (config and
@@ -1100,6 +1141,7 @@ var (
 		"publish-internal-names": {"allow_repos"},
 		"git-discard":            {"allow_repos"},
 		"rm-temp":                {},
+		"main-checkout":          {"allow_repos", "exclude_paths", "worktree_root"},
 	}
 	HintFields = map[string][]string{
 		"agent-memory":    {},
@@ -1113,8 +1155,14 @@ var (
 	}
 )
 
-// toggleFieldErrors reports toggles on known ids carrying a list key the id
-// does not read, naming the keys it does read so the fix is in the message.
+// toggleFields are the optional Toggle keys GuardFields and HintFields gate,
+// in the order an error names them.
+var toggleFields = []string{
+	"exclude_paths", "extra_patterns", "allow_repos", "exclude_repos", "exclude_tools", "worktree_root",
+}
+
+// toggleFieldErrors reports toggles on known ids carrying a key the id does
+// not read, naming the keys it does read so the fix is in the message.
 func toggleFieldErrors(kind string, toggles map[string]Toggle, schema map[string][]string) []error {
 	var errs []error
 	for _, id := range slices.Sorted(maps.Keys(toggles)) {
@@ -1129,8 +1177,9 @@ func toggleFieldErrors(kind string, toggles map[string]Toggle, schema map[string
 			"allow_repos":    len(t.AllowRepos) > 0,
 			"exclude_repos":  len(t.ExcludeRepos) > 0,
 			"exclude_tools":  len(t.ExcludeTools) > 0,
+			"worktree_root":  t.WorktreeRoot != "",
 		}
-		for _, field := range []string{"exclude_paths", "extra_patterns", "allow_repos", "exclude_repos", "exclude_tools"} {
+		for _, field := range toggleFields {
 			if !set[field] || slices.Contains(allowed, field) {
 				continue
 			}
@@ -1152,21 +1201,35 @@ func toggleFieldErrors(kind string, toggles map[string]Toggle, schema map[string
 func toggleModeErrors(kind string, toggles map[string]Toggle) []error {
 	var errs []error
 	for _, id := range slices.Sorted(maps.Keys(toggles)) {
-		mode := toggles[id].Mode
-		if err := validMode(mode); err != nil {
-			errs = append(errs, fmt.Errorf("%s.%s.%w", kind, id, err))
-			continue
-		}
-		if mode == ModeSoft && !slices.Contains(SoftModeGuards, id) {
-			errs = append(errs, fmt.Errorf(
-				"%s.%s: mode: soft has no effect (only %s reads a mode; use enabled: false to switch this one off)",
-				kind,
-				id,
-				strings.Join(SoftModeGuards, ", "),
-			))
+		if err := toggleModeError(kind, id, toggles[id].Mode); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errs
+}
+
+// toggleModeError checks one toggle's mode. A guard in HintModeGuards takes
+// hint or deny, and every other id hard or soft, with soft only on the
+// guards in SoftModeGuards.
+func toggleModeError(kind, id, mode string) error {
+	if kind == "guards" && slices.Contains(HintModeGuards, id) {
+		if mode == "" || mode == ModeHint || mode == ModeDeny {
+			return nil
+		}
+		return fmt.Errorf("%s.%s.mode is %q (must be %q or %q)", kind, id, mode, ModeHint, ModeDeny)
+	}
+	if err := validMode(mode); err != nil {
+		return fmt.Errorf("%s.%s.%w", kind, id, err)
+	}
+	if mode == ModeSoft && !slices.Contains(SoftModeGuards, id) {
+		return fmt.Errorf(
+			"%s.%s: mode: soft has no effect (only %s reads a mode; use enabled: false to switch this one off)",
+			kind,
+			id,
+			strings.Join(SoftModeGuards, ", "),
+		)
+	}
+	return nil
 }
 
 // validMode rejects anything but the two modes and the empty per-rule

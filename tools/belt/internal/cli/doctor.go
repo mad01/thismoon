@@ -420,6 +420,14 @@ func ruleNote(cfg config.Config, id string) string {
 		return reachabilityNote([]string{guard.TossBin}, "guard is a no-op")
 	case guard.LargeReadID:
 		return fmt.Sprintf("  (large_file_lines: %d)", cfg.LargeFileThreshold())
+	case guard.MainCheckoutID:
+		t := cfg.Guards[guard.MainCheckoutID]
+		mode := config.ModeHint
+		if t.Denies() {
+			mode = config.ModeDeny
+		}
+		return fmt.Sprintf("  (mode: %s, worktree_root: %s, exempt: %d repos, %d paths)",
+			mode, t.WorktreeRootOrDefault(), len(t.AllowRepos), len(t.ExcludePaths))
 	}
 	return ""
 }

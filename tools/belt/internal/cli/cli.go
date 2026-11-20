@@ -316,10 +316,18 @@ func checkCmd(paths pathsFunc) *cobra.Command {
 			}
 			denied := false
 			for _, g := range guards {
-				if d := g.Check(in); d != nil {
+				d, advice := guard.Verdict(g, in)
+				switch {
+				case d != nil:
 					denied = true
 					fmt.Fprintf(cmd.OutOrStdout(), "DENY  %-22s %s\n", g.ID(), d.Reason)
-				} else {
+				case len(advice) > 0:
+					// A guard in hint mode lets the call through: the line
+					// says so, and the exit code stays 0.
+					for _, a := range advice {
+						fmt.Fprintf(cmd.OutOrStdout(), "hint  %-22s %s\n", g.ID(), a.Text)
+					}
+				default:
 					fmt.Fprintf(cmd.OutOrStdout(), "allow %-22s\n", g.ID())
 				}
 			}

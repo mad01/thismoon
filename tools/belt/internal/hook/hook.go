@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/mad01/thismoon/kit/gitloc"
@@ -191,13 +192,18 @@ func (rn runner) guards(event string, r io.Reader, w io.Writer) {
 		return
 	}
 	in := toInput(event, p)
-	d, clean := guard.RunClean(in, cfg)
+	d, clean, advice := guard.RunAdvised(in, cfg)
 	if d == nil {
+		if len(advice) > 0 {
+			rn.adviseGuarded(event, p, advice, w)
+			return
+		}
 		// The allows run only here, once every guard passed cleanly: none
-		// denied, none failed open and none softened a denial into a
-		// warning. A deny always wins (docs/adr/0032). An approval posts no
-		// event, since it would be belt's most frequent one and push guard
-		// denials out of the events service's per-source history.
+		// denied, none failed open, none softened a denial into a warning
+		// and none gave advice. A deny always wins (docs/adr/0032). An
+		// approval posts no event, since it would be belt's most frequent
+		// one and push guard denials out of the events service's per-source
+		// history.
 		if !clean {
 			return
 		}
@@ -214,6 +220,30 @@ func (rn runner) guards(event string, r io.Reader, w io.Writer) {
 		withSession(map[string]string{"guard": d.Guard, "event": event}, p),
 	)
 	writeDeny(w, d)
+}
+
+// adviseGuarded lets a call through with the advice guards in hint mode
+// gave: no permission decision, so Claude Code's own permission check still
+// runs, and the advice as PreToolUse additionalContext, which the model
+// reads beside the call's result. Each piece is archived as a hint fire is.
+func (rn runner) adviseGuarded(event string, p payload, advice []guard.Advice, w io.Writer) {
+	texts := make([]string, 0, len(advice))
+	for _, a := range advice {
+		rn.emit(
+			"belt",
+			"info",
+			hintTitle(p.ToolName, a.Guard),
+			a.Text,
+			withSession(map[string]string{"guard": a.Guard, "event": event}, p),
+		)
+		texts = append(texts, a.Text)
+	}
+	_ = json.NewEncoder(w).Encode(adviceDecision{
+		HookSpecificOutput: adviceOutput{
+			HookEventName:     "PreToolUse",
+			AdditionalContext: strings.Join(texts, "\n\n"),
+		},
+	})
 }
 
 // withSession adds who made the call to an event's tags: the session id
