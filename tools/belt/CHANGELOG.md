@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.21.0](https://github.com/mad01/thismoon/compare/belt/v2.20.0...belt/v2.21.0) (2026-11-20)
+
+
+### Features
+
+* **belt:** let config set the worktree command the main-checkout hint names ([127d69d](https://github.com/mad01/thismoon/commit/127d69d7708b205d7039517e8e7053b6ec90f950))
+* **belt:** let git-discard through when nothing is lost ([#519](https://github.com/mad01/thismoon/issues/519)) ([7d1c9af](https://github.com/mad01/thismoon/commit/7d1c9af7a27eab876c9f00a451af4a67bcc2d6d0))
+
+
+### Bug Fixes
+
+* **belt:** give the commit-policy hint only when a commit landed ([#518](https://github.com/mad01/thismoon/issues/518)) ([72df0b0](https://github.com/mad01/thismoon/commit/72df0b01b4d5f9ba30ea889902b6a62efaf39b02))
+
 ## [2.20.0](https://github.com/mad01/thismoon/compare/belt/v2.19.7...belt/v2.20.0) (2026-11-20)
 
 
