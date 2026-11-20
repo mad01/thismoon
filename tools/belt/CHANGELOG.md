@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.21.1](https://github.com/mad01/thismoon/compare/belt/v2.21.0...belt/v2.21.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **belt:** read git checkout without -- as git does in git-discard ([#522](https://github.com/mad01/thismoon/issues/522)) ([49b00fa](https://github.com/mad01/thismoon/commit/49b00fa3ff5b1e1c1ff164248d42abb073cbde39))
+
 ## [2.21.0](https://github.com/mad01/thismoon/compare/belt/v2.20.0...belt/v2.21.0) (2026-11-20)
 
 
