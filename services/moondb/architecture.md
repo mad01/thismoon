@@ -228,10 +228,15 @@ Cost by repo is a view too. Model calls carry no repo, so the listing
 splits a session's cost by who spent it. A subagent's cost goes to the
 repo most of its edits touched, a tie to the one it edited first. A
 subagent without an edit in a repo goes to the repo of its working
-directory, else to "no repo (cwd)". The main conversation's cost goes
-to the repo most of its own edits touched, else to "orchestration". The
-summary keeps each part as tokens and the server prices it on read, like
-the rest of the cost. Each row lists its parts; the window adds them up
+directory, else to "no repo (cwd)". The main conversation's cost is
+split turn by turn. A turn's weights are the edit counts per repo of the
+main conversation's own edits in it, else of its subagents' edits in it,
+else the weights of the turn before. Turns before any edit go to
+"orchestration". Each token count is shared by largest remainder, so the
+parts add up exactly. A session day takes the parts of the turns that
+started that day. The summary keeps each part as tokens and the server
+prices it on read, like the rest of the cost. Each row lists its parts,
+and so does the main conversation's agent row; the window adds them up
 across sessions, as does each repo chip. A repo chip and the repo filter
 take the same sessions: the ones that edited the repo or send it a part.
 The store keeps none of it, so a change to the rule reprices every past

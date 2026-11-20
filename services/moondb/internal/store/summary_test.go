@@ -296,9 +296,10 @@ func TestSummarizeLeavesOutMainSegments(t *testing.T) {
 }
 
 // TestSummarizeCwdRepos: the repositories a session worked in without
-// editing them are its own cwd's and each recorded agent's cwd's, each
-// once and sorted. A repository it edited is left out, and so is an agent
-// or a session cwd outside any repository; nil when none is left.
+// editing them are each recorded agent's cwd's, and its own cwd's while it
+// edited no repository, each once and sorted. A repository it edited is
+// left out, and so is an agent or a session cwd outside any repository;
+// nil when none is left.
 func TestSummarizeCwdRepos(t *testing.T) {
 	const repoC = "example.com/o/c"
 	tests := []struct {
@@ -319,6 +320,7 @@ func TestSummarizeCwdRepos(t *testing.T) {
 			want: []string{repoB, repoC},
 		},
 		{
+			// The session edited, so repoB is there for a2's cwd alone.
 			name: "edited repositories are left out",
 			cwd:  repoB,
 			agents: []Agent{
@@ -326,6 +328,19 @@ func TestSummarizeCwdRepos(t *testing.T) {
 			},
 			edits: []Edit{editIn("e1", "", repoA, 1), editIn("e2", "a3", repoA, 2)},
 			want:  []string{repoB, repoC},
+		},
+		{
+			name:   "own cwd left out once a subagent edits",
+			cwd:    repoB,
+			agents: []Agent{agentWith("a1", repoC, 1)},
+			edits:  []Edit{editIn("e1", "a1", repoA, 1)},
+			want:   []string{repoC},
+		},
+		{
+			name:  "own cwd left out once the main conversation edits",
+			cwd:   repoB,
+			edits: []Edit{editIn("e1", "", repoA, 1)},
+			want:  nil,
 		},
 		{
 			name:   "every cwd edited",

@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -51,9 +52,9 @@ func viewOf(d DayActivity) dayView {
 // TestSummarizeDays: a session has a day for every local day a record
 // falls on, its start included, oldest first. A turn's count, active time
 // and usage go to the day it started, an edit's to the day it was made,
-// an agent's usage to the day it started, and the attribution rule runs
-// over each day's own edits. A day that holds only a turn's end or an
-// agent's stop is a day with no counts.
+// and an agent's usage to the day it started, split by its edits that
+// day. A day that holds only a turn's end or an agent's stop is a day
+// with no counts.
 func TestSummarizeDays(t *testing.T) {
 	loc := Location{Repo: "r", Worktree: "/w"}
 	s := Session{ID: "s", StartedAt: local(1, 9, 0)}
@@ -108,6 +109,49 @@ func TestSummarizeDays(t *testing.T) {
 	}
 	if !sum.LastActivityAt.Equal(local(3, 0, 10)) {
 		t.Errorf("last activity = %v, want the edit on day 3", sum.LastActivityAt)
+	}
+}
+
+// TestSummarizeDaysMainSplit: a day's main usage is the split of the
+// turns that started that day, by the weights the whole session gives
+// them: a turn without edits takes the previous day's, and a turn's edit
+// made after midnight still splits the turn on its start day. The day's
+// agents split by their edits that day.
+func TestSummarizeDaysMainSplit(t *testing.T) {
+	turn := func(id string, seq int, start time.Time, input int64) Turn {
+		return Turn{
+			ID: id, SessionID: "s", Seq: seq, Status: TurnClosed,
+			StartedAt: start, EndedAt: new(start.Add(30 * time.Minute)),
+			Totals: &TurnTotals{Usage: []ModelUsage{{Model: "m", Tokens: Tokens{Input: input}}}},
+		}
+	}
+	turns := []Turn{
+		turn("t1", 1, local(1, 9, 0), 10),
+		turn("t2", 2, local(2, 10, 0), 20),
+		turn("t3", 3, local(2, 23, 50), 40),
+	}
+	a1 := Agent{
+		ID: "a1", SessionID: "s", Type: "general-purpose",
+		StartedAt: local(3, 0, 5), EndedAt: local(3, 0, 15),
+		Totals: &TurnTotals{Usage: []ModelUsage{{Model: "m", Tokens: Tokens{Input: 7}}}},
+	}
+	edits := []*Edit{
+		{ID: "e1", TurnID: "t1", At: local(1, 9, 10), Location: Location{Repo: repoA}},
+		{ID: "e2", TurnID: "t3", At: local(3, 0, 10), Location: Location{Repo: repoB}},
+	}
+	sum := Summarize(Session{ID: "s", StartedAt: local(1, 9, 0)}, turns, []Agent{a1},
+		slices.Values(edits))
+	got := map[string]string{}
+	for _, d := range sum.Days {
+		got[d.Date] = viewOf(d).Repos
+	}
+	want := map[string]string{
+		day(1): repoA + ":10",
+		day(2): repoA + ":20 " + repoB + ":40",
+		day(3): CostNoRepo + ":7",
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("day parts = %v, want %v", got, want)
 	}
 }
 

@@ -19,9 +19,9 @@ type SessionSummary struct {
 	// outside any repository adds none.
 	Worktrees []string `json:"worktrees"`
 	// CwdRepos are the repositories the session worked in without editing
-	// them, sorted: the one its own cwd sits in and each recorded
-	// subagent's (Location), less Repos. An agent without a location adds
-	// none. Nil when there are none.
+	// them, sorted: each recorded subagent's (Location), and the one its
+	// own cwd sits in when it edited no repository, less Repos. An agent
+	// without a location adds none. Nil when there are none.
 	CwdRepos  []string `json:"cwd_repos,omitempty"`
 	TurnCount int      `json:"turn_count"`
 	EditCount int      `json:"edit_count"`
@@ -77,10 +77,11 @@ type SessionSummary struct {
 	// type of each agent known only from its edits.
 	AgentLabels []string `json:"-"`
 	// RepoUsage splits Usage by where the attribution rule sends each
-	// part (MainCostRepo, AgentCostRepo): one entry per repository, or
-	// CostOrchestration or CostNoRepo, sorted by Repo. An agent without
-	// totals has no part. It stays out of the JSON, where a listing row
-	// prices it as repo_costs.
+	// part: the main conversation's turn by turn, each turn by its
+	// weights (MainRepoUsage), and each agent's whole (AgentCostRepo). One
+	// entry per repository, or CostOrchestration or CostNoRepo, sorted by
+	// Repo. An agent without totals has no part. It stays out of the JSON,
+	// where a listing row prices it as repo_costs.
 	RepoUsage []RepoUsage `json:"-"`
 	// Days are the local days the session was active on, oldest first,
 	// each with that day's slice of the session (DayActivity). A session
@@ -112,17 +113,17 @@ type FileKey struct {
 // SortAgents order; edits may come in any order. Summarize only reads
 // them. AgentCount counts every agent an Agent record or an edit names,
 // the main conversation among them when it edited. RepoUsage applies the
-// attribution rule to the same records, and CwdRepos reads the session's
-// and its agents' locations. Days cuts the same records by local day
-// (dayBuilder). A main segment's record (Agent.IsMainSegment) adds
-// nothing anywhere.
+// attribution rule to the same records: each turn's main usage split by
+// the turn's weights (mainSplit), each agent's by its edits. CwdRepos
+// reads the session's and its agents' locations. Days cuts the same
+// records by local day (dayBuilder). A main segment's record
+// (Agent.IsMainSegment) adds nothing anywhere.
 func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) SessionSummary {
 	agents = slices.DeleteFunc(slices.Clone(agents), Agent.IsMainSegment)
 	sum := SessionSummary{
 		Session:        s,
 		Repos:          []string{},
 		Worktrees:      []string{},
-		Files:          []FileKey{},
 		TurnCount:      len(turns),
 		LastActivityAt: s.StartedAt,
 	}
@@ -136,12 +137,13 @@ func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) S
 		days.agent(a)
 	}
 	files := map[FileKey]bool{}
-	tallies := agentTallies{}
+	tallies, split := agentTallies{}, newMainSplit(turns)
 	for e := range edits {
 		times.see(e.At)
 		days.edit(e)
 		sum.EditCount++
 		tallies.add(e)
+		split.add(e)
 		if !seen[e.AgentID] && e.AgentID != "" {
 			sum.AgentLabels = appendNew(sum.AgentLabels, cmp.Or(e.AgentType, "subagent"))
 		}
@@ -154,19 +156,28 @@ func Summarize(s Session, turns []Turn, agents []Agent, edits iter.Seq[*Edit]) S
 	slices.Sort(sum.Repos)
 	slices.Sort(sum.Worktrees)
 	sum.CwdRepos = cwdRepos(s, agents, sum.Repos)
-	for f := range files {
-		sum.Files = append(sum.Files, f)
-	}
-	slices.SortFunc(sum.Files, func(a, b FileKey) int {
-		return cmp.Or(cmp.Compare(a.Worktree, b.Worktree), cmp.Compare(a.Path, b.Path))
-	})
+	sum.Files = sortedFiles(files)
 	sum.FileCount = len(sum.Files)
 	sum.AgentCount = len(seen)
 	times.apply(&sum, days)
-	sum.Days = days.finish()
+	main := split.parts()
+	sum.Days = days.finish(main)
 	sum.Usage = MergeUsage(sum.MainUsage, sum.AgentUsage)
-	sum.RepoUsage = attribute(sum.MainUsage, agents, tallies)
+	sum.RepoUsage = MergeRepoUsage(mergeTurnParts(main), agentParts(agents, tallies))
 	return sum
+}
+
+// sortedFiles lists files by worktree, then path; empty, not nil, without
+// one.
+func sortedFiles(files map[FileKey]bool) []FileKey {
+	out := make([]FileKey, 0, len(files))
+	for f := range files {
+		out = append(out, f)
+	}
+	slices.SortFunc(out, func(a, b FileKey) int {
+		return cmp.Or(cmp.Compare(a.Worktree, b.Worktree), cmp.Compare(a.Path, b.Path))
+	})
+	return out
 }
 
 // turnTimes adds up a session's wall span and active time from its turns.
@@ -268,8 +279,11 @@ func nextStart(turns []Turn, start time.Time) time.Time {
 	return next
 }
 
-// cwdRepos lists the repositories the session's cwd and its agents' cwds
-// sit in that it never edited, sorted; nil when there are none.
+// cwdRepos lists the repositories its agents' cwds sit in that the
+// session never edited, and its own cwd's when it edited none, sorted; nil
+// when there are none. The main conversation's cost goes only to a
+// repository the session edited or to CostOrchestration, while a
+// subagent's can go to its own cwd's.
 func cwdRepos(s Session, agents []Agent, edited []string) []string {
 	var out []string
 	add := func(repo string) {
@@ -277,7 +291,9 @@ func cwdRepos(s Session, agents []Agent, edited []string) []string {
 			out = appendNew(out, repo)
 		}
 	}
-	add(s.Location.Repo)
+	if len(edited) == 0 {
+		add(s.Location.Repo)
+	}
 	for _, a := range agents {
 		add(a.Location.Repo)
 	}

@@ -35,14 +35,17 @@ from the first prompt to the last Stop, pauses included. moondb trace
 --since keeps the sessions active since then, whenever they started, and
 takes an RFC 3339 time or a span before now: 90m, 24h, 7d.
 
---repo keeps the sessions that edited the repository, worked in it (their
-cwd or a subagent's cwd sat in it) or attribute a part of their cost to
-it, and adds two columns. COST is the whole session's cost. ATTRIBUTED
-is the part the attribution rule gives the repository, "unknown" when no
-price covers that part. Each subagent's cost goes to
-the repository most of its edits touched, else its cwd's repository,
-else no_repo. The main conversation's goes to the repository most of its
-own edits touched, else to orchestration.
+--repo keeps the sessions that edited the repository, worked in it (a
+subagent's cwd sat in it, or their own cwd did and they edited no
+repository) or attribute a part of their cost to it, and adds two
+columns. COST is the whole session's cost. ATTRIBUTED is the part the
+attribution rule gives the repository, "unknown" when no price covers
+that part. Each subagent's cost goes to the repository most of its edits
+touched, else its cwd's repository, else no_repo. The main
+conversation's is split turn by turn, by edit count across the
+repositories it edited in that turn, else those its subagents edited in
+that turn, else as the turn before. Turns before any edit go to
+orchestration.
 
 moondb sessions hide takes a session out of this listing, the web page
 and the moondb_sessions MCP tool; moondb sessions show puts it back.

@@ -32,15 +32,17 @@ func sessionSummary(t *testing.T, st store.Store) {
 	merged := []store.ModelUsage{
 		usage("model-a", 1150, 115), usage("model-b", 5, 1), usage("model-c", 9, 1),
 	}
-	// The main conversation edited only repoA. agent-1's one edit in a
-	// repository is in repoB, its other outside any. agent-2 edited
-	// nothing and its cwd sits in no repository.
+	// The main conversation edited repoA in t1. t2 has no edit of its
+	// own, so agent-1's edit in repoB there takes t2's usage, and the open
+	// t3 has none. agent-1's one edit in a repository is in repoB, its
+	// other outside any. agent-2 edited nothing and its cwd sits in no
+	// repository.
 	attributed := []store.RepoUsage{
 		{
 			Repo:  repoA,
-			Usage: []store.ModelUsage{usage("model-a", 150, 15), usage("model-b", 5, 1)},
+			Usage: []store.ModelUsage{usage("model-a", 100, 10), usage("model-b", 5, 1)},
 		},
-		{Repo: repoB, Usage: []store.ModelUsage{usage("model-a", 1000, 100)}},
+		{Repo: repoB, Usage: []store.ModelUsage{usage("model-a", 1050, 105)}},
 		{Repo: store.CostNoRepo, Usage: []store.ModelUsage{usage("model-c", 9, 1)}},
 	}
 	// t1 and t2 give their totals' 1 s each, and the open t3 runs from

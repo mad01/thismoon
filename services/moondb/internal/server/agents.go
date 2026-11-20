@@ -37,11 +37,16 @@ type AgentRow struct {
 	// Repos are the repository identities the agent's edits went to.
 	Repos []string `json:"repos"`
 	// CostRepo is where the attribution rule sends a session row's cost:
-	// a repository, orchestration or no_repo (store.MainCostRepo,
-	// store.AgentCostRepo). A row without tokens adds nothing there and
-	// leaves it empty, as do a turn's rows.
-	CostRepo string       `json:"cost_repo,omitempty"`
-	Tokens   store.Tokens `json:"tokens"`
+	// a repository, orchestration or no_repo. A subagent's cost goes there
+	// whole (store.AgentCostRepo). The main conversation's is split turn by
+	// turn (store.MainRepoUsage), and CostRepo names its largest part
+	// (largestPart). A row without tokens adds nothing there and leaves it
+	// empty, as do a turn's rows.
+	CostRepo string `json:"cost_repo,omitempty"`
+	// CostRepos are the main row's parts, priced and ordered as a session
+	// row's repo_costs (repoCosts). Set only when there is more than one.
+	CostRepos []RepoCost   `json:"cost_repos,omitempty"`
+	Tokens    store.Tokens `json:"tokens"`
 	// Cost is the USD of the priced tokens, nil when none is priced.
 	Cost     *float64 `json:"cost,omitempty"`
 	Unpriced []string `json:"unpriced,omitempty"`
@@ -92,7 +97,7 @@ func (s *Server) sessionAgents(ctx context.Context, d store.SessionDetail) ([]Ag
 	if err != nil {
 		return nil, err
 	}
-	rows := []AgentRow{s.mainRow(d, query.AgentEdits(edits, ""))}
+	rows := []AgentRow{s.mainRow(d, edits)}
 	for _, a := range d.Agents {
 		if a.IsMainSegment() {
 			continue
@@ -103,13 +108,15 @@ func (s *Server) sessionAgents(ctx context.Context, d store.SessionDetail) ([]Ag
 }
 
 // mainRow is the main conversation's row of a session: its turns' calls,
-// time and usage, and the edits it made itself. Its time is the session's
-// wall time, from the earliest turn start, which an imported turn can hold
-// under a higher Seq, to the latest turn end.
+// time and usage, and the edits it made itself. edits are all of the
+// session's, the subagents' among them, which split its cost. Its time is
+// the session's wall time, from the earliest turn start, which an imported
+// turn can hold under a higher Seq, to the latest turn end.
 func (s *Server) mainRow(d store.SessionDetail, edits []store.Edit) AgentRow {
+	own := query.AgentEdits(edits, "")
 	row := AgentRow{
 		Type: MainAgentType, Model: d.Model, TurnIDs: []string{}, Recorded: true,
-		EditCount: len(edits), Repos: editRepos(edits),
+		EditCount: len(own), Repos: editRepos(own),
 	}
 	for _, t := range d.Turns {
 		row.TurnIDs = append(row.TurnIDs, t.ID)
@@ -129,9 +136,43 @@ func (s *Server) mainRow(d store.SessionDetail, edits []store.Edit) AgentRow {
 	row.Tokens = tokensOf(d.MainUsage)
 	row.Cost, row.Unpriced = s.query.UsageCost(d.MainUsage)
 	if row.Tokens.Total() > 0 {
-		row.CostRepo = store.MainCostRepo(edits)
+		row.CostRepo, row.CostRepos = s.mainCostRepos(store.MainRepoUsage(d.Turns, edits))
 	}
 	return row
+}
+
+// mainCostRepos names where the attribution rule sends the main
+// conversation's cost, given its parts: the largest part (largestPart),
+// and the parts priced as repoCosts prices them when there is more than
+// one.
+func (s *Server) mainCostRepos(parts []store.RepoUsage) (string, []RepoCost) {
+	if len(parts) == 0 {
+		return "", nil
+	}
+	costs := s.repoCosts(parts)
+	repo := largestPart(costs, parts)
+	if len(costs) < 2 {
+		return repo, nil
+	}
+	return repo, costs
+}
+
+// largestPart is the repository or label of the costliest priced part, a
+// tie to the lower name. With no part priced it is the one with the most
+// tokens. costs prices parts, and neither is empty.
+func largestPart(costs []RepoCost, parts []store.RepoUsage) string {
+	tokens := make(map[string]int64, len(parts))
+	for _, p := range parts {
+		tokens[p.Repo] = tokensOf(p.Usage).Total()
+	}
+	priced := slices.ContainsFunc(costs, func(c RepoCost) bool { return c.Cost != nil })
+	return slices.MinFunc(costs, func(a, b RepoCost) int {
+		size := cmp.Compare(tokens[b.Repo], tokens[a.Repo])
+		if priced {
+			size = cmp.Compare(costRank(b.Cost), costRank(a.Cost))
+		}
+		return cmp.Or(size, cmp.Compare(a.Repo, b.Repo))
+	}).Repo
 }
 
 // recordedRow is a subagent's row from its record and the edits it made.

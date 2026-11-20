@@ -78,10 +78,10 @@ type SessionSummary struct {
 	CostMain   *float64 `json:"cost_main,omitempty"`
 	CostAgents *float64 `json:"cost_agents,omitempty"`
 	Unpriced   []string `json:"unpriced,omitempty"`
-	// RepoCosts splits Cost by the attribution rule (store.MainCostRepo,
+	// RepoCosts splits Cost by the attribution rule (store.MainRepoUsage,
 	// store.AgentCostRepo): one entry per repository that took a part,
 	// then orchestration and no_repo when they took one.
-	RepoCosts []RepoCost `json:"repo_costs"                jsonschema:"the session's attributed cost: each subagent's cost goes to the repository most of its edits touched, else its cwd's repository, else no_repo; the main conversation's to the repository most of its own edits touched, else orchestration"`
+	RepoCosts []RepoCost `json:"repo_costs"                jsonschema:"the session's attributed cost: each subagent's cost goes to the repository most of its edits touched, else its cwd's repository, else no_repo; the main conversation's is split turn by turn, by edit count across the repositories it edited in that turn, else those its subagents edited in that turn, else as the turn before it, else orchestration"`
 	// RepoCost is set only when the listing filters by repository: the
 	// part of Cost attributed to that repository (attributedCost).
 	RepoCost *float64 `json:"repo_cost,omitempty"       jsonschema:"only with the repo filter: the part of cost attributed to that repository; absent when no price covers that part (its repo_costs entry names the unpriced models) or the session has no priced cost, else 0 when the attribution rule sends it nothing"`
@@ -93,10 +93,11 @@ type SessionSummary struct {
 	// Worktrees are the checkout roots the session edited, sorted.
 	Worktrees []string `json:"worktrees"`
 	// CwdRepos are the repositories the session worked in without editing
-	// them (store.SessionSummary.CwdRepos): its own cwd's and its recorded
-	// subagents' cwds', less Repos, sorted. CwdRepoNames are their short
-	// names in the same order. Both absent when there are none.
-	CwdRepos     []string `json:"cwd_repos,omitempty"       jsonschema:"repositories the session worked in without editing them: the one its cwd sits in and each recorded subagent's cwd repository, less the repos it edited, sorted; absent when there are none. A session recorded before sessions kept a location lacks its own cwd's"`
+	// them (store.SessionSummary.CwdRepos): its recorded subagents' cwds',
+	// and its own cwd's when it edited no repository, less Repos, sorted.
+	// CwdRepoNames are their short names in the same order. Both absent
+	// when there are none.
+	CwdRepos     []string `json:"cwd_repos,omitempty"       jsonschema:"repositories the session worked in without editing them: each recorded subagent's cwd repository, and the one its own cwd sits in when it edited no repository, less the repos it edited, sorted; absent when there are none. A session recorded before sessions kept a location lacks its own cwd's"`
 	CwdRepoNames []string `json:"cwd_repo_names,omitempty"`
 	// CwdName is the cwd as a person reads it (dirName), set for a
 	// session that counts toward no repository: the badge it shows and
@@ -137,9 +138,11 @@ type DayRow struct {
 	// ActiveMS is the active time of the turns that started that day.
 	ActiveMS int64 `json:"active_ms"`
 	// Tokens and Cost cover the turns and the agents that started that
-	// day, and RepoCosts splits the cost by the attribution rule over the
-	// day's own edits. RepoCost is set only when the listing filters by
-	// repository: the part attributed to it, as a row's is.
+	// day, and RepoCosts splits the cost by the attribution rule: each of
+	// those turns' main part as the whole session splits it, each of those
+	// agents by its edits that day (store.DayActivity). RepoCost is set
+	// only when the listing filters by repository: the part attributed to
+	// it, as a row's is.
 	Tokens    store.Tokens `json:"tokens"`
 	Cost      *float64     `json:"cost,omitempty"`
 	Unpriced  []string     `json:"unpriced,omitempty"`
@@ -471,15 +474,16 @@ func (s *Server) repoCounts(sessions []store.SessionSummary) []RepoCount {
 }
 
 // chipRepos lists the repositories a session counts toward, each once: the
-// ones it edited (Repos), the ones it worked in without editing them, its
-// own or a subagent's cwd repository (CwdRepos), and any other the
+// ones it edited (Repos), the ones it worked in without editing them, a
+// subagent's cwd repository or its own while it edited none (CwdRepos),
+// and any other the
 // attribution rule sends a part of its cost to. So every repository its
 // row shows a badge for is here. The repo filter keeps a session by them
-// and a repo chip counts it by them. The rule sends cost only to an edit
-// majority (in Repos), an agent's cwd repository (in CwdRepos) or a
-// label, so the RepoUsage loop adds nothing today. It stays as a guard: a
-// later change to the rule must not hide a session from a repository it
-// sends cost to.
+// and a repo chip counts it by them. The rule sends cost only to a
+// repository the session edited (in Repos), an agent's cwd repository (in
+// CwdRepos) or a label, so the RepoUsage loop adds nothing today. It
+// stays as a guard: a later change to the rule must not hide a session
+// from a repository it sends cost to.
 func chipRepos(sum store.SessionSummary) []string {
 	repos := slices.Concat(sum.Repos, sum.CwdRepos)
 	for _, p := range sum.RepoUsage {
