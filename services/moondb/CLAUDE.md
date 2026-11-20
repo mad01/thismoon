@@ -986,10 +986,14 @@ A session row comes from the index alone, never a chunk
   `worktrees`.
 - `cwd_repos`, `cwd_repo_names`: the repositories the session worked in
   without editing them (`store.SessionSummary.CwdRepos`), sorted, and
-  their short names. They are the repository its own cwd sits in
-  (`Session.Location`) and each recorded subagent's cwd repository
-  (`Agent.Location`), less `repos`. A cwd outside any repository adds
-  none. Both are absent when the list is empty. A session recorded before
+  their short names. They are each recorded subagent's cwd repository
+  (`Agent.Location`), and the repository its own cwd sits in
+  (`Session.Location`) when the session edited no repository, less
+  `repos`. The main conversation's cost goes only to the repositories the
+  session edited or to `orchestration`, so once the session edits, its
+  own cwd's would list it where it sends nothing. A subagent's cost can go
+  to its cwd's, so those stay. A cwd outside any repository adds none.
+  Both are absent when the list is empty. A session recorded before
   sessions kept a location lacks its own cwd's until an import fills it;
   its subagents' are there already.
 - `cwd_name`: only for a session that counts toward no repository (no
@@ -1006,7 +1010,9 @@ A session row comes from the index alone, never a chunk
   `repo_costs`, and under the `repo` filter its `repo_cost`
   (`store.DayActivity`). A turn's count, active time and usage go to the
   day it started, an edit's to its own day, an agent's usage to the day it
-  started, and the attribution rule runs over each day's own edits. A day
+  started. A day's `repo_costs` take the main conversation's parts of the
+  turns that started that day, split as the whole session splits them, and
+  each of that day's agents by its edits that day. A day
   that holds only a turn's end or an agent's stop counts nothing. Turns,
   edits, tokens and cost add up to the row's; active time does too unless
   the wall-time cap cut the row's; files and agents count distinct items
@@ -1016,11 +1022,17 @@ The attributed cost (`store/attribution.go`) is a view over the records,
 never stored. A subagent's cost goes to the repository most of its edits
 touched, a tie to the one it edited first. Without an edit in a
 repository it goes to its cwd's repository (`Agent.Location`), else to
-`no_repo`. The main conversation's cost goes to the repository most of
-its own edits touched, else to `orchestration`. An edit outside any
-repository counts toward none. An agent without totals, or with no tokens
-in them, adds nothing. `store.Summarize` keeps the parts as unpriced
-usage (`RepoUsage`), and the server prices each one on read.
+`no_repo`. The main conversation's cost is split turn by turn, the turns
+in (`StartedAt`, `Seq`) order (`store.MainRepoUsage`). A turn's usage is
+split by edit count across the repositories the main conversation itself
+edited in that turn. With no own edit there, it is split across the
+repositories its subagents edited in that turn. With none of those
+either, it is split the way the turn before it was. Turns before any
+edit go to `orchestration`. Each token count is shared by largest
+remainder, so the parts add up exactly. An edit outside any repository
+counts toward none. An agent without totals, or with no tokens in them,
+adds nothing. `store.Summarize` keeps the parts as unpriced usage
+(`RepoUsage`), and the server prices each one on read.
 
 `since` keeps the sessions active in the window: last active at or after
 it, whenever they started. Rows come most recently active first
@@ -1036,8 +1048,8 @@ long-prompt buckets together. `repos` ignores the `repo`
 filter, so a page can offer every repo of the time window. A repository
 there counts each session that has it in `repos` or `cwd_repos`, once
 even when both hold. Every repository `repo_costs` names is one of those
-or a label: a part goes to an edit majority or to an agent's cwd
-repository. `chipRepos` still adds any other `repo_costs` repository as
+or a label: a part goes to a repository the session edited or to an
+agent's cwd repository. `chipRepos` still adds any other `repo_costs` repository as
 a guard, so a later change to the attribution rule cannot hide a session
 from a repo it sends cost to. The `repo` filter keeps sessions by the
 same rule, so every repo a row shows a badge for lists the row. So a
@@ -1057,11 +1069,16 @@ An agent row (`internal/server/agents.go`) is the main conversation
 (`type` `main`, id empty) or one subagent. It carries `id`, `type`, `name`,
 `description`, `model`, `turn_ids`, `started_at`, `ended_at`, `duration_ms`,
 `model_calls`, `tool_calls`, `tool_errors`, `edit_count`, `repos`,
-`cost_repo`, `tokens`, `cost`, `recorded`, `brief_chunk`, the record's
-spawn brief, `later_messages`, and `last_message`, the latest later
-message that arrived by the row's end. `cost_repo` names where the
+`cost_repo`, `cost_repos`, `tokens`, `cost`, `recorded`, `brief_chunk`,
+the record's spawn brief, `later_messages`, and `last_message`, the latest
+later message that arrived by the row's end. `cost_repo` names where the
 attribution rule sends a session row's cost; a row without tokens, and
-every turn row, leaves it out. A session lists the main conversation first, its time and
+every turn row, leaves it out. The main row's `edit_count` and `repos`
+count its own edits, but its cost is split by every edit of the session.
+Its `cost_repo` is the part with the largest priced cost, a tie to the
+lower `repo`, else the part with the most tokens when none is priced. Its
+`cost_repos` lists every part, in the shape and order of `repo_costs`,
+only when there is more than one. A session lists the main conversation first, its time and
 calls from the turn totals, then each Agent record by start, then each
 subagent known only from its edits (`recorded` false, no calls or cost). A
 turn lists the same rows for its own work: the main row from the turn's
@@ -1148,8 +1165,9 @@ return, so keep it stable.
   worktrees. The Agents section lists the main conversation first, then
   each subagent with its type, model, the turns it ran under, time, calls,
   edits, tokens and cost; clicking the Cost heading sorts the subagents
-  costliest first. Under each agent's name sits its `cost_repo`, so the
-  rows add up to the cost line. Each turn has its prompt label, a badge when a person
+  costliest first. Under each agent's name sits its `cost_repo`, or for
+  the main conversation its `cost_repos` with each part's amount when it
+  has them, so the rows add up to the cost line. Each turn has its prompt label, a badge when a person
   did not start it (`task`, `teammate`, `subagent`, `continued`),
   status, edit count and every agent that ran under it. The page labels and
   classifies a turn recorded before origins existed from its prompt, as

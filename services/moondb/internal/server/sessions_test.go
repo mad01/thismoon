@@ -388,16 +388,22 @@ func TestRepoName(t *testing.T) {
 const (
 	orchSession = "sess-orch"
 	orchTurn    = "turn-orch"
+	orchEdited  = "turn-orch-edited"
 	orchAgent   = "agent-cwd"
 )
 
-// addOrchestration adds a priced session whose main conversation edited
-// nothing, whose one subagent with a record edited nothing either and
-// worked in OtherRepo's checkout, and whose one edit came from a subagent
-// known only from that edit, in Repo.
+// addOrchestration adds a priced session of two priced turns whose main
+// conversation edited nothing. In the first turn its one subagent with a
+// record edited nothing either and worked in OtherRepo's checkout. In the
+// second a subagent known only from its one edit edited Repo. So the main
+// conversation's first turn goes to orchestration and its second to Repo.
 func addOrchestration(h harness) {
 	other := store.Location{Repo: servertest.OtherRepo, Worktree: "/work/other"}
 	here := store.Location{Repo: servertest.Repo, Worktree: servertest.Worktree}
+	edited := servertest.PricedTurn(orchEdited, orchSession)
+	edited.Seq = 2
+	edited.StartedAt, edited.EndedAt = servertest.T0.Add(5*time.Minute),
+		new(servertest.T0.Add(7*time.Minute))
 	h.store.Add(
 		store.Session{
 			ID:        orchSession,
@@ -405,10 +411,12 @@ func addOrchestration(h harness) {
 			Cwd:       "/work",
 			StartedAt: servertest.T0,
 		},
-		[]store.Turn{servertest.PricedTurn(orchTurn, orchSession)},
+		[]store.Turn{servertest.PricedTurn(orchTurn, orchSession), edited},
 		[]store.Agent{servertest.PricedAgent(orchAgent, orchSession, orchTurn, other)},
-		[]store.Edit{servertest.Edit("toolu_ghost:0", orchSession, orchTurn, "agent-ghost", 2, here,
-			servertest.PathA)},
+		[]store.Edit{
+			servertest.Edit("toolu_ghost:0", orchSession, orchEdited, "agent-ghost", 6, here,
+				servertest.PathA),
+		},
 	)
 }
 
@@ -438,13 +446,14 @@ func wantCosts(t *testing.T, what string, got []RepoCost, want []string, cost ma
 }
 
 // TestSessionsAttributeCost: the listing splits cost by the attribution
-// rule through the HTTP API. A main conversation's cost goes to the
-// repository of its edits or to orchestration, a subagent's to its edits'
-// repository, else its cwd's, else no_repo. The window adds the parts up
-// across sessions. A repo chip and the repo filter count every session
-// that edited the repository or sends it a part, and a repo-filtered row
-// says what it attributes to that repository: a real zero when the rule
-// sends nothing there, none when the session has no priced cost.
+// rule through the HTTP API. A main conversation's turn goes to the
+// repository of its own edits in it, else of its subagents' edits in it,
+// else to orchestration before any edit. A subagent's cost goes to its
+// edits' repository, else its cwd's, else no_repo. The window adds the
+// parts up across sessions. A repo chip and the repo filter count every
+// session that edited the repository or sends it a part, and a
+// repo-filtered row says what it attributes to that repository, none when
+// the session has no priced cost.
 func TestSessionsAttributeCost(t *testing.T) {
 	h := newHarness(t)
 	addOrchestration(h)
@@ -462,16 +471,22 @@ func TestSessionsAttributeCost(t *testing.T) {
 	wantCosts(t, "older row", older.RepoCosts,
 		[]string{servertest.OtherRepo, store.CostNoRepo},
 		map[string]float64{servertest.OtherRepo: turnCost, store.CostNoRepo: agentCost})
+	// The fixture's turns cost more than its agents.
 	wantCosts(t, "orchestration row", orch.RepoCosts,
-		[]string{servertest.OtherRepo, store.CostOrchestration},
-		map[string]float64{servertest.OtherRepo: agentCost, store.CostOrchestration: turnCost})
+		[]string{servertest.Repo, servertest.OtherRepo, store.CostOrchestration},
+		map[string]float64{
+			servertest.Repo:         turnCost,
+			servertest.OtherRepo:    agentCost,
+			store.CostOrchestration: turnCost,
+		})
 	if len(newer.RepoCosts) != 0 {
 		t.Errorf("newer row repo_costs = %+v, want none: nothing in it is priced", newer.RepoCosts)
 	}
 	wantCosts(t, "window", list.Window.RepoCosts,
-		[]string{servertest.OtherRepo, store.CostOrchestration, store.CostNoRepo},
+		[]string{servertest.OtherRepo, servertest.Repo, store.CostOrchestration, store.CostNoRepo},
 		map[string]float64{
 			servertest.OtherRepo:    turnCost + agentCost,
+			servertest.Repo:         turnCost,
 			store.CostOrchestration: turnCost,
 			store.CostNoRepo:        agentCost,
 		})
@@ -494,8 +509,8 @@ func TestSessionsAttributeCost(t *testing.T) {
 		!near(*c.Cost, turnCost+agentCost) {
 		t.Errorf("other repo chip = %+v, want 2 sessions and both sessions' parts", c)
 	}
-	if c := chips[servertest.Repo]; c.Sessions != 2 || c.Cost != nil {
-		t.Errorf("thismoon chip = %+v, want 2 sessions and no cost: no priced part goes there", c)
+	if c := chips[servertest.Repo]; c.Sessions != 2 || c.Cost == nil || !near(*c.Cost, turnCost) {
+		t.Errorf("thismoon chip = %+v, want 2 sessions and the main conversation's edited turn", c)
 	}
 
 	filtered := h.sessionList(t, "?repo="+servertest.Repo).Sessions
@@ -504,9 +519,9 @@ func TestSessionsAttributeCost(t *testing.T) {
 		got[row.ID] = row.RepoCost
 	}
 	if len(filtered) != 2 || got[servertest.NewSession] != nil || got[orchSession] == nil ||
-		*got[orchSession] != 0 {
-		t.Errorf("thismoon rows' repo_cost = %v, want none for the unpriced one and 0 for "+
-			"the one that sends nothing there", got)
+		!near(*got[orchSession], turnCost) {
+		t.Errorf("thismoon rows' repo_cost = %v, want none for the unpriced one and the "+
+			"main conversation's edited turn for the other", got)
 	}
 	filtered = h.sessionList(t, "?repo="+servertest.OtherRepo).Sessions
 	clear(got)
@@ -524,15 +539,17 @@ func TestSessionsAttributeCost(t *testing.T) {
 }
 
 // TestSessionAgentsCarryCostRepo: a session's agent rows name where the
-// attribution rule sends their cost, and the row's repo_costs add up the
-// priced rows by that name.
+// attribution rule sends their cost. The main row lists its parts, each
+// turn's, and names the largest, a tie to the lower name, while its edits
+// stay its own. The row's repo_costs add up the subagent rows by cost_repo
+// and the main row by its parts.
 func TestSessionAgentsCarryCostRepo(t *testing.T) {
 	h := newHarness(t)
 	addOrchestration(h)
 	var view SessionView
 	h.getJSON(t, "/api/sessions/"+orchSession, http.StatusOK, &view)
 	want := map[string]string{
-		"": store.CostOrchestration, orchAgent: servertest.OtherRepo,
+		"": servertest.Repo, orchAgent: servertest.OtherRepo,
 		"agent-ghost": "",
 	}
 	sums := map[string]float64{}
@@ -540,10 +557,18 @@ func TestSessionAgentsCarryCostRepo(t *testing.T) {
 		if r.CostRepo != want[r.ID] {
 			t.Errorf("agent %q cost_repo = %q, want %q", r.ID, r.CostRepo, want[r.ID])
 		}
-		if r.Cost != nil {
-			sums[r.CostRepo] += *r.Cost
+		for repo, cost := range rowParts(r) {
+			sums[repo] += cost
 		}
 	}
+	main := view.Agents[0]
+	if main.Cost == nil || main.EditCount != 0 || len(main.Repos) != 0 {
+		t.Fatalf("main row = %+v, want it priced and without edits of its own", main)
+	}
+	turnCost := *main.Cost / 2
+	wantCosts(t, "main row parts", main.CostRepos,
+		[]string{servertest.Repo, store.CostOrchestration},
+		map[string]float64{servertest.Repo: turnCost, store.CostOrchestration: turnCost})
 	got := costsByRepo(view.Summary.RepoCosts)
 	if len(got) != len(sums) {
 		t.Errorf("repo_costs %v, agent sums %v; want one entry per priced cost_repo", got, sums)
@@ -552,6 +577,81 @@ func TestSessionAgentsCarryCostRepo(t *testing.T) {
 		if got[repo] == nil || !near(*got[repo], sum) {
 			t.Errorf("repo_costs[%s] = %v, want the agent rows' %v", repo, got[repo], sum)
 		}
+	}
+}
+
+// rowParts is an agent row's priced cost by where it goes: the main row's
+// parts, else the row's whole cost under its cost_repo.
+func rowParts(r AgentRow) map[string]float64 {
+	out := map[string]float64{}
+	if len(r.CostRepos) == 0 && r.Cost != nil {
+		out[r.CostRepo] = *r.Cost
+	}
+	for _, c := range r.CostRepos {
+		if c.Cost != nil {
+			out[c.Repo] += *c.Cost
+		}
+	}
+	return out
+}
+
+// TestMainRowWholeCost: a main conversation whose cost goes whole to one
+// repository names it and lists no parts.
+func TestMainRowWholeCost(t *testing.T) {
+	h := newHarness(t)
+	var view SessionView
+	h.getJSON(t, "/api/sessions/"+servertest.OldSession, http.StatusOK, &view)
+	if m := view.Agents[0]; m.CostRepo != servertest.OtherRepo || m.CostRepos != nil {
+		t.Errorf("main row cost_repo %q, cost_repos %+v; want %s and no parts",
+			m.CostRepo, m.CostRepos, servertest.OtherRepo)
+	}
+}
+
+// TestLargestPart: the main row names the costliest priced part, a label
+// as well as a repository, a tie to the lower name, and with nothing
+// priced the part with the most tokens.
+func TestLargestPart(t *testing.T) {
+	const repoA, repoB = "example.com/o/a", "example.com/o/b"
+	usage := func(input int64) []store.ModelUsage {
+		return []store.ModelUsage{{Model: "m", Tokens: store.Tokens{Input: input}}}
+	}
+	parts := []store.RepoUsage{
+		{Repo: repoA, Usage: usage(1)},
+		{Repo: repoB, Usage: usage(3)},
+		{Repo: store.CostOrchestration, Usage: usage(2)},
+	}
+	tests := []struct {
+		name  string
+		costs []RepoCost
+		want  string
+	}{
+		{
+			name: "a label costs most",
+			costs: []RepoCost{
+				{
+					Repo: repoA,
+					Cost: new(1.0),
+				}, {Repo: repoB}, {Repo: store.CostOrchestration, Cost: new(2.0)},
+			},
+			want: store.CostOrchestration,
+		},
+		{
+			name:  "a tie goes to the lower name",
+			costs: []RepoCost{{Repo: repoB, Cost: new(1.0)}, {Repo: repoA, Cost: new(1.0)}},
+			want:  repoA,
+		},
+		{
+			name:  "nothing priced goes by tokens",
+			costs: []RepoCost{{Repo: repoA}, {Repo: repoB}, {Repo: store.CostOrchestration}},
+			want:  repoB,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := largestPart(tt.costs, parts); got != tt.want {
+				t.Errorf("largestPart = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -618,11 +718,12 @@ func TestRepoFilterFollowsAttribution(t *testing.T) {
 }
 
 // TestCwdReposCount: a row lists the repositories its session worked in
-// without editing them, its own cwd's and its subagents' cwds', and names
-// its entrypoint and tags. A session counts toward each of them as toward
-// the ones it edited or sends cost to: the repo filter keeps it, the chip
-// counts it once, and the chip's cost and the rows' repo_cost stay the
-// attributed cost.
+// without editing them, its subagents' cwds' and, while it edited none,
+// its own cwd's, and names its entrypoint and tags. A session counts
+// toward each of them as toward the ones it edited or sends cost to: the
+// repo filter keeps it, the chip counts it once, and the chip's cost and
+// the rows' repo_cost stay the attributed cost. A session that edited
+// does not count toward its own cwd's repository.
 func TestCwdReposCount(t *testing.T) {
 	h := newHarness(t)
 	const (
@@ -644,7 +745,8 @@ func TestCwdReposCount(t *testing.T) {
 		},
 		[]store.Turn{servertest.PricedTurn("turn-quiet", quietID)}, nil, nil,
 	)
-	// editor's cwd sits in third, and it edits Repo.
+	// editor's cwd sits in third, and it edits Repo, so third is not one
+	// of its cwd_repos.
 	h.store.Add(
 		store.Session{
 			ID: editorID, Harness: "test-harness", Cwd: "/work/third",
@@ -680,7 +782,7 @@ func TestCwdReposCount(t *testing.T) {
 	}
 	wantRow := map[string][2][]string{
 		quietID:   {{servertest.Repo}, {"owner/thismoon"}},
-		editorID:  {{thirdRepo}, {"owner/third"}},
+		editorID:  {nil, nil},
 		scratchID: {{fourthRepo}, {"owner/fourth"}},
 	}
 	for id, want := range wantRow {
@@ -735,7 +837,7 @@ func TestCwdReposCount(t *testing.T) {
 	parts := map[string]map[string]*float64{}
 	for repo, want := range map[string][]string{
 		servertest.Repo: {editorID, servertest.NewSession, quietID},
-		thirdRepo:       {editorID},
+		thirdRepo:       {},
 		fourthRepo:      {scratchID},
 	} {
 		chip := chips[repo]
@@ -767,13 +869,13 @@ func TestCwdReposCount(t *testing.T) {
 			)
 		}
 	}
-	// quiet's and editor's main conversations send their cost elsewhere, so
-	// the repository they only worked in gets a real zero.
+	// quiet's main conversation sends its cost elsewhere, so the repository
+	// it only worked in gets a real zero.
 	if p := parts[servertest.Repo][quietID]; p == nil || *p != 0 {
 		t.Errorf("quiet session's repo_cost %v, want a real zero", p)
 	}
-	if p := parts[thirdRepo][editorID]; p == nil || *p != 0 {
-		t.Errorf("editor session's repo_cost for %s %v, want a real zero", thirdRepo, p)
+	if c, ok := chips[thirdRepo]; ok {
+		t.Errorf("%s chip = %+v, want none: the editor session edited elsewhere", thirdRepo, c)
 	}
 	if p := parts[fourthRepo][scratchID]; p == nil || !near(*p, *scoutCost) {
 		t.Errorf(

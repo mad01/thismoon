@@ -582,9 +582,10 @@
   var ORCHESTRATION = 'orchestration';
   var NO_REPO = 'no_repo';
   var ATTRIBUTION = 'Attributed by agent: each subagent\'s cost goes to the repo most of its edits ' +
-    'touched, else the repo it worked in, else "no repo (cwd)". The main conversation\'s cost goes to ' +
-    'the repo most of its own edits touched, else "orchestration". A tie goes to the repo edited ' +
-    'first. An agent without a price adds nothing.';
+    'touched, a tie to the one edited first, else the repo it worked in, else "no repo (cwd)". The ' +
+    'main conversation\'s cost is split turn by turn, by edit count: across the repos it edited in ' +
+    'that turn, else the repos its subagents edited in that turn, else as the turn before. Turns ' +
+    'before any edit go to "orchestration". An agent without a price adds nothing.';
 
   function renderSessions() {
     document.title = 'Sessions · moondb';
@@ -1083,12 +1084,13 @@
   }
 
   // workedRepos are the repos a session counts toward without editing
-  // them, each with its short name: its cwd_repos (its own cwd's and its
-  // subagents'), then any repo its repo_costs sends cost to that it
-  // neither edited nor worked in, so the badges cover every repo the repo
-  // filter lists it under. The attribution rule sends cost only to an
-  // edited repo, an agent's cwd repo or a label, so that second leg finds
-  // nothing today; it guards against a later change to the rule.
+  // them, each with its short name: its cwd_repos (its subagents', and its
+  // own cwd's while it edited none), then any repo its repo_costs sends
+  // cost to that it neither edited nor worked in, so the badges cover
+  // every repo the repo filter lists it under. The attribution rule sends
+  // cost only to an edited repo, an agent's cwd repo or a label, so that
+  // second leg finds nothing today; it guards against a later change to
+  // the rule.
   function workedRepos(s) {
     var edited = s.repos || [];
     var names = s.cwd_repo_names || [];
@@ -1537,10 +1539,18 @@
 
   // agentRepoLine sits under an agent's name: the repo the attribution
   // rule sends its cost to, which the session's cost line adds up, and the
-  // repos its edits went to on hover. An agent without tokens has none.
+  // repos its edits went to on hover. The main conversation's cost can be
+  // split across repos, and then the line lists each part with its amount.
+  // An agent without tokens has none.
   function agentRepoLine(r) {
     if (!r.cost_repo) return null;
     var edited = (r.repos || []).length ? 'Edited: ' + r.repos.join(', ') : 'No edit in a repo';
+    var parts = r.cost_repos || [];
+    if (parts.length) {
+      var total = parts.reduce(function (sum, c) { return sum + (c.cost > 0 ? c.cost : 0); }, 0);
+      return el('div', { class: 'row ag-repo ag-parts', title: 'Its cost is split, most to ' + costName(r.cost_repo) + '\n' + edited },
+        parts.map(function (c) { return costLabel(c, total); }));
+    }
     return el('div', { class: 'row ag-repo', title: 'Its cost goes to ' + costName(r.cost_repo) + '\n' + edited }, [
       el('span', { class: 'ls-swatch' + (r.cost_repo === NO_REPO ? ' is-hatched' : ''), style: costHueStyle(r.cost_repo) }),
       el('span', {}, costName(r.cost_repo))

@@ -32,9 +32,11 @@ type DayActivity struct {
 	// the day's wall span.
 	ActiveMS int64 `json:"active_ms"`
 	// Usage merges the usage of the turns and the agents that started
-	// that day, and RepoUsage splits it by the attribution rule over the
-	// day's edits. Both stay out of the JSON, where a listing row prices
-	// them.
+	// that day, and RepoUsage splits it by the attribution rule: each of
+	// those turns by its weights, which come from the whole session and
+	// so carry over from an earlier day (mainSplit), and each of those
+	// agents by its edits that day. Both stay out of the JSON, where a
+	// listing row prices them.
 	Usage     []ModelUsage `json:"-"`
 	RepoUsage []RepoUsage  `json:"-"`
 }
@@ -51,12 +53,13 @@ type dayBuilder map[string]*dayAcc
 // usage lists that give its counts and usage at finish.
 type dayAcc struct {
 	DayActivity
-	files   map[FileKey]bool
-	agents  map[string]bool
-	main    [][]ModelUsage
-	agentUs [][]ModelUsage
-	records []Agent
-	tallies agentTallies
+	files     map[FileKey]bool
+	agents    map[string]bool
+	main      [][]ModelUsage
+	mainParts [][]RepoUsage
+	agentUs   [][]ModelUsage
+	records   []Agent
+	tallies   agentTallies
 }
 
 // see records activity at t and returns its day; a zero t is no activity.
@@ -134,16 +137,21 @@ func (b dayBuilder) agent(a Agent) {
 	b.see(a.EndedAt)
 }
 
-// finish lists the days oldest first with their counts and usage set.
-func (b dayBuilder) finish() []DayActivity {
+// finish lists the days oldest first with their counts and usage set,
+// each part of turns under the day its turn started.
+func (b dayBuilder) finish(turns []turnPart) []DayActivity {
+	for _, p := range turns {
+		if d := b[LocalDay(p.start)]; d != nil {
+			d.mainParts = append(d.mainParts, p.usage)
+		}
+	}
 	out := make([]DayActivity, 0, len(b))
 	for _, d := range b {
 		day := d.DayActivity
 		day.Files = len(d.files)
 		day.Agents = len(d.agents)
-		main := MergeUsage(d.main...)
-		day.Usage = MergeUsage(main, MergeUsage(d.agentUs...))
-		day.RepoUsage = attribute(main, d.records, d.tallies)
+		day.Usage = MergeUsage(slices.Concat(d.main, d.agentUs)...)
+		day.RepoUsage = MergeRepoUsage(append(d.mainParts, agentParts(d.records, d.tallies))...)
 		out = append(out, day)
 	}
 	slices.SortFunc(out, func(a, b DayActivity) int { return cmp.Compare(a.Date, b.Date) })
