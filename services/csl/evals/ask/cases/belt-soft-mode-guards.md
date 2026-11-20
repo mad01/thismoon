@@ -10,10 +10,10 @@ expected:
   - 'script-deny-list'
   - 'publish-internal-names'
   - 'git-discard'
-  - '\b100\b'
+  - '\b107\b'
   - '(?i)\berror\b|rejects?'
 oracle: |
-  - SoftModeGuards (tools/belt/internal/config/config.go:100) lists script-deny-list, publish-internal-names and git-discard.
+  - SoftModeGuards (tools/belt/internal/config/config.go:107) lists script-deny-list, publish-internal-names and git-discard.
   - Every other guard ignores mode:, so mode: soft on a guard outside the list is a config error rather than a silently ignored key.
 notes: >-
   Same file as belt-validmode, a different region. The answer is a short
