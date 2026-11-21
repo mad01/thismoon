@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.21.4](https://github.com/mad01/thismoon/compare/belt/v2.21.3...belt/v2.21.4) (2026-11-21)
+
+
+### Bug Fixes
+
+* **belt:** judge pushes that include main without naming it in git-push-main ([#530](https://github.com/mad01/thismoon/issues/530)) ([31ae621](https://github.com/mad01/thismoon/commit/31ae621e845c57e32a8c43e52219f03ec94ecdb9))
+
 ## [2.21.3](https://github.com/mad01/thismoon/compare/belt/v2.21.2...belt/v2.21.3) (2026-11-21)
 
 
