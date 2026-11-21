@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.22.0](https://github.com/mad01/thismoon/compare/belt/v2.21.7...belt/v2.22.0) (2026-11-21)
+
+
+### Features
+
+* **belt:** add file-discard guard for deletes that lose work ([#537](https://github.com/mad01/thismoon/issues/537)) ([9b34768](https://github.com/mad01/thismoon/commit/9b3476897e599d7a1658f1ee662114f8d652ecc8))
+
 ## [2.21.7](https://github.com/mad01/thismoon/compare/belt/v2.21.6...belt/v2.21.7) (2026-11-21)
 
 
