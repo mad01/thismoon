@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.21.7](https://github.com/mad01/thismoon/compare/belt/v2.21.6...belt/v2.21.7) (2026-11-21)
+
+
+### Bug Fixes
+
+* **belt:** judge worktree remove, apply, read-tree and more in git-discard ([#534](https://github.com/mad01/thismoon/issues/534)) ([ffe27de](https://github.com/mad01/thismoon/commit/ffe27def88840fcdf6acdf1f9896da68117c5520))
+
 ## [2.21.6](https://github.com/mad01/thismoon/compare/belt/v2.21.5...belt/v2.21.6) (2026-11-21)
 
 
