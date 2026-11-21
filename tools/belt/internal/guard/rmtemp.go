@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"slices"
 	"strings"
 )
 
@@ -289,9 +290,17 @@ func (s *rmScan) target(w shWord) (tmpdir, ok bool) {
 // ${HOME}. glob reports an unquoted glob character in it, which
 // literalPath has already checked cannot leave its folder.
 func (s *rmScan) staticPath(w shWord) (p string, glob, ok bool) {
+	p, active, ok := s.staticGlobs(w)
+	glob = slices.Contains(active, true)
+	return p, glob, ok && (!glob || globStaysInside(p, active))
+}
+
+// staticGlobs is staticPath without the glob check: the path, and per byte
+// of it whether the shell expands it as a glob character.
+func (s *rmScan) staticGlobs(w shWord) (p string, active []bool, ok bool) {
 	parts := w.parts
 	if len(parts) == 0 {
-		return "", false, false
+		return "", nil, false
 	}
 	base := ""
 	switch first := parts[0]; {
@@ -302,19 +311,18 @@ func (s *rmScan) staticPath(w shWord) (p string, glob, ok bool) {
 		// ~user, and a tilde prefix that runs into quoted text, are not
 		// expanded here.
 		if rest != "" && rest[0] != '/' || rest == "" && len(parts) > 1 {
-			return "", false, false
+			return "", nil, false
 		}
 		base = s.home
 		parts = append([]wordPart{{kind: partLit, text: rest}}, parts[1:]...)
 	default:
-		rest, glob, ok := literalPath(parts)
-		return rest, glob, ok
+		return literalGlobs(parts)
 	}
-	rest, glob, ok := literalPath(parts)
+	rest, active, ok := literalGlobs(parts)
 	if base == "" || !ok || rest != "" && rest[0] != '/' {
-		return "", false, false
+		return "", nil, false
 	}
-	return base + rest, glob, true
+	return base + rest, append(make([]bool, len(base)), active...), true
 }
 
 // pathSafe are the unquoted bytes a path may hold besides letters, digits
@@ -329,25 +337,35 @@ const pathSafe = "/._-+,:@%]"
 // the folder it is written in: no component holds `..`, and no globbing
 // component starts with a dot (bash before 5.2 matches `.*` to `..`).
 func literalPath(parts []wordPart) (p string, glob, ok bool) {
+	p, active, ok := literalGlobs(parts)
+	glob = slices.Contains(active, true)
+	return p, glob, ok && (!glob || globStaysInside(p, active))
+}
+
+// literalGlobs is literalPath without the glob check: the path, and per
+// byte of it whether it is an unquoted glob character. A `!` or `^` right
+// after an unquoted `[` negates the bracket expression, so it is no
+// expansion of its own.
+func literalGlobs(parts []wordPart) (p string, active []bool, ok bool) {
 	var b strings.Builder
-	var active []bool
+	opened := false
 	for _, part := range parts {
 		if part.kind != partLit {
-			return "", false, false
+			return "", nil, false
 		}
 		for i := 0; i < len(part.text); i++ {
 			c := part.text[i]
 			isGlob := !part.quoted && strings.IndexByte("*?[", c) >= 0
-			if !part.quoted && !isGlob && !isPathByte(c) {
-				return "", false, false
+			negates := opened && !part.quoted && (c == '!' || c == '^')
+			if !part.quoted && !isGlob && !negates && !isPathByte(c) {
+				return "", nil, false
 			}
 			b.WriteByte(c)
 			active = append(active, isGlob)
-			glob = glob || isGlob
+			opened = isGlob && c == '['
 		}
 	}
-	p = b.String()
-	return p, glob, !glob || globStaysInside(p, active)
+	return b.String(), active, true
 }
 
 func isPathByte(c byte) bool {

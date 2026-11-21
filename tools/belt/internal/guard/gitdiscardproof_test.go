@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1258,4 +1259,45 @@ func specEqual(a, b discardSpec) bool {
 		strings.Join(a.pathspecs, "\x00") == strings.Join(b.pathspecs, "\x00") &&
 		strings.Join(a.patches, "\x00") == strings.Join(b.patches, "\x00") &&
 		strings.Join(a.patchOpts, "\x00") == strings.Join(b.patchOpts, "\x00")
+}
+
+// TestProofGitNoLazyFetch: a proof git call in a partial clone fails a read
+// of a blob the clone lacks instead of fetching it. The clone fetches from
+// its upstream's folder through file://, so nothing crosses the network,
+// and plain git then shows that the fetch would have worked.
+func TestProofGitNoLazyFetch(t *testing.T) {
+	r := newDiscardRepos(t)
+	up := filepath.Join(filepath.Dir(r.clone), "up.git")
+	r.git(up, "config", "uploadpack.allowFilter", "true")
+	part := filepath.Join(filepath.Dir(r.clone), "part")
+	r.git(r.clone, "clone", "-q", "--filter=blob:none", "--no-checkout", "file://"+up, part)
+	blob := func(name string) string {
+		out, err := gitCmd(up, "rev-parse", "main:"+name).Output()
+		if err != nil {
+			t.Fatalf("git rev-parse main:%s: %v", name, err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	missing := func(oid string) bool {
+		out, err := gitCmd(part, "rev-list", "--objects", "--missing=print", "--all").Output()
+		if err != nil {
+			t.Fatalf("git rev-list --missing=print: %v", err)
+		}
+		return strings.Contains(string(out), "?"+oid)
+	}
+	probe := gitCmd(part, "cat-file", "-e", blob("b.txt"))
+	probe.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1")
+	if err := probe.Run(); err == nil || !missing(blob("b.txt")) {
+		t.Skip("this git fetches a missing object whatever GIT_NO_LAZY_FETCH says")
+	}
+	a := blob("a.txt")
+	if _, err := runProofGit(context.Background(), part, "cat-file", "-e", a); err == nil {
+		t.Error("the proof's git read a blob the partial clone lacks")
+	}
+	if !missing(a) {
+		t.Fatal("the proof's git fetched a blob the partial clone lacked")
+	}
+	if err := gitCmd(part, "cat-file", "-e", a).Run(); err != nil || missing(a) {
+		t.Fatalf("plain git did not fetch the blob either (%v), so the row shows nothing", err)
+	}
 }

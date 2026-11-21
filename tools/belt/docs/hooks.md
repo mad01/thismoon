@@ -1385,6 +1385,295 @@ Sends deletes of temp paths to `toss-bin` instead of `rm`.
   `belt doctor` marks the guard's line. There is no mode and no repo list:
   `enabled: false` is the only switch.
 
+### file-discard
+
+Blocks a shell delete that may drop work no commit holds. It applies
+git-discard's rule to the commands git does not run.
+
+- **Fires on** `rm`, `unlink` and `shred`, wherever the shell runs them: a
+  chain, a pipeline, a subshell, a `$(...)` substitution, a `bash -c`
+  script, an `eval`, a heredoc a shell reads. The GNU names Homebrew
+  installs (`grm`, `gunlink`, `gshred`) count too. Behind a wrapper the
+  script-deny-list guard reads past (`sudo`, `env`, `timeout`, `nice`,
+  `flock` and the rest of its list), or behind `busybox` or `toybox`, the
+  first `rm`, `unlink` or `shred` word counts (`sudo -u x rm`). Text no
+  shell runs is not one:
+  an `echo` string, a comment, a commit message, a heredoc `cat` prints.
+  `git rm` is git-discard's.
+- **Also fires on** the commands that delete by their own syntax, behind
+  the same wrappers:
+  - `find R... -delete`, and `-exec`, `-execdir`, `-ok` or `-okdir` with
+    `rm`, `unlink` or `shred`. Each root (default `.`) is a tree. Tests in
+    front of the action made only of `-name`, `-iname` and `-type` (with
+    `-maxdepth`, `-mindepth`, `-prune` and the like) narrow it to the paths
+    they match. For `-delete` and `-exec rm` the name must match; for
+    `-exec rm -r` a folder above may match too. find runs the part after an
+    `-o` only where the part before it is false. So an action after an
+    `-o` outside parentheses keeps the tests between the two:
+    `find . -name node_modules -prune -o -name '*.pyc' -delete` takes only
+    `*.pyc` files. Any other part (`!`, parentheses, `-path`, `-newer`)
+    puts the whole root at risk. GNU and BSD options before the roots are
+    read (`-H`, `-L`, `-P`, `-E`, `-x`, `-f path`).
+  - `rsync ... --delete` (every `--delete` form and `--del`): the local
+    destination is a tree. A remote one (`host:path`, `rsync://`), a dry
+    run (`-n`) and `--backup` pass. With `--remove-source-files` each local
+    source is dropped too.
+  - `xargs rm` and `rm $(feeder)` or backticks: the paths the feeder
+    prints. `git ls-files` and `git grep -l` hand the files git tracks under
+    the shell's directory, so an untracked or ignored file there is not at
+    risk. `grep -rl`, `rg -l`, `rg --files` and `find` hand their path
+    operands (default `.`) as trees, `find` narrowed by its tests. `fd` and
+    `fdfind` hand their roots as trees, read the way `fd -x` is read below,
+    so an fd option belt does not read denies here too. Any other
+    feeder (`cat list`, `echo`, `ls`) denies. So does a find feeder that
+    runs a command (`-exec`, `-execdir`, `-ok`) or prints more than paths
+    (`-printf`, `-ls`, `-fprint`). So does an fd feeder that runs a
+    command (`-x`, `-X`) or prints more than paths: `--format`, `-l`, `-a`,
+    and `--color` or `--hyperlink` set to `always`. An xargs whose input comes from a
+    redirect (`< list`, `0<list`, a heredoc or a herestring) denies, and
+    so does a feeder whose error output reaches the pipe (`2>&1`, `|&`).
+  - xargs cuts what it reads at blanks, quotes and backslashes, and
+    `xargs -d X` cuts at X. An unquoted `$(...)` cuts at blanks and then
+    expands globs in each piece. A path the feeder prints that holds one
+    of those bytes reaches the command as other paths. So it denies
+    wherever it lies: a tracked file, an ignored one, a temp folder or a
+    nested repository. A newline cuts every form but `-0`. git without
+    `-z` prints an odd name (a quote, a backslash, a byte past ASCII) in C
+    quotes, as `core.quotePath` says, and that denies too, as does
+    `git -c core.quotepath`. NUL-separated paths (`find -print0`,
+    `git ls-files -z` or `rg -0` into `xargs -0`) and a quoted `"$(...)"`
+    reach the command whole.
+  - GNU `parallel rm`: the paths it hands the command. With no input
+    source it reads its input like xargs, one path per line, so the feeder
+    rules above apply. The words after `:::` are paths. Each one lands at
+    `{}`, at the `-I` text, or after the command's own operands. A `::::`
+    or `-a` file denies, unless it is a `<(...)` that runs a feeder belt
+    reads. `-0` and `--null` cut at NUL, and `-d X` cuts at X.
+    `--dry-run` passes. An option belt does not read denies: `--pipe`,
+    `--colsep`, `-L`, a `--trim` other than `n`, a profile (`-J`), and a
+    long option cut short. So does `PARALLEL` set in the command. So does
+    a replacement string other than `{}` (`{.}`, `{/}`), or a path built
+    around one (`{}.bak`).
+  - `fd` and `fdfind` with `-x`/`--exec` or `-X`/`--exec-batch`: the
+    entries fd matches, read like find. Each root (the paths after the
+    pattern and each `--search-path`, default `.`) is a tree. fd skips
+    hidden entries, `.git` among them, unless `-H` or `-u`. It skips what
+    git ignores unless a `--no-ignore` form or `-u`. One `-e`, the `-t`
+    letters and a `--glob` pattern narrow the tree. A regex pattern does
+    not. The command takes each entry at `{}`, or after its own words when
+    it names none. `{/}`, `{//}`, `{.}` and `{/.}` are paths belt cannot
+    name, and deny. The options are those `fd --help` lists for fd 10.5.1.
+    Any other option denies, and so do `-L`, `--base-directory` and
+    `--path-separator`.
+  - The command xargs, parallel, fd and find `-exec` run is judged one
+    way. `rm`, `unlink` and `shred` take the paths as above. A `sh -c` or
+    `bash -c` script that hands its arguments to one (`rm "$1"`,
+    `rm -f "$@"`) takes them too. Some commands run their input as code:
+    `eval`, a `-c` with no script, and a `-c` script or a command word
+    that holds the replacement text (`{}`, the `-I` text). Such a command
+    denies when the text that builds the input
+    names a delete: the pipe in front, the `:::` words, a here-string or a
+    heredoc. A find or rsync it runs denies when its words hold `-delete`
+    or an rsync delete option. A command that deletes nothing passes.
+- **Decides by** each path the command drops, resolved without a shell. A
+  literal path, `~`, `$HOME` and `${HOME}` resolve, and so does a variable
+  the command sets to a literal. A relative path counts from the directory
+  the shell is in, cd tracking included. `$PWD` is that directory too, in
+  the command's own text. The cd before it must surely have run, and
+  nothing in the command may set `PWD`. A path is judged under the name
+  its folder lists, so `B.txt` on a volume that ignores case is judged as
+  `b.txt`, the name git knows. A glob is expanded the way bash and zsh
+  expand it by default: `*` and `?` skip names that start with a dot, `**`
+  matches any run of folders (hidden ones and symlinks aside), and a
+  trailing `/` matches folders only. Its folder takes rule 1, then each
+  match is judged on its own. The first rule that fits decides:
+  1. The root, the home directory or a folder that holds it: denied. Only
+     the user may run it, with `! <command>`.
+  2. Inside a temp folder, or inside a folder `mktemp` made earlier in the
+     same command: passes. A glob of a temp folder's own entries passes
+     whole. One the kernel may follow through a symlink, as with a
+     trailing `/` or a glob before a deeper part, is judged match by match.
+     A path at or under a cache folder passes too: `~/Library/Caches`,
+     `~/.cache` and `~/Library/Developer/Xcode/DerivedData`. The path is
+     judged after its symlinks resolve. So a link in a cache folder that
+     leads into a work tree is judged where it leads. `~/Library` and
+     `~/Library/Developer` are not cache folders.
+  3. Missing, an empty file or folder, or a symlink `rm` removes as itself:
+     passes. So does a folder `rm` without `-r` leaves alone.
+  4. Outside every git work tree: denied.
+  5. The top of a work tree, or `.git` and anything in it: denied. For a
+     linked worktree the reason names `git worktree remove <path>`. A find
+     or a feeder may start at the top when it hands nothing in `.git`:
+     belt reads `.git` against the find tests, `git ls-files` lists none,
+     `rg` skips hidden folders, and `grep` needs `--exclude-dir=.git`.
+  6. Inside a work tree: one `git status` per tree over the dropped paths.
+     No output passes. An untracked file denies. A changed file passes
+     only when it equals the version in HEAD, its upstream or origin's
+     default branch. git status does not read a file marked
+     assume-unchanged or skip-worktree, so `git ls-files -v` finds them,
+     and one that exists and differs from the index counts as changed. A
+     file a sparse checkout leaves out is missing and passes. An ignored
+     file passes, so build output does.
+  7. A folder dropped whole must hold no work tree of the repository (`git
+     worktree list`), which denies: Claude Code keeps its worktrees in the
+     ignored `.claude/worktrees`. Every other repository in it, a nested
+     one or one inside an ignored folder that git status does not look
+     into, passes only on a short trust list. belt does not try to prove
+     such a repository safe in detail. A clone, or a bare repository (a
+     folder that holds `HEAD`, `objects/` and `refs/`), passes only when
+     all three of these hold:
+     - No linked worktree of it still has its folder. git keeps that
+       worktree's index, HEAD and refs in the repository, so the drop
+       breaks it, staged changes included. The reason names
+       `git -C <repo> worktree remove <path>`. A worktree whose folder is
+       gone is judged by the third rule.
+     - Its `git status` lists nothing. Ignored files are fine. No file
+       marked assume-unchanged or skip-worktree differs from the index,
+       as in step 6. A rebase or
+       merge stopped with `--autostash` keeps the user's change in a
+       commit no ref lists. So `rebase-merge/autostash`,
+       `rebase-apply/autostash` or `MERGE_AUTOSTASH` denies, in the
+       repository or in a worktree whose folder is gone.
+     - Every commit git keeps there is on a remote branch
+       (`refs/remotes/<name>/`) of a remote git reaches across the network.
+       Its URL has a scheme other than `file://`, or is `host:path`. Each
+       URL and push URL of that remote must be one, as written and as each
+       `url.<base>.insteadOf` or `pushInsteadOf` rule turns it. git keeps
+       what each ref and each reflog holds: HEAD, the branches, the tags,
+       the stash, `refs/bisect`, `refs/notes` and any other ref. It also
+       keeps each linked worktree's HEAD and its own refs. belt asks git
+       for that list, for both ref backends, and reads no ref file itself.
+       The remote's `refs/prefetch`, which `git maintenance` fills, counts
+       too. The logs of its remote branches are left out, since the remote
+       held each commit they name, as after a fetch of a force-pushed
+       branch.
+
+     Nothing else counts as kept. The remote branches of a remote in a
+     local folder do not count, since the same delete may take that
+     folder. Nor does a remote branch such a remote may fill through its
+     fetch refspec, nor a mirror's refs, nor a tag. One exception covers
+     SwiftPM's package cache. SwiftPM's scratch folder holds its
+     `workspace-state.json`: `.build`, `.build/index-build` for
+     SourceKit-LSP's index build, or a `--scratch-path`. A bare mirror
+     directly in its `repositories` folder passes whole when it has no
+     linked worktree and each of its remotes is a mirror across the
+     network. SwiftPM clones each checkout in `checkouts` from that mirror
+     with `git clone --shared`, so the checkout's origin is the mirror's
+     folder. Take a checkout whose origin is such a mirror in its own
+     scratch folder. Its origin counts as a network remote, and the
+     mirror's refs count as kept too, so a checkout on a release tag
+     passes. The three rules still apply to the checkout. A drop that a filter
+     narrows (find's tests, a feeder) takes only what the filter hands
+     from a nested repository. That repository is judged as a work tree of
+     its own, by its own `git status`. Part of a bare repository is git's
+     own data and denies.
+
+     git keeps each submodule's repository in `.git/modules`, and the drop
+     takes those too. A submodule that `git submodule deinit` or `git rm`
+     took out of the work tree lives only there. So each one is judged as
+     a repository with no work tree: the first and third rules, an
+     autostash, and an index that must hold what its HEAD holds, since a
+     deinit keeps what was staged. A checked-out submodule is also judged
+     where it lies, by its own `git status`.
+- **Answers with** the first loss and the rule. When `toss-bin` is on PATH
+  it adds `toss-bin --safe-mode -r` with the targets as written, which moves
+  them to the trash. For find it offers
+  `-exec toss-bin --safe-mode -r {} +`, for xargs
+  `xargs toss-bin --safe-mode -r`, for fd `-X toss-bin --safe-mode -r`,
+  and for rsync `--backup`. The reason
+  ends like git-discard's: belt cannot see the user's message, so save the
+  work first or hand the user `! <command>`. An rm whose targets are all
+  temp gets rm-temp's answer instead, since rm-temp runs first.
+- **Why it exists**: `rm -rf` is the one shell command that loses work
+  outright, and git-discard covers only git. A wrong `~`, a glob from the
+  wrong folder or a cd that failed can take a home directory or a dirty
+  tree with it.
+- **Fails closed.** A path belt cannot resolve denies and names the path: an
+  unset variable, a `$(...)` that runs no feeder belt reads, braces,
+  `~user`. So does a glob belt does not expand the way the shell does: `.*`,
+  which can match `..`, zsh's `***`, a class such as `[[:alpha:]]`, a `..`
+  after a glob part. A relative path or `$PWD` denies when the cd before it
+  may not have run, as after `cd x;` or `cd x ||`. Name the path in full, or
+  join the cd to the delete with `&&`. A pipe after `cd x &&` runs only
+  once the cd has, so `cd x && find . -name '*.pyc' | xargs rm` reads from
+  `x`. `cd x || exit` and `cd x || exit 1` leave the shell when the cd
+  fails, so what comes after runs in `x`. `cd x || return 1` does not
+  count, since bash and sh run on after a `return` outside a function.
+  Text the reader cannot follow denies
+  when it names `rm`, `unlink`, `shred`, `-delete` or an rsync delete
+  option. So does code a shell runs that belt cannot read, when the text
+  that builds it names one of those. Examples are
+  `sed 's/^/rm /' list | sh`, `eval "$(sed ...)"`, `bash <(sed ...)`,
+  `bash <<< "$(sed ...)"`, a `$(...)` in an unquoted heredoc a shell reads,
+  and a `$(...)` as the command word. belt scans the words of the pipe in
+  front of the shell, or of the substitution. Code built from text that
+  names none passes:
+  `eval "$(mise activate zsh)"`, `source <(fzf --zsh)`,
+  `echo 'make test' | sh`. A feeder belt cannot read denies, and so do `find -L`, `grep -R`
+  and `rg -L`, which follow symlinks out of their folders. One call reads at
+  most 1024 folders for its globs and 256 matches. Past either, a glob whose
+  matches stay in its folder is judged as that folder, one tree, and any
+  other glob is denied. The search for repositories in a nested or ignored
+  folder, and the read of `.git` against find's tests, stop at 20,000
+  folders, and past that the call is denied. Each folder is searched once
+  per call. In a `node_modules` folder the search reads each package and
+  each `@scope` package, not their insides, so a large one stays far under
+  the cap. A command that cuts names reads every folder. `git ls-files`,
+  `git grep` and `rg` without `-u` or `--no-ignore` print nothing in an
+  ignored folder, so no ignored folder is searched for them. The
+  repositories a delete takes whole are checked four at a time. The git
+  checks and the folder
+  walks share one 2-second budget and one cap of 256 changed paths per call,
+  and past either the call is denied. belt's own git runs with
+  `core.fsmonitor` off and `GIT_NO_LAZY_FETCH=1`, so a partial clone
+  fetches nothing, and not at all while a `GIT_DIR`-style variable is
+  set. `mode: soft` turns a deny into a warn event. There is no repo list.
+- **Accepted gaps.** Any delete outside work trees, temp folders and the
+  three cache folders is denied. An ignored file counts as rebuildable,
+  so an ignored `.env` passes. A find at the top of a work tree that holds
+  a linked worktree in an ignored folder denies, whatever its tests. The
+  trust list denies some repositories that lose nothing. A nested clone
+  whose only remote is a local folder denies, and so does a SwiftPM
+  package resolved from a local folder. So do a mirror outside SwiftPM's
+  layout and a nested repository with a linked worktree whose folder is
+  there. A commit only a tag holds denies, since belt does not ask the
+  network. An annotated tag made in the repository and never pushed
+  passes when a remote branch holds its commit, and its message is lost:
+  a fetched tag and a local one look the same. SwiftPM's cache
+  counts every ref as its remote's, so a commit pushed into that mirror
+  passes. A remote branch counts as kept though the remote may have
+  dropped it since. belt reads remotes from git config only. So a ref
+  written by hand into a network remote's `refs/remotes` counts as kept
+  too: `git update-ref`, or a fetch with its refspec on the command line.
+  That covers a local commit fetched from the repository itself
+  (`git fetch . feat:refs/remotes/origin/feat`), which then counts as
+  pushed. A
+  repository outside the drop that borrows objects from one inside it
+  (`objects/info/alternates`, which `git clone --shared` writes) breaks,
+  since belt does not search the disk for borrowers. `rm -rf
+  .build/repositories` does that to SwiftPM's checkouts.
+  A repository deeper inside a `node_modules` package, as in a nested
+  `node_modules`, goes unseen. An empty
+  repository denies, and so does a `git clone --bare`, which has no fetch
+  refspec. A feeder between other filters
+  (`git ls-files | grep x | xargs rm`) denies. Under a folder whose name
+  git quotes (`café/`), `git ls-files` without `-z` denies, even where it
+  prints the names below it plain. A command that sets `IFS` cuts names
+  where belt does not look. The tree is judged before the command runs, so
+  `mv work build/ && rm -rf build` passes. A glob is read with the default
+  shell options: a user's `setopt globdots` or `shopt -s dotglob` makes `*`
+  match `.git` where belt does not. A delete spelled in pieces
+  (`awk '{print "r" "m " $0}' list | sh`) passes, since the scan is there
+  for slips, not for code that hides. A commit that only the log of a
+  remote branch holds passes, though the remote may have dropped it since.
+  A `PARALLEL` variable or a
+  `~/.parallel/config` from outside the command adds options belt does
+  not see. A `-c` script that holds the replacement text denies even
+  over a clean set (`xargs -I{} sh -c 'rm "{}"'`), since the path is
+  read as code. Write `sh -c 'rm "$1"' _ {}` instead. GNU `sem`,
+  `awk` with `system()`, and a script a command writes and then runs
+  are not read.
+
 ### large-read
 
 Refuses a whole-file Read of a large file before the tokens are spent.
@@ -2404,7 +2693,7 @@ missing key:
 | custom guard timeout | 5 s | custom guards |
 | custom hint default budget | 400 ms | custom hints (`timeout_ms` overrides it per hint) |
 | script size cap | 1 MiB | script-deny-list |
-| temp folders | `/tmp`, `/var/tmp`, `/private/tmp`, `/private/var/tmp`, `~/.tmp` | rm-temp (the folders `toss-bin --temp-only` accepts) |
+| temp folders | `/tmp`, `/var/tmp`, `/private/tmp`, `/private/var/tmp`, `~/.tmp` | rm-temp (the folders `toss-bin --temp-only` accepts), file-discard |
 | memory block budget, prefix and headers included | 9,000 bytes | agent-memory |
 | share held for the work store when both have facts | 2,250 bytes | agent-memory |
 | in-flight files asked of moondb | 200 | moondb-inflight |

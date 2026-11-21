@@ -104,7 +104,9 @@ const DefaultLargeFileLines = 300
 // operator believe a guard was downgraded while it still blocks (or, worse,
 // believe it blocks while they meant to soften it). A guard package test
 // pins this list to the ids that actually call Toggle.Soft.
-var SoftModeGuards = []string{"script-deny-list", "publish-internal-names", "git-discard"}
+var SoftModeGuards = []string{
+	"script-deny-list", "publish-internal-names", "git-discard", "file-discard",
+}
 
 // The modes of the guards in HintModeGuards. "hint" (the default) lets the
 // call through and puts the guard's reason in the model's context beside it;
@@ -1257,6 +1259,7 @@ var (
 		"publish-internal-names": {"allow_repos"},
 		"git-discard":            {"allow_repos"},
 		"rm-temp":                {},
+		"file-discard":           {},
 		"main-checkout": {
 			"allow_repos", "exclude_paths", "worktree_root", "worktree_commands",
 		},

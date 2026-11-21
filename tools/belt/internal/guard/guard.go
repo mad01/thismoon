@@ -127,6 +127,9 @@ func All(cfg config.Config) []Guard {
 		NewPublishInternalNames(cfg, EventBash),
 		NewPublishInternalNames(cfg, EventExternalText),
 		NewRmTemp(),
+		// After rm-temp, so an rm whose targets are all temp keeps rm-temp's
+		// toss-bin --temp-only handover: the first denial wins.
+		NewFileDiscard(cfg),
 		NewLargeRead(cfg),
 		// One id on two events as well: Edit and Write of a file in a main
 		// checkout, and the git commands that change one.

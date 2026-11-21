@@ -1,6 +1,9 @@
 package guard
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // readShell is the quote-aware reader the git guards walk and the script
 // guard masks with. splitSegments splits a command at every &&, ||, ;, | and
@@ -38,12 +41,47 @@ type shellDoc struct {
 type shellCmd struct {
 	words     []placedWord
 	targets   []placedWord // redirection targets, heredoc delimiters included
+	redirs    []redirOp    // the operator of each target, in the same order
 	docs      []shellDoc
 	subshells []span
 	comments  []span // the text after a # on the command's line
 	numbered  bool   // a redirection names its descriptor (2>, 3<<)
+	errPiped  bool   // a |& after it pipes its stderr with its stdout
 	before    joint
 	after     joint
+}
+
+// redirOp is one redirection's operator and the descriptor written right
+// before it, "" for none: `2>&1` is {fd: "2", op: ">&"}.
+type redirOp struct{ fd, op string }
+
+// stdinRedirected reports whether a redirection gives the command its
+// standard input in place of any pipe: <, <<, <<-, <<<, <> or <& on
+// descriptor 0.
+func (c shellCmd) stdinRedirected() bool {
+	return slices.ContainsFunc(c.redirs, func(r redirOp) bool {
+		return strings.HasPrefix(r.op, "<") && (r.fd == "" || r.fd == "0")
+	})
+}
+
+// stderrPiped reports whether the command's stderr may reach the pipe after
+// it: a |&, or descriptor 2 sent to descriptor 1 or /dev/stdout. A target
+// belt cannot read counts.
+func (c shellCmd) stderrPiped() bool {
+	if c.errPiped {
+		return true
+	}
+	for i, r := range c.redirs {
+		if r.fd != "2" || i >= len(c.targets) {
+			continue
+		}
+		t, ok := c.targets[i].literal()
+		dup := r.op == ">&" || r.op == "<&"
+		if !ok || dup && t == "1" || t == "/dev/stdout" || t == "/dev/fd/1" {
+			return true
+		}
+	}
+	return false
 }
 
 // shellReader reads one command text into shellCmds.
@@ -63,6 +101,8 @@ type shellReader struct {
 	// complete is where the last whole top-level line the reader read ends,
 	// heredoc bodies included.
 	complete int
+	// fd holds the digits glued to the redirection being read (`2>`).
+	fd string
 }
 
 // maxShellNesting is how deep the reader follows ( ), $( ), <( ) and >( )
@@ -168,12 +208,15 @@ func (r *shellReader) operator() bool {
 		r.end(jointOr)
 	case two == "&>":
 		l.i += 2
+		l.op = "&>"
 		if l.at(0) == '>' {
 			l.i++
+			l.op = "&>>"
 		}
 		return r.redirect(func() bool { return l.redirectTarget(false, false) })
 	case two == "|&":
 		l.i += 2
+		r.cur.errPiped = true
 		r.end(jointPipe)
 	case two[0] == '|':
 		l.i++
@@ -194,6 +237,8 @@ func (r *shellReader) redirect(read func() bool) bool {
 		return false
 	}
 	r.cur.targets = append(r.cur.targets, placedWord{shWord: l.target, at: l.targetAt})
+	r.cur.redirs = append(r.cur.redirs, redirOp{fd: r.fd, op: l.op})
+	r.fd = ""
 	for range l.heredocs[queued:] {
 		r.owners = append(r.owners, len(r.cmds))
 	}
@@ -209,7 +254,7 @@ func (r *shellReader) word() bool {
 		return false
 	}
 	if isDigits(w.raw) && (l.at(0) == '<' || l.at(0) == '>') {
-		r.cur.numbered = true
+		r.cur.numbered, r.fd = true, w.raw
 		return true
 	}
 	r.cur.words = append(r.cur.words, placedWord{shWord: w, at: span{start, l.i}})

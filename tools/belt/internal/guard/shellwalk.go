@@ -42,6 +42,39 @@ type walkStep struct {
 	// from the token walk or a heredoc body has chain 0, in no run.
 	before, after joint
 	chain         int
+	// words are the command's words as readShell read them, with their
+	// parts, for a guard that judges what each word names on disk. A command
+	// from the token walk has none.
+	words []placedWord
+	// cwd is the shell's own directory where the command runs ("" when only
+	// a shell can tell). Unlike dir it ignores git's -C and GIT_DIR. cwdSure
+	// is false when a cd that set it may not have run (shellWalk.dirSure).
+	cwd     string
+	cwdSure bool
+	// pwd is what $PWD expands to in the command's words, "" when belt
+	// cannot tell (pwdKnown).
+	pwd string
+	// feeder are the words of the command right in front of this one in a
+	// pipeline, whose output it reads (`git ls-files | xargs rm`); nil when
+	// no pipe feeds it or the command in front has no words, as a ( )
+	// subshell has none. feederStderr marks a feeder whose stderr reaches
+	// the pipe too (shellCmd.stderrPiped).
+	feeder       []placedWord
+	feederStderr bool
+	// stdinRedirected marks a command that reads its standard input from a
+	// redirection, a heredoc or a herestring, in place of any pipe.
+	stdinRedirected bool
+	// pipeText is the text of the commands in front of it in its pipeline
+	// (frontText), and unreadSubst the bodies of the substitutions whose
+	// output it runs as code and the walk could not read (unreadSubst).
+	// docText is the text of the heredoc bodies the command reads.
+	pipeText    string
+	unreadSubst []string
+	docText     string
+	// id numbers the command among the steps of one walkCommands call,
+	// from 1, and scriptOf is the id of the command whose -c script it is
+	// part of, 0 for none. A command from the token walk has neither.
+	id, scriptOf int
 }
 
 // walkCommands is walkSegments with the whole step. It reads the command
@@ -62,7 +95,8 @@ type walkStep struct {
 // variable the command filled with text.
 func walkCommands(command, cwd string, fn func(walkStep)) {
 	w := shellWalk{
-		dir: cwd, cdpath: os.Getenv("CDPATH") != "", chains: new(int), mem: newWalkMemory(),
+		dir: cwd, cdpath: os.Getenv("CDPATH") != "", chains: new(int), steps: new(int),
+		mem: newWalkMemory(), outerSure: true,
 	}
 	w.walkRead(resolveLiteralVars(command), true, fn)
 }
@@ -131,9 +165,14 @@ func (w *shellWalk) walkCmds(text string, cmds []shellCmd, fn func(walkStep)) {
 			w.join(c.before)
 			w.joinChain(c.before)
 		}
+		afterMove := w.justMoved
+		w.justMoved = false
 		w.walkNested(text, c, fn)
 		if tokens := c.tokens(); len(tokens) > 0 {
 			w.walkWords(text, c, tokens, w.pipeInto(cmds, i), fn)
+			if afterMove && leavesOnFail(c, tokens) {
+				w.settleMove()
+			}
 		}
 		w.heredoc = w.heredoc || len(c.docs) > 0
 		var reader *shellCmd
@@ -145,11 +184,16 @@ func (w *shellWalk) walkCmds(text string, cmds []shellCmd, fn func(walkStep)) {
 }
 
 // joinChain takes the separator in front of the next command: anything but
-// && starts a new run of commands joined by && (walkStep.chain).
+// && starts a new run of commands joined by && (walkStep.chain), and
+// anything but && or | a new shellWalk.run.
 func (w *shellWalk) joinChain(before joint) {
 	if before != jointAnd || w.chain == 0 {
 		*w.chains++
 		w.chain = *w.chains
+	}
+	if before != jointAnd && before != jointPipe || w.run == 0 {
+		*w.chains++
+		w.run = *w.chains
 	}
 }
 
@@ -561,12 +605,20 @@ type pipeIn struct {
 	// namesConfig marks a pipeline in which a command in front of it names a
 	// git config file (gitConfigFile).
 	namesConfig bool
+	// prev is the command right in front of it, nil outside a pipeline, and
+	// front every command in front of it in the pipeline.
+	prev  *shellCmd
+	front []shellCmd
 }
 
 // pipeInto returns what the pipeline in front of command i of cmds hands it.
 func (w *shellWalk) pipeInto(cmds []shellCmd, i int) pipeIn {
 	var in pipeIn
+	if i > 0 && cmds[i].before == jointPipe {
+		in.prev = &cmds[i-1]
+	}
 	for j := i - 1; j >= 0 && cmds[j+1].before == jointPipe; j-- {
+		in.front = cmds[j:i]
 		in.namesConfig = in.namesConfig || namesGitConfig(cmds[j], w.dir)
 		if in.from == nil && (!passesStdin(cmds[j]) || cmds[j].before != jointPipe) {
 			in.from = &cmds[j]
@@ -604,22 +656,15 @@ func (w *shellWalk) walkWords(
 			raw = append(raw, word.raw)
 		}
 		w.move(target, strings.Join(raw, " "), c.before, c.after, w.prose)
+		w.justMoved = !w.prose
 		return
 	}
 	w.cdHidden = w.cdHidden || (!w.prose && !keepsShellPlaced(defines, tokens))
 	w.noteGitEnv(tokens)
 	dir := w.gitDir(tokens)
-	targets := make([]string, 0, len(c.targets))
-	for _, t := range c.targets {
-		targets = append(targets, t.token())
-	}
-	step := walkStep{
-		tokens: tokens, dir: dir, configEnv: w.configEnv, targets: targets, defines: defines,
-		pipedConfig: in.namesConfig,
-	}
-	if !w.prose {
-		step.before, step.after, step.chain = c.before, c.after, w.chain
-	}
+	step := w.stepFor(c, tokens, in, dir, defines)
+	step.pipeText, step.unreadSubst = frontText(text, in.front), w.unreadSubst(text, c, tokens)
+	step.docText = docBodies(text, c)
 	w.mem.noteAliasConfig(tokens)
 	feeds := w.feedsOf(text, c, tokens, in, dir)
 	opaque, walk := w.mem.claim(feeds)
@@ -632,6 +677,7 @@ func (w *shellWalk) walkWords(
 	if at := inlineScriptAt(tokens); at >= 0 {
 		inner := w.childFor(dir, tokens[:at])
 		inner.positional = at+1 < len(tokens)
+		inner.script = step.id
 		inner.walkRead(c.words[at].script(), true, fn)
 	}
 	if at := evalAt(tokens); at >= 0 {
@@ -640,6 +686,32 @@ func (w *shellWalk) walkWords(
 	if walk {
 		w.walkFeeds(feeds, fn)
 	}
+}
+
+// stepFor builds the step fn sees for one command that is no cd, run from
+// git's directory dir.
+func (w *shellWalk) stepFor(c shellCmd, tokens []string, in pipeIn, dir string, defines bool) walkStep {
+	targets := make([]string, 0, len(c.targets))
+	for _, t := range c.targets {
+		targets = append(targets, t.token())
+	}
+	step := walkStep{
+		tokens: tokens, dir: dir, configEnv: w.configEnv, targets: targets, defines: defines,
+		pipedConfig: in.namesConfig, words: c.words, cwd: w.dir, cwdSure: w.dirSure(),
+		stdinRedirected: c.stdinRedirected(), scriptOf: w.script,
+	}
+	*w.steps++
+	step.id = *w.steps
+	if w.pwdKnown() {
+		step.pwd = w.dir
+	}
+	if !w.prose {
+		step.before, step.after, step.chain = c.before, c.after, w.chain
+	}
+	if in.prev != nil {
+		step.feeder, step.feederStderr = in.prev.words, in.prev.stderrPiped()
+	}
+	return step
 }
 
 // positionalRef is a reference to a script argument: $1 to $9, ${10}, $@
@@ -741,8 +813,8 @@ func (w *shellWalk) leaveShell(inner *shellWalk) {
 func (w *shellWalk) child(dir string) *shellWalk {
 	return &shellWalk{
 		dir: dir, cdpath: w.cdpath, gitEnv: w.gitEnv, configEnv: w.configEnv, heredoc: w.heredoc,
-		feeds: w.feeds, depth: w.depth + 1, chains: w.chains, mem: w.mem, expanding: w.expanding,
-		positional: w.positional, pwdSet: w.pwdSet, cdHidden: w.cdHidden,
+		feeds: w.feeds, depth: w.depth + 1, chains: w.chains, steps: w.steps, mem: w.mem, expanding: w.expanding,
+		positional: w.positional, pwdSet: w.pwdSet, cdHidden: w.cdHidden, outerSure: w.dirSure(),
 	}
 }
 
