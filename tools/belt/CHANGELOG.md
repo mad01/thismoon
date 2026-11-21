@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.21.6](https://github.com/mad01/thismoon/compare/belt/v2.21.5...belt/v2.21.6) (2026-11-21)
+
+
+### Bug Fixes
+
+* **belt:** deny code that script-deny-list cannot read ([#533](https://github.com/mad01/thismoon/issues/533)) ([3f8d020](https://github.com/mad01/thismoon/commit/3f8d02094b115d2d5614d966e52478f0fe0ece5d))
+
 ## [2.21.5](https://github.com/mad01/thismoon/compare/belt/v2.21.4...belt/v2.21.5) (2026-11-21)
 
 
