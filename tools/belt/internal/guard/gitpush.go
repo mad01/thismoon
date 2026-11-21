@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path"
@@ -99,17 +100,21 @@ func (g *GitPushMain) Check(in Input) *Denial {
 // shell may not be in that directory at all, after a cd that failed before a
 // `;` or one that found its target through CDPATH, and a push from a
 // directory with no repository fails anyway. A push from code the reader
-// could not follow goes to unreadDenial. A git checkout or switch earlier in
-// the command may leave another branch checked out, so the push is judged on
-// each branch it may find (pushHeads.candidates). In an exempt repo those
-// switches never turn an allow into a denial: a push they would deny is
-// judged on the branch git reads, as if the command had no switch.
+// could not follow goes to unreadDenial, and one with an option, value or
+// remote only a shell can resolve to shellWordDenial. A git checkout or
+// switch earlier in the command may leave another branch checked out, so the
+// push is judged on each branch it may find (pushHeads.candidates). In an
+// exempt repo those switches never turn an allow into a denial: a push they
+// would deny is judged on the branch git reads, as if the command had no
+// switch.
 func (g *GitPushMain) checkPush(push gitPush) *Denial {
 	switch {
 	case push.opaque.what != "":
 		return g.opaqueDenial(push)
 	case push.unread:
 		return unreadDenial(push)
+	case push.shellWord != "":
+		return shellWordDenial(push.shellWord)
 	case push.dir == "":
 		return unknownDirDenial(push)
 	}
@@ -131,8 +136,13 @@ func (g *GitPushMain) checkPush(push gitPush) *Denial {
 // checkPushOn judges a push with head as the current branch: the one git
 // reads in the push directory, or one a checkout or switch moved to. One the
 // guard could not read is unreadSwitchDenial; one on a default branch goes to
-// defaultBranchDenial.
+// defaultBranchDenial. A push that sweeps branches it does not name goes to
+// sweepDenial: one with no refspec first, whatever branch is checked out,
+// and one with refspecs once they name no default branch outright.
 func (g *GitPushMain) checkPushOn(push gitPush, head pushHead) *Denial {
+	if push.sweep != "" && !push.explicit {
+		return g.sweepDenial(push, head)
+	}
 	noBranch, current := false, ""
 	branch, unsure := push.targetBranch(func() string {
 		current = head.name
@@ -149,10 +159,12 @@ func (g *GitPushMain) checkPushOn(push gitPush, head pushHead) *Denial {
 		return unknownDirDenial(push)
 	case unsure != "":
 		return unsureRefDenial(unsure)
-	case !defaultBranches[branch]:
-		return nil
+	case defaultBranches[branch]:
+		return g.defaultBranchDenial(push, head, branch, current)
+	case push.sweep != "":
+		return g.sweepDenial(push, head)
 	}
-	return g.defaultBranchDenial(push, head, branch, current)
+	return nil
 }
 
 // defaultBranchDenial decides a push that lands on the default branch
@@ -179,16 +191,68 @@ func (g *GitPushMain) defaultBranchDenial(
 			branch,
 		)
 	case !g.toPlainOrigin(push, current):
-		return Reasonf(
-			GitPushMainID,
-			"pushing to %q is blocked: this repo's direct-push exemption covers a push to its origin remote "+
-				"only, with no -c, --config-env, --repo, sudo, or GIT_CONFIG*, GIT_SSH*, HOME or "+
-				"XDG_CONFIG_HOME override. Push with a plain `git push origin %s`.",
-			branch,
-			branch,
-		)
+		return originOnlyDenial(fmt.Sprintf("pushing to %q", branch), "git push origin "+branch)
 	}
 	return nil
+}
+
+// sweepDenial decides a push that may update a default branch without
+// naming one (gitPush.sweep). It is judged like `git push origin main`:
+// denied unless the repo is exempt and the push plainly goes to origin. A
+// bare push goes to the remote git picks for head, the branch checked out.
+func (g *GitPushMain) sweepDenial(push gitPush, head pushHead) *Denial {
+	if !g.pushExempt(push.dir) {
+		return Reasonf(
+			GitPushMainID,
+			"%s may make this push update branches it does not name, main or master among them, "+
+				"and direct pushes to the default branch are never allowed here. Push one branch "+
+				"by name instead: git push -u origin <branch>.",
+			push.sweep,
+		)
+	}
+	current := head.name
+	if head.fromRepo {
+		current = g.resolveBranch(push.dir)
+	}
+	if !g.toPlainOrigin(push, current) {
+		plain := "git push origin <branch>"
+		switch {
+		case push.mirror:
+			plain = "git push --mirror origin"
+		case push.all:
+			plain = "git push --all origin"
+		}
+		return originOnlyDenial("pushing with "+push.sweep, plain)
+	}
+	return nil
+}
+
+// originOnlyDenial decides a default-branch push in an exempt repo that does
+// not plainly go to origin (toPlainOrigin). what names the push, and plain is
+// the form the exemption covers.
+func originOnlyDenial(what, plain string) *Denial {
+	return Reasonf(
+		GitPushMainID,
+		"%s is blocked: this repo's direct-push exemption covers a push to its origin remote "+
+			"only, with no -c, --config-env, --repo, sudo, or GIT_CONFIG*, GIT_SSH*, HOME or "+
+			"XDG_CONFIG_HOME override. Push with a plain `%s`.",
+		what,
+		plain,
+	)
+}
+
+// shellWordDenial decides a push with a word outside its refspecs that only
+// a shell can resolve (gitPush.shellWord). It may turn into --mirror, --all,
+// a remote with a refspec, or no word at all, so the push is denied
+// wherever it runs.
+func shellWordDenial(word string) *Denial {
+	return Reasonf(
+		GitPushMainID,
+		"cannot tell what %s gives git push: a variable, substitution, quote, brace or glob in "+
+			"an option or the remote may turn into --mirror, --all or a refspec that names main. "+
+			"Write the options and the remote in plain text (git push -u origin <branch>).",
+		word,
+	)
 }
 
 // toPlainOrigin reports whether a push goes to the remote named origin with
@@ -309,14 +373,15 @@ func unreadDenial(push gitPush) *Denial {
 // or a directory where git reads no branch (checkPush). Neither the current
 // branch nor the repo can be resolved without running git somewhere it does
 // not belong, so the push is denied unless its refspecs name a non-default
-// branch outright, which is safe wherever it runs.
+// branch outright and it sweeps no other branch (gitPush.sweep), which is
+// safe wherever it runs.
 func unknownDirDenial(push gitPush) *Denial {
 	needsBranch := false
 	branch, unsure := push.targetBranch(func() string {
 		needsBranch = true
 		return ""
 	})
-	if !needsBranch && unsure == "" && !defaultBranches[branch] {
+	if push.sweep == "" && !needsBranch && unsure == "" && !defaultBranches[branch] {
 		return nil
 	}
 	return Reasonf(
@@ -520,6 +585,13 @@ type gitPush struct {
 	// --all/--mirror push every branch, --tags every tag, and --delete
 	// removes a ref rather than publishing one.
 	all, tags, mirror, del bool
+	// sweep names what makes the push update branches it does not name
+	// (pushSweep), so it may land on a default branch; "" when it pushes
+	// only what it names.
+	sweep string
+	// shellWord is the first word outside the refspecs that only a shell can
+	// resolve (noteShellWord); it may turn into any option or refspec.
+	shellWord string
 	// configured, repoFlag and unread decide whether the exemption may apply:
 	// a config override (gitInvocation.configured), a --repo flag naming the
 	// destination, and words from code the reader could not follow.
@@ -626,53 +698,6 @@ func currentBranchWord(spec string) bool {
 		return false
 	}
 	return currentBranchCommands[strings.Join(strings.Fields(body), " ")]
-}
-
-// pushFlagsWithValue are `git push` flags that consume the next token, so the
-// token must not be mistaken for a remote or refspec. --force-with-lease is
-// absent on purpose: it takes the = form only.
-var pushFlagsWithValue = map[string]bool{
-	"-o": true, "--push-option": true, "--receive-pack": true, "--exec": true,
-	"--repo": true,
-}
-
-// parsePushArgs reads the remote and refspecs out of a parsed push.
-func parsePushArgs(c gitInvocation) gitPush {
-	push := gitPush{
-		dir: c.dir, configured: c.configured, unread: c.unread, moved: c.moved, heads: c.heads,
-		opaque: c.opaque,
-	}
-	var positional []string
-	for i := 0; i < len(c.args); i++ {
-		tok := c.args[i]
-		if strings.HasPrefix(tok, "-") {
-			switch tok {
-			case "--all", "--branches":
-				push.all = true
-			case "--tags":
-				push.tags = true
-			case "--mirror":
-				push.mirror = true
-			case "--delete", "-d":
-				push.del = true
-			}
-			push.repoFlag = push.repoFlag || tok == "--repo" || strings.HasPrefix(tok, "--repo=")
-			if pushFlagsWithValue[tok] {
-				i++
-			}
-			continue
-		}
-		positional = append(positional, tok)
-	}
-	// First positional is the remote; the rest are refspecs.
-	if len(positional) > 0 {
-		push.remote = positional[0]
-	}
-	if len(positional) > 1 {
-		push.refspecs = positional[1:]
-		push.explicit = true
-	}
-	return push
 }
 
 // canonicalPushRepoAt resolves where origin pushes to from the repo at dir:

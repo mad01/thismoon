@@ -19,12 +19,17 @@ import (
 // code readShell could not follow (walkStep); moved marks a -C, which runs
 // git somewhere other than the shell's directory; optioned marks any other
 // global option before the subcommand. heads are the branches the checkouts
-// and switches before it may leave checked out (headTracker).
+// and switches before it may leave checked out (headTracker). config holds
+// the value of each -c as written and the key of each --config-env, whose
+// value only the environment holds. setsConfig marks a command that sets or
+// changes config in a way belt does not read key by key (gitCommandsAt).
 type gitInvocation struct {
 	dir        string
 	sub        string
 	args       []string
 	configured bool
+	config     []string
+	setsConfig bool
 	unread     bool
 	moved      bool
 	optioned   bool
@@ -52,6 +57,9 @@ type gitInvocation struct {
 // A step anywhere in the command that can change where a push goes
 // (retargetsPush) marks every invocation configured: the resolvers read the
 // config before the command runs, and a step after a push may run beside it.
+// Such a step, or one that assigns a variable git reads config from
+// (setsConfigEnv), marks every invocation setsConfig as well, since that
+// config may also pick or map the refspecs of a push.
 // A git checkout or switch before an invocation changes the branch it may
 // find checked out (headTracker), read before the invocation itself counts as
 // a step. A step after it may run beside it, behind a & or in a pipeline, so
@@ -61,16 +69,23 @@ type gitInvocation struct {
 //
 // For sub push, a command that runs text the walk could not read
 // (walkStep.opaque) counts as one more push, marked opaque, outside comments
-// and text bodies. The commit guards fail open, so for them it counts as
-// nothing.
+// and text bodies, and so does a git call whose subcommand word only a shell
+// can resolve, with a push word after it (hidesPush). The commit guards fail
+// open, so for them it counts as nothing.
 func gitCommandsAt(command, cwd, sub string) []gitInvocation {
 	var cmds []gitInvocation
 	var seen []int // len(headTracker.changed) after each invocation
-	retargets := false
+	retargets, setsConfig := false, false
 	var heads headTracker
 	walkCommands(command, cwd, func(s walkStep) {
 		retargets = retargets || retargetsPush(s)
+		setsConfig = setsConfig || setsConfigEnv(s)
 		c, ok := segmentGitCommand(s.tokens, s.dir)
+		if ok && sub == "push" && c.sub != sub {
+			if push, hidden := hidesPush(c); hidden {
+				c = push
+			}
+		}
 		if ok = ok && c.sub == sub; ok {
 			c.heads = heads.at(s, c)
 		}
@@ -90,9 +105,25 @@ func gitCommandsAt(command, cwd, sub string) []gitInvocation {
 	})
 	for i := range cmds {
 		cmds[i].configured = cmds[i].configured || retargets
+		cmds[i].setsConfig = retargets || setsConfig
 		cmds[i].heads = heads.settle(cmds[i].heads, seen[i])
 	}
 	return cmds
+}
+
+// hidesPush reports whether a git call whose subcommand word only a shell
+// can resolve may be a push: in `git $X push origin main` the word may expand
+// to global options, so a push word after it may be the subcommand. It
+// returns c read as that push, with the shell word as its first argument,
+// which parsePushArgs keeps as the push's shellWord.
+func hidesPush(c gitInvocation) (gitInvocation, bool) {
+	i := slices.Index(c.args, "push")
+	if plainRefspec(c.sub) || i < 0 {
+		return c, false
+	}
+	c.args = append([]string{c.sub}, c.args[i+1:]...)
+	c.sub = "push"
+	return c, true
 }
 
 // walkSegments calls fn for every command of a compound shell command that
@@ -449,7 +480,8 @@ func segmentGitCommand(tokens []string, cwd string) (gitInvocation, bool) {
 // separate token, so there is no = form to parse. --git-dir and --work-tree
 // point git at a tree only git itself can name, so either form leaves dir
 // "" as well. -c and --config-env set configured, since either may name
-// another push destination (remote.origin.pushurl, url.X.pushInsteadOf).
+// another push destination (remote.origin.pushurl, url.X.pushInsteadOf),
+// and land in config, where a push reads the keys that pick its refspecs.
 // Every other global flag before the subcommand is skipped, together with
 // its value when it takes one (gitValueFlags), so `git --no-pager push` is
 // still a push; every flag but -C sets optioned. ok is false when no
@@ -468,9 +500,13 @@ func parseGitCmd(tokens []string, cwd string) (gitInvocation, bool) {
 			i += 2
 		case tok == "-c" || tok == "--config-env":
 			c.configured = true
+			if i+1 < len(tokens) {
+				c.config = append(c.config, configWord(tok, tokens[i+1]))
+			}
 			i += 2
 		case strings.HasPrefix(tok, "--config-env="):
 			c.configured = true
+			c.config = append(c.config, configWord("--config-env", tok[len("--config-env="):]))
 			i++
 		case tok == "--git-dir" || tok == "--work-tree":
 			otherTree = true

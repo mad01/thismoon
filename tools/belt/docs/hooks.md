@@ -576,6 +576,38 @@ Blocks `git push` to `main` or `master` before it happens.
   environment, since the assignment may not run. So both shapes pass from a
   feature branch and are denied on main. `"$BRANCH"` with no assignment is
   denied.
+- **A push that sweeps branches counts as a push to main.** `--mirror` and
+  `--all` (or `--branches`) push every branch, with or without force. So
+  does the matching refspec `:` or `+:`, which pushes every branch both
+  sides have. belt judges each like `git push origin main`. git reads any
+  unique prefix of a long option, so `--mir` and `--al` count too. belt
+  reads the options the way git does. A bundle of short options reads
+  letter by letter. A value option takes the next word, even `--`. A `--`
+  or `--end-of-options` ends the options. An exempt repo still takes
+  `--mirror`, `--all` and `:` when the push plainly goes to origin.
+- **Config that picks what a push sends counts too.** A push that names no
+  refspec counts as a push to main when config may pick what it pushes.
+  That is a `-c` or `--config-env` for `push.default` (any value but
+  `simple`, `current` or `nothing`), `remote.<name>.push`,
+  `remote.<name>.mirror` or `branch.<name>.merge`. An `include.path` or
+  `includeIf.<condition>.path` counts too, since the file may set any of
+  them. It is also a command that sets config another way: a
+  `GIT_CONFIG*`, `HOME` or `XDG_CONFIG_HOME` assignment, `sudo` in front of
+  git, or a step that drops the exemption below. Either way the exemption
+  is gone. belt reads only the command, so config set in an earlier command
+  is out of its reach.
+- **A refspec with no `:dst` can be mapped.** git sends a refspec like
+  `feature` where `remote.<name>.push` maps it, or to its upstream when
+  `push.default` is `upstream`. So such a push counts as a push to main
+  under a `remote.<name>.push` whose destination may be main, a
+  `push.default` of `upstream` or `tracking`, a `branch.<name>.merge`, an
+  include, or config the command sets another way. A refspec that names its
+  destination, or a `--delete`, is judged on what it names.
+- **Options and the remote must be plain text.** A variable, a
+  substitution, a `$'...'` string, a brace or a glob in an option, an option
+  value or the remote may turn into `--mirror` or a refspec. So may one in
+  the subcommand word when a `push` follows it, as in `git $X push`. The
+  push is then denied on any branch, in an exempt repo too.
 - **Allows when** the push directory's origin remote resolves to a repo on
   the top-level `direct_main_repos` list or on
   `guards.git-push-main.allow_repos`, and the push plainly targets `origin`.
