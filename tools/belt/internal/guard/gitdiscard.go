@@ -257,12 +257,14 @@ func runsBeside(command string) bool {
 
 // statusExtra widens the clean-tree check for `git clean -x`/`-X`, which
 // also deletes ignored files that plain `git status --porcelain` never
-// lists, and for `-e`, whose `!` pattern brings an ignored file in.
+// lists, and for `-e`, whose `!` pattern brings an ignored file in. A clean
+// whose words belt cannot read (readGitWords) may hold any of them.
 func statusExtra(c gitInvocation) []string {
-	if c.sub == "clean" && slices.ContainsFunc(c.args, func(a string) bool {
-		return shortFlagHas(a, 'x') || shortFlagHas(a, 'X') || shortFlagHas(a, 'e') ||
-			strings.HasPrefix(a, "--exclude")
-	}) {
+	if c.sub != "clean" {
+		return nil
+	}
+	w, err := readGitWords(c.args, cleanOptions)
+	if err != nil || w.sets("x") || w.sets("X") || w.sets("exclude") {
 		return []string{"--ignored"}
 	}
 	return nil
@@ -270,13 +272,13 @@ func statusExtra(c gitInvocation) []string {
 
 // discards reports whether one git invocation throws away uncommitted work.
 // fed marks one a command in front of git may hand more words (xargs,
-// fedOperands).
+// fedOperands), which for a reset or clean may be any option.
 func discards(c gitInvocation, fed bool) bool {
 	switch c.sub {
 	case "stash":
 		return stashDiscards(c.args)
 	case "reset":
-		return slices.Contains(c.args, "--hard")
+		return fed || resetDiscards(c.args)
 	case "checkout":
 		return checkoutDiscards(c.args, fed)
 	case "switch":
@@ -284,9 +286,17 @@ func discards(c gitInvocation, fed bool) bool {
 	case "restore":
 		return restoreDiscards(c.args)
 	case "clean":
-		return cleanDiscards(c.args)
+		return fed || cleanDiscards(c.args)
 	}
 	return false
+}
+
+// resetDiscards: a reset drops worktree changes in --hard mode, written in
+// any form git reads as it (`--ha`, readGitWords). Words belt cannot read
+// count too.
+func resetDiscards(args []string) bool {
+	w, err := readGitWords(args, resetOptions)
+	return err != nil || w.sets("hard")
 }
 
 // stashKeeps are the stash subcommands that leave the working tree alone
@@ -337,21 +347,23 @@ func restoreDiscards(args []string) bool {
 	return !staged || worktree
 }
 
-// cleanDiscards: clean deletes only with -f (git refuses otherwise under
-// the default clean.requireForce), and a dry run deletes nothing.
+// cleanDiscards: clean deletes with -f, or with -i once the user picks what
+// goes (git refuses a plain clean under the default clean.requireForce),
+// unless the last -n or --no-dry-run left it a dry run. Options count in any
+// form git reads (`--fo`, `-fd`, readGitWords), and words belt cannot read
+// count as a delete.
 func cleanDiscards(args []string) bool {
-	force, dry := false, false
-	for _, a := range args {
-		force = force || a == "--force" || shortFlagHas(a, 'f')
-		dry = dry || a == "--dry-run" || shortFlagHas(a, 'n')
+	w, err := readGitWords(args, cleanOptions)
+	if err != nil {
+		return true
 	}
-	return force && !dry
-}
-
-// shortFlagHas reports whether a short-flag token (`-f`, `-fdx`) carries
-// the flag letter.
-func shortFlagHas(tok string, flag byte) bool {
-	return len(tok) > 1 && tok[0] == '-' && tok[1] != '-' && strings.IndexByte(tok[1:], flag) >= 0
+	dry := false
+	for _, o := range w.opts {
+		if o.name == "dry-run" {
+			dry = !o.unset
+		}
+	}
+	return !dry && (w.sets("force") || w.sets("interactive"))
 }
 
 // gitStatusPorcelain runs `git status --porcelain` in dir. ok is false when
