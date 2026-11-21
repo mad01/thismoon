@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.21.2](https://github.com/mad01/thismoon/compare/belt/v2.21.1...belt/v2.21.2) (2026-11-21)
+
+
+### Bug Fixes
+
+* **belt:** read a git message heredoc as text in the git guards ([#524](https://github.com/mad01/thismoon/issues/524)) ([1296bd0](https://github.com/mad01/thismoon/commit/1296bd01e241c46c8ed32e0c431571ad13695a69))
+
 ## [2.21.1](https://github.com/mad01/thismoon/compare/belt/v2.21.0...belt/v2.21.1) (2026-11-20)
 
 
