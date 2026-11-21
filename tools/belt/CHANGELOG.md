@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.21.3](https://github.com/mad01/thismoon/compare/belt/v2.21.2...belt/v2.21.3) (2026-11-21)
+
+
+### Bug Fixes
+
+* **belt:** match rm, kubectl, gcloud and terraform deny entries on argv in script-deny-list ([#527](https://github.com/mad01/thismoon/issues/527)) ([a2ddf17](https://github.com/mad01/thismoon/commit/a2ddf17cc960017762d7bee856d5abe0ab1c6230))
+* **belt:** read reset and clean options as git does in git-discard ([#526](https://github.com/mad01/thismoon/issues/526)) ([0900be9](https://github.com/mad01/thismoon/commit/0900be975abab79426add3a5473280d7e6f3313c))
+
 ## [2.21.2](https://github.com/mad01/thismoon/compare/belt/v2.21.1...belt/v2.21.2) (2026-11-21)
 
 
