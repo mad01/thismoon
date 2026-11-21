@@ -108,6 +108,7 @@ CLI tools under `tools/`, installed to your local bin.
 | [suspenders](tools/suspenders/README.md) | Git secret scanner and pre-commit hook orchestrator | CLI | experimental |
 | [agent-sync](tools/agent-sync/README.md) | Syncs Claude Code settings, mods and MCP servers from a data repo onto the machine | CLI | experimental |
 | [harvest](tools/harvest/README.md) | Saves what a Claude Code session learned to the brain vault inbox, from a SessionEnd hook | CLI | experimental |
+| [cards](tools/cards/README.md) | Terminal UI that shows JSON Lines from stdin as cards: a list to pick from or a feed to follow | CLI | experimental |
 
 The MCP column is the AI half of the toolbox. Register those components as
 stdio MCP servers. Then your agent gets the code search, the audit log, and

@@ -39,6 +39,7 @@ Everything is one Go module, `github.com/mad01/thismoon`, under the BSD-3-Clause
 - [agent-sync](https://raw.githubusercontent.com/mad01/thismoon/main/tools/agent-sync/README.md): syncs Claude Code settings, mods, and MCP servers from a data repo onto the machine (CLI)
 - [srtspec](https://raw.githubusercontent.com/mad01/thismoon/main/tools/srtspec/README.md): renders each component's access manifest to the sandbox settings file (CLI)
 - [harvest](https://raw.githubusercontent.com/mad01/thismoon/main/tools/harvest/README.md): saves what a Claude Code session learned to the brain vault inbox, from a SessionEnd hook (CLI)
+- [cards](https://raw.githubusercontent.com/mad01/thismoon/main/tools/cards/README.md): terminal UI that shows JSON Lines from stdin as cards, a list to pick from or a feed to follow (CLI)
 
 ## Skills
 

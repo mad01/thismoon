@@ -25,6 +25,7 @@ services/speak/speak
 services/status/status
 tools/agent-sync/agent-sync
 tools/belt/belt
+tools/cards/cards
 tools/clipboard/clipboard
 tools/harvest/harvest
 tools/humanizer/humanizer
