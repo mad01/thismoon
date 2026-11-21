@@ -60,7 +60,8 @@ type heredoc struct {
 }
 
 // shLexer reads a command string into simple commands. target and targetAt
-// hold the last redirection target read, for readers built on this one.
+// hold the last redirection target read, and op its operator, for readers
+// built on this one.
 type shLexer struct {
 	src      string
 	i        int
@@ -70,6 +71,7 @@ type shLexer struct {
 	heredocs []heredoc
 	target   shWord
 	targetAt span
+	op       string
 }
 
 // lexCommands splits a shell command into its simple commands, in order,
@@ -161,6 +163,7 @@ func (l *shLexer) redirect() bool {
 	for _, op := range []string{"<<<", "<<-", "<<", "<>", "<&", "<", ">>", ">&", ">|", ">"} {
 		if strings.HasPrefix(rest, op) {
 			l.i += len(op)
+			l.op = op
 			return l.redirectTarget(op == "<<" || op == "<<-", op == "<<-")
 		}
 	}

@@ -173,9 +173,13 @@ type shellWalk struct {
 	depth int // how many subshells, -c scripts and evals deep the walk is
 	// chain is the run of commands joined by && the walk is in (walkStep.chain),
 	// and chains counts the runs one walkCommands call has seen, nested walks
-	// included, so no two runs share a number.
+	// included, so no two runs share a number. steps counts the steps the
+	// same way (walkStep.id), and script is the id of the command whose -c
+	// script this walk reads, 0 for none.
 	chain  int
 	chains *int
+	steps  *int
+	script int
 	// mem is what the walk has learned that a later command may run
 	// (walkMemory), shared by every walk of one command.
 	mem *walkMemory
@@ -186,6 +190,40 @@ type shellWalk struct {
 	// a file or a source with words after it, a ! alias body): a command
 	// there that runs one of them as code is opaque (runsPositional).
 	positional bool
+	// run is like chain, but a pipe does not end it: a pipeline runs only
+	// if the && run up to its first command ran, so every member of it
+	// shares that run (dirSure). moved marks a dir a cd, pushd or popd in
+	// this walk set, and moveRun is the run that move was in. outerSure
+	// says whether the dir a child walk started from was sure. sureBefore
+	// says whether the dir was sure where the last move ran, and justMoved
+	// marks a walk whose last command was that move (settleMove).
+	run        int
+	moved      bool
+	moveRun    int
+	outerSure  bool
+	sureBefore bool
+	justMoved  bool
+}
+
+// dirSure reports whether the shell is surely in dir: no move in this walk
+// (and a sure dir where the walk started), or the command is in the same
+// run of && and | commands as the last move, so it runs only if the move
+// did. After `cd x;` or `cd x ||` a command may run where the shell was
+// before.
+func (w *shellWalk) dirSure() bool {
+	if w.moved {
+		return w.run == w.moveRun
+	}
+	return w.outerSure
+}
+
+// pwdKnown reports whether $PWD in the words of the command the walk is at
+// expands to w.dir: the top-level command text, a sure dir (dirSure) and no
+// text that may set PWD (pwdSet). In nested script text the outer shell may
+// expand it before the script's own cd runs. A command run before it that
+// may move the shell unseen counts no more than it does for a relative path.
+func (w *shellWalk) pwdKnown() bool {
+	return w.dir != "" && w.depth == 0 && !w.prose && !w.pwdSet && w.dirSure()
 }
 
 // joint is the separator in front of a command or segment.
@@ -245,6 +283,28 @@ func (w *shellWalk) move(target, text string, before, after joint, inText bool) 
 	if before == jointAnd {
 		w.andOnly = true
 	}
+	w.sureBefore = w.dirSure()
+	w.moved, w.moveRun = true, w.run
+}
+
+// settleMove makes the last move sure for every command after it: the
+// command right after the move left the shell when the move failed
+// (leavesOnFail), so the shell is in the move's directory from here on,
+// as sure as it was where the move ran.
+func (w *shellWalk) settleMove() {
+	w.moved, w.outerSure = false, w.sureBefore
+}
+
+// leavesOnFail reports whether a command is an `|| exit` or `|| exit N`
+// that runs in this shell: it leaves the shell when the command in front
+// of it failed. A pipe or a & after it runs it in a subshell. `|| return`
+// does not count: bash and sh print an error for a return outside a
+// function and run on in the same directory.
+func leavesOnFail(c shellCmd, tokens []string) bool {
+	if c.before != jointOr || c.after == jointPipe || c.after == jointBg || tokens[0] != "exit" {
+		return false
+	}
+	return len(tokens) == 1 || len(tokens) == 2 && strings.Trim(tokens[1], "0123456789") == "" && tokens[1] != ""
 }
 
 // gitRepoEnvNames are the environment variables that point git at another

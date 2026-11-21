@@ -480,7 +480,8 @@ allows:
 
 A map keyed by built-in guard id (`git-push-main`, `git-discard`, `git-identity`,
 `commit-guard`, `script-deny-list`, `write-internal-names`,
-`publish-internal-names`, `rm-temp`, `large-read`, `main-checkout`) or a
+`publish-internal-names`, `rm-temp`, `file-discard`, `large-read`,
+`main-checkout`) or a
 `custom_guards` name. Every guard, built-in or custom, defaults to enabled
 when the file or its entry is missing. The toggle shape is shared across
 guards, but which fields have an effect depends on the guard. `allow_repos`
@@ -562,6 +563,11 @@ entries match the same way as `git_identity[].repos` and
 - **rm-temp**
   - `guards.rm-temp.enabled` (bool, default `true`): the only field with
     effect. The guard needs `toss-bin` on PATH and stays silent without it.
+- **file-discard**
+  - `guards.file-discard.enabled` (bool, default `true`)
+  - `guards.file-discard.mode` (string, default `hard`): `soft` downgrades
+    every denial to a warn event on the events service and lets the command
+    proceed. The guard takes no repo list.
 - **large-read**
   - `guards.large-read.enabled` (bool, default `true`): refuses a Read with
     no `offset` and no `limit` of a text file of `large_file_lines` or more

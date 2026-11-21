@@ -757,11 +757,51 @@ func (c ctxReader) Read(p []byte) (int, error) {
 // runProofGit runs one git command for a proof in dir and returns its raw
 // stdout. Pathspecs are literal, since the proof refuses every glob before
 // it runs git, and git takes no optional lock, so a status here never
-// rewrites the index under the session.
+// rewrites the index under the session. Nor does it fetch an object a
+// partial clone lacks (proofGitEnv).
 func runProofGit(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	out, _, err := execGit(ctx, gitExec{dir: dir, pre: []string{"--literal-pathspecs"}}, args...)
-	return out, err
+	return runProofGitInput(ctx, dir, nil, args...)
 }
+
+// runProofGitInput runs git as runProofGit does, with each of in as a line
+// on its stdin; with none, stdin is empty.
+func runProofGitInput(ctx context.Context, dir string, in []string, args ...string) ([]byte, error) {
+	out, _, err := execGit(ctx, proofExec(dir, in), args...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// runProofGitCode runs git as runProofGitInput does and returns its stdout
+// and exit status, for a git command whose status is its answer (rev-parse
+// --verify). err is set only when git did not run to its end.
+func runProofGitCode(ctx context.Context, dir string, in []string, args ...string) ([]byte, int, error) {
+	out, _, err := execGit(ctx, proofExec(dir, in), args...)
+	var f *gitRunError
+	if errors.As(err, &f) && f.status > 0 {
+		return out, f.status, nil
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	return out, 0, nil
+}
+
+// proofExec is how a proof runs git in dir: literal pathspecs, proofGitEnv,
+// and each of in as a line on its stdin.
+func proofExec(dir string, in []string) gitExec {
+	e := gitExec{dir: dir, pre: []string{"--literal-pathspecs"}, env: proofGitEnv}
+	if len(in) > 0 {
+		e.stdin = []byte(strings.Join(in, "\n") + "\n")
+	}
+	return e
+}
+
+// proofGitEnv is what a proof git call adds to execGit's environment:
+// GIT_NO_LAZY_FETCH=1, so a partial clone fails a read of an object it
+// lacks instead of fetching it across the network inside the hook.
+var proofGitEnv = []string{"GIT_NO_LAZY_FETCH=1"}
 
 // gitExec is how a proof runs git: in dir, with the global options pre in
 // front of the subcommand, env added to the session's environment, and
@@ -775,7 +815,8 @@ type gitExec struct {
 
 // execGit runs one read-only git command and returns its stdout and stderr.
 // git takes no optional lock, and the run stops at ctx, with proofPipeGrace
-// for its pipes. A run that exits non-zero fails with a *gitRunError.
+// for its pipes. A run that exits non-zero fails with a *gitRunError and
+// still returns what git printed.
 func execGit(ctx context.Context, e gitExec, args ...string) (stdout, stderr []byte, err error) {
 	cmd := exec.CommandContext(ctx, "git", slices.Concat(e.pre, args)...)
 	cmd.Dir = e.dir
@@ -790,7 +831,7 @@ func execGit(ctx context.Context, e gitExec, args ...string) (stdout, stderr []b
 		if ctx.Err() != nil {
 			return nil, nil, fmt.Errorf("git %s timed out", args[0])
 		}
-		return nil, nil, &gitRunError{sub: args[0], status: cmd.ProcessState.ExitCode()}
+		return out.Bytes(), errOut.Bytes(), &gitRunError{sub: args[0], status: cmd.ProcessState.ExitCode()}
 	}
 	return out.Bytes(), errOut.Bytes(), nil
 }
