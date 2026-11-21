@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
@@ -17,10 +18,21 @@ import (
 // GitDiscardID identifies the guard against discarding uncommitted work.
 const GitDiscardID = "git-discard"
 
-// gitDiscardAsk is the tail of every deny: the hook never sees the user's
-// message, so a go-ahead cannot pass it, and the two ways forward.
-const gitDiscardAsk = "belt cannot see the user's message, so a go-ahead does not pass this " +
-	"check: save the work first, or let the user run it with `! <command>`."
+// gitGoAhead opens the tail of every deny: the hook never sees the user's
+// message, so a go-ahead cannot pass it.
+const gitGoAhead = "belt cannot see the user's message, so a go-ahead does not pass this check"
+
+// gitDiscardAsk is the tail of a discard's deny, with the two ways forward.
+const gitDiscardAsk = gitGoAhead +
+	": save the work first, or let the user run it with `! <command>`."
+
+// stashDropReason is what the model reads when a command may delete stash
+// entries (stashDrops).
+const stashDropReason = "this deletes stash entries. Every worktree of a repo shares one " +
+	"stash list, so an entry may be another session's set-aside work, and a dropped one " +
+	"comes back only through `git fsck` until the next gc. Run `git stash list` to see the " +
+	"entries, and set your own work aside with a WIP commit, not a stash. " + gitGoAhead +
+	": let the user run it with `! <command>`."
 
 // gitDiscardRule says when a discard the proof reads passes.
 const gitDiscardRule = "It passes only when everything it drops is already in HEAD, " +
@@ -44,7 +56,9 @@ func gitDiscardReason(why error) string {
 // working tree has nothing to lose, so the guard allows there. So does a
 // checkout, restore, clean or hard reset proven to lose nothing (prover):
 // every file version it drops is committed in HEAD, its upstream or origin's
-// default branch. allow_repos exempts repos by canonical identity, and
+// default branch. It also blocks `stash drop` and `stash clear`, which
+// delete stash entries any worktree of the repo may have set aside, whatever
+// the tree holds. allow_repos exempts repos by canonical identity, and
 // `mode: soft` warns instead of denying.
 type GitDiscard struct {
 	cfg config.Config
@@ -91,7 +105,9 @@ func (g *GitDiscard) Event() string { return EventBash }
 // reader could not follow (walkStep.unread), where no directory is certain.
 // A checkout is judged in the form git reads it as (sortCheckoutOperands),
 // with one lookupBudget for all its ref lookups. The walk is read whole
-// first, since a step after a discard may run beside it (proofBlocker).
+// first, since a step after a discard may run beside it (proofBlocker). An
+// invocation that may delete stash entries (stashDrops) is judged on its own
+// (checkStashDrop), outside text no shell runs (walkStep.prose).
 func (g *GitDiscard) Check(in Input) *Denial {
 	var steps []walkStep
 	walkCommands(in.Command, in.Cwd, func(s walkStep) { steps = append(steps, s) })
@@ -107,8 +123,15 @@ func (g *GitDiscard) Check(in Input) *Denial {
 		if !ok {
 			continue
 		}
+		fed := fedOperands(s.tokens)
+		if !s.prose && stashDrops(c, fed) {
+			if d := g.checkStashDrop(c); d != nil {
+				return d
+			}
+			continue
+		}
 		c, unsorted := g.sortCheckoutOperands(lookups, c)
-		if !discards(c, fedOperands(s.tokens)) {
+		if !discards(c, fed) {
 			continue
 		}
 		unsure := cmp.Or(proofBlocker(steps, i, beside), unsorted)
@@ -136,18 +159,40 @@ func (g *GitDiscard) checkDiscard(c gitInvocation, unsure error) *Denial {
 			return nil
 		}
 	}
-	if g.cfg.Guards[GitDiscardID].Soft() {
-		g.emit(
-			"belt",
-			"warn",
-			"git-discard (soft)",
-			"belt["+GitDiscardID+"]: git "+c.sub+" "+strings.Join(c.args, " ")+
-				" would discard uncommitted work. Allowed (soft mode).",
-			map[string]string{"guard": GitDiscardID, "dir": c.dir},
-		)
+	if g.warnSoft(c, "would discard uncommitted work") {
 		return nil
 	}
 	return Reasonf(GitDiscardID, "%s", gitDiscardReason(why))
+}
+
+// checkStashDrop decides one invocation that may delete stash entries
+// (stashDrops). The loss is the entry, not the tree, so a clean tree or a
+// proof allows nothing: only an exempt repo allows, and soft mode warns.
+func (g *GitDiscard) checkStashDrop(c gitInvocation) *Denial {
+	if c.dir != "" && g.cfg.RepoAllowed(GitDiscardID, g.resolveRepo(c.dir)) {
+		return nil
+	}
+	if g.warnSoft(c, "would delete stash entries") {
+		return nil
+	}
+	return Reasonf(GitDiscardID, "%s", stashDropReason)
+}
+
+// warnSoft sends the soft-mode warning that c loses what loss says, and
+// reports whether soft mode is on, so the caller allows instead of denying.
+func (g *GitDiscard) warnSoft(c gitInvocation, loss string) bool {
+	if !g.cfg.Guards[GitDiscardID].Soft() {
+		return false
+	}
+	g.emit(
+		"belt",
+		"warn",
+		"git-discard (soft)",
+		"belt["+GitDiscardID+"]: git "+c.sub+" "+strings.Join(c.args, " ")+" "+loss+
+			". Allowed (soft mode).",
+		map[string]string{"guard": GitDiscardID, "dir": c.dir},
+	)
+	return true
 }
 
 // proveUnless runs the nothing-lost proof unless unsure says the command
@@ -300,8 +345,8 @@ func resetDiscards(args []string) bool {
 }
 
 // stashKeeps are the stash subcommands that leave the working tree alone
-// or only add to it. drop and clear remove stash entries, not worktree
-// changes, and are out of this guard's scope.
+// or only add to it. drop and clear delete stash entries, not worktree
+// changes, which stashDrops judges on its own.
 var stashKeeps = []string{
 	"list",
 	"show",
@@ -312,6 +357,8 @@ var stashKeeps = []string{
 	"clear",
 	"create",
 	"store",
+	"export",
+	"import",
 }
 
 // stashDiscards: a bare `git stash`, a flag-led one (`git stash -u`), and
@@ -321,6 +368,45 @@ func stashDiscards(args []string) bool {
 		return true
 	}
 	return !slices.Contains(stashKeeps, args[0])
+}
+
+// stashDrops reports whether a git invocation may delete stash entries:
+// `stash drop` or `stash clear`. git takes the stash subcommand from the
+// first word alone, matched exactly; an option there makes the stash a push,
+// where a later `drop` is a pathspec or an error (git 2.55 fails `git stash
+// -q drop`). Every drop or clear git runs deletes, so the words after the
+// subcommand change nothing. A first word the shell may still rewrite
+// (asWritten) may be either, and so may a missing one a command in front of
+// git may hand over (fed, `xargs git stash`). pop and branch drop an entry
+// only once its work is back in the tree, so they pass.
+func stashDrops(c gitInvocation, fed bool) bool {
+	switch {
+	case c.sub != "stash":
+		return false
+	case len(c.args) == 0:
+		return fed
+	}
+	switch first := c.args[0]; {
+	case first == "drop" || first == "clear":
+		return true
+	case strings.HasPrefix(first, "-"):
+		return false // no shell rewrite drops the leading -
+	default:
+		return !asWritten(first)
+	}
+}
+
+// asWritten reports whether the shell hands a word to git as the walk shows
+// it: letters, digits and plainValuePunct alone, with nothing to expand,
+// split or glob.
+func asWritten(word string) bool {
+	for _, r := range word {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) &&
+			!strings.ContainsRune(plainValuePunct, r) {
+			return false
+		}
+	}
+	return true
 }
 
 // checkoutDiscards: a path checkout (`checkout -- <path>`, `checkout <ref>

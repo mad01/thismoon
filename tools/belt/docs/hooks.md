@@ -993,7 +993,8 @@ Blocks git commands that throw away uncommitted work.
   <path>`, `checkout .`, a patch checkout) or a forced one, `switch
   --discard-changes`/`-f`, `restore` unless the only target is the index
   (`--staged` without `--worktree`), and `clean` with `-f` or `-i` (a `-n`
-  dry run passes). `stash list|show|apply|pop|branch` are allowed. A
+  dry run passes). `stash list|show|apply|pop|branch` are allowed. It also
+  fires on `stash drop` and `stash clear`, which delete stash entries. A
   checkout or switch force counts the way git reads it. In a bundle of
   short options (`-qf`, `-fb new`), it counts up to a letter that takes the
   rest of the word as its value, so `-bf` creates a branch named `f`. Any
@@ -1049,6 +1050,19 @@ Blocks git commands that throw away uncommitted work.
   clean belt cannot read) allows,
   since nothing would be lost. `allow_repos` exempts repos by canonical
   identity.
+- **Denies a stash drop or clear on any tree.** The loss is the stash
+  entry, not the tree. Every worktree of a repo shares one stash list, so
+  an entry may be another session's set-aside work. A dropped entry comes
+  back only through `git fsck`, until the next gc. git takes the stash
+  subcommand from the first word alone, so `git stash drop -q`, `git -C dir
+  stash drop` and an alias the command sets (`-c alias.x='stash clear'`)
+  count. `git stash -q drop` is a push, which git refuses. A first word the
+  shell may still rewrite (`$X`, `$(...)`, a glob or brace) counts, and so
+  does a bare `xargs git stash`, which may get the subcommand from its
+  input. A comment or a heredoc body no shell runs does not count. `pop`
+  and `branch` pass, since the work comes back into the tree. The reason
+  points to `git stash list` to see the entries, and to a WIP commit to set
+  work aside.
 - **Passes a dirty tree when nothing is lost.** A checkout or restore of
   paths, a `clean -f` and a `reset --hard [<commit>]` pass when every file
   version they drop is already committed at the same path. The commits that

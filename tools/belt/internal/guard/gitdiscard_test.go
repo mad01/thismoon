@@ -76,6 +76,8 @@ func TestGitDiscardCommands(t *testing.T) {
 		{"git stash apply", false},
 		{"git stash pop", false},
 		{"git stash branch tmp", false},
+		{"git stash export --print", false},
+		{"git stash import abc123", false},
 		{"git reset --hard", true},
 		{"git reset --hard origin/main", true},
 		{"git reset --soft HEAD~1", false},
@@ -278,6 +280,110 @@ func TestGitDiscardResetCleanOptions(t *testing.T) {
 	}
 }
 
+// TestGitDiscardStashDrop pins that a stash drop or clear is denied on a
+// clean tree and a dirty one alike, with its own reason, in any form git
+// reads as one or the shell may turn into one. A push form keeps the
+// clean-tree rule (pushes), and the subcommands that keep the entries' work
+// pass.
+func TestGitDiscardStashDrop(t *testing.T) {
+	const repo = "github.com/mad01/thismoon"
+	tests := []struct {
+		command string
+		drops   bool
+		pushes  bool
+	}{
+		{command: "git stash drop", drops: true},
+		{command: "git stash drop -q", drops: true},
+		{command: "git stash drop --quiet", drops: true},
+		{command: "git stash drop --no-quiet", drops: true},
+		{command: "git stash drop 'stash@{1}'", drops: true},
+		{command: "git stash drop 1", drops: true},
+		{command: "git stash drop -- 'stash@{0}'", drops: true},
+		{command: "git stash clear", drops: true},
+		{command: "git stash clear --", drops: true},
+		{command: "git stash 'drop'", drops: true},
+		{command: `git stash dr\op`, drops: true},
+		{command: "git -C /other stash drop", drops: true},
+		{command: "git --no-pager stash clear", drops: true},
+		{command: "cd /other && git stash drop -q", drops: true},
+		{command: "git stash list && git stash drop", drops: true},
+		{command: "(git stash clear)", drops: true},
+		{command: "sh -c 'git stash clear'", drops: true},
+		// Through an alias the command sets.
+		{command: "git -c alias.x='stash clear' x", drops: true},
+		{command: "git config alias.nuke 'stash drop' && git nuke", drops: true},
+		{command: "git -c alias.st=stash st drop", drops: true},
+		// A command in front of git that may hand it the subcommand or the
+		// entry.
+		{command: "echo clear | xargs git stash", drops: true},
+		{command: "echo 'stash@{0}' | xargs git stash drop", drops: true},
+		// A first word the shell may still turn into drop or clear.
+		{command: "git stash $X", drops: true},
+		{command: `git stash "$X"`, drops: true},
+		{command: "git stash $(echo clear)", drops: true},
+		{command: "git stash d*", drops: true},
+		{command: "git stash dr{op,}", drops: true},
+		// The subcommands that keep the entries' work.
+		{command: "git stash list"},
+		{command: "git stash show -p"},
+		{command: "git stash show -p 'stash@{0}'"},
+		{command: "git stash apply"},
+		{command: "git stash apply 'stash@{1}'"},
+		{command: "git stash pop"},
+		{command: "git stash pop --index"},
+		{command: "git stash branch x"},
+		{command: "git stash branch x 'stash@{0}'"},
+		{command: "git stash create"},
+		// Text no shell runs.
+		{command: "git commit -m 'git stash drop'"},
+		{command: "ls # git stash drop"},
+		{command: "cat <<'EOF'\ngit stash clear\nEOF"},
+		// A push: an option first, so a later drop is a pathspec, a message or
+		// an error, and a first word git takes as no subcommand.
+		{command: "git stash", pushes: true},
+		{command: "git stash -u", pushes: true},
+		{command: "git stash -q drop", pushes: true},
+		{command: "git stash -- drop", pushes: true},
+		{command: "git stash -m drop", pushes: true},
+		{command: "git stash push -m clear", pushes: true},
+		{command: "echo f | xargs git stash push", pushes: true},
+		{command: "git stash dro", pushes: true},
+		{command: "git stash Drop", pushes: true},
+	}
+	fixtures := map[string]discardFixture{
+		"clean": {repo: repo},
+		"dirty": {repo: repo, dirty: map[string]bool{"/repo": true}},
+	}
+	for name, fixture := range fixtures {
+		for _, tt := range tests {
+			t.Run(name+"/"+tt.command, func(t *testing.T) {
+				var warned []string
+				g := newDiscardGuard(config.Config{}, fixture, &warned)
+				d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/repo"})
+				var want string
+				switch {
+				case tt.drops:
+					want = "belt[git-discard]: " + stashDropReason
+				case tt.pushes && name == "dirty":
+					want = "belt[git-discard]: this discards uncommitted work"
+				}
+				switch {
+				case want == "" && d != nil:
+					t.Fatalf("Check(%q) = %q, want allow", tt.command, d.Reason)
+				case want != "" && d == nil:
+					t.Fatalf("Check(%q) allowed, want %q", tt.command, want)
+				case want != "" && !strings.HasPrefix(d.Reason, want):
+					t.Errorf("Check(%q) = %q, want %q", tt.command, d.Reason, want)
+				}
+			})
+		}
+	}
+	if !strings.Contains(stashDropReason, "`git stash list`") ||
+		!strings.Contains(stashDropReason, "WIP commit") {
+		t.Errorf("stash drop reason %q names no `git stash list` or WIP commit", stashDropReason)
+	}
+}
+
 func TestGitDiscardDecision(t *testing.T) {
 	const repo = "github.com/mad01/thismoon"
 	tests := []struct {
@@ -428,6 +534,32 @@ func TestGitDiscardDecision(t *testing.T) {
 			}},
 			fixture: discardFixture{repo: repo},
 			command: "git reset --hard", cwd: "/repo",
+		},
+		{
+			name:    "a stash drop denies on a clean tree",
+			fixture: discardFixture{repo: repo},
+			command: "git stash drop", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name:    "a stash drop in an unresolvable directory denies",
+			fixture: discardFixture{repo: repo},
+			command: `cd "$(mktemp -d)" && git stash clear`, cwd: "/repo", wantDeny: true,
+		},
+		{
+			name: "allow_repos exempts a stash drop",
+			cfg: config.Config{Guards: map[string]config.Toggle{
+				GitDiscardID: {AllowRepos: []string{"github.com/mad01/*"}},
+			}},
+			fixture: discardFixture{repo: repo},
+			command: "git stash clear", cwd: "/repo",
+		},
+		{
+			name: "soft mode warns on a stash drop on a clean tree",
+			cfg: config.Config{Guards: map[string]config.Toggle{
+				GitDiscardID: {Mode: config.ModeSoft},
+			}},
+			fixture: discardFixture{repo: repo},
+			command: "git stash drop", cwd: "/repo", wantWarn: true,
 		},
 	}
 	for _, tt := range tests {
