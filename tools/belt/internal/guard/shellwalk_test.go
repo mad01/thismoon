@@ -1527,6 +1527,12 @@ func TestGitGuardsBash32Unclosed(t *testing.T) {
 		{"git reset --hard", func(command string) *Denial {
 			return dirtyDiscardGuard().Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
 		}},
+		{"git gc --prune=now", func(command string) *Denial {
+			return dirtyDiscardGuard().Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		}},
+		{"git fetch origin +main:topic", func(command string) *Denial {
+			return dirtyDiscardGuard().Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		}},
 		{"rm -rf ~/notes", func(command string) *Denial {
 			return newFileDiscardGuard(t, t.TempDir()).Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
 		}},

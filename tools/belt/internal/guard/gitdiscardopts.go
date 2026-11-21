@@ -273,6 +273,185 @@ var updateRefOptions = []gitOpt{
 	{long: "batch-updates", short: '0', negates: true},
 }
 
+// pruneOptions are the options of `git prune -h` (git 2.55).
+var pruneOptions = []gitOpt{
+	{long: "dry-run", short: 'n', negates: true},
+	{long: "verbose", short: 'v', negates: true},
+	{long: "progress", negates: true},
+	{long: "expire", arg: argNeeded, negates: true},
+	{long: "exclude-promisor-objects", negates: true},
+}
+
+// gcOptions are the options of `git gc -h` (git 2.55).
+var gcOptions = []gitOpt{
+	{long: "quiet", short: 'q', negates: true},
+	{long: "prune", arg: argOptional, negates: true},
+	{long: "cruft", negates: true},
+	{long: "max-cruft-size", arg: argNeeded},
+	{long: "aggressive", negates: true},
+	{long: "auto", negates: true},
+	{long: "detach", negates: true},
+	{long: "force", negates: true},
+	{long: "keep-largest-pack", negates: true},
+	{long: "expire-to", arg: argNeeded, negates: true},
+}
+
+// fetchOptions are the options of `git fetch -h` (git 2.55). -n has no long
+// name.
+var fetchOptions = []gitOpt{
+	{long: "verbose", short: 'v', negates: true},
+	{long: "quiet", short: 'q', negates: true},
+	{long: "all", negates: true},
+	{long: "set-upstream", negates: true},
+	{long: "append", short: 'a', negates: true},
+	{long: "atomic", negates: true},
+	{long: "upload-pack", arg: argNeeded, negates: true},
+	{long: "force", short: 'f', negates: true},
+	{long: "multiple", short: 'm', negates: true},
+	{long: "tags", short: 't', negates: true},
+	{short: 'n'},
+	{long: "jobs", short: 'j', arg: argNeeded, negates: true},
+	{long: "prefetch", negates: true},
+	{long: "prune", short: 'p', negates: true},
+	{long: "prune-tags", short: 'P', negates: true},
+	{long: "recurse-submodules", arg: argOptional, negates: true},
+	{long: "dry-run", negates: true},
+	{long: "porcelain", negates: true},
+	{long: "write-fetch-head", negates: true},
+	{long: "keep", short: 'k', negates: true},
+	{long: "update-head-ok", short: 'u', negates: true},
+	{long: "progress", negates: true},
+	{long: "depth", arg: argNeeded, negates: true},
+	{long: "shallow-since", arg: argNeeded, negates: true},
+	{long: "shallow-exclude", arg: argNeeded, negates: true},
+	{long: "deepen", arg: argNeeded, negates: true},
+	{long: "unshallow"},
+	{long: "refetch"},
+	{long: "update-shallow", negates: true},
+	{long: "refmap", arg: argNeeded},
+	{long: "server-option", short: 'o', arg: argNeeded, negates: true},
+	{long: "ipv4", short: '4'},
+	{long: "ipv6", short: '6'},
+	{long: "negotiation-restrict", arg: argNeeded, negates: true},
+	{long: "negotiation-tip", arg: argNeeded, negates: true},
+	{long: "negotiation-include", arg: argNeeded, negates: true},
+	{long: "negotiate-only", negates: true},
+	{long: "filter", arg: argNeeded, negates: true},
+	{long: "auto-maintenance", negates: true},
+	{long: "auto-gc", negates: true},
+	{long: "show-forced-updates", negates: true},
+	{long: "write-commit-graph", negates: true},
+	{long: "stdin", negates: true},
+}
+
+// pullOptions are the options of `git pull -h` (git 2.55): its own, the
+// merge ones and the fetch ones it hands on. -n has no long name.
+var pullOptions = []gitOpt{
+	{long: "verbose", short: 'v', negates: true},
+	{long: "quiet", short: 'q', negates: true},
+	{long: "progress", negates: true},
+	{long: "recurse-submodules", arg: argOptional, negates: true},
+	{long: "rebase", short: 'r', arg: argOptional, negates: true},
+	{short: 'n'},
+	{long: "stat", negates: true},
+	{long: "compact-summary", negates: true},
+	{long: "log", arg: argOptional, negates: true},
+	{long: "signoff", arg: argOptional, negates: true},
+	{long: "squash", negates: true},
+	{long: "commit", negates: true},
+	{long: "edit", negates: true},
+	{long: "cleanup", arg: argNeeded, negates: true},
+	{long: "ff", negates: true},
+	{long: "ff-only"},
+	{long: "verify", negates: true},
+	{long: "verify-signatures", negates: true},
+	{long: "autostash", negates: true},
+	{long: "strategy", short: 's', arg: argNeeded, negates: true},
+	{long: "strategy-option", short: 'X', arg: argNeeded, negates: true},
+	{long: "gpg-sign", short: 'S', arg: argOptional, negates: true},
+	{long: "allow-unrelated-histories", negates: true},
+	{long: "all", negates: true},
+	{long: "append", short: 'a', negates: true},
+	{long: "upload-pack", arg: argNeeded, negates: true},
+	{long: "force", short: 'f', negates: true},
+	{long: "tags", short: 't', negates: true},
+	{long: "prune", short: 'p', negates: true},
+	{long: "jobs", short: 'j', arg: argOptional, negates: true},
+	{long: "dry-run", negates: true},
+	{long: "keep", short: 'k', negates: true},
+	{long: "depth", arg: argNeeded, negates: true},
+	{long: "shallow-since", arg: argNeeded, negates: true},
+	{long: "shallow-exclude", arg: argNeeded, negates: true},
+	{long: "deepen", arg: argNeeded, negates: true},
+	{long: "unshallow"},
+	{long: "update-shallow", negates: true},
+	{long: "refmap", arg: argNeeded},
+	{long: "server-option", short: 'o', arg: argNeeded, negates: true},
+	{long: "ipv4", short: '4', negates: true},
+	{long: "ipv6", short: '6', negates: true},
+	{long: "negotiation-restrict", arg: argNeeded, negates: true},
+	{long: "negotiation-tip", arg: argNeeded, negates: true},
+	{long: "negotiation-include", arg: argNeeded, negates: true},
+	{long: "show-forced-updates", negates: true},
+	{long: "set-upstream", negates: true},
+}
+
+// remoteUpdateOptions are the options of `git remote update -h` (git 2.55).
+var remoteUpdateOptions = []gitOpt{
+	{long: "prune", short: 'p', negates: true},
+}
+
+// remotePruneOptions are the options of `git remote prune -h` (git 2.55).
+var remotePruneOptions = []gitOpt{
+	{long: "dry-run", short: 'n', negates: true},
+}
+
+// remoteAddOptions are the options of `git remote add -h` (git 2.55).
+var remoteAddOptions = []gitOpt{
+	{long: "fetch", short: 'f', negates: true},
+	{long: "tags", negates: true},
+	{long: "track", short: 't', arg: argNeeded, negates: true},
+	{long: "master", short: 'm', arg: argNeeded, negates: true},
+	{long: "mirror", arg: argOptional, negates: true},
+}
+
+// repackOptions are the options of `git repack -h` (git 2.55). -a, -A, -d,
+// -f, -F and -n have no long name, and -m, which -h leaves out, takes no
+// value.
+var repackOptions = []gitOpt{
+	{short: 'a'},
+	{short: 'A'},
+	{long: "cruft", negates: true},
+	{long: "cruft-expiration", arg: argNeeded, negates: true},
+	{long: "combine-cruft-below-size", arg: argNeeded},
+	{long: "max-cruft-size", arg: argNeeded},
+	{short: 'd'},
+	{short: 'f'},
+	{short: 'F'},
+	{long: "name-hash-version", arg: argNeeded, negates: true},
+	{long: "path-walk", negates: true},
+	{short: 'n'},
+	{long: "quiet", short: 'q', negates: true},
+	{long: "local", short: 'l', negates: true},
+	{long: "write-bitmap-index", short: 'b', negates: true},
+	{long: "delta-islands", short: 'i', negates: true},
+	{long: "unpack-unreachable", arg: argNeeded, negates: true},
+	{long: "keep-unreachable", short: 'k', negates: true},
+	{long: "window", arg: argNeeded, negates: true},
+	{long: "window-memory", arg: argNeeded, negates: true},
+	{long: "depth", arg: argNeeded, negates: true},
+	{long: "threads", arg: argNeeded, negates: true},
+	{long: "max-pack-size", arg: argNeeded},
+	{long: "filter", arg: argNeeded, negates: true},
+	{long: "pack-kept-objects", negates: true},
+	{long: "keep-pack", arg: argNeeded, negates: true},
+	{long: "geometric", short: 'g', arg: argNeeded, negates: true},
+	{short: 'm'},
+	{long: "write-midx", arg: argOptional, negates: true},
+	{long: "expire-to", arg: argNeeded, negates: true},
+	{long: "filter-to", arg: argNeeded, negates: true},
+}
+
 // gitOptRead is one option as git reads it from a word.
 type gitOptRead struct {
 	// name is the entry's gitOpt.name.
@@ -331,6 +510,29 @@ func (w gitWords) on(name string) bool {
 		}
 	}
 	return on
+}
+
+// last returns the last read of the named option, the one git keeps for an
+// option that takes a value.
+func (w gitWords) last(name string) (gitOptRead, bool) {
+	for _, o := range slices.Backward(w.opts) {
+		if o.name == name {
+			return o, true
+		}
+	}
+	return gitOptRead{}, false
+}
+
+// values returns every value the named option took, in order, for an option
+// git reads each time it is given.
+func (w gitWords) values(name string) []string {
+	var out []string
+	for _, o := range w.opts {
+		if o.name == name && !o.unset {
+			out = append(out, o.value)
+		}
+	}
+	return out
 }
 
 // readGitWords reads a subcommand's words against its option table the way

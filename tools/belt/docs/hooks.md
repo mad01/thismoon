@@ -1174,7 +1174,11 @@ Blocks git commands that throw away uncommitted work.
   remove`, `apply`, `read-tree -u` or `--index-output`, `checkout-index
   -f`, `rm -f` and `mv -f`. `stash list|show|apply|pop|branch` are allowed. It also
   fires on `stash drop`, `stash clear` and a reflog or ref delete of
-  `refs/stash`, which delete stash entries. Each invocation is
+  `refs/stash`, which delete stash entries. It fires on a reflog expire,
+  gc, prune or repack that deletes sooner than git's default, a reflog
+  delete or drop, a call or config write with such a gc expiry, and a
+  fetch, pull or `remote update` that may force-update or prune a local
+  branch. Each invocation is
   judged in the directory it runs in: a tracked `cd`/`pushd`, a `git -C`
   target, else the session cwd, with `$PWD` and `$(git rev-parse
   --show-toplevel)` read as git-push-main reads them. Heredoc bodies are
@@ -1332,6 +1336,139 @@ Blocks git commands that throw away uncommitted work.
   `reflog expire` or `reflog drop` of `refs/stash` or `--all`, `update-ref
   -d refs/stash` and `update-ref --stdin`, whose commands belt never sees.
   A `-n` dry run passes. A ref the shell may still rewrite counts.
+- **Denies the forms that make a lost commit final, on any tree.** A
+  commit off its branch after `branch -D`, `branch -f` or a reset stays in
+  a reflog, or as an object `git fsck` finds, until a gc prunes it. git
+  keeps an unreachable object for 2 weeks by default, a reflog entry for
+  90 days, and an entry no branch holds for 30. These delete that last
+  copy sooner:
+  - A `reflog expire` with `--expire` sooner than 90 days ago or
+    `--expire-unreachable` sooner than 30 days ago.
+  - A `reflog delete` of any entry, unless it is a `-n` dry run, and a
+    `reflog drop` of any log.
+  - A `gc --prune=<date>` sooner than 2 weeks ago.
+  - A `git prune` without an `--expire` date at least 2 weeks ago. Plain
+    `git prune` counts: without `--expire` it deletes every unreachable
+    loose object, however new. `--no-expire` reads as never.
+  - A `repack -a -d` (or `-ad`), which packs everything and deletes the
+    old packs with the unreachable objects in them. `-k` keeps those
+    objects in the new pack, `-A` turns them loose and `--cruft` packs
+    them apart, so those pass unless `--unpack-unreachable` or
+    `--cruft-expiration` is sooner than 2 weeks ago. An
+    `--unpack-unreachable` date turns the newer objects loose under `-a`
+    too, so `repack -a -d --unpack-unreachable=3.weeks.ago` passes. An
+    empty `--unpack-unreachable=` counts, since git reads it as now.
+  - A `git config` write that sets `gc.pruneExpire`, `gc.reflogExpire` or
+    `gc.reflogExpireUnreachable` (also `gc.<pattern>.reflogExpire`) sooner
+    than its default, which every later gc applies.
+  - Any git call that runs with such a setting: its own `-c` or
+    `--config-env`, or `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` or
+    `GIT_CONFIG_PARAMETERS` set in front of it or earlier in the command.
+    A commit, merge, rebase or fetch may start a gc, and a hook or alias
+    may run one, so `git -c gc.pruneExpire=now commit` counts. A read
+    (`status`, `log`, `diff`, `reflog show` and the like) and a dry run
+    pass.
+
+  `now` and `all` count, and `never` and `false` pass. belt has git read
+  any other date (`git config --type=expiry-date`, the parse prune, gc and
+  reflog use), so `1.second.ago`, `2099-01-01` and a future date count. A
+  date git cannot read counts too. Options are read as for reset, so
+  `gc --pru=now`, `prune --exp=all` and `reflog expire --expire-u=now`
+  count. An option belt cannot read, a word the shell may still rewrite
+  and `xargs` in front of git count too. A `-n` dry run, `gc --prune` with
+  no date and an expiry at least as old as git's default pass. This is a
+  rule with no proof. The reason says belt cannot see the user's message:
+  keep what is needed on a branch first, or hand the user `! <command>`.
+  `branch -D`, `branch -f`, `branch -M`, `update-ref -d`, `checkout -B` and
+  `switch -C` pass, since what they move off stays in a reflog or as an
+  unreachable object until then.
+- **Denies a forced fetch or pull into a branch that holds unpushed
+  work.** That is a refspec with a leading `+` (`git fetch origin
+  +main:feat`, `git pull origin +main:feat`), or `-f` with `src:dst`,
+  whose destination git reads as a branch: `refs/heads/x`, `heads/x` or a
+  bare name. A `--refmap` value counts as a refspec, and so does each
+  `remote.<name>.fetch` value: one the call sets with `-c` or a
+  `GIT_CONFIG_*` variable, one an earlier step of the same command writes
+  (`git config`, `--add`, `--replace-all`, `git config set`, or the
+  `+refs/*:refs/*` a `git remote add --mirror=fetch` writes), and one the
+  repository's config holds, which belt reads with one `git config
+  --get-regexp`. A configured refspec counts with refspecs on the command
+  line too, since git still maps the fetched refs through it. A `git
+  remote update`, with or without remote or group names, is a fetch with
+  no refspec words of its own, so the settings and the configured
+  refspecs count. So is a `git remote add -f` or `--fetch`, which fetches
+  the new remote through the refspecs it writes: `git remote add -f
+  --mirror=fetch x <url>` force-moves every branch in one command. belt runs `git rev-list -n 1 --ignore-missing <branch>
+  --not --remotes` in the repo, within the 2-second proof budget, and
+  denies when it prints a commit. The reason names the branch and the
+  commit, for `git branch <name> <commit>`. A branch with nothing unpushed
+  passes, and so does one that does not exist. So do a destination under
+  `refs/remotes/` or a tag, git's default `remote.origin.fetch`, a fetch
+  with no destination (`git fetch origin main`) and a `--dry-run`. A
+  pattern destination (`'+refs/heads/*:refs/heads/*'`) checks every branch
+  it matches, and `refs/*` every branch. It checks a branch the remote does
+  not have too, since telling would need `git ls-remote`, a network call.
+  A destination belt cannot read checks every local branch: a word the
+  shell may still rewrite, `--stdin`, an option belt does not know,
+  `xargs` in front of git, or a config read that fails. git refuses to
+  fetch into a branch a worktree has checked out, but a pull lets it, so
+  belt checks those too. A bare mirror (`git clone --mirror`) passes: in
+  a repository git reads as bare, the refspecs of a remote whose
+  `remote.<name>.mirror` is true in the config files count for nothing,
+  since its `+refs/*:refs/*` keeps every local ref a copy of the remote's.
+  The same config read takes `core.bare`, and only when that is true does
+  belt confirm with `git rev-parse --is-bare-repository --git-common-dir`;
+  a call that fails or runs out of time counts as no bare repository. A
+  fetch that does not prune passes in a bare mirror with linked worktrees
+  too, since git refuses to update a branch a worktree has checked out. A
+  mirror remote
+  in a clone with a work tree (`git remote add --mirror`) counts, and so
+  does one in a linked worktree of a bare mirror, which reads `core.bare`
+  as true too: there the branches hold the user's work.
+- **Denies a pruning fetch that deletes a branch holding unpushed work.**
+  A fetch, pull or `remote update` that prunes deletes the local branches
+  a pattern refspec's destination matches when the remote lacks them, with
+  their reflogs, forced or not: `git fetch --prune origin
+  'refs/heads/*:refs/heads/*'` deletes a local-only branch. It prunes with
+  `--prune` or `-p`, or with neither when `fetch.prune` or
+  `remote.<name>.prune` may be true: in the config files, from `-c`, a
+  `GIT_CONFIG_*` variable or an earlier `git config` write. `--no-prune`
+  turns it off. belt checks those branches the same way, within the same
+  budget, and the reason says to push first. Plain `git fetch --prune` and
+  `git remote update --prune` with git's default refspec pass with the one
+  config read. An exact refspec passes, since git refuses the fetch when
+  the remote lacks its source, and so does `--prune-tags`, which only adds
+  `refs/tags/*:refs/tags/*`. A `git remote prune` fetches nothing and
+  prunes through every refspec the same way, a `+` one included. It also
+  prunes through an exact refspec whose destination is written as
+  `refs/heads/<name>`, since git compares the remote's refs with the
+  source as written: `main:refs/heads/x` deletes x even when the remote
+  has main. belt checks that branch whether the remote has the source or
+  not. `-n` and `--dry-run` pass, and with git's default refspec it
+  passes with the one config read. A bare mirror with no linked worktrees
+  passes here too. In a bare mirror with linked worktrees every fetch,
+  pull, `remote update` and `remote prune` that prunes denies, with a
+  reason that names the linked worktrees: the mirror's refspecs delete a
+  branch made in a worktree when the remote lacks it (`- [deleted] (none)
+  -> <branch>`), and belt does not check which branches hold work. belt
+  finds the worktrees with the same `git rev-parse` call and a read of
+  `<common dir>/worktrees`, where an entry whose folder holds a `gitdir`
+  file counts; a read that fails counts as a worktree.
+- **The fetch checks leave some things unread.** They miss a config
+  write later in a loop body, which the next round of the loop runs
+  before the fetch, and one in a step after the fetch that runs beside it
+  (`&` or a pipeline). They do not read the remote a fetch names, so
+  every remote's refspecs and prune keys count, nor a `-c` or written
+  `remote.<name>.mirror` or `core.bare`. They skip a config file another
+  variable names (`GIT_CONFIG_GLOBAL`, `HOME`) or another tool edits, and
+  `submodule update`, which fetches too. They do not read `git remote
+  <word the shell may rewrite> -f --mirror=fetch x <url>` as a mirror
+  fetch; only that unsure subcommand word is missed, and an `xargs` in
+  front of git or a `$M` in the option slot is read. Some calls deny where
+  git loses nothing (false denies): a `git remote add -f --mirror` inside a
+  bare mirror when a branch holds a commit, a `-c remote.<name>.fetch`
+  refspec inside a bare mirror, and every fetch that prunes in a bare
+  mirror with linked worktrees, since that check fails closed.
 - **Treats a subcommand belt cannot see as any.** One case is a command in
   front of git that may hand it the subcommand (`echo stash clear | xargs
   git`). Another is a subcommand word only a shell can resolve (`git $X
