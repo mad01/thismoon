@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.21.5](https://github.com/mad01/thismoon/compare/belt/v2.21.4...belt/v2.21.5) (2026-11-21)
+
+
+### Bug Fixes
+
+* **belt:** deny git stash drop and git stash clear in git-discard ([#529](https://github.com/mad01/thismoon/issues/529)) ([c83f5f9](https://github.com/mad01/thismoon/commit/c83f5f940c6321ecfc48954d4cbf810e0c2091eb))
+
 ## [2.21.4](https://github.com/mad01/thismoon/compare/belt/v2.21.3...belt/v2.21.4) (2026-11-21)
 
 
