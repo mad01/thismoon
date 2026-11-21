@@ -499,19 +499,22 @@ func scanFindExec(tokens []string, patterns []deny) *Denial {
 	return nil
 }
 
-// deny pairs a deny-list pattern with its compiled matcher.
+// deny pairs a deny-list pattern with its compiled matcher. argv holds the
+// pattern's words when the argv match reads it too (scriptdeny_argv.go).
 type deny struct {
 	pattern string
 	re      *regexp.Regexp
+	argv    []string
 }
 
 // compilePatterns builds a matcher per pattern. A `re:` prefix compiles the
-// rest as a case-insensitive regex — the escape hatch for shapes the literal
-// form cannot express (flag reordering, argument wildcards); anchor it
-// yourself when word boundaries matter. Every other pattern matches its
-// tokens in order, separated by whitespace, not embedded in a longer word:
-// `kubectl delete` matches `  kubectl   delete pod x` but not `kubectl
-// deleted`.
+// rest as a case-insensitive regex: the escape hatch for shapes the literal
+// form cannot express (argument wildcards, flag reordering for a tool the
+// argv match does not read). Anchor it yourself when word boundaries
+// matter. Every other pattern matches its tokens in order,
+// separated by whitespace, not embedded in a longer word: `kubectl delete`
+// matches `  kubectl   delete pod x` but not `kubectl deleted`. An rm,
+// kubectl, gcloud or terraform pattern also matches on argv (argvEntry).
 func compilePatterns(patterns []string) []deny {
 	var out []deny
 	for _, p := range patterns {
@@ -533,7 +536,7 @@ func compilePatterns(patterns []string) []deny {
 		if err != nil {
 			continue
 		}
-		out = append(out, deny{pattern: p, re: re})
+		out = append(out, deny{pattern: p, re: re, argv: argvEntry(toks)})
 	}
 	return out
 }
@@ -571,8 +574,8 @@ func logicalLines(text string) []logicalLine {
 }
 
 // scanText checks every non-comment logical line against every pattern —
-// first as written, then with quoting noise collapsed — and denies on the
-// first hit.
+// first as written, then with quoting noise collapsed, then each form's
+// commands on argv — and denies on the first hit.
 func scanText(text, where string, patterns []deny) *Denial {
 	for _, line := range logicalLines(text) {
 		trimmed := strings.TrimSpace(line.text)
@@ -580,8 +583,9 @@ func scanText(text, where string, patterns []deny) *Denial {
 			continue
 		}
 		normalized := lineNoise.Replace(line.text)
+		cmds := lineCommands(line.text, normalized)
 		for _, d := range patterns {
-			if d.re.MatchString(line.text) || d.re.MatchString(normalized) {
+			if d.re.MatchString(line.text) || d.re.MatchString(normalized) || d.runsIn(cmds) {
 				return Reasonf(
 					ScriptDenyListID,
 					"%s runs %q (line %d) — that command is on the Bash deny list and scripts don't get to bypass it. "+
