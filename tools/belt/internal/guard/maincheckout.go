@@ -273,7 +273,8 @@ func changesCheckout(c gitInvocation) bool {
 	case "clean":
 		return cleanDiscards(c.args)
 	case "apply":
-		return !applyOnlyReports(c.args)
+		w, err := readGitWords(c.args, applyOptions)
+		return err != nil || !applyReports(w)
 	case "sparse-checkout":
 		return len(c.args) > 0 && c.args[0] != "list" && c.args[0] != "check-rules"
 	case "submodule":
@@ -400,16 +401,6 @@ func submoduleReports(args []string) bool {
 		return false
 	}
 	return true
-}
-
-// applyOnlyReports reports whether `git apply` only checks or describes the
-// patch: --check never applies it, and --stat, --numstat and --summary turn
-// applying off unless --apply turns it back on.
-func applyOnlyReports(args []string) bool {
-	if hasFlag(args, "--check") {
-		return true
-	}
-	return hasFlag(args, "--stat", "--numstat", "--summary") && !hasFlag(args, "--apply")
 }
 
 // pullMergeFlags are the long pull options that make it more than a

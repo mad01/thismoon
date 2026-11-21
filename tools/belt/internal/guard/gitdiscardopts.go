@@ -74,6 +74,205 @@ var cleanOptions = []gitOpt{
 	{short: 'X'},
 }
 
+// worktreeRemoveOptions are the options of `git worktree remove -h` (git
+// 2.55). -f counts up: twice removes a locked worktree too.
+var worktreeRemoveOptions = []gitOpt{
+	{long: "force", short: 'f', negates: true},
+}
+
+// worktreePruneOptions are the options of `git worktree prune -h` (git
+// 2.55).
+var worktreePruneOptions = []gitOpt{
+	{long: "dry-run", short: 'n', negates: true},
+	{long: "verbose", short: 'v', negates: true},
+	{long: "expire", arg: argNeeded, negates: true},
+}
+
+// applyOptions are the options of `git apply -h` (git 2.55). --no-add and
+// --add are two entries, as git lists them.
+var applyOptions = []gitOpt{
+	{long: "exclude", arg: argNeeded},
+	{long: "include", arg: argNeeded},
+	{short: 'p', arg: argNeeded},
+	{long: "no-add"},
+	{long: "add"},
+	{long: "stat", negates: true},
+	{long: "numstat", negates: true},
+	{long: "summary", negates: true},
+	{long: "check", negates: true},
+	{long: "index", negates: true},
+	{long: "intent-to-add", short: 'N', negates: true},
+	{long: "cached", negates: true},
+	{long: "unsafe-paths", negates: true},
+	{long: "apply", negates: true},
+	{long: "3way", short: '3', negates: true},
+	{long: "ours"},
+	{long: "theirs"},
+	{long: "union"},
+	{long: "build-fake-ancestor", arg: argNeeded, negates: true},
+	{short: 'z'},
+	{short: 'C', arg: argNeeded},
+	{long: "whitespace", arg: argNeeded, negates: true},
+	{long: "ignore-space-change", negates: true},
+	{long: "ignore-whitespace", negates: true},
+	{long: "reverse", short: 'R', negates: true},
+	{long: "unidiff-zero", negates: true},
+	{long: "reject", negates: true},
+	{long: "allow-overlap", negates: true},
+	{long: "verbose", short: 'v', negates: true},
+	{long: "quiet", short: 'q', negates: true},
+	{long: "inaccurate-eof", negates: true},
+	{long: "recount", negates: true},
+	{long: "directory", arg: argNeeded, negates: true},
+	{long: "allow-empty", negates: true},
+}
+
+// readTreeOptions are the options of `git read-tree -h` (git 2.55).
+var readTreeOptions = []gitOpt{
+	{long: "index-output", arg: argNeeded},
+	{long: "empty", negates: true},
+	{long: "verbose", short: 'v', negates: true},
+	{short: 'm'},
+	{long: "trivial", negates: true},
+	{long: "aggressive", negates: true},
+	{long: "reset", negates: true},
+	{long: "prefix", arg: argNeeded},
+	{short: 'u'},
+	{long: "exclude-per-directory", arg: argNeeded},
+	{short: 'i'},
+	{long: "dry-run", short: 'n', negates: true},
+	{long: "no-sparse-checkout"},
+	{long: "sparse-checkout"},
+	{long: "debug-unpack", negates: true},
+	{long: "recurse-submodules", arg: argOptional, negates: true},
+	{long: "quiet", short: 'q', negates: true},
+}
+
+// checkoutIndexOptions are the options of `git checkout-index -h` (git
+// 2.55). --no-create and --create are two entries, as git lists them.
+var checkoutIndexOptions = []gitOpt{
+	{long: "all", short: 'a', negates: true},
+	{long: "ignore-skip-worktree-bits", negates: true},
+	{long: "force", short: 'f', negates: true},
+	{long: "quiet", short: 'q', negates: true},
+	{long: "no-create", short: 'n'},
+	{long: "create"},
+	{long: "index", short: 'u', negates: true},
+	{short: 'z'},
+	{long: "stdin", negates: true},
+	{long: "temp", negates: true},
+	{long: "prefix", arg: argNeeded, negates: true},
+	{long: "stage", arg: argNeeded},
+}
+
+// rmOptions are the options of `git rm -h` (git 2.55).
+var rmOptions = []gitOpt{
+	{long: "dry-run", short: 'n', negates: true},
+	{long: "quiet", short: 'q', negates: true},
+	{long: "cached", negates: true},
+	{long: "force", short: 'f', negates: true},
+	{short: 'r'},
+	{long: "ignore-unmatch", negates: true},
+	{long: "sparse", negates: true},
+	{long: "pathspec-from-file", arg: argNeeded, negates: true},
+	{long: "pathspec-file-nul", negates: true},
+}
+
+// mvOptions are the options of `git mv -h` (git 2.55).
+var mvOptions = []gitOpt{
+	{long: "verbose", short: 'v', negates: true},
+	{long: "dry-run", short: 'n', negates: true},
+	{long: "force", short: 'f', negates: true},
+	{short: 'k'},
+	{long: "sparse", negates: true},
+}
+
+// checkoutOptions are the options of `git checkout -h` (git 2.55). --ours
+// and --theirs take no --no- form.
+var checkoutOptions = []gitOpt{
+	{short: 'b', arg: argNeeded},
+	{short: 'B', arg: argNeeded},
+	{short: 'l'},
+	{long: "guess", negates: true},
+	{long: "overlay", negates: true},
+	{long: "auto-advance", negates: true},
+	{long: "quiet", short: 'q', negates: true},
+	{long: "recurse-submodules", arg: argOptional, negates: true},
+	{long: "progress", negates: true},
+	{long: "merge", short: 'm', negates: true},
+	{long: "conflict", arg: argNeeded, negates: true},
+	{long: "detach", short: 'd', negates: true},
+	{long: "track", short: 't', arg: argOptional, negates: true},
+	{long: "force", short: 'f', negates: true},
+	{long: "orphan", arg: argNeeded, negates: true},
+	{long: "overwrite-ignore", negates: true},
+	{long: "ignore-other-worktrees", negates: true},
+	{long: "ours", short: '2'},
+	{long: "theirs", short: '3'},
+	{long: "patch", short: 'p', negates: true},
+	{long: "unified", short: 'U', arg: argNeeded},
+	{long: "inter-hunk-context", arg: argNeeded},
+	{long: "ignore-skip-worktree-bits", negates: true},
+	{long: "pathspec-from-file", arg: argNeeded, negates: true},
+	{long: "pathspec-file-nul", negates: true},
+}
+
+// switchOptions are the options of `git switch -h` (git 2.55).
+var switchOptions = []gitOpt{
+	{long: "create", short: 'c', arg: argNeeded, negates: true},
+	{long: "force-create", short: 'C', arg: argNeeded, negates: true},
+	{long: "guess", negates: true},
+	{long: "discard-changes", negates: true},
+	{long: "quiet", short: 'q', negates: true},
+	{long: "recurse-submodules", arg: argOptional, negates: true},
+	{long: "progress", negates: true},
+	{long: "merge", short: 'm', negates: true},
+	{long: "conflict", arg: argNeeded, negates: true},
+	{long: "detach", short: 'd', negates: true},
+	{long: "track", short: 't', arg: argOptional, negates: true},
+	{long: "force", short: 'f', negates: true},
+	{long: "orphan", arg: argNeeded, negates: true},
+	{long: "overwrite-ignore", negates: true},
+	{long: "ignore-other-worktrees", negates: true},
+}
+
+// reflogDeleteOptions are the options of `git reflog delete -h` (git 2.55).
+var reflogDeleteOptions = []gitOpt{
+	{long: "dry-run", short: 'n', negates: true},
+	{long: "rewrite", negates: true},
+	{long: "updateref", negates: true},
+	{long: "verbose", negates: true},
+}
+
+// reflogExpireOptions are the options of `git reflog expire -h` (git 2.55):
+// those of delete and its own.
+var reflogExpireOptions = slices.Concat(reflogDeleteOptions, []gitOpt{
+	{long: "expire", arg: argNeeded},
+	{long: "expire-unreachable", arg: argNeeded},
+	{long: "stale-fix", negates: true},
+	{long: "all", negates: true},
+	{long: "single-worktree", negates: true},
+})
+
+// reflogDropOptions are the options of `git reflog drop -h` (git 2.55).
+var reflogDropOptions = []gitOpt{
+	{long: "all", negates: true},
+	{long: "single-worktree", negates: true},
+}
+
+// updateRefOptions are the options of `git update-ref -h` (git 2.55).
+// --no-deref and --deref are two entries, as git lists them.
+var updateRefOptions = []gitOpt{
+	{short: 'm', arg: argNeeded},
+	{short: 'd'},
+	{long: "no-deref"},
+	{long: "deref"},
+	{short: 'z'},
+	{long: "stdin", negates: true},
+	{long: "create-reflog", negates: true},
+	{long: "batch-updates", short: '0', negates: true},
+}
+
 // gitOptRead is one option as git reads it from a word.
 type gitOptRead struct {
 	// name is the entry's gitOpt.name.
@@ -82,12 +281,31 @@ type gitOptRead struct {
 	unset bool
 	// word is the word it was read from.
 	word string
+	// value is the value it took: after =, the rest of a short bundle or
+	// the next word. "" when it took none.
+	value string
+}
+
+// asWord writes the option back as one word git reads the same way: -p1,
+// --no-reverse, --directory=sub.
+func (o gitOptRead) asWord() string {
+	switch {
+	case len(o.name) == 1:
+		return "-" + o.name + o.value
+	case o.unset:
+		return "--no-" + o.name
+	case o.value != "":
+		return "--" + o.name + "=" + o.value
+	}
+	return "--" + o.name
 }
 
 // gitWords are a subcommand's words the way git reads them.
 type gitWords struct {
-	// opts are the options in the order git reads them.
-	opts []gitOptRead
+	// opts are the options in the order git reads them, and optWords the
+	// words they were read from, each value in a word of its own included.
+	opts     []gitOptRead
+	optWords []string
 	// operands are the words before `--` that are no option or value.
 	operands []string
 	// paths are the words after `--`, and dashed says there was one.
@@ -101,6 +319,18 @@ func (w gitWords) sets(name string) bool {
 	return slices.ContainsFunc(w.opts, func(o gitOptRead) bool {
 		return o.name == name && !o.unset
 	})
+}
+
+// on reports whether the last read of the named option sets it: git keeps
+// the last of `--check --no-check`, and a --no-force resets a count.
+func (w gitWords) on(name string) bool {
+	on := false
+	for _, o := range w.opts {
+		if o.name == name {
+			on = !o.unset
+		}
+	}
+	return on
 }
 
 // readGitWords reads a subcommand's words against its option table the way
@@ -138,9 +368,13 @@ func readGitWords(args []string, table []gitOpt) (gitWords, error) {
 		case next && mayBecomeOption(args[i+1]):
 			return w, fmt.Errorf("the word %s", args[i+1])
 		case next:
+			w.optWords = append(w.optWords, a)
 			i++
+			a = args[i]
+			read[len(read)-1].value = a
 		}
 		w.opts = append(w.opts, read...)
+		w.optWords = append(w.optWords, a)
 	}
 	return w, nil
 }
@@ -171,7 +405,7 @@ func readOptWord(word string, table []gitOpt) (read []gitOptRead, next bool, err
 	if !long {
 		return readBundle(word, table)
 	}
-	name, _, valued := strings.Cut(text, "=")
+	name, value, valued := strings.Cut(text, "=")
 	opt, unset, ok := resolveLong(name, table)
 	switch {
 	case !ok:
@@ -179,7 +413,7 @@ func readOptWord(word string, table []gitOpt) (read []gitOptRead, next bool, err
 	case valued && (unset || opt.arg == argNone):
 		return nil, false, fmt.Errorf("option %s takes no value", word)
 	}
-	read = []gitOptRead{{name: opt.name(), unset: unset, word: word}}
+	read = []gitOptRead{{name: opt.name(), unset: unset, word: word, value: value}}
 	return read, !valued && !unset && opt.arg == argNeeded, nil
 }
 
@@ -228,6 +462,7 @@ func readBundle(word string, table []gitOpt) (read []gitOptRead, next bool, err 
 		o := table[at]
 		read = append(read, gitOptRead{name: o.name(), word: word})
 		if o.arg != argNone {
+			read[len(read)-1].value = word[i+1:]
 			return read, o.arg == argNeeded && i == len(word)-1, nil
 		}
 	}

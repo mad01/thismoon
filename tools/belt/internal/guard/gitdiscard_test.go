@@ -22,6 +22,17 @@ type discardFixture struct {
 	// ignoredDirty marks directories whose only changes are ignored files,
 	// visible to `git status --porcelain --ignored` alone.
 	ignoredDirty map[string]bool
+	// worktrees are the worktree paths git lists in any directory; nil makes
+	// the list fail.
+	worktrees []string
+	// stranded maps listed worktrees to the count of commits only their HEAD
+	// and HEAD reflog hold; a negative count makes the count fail.
+	stranded map[string]int
+	// pruned is the count of commits a `worktree prune` strands; a negative
+	// count makes the count fail.
+	pruned int
+	// unforced marks directories where clean.requireForce reads false.
+	unforced map[string]bool
 }
 
 // fakeTrees are the revs fakeIsTree resolves in any directory belt can name.
@@ -32,6 +43,15 @@ func fakeIsTree(_ context.Context, dir, rev string) (bool, error) {
 	return dir != "" && fakeTrees[rev], nil
 }
 
+// fakeLost stands in for a stranded-commit count of n, failing when n is
+// negative.
+func fakeLost(n int) (lostCommits, error) {
+	if n < 0 {
+		return lostCommits{}, errors.New("git rev-list failed")
+	}
+	return lostCommits{n: n, tip: "0123456789abcdef0123"}, nil
+}
+
 // newDiscardGuard builds the guard with injected resolvers and a warning
 // recorder, so no test shells out to git or dials the events service. The
 // nothing-lost proof never holds here: a dirty fixture tree has unique work.
@@ -39,6 +59,23 @@ func newDiscardGuard(cfg config.Config, f discardFixture, warned *[]string) *Git
 	g := NewGitDiscard(cfg)
 	g.resolveRepo = func(string) string { return f.repo }
 	g.isTree = fakeIsTree
+	g.worktrees = func(string) ([]listedWorktree, error) {
+		if f.worktrees == nil {
+			return nil, errors.New("git worktree list failed")
+		}
+		var list []listedWorktree
+		for i, p := range f.worktrees {
+			list = append(list, listedWorktree{path: p, main: i == 0})
+		}
+		return list, nil
+	}
+	g.stranded = func(_ context.Context, _ string, wt listedWorktree) (lostCommits, error) {
+		return fakeLost(f.stranded[wt.path])
+	}
+	g.pruned = func(context.Context, string, []string) (lostCommits, error) {
+		return fakeLost(f.pruned)
+	}
+	g.requireForce = func(_ context.Context, dir string) bool { return !f.unforced[dir] }
 	g.prove = func(gitInvocation) error { return errors.New("`file.go` holds unique work") }
 	g.status = func(dir string, extra ...string) (string, bool) {
 		if f.broken[dir] {
@@ -126,6 +163,48 @@ func TestGitDiscardCommands(t *testing.T) {
 		{"git switch -cf", false}, // a branch named f
 		{"git switch -c f", false},
 		{"git switch main", false},
+		// checkout and switch options read as git's parse-options reads them:
+		// a prefix of one name, a bundle up to a letter that takes a value, and
+		// fail closed on a word belt cannot read.
+		{"git checkout --fo main", true},
+		{"git checkout -mf main", true},
+		{"git checkout -fB x main", true},
+		{"git checkout -Bf main", false}, // a branch named f
+		{"git checkout -tf", false},      // -t takes f as its value, which git refuses
+		{"git checkout --no-f main", false},
+		{"git checkout -f --no-force main", false},
+		{"git checkout --patc", true},
+		{"git checkout --pat main", true}, // ambiguous: patch or a pathspec option
+		{"git checkout -U3 -p", true},
+		{"git checkout -2 file.go", true},
+		{"git checkout --ours -- file.go", true},
+		{"git checkout --conflict=diff3 -- file.go", true},
+		{"git checkout --conflict diff3 file.go", true},
+		{"git checkout --pathspec-f list", true}, // ambiguous: from-file or file-nul
+		{"git checkout --frobnicate main", true},
+		{"git checkout $X", true},
+		{"git checkout main $X", true},
+		{"git checkout -b feat --track origin/main", false},
+		{"git checkout --orphan new", false},
+		{"git checkout --detach main", false},
+		{"git checkout -b -- main", false}, // -b takes -- as its value
+		{"git switch --force main", true},
+		{"git switch --discard main", true},
+		{"git switch --fo main", true}, // ambiguous: force or force-create
+		{"git switch --d main", true},  // ambiguous: detach or discard-changes
+		{"git switch -mf main", true},
+		{"git switch -fC x", true},
+		{"git switch -Cf x", false}, // a branch named f
+		{"git switch -f --no-force main", false},
+		{"git switch --no-force main", false},
+		{"git switch --no-discard-changes main", false},
+		{"git switch --track origin/x", false},
+		{"git switch -d HEAD~1", false},
+		{"git switch -c new --no-guess", false},
+		{"git switch $X", true},
+		{"git switch --frobnicate main", true},
+		{"echo main | xargs git switch", true},
+		{"xargs git -c", true}, // a fed git whose options belt cannot read
 		{"git restore file.go", true},
 		{"git restore --staged file.go", false},
 		{"git restore -S file.go", false},
@@ -215,6 +294,11 @@ func TestGitDiscardResetCleanOptions(t *testing.T) {
 		{"git reset --soft HEAD~1", false},
 		{"git reset --so 'HEAD@{1}'", false},
 		{"git reset --keep HEAD~1", false},
+		// --merge drops staged edits; any prefix git reads as it counts.
+		{"git reset --merge", true},
+		{"git reset --mer HEAD~1", true},
+		{"git reset -q --merge origin/main", true},
+		{"git reset --merge --soft", true}, // the proof reads no mix of modes
 		{"git reset -q HEAD~1", false},
 		{"git reset -p", false},
 		{"git reset -U3 -p", false},
@@ -267,6 +351,19 @@ func TestGitDiscardResetCleanOptions(t *testing.T) {
 		{"git clean -nd -e '*.log'", false},
 		{"git clean -n --exclude=*.log", false},
 		{"git clean -nq", false},
+		// A clean without -f or -i deletes once clean.requireForce is false,
+		// which config the command sets may say.
+		{"git -c clean.requireForce=false clean -d", true},
+		{"git -c color.ui=never clean -d", true},
+		{"git --config-env=clean.requireForce=V clean", true},
+		{"GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=clean.requireForce GIT_CONFIG_VALUE_0=false git clean -d", true},
+		{`export GIT_CONFIG_PARAMETERS="'clean.requireforce=false'"; git clean -d`, true},
+		{"git config clean.requireForce false && git clean -d", true},
+		{"git config --local clean.requireForce false; git clean", true},
+		{"HOME=/tmp/h git clean -x", true},
+		{"git -c clean.requireForce=false clean -n", false},
+		{"git clean -d && git config clean.requireForce false", false},
+		{"git clean", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.command, func(t *testing.T) {
@@ -280,6 +377,275 @@ func TestGitDiscardResetCleanOptions(t *testing.T) {
 	}
 }
 
+// TestGitDiscardUnforcedClean pins a clean in a repository whose config on
+// disk sets clean.requireForce false: without -f or -i it deletes all the
+// same, so it counts on a dirty tree and passes a clean one; a dry run
+// deletes nothing.
+func TestGitDiscardUnforcedClean(t *testing.T) {
+	tests := []struct {
+		command  string
+		dirty    bool
+		wantDeny bool
+	}{
+		{"git clean", true, true},
+		{"git clean -d", true, true},
+		{"git clean -x", true, true},
+		{"git clean -q -- out", true, true},
+		{"git -C /repo clean -d", true, true},
+		{"git clean -n", true, false},
+		{"git clean -d --dry-run", true, false},
+		{"git clean -d", false, false},
+		{"git -C /other clean -d", true, false}, // requireForce holds at /other
+	}
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			var warned []string
+			f := discardFixture{
+				repo: "r", unforced: map[string]bool{"/repo": true},
+				dirty: map[string]bool{"/repo": tt.dirty, "/other": tt.dirty},
+			}
+			g := newDiscardGuard(config.Config{}, f, &warned)
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/repo"})
+			if (d != nil) != tt.wantDeny {
+				t.Fatalf("Check(%q) denial = %v, wantDeny %v", tt.command, d, tt.wantDeny)
+			}
+		})
+	}
+}
+
+// TestGitDiscardTreeWriters pins which worktree remove, apply, read-tree,
+// checkout-index, rm and mv forms count as a discard on a dirty tree, their
+// options read as git's parse-options reads them, with an option belt does
+// not know, or a word the shell may still turn into one, counted.
+func TestGitDiscardTreeWriters(t *testing.T) {
+	dirty := discardFixture{
+		repo:      "github.com/mad01/thismoon",
+		dirty:     map[string]bool{"/repo": true, "/wt": true},
+		worktrees: []string{"/repo", "/wt"},
+	}
+	tests := []struct {
+		command  string
+		wantDeny bool
+	}{
+		// A forced remove deletes the worktree; a plain one refuses a dirty
+		// tree, and both are judged in it (TestGitDiscardDecision).
+		{"git worktree remove --force /wt", true},
+		{"git worktree remove -f wt", true},
+		{"git worktree remove -f -f ../wt", true},
+		{"git worktree remove --fo /wt", true},
+		{"git worktree remove --no-force -f /wt", true},
+		{"git worktree remove --frobnicate /wt", true},
+		{"git worktree remove -f $WT", true},
+		{"git worktree $SUB -f /wt", true},
+		{"echo /wt | xargs git worktree remove", true},
+		{"echo remove /wt | xargs git worktree", true},
+		{"git worktree remove $WT", true},
+		{"git worktree remove /wt", false},
+		{"git worktree remove '/wt'", false},
+		{"git worktree remove -f --no-force /wt", false},
+		{"git worktree list", false},
+		{"git worktree prune", false},
+		{"git worktree prune -n --frobnicate", true},
+		{"git worktree prune $OPT", true},
+		{"git worktree add ../x", false},
+		// apply rewrites what its patches touch, forward or reversed.
+		{"git apply -R p.diff", true},
+		{"git apply p.diff", true},
+		{"git apply --rev p.diff", true},
+		{"git diff | git apply -R", true},
+		{"git apply --index p.diff", true},
+		{"git apply -3 p.diff", true},
+		{"git apply --cached --no-cached p.diff", true},
+		{"git apply --stat --apply p.diff", true},
+		{"git apply --check --no-check p.diff", true},
+		{"git apply --build-fake-ancestor=x p.diff", true},
+		{"git apply --frobnicate p.diff", true},
+		{"git apply --no-a p.diff", true}, // git finds it ambiguous
+		{"git apply $OPT p.diff", true},
+		{"git apply --cached p.diff", false},
+		{"git apply --cach -R p.diff", false},
+		{"git apply --check -R p.diff", false},
+		{"git apply --stat p.diff", false},
+		{"git apply --numstat -R p.diff", false},
+		{"git apply --summary p.diff", false},
+		// read-tree writes the worktree with -u.
+		{"git read-tree -u --reset HEAD", true},
+		{"git read-tree -m -u HEAD", true},
+		{"git read-tree -mu HEAD", true},
+		{"git read-tree --res -u HEAD", true},
+		{"git read-tree -n --no-dry-run -m -u HEAD", true},
+		{"git read-tree --frobnicate HEAD", true},
+		// --index-output writes the index over the file it names.
+		{"git read-tree --index-output=a.txt HEAD", true},
+		{"git read-tree --index-out a.txt HEAD", true},
+		{"git read-tree -n --no-dry-run --index-output=a.txt HEAD", true},
+		{"git read-tree -n --index-output=a.txt HEAD", false},
+		{"git read-tree --reset HEAD", false},
+		{"git read-tree -m HEAD", false},
+		{"git read-tree HEAD", false},
+		{"git read-tree -n -m -u HEAD", false},
+		{"git read-tree --dry -m -u HEAD", false},
+		// checkout-index overwrites only with -f.
+		{"git checkout-index -f -a", true},
+		{"git checkout-index -fa", true},
+		{"git checkout-index --force --all", true},
+		{"git checkout-index --fo -- file.go", true},
+		{"git checkout-index -f --stdin", true},
+		{"git checkout-index --frobnicate -a", true},
+		{"git checkout-index -a", false},
+		{"git checkout-index -f --temp -a", false},
+		{"git checkout-index -f --no-force -a", false},
+		// rm deletes a changed file only with -f, and never with --cached.
+		{"git rm -f file.go", true},
+		{"git rm -rf .", true},
+		{"git rm -r -f .", true},
+		{"git rm --fo file.go", true},
+		{"git rm -n --no-dry-run -f file.go", true},
+		{"git rm -f --pathspec-from-file=list", true},
+		{"git rm $OPT file.go", true},
+		{"echo -f | xargs git rm", true},
+		{"git rm file.go", false},
+		{"git rm -r dir", false},
+		{"git rm --cached -f file.go", false},
+		{"git rm --ca -rf .", false},
+		{"git rm -f -n file.go", false},
+		{"git rm -- -f", false}, // a path after --
+		// mv overwrites its destination only with -f.
+		{"git mv -f a b", true},
+		{"git mv --force a b", true},
+		{"git mv --fo a b", true},
+		{"git mv -kf a b", true},
+		{"git mv --frobnicate a b", true},
+		{"git mv $OPT a b", true},
+		{"git mv a b", false},
+		{"git mv -n -f a b", false},
+		{"git mv -f --no-force a b", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			var warned []string
+			g := newDiscardGuard(config.Config{}, dirty, &warned)
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/repo"})
+			if (d != nil) != tt.wantDeny {
+				t.Fatalf("Check(%q) denial = %v, wantDeny %v", tt.command, d, tt.wantDeny)
+			}
+			if d != nil &&
+				!strings.HasPrefix(d.Reason, "belt[git-discard]: this discards uncommitted work") {
+				t.Errorf("reason = %q, want the git-discard prefix and message", d.Reason)
+			}
+		})
+	}
+}
+
+// TestPruneExpiry pins which expire words a prune's dry run takes: the
+// prune's own, unless a value may still change, which leaves the most a
+// prune deletes.
+func TestPruneExpiry(t *testing.T) {
+	tests := []struct {
+		args    string
+		fed     bool
+		want    string
+		wantErr bool
+	}{
+		{args: "", want: ""},
+		{args: "-v -n", want: ""},
+		{args: "--expire 3.days.ago", want: "--expire=3.days.ago"},
+		{args: "--expire=now -v", want: "--expire=now"},
+		{args: "--exp never", want: "--expire=never"},
+		{args: "--expire=now --no-expire", want: "--expire=now --no-expire"},
+		{args: "--expire=*", want: ""},
+		{args: "--expire=$WHEN", wantErr: true},
+		{args: "--expire=1.day.ago", fed: true, want: ""},
+		{args: "--frobnicate", wantErr: true},
+		{args: "--expire", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.args, func(t *testing.T) {
+			got, err := pruneExpiry(strings.Fields(tt.args), tt.fed)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("pruneExpiry(%q) error = %v, wantErr %v", tt.args, err, tt.wantErr)
+			}
+			if strings.Join(got, " ") != tt.want {
+				t.Errorf("pruneExpiry(%q) = %q, want %q", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRemoveTargets pins which listed worktrees a `worktree remove <name>`
+// may delete: one whose path ends in the name at a directory boundary, or
+// the one at the name as a path, both without case.
+func TestRemoveTargets(t *testing.T) {
+	listed := listedAt("/repo", "/x/wt", "/y/WT", "/x/other-wt")
+	tests := []struct {
+		dir, name string
+		want      []string
+	}{
+		{"/repo", "/x/wt", []string{"/x/wt"}},
+		{"/repo", "../x/wt", []string{"/x/wt"}},
+		{"/repo", "../x/wt/", []string{"/x/wt"}},
+		{"/repo", "x/wt", []string{"/x/wt"}},
+		{"/repo", "wt", []string{"/x/wt", "/y/WT"}},
+		{"/x", "other-wt", []string{"/x/other-wt"}},
+		{"/repo", "-wt", nil},
+		{"/repo", "../y/wt", []string{"/y/WT"}},
+		{"/repo", "gone", nil},
+		{"/repo", ".", []string{"/repo"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.dir+" "+tt.name, func(t *testing.T) {
+			got := removeTargets(tt.dir, tt.name, listed)
+			if paths := worktreePaths(got); paths != strings.Join(tt.want, " ") {
+				t.Errorf("removeTargets(%q, %q) = %v, want %v", tt.dir, tt.name, paths, tt.want)
+			}
+		})
+	}
+}
+
+// TestRemoveTargetsThroughSymlinks pins that a relative name counts from
+// the physical directory too: git resolves `..` from where a symlinked cwd
+// points, not from the link's parent.
+func TestRemoveTargetsThroughSymlinks(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"r/sub", "r/wty", "x/wty"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(root, "x", "L2")
+	if err := os.Symlink(filepath.Join(root, "r", "sub"), link); err != nil {
+		t.Fatal(err)
+	}
+	physical, logical := filepath.Join(root, "r", "wty"), filepath.Join(root, "x", "wty")
+	listed := listedAt(physical, logical)
+	got := worktreePaths(removeTargets(link, "../wty", listed))
+	if want := physical + " " + logical; got != want {
+		t.Errorf("removeTargets(%q, ../wty) = %v, want %v", link, got, want)
+	}
+	got = worktreePaths(removeTargets(link, "../../r/wty", listed))
+	if got != physical {
+		t.Errorf("removeTargets(%q, ../../r/wty) = %v, want %v", link, got, physical)
+	}
+}
+
+// listedAt lists worktrees at paths, none of them main.
+func listedAt(paths ...string) []listedWorktree {
+	list := make([]listedWorktree, 0, len(paths))
+	for _, p := range paths {
+		list = append(list, listedWorktree{path: p})
+	}
+	return list
+}
+
+// worktreePaths joins the paths of a worktree list with spaces.
+func worktreePaths(list []listedWorktree) string {
+	paths := make([]string, 0, len(list))
+	for _, wt := range list {
+		paths = append(paths, wt.path)
+	}
+	return strings.Join(paths, " ")
+}
+
 // TestGitDiscardStashDrop pins that a stash drop or clear is denied on a
 // clean tree and a dirty one alike, with its own reason, in any form git
 // reads as one or the shell may turn into one. A push form keeps the
@@ -287,10 +653,16 @@ func TestGitDiscardResetCleanOptions(t *testing.T) {
 // pass.
 func TestGitDiscardStashDrop(t *testing.T) {
 	const repo = "github.com/mad01/thismoon"
+	// drops denies on any tree with the stash reason; pushes, and hidesKeeps
+	// for a git call whose subcommand belt cannot see, deny a dirty tree
+	// alone; hides denies a dirty tree as a discard and a clean one with the
+	// stash reason.
 	tests := []struct {
-		command string
-		drops   bool
-		pushes  bool
+		command    string
+		drops      bool
+		pushes     bool
+		hides      bool
+		hidesKeeps bool
 	}{
 		{command: "git stash drop", drops: true},
 		{command: "git stash drop -q", drops: true},
@@ -349,6 +721,80 @@ func TestGitDiscardStashDrop(t *testing.T) {
 		{command: "echo f | xargs git stash push", pushes: true},
 		{command: "git stash dro", pushes: true},
 		{command: "git stash Drop", pushes: true},
+		// A reflog or ref delete that reaches refs/stash, which holds the
+		// entries.
+		{command: "git reflog delete 'stash@{0}'", drops: true},
+		{command: "git reflog delete refs/stash@{1}", drops: true},
+		{command: "git reflog delete --rewrite --updateref stash@{0}", drops: true},
+		{command: "git reflog delete STASH@{0}", drops: true},
+		{command: `git reflog delete "$R@{0}"`, drops: true},
+		{command: "git reflog delete $E", drops: true},
+		{command: "git reflog delete --frobnicate stash@{0}", drops: true},
+		{command: "git reflog 'delete' stash@{0}", drops: true},
+		{command: "git reflog $X stash@{0}", drops: true},
+		{command: "git reflog d{elete,} stash@{0}", drops: true},
+		{command: "git reflog expire --expire-unreachable=now refs/stash", drops: true},
+		{command: "git reflog expire --expire=now --all", drops: true},
+		{command: "git reflog expire --al", drops: true},
+		{command: "git reflog expire stash", drops: true},
+		{command: "git reflog expire --exp=now stash", drops: true}, // ambiguous
+		{command: "git reflog drop refs/stash", drops: true},
+		{command: "git reflog drop --all", drops: true},
+		{command: "echo delete | xargs git reflog", drops: true},
+		{command: "echo main | xargs git reflog expire", drops: true},
+		{command: "git update-ref -d refs/stash", drops: true},
+		{command: "git update-ref -d stash", drops: true},
+		{command: "git update-ref -m gone --no-deref -d refs/stash", drops: true},
+		{command: "git update-ref -d $R", drops: true},
+		{command: "git update-ref --stdin", drops: true},
+		{command: "git update-ref --std -z", drops: true},
+		{command: "echo refs/stash | xargs git update-ref -d", drops: true},
+		{command: "git reflog delete -n 'stash@{0}'"},
+		{command: "git reflog delete HEAD@{1}"},
+		{command: "git reflog expire --dry-run --all"},
+		{command: "git reflog expire --expire=now refs/heads/main"},
+		{command: "git reflog drop main"},
+		{command: "git reflog"},
+		{command: "git reflog -n 5"},
+		{command: "git reflog HEAD@{1}"},
+		{command: "git reflog show stash"},
+		{command: "git reflog list"},
+		{command: "git reflog exists refs/stash"},
+		{command: "git update-ref -d refs/heads/old"},
+		{command: "git update-ref refs/stash HEAD"},
+		{command: "git update-ref --no-stdin refs/heads/x HEAD"},
+		// A command in front of git that may hand it the subcommand: belt
+		// never sees the words, so they may drop entries too.
+		{command: "echo stash clear | xargs git", hides: true},
+		{command: "echo reset --hard | xargs git", hides: true},
+		{command: "xargs git < cmds.txt", hides: true},
+		{command: "xargs git --no-pager", hides: true},
+		{command: "xargs git -c x=y", hides: true},
+		{command: "xargs git -C /other", drops: true}, // a clean tree at /other
+		{command: `find . -name x -exec git {} \;`, hides: true},
+		// A subcommand word only a shell can resolve.
+		{command: "git $X clear", hides: true},
+		{command: "git $X drop -q", hides: true},
+		{command: `git "$X" stash drop`, hides: true},
+		{command: "git 'stash' drop", drops: true}, // the walk drops the quotes
+		{command: "git st\\ash clear", drops: true},
+		{command: "git $X", hides: true},
+		{command: `git "$@"`, hides: true},
+		{command: "git $X $Y", hides: true},
+		{command: "git $X file.go", hidesKeeps: true},
+		{command: "git ${X} status -s", hidesKeeps: true},
+		{command: "git 'stash' list"},
+		{command: "git st*sh list", hidesKeeps: true},
+		// An alias body belt cannot read.
+		{command: `git -c alias.x="$B" x`, hides: true},
+		{command: `git -c alias.x="stash $Y" x`, hides: true},
+		{command: `git -c alias.x="!$B" x`, hides: true},
+		{command: `git -c alias.x="-c a=b $Y" x`, hides: true},
+		{command: `git -c alias.x="y $Z" x`, hides: true}, // y may be another alias
+		{command: `git config alias.x "$B" && git x`, hides: true},
+		{command: "git --config-env=alias.x=B x", hides: true},
+		{command: `git -c alias.x="log $Y" x`, hidesKeeps: true},
+		{command: `git -c "alias.x=reset $Y" x`, hidesKeeps: true},
 	}
 	fixtures := map[string]discardFixture{
 		"clean": {repo: repo},
@@ -361,11 +807,12 @@ func TestGitDiscardStashDrop(t *testing.T) {
 				g := newDiscardGuard(config.Config{}, fixture, &warned)
 				d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/repo"})
 				var want string
+				dirty := name == "dirty"
 				switch {
-				case tt.drops:
-					want = "belt[git-discard]: " + stashDropReason
-				case tt.pushes && name == "dirty":
+				case (tt.pushes || tt.hides || tt.hidesKeeps) && dirty:
 					want = "belt[git-discard]: this discards uncommitted work"
+				case tt.drops || tt.hides:
+					want = "belt[git-discard]: " + stashDropReason
 				}
 				switch {
 				case want == "" && d != nil:
@@ -536,6 +983,146 @@ func TestGitDiscardDecision(t *testing.T) {
 			command: "git reset --hard", cwd: "/repo",
 		},
 		{
+			name:    "the new tree writers pass on a clean tree",
+			fixture: discardFixture{repo: repo},
+			command: "git apply -R p.diff; git read-tree -u --reset HEAD; " +
+				"git checkout-index -f -a; git rm -rf .; git mv -f a b",
+			cwd: "/repo",
+		},
+		{
+			name: "a forced worktree remove is judged in the worktree, not the cwd",
+			fixture: discardFixture{
+				repo: repo, dirty: map[string]bool{"/repo": true}, worktrees: []string{"/repo", "/wt"},
+			},
+			command: "git worktree remove -f ../wt", cwd: "/repo",
+		},
+		{
+			name: "a forced remove of a dirty worktree denies from a clean cwd",
+			fixture: discardFixture{
+				repo: repo, dirty: map[string]bool{"/wt": true}, worktrees: []string{"/repo", "/wt"},
+			},
+			command: "git -C /repo worktree remove --force /wt", cwd: "/elsewhere", wantDeny: true,
+		},
+		{
+			name: "every worktree a suffix may name is judged",
+			fixture: discardFixture{
+				repo:      repo,
+				dirty:     map[string]bool{"/b/WT": true},
+				worktrees: []string{"/repo", "/a/wt", "/b/WT"},
+			},
+			command: "git worktree remove -f wt", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name:    "a worktree name that matches no worktree denies",
+			fixture: discardFixture{repo: repo, worktrees: []string{"/repo"}},
+			command: "git worktree remove -f gone", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name:    "a worktree list that fails denies",
+			fixture: discardFixture{repo: repo},
+			command: "git worktree remove -f /wt", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name: "a plain remove of a detached HEAD with commits only it holds denies",
+			fixture: discardFixture{
+				repo: repo, worktrees: []string{"/repo", "/wt"}, stranded: map[string]int{"/wt": 2},
+			},
+			command: "git worktree remove /wt", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name: "a forced remove of a clean detached HEAD with commits only it holds denies",
+			fixture: discardFixture{
+				repo: repo, worktrees: []string{"/repo", "/wt"}, stranded: map[string]int{"/wt": 1},
+			},
+			command: "git worktree remove -f /wt", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name: "a detached HEAD whose commits belt cannot count denies",
+			fixture: discardFixture{
+				repo: repo, worktrees: []string{"/repo", "/wt"}, stranded: map[string]int{"/wt": -1},
+			},
+			command: "git worktree remove /wt", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name: "a detached HEAD that a branch holds passes",
+			fixture: discardFixture{
+				repo:      repo,
+				dirty:     map[string]bool{"/wt": true},
+				worktrees: []string{"/repo", "/wt"},
+				stranded:  map[string]int{"/wt": 0},
+			},
+			command: "git worktree remove /wt", cwd: "/repo",
+		},
+		{
+			name: "a remove of a branch whose HEAD reflog alone holds commits denies",
+			fixture: discardFixture{
+				repo: repo, worktrees: []string{"/repo", "/wt"}, stranded: map[string]int{"/wt": 3},
+			},
+			command: "git worktree remove /wt", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name: "a remove of the main worktree is not counted, since git refuses it",
+			fixture: discardFixture{
+				repo: repo, worktrees: []string{"/repo", "/wt"}, stranded: map[string]int{"/repo": -1},
+			},
+			command: "git worktree remove /repo", cwd: "/wt",
+		},
+		{
+			name:    "a prune that strands commits denies",
+			fixture: discardFixture{repo: repo, pruned: 2},
+			command: "git worktree prune -v", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name:    "a prune whose commits belt cannot count denies",
+			fixture: discardFixture{repo: repo, pruned: -1},
+			command: "git worktree prune", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name:    "a dry-run prune passes",
+			fixture: discardFixture{repo: repo, pruned: -1},
+			command: "git worktree prune -n; git worktree prune --no-dry-run --dry-run", cwd: "/repo",
+		},
+		{
+			name:    "a dry-run prune a command in front of git may hand more words denies",
+			fixture: discardFixture{repo: repo, pruned: 1},
+			command: "echo --no-dry-run | xargs git worktree prune -n", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name:    "a prune that strands nothing passes",
+			fixture: discardFixture{repo: repo},
+			command: "git worktree prune --expire 3.days.ago", cwd: "/repo",
+		},
+		{
+			name:    "a plain remove belt cannot place denies",
+			fixture: discardFixture{repo: repo, worktrees: []string{"/repo", "/wt"}},
+			command: "git worktree remove gone", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name:    "a forced mv checks ignored files too",
+			fixture: discardFixture{repo: repo, ignoredDirty: map[string]bool{"/repo": true}},
+			command: "git mv -f a.txt build.log", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name:    "a checkout-index --prefix export denies on a clean tree",
+			fixture: discardFixture{repo: repo},
+			command: "git checkout-index -f -a --prefix=/tmp/export/", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name:    "an apply outside the worktree denies on a clean tree",
+			fixture: discardFixture{repo: repo},
+			command: "git apply --unsafe-paths p.diff", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name:    "a read-tree into another index file denies on a clean tree",
+			fixture: discardFixture{repo: repo},
+			command: "git read-tree -m -u --index-output=/tmp/idx HEAD", cwd: "/repo", wantDeny: true,
+		},
+		{
+			name:    "a read-tree into another index file without -u denies on a clean tree",
+			fixture: discardFixture{repo: repo},
+			command: "git read-tree --index-output=a.txt HEAD", cwd: "/repo", wantDeny: true,
+		},
+		{
 			name:    "a stash drop denies on a clean tree",
 			fixture: discardFixture{repo: repo},
 			command: "git stash drop", cwd: "/repo", wantDeny: true,
@@ -600,7 +1187,7 @@ func TestSortCheckoutOperands(t *testing.T) {
 		{dir: "/repo", args: "HEAD f g", want: "HEAD -- f g"},
 		{dir: "/repo", args: "- f", want: "@{-1} -- f"},
 		{dir: "/repo", args: "-b feat f", want: "-b feat -- f"},
-		{dir: "/repo", args: "$B", want: "-- $B"},
+		{dir: "/repo", args: "$B", want: "$B"}, // a word readGitWords refuses stays as written
 		{dir: "/repo", args: "main -- f", want: "main -- f"},
 		{dir: "/repo", args: "f --", want: "f --"},
 		{dir: "", args: "main", want: "-- main"},
@@ -698,7 +1285,8 @@ func TestCheckoutLookupPastBudget(t *testing.T) {
 }
 
 // TestGitStatusPorcelain runs the real backend against a scratch repo: clean
-// reads as clean, an untracked file as dirty, and a non-repo as a failure.
+// reads as clean, an untracked file as dirty even when the repo's config
+// hides untracked files, and a non-repo as a failure.
 func TestGitStatusPorcelain(t *testing.T) {
 	dir := t.TempDir()
 	if out, ok := gitStatusPorcelain(dir); ok {
@@ -715,6 +1303,12 @@ func TestGitStatusPorcelain(t *testing.T) {
 	}
 	if out, ok := gitStatusPorcelain(dir); !ok || out == "" {
 		t.Errorf("status with an untracked file = %q, %v; want dirty", out, ok)
+	}
+	if err := gitCmd(dir, "config", "status.showUntrackedFiles", "no").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if out, ok := gitStatusPorcelain(dir); !ok || out == "" {
+		t.Errorf("status with untracked files hidden by config = %q, %v; want dirty", out, ok)
 	}
 	if _, ok := gitStatusPorcelain(""); ok {
 		t.Error("empty dir must fail, never run git in belt's own cwd")

@@ -19,6 +19,21 @@ const (
 	// hardReset moves the branch and rewrites index and worktree: `reset
 	// --hard [<commit>]`.
 	hardReset
+	// mergeReset is a hard reset that keeps the worktree copies that differ
+	// from the index: `reset --merge [<commit>]`.
+	mergeReset
+	// treeRead rewrites index and worktree from a tree and leaves the
+	// branch alone: `read-tree -u --reset <tree>`, `read-tree -m -u <tree>`.
+	treeRead
+	// trackedRemoval deletes tracked files from index and worktree: `rm -f`.
+	trackedRemoval
+	// forcedMove overwrites what stands at each destination: `mv -f`.
+	forcedMove
+	// patchApply rewrites the files its patches touch: `apply`.
+	patchApply
+	// worktreeRemoval deletes a linked worktree with its index: `worktree
+	// remove --force`, read in the worktree it removes.
+	worktreeRemoval
 )
 
 // cleanScope says which untracked files a clean deletes.
@@ -43,13 +58,19 @@ type discardSpec struct {
 	// pathspecs are the paths the command names, each a literal path
 	// relative to the directory it runs in.
 	pathspecs []string
-	// staged marks a path restore that overwrites the index too.
+	// staged marks a path restore or an apply that overwrites the index too.
 	staged bool
 	// overlay marks a path restore that leaves index paths the source lacks
 	// in place (checkout), where restore deletes them.
 	overlay bool
 	// scope is which untracked files a clean deletes.
 	scope cleanScope
+	// dest is where a forced move puts its sources (pathspecs), as written.
+	dest string
+	// patches are the patch files an apply reads, and patchOpts its options
+	// that change which paths the patches name, as git reads them.
+	patches   []string
+	patchOpts []string
 }
 
 // errNotRead is the cause for a discard shape the proof does not read.
@@ -73,6 +94,21 @@ func readDiscardSpec(c gitInvocation) (discardSpec, error) {
 		return readClean(c.args)
 	case "reset":
 		return readReset(c.args)
+	case "read-tree":
+		return readReadTree(c.args)
+	case "checkout-index":
+		return readCheckoutIndex(c.args)
+	case "rm":
+		return readGitRm(c.args)
+	case "mv":
+		return readMv(c.args)
+	case "apply":
+		return readApply(c.args)
+	case "worktree":
+		// judge reads a remove's words once (removedWorktrees) and runs the
+		// proof in each worktree it removes, where every file goes, tracked
+		// or not, and the index with it. The proof reads nothing from them.
+		return discardSpec{kind: worktreeRemoval}, nil
 	}
 	return discardSpec{}, errNoProof
 }
@@ -81,49 +117,29 @@ func readDiscardSpec(c gitInvocation) (discardSpec, error) {
 // `checkout [-q] .`. A tree writes index and worktree; without one the
 // worktree comes back from the index. Patch mode (-p) is read as taking
 // every hunk, the most it drops, and from a tree it also deletes the paths
-// the tree lacks, as git does for a file only the index has. Any other
-// flag, `-f` included, is not read.
+// the tree lacks, as git does for a file only the index has. Options are
+// read as git reads them (readGitWords); any but -q and -p, `-f` included,
+// is not read.
 func readCheckout(args []string) (discardSpec, error) {
-	before, paths, dashed := splitAtDashes(args)
-	var words []string
-	patch := false
-	for _, a := range before {
-		read, p := readCheckoutFlag(a)
-		switch {
-		case read:
-			patch = patch || p
-		case strings.HasPrefix(a, "-"):
-			return discardSpec{}, fmt.Errorf("option %s", a)
-		default:
-			words = append(words, a)
-		}
+	w, err := readGitWords(args, checkoutOptions)
+	if err != nil {
+		return discardSpec{}, err
 	}
-	spec := discardSpec{kind: pathRestore, overlay: true, pathspecs: paths}
+	if err := onlyOptions(w, "quiet", "patch"); err != nil {
+		return discardSpec{}, err
+	}
+	words := w.operands
+	spec := discardSpec{kind: pathRestore, overlay: true, pathspecs: w.paths}
 	switch {
-	case dashed && len(words) == 1:
-		spec.source, spec.staged, spec.overlay = words[0], true, !patch
-	case dashed && len(words) == 0:
-	case !dashed && len(words) == 1 && words[0] == ".":
+	case w.dashed && len(words) == 1:
+		spec.source, spec.staged, spec.overlay = words[0], true, !w.on("patch")
+	case w.dashed && len(words) == 0:
+	case !w.dashed && len(words) == 1 && words[0] == ".":
 		spec.pathspecs = words
 	default:
 		return discardSpec{}, errNotRead
 	}
 	return spec, checkOperands(spec)
-}
-
-// readCheckoutFlag reports whether readCheckout reads a checkout option,
-// and whether it selects patch mode: -q, -p, a bundle of the two, --quiet
-// and --patch.
-func readCheckoutFlag(a string) (read, patch bool) {
-	switch {
-	case a == "--quiet":
-		return true, false
-	case a == "--patch":
-		return true, true
-	case len(a) < 2 || a[0] != '-' || strings.Trim(a[1:], "qp") != "":
-		return false, false
-	}
-	return true, strings.Contains(a, "p")
 }
 
 // readRestore reads `restore [-q] [-W] [-S] [-s <tree>] [--] <paths>`.
@@ -186,23 +202,31 @@ func readClean(args []string) (discardSpec, error) {
 	return spec, checkOperands(spec)
 }
 
-// readReset reads `reset --hard [-q] [<commit>]`, its options as git reads
-// them (readGitWords). A reset with paths is not one git runs with --hard,
-// and any other option is not read.
+// readReset reads `reset (--hard | --merge) [-q] [<commit>]`, its options as
+// git reads them (readGitWords); git keeps the last mode given. A reset with
+// paths is not one git runs in either mode, and any other option is not
+// read.
 func readReset(args []string) (discardSpec, error) {
 	w, err := readGitWords(args, resetOptions)
-	switch {
-	case err != nil:
+	if err != nil {
 		return discardSpec{}, err
-	case w.dashed || !w.sets("hard"):
-		return discardSpec{}, errNotRead
 	}
+	var kind discardKind
 	for _, o := range w.opts {
-		if o.name != "hard" && o.name != "quiet" {
-			return discardSpec{}, fmt.Errorf("option %s", o.word)
+		switch o.name {
+		case "hard":
+			kind = hardReset
+		case "merge":
+			kind = mergeReset
 		}
 	}
-	spec := discardSpec{kind: hardReset, source: "HEAD"}
+	if w.dashed || kind == 0 {
+		return discardSpec{}, errNotRead
+	}
+	if err := onlyOptions(w, "hard", "merge", "quiet"); err != nil {
+		return discardSpec{}, err
+	}
+	spec := discardSpec{kind: kind, source: "HEAD"}
 	switch len(w.operands) {
 	case 0:
 	case 1:
@@ -213,15 +237,159 @@ func readReset(args []string) (discardSpec, error) {
 	return spec, checkOperands(spec)
 }
 
-// splitAtDashes splits args at the first `--`: the words before it, the
-// paths after it, and whether there was one.
-func splitAtDashes(args []string) (before, after []string, dashed bool) {
-	for i, a := range args {
-		if a == "--" {
-			return args[:i], args[i+1:], true
+// readReadTree reads `read-tree -u (--reset | -m) [-q] [-v] <tree>`, its
+// options as git reads them (readGitWords). Both forms are read as --reset,
+// which overwrites every change git status lists; -m drops only the staged
+// ones, since git refuses to overwrite an unstaged edit. Two or three
+// trees, --prefix and any other option are not read.
+func readReadTree(args []string) (discardSpec, error) {
+	w, err := readGitWords(args, readTreeOptions)
+	switch {
+	case err != nil:
+		return discardSpec{}, err
+	case !w.sets("m") && !w.on("reset"):
+		return discardSpec{}, errNotRead
+	}
+	if err := onlyOptions(w, "u", "m", "reset", "quiet", "verbose"); err != nil {
+		return discardSpec{}, err
+	}
+	trees := slices.Concat(w.operands, w.paths)
+	if len(trees) != 1 {
+		return discardSpec{}, errNotRead
+	}
+	spec := discardSpec{kind: treeRead, source: trees[0]}
+	return spec, checkOperands(spec)
+}
+
+// readCheckoutIndex reads `checkout-index -f [-q] [-u] [-n] (-a | [--]
+// <file>...)` as a restore of those paths from the index; -a is every index
+// path under the directory it runs in, as git limits it. --stdin, --prefix,
+// --stage and any other option are not read.
+func readCheckoutIndex(args []string) (discardSpec, error) {
+	w, err := readGitWords(args, checkoutIndexOptions)
+	if err != nil {
+		return discardSpec{}, err
+	}
+	if err := onlyOptions(w, "all", "force", "quiet", "index", "no-create", "create"); err != nil {
+		return discardSpec{}, err
+	}
+	spec := discardSpec{
+		kind: pathRestore, overlay: true, pathspecs: slices.Concat(w.operands, w.paths),
+	}
+	if w.on("all") {
+		spec.pathspecs = append(spec.pathspecs, ".")
+	}
+	if len(spec.pathspecs) == 0 {
+		return discardSpec{}, errNotRead
+	}
+	return spec, checkOperands(spec)
+}
+
+// readGitRm reads `rm -f [-r] [-q] [--ignore-unmatch] [--] <pathspec>...`, its
+// options as git reads them (readGitWords): every index path the pathspecs
+// match goes from index and worktree. --pathspec-from-file, --sparse and any
+// other option are not read.
+func readGitRm(args []string) (discardSpec, error) {
+	w, err := readGitWords(args, rmOptions)
+	if err != nil {
+		return discardSpec{}, err
+	}
+	if err := onlyOptions(w, "force", "r", "quiet", "ignore-unmatch"); err != nil {
+		return discardSpec{}, err
+	}
+	spec := discardSpec{kind: trackedRemoval, pathspecs: slices.Concat(w.operands, w.paths)}
+	if len(spec.pathspecs) == 0 {
+		return discardSpec{}, errNotRead
+	}
+	return spec, checkOperands(spec)
+}
+
+// readMv reads `mv -f [-k] [-v] [--] <source>... <destination>`, its options
+// as git reads them (readGitWords). --sparse and any other option are not
+// read.
+func readMv(args []string) (discardSpec, error) {
+	w, err := readGitWords(args, mvOptions)
+	if err != nil {
+		return discardSpec{}, err
+	}
+	if err := onlyOptions(w, "force", "k", "verbose"); err != nil {
+		return discardSpec{}, err
+	}
+	words := slices.Concat(w.operands, w.paths)
+	if len(words) < 2 {
+		return discardSpec{}, errNotRead
+	}
+	last := len(words) - 1
+	spec := discardSpec{kind: forcedMove, pathspecs: words[:last], dest: words[last]}
+	if !literalPathspec(spec.dest) {
+		return discardSpec{}, fmt.Errorf("the pathspec %s", spec.dest)
+	}
+	return spec, checkOperands(spec)
+}
+
+// patchNameOptions are the apply options that change which paths a patch
+// names or how its hunks parse, which the proof passes on when it lists
+// them; patchValueOptions are those that take a value.
+var (
+	patchNameOptions  = wordSet("p directory include exclude reverse recount inaccurate-eof allow-empty")
+	patchValueOptions = wordSet("p directory include exclude")
+)
+
+// patchApplyOptions are the other apply options the proof reads: how hunks
+// match, what git prints, and --index or --3way, which write the index too.
+var patchApplyOptions = wordSet(
+	"index 3way ours theirs union C whitespace ignore-space-change ignore-whitespace " +
+		"unidiff-zero allow-overlap no-add add intent-to-add verbose quiet z " +
+		"stat numstat summary check apply cached",
+)
+
+// readApply reads `apply [<options>] <patch>...`, its options as git reads
+// them (readGitWords): the files its patches touch are rewritten, and with
+// --index or --3way their index entries too. A patch read from stdin cannot
+// be read a second time, --reject writes .rej files beside the paths, and
+// --unsafe-paths and --build-fake-ancestor write outside the tree, so none
+// of them is read; nor is a value the shell may still rewrite on an option
+// the proof passes on.
+func readApply(args []string) (discardSpec, error) {
+	w, err := readGitWords(args, applyOptions)
+	if err != nil {
+		return discardSpec{}, err
+	}
+	spec := discardSpec{
+		kind:    patchApply,
+		staged:  w.on("index") || w.on("3way"),
+		patches: slices.Concat(w.operands, w.paths),
+	}
+	for _, o := range w.opts {
+		switch {
+		case patchValueOptions[o.name] && !o.unset && (o.value == "" || !asWritten(o.value)):
+			return discardSpec{}, fmt.Errorf("option %s", o.word)
+		case patchNameOptions[o.name]:
+			spec.patchOpts = append(spec.patchOpts, o.asWord())
+		case !patchApplyOptions[o.name]:
+			return discardSpec{}, fmt.Errorf("option %s", o.word)
 		}
 	}
-	return args, nil, false
+	if len(spec.patches) == 0 || slices.Contains(spec.patches, "-") {
+		return discardSpec{}, errors.New("a patch read from stdin")
+	}
+	for _, p := range spec.patches {
+		if !literalPathspec(p) {
+			return discardSpec{}, fmt.Errorf("the patch %s", p)
+		}
+	}
+	return spec, nil
+}
+
+// onlyOptions refuses a read option whose name is not in names: the proof
+// reads no other.
+func onlyOptions(w gitWords, names ...string) error {
+	for _, o := range w.opts {
+		if !slices.Contains(names, o.name) {
+			return fmt.Errorf("option %s", o.word)
+		}
+	}
+	return nil
 }
 
 // checkOperands refuses a source or path the proof cannot pass to git as

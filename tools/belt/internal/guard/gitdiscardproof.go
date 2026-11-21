@@ -148,7 +148,7 @@ func (r proofRepo) drops(spec discardSpec) ([]drop, error) {
 		return r.restoreDrops(spec)
 	case untrackedClean:
 		return r.cleanDrops(spec)
-	case hardReset:
+	case hardReset, mergeReset, treeRead:
 		if err := r.hiddenEntries(r.top, nil); err != nil {
 			return nil, err
 		}
@@ -156,6 +156,17 @@ func (r proofRepo) drops(spec discardSpec) ([]drop, error) {
 			return nil, err
 		}
 		return r.resetDrops(spec)
+	case trackedRemoval:
+		return r.removedTracked(spec)
+	case forcedMove:
+		return r.moveDrops(spec)
+	case patchApply:
+		return r.applyDrops(spec)
+	case worktreeRemoval:
+		if err := r.hiddenEntries(r.top, nil); err != nil {
+			return nil, err
+		}
+		return r.worktreeDrops()
 	}
 	return nil, notListed(errNotRead)
 }
@@ -271,7 +282,10 @@ func (r proofRepo) cleanDrops(spec discardSpec) ([]drop, error) {
 // path git status reports changed, plus, when the target is another commit,
 // each file it adds over an untracked or ignored file and each untracked
 // file standing where it needs a directory. It refuses a reset that would
-// strand commits neither a shared commit nor the target holds.
+// strand commits neither a shared commit nor the target holds. A read-tree
+// rewrites the same paths and leaves the branch alone. A merge reset drops
+// what a hard one does less what it keeps (mergeKeeps), and nothing when git
+// refuses it.
 func (r proofRepo) resetDrops(spec discardSpec) ([]drop, error) {
 	head, err := r.commit("HEAD")
 	if err != nil {
@@ -281,13 +295,15 @@ func (r proofRepo) resetDrops(spec discardSpec) ([]drop, error) {
 	if err != nil {
 		return nil, err
 	}
-	paths, err := r.changedTracked()
+	paths, unstaged, err := r.changedTracked()
 	if err != nil {
 		return nil, err
 	}
 	if target != head {
-		if err := r.keepsCommits(head, target); err != nil {
-			return nil, err
+		if spec.kind == hardReset {
+			if err := r.keepsCommits(head, target); err != nil {
+				return nil, err
+			}
 		}
 		added, err := r.addedFiles(head, target)
 		if err != nil {
@@ -295,7 +311,38 @@ func (r proofRepo) resetDrops(spec discardSpec) ([]drop, error) {
 		}
 		paths = appendNew(paths, inTheWay(r.top, added))
 	}
-	return r.rewritten(target, paths)
+	drops, err := r.rewritten(target, paths)
+	if err != nil || spec.kind != mergeReset {
+		return drops, err
+	}
+	drops, refused := mergeKeeps(drops, unstaged)
+	switch {
+	case refused:
+		return nil, nil
+	case target != head:
+		if err := r.keepsCommits(head, target); err != nil {
+			return nil, err
+		}
+	}
+	return drops, nil
+}
+
+// mergeKeeps takes from the drops of a hard reset what `reset --merge`
+// keeps (git 2.55): a path whose worktree copy differs from the index
+// (unstaged) keeps it, index and all, since its index entry already equals
+// the target. When such a path's index entry differs from the target, git
+// refuses the whole reset and changes nothing, and refused says so. A
+// conflicted entry is reset like any other, so it stays a drop.
+func mergeKeeps(drops []drop, unstaged map[string]bool) (kept []drop, refused bool) {
+	for _, d := range drops {
+		switch {
+		case !unstaged[d.path] || conflicted(d.staged):
+			kept = append(kept, d)
+		case d.staged.oid != d.written.oid || d.staged.mode != d.written.mode:
+			return nil, true
+		}
+	}
+	return kept, false
 }
 
 // rewritten pairs each path with what the target commit writes there and the
@@ -453,23 +500,25 @@ func (r proofRepo) commit(rev string) (string, error) {
 }
 
 // changedTracked lists the tracked paths git status reports changed in the
-// index or the worktree, untracked files left out. A submodule's `ignore`
-// setting is overridden, so a dirty submodule is listed (and refused later).
-func (r proofRepo) changedTracked() ([]string, error) {
+// index or the worktree, untracked files left out, and marks unstaged those
+// whose worktree copy differs from the index. A submodule's `ignore` setting
+// is overridden, so a dirty submodule is listed (and refused later).
+func (r proofRepo) changedTracked() (paths []string, unstaged map[string]bool, err error) {
 	out, err := runProofGit(
 		r.ctx, r.top, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=no",
 		"--ignore-submodules=none",
 	)
 	if err != nil {
-		return nil, notListed(err)
+		return nil, nil, notListed(err)
 	}
-	var paths []string
+	unstaged = map[string]bool{}
 	for _, f := range nulFields(out) {
 		if len(f) > 3 {
 			paths = append(paths, f[3:])
+			unstaged[f[3:]] = f[1] != ' '
 		}
 	}
-	return paths, nil
+	return paths, unstaged, nil
 }
 
 // addedFiles lists the files commit to has that commit from lacks.
@@ -710,18 +759,55 @@ func (c ctxReader) Read(p []byte) (int, error) {
 // it runs git, and git takes no optional lock, so a status here never
 // rewrites the index under the session.
 func runProofGit(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"--literal-pathspecs"}, args...)...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
-	cmd.WaitDelay = proofPipeGrace
-	out, err := cmd.Output()
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("git %s timed out", args[0])
-		}
-		return nil, fmt.Errorf("git %s failed", args[0])
+	out, _, err := execGit(ctx, gitExec{dir: dir, pre: []string{"--literal-pathspecs"}}, args...)
+	return out, err
+}
+
+// gitExec is how a proof runs git: in dir, with the global options pre in
+// front of the subcommand, env added to the session's environment, and
+// stdin as its input.
+type gitExec struct {
+	dir   string
+	pre   []string
+	env   []string
+	stdin []byte
+}
+
+// execGit runs one read-only git command and returns its stdout and stderr.
+// git takes no optional lock, and the run stops at ctx, with proofPipeGrace
+// for its pipes. A run that exits non-zero fails with a *gitRunError.
+func execGit(ctx context.Context, e gitExec, args ...string) (stdout, stderr []byte, err error) {
+	cmd := exec.CommandContext(ctx, "git", slices.Concat(e.pre, args)...)
+	cmd.Dir = e.dir
+	cmd.Env = slices.Concat(os.Environ(), []string{"GIT_OPTIONAL_LOCKS=0"}, e.env)
+	if e.stdin != nil {
+		cmd.Stdin = bytes.NewReader(e.stdin)
 	}
-	return out, nil
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	cmd.WaitDelay = proofPipeGrace
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, fmt.Errorf("git %s timed out", args[0])
+		}
+		return nil, nil, &gitRunError{sub: args[0], status: cmd.ProcessState.ExitCode()}
+	}
+	return out.Bytes(), errOut.Bytes(), nil
+}
+
+// gitRunError is a git run that failed: status is its exit status, or -1
+// when it did not exit on its own.
+type gitRunError struct {
+	sub    string
+	status int
+}
+
+func (e *gitRunError) Error() string { return "git " + e.sub + " failed" }
+
+// exitedWith reports whether err is a git run that exited with status.
+func exitedWith(err error, status int) bool {
+	var f *gitRunError
+	return errors.As(err, &f) && f.status == status
 }
 
 // nulFields splits NUL-terminated git output into its fields.
