@@ -509,12 +509,12 @@ Blocks `git push` to `main` or `master` before it happens.
 - **Heredoc bodies are text unless a shell may run them.** A body read by
   `cat`, `tee`, `head`, `tail`, `git commit` or a `gh pr`, `issue`,
   `release`, `gist` or `api` call is prose. So is a body `git tag`, `git
-  merge` or `git notes add` reads as its message with `-F -` or `--file=-`,
-  and one piped from `cat` into `gh pr create`, `comment` or `edit` or `gh
-  issue create` or `comment` that reads its body with `--body-file -` or
-  `-F -` and pipes nothing on. Its lines are read the old token way, so a
-  line that starts with a push still counts, but a backtick or `$( )` in a
-  quoted (`<<'EOF'`) body is text: a PR body or commit message that shows a
+  merge` or `git notes add` reads as its message with `-F -`, `--file=-` or
+  `-F /dev/stdin`, and one piped from `cat` into `gh pr create`, `comment`
+  or `edit` or `gh issue create` or `comment` that reads its body with
+  `--body-file -` or `-F -` and pipes nothing on. Its lines are read the old
+  token way, so a line that starts with a push still counts, but a backtick
+  or `$( )` in a quoted (`<<'EOF'`) body is text: a PR body that shows a
   push in a code span passes. In an unquoted body the shell runs every `$( )`
   and backtick before the command reads it, even after a `'` or `#`, so those
   are read as code and a push there is denied. Any other command, any other
@@ -523,6 +523,42 @@ Blocks `git push` to `main` or `master` before it happens.
   the rest of the command. In an unquoted body a line ending in a
   backslash joins the next one before belt compares it with the delimiter,
   as bash and zsh do.
+- **A git message is text, every line of it.** git stores the message and
+  runs none of it, so no line of it counts, even one that starts with a push
+  or a discard. That covers a `git commit -m "$(cat <<'EOF' ... EOF)"`
+  value whose body the shell passes on as written (a quoted delimiter, or
+  no `$`, backtick or `\` in it), and a heredoc `git tag` or `git notes add`
+  reads with `-F -`, `--file=-` or `-F /dev/stdin`. So a commit message may
+  name `git checkout -- f` or `reset --hard` in plain words. A heredoc that
+  `git commit` or `git merge` reads with `-F -` gets no pass. Both refresh
+  the index before they read the message, and a `core.fsmonitor` program
+  runs then with git's standard input, so a shell may read the body. The
+  pass needs a git belt can vouch for. The word `git` comes
+  first (no path, wrapper or `VAR=` in front), with nothing but `-C <dir>`
+  before the subcommand (`-c` or `-p` may bring in a pager or a config
+  value), in top-level text. Every word after `git` is plain text the shell
+  passes as written, since a variable, glob, brace or substitution
+  (`$E`, `{-e,-q}`) may turn into an option. A quote or `$` in a word
+  ends the pass too, since `'-em$'` is `-e` to git. Only a `-m` value may
+  hold them, and only there is the quoted `"$(cat ...)"` let through. The heredoc is on standard input, not
+  `3<<`. Only
+  `cd`, a git call or a plain read such as `echo` runs before it; a
+  function, alias, `source`, `exec` or `PATH` change ends the pass. The
+  git call has no redirect but its heredocs and no pipe, so what git prints,
+  which holds the subject line, cannot reach a shell. Every option is one
+  belt knows starts no editor or prompt: for `git commit` that is `-q`,
+  `-a`, `-s`, `-n`, `--allow-empty`, `--allow-empty-message`, `--amend` and
+  `--no-edit`, for `git tag` `-a` and `-f`, and for `git notes add` `-f`
+  and `--allow-empty`, besides `-m` and `-F`. The editor gets the message
+  file and may be a shell, and `-p` reads its answers from standard input,
+  so `-e`, `-p` and any option belt does not know end the pass. In the `-m` form
+  the whole `$( )` also needs paired quotes, balanced parens and no `$`,
+  backtick, `\` or `#`. bash 3.2, macOS's `/bin/bash`, ends a `$( )` at the
+  first `)` it cannot match and knows no heredoc. So a `)` or a lone `'` in
+  the body can end it early. Any other message is read as the bullet above
+  says.
+  The `$( )` and backticks of an unquoted body still run, and so does
+  anything else in the substitution.
 - **A refspec must be plain text.** A refspec that holds a variable, a
   substitution, a `$'...'` string, a brace or a glob may name `main`, so the
   push is denied on any branch. Two shapes read as the current branch. The
@@ -911,8 +947,8 @@ Blocks git commands that throw away uncommitted work.
   judged in the directory it runs in: a tracked `cd`/`pushd`, a `git -C`
   target, else the session cwd, with `$PWD` and `$(git rev-parse
   --show-toplevel)` read as git-push-main reads them. Heredoc bodies are
-  read as git-push-main reads them, so a PR body or tag message that names
-  `reset --hard` in a code span passes.
+  read as git-push-main reads them, so a commit or tag message may name
+  `reset --hard` in plain words, and a PR body may in a code span.
 - **Reads a checkout without `--` as git does.** belt asks git whether the
   first operand names a branch, tag or commit (`git rev-parse --verify
   <operand>^{tree}`). All the lookups of one call share a 2 second budget,

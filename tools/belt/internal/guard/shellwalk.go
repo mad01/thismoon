@@ -156,10 +156,19 @@ func (w *shellWalk) joinChain(before joint) {
 // walkNested walks what a command runs in a subshell, each from the
 // directory the walk has reached. When the command may run the text a
 // substitution prints (runsText), that text is code, so a heredoc body
-// printed there is read as code too (shellWalk.feeds).
+// printed there is read as code too (shellWalk.feeds). In a plainGit
+// commit, a message substitution that only prints a heredoc (messageCats)
+// runs nothing and is not walked.
 func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) {
 	feeds := w.feeds || runsText(c)
+	var message map[span]bool
+	if w.plainGit(c) {
+		message = messageCats(text, c)
+	}
 	for _, s := range append(c.pieces(), c.subshells...) {
+		if message[s] {
+			continue
+		}
 		inner := w.child(w.dir)
 		inner.feeds = feeds
 		inner.walkRead(text[s.from:s.to], true, fn)
@@ -175,20 +184,24 @@ func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) {
 // expands nothing, so a backtick or $( ) in it is text. The shell runs the
 // $( ) and backticks of an unquoted body itself before the command reads it,
 // a ' or # in front of them included, since both are literal in a body, so
-// those bodies are walked as code wherever the body goes. reader is the
-// command a pipe after c hands its output to, nil when there is none.
+// those bodies are walked as code wherever the body goes. A body a plainGit
+// call reads as its message file (readsGitMessage) is text through and
+// through, so only its $( ) and backticks are walked. reader is the command
+// a pipe after c hands its output to, nil when there is none.
 func (w *shellWalk) walkProse(text string, c shellCmd, reader *shellCmd, fn func(walkStep)) {
 	prose := w.prose
 	w.prose = true
 	runs := w.feeds || docRuns(c, reader)
+	message := !runs && w.plainGit(c) && readsGitMessage(c)
 	asProse := func(s walkStep) {
 		s.prose = true
 		fn(s)
 	}
 	for _, d := range c.docs {
-		if runs {
+		switch {
+		case runs:
 			w.walkRead(text[d.body.from:d.body.to], false, fn)
-		} else {
+		case !message:
 			w.walkTokens(text[d.body.from:d.body.to], false, asProse)
 		}
 		if d.quoted {
@@ -232,6 +245,216 @@ func docRuns(c shellCmd, reader *shellCmd) bool {
 	return true
 }
 
+// plainGit reports whether c is a git call whose message belt can vouch
+// for: the word git itself comes first (no path, wrapper or assignment in
+// front, so PATH and the command name are what they were), in top-level
+// text no shell runs as printed output (depth, feeds), after no command that
+// may have changed the shell unseen, such as a function, an alias, exec or a
+// PATH change (cdHidden), and with no redirection but its heredocs on
+// standard input (numbered) and no pipe or >( ) (runsText), so what git
+// prints cannot reach a shell.
+func (w *shellWalk) plainGit(c shellCmd) bool {
+	tokens := c.tokens()
+	return w.depth == 0 && !w.feeds && !w.cdHidden &&
+		len(tokens) > 0 && tokens[0] == "git" &&
+		len(c.targets) == len(c.docs) && !c.numbered && !runsText(c)
+}
+
+// plainArgs reports whether the shell passes every word of c after the
+// first as one word, as written, so the options and operands belt reads
+// are the ones git gets: literal text with no unquoted glob, brace, tilde
+// or zsh =word character. Any other expansion ($E, {-e,-q}, "$(printf -e)")
+// may turn an operand into an option. The token messageArgs reads must be
+// that literal too: token keeps a word with a quote or $ in it as written,
+// so '-em$' would read as an operand while git gets -e. A word in message,
+// a -m value, is a value whatever it holds, and may also hold a $( )
+// inside double quotes, which stays one word.
+func plainArgs(c shellCmd, message map[int]bool) bool {
+	for i := 1; i < len(c.words); i++ {
+		if v, ok := c.words[i].literal(); !message[i] && (!ok || c.words[i].token() != v) {
+			return false
+		}
+		for j, p := range c.words[i].parts {
+			switch {
+			case p.kind == partSubst && p.quoted && message[i]:
+			case p.kind != partLit:
+				return false
+			case p.quoted:
+			case strings.ContainsAny(p.text, "*?[]{}~#^") || (j == 0 && strings.HasPrefix(p.text, "=")):
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// readsGitMessage reports whether c is a git tag or git notes add with no
+// global option but -C (plainSubcommand) whose -F or --file reads its
+// standard input, with options belt knows leave the message alone
+// (messageArgs) and every word as written (plainArgs), so its heredoc is
+// only ever the message. Neither command
+// touches the index or starts a hook. git commit and git merge refresh the
+// index, and core.fsmonitor then runs a configured program with git's
+// standard input, so their heredoc may still reach a shell.
+func readsGitMessage(c shellCmd) bool {
+	tokens := c.tokens()
+	sub, _ := plainSubcommand(tokens)
+	g, ok := segmentGitCommand(tokens, "")
+	if !ok || sub != g.sub || (g.sub != "tag" && g.sub != "notes") || !plainArgs(c, nil) {
+		return false
+	}
+	known, stdin := messageArgs(g)
+	return known && stdin
+}
+
+// messageOptions are, per subcommand, the options known to read no standard
+// input and to start no editor, prompt or hook that gets the message file:
+// shorts are the one-letter forms that may share a word (-qa). -m, -F and
+// their long forms are read by messageArgs itself. Any other option, -e,
+// -p or --trailer among them, is not known, so the message keeps the walk.
+var messageOptions = map[string]struct {
+	shorts string
+	longs  map[string]bool
+}{
+	"commit": {"qasn", wordSet(
+		"--quiet --all --signoff --no-verify --allow-empty --allow-empty-message --amend --no-edit",
+	)},
+	"tag":   {"af", wordSet("--annotate --force")},
+	"notes": {"f", wordSet("--force --allow-empty")},
+}
+
+// messageArgs reads the arguments of a git commit, tag or notes add as git
+// does. known is true when every one is a messageOptions option, a -m or -F
+// with its value, or an operand (a word with no leading -, or anything after
+// a --). stdin is true when a -F or --file value names standard input. A
+// value is skipped whatever it holds, so a -- or -F taken as one (-m -- -e,
+// -m -F -) is read as the value it is.
+func messageArgs(g gitInvocation) (known, stdin bool) {
+	opts, ok := messageOptions[g.sub]
+	args := g.args
+	if g.sub == "notes" {
+		ok = ok && len(args) > 0 && args[0] == "add"
+		args = args[min(1, len(args)):]
+	}
+	if !ok {
+		return false, false
+	}
+	for i := 0; i < len(args); i++ {
+		a, file := args[i], ""
+		switch {
+		case a == "--":
+			return true, stdin
+		case a == "--message", a == "--file":
+			i++
+			if a == "--file" && i < len(args) {
+				file = args[i]
+			}
+		case strings.HasPrefix(a, "--message="):
+		case strings.HasPrefix(a, "--file="):
+			file = strings.TrimPrefix(a, "--file=")
+		case strings.HasPrefix(a, "--"):
+			if !opts.longs[a] {
+				return false, false
+			}
+		case len(a) > 1 && a[0] == '-':
+			letter, value, takesNext, known := shortMessageWord(a[1:], opts.shorts)
+			if !known {
+				return false, false
+			}
+			if takesNext {
+				i++
+				if i < len(args) {
+					value = args[i]
+				}
+			}
+			if letter == 'F' {
+				file = value
+			}
+		}
+		stdin = stdin || (file != "" && namesStdin(file))
+	}
+	return true, stdin
+}
+
+// shortMessageWord reads one word of short options (without its -): each
+// letter must be in shorts until an m or F (letter), which takes the rest of
+// the word as its value, or the next word when nothing follows it
+// (takesNext).
+func shortMessageWord(letters, shorts string) (letter rune, value string, takesNext, known bool) {
+	for i, r := range letters {
+		switch {
+		case r == 'm' || r == 'F':
+			return r, letters[i+1:], i == len(letters)-1, true
+		case !strings.ContainsRune(shorts, r):
+			return 0, "", false, false
+		}
+	}
+	return 0, "", false, true
+}
+
+// messageCats returns the substitutions in a git commit's message values
+// that only print a heredoc the shell hands over as written, the
+// `-m "$(cat <<'EOF' ... EOF)"` form (dataCat), when bash 3.2 ends them
+// where belt does (bash32Closes) and the commit's options leave the message
+// alone (messageArgs), with every word as written (plainArgs). What they
+// print is the message, so they run nothing but cat. The caller checks the
+// commit is a plainGit call.
+func messageCats(text string, c shellCmd) map[span]bool {
+	words, _, ok := commitMessageWords(c.tokens())
+	g, isGit := segmentGitCommand(c.tokens(), "")
+	message := map[int]bool{}
+	for _, i := range words {
+		message[i] = true
+	}
+	if known, _ := messageArgs(g); !ok || !isGit || !known || !plainArgs(c, message) {
+		return nil
+	}
+	cats := map[span]bool{}
+	for _, i := range words {
+		for _, p := range c.words[i].parts {
+			if p.kind != partSubst || !bash32Closes(text[p.body.from:p.body.to]) {
+				continue
+			}
+			if _, ok := dataCat(text, p.body); ok {
+				cats[p.body] = true
+			}
+		}
+	}
+	return cats
+}
+
+// bash32Closes reports whether bash 3.2, macOS's /bin/bash, ends a $( )
+// whose text is sub where belt does. It finds the close by counting parens
+// and skipping quoted strings, and knows no heredoc, so a ) or a lone ' in
+// a heredoc body there can end the substitution early and leave the rest of
+// the body to run as commands. sub passes when its quotes pair up and its
+// parens balance without going below zero, and it holds no $, backtick,
+// backslash or #, which that count reads in ways not modelled here.
+func bash32Closes(sub string) bool {
+	if strings.ContainsAny(sub, "$`\\#") {
+		return false
+	}
+	depth := 0
+	for i := 0; i < len(sub); i++ {
+		switch sub[i] {
+		case '\'', '"':
+			end := strings.IndexByte(sub[i+1:], sub[i])
+			if end < 0 {
+				return false
+			}
+			i += end + 1
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth < 0 {
+				return false
+			}
+		}
+	}
+	return depth == 0
+}
+
 // ghTextGroups are the gh command groups whose heredoc input is a body, a
 // note or a request, never a script.
 var ghTextGroups = wordSet("pr issue release gist api")
@@ -251,14 +474,19 @@ func readsBody(c shellCmd) bool {
 	return ghBodyReaders[words[1]+"/"+words[2]] && readsStdinFile(words[3:], "--body-file", "-F")
 }
 
-// readsMessage reports whether a git command reads a heredoc on its standard
-// input as a message: git commit always, and git tag, git merge and git
-// notes add when -F - or --file=- names standard input as the message file.
+// readsMessage reports whether docRuns reads a git command's heredoc as
+// prose: git commit always, and the takesStdinMessage forms. Only a git tag
+// or notes add body may skip the token walk too (readsGitMessage).
 func readsMessage(g gitInvocation) bool {
+	return g.sub == "commit" || takesStdinMessage(g)
+}
+
+// takesStdinMessage reports whether a git command may read its standard
+// input as its message file: git commit, tag or merge, or git notes add,
+// with -F or --file naming standard input.
+func takesStdinMessage(g gitInvocation) bool {
 	switch g.sub {
-	case "commit":
-		return true
-	case "tag", "merge":
+	case "commit", "tag", "merge":
 		return readsStdinFile(g.args, "--file", "-F")
 	case "notes":
 		return len(g.args) > 0 && g.args[0] == "add" && readsStdinFile(g.args[1:], "--file", "-F")
@@ -267,17 +495,31 @@ func readsMessage(g gitInvocation) bool {
 }
 
 // readsStdinFile reports whether args name standard input as the file of
-// the option long or its short form: `-F -`, `-F-`, `--file -`, `--file=-`.
+// the option long or its short form, as - or /dev/stdin: `-F -`, `-F-`,
+// `--file -`, `--file=-`, `-F /dev/stdin`.
 func readsStdinFile(args []string, long, short string) bool {
 	for i, arg := range args {
 		switch {
-		case arg == short+"-", arg == long+"=-":
-			return true
-		case (arg == short || arg == long) && i+1 < len(args) && args[i+1] == "-":
-			return true
+		case arg == short || arg == long:
+			if i+1 < len(args) && namesStdin(args[i+1]) {
+				return true
+			}
+		case strings.HasPrefix(arg, long+"="):
+			if namesStdin(strings.TrimPrefix(arg, long+"=")) {
+				return true
+			}
+		case strings.HasPrefix(arg, short) && !strings.HasPrefix(arg, "--"):
+			if namesStdin(strings.TrimPrefix(arg, short)) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// namesStdin reports whether a file argument is standard input.
+func namesStdin(file string) bool {
+	return file == "-" || file == "/dev/stdin"
 }
 
 // runsText reports whether a command may run the text a substitution in it

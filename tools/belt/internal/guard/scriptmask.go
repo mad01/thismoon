@@ -177,20 +177,40 @@ func dataWords(tokens []string) (words []int, docs, ok bool) {
 		}
 		return words, true, true
 	case len(tokens) > 0 && tokens[0] == "git":
-		at := 1
-		if len(tokens) > 3 && tokens[1] == "-C" {
-			at = 3
-		}
-		if len(tokens) > at && tokens[at] == "commit" {
-			words, docs = commitFlags.values(tokens, at+1)
-			return words, docs, true
-		}
+		return commitMessageWords(tokens)
 	case len(tokens) > 2 && tokens[0] == "gh" && textSafeGh[tokens[1]][tokens[2]]:
 		words, docs = ghFlags.values(tokens, 3)
 		gistStdin := tokens[1] == "gist" && slices.Contains(tokens[3:], "-")
 		return words, docs || gistStdin, true
 	}
 	return nil, false, false
+}
+
+// commitMessageWords returns the indexes of the words a git commit (or git
+// -C DIR commit) takes as its message, and whether -F - names its heredoc
+// as the message file. ok is false for any other command.
+func commitMessageWords(tokens []string) (words []int, stdin, ok bool) {
+	sub, at := plainSubcommand(tokens)
+	if sub != "commit" {
+		return nil, false, false
+	}
+	words, stdin = commitFlags.values(tokens, at+1)
+	return words, stdin, true
+}
+
+// plainSubcommand returns the subcommand of a git call with nothing but
+// -C DIR in front of it, and its index, or "" for any other command. A
+// global option such as -c, -p or --exec-path may bring in a config value,
+// a pager or a program the message checks cannot vouch for.
+func plainSubcommand(tokens []string) (sub string, at int) {
+	at = 1
+	if len(tokens) > 3 && tokens[1] == "-C" {
+		at = 3
+	}
+	if len(tokens) <= at || tokens[0] != "git" {
+		return "", 0
+	}
+	return tokens[at], at
 }
 
 // printsWords reports whether a command is echo, or printf without -v
