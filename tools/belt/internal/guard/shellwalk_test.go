@@ -738,6 +738,74 @@ var heredocBodies = []struct {
 		false,
 	},
 	{"merge -F -", "git merge -F - fix/x <<'EOF2'\nNever `git push origin main`.\nEOF2", false},
+	// MAD-663: a body git tag or git notes add takes as its message is text,
+	// so a line that names a push or a discard in plain words counts for
+	// nothing.
+	{"tag -F -, a push line", "git tag -a v1 -F - <<'EOF2'\ngit push origin main\nEOF2", false},
+	{"tag, unquoted literal body", "git tag -a v1 -F - <<EOF2\ngit push origin main\nEOF2", false},
+	{"tag -F /dev/stdin", "git tag -a v1 -F /dev/stdin <<'EOF2'\ngit push origin main\nEOF2", false},
+	{"tag -F/dev/stdin", "git tag -a v1 -F/dev/stdin <<'EOF2'\ngit push origin main\nEOF2", false},
+	{"notes add -F -, a push line", "git notes add -F - <<'EOF2'\ngit push origin main\nEOF2", false},
+	// git commit and git merge refresh the index before they read -F, and
+	// core.fsmonitor then runs a configured program with git's standard
+	// input, so their heredoc keeps the walk.
+	{"commit -F -, plain words", "git commit -q -F - <<'EOF2'\nfix: so git push origin main is text\nEOF2", true},
+	{"commit -F -, a push line", "git commit -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"commit -F /dev/stdin", "git commit -F /dev/stdin <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"merge --file=-, a push line", "git merge --file=- fix/x <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"merge -F /dev/stdin", "git merge --no-ff -F /dev/stdin side <<'EOF2'\ngit push origin main\nEOF2", true},
+	{
+		"commit after core.fsmonitor is set",
+		"git config core.fsmonitor 'sh -s' && git commit -F - <<'EOF2'\ngit push origin main\nEOF2",
+		true,
+	},
+	// A word the shell expands may turn into an option such as -e, so every
+	// word must be literal; a heredoc on another descriptor is not the file.
+	{
+		"commit {-e,-q} -m cat",
+		"git commit {-e,-q} -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
+		true,
+	},
+	{"commit $E -m cat", "git commit $E -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"", true},
+	{
+		"commit -m unquoted cat",
+		"git commit -m $(cat <<'EOF2'\nx -e git push origin main\nEOF2\n)",
+		true,
+	},
+	{"tag {-e,-a} -F -", "git tag {-e,-a} -F - v1 <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"tag printf -e -F -", "git tag \"$(printf %s -e)\" -a -F - v1 <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"notes add {-e,-f} -F -", "git notes add {-e,-f} -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"tag with a glob operand", "git tag -a -F - v* <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"tag -C $D", "git -C $D tag -a -F - v1 <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"tag -F - on fd 3", "git tag -a -F - v1 3<<'EOF2'\ngit push origin main\nEOF2", true},
+	// A quote or $ keeps a word's token as written, so '-em$' must not read
+	// as an operand: git gets -e -m '$'.
+	{"notes add '-em$' -F -", "git notes add '-em$' -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{
+		"commit '-em$' -m cat",
+		"git commit --allow-empty '-em$' -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
+		true,
+	},
+	{
+		"commit -m 'fix(x): y' -m cat",
+		"git commit -m 'fix(x): y' -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
+		false,
+	},
+	// A -F that is the value of -m names no message file.
+	{"tag -m -F -", "git tag -a -m -F - v1 <<'EOF2'\ngit push origin main\nEOF2", true},
+	{
+		"commit -m cat, plain words",
+		"git commit -m \"$(cat <<'EOF2'\nfix: so git push origin main is text\nEOF2\n)\"",
+		false,
+	},
+	{
+		"commit -m cat, a push line",
+		"git commit -q -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\" && git status",
+		false,
+	},
+	{"commit --message=cat", "git commit --message=\"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"", false},
+	{"commit -am cat", "git commit -am \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"", false},
+	{"commit -C dir -m cat", "git -C /tmp commit -m \"$(cat <<EOF2\ngit push origin main\nEOF2\n)\"", false},
 
 	{"unquoted, apostrophe then backticks", "cat <<EOF2\nDon't `git push origin main`\nEOF2", true},
 	{
@@ -786,6 +854,196 @@ var heredocBodies = []struct {
 		true,
 	},
 	{"tag without -F -", "git tag -a v1 <<'EOF2'\nNever `git push origin main`.\nEOF2", true},
+	// MAD-663: what runs around a message is still code.
+	{"commit -F -, unquoted substitution", "git commit -F - <<EOF2\nx $(git push origin main)\nEOF2", true},
+	{"commit -F -, unquoted backticks", "git commit -F - <<EOF2\nx `git push origin main`\nEOF2", true},
+	{"commit -F - piped into sh", "git commit -F - <<'EOF2' | sh\ngit push origin main\nEOF2", true},
+	{"commit -F -, a push after the body", "git commit -F - <<'EOF2'\nx\nEOF2\ngit push origin main", true},
+	{"tag -F of a file", "git tag -a v1 -F notes.txt <<'EOF2'\ngit push origin main\nEOF2", true},
+	{
+		"commit -m cat, unquoted substitution",
+		"git commit -m \"$(cat <<EOF2\nx $(git push origin main)\nEOF2\n)\"",
+		true,
+	},
+	{
+		"commit -m cat piped into sh",
+		"git commit -m \"$(cat <<'EOF2' | sh\ngit push origin main\nEOF2\n)\"",
+		true,
+	},
+	{
+		"commit -m with code beside cat",
+		"git commit -m \"$(git push origin main; cat <<'EOF2'\nx\nEOF2\n)\"",
+		true,
+	},
+	{
+		"commit -m cat, commit piped into sh",
+		"git commit -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\" | sh",
+		true,
+	},
+	{
+		"commit -m cat, then a substitution",
+		"git commit -m \"$(cat <<'EOF2'\nx\nEOF2\n)$(git push origin main)\"",
+		true,
+	},
+	{
+		"echo of a cat, not a message",
+		"echo \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
+		true,
+	},
+	{
+		"commit -m cat inside eval",
+		"eval \"$(git commit -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\")\"",
+		true,
+	},
+	// Without -F - a commit hands its standard input to the editor.
+	{
+		"commit body to a shell editor",
+		"GIT_EDITOR='sh -s' git commit --allow-empty <<'EOF2'\ngit push origin main\nEOF2",
+		true,
+	},
+	{"commit body to a -c editor", "git -c core.editor='sh -s' commit <<'EOF2'\ngit push origin main\nEOF2", true},
+	// A git or cat the same command may have redefined, or a git found
+	// elsewhere, is not the git that stores a message.
+	{"git function", "git() { sh; }; git tag -a v1 -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{
+		"cat function",
+		"cat() { sh; }; git commit -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
+		true,
+	},
+	{
+		"cat alias",
+		"alias cat=sh\ngit commit -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
+		true,
+	},
+	{"PATH in front", "PATH=/x:$PATH git tag -a v1 -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"PATH set before", "export PATH=/x; git tag -a v1 -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"a git by path", "./git tag -a v1 -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"source before", "source x.sh; git tag -a v1 -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	// What git prints holds the subject line; written to a file a shell
+	// then runs, the text after a ; in it is a command.
+	{
+		"tag output to a file",
+		"git tag -a v1 -F - <<'EOF2' > /tmp/o.txt\nx; git push origin main\nEOF2\nsh /tmp/o.txt",
+		true,
+	},
+	{
+		"commit -m cat output to a file",
+		"git commit -m \"$(cat <<'EOF2'\nx; git push origin main\nEOF2\n)\" &> /tmp/x.sh; . /tmp/x.sh",
+		true,
+	},
+	{
+		"subshell output to a file",
+		"(git tag -a v1 -F - <<'EOF2'\nx; git push origin main\nEOF2\n) > /tmp/o.sh; sh /tmp/o.sh",
+		true,
+	},
+	{
+		"group output to a file",
+		"{ git tag -a v1 -F - <<'EOF2'\nx; git push origin main\nEOF2\n} > /tmp/o.sh; sh /tmp/o.sh",
+		true,
+	},
+	{"exec before", "exec > /tmp/o.sh; git tag -a v1 -F - <<'EOF2'\nx; git push origin main\nEOF2", true},
+	// With -e git hands the message file to the editor, which may be a shell.
+	{"commit -e -F -", "git -c core.editor=sh commit -e -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"commit -qe -F -", "git commit -qe -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"commit --edi -F -", "git commit --edi -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"tag -e -F -", "git tag -a v1 -e -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	// -s takes no value for commit and tag, so the e after it is -e.
+	{"commit -se -F -", "git commit --allow-empty -se -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"commit -sae -F -", "git commit -sae -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"tag -se -F -", "git tag -f -se -F - t1 <<'EOF2'\ngit push origin main\nEOF2", true},
+	{
+		"commit -se -m cat",
+		"git commit --allow-empty -se -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
+		true,
+	},
+	// -p and --interactive answer their hunk prompts from standard input, and
+	// an e answer opens the editor. Any option belt does not know ends the pass.
+	{"commit -p -F -", "git commit -p -F - <<'EOF2'\ne\ngit push origin main\nEOF2", true},
+	{"commit -ap -F -", "git commit -ap -F - <<'EOF2'\ne\ngit push origin main\nEOF2", true},
+	{"commit --patch -F -", "git commit --patch -F - <<'EOF2'\ne\ngit push origin main\nEOF2", true},
+	{"commit --interactive -F -", "git commit --interactive -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"commit with an unknown option", "git commit --frobnicate -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	// A global option may bring in a pager or a config value: only -C passes.
+	{"git -c before commit", "git -c pager.commit=sh commit -F - <<'EOF2'\nx; git push origin main\nEOF2", true},
+	{"git -p before commit", "git -p commit -F - <<'EOF2'\nx; git push origin main\nEOF2", true},
+	// An option may take -- as its value, so a later -e still starts the editor.
+	{
+		"commit -m -- -e -m cat",
+		"git commit -m -- -e -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
+		true,
+	},
+	{"commit --trailer -- -e -F -", "git commit --trailer -- -e -F - <<'EOF2'\ngit push origin main\nEOF2", true},
+	{"notes add -m -- -e -F -", "git notes add -m -- -e -F - HEAD <<'EOF2'\ngit push origin main\nEOF2", true},
+	{
+		"merge --into-name -- -e",
+		"git merge --no-ff --into-name -- -e -F /dev/stdin side <<'EOF2'\ngit push origin main\nEOF2",
+		true,
+	},
+	{
+		"commit -e -m cat",
+		"git commit -e -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
+		true,
+	},
+	// bash 3.2 ends a $( ) at the first ) its paren count cannot match and
+	// knows no heredoc, so a ) or a lone ' in the body ends it early.
+	{
+		"commit -m cat, a ) ends it in bash 3.2",
+		"git commit --allow-empty -m \"$(cat <<'EOF2'\nx\n)\"; git push origin main; echo \"(\nEOF2\n)\"",
+		true,
+	},
+	{
+		"commit -m cat, a lone apostrophe",
+		"git commit -m \"$(cat <<'EOF2'\ndon't git push origin main\nEOF2\n)\"",
+		true,
+	},
+	{
+		"commit -m cat, a # in the body",
+		"git commit -m \"$(cat <<'EOF2'\nfixes #1: git push origin main\nEOF2\n)\"",
+		true,
+	},
+}
+
+// TestGitGuardsHeredocMessagePasses pins the MAD-663 message forms that pass:
+// a balanced pair of parens or quotes in a -m cat body bash 3.2 closes where
+// belt does, and --no-edit asks for no editor.
+func TestGitGuardsHeredocMessagePasses(t *testing.T) {
+	for _, command := range []string{
+		"git commit -m \"$(cat <<'EOF2'\nfix(belt): so git push origin main is text\nEOF2\n)\"",
+		"git commit -m \"$(cat <<'EOF2'\nit's 'git push origin main', it's text\nEOF2\n)\"",
+		"git commit --no-edit -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
+		"git tag -f -F - edit-x <<'EOF2'\ngit push origin main\nEOF2",
+	} {
+		if d := newGitPushGuard("main").Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"}); d != nil {
+			t.Errorf("git-push-main Check(%q) = %v, want allow", command, d)
+		}
+		reset := strings.ReplaceAll(command, "git push origin main", "git reset --hard")
+		if d := dirtyDiscardGuard().Check(Input{Event: EventBash, Command: reset, Cwd: "/tmp"}); d != nil {
+			t.Errorf("git-discard Check(%q) = %v, want allow", reset, d)
+		}
+	}
+}
+
+// TestBash32Closes pins where bash 3.2's paren count ends a $( ).
+func TestBash32Closes(t *testing.T) {
+	tests := []struct {
+		sub  string
+		want bool
+	}{
+		{"cat <<'EOF'\nplain words\nEOF\n", true},
+		{"cat <<\"EOF\"\nfix(belt): x\nEOF\n", true},
+		{"cat <<EOF\nit's (one) and it's two\nEOF\n", true},
+		{"cat <<'EOF'\nx\n)\"; y; echo \"(\nEOF\n", false},
+		{"cat <<'EOF'\ndon't\nEOF\n", false},
+		{"cat <<'EOF'\n(\nEOF\n", false},
+		{"cat <<'EOF'\n$x\nEOF\n", false},
+		{"cat <<\\EOF\nx\nEOF\n", false},
+		{"cat <<'EOF'\n# x\nEOF\n", false},
+	}
+	for _, tt := range tests {
+		if got := bash32Closes(tt.sub); got != tt.want {
+			t.Errorf("bash32Closes(%q) = %v, want %v", tt.sub, got, tt.want)
+		}
+	}
 }
 
 func TestGitGuardsHeredocBodies(t *testing.T) {

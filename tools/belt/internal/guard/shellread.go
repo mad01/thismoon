@@ -41,6 +41,7 @@ type shellCmd struct {
 	docs      []shellDoc
 	subshells []span
 	comments  []span // the text after a # on the command's line
+	numbered  bool   // a redirection names its descriptor (2>, 3<<)
 	before    joint
 	after     joint
 }
@@ -208,6 +209,7 @@ func (r *shellReader) word() bool {
 		return false
 	}
 	if isDigits(w.raw) && (l.at(0) == '<' || l.at(0) == '>') {
+		r.cur.numbered = true
 		return true
 	}
 	r.cur.words = append(r.cur.words, placedWord{shWord: w, at: span{start, l.i}})
