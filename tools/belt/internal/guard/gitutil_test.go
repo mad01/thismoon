@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,11 +13,42 @@ import (
 
 // TestMain clears CDPATH, which the cd tracking reads from belt's own
 // environment (walkSegments), so no test depends on the shell running it.
+// It also moves the test temp folder out of the temp roots when it lies in
+// one, as /tmp does on Linux: file-discard passes every delete inside a temp
+// root, so its fixtures must sit outside them, as macOS's /var/folders does.
 func TestMain(m *testing.M) {
 	if err := os.Unsetenv("CDPATH"); err != nil {
 		panic(err)
 	}
-	os.Exit(m.Run())
+	base, err := tempOutsideRoots()
+	if err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	if base != "" {
+		if err := os.RemoveAll(base); err != nil {
+			fmt.Fprintln(os.Stderr, "remove test temp folder:", err)
+		}
+	}
+	os.Exit(code)
+}
+
+// tempOutsideRoots points TMPDIR at a fresh folder in the home folder when
+// the system temp folder lies in a temp root (underTempRoot), and returns
+// that folder, "" when nothing moved.
+func tempOutsideRoots() (string, error) {
+	if !underTempRoot(filepath.Join(os.TempDir(), "x"), "") {
+		return "", nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	base, err := os.MkdirTemp(home, ".belt-guard-test-")
+	if err != nil {
+		return "", err
+	}
+	return base, os.Setenv("TMPDIR", base)
 }
 
 // invocationDirs lists the directory of each invocation, in order.
