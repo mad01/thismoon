@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -59,13 +60,83 @@ var scriptExts = map[string]bool{
 	".rb": true, ".pl": true, ".js": true, ".mjs": true, ".cjs": true, ".ts": true,
 }
 
-// wrapperCommands are stripped from the front of a segment before the head
-// is classified; wrappersWithArg additionally consume the next token.
-var wrapperCommands = map[string]bool{
-	"sudo": true, "command": true, "exec": true, "nohup": true, "time": true, "env": true,
+// wrapperOptions are the wrappers that run the command after them as
+// written, so they are stripped from the front of a segment before the head
+// is classified, each with the options it reads in front of its command
+// (wrapperSpec). It is the one table of them: isWrapper and every reader
+// that skips a wrapper look a name up here. The wrappers that hand their
+// words to a shell instead are shellRunners. coproc runs its command as a
+// coprocess, and zsh's noglob and nocorrect run theirs with globbing or
+// spelling correction off. The options come from sudo -h, env --help,
+// gtimeout --help and the macOS man pages, and for the tools macOS does not
+// ship (doas, setsid, flock, ionice, chronic) from their OpenBSD,
+// util-linux and moreutils manuals. An option a wrapper's entry does not
+// name fails closed: the words after the wrapper are read as shell text
+// (wrapperSpec.read).
+var wrapperOptions = map[string]wrapperSpec{
+	"sudo": {
+		short: "Aa:BbC:c:D:Eeg:Hh::iKklNnPp:R:r:SsT:t:U:u:Vv",
+		long: "askpass auth-type: background bell close-from: login-class: chdir: preserve-env:: " +
+			"edit group: set-home help host: login remove-timestamp reset-timestamp list " +
+			"non-interactive preserve-groups prompt: chroot: role: stdin shell type: " +
+			"command-timeout: other-user: user: version validate",
+		asText: "s i shell login",
+	},
+	"env": {
+		short: "0ia:C:P:S:u:v",
+		long: "ignore-environment null argv0: chdir: split-string: unset: debug " +
+			"block-signal:: default-signal:: ignore-signal:: list-signal-handling help version",
+		asText:   "S split-string",
+		loneDash: true,
+	},
+	"doas":      {short: "a:C:Lnsu:", asText: "s", noRun: "C L"},
+	"command":   {short: "pVv", noRun: "v V"},
+	"builtin":   {},
+	"coproc":    {async: true},
+	"noglob":    {},
+	"nocorrect": {},
+	"exec":      {short: "a:cl"},
+	"nohup":     {long: "help version"},
+	"setsid":    {short: "cfwhV", long: "ctty fork wait help version", async: true},
+	"time":      {short: "af:hlo:pqVv", long: "append format: output: portability quiet verbose help version"},
+	"timeout":   timeoutSpec,
+	"gtimeout":  timeoutSpec,
+	"nice":      {short: "n:0123456789", long: "adjustment: help version"},
+	"ionice": {
+		short: "c:n:p:P:tu:hV",
+		long:  "class: classdata: pid: pgid: ignore uid: help version",
+		noRun: "p P u pid pgid uid",
+	},
+	"stdbuf":     {short: "e:i:o:", long: "error: input: output: help version"},
+	"caffeinate": {short: "dimst:uw:"},
+	"chronic":    {short: "ev"},
+	"arch": {
+		words: "32 64 arch: c d: e: h i386 x86_64 x86_64h arm64 arm64e",
+	},
+	"flock": {
+		short: "sexnoFuw:E:hVc:",
+		long: "shared exclusive unlock nonblock nb close no-fork timeout: wait: " +
+			"conflict-exit-code: fcntl verbose help version command:",
+		asText:   "c command",
+		operand:  true,
+		textNext: "-c --command",
+	},
 }
 
-var wrappersWithArg = map[string]bool{"timeout": true}
+// timeoutSpec is GNU timeout's, which Homebrew also installs as gtimeout:
+// options, then the duration, then the command.
+var timeoutSpec = wrapperSpec{
+	short:   "k:s:fpv",
+	long:    "kill-after: signal: foreground preserve-status verbose help version",
+	operand: true,
+}
+
+// isWrapper reports whether a command name is a wrapper wrapperOptions
+// reads.
+func isWrapper(name string) bool {
+	_, ok := wrapperOptions[name]
+	return ok
+}
 
 // fileProducers and fetchProducers classify the segment piped into a bare
 // interpreter: a file producer's file arguments get scanned, a fetcher is
@@ -123,12 +194,14 @@ func (g *ScriptDenyList) Check(in Input) *Denial {
 // scripts are read from it, so a denied command named only in an echo string
 // or a commit message is not read as code. scanTarget and scanMadeExecutable
 // keep reading in.Command, the raw text a written file's content lives in.
+// names are the variables, functions and aliases cmd defines (shellNames).
 type scan struct {
 	in       Input
 	cmd      string
 	segs     []segment
 	written  map[string]bool
 	patterns []deny
+	names    shellNames
 }
 
 func (g *ScriptDenyList) check(in Input) *Denial {
@@ -144,6 +217,7 @@ func (g *ScriptDenyList) check(in Input) *Denial {
 		segs:     segs,
 		written:  redirectTargets(segs, in.Cwd),
 		patterns: patterns,
+		names:    readShellNames(cmd),
 	}
 	// A Python heredoc proven inert ends the command: its own segment, its
 	// body lines and its terminator need no check. A text heredoc's body
@@ -164,22 +238,45 @@ func (g *ScriptDenyList) check(in Input) *Denial {
 	}
 	// A substitution runs where it stands, whatever command it is an argument
 	// of, so its body is code even inside a masked echo. A print piped into an
-	// interpreter is the script that interpreter runs.
+	// interpreter is the script that interpreter runs. A download or decoded
+	// text run as code is denied, as nothing can read it (codeWalk).
 	if d := scanSubstitutions(cmd, patterns); d != nil {
+		return d
+	}
+	if d := newCodeWalk(g, s).run(cmd, 0); d != nil {
 		return d
 	}
 	return scanPipedPrint(in.Command, patterns)
 }
 
 // checkSegment classifies one segment's head and scans whatever script text
-// or file it would run.
+// or file it would run. The head is read past wrappers first, and a command
+// hidden behind one or behind a name is checked (checkHidden). A wrapper
+// named by a path (./nice, /usr/bin/env) is read both ways: as the script
+// of that name it may be, and as the wrapper. A head that names an
+// interpreter through a variable is read as that interpreter
+// (shellNames.runnerNamed).
 func (g *ScriptDenyList) checkSegment(s scan, i int) *Denial {
 	seg := s.segs[i]
-	tokens := stripWrappers(strings.Fields(seg.text))
+	fields := strings.Fields(seg.text)
+	tokens, kind := unwrapCommand(fields)
+	for _, word := range fields[:len(fields)-len(tokens)] {
+		if strings.ContainsRune(word, '/') && !strings.Contains(word, "=") && wrapperName(filepath.Base(word)) {
+			if d := g.scanRunFile(s, word); d != nil {
+				return d
+			}
+		}
+	}
+	if d := s.checkHidden(seg, firstCommandWord(skipOpeners(fields)), tokens, kind); d != nil {
+		return d
+	}
 	if len(tokens) == 0 {
 		return nil
 	}
 	head := filepath.Base(tokens[0])
+	if runner, ok := s.names.runnerNamed(tokens[0]); ok {
+		head = runner // "$SHELL" -c …, S=sh; … | $S
+	}
 	if flags, ok := isInterpreter(head); ok {
 		return g.checkInterpreter(s, i, head, tokens[1:], flags)
 	}
@@ -202,22 +299,33 @@ func (g *ScriptDenyList) checkSegment(s scan, i int) *Denial {
 	case head == "chmod":
 		return g.scanMadeExecutable(s, tokens[1:])
 	case strings.ContainsRune(tokens[0], '/'):
-		resolved := resolvePath(tokens[0], s.in.Cwd)
-		if s.written[resolved] || scannableScript(resolved) {
-			return g.scanTarget(s, tokens[0])
-		}
+		return g.scanRunFile(s, tokens[0])
+	}
+	return nil
+}
+
+// scanRunFile scans a file a segment runs by its path (./deploy, bin/x.sh)
+// when it is a script: one the same command writes, or scannableScript.
+func (g *ScriptDenyList) scanRunFile(s scan, path string) *Denial {
+	resolved := resolvePath(path, s.in.Cwd)
+	if s.written[resolved] || scannableScript(resolved) {
+		return g.scanTarget(s, path)
 	}
 	return nil
 }
 
 // checkInterpreter handles a segment whose head is an interpreter: an inline
 // script (-c/-e string or heredoc), a script file argument, a `< file` stdin
-// redirect, or a pipe feeding it from a producer segment.
+// redirect, or a pipe feeding it from a producer segment. A shell's -c may
+// sit in a bundle (`bash -lc`, `sh -ec`; inlineScriptAt).
 func (g *ScriptDenyList) checkInterpreter(
 	s scan, i int, head string, args []string, inlineFlags map[string]bool,
 ) *Denial {
 	seg := s.segs[i]
 	inline, file := parseInterpreterArgs(args, inlineFlags)
+	if shellInterpreters[head] && inlineScriptAt(slices.Concat([]string{head}, args)) >= 0 {
+		inline, file = true, ""
+	}
 	heredoc := strings.Contains(seg.text, "<<")
 	if inline || heredoc {
 		// Inline script: scan from this segment to the end of the command —
@@ -276,7 +384,7 @@ func (g *ScriptDenyList) checkProducer(s scan, i int) *Denial {
 		return Reasonf(
 			ScriptDenyListID,
 			"pipes a %s download straight into an interpreter, so nothing can inspect what would run. "+
-				"Download to a file first, then run the file, so the deny list (and the user) can read it before it executes.",
+				"Download to a file in one call, then run the file in a later call, so the deny list (and the user) can read it before it executes.",
 			head,
 		)
 	}
@@ -575,8 +683,16 @@ func logicalLines(text string) []logicalLine {
 
 // scanText checks every non-comment logical line against every pattern —
 // first as written, then with quoting noise collapsed, then each form's
-// commands on argv — and denies on the first hit.
+// commands on argv — and denies on the first hit. A command whose name the
+// text's own variables, aliases or functions give is read through them
+// (shellNames.hiddenRun).
 func scanText(text, where string, patterns []deny) *Denial {
+	return scanLines(text, where, patterns, readShellNames(text), 0)
+}
+
+// scanLines is scanText with the names to read commands through, and how
+// many expansions deep the text already is.
+func scanLines(text, where string, patterns []deny, names shellNames, depth int) *Denial {
 	for _, line := range logicalLines(text) {
 		trimmed := strings.TrimSpace(line.text)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
@@ -594,6 +710,16 @@ func scanText(text, where string, patterns []deny) *Denial {
 					d.pattern,
 					line.number,
 				)
+			}
+		}
+		for _, words := range cmds {
+			run, _ := unwrapCommand(words)
+			if len(run) == 0 || !names.hides(commandName(run[0])) {
+				continue
+			}
+			at := fmt.Sprintf("%s (line %d)", where, line.number)
+			if d := names.hiddenRun(run, at, patterns, depth); d != nil {
+				return d
 			}
 		}
 	}
@@ -639,20 +765,65 @@ func parseInterpreterArgs(tokens []string, inlineFlags map[string]bool) (inline 
 }
 
 // stripWrappers drops leading env assignments and wrapper commands (sudo,
-// env, exec, ...) so the real head of the segment gets classified.
+// env, exec, ...), with their options (wrapperOptions), so the real head of
+// the segment gets classified. It returns a suffix of tokens.
 func stripWrappers(tokens []string) []string {
+	rest, _ := peelWrappers(tokens)
+	return rest
+}
+
+// peelWrappers is stripWrappers that also says how the words left run:
+// runsDirect behind assignments alone, runsWrapped behind a wrapper that
+// runs them as written, and runsAsText behind one that hands them to a
+// shell (sudo -s, env -S) or whose options belt cannot read, from the words
+// after that wrapper on (wrapperSpec.read).
+func peelWrappers(tokens []string) ([]string, wrapKind) {
+	kind := runsDirect
 	for len(tokens) > 0 {
+		if strings.Contains(tokens[0], "=") {
+			tokens = tokens[1:]
+			continue
+		}
 		head := filepath.Base(tokens[0])
-		switch {
-		case strings.Contains(tokens[0], "="):
-			tokens = tokens[1:]
-		case wrapperCommands[head]:
-			tokens = tokens[1:]
-		case wrappersWithArg[head] && len(tokens) > 1:
-			tokens = tokens[2:]
+		spec, ok := wrapperOptions[head]
+		if !ok {
+			return tokens, kind
+		}
+		rest, how := spec.read(tokens[1:])
+		if how == runsAsText {
+			return rest, how
+		}
+		if head == "coproc" && len(rest) > 1 && (rest[1] == "{" || rest[1] == "(") {
+			rest = rest[1:] // coproc NAME { …; }: NAME names the coprocess
+		}
+		if spec.operand {
+			if len(rest) == 0 {
+				return tokens, kind
+			}
+			rest = rest[1:]
+			if text, ok := spec.afterOperand(rest); ok {
+				return text, runsAsText
+			}
+		}
+		tokens, kind = rest, runsWrapped
+	}
+	return tokens, kind
+}
+
+// skipOptions returns args from the first word that is not an option: a
+// word in valued takes the next word as its value, any other word starting
+// with - is a flag or a bundle (`-oL`, `-10`), and -- ends the options.
+func skipOptions(args []string, valued map[string]bool) []string {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--":
+			return args[i+1:]
+		case valued[a]:
+			i++
+		case len(a) > 1 && a[0] == '-':
 		default:
-			return tokens
+			return args[i:]
 		}
 	}
-	return tokens
+	return nil
 }
