@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: cards
+  description: Terminal UI that shows JSON Lines from stdin as cards, a list to pick from or a feed to follow (CLI)
+  tags: [go, cli, tui]
+spec:
+  type: cli
+  lifecycle: development
+  owner: mad01
+  system: thismoon
