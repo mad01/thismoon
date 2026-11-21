@@ -938,17 +938,32 @@ Blocks git commands that throw away uncommitted work.
   `reset --hard`, a path checkout (`checkout -- <path>`, `checkout <ref> --
   <path>`, `checkout .`, a patch checkout) or a forced one, `switch
   --discard-changes`/`-f`, `restore` unless the only target is the index
-  (`--staged` without `--worktree`), and `clean` with `-f` (a `-n` dry run
-  passes). `stash list|show|apply|pop|branch` are allowed. A force counts
-  the way git reads it. In a bundle of short options (`-qf`, `-fb new`), it
-  counts up to a letter that takes the rest of the word as its value, so
-  `-bf` creates a branch named `f`. Any prefix of the long option counts
-  too (`--forc`, `switch --disc`), since git takes one. Each invocation is
+  (`--staged` without `--worktree`), and `clean` with `-f` or `-i` (a `-n`
+  dry run passes). `stash list|show|apply|pop|branch` are allowed. A
+  checkout or switch force counts the way git reads it. In a bundle of
+  short options (`-qf`, `-fb new`), it counts up to a letter that takes the
+  rest of the word as its value, so `-bf` creates a branch named `f`. Any
+  prefix of the long option counts too (`--forc`, `switch --disc`), since
+  git takes one. Each invocation is
   judged in the directory it runs in: a tracked `cd`/`pushd`, a `git -C`
   target, else the session cwd, with `$PWD` and `$(git rev-parse
   --show-toplevel)` read as git-push-main reads them. Heredoc bodies are
   read as git-push-main reads them, so a commit or tag message may name
   `reset --hard` in plain words, and a PR body may in a code span.
+- **Reads reset and clean options as git does.** Each option comes from a
+  table of the options `git reset -h` and `git clean -h` list. Any prefix
+  that names one option alone counts as its full name. So `reset --ha` is
+  `--hard`, `clean --fo` is `--force`, and `clean --d` is `--dry-run`. Short
+  options may come in a bundle (`-xdf`). An option that needs a value takes
+  the next word, even `--` or one that starts with `-`. In `clean -e -n -f`
+  and `clean -fen`, the `n` is a pattern, so the clean deletes. The last
+  `-n` or `--no-dry-run` decides whether a clean is a dry run. `clean -i`
+  counts, since it deletes what the user picks without `-f`. Anything belt
+  cannot read this way counts as a discard. That is an option not in the
+  table, a prefix of two options, or a value on an option that takes none.
+  It is also a word the shell may still turn into an option (`$X`,
+  `$(...)`, a leading glob or brace), or a command in front of git that may
+  hand it more words (`xargs git reset`).
 - **Reads a checkout without `--` as git does.** belt asks git whether the
   first operand names a branch, tag or commit (`git rev-parse --verify
   <operand>^{tree}`). All the lookups of one call share a 2 second budget,
@@ -976,7 +991,8 @@ Blocks git commands that throw away uncommitted work.
   tree it also deletes a file only the index has, so the proof checks
   those files too.
 - **Decides by** the working tree there. A clean tree (`git status
-  --porcelain` empty, with `--ignored` added for `clean -x`/`-X`/`-e`) allows,
+  --porcelain` empty, with `--ignored` added for `clean -x`/`-X`/`-e` and a
+  clean belt cannot read) allows,
   since nothing would be lost. `allow_repos` exempts repos by canonical
   identity.
 - **Passes a dirty tree when nothing is lost.** A checkout or restore of

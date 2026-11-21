@@ -158,6 +158,126 @@ func TestGitDiscardCommands(t *testing.T) {
 	}
 }
 
+// TestGitDiscardResetCleanOptions pins how reset and clean options are read:
+// as git's parse-options reads them, with an option belt does not know, or
+// a word the shell may still turn into one, counted as a discard.
+func TestGitDiscardResetCleanOptions(t *testing.T) {
+	dirty := discardFixture{
+		repo:  "github.com/mad01/thismoon",
+		dirty: map[string]bool{"/repo": true},
+	}
+	tests := []struct {
+		command  string
+		wantDeny bool
+	}{
+		// Any prefix of --hard is --hard, wherever it stands.
+		{"git reset --h", true},
+		{"git reset --ha", true},
+		{"git reset --har", true},
+		{"git reset --ha origin/main", true},
+		{"git reset HEAD --har", true},
+		{"git reset -q --ha", true},
+		{"git reset --soft --hard", true},
+		{"git reset --hard=x", true}, // git refuses it; counting it errs toward a deny
+		// An optional value never takes the next word; a needed one takes it
+		// even when it is --.
+		{"git reset --recurse-submodules --hard", true},
+		{"git reset --pathspec-from-file -- --hard", true},
+		// An option belt does not know, or one git finds ambiguous, fails closed.
+		{"git reset --frobnicate", true},
+		{"git reset -x", true},
+		{"git reset --m", true},
+		{"git reset --no-hard", true},
+		{"git reset --ha{r,}d", true},
+		// --end-of-options ends the options as git reads it, so what follows
+		// is an operand; a later -- still starts the paths.
+		{"git reset --end-of-options HEAD~1", false},
+		{"git reset --end-of-options --hard", false},
+		{"git reset --hard --end-of-options HEAD", true},
+		{"git clean -n --end-of-options -f", false},
+		{"git clean -f --end-of-options x", true},
+		{"git reset --end-of-options $X", true},
+		// A word the shell may still turn into an option.
+		{"git reset $MODE", true},
+		{`git reset "$MODE"`, true},
+		{"git reset $(echo --hard)", true},
+		{"git reset {--hard,}", true},
+		{"git reset *", true},
+		{"git reset ''*", true},
+		{`git reset '-hard;'`, true},
+		{"echo --hard | xargs git reset", true},
+		// Resets that keep the worktree.
+		{"git reset", false},
+		{"git reset --mixed", false},
+		{"git reset --mi HEAD~1", false},
+		{"git reset --soft HEAD~1", false},
+		{"git reset --so 'HEAD@{1}'", false},
+		{"git reset --keep HEAD~1", false},
+		{"git reset -q HEAD~1", false},
+		{"git reset -p", false},
+		{"git reset -U3 -p", false},
+		{"git reset --no-refresh HEAD~1", false},
+		{"git reset --no-quiet", false},
+		{"git reset --recurse-submodules=no HEAD~1", false},
+		{"git reset --pathspec-from-file list", false},
+		{"git reset -- --hard", false}, // a path after --
+		{"git reset HEAD -- file.go", false},
+		{"git reset src/*.go", false},
+		// Any prefix of --force is --force, alone or in a bundle.
+		{"git clean --f", true},
+		{"git clean --fo", true},
+		{"git clean --for", true},
+		{"git clean -d --forc", true},
+		{"git clean --forc -x", true},
+		{"git clean -fd", true},
+		{"git clean -xdf", true},
+		{"git clean -dfX", true},
+		{"git clean --force=x", true}, // git refuses it; counting it errs toward a deny
+		// -e takes its pattern from the rest of the bundle or the next word,
+		// so a -n there is no dry run.
+		{"git clean -fen", true},
+		{"git clean -e -n -f", true},
+		{"git clean --exclude -n -f", true},
+		// The last -n or --no-dry-run decides; a -n after -- is a path.
+		{"git clean -n --no-dry-run -f", true},
+		{"git clean -n --no-d -f", true},
+		{"git clean -f -- -n", true},
+		// -i deletes what the user picks, without -f.
+		{"git clean -i", true},
+		{"git clean --inter", true},
+		// Fails closed, as reset does.
+		{"git clean -n --frobnicate", true},
+		{"git clean -nz", true},
+		{"git clean -n --no-exclude", true},
+		{"git clean -n $X", true},
+		{"git clean -n *", true},
+		{"echo -f | xargs git clean", true},
+		// Cleans that delete nothing.
+		{"git clean -n", false},
+		{"git clean --for -n", false},
+		{"git clean -n --forc", false},
+		{"git clean --d -f", false}, // --d is --dry-run
+		{"git clean -f --dry-run", false},
+		{"git clean -fdxn", false},
+		{"git clean -d", false},
+		{"git clean -x", false},
+		{"git clean -f --no-dry-run -n", false},
+		{"git clean -nd -e '*.log'", false},
+		{"git clean -n --exclude=*.log", false},
+		{"git clean -nq", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			var warned []string
+			g := newDiscardGuard(config.Config{}, dirty, &warned)
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/repo"})
+			if (d != nil) != tt.wantDeny {
+				t.Fatalf("Check(%q) denial = %v, wantDeny %v", tt.command, d, tt.wantDeny)
+			}
+		})
+	}
+}
+
 func TestGitDiscardDecision(t *testing.T) {
 	const repo = "github.com/mad01/thismoon"
 	tests := []struct {
@@ -271,6 +391,11 @@ func TestGitDiscardDecision(t *testing.T) {
 			name:    "clean without -x ignores ignored files",
 			fixture: discardFixture{repo: repo, ignoredDirty: map[string]bool{"/repo": true}},
 			command: "git clean -fd", cwd: "/repo",
+		},
+		{
+			name:    "a prefix of --exclude checks ignored files too",
+			fixture: discardFixture{repo: repo, ignoredDirty: map[string]bool{"/repo": true}},
+			command: "git clean --fo --ex '!secret.env'", cwd: "/repo", wantDeny: true,
 		},
 		{
 			name: "allow_repos exempts",

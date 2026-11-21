@@ -3,6 +3,7 @@ package guard
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -160,67 +161,52 @@ func readRestore(args []string) (discardSpec, error) {
 	return spec, checkOperands(spec)
 }
 
-// readClean reads `clean -f [-d] [-x|-X] [-q] [--] [<paths>]`. An -e
-// (--exclude) pattern is not read: a `!` pattern brings an ignored file
-// back in, and under -X a plain one adds untracked files, so it can widen
-// what the clean deletes past what the proof lists.
+// readClean reads `clean -f [-d] [-x|-X] [-q] [--] [<paths>]`, its options
+// as git reads them (readGitWords). An -e (--exclude) pattern is not read:
+// a `!` pattern brings an ignored file back in, and under -X a plain one
+// adds untracked files, so it can widen what the clean deletes past what
+// the proof lists. Nor is -i, --no-force or any other option.
 func readClean(args []string) (discardSpec, error) {
-	spec := discardSpec{kind: untrackedClean}
-	for i := 0; i < len(args); i++ {
-		a := args[i]
+	w, err := readGitWords(args, cleanOptions)
+	if err != nil {
+		return discardSpec{}, err
+	}
+	spec := discardSpec{kind: untrackedClean, pathspecs: slices.Concat(w.operands, w.paths)}
+	for _, o := range w.opts {
 		switch {
-		case a == "--":
-			spec.pathspecs = append(spec.pathspecs, args[i+1:]...)
-			i = len(args)
-		case a == "--force" || a == "--quiet":
-		case strings.HasPrefix(a, "--"):
-			return discardSpec{}, fmt.Errorf("option %s", a)
-		case strings.HasPrefix(a, "-"):
-			if err := readCleanShort(a, &spec); err != nil {
-				return discardSpec{}, err
-			}
+		case o.name == "x":
+			spec.scope = cleanWithIgnored
+		case o.name == "X":
+			spec.scope = cleanOnlyIgnored
+		case o.name == "force" && !o.unset, o.name == "d", o.name == "quiet":
 		default:
-			spec.pathspecs = append(spec.pathspecs, a)
+			return discardSpec{}, fmt.Errorf("option %s", o.word)
 		}
 	}
 	return spec, checkOperands(spec)
 }
 
-// readCleanShort reads one short-flag token of clean (`-fdx`) into spec.
-// Any letter it does not know, -e included, is not read.
-func readCleanShort(tok string, spec *discardSpec) error {
-	for i := 1; i < len(tok); i++ {
-		switch tok[i] {
-		case 'f', 'd', 'q':
-		case 'x':
-			spec.scope = cleanWithIgnored
-		case 'X':
-			spec.scope = cleanOnlyIgnored
-		default:
-			return fmt.Errorf("option %s", tok)
-		}
-	}
-	return nil
-}
-
-// readReset reads `reset --hard [-q] [<commit>]`. A reset with paths is
-// not one git runs with --hard, and any other flag is not read.
+// readReset reads `reset --hard [-q] [<commit>]`, its options as git reads
+// them (readGitWords). A reset with paths is not one git runs with --hard,
+// and any other option is not read.
 func readReset(args []string) (discardSpec, error) {
-	spec := discardSpec{kind: hardReset, source: "HEAD"}
-	var words []string
-	for _, a := range args {
-		switch {
-		case a == "--hard" || a == "-q" || a == "--quiet":
-		case strings.HasPrefix(a, "-"):
-			return discardSpec{}, fmt.Errorf("option %s", a)
-		default:
-			words = append(words, a)
+	w, err := readGitWords(args, resetOptions)
+	switch {
+	case err != nil:
+		return discardSpec{}, err
+	case w.dashed || !w.sets("hard"):
+		return discardSpec{}, errNotRead
+	}
+	for _, o := range w.opts {
+		if o.name != "hard" && o.name != "quiet" {
+			return discardSpec{}, fmt.Errorf("option %s", o.word)
 		}
 	}
-	switch len(words) {
+	spec := discardSpec{kind: hardReset, source: "HEAD"}
+	switch len(w.operands) {
 	case 0:
 	case 1:
-		spec.source = words[0]
+		spec.source = w.operands[0]
 	default:
 		return discardSpec{}, errNotRead
 	}

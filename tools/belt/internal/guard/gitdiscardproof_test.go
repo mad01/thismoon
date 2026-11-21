@@ -143,8 +143,11 @@ func TestGitDiscardNothingLost(t *testing.T) {
 				"git clean -f",
 				"git clean -f -- new.txt",
 				"git clean -fd",
+				"git clean --fo",
+				"git clean -d --forc",
 				"git reset --hard origin/main",
 				"git reset --hard @{u}",
+				"git reset --ha origin/main",
 			},
 		},
 		{
@@ -164,9 +167,11 @@ func TestGitDiscardNothingLost(t *testing.T) {
 			},
 		},
 		{
-			name:     "a modified file with unique content",
-			setup:    func(r discardRepos) { r.local(map[string]string{"a.txt": "mine\n"}) },
-			commands: []string{"git checkout -- a.txt", "git restore .", "git reset --hard"},
+			name:  "a modified file with unique content",
+			setup: func(r discardRepos) { r.local(map[string]string{"a.txt": "mine\n"}) },
+			commands: []string{
+				"git checkout -- a.txt", "git restore .", "git reset --hard", "git reset --har",
+			},
 			wantDeny: "`a.txt` holds content no commit has",
 		},
 		{
@@ -644,6 +649,31 @@ func TestReadDiscardSpec(t *testing.T) {
 		{sub: "checkout", args: "-- d/*.go", wantErr: true},
 		{sub: "checkout", args: `-- a\b`, wantErr: true},
 		{sub: "reset", args: "--hard -x", wantErr: true},
+		{sub: "reset", args: "--ha", want: discardSpec{kind: hardReset, source: "HEAD"}},
+		{
+			sub:  "reset",
+			args: "-q --har origin/main",
+			want: discardSpec{kind: hardReset, source: "origin/main"},
+		},
+		{sub: "reset", args: "origin/main --h", want: discardSpec{
+			kind: hardReset, source: "origin/main",
+		}},
+		{sub: "reset", args: "--hard --soft", wantErr: true},
+		{sub: "reset", args: "--hard=x", wantErr: true},
+		{sub: "reset", args: "--hard HEAD --", wantErr: true},
+		{sub: "reset", args: "--hard $REF", wantErr: true},
+		{sub: "reset", args: "--soft", wantErr: true},
+		{sub: "clean", args: "--fo -d", want: discardSpec{kind: untrackedClean}},
+		{sub: "clean", args: "--forc -x -- out", want: discardSpec{
+			kind: untrackedClean, scope: cleanWithIgnored, pathspecs: []string{"out"},
+		}},
+		{sub: "clean", args: "-f out", want: discardSpec{
+			kind: untrackedClean, pathspecs: []string{"out"},
+		}},
+		{sub: "clean", args: "-fen", wantErr: true},
+		{sub: "clean", args: "-f --ex keep", wantErr: true},
+		{sub: "clean", args: "-f --no-force", wantErr: true},
+		{sub: "clean", args: "-fi", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.sub+" "+tt.args, func(t *testing.T) {
