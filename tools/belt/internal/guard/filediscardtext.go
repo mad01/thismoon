@@ -72,8 +72,8 @@ func docBodies(text string, c shellCmd) string {
 	return b.String()
 }
 
-// unreadSubst returns the bodies, read from text, of the substitutions
-// whose output a command runs as code and the walk cannot read
+// unreadSubst returns the code, read from text (wordPart.code), of the
+// substitutions whose output a command runs as code and the walk cannot read
 // (bodyProduced): a $( ) or backtick in its command word, in the words
 // eval runs or in a shell's -c script, a <( ) a shell or source reads as
 // its script operand or its standard input, and a $( ) or backtick in the
@@ -83,13 +83,12 @@ func (w *shellWalk) unreadSubst(text string, c shellCmd, tokens []string) []stri
 	for _, word := range words {
 		for _, p := range word.parts {
 			if runsBody(text, p) {
-				bodies = append(bodies, p.body)
+				bodies = append(bodies, p.code(text))
 			}
 		}
 	}
 	var out []string
-	for _, at := range bodies {
-		body := text[at.from:at.to]
+	for _, body := range bodies {
 		if s, known := w.bodyProduced(body); !known || !s.ok {
 			out = append(out, body)
 		}
@@ -100,7 +99,7 @@ func (w *shellWalk) unreadSubst(text string, c shellCmd, tokens []string) []stri
 // codeWords returns the words of a command, read from text, whose
 // substitutions it may run as code (unreadSubst), and the substitutions
 // in the unquoted heredoc bodies a shell reads as its script.
-func codeWords(text string, c shellCmd, tokens []string) ([]placedWord, []span) {
+func codeWords(text string, c shellCmd, tokens []string) ([]placedWord, []string) {
 	var words []placedWord
 	if head := len(tokens) - len(stripWrappers(tokens)); head < len(c.words) {
 		words = append(words, c.words[head])
@@ -123,7 +122,7 @@ func codeWords(text string, c shellCmd, tokens []string) ([]placedWord, []span) 
 			words = append(words, t)
 		}
 	}
-	var bodies []span
+	var bodies []string
 	for _, d := range c.docs {
 		if !d.quoted {
 			bodies = append(bodies, bodySubstitutions(text, d.body)...)

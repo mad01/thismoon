@@ -209,7 +209,10 @@ func (w *shellWalk) joinChain(before joint) {
 // runs nothing and is not walked. A `$(cat <<'EOF' ... EOF)` bash 3.2 may
 // run more of than cat (bash32Cats) is read fail-closed (walkUnread): bash
 // 3.2 may run any part of its heredoc body, with quotes belt cannot follow.
-// Both read a $( ) in the shell's whole input to its end (whole).
+// Both read a $( ) in the shell's whole input to its end (whole). Any other
+// substitution is walked as the command it runs (piece.code): a backtick
+// body with one level of escapes taken off, so cmd in the body echo \`cmd\`
+// is walked too.
 func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) {
 	feeds := w.feeds || runsText(c)
 	var message map[span]bool
@@ -217,17 +220,23 @@ func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) {
 		message = messageCats(text, c, w.whole(text))
 	}
 	bash32 := bash32Cats(text, c, w.whole(text))
-	for _, s := range append(c.pieces(), c.subshells...) {
-		if message[s] {
-			continue
+	walk := func(at span, code string) {
+		if message[at] {
+			return
 		}
 		inner := w.child(w.dir)
 		inner.feeds = feeds
-		if bash32[s] {
-			inner.walkUnread(text[s.from:s.to], markBash32(fn))
-			continue
+		if bash32[at] {
+			inner.walkUnread(text[at.from:at.to], markBash32(fn))
+			return
 		}
-		inner.walkRead(text[s.from:s.to], true, fn)
+		inner.walkRead(code, true, fn)
+	}
+	for _, p := range c.pieces() {
+		walk(p.span, p.code(text))
+	}
+	for _, s := range c.subshells {
+		walk(s, text[s.from:s.to])
 	}
 }
 
@@ -263,10 +272,10 @@ func (w *shellWalk) walkProse(text string, c shellCmd, reader *shellCmd, fn func
 		if d.quoted {
 			continue
 		}
-		for _, s := range bodySubstitutions(text, d.body) {
+		for _, code := range bodySubstitutions(text, d.body) {
 			inner := w.child(w.dir)
 			inner.feeds = runs
-			inner.walkRead(text[s.from:s.to], true, fn)
+			inner.walkRead(code, true, fn)
 		}
 	}
 	for _, s := range c.comments {
@@ -589,7 +598,7 @@ func runsText(c shellCmd) bool {
 	case c.after == jointPipe, handsOn(c), inlineScriptAt(tokens) >= 0, evalAt(tokens) >= 0:
 		return true
 	}
-	words := stripWrappers(tokens)
+	words := tokens[runAt(tokens):]
 	if len(words) == 0 {
 		return false
 	}
@@ -651,7 +660,10 @@ func namesGitConfig(c shellCmd, dir string) bool {
 // walkWords handles one command's words, read from text: a cd moves the
 // walk, anything else reaches fn, and a shell -c script or an eval text is
 // walked in turn, then what the command feeds a shell (feedsOf). A function
-// definition moves nothing, even one named cd.
+// definition moves nothing, even one named cd, and the eval, script and
+// feeds of its body are read where it stands (bodyOf). Code from a
+// definition on may be a function's body, run with the call's arguments, so
+// an eval or a -c there that runs one of them is opaque (afterFunction).
 func (w *shellWalk) walkWords(
 	text string,
 	c shellCmd,
@@ -680,26 +692,43 @@ func (w *shellWalk) walkWords(
 	step.pipeText, step.unreadSubst = frontText(text, in.front), w.unreadSubst(text, c, tokens)
 	step.docText = docBodies(text, c)
 	w.mem.noteAliasConfig(tokens)
-	feeds := w.feedsOf(text, c, tokens, in, dir)
+	body, run := bodyOf(text, c, tokens)
+	feeds := w.feedsOf(text, body, run, in, dir)
 	opaque, walk := w.mem.claim(feeds)
-	if opaque.what == "" && w.positional && runsPositional(c, tokens) {
+	w.afterFunction = w.afterFunction || defines
+	switch {
+	case opaque.what != "":
+	case w.positional && runsPositional(body, run):
 		opaque = opacity{what: "a script argument the script runs as code", scoped: true}
+	case w.afterFunction && runsPositionalText(body, run):
+		opaque = opacity{what: "a function argument the function runs as code", scoped: true}
 	}
 	step.opaque = opaque
 	fn(step)
-	w.remember(text, c, tokens, in, dir)
+	w.remember(text, body, run, in, dir)
 	if at := inlineScriptAt(tokens); at >= 0 {
 		inner := w.childFor(dir, tokens[:at])
-		inner.positional = at+1 < len(tokens)
+		inner.positional = at+1 < len(tokens) || appendsItems(run)
 		inner.script = step.id
 		inner.walkRead(c.words[at].script(), true, fn)
 	}
-	if at := evalAt(tokens); at >= 0 {
-		w.walkEval(c, tokens, at, fn)
+	if at := evalAt(run); at >= 0 {
+		w.walkEval(body, run, at, fn)
 	}
 	if walk {
 		w.walkFeeds(feeds, fn)
 	}
+}
+
+// bodyOf returns a command, its words and its tokens with a function
+// definition's head dropped (functionBody), so the walk reads an eval, a
+// script or a feed in the body where the function is defined, whether the
+// command calls it or not (`f() { eval "$x"; }`). Any other command comes
+// back whole.
+func bodyOf(text string, c shellCmd, tokens []string) (shellCmd, []string) {
+	run := functionBody(text, c, tokens)
+	c.words = c.words[len(tokens)-len(run):]
+	return c, run
 }
 
 // stepFor builds the step fn sees for one command that is no cd, run from
@@ -734,19 +763,29 @@ var positionalRef = regexp.MustCompile(`\$\{?[0-9@*]`)
 
 // runsPositional reports whether a command runs a script argument as code:
 // its command word is one, or eval or a shell's -c takes one as its text
-// (`sh -c 'eval "$1"' _ 'git push'`). The walk cannot see the argument from
-// inside the script, so the text is unread.
+// (runsPositionalText). The walk cannot see the argument from inside the
+// script, so the text is unread.
 func runsPositional(c shellCmd, tokens []string) bool {
-	refers := func(w placedWord) bool { return positionalRef.MatchString(w.raw) }
-	head := len(tokens) - len(stripWrappers(tokens))
-	switch {
-	case head < len(c.words) && refers(c.words[head]):
-		return true
-	case evalAt(tokens) >= 0:
-		return slices.ContainsFunc(c.words[evalAt(tokens)+1:], refers)
+	head := runAt(tokens)
+	return head < len(c.words) && refersPositional(c.words[head]) || runsPositionalText(c, tokens)
+}
+
+// runsPositionalText reports whether eval or a shell's -c takes a script or
+// function argument as its text (`sh -c 'eval "$1"' _ 'git push'`, `f() {
+// eval "$1"; }`). A function's call shows its arguments as words, so one it
+// runs as a command (`"$@"`) is read there; only text run as code hides.
+func runsPositionalText(c shellCmd, tokens []string) bool {
+	if at := evalAt(tokens); at >= 0 {
+		return slices.ContainsFunc(c.words[at+1:], refersPositional)
 	}
 	at := inlineScriptAt(tokens)
-	return at >= 0 && refers(c.words[at])
+	return at >= 0 && refersPositional(c.words[at])
+}
+
+// refersPositional reports whether a word refers to a script argument
+// (positionalRef).
+func refersPositional(w placedWord) bool {
+	return positionalRef.MatchString(w.raw)
 }
 
 // definesFunction reports whether a command, read from text, defines a shell
@@ -828,7 +867,8 @@ func (w *shellWalk) child(dir string) *shellWalk {
 	return &shellWalk{
 		dir: dir, cdpath: w.cdpath, gitEnv: w.gitEnv, configEnv: w.configEnv, heredoc: w.heredoc,
 		feeds: w.feeds, depth: w.depth + 1, chains: w.chains, steps: w.steps, mem: w.mem, expanding: w.expanding,
-		positional: w.positional, pwdSet: w.pwdSet, cdHidden: w.cdHidden, outerSure: w.dirSure(),
+		positional: w.positional, afterFunction: w.afterFunction, pwdSet: w.pwdSet, cdHidden: w.cdHidden,
+		outerSure: w.dirSure(),
 	}
 }
 
@@ -875,14 +915,36 @@ func inlineScriptAt(tokens []string) int {
 	return -1
 }
 
-// evalAt returns the index of an eval word that starts the command, behind
-// any wrapper stripWrappers drops, or -1.
+// evalAt returns the index of an eval word that starts the command, past
+// what runAt reads past, or -1.
 func evalAt(tokens []string) int {
-	rest := stripWrappers(tokens)
-	if len(rest) == 0 || rest[0] != "eval" {
+	at := runAt(tokens)
+	if at == len(tokens) || tokens[at] != "eval" {
 		return -1
 	}
-	return len(tokens) - len(rest)
+	return at
+}
+
+// runAt returns the index of the word a command runs as its name,
+// len(tokens) when none is left: past the reserved words that open it ({,
+// !, if, then, else, while, do, function and its name) and the wrappers in
+// front of its name, as the script guard reads them (unwrapCommand), and
+// past the head of a case whose pattern stands in ( ), which the reader
+// keeps as a subshell (`case x in (x) eval …`). Every lookup of what a
+// command runs starts here, so an eval, a shell that reads its script or an
+// xargs inside a group, a loop, an if or a function body is read as it is
+// at the top level. walkWords drops a function definition's head first
+// (functionBody).
+func runAt(tokens []string) int {
+	at := 0
+	for {
+		rest, _ := unwrapCommand(tokens[at:])
+		at = len(tokens) - len(rest)
+		if len(rest) < 3 || rest[0] != "case" || rest[2] != "in" {
+			return at
+		}
+		at += 3
+	}
 }
 
 // walkTokens is the token walk every walker used before readShell: split at

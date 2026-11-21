@@ -363,6 +363,8 @@ func TestFileDiscardUnreadCode(t *testing.T) {
 	writeTree(t, home, map[string]string{"x/f": "x", "list": "x/f\n"})
 	piped := []string{"belt cannot read the text `sh` runs", "name a delete"}
 	printed := []string{"prints as code", "names a delete"}
+	evaled := []string{"belt cannot read the text eval runs", "name a delete"}
+	outside := []string{"in no git work tree and no temp folder"}
 	rows := []fileDiscardRow{
 		{"sed into sh", "~", "find x -name f | sed 's/^/rm /' | sh", piped, nil},
 		{"cat and sed into bash", "~", "cat list | sed 's/^/rm /' | bash", []string{"`bash` runs"}, nil},
@@ -379,6 +381,15 @@ func TestFileDiscardUnreadCode(t *testing.T) {
 		{"bash of an unquoted heredoc", "~", "bash <<EOF\nset -e\n$(sed 's/^/rm /' list)\nEOF", []string{"names a delete"}, nil},
 		{"bash of a here-string without a delete", "~", `bash <<< "$(mise activate bash)"`, nil, nil},
 		{"source of a process substitution", "~", "source <(sed 's/^/unlink /' list)", printed, nil},
+		// MAD-672: a backtick body runs with one level of escapes taken off,
+		// \" too inside double quotes, so the eval reads the text that
+		// command prints and the nested sed is a substitution of its own.
+		{"eval of a backtick echo", "~", "eval \"`echo \\\"true; rm x/f\\\"`\"", outside, nil},
+		{"sh -c of a backtick echo", "~", "sh -c \"`echo \\\"rm x/f\\\"`\"", outside, nil},
+		{"eval of nested backticks", "~", "eval \"`echo \\`sed 's/^/rm /' list\\``\"", evaled, nil},
+		{"eval of an escaped $ in backticks", "~", "eval \"`echo rm x/f \\$X`\"", evaled, nil},
+		{"backtick echo of a delete as text", "~", "echo \"`echo \\\"; rm x/f; \\\"`\"", nil, nil},
+		{"single-quoted eval of a backtick", "~", "eval '\"`echo \\\"; rm x/f; \\\"`\"'", nil, nil},
 		// Nothing in the text that builds the code names a delete.
 		{"mise", "~", `eval "$(mise activate zsh)"`, nil, nil},
 		{"direnv", "~", `eval "$(direnv hook zsh)"`, nil, nil},
@@ -464,13 +475,18 @@ func TestFileDiscardConsumers(t *testing.T) {
 	writeTree(t, tmp, map[string]string{"t/a.pyc": "p", "t/b": "b"})
 	outside := []string{"in no git work tree and no temp folder"}
 	code := func(who string) []string { return []string{who + " runs its input as code", "names a delete"} }
+	// An xargs that runs its items as a shell's script reads them as `| sh`
+	// does (xargsFeeds): text belt cannot read there is opaque.
+	unread := func(shell string) []string {
+		return []string{"belt cannot read the text `xargs` hands `" + shell + "` to run", "name a delete"}
+	}
 	rows := []fileDiscardRow{
 		// xargs: the input runs as code.
-		{"xargs -I in the script", "~", `find x -name f | xargs -I{} sh -c 'rm "{}"'`, code("xargs"), nil},
+		{"xargs -I in the script", "~", `find x -name f | xargs -I{} sh -c 'rm "{}"'`, unread("sh"), nil},
 		{"xargs -I % in the script", "~", "echo x/f | xargs -I % sh -c 'rm %'", code("xargs"), nil},
-		{"xargs -I script", "~", "sed 's/^/rm /' list | xargs -I{} sh -c '{}'", code("xargs"), nil},
-		{"xargs -c without a script", "~", `sed 's/^/rm /' list | tr '\n' '\0' | xargs -0 -n1 bash -c`, code("xargs"), nil},
-		{"xargs -0 -c without a script", "~", "sed 's/^/rm /' list | xargs -0 bash -c", code("xargs"), nil},
+		{"xargs -I script", "~", "sed 's/^/rm /' list | xargs -I{} sh -c '{}'", unread("sh"), nil},
+		{"xargs -c without a script", "~", `sed 's/^/rm /' list | tr '\n' '\0' | xargs -0 -n1 bash -c`, unread("bash"), nil},
+		{"xargs -0 -c without a script", "~", "sed 's/^/rm /' list | xargs -0 bash -c", unread("bash"), nil},
 		{"xargs eval of an argument", "~", `sed 's/^/rm /' list | xargs -n1 sh -c 'eval "$0"'`, code("xargs"), nil},
 		{"xargs input as the command", "~", "echo rm x/f | xargs sudo", code("xargs"), nil},
 		{"xargs -I command word", "~", "sed 's/^/rm /' list | xargs -I{} {}", code("xargs"), nil},
@@ -979,7 +995,7 @@ func TestFileDiscardConsumersInWorkTrees(t *testing.T) {
 		{"find $1 over ignored files", dirty, `find . -name '*.pyc' -exec sh -c 'rm "$1"' _ {} \;`, nil},
 		{"find $1 over a dirty file", dirty, `find . -name a.txt -exec sh -c 'rm "$1"' _ {} \;`, []string{"`a.txt`"}},
 		{"xargs -I script over ignored files", dirty, `find . -name '*.pyc' | xargs -I{} sh -c 'rm "{}"'`,
-			[]string{"xargs runs its input as code"}},
+			[]string{"belt cannot read the text `xargs` hands `sh` to run"}},
 	})
 }
 

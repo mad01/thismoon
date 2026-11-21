@@ -444,12 +444,25 @@ Blocks `git push` to `main` or `master` before it happens.
 - **Reads a wrapped push.** The guard walks a quote-aware reader, so a push
   inside a `( … )` subshell, a `$(…)` or backtick substitution, an
   `sh -c`/`bash -c` string, an `eval`, a `\`-continued line, or a `{ … }`
-  group is judged like a plain `git push`. When the reader cannot follow a
-  command, the whole lines before the line it fails on get the full walk,
-  because bash runs them before it meets the syntax error. The rest is read
-  fail-closed: a git word and a push there are denied unless the refspecs
-  name a non-default branch in plain text. Nesting deeper than 32 levels is
-  read the same way.
+  group is judged like a plain `git push`. An `eval`, a shell that reads
+  its script and an `xargs` count wherever they stand in a command: in a
+  `{ … }` group, an `if`, a loop or a `case` arm, behind `!` or `time`, and
+  in a function's body, which is read where the function is defined,
+  called or not. A backtick body loses one level
+  of `\$`, `` \` `` and `\\` escapes before it is read, so a push in nested
+  backticks (`` `echo \`git push …\`` ``) counts at every level. Inside
+  double quotes it loses the backslash of `\"` too, as bash and zsh drop
+  it there, so in ``"`echo \"'\"; git push …; echo \"'\"`"`` the push is
+  not inside quotes and counts. A backslash-newline between `$` and `(`
+  joins them in a bare word, a double-quoted string and a here-string, as
+  bash reads them, so `"$\` at a line end and `(git push …)"` on the next
+  line is a substitution (zsh reads it as text). In single quotes it is
+  text. When the
+  reader cannot follow a command, the whole lines before the line it fails
+  on get the full walk, because bash runs them before it meets the syntax
+  error. The rest is read fail-closed: a git word and a push there are
+  denied unless the refspecs name a non-default branch in plain text.
+  Nesting deeper than 32 levels is read the same way.
 - **Reads git aliases and text printed into a shell.** A git alias the
   command sets is read in place of the subcommand. belt learns an alias
   name only where the command sets config: an invocation's own `-c
@@ -465,7 +478,15 @@ Blocks `git push` to `main` or `master` before it happens.
   `echo`, `printf`, or a `cat` of a heredoc or here-string prints is read as
   code when a shell runs it. That covers a pipe (`echo '...' | sh`), a
   here-string (`sh <<< '...'`), a `<( )` operand (`bash <(echo ...)`,
-  `. <(...)`) and a substitution in a `-c` script or `eval`. It also covers
+  `. <(...)`) and a substitution in a `-c` script or `eval`. An `xargs`
+  that runs its items as a shell's script reads them the same way:
+  `printf '%s' '...' | xargs -0 sh -c` runs the text, and `xargs -I{} sh
+  -c '... {}'` runs the script with each item in place of `{}`. belt cuts
+  the items as xargs does (at a NUL after `-0`, at the `-d` character,
+  else at newlines and blanks with quotes taken off, and at newlines alone
+  with `-I`) and reads each on its own. A backtick
+  printer is read with its escapes taken off, as the push in it is read, so
+  `` eval "`echo \"true; git push …\"`" `` runs the push. It also covers
   a variable the command set to such text (`X=$(cat <<'EOF' ...); eval
   "$X"`, or `$X` as the command word), and a file the command wrote and then
   runs (`cat <<'EOF' > x.sh && sh x.sh`).
@@ -477,8 +498,9 @@ Blocks `git push` to `main` or `master` before it happens.
   only in a repo with no direct-push exemption, or from a directory belt
   cannot tell:
   - Shell text: printed text that holds a variable or a command's output,
-    and any other command piped into a shell (`cat x.sh | sh`, `curl x |
-    sh`).
+    and any other command piped into a shell or into an `xargs` that runs
+    its items as code (`cat x.sh | sh`, `curl x | sh`, `find . | xargs
+    -I{} sh -c '...'`).
   - A Python, Perl, Ruby, Node or osascript script that starts a process
     (Python `subprocess`, `os.system`, `os.popen`, `os.exec*`, `pty.spawn`;
     Perl `system`, `exec`, backticks, `qx`, `open` with a pipe; Ruby
@@ -490,7 +512,11 @@ Blocks `git push` to `main` or `master` before it happens.
     push` is refused in a guarded repo, since belt cannot read the
     language.
   - A script argument a `-c` script, a sourced file or a `!` alias body
-    runs as code (`sh -c 'eval "$1"' _ '...'`, `"$@"` as the command).
+    runs as code (`sh -c 'eval "$1"' _ '...'`, `"$@"` as the command), and
+    an argument an `eval` or a `-c` runs as its text after a function
+    definition, where it may be the function's body (`f() { eval "$1";
+    }`). A function that runs an argument as a command (`"$@"`) is read at
+    the call, whose words show it.
   - A variable or a written file past 64 KiB, or text past 512 KiB in all
     of one command: a variable doubled a few times over grows past any
     size, so belt stops reading it instead.
@@ -519,8 +545,16 @@ Blocks `git push` to `main` or `master` before it happens.
   or `$( )` in a quoted (`<<'EOF'`) body is text: a PR body that shows a
   push in a code span passes. In an unquoted body the shell runs every `$( )`
   and backtick before the command reads it, even after a `'` or `#`, so those
-  are read as code and a push there is denied. Any other command, any other
-  pipe, a `>( )` after the reader, and a substitution handed to
+  are read as code and a push there is denied. belt finds them the way the
+  shell expands the body. It drops each backslash-newline first, so `$\` at
+  a line end and `(git push …)` on the next line is a substitution. A
+  backtick substitution ends at the first backtick no backslash quotes, and
+  its body loses one level of `\$`, `` \` `` and `\\` escapes, so
+  `` `echo \`git push …\`` `` runs the inner push and is denied. A `\"`
+  keeps its backslash there, since a body is not a double-quoted string:
+  `` `echo \"; git push …; echo \"` `` runs the push. An escaped
+  `\$(` or `` \` `` outside a substitution is text. Any other command, any
+  other pipe, a `>( )` after the reader, and a substitution handed to
   `sh -c`, `eval`, `source` or an interpreter make the body code, read like
   the rest of the command. In an unquoted body a line ending in a
   backslash joins the next one before belt compares it with the delimiter,
@@ -823,7 +857,8 @@ then run the file" bypass.
   backslash, which every shell takes off before it reads the body. What can
   still run is scanned
   raw: every `$(…)`, backtick or `<( )` body wherever it stands (so
-  `echo "$(rm -rf x)"` and `x=$(rm -rf x)` deny), and an
+  `echo "$(rm -rf x)"` and `x=$(rm -rf x)` deny), a backtick body read with
+  its escapes taken off as the push guard reads it, and an
   `echo`/`printf` piped through `cat`/`tee` into a stdin-reading interpreter
   (`echo '…' | sh`). The write-then-run and chmod scans keep reading the raw
   command, so a file written then run is unaffected.
@@ -1144,7 +1179,9 @@ Blocks git commands that throw away uncommitted work.
   target, else the session cwd, with `$PWD` and `$(git rev-parse
   --show-toplevel)` read as git-push-main reads them. Heredoc bodies are
   read as git-push-main reads them, so a commit or tag message may name
-  `reset --hard` in plain words, and a PR body may in a code span.
+  `reset --hard` in plain words, and a PR body may in a code span. So are
+  a wrapped command, an `eval` or a `sh -c` in a group, a loop, an `if` or
+  a function's body, and an `xargs` that runs its items as code.
 - **Reads reset, clean, checkout and switch options as git does.** Each
   option comes from a table of the options `git <cmd> -h` lists. Any prefix
   that names one option alone counts as its full name. So `reset --ha` is
@@ -1641,7 +1678,8 @@ git-discard's rule to the commands git does not run.
   `sed 's/^/rm /' list | sh`, `eval "$(sed ...)"`, `bash <(sed ...)`,
   `bash <<< "$(sed ...)"`, a `$(...)` in an unquoted heredoc a shell reads,
   and a `$(...)` as the command word. belt scans the words of the pipe in
-  front of the shell, or of the substitution. Code built from text that
+  front of the shell, or of the substitution, a backtick one with one level
+  of escapes taken off. Code built from text that
   names none passes:
   `eval "$(mise activate zsh)"`, `source <(fzf --zsh)`,
   `echo 'make test' | sh`. A feeder belt cannot read denies, and so do `find -L`, `grep -R`
