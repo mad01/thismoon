@@ -346,7 +346,9 @@ Blocks `git push` to `main` or `master` before it happens.
   replaces the branch only when all of these hold:
   - It runs as git itself. Only assignments or a wrapper such as `env` stand
     before the git word, not `echo` or `:`, and no `!` negates it, since
-    `! git switch -c x && git push` pushes only when the switch failed.
+    `! git switch -c x && git push` pushes only when the switch failed. A
+    wrapper that may run it beside the shell does not count (`coproc`,
+    `setsid`), since the push may then run before the switch ends.
   - It is not itself after `||` or in a pipeline, and only `&&` joins it to
     the push, so the push runs only after the switch worked.
   - It is the last switch in the command, and every step between it and the
@@ -705,10 +707,18 @@ then run the file" bypass.
   x.sh`, `python x.py` (versioned names like `python3.12` too), `perl`,
   `ruby`, `node`, `osascript`, `uv run`, `./x.sh`, extensionless `./deploy`
   when the file starts with a shebang, `source x.sh`, interpreter `-c`/`-e`
-  strings, heredocs, `bash < x.sh` stdin redirects, `cat x.sh | bash`
-  pipes, and a heredoc or here-string passed through `cat`, `head`, `tail`
-  or `tee` into an interpreter (`cat <<EOF | sh`). Wrappers (`sudo`, `env`,
-  `nohup`, `timeout <n>`, …) are stripped first.
+  strings (a shell's `-c` in a bundle too, as in `bash -lc`), heredocs,
+  `bash < x.sh` stdin redirects, `cat x.sh | bash` pipes, and a heredoc or
+  here-string passed through `cat`, `head`, `tail` or `tee` into an
+  interpreter (`cat <<EOF | sh`). Wrappers (`sudo`, `doas`, `env`,
+  `command`, `builtin`, `nohup`, `setsid`, `nice`, `ionice`, `stdbuf`,
+  `caffeinate`, `chronic`, `arch`, `flock`, `timeout`, `gtimeout`, …) are
+  read past first with their options, and so are the runners `watch`,
+  `parallel` and `script`, and the reserved words that open a command
+  (`if`, `then`, `do`, `!`, `{`). A command word that names an interpreter
+  through a variable reads as that interpreter: `$SHELL`, `$BASH`,
+  `$ZSH_NAME`, any name that ends in `SHELL`, and a variable the command
+  sets to an interpreter (`S=sh`, `B=/bin/bash`).
 - **Indirection heads are scanned too**: the command after `eval`, `xargs`,
   and `find -exec`/`-execdir`/`-ok` runs through the same patterns — those
   are the routes a prefix matcher never sees.
@@ -783,7 +793,103 @@ then run the file" bypass.
   (`echo '…' | sh`). The write-then-run and chmod scans keep reading the raw
   command, so a file written then run is unaffected.
 - **`curl | bash` is denied outright** (`wget` too): nothing can read what
-  would run. Download to a file first, then run the file.
+  would run. Download to a file in one call, then run the file in a later
+  call.
+- **Any code belt cannot read is denied the same way** (`scriptdeny_unread.go`).
+  A download or decoded text that a shell, `eval` or `source` runs denies
+  in these shapes:
+  - `bash <(curl …)`, `source <(curl …)`, `bash < <(curl …)` and a
+    here-string.
+  - `sh -c "$(curl …)"`, `eval "$(curl …)"`, and a download as the command
+    word.
+  - A script named `/dev/stdin` or `/dev/fd/N` whose input is a download:
+    `sh /dev/stdin <<< "$(curl …)"`, `bash /dev/fd/3 3< <(curl …)`.
+  - A variable set to a download, then run: `X=$(curl …); eval "$X"`,
+    `bash -c "$X"`, `echo "$X" | sh`, or `X=$(curl …) bash -c "$X"`. A
+    variable copied from one counts too (`Y="$X"`).
+  - A fetch anywhere in a pipeline into a shell: `curl … | tee x | sh`,
+    `curl … | sh -s -- -y`, `| source /dev/stdin`. The fetch may sit in a
+    group (`{ curl …; } | sh`, `if …; then curl …; fi | sh`), and the shell
+    in a group, a subshell or a loop (`curl … | (sh)`, `curl … | { cd x;
+    sh; }`). An `xargs` that runs its items as code counts as a shell:
+    `curl … | xargs -0 sh -c`, `xargs -I{} sh -c '{}'`.
+  - A shell named by a variable: `"$SHELL" -c "$(curl …)"`,
+    `X=$(curl …); "$SHELL" -c "$X"`, `curl … | "$SHELL"` and `S=sh; curl …
+    | $S`. `exec "$SHELL" -l` and `"$SHELL" -lc 'make test'` pass.
+  - A `>( )` whose command runs its input as code, for what the command
+    writes into it: `curl … | tee >(sh)`, `curl … > >(sh)`, `curl -o >(sh)
+    …`. An `xargs` that runs its items as code reads them from its `-a`
+    file the same way: `xargs -a <(curl …) sh -c`. Its options are read
+    as getopt reads them, so a bundle counts too:
+    `xargs -0a <(curl …) sh -c`, `xargs -0I{} sh -c '{}'`.
+  - A file the same command writes a download to, then runs
+    (`scriptdeny_saved.go`): `curl … > i.sh && bash i.sh`, `curl -o i.sh …`,
+    `curl -O`, `wget -O i.sh`, plain `wget URL` by the name it saves, a
+    `tee` after a fetch, then `sh i.sh`, `source i.sh`, `./i.sh`,
+    `bash < i.sh` or `cat i.sh | sh`. A file written in one call and run in
+    a later one is read from disk then.
+  - Decoded text into a shell: `base64 -d`, `openssl … -d`, `xxd -r`,
+    `uudecode` and the decompressors (`gunzip`, `zcat`, `gzip -d`, …), in
+    every shape above.
+  - `node`, `deno run`, `deno eval` and `bun` read as interpreters do:
+    `deno run <(curl …)` and `bun <(curl …)` deny.
+
+  The same shapes deny behind a wrapper, after a reserved word, in a brace
+  group or a function body (`{ bash <(curl …); }`, `if …; then …; fi`,
+  `f() { eval "$(curl …)"; }`), and inside a `-c` string, an `eval`, a
+  subshell, a substitution and a runner's shell text. A `<( )` or `$( )`
+  that only prints files with `cat`, `head` or `tail` is read instead: its
+  files are scanned, so `bash <(cat x.sh)` passes when `x.sh` runs nothing
+  denied. `bash <(echo …)` passes too, since the echo text is scanned as a
+  substitution. A variable set to a readable substitution passes
+  (`X=$(git rev-parse HEAD); eval "echo $X"`), and so does a download saved
+  and only read (`curl -o f.json … && jq . f.json`). Not read yet:
+  - A variable a builtin sets (`read X < <(curl …)`), a held variable in a
+    heredoc body, and a variable that holds a `cat` of a file.
+  - A download moved, copied or unpacked before it runs (`mv`, `cp`,
+    `tar`), and a runtime that fetches a URL itself (`deno run https://…`).
+  - A shell's name only the shell can work out: `"${SHELL:-sh}"`, or a
+    `$( )` as the command word (`$(which sh)`).
+  - A wrapper that starts a shell with no command, which then reads the
+    pipe: `curl … | sudo -s`, `doas -s`, `su`.
+  - A shell fed by a pipe of its own inside `( )` or `>( )`:
+    `curl … | ( cat | sh )`, `curl … | tee >(cat | sh)`.
+- **A command behind a wrapper is read past it** (`scriptdeny_indirect.go`).
+  The permission system matches a command by the words it starts with, so
+  `nice kubectl delete` and `script -q /dev/null rm -rf x` slip past it. A
+  wrapper that runs its command as written (`sudo`, `nohup`, `nice`,
+  `timeout`, `flock FILE`, BSD `script FILE CMD`, `coproc`, zsh's `noglob`
+  and `nocorrect`, …) is denied when that command starts with a deny
+  entry. So `coproc rm -rf /x` and `coproc NAME { rm -rf /x; }` deny. A
+  runner that hands its words to a shell (`watch`, `parallel`, `script -c`,
+  `env -S`, `sudo -s`, `flock FILE -c`) gets its text scanned to the end of
+  the command, as a `-c` string is. A wrapper's options are read as the
+  wrapper reads them (`sudo -u root`, `env -i`, `command -p`, `arch -arm64`
+  and `arch -arch NAME`). `wrapperOptions` is the one table of wrappers,
+  and every reader that skips one looks it up there. An option belt does
+  not know fails closed: the words after the wrapper are scanned as shell
+  text. A wrapper
+  named by a path (`./nice`, `/usr/bin/env`) is read both ways, as the
+  script of that name it may be and as the wrapper. The reserved words that
+  open a command (`if`, `then`, `do`, `!`, `{`) and a function definition's
+  head are read past too, without counting as a wrapper, and after a
+  wrapper as well (`time { bash <(curl …); }`).
+- **A command a name hides is read through the name.**
+  - An alias or a function the same text defines runs as its value or body,
+    with the call's arguments: `alias k=kubectl; k delete pod x` and
+    `f() { kubectl "$@"; }; f delete pod x` deny.
+  - A variable the text assigns a literal runs as that literal:
+    `X="rm -rf"; $X /x` denies. A value built from literals and variables
+    is resolved through the literals, so `Y=rm; Z="$Y -rf /x"; eval "$Z"`
+    denies. A variable in it the text does not set is read by its name, as
+    below.
+  - A variable the text does not set comes from the user's profile, since
+    shell state does not carry between Bash calls, so its name is all belt
+    has. It denies when the name holds a deny entry's command word, case
+    aside, and its arguments match the entry's words after that word:
+    `$RM -rf /x` and `"$KUBECTL" -n prod delete pod` deny. A one-word entry
+    and a `re:` entry name no such words. So `$X -rf /x`, `$GIT rm file`,
+    `$NPM rm pkg`, `$GO test ./...` and `"$EDITOR" notes.md` pass.
 - **Patterns come from** the `permissions.deny` `Bash(...)` entries of
   `~/.claude/settings.json` and `settings.local.json`, read live on every
   invocation so the guard and the permission system cannot drift.

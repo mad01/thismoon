@@ -238,17 +238,21 @@ func knownDir(s walkStep, c gitInvocation) string {
 }
 
 // runsGit reports whether a command's words run the git in them: nothing but
-// NAME=value assignments and wrapperCommands words (timeout with its
-// duration) in front of the git word. So git is not the argument of another
-// command (echo git, : git, xargs git), and no ! in front turns a failed git
-// into success for the && after it.
+// NAME=value assignments and wrapper names (wrapperOptions, timeout with
+// its duration) in front of the git word. So git is not the argument of
+// another command (echo git, : git, xargs git), no ! in front turns a failed
+// git into success for the && after it, and no async wrapper (coproc)
+// leaves it running while the && goes on.
 func runsGit(tokens []string) bool {
 	pre, ok := beforeGit(tokens)
 	for i := 0; ok && i < len(pre); i++ {
 		switch name := filepath.Base(pre[i]); {
-		case isAssignment(pre[i]), wrapperCommands[name]:
-		case wrappersWithArg[name] && i+1 < len(pre):
-			i++
+		case isAssignment(pre[i]):
+		case wrapperOptions[name].operand:
+			if i++; i >= len(pre) {
+				return false
+			}
+		case isWrapper(name) && !wrapperOptions[name].async:
 		default:
 			return false
 		}

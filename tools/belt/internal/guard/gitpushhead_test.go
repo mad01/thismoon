@@ -85,6 +85,15 @@ var branchSwitches = []struct {
 	{"main", "FOO=1 git switch -c zz && git push origin HEAD", false},
 	{"main", "env git switch -c zz && git push origin HEAD", false},
 	{"main", "timeout 5 git switch -c zz && git push origin HEAD", false},
+	{"main", "gtimeout 5 git switch -c zz && git push origin HEAD", false},
+	{"main", "flock /tmp/l git switch -c zz && git push origin HEAD", false},
+	{"main", "chronic git switch -c zz && git push origin HEAD", false},
+	// doas may run git under another user's config (setsConfigEnv).
+	{"main", "doas git switch -c zz && git push origin HEAD", true},
+	{"main", "flock git switch -c zz && git push origin HEAD", true},
+	// An async wrapper leaves the switch running while the push goes on.
+	{"main", "coproc git switch -c zz && git push origin HEAD", true},
+	{"main", "setsid git switch -c zz && git push origin HEAD", true},
 
 	// Finding 3: git checkout <name> is sure once <name> is a local branch.
 	{

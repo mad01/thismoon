@@ -168,12 +168,14 @@ func (l *shLexer) redirect() bool {
 }
 
 // redirectTarget reads the word a redirection names. For a heredoc that
-// word is the delimiter, and the body is queued for the next newline.
+// word is the delimiter, and the body is queued for the next newline. A
+// process substitution is a word too (`sh < <(cmd)`).
 func (l *shLexer) redirectTarget(isHeredoc, stripTabs bool) bool {
 	for l.at(0) == ' ' || l.at(0) == '\t' {
 		l.i++
 	}
-	if l.i >= len(l.src) || strings.IndexByte("\n;&|()<>", l.src[l.i]) >= 0 {
+	procSubst := (l.at(0) == '<' || l.at(0) == '>') && l.at(1) == '('
+	if l.i >= len(l.src) || (!procSubst && strings.IndexByte("\n;&|()<>", l.src[l.i]) >= 0) {
 		return false
 	}
 	start := l.i

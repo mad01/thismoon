@@ -147,7 +147,7 @@ func envAssignments(words []string) []string {
 		switch {
 		case isAssignment(w):
 			out = append(out, w)
-		case wrapperCommands[filepath.Base(w)], i > 0 && strings.HasPrefix(w, "-"):
+		case isWrapper(filepath.Base(w)), i > 0 && strings.HasPrefix(w, "-"):
 		default:
 			head = i
 		}
