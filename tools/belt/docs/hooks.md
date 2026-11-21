@@ -1095,27 +1095,29 @@ two events.
 Blocks git commands that throw away uncommitted work.
 
 - **Fires on** `git stash` (bare, flag-led like `-u`, `push`, `save`),
-  `reset --hard`, a path checkout (`checkout -- <path>`, `checkout <ref> --
+  `reset --hard` or `--merge`, a path checkout (`checkout -- <path>`, `checkout <ref> --
   <path>`, `checkout .`, a patch checkout) or a forced one, `switch
   --discard-changes`/`-f`, `restore` unless the only target is the index
   (`--staged` without `--worktree`), and `clean` with `-f` or `-i` (a `-n`
-  dry run passes). `stash list|show|apply|pop|branch` are allowed. It also
-  fires on `stash drop` and `stash clear`, which delete stash entries. A
-  checkout or switch force counts the way git reads it. In a bundle of
-  short options (`-qf`, `-fb new`), it counts up to a letter that takes the
-  rest of the word as its value, so `-bf` creates a branch named `f`. Any
-  prefix of the long option counts too (`--forc`, `switch --disc`), since
-  git takes one. Each invocation is
+  dry run passes). A clean with neither counts when `clean.requireForce`
+  may be off. Six commands that write the tree count too: `worktree
+  remove`, `apply`, `read-tree -u` or `--index-output`, `checkout-index
+  -f`, `rm -f` and `mv -f`. `stash list|show|apply|pop|branch` are allowed. It also
+  fires on `stash drop`, `stash clear` and a reflog or ref delete of
+  `refs/stash`, which delete stash entries. Each invocation is
   judged in the directory it runs in: a tracked `cd`/`pushd`, a `git -C`
   target, else the session cwd, with `$PWD` and `$(git rev-parse
   --show-toplevel)` read as git-push-main reads them. Heredoc bodies are
   read as git-push-main reads them, so a commit or tag message may name
   `reset --hard` in plain words, and a PR body may in a code span.
-- **Reads reset and clean options as git does.** Each option comes from a
-  table of the options `git reset -h` and `git clean -h` list. Any prefix
+- **Reads reset, clean, checkout and switch options as git does.** Each
+  option comes from a table of the options `git <cmd> -h` lists. Any prefix
   that names one option alone counts as its full name. So `reset --ha` is
-  `--hard`, `clean --fo` is `--force`, and `clean --d` is `--dry-run`. Short
-  options may come in a bundle (`-xdf`). An option that needs a value takes
+  `--hard`, `clean --fo` is `--force`, `clean --d` is `--dry-run` and
+  `checkout --forc` is `--force`. `switch --fo` names two options, so it
+  counts. Short options may come in a bundle (`-xdf`). In a bundle, a
+  letter that takes a value takes the rest of the word, so `checkout -fb
+  new` forces and `-bf` creates a branch named `f`. An option that needs a value takes
   the next word, even `--` or one that starts with `-`. In `clean -e -n -f`
   and `clean -fen`, the `n` is a pattern, so the clean deletes. The last
   `-n` or `--no-dry-run` decides whether a clean is a dry run. `clean -i`
@@ -1124,7 +1126,21 @@ Blocks git commands that throw away uncommitted work.
   table, a prefix of two options, or a value on an option that takes none.
   It is also a word the shell may still turn into an option (`$X`,
   `$(...)`, a leading glob or brace), or a command in front of git that may
-  hand it more words (`xargs git reset`).
+  hand it more words (`xargs git reset`, `xargs git switch`).
+- **Counts a clean without `-f` when `clean.requireForce` may be off.**
+  git then deletes without `-f` or `-i`. The command may set config for
+  the clean itself: `-c`, `--config-env`, a `GIT_CONFIG*` or `HOME`
+  variable, or a `git config` write earlier in the command. Any of these
+  counts, whatever the key. Otherwise belt reads `git -c
+  core.fsmonitor=false config --type=bool --get clean.requireForce` in the
+  repo, so a repo or global `false` counts too. A value git cannot read
+  counts as `false`.
+- **Reads `reset --merge` as git 2.55 runs it.** It resets the index and
+  keeps a file whose worktree copy differs from the index. So a staged edit
+  with no unstaged change on top is lost, and an unstaged edit is kept. git
+  refuses the whole reset when a file with an unstaged change also differs
+  between the index and the target. The proof checks what `--hard` drops,
+  less what `--merge` keeps, and passes a reset git refuses.
 - **Reads a checkout without `--` as git does.** belt asks git whether the
   first operand names a branch, tag or commit (`git rev-parse --verify
   <operand>^{tree}`). All the lookups of one call share a 2 second budget,
@@ -1151,11 +1167,81 @@ Blocks git commands that throw away uncommitted work.
   `git checkout HEAD -- .`. Taking every hunk is the most it drops. From a
   tree it also deletes a file only the index has, so the proof checks
   those files too.
+- **Reads six tree writers the same way.** Each takes its options from a
+  table of what `git <cmd> -h` lists, read as reset and clean are. The last
+  of an option and its `--no-` form decides.
+  - `git worktree remove --force` (`-f`, twice for a locked worktree)
+    deletes a linked worktree, untracked files included. A plain remove
+    refuses a dirty tree, so only the commit check below applies to it.
+    belt judges the worktree it removes, not the one it runs in. git finds
+    that worktree by its path or by the end of its path (`remove wt`), so
+    belt checks every worktree either reading could name. The name gets the
+    shell's `~` and quote expansion. git starts a relative name from the
+    real directory, so from a symlinked cwd `..` goes to the link target's
+    parent. belt checks the name from the cwd as written and with its
+    symlinks resolved. A remove deletes ignored files too, forced or not,
+    and belt does not count them, as git's own check does not.
+  - Any `git worktree remove`, forced or not, denies when the worktree's
+    HEAD and HEAD reflog are the last refs that hold some commits. That
+    holds on a detached HEAD and on a branch alike. A commit made on a
+    detached HEAD and left behind by a checkout lives only in the reflog.
+    git removes the worktree without a warning, and its HEAD and HEAD
+    reflog go with it. The main worktree is not counted, since git refuses
+    to remove it.
+  - A `git worktree prune` denies the same way. It deletes what is left of
+    each worktree whose folder is gone, HEAD and HEAD reflog included.
+    belt asks git which ones with a dry run, `git worktree prune -n -v`,
+    and passes on the prune's own `--expire`. An expire value the shell may
+    still glob or unquote drops it, so the dry run names the most a prune
+    deletes. One the shell may still expand, such as `$WHEN`, denies.
+    `-n` and `--dry-run` pass.
+  - belt counts the commits those HEADs and reflogs reach that nothing
+    left reaches. What is left is every branch, tag, remote-tracking
+    branch, stash entry and note, every reflog of them, and the HEAD and
+    HEAD reflog of every other worktree. The count is one `git rev-list`
+    on the repository's common dir: `--exclude` drops the removed HEAD
+    from `--all`, and `--single-worktree --reflog` reads the shared
+    reflogs. The other worktrees' HEAD reflogs come from `git rev-list
+    --walk-reflogs`, since `--exclude` does not reach `--reflog`. A count
+    git cannot give denies. The reason names the count and the newest lost
+    commit, and says to run `git branch <name> <commit>` first.
+  - A worktree on an unborn branch, as `git worktree add --orphan` leaves
+    it, holds no commit, so its remove or prune passes. That holds while
+    its HEAD keeps no reflog. A reflog there may hold commits git cannot
+    walk from that HEAD, so the command denies.
+  - A false deny belt accepts: after `git rebase -i --autosquash` with a
+    fixup in a branch worktree, `git worktree remove` denies. The pick
+    from before the fixup lives only in that worktree's HEAD reflog.
+    `git branch keep-<x> <commit>` gets past it, and so does running the
+    remove by hand.
+  - A known gap: two removes in one command pass when a commit sits only
+    in both worktrees' HEAD reflogs, as in `git worktree remove ../w1 &&
+    git worktree remove ../w2`. Each remove counts the other worktree as
+    kept.
+  - `git apply` rewrites the files its patches touch. `-R` reverts edits,
+    and a forward hunk replaces the lines it matches, so both count.
+    `--cached` only changes the index, like `git reset`, so it passes. So
+    do `--check` and a `--stat`, `--numstat` or `--summary` without
+    `--apply`.
+  - `git read-tree -u` with `--reset` overwrites every changed file, and
+    with `-m` a staged one. `--index-output` writes the index over the
+    file it names, with or without `-u`. Without either only the index
+    changes. `-n` writes nothing.
+  - `git checkout-index -f` overwrites files from the index. Without `-f`
+    it leaves a file that exists alone.
+  - `git rm -f` deletes a file with changes. A plain `git rm` refuses one,
+    and `--cached` keeps the file.
+  - `git mv -f` overwrites what stands at the destination, tracked,
+    untracked or ignored. A plain `git mv` refuses an existing one.
 - **Decides by** the working tree there. A clean tree (`git status
-  --porcelain` empty, with `--ignored` added for `clean -x`/`-X`/`-e` and a
-  clean belt cannot read) allows,
-  since nothing would be lost. `allow_repos` exempts repos by canonical
-  identity.
+  --porcelain` empty, with `--ignored` added for `clean -x`/`-X`/`-e`, a
+  clean belt cannot read and `mv -f`) allows,
+  since nothing would be lost. belt passes `--untracked-files=normal`, so a
+  repo's `status.showUntrackedFiles=no` cannot hide an untracked file. A
+  worktree remove reads the status of the worktree it removes. A command that also writes outside the tree needs
+  the proof: `checkout-index --prefix`, `apply --unsafe-paths` or
+  `--build-fake-ancestor`, and `read-tree --index-output`. `allow_repos`
+  exempts repos by canonical identity.
 - **Denies a stash drop or clear on any tree.** The loss is the stash
   entry, not the tree. Every worktree of a repo shares one stash list, so
   an entry may be another session's set-aside work. A dropped entry comes
@@ -1169,9 +1255,26 @@ Blocks git commands that throw away uncommitted work.
   and `branch` pass, since the work comes back into the tree. The reason
   points to `git stash list` to see the entries, and to a WIP commit to set
   work aside.
+- **Denies a reflog or ref delete of `refs/stash` the same way.** The
+  entries live in its reflog. That covers `reflog delete stash@{0}`, a
+  `reflog expire` or `reflog drop` of `refs/stash` or `--all`, `update-ref
+  -d refs/stash` and `update-ref --stdin`, whose commands belt never sees.
+  A `-n` dry run passes. A ref the shell may still rewrite counts.
+- **Treats a subcommand belt cannot see as any.** One case is a command in
+  front of git that may hand it the subcommand (`echo stash clear | xargs
+  git`). Another is a subcommand word only a shell can resolve (`git $X
+  clear`). The last is an alias body belt cannot read (`git -c
+  alias.x="$B" x`). Only a clean tree passes one. It denies on any tree
+  when it may drop stash entries. That is always so behind `xargs`. After a
+  shell word it is so when a `drop` or `clear` word follows, or no plain
+  word does. For an alias it is so when the body may run `stash`, `reflog`
+  or `update-ref`. A plain alias body led by another builtin (`log $Y`)
+  keeps the entries, since git splits it without a shell.
 - **Passes a dirty tree when nothing is lost.** A checkout or restore of
-  paths, a `clean -f` and a `reset --hard [<commit>]` pass when every file
-  version they drop is already committed at the same path. The commits that
+  paths, a `clean -f`, a `reset --hard [<commit>]`, a `reset --merge
+  [<commit>]` and the six tree writers
+  pass when every file version they drop is already committed at the same
+  path. The commits that
   count are HEAD, its upstream (`@{u}`) and origin's default branch
   (`refs/remotes/origin/HEAD`, only while it points at a branch under
   `refs/remotes/origin/`), plus what the command itself writes there.
@@ -1187,7 +1290,15 @@ Blocks git commands that throw away uncommitted work.
   clean checks `git ls-files --others` under the same ignore rules: `-x`
   adds ignored files, `-X` lists only them. A reset checks the paths `git
   status` reports changed and, for another commit, any untracked or ignored
-  file at a path the target adds. Every form also checks a file or symlink
+  file at a path the target adds. A `read-tree -u` checks what a reset to
+  its tree checks, and keeps the branch where it is. A `checkout-index -f`
+  checks the index paths it names, or all under the directory for `-a`. An
+  `rm -f` checks the index paths it matches, with their staged copies. An
+  `mv -f` checks what stands at each destination; a directory destination
+  takes each source by its base name. An `apply` checks the paths `git
+  apply --numstat` lists for its patches, and their staged copies with
+  `--index` or `--3way`. A `worktree remove --force` checks the changed and
+  untracked files of that worktree. Every form also checks a file or symlink
   that stands where a path it writes needs a directory, since git replaces
   it with the directory.
 - **Proves only a discard that runs on its own.** The proof reads the tree
@@ -1202,8 +1313,11 @@ Blocks git commands that throw away uncommitted work.
   either.
 - **Still denies** a command whose losses it cannot list exactly. That is
   an option it does not read (`--ours`, `checkout -f`, `checkout -m`,
-  `--pathspec-from-file`, `clean -i`), a glob, pathspec magic or a word the
-  shell may still rewrite. A `clean -e` is one: a `!` pattern brings an
+  `--pathspec-from-file`, `clean -i`, `apply --reject`, `rm --sparse`), a
+  glob, pathspec magic or a word the shell may still rewrite. An `apply`
+  whose patch comes from stdin is one (`git diff | git apply -R`), since
+  belt cannot read it a second time, and so is a patch that renames or
+  copies a file. A `clean -e` is one: a `!` pattern brings an
   ignored file in, and with `-X` a plain one adds untracked files. So is a
   global git option other than `-C`, a config override or a word in front
   of `git` (`GIT_ICASE_PATHSPECS=1`, `env`, `xargs`), since the proof runs
@@ -1213,7 +1327,8 @@ Blocks git commands that throw away uncommitted work.
   shows even under `ignore = dirty`, and a reset is refused whenever
   `submodule.recurse` is on and the index holds a submodule), a nested
   repository, more than 256 paths, or a proof that runs past its 2-second
-  budget. `git stash` and `switch` keep the clean-tree rule alone. The reason names the first file
+  budget. `git stash`, `switch` and a subcommand belt cannot see keep the
+  clean-tree rule alone. The reason names the first file
   that would lose content, or why the losses could not be listed. It also
   says that belt cannot see the user's message, so a go-ahead does not
   pass the check: save the work first, or hand the user `! <command>`.
@@ -1351,7 +1466,8 @@ worktree. One id on two events: `write` and `bash`.
   git command that changes one: `commit`, `add`, `rm`, `mv`, `reset`,
   `restore`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `bisect`,
   `update-index`, `stash` (all but `list` and `show`), `apply` (all but
-  `--check` and the report-only `--stat`, `--numstat`, `--summary`),
+  `--check` and the report-only `--stat`, `--numstat`, `--summary`, read
+  as git-discard reads them, so an option belt cannot read counts),
   `sparse-checkout` (all but `list` and `check-rules`), `submodule` (all
   but bare, `status` and `summary`), `clean` with `-f`, a `branch -m` or
   `-M` that renames the checked-out branch, a `checkout` or `switch` to

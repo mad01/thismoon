@@ -175,6 +175,10 @@ func TestMainCheckoutBash(t *testing.T) {
 		{"add", "git add README.md", m, "main", []string{"git add changes"}},
 		{"forced clean", "git clean -fd", m, "main", []string{"git clean changes"}},
 		{"apply", "git apply fix.patch", m, "main", []string{"git apply changes"}},
+		{
+			"apply check turned off", "git apply --check --no-check fix.patch", m, "main",
+			[]string{"git apply changes"},
+		},
 		{"pull off the default branch", "git pull", m, "feature", []string{"git pull changes"}},
 		{
 			"pull of another branch",
@@ -263,6 +267,7 @@ func TestMainCheckoutBash(t *testing.T) {
 		{"stash list", "git stash list", m, "main", nil},
 		{"dry-run clean", "git clean -n", m, "main", nil},
 		{"apply check", "git apply --check fix.patch", m, "main", nil},
+		{"apply check by a prefix", "git apply --chec fix.patch", m, "main", nil},
 		{"bare pull on the default branch", "git pull", m, "main", nil},
 		{"fast-forward pull", "git pull --ff-only", m, "main", nil},
 		{"pull of the default branch", "git pull --rebase origin main", m, "main", nil},

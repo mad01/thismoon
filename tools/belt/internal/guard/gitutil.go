@@ -118,12 +118,19 @@ func gitCommandsAt(command, cwd, sub string) []gitInvocation {
 // which parsePushArgs keeps as the push's shellWord.
 func hidesPush(c gitInvocation) (gitInvocation, bool) {
 	i := slices.Index(c.args, "push")
-	if plainRefspec(c.sub) || i < 0 {
+	if !shellSubcommand(c) || i < 0 {
 		return c, false
 	}
 	c.args = append([]string{c.sub}, c.args[i+1:]...)
 	c.sub = "push"
 	return c, true
+}
+
+// shellSubcommand reports whether a git call's subcommand word is one only
+// a shell can resolve: a quote, an expansion or a pattern may turn it into
+// any subcommand, or into global options with the subcommand after them.
+func shellSubcommand(c gitInvocation) bool {
+	return !plainRefspec(c.sub)
 }
 
 // walkSegments calls fn for every command of a compound shell command that
