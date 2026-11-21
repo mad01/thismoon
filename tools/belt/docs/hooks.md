@@ -554,11 +554,19 @@ Blocks `git push` to `main` or `master` before it happens.
   and `--allow-empty`, besides `-m` and `-F`. The editor gets the message
   file and may be a shell, and `-p` reads its answers from standard input,
   so `-e`, `-p` and any option belt does not know end the pass. In the `-m` form
-  the whole `$( )` also needs paired quotes, balanced parens and no `$`,
-  backtick, `\` or `#`. bash 3.2, macOS's `/bin/bash`, ends a `$( )` at the
-  first `)` it cannot match and knows no heredoc. So a `)` or a lone `'` in
-  the body can end it early. Any other message is read as the bullet above
-  says.
+  bash 3.2, macOS's `/bin/bash`, must also run no more of the `$( )` than
+  `cat` (`bash32Closes`, see the script-deny-list masking below). It knows
+  no heredoc there, so a `)`, a lone `'` or a quote on a `#` line in the
+  body can end the `$( )` early. A lone `'` that nothing after it in the
+  command closes passes: bash 3.2 then stops at a syntax error and runs
+  none of the command (`bash32Unclosed`). That holds for the command as
+  typed only; in a nested text or a `-c` script it is read fail-closed. A
+  `$(cat <<'EOF' ... EOF)` bash
+  3.2 may run more of, in any command, is read fail-closed: a push or a
+  discard anywhere in its body is denied. The reason (git-push-main,
+  git-discard, file-discard) then points at the forms that stay text:
+  `git commit -F -` (or `gh ... --body-file -`) with a quoted heredoc, or a
+  message file. Any other message is read as the bullet above says.
   The `$( )` and backticks of an unquoted body still run, and so does
   anything else in the substitution.
 - **A refspec must be plain text.** A refspec that holds a variable, a
@@ -786,7 +794,34 @@ then run the file" bypass.
   reader cannot follow the whole command. It is off for a heredoc body with
   a line that starts with its delimiter without being it: inside `$( )` bash
   ends the body at a line `EOF)` and runs the rest of that line, zsh does
-  not. What can still run is scanned
+  not. A `$(cat <<'EOF')` body is masked only when bash 3.2, macOS's
+  `/bin/bash`, runs no more of it than `cat` (`bash32Closes`, the rule the
+  git guards use). bash 3.2 knows no heredoc inside `$( )` and finds its
+  `)` twice, each time at the first `)` it cannot match, so a `)` in the
+  body can end it early. Its parse step ends the word. belt reads it as bash
+  3.2 does: quoted strings and backtick pairs, `$( )`, `${ }` and `$[ ]`
+  inside double quotes, backslash escapes, and a `#` comment only outside
+  double quotes. Its expansion ends the command it runs. It takes a `#`
+  after a blank for a comment inside double quotes too, so a `'` or `)` on a
+  `#` line counts in one scan and not in the other. The body passes when
+  both scans end where belt does and the text stays as written: no
+  backslash-newline, `$'...'` or `$"..."`. Inside double quotes it also
+  passes when the earlier of the two closes is past the first line, as in a
+  numbered list (`1) ...`). The rest from there must hold no `"`, backtick,
+  `$` or backslash, since only then do both scans read it as text of the
+  same word. It passes as well when the parse step, read on through the
+  rest of the command, never closes the `$( )`, as a lone apostrophe does
+  when nothing after it closes the quote (`bash32Unclosed`). bash 3.2 then
+  stops at a syntax error and runs nothing of the command. This holds only
+  for the command as typed, not for a nested text or a `-c` script, and only
+  when the text in front of the `$( )` holds no `$`, backtick, backslash,
+  `<( )` or `>( )`, since an earlier `$( )` bash 3.2 closes later than belt
+  does can take this one in. Any other body, one whose lone apostrophe a
+  later word closes included, is scanned, so such a body that names a denied
+  command denies. The reason then points at the forms that stay masked: `git commit -F -` (or `gh ... --body-file -`) with a quoted
+  heredoc, or a message file. A backtick body is scanned when it holds a
+  backslash, which every shell takes off before it reads the body. What can
+  still run is scanned
   raw: every `$(…)`, backtick or `<( )` body wherever it stands (so
   `echo "$(rm -rf x)"` and `x=$(rm -rf x)` deny), and an
   `echo`/`printf` piped through `cat`/`tee` into a stdin-reading interpreter

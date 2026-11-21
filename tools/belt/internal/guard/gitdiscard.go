@@ -133,7 +133,8 @@ func (g *GitDiscard) Event() string { return EventBash }
 // (checkStashDrop), outside text no shell runs (walkStep.prose), and so is
 // one whose subcommand belt cannot see (hiddenGit, checkHidden). A clean
 // without -f or -i counts when clean.requireForce may be off
-// (unforcedCleanDeletes).
+// (unforcedCleanDeletes). A denial for a step of a message read as code for
+// bash 3.2 alone says how to pass the message as data (bash32Hinted).
 func (g *GitDiscard) Check(in Input) *Denial {
 	var steps []walkStep
 	walkCommands(in.Command, in.Cwd, func(s walkStep) { steps = append(steps, s) })
@@ -147,7 +148,7 @@ func (g *GitDiscard) Check(in Input) *Denial {
 		}
 		if c, drops, hidden := hiddenGit(s, dir); hidden {
 			if d := g.checkHidden(c, drops); d != nil {
-				return d
+				return bash32Hinted(d, s.bash32)
 			}
 			continue
 		}
@@ -158,7 +159,7 @@ func (g *GitDiscard) Check(in Input) *Denial {
 		fed := fedOperands(s.tokens)
 		if !s.prose && stashDrops(c, fed) {
 			if d := g.checkStashDrop(c); d != nil {
-				return d
+				return bash32Hinted(d, s.bash32)
 			}
 			continue
 		}
@@ -168,7 +169,7 @@ func (g *GitDiscard) Check(in Input) *Denial {
 		}
 		unsure := cmp.Or(proofBlocker(steps, i, beside), unsorted)
 		if d := g.checkDiscard(c, fed, unsure); d != nil {
-			return d
+			return bash32Hinted(d, s.bash32)
 		}
 	}
 	return nil

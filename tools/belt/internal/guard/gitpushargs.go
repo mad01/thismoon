@@ -100,8 +100,8 @@ func shortPushOptions(letters string) (names []string, next bool) {
 // not name (pushSweep).
 func parsePushArgs(c gitInvocation) gitPush {
 	push := gitPush{
-		dir: c.dir, configured: c.configured, unread: c.unread, moved: c.moved, heads: c.heads,
-		opaque: c.opaque,
+		dir: c.dir, configured: c.configured, unread: c.unread, bash32: c.bash32, moved: c.moved,
+		heads: c.heads, opaque: c.opaque,
 	}
 	var positional []string
 	ended := false
