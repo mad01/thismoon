@@ -759,8 +759,9 @@ then run the file" bypass.
   leaving only the extra patterns. Patterns also come from
   `guards.script-deny-list.extra_patterns` for things the settings file only
   lists under "ask" (like `rm -rf`). An extra pattern starting `re:` is
-  compiled as a case-insensitive regex — the escape hatch for flag
-  reordering and argument wildcards the literal form cannot express.
+  compiled as a case-insensitive regex. It is the escape hatch for argument
+  wildcards, and for flag reordering in a tool the argv match below does not
+  read.
 - **Matching is** per non-comment line, case-insensitive, whole-word, and
   whitespace-normalized: `kubectl delete` matches `  kubectl   delete pod x`
   but not `kubectl deleted`, in shell lines and Python
@@ -768,6 +769,27 @@ then run the file" bypass.
   joined before matching, and a second pass collapses quotes, commas, and
   brackets so `kubectl "delete"` and list-form `subprocess.run(["rm",
   "-rf", …])` match the same patterns as their plain forms.
+- **An rm, kubectl, gcloud or terraform entry also matches on argv**, the
+  way the tool reads its arguments (`scriptdeny_argv.go`). Each command on
+  the line is read from any of its words, so `sudo rm` and `xargs -0 rm`
+  count.
+  - `rm -rf` means rm with recursive and force, in any spelling: `-r -f`,
+    `-fr`, `-Rfv`, `--recursive --force` and GNU prefixes such as `--rec`
+    and `--for`. An option after an operand counts, since GNU rm reads it.
+    `--` ends the options. `-d` (`--dir`) is not recursive.
+  - For kubectl, gcloud and terraform, the flags before and between the
+    verbs are skipped, so `kubectl -n prod delete`, `gcloud -q sql
+    instances delete` and `terraform -chdir=x destroy` match. Any flag may
+    take the next word as its value, so an unknown global flag still counts
+    as a match. A gcloud release track (`alpha`, `beta`, `preview`) may be
+    skipped too, so `gcloud beta sql instances delete` matches.
+  - `terraform apply -destroy` counts as `terraform destroy`. `terraform
+    plan -destroy` does not, since it only plans.
+  - A word the shell expands (`$X`, `"$(…)"`) counts as a possible flag
+    before a verb. It is never read as an rm option, since that would deny
+    every `rm -f "$file"`.
+  - An entry with a flag in it for a verb tool (`kubectl delete --all`),
+    and an entry for any other tool, matches as text only.
 - **One Python heredoc shape is read as code, not text.** Every other inline
   script matches as text, so a heredoc that only writes a file naming
   `rm -rf` is denied like one that runs it. The exception (`scriptpy.go`)

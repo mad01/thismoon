@@ -197,13 +197,22 @@ func isCommandWord(w shWord, name string) bool {
 // rmFlags are the short option letters BSD and GNU rm take.
 const rmFlags = "dfiIPRrvWx"
 
-// rmLongFlags are the GNU long options that delete the operands as given.
-var rmLongFlags = map[string]bool{
-	"--force": true, "--recursive": true, "--dir": true, "--verbose": true,
-	"--one-file-system": true, "--no-preserve-root": true, "--preserve-root": true,
-	"--preserve-root=all": true, "--interactive": true, "--interactive=never": true,
-	"--interactive=once": true, "--interactive=always": true,
-}
+// rmLongFlags are the GNU long options that delete the operands as given:
+// each of rmLongOptions but --help and --version, which delete nothing, in
+// its full spelling, plus the value forms of --preserve-root and
+// --interactive.
+var rmLongFlags = func() map[string]bool {
+	flags := map[string]bool{
+		"--preserve-root=all": true, "--interactive=never": true,
+		"--interactive=once": true, "--interactive=always": true,
+	}
+	for _, name := range rmLongOptions {
+		if name != "help" && name != "version" {
+			flags["--"+name] = true
+		}
+	}
+	return flags
+}()
 
 // rm judges one rm's arguments: every operand must be a temp path. An
 // option after an operand is not ok, since BSD rm reads it as a file name
