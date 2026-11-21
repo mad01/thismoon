@@ -224,17 +224,13 @@ func (g *globWalk) recurse(dir string, rest []globPart) error {
 	return nil
 }
 
-// read lists dir. A folder the shell cannot list matches nothing.
+// read lists dir, sorted by name as the shell sorts matches. A folder the
+// shell cannot list matches nothing.
 func (g *globWalk) read(dir string) ([]fs.DirEntry, error) {
 	if g.dirs++; g.dirs > g.maxDirs || time.Now().After(g.deadline) {
 		return nil, errWalkTooBig
 	}
-	f, err := os.Open(dir)
-	if err != nil {
-		return nil, nil
-	}
-	defer f.Close()
-	entries, _ := f.ReadDir(-1)
+	entries, _ := os.ReadDir(dir)
 	return entries, nil
 }
 
@@ -362,7 +358,8 @@ type walkDir struct {
 }
 
 // walkDirs reads every folder at and below root, breadth first, and hands
-// each one's entries to visit, which says what the walk does next
+// each one's entries, sorted by name so every file system names the same
+// first loss, to visit, which says what the walk does next
 // (walkNext). It reads hidden folders, follows no symlink, leaves out what
 // mode says and stops past scanDirs folders in the whole call or the
 // deadline.
@@ -374,7 +371,7 @@ func (j *discardJudge) walkDirs(root string, mode walkMode, visit func(dir strin
 		if j.scanned++; j.scanned > j.g.scanDirs || time.Now().After(j.deadline) {
 			return errWalkTooBig
 		}
-		entries, err := readDir(dir.path)
+		entries, err := os.ReadDir(dir.path)
 		if err != nil {
 			return err
 		}
@@ -412,14 +409,4 @@ func (m walkMode) childLevel(dir walkDir) (int, bool) {
 		return 0, false
 	}
 	return 0, true
-}
-
-func readDir(dir string) ([]fs.DirEntry, error) {
-	f, err := os.Open(dir)
-	if err != nil {
-		return nil, err
-	}
-	entries, err := f.ReadDir(-1)
-	_ = f.Close()
-	return entries, err
 }
