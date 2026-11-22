@@ -32,10 +32,10 @@ func (j *discardJudge) operand(call *lossCall, op lossOperand, s walkStep) *file
 		return j.pwdOperand(call, op, s)
 	}
 	if _, known := j.scan.vars[parts[0].text]; !known {
-		return unresolvable(call, op.word)
+		return j.unknown(unresolvable(call, op.word))
 	}
 	if _, ok := j.scan.target(op.word); !ok {
-		return unresolvable(call, op.word)
+		return j.unknown(unresolvable(call, op.word))
 	}
 	rest := shWord{raw: op.word.raw, parts: parts[1:]}
 	if emptyWord(rest) {
@@ -55,7 +55,7 @@ func (j *discardJudge) operand(call *lossCall, op lossOperand, s walkStep) *file
 func (j *discardJudge) pwdOperand(call *lossCall, op lossOperand, s walkStep) *fileLoss {
 	first := op.word.parts[0]
 	if s.pwd == "" || !first.quoted && strings.ContainsAny(s.pwd, " \t\n*?[") {
-		return unresolvable(call, op.word)
+		return j.unknown(unresolvable(call, op.word))
 	}
 	parts := append([]wordPart{{kind: partLit, text: s.pwd, quoted: true}}, op.word.parts[1:]...)
 	return j.pathOperand(call, op, shWord{raw: op.word.raw, parts: parts}, s)
@@ -70,7 +70,7 @@ func (j *discardJudge) pwdOperand(call *lossCall, op lossOperand, s walkStep) *f
 func (j *discardJudge) pathOperand(call *lossCall, op lossOperand, w shWord, s walkStep) *fileLoss {
 	lit, active, ok := j.scan.staticGlobs(w)
 	if !ok {
-		return unresolvable(call, op.word)
+		return j.unknown(unresolvable(call, op.word))
 	}
 	if loss := writtenCut(call, op.filter, lit, active); loss != nil {
 		return loss
@@ -78,11 +78,11 @@ func (j *discardJudge) pathOperand(call *lossCall, op lossOperand, w shWord, s w
 	if !path.IsAbs(lit) {
 		switch {
 		case s.cwd == "":
-			return unresolvable(call, op.word)
+			return j.unknown(unresolvable(call, op.word))
 		case !s.cwdSure:
-			return &fileLoss{call: call, why: "the cd before it may not have run, so belt cannot " +
+			return j.unknown(&fileLoss{call: call, why: "the cd before it may not have run, so belt cannot " +
 				"tell which directory `" + op.word.raw + "` is in: name the path in full, or " +
-				"join the cd to the delete with &&"}
+				"join the cd to the delete with &&"})
 		}
 		base := strings.TrimSuffix(s.cwd, "/") + "/"
 		lit, active = base+lit, append(make([]bool, len(base)), active...)

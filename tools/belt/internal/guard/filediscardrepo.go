@@ -61,7 +61,8 @@ func readStatus(out []byte) ([]statusEntry, error) {
 // untracked file denies; an untracked folder, a nested repository, is
 // judged by its own state (hiddenWork). Every path a feeder prints must
 // reach the command whole (namesLoss), and every tracked entry must hold
-// what a commit that counts holds (prove). An ignored entry passes, but a
+// what a commit that counts holds (prove), checked per call so a denial
+// names the call that drops the path. An ignored entry passes, but a
 // folder the command reaches into may still hold work status cannot show.
 func (j *discardJudge) inRepo(ctx context.Context, r *repoDrops, proved *int) *fileLoss {
 	pathspecs := make([]string, len(r.drops))
@@ -77,6 +78,7 @@ func (j *discardJudge) inRepo(ctx context.Context, r *repoDrops, proved *int) *f
 		return &fileLoss{call: r.drops[0].call, why: notListed(err).Error()}
 	}
 	var tracked []string
+	var byCall callPaths
 	var hidden []hiddenDir
 	for _, e := range entries {
 		d, lost := r.loser(e.code, e.path)
@@ -91,6 +93,7 @@ func (j *discardJudge) inRepo(ctx context.Context, r *repoDrops, proved *int) *f
 			hidden = append(hidden, hiddenDir{rel: dir})
 		case e.code != "!!":
 			tracked = append(tracked, e.path)
+			byCall.add(d.call, e.path)
 		}
 	}
 	if loss := j.namesLoss(ctx, r, entries); loss != nil {
@@ -100,11 +103,30 @@ func (j *discardJudge) inRepo(ctx context.Context, r *repoDrops, proved *int) *f
 		return &fileLoss{call: r.drops[0].call, why: notListed(
 			fmt.Sprintf("more than %d paths", j.g.maxPaths)).Error()}
 	}
-	if err := j.g.prove(ctx, r.top, tracked); err != nil {
-		return &fileLoss{call: r.drops[0].call, why: "this " + r.drops[0].call.verb() +
-			" uncommitted work in " + r.top + ": " + err.Error()}
+	for i, call := range byCall.calls {
+		if err := j.g.prove(ctx, r.top, byCall.paths[i]); err != nil {
+			return &fileLoss{call: call, why: "this " + call.verb() +
+				" uncommitted work in " + r.top + ": " + err.Error()}
+		}
 	}
 	return j.hiddenWork(ctx, r, hidden)
+}
+
+// callPaths holds tracked paths by the call that drops them, in the order
+// the calls first appear.
+type callPaths struct {
+	calls []*lossCall
+	paths [][]string
+}
+
+// add files p under call.
+func (c *callPaths) add(call *lossCall, p string) {
+	if i := slices.Index(c.calls, call); i >= 0 {
+		c.paths[i] = append(c.paths[i], p)
+		return
+	}
+	c.calls = append(c.calls, call)
+	c.paths = append(c.paths, []string{p})
 }
 
 // loser is the first drop that loses the status entry p (pathFilter.loses),

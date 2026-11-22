@@ -88,6 +88,17 @@ type walkStep struct {
 	// from 1, and scriptOf is the id of the command whose -c script it is
 	// part of, 0 for none. A command from the token walk has neither.
 	id, scriptOf int
+	// scripts are the interpreter scripts the command runs that the walk
+	// found (feedsOf), read or not: an inline -c or -e script, a heredoc,
+	// a here-string or a pipe it reads, a file the command wrote.
+	scripts []feed
+	// writes are the redirection targets the command writes to, as tokens
+	// (writeTargets).
+	writes []string
+	// written returns what the commands of the walk wrote to the file at a
+	// clean path so far (walkMemory.fileAt), for a guard that reads a file a
+	// command makes. A command from the token walk has none.
+	written func(p string) (script, bool)
 }
 
 // walkCommands is walkSegments with the whole step. It reads the command
@@ -738,7 +749,8 @@ func (w *shellWalk) walkWords(
 	dir := w.gitDir(tokens)
 	step := w.stepFor(c, tokens, in, dir, defines)
 	step.pipeText, step.unreadSubst = frontText(text, in.front), w.unreadSubst(text, c, tokens)
-	step.docText = docBodies(text, c)
+	step.docText, step.writes = docBodies(text, c), writeTargets(text, c)
+	step.written = w.mem.fileAt
 	w.mem.noteAliasConfig(tokens)
 	body, run := bodyOf(text, c, tokens)
 	feeds := w.feedsOf(text, body, run, in, dir)
@@ -752,6 +764,7 @@ func (w *shellWalk) walkWords(
 		opaque = opacity{what: "a function argument the function runs as code", scoped: true}
 	}
 	step.opaque = opaque
+	step.scripts = slices.DeleteFunc(slices.Clone(feeds), func(f feed) bool { return !f.interp })
 	fn(step)
 	w.remember(text, body, run, in, dir)
 	if at := inlineScriptAt(tokens); at >= 0 {
@@ -766,6 +779,18 @@ func (w *shellWalk) walkWords(
 	if walk {
 		w.walkFeeds(feeds, fn)
 	}
+}
+
+// writeTargets returns the redirection targets of a command that it writes
+// to (`>`, `>>`, `2>`, `&>`, `<>` and the rest), as tokens.
+func writeTargets(text string, c shellCmd) []string {
+	var out []string
+	for _, t := range c.targets {
+		if strings.Contains(redirectOp(text, t), ">") {
+			out = append(out, t.token())
+		}
+	}
+	return out
 }
 
 // bodyOf returns a command, its words and its tokens with a function

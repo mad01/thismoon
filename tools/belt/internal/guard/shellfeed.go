@@ -2,7 +2,10 @@ package guard
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -57,11 +60,14 @@ func newWalkMemory() *walkMemory {
 
 // script is text a shell or an interpreter may run; ok is false when the
 // walk could not read it. capped marks text the walk did not read because
-// it grew past maxDerivedText or the command's byte budget.
+// it grew past maxDerivedText or the command's byte budget. file names the
+// file on disk the text starts with, when the command appends to a file it
+// did not write first (walkMemory.write).
 type script struct {
 	text   string
 	ok     bool
 	capped bool
+	file   string
 }
 
 // overCap is the script for text past maxDerivedText or the byte budget.
@@ -97,6 +103,8 @@ type feed struct {
 	// positional marks a script run with arguments, which $1, "$@" and the
 	// rest name (shellWalk.positional).
 	positional bool
+	// file names the file on disk the text starts with (script.file).
+	file string
 }
 
 // feedsOf returns the feeds of one command: what a git alias runs, what a
@@ -130,7 +138,7 @@ func (w *shellWalk) feedsOf(
 			out = append(out, feed{
 				runner: fmt.Sprintf("the script %s", tokens[head]),
 				text:   s.text, ok: s.ok, interp: interp, lang: lang, dir: dir,
-				positional: head+1 < len(tokens),
+				positional: head+1 < len(tokens), file: s.file,
 			})
 		}
 	}
@@ -395,7 +403,7 @@ func (w *shellWalk) inputScripts(
 
 // with returns the feed carrying a script.
 func (f feed) with(s script) feed {
-	f.text, f.ok = s.text, s.ok
+	f.text, f.ok, f.file = s.text, s.ok, s.file
 	return f
 }
 
@@ -452,7 +460,7 @@ func (w *shellWalk) inlineFeeds(text string, c shellCmd, tokens []string, dir st
 	}
 	if at := interpreterScriptAt(tokens); at >= 0 {
 		s, _ := w.scriptOf(text, c.words[at:at+1])
-		head := tokens[runAt(tokens)]
+		head := tokens[runCommandAt(tokens)]
 		f := feed{
 			runner: fmt.Sprintf("the `%s` script", head), interp: true,
 			lang: interpreterLang(head), dir: dir,
@@ -463,19 +471,21 @@ func (w *shellWalk) inlineFeeds(text string, c shellCmd, tokens []string, dir st
 }
 
 // interpreterScriptAt returns the index of the inline script word of an
-// interpreter that is no shell (python -c, perl -e, perl -ne), or -1.
+// interpreter that is no shell (python -c, perl -e, perl -ne, bun -e), or
+// -1. The interpreter may run under `uv run` (runCommandAt).
 func interpreterScriptAt(tokens []string) int {
-	i := runAt(tokens)
+	i := runCommandAt(tokens)
 	if i >= len(tokens) || shellInterpreters[filepath.Base(tokens[i])] {
 		return -1
 	}
-	flags, ok := isInterpreter(filepath.Base(tokens[i]))
+	flags, ok := scriptRunner(filepath.Base(tokens[i]))
 	if !ok {
 		return -1
 	}
+	_, bundles := isInterpreter(filepath.Base(tokens[i]))
 	for j := i + 1; j < len(tokens); j++ {
 		switch tok := tokens[j]; {
-		case flags[tok] || inlineBundle.MatchString(tok):
+		case flags[tok] || bundles && inlineBundle.MatchString(tok):
 			if j+1 < len(tokens) {
 				return j + 1
 			}
@@ -485,6 +495,38 @@ func interpreterScriptAt(tokens []string) int {
 		}
 	}
 	return -1
+}
+
+// uvRunValued are the options of `uv run` that take the next word as their
+// value.
+var uvRunValued = wordSet(`
+	--extra --no-extra --group --no-group --only-group --with --with-editable
+	--with-requirements --package --env-file -p --python --project --directory
+	--index --default-index -i --index-url --extra-index-url -f --find-links
+	-P --upgrade-package --reinstall-package --refresh-package --cache-dir
+	--config-file -C --config-setting --resolution --prerelease --exclude-newer
+	--link-mode --index-strategy --keyring-provider --python-platform --color
+	--allow-insecure-host`)
+
+// runCommandAt returns the index of the word a command runs as its name, as
+// runAt does, and past `uv run` and its options, which run the command
+// after them in a project's environment.
+func runCommandAt(tokens []string) int {
+	i := runAt(tokens)
+	if i+1 >= len(tokens) || filepath.Base(tokens[i]) != "uv" || tokens[i+1] != "run" {
+		return i
+	}
+	for j := i + 2; j < len(tokens); j++ {
+		switch tok := tokens[j]; {
+		case tok == "--":
+			return j + 1
+		case uvRunValued[tok]:
+			j++
+		case !strings.HasPrefix(tok, "-"):
+			return j
+		}
+	}
+	return len(tokens)
 }
 
 // inlineBundle is an interpreter option bundle that ends in its inline
@@ -890,8 +932,9 @@ var anyProcessCall = func() *regexp.Regexp {
 }()
 
 // interpreterLang returns the language of an interpreter word that is no
-// shell: python for any python name, else the name itself (perl, ruby,
-// node, osascript), "" for anything else.
+// shell: python for any python name, node for a JavaScript runtime
+// (jsRuntimes), else the name itself (perl, ruby, node, osascript), "" for
+// anything else.
 func interpreterLang(word string) string {
 	name := filepath.Base(word)
 	switch {
@@ -899,6 +942,8 @@ func interpreterLang(word string) string {
 		return "python"
 	case inlineEInterpreters[name]:
 		return name
+	case jsRuntimes[name] != nil:
+		return "node"
 	}
 	return ""
 }
@@ -959,29 +1004,70 @@ func (m *walkMemory) file(dir, word string) (script, bool) {
 	return script{}, false
 }
 
+// fileAt returns what the command wrote to the file at the clean path p.
+func (m *walkMemory) fileAt(p string) (script, bool) {
+	s, ok := m.files["path:"+p]
+	return s, ok
+}
+
 // write records what a command wrote to the file a word names in dir,
-// after what an earlier write left there when appending. A file past
-// maxDerivedText or the byte budget is unread (keep).
+// after what an earlier write left there when appending. An append to a
+// file no earlier write made goes after what the file holds on disk
+// (onDisk). A file past maxDerivedText or the byte budget is unread (keep).
 func (m *walkMemory) write(dir, word string, s script, appending bool) {
 	s = m.keep(s)
-	if old, ok := m.file(dir, word); ok && appending {
-		s = joinScripts(old, s)
+	if appending {
+		old, ok := m.file(dir, word)
+		if !ok {
+			old, ok = m.onDisk(resolveDir(dir, word))
+		}
+		if ok {
+			s = joinScripts(old, s)
+		}
 	}
 	for _, key := range fileKeys(dir, word) {
 		m.files[key] = s
 	}
 }
 
+// onDisk returns what the file at p holds before the command runs, for an
+// append to it: ok is false when no file is there, and the text is unread
+// when belt cannot place or read it, or it is past maxDerivedText or the
+// byte budget (keep). Only a regular file is opened, since a FIFO would
+// block the open.
+func (m *walkMemory) onDisk(p string) (script, bool) {
+	if p == "" {
+		return script{}, true
+	}
+	fi, err := os.Stat(p)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return script{}, false
+	case err != nil || !fi.Mode().IsRegular():
+		return script{file: p}, true
+	case fi.Size() > maxDerivedText:
+		return script{capped: true, file: p}, true
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return script{file: p}, true
+	}
+	s := m.keep(script{text: string(b), ok: true})
+	s.file = p
+	return s, true
+}
+
 // joinScripts returns the text of a followed by b, unread when either is or
-// when the two together are past maxDerivedText.
+// when the two together are past maxDerivedText. The file a starts with
+// stays its start.
 func joinScripts(a, b script) script {
 	switch {
 	case !a.ok || !b.ok:
-		return script{capped: a.capped || b.capped}
+		return script{capped: a.capped || b.capped, file: a.file}
 	case len(a.text)+len(b.text) > maxDerivedText:
-		return overCap
+		return script{capped: true, file: a.file}
 	}
-	return script{text: a.text + b.text, ok: true}
+	return script{text: a.text + b.text, ok: true, file: a.file}
 }
 
 // remember records what a command leaves for a later one to run: a git

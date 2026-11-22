@@ -60,10 +60,15 @@ func consumerTokens(words []shWord) []string {
 // a cp, mv, install or ln writes over what each input names (consumedCopy).
 // Any other command that deletes is one belt does not read there, and
 // denies when its words name a delete. A shell's -c script takes the input
-// as its arguments (consumedScript). Any other command passes.
+// as its arguments (consumedScript). A Python, Node, Ruby or Perl script
+// is read for its recursive deletes (consumedScripts). Any other command
+// passes.
 func (j *discardJudge) consumer(r consumerRun, s walkStep) *fileLoss {
+	if loss := j.consumedScripts(r, s); loss != nil {
+		return loss
+	}
 	if r.runsCode() {
-		return consumedCode(r, s)
+		return j.unknown(consumedCode(r, s))
 	}
 	name, cargs, isLoss := lossCommand(skipAssignments(r.command))
 	switch {
@@ -72,7 +77,7 @@ func (j *discardJudge) consumer(r consumerRun, s walkStep) *fileLoss {
 	case isLoss && isCopyFamily(name):
 		return j.consumedCopy(r, name, cargs, s)
 	case isLoss && namesLossText(strings.Join(consumerTokens(r.command), " ")):
-		return &fileLoss{why: "belt does not read a " + name + " that " + r.who + " runs, and it names a delete"}
+		return j.unknown(&fileLoss{why: "belt does not read a " + name + " that " + r.who + " runs, and it names a delete"})
 	case isLoss:
 		return nil
 	}
@@ -130,7 +135,7 @@ func (j *discardJudge) rmInputs(r consumerRun, name string, cargs []shWord, mark
 	}
 	for _, w := range cargs {
 		if v, ok := w.literal(); (!ok || v != mark) && r.holds(w) {
-			return unresolvable(call, w)
+			return j.unknown(unresolvable(call, w))
 		}
 	}
 	for _, w := range r.words {
@@ -227,7 +232,7 @@ func (j *discardJudge) consumedScript(r consumerRun, s walkStep) *fileLoss {
 	script, lit := r.command[at].literal()
 	cmds, read := readShell(script)
 	if lit && read && slices.ContainsFunc(cmds, func(c shellCmd) bool { return runsPositional(c, c.tokens()) }) {
-		return consumedCode(r, s)
+		return j.unknown(consumedCode(r, s))
 	}
 	if lit && read && len(cmds) == 1 && len(cmds[0].subshells) == 0 && len(cmds[0].docs) == 0 {
 		args, ok := scriptOperands(plainWords(cmds[0].words), r.command[at+1:], r.appended())
@@ -247,7 +252,7 @@ func (j *discardJudge) consumedScript(r consumerRun, s walkStep) *fileLoss {
 		}
 	}
 	if !walked && namesLossText(r.command[at].raw) {
-		return &fileLoss{why: "belt does not read the script " + r.who + " runs there, and it names a delete"}
+		return j.unknown(&fileLoss{why: "belt does not read the script " + r.who + " runs there, and it names a delete"})
 	}
 	return nil
 }
