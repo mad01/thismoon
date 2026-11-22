@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.0](https://github.com/mad01/thismoon/compare/csl/v0.39.1...csl/v0.40.0) (2026-11-22)
+
+
+### Features
+
+* **belt:** add direct-deny-list for deny entries run as direct commands ([#547](https://github.com/mad01/thismoon/issues/547)) ([5a627fd](https://github.com/mad01/thismoon/commit/5a627fdf83e7f4020bd3b962e8e96acfc32bf642))
+
 ## [0.39.1](https://github.com/mad01/thismoon/compare/csl/v0.39.0...csl/v0.39.1) (2026-11-13)
 
 
