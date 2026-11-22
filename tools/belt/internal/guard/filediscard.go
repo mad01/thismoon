@@ -4,6 +4,7 @@ import (
 	"context"
 	"os/exec"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,13 +16,20 @@ import (
 // holds.
 const FileDiscardID = "file-discard"
 
-// fileDiscardRule says when a delete passes.
-const fileDiscardRule = "A delete passes only when every file it drops is inside a temp or cache folder, " +
-	"missing or empty, ignored by git, or already in HEAD, its upstream or origin's default branch."
+// fileDiscardRule says when a delete passes, and replaceRule when an
+// overwrite does.
+const (
+	fileDiscardRule = "A delete passes only when every file it drops is inside a temp or cache folder, " +
+		"missing or empty, ignored by git, or already in HEAD, its upstream or origin's default branch."
+	replaceRule = "An overwrite passes only when the file is inside a temp or cache folder, " +
+		"missing or empty, ignored by git, or already in HEAD, its upstream or origin's default branch."
+)
 
 // FileDiscard denies a shell command that deletes files belt cannot prove
 // are kept elsewhere: rm, unlink and shred, find -delete and -exec, rsync
-// --delete, xargs, GNU parallel and fd -x. It is git-discard's rule for the
+// --delete, xargs, GNU parallel and fd -x. It judges a command that empties
+// or overwrites a file the same way: a redirection behind a command that
+// prints nothing, truncate and dd of=. It is git-discard's rule for the
 // commands git does not run. A delete passes when every path it drops is
 // inside a temp or cache folder, missing or empty, ignored in a git work
 // tree, or the same as HEAD, its upstream or origin's default branch there. rm-temp runs
@@ -89,13 +97,13 @@ func (g *FileDiscard) Event() string { return EventBash }
 
 func (g *FileDiscard) noteWarnings(note func()) { g.emit = noting(g.emit, note) }
 
-// Check walks every command the shell runs (walkCommands) and judges each
-// path an rm, unlink or shred drops. The cheap checks run during the walk;
+// Check walks every command the shell runs (walkCommandsBare, so `> f` with
+// no command counts) and judges each path a command drops. The cheap checks run during the walk;
 // the git checks run after it, one git status per work tree.
 func (g *FileDiscard) Check(in Input) *Denial {
 	j := newDiscardJudge(g)
 	var loss *fileLoss
-	walkCommands(in.Command, in.Cwd, func(s walkStep) {
+	walkCommandsBare(in.Command, in.Cwd, func(s walkStep) {
 		if loss == nil {
 			loss = j.step(s)
 		}
@@ -132,7 +140,11 @@ func (g *FileDiscard) reason(loss *fileLoss) string {
 	if loss.userOnly {
 		return loss.why + ". " + gitGoAhead + ": only the user may run it, with `! <command>`."
 	}
-	parts := []string{loss.why + ".", fileDiscardRule}
+	rule := fileDiscardRule
+	if loss.call.replaces() {
+		rule = replaceRule
+	}
+	parts := []string{loss.why + ".", rule}
 	switch c := loss.call; {
 	case loss.instead != "":
 		parts = append(parts, loss.instead)
@@ -157,11 +169,24 @@ func (g *FileDiscard) hasTossBin() bool {
 // operands as written (targets), for the toss-bin form, or a find, xargs
 // or rsync. toss is the toss-bin form for a call whose operands toss-bin
 // cannot take as they are, and keep a lossless form that needs no
-// toss-bin, offered first.
+// toss-bin, offered first. replace marks a call that empties or overwrites
+// one file in place (replaceOperands, redirects) instead of deleting it.
 type lossCall struct {
 	targets []string
 	toss    string
 	keep    string
+	replace bool
+}
+
+// replaces reports whether c overwrites a file instead of deleting it.
+func (c *lossCall) replaces() bool { return c != nil && c.replace }
+
+// verb is what c does to a path, for the loss text.
+func (c *lossCall) verb() string {
+	if c.replaces() {
+		return "overwrites"
+	}
+	return "deletes"
 }
 
 // fileLoss is the first thing a command may lose: why, the call that loses
@@ -232,8 +257,11 @@ type discardJudge struct {
 	spellings map[string]string
 	walked    map[walkKey]bool
 	covered   map[int]bool
-	globDirs  int
-	scanned   int
+	// funcs are the functions the command defines, by name, each marked
+	// true when its body prints nothing (redirects).
+	funcs    map[string]bool
+	globDirs int
+	scanned  int
 }
 
 func newDiscardJudge(g *FileDiscard) *discardJudge {
@@ -241,7 +269,7 @@ func newDiscardJudge(g *FileDiscard) *discardJudge {
 	j := &discardJudge{
 		g: g, scan: rmScan{home: home, vars: map[string]tempVar{}}, home: home,
 		deadline: time.Now().Add(g.budget), spellings: map[string]string{}, walked: map[walkKey]bool{},
-		covered: map[int]bool{},
+		covered: map[int]bool{}, funcs: map[string]bool{},
 	}
 	if home != "" {
 		j.realHome = physical(home)
@@ -255,7 +283,8 @@ func newDiscardJudge(g *FileDiscard) *discardJudge {
 // (walkStep.unread, or one from the token walk with no words) is a loss
 // when it names a loss command anywhere, and so is code it runs that belt
 // could not read, when the text that builds it names one (unreadLoss). git
-// steps are git-discard's.
+// steps are git-discard's. A redirection that empties a file (redirects),
+// truncate and dd are replaces of one file each.
 func (j *discardJudge) step(s walkStep) *fileLoss {
 	switch {
 	case s.prose, j.covered[s.scriptOf]:
@@ -275,6 +304,9 @@ func (j *discardJudge) step(s walkStep) *fileLoss {
 		words[i] = w.shWord
 	}
 	words = skipReserved(words)
+	if loss := j.redirects(skipAssignments(words), s); loss != nil {
+		return loss
+	}
 	if j.scan.assign(words) {
 		return nil
 	}
@@ -283,6 +315,10 @@ func (j *discardJudge) step(s walkStep) *fileLoss {
 		return nil
 	}
 	switch name {
+	case "truncate", "dd":
+		return j.replace(replaceOperands(name, args), s)
+	case "cp", "mv", "install", "ln":
+		return j.copy(name, args, s)
 	case "find":
 		return j.find(args, s)
 	case "rsync":
@@ -357,6 +393,12 @@ func discardName(w shWord) string {
 	if name, ok := lossCommands[n]; ok {
 		return name
 	}
+	if name, ok := replaceCommands[n]; ok {
+		return name
+	}
+	if name, ok := copyCommands[n]; ok {
+		return name
+	}
 	return shapeCommands[n]
 }
 
@@ -381,8 +423,9 @@ func runName(w shWord) string {
 }
 
 // lossCommand finds the loss command a step runs: its command word, or
-// behind a wrapper the first loss-command word after it (`sudo -u x rm`). A
-// git word first means git runs it, which git-discard judges.
+// behind a wrapper the first loss-command word after it (`sudo -u x rm`),
+// which for a copy must be the wrapped command (runsAt). A git word first
+// means git runs it, which git-discard judges.
 func lossCommand(words []shWord) (name string, args []shWord, ok bool) {
 	if len(words) == 0 {
 		return "", nil, false
@@ -398,10 +441,25 @@ func lossCommand(words []shWord) (name string, args []shWord, ok bool) {
 			return "", nil, false
 		}
 		if name := discardName(w); name != "" {
+			if isCopyFamily(name) && !runsAt(words, i+1) {
+				return "", nil, false
+			}
 			return name, words[i+2:], true
 		}
 	}
 	return "", nil, false
+}
+
+// runsAt reports whether the wrappers in front of words[at] run it as their
+// command: a multicall tool right before it, or wrappers whose options
+// peelWrappers reads up to it or cannot read. A copy word that is only a
+// wrapped command's argument (`sudo apt install a b`) is not one.
+func runsAt(words []shWord, at int) bool {
+	if multicallTools[runName(words[at-1])] {
+		return true
+	}
+	rest, how := peelWrappers(consumerTokens(words))
+	return how == runsAsText || len(words)-len(rest) == at
 }
 
 // isRmFamily reports whether a loss command name is rm, unlink or shred.
@@ -409,12 +467,20 @@ func isRmFamily(name string) bool {
 	return name == "rm" || name == "unlink" || name == "shred"
 }
 
-// namesLossCommand reports whether a token reads as a loss command, find's
-// -delete or one of rsync's delete options anywhere in a step belt could
-// not read.
+// textCopies are the copy commands a word scan of text belt could not read
+// counts. install is left out: it is a common word in a URL or a package
+// manager's command.
+var textCopies = wordSet("cp gcp mv gmv ln gln")
+
+// namesLossCommand reports whether a token reads as a loss command, truncate
+// or dd, cp, mv or ln (textCopies), find's -delete or one of rsync's delete
+// options anywhere in a step belt could not read.
 func namesLossCommand(tokens []string) bool {
 	for _, tok := range tokens {
-		if _, ok := lossCommands[path.Base(tok)]; ok || tok == "-delete" ||
+		name := path.Base(tok)
+		_, deletes := lossCommands[name]
+		_, replaces := replaceCommands[name]
+		if deletes || replaces || textCopies[name] || tok == "-delete" ||
 			strings.HasPrefix(tok, "--del") || strings.HasPrefix(tok, "--remove-s") {
 			return true
 		}
@@ -518,19 +584,25 @@ func shredOperands(args []shWord) []lossOperand {
 // shredTakesValue reports whether a long option, by its exact name or a
 // unique prefix, takes the next word as its value.
 func shredTakesValue(name string) bool {
+	return shredValueOptions[longOption(shredLongOptions, name)]
+}
+
+// longOption is the long option name stands for, as getopt_long reads it:
+// an exact name or a unique prefix of one; "" for none or several.
+func longOption(options []string, name string) string {
+	if slices.Contains(options, name) {
+		return name
+	}
 	match := ""
-	for _, o := range shredLongOptions {
-		if o == name {
-			return shredValueOptions[o]
-		}
+	for _, o := range options {
 		if strings.HasPrefix(o, name) {
 			if match != "" {
-				return false
+				return ""
 			}
 			match = o
 		}
 	}
-	return shredValueOptions[match]
+	return match
 }
 
 // unresolvable is the loss for an operand belt cannot place on disk.

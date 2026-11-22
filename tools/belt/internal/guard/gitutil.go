@@ -169,6 +169,9 @@ type shellWalk struct {
 	prose     bool // walking a heredoc body or comment (walkProse)
 	pwdSet    bool // the command may give PWD a value of its own (rewritesPWD)
 	cdHidden  bool // the command may have moved the shell unseen (keepsShellPlaced)
+	// bare makes the walk reach fn for a command of redirections alone
+	// (walkCommandsBare).
+	bare bool
 	// feeds marks text whose output a shell or interpreter may run (a
 	// substitution in a -c script or piped on), so every heredoc body in it
 	// is read as code (walkProse).

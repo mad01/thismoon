@@ -154,7 +154,8 @@ func kernelPath(p string, follows bool) string {
 
 // globDrop judges a glob operand the way bash and zsh expand it by default
 // (splitGlob, globWalk). Its literal prefix folder takes the first rung:
-// the root, the home directory or a folder holding it denies. The prefix's
+// the root, the home directory or a folder holding it denies, unless the
+// call is a replace, which writes only the files it matches. The prefix's
 // own entries in a temp or cache folder pass, unless the command follows them
 // through a symlink, as a trailing slash makes BSD rm do. Each match is
 // then judged as a path of its own; with a trailing slash only folders
@@ -175,7 +176,7 @@ func (j *discardJudge) globDrop(
 	if c, ok := j.spelled(dir); ok {
 		dir = c
 	}
-	if loss := j.homeLoss(call, dir); loss != nil {
+	if loss := j.homeLoss(call, dir); loss != nil && !call.replaces() {
 		return loss
 	}
 	if !follows && len(parts) == 1 && !parts[0].recursive && (j.inTemp(dir+"/x") || j.inCache(dir+"/x")) &&
@@ -235,7 +236,7 @@ func (j *discardJudge) homeLoss(call *lossCall, p string) *fileLoss {
 	if what == "" {
 		return nil
 	}
-	return &fileLoss{call: call, why: "this deletes `" + p + "`, " + what, userOnly: true}
+	return &fileLoss{call: call, why: "this " + call.verb() + " `" + p + "`, " + what, userOnly: true}
 }
 
 // inTemp reports whether p sits strictly inside a temp folder, the home
@@ -275,9 +276,13 @@ func (j *discardJudge) inCache(p string) bool {
 // git's own data. Anything else in a work tree waits for its git status
 // (inRepos). From the work tree on, the path is spelled the way its folders
 // list it (spelled), as git reads it. A filter whose tests match the path
-// itself drops it whole (pathFilter.takes).
+// itself drops it whole (pathFilter.takes). A replace of a device, a pipe
+// or a socket writes no file, and passes, and a replace of the files a
+// feeder hands from a folder (tree) skips the home rung, as it writes only
+// the files below it.
 func (j *discardJudge) drop(call *lossCall, tree bool, filter *pathFilter, p string) *fileLoss {
-	if loss := j.homeLoss(call, p); loss != nil {
+	below := call.replaces() && tree
+	if loss := j.homeLoss(call, p); loss != nil && !below {
 		return loss
 	}
 	if j.inTemp(p) || j.inCache(p) {
@@ -293,6 +298,8 @@ func (j *discardJudge) drop(call *lossCall, tree bool, filter *pathFilter, p str
 		return nil
 	case fi.IsDir() && (!tree || emptyDir(p)):
 		return nil
+	case call.replaces() && !tree && !fi.IsDir() && !fi.Mode().IsRegular():
+		return nil
 	}
 	real, ok := j.spelled(p)
 	switch {
@@ -301,7 +308,7 @@ func (j *discardJudge) drop(call *lossCall, tree bool, filter *pathFilter, p str
 	case j.inTemp(real) || j.inCache(real):
 		return j.tempCuts(call, tree, filter, real)
 	}
-	if loss := j.homeLoss(call, real); loss != nil {
+	if loss := j.homeLoss(call, real); loss != nil && !below {
 		return loss
 	}
 	if filter.takes(filepath.Base(real), fileType(fi)) {
@@ -351,7 +358,7 @@ func emptyDir(p string) bool {
 func (j *discardJudge) inWorkTree(call *lossCall, dir bool, filter *pathFilter, p string) *fileLoss {
 	top := cslindex.RepoRoot(p)
 	if top == "" {
-		return &fileLoss{call: call, why: "this deletes `" + p + "`, which is in no git work " +
+		return &fileLoss{call: call, why: "this " + call.verb() + " `" + p + "`, which is in no git work " +
 			"tree and no temp folder, so belt cannot tell whether it holds work no commit has"}
 	}
 	rel, err := filepath.Rel(top, p)
@@ -361,13 +368,13 @@ func (j *discardJudge) inWorkTree(call *lossCall, dir bool, filter *pathFilter, 
 	case rel == "." && (filter == nil || filter.all):
 		return topLoss(call, p)
 	case rel == ".git" || strings.HasPrefix(rel, ".git/"):
-		return &fileLoss{call: call, why: "this deletes `" + p + "`, which is git's own data"}
+		return &fileLoss{call: call, why: "this " + call.verb() + " `" + p + "`, which is git's own data"}
 	case rel == "." && filter.hasTests():
 		if loss := j.gitDataLoss(call, filepath.Join(p, ".git"), filter); loss != nil {
 			return loss
 		}
 	case rel == "." && !filter.skipsGitData():
-		return &fileLoss{call: call, why: "the paths it deletes may lie in `" + p +
+		return &fileLoss{call: call, why: "the paths it " + call.verb() + " may lie in `" + p +
 			"/.git`, which is git's own data"}
 	}
 	j.queue(top, treeDrop{rel: rel, call: call, dir: dir && !filter.onlyTracked(), filter: filter})
@@ -386,15 +393,19 @@ func (j *discardJudge) gitDataLoss(call *lossCall, gitDir string, f *pathFilter)
 	case err != nil:
 		return &fileLoss{call: call, why: fmt.Sprintf("belt could not read `%s` (%v)", gitDir, err)}
 	case hit != "":
-		return &fileLoss{call: call, why: "this deletes `" + hit + "`, which is git's own data"}
+		return &fileLoss{call: call, why: "this " + call.verb() + " `" + hit + "`, which is git's own data"}
 	}
 	return nil
 }
 
-// topLoss is the loss for the top of a work tree.
+// topLoss is the loss for the top of a work tree. A delete of a linked
+// worktree's top offers git's own command; a replace writes files in it,
+// so no removal fits.
 func topLoss(call *lossCall, top string) *fileLoss {
-	loss := &fileLoss{call: call, why: "this deletes `" + top + "`, the top of a git work tree"}
-	loss.instead = worktreeRemoveHint(top)
+	loss := &fileLoss{call: call, why: "this " + call.verb() + " `" + top + "`, the top of a git work tree"}
+	if !call.replaces() {
+		loss.instead = worktreeRemoveHint(top)
+	}
 	return loss
 }
 

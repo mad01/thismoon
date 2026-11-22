@@ -1,8 +1,6 @@
 package guard
 
 import (
-	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -135,175 +133,27 @@ func (j *discardJudge) rsync(args []shWord, s walkStep) *fileLoss {
 	return nil
 }
 
-// xargsDrop is an xargs command read for file-discard: the command it
-// runs, the text -I or -J replaces with each path ("" when it appends
-// them), whether it reads the paths from a file (-a), and how it cuts its
-// input into paths: at a NUL with -0, at the -d byte (delim), else at
-// blanks and newlines, reading quotes and backslashes as its own. why says
-// why belt cannot read it.
-type xargsDrop struct {
-	command  []shWord
-	replace  string
-	fromFile bool
-	nul      bool
-	delim    string
-	why      string
-}
-
-// xargsSplit are the bytes at which xargs without -0 or -d cuts its input,
-// and the quotes and backslash it reads as its own.
-const xargsSplit = " \t\n\v\f\r'\"\\"
-
-// split returns the bytes at which xargs cuts its input into paths, ""
-// for a NUL, which no path holds.
-func (x xargsDrop) split() string {
-	switch {
-	case x.nul || x.delim == "\x00":
-		return ""
-	case x.delim != "":
-		return x.delim
-	}
-	return xargsSplit
-}
-
-// The xargs options that take a value, GNU's and BSD's: long, and short
-// in the next word or the rest of the cluster.
-var xargsValues = wordSet("arg-file delimiter max-args max-procs max-chars process-slot-var")
-
-const xargsValueShorts = "adEIJLnPRSs"
-
-// readXargsDrop reads xargs' options, up to the command it runs. GNU's -e, -i
-// and -l take a value only in the same word.
-func readXargsDrop(args []shWord) xargsDrop {
-	var x xargsDrop
-	i := 0
-	for ; i < len(args); i++ {
-		v, ok := args[i].literal()
-		if !ok || len(v) < 2 || v[0] != '-' {
-			break
-		}
-		if v == "--" {
-			i++
-			break
-		}
-		if strings.HasPrefix(v, "--") {
-			x.readLong(v, args, &i)
-			continue
-		}
-		x.readShorts(v, args, &i)
-	}
-	x.command = args[min(i, len(args)):]
-	return x
-}
-
-// readLong reads one long xargs option at args[*i], and its value.
-func (x *xargsDrop) readLong(v string, args []shWord, i *int) {
-	name, val, inline := strings.Cut(v[2:], "=")
-	known := inline
-	if xargsValues[name] && !inline && *i+1 < len(args) {
-		*i++
-		val, known = args[*i].literal()
-	}
-	switch {
-	case name == "arg-file":
-		x.fromFile = true
-	case name == "null":
-		x.nul = true
-	case name == "delimiter":
-		x.readDelim(val, known)
-	case name == "replace" && inline:
-		x.replace = val
-	case name == "replace":
-		x.replace = "{}"
-	}
-}
-
-// readShorts reads one cluster of short xargs options at args[*i].
-func (x *xargsDrop) readShorts(v string, args []shWord, i *int) {
-	for k := 1; k < len(v); k++ {
-		c := v[k]
-		switch {
-		case c == '0':
-			x.nul = true
-		case c == 'i':
-			x.replace = "{}"
-			if k+1 < len(v) {
-				x.replace = v[k+1:]
-			}
-			return
-		case c == 'e' || c == 'l':
-			return
-		case strings.IndexByte(xargsValueShorts, c) >= 0:
-			val, known := v[k+1:], true
-			if val == "" && *i+1 < len(args) {
-				*i++
-				val, known = args[*i].literal()
-			}
-			switch c {
-			case 'I', 'J':
-				x.replace = val
-			case 'a':
-				x.fromFile = true
-			case 'd':
-				x.readDelim(val, known)
-			}
-			return
-		}
-	}
-}
-
-// readDelim reads GNU xargs' -d value: one byte, or a backslash escape (\n,
-// \t, \0, \\, an octal \NNN or a hex \xHH).
-func (x *xargsDrop) readDelim(v string, known bool) {
-	b, ok := delimByte(v)
-	if !known || !ok {
-		x.why = "belt cannot read the xargs delimiter `" + v + "`"
-		return
-	}
-	x.delim = string(b)
-}
-
-// delimByte decodes one xargs -d value into its byte.
-func delimByte(v string) (byte, bool) {
-	switch {
-	case len(v) == 1:
-		return v[0], true
-	case len(v) < 2 || v[0] != '\\':
-		return 0, false
-	}
-	if c, ok := map[byte]byte{
-		'n': '\n', 't': '\t', 'r': '\r', 'v': '\v', 'f': '\f', 'a': '\a', 'b': '\b', '\\': '\\',
-	}[v[1]]; ok && len(v) == 2 {
-		return c, true
-	}
-	base, digits := 8, v[1:]
-	if v[1] == 'x' {
-		base, digits = 16, v[2:]
-	}
-	n, err := strconv.ParseUint(digits, base, 8)
-	return byte(n), err == nil && digits != ""
-}
-
-// xargs judges the command an xargs runs (discardJudge.consumer): its
-// input is the paths the command in front of it prints (stdinFeed), each
-// cut where xargs cuts its input, at the -I or -J text or after the
-// command's own words. With no command it runs echo.
+// xargs judges the command an xargs runs (discardJudge.consumer), read
+// with readXargsWords: its input is the paths the command in front of it
+// prints (stdinFeed), each cut where xargs cuts its input (xargsCall.cut),
+// at the -I or -J text or after the command's own words. With no command
+// it runs echo.
 func (j *discardJudge) xargs(args []shWord, s walkStep) *fileLoss {
-	x := readXargsDrop(args)
-	if len(x.command) == 0 {
+	x, command := readXargsWords(args)
+	if len(command) == 0 {
 		return nil
 	}
 	fd := stdinFeed(s, "xargs")
-	switch {
-	case x.fromFile:
+	switch why := x.delimWhy(); {
+	case x.itemFile > 0:
 		fd = &pathFeed{why: "xargs reads its paths from a file belt cannot see"}
-	case x.why != "":
-		fd = &pathFeed{why: x.why}
+	case why != "":
+		fd = &pathFeed{why: why}
 	}
-	fd.split = x.split()
-	r := consumerRun{who: "xargs", command: x.command, mark: x.replace, appends: x.replace == "", feeds: []*pathFeed{fd}}
+	fd.split = x.cut()
+	r := consumerRun{who: "xargs", command: command, mark: x.replace, appends: x.replace == "", feeds: []*pathFeed{fd}}
 	if x.replace != "" {
-		r.marks = regexp.MustCompile(regexp.QuoteMeta(x.replace))
+		r.marks = x.marks()
 	}
 	return j.consumer(r, s)
 }

@@ -1801,8 +1801,9 @@ Sends deletes of temp paths to `toss-bin` instead of `rm`.
 
 ### file-discard
 
-Blocks a shell delete that may drop work no commit holds. It applies
-git-discard's rule to the commands git does not run.
+Blocks a shell delete that may drop work no commit holds, and a command
+that empties or overwrites such a file. It applies git-discard's rule to
+the commands git does not run.
 
 - **Fires on** `rm`, `unlink` and `shred`, wherever the shell runs them: a
   chain, a pipeline, a subshell, a `$(...)` substitution, a `bash -c`
@@ -1880,15 +1881,79 @@ git-discard's rule to the commands git does not run.
     Any other option denies, and so do `-L`, `--base-directory` and
     `--path-separator`.
   - The command xargs, parallel, fd and find `-exec` run is judged one
-    way. `rm`, `unlink` and `shred` take the paths as above. A `sh -c` or
+    way. `rm`, `unlink` and `shred` take the paths as above. `cp`, `mv`,
+    `install` and `ln -f` take them as the copies below do. A `sh -c` or
     `bash -c` script that hands its arguments to one (`rm "$1"`,
-    `rm -f "$@"`) takes them too. Some commands run their input as code:
+    `rm -f "$@"`, `cp "$1" dir/`) takes them too. xargs reads `-I`, `-i`
+    and BSD's `-J`. `-J` puts every path in place of the one word that is
+    its text alone (`xargs -J% mv % dir/`). Some commands run their input as code:
     `eval`, a `-c` with no script, and a `-c` script or a command word
     that holds the replacement text (`{}`, the `-I` text). Such a command
     denies when the text that builds the input
     names a delete: the pipe in front, the `:::` words, a here-string or a
     heredoc. A find or rsync it runs denies when its words hold `-delete`
-    or an rsync delete option. A command that deletes nothing passes.
+    or an rsync delete option, and a `truncate` or `dd` it runs denies. A
+    command that deletes nothing passes.
+- **Also fires on** the commands that empty or overwrite one file in
+  place, wherever the shell runs them, `truncate`, `dd` and the copies
+  behind the same wrappers:
+  - A redirection that empties its target behind a command that prints
+    nothing: `> f` alone, `: > f`, `true > f`, `false > f`, `echo > f`,
+    `echo -n > f`, `echo "" > f`, `printf '' > f`, `printf '%s' '' > f`,
+    `cat /dev/null > f` and `cat < /dev/null > f`. So does `exec > f`,
+    which opens the file in the shell itself. The operators are `>` and
+    `>|` on any descriptor (`1>`, `2>`, `3>`), `&>`, and `>&` with a file
+    name on any descriptor (`>& f`, `1>& f`, `2>& f`), which bash and zsh
+    open as a file. `>&` with a digit or `-` copies or closes a descriptor
+    and passes. `>>` and `&>>` append and pass. So does a `>( )` target,
+    which is a pipe. A command that prints (`go test ./... > out.txt`,
+    `echo hi > f`, `exec cmd > f`) puts new content in the file and
+    passes.
+  - A `( )` or `{ }` group, or an `if`, `while`, `until` or `for` loop,
+    takes the redirection after it for its whole body. The shell empties
+    the file before the body runs, so the group counts as a command that
+    prints nothing when every command in its body does: `( : ) > f`,
+    `{ :; } > f`, `if false; then :; fi > f`. A call of a function the
+    command defines counts the same way, by the function's body
+    (`f() { :; }; f > f`). A body that prints (`{ echo hi; } > f`) passes,
+    and so do `select` and `case`.
+  - `truncate` and `gtruncate`: each file operand. A size of `+N` (`-s +N`,
+    `--size=+N`) only grows the file and passes, unless `-r` names a
+    reference file, since the size then counts from that file. `-s 0`,
+    `-s 10`, `-s -5`, `-r ref` and a size belt cannot read drop.
+  - `dd` and `gdd`: the file `of=` names. `of=/dev/...` passes, and so does
+    a dd with no `of=`. An operand that starts with an expansion may expand
+    to `of=`, and denies.
+  - `cp`, `mv`, `install` and `ln -f` (`ln -sf`), with their GNU names
+    `gcp`, `gmv`, `ginstall` and `gln`: the destination. When it is a
+    folder, each source lands on the file of its name in it, or of its
+    whole path for `cp --parents`. With `-t dir` every operand is a source.
+    An `ln` of one operand links into the shell's folder. `-T`, `ln -n`
+    and `mv -h` take the destination as a file even when it is a folder or
+    a link to one. A glob source lands on each entry of the folder its
+    last part matches. Paths a feeder hands (`xargs`, `find -exec`, a
+    `$(...)`) land on each entry of the folder that their `-name` tests
+    match, or on every entry when the command may cut a path the feeder
+    prints into pieces (xargs without `-0`). A destination that is the
+    feeder's path is that path, and `{}.bak` is its sibling of that name.
+    The last of the paths xargs appends with no `-t` denies, since it is
+    the destination. `-n`, `--no-clobber` and `--update=none` pass, unless
+    a later `-f` or `-i` undoes them. A backup (`-b`, `--backup`,
+    `--suffix`, and `-S` for mv and ln) passes, unless the last
+    `--backup=` value is `none` or `off`, which GNU reads as no backup. A
+    later `-b` or bare `--backup` keeps that value, as GNU does. So do `ln` without `-f`,
+    `install -d`, `mv --exchange`, and a copy with too few operands. Several
+    sources onto a file that is no folder fail and pass. A folder in the
+    destination's place passes, so `cp -r` merging into a folder is left
+    alone. Behind a wrapper the copy word must be the command it runs:
+    `sudo cp a b` counts, `sudo apt install a b` does not.
+  - Each is one file, never a tree, judged by the rules below. `cp`,
+    `install` and the others write through a symlink in the last part of
+    the path, so a link to a changed file denies. `mv` and `ln` replace
+    the link, which passes. A path under `/dev`, a device, a pipe and a
+    socket pass. A glob is judged match by match, and its folder skips
+    rule 1, as does the folder a feeder hands the paths from. The reason
+    says "overwrites".
 - **Decides by** each path the command drops, resolved without a shell. A
   literal path, `~`, `$HOME` and `${HOME}` resolve, and so does a variable
   the command sets to a literal. A relative path counts from the directory
@@ -1994,7 +2059,11 @@ git-discard's rule to the commands git does not run.
   them to the trash. For find it offers
   `-exec toss-bin --safe-mode -r {} +`, for xargs
   `xargs toss-bin --safe-mode -r`, for fd `-X toss-bin --safe-mode -r`,
-  and for rsync `--backup`. The reason
+  and for rsync `--backup`. For a replace it offers
+  `toss-bin --safe-mode <file> && <command>`, which keeps the old file in
+  the trash before the command writes the new one. For a copy of the paths
+  a feeder hands it names the file to move first. When xargs may cut a
+  path into pieces it offers `-print0` into `xargs -0`. The reason
   ends like git-discard's: belt cannot see the user's message, so save the
   work first or hand the user `! <command>`. An rm whose targets are all
   temp gets rm-temp's answer instead, since rm-temp runs first.
@@ -2014,8 +2083,9 @@ git-discard's rule to the commands git does not run.
   fails, so what comes after runs in `x`. `cd x || return 1` does not
   count, since bash and sh run on after a `return` outside a function.
   Text the reader cannot follow denies
-  when it names `rm`, `unlink`, `shred`, `-delete` or an rsync delete
-  option. So does code a shell runs that belt cannot read, when the text
+  when it names `rm`, `unlink`, `shred`, `truncate`, `dd`, `cp`, `mv`, `ln`,
+  `-delete` or an rsync delete option. `install` is left out, since it is a
+  common word in a URL or a package manager's command. So does code a shell runs that belt cannot read, when the text
   that builds it names one of those. Examples are
   `sed 's/^/rm /' list | sh`, `eval "$(sed ...)"`, `bash <(sed ...)`,
   `bash <<< "$(sed ...)"`, a `$(...)` in an unquoted heredoc a shell reads,
@@ -2087,7 +2157,21 @@ git-discard's rule to the commands git does not run.
   over a clean set (`xargs -I{} sh -c 'rm "{}"'`), since the path is
   read as code. Write `sh -c 'rm "$1"' _ {}` instead. GNU `sem`,
   `awk` with `system()`, and a script a command writes and then runs
-  are not read.
+  are not read. A command that prints replaces a file's content and
+  passes (`cmd > f`, `tee f`), and so does `cp -r` merging into a folder.
+  After `exec > f` the output of later commands lands in `f` unseen. A
+  redirection in text the reader cannot follow is not read. A `-c` script a consumer hands its input to
+  (`xargs -I{} sh -c ': > {}'`) denies even over a clean set, as it does
+  for rm. `xargs truncate -s +1` denies too, since belt does not read a
+  truncate a consumer runs. A copy over a file outside every work tree
+  denies, `~/code/bin/x` and `/usr/local/bin/x` among them. A copy into
+  `{}`, a feeder's path, that is a folder writes a file in it that belt
+  does not judge. A copy into a folder from a feeder judges every entry
+  of that folder its tests match, not only the names the feeder prints.
+  A loop variable (`for f in *; do cp "$f" "$f.bak"; done`) denies, as
+  it does for rm. BSD `-J` replaces only its first word, and belt reads
+  every whole word. A `find -exec cp {} +` names its last match the
+  destination, which belt reads as each match.
 
 ### large-read
 
