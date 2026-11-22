@@ -55,7 +55,7 @@ func literalWord(p string) shWord {
 // each printed path checked whole when the command cuts what it reads.
 func (j *discardJudge) fed(call *lossCall, consumer lossOperand, fd *pathFeed, s walkStep) *fileLoss {
 	if fd.why != "" {
-		return &fileLoss{call: call, why: fd.why}
+		return j.unknown(&fileLoss{call: call, why: fd.why})
 	}
 	for _, r := range fd.roots {
 		op := lossOperand{word: r.word, tree: r.tree, follows: r.follows || consumer.follows}

@@ -27,10 +27,11 @@ const (
 
 // FileDiscard denies a shell command that deletes files belt cannot prove
 // are kept elsewhere: rm, unlink and shred, find -delete and -exec, rsync
-// --delete, xargs, GNU parallel and fd -x. It judges a command that empties
-// or overwrites a file the same way: a redirection behind a command that
-// prints nothing, truncate and dd of=. It is git-discard's rule for the
-// commands git does not run. A delete passes when every path it drops is
+// --delete, xargs, GNU parallel and fd -x, and a recursive delete in a
+// Python, Node, Ruby or Perl script (scriptDeletes). It judges a command
+// that empties or overwrites a file the same way: a redirection behind a
+// command that prints nothing, truncate and dd of=. It is git-discard's
+// rule for the commands git does not run. A delete passes when every path it drops is
 // inside a temp or cache folder, missing or empty, ignored in a git work
 // tree, or the same as HEAD, its upstream or origin's default branch there. rm-temp runs
 // first, so an rm whose targets are all temp keeps its toss-bin --temp-only
@@ -111,6 +112,9 @@ func (g *FileDiscard) Check(in Input) *Denial {
 	if loss == nil {
 		loss = j.inRepos()
 	}
+	if loss != nil {
+		loss.why = loss.where() + loss.why
+	}
 	if loss == nil || g.warnSoft(loss) {
 		return nil
 	}
@@ -153,11 +157,22 @@ func (g *FileDiscard) reason(loss *fileLoss) string {
 		parts = append(parts, c.keep)
 	case c.toss != "" && g.hasTossBin():
 		parts = append(parts, "To keep a copy, "+c.toss+".")
-	case len(c.targets) > 0 && g.hasTossBin():
+	case len(c.targets) > 0 && g.hasTossBin() && (c.via == "" || plainTargets(c.targets)):
 		parts = append(parts, "To keep a copy, move the paths to the trash instead: `"+
 			TossBin+" --safe-mode -r "+strings.Join(c.targets, " ")+"`.")
 	}
 	return strings.Join(append(parts, gitDiscardAsk), " ")
+}
+
+// plainTargets reports whether targets hold no shell expansion, so the
+// toss-bin form names the paths a build target's body deletes.
+func plainTargets(targets []string) bool {
+	for _, t := range targets {
+		if strings.ContainsAny(t, "$`") {
+			return false
+		}
+	}
+	return true
 }
 
 func (g *FileDiscard) hasTossBin() bool {
@@ -171,11 +186,14 @@ func (g *FileDiscard) hasTossBin() bool {
 // cannot take as they are, and keep a lossless form that needs no
 // toss-bin, offered first. replace marks a call that empties or overwrites
 // one file in place (replaceOperands, redirects) instead of deleting it.
+// via names the build target that runs the call (buildBody.what), "" for
+// the command's own text.
 type lossCall struct {
 	targets []string
 	toss    string
 	keep    string
 	replace bool
+	via     string
 }
 
 // replaces reports whether c overwrites a file instead of deleting it.
@@ -202,6 +220,22 @@ type fileLoss struct {
 	// 3.2 alone (walkStep.bash32), whose denial says how to pass the
 	// message as data (bash32Hinted).
 	bash32 bool
+	// via names the build target whose body holds the loss, "" for the
+	// command's own text (lossCall.via).
+	via string
+}
+
+// where is the build target a loss comes from, as the start of its
+// denial, "" for the command's own text.
+func (l *fileLoss) where() string {
+	via := l.via
+	if via == "" && l.call != nil {
+		via = l.call.via
+	}
+	if via == "" {
+		return ""
+	}
+	return via + ": "
 }
 
 // lossOperand is one path a loss command names: the word as written,
@@ -262,6 +296,18 @@ type discardJudge struct {
 	funcs    map[string]bool
 	globDirs int
 	scanned  int
+	// codeFile is the file the code being judged was read from, "" for the
+	// command's own text, and codeFrom every file its values come from,
+	// which the trust rule needs committed (inCode); committed caches
+	// committedCode, and touches are the files earlier steps may have
+	// written (noteWrites, noteEdits). builds counts the build targets read
+	// so far, depth how deep they run one another (buildTargets).
+	codeFile  string
+	codeFrom  []string
+	committed map[string]bool
+	touches   []touch
+	builds    int
+	depth     int
 }
 
 func newDiscardJudge(g *FileDiscard) *discardJudge {
@@ -269,7 +315,7 @@ func newDiscardJudge(g *FileDiscard) *discardJudge {
 	j := &discardJudge{
 		g: g, scan: rmScan{home: home, vars: map[string]tempVar{}}, home: home,
 		deadline: time.Now().Add(g.budget), spellings: map[string]string{}, walked: map[walkKey]bool{},
-		covered: map[int]bool{}, funcs: map[string]bool{},
+		covered: map[int]bool{}, funcs: map[string]bool{}, committed: map[string]bool{},
 	}
 	if home != "" {
 		j.realHome = physical(home)
@@ -277,26 +323,47 @@ func newDiscardJudge(g *FileDiscard) *discardJudge {
 	return j
 }
 
-// step judges one command and returns its first loss, or nil. A prose step
-// runs nothing, and a step of a -c script the consumer judge read with the
-// consumer's input (covered) is judged already. A step belt could not read
-// (walkStep.unread, or one from the token walk with no words) is a loss
-// when it names a loss command anywhere, and so is code it runs that belt
-// could not read, when the text that builds it names one (unreadLoss). git
-// steps are git-discard's. A redirection that empties a file (redirects),
-// truncate and dd are replaces of one file each.
+// step judges one command and returns its first loss, or nil (judgeStep).
+// Around it, it notes the files the command writes before it runs and the
+// ones it may edit for the steps after it, which committed code may not
+// count on (noteWrites, noteEdits).
 func (j *discardJudge) step(s walkStep) *fileLoss {
+	if s.prose {
+		return nil
+	}
+	j.noteWrites(s)
+	loss := j.judgeStep(s)
+	j.noteEdits(s)
+	return loss
+}
+
+// judgeStep judges one command that is no prose. A step of a -c script the
+// consumer judge read with the consumer's input (covered) is judged
+// already. A step belt could not read (walkStep.unread, or one from the
+// token walk with no words) is a loss when it names a loss command
+// anywhere, or runs an interpreter and names a recursive delete of its
+// language (namesScriptDelete), and so is code it runs that belt could not
+// read, when the text that builds it names one (unreadLoss). In committed
+// code those pass (unknown). The scripts it runs go to scriptDeletes, and
+// the build targets it runs to buildTargets. git steps are git-discard's.
+func (j *discardJudge) judgeStep(s walkStep) *fileLoss {
 	switch {
-	case s.prose, j.covered[s.scriptOf]:
+	case j.covered[s.scriptOf]:
 		return nil
 	case s.unread || s.words == nil:
-		if namesLossCommand(s.tokens) {
-			return &fileLoss{why: "belt could not read the shell text around `" +
-				stepText(s.tokens) + "`, so it cannot tell what it deletes", bash32: s.bash32}
+		if namesLossCommand(s.tokens) || namesScriptDelete(s.tokens) {
+			return j.unknown(&fileLoss{why: "belt could not read the shell text around `" +
+				stepText(s.tokens) + "`, so it cannot tell what it deletes", bash32: s.bash32})
 		}
 		return nil
 	}
 	if loss := unreadLoss(s); loss != nil {
+		return j.unknown(loss)
+	}
+	if loss := j.scriptDeletes(s); loss != nil {
+		return loss
+	}
+	if loss := j.buildTargets(s); loss != nil {
 		return loss
 	}
 	words := make([]shWord, len(s.words))
@@ -314,6 +381,12 @@ func (j *discardJudge) step(s walkStep) *fileLoss {
 	if !ok {
 		return nil
 	}
+	return j.shapeCall(name, words, args, s)
+}
+
+// shapeCall judges one loss command by its shape: find, rsync, xargs, GNU
+// parallel and fd by their own syntax, rm, unlink and shred by operand.
+func (j *discardJudge) shapeCall(name string, words, args []shWord, s walkStep) *fileLoss {
 	switch name {
 	case "truncate", "dd":
 		return j.replace(replaceOperands(name, args), s)
@@ -358,10 +431,10 @@ func (j *discardJudge) callOperand(call *lossCall, op lossOperand, s walkStep, f
 	case fd != nil && lit && v == fd.mark:
 		return j.fed(call, op, fd, s)
 	case fd != nil && fd.mark != feedMark && strings.Contains(op.word.raw, fd.mark):
-		return unresolvable(call, op.word)
+		return j.unknown(unresolvable(call, op.word))
 	case fd != nil && fd.inMatchDir && (!lit || !path.IsAbs(v)):
-		return &fileLoss{call: call, why: "`" + op.word.raw + "` is relative to the folder of " +
-			"each match, so belt cannot tell which path it names"}
+		return j.unknown(&fileLoss{call: call, why: "`" + op.word.raw + "` is relative to the folder of " +
+			"each match, so belt cannot tell which path it names"})
 	}
 	if body, ok := substBody(op.word); ok {
 		return j.fed(call, op, substFeed(op.word, body), s)
@@ -371,10 +444,12 @@ func (j *discardJudge) callOperand(call *lossCall, op lossOperand, s walkStep, f
 
 // lossCommands are the commands whose operands file-discard judges as
 // deletes, by the name each runs as: GNU coreutils from Homebrew installs
-// them with a g in front.
+// them with a g in front. rimraf is the npm package that deletes each of
+// its operands with all it holds.
 var lossCommands = map[string]string{
 	"rm": "rm", "unlink": "unlink", "shred": "shred",
 	"grm": "rm", "gunlink": "unlink", "gshred": "shred",
+	"rimraf": "rimraf",
 }
 
 // shapeCommands are the commands whose own syntax says what they delete:
@@ -412,6 +487,30 @@ func runsNext(name string) bool {
 	return isWrapper(name) || multicallTools[name]
 }
 
+// packageRunners run the command of an npm package that their words name
+// (`npx rimraf build`); packageRunWords are the subcommands of npm, pnpm,
+// yarn and bun that do (`npm exec`, `pnpm dlx`, `bun x`).
+var (
+	packageRunners  = wordSet("npx pnpx bunx")
+	packageRunWords = map[string]map[string]bool{
+		"npm": wordSet("exec x"), "pnpm": wordSet("exec dlx"), "yarn": wordSet("exec dlx"), "bun": wordSet("x"),
+	}
+)
+
+// runsPackage reports whether words run the command of an npm package
+// (packageRunners, packageRunWords).
+func runsPackage(words []shWord) bool {
+	name := runName(words[0])
+	if packageRunners[name] {
+		return true
+	}
+	if len(words) < 2 {
+		return false
+	}
+	sub, _ := words[1].literal()
+	return packageRunWords[name][sub]
+}
+
 // runName is the command a word runs: its last path part, "" when the word
 // holds an expansion.
 func runName(w shWord) string {
@@ -433,7 +532,7 @@ func lossCommand(words []shWord) (name string, args []shWord, ok bool) {
 	if name := discardName(words[0]); name != "" {
 		return name, words[1:], true
 	}
-	if !runsNext(runName(words[0])) {
+	if !runsNext(runName(words[0])) && !runsPackage(words) {
 		return "", nil, false
 	}
 	for i, w := range words[1:] {
@@ -495,8 +594,28 @@ func lossOperands(name string, args []shWord) []lossOperand {
 		return rmOperands(args)
 	case "shred":
 		return shredOperands(args)
+	case "rimraf":
+		return rimrafOperands(args)
 	}
 	return unlinkOperands(args)
+}
+
+// rimrafOperands reads rimraf's arguments: every word that is no option is
+// a tree it deletes, and `--` ends the options. A word belt cannot read
+// counts as an operand.
+func rimrafOperands(args []shWord) []lossOperand {
+	var ops []lossOperand
+	endOpts := false
+	for _, w := range args {
+		v, lit := w.literal()
+		switch {
+		case endOpts || !lit || len(v) < 2 || v[0] != '-':
+			ops = append(ops, lossOperand{word: w, tree: true})
+		case v == "--":
+			endOpts = true
+		}
+	}
+	return ops
 }
 
 // rmOperands reads rm's arguments with the rm option list the script guard

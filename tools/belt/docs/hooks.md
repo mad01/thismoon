@@ -1833,6 +1833,10 @@ the commands git does not run.
     destination is a tree. A remote one (`host:path`, `rsync://`), a dry
     run (`-n`) and `--backup` pass. With `--remove-source-files` each local
     source is dropped too.
+  - `rimraf`: each word that is no option is a tree. It counts behind the
+    tools that run a package's command too: `npx`, `pnpx`, `bunx`,
+    `npm exec`, `npm x`, `pnpm exec`, `pnpm dlx`, `yarn exec`, `yarn dlx`
+    and `bun x`.
   - `xargs rm` and `rm $(feeder)` or backticks: the paths the feeder
     prints. `git ls-files` and `git grep -l` hand the files git tracks under
     the shell's directory, so an untracked or ignored file there is not at
@@ -1954,6 +1958,119 @@ the commands git does not run.
     socket pass. A glob is judged match by match, and its folder skips
     rule 1, as does the folder a feeder hands the paths from. The reason
     says "overwrites".
+- **Also fires on** a recursive delete in a Python, Node, Ruby or Perl
+  script. Each path it names is judged like an `rm -r` operand.
+  - The calls are Python's `shutil.rmtree`, and Node's `fs.rm`,
+    `fs.rmSync`, `fs.rmdir` and `fs.rmdirSync` with `recursive` set
+    (`fs.promises.rm` too). Ruby's are `FileUtils.rm_rf`, `rm_r`,
+    `rmtree`, `remove_dir`, `remove_entry` and `remove_entry_secure`.
+    Perl's are File::Path's `rmtree` and `remove_tree`. A Python or Node
+    import under another name counts (`from shutil import rmtree as zap`),
+    and so does a name the script sets to the call
+    (`zap = shutil.rmtree`, `const zap = fs.rmSync`).
+  - The script is a `-c` or `-e` string (node's `-p` too), a heredoc, a
+    here-string, text piped in, or a file the same command writes. It is
+    also a file the command names: `python3 x.py`, or `./x` with a `#!`
+    line. belt reads such a file up to 1 MiB. The wrappers above count, and
+    so does the command xargs, parallel, fd and find `-exec` run. bun's
+    `-e` string is read as Node, and `uv run` runs the command after its
+    options (`uv run python -c ...`).
+  - Each path must be a plain string literal. A relative one counts from
+    the shell's directory, and `~` is a folder name there, as the language
+    reads it. Any other path is unknown and denies, the way `rm -rf $X`
+    does: a variable, a script argument, an f-string, or text with `$`,
+    `#{` or an escape in it. A relative path denies in a script that calls
+    `chdir`, and under find's `-execdir`.
+  - A script belt cannot read in full denies when its text, or the words
+    that build it, name one of the calls. A line that holds only a comment
+    does not count, nor does a Ruby symbol (`:rm_rf`) or a Perl `use` line.
+    Node's `rm` with no options or `recursive: false` deletes one file and
+    passes.
+- **Also fires on** the body of a build target the command runs. belt
+  reads it from the build file and judges it the way the shell runs it,
+  from the folder the tool runs it in. The targets it runs first count too.
+  - make and gmake: the targets named, or the first one (the default
+    goal), with `-C`, `-f`, and `GNUmakefile`, `makefile` or `Makefile`.
+    Prerequisites count, and so does a `%` pattern rule. The `@`, `-` and
+    `+` marks drop, and `$$` is `$`. With `-n`, `-q` or `-t` only a `+`
+    line or one that runs `$(MAKE)` counts.
+  - A variable set to a literal resolves in `$(VAR)` and `${VAR}`, and so
+    do `$@`, `$<`, `$^`, `$*`, `$(call)` and a substitution such as
+    `$(SRCS:.c=.o)`. A variable a conditional sets takes each branch's
+    value. `VAR=x` on make's command line wins, and one set in front of
+    make fills a `?=`. Any other variable is unknown, the way `rm -rf $X`
+    is. A `$(shell)` command counts as a command make runs. Another
+    function whose text names a delete, such as `$(foreach)`, denies.
+  - An include is read from make's folder, else from each `-I` folder
+    and then make's default ones. An include or a line belt cannot read
+    leaves the makefile partial, and a target belt does not find there
+    denies.
+  - With `-e`, or a MAKEFLAGS that holds it, a variable set in front of
+    make wins over the makefile. The files MAKEFILES names are read first.
+    A pattern-specific variable (`%-out: OUT = x`), `.RECIPEPREFIX` and a
+    `.SECONDEXPANSION` prerequisite count.
+  - A SHELL of python3, node, ruby or perl runs each recipe line as a
+    script in that language, and belt reads it so. Any other SHELL that is
+    no POSIX shell leaves the recipes unread.
+  - A makefile from standard input (`-f -`, `-f /dev/stdin`) and an
+    `--eval` text are read, but no file holds them, so the trust rule
+    below never passes them.
+  - npm: `npm run X`, `npm run-script X`, `npm test`, `npm start` and
+    `npm stop`. yarn and pnpm: `yarn X`, `pnpm X` and their `run` forms,
+    when X is no command of the tool's own. The script comes from the
+    nearest package.json, with its preX and postX hooks unless
+    `--ignore-scripts`. Words after the name are appended. `npm run`
+    alone lists the scripts and passes.
+  - A run across workspaces is not read: `-w`, `--workspaces`, `pnpm -r`,
+    `--filter`, `yarn workspace pkg clean`, `yarn workspaces`. It counts
+    as a delete belt cannot read. The trust rule passes it only when git
+    holds every package.json under the folder committed.
+  - `npm install`, `npm ci`, `npm pack` and `npm publish` run the root
+    package's lifecycle scripts (`preinstall`, `install`, `postinstall`,
+    `prepare` and the rest), and so do the yarn and pnpm forms. They count
+    unless `--ignore-scripts`.
+  - just: the recipes named, or the first one (or `[default]`), from the
+    nearest justfile. Recipes they depend on count, those after `&&` too.
+    Arguments, parameter defaults and string variables fill `{{ }}`. A
+    `#!` or `[script]` recipe is read as a script in its language.
+    `[no-cd]` runs from the folder just runs from. A recipe for another
+    system does not count. `just --list` and its kin pass.
+  - `--set NAME VALUE` sets a variable, as `NAME=VALUE` does. A module
+    (`mod foo`) is read from its file, for `foo::clean` and `foo clean`
+    alike, and its recipes run in that file's folder. A `set shell` of
+    python3, node, ruby or perl is read as SHELL is for make, and any
+    other shell that is no POSIX shell leaves the recipes unread.
+  - Under `set positional-arguments`, or the `[positional-arguments]`
+    attribute, `$1` and on in a shell recipe line take the recipe's
+    arguments. A value that is no plain word, and a `$1` in single
+    quotes, stay unknown.
+- **Trusts committed code.** A script file the command runs, and a build
+  target's makefile, package.json or justfile, is trusted when git tracks
+  it and `git status` lists nothing for it.
+  - A build target is trusted only when every file its run reads is
+    trusted too. For make that is each include, `-include` and
+    `sinclude`, found in make's folder or an `-I` folder, and each file
+    MAKEFILES names. For just it is each import, the module file of the
+    recipe, and the `.env` file a dotenv setting or option loads. An
+    optional include that is not there leaves the run trusted.
+  - In trusted code a delete whose path belt cannot read passes: a
+    variable, a script argument, a cd that may not have run. A literal
+    path there is still judged by the rules below.
+  - A file outside any work tree is not trusted, nor one with an edit,
+    staged or not.
+  - A file the same command writes or edits first is not trusted either,
+    and the check runs again at each step.
+  - belt judges the new body when it can read it: a redirect, `tee`, a
+    heredoc, or `cp` or `mv` of a file it reads. An append adds to what
+    is on disk.
+  - Any other write leaves a body belt cannot read: a download, a script
+    that writes the file, `sed -i`, a step that names the file and does
+    more than read it. A build file changed so denies, since belt cannot
+    tell what any target deletes. A script changed so is unread.
+  - A git command that changes the work tree (`checkout`, `pull`,
+    `reset`, `stash`) leaves what git holds there. The run denies when the
+    target, or that step, names a delete.
+  - Running the change as a command of its own first works.
 - **Decides by** each path the command drops, resolved without a shell. A
   literal path, `~`, `$HOME` and `${HOME}` resolve, and so does a variable
   the command sets to a literal. A relative path counts from the directory
@@ -2172,6 +2289,17 @@ the commands git does not run.
   it does for rm. BSD `-J` replaces only its first word, and belt reads
   every whole word. A `find -exec cp {} +` names its last match the
   destination, which belt reads as each match.
+- **Build target gaps.** The lifecycle scripts of dependencies are not
+  read, and `npm pkg set` does not count as an edit of package.json. A
+  step that writes a build file without naming it goes unseen, as a
+  generator that writes a Makefile. Any step whose text names the file
+  as a word and does more than read it makes the file unread, so the
+  make after it denies. Under
+  make's `-e` only the variables set in front of make count, not the
+  ones the shell exported before. Runners
+  other than `uv run`, such as `poetry run` or `uvx`, are not read past,
+  and an option of `uv run` belt does not know stops the read. fs-extra's
+  `removeSync` and `emptyDirSync` are not read.
 
 ### large-read
 

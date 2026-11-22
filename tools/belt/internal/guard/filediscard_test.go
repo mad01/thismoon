@@ -750,6 +750,8 @@ func TestFileDiscardInWorkTrees(t *testing.T) {
 			"rm a.txt", []string{"`a.txt` holds content no commit has", "toss-bin --safe-mode -r a.txt"}},
 		{"dirty in tree", func(r discardRepos) { r.local(map[string]string{"d/f.txt": "mine\n"}) },
 			"rm -rf d", []string{"`d/f.txt` holds content no commit has"}},
+		{"dirty tree after a clean copy", func(r discardRepos) { r.local(map[string]string{"d/f.txt": "mine\n"}) },
+			"cp a.txt b.txt && rm -rf d", []string{"this deletes uncommitted work", "`d/f.txt` holds content no commit has"}},
 		{"dirty glob", func(r discardRepos) { r.local(map[string]string{"b.txt": "mine\n"}) },
 			"rm *.txt", []string{"`b.txt`"}},
 		{"second operand dirty", func(r discardRepos) { r.local(map[string]string{"b.txt": "mine\n"}) },
