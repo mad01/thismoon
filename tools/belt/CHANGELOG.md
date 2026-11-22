@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.23.1](https://github.com/mad01/thismoon/compare/belt/v2.23.0...belt/v2.23.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **belt:** judge the rest of a command after a message bash 3.2 may read differently ([#550](https://github.com/mad01/thismoon/issues/550)) ([06610e6](https://github.com/mad01/thismoon/commit/06610e64a5f3a3f6dba3ab556e522a81c64bef30))
+
 ## [2.23.0](https://github.com/mad01/thismoon/compare/belt/v2.22.3...belt/v2.23.0) (2026-11-22)
 
 
