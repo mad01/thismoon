@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.24.0](https://github.com/mad01/thismoon/compare/belt/v2.23.1...belt/v2.24.0) (2026-11-22)
+
+
+### Features
+
+* **belt:** deny emptying or replacing a file that holds unsaved work ([#551](https://github.com/mad01/thismoon/issues/551)) ([26a4617](https://github.com/mad01/thismoon/commit/26a46175b3c825975b96602c489dae20c1fbffbf))
+
 ## [2.23.1](https://github.com/mad01/thismoon/compare/belt/v2.23.0...belt/v2.23.1) (2026-11-22)
 
 
