@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.25.0](https://github.com/mad01/thismoon/compare/belt/v2.24.0...belt/v2.25.0) (2026-11-22)
+
+
+### Features
+
+* **belt:** judge deletes in scripts and build targets ([#554](https://github.com/mad01/thismoon/issues/554)) ([a5b35bc](https://github.com/mad01/thismoon/commit/a5b35bc4a533b7240616f712b8bf3f544450abff))
+
 ## [2.24.0](https://github.com/mad01/thismoon/compare/belt/v2.23.1...belt/v2.24.0) (2026-11-22)
 
 
