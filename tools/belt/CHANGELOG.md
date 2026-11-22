@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.23.0](https://github.com/mad01/thismoon/compare/belt/v2.22.3...belt/v2.23.0) (2026-11-22)
+
+
+### Features
+
+* **belt:** add direct-deny-list for deny entries run as direct commands ([#547](https://github.com/mad01/thismoon/issues/547)) ([5a627fd](https://github.com/mad01/thismoon/commit/5a627fdf83e7f4020bd3b962e8e96acfc32bf642))
+
 ## [2.22.3](https://github.com/mad01/thismoon/compare/belt/v2.22.2...belt/v2.22.3) (2026-11-22)
 
 
