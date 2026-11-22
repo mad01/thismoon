@@ -31,6 +31,10 @@ import (
 //     &, a coproc, a trap, or a word that starts a job that outlives its
 //     parent. Such a job could run the file an echo or a commit writes,
 //     after the check that file never reached.
+//   - The piece lies before the first `$(cat <<'EOF' ... EOF)` that bash 3.2
+//     may end in another place than belt (bash32Tail). A quote of that body
+//     can stay open past belt's ), so bash 3.2 may run any text after it.
+//     That text is scanned as code (scanBash32Tail).
 //
 // A written file that is run, sourced, made executable or piped on is still
 // checked against the raw command (scanTarget), and the bodies of every
@@ -63,7 +67,7 @@ var laterWords = wordSet(`
 // or what is left once the data is blanked could run it later (runsLater).
 // cmd is the shell's whole input (dataCat).
 func maskData(cmd string) string {
-	return maskWith(cmd, func(cmd string, p wordPart) (span, bool) { return dataCat(cmd, p, true) })
+	return maskWith(cmd, func(cmd string, p wordPart) (span, bool) { return dataCat(cmd, p, true) }, bash32Tail(cmd))
 }
 
 // maskDataBash5 is maskData for a shell that ends a `$(cat <<'EOF' ... EOF)`
@@ -71,7 +75,7 @@ func maskData(cmd string) string {
 // bash 3.2 would run (bash32Closes). It only tells a denial that comes from
 // bash 3.2 alone (ScriptDenyList.check).
 func maskDataBash5(cmd string) string {
-	return maskWith(cmd, catBody)
+	return maskWith(cmd, catBody, len(cmd))
 }
 
 // catReader returns where the heredoc body of a substitution that only
@@ -79,8 +83,8 @@ func maskDataBash5(cmd string) string {
 type catReader func(cmd string, p wordPart) (span, bool)
 
 // maskWith is maskData with cat reading the `$(cat <<'EOF' ... EOF)`
-// arguments.
-func maskWith(cmd string, cat catReader) string {
+// arguments, masking only the pieces that start before until.
+func maskWith(cmd string, cat catReader, until int) string {
 	cmds, ok := readShell(cmd)
 	if !ok || !maskable(cmds) {
 		return cmd
@@ -88,6 +92,9 @@ func maskWith(cmd string, cat catReader) string {
 	b := []byte(cmd)
 	for _, c := range cmds {
 		for _, s := range dataSpans(cmd, c, cat) {
+			if s.from >= until {
+				continue
+			}
 			for i := s.from; i < s.to; i++ {
 				if b[i] != '\n' {
 					b[i] = ' '
@@ -330,6 +337,115 @@ func dataCat(cmd string, p wordPart, eof bool) (span, bool) {
 		return span{}, false
 	}
 	return body, true
+}
+
+// bash32Refused calls fn for each `$(cat <<'EOF' ... EOF)` in c's words and
+// redirection targets of which bash 3.2 may run more than cat (catBody
+// accepts it, dataCat refuses it), and says whether bash 3.2 may also read
+// the text after it in another way than belt (bash32Rejoins). eof says text
+// is the shell's whole input (dataCat), where a message word may take in
+// the rest of it (messageWords).
+func bash32Refused(text string, c shellCmd, eof bool, fn func(p wordPart, apart bool)) {
+	visit := func(words []placedWord, message map[int]bool) {
+		for i, w := range words {
+			for _, p := range w.parts {
+				if p.kind != partSubst {
+					continue
+				}
+				if _, ok := catBody(text, p); !ok {
+					continue
+				}
+				if _, ok := dataCat(text, p, eof); !ok {
+					fn(p, !bash32Rejoins(text, p, w.at.to, message[i]))
+				}
+			}
+		}
+	}
+	var message map[int]bool
+	if eof {
+		message = messageWords(c.tokens())
+	}
+	visit(c.words, message)
+	visit(c.targets, nil)
+}
+
+// messageWords returns the indexes of the words a git commit or a textSafeGh
+// call takes as its message text (dataWords). An echo or printf has none:
+// what it prints goes wherever its output goes.
+func messageWords(tokens []string) map[int]bool {
+	if printsWords(tokens) {
+		return nil
+	}
+	words, _, _ := dataWords(tokens)
+	set := map[int]bool{}
+	for _, i := range words {
+		set[i] = true
+	}
+	return set
+}
+
+// bash32Tail returns where the text bash 3.2 may read in another way than
+// belt starts in cmd, the shell's whole input: at the ) of the first
+// `$(cat <<'EOF' ... EOF)` after which it may (bash32Refused), or len(cmd)
+// when there is none. It looks in every command's words and redirection
+// targets, and in the ( ) subshells and the $( ), <( ), >( ) and ${ }
+// bodies in them, which bash 3.2's parse step reads in the same pass: a
+// nested text is read on its own, and its tail starts the tail around it.
+// A backtick body ends at its first backtick no backslash quotes, in bash
+// 3.2 as in belt.
+func bash32Tail(cmd string) int {
+	if !strings.Contains(cmd, "$(") {
+		return len(cmd)
+	}
+	return bash32TailIn(cmd, 0)
+}
+
+// bash32TailIn is bash32Tail for a text depth levels inside the shell's
+// input. A nested text it does not read, past maxShellNesting or one
+// readShell cannot follow, may hold such a message when it holds a $( ), so
+// the tail then starts where that text does.
+func bash32TailIn(text string, depth int) int {
+	tail := len(text)
+	if depth > maxShellNesting {
+		return bash32Unread(text)
+	}
+	cmds, ok := readShell(text)
+	if !ok {
+		if depth > 0 {
+			return bash32Unread(text)
+		}
+		return tail
+	}
+	nested := func(s span) {
+		if at := bash32TailIn(text[s.from:s.to], depth+1); at < s.to-s.from {
+			tail = min(tail, s.from+at)
+		}
+	}
+	for _, c := range cmds {
+		bash32Refused(text, c, depth == 0, func(p wordPart, apart bool) {
+			if apart {
+				tail = min(tail, p.body.to)
+			}
+		})
+		for _, p := range c.pieces() {
+			if p.from > 0 && strings.IndexByte("({", text[p.from-1]) >= 0 {
+				nested(p.span)
+			}
+		}
+		for _, s := range c.subshells {
+			nested(s)
+		}
+	}
+	return tail
+}
+
+// bash32Unread is bash32TailIn for a nested text it does not read: 0 when
+// the text holds a $( ), len(text) when it holds none.
+func bash32Unread(text string) int {
+	if strings.Contains(text, "$(") {
+		return 0
+	}
+	return len(text)
 }
 
 // catBody is dataCat for a shell that ends a $( ) where belt does, as bash 5

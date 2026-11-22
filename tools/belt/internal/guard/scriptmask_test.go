@@ -437,6 +437,74 @@ func TestScriptDenyMaskBash32Close(t *testing.T) {
 	})
 }
 
+// TestScriptDenyBash32Tail pins the text after a `$(cat <<'EOF' ... EOF)`
+// bash 3.2 may end in another place than belt (bash32Tail). A quote of the
+// body stays open into the text after it, which bash 3.2 then runs where
+// belt reads data, so nothing there is masked and all of it is scanned as
+// code, comments and heredoc bodies included. A body bash 3.2 ends early
+// whose rest it reads as text of the same word, and a message that takes in
+// all the rest, leave the text after it as belt reads it.
+func TestScriptDenyBash32Tail(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CDPATH", "")
+	g := NewScriptDenyList(scriptDenyConfig(maskClaudeDeny, maskExtra))
+	cat := func(head, body string) string {
+		return head + " \"$(cat <<'EOF'\n" + body + "\nEOF\n)\""
+	}
+	tests := []struct {
+		name, command string
+		deny          bool
+	}{
+		{"a later word closes the quote", cat("git commit -m", "It's done") + "; echo '\n)\" ; kubectl delete pod x ; #'", true},
+		{"a later heredoc closes the quote", cat("git commit -m", "It's done") + "; cat <<'Y'\n')\" ; rm -rf /x ; #'\nY", true},
+		{"a later comment closes the quote", cat("git commit -m", "It's done") + "; echo 'x'\n# ')\" ; kubectl delete pod x ; #'", true},
+		{"an assignment's message", "x=\"$(cat <<'EOF'\nIt's done\nEOF\n)\"; echo '\n)\" ; kubectl delete pod x ; #'", true},
+		{"a message in a subshell", "(" + cat("git commit -m", "It's done") + "); echo '\n)\") ; rm -rf /x ; #'", true},
+		{"an unquoted list", "git commit -m $(cat <<'EOF'\n1) it's\nEOF\n); echo '\nkubectl delete pod x ; #'", true},
+		{
+			"text after a message that takes in the rest",
+			cat("git commit -m", "It's x") + " && cat <<'Y'\n') ; echo z ; echo \"z\nY\nkubectl delete pod x",
+			true,
+		},
+		{"a list, then quoted words", cat("git commit -m", "x\n\n1) renames \"a\" to \"b\"") + " && echo 'kubectl delete'", false},
+		{"a list, then backticks", cat("git commit -m", "x\n\n1) adds `--quiet`\n2) docs") + " && echo 'rm -rf /x'", false},
+		{
+			"a message that takes in the rest",
+			cat("git commit -m", "It's x") + " && cat <<'Y'\n') ; kubectl delete pod x ; echo \"z",
+			false,
+		},
+		{"a later ) in a later word", cat("git commit -m", "- fix (part 1") + ` -m "next ) ; kubectl delete pod x ; echo ("`, false},
+		// bash 3.2's expansion reads the word again and may end the $( ) in
+		// another place than its parse step, which flips the quotes after it.
+		{"the expansion ends it earlier, then a <( )", "git commit -m \"$(cat <<'EOF'\na # (\nb ) '\"' ) 'z\nEOF\n)<(rm -rf /x)\"", true},
+		{"a message whose expansion runs a later comment", cat("git commit -m", "# It's x") + " && echo 'q\nZ' # $(rm -rf /x) ')\"", true},
+		{"a message nested past the reader's depth", "echo \"" + deepMessage("It's done") + "\" '\n)\" ; rm -rf /x ; #'", true},
+	}
+	for _, tt := range tests {
+		d := g.Check(Input{Event: EventBash, Command: tt.command})
+		switch {
+		case (d != nil) != tt.deny:
+			t.Errorf("%s: Check(%q) = %v, want deny %v", tt.name, tt.command, d, tt.deny)
+		case d != nil && !strings.HasSuffix(d.Reason, bash32Hint):
+			t.Errorf("%s: Check(%q) reason %q, want it to end in bash32Hint", tt.name, tt.command, d.Reason)
+		}
+	}
+	tail := cat("git commit -m", "It's done") + "; echo '\n)\" ; x ; #'"
+	if got := maskData(tail); got != tail {
+		t.Errorf("maskData(%q) = %q, want the text after the message as written", tail, got)
+	}
+}
+
+// deepMessage returns a `git commit -m "$(cat <<'EOF' ... EOF)"` with body
+// nested past maxShellNesting: $( ) levels, a ${ } whose body the reader
+// does not follow, then more $( ) levels around the commit.
+func deepMessage(body string) string {
+	levels := strings.Repeat("$(echo ", maxShellNesting-1)
+	ends := strings.Repeat(")", maxShellNesting-1)
+	commit := "git commit -m \"$(cat <<'EOF'\n" + body + "\nEOF\n)\""
+	return levels + "${x:-" + levels + commit + ends + "}" + ends
+}
+
 // TestScriptDenyBash32Reason pins the reason for a message belt reads as
 // code only because bash 3.2 may run part of it: it names the forms that
 // stay data (bash32Hint). Every other denial keeps its own reason.

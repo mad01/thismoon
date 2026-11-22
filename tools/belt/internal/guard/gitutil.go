@@ -213,6 +213,12 @@ type shellWalk struct {
 	// input is the text walkCommands walks, the shell's whole input, where
 	// bash 3.2 reads a $( ) on to the end (whole). It is "" in a child walk.
 	input string
+	// unsynced marks a walk that read the rest of its text fail-closed after
+	// a `$(cat <<'EOF' ... EOF)` bash 3.2 may end in another place
+	// (bash32Cats), or read code it could not follow that may hold one
+	// (walkUnread), so the walk around it reads the rest of its own text
+	// that way too (walkNested).
+	unsynced bool
 }
 
 // whole reports whether text is the shell's whole input (shellWalk.input),

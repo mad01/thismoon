@@ -130,3 +130,67 @@ func TestBash32Unclosed(t *testing.T) {
 		}
 	}
 }
+
+// TestBash32Rejoins pins when bash 3.2 reads the text after a
+// `$(cat <<'EOF' ... EOF)` it may run more of than cat as belt does. word is
+// the rest of the word that holds the $( ), and rest the text after that
+// word. Each row was checked by running /bin/bash 3.2.57 on the same shape
+// with printf in place of git commit and echo markers in place of the
+// commands, whose output shows what it runs. A message word that takes in
+// all the rest runs none of it, so message rows say whether the word is
+// message text (messageWords).
+func TestBash32Rejoins(t *testing.T) {
+	cat := func(body string) string { return "cat <<'EOF'\n" + body + "\nEOF\n" }
+	const commit = `git commit -m "`
+	tests := []struct {
+		name, head, sub, word, rest string
+		quoted, message, want       bool
+	}{
+		// The parse step ends the $( ) at belt's ). The expansion reads the
+		// word again: the rest reads alike when it ends the $( ) at belt's )
+		// or earlier with the rest of the body as text of the same quoted word.
+		{"the expansion ends it early", commit, cat("a # (\nb ) $HOME"), `"`, `; echo t 'p;q'`, true, false, true},
+		{"the expansion ends it early, then a quote", commit, cat("a # (\nb ) \"'\""), `"'$(echo x)'`, ``, true, false, false},
+		{"the expansion ends it early, then backticks", commit, cat("a # (\nb ) \"'\""), "\"'`echo x`'", ``, true, false, false},
+		{"a list the expansion ends early", commit, cat("- fix # (part 1\n- done ) \"'\""), `"'$(echo x)'`, ``, true, false, false},
+		{"a pr body the expansion ends early", `gh pr create --title t --body "`, cat("a # (\nb ) \"'\""), `"'$(echo x)'`, ``, true, true, false},
+		// It ends it past belt's ): the $( ) runs cat and stops at belt's ),
+		// and the word goes on from the later ).
+		{"the expansion ends it late", commit, cat("a ( # )"), `"'$(echo x)'")"`, ``, true, false, true},
+		{"the expansion ends it late, then a substitution", commit, cat("a ( # )"), `"'x'")"$(echo x)`, ``, true, false, false},
+		// It finds no ) in the word: a bad substitution, which drops the command.
+		{"the expansion never ends it", commit, cat("PR #1 renames the bar's x\nand speak's y"), `"`, ` && echo t`, true, false, true},
+		{"the expansion never ends it, then a quote", commit, cat("PR #1 renames the bar's x\nand speak's y"), `"'$(echo x)'`, ``, true, false, true},
+		// It ends it early, and the rest of the body is text of the word.
+		{"a list, then backticks", commit, cat("x\n\n1) adds the `echo y` flag\n2) docs"), `"`, ` && echo t '(x)'`, true, false, true},
+		{"a list, then quoted words", commit, cat("x\n\n1) renames \"a\" to \"b\"\n2) docs"), `"`, ` && echo t '(x)'`, true, false, true},
+		{"a list, then a quoted phrase", commit, cat("x\n1) set \"max tries\" to 3"), `"`, ` && echo t`, true, false, false},
+		{"a list, then a quote that ends the word", commit, cat("x\n1) say \"hi"), `"`, `; echo 'x'`, true, false, false},
+		{"the expansion ends it earlier, then a <( )", commit, cat("a # (\nb ) '\"' ) 'z"), `<(echo x)"`, ``, true, false, false},
+		{"an unquoted list", `git commit -m `, cat("1) it's"), ``, "; echo '\necho x ; #'", false, false, false},
+		// It ends it past belt's ): a quote of the body is open in between.
+		{"a later word closes the quote", commit, cat("It's done"), `"`, "; echo '\n)\" ; echo x ; #'", true, false, false},
+		{"a later heredoc closes the quote", commit, cat("It's done"), `"`, "; cat <<'Y'\n')\" ; echo x ; #'\nY", true, false, false},
+		{"a later comment closes the quote", commit, cat("It's done"), `"`, "; echo 'x'\n# ')\" ; echo x ; #'", true, false, false},
+		{"a backtick past belt's )", commit, cat("It's x"), `"`, " && echo 'q\n) `echo x >&2` \"\necho \"'", true, true, false},
+		{"a message that takes in the rest", commit, cat("It's x"), `"`, " && cat <<'Y'\n') ; echo x ; echo \"z", true, true, true},
+		{"a -c script that takes in the rest", `sh -c "`, cat("It's x"), `"`, " && cat <<'Y'\n') ' ; echo x ; echo \"z", true, false, false},
+		{"text after the message that takes in the rest", commit, cat("It's x"), `"`, " && cat <<'Y'\n') ; echo x ; echo \"z\nY\necho x", true, true, false},
+		{"a later ) in a later word", commit, cat("- fix (part 1"), `"`, ` -m "next ) ; echo x ; echo ("`, true, true, true},
+		// The message takes in the rest, but the expansion, which skips the
+		// heading as a comment, reads the rest as text belt quotes.
+		{"a message whose expansion runs a later heredoc", commit, cat("# It's x"), `"`, " && cat <<'Y'\nZ $(echo x) ')\nY\n# \"", true, true, false},
+		{"a message whose expansion runs a later comment", commit, cat("# It's x"), `"`, " && echo 'q\nZ' # $(echo x) ')\"", true, true, false},
+		{"a message whose expansion runs a later <( )", commit, cat("# It's x"), `"`, " && cat <<'Y'\nZ <(echo x) ')\nY\n# \"", true, true, false},
+		// It never ends it: bash32Unclosed decides those.
+		{"a lone apostrophe", commit, cat("don't"), `"`, ``, true, true, false},
+	}
+	for _, tt := range tests {
+		cmd := tt.head + "$(" + tt.sub + ")" + tt.word + tt.rest
+		p := wordPart{kind: partSubst, quoted: tt.quoted, body: span{len(tt.head) + 2, len(tt.head) + 2 + len(tt.sub)}}
+		wordEnd := p.body.to + 1 + len(tt.word)
+		if got := bash32Rejoins(cmd, p, wordEnd, tt.message); got != tt.want {
+			t.Errorf("%s: bash32Rejoins(%q, %v) = %v, want %v", tt.name, cmd, tt.message, got, tt.want)
+		}
+	}
+}
