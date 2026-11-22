@@ -403,13 +403,35 @@ func unknownDirDenial(push gitPush) *Denial {
 
 // retargetsPush reports whether one step can change where a push goes once
 // it has run: a git config write (gitConfigWrites), a git remote add,
-// set-url, rename or remove, a git branch upstream change, a redirection
-// into a git config file (gitConfigFile), or any other command that names
-// one in its words or takes the output of one that does through a pipe
-// (`grep -l x .git/config | xargs sed -i ...`). A command that only reads or
-// prints (readOnlyCommand) writes through its redirections alone, and a
-// comment or a heredoc body no shell runs (walkStep.prose) changes nothing.
+// set-url, rename or remove, a git branch upstream change, or a write into
+// a git config file by other means (writesGitConfigFile).
 func retargetsPush(s walkStep) bool {
+	if writesGitConfigFile(s) {
+		return true
+	}
+	c, ok := segmentGitCommand(s.tokens, s.dir)
+	if s.prose || !ok {
+		return false
+	}
+	switch c.sub {
+	case "config":
+		return gitConfigWrites(c.args)
+	case "remote":
+		return len(c.args) > 0 && remoteWrites[c.args[0]]
+	case "branch":
+		return slices.ContainsFunc(c.args, upstreamFlag)
+	}
+	return false
+}
+
+// writesGitConfigFile reports whether one step may write a git config file
+// other than through a git subcommand: a redirection into one
+// (gitConfigFile), or a command other than git that names one in its words
+// or takes the output of one that does through a pipe (`grep -l x
+// .git/config | xargs sed -i ...`). A command that only reads or prints
+// (readOnlyCommand) writes through its redirections alone, and a comment or
+// a heredoc body no shell runs (walkStep.prose) changes nothing.
+func writesGitConfigFile(s walkStep) bool {
 	if s.prose {
 		return false
 	}
@@ -417,15 +439,7 @@ func retargetsPush(s walkStep) bool {
 	if slices.ContainsFunc(writes, func(t string) bool { return gitConfigFile(t, s.dir) }) {
 		return true
 	}
-	if c, ok := segmentGitCommand(s.tokens, s.dir); ok {
-		switch c.sub {
-		case "config":
-			return gitConfigWrites(c.args)
-		case "remote":
-			return len(c.args) > 0 && remoteWrites[c.args[0]]
-		case "branch":
-			return slices.ContainsFunc(c.args, upstreamFlag)
-		}
+	if _, ok := segmentGitCommand(s.tokens, s.dir); ok {
 		return false
 	}
 	words := stripWrappers(s.tokens)
