@@ -123,6 +123,107 @@ func TestScriptDenyListArgvIndirection(t *testing.T) {
 	}
 }
 
+// TestScriptDenyListReadsANSICScripts pins a -c string, an eval argument and
+// a runner word written in ANSI-C quoting: each reads as bash decodes it.
+func TestScriptDenyListReadsANSICScripts(t *testing.T) {
+	g := NewScriptDenyList(scriptDenyConfig(argvDeny, argvExtra))
+	tests := []struct {
+		command string
+		deny    bool
+	}{
+		{`bash -c $'kube\x63tl delete pod x'`, true},
+		{`bash -c $'kubectl\x20delete pod x'`, true},
+		{`sudo sh -lc $'kube\x63tl -n prod delete pod x'`, true},
+		{`bash -c 'true' && bash -c $'kube\x63tl delete pod x'`, true},
+		{`eval $'kube\x63tl delete pod x'`, true},
+		{`$'bash' -c 'kubectl delete pod x'`, true},
+		{`$'ba\x73h' -c 'kubectl delete pod x'`, true},
+		{`$'eval' kubectl delete pod x`, true},
+		{`bash -c $'kube\x63tl get pods'`, false},
+		{`eval $'kube\x63tl get pods'`, false},
+		{`$'bash' -c 'kubectl get pods'`, false},
+		{`echo $'kube\x63tl delete pod x'`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			d := g.Check(Input{Event: EventBash, Command: tt.command})
+			if got := d != nil; got != tt.deny {
+				t.Fatalf("deny = %v, want %v (denial: %+v)", got, tt.deny, d)
+			}
+		})
+	}
+}
+
+// TestScriptDenyListReadsANSICNames pins a variable or a function set
+// inside a $'...' -c string: it reads from the decoded text.
+func TestScriptDenyListReadsANSICNames(t *testing.T) {
+	g := NewScriptDenyList(scriptDenyConfig(argvDeny, argvExtra))
+	tests := []struct {
+		command string
+		deny    bool
+	}{
+		{`bash -c $'K=kube\x63tl\n$K delete pod x'`, true},
+		{`bash -c $'f() { kube\x63tl "$@"; }; f delete pod x'`, true},
+		{`bash -c $'K=kube\x63tl\n$K get pods'`, false},
+		{`bash -c $'f() { kube\x63tl "$@"; }; f get pods'`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			d := g.Check(Input{Event: EventBash, Command: tt.command})
+			if got := d != nil; got != tt.deny {
+				t.Fatalf("deny = %v, want %v (denial: %+v)", got, tt.deny, d)
+			}
+		})
+	}
+}
+
+// TestANSICText pins how text with ANSI-C strings in it reads: each string
+// decoded in place, one after a backslash or with no closing quote left as
+// written.
+func TestANSICText(t *testing.T) {
+	tests := []struct{ text, want string }{
+		{`bash -c $'kube\x63tl delete'`, "bash -c kubectl delete"},
+		{`a $'it\'s' b $'\x41'`, "a it's b A"},
+		{`a \$'x' b`, `a \$'x' b`},
+		{`a $'b' $'unterminated`, `a b $'unterminated`},
+		{"plain 'text'", "plain 'text'"},
+	}
+	for _, tt := range tests {
+		if got := ansiCText(tt.text); got != tt.want {
+			t.Errorf("ansiCText(%q) = %q, want %q", tt.text, got, tt.want)
+		}
+	}
+}
+
+// TestANSICWord pins how a word written in ANSI-C quoting reads: bash's
+// escapes decoded, the word's other quotes dropped, a NUL ending the value,
+// and a word with any other expansion left as written.
+func TestANSICWord(t *testing.T) {
+	tests := []struct{ word, want string }{
+		{"$'delete'", "delete"},
+		{`$'\x64elete'`, "delete"},
+		{`$'\144elete'`, "delete"},
+		{`$'delete'`, "delete"},
+		{`$'\U00000064elete'`, "delete"},
+		{`de$'lete'`, "delete"},
+		{`"de"$'lete'`, "delete"},
+		{`$'a\tb\n'`, "a\tb\n"},
+		{`$'it\'s'`, "it's"},
+		{`$'\cA'`, "\x01"},
+		{`$'\q'`, `\q`},
+		{`$'\x'`, `\x`},
+		{`$'del\0ete'`, "del"},
+		{`$'del'$X`, `$'del'$X`},
+		{`$'unterminated`, `$'unterminated`},
+		{"plain", "plain"},
+	}
+	for _, tt := range tests {
+		if got := ansiCWord(tt.word); got != tt.want {
+			t.Errorf("ansiCWord(%q) = %q, want %q", tt.word, got, tt.want)
+		}
+	}
+}
+
 // TestDenyRunsWords pins the argv match as a function over one command's
 // words, the command name first.
 func TestDenyRunsWords(t *testing.T) {
@@ -145,13 +246,15 @@ func TestDenyRunsWords(t *testing.T) {
 		{"kubectl delete", "kubectl -n x delete pod", true},
 		{"kubectl delete", "kubectl -n x -- delete pod", true},
 		{"kubectl delete", "kubectl get -n delete", false},
-		{"kubectl delete --all", "kubectl delete --all", false},
+		{"kubectl delete --all", "kubectl -n x delete pods --all", true},
+		{"kubectl delete --all", "kubectl delete pod x", false},
 		{"gcloud sql instances delete", "gcloud sql --quiet instances delete db", true},
 		{"gcloud sql instances delete", "gcloud sql backups delete db", false},
 		{"terraform destroy", "terraform apply -destroy=false -destroy", true},
 		{"terraform destroy", "terraform apply -destroy=maybe", true},
 		{"terraform destroy", "terraform apply -destroy -destroy=false", false},
-		{"bq rm", "bq --project_id=p rm x", false},
+		{"bq rm", "bq --project_id=p rm x", true},
+		{"bq rm", "bq --project_id=p ls x", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.pattern+"/"+tt.words, func(t *testing.T) {

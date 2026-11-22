@@ -98,6 +98,7 @@ func noting(emit emitFunc, note func()) emitFunc {
 }
 
 func (g *CommitGuard) noteWarnings(note func())          { g.emit = noting(g.emit, note) }
+func (g *DirectDenyList) noteWarnings(note func())       { g.emit = noting(g.emit, note) }
 func (c *Custom) noteWarnings(note func())               { c.emit = noting(c.emit, note) }
 func (g *GitDiscard) noteWarnings(note func())           { g.emit = noting(g.emit, note) }
 func (g *GitIdentity) noteWarnings(note func())          { g.emit = noting(g.emit, note) }

@@ -6,56 +6,31 @@ import (
 	"strings"
 )
 
-// This file reads a literal deny entry the way the tool it names reads its
-// arguments, so a spelling the text match misses still counts: rm's options
-// in any shape (`rm -r -f` and `rm --recursive --force` for `rm -rf`), and
-// the flags before a kubectl, gcloud or terraform verb (`kubectl -n prod
-// delete` for `kubectl delete`). Every other entry matches as text only.
-
-// verbTools are the tools whose deny entries name verbs, read past the flags
-// before and between them.
-var verbTools = map[string]bool{"gcloud": true, "kubectl": true, "terraform": true}
+// This file reads a deny entry (denyentry.go) the way the tool it names
+// reads its arguments, so a spelling the text match misses still counts:
+// rm's options in any shape (`rm -r -f` and `rm --recursive --force` for `rm
+// -rf`), and the flags before and between any tool's verbs (`kubectl -n prod
+// delete` for `kubectl delete`, `git -C x remote prune` for `git remote
+// prune`).
 
 // gcloudTracks are gcloud's release tracks. A track group runs the same
 // command (`gcloud beta sql instances delete`), so it may be skipped.
 var gcloudTracks = map[string]bool{"alpha": true, "beta": true, "preview": true}
 
+// taskTools take a list of tasks and run each one, so a task entry matches
+// at any position: `rake db:create db:drop` runs db:drop.
+var taskTools = map[string]bool{"rake": true, "rails": true}
+
 // commandBreaks end one command inside a line: list and pipe operators,
 // subshell and substitution parentheses, and backticks.
 const commandBreaks = ";|&()`"
 
-// argvEntry returns a deny entry's words when the argv match reads it: an
-// rm entry whose long options rm knows, or a verb-tool entry made of verbs
-// only. Any other entry returns nil and keeps the text match alone.
-func argvEntry(words []string) []string {
-	switch tool := strings.ToLower(words[0]); {
-	case tool == "rm":
-		if _, known := readRm(words[1:]); known {
-			return words
-		}
-	case verbTools[tool]:
-		for _, w := range words[1:] {
-			if strings.HasPrefix(w, "-") {
-				return nil
-			}
-		}
-		return words
-	}
-	return nil
-}
-
 // runsWords reports whether one command, its words with the command name
 // first, runs what the deny entry names, read the way the tool reads its
-// arguments. An entry the argv match does not read never matches here.
+// arguments. An entry the reader does not read (a `re:` entry, a shape
+// readDenyEntry refuses) never matches here.
 func (d deny) runsWords(words []string) bool {
-	if len(d.argv) == 0 || len(words) == 0 || !strings.EqualFold(commandName(words[0]), d.argv[0]) {
-		return false
-	}
-	tool := strings.ToLower(d.argv[0])
-	if tool == "rm" {
-		return rmRuns(d.argv[1:], words[1:])
-	}
-	return verbsRun(tool, d.argv[1:], words[1:])
+	return d.entry != nil && d.entry.runs(words)
 }
 
 // runsIn reports whether any of a line's commands runs the deny entry,
@@ -63,7 +38,7 @@ func (d deny) runsWords(words []string) bool {
 // anywhere on a line: `sudo rm -r -f`, `xargs -0 rm -r -f` and `find -exec
 // rm -r -f` all count.
 func (d deny) runsIn(cmds [][]string) bool {
-	if len(d.argv) == 0 {
+	if d.entry == nil {
 		return false
 	}
 	for _, words := range cmds {
@@ -89,6 +64,67 @@ func lineCommands(forms ...string) [][]string {
 		}
 	}
 	return out
+}
+
+// ansiCWords returns words with each one written in ANSI-C quoting read as
+// the shell passes it (ansiCWord), and words itself when none is.
+func ansiCWords(words []string) []string {
+	if !slices.ContainsFunc(words, func(w string) bool { return strings.Contains(w, "$'") }) {
+		return words
+	}
+	out := make([]string, len(words))
+	for i, w := range words {
+		out[i] = ansiCWord(w)
+	}
+	return out
+}
+
+// ansiCWord returns a word that holds a $'...' string as the shell passes
+// it, its escapes decoded and its other quotes dropped (`$'delete'` and
+// `$'\x64elete'` read as delete). A word with any other expansion, or one
+// the reader cannot follow, stays as written.
+func ansiCWord(word string) string {
+	if !strings.Contains(word, "$'") {
+		return word
+	}
+	l := shLexer{src: word}
+	w, ok := l.readWord()
+	if !ok || l.i != len(word) {
+		return word
+	}
+	if v, ok := w.literalANSIC(); ok {
+		return v
+	}
+	return word
+}
+
+// ansiCText returns text with each $'...' string in it decoded as bash
+// passes it (ansiCValue), for text a shell reads again as code: a -c
+// string, eval's words, a script. A string after a backslash stays as
+// written, and so does the rest of the text from a string no quote closes.
+func ansiCText(text string) string {
+	if !strings.Contains(text, "$'") {
+		return text
+	}
+	var b strings.Builder
+	for i := 0; i < len(text); i++ {
+		switch {
+		case text[i] == '\\' && i+1 < len(text):
+			b.WriteString(text[i : i+2])
+			i++
+		case strings.HasPrefix(text[i:], "$'"):
+			end := ansiCEnd(text, i+2)
+			if end < 0 {
+				b.WriteString(text[i:])
+				return b.String()
+			}
+			b.WriteString(ansiCValue(text[i+2 : end]))
+			i = end
+		default:
+			b.WriteByte(text[i])
+		}
+	}
+	return b.String()
 }
 
 // commandName returns a command word as the name a deny entry gives: the
@@ -197,27 +233,28 @@ func rmRuns(entry, args []string) bool {
 	return true
 }
 
-// verbWord is a word that may name a verb. optional marks one right after a
-// flag, which may be that flag's value instead.
+// verbWord is a word that may name a verb. optional marks one the verbs may
+// skip: a word right after a flag, which may be that flag's value instead,
+// and a NAME=value word.
 type verbWord struct {
 	text     string
 	optional bool
 }
 
-// verbsRun reports whether a verb tool's arguments reach the entry's verbs
-// in order. A flag before or between the verbs is skipped, and any flag may
+// verbsRun reports whether a tool's arguments reach the entry's verbs in
+// order. A flag before or between the verbs is skipped, and any flag may
 // take the next word as its value, so a global flag the guard does not know
 // (`kubectl --context x delete`) still counts as a possible match.
-// terraform's `apply -destroy` counts as `destroy`, and a gcloud release
-// track may be skipped.
+// terraform's and tofu's `apply -destroy` counts as `destroy`, a gcloud
+// release track may be skipped, and so may any word before a rake or rails
+// task (taskTools).
 func verbsRun(tool string, verbs, args []string) bool {
 	words := verbWords(args)
-	if tool == "gcloud" {
-		for i := range words {
-			words[i].optional = words[i].optional || gcloudTracks[strings.ToLower(words[i].text)]
-		}
+	for i := range words {
+		track := tool == "gcloud" && gcloudTracks[strings.ToLower(words[i].text)]
+		words[i].optional = words[i].optional || track || taskTools[tool]
 	}
-	if tool == "terraform" && destroys(args) {
+	if (tool == "terraform" || tool == "tofu") && destroys(args) {
 		for i := range words {
 			if words[i].text == "apply" {
 				words[i].text = "destroy"
@@ -228,7 +265,9 @@ func verbsRun(tool string, verbs, args []string) bool {
 }
 
 // verbWords reads the words that may name a verb: every word but the flags,
-// up to `--`, and every word after it.
+// up to `--`, and every word after it. A NAME=value word may be skipped:
+// rake and rails take one as an environment setting before a task (`rake
+// RAILS_ENV=production db:drop`), and make and others take variables so.
 func verbWords(args []string) []verbWord {
 	var out []verbWord
 	afterFlag := false
@@ -245,7 +284,7 @@ func verbWords(args []string) []verbWord {
 			afterFlag = !strings.Contains(arg, "=") || strings.HasSuffix(arg, "=")
 			continue
 		}
-		out = append(out, verbWord{text: arg, optional: afterFlag})
+		out = append(out, verbWord{text: arg, optional: afterFlag || isAssignment(arg)})
 		afterFlag = false
 	}
 	return out
@@ -284,8 +323,8 @@ func reachesVerbs(verbs []string, words []verbWord) bool {
 	return reach[len(verbs)]
 }
 
-// destroys reports whether terraform's arguments turn on -destroy, which
-// makes apply a destroy. terraform reads flags with Go's flag package: one
+// destroys reports whether terraform's (or tofu's) arguments turn on
+// -destroy, which makes apply a destroy. terraform reads flags with Go's flag package: one
 // or two dashes, an optional boolean value, and the last one wins. A value
 // it cannot read counts as on, once the quotes the line as written leaves
 // around it are dropped.

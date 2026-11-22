@@ -55,8 +55,9 @@ nothing:
 - a `mode:` anywhere other than `hard` or `soft`, except on
   `guards.main-checkout`, which takes only `hint` or `deny`;
 - `mode: soft` under `guards:` or `hints:` on any id except
-  `script-deny-list` and `publish-internal-names`, the two that read a
-  toggle mode. Use `enabled: false` to switch a different guard off;
+  `direct-deny-list`, `script-deny-list`, `publish-internal-names` and
+  `git-discard`, the guards that read a toggle mode. Use `enabled: false`
+  to switch a different guard off;
 - a negative top-level `large_file_lines`: 0 or unset is the default, and a
   negative threshold would refuse every Read;
 - any list key on a built-in id that does not read it. Each id declares
@@ -92,8 +93,8 @@ ships enabled and denies every push to main until a machine's rendered
 config disables it or allowlists a repo.
 
 Exactly one non-belt surface is read, visible in `belt doctor`: the Claude
-Code settings. The Bash deny patterns behind `script-deny-list` come from
-the `permissions.deny` entries of `~/.claude/settings.json` and
+Code settings. The Bash deny patterns behind `direct-deny-list` and
+`script-deny-list` come from the `permissions.deny` entries of `~/.claude/settings.json` and
 `~/.claude/settings.local.json` on every invocation. They are read live,
 never cached and never copied into the belt config, so the guard and the Claude
 Code permission system can never drift apart. `belt doctor` also reads the
@@ -211,7 +212,8 @@ means an empty name set (see Where config lives).
 
 The switch on belt's read of the Claude Code settings files, the only
 non-belt config surface belt reads (docs/adr/0010). belt's hooks take only the
-`permissions.deny` Bash entries feeding `script-deny-list`, and `belt
+`permissions.deny` Bash entries feeding `direct-deny-list` and
+`script-deny-list`, and `belt
 doctor` reads the `hooks.PostToolUse` entries to check the `belt hint read`
 matcher. Under `belt hint session-start --agent claude-code`, the
 agent-memory hint also reads `autoMemoryDirectory`, `autoMemoryEnabled` and
@@ -225,8 +227,9 @@ belt never writes any of these files.
 - `claude_settings.enabled` (bool, default `true`): whether belt opens
   the Claude Code settings files at all.
   Disabling it leaves `script-deny-list` matching only its
-  `extra_patterns` — the guard stays on, with a smaller pattern set — and
-  both `belt doctor` and `belt config` state that the read is off. The
+  `extra_patterns`: the guard stays on, with a smaller pattern set.
+  `direct-deny-list` is left with nothing to read. Both `belt doctor` and
+  `belt config` state that the read is off. The
   doctor's read matcher check is skipped too, and agent-memory leaves out
   no store.
 
@@ -479,7 +482,7 @@ allows:
 ### guards
 
 A map keyed by built-in guard id (`git-push-main`, `git-discard`, `git-identity`,
-`commit-guard`, `script-deny-list`, `write-internal-names`,
+`commit-guard`, `direct-deny-list`, `script-deny-list`, `write-internal-names`,
 `publish-internal-names`, `rm-temp`, `file-discard`, `large-read`,
 `main-checkout`) or a
 `custom_guards` name. Every guard, built-in or custom, defaults to enabled
@@ -514,6 +517,15 @@ entries match the same way as `git_identity[].repos` and
   - `guards.commit-guard.enabled` (bool, default `true`): the only field
     with effect. The rules themselves live in the top-level `commit_guards`
     list, not under this key.
+- **direct-deny-list**
+  - `guards.direct-deny-list.enabled` (bool, default `true`): denies a
+    command the call runs itself when it runs a Claude settings deny entry,
+    read past global flags and wrappers. It reads the settings entries only,
+    never `extra_patterns`, and has nothing to read with
+    `claude_settings.enabled: false`.
+  - `guards.direct-deny-list.mode` (string, default `hard`): `soft`
+    downgrades every denial to a warn event on the events service, and then
+    Claude Code's own check runs.
 - **script-deny-list**
   - `guards.script-deny-list.enabled` (bool, default `true`)
   - `guards.script-deny-list.mode` (string, default `hard`): `soft`
@@ -825,6 +837,13 @@ guards:
     # not a workflow fact.
     # allow_repos:
     #   - github.com/you/one-off-exception
+
+  direct-deny-list:
+    enabled: true
+    # Denies a command the call runs itself when it runs a Claude settings
+    # permissions.deny Bash(...) entry, read past global flags and wrappers.
+    # It reads no extra_patterns. "soft" turns a denial into a warn event.
+    mode: hard
 
   script-deny-list:
     enabled: true

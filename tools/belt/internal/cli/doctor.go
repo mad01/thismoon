@@ -239,11 +239,11 @@ func (r doctorReport) printConfigSurfaces(w io.Writer) []string {
 		}
 	}
 	fmt.Fprintf(w, "  claude deny  %s\n", claudeDenyNote(cfg, p))
-	if cfg.GuardEnabled(guard.ScriptDenyListID) &&
+	if (cfg.GuardEnabled(guard.ScriptDenyListID) || cfg.GuardEnabled(guard.DirectDenyListID)) &&
 		cfg.ClaudeSettings.ReadEnabled() && len(cfg.ClaudeDeny) == 0 {
 		warns = append(
 			warns,
-			"script-deny-list has no Bash deny patterns from the Claude settings;"+
+			"script-deny-list and direct-deny-list have no Bash deny patterns from the Claude settings;"+
 				" check permissions.deny in ~/.claude/settings.json",
 		)
 	}
@@ -390,14 +390,16 @@ func includeWarning(inc config.Include) string {
 
 // claudeDenyNote reports the Claude settings read: the files and pattern
 // count when the claude_settings gate allows it, or the disabled state and
-// what the script guard is left with.
+// what the two deny-list guards are left with.
 func claudeDenyNote(cfg config.Config, p config.Paths) string {
 	if !cfg.ClaudeSettings.ReadEnabled() {
-		return "disabled (claude_settings.enabled: false) — script-deny-list matches extra_patterns only"
+		return "disabled (claude_settings.enabled: false) — script-deny-list matches extra_patterns only," +
+			" direct-deny-list has nothing to read"
 	}
 	files := strings.Join(p.ClaudeSettings, " + ")
 	if len(cfg.ClaudeDeny) == 0 {
-		return files + "  0 bash deny patterns — script-deny-list enforces nothing beyond extra_patterns"
+		return files + "  0 bash deny patterns — script-deny-list enforces nothing beyond extra_patterns," +
+			" direct-deny-list nothing at all"
 	}
 	return fmt.Sprintf(
 		"%s  %d bash deny patterns (belt config lists them)",
@@ -412,6 +414,11 @@ func claudeDenyNote(cfg config.Config, p config.Paths) string {
 // the guard stays silent.
 func ruleNote(cfg config.Config, id string) string {
 	switch id {
+	case guard.DirectDenyListID:
+		if !cfg.ClaudeSettings.ReadEnabled() {
+			return "  (claude_settings.enabled: false, no deny list to read: guard is a no-op)"
+		}
+		return countNote("Bash deny entries from the Claude settings", len(cfg.ClaudeDeny))
 	case guard.GitIdentityID:
 		return countNote("git_identity rules", len(cfg.GitIdentity))
 	case guard.CommitGuardID:

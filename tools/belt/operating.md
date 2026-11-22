@@ -44,9 +44,12 @@ file gets no legacy TOML fallback). The config is standalone and has no
 machine-profile concept: belt reads no other tool's file, and the
 provisioning layer renders one config per machine class. A guard meant for
 only some machines is absent or disabled in the others' files. The Bash deny
-patterns are read live from the Claude settings files, so the script guard
-and the permission system share one deny list. claude_settings.enabled:
-false turns that read off, leaving the guard with extra_patterns only.
+patterns are read live from the Claude settings files, so the two deny-list
+guards (direct-deny-list for the commands a call runs, script-deny-list
+inside scripts) and the permission system share one deny list.
+claude_settings.enabled: false turns that read off, leaving
+script-deny-list with extra_patterns only and direct-deny-list with
+nothing to read.
 
 The config file is optional, but a broken one is not tolerated. No file at
 all means the built-in defaults. A file that is present and fails to parse

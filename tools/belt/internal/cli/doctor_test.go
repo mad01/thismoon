@@ -614,7 +614,7 @@ func TestDoctorWarningsSection(t *testing.T) {
 				writeFile(t, dir, "settings.json", `{"permissions": {"deny": ["WebFetch"]}}`)
 				return p
 			},
-			"script-deny-list has no Bash deny patterns from the Claude settings;" +
+			"script-deny-list and direct-deny-list have no Bash deny patterns from the Claude settings;" +
 				" check permissions.deny in ~/.claude/settings.json",
 		},
 		{

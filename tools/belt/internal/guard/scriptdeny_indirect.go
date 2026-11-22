@@ -325,12 +325,16 @@ func leadingDeny(words []string, patterns []deny) *deny {
 
 // leads reports whether a command, its words with the name first, runs what
 // the deny entry names the way the permission system's prefix match reads a
-// command: on argv for an entry the argv match reads, and as text from the
-// command's first word, with quotes collapsed too. A regex entry matches
+// command: on argv for an entry the reader reads, and as text from the
+// command's first word, with quotes collapsed too. An entry with a `*`
+// group has no text form and reads on argv alone. A regex entry matches
 // anywhere, as it does in scanText.
 func (d deny) leads(words []string) bool {
 	if d.runsWords(words) {
 		return true
+	}
+	if d.re == nil {
+		return false
 	}
 	line := strings.Join(words, " ")
 	if strings.HasPrefix(d.pattern, "re:") {
@@ -668,11 +672,11 @@ func (r nameRead) variableRun(args []string) *Denial {
 		if d.runsAsVariable(variable, args) {
 			return Reasonf(
 				ScriptDenyListID,
-				"%s runs a command named by %s, which only the shell can expand, with arguments that match %q on the Bash deny list. "+
-					"Write the command name out so the permission system can evaluate it, or ask the user first.",
+				"%s runs a command named by %s, which only the shell can expand, with arguments that match %q on the Bash deny list. %s",
 				r.where,
 				r.name,
 				d.pattern,
+				d.hint("Write the command name out so the permission system can evaluate it, or ask the user first."),
 			)
 		}
 	}
@@ -696,10 +700,11 @@ func (s scan) checkHidden(seg segment, wrapper string, tokens []string, kind wra
 		if d := leadingDeny(tokens, s.patterns); d != nil {
 			return Reasonf(
 				ScriptDenyListID,
-				"runs %q behind %s, which the permission system's prefix match does not read past. "+
-					"Run the command without the wrapper so the permission system can evaluate it, or ask the user first.",
+				"runs %q behind %s, which the permission system's prefix match does not read past. %s",
 				d.pattern,
 				wrapper,
+				d.hint("Run the command without the wrapper so the permission system can evaluate it, "+
+					"or ask the user first."),
 			)
 		}
 	}

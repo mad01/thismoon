@@ -1,7 +1,7 @@
 # ADR-0010: guard tools read only their own config
 
 **Date:** 2026-08-28
-**Status:** Accepted, amended 2026-11-01
+**Status:** Accepted, amended 2026-11-01 and 2026-11-21
 
 **Scope:** `tools/belt`, `tools/suspenders`, and any future guard tool.
 Decided after a code audit of every exemption mechanism in both tools.
@@ -101,3 +101,19 @@ no guard or hint decision depends on it. It sits behind the same
 and doctor reports what it found. The surface stays the Claude
 settings files; this names a second key in them. Any further key or file
 still needs a new decision here.
+
+## Amendment, 2026-11-21
+
+The `permissions.deny` Bash entries now feed two guards. script-deny-list
+applies them inside scripts, as before. direct-deny-list applies them to
+the commands a call runs itself. The read is the same: the same key, in
+the files already named in `Paths`, behind the same
+`claude_settings.enabled` switch, and doctor reports it. With the switch
+off, direct-deny-list has nothing to read, and doctor says so on its line.
+`extra_patterns` still feeds script-deny-list only.
+
+Both guards read an entry on argv, in Claude Code's wildcard form, not
+only as text. So the flags before and between its verbs, a `*` group of
+required options, and a phrase all count. Claude Code reads the same entry
+as a text prefix, a narrower match. belt runs first, so its wider reading
+decides. No new key or file is read.

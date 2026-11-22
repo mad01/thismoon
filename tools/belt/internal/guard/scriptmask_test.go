@@ -474,6 +474,8 @@ func TestScriptDenyBash32Reason(t *testing.T) {
 			t.Errorf("%s: Check(%q) reason %q, want bash32Hint %v", tt.name, tt.command, d.Reason, tt.bash32)
 		case tt.bash32 && strings.Contains(d.Reason, directHint):
 			t.Errorf("%s: Check(%q) reason %q still holds directHint", tt.name, tt.command, d.Reason)
+		case tt.bash32 && strings.Contains(d.Reason, askUserToRun):
+			t.Errorf("%s: Check(%q) reason %q still holds askUserToRun", tt.name, tt.command, d.Reason)
 		}
 	}
 }
