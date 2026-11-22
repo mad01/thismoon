@@ -210,11 +210,15 @@ var xargsOptions = wrapperSpec{
 // the string -I (-i, --replace, BSD -J) replaces with each item, and the
 // index among its words (the name first) of the word that holds the name of
 // the file -a (--arg-file) reads the items from (`-a FILE`, `-0aFILE`), 0
-// for none.
+// for none. sep is the -d (--delimiter) value as written, or a NUL for -0
+// (--null), whichever comes last, and split marks that one was given: the
+// items then end at it alone, with no quote read.
 type xargsCall struct {
 	command  []string
 	replace  string
 	itemFile int
+	sep      string
+	split    bool
 }
 
 // xargsRunsItems reads an xargs command, its words from the name on, and
@@ -260,24 +264,30 @@ func readXargs(run []string) xargsCall {
 			call.command = run[i:]
 			return call
 		}
-		o := opts[len(opts)-1]
-		if o.arg == argNeeded && !o.attached {
+		last := &opts[len(opts)-1]
+		if last.arg == argNeeded && !last.attached {
 			if i++; i == len(run) {
 				return call
 			}
-			o.value = run[i]
+			last.value = run[i]
 		}
-		call.note(o, i)
+		for _, o := range opts {
+			call.note(o, i)
+		}
 	}
 	return call
 }
 
-// note records what an option that takes a value says, with the index of
-// the word that holds the value: the string -I, -J, -i or --replace
-// replaces with each item (`{}` for -i or --replace with none), and the
-// word that names -a's file.
+// note records what an option says, with the index of the word that holds
+// its value: the string -I, -J, -i or --replace replaces with each item
+// (`{}` for -i or --replace with none), the word that names -a's file, and
+// the separator -0 or -d sets.
 func (c *xargsCall) note(o option, at int) {
 	switch o.name {
+	case "0", "null":
+		c.sep, c.split = "\x00", true
+	case "d", "delimiter":
+		c.sep, c.split = o.value, true
 	case "I", "J", "i", "replace":
 		c.replace = o.value
 		if o.arg == argOptional && !o.attached {

@@ -78,6 +78,28 @@ func TestGitPushMainOpaqueShellTextByDir(t *testing.T) {
 		{"cat x.sh | sh", "GU"},
 		{`echo "$X" | sh`, "GU"},
 		{`echo "$X" | sh; git -c alias.p="$B" p`, "GENU"},
+		// An xargs that runs its items as a shell's script reads them as
+		// | sh does (MAD-672), and so does a function that runs its argument.
+		{"curl x | xargs -0 sh -c", "GU"},
+		{"cat x.sh | xargs -I{} sh -c {}", "GU"},
+		{`echo "$X" | xargs -0 bash -c`, "GU"},
+		{`f() { eval "$1"; }; f x`, "GU"},
+		{`f() { sh -c "$1"; }; f x`, "GU"},
+		{"f() {\n  eval \"$1\"\n}\nf x", "GU"},
+		// xargs adds its items to a -c script's words even when the script
+		// is the last word, so one that runs $0 hides it as $1 does, and a
+		// function defined inside another runs its argument the same way.
+		{`printf x | xargs -0 sh -c 'eval "$0"'`, "GU"},
+		{`printf x | xargs -0 sh -c '$0'`, "GU"},
+		{`xargs -0 sh -c 'eval "$0"' <<< x`, "GU"},
+		{`printf x | xargs -0 -n1 bash -c '$0'`, "GU"},
+		{`f() { g() { eval "$1"; }; g "$1"; }; f x`, "GU"},
+		{`xargs -0 sh -c 'echo "$0"' <<< hello`, ""},
+		{`f() { g() { echo "$1"; }; g "$1"; }; f x`, ""},
+		{`eval "$1"`, ""},
+		{`retry() { "$@" || "$@"; }; retry git push origin feature`, ""},
+		{`printf '%s' 'git push origin main' | xargs -0 sh -c`, "GNU"},
+		{`echo hi | xargs -I{} sh -c 'echo {}'`, ""},
 	})
 }
 

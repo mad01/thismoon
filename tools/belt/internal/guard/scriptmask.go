@@ -379,27 +379,30 @@ func unexpanded(cmd string, d shellDoc) bool {
 // rm. cmd is the masked command, so a dataCat body is already blank.
 func scanSubstitutions(cmd string, patterns []deny) *Denial {
 	for _, s := range substitutions(cmd, span{0, len(cmd)}) {
-		if d := scanText(cmd[s.from:s.to], "the command substitution", patterns); d != nil {
+		if d := scanText(s, "the command substitution", patterns); d != nil {
 			return d
 		}
 	}
 	return nil
 }
 
-// substitutions returns the substitution bodies scanSubstitutions scans in
-// cmd[within.from:within.to], as offsets into cmd. Text readShell cannot
+// substitutions returns the code of the substitutions scanSubstitutions
+// scans in cmd[within.from:within.to]: each body as written, but a
+// backtick body with one level of escapes taken off, in a word (piece.code)
+// as in an unquoted heredoc body (bodySubstitutions). Text readShell cannot
 // follow yields none; the other checks still read it.
-func substitutions(cmd string, within span) []span {
-	cmds, ok := readShell(cmd[within.from:within.to])
+func substitutions(cmd string, within span) []string {
+	text := cmd[within.from:within.to]
+	cmds, ok := readShell(text)
 	if !ok {
 		return nil
 	}
 	shift := func(s span) span { return span{s.from + within.from, s.to + within.from} }
-	var out []span
+	var out []string
 	for _, c := range cmds {
 		for _, p := range c.pieces() {
-			if p := shift(p); p.from > 0 && (cmd[p.from-1] == '(' || cmd[p.from-1] == '`') {
-				out = append(out, p) // not a ${...} parameter
+			if p.from > 0 && (text[p.from-1] == '(' || text[p.from-1] == '`') {
+				out = append(out, p.code(text)) // not a ${...} parameter
 			}
 		}
 		for _, sub := range c.subshells {
@@ -414,28 +417,33 @@ func substitutions(cmd string, within span) []span {
 	return out
 }
 
-// bodySubstitutions returns the $( ) and backtick bodies in an unquoted
-// heredoc body. One that does not close runs to the end of the body.
-func bodySubstitutions(cmd string, body span) []span {
-	var out []span
-	for i := body.from; i < body.to; i++ {
+// bodySubstitutions returns the code of the $( ) and backtick substitutions
+// in an unquoted heredoc body. Its backslash-newlines are dropped first
+// (joinedBody), so `$\` at a line end
+// and `(cmd)` on the next line is a substitution. A backtick body closes at
+// the first backtick no backslash quotes and comes back with one level of
+// escapes taken off (backtickCode), so the walk reads a nested \`cmd\` in
+// it as a substitution of its own. A \" keeps its backslash there, as in
+// an unquoted word: a body is not a double-quoted string. One that does not
+// close runs to the end of the body.
+func bodySubstitutions(cmd string, body span) []string {
+	text := joinedBody(cmd[body.from:body.to])
+	var out []string
+	for i := 0; i < len(text); i++ {
 		switch {
-		case cmd[i] == '\\':
+		case text[i] == '\\':
 			i++
-		case cmd[i] == '$' && i+1 < body.to && cmd[i+1] == '(':
-			end, ok := matchParen(cmd[:body.to], i+1)
+		case text[i] == '$' && i+1 < len(text) && text[i+1] == '(':
+			end, ok := matchParen(text, i+1)
 			if !ok {
-				return append(out, span{i + 2, body.to})
+				return append(out, text[i+2:])
 			}
-			out = append(out, span{i + 2, end})
+			out = append(out, text[i+2:end])
 			i = end
-		case cmd[i] == '`':
-			end := strings.IndexByte(cmd[i+1:body.to], '`')
-			if end < 0 {
-				return append(out, span{i + 1, body.to})
-			}
-			out = append(out, span{i + 1, i + 1 + end})
-			i += end + 1
+		case text[i] == '`':
+			end := backtickEnd(text, i+1)
+			out = append(out, backtickCode(text[i+1:end], false))
+			i = end
 		}
 	}
 	return out

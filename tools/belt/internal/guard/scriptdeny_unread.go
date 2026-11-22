@@ -222,14 +222,19 @@ func (w codeWalk) step(text string, cmds []shellCmd, i, depth int) *Denial {
 // functionBody returns a function definition's tokens from the first word
 // after its { on (definesFunction), so its body is read as the code it runs
 // once called. The reader keeps a definition's () as a subshell, so the
-// name and the { come first among its words. Any other command's tokens
+// name and the { come first among its words. A definition that opens the
+// body is dropped the same way, and so on down (`f() { g() { eval …`), with
+// the subshells in front of each { left behind. Any other command's tokens
 // are returned whole.
 func functionBody(text string, c shellCmd, tokens []string) []string {
-	if !definesFunction(text, c, tokens) {
-		return tokens
-	}
-	if i := slices.Index(tokens, "{"); i >= 0 {
-		return tokens[i+1:]
+	for definesFunction(text, c, tokens) {
+		i := slices.Index(tokens, "{")
+		if i < 0 {
+			break
+		}
+		open := c.words[len(c.words)-len(tokens)+i].at.to
+		c.subshells = slices.DeleteFunc(slices.Clone(c.subshells), func(s span) bool { return s.from < open })
+		tokens = tokens[i+1:]
 	}
 	return tokens
 }
@@ -246,10 +251,10 @@ func (w codeWalk) readCode(text string, c shellCmd, run []string, at int, kind w
 		}
 	}
 	for _, body := range codeBodies(text, c, code, stdin) {
-		if src := w.printsUnreadable(text[body.from:body.to]); src != "" {
+		if src := w.printsUnreadable(body); src != "" {
 			return unreadableDenial(src)
 		}
-		if d := w.readFiles(text[body.from:body.to]); d != nil {
+		if d := w.readFiles(body); d != nil {
 			return d
 		}
 	}
@@ -482,10 +487,12 @@ func (w codeWalk) codeWords(text string, c shellCmd, run []string, at int, kind 
 // codeBodies returns the substitution bodies whose output a command runs as
 // code: those in its code words (codeWords), and for a command that runs
 // its standard input, an unquoted heredoc's substitutions.
-func codeBodies(text string, c shellCmd, code []placedWord, stdin bool) []span {
-	var out []span
+func codeBodies(text string, c shellCmd, code []placedWord, stdin bool) []string {
+	var out []string
 	for _, w := range code {
-		out = append(out, substBodies(text, w)...)
+		for _, p := range substBodies(text, w) {
+			out = append(out, text[p.from:p.to])
+		}
 	}
 	if stdin {
 		for _, d := range c.docs {
@@ -509,7 +516,7 @@ func substBodies(text string, w placedWord) []span {
 		default:
 			continue
 		}
-		out = append(out, p)
+		out = append(out, p.span)
 	}
 	return out
 }

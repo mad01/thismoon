@@ -259,6 +259,27 @@ func bodyLine(src string, i int, join bool) (string, int) {
 	}
 }
 
+// joinedBody returns an unquoted heredoc body as the shell expands it: each
+// line joined to the next wherever bodyLine joins them. bash and zsh drop
+// those backslash-newlines as they read the body, before they look for a
+// substitution, so `$\` at a line end and `(cmd)` on the next line is
+// `$(cmd)`.
+func joinedBody(body string) string {
+	if !strings.Contains(body, "\\\n") {
+		return body
+	}
+	var b strings.Builder
+	for i := 0; i < len(body); {
+		line, next := bodyLine(body, i, true)
+		b.WriteString(line)
+		if body[next-1] == '\n' {
+			b.WriteByte('\n')
+		}
+		i = next
+	}
+	return b.String()
+}
+
 // wordEnds are the unquoted bytes that end a word.
 const wordEnds = " \t\n;&|()<>"
 
@@ -370,25 +391,33 @@ func (l *shLexer) readDouble(parts *[]wordPart) bool {
 }
 
 // readDollar reads an expansion that starts with $. A $ that starts none
-// is a literal dollar sign.
+// is a literal dollar sign. bash drops a backslash-newline between the $
+// and the byte after it, in an unquoted word and inside double quotes alike
+// (joinedAt), so `"$\` at a line end and `(cmd)"` on the next line is a
+// substitution. zsh reads that as text, and belt reads it as bash does.
 func (l *shLexer) readDollar(parts *[]wordPart, quoted bool) bool {
-	switch next := l.at(1); {
+	k := joinedAt(l.src, l.i+1)
+	var next byte
+	if k < len(l.src) {
+		next = l.src[k]
+	}
+	switch {
 	case next == '(':
-		return l.readDollarParen(parts, quoted)
+		return l.readDollarParen(parts, quoted, k)
 	case next == '{':
-		return l.readDollarBrace(parts, quoted)
+		return l.readDollarBrace(parts, quoted, k)
 	case next == '\'' && !quoted:
-		return l.readANSIC(parts)
+		return l.readANSIC(parts, k)
 	case isNameStart(next):
-		j := l.i + 1
+		j := k
 		for j < len(l.src) && isNameByte(l.src[j]) {
 			j++
 		}
-		*parts = append(*parts, wordPart{kind: partVar, text: l.src[l.i+1 : j], quoted: quoted})
+		*parts = append(*parts, wordPart{kind: partVar, text: l.src[k:j], quoted: quoted})
 		l.i = j
 	case next != 0 && strings.IndexByte("@*#?$!-0123456789", next) >= 0:
 		*parts = append(*parts, wordPart{kind: partUnknown})
-		l.i += 2
+		l.i = k + 1
 	default:
 		addLit(parts, "$", quoted)
 		l.i++
@@ -396,14 +425,23 @@ func (l *shLexer) readDollar(parts *[]wordPart, quoted bool) bool {
 	return true
 }
 
+// joinedAt returns the index of the first byte at or after i that does not
+// start a backslash-newline, the line join the shell drops.
+func joinedAt(s string, i int) int {
+	for i+1 < len(s) && s[i] == '\\' && s[i+1] == '\n' {
+		i += 2
+	}
+	return i
+}
+
 // readDollarParen reads a $(...) substitution or a $((...)) arithmetic
-// expansion.
-func (l *shLexer) readDollarParen(parts *[]wordPart, quoted bool) bool {
-	end, ok := l.matchParen(l.i + 1)
+// expansion whose first ( is at open.
+func (l *shLexer) readDollarParen(parts *[]wordPart, quoted bool, open int) bool {
+	end, ok := l.matchParen(open)
 	if !ok {
 		return false
 	}
-	at := span{l.i + 2, end}
+	at := span{open + 1, end}
 	body := l.src[at.from:at.to]
 	if strings.HasPrefix(body, "(") {
 		*parts = append(*parts, wordPart{kind: partUnknown, body: at}) // $((arithmetic))
@@ -415,26 +453,26 @@ func (l *shLexer) readDollarParen(parts *[]wordPart, quoted bool) bool {
 }
 
 // readDollarBrace reads ${NAME} as a variable and any other ${...} as an
-// expansion only the shell can resolve.
-func (l *shLexer) readDollarBrace(parts *[]wordPart, quoted bool) bool {
-	end := strings.IndexByte(l.src[l.i+2:], '}')
+// expansion only the shell can resolve. Its { is at open.
+func (l *shLexer) readDollarBrace(parts *[]wordPart, quoted bool, open int) bool {
+	end := strings.IndexByte(l.src[open+1:], '}')
 	if end < 0 {
 		return false
 	}
-	name := l.src[l.i+2 : l.i+2+end]
-	if isShellName(name) {
+	at := span{open + 1, open + 1 + end}
+	if name := l.src[at.from:at.to]; isShellName(name) {
 		*parts = append(*parts, wordPart{kind: partVar, text: name, quoted: quoted})
 	} else {
-		*parts = append(*parts, wordPart{kind: partUnknown, body: span{l.i + 2, l.i + 2 + end}})
+		*parts = append(*parts, wordPart{kind: partUnknown, body: at})
 	}
-	l.i += end + 3
+	l.i = at.to + 1
 	return true
 }
 
-// readANSIC reads a $'...' string, whose backslash escapes only the shell
-// decodes.
-func (l *shLexer) readANSIC(parts *[]wordPart) bool {
-	j := l.i + 2
+// readANSIC reads a $'...' string whose opening quote is at quote. Its
+// backslash escapes only the shell decodes.
+func (l *shLexer) readANSIC(parts *[]wordPart, quote int) bool {
+	j := quote + 1
 	for j < len(l.src) && l.src[j] != '\'' {
 		if l.src[j] == '\\' {
 			j++
@@ -450,13 +488,7 @@ func (l *shLexer) readANSIC(parts *[]wordPart) bool {
 }
 
 func (l *shLexer) readBacktick(parts *[]wordPart, quoted bool) bool {
-	j := l.i + 1
-	for j < len(l.src) && l.src[j] != '`' {
-		if l.src[j] == '\\' {
-			j++
-		}
-		j++
-	}
+	j := backtickEnd(l.src, l.i+1)
 	if j >= len(l.src) {
 		return false
 	}
@@ -467,6 +499,47 @@ func (l *shLexer) readBacktick(parts *[]wordPart, quoted bool) bool {
 	)
 	l.i = j + 1
 	return true
+}
+
+// backtickEnd returns the index of the backtick that closes a backtick
+// substitution whose body starts at from, a backslash and the byte after it
+// skipped, or len(s) when none does.
+func backtickEnd(s string, from int) int {
+	for j := from; j < len(s); j++ {
+		switch s[j] {
+		case '\\':
+			j++
+		case '`':
+			return j
+		}
+	}
+	return len(s)
+}
+
+// backtickCode returns the command a backtick substitution runs: its body
+// with one level of escapes taken off, since inside backticks a backslash
+// before $, ` or \ quotes that byte and the shell drops it before it reads
+// the command. Inside double quotes (quoted) the same goes for a backslash
+// before ": bash and zsh run "`echo \"x\"`" as echo "x". So the body
+// echo \`cmd\` runs echo with a nested cmd substitution, and each level of
+// nesting takes one more level off. A backslash before any other byte
+// stays, as does \" in an unquoted word or heredoc body.
+func backtickCode(body string, quoted bool) string {
+	if !strings.Contains(body, `\`) {
+		return body
+	}
+	escapes := "$`\\"
+	if quoted {
+		escapes += `"`
+	}
+	var b strings.Builder
+	for i := 0; i < len(body); i++ {
+		if body[i] == '\\' && i+1 < len(body) && strings.IndexByte(escapes, body[i+1]) >= 0 {
+			i++
+		}
+		b.WriteByte(body[i])
+	}
+	return b.String()
 }
 
 // skipParens consumes a parenthesised construct that starts at open and

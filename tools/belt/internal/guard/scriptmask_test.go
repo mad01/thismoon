@@ -106,6 +106,13 @@ func TestScriptDenyMaskRefused(t *testing.T) {
 		{"eval of the command", `eval "git push origin main"`, "", true},
 		{"substitution inside an echo string", `echo "$(git push origin main)"`, "", true},
 		{"backtick substitution inside echo", "echo \"`rm -rf /tmp/x`\"", "", true},
+		{
+			"escaped quotes in backticks inside echo",
+			"echo \"`kubectl \\\"delete\\\" pod x`\"",
+			"",
+			true,
+		},
+		{"$\\ joins ( inside an echo string", "echo \"$\\\n(kubectl delete pod x)\"", "", true},
 		{"assignment from a substitution", `x=$(rm -rf /tmp/x)`, "", true},
 		{
 			"unquoted commit heredoc runs a substitution",

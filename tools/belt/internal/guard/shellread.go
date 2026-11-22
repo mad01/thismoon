@@ -349,11 +349,37 @@ func (w placedWord) script() string {
 	return b.String()
 }
 
+// piece is the body of one expansion in a word: where it lies in the text,
+// and whether it sits inside double quotes, which changes the command a
+// backtick body runs (code).
+type piece struct {
+	span
+	quoted bool
+}
+
+// code returns the command the shell runs from the piece, read from text:
+// a backtick body with one level of escapes taken off (backtickCode), any
+// other body as written.
+func (p piece) code(text string) string {
+	body := text[p.from:p.to]
+	if p.from > 0 && text[p.from-1] == '`' {
+		return backtickCode(body, p.quoted)
+	}
+	return body
+}
+
+// code returns the command a word part's body runs, read from text
+// (piece.code), so a reader of what a backtick prints reads the command the
+// walk reads (shellWalk.walkNested).
+func (p wordPart) code(text string) string {
+	return piece{span: p.body, quoted: p.quoted}.code(text)
+}
+
 // pieces returns the bodies of the substitutions and other expansions in
 // the command's words and redirection targets that hold text the shell may
 // run, in order: $(...), backticks, <(...), >(...), $((...)) and ${...}.
-func (c shellCmd) pieces() []span {
-	var out []span
+func (c shellCmd) pieces() []piece {
+	var out []piece
 	for _, words := range [][]placedWord{c.words, c.targets} {
 		for _, w := range words {
 			out = append(out, w.pieces()...)
@@ -363,11 +389,11 @@ func (c shellCmd) pieces() []span {
 }
 
 // pieces returns the bodies of the expansions in one word (shellCmd.pieces).
-func (w placedWord) pieces() []span {
-	var out []span
+func (w placedWord) pieces() []piece {
+	var out []piece
 	for _, p := range w.parts {
 		if p.body.to > p.body.from {
-			out = append(out, p.body)
+			out = append(out, piece{span: p.body, quoted: p.quoted})
 		}
 	}
 	return out

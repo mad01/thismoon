@@ -24,6 +24,33 @@ var wrappedPushes = []struct {
 	{"substitution in a string", `echo "$(git push origin main)"`, true},
 	{"substitution in an assignment", "out=$(git push origin main 2>&1)", true},
 	{"backticks", "`git push origin main`", true},
+	{"nested backticks", "echo `echo \\`git push origin main\\``", true},
+	{"nested backticks in a string", "echo \"`echo \\`git push origin main\\``\"", true},
+	{"nested backticks in an assignment", "x=`echo \\`git push origin main\\``", true},
+	// MAD-672: inside double quotes a backtick body loses the backslash of \"
+	// too, and bash drops a backslash-newline between $ and (. bash 3.2, bash
+	// 5.3 and zsh 5.9 run the \" pushes and the bare $\ one; only the two
+	// bashes run the $\ pushes in a string, which zsh reads as text.
+	{
+		"escaped quotes in string backticks",
+		"echo \"`echo \\\"'\\\"; git push origin main; echo \\\"'\\\"`\"",
+		true,
+	},
+	{
+		"escaped quotes in nested string backticks",
+		"echo \"`echo \\\"\\`echo \\\\\\\"'\\\\\\\"; git push origin main; " +
+			"echo \\\\\\\"'\\\\\\\"\\`\\\"`\"",
+		true,
+	},
+	{
+		"escaped quotes in here-string backticks",
+		"cat <<<\"`echo \\\"'\\\"; git push origin main; echo \\\"'\\\"`\"",
+		true,
+	},
+	{"$\\ joins ( in a string", "echo \"$\\\n(git push origin main)\"", true},
+	{"$\\ joins ( twice in a string", "echo \"$\\\n\\\n(git push origin main)\"", true},
+	{"$\\ joins ( in a here-string", "cat <<<\"$\\\n(git push origin main)\"", true},
+	{"$\\ joins ( in a bare word", "echo $\\\n(git push origin main)", true},
 	{"process substitution", "cat <(git push origin main)", true},
 	{"sh -c single quotes", "sh -c 'git push origin main'", true},
 	{"bash -c double quotes", `bash -c "git push origin main"`, true},
@@ -55,6 +82,39 @@ var wrappedPushes = []struct {
 	{"push words in a commit message", `git commit -m "then git push origin main"`, false},
 	{"push words after a ; in a string", `echo "done; git push origin main"`, false},
 	{"push words in a single-quoted -c echo", `sh -c 'echo "git push origin main"'`, false},
+	{
+		"escaped backticks in a backtick echo",
+		"echo `echo \\\\\\`git push origin main\\\\\\``",
+		false,
+	},
+	{
+		"escaped quotes keep a push quoted in string backticks",
+		"echo \"`echo \\\"; git push origin main; echo \\\"`\"",
+		false,
+	},
+	{
+		"escaped quotes stay in bare backticks",
+		"echo `echo \\\"'\\\"; git push origin main; echo \\\"'\\\"`",
+		false,
+	},
+	{
+		"escaped quotes stay in backticks inside $( )",
+		"echo \"$(echo `echo \\\"'\\\"; git push origin main; echo \\\"'\\\"`)\"",
+		false,
+	},
+	{
+		"escaped quotes stay in bare backticks nested in a string",
+		"echo \"`echo \\`echo \\\\\\\"'\\\\\\\"; git push origin main; " +
+			"echo \\\\\\\"'\\\\\\\"\\``\"",
+		false,
+	},
+	{
+		"a join before plain text in a string",
+		"echo \"see \\\n(git push origin main) later\"",
+		false,
+	},
+	{"single-quoted $\\ then (", "echo '$\\\n(git push origin main)'", false},
+	{"escaped $ then a join in a string", "echo \"\\$\\\n(git push origin main)\"", false},
 	{"plain status", "git status", false},
 }
 
@@ -90,6 +150,235 @@ func TestGitDiscardWrapped(t *testing.T) {
 				t.Errorf("git-discard allowed %q", command)
 			}
 		})
+	}
+}
+
+// standInRow is a command with XX for the git command it runs
+// (gitStandIns), and whether the git guards deny it with each one.
+type standInRow struct {
+	name, command string
+	deny          bool
+}
+
+// printedBackticks (MAD-672) are backtick printers whose text eval, sh -c or
+// a | sh runs, with XX for the git command. The text a backtick prints comes
+// from its body with one level of escapes taken off, \" too inside double
+// quotes, so each deny row runs XX in bash 3.2, bash 5.3 and zsh 5.9 (the
+// leading-; rows in zsh only), like its $( ) twin. In the allow rows the
+// same backticks print XX as text no shell runs.
+var printedBackticks = []standInRow{
+	{"eval of a backtick echo", "eval \"`echo \\\"true; XX\\\"`\"", true},
+	{"bash -c of a backtick echo", "bash -c \"`echo \\\"true; XX\\\"`\"", true},
+	{"a backtick echo piped into sh", "echo \"`echo \\\"true; XX\\\"`\" | sh", true},
+	{"sh -c of a backtick printf", "sh -c \"`printf \\\"%s\\\" \\\"true; XX\\\"`\"", true},
+	{"eval of a backtick echo after a ;", "eval \"`echo \\\"; XX; \\\"`\"", true},
+	{"eval of a backtick echo of the command", "eval \"`echo \\\"XX\\\"`\"", true},
+	{"bash -c of a backtick echo of the command", "bash -c \"`echo \\\"XX\\\"`\"", true},
+	{"eval of a $( ) echo", `eval "$(echo "true; XX")"`, true},
+	{"bash -c of a $( ) echo", `bash -c "$(echo "true; XX")"`, true},
+	{"a $( ) echo piped into sh", `echo "$(echo "true; XX")" | sh`, true},
+	{"sh -c of a $( ) printf", `sh -c "$(printf "%s" "true; XX")"`, true},
+	{"eval of a $( ) echo after a ;", `eval "$(echo "; XX; ")"`, true},
+	{"eval of a $( ) echo of the command", `eval "$(echo "XX")"`, true},
+	{"bash -c of a $( ) echo of the command", `bash -c "$(echo "XX")"`, true},
+	{"a backtick echo as an echo word", "echo \"`echo \\\"; XX; \\\"`\"", false},
+	{"a backtick echo in an assignment", "x=\"`echo \\\"; XX; \\\"`\"", false},
+	{"a backtick echo in single-quoted bash -c", "bash -c 'echo \"`echo \\\"; XX; \\\"`\"'", false},
+	{"a backtick echo in single-quoted eval", "eval 'echo \"`echo \\\"; XX; \\\"`\"'", false},
+	{
+		"a backtick echo as a single-quoted bash -c word",
+		"bash -c '\"`echo \\\"; XX; \\\"`\"'",
+		false,
+	},
+	{"a backtick echo as a single-quoted eval word", "eval '\"`echo \\\"; XX; \\\"`\"'", false},
+	{"a backtick echo nested in a $( )", "echo \"$(echo \"`echo \\\"; XX; \\\"`\")\"", false},
+	{"a backtick echo after true as an echo word", "echo \"`echo \\\"true; XX\\\"`\"", false},
+	{"a backtick echo after true in an assignment", "x=\"`echo \\\"true; XX\\\"`\"", false},
+}
+
+// gitStandIns are the git commands printedBackticks rows run in place of
+// XX: a push to main for git-push-main, a checkout and a reset for
+// git-discard.
+var gitStandIns = []string{"git push origin main", "git checkout -- file.go", "git reset --hard"}
+
+// dirtyRepo is a discardFixture whose tree at /repo holds uncommitted work.
+var dirtyRepo = discardFixture{
+	repo:  "github.com/mad01/thismoon",
+	dirty: map[string]bool{"/repo": true},
+}
+
+// TestPrintedBackticks runs printedBackticks through the git guards.
+func TestPrintedBackticks(t *testing.T) {
+	runStandIns(t, printedBackticks)
+}
+
+// codeInCompounds (MAD-672) are an eval and a shell reading its script
+// inside a compound command: a { } group, an if, a loop, a case arm, a !, a
+// time and a function body, with their $( ) and plain twins. bash 3.2, bash
+// 5.3, zsh 5.9 and dash run XX in each deny row (zsh and the bashes only for
+// time and the function keyword), and a function body runs it once called,
+// so a body is read where it is defined, called or not, and so is a
+// function defined inside another's body. In the allow rows the same words
+// are text.
+var codeInCompounds = []standInRow{
+	{"eval in a group", `{ eval "true; XX"; }`, true},
+	{"eval in an if", `if true; then eval "true; XX"; fi`, true},
+	{"eval in an else", `if false; then :; else eval "true; XX"; fi`, true},
+	{"eval as an elif test", `if false; then :; elif eval "true; XX"; then :; fi`, true},
+	{"eval in a for", `for i in 1; do eval "true; XX"; done`, true},
+	{"eval in a while", `while true; do eval "true; XX"; break; done`, true},
+	{"eval in an until", `until false; do eval "true; XX"; break; done`, true},
+	{"eval in a case arm", `case x in x) eval "true; XX";; esac`, true},
+	{"eval in a case arm with a ( pattern", `case x in (x) eval "true; XX";; esac`, true},
+	{"eval behind !", `! eval "true; XX"`, true},
+	{"eval behind time", `time eval "true; XX"`, true},
+	{"eval after && in a group", `{ true && eval "true; XX"; }`, true},
+	{"eval after || in an if", `if true; then false || eval "true; XX"; fi`, true},
+	{"eval in a group behind !", `! { eval "true; XX"; }`, true},
+	{"eval in a group in an if", `if true; then { eval "true; XX"; }; fi`, true},
+	{"eval in a function it calls", `f() { eval "true; XX"; }; f`, true},
+	{"eval in a function it never calls", `f() { eval "true; XX"; }`, true},
+	{"eval in a function keyword body", `function f { eval "true; XX"; }; f`, true},
+	{"eval in a function defined in a function", `outer() { inner() { eval "true; XX"; }; inner; }; outer`, true},
+	{"eval three functions down", `a() { b() { c() { eval "true; XX"; }; c; }; b; }; a`, true},
+	{"assignment in a group, then eval", `{ x="true; XX"; }; eval "$x"`, true},
+	{"assignment in an if, then eval", `if true; then x="true; XX"; fi; eval "$x"`, true},
+	{"assignment in a function, then eval", `f() { x="true; XX"; }; f; eval "$x"`, true},
+	{"sh in a group reads a pipe", `echo "true; XX" | { sh; }`, true},
+	{"eval of a $( ) echo in a group", `{ eval "$(echo "true; XX")"; }`, true},
+	{"eval of a $( ) echo in an if", `if true; then eval "$(echo "true; XX")"; fi`, true},
+	{"eval of a $( ) echo in a for", `for i in 1; do eval "$(echo "true; XX")"; done`, true},
+	{"eval of a $( ) echo in a while", `while true; do eval "$(echo "true; XX")"; break; done`, true},
+	{"eval of a $( ) echo behind !", `! eval "$(echo "true; XX")"`, true},
+	{"eval of a $( ) echo in a function", `f() { eval "$(echo "true; XX")"; }; f`, true},
+	{"eval of a backtick echo in a group", "{ eval \"`echo \\\"true; XX\\\"`\"; }", true},
+	{"eval of a backtick echo in an if", "if true; then eval \"`echo \\\"true; XX\\\"`\"; fi", true},
+	{"eval of a backtick echo in a for", "for i in 1; do eval \"`echo \\\"true; XX\\\"`\"; done", true},
+	{
+		"eval of a backtick echo in a while",
+		"while true; do eval \"`echo \\\"true; XX\\\"`\"; break; done",
+		true,
+	},
+	{"eval of a backtick echo behind !", "! eval \"`echo \\\"true; XX\\\"`\"", true},
+	{"eval of a backtick echo in a function", "f() { eval \"`echo \\\"true; XX\\\"`\"; }; f", true},
+	{"eval of a backtick echo in a case arm", "case x in x) eval \"`echo \\\"true; XX\\\"`\";; esac", true},
+	{"echo in a group", `{ echo "true; XX"; }`, false},
+	{"echo in an if", `if true; then echo "true; XX"; fi`, false},
+	{"echo in a function", `f() { echo "true; XX"; }; f`, false},
+	{"echo in a function defined in a function", `outer() { inner() { echo "true; XX"; }; inner; }; outer`, false},
+	{"echo of an argument in a nested function", `f() { g() { echo "$1"; }; g "$1"; }; f "true; XX"`, false},
+	{"a function that runs its arguments", `retry() { "$@"; }; retry git push origin feature`, false},
+	{"echo behind !", `! echo "true; XX"`, false},
+	{"eval as an echo word", `echo eval "true; XX"`, false},
+	{"eval as an echo word in a group", `{ echo eval "true; XX"; }`, false},
+	{"printf in a while", `while true; do printf '%s\n' "true; XX"; break; done`, false},
+}
+
+// TestCodeInCompounds runs codeInCompounds through the git guards.
+func TestCodeInCompounds(t *testing.T) {
+	runStandIns(t, codeInCompounds)
+}
+
+// xargsScripts (MAD-672) are an xargs that runs the items it reads as a
+// shell's script, with $( ), backtick and plain printers in front of it.
+// bash 3.2, bash 5.3, zsh 5.9 and dash run XX in each deny row (the -d row
+// needs GNU xargs). The items are cut as xargs cuts them and each is read
+// on its own, or put in place of -I's string in the script, so a quote that
+// spans items or an item that closes the script's quote hides nothing. In
+// the allow rows xargs hands the items to a command that runs no code, or
+// puts them where they stay text.
+var xargsScripts = []standInRow{
+	{"-0 sh -c", `printf '%s' "true; XX" | xargs -0 sh -c`, true},
+	{"-0 bash -c", `printf '%s' "true; XX" | xargs -0 bash -c`, true},
+	{"-0 zsh -c", `printf '%s' "true; XX" | xargs -0 zsh -c`, true},
+	{"--null sh -c", `printf '%s' "true; XX" | xargs --null sh -c`, true},
+	{"-0 sh -c behind env", `printf '%s' "true; XX" | xargs -0 env sh -c`, true},
+	{"-0 sh -c after --", `printf '%s' "true; XX" | xargs -0 -- sh -c`, true},
+	{"-0 of an echo", `echo "true; XX" | xargs -0 sh -c`, true},
+	{"-I{} sh -c {}", `echo "true; XX" | xargs -I{} sh -c {}`, true},
+	{"-I % sh -c %", `echo "true; XX" | xargs -I % sh -c %`, true},
+	{"-0I{} bundle", `printf '%s' "true; XX" | xargs -0I{} sh -c {}`, true},
+	{"-I{} in an eval", `echo "true; XX" | xargs -I{} sh -c 'eval "{}"'`, true},
+	{"-I{} through tee", `echo "true; XX" | tee /dev/null | xargs -I{} sh -c {}`, true},
+	{"-d newline", `printf 'true; XX\n' | xargs -d '\n' sh -c`, true},
+	{"-0 -n1, the second item", `printf '%s\0' x "true; XX" | xargs -0 -n1 sh -c`, true},
+	{"-0 -n1, a quote across items", `printf '%s\0' "echo '" "XX" "'" | xargs -0 -n1 sh -c`, true},
+	{"-I{} item closes the script's quote", `printf '%s' 'a"; XX; "b' | xargs -0 -I{} sh -c 'echo "{}"'`, true},
+	{"line mode takes the quotes off", `echo "'true; XX'" | xargs sh -c`, true},
+	{"a variable printed into -0", `x="true; XX"; printf '%s' "$x" | xargs -0 sh -c`, true},
+	{"a here-string", `xargs -0 sh -c <<< "true; XX"`, true},
+	{"-a of a <( )", `xargs -a <(printf '%s' "true; XX") -0 sh -c`, true},
+	{"in a group", `{ printf '%s' "true; XX" | xargs -0 sh -c; }`, true},
+	{"a $( ) printf into -0", `printf '%s' "$(echo "true; XX")" | xargs -0 sh -c`, true},
+	{"a $( ) echo into -I{}", `echo "$(echo "true; XX")" | xargs -I{} sh -c {}`, true},
+	{"a backtick printf into -0", "printf '%s' \"`echo \\\"true; XX\\\"`\" | xargs -0 sh -c", true},
+	{"a backtick printf into -0 bash", "printf '%s' \"`echo \\\"true; XX\\\"`\" | xargs -0 bash -c", true},
+	{"a backtick echo into -0", "echo \"`echo \\\"true; XX\\\"`\" | xargs -0 sh -c", true},
+	{"a backtick echo into -I{}", "echo \"`echo \\\"true; XX\\\"`\" | xargs -I{} sh -c {}", true},
+	{
+		"a backtick variable into -0",
+		"x=\"`echo \\\"true; XX\\\"`\"; printf '%s' \"$x\" | xargs -0 sh -c",
+		true,
+	},
+	{"xargs echo", `echo "true; XX" | xargs echo`, false},
+	{"items as $0 of an echo", `xargs -0 sh -c 'echo "$0"' <<< hello`, false},
+	{"-0 gofmt", `find . -name '*.go' -print0 | xargs -0 gofmt -l`, false},
+	{"-I{} echo of plain items", `printf '%s\n' a b | xargs -I{} echo {}`, false},
+	{"xargs -0 printf", `echo "true; XX" | xargs -0 printf '%s'`, false},
+	{"items as arguments of a script", `printf '%s' "true; XX" | xargs -0 sh -c 'printf %s "$1"' _`, false},
+	{"-I{} into echo", `echo "fix: XX" | xargs -I{} echo {}`, false},
+	{"-I{} inside the script's quotes", `printf '%s' 'fix: XX' | xargs -0 -I{} sh -c 'echo "{}"'`, false},
+	{"-I{} items that run nothing", `printf '%s\n' a b | xargs -I{} sh -c 'echo {}'`, false},
+}
+
+// TestXargsScripts runs xargsScripts through the git guards.
+func TestXargsScripts(t *testing.T) {
+	runStandIns(t, xargsScripts)
+}
+
+// runStandIns runs each row through git-push-main with the push and through
+// git-discard with each discard (gitStandIns), in a dirty tree.
+func runStandIns(t *testing.T, rows []standInRow) {
+	t.Helper()
+	for _, tt := range rows {
+		for _, git := range gitStandIns {
+			command := strings.ReplaceAll(tt.command, "XX", git)
+			t.Run(tt.name+"/"+git, func(t *testing.T) {
+				var g Guard = newGitPushGuard("feature")
+				if !strings.Contains(git, "push") {
+					var warned []string
+					g = newDiscardGuard(config.Config{}, dirtyRepo, &warned)
+				}
+				d := g.Check(Input{Event: EventBash, Command: command, Cwd: "/repo"})
+				if (d != nil) != tt.deny {
+					t.Errorf("%s Check(%q) denial = %v, want deny %v", g.ID(), command, d, tt.deny)
+				}
+			})
+		}
+	}
+}
+
+// TestPlainBodiesWithBackticks pins that commit and pull request bodies
+// that show backticks and quotes as text pass both git guards.
+func TestPlainBodiesWithBackticks(t *testing.T) {
+	var warned []string
+	guards := []Guard{
+		newGitPushGuard("feature"),
+		newDiscardGuard(config.Config{}, dirtyRepo, &warned),
+	}
+	commands := []string{
+		"git commit -m \"fix: read \\`x\\` and \\\"y\\\"\"",
+		"git commit -F - <<'EOF2'\nfix(belt): read `x` and \"y\"\n\nIt's `z`.\nEOF2",
+		"git commit -m \"$(cat <<'EOF2'\nfeat: x `y` \"z\"\nEOF2\n)\"",
+		"gh pr create --title x --body \"Use \\`foo\\` with \\\"bar\\\".\"",
+		"gh pr create --title x --body \"$(cat <<'EOF2'\nUse `foo` with \"bar\".\nEOF2\n)\"",
+	}
+	for _, command := range commands {
+		for _, g := range guards {
+			if d := g.Check(Input{Event: EventBash, Command: command, Cwd: "/repo"}); d != nil {
+				t.Errorf("%s denied %q: %v", g.ID(), command, d)
+			}
+		}
 	}
 }
 
@@ -825,6 +1114,121 @@ var heredocBodies = []struct {
 		"unquoted gh body",
 		"gh pr create --title x --body \"$(cat <<EOF2\nDon't `git push origin main`\nEOF2\n)\"",
 		true,
+	},
+	// MAD-672: the shell drops an unquoted body's backslash-newlines before it
+	// looks for a substitution, and takes one level of escapes off a backtick
+	// body, so `$\` then `(cmd)` and `echo \`cmd\`` inside backticks run cmd.
+	// bash 3.2, bash 5.3 and zsh 5.9 agree.
+	{"unquoted, $\\ joins (", "cat <<EOF2\nx $\\\n(git push origin main)\nEOF2", true},
+	{"unquoted, nested backticks", "cat <<EOF2\nx `echo \\`git push origin main\\``\nEOF2", true},
+	{
+		"commit -F -, $\\ joins (",
+		"git commit -F - <<EOF2\nx $\\\n(git push origin main)\nEOF2",
+		true,
+	},
+	{
+		"commit -F -, nested backticks",
+		"git commit -F - <<EOF2\nx `echo \\`git push origin main\\``\nEOF2",
+		true,
+	},
+	{
+		"gh --body-file -, $\\ joins (",
+		"gh pr create --title x --body-file - <<EOF2\nx $\\\n(git push origin main)\nEOF2",
+		true,
+	},
+	{
+		"gh --body-file -, nested backticks",
+		"gh pr create --title x --body-file - <<EOF2\nx `echo \\`git push origin main\\``\nEOF2",
+		true,
+	},
+	{
+		"cat piped into gh, $\\ joins (",
+		"cat <<EOF2 | gh pr create --title x --body-file -\nx $\\\n(git push origin main)\nEOF2",
+		true,
+	},
+	{
+		"cat piped into gh, nested backticks",
+		"cat <<EOF2 | gh pr create --title x --body-file -\nx `echo \\`git push origin main\\``\nEOF2",
+		true,
+	},
+	{"unquoted, two joins", "cat <<EOF2\nx $\\\n\\\n(git push origin main)\nEOF2", true},
+	{"unquoted <<-, $\\ joins (", "cat <<-EOF2\n\tx $\\\n(git push origin main)\n\tEOF2", true},
+	{
+		"unquoted, backticks two levels deep",
+		"cat <<EOF2\nx `echo \\`echo \\\\\\`git push origin main\\\\\\`\\``\nEOF2",
+		true,
+	},
+	{"unquoted, \\$( in backticks", "cat <<EOF2\nx `echo \\$(git push origin main)`\nEOF2", true},
+	// In a body a backtick body keeps the backslash of \", unlike inside
+	// double quotes, so the \" ends no quote and bash 3.2, bash 5.3 and zsh
+	// 5.9 run the push. A notes message body is text but for its $( ) and
+	// backticks, so only the backtick reading decides these rows.
+	{
+		"notes -F -, \\\" in backticks ends no quote",
+		"git notes add -F - <<EOF2\n`echo \\\"; git push origin main; echo \\\"`\nEOF2",
+		true,
+	},
+	{
+		"commit -m cat, $\\ joins (",
+		"git commit -m \"$(cat <<EOF2\nx $\\\n(git push origin main)\nEOF2\n)\"",
+		true,
+	},
+	{"quoted, $\\ then (", "cat <<'EOF2'\nx $\\\n(git push origin main)\nEOF2", false},
+	{"quoted, nested backticks", "cat <<'EOF2'\nx `echo \\`git push origin main\\``\nEOF2", false},
+	{"double-quoted, $\\ then (", "cat <<\"EOF2\"\nx $\\\n(git push origin main)\nEOF2", false},
+	{
+		"backslash-quoted, nested backticks",
+		"cat <<\\EOF2\nx `echo \\`git push origin main\\``\nEOF2",
+		false,
+	},
+	{
+		"commit -F -, quoted, nested backticks",
+		"git commit -F - <<'EOF2'\nx `echo \\`git push origin main\\``\nEOF2",
+		false,
+	},
+	{
+		"gh --body-file -, quoted, $\\ then (",
+		"gh pr create --title x --body-file - <<'EOF2'\nx $\\\n(git push origin main)\nEOF2",
+		false,
+	},
+	{"unquoted, \\$ then a join", "cat <<EOF2\nx \\$\\\n(git push origin main)\nEOF2", false},
+	{"unquoted, \\\\ joins nothing", "cat <<EOF2\nx $\\\\\n(git push origin main)\nEOF2", false},
+	{"unquoted, escaped backticks", "cat <<EOF2\nx \\`git push origin main\\`\nEOF2", false},
+	{
+		"notes -F -, \\\" in backticks keeps a push quoted",
+		"git notes add -F - <<EOF2\n`echo \\\"'\\\"; git push origin main; echo \\\"'\\\"`\nEOF2",
+		false,
+	},
+	{
+		"notes -F -, \\\" in a string in backticks",
+		"git notes add -F - <<EOF2\n`echo \"\\\"; git push origin main; echo \\\"\"`\nEOF2",
+		false,
+	},
+	{
+		"unquoted, escaped backticks in $( )",
+		"cat <<EOF2\nx $(echo \\`git push origin main\\`)\nEOF2",
+		false,
+	},
+	{
+		"unquoted, escaped backticks two levels deep",
+		"cat <<EOF2\nx `echo \\\\\\`git push origin main\\\\\\``\nEOF2",
+		false,
+	},
+	{"unquoted, backslash before plain text", "cat <<EOF2\nfix: a long\\\nline\nEOF2", false},
+	{
+		"commit -F -, backslash before plain text",
+		"git commit -F - <<EOF2\nfix: a long\\\nline\nEOF2",
+		false,
+	},
+	{
+		"commit -F -, plain message",
+		"git commit -F - <<EOF2\nfeat: add x\n\nIt's the body, with a (paren) and a \\ in it.\nEOF2",
+		false,
+	},
+	{
+		"gh --body-file -, plain body",
+		"gh pr create --title x --body-file - <<EOF2\nSummary line.\n\nIt's the body.\nEOF2",
+		false,
 	},
 	{
 		"plain push line in a quoted body",

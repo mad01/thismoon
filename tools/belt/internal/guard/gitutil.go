@@ -192,7 +192,11 @@ type shellWalk struct {
 	// positional marks a script run with arguments of its own (a -c script,
 	// a file or a source with words after it, a ! alias body): a command
 	// there that runs one of them as code is opaque (runsPositional).
-	positional bool
+	// afterFunction marks the code from a function definition on, which may
+	// be the function's body: an eval or a -c there that runs an argument as
+	// its text is opaque (runsPositionalText).
+	positional    bool
+	afterFunction bool
 	// run is like chain, but a pipe does not end it: a pipeline runs only
 	// if the && run up to its first command ran, so every member of it
 	// shares that run (dirSure). moved marks a dir a cd, pushd or popd in
