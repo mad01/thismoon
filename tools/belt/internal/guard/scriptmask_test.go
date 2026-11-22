@@ -278,6 +278,199 @@ func TestScriptDenyMaskDelimiterPrefix(t *testing.T) {
 	}
 }
 
+// earlyClose is the bash 3.2 shape (MAD-671): bash 3.2, macOS's /bin/bash,
+// ends a $( ) at the first ) its scans cannot match and knows no heredoc
+// there, so it runs the command after `)"`, while bash 5 and zsh
+// read the whole body as message text. The first %s is the command head,
+// the second the command bash 3.2 runs.
+const earlyClose = "%s \"$(cat <<'EOF'\nx\n)\"; %s; echo \"(\nEOF\n)\""
+
+// TestScriptDenyMaskBash32Close pins that a `$(cat <<'EOF' ... EOF)` body is
+// masked only when bash 3.2 runs no more of it than cat (bash32Closes). A
+// body it cannot vouch for is scanned like any other substitution body, so
+// naming a denied command in it denies, while the same body in a -F -
+// heredoc stays masked.
+func TestScriptDenyMaskBash32Close(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CDPATH", "")
+	g := NewScriptDenyList(scriptDenyConfig(maskClaudeDeny, maskExtra))
+	cat := func(head, body string) string {
+		return head + " \"$(cat <<'EOF'\n" + body + "\nEOF\n)\""
+	}
+	runMaskCases(t, g, []scriptDenyCase{
+		{
+			"commit body ends early in bash 3.2",
+			fmt.Sprintf(earlyClose, "git commit -m", "kubectl delete pod x"),
+			"",
+			true,
+		},
+		{
+			"pr body ends early in bash 3.2",
+			fmt.Sprintf(earlyClose, "gh pr create --title t --body", "rm -rf /x"),
+			"",
+			true,
+		},
+		{"echo ends early in bash 3.2", fmt.Sprintf(earlyClose, "echo", "git push origin main"), "", true},
+		{
+			"a quoted ) before the early close",
+			cat("git commit -m", "x ')' y\n)\"; kubectl delete pod x; echo \"("),
+			"",
+			true,
+		},
+		{"parens in a commit subject", cat("git commit -m", "fix(belt): kubectl delete pod x is text"), "", false},
+		{
+			"nested parens in a pr body",
+			cat("gh pr create --title t --body", "keep (rm -rf (in the guard)) as text"),
+			"",
+			false,
+		},
+		{"paired quotes", cat("git commit -m", "it's 'kubectl delete', it's text"), "", false},
+		// A lone apostrophe bash 3.2's parse step never closes is a syntax
+		// error there, so it runs nothing; one a later word closes is
+		// scanned, and so is one bash 3.2 may reach another way than belt.
+		{"a lone apostrophe", cat("git commit -m", "don't let kubectl delete through"), "", false},
+		{
+			"a lone apostrophe in a pr body",
+			cat("gh pr create --title \"fix(belt): kubectl\" --body", "belt denies `kubectl delete`.\n\nIt's tested."),
+			"",
+			false,
+		},
+		{
+			"a lone apostrophe, then a second message",
+			cat("git commit -m", "don't let kubectl delete through") + ` -m "second (one)"`,
+			"",
+			false,
+		},
+		{
+			"a lone apostrophe a later word closes",
+			cat("git commit -m", "don't let kubectl delete through") + ` -m "it's done)"`,
+			"",
+			true,
+		},
+		{
+			"a lone apostrophe after an earlier message",
+			cat("git commit -m", "don't") + cat(" -m", "it's x)\"; kubectl delete pod x; echo \""),
+			"",
+			true,
+		},
+		{
+			"a lone apostrophe behind a $",
+			cat("git -C \"$HOME/x\" commit -m", "don't let kubectl delete through"),
+			"",
+			true,
+		},
+		{"a # heading in a pr body", cat("gh pr create --title t --body", "## Summary\n- block rm -rf"), "", false},
+		{"a lone apostrophe, no denied name", cat("git commit -m", "don't count twice"), "", false},
+		{"a backtick pair", cat("git commit -m", "fix(belt): read `rm -rf` behind sudo"), "", false},
+		{"an issue ref", cat("git commit -m", "fix(belt): deny kubectl delete\n\nCloses #12"), "", false},
+		{
+			"a numbered list bash 3.2 ends early",
+			cat("git commit -m", "fix(belt): two cases\n\n1) rm -rf with a long option\n2) a wrapper"),
+			"",
+			false,
+		},
+		{"a list then a substitution", cat("git commit -m", "a\n1) x $(rm -rf /x)"), "", true},
+		{"a list then backticks", cat("git commit -m", "a\n1) x `rm -rf /x`"), "", true},
+		{"a backslash-newline", cat("git commit -m", "EO\\\nF\nkubectl delete pod x"), "", true},
+		{
+			"an unquoted body with a comment bash 3.2 never closes",
+			"git commit -m $(cat <<'EOF'\nfix (see #12) kubectl delete\nEOF\n)",
+			"",
+			false,
+		},
+		// bash 3.2's expansion takes a # after a blank for a comment inside
+		// "$( )" too, while its parse step does not, so a quote or ) on a #
+		// line counts in one scan and not the other.
+		{"the quoted form of that body", cat("git commit -m", "fix (see #12) kubectl delete"), "", true},
+		{
+			"an apostrophe on a # line, then backticks",
+			cat("gh pr create --title t --body", "## What's new\n1) a fix for `kubectl delete pod x`\n- don't break it"),
+			"",
+			true,
+		},
+		{
+			"an apostrophe on a # line, then a substitution",
+			cat("git commit -m", "# it's\n1) $(kubectl delete pod x)\nx'"),
+			"",
+			true,
+		},
+		{"a ) on a # line", cat("git commit -m", "## step 1)\n- kubectl delete pod x"), "", false},
+		{
+			"a summary heading, then backticks",
+			cat("gh pr create --title t --body", "## Summary\n- deny `kubectl delete` behind `sudo`"),
+			"",
+			false,
+		},
+		{"a $ in a backtick span", cat("git commit -m", "docs: note `$HOME` handling, see #40"), "", false},
+		{
+			"the --body-file - form of an apostrophe on a # line",
+			"gh pr create --title t --body-file - <<'EOF'\n## What's new\n1) a fix for `kubectl delete pod x`\nEOF",
+			"",
+			false,
+		},
+		{
+			"the -F - form of an apostrophe on a # line",
+			"git commit -F - <<'EOF'\n# it's\n1) $(kubectl delete pod x)\nx'\nEOF",
+			"",
+			false,
+		},
+		{"a backtick body", "git commit -m \"`cat <<'EOF'\nfix (see #12) kubectl delete\nEOF\n`\"", "", false},
+		{
+			"a backslash in a backtick body",
+			"git commit -m \"`cat <<'EOF'\nEO\\\nF\nkubectl delete pod x\nEOF\n`\"",
+			"",
+			true,
+		},
+		{
+			"the -F - form of a lone apostrophe",
+			"git commit -F - <<'EOF'\ndon't let kubectl delete through\nEOF",
+			"",
+			false,
+		},
+	})
+}
+
+// TestScriptDenyBash32Reason pins the reason for a message belt reads as
+// code only because bash 3.2 may run part of it: it names the forms that
+// stay data (bash32Hint). Every other denial keeps its own reason.
+func TestScriptDenyBash32Reason(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CDPATH", "")
+	g := NewScriptDenyList(scriptDenyConfig(maskClaudeDeny, maskExtra))
+	for _, tt := range []struct {
+		name, command string
+		bash32        bool
+	}{
+		{
+			"a lone apostrophe a later word closes",
+			"git commit -m \"$(cat <<'EOF'\ndon't let kubectl delete through\nEOF\n)\" -m \"it's done)\"",
+			true,
+		},
+		{"the early close", fmt.Sprintf(earlyClose, "git commit -m", "kubectl delete pod x"), true},
+		{
+			"an apostrophe on a # line",
+			"gh pr create --title t --body \"$(cat <<'EOF'\n## What's new\n1) a fix for `kubectl delete pod x`\n- don't break it\nEOF\n)\"",
+			true,
+		},
+		{"a substitution", "echo \"$(kubectl delete pod x)\"", false},
+		{
+			"a message beside a substitution",
+			"git commit -m \"$(cat <<'EOF'\ndon't\nEOF\n)$(kubectl delete pod x)\"",
+			false,
+		},
+	} {
+		d := g.Check(Input{Event: EventBash, Command: tt.command})
+		switch {
+		case d == nil:
+			t.Errorf("%s: Check(%q) allowed, want a denial", tt.name, tt.command)
+		case strings.HasSuffix(d.Reason, bash32Hint) != tt.bash32:
+			t.Errorf("%s: Check(%q) reason %q, want bash32Hint %v", tt.name, tt.command, d.Reason, tt.bash32)
+		case tt.bash32 && strings.Contains(d.Reason, directHint):
+			t.Errorf("%s: Check(%q) reason %q still holds directHint", tt.name, tt.command, d.Reason)
+		}
+	}
+}
+
 // TestMaskDataMessageFlagsOnly pins what a git commit or gh call masks: the
 // values of its message flags, and a heredoc only where -F - (or its long
 // form) reads the message from it. Every other word stays as written.

@@ -350,7 +350,9 @@ func existingAncestor(dir string) string {
 // unreadDenial decides a push the walk found in code readShell could not
 // follow, so its words come from the token split and a quote may hide where
 // it goes. It is denied unless its refspecs name non-default branches in
-// plain words, which is safe wherever it runs.
+// plain words, which is safe wherever it runs. A push in a message read that
+// way for bash 3.2 alone (gitPush.bash32) is told how to pass the message as
+// data (bash32Hint) instead of how to write the push.
 func unreadDenial(push gitPush) *Denial {
 	plain := push.explicit && !slices.ContainsFunc(push.refspecs, func(s string) bool {
 		return strings.ContainsAny(s, unresolvableChars+`\#`)
@@ -358,10 +360,14 @@ func unreadDenial(push gitPush) *Denial {
 	if plain && unknownDirDenial(push) == nil {
 		return nil
 	}
+	fix := "Write the push as a plain command (git push origin <branch>), outside quotes and substitutions."
+	if push.bash32 {
+		fix = bash32Hint
+	}
 	return Reasonf(
 		GitPushMainID,
-		"cannot read this command's quoting or substitutions, so the push in it cannot be checked. "+
-			"Write the push as a plain command (git push origin <branch>), outside quotes and substitutions.",
+		"cannot read this command's quoting or substitutions, so the push in it cannot be checked. %s",
+		fix,
 	)
 }
 
@@ -594,8 +600,10 @@ type gitPush struct {
 	shellWord string
 	// configured, repoFlag and unread decide whether the exemption may apply:
 	// a config override (gitInvocation.configured), a --repo flag naming the
-	// destination, and words from code the reader could not follow.
-	configured, repoFlag, unread bool
+	// destination, and words from code the reader could not follow. bash32
+	// marks such words from a message read that way for bash 3.2 alone
+	// (gitInvocation.bash32).
+	configured, repoFlag, unread, bash32 bool
 	// moved marks a git -C: a substitution in the push's words runs in the
 	// shell's directory, not the one git pushes from.
 	moved bool

@@ -106,7 +106,7 @@ func (g *FileDiscard) Check(in Input) *Denial {
 	if loss == nil || g.warnSoft(loss) {
 		return nil
 	}
-	return Reasonf(FileDiscardID, "%s", g.reason(loss))
+	return bash32Hinted(Reasonf(FileDiscardID, "%s", g.reason(loss)), loss.bash32)
 }
 
 // warnSoft sends the soft-mode warning for loss and reports whether soft
@@ -173,6 +173,10 @@ type fileLoss struct {
 	call     *lossCall
 	instead  string
 	userOnly bool
+	// bash32 marks a loss from a step of a message read as code for bash
+	// 3.2 alone (walkStep.bash32), whose denial says how to pass the
+	// message as data (bash32Hinted).
+	bash32 bool
 }
 
 // lossOperand is one path a loss command names: the word as written,
@@ -259,7 +263,7 @@ func (j *discardJudge) step(s walkStep) *fileLoss {
 	case s.unread || s.words == nil:
 		if namesLossCommand(s.tokens) {
 			return &fileLoss{why: "belt could not read the shell text around `" +
-				stepText(s.tokens) + "`, so it cannot tell what it deletes"}
+				stepText(s.tokens) + "`, so it cannot tell what it deletes", bash32: s.bash32}
 		}
 		return nil
 	}

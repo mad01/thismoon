@@ -204,12 +204,30 @@ type scan struct {
 	names    shellNames
 }
 
+// check runs every scan over the command with its data masked (maskData).
+// A denial that goes away once belt trusts every `$(cat <<'EOF' ... EOF)`
+// message as bash 5 and zsh read it (maskDataBash5) comes from a message
+// bash 3.2 may run: it says so and names the forms that stay data
+// (bash32Hint).
 func (g *ScriptDenyList) check(in Input) *Denial {
 	patterns := compilePatterns(g.patterns())
 	if len(patterns) == 0 || in.Command == "" {
 		return nil
 	}
 	cmd := maskData(in.Command)
+	d := g.scanMasked(in, cmd, patterns)
+	if d == nil {
+		return nil
+	}
+	if bash5 := maskDataBash5(in.Command); bash5 != cmd && g.scanMasked(in, bash5, patterns) == nil {
+		return bash32Denial(d)
+	}
+	return d
+}
+
+// scanMasked runs every scan over in.Command, read from cmd, the command
+// with its data blanked.
+func (g *ScriptDenyList) scanMasked(in Input, cmd string, patterns []deny) *Denial {
 	segs := splitSegments(cmd)
 	s := scan{
 		in:       in,
@@ -681,6 +699,38 @@ func logicalLines(text string) []logicalLine {
 	return out
 }
 
+// directHint ends a deny-list denial: what to do instead.
+const directHint = "Run the blocked operation as a direct command so the permission system can evaluate it, " +
+	"or ask the user first."
+
+// bash32Hint ends a denial whose match is in a `$(cat <<'EOF' ... EOF)`
+// message belt reads as code because bash 3.2 may run part of it
+// (bash32Closes): it takes the place of directHint, and the git guards add
+// it to their own reason (bash32Hinted).
+const bash32Hint = "belt found it in a $(cat <<'EOF' ... EOF) message: bash 3.2, macOS's /bin/bash, " +
+	"can end that substitution early and run part of the message, so belt reads it as code. " +
+	"Pass the message as data instead: git commit -F - (or gh ... --body-file -) with a quoted heredoc " +
+	"such as <<'EOF', or a message file (git commit -F <file>, gh ... --body-file <file>)."
+
+// bash32Denial is d with bash32Hint in place of directHint, or after the
+// reason when it has none.
+func bash32Denial(d *Denial) *Denial {
+	reason, ok := strings.CutSuffix(d.Reason, directHint)
+	if !ok {
+		reason += " "
+	}
+	return &Denial{Guard: d.Guard, Reason: reason + bash32Hint}
+}
+
+// bash32Hinted is d with bash32Hint added when bash32 says it comes from a
+// step of a message read as code for bash 3.2 alone (walkStep.bash32).
+func bash32Hinted(d *Denial, bash32 bool) *Denial {
+	if d == nil || !bash32 {
+		return d
+	}
+	return bash32Denial(d)
+}
+
 // scanText checks every non-comment logical line against every pattern —
 // first as written, then with quoting noise collapsed, then each form's
 // commands on argv — and denies on the first hit. A command whose name the
@@ -704,11 +754,11 @@ func scanLines(text, where string, patterns []deny, names shellNames, depth int)
 			if d.re.MatchString(line.text) || d.re.MatchString(normalized) || d.runsIn(cmds) {
 				return Reasonf(
 					ScriptDenyListID,
-					"%s runs %q (line %d) — that command is on the Bash deny list and scripts don't get to bypass it. "+
-						"Run the blocked operation as a direct command so the permission system can evaluate it, or ask the user first.",
+					"%s runs %q (line %d) — that command is on the Bash deny list and scripts don't get to bypass it. %s",
 					where,
 					d.pattern,
 					line.number,
+					directHint,
 				)
 			}
 		}

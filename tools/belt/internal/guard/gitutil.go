@@ -16,13 +16,15 @@ import (
 // when that directory cannot be told without a shell (see parseGitCmd).
 // configured marks a -c or --config-env option, or an environment that may
 // change git's config (gitCommandsAt); unread marks an invocation taken from
-// code readShell could not follow (walkStep); moved marks a -C, which runs
-// git somewhere other than the shell's directory; optioned marks any other
-// global option before the subcommand. heads are the branches the checkouts
-// and switches before it may leave checked out (headTracker). config holds
-// the value of each -c as written and the key of each --config-env, whose
-// value only the environment holds. setsConfig marks a command that sets or
-// changes config in a way belt does not read key by key (gitCommandsAt).
+// code readShell could not follow (walkStep), and bash32 one from a message
+// read that way for bash 3.2 alone (walkStep.bash32); moved marks a -C,
+// which runs git somewhere other than the shell's directory; optioned marks
+// any other global option before the subcommand. heads are the branches the
+// checkouts and switches before it may leave checked out (headTracker).
+// config holds the value of each -c as written and the key of each
+// --config-env, whose value only the environment holds. setsConfig marks a
+// command that sets or changes config in a way belt does not read key by
+// key (gitCommandsAt).
 type gitInvocation struct {
 	dir        string
 	sub        string
@@ -31,6 +33,7 @@ type gitInvocation struct {
 	config     []string
 	setsConfig bool
 	unread     bool
+	bash32     bool
 	moved      bool
 	optioned   bool
 	heads      pushHeads
@@ -99,7 +102,7 @@ func gitCommandsAt(command, cwd, sub string) []gitInvocation {
 		}
 		pre, _ := beforeGit(s.tokens)
 		c.configured = c.configured || s.configEnv || overridesConfig(pre)
-		c.unread = s.unread
+		c.unread, c.bash32 = s.unread, s.bash32
 		cmds = append(cmds, c)
 		seen = append(seen, len(heads.changed))
 	})
@@ -203,6 +206,15 @@ type shellWalk struct {
 	outerSure  bool
 	sureBefore bool
 	justMoved  bool
+	// input is the text walkCommands walks, the shell's whole input, where
+	// bash 3.2 reads a $( ) on to the end (whole). It is "" in a child walk.
+	input string
+}
+
+// whole reports whether text is the shell's whole input (shellWalk.input),
+// so a $( ) bash 3.2 never closes in it is a syntax error (bash32Unclosed).
+func (w *shellWalk) whole(text string) bool {
+	return text == w.input
 }
 
 // dirSure reports whether the shell is surely in dir: no move in this walk

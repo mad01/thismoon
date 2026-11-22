@@ -17,8 +17,12 @@ type walkStep struct {
 	// reach with a variable that changes where git pushes (gitConfigEnv).
 	configEnv bool
 	// unread marks a command taken from code readShell could not follow,
-	// read fail-closed (walkUnread).
+	// read fail-closed (walkUnread). bash32 marks one from a
+	// `$(cat <<'EOF' ... EOF)` message read that way only because bash 3.2
+	// may run part of it (bash32Cats): a denial there names the forms that
+	// stay data (bash32Hinted).
 	unread bool
+	bash32 bool
 	// targets are the command's redirection targets as tokens, heredoc
 	// delimiters included. A command from the token walk keeps them in
 	// tokens instead.
@@ -96,9 +100,9 @@ type walkStep struct {
 func walkCommands(command, cwd string, fn func(walkStep)) {
 	w := shellWalk{
 		dir: cwd, cdpath: os.Getenv("CDPATH") != "", chains: new(int), steps: new(int),
-		mem: newWalkMemory(), outerSure: true,
+		mem: newWalkMemory(), outerSure: true, input: resolveLiteralVars(command),
 	}
-	w.walkRead(resolveLiteralVars(command), true, fn)
+	w.walkRead(w.input, true, fn)
 }
 
 // walkRead walks one text. code says the shell runs it as commands; with
@@ -202,19 +206,27 @@ func (w *shellWalk) joinChain(before joint) {
 // substitution prints (runsText), that text is code, so a heredoc body
 // printed there is read as code too (shellWalk.feeds). In a plainGit
 // commit, a message substitution that only prints a heredoc (messageCats)
-// runs nothing and is not walked.
+// runs nothing and is not walked. A `$(cat <<'EOF' ... EOF)` bash 3.2 may
+// run more of than cat (bash32Cats) is read fail-closed (walkUnread): bash
+// 3.2 may run any part of its heredoc body, with quotes belt cannot follow.
+// Both read a $( ) in the shell's whole input to its end (whole).
 func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) {
 	feeds := w.feeds || runsText(c)
 	var message map[span]bool
 	if w.plainGit(c) {
-		message = messageCats(text, c)
+		message = messageCats(text, c, w.whole(text))
 	}
+	bash32 := bash32Cats(text, c, w.whole(text))
 	for _, s := range append(c.pieces(), c.subshells...) {
 		if message[s] {
 			continue
 		}
 		inner := w.child(w.dir)
 		inner.feeds = feeds
+		if bash32[s] {
+			inner.walkUnread(text[s.from:s.to], markBash32(fn))
+			continue
+		}
 		inner.walkRead(text[s.from:s.to], true, fn)
 	}
 }
@@ -438,12 +450,12 @@ func shortMessageWord(letters, shorts string) (letter rune, value string, takesN
 
 // messageCats returns the substitutions in a git commit's message values
 // that only print a heredoc the shell hands over as written, the
-// `-m "$(cat <<'EOF' ... EOF)"` form (dataCat), when bash 3.2 ends them
-// where belt does (bash32Closes) and the commit's options leave the message
-// alone (messageArgs), with every word as written (plainArgs). What they
-// print is the message, so they run nothing but cat. The caller checks the
-// commit is a plainGit call.
-func messageCats(text string, c shellCmd) map[span]bool {
+// `-m "$(cat <<'EOF' ... EOF)"` form of which bash 3.2 runs no more than
+// cat (dataCat), when the commit's options leave the message alone
+// (messageArgs), with every word as written (plainArgs). What they print is
+// the message, so they run nothing but cat. eof says text is the shell's
+// whole input (dataCat). The caller checks the commit is a plainGit call.
+func messageCats(text string, c shellCmd, eof bool) map[span]bool {
 	words, _, ok := commitMessageWords(c.tokens())
 	g, isGit := segmentGitCommand(c.tokens(), "")
 	message := map[int]bool{}
@@ -456,10 +468,10 @@ func messageCats(text string, c shellCmd) map[span]bool {
 	cats := map[span]bool{}
 	for _, i := range words {
 		for _, p := range c.words[i].parts {
-			if p.kind != partSubst || !bash32Closes(text[p.body.from:p.body.to]) {
+			if p.kind != partSubst {
 				continue
 			}
-			if _, ok := dataCat(text, p.body); ok {
+			if _, ok := dataCat(text, p, eof); ok {
 				cats[p.body] = true
 			}
 		}
@@ -467,36 +479,38 @@ func messageCats(text string, c shellCmd) map[span]bool {
 	return cats
 }
 
-// bash32Closes reports whether bash 3.2, macOS's /bin/bash, ends a $( )
-// whose text is sub where belt does. It finds the close by counting parens
-// and skipping quoted strings, and knows no heredoc, so a ) or a lone ' in
-// a heredoc body there can end the substitution early and leave the rest of
-// the body to run as commands. sub passes when its quotes pair up and its
-// parens balance without going below zero, and it holds no $, backtick,
-// backslash or #, which that count reads in ways not modelled here.
-func bash32Closes(sub string) bool {
-	if strings.ContainsAny(sub, "$`\\#") {
-		return false
-	}
-	depth := 0
-	for i := 0; i < len(sub); i++ {
-		switch sub[i] {
-		case '\'', '"':
-			end := strings.IndexByte(sub[i+1:], sub[i])
-			if end < 0 {
-				return false
-			}
-			i += end + 1
-		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth < 0 {
-				return false
+// bash32Cats returns the substitutions in c's words and redirection targets
+// that only print a heredoc in bash 5 and zsh (catBody) but of which bash
+// 3.2 may run more than cat (dataCat refuses them): it can end the $( )
+// early and run any part of the heredoc body, so walkNested reads it
+// fail-closed. eof says text is the shell's whole input (dataCat).
+func bash32Cats(text string, c shellCmd, eof bool) map[span]bool {
+	cats := map[span]bool{}
+	for _, words := range [][]placedWord{c.words, c.targets} {
+		for _, w := range words {
+			for _, p := range w.parts {
+				if p.kind != partSubst {
+					continue
+				}
+				if _, ok := catBody(text, p); !ok {
+					continue
+				}
+				if _, ok := dataCat(text, p, eof); !ok {
+					cats[p.body] = true
+				}
 			}
 		}
 	}
-	return depth == 0
+	return cats
+}
+
+// markBash32 is fn for the steps of a message bash32Cats reads fail-closed:
+// each is marked walkStep.bash32.
+func markBash32(fn func(walkStep)) func(walkStep) {
+	return func(s walkStep) {
+		s.bash32 = true
+		fn(s)
+	}
 }
 
 // ghTextGroups are the gh command groups whose heredoc input is a body, a

@@ -984,32 +984,35 @@ var heredocBodies = []struct {
 		"git commit -e -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
 		true,
 	},
-	// bash 3.2 ends a $( ) at the first ) its paren count cannot match and
-	// knows no heredoc, so a ) or a lone ' in the body ends it early.
+	// bash 3.2 ends a $( ) at the first ) its scan cannot match and knows no
+	// heredoc, so a ) in the body ends it early, and a lone ' runs past it
+	// to a later word that closes it.
 	{
 		"commit -m cat, a ) ends it in bash 3.2",
 		"git commit --allow-empty -m \"$(cat <<'EOF2'\nx\n)\"; git push origin main; echo \"(\nEOF2\n)\"",
 		true,
 	},
 	{
-		"commit -m cat, a lone apostrophe",
-		"git commit -m \"$(cat <<'EOF2'\ndon't git push origin main\nEOF2\n)\"",
-		true,
-	},
-	{
-		"commit -m cat, a # in the body",
-		"git commit -m \"$(cat <<'EOF2'\nfixes #1: git push origin main\nEOF2\n)\"",
+		"commit -m cat, a lone apostrophe a later word closes",
+		"git commit -m \"$(cat <<'EOF2'\ndon't git push origin main\nEOF2\n)\" -m \"it's done)\"",
 		true,
 	},
 }
 
 // TestGitGuardsHeredocMessagePasses pins the MAD-663 message forms that pass:
-// a balanced pair of parens or quotes in a -m cat body bash 3.2 closes where
-// belt does, and --no-edit asks for no editor.
+// a -m cat body of which bash 3.2 runs no more than cat (bash32Closes), and
+// --no-edit asks for no editor. Inside double quotes a # starts no comment
+// there, and a ) that ends the substitution early leaves the rest of the
+// body as text of the same word. A lone apostrophe bash 3.2 never closes is
+// a syntax error there, which runs nothing (bash32Unclosed).
 func TestGitGuardsHeredocMessagePasses(t *testing.T) {
 	for _, command := range []string{
 		"git commit -m \"$(cat <<'EOF2'\nfix(belt): so git push origin main is text\nEOF2\n)\"",
+		"git commit -m \"$(cat <<'EOF2'\ndon't git push origin main\nEOF2\n)\"",
+		"git commit -m \"$(cat <<'EOF2'\ndon't git push origin main\nEOF2\n)\" -m \"second (one)\"",
 		"git commit -m \"$(cat <<'EOF2'\nit's 'git push origin main', it's text\nEOF2\n)\"",
+		"git commit -m \"$(cat <<'EOF2'\nfixes #1: git push origin main\nEOF2\n)\"",
+		"git commit -m \"$(cat <<'EOF2'\nfix: two cases\n\n1) git push origin main\n2) a wrapper\nEOF2\n)\"",
 		"git commit --no-edit -m \"$(cat <<'EOF2'\ngit push origin main\nEOF2\n)\"",
 		"git tag -f -F - edit-x <<'EOF2'\ngit push origin main\nEOF2",
 	} {
@@ -1023,25 +1026,129 @@ func TestGitGuardsHeredocMessagePasses(t *testing.T) {
 	}
 }
 
-// TestBash32Closes pins where bash 3.2's paren count ends a $( ).
-func TestBash32Closes(t *testing.T) {
+// TestGitGuardsBash32MessageCode pins the message forms bash 3.2 runs part
+// of (MAD-671): a $( ) it ends early, before the line that runs a command,
+// leaves that command to run, so the git guards read the heredoc body as
+// code (bash32Cats). The expansion takes a # after a blank for a comment
+// inside "$( )" too, so a quote on a # line opens a quote for the parse
+// step only. The controls are message forms both of bash 3.2's scans read
+// as belt does, which stay text.
+func TestGitGuardsBash32MessageCode(t *testing.T) {
+	const op = "git push origin main"
+	cat := func(head, body string) string {
+		return head + " \"$(cat <<'EOF2'\n" + body + "\nEOF2\n)\""
+	}
 	tests := []struct {
-		sub  string
-		want bool
+		name, command string
+		deny          bool
 	}{
-		{"cat <<'EOF'\nplain words\nEOF\n", true},
-		{"cat <<\"EOF\"\nfix(belt): x\nEOF\n", true},
-		{"cat <<EOF\nit's (one) and it's two\nEOF\n", true},
-		{"cat <<'EOF'\nx\n)\"; y; echo \"(\nEOF\n", false},
-		{"cat <<'EOF'\ndon't\nEOF\n", false},
-		{"cat <<'EOF'\n(\nEOF\n", false},
-		{"cat <<'EOF'\n$x\nEOF\n", false},
-		{"cat <<\\EOF\nx\nEOF\n", false},
-		{"cat <<'EOF'\n# x\nEOF\n", false},
+		{"an early ) then a substitution", cat("git commit -m", "x\n1) $("+op+")"), true},
+		{
+			"an apostrophe on a # line, then backticks",
+			cat("git commit -m", "## What's new\n1) a fix for `"+op+"`\n- don't break it"),
+			true,
+		},
+		{"an apostrophe on a # line, then a substitution", cat("git commit -m", "# it's\n1) $("+op+")\nx'"), true},
+		{
+			"a pr body with an apostrophe on a # line",
+			cat("gh pr create --title t --body", "## What's new\n1) a fix for `"+op+"`\n- don't break it"),
+			true,
+		},
+		{"a backtick span", cat("git commit -m", "fix(belt): read `"+op+"` behind sudo"), false},
+		{"an issue ref", cat("git commit -m", "fix(belt): "+op+"\n\nCloses #12"), false},
+		{"a numbered list", cat("git commit -m", "fix(belt): two cases\n\n1) "+op+"\n2) a wrapper"), false},
+		{"parens", cat("git commit -m", "fix(belt): read "+op+" behind sudo\n\nThe form (and the env one)."), false},
+		{"a summary heading", cat("gh pr create --title t --body", "## Summary\n- deny `"+op+"` behind `sudo`"), false},
+		{"a $ in a backtick span", cat("git commit -m", "docs: note `$HOME` and "+op+", see #40"), false},
+		{"apostrophes", cat("git commit -m", "it's '"+op+"', it's text"), false},
+		{"the -F - form", "git commit -F - <<'EOF2'\n## What's new\n1) a fix for `" + op + "`\nEOF2", false},
+		{
+			"the --body-file - form",
+			"gh pr create --title t --body-file - <<'EOF2'\n## What's new\n1) a fix for `" + op + "`\nEOF2",
+			false,
+		},
 	}
 	for _, tt := range tests {
-		if got := bash32Closes(tt.sub); got != tt.want {
-			t.Errorf("bash32Closes(%q) = %v, want %v", tt.sub, got, tt.want)
+		d := newGitPushGuard("main").Check(Input{Event: EventBash, Command: tt.command, Cwd: "/tmp"})
+		if (d != nil) != tt.deny {
+			t.Errorf("%s: git-push-main Check(%q) = %v, want deny %v", tt.name, tt.command, d, tt.deny)
+		}
+		for _, discard := range []string{"git checkout -- f", "git reset --hard"} {
+			command := strings.ReplaceAll(tt.command, op, discard)
+			d := dirtyDiscardGuard().Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+			if (d != nil) != tt.deny {
+				t.Errorf("%s: git-discard Check(%q) = %v, want deny %v", tt.name, command, d, tt.deny)
+			}
+		}
+	}
+}
+
+// TestGitGuardsBash32Unclosed pins the message forms bash 3.2 never closes:
+// a lone apostrophe in a -m or --body cat runs its parse step to the end of
+// the command, a syntax error that runs nothing, so the message is text as
+// bash 5 and zsh read it (bash32Unclosed). One a later word closes stays
+// code, and the denial then names the forms that stay data (bash32Hint),
+// while a denial with no such message keeps its own reason.
+func TestGitGuardsBash32Unclosed(t *testing.T) {
+	body := func(op string) string {
+		return "belt now denies `" + op + "`, since every worktree shares one stash list.\n\nIt's covered by new test rows."
+	}
+	pr := func(op, tail string) string {
+		return "gh pr create --title \"fix(belt): stash drop\" --body \"$(cat <<'EOF'\n" + body(op) + "\nEOF\n)\"" + tail
+	}
+	commit := func(op, tail string) string {
+		return "git commit -m \"$(cat <<'EOF'\n" + body(op) + "\nEOF\n)\"" + tail
+	}
+	const closes = ` -m "it's done)"`
+	tests := []struct {
+		name, command string
+		deny          bool
+	}{
+		{"a pr body", pr("%s", ""), false},
+		{"a commit message", commit("%s", ""), false},
+		{"a commit message, then a second one", commit("%s", ` -m "second (one)"`), false},
+		{"a pr body a later word closes", pr("%s", ` --label "it's x)"`), true},
+		{"a commit message a later word closes", commit("%s", closes), true},
+	}
+	guards := []struct {
+		op    string
+		check func(command string) *Denial
+	}{
+		{"git push origin main", func(command string) *Denial {
+			return newGitPushGuard("main").Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		}},
+		{"git stash drop", func(command string) *Denial {
+			return dirtyDiscardGuard().Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		}},
+		{"git reset --hard", func(command string) *Denial {
+			return dirtyDiscardGuard().Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		}},
+		{"rm -rf ~/notes", func(command string) *Denial {
+			return newFileDiscardGuard(t, t.TempDir()).Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		}},
+	}
+	for _, tt := range tests {
+		for _, g := range guards {
+			command := fmt.Sprintf(tt.command, g.op)
+			d := g.check(command)
+			switch {
+			case (d != nil) != tt.deny:
+				t.Errorf("%s: Check(%q) = %v, want deny %v", tt.name, command, d, tt.deny)
+			case d != nil && !strings.HasSuffix(d.Reason, bash32Hint):
+				t.Errorf("%s: Check(%q) reason %q, want it to end in bash32Hint", tt.name, command, d.Reason)
+			}
+		}
+	}
+	for _, command := range []string{"git stash drop", "git push origin main \"", "git reset --hard"} {
+		d := newGitPushGuard("main").Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		if d == nil {
+			d = dirtyDiscardGuard().Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		}
+		switch {
+		case d == nil:
+			t.Errorf("Check(%q) allowed, want a denial", command)
+		case strings.Contains(d.Reason, bash32Hint):
+			t.Errorf("Check(%q) reason %q holds bash32Hint, want the guard's own", command, d.Reason)
 		}
 	}
 }

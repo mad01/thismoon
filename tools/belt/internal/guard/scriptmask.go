@@ -22,8 +22,10 @@ import (
 //     output of a group or of everything after it.
 //   - The masked piece is an argument word with no command in it, a heredoc
 //     body the command reads, or the body of a `$(cat <<'EOF' ... EOF)`
-//     argument. A heredoc body must have a quoted delimiter or hold no $,
-//     backtick or backslash, so the shell expands nothing in it.
+//     argument of which bash 3.2 runs no more than cat (bash32Closes), or
+//     none at all (bash32Unclosed). A heredoc body must have a quoted
+//     delimiter or hold no $, backtick or backslash, so the shell expands
+//     nothing in it.
 //   - Nothing left in the command once the data is blanked can run beside
 //     the data command or after the command ends (runsLater): a background
 //     &, a coproc, a trap, or a word that starts a job that outlives its
@@ -59,14 +61,33 @@ var laterWords = wordSet(`
 // segments around the data stay where they were. cmd comes back unchanged
 // when readShell cannot read it, the call has a shape that blocks masking,
 // or what is left once the data is blanked could run it later (runsLater).
+// cmd is the shell's whole input (dataCat).
 func maskData(cmd string) string {
+	return maskWith(cmd, func(cmd string, p wordPart) (span, bool) { return dataCat(cmd, p, true) })
+}
+
+// maskDataBash5 is maskData for a shell that ends a `$(cat <<'EOF' ... EOF)`
+// where belt does, as bash 5 and zsh do: it masks every catBody, whatever
+// bash 3.2 would run (bash32Closes). It only tells a denial that comes from
+// bash 3.2 alone (ScriptDenyList.check).
+func maskDataBash5(cmd string) string {
+	return maskWith(cmd, catBody)
+}
+
+// catReader returns where the heredoc body of a substitution that only
+// prints it lies (dataCat, catBody).
+type catReader func(cmd string, p wordPart) (span, bool)
+
+// maskWith is maskData with cat reading the `$(cat <<'EOF' ... EOF)`
+// arguments.
+func maskWith(cmd string, cat catReader) string {
 	cmds, ok := readShell(cmd)
 	if !ok || !maskable(cmds) {
 		return cmd
 	}
 	b := []byte(cmd)
 	for _, c := range cmds {
-		for _, s := range dataSpans(cmd, c) {
+		for _, s := range dataSpans(cmd, c, cat) {
 			for i := s.from; i < s.to; i++ {
 				if b[i] != '\n' {
 					b[i] = ' '
@@ -133,14 +154,14 @@ func maskable(cmds []shellCmd) bool {
 }
 
 // dataSpans returns the pieces of one top-level command that are data.
-func dataSpans(cmd string, c shellCmd) []span {
+func dataSpans(cmd string, c shellCmd, cat catReader) []span {
 	words, docs, ok := dataWords(c.tokens())
 	if !ok {
 		return nil
 	}
 	var out []span
 	for _, i := range words {
-		out = append(out, wordData(cmd, c.words[i])...)
+		out = append(out, wordData(cmd, c.words[i], cat)...)
 	}
 	for _, d := range c.docs {
 		if docs && unexpanded(cmd, d) {
@@ -268,14 +289,14 @@ func (f textFlags) split(arg string) (flag string, glued bool, value string) {
 }
 
 // wordData returns what is data in one argument word: the whole word when
-// nothing in it runs a command, the bodies of its dataCat substitutions when
+// nothing in it runs a command, the bodies of its cat substitutions when
 // those are all it runs, and nothing otherwise.
-func wordData(cmd string, w placedWord) []span {
+func wordData(cmd string, w placedWord, cat catReader) []span {
 	var bodies []span
 	for _, p := range w.parts {
 		switch {
 		case p.kind == partSubst:
-			body, ok := dataCat(cmd, p.body)
+			body, ok := cat(cmd, p)
 			if !ok {
 				return nil
 			}
@@ -292,8 +313,33 @@ func wordData(cmd string, w placedWord) []span {
 
 // dataCat reports whether a substitution only prints a heredoc the shell
 // hands over unchanged, `$(cat <<'EOF' ... EOF)`, the form a commit message
-// or a pull request body takes, and returns where that heredoc body lies.
-func dataCat(cmd string, sub span) (span, bool) {
+// or a pull request body takes, and returns where that heredoc body lies
+// (catBody). bash 3.2 must run no more of a $( ) than cat (bash32Closes): it
+// knows no heredoc there, so a ) in the body can end it early, in its parse
+// step or in its expansion, and run part of the body. eof says cmd runs to
+// the end of the shell's input, so a $( ) bash 3.2's parse step never
+// closes there is a syntax error that runs nothing (bash32Unclosed), and the
+// body passes too. A backtick substitution ends at its first backtick no
+// backslash quotes, in bash 3.2 as in belt.
+func dataCat(cmd string, p wordPart, eof bool) (span, bool) {
+	body, ok := catBody(cmd, p)
+	if !ok || backtickBody(cmd, p.body) {
+		return body, ok
+	}
+	if !bash32Closes(cmd[p.body.from:p.body.to], p.quoted) && (!eof || !bash32Unclosed(cmd, p.body, p.quoted)) {
+		return span{}, false
+	}
+	return body, true
+}
+
+// catBody is dataCat for a shell that ends a $( ) where belt does, as bash 5
+// and zsh do. A backtick body must hold no backslash, since every shell
+// takes backslashes off it before it reads it.
+func catBody(cmd string, p wordPart) (span, bool) {
+	sub := p.body
+	if backtickBody(cmd, sub) && strings.Contains(cmd[sub.from:sub.to], `\`) {
+		return span{}, false
+	}
 	cmds, ok := readShell(cmd[sub.from:sub.to])
 	if !ok || len(cmds) != 1 {
 		return span{}, false
@@ -310,6 +356,11 @@ func dataCat(cmd string, sub span) (span, bool) {
 		return span{}, false
 	}
 	return d.body, true
+}
+
+// backtickBody reports whether sub is the body of a backtick substitution.
+func backtickBody(cmd string, sub span) bool {
+	return sub.from > 0 && cmd[sub.from-1] == '`'
 }
 
 // unexpanded reports whether the shell hands a heredoc body over as
