@@ -1563,6 +1563,74 @@ func TestGitGuardsBash32Unclosed(t *testing.T) {
 	}
 }
 
+// TestGitGuardsBash32Tail pins the text after a `$(cat <<'EOF' ... EOF)`
+// bash 3.2 may end in another place than belt (bash32Cats): a quote of the
+// body stays open into it, so bash 3.2 runs words, comments and heredoc
+// bodies belt reads as data. The walk reads all of it fail-closed, from the
+// level the message is on outward, and a denial there names the forms that
+// stay data (bash32Hint). A body bash 3.2 ends early whose rest it reads as
+// text of the same word, and a message that takes in all the rest, leave
+// the text after it as belt reads it.
+func TestGitGuardsBash32Tail(t *testing.T) {
+	commit := func(body string) string {
+		return "git commit -m \"$(cat <<'EOF'\n" + body + "\nEOF\n)\""
+	}
+	tests := []struct {
+		name, command string
+		deny          bool
+	}{
+		{"a later word closes the quote", commit("It's done") + "; echo '\n)\" ; %s ; #'", true},
+		{"a later heredoc closes the quote", commit("It's done") + "; cat <<'Y'\n')\" ; %s ; #'\nY", true},
+		{"an assignment's message", "x=\"$(cat <<'EOF'\nIt's done\nEOF\n)\"; echo '\n)\" ; %s ; #'", true},
+		{"a message in a subshell", "(" + commit("It's done") + "); echo '\n)\") ; %s ; #'", true},
+		{"a message in a substitution", "echo \"$(" + commit("It's done") + ")\" '\n)\")\" ; %s ; #'", true},
+		{"a list, then quoted words", commit("x\n\n1) renames \"a\" to \"b\"") + " && echo '%s'", false},
+		{"a list, then backticks", commit("x\n\n1) adds `--quiet`\n2) docs") + " && echo '%s'", false},
+		{"a message that takes in the rest", commit("It's x") + " && echo \"a\n') ; %s ; echo z\"", false},
+		{"a later ) in a later word", commit("- fix (part 1") + ` -m "next ) ; %s ; echo ("`, false},
+		// bash 3.2's expansion reads the word again and may end the $( ) in
+		// another place than its parse step, which flips the quotes after it.
+		{"the expansion ends it early, then a quote", commit("a # (\nb ) \"'\"") + "'$(%s)'", true},
+		{"the expansion ends it early, then backticks", commit("a # (\nb ) \"'\"") + "'`%s`'", true},
+		{"a list the expansion ends early", commit("- fix # (part 1\n- done ) \"'\"") + "'$(%s)'", true},
+		{"the expansion ends it earlier, then a <( )", "git commit -m \"$(cat <<'EOF'\na # (\nb ) '\"' ) 'z\nEOF\n)<(%s)\"", true},
+		{"a message whose expansion runs a later heredoc", commit("# It's x") + " && cat <<'Y'\nZ $(%s) ')\nY\n# \"", true},
+		{"a message whose expansion runs a later comment", commit("# It's x") + " && echo 'q\nZ' # $(%s) ')\"", true},
+		{"the expansion ends it late", commit("a ( # )") + "'$(%s)'\")\"", false},
+		{"the expansion never ends it", commit("PR #1 renames the bar's x\nand speak's y") + " && echo '%s'", false},
+		{"a message nested past the walk's depth", "echo \"" + deepMessage("It's done") + "\" '\n)\" ; %s ; #'", true},
+	}
+	guards := []struct {
+		op    string
+		check func(command string) *Denial
+	}{
+		{"git push origin main", func(command string) *Denial {
+			return newGitPushGuard("main").Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		}},
+		{"git reset --hard", func(command string) *Denial {
+			return dirtyDiscardGuard().Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		}},
+		{"git checkout -- f", func(command string) *Denial {
+			return dirtyDiscardGuard().Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		}},
+		{"rm -rf ~/notes", func(command string) *Denial {
+			return newFileDiscardGuard(t, t.TempDir()).Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+		}},
+	}
+	for _, tt := range tests {
+		for _, g := range guards {
+			command := fmt.Sprintf(tt.command, g.op)
+			d := g.check(command)
+			switch {
+			case (d != nil) != tt.deny:
+				t.Errorf("%s: Check(%q) = %v, want deny %v", tt.name, command, d, tt.deny)
+			case d != nil && !strings.HasSuffix(d.Reason, bash32Hint):
+				t.Errorf("%s: Check(%q) reason %q, want it to end in bash32Hint", tt.name, command, d.Reason)
+			}
+		}
+	}
+}
+
 func TestGitGuardsHeredocBodies(t *testing.T) {
 	for _, tt := range heredocBodies {
 		t.Run(tt.name, func(t *testing.T) {

@@ -602,7 +602,31 @@ Blocks `git push` to `main` or `master` before it happens.
   `git commit -F -` (or `gh ... --body-file -`) with a quoted heredoc, or a
   message file. Any other message is read as the bullet above says.
   The `$( )` and backticks of an unquoted body still run, and so does
-  anything else in the substitution.
+  anything else in the substitution. bash 3.2 may also end that `$( )`
+  later than belt, or end its word in another place. A quote of the body
+  then stays open into the text after it, and bash 3.2 runs words,
+  comments and heredoc bodies belt reads as data. So the rest of the
+  command from that `)` is read fail-closed in place of the commands after
+  it. A subshell or substitution that holds such a message has the rest
+  around it read the same way.
+  The rest reads as belt reads it only when two scans of bash 3.2 agree
+  with belt (`bash32Rejoins`). The parse step must end the word where belt
+  does. It does when it ends the `$( )` at belt's `)`, or after
+  a numbered list whose rest holds backticks or paired `"` around bare
+  words. A commit or `gh` message word that takes in all the rest of the
+  command passes too, since the rest is then message text. The expansion
+  then reads that word again. It takes a `#` after a blank for a
+  comment even inside double quotes, so `a # (` on one line and `b )` on
+  the next ends the `$( )` at `b )`. It must end the `$( )` at belt's `)`,
+  or earlier with the rest of the body read in the quoting belt has after
+  its `)`. It may also end it later: the `$( )` then runs cat and stops at
+  belt's `)` with a syntax error, and the word goes on from the later `)`.
+  There, and in a message word that takes in the rest, the expansion must
+  find nothing to expand: no `$`, backtick, backslash, `<( )`, glob or
+  brace outside single quotes. When it finds no `)` in the word at all,
+  bash 3.2 reports a bad substitution and drops the command, so nothing in
+  the word runs. Code belt cannot read that holds a `$(` is read the same
+  way, nested past the reader's depth included.
 - **A refspec must be plain text.** A refspec that holds a variable, a
   substitution, a `$'...'` string, a brace or a glob may name `main`, so the
   push is denied on any branch. Two shapes read as the current branch. The
@@ -933,7 +957,13 @@ then run the file" bypass.
   does can take this one in. Any other body, one whose lone apostrophe a
   later word closes included, is scanned, so such a body that names a denied
   command denies. The reason then points at the forms that stay masked: `git commit -F -` (or `gh ... --body-file -`) with a quoted
-  heredoc, or a message file. A backtick body is scanned when it holds a
+  heredoc, or a message file. When bash 3.2 may also read the text after
+  such a body in another way than belt (`bash32Tail`, the rule the git
+  guards use), nothing after its `)` is masked. That text is scanned as
+  code with every `#` read as a blank (`scanBash32Tail`). A word, a comment
+  or a heredoc body there that names a denied command denies too, with the
+  same reason. A nested text belt does not read that holds a `$(` starts
+  that text too. A backtick body is scanned when it holds a
   backslash, which every shell takes off before it reads the body. What can
   still run is scanned
   raw: every `$(…)`, backtick or `<( )` body wherever it stands (so

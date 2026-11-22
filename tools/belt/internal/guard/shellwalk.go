@@ -152,8 +152,12 @@ func (w *shellWalk) walkLines(text string, readTo int, fn func(walkStep)) {
 // walkUnread walks code the reader could not follow, fail-closed: quotes and
 // backslashes dropped and every ( ) $( ) backtick and brace read as a
 // separator, so a git word hidden in `(git`, `$(git`, `"g"it` or `p\ush`
-// still reaches fn, marked unread.
+// still reaches fn, marked unread. Such code may hold a
+// `$(cat <<'EOF' ... EOF)` bash 3.2 ends in another place when it holds a
+// $( ), so the walk around it reads the rest of its own text fail-closed
+// too (shellWalk.unsynced).
 func (w *shellWalk) walkUnread(text string, fn func(walkStep)) {
+	w.unsynced = w.unsynced || strings.Contains(text, "$(")
 	loose := strings.NewReplacer(
 		"\\\n", "", `'`, "", `"`, "", `\`, "",
 		"(", ";", ")", ";", "`", ";", "{", ";", "}", ";",
@@ -163,6 +167,11 @@ func (w *shellWalk) walkUnread(text string, fn func(walkStep)) {
 
 // walkCmds walks the commands readShell read from text. Each command's
 // heredoc bodies are judged with the command a pipe hands them to, if any.
+// Once a command holds a `$(cat <<'EOF' ... EOF)` bash 3.2 may end in
+// another place than belt (walkNested), a quote of its body may stay open
+// into anything after it, so the rest of text from there is read
+// fail-closed (walkUnread) in place of the commands after it, its steps
+// marked walkStep.bash32.
 func (w *shellWalk) walkCmds(text string, cmds []shellCmd, fn func(walkStep)) {
 	for i, c := range cmds {
 		if !w.prose {
@@ -171,7 +180,7 @@ func (w *shellWalk) walkCmds(text string, cmds []shellCmd, fn func(walkStep)) {
 		}
 		afterMove := w.justMoved
 		w.justMoved = false
-		w.walkNested(text, c, fn)
+		tail := w.walkNested(text, c, fn)
 		if tokens := c.tokens(); len(tokens) > 0 {
 			w.walkWords(text, c, tokens, w.pipeInto(cmds, i), fn)
 			if afterMove && leavesOnFail(c, tokens) {
@@ -184,6 +193,11 @@ func (w *shellWalk) walkCmds(text string, cmds []shellCmd, fn func(walkStep)) {
 			reader = &cmds[i+1]
 		}
 		w.walkProse(text, c, reader, fn)
+		if tail >= 0 {
+			w.unsynced = true
+			w.walkUnread(text[tail:], markBash32(fn))
+			return
+		}
 	}
 }
 
@@ -212,14 +226,17 @@ func (w *shellWalk) joinChain(before joint) {
 // Both read a $( ) in the shell's whole input to its end (whole). Any other
 // substitution is walked as the command it runs (piece.code): a backtick
 // body with one level of escapes taken off, so cmd in the body echo \`cmd\`
-// is walked too.
-func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) {
+// is walked too. It returns where the text bash 3.2 may read in another way
+// than belt starts, -1 for nowhere: at the ) of a bash32Cats message it may
+// end elsewhere, or at the end of a subshell or substitution whose own walk
+// reached such a message (shellWalk.unsynced).
+func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) (tail int) {
 	feeds := w.feeds || runsText(c)
 	var message map[span]bool
 	if w.plainGit(c) {
 		message = messageCats(text, c, w.whole(text))
 	}
-	bash32 := bash32Cats(text, c, w.whole(text))
+	bash32, tail := bash32Cats(text, c, w.whole(text))
 	walk := func(at span, code string) {
 		if message[at] {
 			return
@@ -231,6 +248,9 @@ func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) {
 			return
 		}
 		inner.walkRead(code, true, fn)
+		if inner.unsynced && (tail < 0 || at.to < tail) {
+			tail = at.to
+		}
 	}
 	for _, p := range c.pieces() {
 		walk(p.span, p.code(text))
@@ -238,6 +258,7 @@ func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) {
 	for _, s := range c.subshells {
 		walk(s, text[s.from:s.to])
 	}
+	return tail
 }
 
 // walkProse walks a command's heredoc bodies and comments in this shell, as
@@ -492,25 +513,18 @@ func messageCats(text string, c shellCmd, eof bool) map[span]bool {
 // that only print a heredoc in bash 5 and zsh (catBody) but of which bash
 // 3.2 may run more than cat (dataCat refuses them): it can end the $( )
 // early and run any part of the heredoc body, so walkNested reads it
-// fail-closed. eof says text is the shell's whole input (dataCat).
-func bash32Cats(text string, c shellCmd, eof bool) map[span]bool {
-	cats := map[span]bool{}
-	for _, words := range [][]placedWord{c.words, c.targets} {
-		for _, w := range words {
-			for _, p := range w.parts {
-				if p.kind != partSubst {
-					continue
-				}
-				if _, ok := catBody(text, p); !ok {
-					continue
-				}
-				if _, ok := dataCat(text, p, eof); !ok {
-					cats[p.body] = true
-				}
-			}
+// fail-closed. tail is the ) of the first of them after which bash 3.2 may
+// read the rest of text in another way (bash32Refused) and run any of it,
+// -1 for none. eof says text is the shell's whole input (dataCat).
+func bash32Cats(text string, c shellCmd, eof bool) (cats map[span]bool, tail int) {
+	cats, tail = map[span]bool{}, -1
+	bash32Refused(text, c, eof, func(p wordPart, apart bool) {
+		cats[p.body] = true
+		if apart && (tail < 0 || p.body.to < tail) {
+			tail = p.body.to
 		}
-	}
-	return cats
+	})
+	return cats, tail
 }
 
 // markBash32 is fn for the steps of a message bash32Cats reads fail-closed:

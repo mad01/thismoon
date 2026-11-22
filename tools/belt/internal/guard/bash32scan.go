@@ -60,6 +60,198 @@ func bash32Unclosed(cmd string, sub span, quoted bool) bool {
 	return end == pairOpen
 }
 
+// bash32Rejoins reports whether bash 3.2 reads the text after the $( ) p as
+// belt does, though it may run more of its body than cat (bash32Closes
+// refuses it). wordEnd is where belt ends the word that holds p. bash 3.2's
+// parse step, which ends the word, reads on through the rest of cmd from
+// the ) it ends p at (bash32WordEnd). It ends the word where belt does when
+// that ) is belt's, or when its reading of the rest says so. message says
+// the word is message text a command only takes in, at the end of the
+// shell's whole input: a word that takes in all the rest of it is passed
+// on, not run. The expansion then reads the word again (bash32Expands),
+// and must run nothing after belt's ) that belt reads as data. Anything
+// else can leave a quote of the body open into the text after it, which
+// may then run as code where belt reads data.
+func bash32Rejoins(cmd string, p wordPart, wordEnd int, message bool) bool {
+	sub := p.body
+	if strings.ContainsAny(cmd, bash32Escaped) || sub.to >= len(cmd) || cmd[sub.to] != ')' {
+		return false
+	}
+	end, how := bash32Scan(cmd[sub.from:]).pair(0, 0, '(', ')', substFlags(p.quoted))
+	if how != pairClosed {
+		return false
+	}
+	at := wordEnd
+	if sub.from+end != sub.to+1 {
+		var ok bool
+		if at, ok = bash32WordEnd(cmd, sub.from+end, sub.to+1, p.quoted); !ok {
+			return false
+		}
+	}
+	switch {
+	case at == wordEnd:
+		return bash32Expands(cmd, sub, at, p.quoted, false)
+	case message && at > wordEnd && strings.TrimSpace(cmd[at:]) == "":
+		return bash32Expands(cmd, sub, at, p.quoted, true)
+	}
+	return false
+}
+
+// bash32Expands reports whether bash 3.2's expansion (bash32Expansion), as
+// it reads the word the parse step ended at end again, runs nothing after
+// belt's ) of the $( ) sub that belt reads as data. It ends the $( ) where
+// it can match a ), which may not be the parse step's or belt's. It may end
+// it at belt's ), or earlier and read the rest of the body as text of the
+// same word, quoted as belt quotes the text after the ) (bash32Reaches). It
+// then reads the rest of the word as belt does, up to belt's end of it.
+// rest says the word takes in the text after belt's end of it too, where
+// the expansion must run nothing (bash32Inert). When it ends the $( ) past
+// belt's ), the $( ) runs cat on the heredoc and then stops at belt's ):
+// bash 3.2 runs no command that starts with a ). The word then goes on
+// from that later ), and the expansion must run nothing there either. When
+// it finds no ) in the word at all, bash 3.2 reports a bad substitution
+// and drops the command before it expands the word, so nothing in the word
+// runs.
+func bash32Expands(cmd string, sub span, end int, quoted, rest bool) bool {
+	closed, ok := bash32Expansion(cmd[sub.from:end]).command(0)
+	if !ok {
+		return true
+	}
+	closed += sub.from
+	after := sub.to + 1
+	switch {
+	case closed > after:
+		return bash32Inert(cmd[closed:end], quoted)
+	case closed < after && !bash32Reaches(cmd[closed:after], quoted):
+		return false
+	}
+	return !rest || bash32Inert(cmd[after:end], quoted)
+}
+
+// bash32Reaches reports whether bash 3.2's expansion, reading text as the
+// rest of a word from inside double quotes when quoted
+// (expand_word_internal), ends text in the same quoting, with each quote,
+// backtick, $( ), ${ } and <( ) it opens ended inside text. Text inside
+// double quotes is read as string_extract_double_quoted reads it
+// (bash32Expansion.doubleQuoted).
+func bash32Reaches(text string, quoted bool) bool {
+	s := bash32Expansion(text + `"`) // the " ends double quotes that reach the end of text
+	start := quoted
+	for at := 0; at < len(text); {
+		next, ok := at+1, true
+		switch rest := string(s[at:]); {
+		case quoted:
+			next, ok = s.doubleQuoted(at)
+			if ok && next > len(text) {
+				return start
+			}
+			quoted = false
+		case rest[0] == '"':
+			quoted = true
+		case rest[0] == '\'':
+			next, ok = s.singleQuoted(at + 1)
+		case rest[0] == '\\':
+			next = at + 2
+		case rest[0] == '`':
+			next, ok = s.backtick(at + 1)
+		case strings.HasPrefix(rest, "${"):
+			next, ok = s.brace(at + 2)
+		case strings.HasPrefix(rest, "$("), strings.HasPrefix(rest, "<("), strings.HasPrefix(rest, ">("):
+			next, ok = s.command(at + 2)
+		}
+		if !ok || next > len(text) {
+			return false
+		}
+		at = next
+	}
+	return quoted == start
+}
+
+// bash32Inert reports whether bash 3.2's expansion, reading text as the
+// rest of a word from inside double quotes when quoted, runs, splits and
+// globs nothing in it: text holds no $, backtick or backslash outside
+// single quotes, and outside double quotes too no <( or >( and no glob or
+// brace. A ' outside double quotes starts text read as written up to the
+// next ' or the end of the word.
+func bash32Inert(text string, quoted bool) bool {
+	for at := 0; at < len(text); at++ {
+		switch ch := text[at]; {
+		case strings.IndexByte("$`\\", ch) >= 0:
+			return false
+		case ch == '"':
+			quoted = !quoted
+		case quoted:
+		case ch == '\'':
+			end := strings.IndexByte(text[at+1:], '\'')
+			if end < 0 {
+				return true
+			}
+			at += end + 1
+		case strings.IndexByte("*?[{", ch) >= 0,
+			strings.IndexByte("<>", ch) >= 0 && at+1 < len(text) && text[at+1] == '(':
+			return false
+		}
+	}
+	return true
+}
+
+// bash32WordEnd returns where bash 3.2's parse step ends a word it reads on
+// from at, just past the ) it ends a $( ) at, inside double quotes when
+// quoted. close is just past belt's ) of that $( ): before it lies the body,
+// which belt reads fail-closed, and from it on text belt reads as words of
+// its own. Each " switches between double-quoted text (bash32Quoted) and
+// bare text, which ends the word at a blank or an operator byte. ok is
+// false for a word that may run text belt reads as data, or split it in
+// other places: bare text holding a quote, $, backtick, backslash, glob or
+// brace, or double-quoted text bash32Quoted refuses.
+func bash32WordEnd(cmd string, at, close int, quoted bool) (int, bool) {
+	for at < len(cmd) {
+		if quoted {
+			next, ok := bash32Quoted(cmd, at, close)
+			if !ok {
+				return 0, false
+			}
+			at, quoted = next, false
+			continue
+		}
+		switch ch := cmd[at]; {
+		case ch == '"':
+			quoted = true
+		case strings.IndexByte(wordEnds, ch) >= 0:
+			return at, true
+		case strings.IndexByte("'`$\\*?[{", ch) >= 0:
+			return 0, false
+		}
+		at++
+	}
+	return at, !quoted
+}
+
+// bash32Quoted returns the index just past the " that ends the
+// double-quoted text bash 3.2 reads from at (bash32WordEnd). Before close,
+// in the body, it follows the backticks, $( ), ${ } and $[ ] that text opens
+// (bash32Scan.pair), which must end before close. From close on, in text
+// belt reads as its own words, it takes no $, backtick or backslash, since
+// bash 3.2 would expand them where belt reads plain text.
+func bash32Quoted(cmd string, at, close int) (int, bool) {
+	if at < close {
+		body := cmd[at:close] + `"`
+		end, how := bash32Scan(body).pair(0, '"', '"', '"', 0)
+		switch {
+		case how != pairClosed:
+			return 0, false
+		case end < len(body):
+			return at + end, true
+		}
+		at = close // still inside the double quotes at belt's )
+	}
+	end := strings.IndexAny(cmd[at:], "\"$`\\")
+	if end < 0 || cmd[at+end] != '"' {
+		return 0, false
+	}
+	return at + end + 1, true
+}
+
 // substFlags are the flags bash 3.2's parse step reads a $( ) with: inside
 // double quotes (quoted) none, outside them P_COMMAND.
 func substFlags(quoted bool) pairFlags {

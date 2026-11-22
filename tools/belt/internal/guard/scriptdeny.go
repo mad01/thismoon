@@ -208,7 +208,8 @@ type scan struct {
 // A denial that goes away once belt trusts every `$(cat <<'EOF' ... EOF)`
 // message as bash 5 and zsh read it (maskDataBash5) comes from a message
 // bash 3.2 may run: it says so and names the forms that stay data
-// (bash32Hint).
+// (bash32Hint). So does one in the text after a message bash 3.2 may end
+// in another place (scanBash32Tail).
 func (g *ScriptDenyList) check(in Input) *Denial {
 	patterns := g.compiled()
 	if len(patterns) == 0 || in.Command == "" {
@@ -217,6 +218,9 @@ func (g *ScriptDenyList) check(in Input) *Denial {
 	cmd := maskData(in.Command)
 	d := g.scanMasked(in, cmd, patterns)
 	if d == nil {
+		if d = scanBash32Tail(in.Command, patterns); d != nil {
+			return bash32Denial(d)
+		}
 		return nil
 	}
 	if bash5 := maskDataBash5(in.Command); bash5 != cmd && g.scanMasked(in, bash5, patterns) == nil {
@@ -758,11 +762,13 @@ const directHint = "Run the blocked operation as a direct command so the permiss
 
 // bash32Hint ends a denial whose match is in a `$(cat <<'EOF' ... EOF)`
 // message belt reads as code because bash 3.2 may run part of it
-// (bash32Closes): it takes the place of the advice a deny-list denial ends
-// with (deny.hint), and the git guards add it to their own reason
+// (bash32Closes), or in the text after one it may end later (bash32Tail):
+// it takes the place of the advice a deny-list denial ends with
+// (deny.hint), and the git guards add it to their own reason
 // (bash32Hinted).
-const bash32Hint = "belt found it in a $(cat <<'EOF' ... EOF) message: bash 3.2, macOS's /bin/bash, " +
-	"can end that substitution early and run part of the message, so belt reads it as code. " +
+const bash32Hint = "belt found it in or after a $(cat <<'EOF' ... EOF) message: bash 3.2, macOS's /bin/bash, " +
+	"can end that substitution early or late and run part of the message or the text after it, " +
+	"so belt reads them as code. " +
 	"Pass the message as data instead: git commit -F - (or gh ... --body-file -) with a quoted heredoc " +
 	"such as <<'EOF', or a message file (git commit -F <file>, gh ... --body-file <file>)."
 
@@ -787,6 +793,20 @@ func bash32Hinted(d *Denial, bash32 bool) *Denial {
 		return d
 	}
 	return bash32Denial(d)
+}
+
+// scanBash32Tail scans the text after the first `$(cat <<'EOF' ... EOF)`
+// that bash 3.2 may end in another place than belt (bash32Tail) as code. A
+// quote of the body can stay open past belt's ), so any word, comment or
+// heredoc body after it may run there: every # reads as a blank, so no line
+// is skipped as a comment, and the names the whole command defines count.
+func scanBash32Tail(cmd string, patterns []deny) *Denial {
+	at := bash32Tail(cmd)
+	if at == len(cmd) {
+		return nil
+	}
+	tail := strings.ReplaceAll(cmd[at:], "#", " ")
+	return scanLines(tail, "the text after a $(cat <<'EOF' ... EOF) message", patterns, readShellNames(cmd), 0)
 }
 
 // scanText checks every non-comment logical line against every pattern —
