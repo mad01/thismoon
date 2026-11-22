@@ -118,6 +118,9 @@ func All(cfg config.Config) []Guard {
 		NewGitDiscard(cfg),
 		NewGitIdentity(cfg),
 		NewCommitGuard(cfg),
+		// Before script-deny-list, so a deny-listed command run directly or
+		// behind a wrapper gets this guard's ask-the-user text.
+		NewDirectDenyList(cfg),
 		NewScriptDenyList(cfg),
 		NewWriteInternalNames(cfg),
 		// One guard id on two events: the bash half watches git push, git

@@ -105,7 +105,8 @@ const DefaultLargeFileLines = 300
 // believe it blocks while they meant to soften it). A guard package test
 // pins this list to the ids that actually call Toggle.Soft.
 var SoftModeGuards = []string{
-	"script-deny-list", "publish-internal-names", "git-discard", "file-discard",
+	"direct-deny-list", "script-deny-list", "publish-internal-names", "git-discard",
+	"file-discard",
 }
 
 // The modes of the guards in HintModeGuards. "hint" (the default) lets the
@@ -1253,6 +1254,7 @@ var (
 		"git-push-main":          {"allow_repos"},
 		"git-identity":           {},
 		"commit-guard":           {},
+		"direct-deny-list":       {},
 		"script-deny-list":       {"extra_patterns", "exclude_paths"},
 		"write-internal-names":   {"allow_repos", "exclude_paths"},
 		"large-read":             {},

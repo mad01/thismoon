@@ -1,0 +1,9 @@
+# direct-deny-list verdicts of the build that added the guard, for
+# directFrozenCorpus (directdeny_diff_test.go), recorded once from that
+# build. Never record them again from a later one: it would write its
+# own verdicts. A group line is: name, input count, fingerprint, then run
+# lengths that alternate allow and deny, starting with allow.
+patterns d4b9c69c912a94f6
+group tranche 587 ceefb90b63ca0824 0 22 9 20 7 23 8 12 5 29 11 23 9 14 6 15 5 23 10 21 7 17 4 15 6 14 2 13 5 17 6 14 6 16 8 16 5 14 7 14 6 21 6 12 5 12 5 12 4 19 7
+group shapes 35 0739ffe8e91c93bd 0 15 10 3 1 2 1 2 1
+group generated 12152 630a8835ace9c889 0 124 372 124 372 124 372 124 372 124 372 124 372 124 372 124 372 124 372 124 372 124 372 124 372 124 124 124 372 124 372 124 372 124 372 124 372 124 372 124 372 124 372 124 372 124 372 124 372 124 372

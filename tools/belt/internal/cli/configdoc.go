@@ -78,10 +78,12 @@ internal_names:
 
 # The switch on belt reading the Claude settings files: ~/.claude/
 # settings.json + settings.local.json, the source of the permissions.deny
-# Bash entries script-deny-list enforces inside scripts, and the files
+# Bash entries direct-deny-list enforces on the commands a call runs and
+# script-deny-list enforces inside scripts, and the files
 # Claude Code reads auto memory settings from, which agent-memory reads
 # under --agent claude-code. Defaults to true; false stops belt opening
-# those files, leaving the guard with extra_patterns only and agent-memory
+# those files, leaving script-deny-list with extra_patterns only,
+# direct-deny-list with nothing to read, and agent-memory
 # leaving out no store.
 claude_settings:
   enabled: true
@@ -281,13 +283,20 @@ guards:
     exclude_paths:
       - ~/.local/share/journal
 
+  direct-deny-list:
+    enabled: true
+    # Denies a command the call runs itself when it runs a Claude settings
+    # permissions.deny Bash(...) entry, read past global flags and wrappers.
+    # It reads no extra_patterns. "soft" turns a denial into a warn event.
+    mode: hard
+
   script-deny-list:
     enabled: true
     # "soft" downgrades every denial to a warn event on the events service
     # and lets the command proceed (the rollout setting for tuning new
     # patterns before they block). "hard" (the default) blocks. Only
-    # script-deny-list, publish-internal-names, git-discard and file-discard
-    # read a mode here; setting it elsewhere is an error.
+    # direct-deny-list, script-deny-list, publish-internal-names, git-discard
+    # and file-discard read a mode here; setting it elsewhere is an error.
     mode: hard
     # Extra patterns denied inside scripts, beyond the Claude settings
     # permissions.deny Bash(...) entries (which are read live, never copied).
@@ -369,7 +378,7 @@ and this command prints the defaults only so the reference stays readable
 while the file is broken. Every value prints resolved, defaults included.
 claude_deny is the one section that isn't a config.yaml key: the Bash deny
 patterns are read live from the Claude settings and shown here because the
-script-deny-list guard enforces them.
+direct-deny-list and script-deny-list guards enforce them.
 
 Every setting:
 
@@ -447,9 +456,9 @@ func encodeYAML(w io.Writer, v any) error {
 // effectiveConfig is the full resolved config in the shape of
 // ~/.config/belt/config.yaml with every default made explicit:
 // claude_settings prints its resolved enabled state. ClaudeDeny is the one
-// section that is not a config.yaml key — the Bash deny patterns read live
-// from the Claude settings — included because the script-deny-list guard
-// enforces them and no other command lists them.
+// section that is not a config.yaml key: the Bash deny patterns read live
+// from the Claude settings. It is included because the direct-deny-list and
+// script-deny-list guards enforce them and no other command lists them.
 type effectiveConfig struct {
 	InternalNames  config.InternalNames          `yaml:"internal_names"`
 	ClaudeSettings config.ClaudeSettings         `yaml:"claude_settings"`

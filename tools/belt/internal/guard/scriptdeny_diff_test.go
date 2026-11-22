@@ -147,7 +147,7 @@ func TestScriptDenyListKeepsFrozenVerdicts(t *testing.T) {
 	// A relative cd is followed only when CDPATH is unset (scripttext.go).
 	t.Setenv("CDPATH", "")
 	g, groups, root := frozenCorpus(t)
-	frozen := readFrozenVerdicts(t)
+	frozen := readFrozenVerdicts(t, frozenVerdicts)
 	if got := frozenPrint([]string{strings.Join(g.patterns(), "\n")}); got != frozen.patterns {
 		t.Fatalf("the corpus deny list changed since the verdicts were frozen (fingerprint %s)", got)
 	}
@@ -208,11 +208,11 @@ type frozenFile struct {
 	groups   map[string][]bool
 }
 
-// readFrozenVerdicts reads frozenVerdicts. A group line is `group <name>
-// <count> <fingerprint> <runs...>`.
-func readFrozenVerdicts(t *testing.T) frozenFile {
+// readFrozenVerdicts reads a frozen verdicts file (frozenVerdicts). A group
+// line is `group <name> <count> <fingerprint> <runs...>`.
+func readFrozenVerdicts(t *testing.T, path string) frozenFile {
 	t.Helper()
-	data, err := os.ReadFile(frozenVerdicts)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,10 +225,10 @@ func readFrozenVerdicts(t *testing.T) frozenFile {
 		case len(fields) >= 4 && fields[0] == "group":
 			count, err := strconv.Atoi(fields[2])
 			if err != nil {
-				t.Fatalf("%s: %q: %v", frozenVerdicts, line, err)
+				t.Fatalf("%s: %q: %v", path, line, err)
 			}
 			f.prints[fields[1]] = fields[3]
-			f.groups[fields[1]] = decodeRuns(t, fields[4:], count)
+			f.groups[fields[1]] = decodeRuns(t, path, fields[4:], count)
 		}
 	}
 	return f
@@ -236,20 +236,20 @@ func readFrozenVerdicts(t *testing.T) frozenFile {
 
 // decodeRuns turns run lengths that alternate allow and deny, starting with
 // allow, into one verdict per input.
-func decodeRuns(t *testing.T, runs []string, count int) []bool {
+func decodeRuns(t *testing.T, path string, runs []string, count int) []bool {
 	t.Helper()
 	out := make([]bool, 0, count)
 	for i, r := range runs {
 		n, err := strconv.Atoi(r)
 		if err != nil {
-			t.Fatalf("%s: run %q: %v", frozenVerdicts, r, err)
+			t.Fatalf("%s: run %q: %v", path, r, err)
 		}
 		for range n {
 			out = append(out, i%2 == 1)
 		}
 	}
 	if len(out) != count {
-		t.Fatalf("%s: runs add up to %d verdicts, the group has %d", frozenVerdicts, len(out), count)
+		t.Fatalf("%s: runs add up to %d verdicts, the group has %d", path, len(out), count)
 	}
 	return out
 }

@@ -1,6 +1,9 @@
 package guard
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // This file is the quote-aware shell reader behind the rm-temp guard. The
 // token parser the git guards share (splitSegments) splits inside quoted
@@ -24,7 +27,8 @@ const (
 	partLit     partKind = iota // literal text, quotes removed
 	partVar                     // $NAME or ${NAME}: text is the name
 	partSubst                   // $(...) or `...`: text is the inner command
-	partUnknown                 // any other expansion ($1, ${x:-y}, $((...)), $'...', <(...))
+	partUnknown                 // any other expansion ($1, ${x:-y}, $((...)), <(...))
+	partANSIC                   // $'...': text is its value, the escapes decoded
 )
 
 // wordPart is one piece of a word. quoted marks literal text that was
@@ -40,9 +44,22 @@ type wordPart struct {
 
 // literal returns the word's value when it holds no expansion at all.
 func (w shWord) literal() (string, bool) {
+	return w.value(false)
+}
+
+// literalANSIC is literal with a $'...' piece read as its value: the word
+// the shell passes when it holds no other expansion. The deny guards read
+// words this way (ansiCWord).
+func (w shWord) literalANSIC() (string, bool) {
+	return w.value(true)
+}
+
+// value joins the word's literal pieces, and its $'...' pieces when ansiC
+// is set. ok is false when the word holds any other piece.
+func (w shWord) value(ansiC bool) (string, bool) {
 	var b strings.Builder
 	for _, p := range w.parts {
-		if p.kind != partLit {
+		if p.kind != partLit && (!ansiC || p.kind != partANSIC) {
 			return "", false
 		}
 		b.WriteString(p.text)
@@ -470,21 +487,103 @@ func (l *shLexer) readDollarBrace(parts *[]wordPart, quoted bool, open int) bool
 }
 
 // readANSIC reads a $'...' string whose opening quote is at quote. Its
-// backslash escapes only the shell decodes.
+// piece holds the value with the backslash escapes decoded (ansiCValue),
+// which only the deny guards read as literal text (literalANSIC); to every
+// other reader it is an expansion.
 func (l *shLexer) readANSIC(parts *[]wordPart, quote int) bool {
-	j := quote + 1
-	for j < len(l.src) && l.src[j] != '\'' {
-		if l.src[j] == '\\' {
+	j := ansiCEnd(l.src, quote+1)
+	if j < 0 {
+		return false
+	}
+	*parts = append(*parts, wordPart{kind: partANSIC, text: ansiCValue(l.src[quote+1 : j])})
+	l.i = j + 1
+	return true
+}
+
+// ansiCEnd returns where the quote that closes a $'...' string lies in src,
+// its body starting at from, past the backslash escapes in it. It is -1
+// when no quote closes the string.
+func ansiCEnd(src string, from int) int {
+	j := from
+	for j < len(src) && src[j] != '\'' {
+		if src[j] == '\\' {
 			j++
 		}
 		j++
 	}
-	if j >= len(l.src) {
-		return false
+	if j >= len(src) {
+		return -1
 	}
-	*parts = append(*parts, wordPart{kind: partUnknown}) // $'ANSI-C'
-	l.i = j + 1
-	return true
+	return j
+}
+
+// ansiCEscapes are the one-letter escapes of a $'...' string.
+var ansiCEscapes = map[byte]byte{
+	'a': '\a', 'b': '\b', 'e': 0x1b, 'E': 0x1b, 'f': '\f', 'n': '\n', 'r': '\r',
+	't': '\t', 'v': '\v', '\\': '\\', '\'': '\'', '"': '"', '?': '?',
+}
+
+// ansiCValue decodes the body of a $'...' string as bash does: the
+// one-letter escapes, octal \nnn, \xHH, \uHHHH, \UHHHHHHHH and \cX for a
+// control character. An unknown escape keeps its backslash, and a NUL ends
+// the value, as it ends an argument the shell passes.
+func ansiCValue(body string) string {
+	var b strings.Builder
+	for i := 0; i < len(body); i++ {
+		if body[i] != '\\' || i+1 == len(body) {
+			b.WriteByte(body[i])
+			continue
+		}
+		i++
+		esc := body[i]
+		if c, ok := ansiCEscapes[esc]; ok {
+			b.WriteByte(c)
+			continue
+		}
+		v, wide, used := ansiCNumber(body[i:])
+		switch {
+		case used > 0 && wide:
+			b.WriteRune(rune(v))
+			i += used - 1
+		case used > 0:
+			b.WriteByte(byte(v))
+			i += used - 1
+		case esc == 'c' && i+1 < len(body):
+			b.WriteByte(body[i+1] & 0x1f)
+			i++
+		default:
+			b.WriteByte('\\')
+			b.WriteByte(esc)
+		}
+	}
+	value, _, _ := strings.Cut(b.String(), "\x00")
+	return value
+}
+
+// ansiCNumber reads a numeric escape from just after its backslash: up to
+// three octal digits, or x, u or U and up to two, four or eight hex digits.
+// wide marks a \u or \U character, written as UTF-8; the others are one
+// byte. used is how many bytes the escape takes, 0 when s starts none.
+func ansiCNumber(s string) (v uint64, wide bool, used int) {
+	base, set, digits, start := 8, "01234567", 3, 0
+	const hex = "0123456789abcdefABCDEF"
+	switch s[0] {
+	case 'x':
+		base, set, digits, start = 16, hex, 2, 1
+	case 'u':
+		base, set, digits, start, wide = 16, hex, 4, 1, true
+	case 'U':
+		base, set, digits, start, wide = 16, hex, 8, 1, true
+	}
+	end := start
+	for end < len(s) && end-start < digits && strings.IndexByte(set, s[end]) >= 0 {
+		end++
+	}
+	if end == start {
+		return 0, false, 0
+	}
+	v, _ = strconv.ParseUint(s[start:end], base, 32)
+	return v, wide, end
 }
 
 func (l *shLexer) readBacktick(parts *[]wordPart, quoted bool) bool {

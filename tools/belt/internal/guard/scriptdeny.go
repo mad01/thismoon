@@ -210,7 +210,7 @@ type scan struct {
 // bash 3.2 may run: it says so and names the forms that stay data
 // (bash32Hint).
 func (g *ScriptDenyList) check(in Input) *Denial {
-	patterns := compilePatterns(g.patterns())
+	patterns := g.compiled()
 	if len(patterns) == 0 || in.Command == "" {
 		return nil
 	}
@@ -271,8 +271,9 @@ func (g *ScriptDenyList) scanMasked(in Input, cmd string, patterns []deny) *Deni
 // or file it would run. The head is read past wrappers first, and a command
 // hidden behind one or behind a name is checked (checkHidden). A wrapper
 // named by a path (./nice, /usr/bin/env) is read both ways: as the script
-// of that name it may be, and as the wrapper. A head that names an
-// interpreter through a variable is read as that interpreter
+// of that name it may be, and as the wrapper. A head in ANSI-C quoting
+// reads as the shell passes it (ansiCWord), so `$'bash'` names bash. A head
+// that names an interpreter through a variable is read as that interpreter
 // (shellNames.runnerNamed).
 func (g *ScriptDenyList) checkSegment(s scan, i int) *Denial {
 	seg := s.segs[i]
@@ -291,7 +292,7 @@ func (g *ScriptDenyList) checkSegment(s scan, i int) *Denial {
 	if len(tokens) == 0 {
 		return nil
 	}
-	head := filepath.Base(tokens[0])
+	head := filepath.Base(ansiCWord(tokens[0]))
 	if runner, ok := s.names.runnerNamed(tokens[0]); ok {
 		head = runner // "$SHELL" -c …, S=sh; … | $S
 	}
@@ -418,21 +419,38 @@ func pipeBefore(command string, off int) bool {
 // patterns merges the Claude settings deny prefixes with the guard's
 // configured extra patterns.
 func (g *ScriptDenyList) patterns() []string {
+	return uniquePatterns(g.cfg.ClaudeDeny, g.cfg.Guards[ScriptDenyListID].ExtraPatterns)
+}
+
+// compiled compiles the guard's patterns, each one the settings list gives
+// marked as such (deny.settings), so its denial asks the user to run the
+// command, since direct-deny-list denies the direct form too.
+func (g *ScriptDenyList) compiled() []deny {
+	patterns := compilePatterns(g.patterns())
+	fromSettings := map[string]bool{}
+	for _, p := range uniquePatterns(g.cfg.ClaudeDeny) {
+		fromSettings[p] = true
+	}
+	for i := range patterns {
+		patterns[i].settings = fromSettings[patterns[i].pattern]
+	}
+	return patterns
+}
+
+// uniquePatterns joins pattern lists in order, each pattern trimmed, with
+// the empty ones and repeats dropped.
+func uniquePatterns(lists ...[]string) []string {
 	seen := map[string]bool{}
 	var out []string
-	add := func(p string) {
-		p = strings.TrimSpace(p)
-		if p == "" || seen[p] {
-			return
+	for _, list := range lists {
+		for _, p := range list {
+			p = strings.TrimSpace(p)
+			if p == "" || seen[p] {
+				continue
+			}
+			seen[p] = true
+			out = append(out, p)
 		}
-		seen[p] = true
-		out = append(out, p)
-	}
-	for _, p := range g.cfg.ClaudeDeny {
-		add(p)
-	}
-	for _, p := range g.cfg.Guards[ScriptDenyListID].ExtraPatterns {
-		add(p)
 	}
 	return out
 }
@@ -625,22 +643,38 @@ func scanFindExec(tokens []string, patterns []deny) *Denial {
 	return nil
 }
 
-// deny pairs a deny-list pattern with its compiled matcher. argv holds the
-// pattern's words when the argv match reads it too (scriptdeny_argv.go).
+// deny pairs a deny-list pattern with its compiled matchers: re for the
+// text match, nil for an entry with a `*` group, which argv alone reads, and
+// entry for the argv match (denyentry.go), nil for an entry the reader does
+// not read. settings marks an entry from the Claude settings deny list, as
+// opposed to extra_patterns.
 type deny struct {
-	pattern string
-	re      *regexp.Regexp
-	argv    []string
+	pattern  string
+	re       *regexp.Regexp
+	entry    *denyEntry
+	settings bool
 }
 
-// compilePatterns builds a matcher per pattern. A `re:` prefix compiles the
-// rest as a case-insensitive regex: the escape hatch for shapes the literal
-// form cannot express (argument wildcards, flag reordering for a tool the
-// argv match does not read). Anchor it yourself when word boundaries
-// matter. Every other pattern matches its tokens in order,
-// separated by whitespace, not embedded in a longer word: `kubectl delete`
-// matches `  kubectl   delete pod x` but not `kubectl deleted`. An rm,
-// kubectl, gcloud or terraform pattern also matches on argv (argvEntry).
+// hint returns the advice a script-deny-list denial of this entry ends
+// with: direct, the advice to run the command where the permission system
+// can judge it, for an extra_patterns entry. An entry from the settings
+// list gets askUserToRun instead, since direct-deny-list denies the direct
+// form too.
+func (d deny) hint(direct string) string {
+	if d.settings {
+		return askUserToRun
+	}
+	return direct
+}
+
+// compilePatterns builds the matchers per pattern. A `re:` prefix compiles
+// the rest as a case-insensitive regex: the escape hatch for shapes the
+// entry format cannot express. Anchor it yourself when word boundaries
+// matter. Every other pattern is read as a deny entry on argv
+// (readDenyEntry). One without a `*` group also matches its words as text
+// in order, separated by whitespace, not embedded in a longer word: `kubectl
+// delete` matches `  kubectl   delete pod x` but not `kubectl deleted`. A
+// pattern the reader refuses keeps that text match alone.
 func compilePatterns(patterns []string) []deny {
 	var out []deny
 	for _, p := range patterns {
@@ -650,21 +684,40 @@ func compilePatterns(patterns []string) []deny {
 			}
 			continue
 		}
-		toks := strings.Fields(p)
-		if len(toks) == 0 {
-			continue
+		d, toks := deny{pattern: p}, strings.Fields(p)
+		if e, ok := readDenyEntry(p); ok {
+			d.entry, toks = &e, entryWords(p)
 		}
-		quoted := make([]string, len(toks))
-		for i, t := range toks {
-			quoted[i] = regexp.QuoteMeta(t)
+		if d.entry == nil || !slices.Contains(toks, "*") {
+			d.re = wordsRegexp(toks, textGap)
 		}
-		re, err := regexp.Compile(`(?i)(?:^|[^\w-])` + strings.Join(quoted, `\s+`) + `(?:[^\w-]|$)`)
-		if err != nil {
-			continue
+		if d.re != nil || d.entry != nil {
+			out = append(out, d)
 		}
-		out = append(out, deny{pattern: p, re: re, argv: argvEntry(toks)})
 	}
 	return out
+}
+
+// inText reports whether the text match finds the pattern in a line.
+func (d deny) inText(line string) bool {
+	return d.re != nil && d.re.MatchString(line)
+}
+
+// textGap is what stands between an entry's words in the text match.
+const textGap = `\s+`
+
+// wordsRegexp matches words in order as text, case-insensitively, separated
+// by gap (textGap, or phraseGap for a phrase) and not inside a longer word.
+// It is nil for no words.
+func wordsRegexp(words []string, gap string) *regexp.Regexp {
+	if len(words) == 0 {
+		return nil
+	}
+	quoted := make([]string, len(words))
+	for i, t := range words {
+		quoted[i] = regexp.QuoteMeta(t)
+	}
+	return regexp.MustCompile(`(?i)(?:^|[^\w-])` + strings.Join(quoted, gap) + `(?:[^\w-]|$)`)
 }
 
 // lineNoise collapses the separators that hide a command from the
@@ -705,17 +758,22 @@ const directHint = "Run the blocked operation as a direct command so the permiss
 
 // bash32Hint ends a denial whose match is in a `$(cat <<'EOF' ... EOF)`
 // message belt reads as code because bash 3.2 may run part of it
-// (bash32Closes): it takes the place of directHint, and the git guards add
-// it to their own reason (bash32Hinted).
+// (bash32Closes): it takes the place of the advice a deny-list denial ends
+// with (deny.hint), and the git guards add it to their own reason
+// (bash32Hinted).
 const bash32Hint = "belt found it in a $(cat <<'EOF' ... EOF) message: bash 3.2, macOS's /bin/bash, " +
 	"can end that substitution early and run part of the message, so belt reads it as code. " +
 	"Pass the message as data instead: git commit -F - (or gh ... --body-file -) with a quoted heredoc " +
 	"such as <<'EOF', or a message file (git commit -F <file>, gh ... --body-file <file>)."
 
-// bash32Denial is d with bash32Hint in place of directHint, or after the
-// reason when it has none.
+// bash32Denial is d with bash32Hint in place of the advice its reason ends
+// with (directHint, or askUserToRun for a settings entry), or after the
+// reason when it has neither.
 func bash32Denial(d *Denial) *Denial {
 	reason, ok := strings.CutSuffix(d.Reason, directHint)
+	if !ok {
+		reason, ok = strings.CutSuffix(d.Reason, askUserToRun)
+	}
 	if !ok {
 		reason += " "
 	}
@@ -735,9 +793,19 @@ func bash32Hinted(d *Denial, bash32 bool) *Denial {
 // first as written, then with quoting noise collapsed, then each form's
 // commands on argv — and denies on the first hit. A command whose name the
 // text's own variables, aliases or functions give is read through them
-// (shellNames.hiddenRun).
+// (shellNames.hiddenRun). Text with a $'...' string in it is scanned again
+// with each one decoded (ansiCText), and its names read again from the
+// decoded text, since a shell that reads the text as code runs the decoded
+// value: `bash -c $'kube\x63tl delete pod x'`, `bash -c $'K=kube\x63tl\n$K
+// delete pod x'`.
 func scanText(text, where string, patterns []deny) *Denial {
-	return scanLines(text, where, patterns, readShellNames(text), 0)
+	if d := scanLines(text, where, patterns, readShellNames(text), 0); d != nil {
+		return d
+	}
+	if decoded := ansiCText(text); decoded != text {
+		return scanLines(decoded, where, patterns, readShellNames(decoded), 0)
+	}
+	return nil
 }
 
 // scanLines is scanText with the names to read commands through, and how
@@ -751,14 +819,14 @@ func scanLines(text, where string, patterns []deny, names shellNames, depth int)
 		normalized := lineNoise.Replace(line.text)
 		cmds := lineCommands(line.text, normalized)
 		for _, d := range patterns {
-			if d.re.MatchString(line.text) || d.re.MatchString(normalized) || d.runsIn(cmds) {
+			if d.inText(line.text) || d.inText(normalized) || d.runsIn(cmds) {
 				return Reasonf(
 					ScriptDenyListID,
 					"%s runs %q (line %d) — that command is on the Bash deny list and scripts don't get to bypass it. %s",
 					where,
 					d.pattern,
 					line.number,
-					directHint,
+					d.hint(directHint),
 				)
 			}
 		}

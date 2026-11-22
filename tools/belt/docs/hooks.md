@@ -740,6 +740,73 @@ hours.
   (`cd "$(git rev-parse --show-toplevel)" && git commit` is not judged, not
   even in the session cwd).
 
+### direct-deny-list
+
+Applies the Bash deny list to the commands a call runs itself, read past
+global flags, quoting and wrappers.
+
+- **Fires on** a command that runs an entry of the Claude Code settings deny
+  list, in any spelling the entry reader matches on argv (`denyentry.go`,
+  the same reader script-deny-list uses). So `kubectl -n prod delete pod x`,
+  `gcloud --project p beta sql instances delete db`, `gh api -XDELETE
+  repos/o/r`, `psql -h h -d db -c 'drop table t'`, `sudo kubectl delete`,
+  `timeout 30 terraform destroy`, `/usr/local/bin/helm uninstall x` and
+  `\kubectl delete` all deny for their entries.
+- **Reads** every simple command at the top level of the call, the commands
+  after `&&`, `||`, `;`, `|` and a background `&`, and the commands inside a
+  `( )` subshell. The quote-aware reader (`readShell`) drops the quotes and
+  skips heredoc bodies, comments and quoted text, so `rg 'a|kubectl delete'`
+  and `cat > notes.md <<'EOF'` with a body that names an entry pass. A
+  `$'…'` string reads as its value, so `kubectl $'delete'` counts. When
+  the reader cannot follow the call, the whole lines before the one it
+  stops at are still read this way, since bash runs them before it meets
+  the error. The rest is read as masked segments (`splitSegments` over
+  `maskData`). Each of those commands is read once as written and once with
+  the quotes and backslashes inside its words dropped (`kube\ctl`, `-X
+  D"ELETE"`), so it reads more words as commands, not fewer. Each command
+  is read past assignments, reserved words and wrappers (`unwrapCommand`),
+  then matched with `leadingDeny`.
+- **Leaves to script-deny-list** a `-c` string, `eval`, `xargs`, `find
+  -exec`, a substitution, an alias, a script file, and the body of a
+  `f() { …; }` function, which script-deny-list reads where the call runs
+  `f`. A `function f { …; }` body is the exception: `function f` is an
+  opener `unwrapCommand` reads past, so its body reads as top-level
+  commands and the definition is denied, called or not.
+- **Patterns come from** the `permissions.deny` `Bash(...)` entries of
+  `~/.claude/settings.json` and `settings.local.json`, read live. Nothing
+  else: `extra_patterns` stays with script-deny-list, since its entries are
+  ask entries in the settings and a direct call should still get the ask.
+  With `claude_settings.enabled: false` the guard has nothing to read, and
+  `belt doctor` says so on its line.
+- **The deny text** names the entry and asks the agent to hand the command
+  to the user: `belt[direct-deny-list]: this runs "kubectl delete" from the
+  Bash deny list (read past global flags and wrappers). It can delete or
+  change state that may not come back, so every form of it is denied: a
+  script, a wrapper or an alias too. Ask the user to run it; they can type
+  ! <command> in the prompt.`
+- **Runs** after the git guards, so git push and the discard verbs keep
+  their own text. It runs right before script-deny-list, so `sudo kubectl
+  delete` gets this text, not "run it without the wrapper".
+- **`mode: soft`** turns a denial into a warn event titled
+  "direct-deny-list (soft)", and then Claude Code's own check runs. Its
+  text match still denies the literal prefix forms. A form only belt reads
+  (a global flag before the verb, a `*` group) runs unless Claude Code asks.
+  A soft warn also turns off belt's allows for that call.
+- **Why it exists**: Claude Code reads a deny entry as a text prefix, so
+  `kubectl -n prod delete pod x` and `sudo kubectl delete pod x` do not
+  match `Bash(kubectl delete:*)`.
+- **Known gaps**: SQL on stdin is not read. So `psql <<'EOF'` with `DROP
+  TABLE t` in the body passes, and so does `echo 'DROP TABLE t' | psql`.
+  A `-c` string it leaves to script-deny-list passes there in two shapes:
+  a runner word in quotes or behind a backslash (`"bash" -c`, `\bash -c`),
+  and a string built from quoted pieces (`bash -c 'kube'"ctl delete pod
+  x"`, `bash -c "kube"$'\x63'"tl delete pod x"`).
+- **Safety net**: `directdeny_test.go` holds one block per first-tranche
+  CLI, and `directdeny_diff_test.go` checks the verdicts recorded once in
+  `testdata/directdeny_frozen.txt`. Never re-record them from a later build;
+  a reviewed change goes on `directTightened`.
+- No `extra_patterns`, `exclude_paths` or `allow_repos`.
+
 ### script-deny-list
 
 Applies the Bash deny list inside scripts, closing the "write it to a file,
@@ -760,10 +827,23 @@ then run the file" bypass.
   (`if`, `then`, `do`, `!`, `{`). A command word that names an interpreter
   through a variable reads as that interpreter: `$SHELL`, `$BASH`,
   `$ZSH_NAME`, any name that ends in `SHELL`, and a variable the command
-  sets to an interpreter (`S=sh`, `B=/bin/bash`).
+  sets to an interpreter (`S=sh`, `B=/bin/bash`). A command word in
+  `$'…'` reads as its value, so `$'bash' -c` is bash.
 - **Indirection heads are scanned too**: the command after `eval`, `xargs`,
   and `find -exec`/`-execdir`/`-ok` runs through the same patterns — those
   are the routes a prefix matcher never sees.
+- **A `$'…'` string reads as bash decodes it.** Script text with one in it
+  is scanned a second time with each one decoded, since the shell that
+  runs the text runs the decoded value. So `bash -c $'kube\x63tl delete
+  pod x'` and `eval $'kube\x63tl delete pod x'` deny. The variables and
+  functions are read again from the decoded text, so `bash -c
+  $'K=kube\x63tl\n$K delete pod x'` denies too.
+- **Known gaps**: the guard does not join the quoted pieces of one word.
+  So `bash -c 'kube'"ctl delete pod x"` and `bash -c "kube"$'\x63'"tl
+  delete pod x"` pass. A runner word in quotes or behind a backslash is
+  not read as a runner, so `"bash" -c 'kubectl delete pod x'` and `\bash
+  -c …` pass. SQL on stdin is not read: `psql <<'EOF'` with `DROP TABLE t`
+  in the body passes, and so does `echo 'DROP TABLE t' | psql`.
 - **A file written and run in one command** (`echo '…' > s.sh && bash
   s.sh`, `tee` included) gets the whole command text scanned. At check time
   the file does not exist yet, so the command line is where its future
@@ -967,37 +1047,85 @@ then run the file" bypass.
   leaving only the extra patterns. Patterns also come from
   `guards.script-deny-list.extra_patterns` for things the settings file only
   lists under "ask" (like `rm -rf`). An extra pattern starting `re:` is
-  compiled as a case-insensitive regex. It is the escape hatch for argument
-  wildcards, and for flag reordering in a tool the argv match below does not
-  read.
+  compiled as a case-insensitive regex. It is the escape hatch for a shape
+  the entry format below cannot express.
+- **The deny text depends on the source.** For an extra pattern it says to
+  run the command directly, so the permission system can judge it. For a
+  settings entry it asks the user to run the command (`! <command>`),
+  since direct-deny-list denies the direct form too.
 - **Matching is** per non-comment line, case-insensitive, whole-word, and
   whitespace-normalized: `kubectl delete` matches `  kubectl   delete pod x`
   but not `kubectl deleted`, in shell lines and Python
   `subprocess`/`os.system` strings alike. Backslash-continued lines are
   joined before matching, and a second pass collapses quotes, commas, and
   brackets so `kubectl "delete"` and list-form `subprocess.run(["rm",
-  "-rf", …])` match the same patterns as their plain forms.
-- **An rm, kubectl, gcloud or terraform entry also matches on argv**, the
-  way the tool reads its arguments (`scriptdeny_argv.go`). Each command on
+  "-rf", …])` match the same patterns as their plain forms. An entry with a
+  `*` group has no text form and matches on argv only.
+- **Every entry also matches on argv**, the way the tool reads its
+  arguments (`denyentry.go`, `scriptdeny_argv.go`). The entry is read in
+  Claude Code's wildcard form:
+  `<tool> <head words> [* <group>]... [* | :*]`.
+  The end is always open, so every entry reads as a prefix. Each command on
   the line is read from any of its words, so `sudo rm` and `xargs -0 rm`
   count.
+  - The tool is the command name of the first word. A path, a `\` and
+    quotes are dropped.
+  - The head's plain words are verbs, matched in order, case aside. The
+    flags before and between them are skipped for every tool, so `kubectl
+    -n prod delete`, `git -C x remote prune` and `terraform -chdir=x
+    destroy` match. Any flag may take the next word as its value, so an
+    unknown global flag still counts as a match. A gcloud release track
+    (`alpha`, `beta`, `preview`) and a `NAME=value` word may be skipped
+    too, and a rake or rails task may stand at any position, so `rake
+    RAILS_ENV=production db:drop` and `rake db:create db:drop` match. Verbs
+    are whole words: `rails db:drop` does not match `rails db:drop:all`.
+    A `$'…'` word reads as its value (`kubectl $'delete'`).
+  - A flag in the head is a required option, so `gsutil -m rm` reads as
+    `gsutil rm` with `-m`.
+  - A group after a `*` that starts with a flag names required options. Each
+    may stand anywhere after the tool word, up to `--`. `--name` matches
+    `--name`, `--name=v` and a prefix of three letters or more (`--rec`). A
+    one-letter `-v` matches as the first letter of a word, or anywhere in a
+    bundle made of letters alone (`-qv`). Past the first letter of any
+    other word it is part of a value: `-H"X-Req: $ID"` gives `-H`, not
+    `-X`. It never matches inside a long option. A plain word after the
+    flag is its value: `-X DELETE` matches
+    `-X DELETE`, `-XDELETE` and `-X=DELETE`, case aside. `--name=v` in an
+    entry means `--name v`. An integer value matches the same number
+    written another way, so `--replicas=0` matches `--replicas=00` and
+    `--replicas=0x0`. A value the shell expands (`$M`) counts as any value.
+  - A group that starts with a plain word is a phrase. Its words must stand
+    as whole words, case aside, in the arguments after the tool word, with
+    quotes collapsed. So `psql * DROP *` denies `psql -h h -c 'drop table
+    t'`, and `psql -d dropzone` passes. The arguments are read as one text,
+    since a quoted argument reaches the guard split into words. A value
+    glued to a one-letter option is read too, after the option alone or
+    after any letter or digit of a bundle: `psql -c'DROP TABLE t'`, `psql
+    -tAc"truncate t"`, `psql -1c'DROP TABLE t'` and `mysql -e"DROP
+    DATABASE x"` deny. A glued value counts only when it holds more than
+    one word or a `/*` comment, since a statement takes more than one word.
+    Any SQL whitespace sets the words apart, `\r`, `\f` and `\v` included. So `psql -dbackdrop` passes, and
+    so does `psql -cDROP`, which runs the one word `DROP`. A quote before
+    the dash drops (`psql '-cDROP TABLE t'`). A script or a `-c` string is
+    split at whitespace, so there a word with an open quote or a trailing
+    backslash runs on into the words after it.
+  - A SQL comment between a phrase's words counts as space. A block
+    comment may stand anywhere (`DELETE/**/FROM t`). A line comment (`--`
+    or `#`) counts up to the newline that ends it, so `DELETE -- x` with
+    `FROM t` on the next line denies. `DELETE --x FROM t` on one line
+    passes.
   - `rm -rf` means rm with recursive and force, in any spelling: `-r -f`,
     `-fr`, `-Rfv`, `--recursive --force` and GNU prefixes such as `--rec`
     and `--for`. An option after an operand counts, since GNU rm reads it.
     `--` ends the options. `-d` (`--dir`) is not recursive.
-  - For kubectl, gcloud and terraform, the flags before and between the
-    verbs are skipped, so `kubectl -n prod delete`, `gcloud -q sql
-    instances delete` and `terraform -chdir=x destroy` match. Any flag may
-    take the next word as its value, so an unknown global flag still counts
-    as a match. A gcloud release track (`alpha`, `beta`, `preview`) may be
-    skipped too, so `gcloud beta sql instances delete` matches.
-  - `terraform apply -destroy` counts as `terraform destroy`. `terraform
-    plan -destroy` does not, since it only plans.
+  - `terraform apply -destroy` counts as `terraform destroy`, and the same
+    holds for tofu. `plan -destroy` does not, since it only plans.
   - A word the shell expands (`$X`, `"$(…)"`) counts as a possible flag
     before a verb. It is never read as an rm option, since that would deny
-    every `rm -f "$file"`.
-  - An entry with a flag in it for a verb tool (`kubectl delete --all`),
-    and an entry for any other tool, matches as text only.
+    every `rm -f "$file"`. Nor is it a required option on its own.
+  - An entry with a `*` inside a word (`rm -rf /tmp/*`), a lone `--` or a
+    word after a flag's value matches as text only. So does an rm entry
+    with an option rm does not know.
 - **One Python heredoc shape is read as code, not text.** Every other inline
   script matches as text, so a heredoc that only writes a file naming
   `rm -rf` is denied like one that runs it. The exception (`scriptpy.go`)
