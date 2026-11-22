@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.22.1](https://github.com/mad01/thismoon/compare/belt/v2.22.0...belt/v2.22.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **belt:** read heredoc messages as text only where bash 3.2 does ([#541](https://github.com/mad01/thismoon/issues/541)) ([16bc8bf](https://github.com/mad01/thismoon/commit/16bc8bf7cdd02f9163384adfac25175f3f19a560))
+
 ## [2.22.0](https://github.com/mad01/thismoon/compare/belt/v2.21.7...belt/v2.22.0) (2026-11-21)
 
 
