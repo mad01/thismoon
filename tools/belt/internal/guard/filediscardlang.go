@@ -289,9 +289,10 @@ func (j *discardJudge) langCall(sc langScript, c langCall, moves bool, s walkSte
 	return nil
 }
 
-// quoteTarget writes a path as one shell word for the toss-bin form.
+// quoteTarget writes a path as one shell word for the toss-bin form. A
+// path of plain characters stays bare; langLiteral never lets a quote in.
 func quoteTarget(p string) string {
-	const plain = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./+,:@%="
+	const plain = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./+,:@%=-"
 	if strings.Trim(p, plain) == "" {
 		return p
 	}

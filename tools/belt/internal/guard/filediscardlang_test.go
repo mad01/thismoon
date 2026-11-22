@@ -11,6 +11,22 @@ import (
 // The rows below run each language's recursive delete through file-discard,
 // as Check reads the command: nothing runs.
 
+// TestQuoteTarget keeps a path of plain characters bare, a hyphen among
+// them, and quotes one the shell would split or expand.
+func TestQuoteTarget(t *testing.T) {
+	for p, want := range map[string]string{
+		"/home/runner/.belt-test-1/work": "/home/runner/.belt-test-1/work",
+		"build/out.o":                    "build/out.o",
+		"my dir":                         "'my dir'",
+		"~/x":                            "'~/x'",
+		"a*":                             "'a*'",
+	} {
+		if got := quoteTarget(p); got != want {
+			t.Errorf("quoteTarget(%q) = %q, want %q", p, got, want)
+		}
+	}
+}
+
 // TestFileDiscardScriptsOutsideWorkTrees covers the four languages over a
 // temp folder, which passes, and a folder in no work tree, which denies.
 func TestFileDiscardScriptsOutsideWorkTrees(t *testing.T) {
