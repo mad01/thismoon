@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.22.3](https://github.com/mad01/thismoon/compare/belt/v2.22.2...belt/v2.22.3) (2026-11-22)
+
+
+### Bug Fixes
+
+* **belt:** deny submodule deinit and forced update over unsaved work ([#546](https://github.com/mad01/thismoon/issues/546)) ([e71b87b](https://github.com/mad01/thismoon/commit/e71b87bc6c02111a259f87453ea07a9c6d09d7b5))
+
 ## [2.22.2](https://github.com/mad01/thismoon/compare/belt/v2.22.1...belt/v2.22.2) (2026-11-22)
 
 
