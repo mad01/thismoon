@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.22.2](https://github.com/mad01/thismoon/compare/belt/v2.22.1...belt/v2.22.2) (2026-11-22)
+
+
+### Bug Fixes
+
+* **belt:** read escaped substitutions the way the shell runs them ([#542](https://github.com/mad01/thismoon/issues/542)) ([40b313e](https://github.com/mad01/thismoon/commit/40b313e0964170a7aec8ce176c9875076d38538f))
+
 ## [2.22.1](https://github.com/mad01/thismoon/compare/belt/v2.22.0...belt/v2.22.1) (2026-11-22)
 
 
