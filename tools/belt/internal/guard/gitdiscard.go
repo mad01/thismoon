@@ -46,17 +46,22 @@ func gitDiscardReason(why error) string {
 	if errors.Is(why, errNoProof) {
 		return "this discards uncommitted work and passes only on a clean tree. " + gitDiscardAsk
 	}
-	return "this discards uncommitted work: " + why.Error() + ". " + gitDiscardRule + " " +
-		gitDiscardAsk
+	rule := gitDiscardRule
+	if errors.As(why, new(submoduleLoss)) {
+		rule = submoduleRule
+	}
+	return "this discards uncommitted work: " + why.Error() + ". " + rule + " " + gitDiscardAsk
 }
 
 // GitDiscard blocks git commands that throw away uncommitted work: a stash
 // push, `reset --hard` or `--merge`, a checkout or restore over the
 // worktree, a clean that deletes (forced, or with clean.requireForce off), a
 // forced worktree remove, rm or mv, an apply, a `read-tree -u`, a forced
-// checkout-index. A session audit found agents running these over the
-// user's own edits without being asked, and the edits are not in any
-// reflog. A clean working tree has nothing to lose, so the guard allows
+// checkout-index, a forced submodule deinit or update, which pass when
+// every submodule they touch is clean (judgeSubmodules). A session audit
+// found agents running these over the user's own edits without being
+// asked, and the edits are not in any reflog. A clean working tree has
+// nothing to lose, so the guard allows
 // there. So does a discard other than a stash push or switch proven to lose
 // nothing (prover): every file version it drops is committed in HEAD, its
 // upstream or origin's default branch. A git call whose subcommand belt
@@ -111,6 +116,10 @@ type GitDiscard struct {
 	// prove returns nil when a discard provably loses nothing, else the
 	// first loss. Injectable for tests.
 	prove func(c gitInvocation) error
+	// submoduleCheck returns nil when every submodule work tree a forced
+	// deinit or update run in dir touches is clean, else the first loss
+	// (submoduleDirt). Injectable for tests.
+	submoduleCheck func(ctx context.Context, dir string, touch submoduleTouch) error
 	// emit sends the soft-mode warning to the events service. Injectable
 	// for tests.
 	emit func(source, level, title, message string, tags map[string]string)
@@ -119,20 +128,21 @@ type GitDiscard struct {
 // NewGitDiscard builds the guard with the real git and events backends.
 func NewGitDiscard(cfg config.Config) *GitDiscard {
 	return &GitDiscard{
-		cfg:          cfg,
-		resolveRepo:  CanonicalRepoAt,
-		status:       gitStatusPorcelain,
-		isTree:       gitIsTree,
-		lookupBudget: treeLookupBudget,
-		worktrees:    gitWorktrees,
-		requireForce: cleanRequiresForce,
-		stranded:     removeStranded,
-		pruned:       pruneStranded,
-		unpushed:     unpushedCommit,
-		repoFetch:    repoFetchConfig,
-		expiry:       gitExpiry,
-		prove:        newProver().prove,
-		emit:         notify.EmitEventSync,
+		cfg:            cfg,
+		resolveRepo:    CanonicalRepoAt,
+		status:         gitStatusPorcelain,
+		isTree:         gitIsTree,
+		lookupBudget:   treeLookupBudget,
+		worktrees:      gitWorktrees,
+		requireForce:   cleanRequiresForce,
+		stranded:       removeStranded,
+		pruned:         pruneStranded,
+		unpushed:       unpushedCommit,
+		repoFetch:      repoFetchConfig,
+		expiry:         gitExpiry,
+		prove:          newProver().prove,
+		submoduleCheck: submoduleDirt,
+		emit:           notify.EmitEventSync,
 	}
 }
 
@@ -154,7 +164,9 @@ func (g *GitDiscard) Event() string { return EventBash }
 // move or delete a local branch (checkFetch), outside text no shell runs,
 // with the settings its -c words, its environment and the steps before it
 // give it (callSettings). A clean without -f or -i counts when
-// clean.requireForce may be off (unforcedCleanDeletes). A denial for a step
+// clean.requireForce may be off (unforcedCleanDeletes). A discard the
+// command may point at another work tree runs where belt cannot tell
+// (withWorkTree). A denial for a step
 // of a message read as code for bash 3.2 alone says how to pass the message
 // as data (bash32Hinted).
 func (g *GitDiscard) Check(in Input) *Denial {
@@ -169,7 +181,7 @@ func (g *GitDiscard) Check(in Input) *Denial {
 			dir = ""
 		}
 		if c, drops, hidden := hiddenGit(s, dir); hidden {
-			if d := g.checkHidden(c, drops); d != nil {
+			if d := g.checkHidden(withWorkTree(c, steps, i, beside), drops); d != nil {
 				return bash32Hinted(d, s.bash32)
 			}
 			continue
@@ -194,7 +206,7 @@ func (g *GitDiscard) Check(in Input) *Denial {
 				return bash32Hinted(d, s.bash32)
 			}
 		}
-		c, unsorted := g.sortCheckoutOperands(lookups, c)
+		c, unsorted := g.sortCheckoutOperands(lookups, withWorkTree(c, steps, i, beside))
 		if !discards(c, fed) && !g.unforcedCleanDeletes(lookups, c, steps, i, beside) {
 			continue
 		}
@@ -233,8 +245,12 @@ func (g *GitDiscard) checkDiscard(c gitInvocation, fed bool, unsure error) *Deni
 // HEAD reflog must strand no commit (keepsWorktreeCommits), forced or not,
 // and a forced remove must lose no file (judgeTree). The commit counts of
 // one remove share one proofBudget. A prune is judged on its own
-// (judgePrune).
+// (judgePrune), and so is a forced submodule deinit or update
+// (judgeSubmodules).
 func (g *GitDiscard) judge(c gitInvocation, fed bool, unsure error) error {
+	if touch, ok := readSubmoduleCall(c, fed); ok {
+		return g.judgeSubmodules(c, touch)
+	}
 	if c.sub != "worktree" {
 		return g.judgeTree(c, unsure)
 	}
@@ -545,6 +561,9 @@ func discards(c gitInvocation, fed bool) bool {
 		return fed || rmDeletes(c.args)
 	case "mv":
 		return fed || mvOverwrites(c.args)
+	case "submodule", "submodule--helper":
+		_, drops := readSubmoduleCall(c, fed)
+		return drops
 	}
 	return false
 }
@@ -720,6 +739,121 @@ func setsGitConfig(steps []walkStep, i int, c gitInvocation, beside bool) bool {
 		}
 	}
 	return false
+}
+
+// withWorkTree returns the git call c at steps[i] with no directory when
+// the command may point it at another work tree than the one its config
+// names now: a setting it runs with may set core.worktree (namesWorkTree,
+// callSettings), or a step before it, or beside it, may change the key
+// (changesWorkTree). Like --work-tree, that names a tree only git itself
+// can find, and a git status belt reads before the command runs would see
+// the old one.
+func withWorkTree(c gitInvocation, steps []walkStep, i int, beside bool) gitInvocation {
+	moved := namesWorkTree(callSettings(c, steps, i))
+	for j, s := range steps {
+		moved = moved || j != i && (j < i || beside) && changesWorkTree(s)
+	}
+	if moved {
+		c.dir = ""
+	}
+	return c
+}
+
+// namesWorkTree reports whether a setting a git call runs with
+// (callSettings) may set core.worktree: the key itself, an include that
+// may set it, or a key the shell may still rewrite.
+func namesWorkTree(settings []callSetting) bool {
+	return slices.ContainsFunc(settings, func(s callSetting) bool {
+		return s.anyKey || s.key == "core.worktree" || s.key == "include.path" ||
+			strings.HasPrefix(s.key, "includeif.") && strings.HasSuffix(s.key, ".path")
+	})
+}
+
+// changesWorkTree reports whether one step may change the core.worktree a
+// git config file holds: a write into the file other than git config
+// (writesGitConfigFile), or a git config call that may set the key
+// (configWriteSettings, namesWorkTree) or drop it (dropsWorkTree). Words a
+// command in front of git may hand over may make any call a write. A
+// comment or a text body changes nothing.
+func changesWorkTree(s walkStep) bool {
+	if s.prose {
+		return false
+	}
+	if writesGitConfigFile(s) {
+		return true
+	}
+	c, ok := segmentGitCommand(s.tokens, "")
+	if !ok || c.sub != "config" {
+		return false
+	}
+	return namesWorkTree(configWriteSettings(c.args, fedOperands(s.tokens))) || dropsWorkTree(c.args)
+}
+
+// dropsWorkTree reports whether a git config call may remove a
+// core.worktree a config file holds, or bring one in, other than by
+// setting it: an unset of the key, a removal or rename of the core
+// section, from it or to it, or an edit, which may change any key. A name
+// the shell may still rewrite may be the key or the section. In a call
+// that is no plain read, such a word where an option may stand may be any
+// option or subcommand.
+func dropsWorkTree(args []string) bool {
+	op, names, unread := readConfigClear(args)
+	switch op {
+	case "":
+		return unread && !gitConfigReads(args, names)
+	case "edit":
+		return true
+	}
+	want, n := "core.worktree", 1
+	if op == "section" {
+		want, n = "core", 2
+	}
+	return slices.ContainsFunc(names[:min(n, len(names))], func(w string) bool {
+		return mayExpand(w) || strings.ToLower(unquoteWord(w)) == want
+	})
+}
+
+// configClearOps say what each configClearFlags and configClearSubs word
+// makes a git config call do: unset a key, remove or rename a section, or
+// edit the file.
+var configClearOps = map[string]string{
+	"--unset": "unset", "--unset-all": "unset", "unset": "unset",
+	"--remove-section": "section", "--rename-section": "section",
+	"remove-section": "section", "rename-section": "section",
+	"-e": "edit", "--edit": "edit", "edit": "edit",
+}
+
+// readConfigClear reads the words of a git config call: what a clear
+// option or subcommand makes it do (configClearOps), "" for none, and the
+// other words that are no option, in order. unread says a word the shell
+// may still rewrite came up before the first of them: git config reads
+// options up to the first other word, so only there may one be an option.
+func readConfigClear(args []string) (op string, names []string, unread bool) {
+	for i := 0; i < len(args); i++ {
+		unread = unread || len(names) == 0 && mayExpand(args[i])
+		switch w := unquoteWord(args[i]); {
+		case configClearFlags[w]:
+			op = configClearOps[w]
+		case gitConfigValueFlags[w]:
+			i++
+		case strings.HasPrefix(w, "-"):
+		case op == "" && len(names) == 0 && configClearSubs[w]:
+			op = configClearOps[w]
+		default:
+			names = append(names, args[i])
+		}
+	}
+	return op, names, unread
+}
+
+// gitConfigReads reports whether a git config call is a read as written: a
+// read flag in its words, or get or list as the first of the names
+// readConfigClear returns.
+func gitConfigReads(args, names []string) bool {
+	if len(names) > 0 && (names[0] == "get" || names[0] == "list") {
+		return true
+	}
+	return slices.ContainsFunc(args, func(a string) bool { return gitConfigReadFlags[unquoteWord(a)] })
 }
 
 // cleanRequiresForce reports whether git in dir refuses a clean without -f

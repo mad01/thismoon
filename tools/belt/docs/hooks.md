@@ -1172,7 +1172,8 @@ Blocks git commands that throw away uncommitted work.
   dry run passes). A clean with neither counts when `clean.requireForce`
   may be off. Six commands that write the tree count too: `worktree
   remove`, `apply`, `read-tree -u` or `--index-output`, `checkout-index
-  -f`, `rm -f` and `mv -f`. `stash list|show|apply|pop|branch` are allowed. It also
+  -f`, `rm -f` and `mv -f`. So does a forced `submodule deinit` or
+  `update`. `stash list|show|apply|pop|branch` are allowed. It also
   fires on `stash drop`, `stash clear` and a reflog or ref delete of
   `refs/stash`, which delete stash entries. It fires on a reflog expire,
   gc, prune or repack that deletes sooner than git's default, a reflog
@@ -1309,6 +1310,52 @@ Blocks git commands that throw away uncommitted work.
     and `--cached` keeps the file.
   - `git mv -f` overwrites what stands at the destination, tracked,
     untracked or ignored. A plain `git mv` refuses an existing one.
+- **Reads a forced `git submodule deinit` or `update` as its script
+  does.** `deinit -f` deletes each submodule work tree it names, and
+  `update -f` checks out over it. belt reads the words as git-submodule.sh
+  reads them. An option counts only when written in full, so a bundle or a
+  prefix makes git stop with its usage. `--reference`, `--depth`, `-j`,
+  `--filter` and `--ref-format` take the next word. The first other word
+  starts the pathspecs, so `deinit a -f` names a path `-f` and does not
+  force. `git ls-files` matches the pathspecs with their magic, as the
+  submodule helper does. A word the shell may rewrite, a command in front
+  of git, `--all`, no pathspec and a global option touch every submodule.
+  So does `git submodule--helper deinit` or `update`.
+  - The call passes when each submodule it touches is clean. That is a
+    missing folder, an empty one, or a checkout with an empty `git status
+    --porcelain --ignore-submodules=none --untracked-files=normal`. A
+    folder with files but no `.git` denies, since deinit deletes the files
+    with it. A dirty file in the superproject does not count, and neither
+    does a submodule on another commit than the one recorded.
+  - The same rule holds for each submodule nested in a checkout, to any
+    depth. git status in a checkout does not list the files in a nested
+    folder that is not checked out, and deinit deletes them all the same.
+  - A checkout whose git directory sets `core.worktree` to another folder
+    denies. Its git status reads that folder, while deinit deletes this
+    one. belt compares `git rev-parse --show-toplevel` with the path.
+  - Every git call runs with `core.fsmonitor` off, so a repository config
+    starts no program inside the hook.
+  - All the git calls of one check share a 2 second budget.
+  - A plain deinit or update passes, since git refuses to drop changes
+    without `-f`.
+  - A known gap: a deinit, forced or not, also deletes ignored files, and
+    belt does not count them. Neither does it read the command a `git
+    submodule foreach` runs.
+- **Reads `core.worktree` from the command too.** A `-c core.worktree=<dir>`,
+  a `--config-env`, a `GIT_CONFIG_*` variable or an earlier `git config
+  core.worktree` write moves the work tree git writes. belt reads git
+  status before the command runs, in the old tree. So such a discard
+  denies, as one in a directory belt cannot name does. So does an
+  `include.path` or `includeIf.<cond>.path` setting, which may set it, and
+  a key the shell may still rewrite.
+  - Dropping the key moves the tree just as much. So an earlier step, or
+    one beside the discard, that may change the key counts the same. That
+    is a `git config` unset of `core.worktree`, a removal or rename of the
+    `core` section, an edit, or a word the shell may rewrite in a `git
+    config` call that is no plain read. A write into a git config file by
+    other means counts too: a redirect, `sed -i` or `tee`.
+  - A `core.worktree` the command leaves alone needs nothing: git status
+    where the command runs reads the moved tree.
 - **Decides by** the working tree there. A clean tree (`git status
   --porcelain` empty, with `--ignored` added for `clean -x`/`-X`/`-e`, a
   clean belt cannot read and `mv -f`) allows,
