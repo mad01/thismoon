@@ -2,11 +2,14 @@ package guard
 
 import (
 	"context"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
@@ -1074,6 +1077,394 @@ func TestGitDiscardNothingLost(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestGitDiscardForcedFetchProof runs the forced-fetch check with its real
+// git backend over a clone: feat holds a commit no remote-tracking ref
+// holds, pushed sits on the upstream's main, and nope does not exist. A
+// pull reads its refspecs the way a fetch does, and so do a -c setting and
+// the clone's own config. Once feat is pushed, nothing is left to lose.
+func TestGitDiscardForcedFetchProof(t *testing.T) {
+	r := newDiscardRepos(t)
+	r.git(r.clone, "branch", "pushed")
+	r.git(r.clone, "checkout", "-q", "-b", "feat")
+	r.commitIn(r.clone, "local.txt")
+	r.git(r.clone, "checkout", "-q", "main")
+	g := NewGitDiscard(config.Config{})
+	g.emit = func(_, _, _, _ string, _ map[string]string) {}
+	check := func(command, wantDeny string) {
+		t.Helper()
+		d := g.Check(Input{Event: EventBash, Command: command, Cwd: r.clone})
+		switch {
+		case wantDeny == "" && d != nil:
+			t.Errorf("Check(%q) = %q, want it to pass", command, d.Reason)
+		case wantDeny != "" && d == nil:
+			t.Errorf("Check(%q) passed, want a deny naming %q", command, wantDeny)
+		case d != nil && !strings.Contains(d.Reason, wantDeny):
+			t.Errorf("Check(%q) reason = %q, want it to contain %q", command, d.Reason, wantDeny)
+		}
+	}
+	check("git fetch origin +main:feat", "the branch `feat` off commit")
+	check("git fetch -f origin main:refs/heads/feat", "the branch `feat` off commit")
+	check("git fetch origin '+refs/heads/*:refs/heads/f*'", "the branches `refs/heads/f*` off commit")
+	check(`git fetch origin "+main:$B"`, "any local branch")
+	check("git fetch -f origin main:pushed", "")
+	check("git fetch origin +main:nope", "")
+	check("git fetch origin +main:refs/remotes/origin/x", "")
+	check("git fetch --dry-run origin +main:feat", "")
+	check("git pull origin +main:feat", "the branch `feat` off commit")
+	check("git pull --force origin main:feat", "the branch `feat` off commit")
+	check("git pull --rebase -f origin main:refs/heads/feat", "the branch `feat` off commit")
+	check("git pull origin main", "")
+	check("git pull --rebase", "")
+	check("git pull origin +main:pushed", "")
+	check("git -c 'remote.origin.fetch=+refs/heads/*:refs/heads/*' fetch origin", "the branches `refs/heads/*` off commit")
+	check("git -c 'remote.origin.fetch=+refs/heads/*:refs/heads/*' pull", "the branches `refs/heads/*` off commit")
+	check("GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.fetch GIT_CONFIG_VALUE_0=+main:feat git fetch", "the branch `feat` off commit")
+	check("git -c 'remote.origin.fetch=+main:pushed' fetch origin", "")
+	r.git(r.clone, "config", "--add", "remote.origin.fetch", "+refs/heads/main:refs/heads/feat")
+	check("git fetch origin", "the branch `feat` off commit")
+	check("git pull", "the branch `feat` off commit")
+	check("git fetch --all", "the branch `feat` off commit")
+	r.git(r.clone, "push", "-q", "origin", "feat")
+	check("git fetch origin +main:feat", "")
+	check(`git fetch origin "+main:$B"`, "")
+	check("git fetch origin", "")
+}
+
+// TestGitDiscardFetchPruneProof runs the fetch check with its real git
+// backend over a clone where feat holds a commit no remote-tracking ref
+// holds: a remote update reads the settings and the clone's refspecs, a
+// refspec an earlier step writes counts, a pruning fetch with a pattern
+// refspec into refs/heads denies from the words, a setting or the clone's
+// config, and a mirror clone's own refspecs count for nothing.
+func TestGitDiscardFetchPruneProof(t *testing.T) {
+	r := newDiscardRepos(t)
+	r.git(r.clone, "checkout", "-q", "-b", "feat")
+	r.commitIn(r.clone, "local.txt")
+	r.git(r.clone, "checkout", "-q", "main")
+	g := NewGitDiscard(config.Config{})
+	g.emit = func(_, _, _, _ string, _ map[string]string) {}
+	check := func(cwd, command, wantDeny string) {
+		t.Helper()
+		d := g.Check(Input{Event: EventBash, Command: command, Cwd: cwd})
+		switch {
+		case wantDeny == "" && d != nil:
+			t.Errorf("Check(%q) = %q, want it to pass", command, d.Reason)
+		case wantDeny != "" && d == nil:
+			t.Errorf("Check(%q) passed, want a deny naming %q", command, wantDeny)
+		case d != nil && !strings.Contains(d.Reason, wantDeny):
+			t.Errorf("Check(%q) reason = %q, want it to contain %q", command, d.Reason, wantDeny)
+		}
+	}
+	const (
+		moves   = "it may move the branches `refs/heads/*` off commit"
+		deletes = "it may delete the branches `refs/heads/*` and their reflogs where the remote lacks them"
+		heads   = "'refs/heads/*:refs/heads/*'"
+	)
+	check(r.clone, "git remote update", "")
+	check(r.clone, "git remote update --prune", "")
+	check(r.clone, "git fetch --prune", "")
+	check(r.clone, "git fetch origin "+heads, "")
+	check(r.clone, "git -c 'remote.origin.fetch=+refs/heads/*:refs/heads/*' remote update", moves)
+	check(r.clone, "git config --add remote.origin.fetch '+refs/heads/*:refs/heads/*' && git fetch", moves)
+	check(r.clone, "git remote add --mirror=fetch backup ../up.git && git fetch backup", "every branch `refs/*` covers")
+	check(r.clone, "git fetch --prune origin "+heads, deletes)
+	check(r.clone, "git -c fetch.prune=true fetch origin "+heads, deletes)
+	check(r.clone, "git -c 'remote.origin.fetch=refs/heads/*:refs/heads/*' -c fetch.prune=true remote update", deletes)
+	check(r.clone, "git config fetch.prune true && git fetch origin "+heads, deletes)
+	r.git(r.clone, "config", "--add", "remote.origin.fetch", "refs/heads/*:refs/heads/*")
+	check(r.clone, "git fetch", "")
+	check(r.clone, "git remote update", "")
+	r.git(r.clone, "config", "fetch.prune", "true")
+	check(r.clone, "git fetch", deletes)
+	check(r.clone, "git pull", deletes)
+	check(r.clone, "git remote update", deletes)
+	check(r.clone, "git fetch --no-prune", "")
+
+	mirror := filepath.Join(filepath.Dir(r.clone), "mirror.git")
+	r.git(filepath.Dir(r.clone), "clone", "-q", "--mirror", filepath.Join(filepath.Dir(r.clone), "up.git"), mirror)
+	check(mirror, "git fetch", "")
+	check(mirror, "git fetch --prune", "")
+	check(mirror, "git remote update --prune", "")
+	check(mirror, "git -c fetch.prune=true remote update", "")
+	r.git(mirror, "config", "remote.origin.mirror", "false")
+	check(mirror, "git fetch", "every branch `refs/*` covers")
+}
+
+// TestGitDiscardRemoteProof runs the fetch check with its real git backend
+// on the git remote calls that fetch or prune, over a clone where feat
+// holds a commit no remote-tracking ref holds. `remote prune` with git's
+// default refspec, a -n one and a remote add without -f pass; a prune
+// through a refspec into refs/heads and a `remote add -f` that sets up a
+// fetch mirror deny. A mirror remote counts wherever git reads the
+// repository as no bare one: in a clone with a work tree, and in a linked
+// worktree of a bare mirror, which reads core.bare as true too.
+func TestGitDiscardRemoteProof(t *testing.T) {
+	r := newDiscardRepos(t)
+	r.git(r.clone, "checkout", "-q", "-b", "feat")
+	r.commitIn(r.clone, "local.txt")
+	r.git(r.clone, "checkout", "-q", "main")
+	g := NewGitDiscard(config.Config{})
+	g.emit = func(_, _, _, _ string, _ map[string]string) {}
+	check := func(cwd, command, wantDeny string) {
+		t.Helper()
+		d := g.Check(Input{Event: EventBash, Command: command, Cwd: cwd})
+		switch {
+		case wantDeny == "" && d != nil:
+			t.Errorf("Check(%q) = %q, want it to pass", command, d.Reason)
+		case wantDeny != "" && d == nil:
+			t.Errorf("Check(%q) passed, want a deny naming %q", command, wantDeny)
+		case d != nil && !strings.Contains(d.Reason, wantDeny):
+			t.Errorf("Check(%q) reason = %q, want it to contain %q", command, d.Reason, wantDeny)
+		}
+	}
+	const (
+		deletes = "this prunes local branches: it may delete the branches `refs/heads/*` and their reflogs"
+		every   = "every branch `refs/*` covers"
+		moves   = "this force-fetches into a local branch: it may move " + every
+		heads   = "'remote.origin.fetch=refs/heads/*:refs/heads/*'"
+		// mirrorWorktrees is the deny for a pruning fetch in a bare mirror
+		// with linked worktrees.
+		mirrorWorktrees = "prunes local branches in a bare mirror that has linked worktrees"
+	)
+	root := filepath.Dir(r.clone)
+	up := filepath.Join(root, "up.git")
+	check(r.clone, "git remote prune origin", "")
+	check(r.clone, "git remote prune -n origin", "")
+	check(r.clone, "git remote add x "+up, "")
+	check(r.clone, "git remote add -f x "+up, "")
+	check(r.clone, "git remote add -f --mirror=push x "+up, "")
+	check(r.clone, "git -c "+heads+" remote prune origin", deletes)
+	check(r.clone, "git -c 'remote.origin.fetch=+refs/heads/*:refs/heads/*' remote prune origin", deletes)
+	check(r.clone, "git -c 'remote.origin.fetch=main:refs/heads/feat' remote prune origin",
+		"it may delete the branch `feat` and its reflog where the remote lacks it")
+	check(r.clone, "git -c "+heads+" remote prune -n origin", "")
+	check(r.clone, "git remote add -f --mirror=fetch x "+up, moves)
+	check(r.clone, "git remote add --fetch --mirror x "+up, moves)
+	cloneWt := filepath.Join(root, "clone-wt")
+	r.git(r.clone, "worktree", "add", "-q", cloneWt, "-b", "cwt")
+	r.commitIn(cloneWt, "cwt.txt")
+	check(r.clone, "git fetch --prune", "")
+
+	r.git(r.clone, "remote", "add", "--mirror", "m", up)
+	check(r.clone, "git fetch --prune m", every)
+	check(r.clone, "git remote prune m", every)
+	check(r.clone, "git -c fetch.prune=true fetch m", every)
+
+	mirror := filepath.Join(root, "mirror.git")
+	r.git(root, "clone", "-q", "--mirror", up, mirror)
+	check(mirror, "git fetch", "")
+	check(mirror, "git fetch --prune", "")
+	check(mirror, "git remote prune origin", "")
+	check(mirror, "git remote update --prune", "")
+	wt := filepath.Join(root, "mirror-wt")
+	r.git(mirror, "worktree", "add", "-q", wt, "-b", "wl")
+	r.commitIn(wt, "wl.txt")
+	check(mirror, "git fetch", "")
+	check(mirror, "git fetch --prune", mirrorWorktrees)
+	check(mirror, "git fetch --prune origin", mirrorWorktrees)
+	check(mirror, "git remote update --prune", mirrorWorktrees)
+	check(mirror, "git remote prune origin", mirrorWorktrees)
+	r.git(wt, "checkout", "-q", "--detach")
+	check(wt, "git fetch --prune", every)
+	check(wt, "git remote prune origin", every)
+
+	plain := filepath.Join(root, "plain.git")
+	r.git(root, "clone", "-q", "--mirror", up, plain)
+	ctx := context.Background()
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	for _, tt := range []struct {
+		ctx             context.Context
+		dir             string
+		bare, worktrees bool
+	}{
+		{ctx, mirror, true, true},
+		{ctx, filepath.Join(mirror, "refs"), true, true},
+		{ctx, plain, true, false},
+		{ctx, wt, false, false},
+		{ctx, r.clone, false, false},
+		{ctx, filepath.Join(root, "missing"), false, false},
+		{cancelled, mirror, false, false}, // a failed call counts as no bare one
+	} {
+		if bare, worktrees := gitBareRepo(tt.ctx, tt.dir); bare != tt.bare || worktrees != tt.worktrees {
+			t.Errorf("gitBareRepo(%s) = %v, %v, want %v, %v", tt.dir, bare, worktrees, tt.bare, tt.worktrees)
+		}
+	}
+}
+
+// TestHasLinkedWorktrees pins how a common git directory's linked
+// worktrees read: an entry under worktrees/ counts when its folder holds a
+// gitdir file, and a worktrees folder that cannot be read counts as one.
+func TestHasLinkedWorktrees(t *testing.T) {
+	write := func(path string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tt := range []struct {
+		name  string
+		files []string
+		dirs  []string
+		want  bool
+	}{
+		{name: "no worktrees folder"},
+		{name: "an empty worktrees folder", dirs: []string{"worktrees"}},
+		{name: "an entry with a gitdir file", files: []string{"worktrees/a/gitdir"}, want: true},
+		{name: "an entry with no gitdir file", files: []string{"worktrees/a/HEAD"}},
+		{name: "a file in the worktrees folder", files: []string{"worktrees/a"}},
+		{name: "a worktrees file that cannot be read as a folder", files: []string{"worktrees"}, want: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			common := t.TempDir()
+			for _, d := range tt.dirs {
+				if err := os.MkdirAll(filepath.Join(common, d), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, f := range tt.files {
+				write(filepath.Join(common, f))
+			}
+			if got := hasLinkedWorktrees(common); got != tt.want {
+				t.Errorf("hasLinkedWorktrees = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestGitDiscardRemotePruneExactProof pins `remote prune` through exact
+// refspecs against real git, over a clone where x1 to x4 each hold a
+// commit no remote-tracking ref holds. git compares each local ref with a
+// destination as written and the remote's refs with a source as written:
+// it deletes x1 (`main:refs/heads/x1`, even though the remote has main)
+// and x2 (a source the remote lacks), and keeps x3 (a full source the
+// remote has) and x4 (a destination not written in full). belt denies for
+// x1 and x2 and passes x4; it checks x3 too, since telling whether the
+// remote has a source would take `ls-remote`, a network call.
+func TestGitDiscardRemotePruneExactProof(t *testing.T) {
+	r := newDiscardRepos(t)
+	specs := map[string]string{
+		"x1": "main:refs/heads/x1",
+		"x2": "refs/heads/gone:refs/heads/x2",
+		"x3": "refs/heads/main:refs/heads/x3",
+		"x4": "+gone:x4",
+	}
+	for _, b := range slices.Sorted(maps.Keys(specs)) {
+		r.git(r.clone, "checkout", "-q", "-b", b, "main")
+		r.commitIn(r.clone, b+".txt")
+	}
+	r.git(r.clone, "checkout", "-q", "main")
+	g := NewGitDiscard(config.Config{})
+	g.emit = func(_, _, _, _ string, _ map[string]string) {}
+	for b, deny := range map[string]bool{"x1": true, "x2": true, "x3": true, "x4": false} {
+		command := "git -c 'remote.origin.fetch=" + specs[b] + "' remote prune origin"
+		d := g.Check(Input{Event: EventBash, Command: command, Cwd: r.clone})
+		want := "this prunes local branches: it may delete the branch `" + b + "` and its reflog"
+		switch {
+		case !deny && d != nil:
+			t.Errorf("Check(%q) = %q, want it to pass", command, d.Reason)
+		case deny && (d == nil || !strings.Contains(d.Reason, want)):
+			t.Errorf("Check(%q) = %v, want a deny naming %q", command, d, want)
+		}
+	}
+	for _, b := range slices.Sorted(maps.Keys(specs)) {
+		r.git(r.clone, "config", "--add", "remote.origin.fetch", specs[b])
+	}
+	r.git(r.clone, "remote", "prune", "origin")
+	for b, kept := range map[string]bool{"x1": false, "x2": false, "x3": true, "x4": true} {
+		err := gitCmd(r.clone, "rev-parse", "-q", "--verify", "refs/heads/"+b).Run()
+		if got := err == nil; got != kept {
+			t.Errorf("after git remote prune, %s kept = %v, want %v", b, got, kept)
+		}
+	}
+}
+
+// TestGitExpiryProof reads expiry dates with the real git, the way prune,
+// gc and reflog expire read them, against each of git's default windows: a
+// date at least that old passes, a sooner or future one is final, and so
+// is one git cannot read.
+func TestGitExpiryProof(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	x := expiryReader{ctx: context.Background(), parse: gitExpiry}
+	tests := []struct {
+		date  string
+		keep  time.Duration
+		final bool
+	}{
+		{"2.weeks.ago", pruneKeep, false},
+		{"14.days.ago", pruneKeep, false},
+		{"3.weeks.ago", pruneKeep, false},
+		{"2000-01-01", pruneKeep, false},
+		{"13.days.ago", pruneKeep, true},
+		{"1.second.ago", pruneKeep, true},
+		{"2099-01-01", pruneKeep, true},
+		{"NOW", pruneKeep, true},
+		{"now", pruneKeep, true},
+		{"all", pruneKeep, true},
+		{"ALL", pruneKeep, true}, // git refuses it
+		{"garbage", pruneKeep, true},
+		{"", pruneKeep, true},
+		{"never", pruneKeep, false},
+		{"NEVER", pruneKeep, false},
+		{"false", pruneKeep, false},
+		{"90.days.ago", reflogKeep, false},
+		{"1.year.ago", reflogKeep, false},
+		{"89.days.ago", reflogKeep, true},
+		{"2.weeks.ago", reflogKeep, true},
+		{"30.days.ago", unreachableKeep, false},
+		{"29.days.ago", unreachableKeep, true},
+		{"1.week.ago", unreachableKeep, true},
+	}
+	for _, tt := range tests {
+		if got := x.final(tt.date, tt.keep); got != tt.final {
+			t.Errorf("final(%q, %v) = %v, want %v", tt.date, tt.keep, got, tt.final)
+		}
+	}
+	for date, want := range map[string]uint64{"now": 1<<64 - 1, "all": 1<<64 - 1, "never": 0} {
+		if got, err := gitExpiry(context.Background(), date); err != nil || got != want {
+			t.Errorf("gitExpiry(%q) = %d, %v, want %d", date, got, err, want)
+		}
+	}
+	if _, err := gitExpiry(context.Background(), "garbage"); err == nil {
+		t.Error("gitExpiry(garbage) read a date, want it to fail as git does")
+	}
+}
+
+// TestGitDiscardFinalLossProof runs the final-loss check with its real git
+// date reads in a clone: a date sooner than git's default denies, one at
+// least that old passes.
+func TestGitDiscardFinalLossProof(t *testing.T) {
+	r := newDiscardRepos(t)
+	g := NewGitDiscard(config.Config{})
+	g.emit = func(_, _, _, _ string, _ map[string]string) {}
+	for command, deny := range map[string]bool{
+		"git prune --expire=2099-01-01":                                       true,
+		"git prune --expire=1.second.ago":                                     true,
+		"git gc --prune=2099-01-01":                                           true,
+		"git reflog expire --expire-unreachable=1.second.ago refs/heads/main": true,
+		"git config gc.pruneExpire 2099-01-01":                                true,
+		"git -c gc.reflogExpire=1.week.ago commit -m x":                       true,
+		"git repack -A -d --unpack-unreachable=1.second.ago":                  true,
+		"git repack -a -d --unpack-unreachable=1.day.ago":                     true,
+		"git repack -a -d --unpack-unreachable=3.weeks.ago":                   false,
+		"git prune --expire=3.weeks.ago":                                      false,
+		"git gc --prune=3.weeks.ago":                                          false,
+		"git reflog expire --expire=91.days.ago HEAD":                         false,
+		"git config gc.reflogExpireUnreachable 31.days.ago":                   false,
+		"git repack --cruft -d --cruft-expiration=3.weeks.ago":                false,
+	} {
+		d := g.Check(Input{Event: EventBash, Command: command, Cwd: r.clone})
+		if got := d != nil; got != deny {
+			t.Errorf("Check(%q) denies = %v, want %v (%v)", command, got, deny, d)
+		}
 	}
 }
 

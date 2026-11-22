@@ -65,7 +65,12 @@ func gitDiscardReason(why error) string {
 // refs/stash, which delete stash entries any worktree of the repo may have
 // set aside, whatever the tree holds, and any worktree remove or prune that
 // deletes the HEAD and HEAD reflog that alone hold some commits
-// (keepsWorktreeCommits, judgePrune). allow_repos exempts repos by canonical
+// (keepsWorktreeCommits, judgePrune). It blocks the commands that make the
+// loss of a commit off its branch final (finalLoss: a reflog expire, gc,
+// prune or repack that deletes sooner than git's default, a reflog delete
+// or drop, a call or config write with such a gc expiry), and a fetch,
+// pull or remote update that may force-update or prune a local branch that
+// holds a commit no remote-tracking ref holds (checkFetch). allow_repos exempts repos by canonical
 // identity, and `mode: soft` warns instead of denying.
 type GitDiscard struct {
 	cfg config.Config
@@ -93,6 +98,16 @@ type GitDiscard struct {
 	// pruned counts the commits a `worktree prune` with the expire words,
 	// run in dir, strands (judgePrune). Injectable for tests.
 	pruned func(ctx context.Context, dir string, expire []string) (lostCommits, error)
+	// unpushed returns a commit the local branches rev names hold that no
+	// remote-tracking ref holds, "" for none (unpushedCommit), which judges
+	// a fetch that may move or delete them. Injectable for tests.
+	unpushed func(ctx context.Context, dir, rev string) (string, error)
+	// repoFetch returns what the config files git reads in dir say about
+	// its fetches (repoFetchConfig). Injectable for tests.
+	repoFetch func(ctx context.Context, dir string) (fetchConfig, error)
+	// expiry reads an expiry date as git does, in Unix seconds (gitExpiry).
+	// Injectable for tests.
+	expiry func(ctx context.Context, date string) (uint64, error)
 	// prove returns nil when a discard provably loses nothing, else the
 	// first loss. Injectable for tests.
 	prove func(c gitInvocation) error
@@ -113,6 +128,9 @@ func NewGitDiscard(cfg config.Config) *GitDiscard {
 		requireForce: cleanRequiresForce,
 		stranded:     removeStranded,
 		pruned:       pruneStranded,
+		unpushed:     unpushedCommit,
+		repoFetch:    repoFetchConfig,
+		expiry:       gitExpiry,
 		prove:        newProver().prove,
 		emit:         notify.EmitEventSync,
 	}
@@ -131,10 +149,14 @@ func (g *GitDiscard) Event() string { return EventBash }
 // first, since a step after a discard may run beside it (proofBlocker). An
 // invocation that may delete stash entries (stashDrops) is judged on its own
 // (checkStashDrop), outside text no shell runs (walkStep.prose), and so is
-// one whose subcommand belt cannot see (hiddenGit, checkHidden). A clean
-// without -f or -i counts when clean.requireForce may be off
-// (unforcedCleanDeletes). A denial for a step of a message read as code for
-// bash 3.2 alone says how to pass the message as data (bash32Hinted).
+// one whose subcommand belt cannot see (hiddenGit, checkHidden). So is one
+// that makes a loss final (checkFinalLoss) or fetches in a way that may
+// move or delete a local branch (checkFetch), outside text no shell runs,
+// with the settings its -c words, its environment and the steps before it
+// give it (callSettings). A clean without -f or -i counts when
+// clean.requireForce may be off (unforcedCleanDeletes). A denial for a step
+// of a message read as code for bash 3.2 alone says how to pass the message
+// as data (bash32Hinted).
 func (g *GitDiscard) Check(in Input) *Denial {
 	var steps []walkStep
 	walkCommands(in.Command, in.Cwd, func(s walkStep) { steps = append(steps, s) })
@@ -162,6 +184,15 @@ func (g *GitDiscard) Check(in Input) *Denial {
 				return bash32Hinted(d, s.bash32)
 			}
 			continue
+		}
+		if !s.prose {
+			settings := callSettings(c, steps, i)
+			if d := g.checkFinalLoss(c, settings, fed); d != nil {
+				return bash32Hinted(d, s.bash32)
+			}
+			if d := g.checkFetch(c, settings, fed); d != nil {
+				return bash32Hinted(d, s.bash32)
+			}
 		}
 		c, unsorted := g.sortCheckoutOperands(lookups, c)
 		if !discards(c, fed) && !g.unforcedCleanDeletes(lookups, c, steps, i, beside) {
@@ -267,13 +298,70 @@ func writesOutside(c gitInvocation) bool {
 // (stashDrops). The loss is the entry, not the tree, so a clean tree or a
 // proof allows nothing: only an exempt repo allows, and soft mode warns.
 func (g *GitDiscard) checkStashDrop(c gitInvocation) *Denial {
-	if c.dir != "" && g.cfg.RepoAllowed(GitDiscardID, g.resolveRepo(c.dir)) {
+	return g.denyAnyTree(c, "would delete stash entries", stashDropReason)
+}
+
+// checkFinalLoss decides one invocation that makes a loss final
+// (finalLoss), with one proofBudget for the dates it reads. It is a rule
+// with no proof: only an exempt repo allows, and soft mode warns.
+func (g *GitDiscard) checkFinalLoss(c gitInvocation, settings []callSetting, fed bool) *Denial {
+	ctx, cancel := context.WithTimeout(context.Background(), proofBudget)
+	defer cancel()
+	what := finalLoss(c, settings, fed, expiryReader{ctx: ctx, parse: g.expiry})
+	if what == "" {
 		return nil
 	}
-	if g.warnSoft(c, "would delete stash entries") {
+	return g.denyAnyTree(c, "would make a loss final", finalLossReason(what))
+}
+
+// checkFetch decides one fetch, pull, remote update, remote prune or remote
+// add -f (readFetchCall) that may force-update or prune local branches
+// (fetchTargets): it passes when none of them holds a commit no
+// remote-tracking ref holds (judgeFetch), and in an exempt repo; soft mode
+// warns. A dry run updates none. What the
+// repository's config says about fetches (repoFetch) counts too, read in a
+// directory belt can name; a failed read may hold any refspec. A fetch that
+// prunes in a bare mirror with linked worktrees denies with no count
+// (mirrorWorktreesReason). One proofBudget covers the read and every count.
+func (g *GitDiscard) checkFetch(c gitInvocation, settings []callSetting, fed bool) *Denial {
+	f, ok := readFetchCall(c, fed)
+	if !ok || f.dry {
 		return nil
 	}
-	return Reasonf(GitDiscardID, "%s", stashDropReason)
+	ctx, cancel := context.WithTimeout(context.Background(), proofBudget)
+	defer cancel()
+	var repo fetchConfig
+	if c.dir != "" && !f.anyRef {
+		cfg, err := g.repoFetch(ctx, c.dir)
+		repo, f.anyRef = cfg, err != nil
+	}
+	if repo.mirrorWorktrees && f.prunes(settings, repo.prune) {
+		return g.denyAnyTree(c, "would prune branches in a bare mirror that has linked worktrees", mirrorWorktreesReason)
+	}
+	targets := fetchTargets(f, settings, repo)
+	if len(targets) == 0 || g.exempt(c) {
+		return nil
+	}
+	why := g.judgeFetch(ctx, c.dir, targets)
+	if why == nil || g.warnSoft(c, "would move or delete a local branch that holds unpushed commits") {
+		return nil
+	}
+	return Reasonf(GitDiscardID, "%s", fetchLossReason(why))
+}
+
+// denyAnyTree denies an invocation whose loss no tree state undoes, with
+// reason: only an exempt repo allows, and soft mode warns that c loses what
+// loss says.
+func (g *GitDiscard) denyAnyTree(c gitInvocation, loss, reason string) *Denial {
+	if g.exempt(c) || g.warnSoft(c, loss) {
+		return nil
+	}
+	return Reasonf(GitDiscardID, "%s", reason)
+}
+
+// exempt reports whether allow_repos exempts the repo c runs in.
+func (g *GitDiscard) exempt(c gitInvocation) bool {
+	return c.dir != "" && g.cfg.RepoAllowed(GitDiscardID, g.resolveRepo(c.dir))
 }
 
 // checkHidden decides a git call whose subcommand belt cannot see
