@@ -101,8 +101,8 @@ func (j *discardJudge) inRepo(ctx context.Context, r *repoDrops, proved *int) *f
 			fmt.Sprintf("more than %d paths", j.g.maxPaths)).Error()}
 	}
 	if err := j.g.prove(ctx, r.top, tracked); err != nil {
-		return &fileLoss{call: r.drops[0].call, why: "this deletes uncommitted work in " + r.top + ": " +
-			err.Error()}
+		return &fileLoss{call: r.drops[0].call, why: "this " + r.drops[0].call.verb() +
+			" uncommitted work in " + r.top + ": " + err.Error()}
 	}
 	return j.hiddenWork(ctx, r, hidden)
 }
@@ -141,7 +141,7 @@ func below(rel, p string) string {
 
 // untrackedLoss is the loss for an untracked file: no commit holds it.
 func untrackedLoss(call *lossCall, p string) *fileLoss {
-	return &fileLoss{call: call, why: "this deletes `" + p + "`, which is untracked, so no commit holds it"}
+	return &fileLoss{call: call, why: "this " + call.verb() + " `" + p + "`, which is untracked, so no commit holds it"}
 }
 
 // namesLoss is the loss for a path a feeder prints that the command cuts

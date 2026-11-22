@@ -27,6 +27,15 @@ type walkStep struct {
 	// delimiters included. A command from the token walk keeps them in
 	// tokens instead.
 	targets []string
+	// redirs are the operators of the command's redirections and
+	// targetWords their targets with their parts, both in the order of
+	// targets. A command from the token walk has neither.
+	redirs      []redirOp
+	targetWords []placedWord
+	// group is the body whose output the redirections take, nil when the
+	// command's own: a ( ) subshell's, or the { } group's or compound
+	// command's the command closes (`}`, `fi`, `done`).
+	group *shellGroup
 	// prose marks a command taken from a comment or a heredoc body no shell
 	// runs (walkProse): its words are only text.
 	prose bool
@@ -98,11 +107,26 @@ type walkStep struct {
 // (feedsOf): a git alias body, text printed into a shell, a file or a
 // variable the command filled with text.
 func walkCommands(command, cwd string, fn func(walkStep)) {
-	w := shellWalk{
+	w := newShellWalk(command, cwd)
+	w.walkRead(w.input, true, fn)
+}
+
+// walkCommandsBare is walkCommands that also reaches fn for a command of
+// redirections alone (`> f`), which opens its targets and runs nothing, or
+// of ( ) bodies and redirections (`( : ) > f`). Its step has no tokens and
+// empty words; a ( ) body is its group.
+func walkCommandsBare(command, cwd string, fn func(walkStep)) {
+	w := newShellWalk(command, cwd)
+	w.bare = true
+	w.walkRead(w.input, true, fn)
+}
+
+// newShellWalk starts the walk of command from cwd.
+func newShellWalk(command, cwd string) *shellWalk {
+	return &shellWalk{
 		dir: cwd, cdpath: os.Getenv("CDPATH") != "", chains: new(int), steps: new(int),
 		mem: newWalkMemory(), outerSure: true, input: resolveLiteralVars(command),
 	}
-	w.walkRead(w.input, true, fn)
 }
 
 // walkRead walks one text. code says the shell runs it as commands; with
@@ -167,12 +191,15 @@ func (w *shellWalk) walkUnread(text string, fn func(walkStep)) {
 
 // walkCmds walks the commands readShell read from text. Each command's
 // heredoc bodies are judged with the command a pipe hands them to, if any.
+// In a bare walk a command of redirections alone reaches fn too. The step
+// of a command that closes a group carries that group (groupsOf).
 // Once a command holds a `$(cat <<'EOF' ... EOF)` bash 3.2 may end in
 // another place than belt (walkNested), a quote of its body may stay open
 // into anything after it, so the rest of text from there is read
 // fail-closed (walkUnread) in place of the commands after it, its steps
 // marked walkStep.bash32.
 func (w *shellWalk) walkCmds(text string, cmds []shellCmd, fn func(walkStep)) {
+	groups := groupsOf(text, cmds)
 	for i, c := range cmds {
 		if !w.prose {
 			w.join(c.before)
@@ -182,10 +209,17 @@ func (w *shellWalk) walkCmds(text string, cmds []shellCmd, fn func(walkStep)) {
 		w.justMoved = false
 		tail := w.walkNested(text, c, fn)
 		if tokens := c.tokens(); len(tokens) > 0 {
-			w.walkWords(text, c, tokens, w.pipeInto(cmds, i), fn)
+			w.walkWords(text, c, tokens, w.pipeInto(cmds, i), withGroup(fn, groups[i]))
 			if afterMove && leavesOnFail(c, tokens) {
 				w.settleMove()
 			}
+		} else if w.bare && len(c.targets) > 0 {
+			step := w.stepFor(c, []string{}, w.pipeInto(cmds, i), w.dir, false)
+			step.words = []placedWord{}
+			if len(c.subshells) > 0 {
+				step.group = subshellGroup(text, c)
+			}
+			fn(step)
 		}
 		w.heredoc = w.heredoc || len(c.docs) > 0
 		var reader *shellCmd
@@ -754,6 +788,7 @@ func (w *shellWalk) stepFor(c shellCmd, tokens []string, in pipeIn, dir string, 
 	}
 	step := walkStep{
 		tokens: tokens, dir: dir, configEnv: w.configEnv, targets: targets, defines: defines,
+		redirs: c.redirs, targetWords: c.targets,
 		pipedConfig: in.namesConfig, words: c.words, cwd: w.dir, cwdSure: w.dirSure(),
 		stdinRedirected: c.stdinRedirected(), scriptOf: w.script,
 	}
@@ -882,7 +917,7 @@ func (w *shellWalk) child(dir string) *shellWalk {
 		dir: dir, cdpath: w.cdpath, gitEnv: w.gitEnv, configEnv: w.configEnv, heredoc: w.heredoc,
 		feeds: w.feeds, depth: w.depth + 1, chains: w.chains, steps: w.steps, mem: w.mem, expanding: w.expanding,
 		positional: w.positional, afterFunction: w.afterFunction, pwdSet: w.pwdSet, cdHidden: w.cdHidden,
-		outerSure: w.dirSure(),
+		outerSure: w.dirSure(), bare: w.bare,
 	}
 }
 

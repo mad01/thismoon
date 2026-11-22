@@ -56,7 +56,8 @@ func consumerTokens(words []shWord) []string {
 
 // consumer judges the command a consumer runs. Input it runs as code
 // (runsCode) denies when the text that builds it names a delete
-// (consumedCode). An rm, unlink or shred drops each input (consumedRm).
+// (consumedCode). An rm, unlink or shred drops each input (consumedRm), and
+// a cp, mv, install or ln writes over what each input names (consumedCopy).
 // Any other command that deletes is one belt does not read there, and
 // denies when its words name a delete. A shell's -c script takes the input
 // as its arguments (consumedScript). Any other command passes.
@@ -68,6 +69,8 @@ func (j *discardJudge) consumer(r consumerRun, s walkStep) *fileLoss {
 	switch {
 	case isLoss && isRmFamily(name):
 		return j.consumedRm(r, name, cargs, s)
+	case isLoss && isCopyFamily(name):
+		return j.consumedCopy(r, name, cargs, s)
 	case isLoss && namesLossText(strings.Join(consumerTokens(r.command), " ")):
 		return &fileLoss{why: "belt does not read a " + name + " that " + r.who + " runs, and it names a delete"}
 	case isLoss:
@@ -150,6 +153,62 @@ func (j *discardJudge) rmInputs(r consumerRun, name string, cargs []shWord, mark
 	return nil
 }
 
+// consumedCopy judges a cp, mv, install or ln a consumer runs: a word that
+// is the mark stands for each input, and when the consumer appends the
+// inputs (consumerRun.appended) they follow the operands.
+func (j *discardJudge) consumedCopy(r consumerRun, name string, cargs []shWord, s walkStep) *fileLoss {
+	if r.appended() {
+		return j.copyInputs(r, name, append(slices.Clone(cargs), literalWord(feedMark)), feedMark, s)
+	}
+	return j.copyInputs(r, name, cargs, r.mark, s)
+}
+
+// copyInputs judges a copy whose operands that are mark stand for each
+// input of r (copyInto): each literal input in their place (fillMark), then
+// each feed.
+func (j *discardJudge) copyInputs(r consumerRun, name string, cargs []shWord, mark string, s walkStep) *fileLoss {
+	for _, w := range r.words {
+		args, ok := fillMark(r, cargs, mark, w)
+		if !ok {
+			return unresolvable(copyLoss("", s), w)
+		}
+		if loss := j.copyInto(readCopy(name, args), s, nil); loss != nil {
+			return loss
+		}
+	}
+	for _, fd := range r.feeds {
+		fd.mark = mark
+		in := &copyInput{fd: fd, holds: r.holds, appended: mark == feedMark}
+		if loss := j.copyInto(readCopy(name, cargs), s, in); loss != nil {
+			return loss
+		}
+	}
+	return nil
+}
+
+// fillMark puts the literal input w in place of mark in each word of
+// cargs, whole or in part. ok is false when a word left holds a text the
+// consumer fills in, or w holds an expansion where a word holds the mark
+// in part.
+func fillMark(r consumerRun, cargs []shWord, mark string, w shWord) ([]shWord, bool) {
+	input, inputLit := w.literal()
+	args := slices.Clone(cargs)
+	for i, a := range args {
+		v, lit := a.literal()
+		switch {
+		case lit && v == mark:
+			args[i] = w
+			continue
+		case lit && inputLit && strings.Contains(v, mark):
+			args[i] = literalWord(strings.ReplaceAll(v, mark, input))
+		}
+		if r.holds(args[i]) {
+			return nil, false
+		}
+	}
+	return args, true
+}
+
 // consumedScript judges a shell's -c script a consumer runs with the
 // input as the script's arguments ($0, $1 and on). A script that runs one
 // of them as code runs the input as code (consumedCode). A script that is
@@ -172,13 +231,17 @@ func (j *discardJudge) consumedScript(r consumerRun, s walkStep) *fileLoss {
 	}
 	if lit && read && len(cmds) == 1 && len(cmds[0].subshells) == 0 && len(cmds[0].docs) == 0 {
 		args, ok := scriptOperands(plainWords(cmds[0].words), r.command[at+1:], r.appended())
-		if name, cargs, isLoss := lossCommand(skipAssignments(args)); ok && isLoss && isRmFamily(name) {
+		name, cargs, isLoss := lossCommand(skipAssignments(args))
+		if ok && isLoss && (isRmFamily(name) || isCopyFamily(name)) {
 			if walked {
 				j.covered[s.id] = true
 			}
 			mark := r.mark
 			if r.appended() {
 				mark = feedMark
+			}
+			if isCopyFamily(name) {
+				return j.copyInputs(r, name, cargs, mark, s)
 			}
 			return j.rmInputs(r, name, cargs, mark, s)
 		}
