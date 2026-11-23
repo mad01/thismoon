@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.26.0](https://github.com/mad01/thismoon/compare/belt/v2.25.0...belt/v2.26.0) (2026-11-23)
+
+
+### Features
+
+* **belt:** read deny-listed commands past launchers ([#559](https://github.com/mad01/thismoon/issues/559)) ([4da43f2](https://github.com/mad01/thismoon/commit/4da43f2d830c14cf5e10e9a354f86e7e69d8e970))
+
 ## [2.25.0](https://github.com/mad01/thismoon/compare/belt/v2.24.0...belt/v2.25.0) (2026-11-22)
 
 
