@@ -922,15 +922,22 @@ func stripWrappers(tokens []string) []string {
 	return rest
 }
 
+// assignmentWord is a word the shell reads as an assignment in front of a
+// command: a name, an array subscript or none, then = or +=, before any quote
+// or substitution (`X=1`, `a[0]=x`, `PATH+=:/bin`).
+var assignmentWord = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=`)
+
 // peelWrappers is stripWrappers that also says how the words left run:
 // runsDirect behind assignments alone, runsWrapped behind a wrapper that
 // runs them as written, and runsAsText behind one that hands them to a
 // shell (sudo -s, env -S) or whose options belt cannot read, from the words
-// after that wrapper on (wrapperSpec.read).
+// after that wrapper on (wrapperSpec.read). Only an assignmentWord is read
+// past as an assignment: a command word that holds = elsewhere, such as a
+// backtick that runs `git log --format=%B`, is the command.
 func peelWrappers(tokens []string) ([]string, wrapKind) {
 	kind := runsDirect
 	for len(tokens) > 0 {
-		if strings.Contains(tokens[0], "=") {
+		if assignmentWord.MatchString(tokens[0]) {
 			tokens = tokens[1:]
 			continue
 		}
