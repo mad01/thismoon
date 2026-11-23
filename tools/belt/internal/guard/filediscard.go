@@ -487,28 +487,21 @@ func runsNext(name string) bool {
 	return isWrapper(name) || multicallTools[name]
 }
 
-// packageRunners run the command of an npm package that their words name
-// (`npx rimraf build`); packageRunWords are the subcommands of npm, pnpm,
-// yarn and bun that do (`npm exec`, `pnpm dlx`, `bun x`).
-var (
-	packageRunners  = wordSet("npx pnpx bunx")
-	packageRunWords = map[string]map[string]bool{
-		"npm": wordSet("exec x"), "pnpm": wordSet("exec dlx"), "yarn": wordSet("exec dlx"), "bun": wordSet("x"),
-	}
-)
-
-// runsPackage reports whether words run the command of an npm package
-// (packageRunners, packageRunWords).
+// runsPackage reports whether words run the command of an npm package that
+// their later words name (`npx rimraf build`, `pnpm dlx rimraf x`): a
+// launcher form marked npm, its subcommand the word right after the name.
+// The other launchers run in a container or may move the working directory
+// first (`mise -C dir exec`, `uv run --directory dir`), so file-discard
+// leaves them be.
 func runsPackage(words []shWord) bool {
 	name := runName(words[0])
-	if packageRunners[name] {
-		return true
+	sub := ""
+	if len(words) > 1 {
+		sub, _ = words[1].literal()
 	}
-	if len(words) < 2 {
-		return false
-	}
-	sub, _ := words[1].literal()
-	return packageRunWords[name][sub]
+	return slices.ContainsFunc(launchers, func(l launcher) bool {
+		return l.npm && l.name == name && (l.sub == "" || l.sub == sub)
+	})
 }
 
 // runName is the command a word runs: its last path part, "" when the word

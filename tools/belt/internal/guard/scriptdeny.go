@@ -650,11 +650,16 @@ func scanFindExec(tokens []string, patterns []deny) *Denial {
 // deny pairs a deny-list pattern with its compiled matchers: re for the
 // text match, nil for an entry with a `*` group, which argv alone reads, and
 // entry for the argv match (denyentry.go), nil for an entry the reader does
-// not read. settings marks an entry from the Claude settings deny list, as
-// opposed to extra_patterns.
+// not read. lead matches the text match's first word alone, which the first
+// word of a command must hold for the text match to start there, and start
+// is re anchored at the start of a text, where that match must begin
+// (launchRead.textStart). settings marks an entry from the Claude settings
+// deny list, as opposed to extra_patterns.
 type deny struct {
 	pattern  string
 	re       *regexp.Regexp
+	lead     *regexp.Regexp
+	start    *regexp.Regexp
 	entry    *denyEntry
 	settings bool
 }
@@ -694,6 +699,10 @@ func compilePatterns(patterns []string) []deny {
 		}
 		if d.entry == nil || !slices.Contains(toks, "*") {
 			d.re = wordsRegexp(toks, textGap)
+			d.lead = wordsRegexp(toks[:min(1, len(toks))], textGap)
+			if d.re != nil {
+				d.start = regexp.MustCompile(`^(?:` + d.re.String() + `)`)
+			}
 		}
 		if d.re != nil || d.entry != nil {
 			out = append(out, d)

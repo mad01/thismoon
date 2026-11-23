@@ -213,6 +213,75 @@ var (
 		--log-timing --logging-format --output-limit`)
 )
 
+// launcher is one form of a command that runs another command its later
+// words name: the launcher's name and the subcommand words that make it
+// one, none for a name that launches by itself.
+type launcher struct {
+	name, sub string
+	// npm marks a form that runs an npm package's command, the forms
+	// file-discard reads past (runsPackage).
+	npm bool
+}
+
+// launchers run a command their later words name: a package's binary
+// (`npx prisma`, `pnpm prisma`, `bun x`, `uvx ruff`, `pipx run black`), a
+// command in a project's environment (`bundle exec`, `poetry run`, `uv run`,
+// `mise exec`, `direnv exec`) or in a container (`docker exec`, `docker run`,
+// `docker compose exec`, `podman exec`, `kubectl exec`, `kubectl run`,
+// `kubectl debug`). pnpm and yarn run a package's binary by its name alone,
+// so their exec and dlx forms are listed for file-discard's sake. Any word
+// after the name may start the command (launchedDeny), so a launcher's own
+// options need no table: `npx -p prisma prisma migrate reset` and `kubectl
+// exec -it pod -- psql` read alike.
+var launchers = []launcher{
+	{name: "npx", npm: true}, {name: "pnpx", npm: true}, {name: "bunx", npm: true},
+	{name: "bun", sub: "x", npm: true},
+	{name: "npm", sub: "exec", npm: true}, {name: "npm", sub: "x", npm: true},
+	{name: "pnpm"}, {name: "pnpm", sub: "exec", npm: true}, {name: "pnpm", sub: "dlx", npm: true},
+	{name: "yarn"}, {name: "yarn", sub: "exec", npm: true}, {name: "yarn", sub: "dlx", npm: true},
+	{name: "uvx"}, {name: "pipx", sub: "run"},
+	{name: "bundle", sub: "exec"}, {name: "poetry", sub: "run"}, {name: "uv", sub: "run"},
+	{name: "mise", sub: "exec"}, {name: "mise", sub: "x"}, {name: "direnv", sub: "exec"},
+	{name: "docker", sub: "exec"}, {name: "docker", sub: "container exec"},
+	{name: "docker", sub: "compose exec"}, {name: "docker-compose", sub: "exec"},
+	{name: "docker", sub: "run"}, {name: "docker", sub: "container run"},
+	{name: "docker", sub: "compose run"}, {name: "docker-compose", sub: "run"},
+	{name: "podman", sub: "exec"},
+	{name: "kubectl", sub: "exec"}, {name: "kubectl", sub: "run"}, {name: "kubectl", sub: "debug"},
+}
+
+// launches reports whether a command, its words with the name first, is a
+// launcher form: the name as a deny entry reads it (commandName, case
+// aside), then the form's subcommand words in order past the launcher's
+// global options, read the way an entry's verbs are (reachesVerbs). So
+// `kubectl -n prod exec` and `docker --context c compose -f x.yml exec`
+// count. Each word reads as the shell passes it (shellValue), so quoting
+// does not hide a launcher: `$'docker' exec` and `d'o'cker exec` count.
+func launches(words []string) bool {
+	if len(words) == 0 {
+		return false
+	}
+	name := strings.ToLower(commandName(shellValue(words[0])))
+	var args []verbWord
+	read := false
+	return slices.ContainsFunc(launchers, func(l launcher) bool {
+		if l.name != name {
+			return false
+		}
+		if l.sub == "" {
+			return true
+		}
+		if !read {
+			values := make([]string, len(words)-1)
+			for i, w := range words[1:] {
+				values[i] = shellValue(w)
+			}
+			args, read = verbWords(values), true
+		}
+		return reachesVerbs(strings.Fields(l.sub), args)
+	})
+}
+
 // wrapperName reports whether a command name is a wrapper or a shell runner.
 func wrapperName(name string) bool {
 	_, runner := shellRunners[name]
@@ -313,8 +382,18 @@ func unwrapCommand(tokens []string) ([]string, wrapKind) {
 }
 
 // leadingDeny returns the first deny entry a command, its words with the
-// name first, starts with (deny.leads), or nil.
+// name first, starts with (deny.leads), or the one the command behind its
+// launcher starts with (launchedDeny), or nil.
 func leadingDeny(words []string, patterns []deny) *deny {
+	if d := firstLeading(words, patterns); d != nil {
+		return d
+	}
+	return launchedDeny(words, patterns)
+}
+
+// firstLeading returns the first deny entry words start with (deny.leads),
+// or nil.
+func firstLeading(words []string, patterns []deny) *deny {
 	for i := range patterns {
 		if patterns[i].leads(words) {
 			return &patterns[i]
@@ -685,11 +764,13 @@ func (r nameRead) variableRun(args []string) *Denial {
 
 // checkHidden denies a top-level segment whose command hides from the
 // permission system's prefix match. Behind a wrapper that runs it as
-// written, the command may not start with a deny entry (leadingDeny).
-// Behind one that hands it to a shell, its text is scanned to the end of the
-// command, as a -c string is. A name a variable, alias or function gives is
-// read by hiddenRun.
+// written, the command may not start with a deny entry (leadingDeny), nor
+// may the command behind a launcher (launchedDeny), with no wrapper in
+// front too. Behind one that hands it to a shell, its text is scanned to
+// the end of the command, as a -c string is. A name a variable, alias or
+// function gives is read by hiddenRun.
 func (s scan) checkHidden(seg segment, wrapper string, tokens []string, kind wrapKind) *Denial {
+	var hidden *deny
 	switch kind {
 	case runsAsText:
 		where := fmt.Sprintf("the shell text after %s", wrapper)
@@ -697,16 +778,19 @@ func (s scan) checkHidden(seg segment, wrapper string, tokens []string, kind wra
 			return d
 		}
 	case runsWrapped:
-		if d := leadingDeny(tokens, s.patterns); d != nil {
-			return Reasonf(
-				ScriptDenyListID,
-				"runs %q behind %s, which the permission system's prefix match does not read past. %s",
-				d.pattern,
-				wrapper,
-				d.hint("Run the command without the wrapper so the permission system can evaluate it, "+
-					"or ask the user first."),
-			)
-		}
+		hidden = leadingDeny(tokens, s.patterns)
+	default:
+		hidden = launchedDeny(tokens, s.patterns)
+	}
+	if hidden != nil {
+		return Reasonf(
+			ScriptDenyListID,
+			"runs %q behind %s, which the permission system's prefix match does not read past. %s",
+			hidden.pattern,
+			wrapper,
+			hidden.hint("Run the command without the wrapper or launcher so the permission system can evaluate it, "+
+				"or ask the user first."),
+		)
 	}
 	return s.names.hiddenRun(tokens, "the command", s.patterns, 0)
 }

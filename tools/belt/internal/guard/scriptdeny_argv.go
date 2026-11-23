@@ -87,6 +87,14 @@ func ansiCWord(word string) string {
 	if !strings.Contains(word, "$'") {
 		return word
 	}
+	return shellValue(word)
+}
+
+// shellValue returns a word as the shell passes it when quoting is all it
+// holds: its quotes and backslashes dropped and a $'...' string decoded, so
+// `d'o'cker`, `$'docker'` and `\docker` all read as docker. A word with any
+// other expansion, or one the reader cannot follow, stays as written.
+func shellValue(word string) string {
 	l := shLexer{src: word}
 	w, ok := l.readWord()
 	if !ok || l.i != len(word) {
@@ -166,29 +174,51 @@ func readRm(args []string) (r rmArgs, known bool) {
 	r.options = map[string]bool{}
 	known = true
 	for i, arg := range args {
-		switch {
-		case arg == "--":
+		if arg == "--" {
 			r.operands = append(r.operands, args[i+1:]...)
 			return r, known
-		case strings.HasPrefix(arg, "--"):
-			name, ok := rmLongOption(arg[2:])
-			if ok {
-				r.options[name] = true
-			}
-			known = known && ok
-		case len(arg) > 1 && arg[0] == '-':
-			for _, c := range arg[1:] {
-				name, ok := rmShortOptions[c]
-				if !ok {
-					name = string(c)
-				}
-				r.options[name] = true
-			}
-		default:
+		}
+		a := readRmArg(arg)
+		for _, name := range a.options {
+			r.options[name] = true
+		}
+		if a.operand {
 			r.operands = append(r.operands, arg)
 		}
+		known = known && a.known
 	}
 	return r, known
+}
+
+// rmArg is one of rm's arguments before `--` as readRm reads it: the options
+// it gives by name, or that it is an operand. known is false for a long
+// option rm does not know.
+type rmArg struct {
+	options        []string
+	operand, known bool
+}
+
+// readRmArg reads one of rm's arguments before `--`.
+func readRmArg(arg string) rmArg {
+	switch {
+	case strings.HasPrefix(arg, "--"):
+		name, ok := rmLongOption(arg[2:])
+		if !ok {
+			return rmArg{}
+		}
+		return rmArg{options: []string{name}, known: true}
+	case len(arg) > 1 && arg[0] == '-':
+		a := rmArg{known: true}
+		for _, c := range arg[1:] {
+			name, ok := rmShortOptions[c]
+			if !ok {
+				name = string(c)
+			}
+			a.options = append(a.options, name)
+		}
+		return a
+	}
+	return rmArg{operand: true, known: true}
 }
 
 // rmLongOption names the long option a word gives without its dashes: an
@@ -251,17 +281,36 @@ type verbWord struct {
 func verbsRun(tool string, verbs, args []string) bool {
 	words := verbWords(args)
 	for i := range words {
-		track := tool == "gcloud" && gcloudTracks[strings.ToLower(words[i].text)]
-		words[i].optional = words[i].optional || track || taskTools[tool]
+		words[i].optional = words[i].optional || skippable(tool, words[i].text)
 	}
-	if (tool == "terraform" || tool == "tofu") && destroys(args) {
+	if destroyTool(tool) && destroys(args) {
 		for i := range words {
-			if words[i].text == "apply" {
-				words[i].text = "destroy"
-			}
+			words[i].text = destroyText(words[i].text, true)
 		}
 	}
 	return reachesVerbs(verbs, words)
+}
+
+// skippable reports whether the verbs may skip a word of a tool's arguments
+// whatever comes before it: a gcloud release track, and any word before a
+// rake or rails task (taskTools).
+func skippable(tool, word string) bool {
+	return (tool == "gcloud" && gcloudTracks[strings.ToLower(word)]) || taskTools[tool]
+}
+
+// destroyTool reports whether a tool reads `apply -destroy` as a destroy
+// (destroys): terraform and tofu.
+func destroyTool(tool string) bool {
+	return tool == "terraform" || tool == "tofu"
+}
+
+// destroyText is a verb word as a destroy tool reads it: apply reads as
+// destroy when -destroy is on.
+func destroyText(word string, on bool) string {
+	if on && word == "apply" {
+		return "destroy"
+	}
+	return word
 }
 
 // verbWords reads the words that may name a verb: every word but the flags,
@@ -279,15 +328,20 @@ func verbWords(args []string) []verbWord {
 			return out
 		}
 		if mayBeFlag(arg) {
-			// `--context x` may take the next word and `--context=x` does not.
-			// The quote-collapsed form of `--context="x"` is `--context= x`.
-			afterFlag = !strings.Contains(arg, "=") || strings.HasSuffix(arg, "=")
+			afterFlag = flagTakesNext(arg)
 			continue
 		}
 		out = append(out, verbWord{text: arg, optional: afterFlag || isAssignment(arg)})
 		afterFlag = false
 	}
 	return out
+}
+
+// flagTakesNext reports whether a flag may take the next word as its value:
+// `--context x` may and `--context=x` does not. The quote-collapsed form of
+// `--context="x"` is `--context= x`.
+func flagTakesNext(flag string) bool {
+	return !strings.Contains(flag, "=") || strings.HasSuffix(flag, "=")
 }
 
 // mayBeFlag reports whether a word is a flag or may become one: a word the
@@ -334,15 +388,23 @@ func destroys(args []string) bool {
 		if arg == "--" {
 			break
 		}
-		if !strings.HasPrefix(arg, "-") {
-			continue
+		if v, ok := destroyFlag(arg); ok {
+			on = v
 		}
-		name, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-		if name != "destroy" {
-			continue
-		}
-		parsed, err := strconv.ParseBool(strings.Trim(value, `'"`))
-		on = !hasValue || err != nil || parsed
 	}
 	return on
+}
+
+// destroyFlag reads one argument as terraform's -destroy flag: ok when it is
+// that flag, and on when it turns destroy on.
+func destroyFlag(arg string) (on, ok bool) {
+	if !strings.HasPrefix(arg, "-") {
+		return false, false
+	}
+	name, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+	if name != "destroy" {
+		return false, false
+	}
+	parsed, err := strconv.ParseBool(strings.Trim(value, `'"`))
+	return !hasValue || err != nil || parsed, true
 }
