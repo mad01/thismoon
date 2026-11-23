@@ -163,6 +163,10 @@ type ScriptDenyList struct {
 	// emit sends the soft-mode warning to the events service. Injectable for
 	// tests.
 	emit func(source, level, title, message string, tags map[string]string)
+	// stdinRoot is the folder the standard input reads take for the root of
+	// the file system (inputReader), "" for the real one. Injectable for
+	// tests, so a test reads no file of the host.
+	stdinRoot string
 }
 
 // NewScriptDenyList builds the guard with the real events backend.
@@ -196,6 +200,8 @@ func (g *ScriptDenyList) Check(in Input) *Denial {
 // or a commit message is not read as code. scanTarget and scanMadeExecutable
 // keep reading in.Command, the raw text a written file's content lives in.
 // names are the variables, functions and aliases cmd defines (shellNames).
+// input reads what a nested command or a script file's command takes on
+// standard input, for a head an entry with a phrase names (tools).
 type scan struct {
 	in       Input
 	cmd      string
@@ -203,6 +209,8 @@ type scan struct {
 	written  map[string]bool
 	patterns []deny
 	names    shellNames
+	input    *inputReader
+	tools    map[string]bool
 }
 
 // check runs every scan over the command with its data masked (maskData).
@@ -243,6 +251,8 @@ func (g *ScriptDenyList) scanMasked(in Input, cmd string, patterns []deny) *Deni
 		written:  redirectTargets(segs, in.Cwd),
 		patterns: patterns,
 		names:    readShellNames(cmd),
+		input:    newInputReader(g.stdinRoot),
+		tools:    phraseTools(patterns),
 	}
 	// A Python heredoc proven inert ends the command: its own segment, its
 	// body lines and its terminator need no check. A text heredoc's body
@@ -479,7 +489,7 @@ func (g *ScriptDenyList) scanTarget(s scan, path string) *Denial {
 			return d
 		}
 	}
-	return g.scanFile(resolved, s.patterns)
+	return g.scanFile(s, resolved)
 }
 
 // scanMadeExecutable handles chmod: a file the same command writes and then
@@ -552,11 +562,12 @@ func modeAddsExec(mode string) bool {
 	return false
 }
 
-// scanFile reads the script (capped at maxScriptSize) and scans it.
-// Unreadable files are allowed — the shell will fail on them anyway, and
-// belt must not block on its own limitations; the write-then-run pass in
-// scanTarget covers the file that does not exist yet.
-func (g *ScriptDenyList) scanFile(resolved string, patterns []deny) *Denial {
+// scanFile reads the script (capped at maxScriptSize) and scans it, then
+// what its commands read on standard input (scriptInput). Unreadable files
+// are allowed: the shell will fail on them anyway, and belt must not block
+// on its own limitations; the write-then-run pass in scanTarget covers the
+// file that does not exist yet.
+func (g *ScriptDenyList) scanFile(s scan, resolved string) *Denial {
 	f, err := os.Open(resolved)
 	if err != nil {
 		return nil
@@ -566,7 +577,35 @@ func (g *ScriptDenyList) scanFile(resolved string, patterns []deny) *Denial {
 	if err != nil {
 		return nil
 	}
-	return scanText(string(data), fmt.Sprintf("script %s", resolved), patterns)
+	where := fmt.Sprintf("script %s", resolved)
+	if d := scanText(string(data), where, s.patterns); d != nil {
+		return d
+	}
+	return s.scriptInput(string(data), where)
+}
+
+// scriptInput denies a command of a script file's text whose standard
+// input runs an entry with a phrase, or that a phrase head reads from a
+// source belt cannot read (inputReader.check), read as direct-deny-list
+// reads a call's own commands (directCommands). The script runs from the
+// payload's cwd, a sure place only when the call holds no cd, pushd or popd.
+// Text readShell cannot follow, such as a script in another language, is
+// not read for it.
+func (s scan) scriptInput(text, where string) *Denial {
+	if len(s.tools) == 0 {
+		return nil
+	}
+	place := newShellWalk("", s.in.Cwd)
+	place.outerSure = !mentionsName(s.cmd, moveWords)
+	for _, c := range place.directIn(text, nil) {
+		if c.in == nil {
+			continue
+		}
+		if hit := s.input.check(*c.in, commandRun(c.words), s.patterns, s.tools); hit != nil {
+			return hit.scriptReason(where, lineOf(c.in.text, c.in.cmds[c.in.i]))
+		}
+	}
+	return nil
 }
 
 // resolvePath expands ~ and joins relative paths against cwd, mirroring how

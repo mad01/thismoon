@@ -197,26 +197,46 @@ const phraseGap = `(?:[\s\v]|/\*(?s:.*?)\*/|(?:--|#)[^\n\x00]*\n)+`
 // every phrase (phraseText). A word in ANSI-C quoting reads as the shell
 // passes it (ansiCWords).
 func (e denyEntry) runs(words []string) bool {
-	if len(words) == 0 {
+	args, ok := e.named(words)
+	return ok && (e.tool == "rm" || e.phrasesIn(args))
+}
+
+// runsReading is runs for a command that reads input, the text on its
+// standard input: the input counts as one more argument, for the phrases
+// alone (phrasesReading). An entry with no phrase reads no input, so it
+// never matches here.
+func (e denyEntry) runsReading(words []string, input string) bool {
+	if len(e.phrases) == 0 {
 		return false
+	}
+	args, ok := e.named(words)
+	return ok && e.phrasesReading(args, input)
+}
+
+// named reports whether a command names the entry's tool, verbs and
+// options, and returns its arguments after the tool word. For an rm entry
+// it reports whether rm's reader matches the arguments.
+func (e denyEntry) named(words []string) ([]string, bool) {
+	if len(words) == 0 {
+		return nil, false
 	}
 	words = ansiCWords(words)
 	if !strings.EqualFold(commandName(words[0]), e.tool) {
-		return false
+		return nil, false
 	}
 	args := words[1:]
 	if e.tool == "rm" {
-		return rmRuns(e.rm, args)
+		return args, rmRuns(e.rm, args)
 	}
 	if !verbsRun(e.tool, e.verbs, args) {
-		return false
+		return nil, false
 	}
 	for _, o := range e.options {
 		if !o.in(args) {
-			return false
+			return nil, false
 		}
 	}
-	return e.phrasesIn(args)
+	return args, true
 }
 
 // phrasesIn reports whether every phrase of the entry is in the arguments
@@ -225,7 +245,18 @@ func (e denyEntry) phrasesIn(args []string) bool {
 	if len(e.phrases) == 0 {
 		return true
 	}
-	text := phraseText(args)
+	return e.phrasesInText(phraseText(args, ""))
+}
+
+// phrasesReading is phrasesIn with input, the text the command reads on its
+// standard input, as one more argument after the others (phraseText).
+func (e denyEntry) phrasesReading(args []string, input string) bool {
+	return e.phrasesInText(phraseText(args, input))
+}
+
+// phrasesInText reports whether every phrase of the entry is in a phrase
+// text.
+func (e denyEntry) phrasesInText(text string) bool {
 	for _, p := range e.phrases {
 		if !p.MatchString(text) {
 			return false
@@ -239,8 +270,15 @@ func (e denyEntry) phrasesIn(args []string) bool {
 // reaches the guard as the words it holds, then each value a single-dash
 // word may glue to its option (gluedValues). Each value is a piece of its
 // own, set apart by a NUL, so a phrase never runs from one into the next.
-func phraseText(args []string) string {
-	pieces := []string{strings.Join(args, " ")}
+// input, the text a command reads on its standard input, joins the
+// arguments as one more after them when it is not empty. It glues to no
+// option, so a body of any size is read once.
+func phraseText(args []string, input string) string {
+	first := strings.Join(args, " ")
+	if input != "" {
+		first += " " + input
+	}
+	pieces := []string{first}
 	for i, a := range args {
 		pieces = append(pieces, gluedValues(a, args[i+1:])...)
 	}

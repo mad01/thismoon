@@ -29,8 +29,40 @@ func launchedDeny(words []string, patterns []deny) *deny {
 	if !launches(words) {
 		return nil
 	}
+	return readLaunch(words).first(patterns)
+}
+
+// readingDeny returns the first entry with a phrase that a command, its
+// words with the name first, runs once input, the text it reads on its
+// standard input, counts as one more argument (denyEntry.runsReading): from
+// its first word, or from a word behind its launcher, read as launchedDeny
+// reads one. A launcher hands its standard input to the command it runs
+// (`docker compose exec -T db psql < x.sql`). An entry with no phrase reads
+// no input, so it never matches here.
+func readingDeny(words []string, input string, patterns []deny) *deny {
+	var phrased []deny
+	for _, d := range patterns {
+		if d.entry != nil && len(d.entry.phrases) > 0 {
+			phrased = append(phrased, d)
+		}
+	}
+	for i := range phrased {
+		if phrased[i].entry.runsReading(words, input) {
+			return &phrased[i]
+		}
+	}
+	if len(phrased) == 0 || !launches(words) {
+		return nil
+	}
 	r := readLaunch(words)
-	found, at := -1, len(words)
+	r.input, r.reading = input, true
+	return r.first(phrased)
+}
+
+// first returns the entry that starts at the earliest word after the
+// launcher's name, the first in list order of those, or nil.
+func (r *launchRead) first(patterns []deny) *deny {
+	found, at := -1, len(r.words)
 	for j := range patterns {
 		if i := r.firstStart(&patterns[j], at); i < at {
 			found, at = j, i
@@ -50,6 +82,8 @@ func launchedDeny(words []string, patterns []deny) *deny {
 // at its end trimmed, which nonSpace indexes; plain marks a line with no
 // quotes to collapse. dashes holds, per word, where the first `--` at or
 // after it is. The maps and slices after them keep the reads entries share.
+// With reading set, input is the text the command reads on its standard
+// input, one more argument for the phrases (readingDeny).
 type launchRead struct {
 	words, dec, names []string
 	line, noise       string
@@ -60,6 +94,8 @@ type launchRead struct {
 	destroy           []bool
 	rmArgs            []rmArg
 	rd                strings.Reader
+	input             string
+	reading           bool
 }
 
 // readLaunch reads a launcher command, its words with the name first.
@@ -227,10 +263,20 @@ func (r *launchRead) argvStart(e *denyEntry, limit int) int {
 		return r.rmStart(e, tool, limit)
 	}
 	at := r.verbStart(e, r.optionStarts(e, tool, limit), limit)
-	if at < limit && !e.phrasesIn(r.dec[at+1:]) {
+	if at < limit && !r.phrasesIn(e, r.dec[at+1:]) {
 		return limit
 	}
 	return at
+}
+
+// phrasesIn reports whether the entry's phrases are in args, the words
+// after a word that names its tool, with the input as one more argument when
+// the read has one (readingDeny).
+func (r *launchRead) phrasesIn(e *denyEntry, args []string) bool {
+	if r.reading {
+		return len(e.phrases) > 0 && e.phrasesReading(args, r.input)
+	}
+	return e.phrasesIn(args)
 }
 
 // optionStarts returns the words before limit that name the tool and are

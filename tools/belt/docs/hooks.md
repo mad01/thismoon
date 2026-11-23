@@ -849,11 +849,70 @@ global flags, quoting, wrappers and launchers.
   test dropdb`), and so does a quoted argument whose text starts with one.
   Each entry is read in one pass over the words (`scriptdeny_launch.go`),
   so the read stays linear in the command's length.
+- **Reads standard input** for a head that an entry with a phrase names
+  (`psql * DROP *`; in the first tranche `psql`, `mysql`, `mariadb` and
+  `sqlite3`). The text counts as one more argument for the phrases
+  (`denystdin.go`): a heredoc (`<<` or `<<-`, quoted or not), a
+  here-string (`<<<`), a `<` or `0<` file, and what `echo` or `printf`
+  pipes into it, or a `cat`, `head`, `tail` or `tac` of a file, read
+  whole, through a `tee` too. A `( )`, a `{ }` group and a
+  compound command (`for`, `while`, `until`, `select`, `if`, `case`) hand
+  their input to every command in them, a pipe into them included, and a
+  launcher hands it to the command it runs (`denystdin_shell.go`). An
+  `exec` with no command (`exec < x.sql`, `exec 3< x.sql; exec 0<&3`)
+  hands what it opens on descriptor 0 to every later command of its shell,
+  until another `exec` sets it again; a `( )` and a `-c` string are a
+  shell of their own. A call of a function the same text defines hands
+  what it reads to the commands of the body, with the redirections on the
+  body's `}` (`f() { psql; }; f < x.sql`, `f() { psql; }; exec < x.sql;
+  f`). So `psql <<'SQL'` with `DROP TABLE t` in the body,
+  `sqlite3 app.db < x.sql`, `echo 'DROP TABLE t' | psql`, `head -n 100
+  x.sql | psql`, `while true; do psql; break; done < x.sql`, `exec <
+  x.sql; psql` and `docker compose exec -T db psql < x.sql` deny when the
+  text holds the phrase, and `psql < ok.sql` with `select 1` in it passes.
+  bash reads the last input a command
+  names and zsh reads all of them, so belt reads every one. A relative file
+  is placed from the payload's cwd and the `cd` before it, and a group's
+  file from where the group starts; after a `cd x;` that may not have run,
+  belt reads it in both folders, and it must be in both. No other command
+  has its input read.
+- **Reads a substitution that prints a file** as that file, by the same
+  rules as a `<` file: `$(cat f)`, `$(< f)`, a backtick `cat f`, and
+  `$(head …)`, `$(tail …)` or `$(tac …)` of a file
+  (`denystdin_subst.go`). One that prints literal text (`$(echo …)`,
+  `$(printf …)`) reads as that text. This holds in a here-string, an
+  unquoted heredoc body, the words of a printer piped in, and an argument
+  word of the head (`psql -c "$(cat x.sql)"`). The words in front of the
+  head, such as `X="$(cat f)"` or a wrapper's options, are not its
+  arguments. Any other substitution adds nothing (`$(date -I)`).
+- **Reads what `xargs` hands a phrase head** as argument text: the items
+  from its `-a` or `--arg-file` file, or else from its standard input
+  (`cat x.sql | xargs psql -c`, `xargs psql -c < x.sql`, `xargs -a x.sql
+  psql -c`). With `-a`, GNU xargs hands the command its own standard
+  input, so that counts too.
+- **Reads a regular file alone**, since it opens the file in its own
+  process. It looks at the path before it opens it, follows each link part
+  by part, and opens without following a link or waiting on a FIFO.
+  `/dev/null` is empty input and passes. A FIFO, a socket, a device, and a
+  descriptor (`/dev/stdin`, `/dev/fd/N`, `/proc/self/fd/N`), named or
+  reached through a link, deny without being opened, so `psql < /dev/zero`
+  and `psql < /dev/tty` deny at once.
+- **Fails closed** on input belt cannot read. That covers a text or file
+  over 1 MiB, more than 8 MiB in one call, a folder, a file belt cannot
+  open, and `<&3`. It covers a path that holds a variable, a substitution
+  or a glob, and a relative path where belt cannot tell the folder. It
+  also covers a heredoc whose body lies past the `( )` it is in. A missing
+  file denies too: an earlier step may make it without naming it (`make &&
+  psql < out.sql`), and when it stays missing the shell runs nothing. A
+  substitution or an `xargs -a` file that prints such a file denies the
+  same way (`psql -c "$(cat missing.sql)"`). Past 4096 commands of function
+  bodies in one call, a call of a function reads as unread.
 - **Leaves to script-deny-list** a `-c` string, `eval`, `xargs`, `find
   -exec`, a substitution, an alias, a script file, and the body of a
   `f() { …; }` function, which script-deny-list reads where the call runs
-  `f`. A `function f { …; }` body is the exception: `function f` is an
-  opener `unwrapCommand` reads past, so its body reads as top-level
+  `f`. Only the standard input above is read here for an `xargs` and a
+  function call. A `function f { …; }` body is the exception: `function f`
+  is an opener `unwrapCommand` reads past, so its body reads as top-level
   commands and the definition is denied, called or not.
 - **Patterns come from** the `permissions.deny` `Bash(...)` entries of
   `~/.claude/settings.json` and `settings.local.json`, read live. Nothing
@@ -866,7 +925,11 @@ global flags, quoting, wrappers and launchers.
   Bash deny list (read past global flags and wrappers). It can delete or
   change state that may not come back, so every form of it is denied: a
   script, a wrapper or an alias too. Ask the user to run it; they can type
-  ! <command> in the prompt.`
+  ! <command> in the prompt.` For standard input it says where the SQL came
+  from (`with the SQL from the heredoc on its standard input`), or what belt
+  could not read and why. SQL from a substitution in an argument word or
+  from an `xargs` says `in its arguments` instead, and SQL a function call
+  hands on names the function.
 - **Runs** after the git guards, so git push and the discard verbs keep
   their own text. It runs right before script-deny-list, so `sudo kubectl
   delete` gets this text, not "run it without the wrapper".
@@ -878,10 +941,23 @@ global flags, quoting, wrappers and launchers.
 - **Why it exists**: Claude Code reads a deny entry as a text prefix, so
   `kubectl -n prod delete pod x` and `sudo kubectl delete pod x` do not
   match `Bash(kubectl delete:*)`.
-- **Known gaps**: SQL on stdin is not read. So `psql <<'EOF'` with `DROP
-  TABLE t` in the body passes, and so does `echo 'DROP TABLE t' | psql`.
-  A `-c` string it leaves to script-deny-list passes there in two shapes:
-  a runner word in quotes or behind a backslash (`"bash" -c`, `\bash -c`),
+- **Known gaps**: on standard input, a pipe from any other command passes
+  (`pg_dump src | psql dst`, `curl -s URL | psql`), and so does a filter
+  of a file (`sed 1d x.sql | psql`, `awk 1 x.sql | psql`). So does SQL read
+  with `-f`, `\i` or `.read`, any substitution that does not print a file
+  or literal text (`$(date -I)`, `$(pg_dump …)`), and a plain variable, in
+  standard input text and in an argument alike (`SQL='DROP TABLE t'; psql
+  <<< "$SQL"`): belt tracks no variables. A path through a link and `..`
+  (`link/../x.sql`) is cleaned as text before the link is followed, so it
+  is read where the text points, not where the shell goes. A function call
+  more than four calls deep is not read, as script-deny-list reads names
+  no deeper. A command that may move the shell where belt does
+  not see it (`source env.sh; psql < x.sql`) does not change where a
+  relative file is read, as for the other guards. `npx prisma db execute
+  --stdin` passes, since no entry names `prisma` with a phrase. A keyword
+  in a SQL comment or string denies, and so does a dump that drops its
+  tables before it restores them. A `-c` string it leaves to
+  script-deny-list passes there in two shapes: a runner word in quotes or behind a backslash (`"bash" -c`, `\bash -c`),
   and a string built from quoted pieces (`bash -c 'kube'"ctl delete pod
   x"`, `bash -c "kube"$'\x63'"tl delete pod x"`). A shell string behind a
   launcher is read by neither guard (`docker exec db sh -c 'psql -c "DROP
@@ -891,9 +967,13 @@ global flags, quoting, wrappers and launchers.
   CLI and a deny and a pass row per launcher (`directLaunchers`). It also
   checks the one-pass launcher read against a read anew from each word
   (`launchedDenyWordByWord`) and bounds its cost on thousands of words.
+  `denystdin_test.go` holds the standard input rows for both deny guards,
+  read from SQL files in a test folder.
   `directdeny_diff_test.go` checks the verdicts recorded once in
   `testdata/directdeny_frozen.txt`. Never re-record them from a later build;
-  a reviewed change goes on `directTightened`.
+  a reviewed change goes on `directTightened`. Its reads take an empty
+  folder for the root of the file system (`stdinRoot`), so no file on the
+  host changes a verdict.
 - No `extra_patterns`, `exclude_paths` or `allow_repos`.
 
 ### script-deny-list
@@ -1166,6 +1246,24 @@ then run the file" bypass.
   lists under "ask" (like `rm -rf`). An extra pattern starting `re:` is
   compiled as a case-insensitive regex. It is the escape hatch for a shape
   the entry format below cannot express.
+- **Standard input** of a phrase head is read as direct-deny-list reads it
+  (`denystdin.go`), in nested code (a `-c` string, a substitution, a
+  heredoc a shell runs) and in a script file belt reads, a group, a `( )`
+  and an `exec` of that nested shell included, and so are a substitution
+  that prints a file, an `xargs` and a function call. Nested code other
+  than a `( )` body (a `-c` string, a substitution, `eval`) starts with
+  its caller's standard input on descriptor 0, which its own `exec` lines
+  may replace. So `bash -c "psql <<'SQL'
+  …"` with `DROP TABLE t` in the body denies, and so do `bash -c '{ psql;
+  } < x.sql'`, `bash -c 'exec < x.sql; psql'`, `bash -c 'psql' < x.sql`,
+  `exec < x.sql; bash -c 'psql'`, `exec < x.sql; echo "$(psql)"` and a
+  script file with that heredoc, with the line it is on. `bash -c 'exec <
+  ok.sql; psql' < x.sql` passes. A script file's
+  relative paths are placed from the payload's cwd, a sure folder only when
+  the call holds no `cd`, `pushd` or `popd`. A `-c` string inside a script
+  file is not read for it, and a script file does not start with its
+  caller's standard input (`bash run.sh < x.sql` with a bare `psql` in
+  run.sh passes).
 - **The deny text depends on the source.** For an extra pattern it says to
   run the command directly, so the permission system can judge it. For a
   settings entry it asks the user to run the command (`! <command>`),

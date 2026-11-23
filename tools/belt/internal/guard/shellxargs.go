@@ -33,7 +33,7 @@ const xargsSplit = " \t\n\v\f\r'\"\\"
 // the string -I (-i, --replace, BSD -J) replaces with each item, and the
 // index among its words (the name first) of the word that holds the name of
 // the file -a (--arg-file) reads the items from (`-a FILE`, `-0aFILE`), 0
-// for none. sep is the -d (--delimiter) value as written, or a NUL for -0
+// for none, and itemName that name as read. sep is the -d (--delimiter) value as written, or a NUL for -0
 // (--null), whichever comes last, and split marks that one was given: the
 // items then end at it alone, with no quote read. unread marks a -d value
 // with an expansion in it. batch marks BSD's -J, which puts every item in
@@ -42,6 +42,7 @@ type xargsCall struct {
 	command  []string
 	replace  string
 	itemFile int
+	itemName string
 	sep      string
 	split    bool
 	unread   bool
@@ -129,7 +130,7 @@ func (c *xargsCall) note(o option, at int, read bool) {
 			c.replace = "{}"
 		}
 	case "a", "arg-file":
-		c.itemFile = at
+		c.itemFile, c.itemName = at, o.value
 	}
 }
 

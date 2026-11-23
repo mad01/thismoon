@@ -531,8 +531,8 @@ func TestLaunchedDenyReadsEveryWord(t *testing.T) {
 		return false
 	}
 	for _, c := range commands {
-		for _, words := range append(directCommands(c), strings.Fields(c)) {
-			words = append([]string{"npx"}, words...)
+		for _, dc := range append(directCommands(c, ""), directCmd{words: strings.Fields(c)}) {
+			words := append([]string{"npx"}, dc.words...)
 			got := launchedDeny(words, patterns)
 			if want := everyWord(words); (got != nil) != want {
 				t.Errorf("launchedDeny = %v, every word = %v: %q", got != nil, want, words)

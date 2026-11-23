@@ -521,9 +521,22 @@ entries match the same way as `git_identity[].repos` and
   - `guards.direct-deny-list.enabled` (bool, default `true`): denies a
     command the call runs itself when it runs a Claude settings deny entry,
     read past global flags, wrappers and launchers (`npx`, `bundle exec`,
-    `docker exec`, `kubectl exec`). It reads the settings entries only,
-    never `extra_patterns`, and has nothing to read with
-    `claude_settings.enabled: false`.
+    `docker exec`, `kubectl exec`). For a head that an entry with a phrase
+    names (`psql * DROP *`), the SQL on its standard input counts too: a
+    heredoc, a here-string, a `<` file, or what `echo` or `printf` pipes
+    into it, or a `cat`, `head`, `tail` or `tac` of a file. That holds on
+    the command, on a group or `( )` around it, when left by an earlier
+    `exec < file`, and when handed on by a call of a function the call
+    defines. A substitution that prints a file (`$(cat f)`, `$(< f)`) reads
+    as that file, in a here-string, a heredoc body, a printer's words or an
+    argument (`psql -c "$(cat f)"`), and what `xargs` reads is argument text
+    for the command it runs. Input it cannot read, such as a missing
+    file, a file over 1 MiB, a path from a variable, or anything but a
+    regular file or `/dev/null` (a FIFO, a device, `/dev/stdin`), denies.
+    Any other substitution (`$(date -I)`), a plain variable (`"$SQL"`), a
+    filter such as `sed` piped in, and SQL read with `-f` pass. It reads
+    the settings entries only, never `extra_patterns`, and has nothing to
+    read with `claude_settings.enabled: false`.
   - `guards.direct-deny-list.mode` (string, default `hard`): `soft`
     downgrades every denial to a warn event on the events service, and then
     Claude Code's own check runs.

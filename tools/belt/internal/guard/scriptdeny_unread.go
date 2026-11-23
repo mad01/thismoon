@@ -150,16 +150,34 @@ func unreadableDenial(src string) *Denial {
 // it writes one to, by resolved path, each with what it holds. Both fill in
 // as the walk meets the commands, in order, and like shellNames they read
 // text, not shell scope.
+//
+// place follows the directory across the text being walked (shellWalk.enter
+// and leave), from the payload's cwd, and dir and sure are where the command
+// being read runs, so a nested command's `<` file is placed the way
+// direct-deny-list places a top-level one (inputReader). outer is the
+// command whose ( ) body the text being walked is, nil for none, caller the
+// command that runs the text as any other nested code (a -c string, a
+// substitution, eval), whose standard input the text starts with, nil for
+// none, and in is where the command being read takes its standard input
+// (stdinWalk).
 type codeWalk struct {
 	g     *ScriptDenyList
 	s     scan
 	held  map[string]string
 	saved map[string]string
+	place *shellWalk
+	runDir
+	outer  *inputAt
+	caller *inputAt
+	in     *inputAt
 }
 
 // newCodeWalk starts a walk with nothing held or saved yet.
 func newCodeWalk(g *ScriptDenyList, s scan) codeWalk {
-	return codeWalk{g: g, s: s, held: map[string]string{}, saved: map[string]string{}}
+	return codeWalk{
+		g: g, s: s, held: map[string]string{}, saved: map[string]string{},
+		place: newShellWalk("", s.in.Cwd),
+	}
 }
 
 // run denies text that runs a download or decoded text as code, or a
@@ -173,20 +191,44 @@ func (w codeWalk) run(text string, depth int) *Denial {
 	if !ok {
 		return nil
 	}
+	w.place.placeText(text)
+	in := newStdinWalk(text, cmds, w.outer, true)
+	in.inherit(w.caller)
 	for i := range cmds {
-		if d := w.step(text, cmds, i, depth); d != nil {
+		at := w
+		var afterMove bool
+		at.runDir, afterMove = w.place.enter(cmds[i])
+		at.in = in.at(i, at.runDir)
+		d := at.step(text, cmds, i, depth)
+		in.leave(i, at.in)
+		w.place.leave(text, cmds[i], afterMove)
+		if d != nil {
 			return d
 		}
 	}
 	return nil
 }
 
+// readsInput denies a nested command whose standard input runs an entry
+// with a phrase, or that a phrase head reads from a source belt cannot read
+// (inputReader.check). The top level is direct-deny-list's.
+func (w codeWalk) readsInput(text string, cmds []shellCmd, i int) *Denial {
+	run := commandRun(functionBody(text, cmds[i], cmds[i].tokens()))
+	hit := w.s.input.check(*w.in, run, w.s.patterns, w.s.tools)
+	if hit == nil {
+		return nil
+	}
+	return hit.scriptReason("the nested command", lineOf(text, cmds[i]))
+}
+
 // step reads one command: the variables it sets, a pipe into its script or
 // a >( ) that runs what it writes, a saved download it runs, its code
 // words, the files it saves a download to, a name that hides it when it is
-// nested (the top level is checkSegment's), and the code nested inside it.
-// A command word that names an interpreter through a variable is read as
-// that interpreter (shellNames.withRunner).
+// nested (the top level is checkSegment's), and the code nested inside it,
+// where a ( ) body reads what the ( ) reads on standard input, and any
+// other nested code starts with the command's standard input. A command
+// word that names an interpreter through a variable is read as that
+// interpreter (shellNames.withRunner).
 func (w codeWalk) step(text string, cmds []shellCmd, i, depth int) *Denial {
 	c := cmds[i]
 	tokens := c.tokens()
@@ -211,9 +253,18 @@ func (w codeWalk) step(text string, cmds []shellCmd, i, depth int) *Denial {
 		if d := w.s.names.hiddenRun(words, "the nested command", w.s.patterns, 0); d != nil {
 			return d
 		}
+		if d := w.readsInput(text, cmds, i); d != nil {
+			return d
+		}
 	}
-	for _, inner := range nestedCode(text, c, slices.Concat(tokens[:at], run), run, at, kind) {
-		if d := w.run(inner, depth+1); d != nil {
+	for k, inner := range nestedCode(text, c, slices.Concat(tokens[:at], run), run, at, kind) {
+		nested := w
+		nested.place = w.place.child(w.dir)
+		nested.outer, nested.caller = nil, w.in
+		if k < len(c.subshells) {
+			nested.outer, nested.caller = w.in, nil
+		}
+		if d := nested.run(inner, depth+1); d != nil {
 			return d
 		}
 	}
@@ -540,7 +591,8 @@ func inputTargets(text string, c shellCmd) []placedWord {
 
 // nestedCode returns the code texts a command runs inside it: its ( )
 // subshells and substitutions, a shell's -c string, eval's words, the words
-// a runner hands a shell, and a heredoc a shell reads as its script.
+// a runner hands a shell, and a heredoc a shell reads as its script. The ( )
+// bodies come first, one for each of c.subshells, in their order.
 func nestedCode(text string, c shellCmd, tokens, run []string, at int, kind wrapKind) []string {
 	var out []string
 	for _, s := range c.subshells {
