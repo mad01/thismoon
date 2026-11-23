@@ -106,11 +106,17 @@ func (c Cells) Cut(s string, width int) string {
 	case c.Width(s) <= width:
 		return s
 	}
+	return c.truncate(s, width, Ellipsis)
+}
+
+// truncate cuts s, which must be wider than width cells and width at least
+// zero, to the longest start of s that leaves room for tail, then adds tail.
+func (c Cells) truncate(s string, width int, tail string) string {
 	// ansi's Truncate returns s whole when it fits by grapheme width,
 	// whatever method it was given, so a string wider only by wcwidth would
 	// stay uncut. Spaces past the end make s too wide by either method; the
 	// cut falls inside s, so none of them is kept.
-	return c.Method.Truncate(s+strings.Repeat(" ", width+1), width, Ellipsis)
+	return c.Method.Truncate(s+strings.Repeat(" ", width+1), width, tail)
 }
 
 // Pad fills s with spaces on the right to width cells. A string already that

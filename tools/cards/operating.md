@@ -27,7 +27,7 @@ Exit status:
 
 ## list mode
 
-    {{.Bin}} list [--out FILE] [--card-style none|space|line|box] [--newest top|bottom] [--esc-quits]
+    {{.Bin}} list [--out FILE] [--card-style none|space|line|box] [--newest top|bottom] [--esc-quits] [--wrap-last]
 
 Flags:
 
@@ -51,6 +51,14 @@ Flags:
   Use it for a popup that should close on Esc the way fzf does. Leave it
   off in a pane that stays open, so a stray Esc does not quit it. Default
   off.
+- `--wrap-last`: a card's last line that is wider than the card takes a
+  second row instead of being cut. It breaks at the last space that fits,
+  or inside the word when there is none, and a second row that is still
+  too wide is cut with `…`. Only the last line wraps; any other line wider
+  than the card is cut as always. A card whose lines fit looks the same as
+  without the flag. A row of cards is as tall as its tallest card, so the
+  cards beside a wrapped one stay lined up. A resize wraps the line again,
+  or puts it back on one row, to fit the new width. Default off.
 
 Keys:
 
@@ -109,7 +117,7 @@ cells there, and the whole row to the pane width.
 
 ## feed mode
 
-    {{.Bin}} feed [--max N] [--card-style none|space|line|box] [--newest top|bottom]
+    {{.Bin}} feed [--max N] [--card-style none|space|line|box] [--newest top|bottom] [--wrap-last]
 
 Flags:
 
@@ -119,6 +127,8 @@ Flags:
 - `--newest`: where the newest entry shows. `bottom` puts it at the
   bottom, `top` at the top with older entries pushed down. `--max` drops
   the oldest entries either way. Default `bottom`.
+- `--wrap-last`: as in list mode, for an entry's last line that is wider
+  than the space after the time column. Default off.
 
 Each entry starts with a time column in `15:04` form and local time: the
 card's `at`, or the time its line arrived when `at` is missing. The newest

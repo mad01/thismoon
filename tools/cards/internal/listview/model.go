@@ -65,6 +65,10 @@ type Config struct {
 	// no marks, hidden ones included, and an empty filter. Each Esc before
 	// that still clears the marks, then the filter.
 	EscQuits bool
+	// WrapLast gives a card's last line a second row when it is wider than
+	// the card's text, broken at a space, as render.Cells.WrapLast does. A
+	// card whose lines fit draws as without it.
+	WrapLast bool
 }
 
 // Model is the list-mode state. Construct with New.
@@ -75,6 +79,8 @@ type Model struct {
 	style   render.CardStyle
 	// escQuits is Config.EscQuits.
 	escQuits bool
+	// wrapLast is Config.WrapLast.
+	wrapLast bool
 	// cells counts cells the way the renderer does; see render.Cells.
 	cells  render.Cells
 	query  string
@@ -93,6 +99,7 @@ func New(cfg Config) *Model {
 		emitter:  cfg.Emitter,
 		style:    cfg.Style,
 		escQuits: cfg.EscQuits,
+		wrapLast: cfg.WrapLast,
 	}
 }
 

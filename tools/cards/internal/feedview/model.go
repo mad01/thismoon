@@ -46,6 +46,10 @@ type Config struct {
 	// Newest is the end the newest entry shows at. The zero value is
 	// order.Bottom.
 	Newest order.Newest
+	// WrapLast gives an entry's last line a second row when it is wider than
+	// the entry's text, broken at a space, as render.Cells.WrapLast does. An
+	// entry whose lines fit draws as without it.
+	WrapLast bool
 }
 
 // Model is the feed-mode state. Construct with New.
@@ -55,6 +59,8 @@ type Model struct {
 	loc    *time.Location
 	style  render.CardStyle
 	newest order.Newest
+	// wrapLast is Config.WrapLast.
+	wrapLast bool
 	// cells counts cells the way the renderer does; see render.Cells.
 	cells  render.Cells
 	status frame.Status
@@ -84,6 +90,7 @@ func New(cfg Config) *Model {
 		loc:       cfg.Location,
 		style:     cfg.Style,
 		newest:    cfg.Newest,
+		wrapLast:  cfg.WrapLast,
 		following: true,
 	}
 	if m.now == nil {
@@ -171,7 +178,7 @@ func (m *Model) followKey() (key, name string) {
 // by one entry, pgup and pgdown by one screen, home to the first row and end
 // to the last. With no entry on screen it changes nothing.
 func (m *Model) scroll(key string) {
-	l := newLayout(m.store.Visible(), m.style, m.newest)
+	l := m.layout()
 	top := m.top(l)
 	switch key {
 	case "up":
@@ -242,7 +249,7 @@ func (m *Model) repin() {
 	if m.following || m.store.Holds(m.pin.seq) {
 		return
 	}
-	l := newLayout(m.store.Visible(), m.style, m.newest)
+	l := m.layout()
 	if len(l.entries) == 0 {
 		return
 	}

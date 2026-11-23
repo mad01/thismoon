@@ -46,7 +46,15 @@ A run action starts its argv directly, with no shell. An emit action appends
 	addNewestFlag(c, &cfg.Newest, "put a card with a new id at the `END` of the list")
 	c.Flags().BoolVar(&cfg.EscQuits, "esc-quits", false,
 		"quit on esc when there are no marks and no filter to clear")
+	addWrapLastFlag(c, &cfg.WrapLast)
 	return c
+}
+
+// addWrapLastFlag adds --wrap-last to c, setting wrap. It is off by default,
+// so a card draws as it always has.
+func addWrapLastFlag(c *cobra.Command, wrap *bool) {
+	c.Flags().BoolVar(wrap, "wrap-last", false,
+		"give a card's last line a second row when it is too wide, broken at a space")
 }
 
 // addCardStyleFlag adds --card-style to c, setting style, which holds the
@@ -63,8 +71,9 @@ func addNewestFlag(c *cobra.Command, newest *order.Newest, usage string) {
 	c.Flags().TextVar(newest, "newest", *newest, usage+": "+strings.Join(order.Names(), ", "))
 }
 
-// runList runs list mode on stdin, with the card style, the newest end and
-// whether Esc quits in cfg, until the user quits.
+// runList runs list mode on stdin, with the card style, the newest end,
+// whether Esc quits and whether a long last line wraps in cfg, until the
+// user quits.
 func runList(stdin io.Reader, outPath string, cfg listview.Config) error {
 	if err := checkPipe(stdin, "list"); err != nil {
 		return err

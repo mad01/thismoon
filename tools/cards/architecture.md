@@ -49,7 +49,8 @@ argvs and writes `emit` lines.
 ## Interfaces
 
 CLI: `list [--out FILE] [--card-style STYLE] [--newest END]
-[--esc-quits]`, `feed [--max N] [--card-style STYLE] [--newest END]`,
+[--esc-quits] [--wrap-last]`, `feed [--max N] [--card-style STYLE]
+[--newest END] [--wrap-last]`,
 `docs`, `doctor`, and `version` (bare token, or the shared four-key build
 metadata object with `-o json`) via the shared
 `github.com/mad01/thismoon/buildinfo` package.

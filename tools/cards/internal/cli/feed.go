@@ -41,11 +41,12 @@ be a pipe: producer | cards feed.`,
 	c.Flags().IntVar(&cfg.Max, "max", feedstore.DefaultMax, "keep the newest `N` entries")
 	addCardStyleFlag(c, &cfg.Style)
 	addNewestFlag(c, &cfg.Newest, "show the newest entry at the `END` of the feed")
+	addWrapLastFlag(c, &cfg.WrapLast)
 	return c
 }
 
-// runFeed runs feed mode on stdin, with the entry limit, the card style and
-// the newest end in cfg, until the user quits.
+// runFeed runs feed mode on stdin, with the entry limit, the card style, the
+// newest end and whether a long last line wraps in cfg, until the user quits.
 func runFeed(stdin io.Reader, cfg feedview.Config) error {
 	if cfg.Max < 1 {
 		return fmt.Errorf("%w: --max must be at least 1, got %d", ErrUsage, cfg.Max)

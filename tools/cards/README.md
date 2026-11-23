@@ -59,8 +59,8 @@ with `docs`.
 
 | Mode | Keys | Flags |
 |------|------|-------|
-| `list` | arrows move, Space marks, Enter runs the enter action of the marked cards (or the cursor card), a letter with an action on a marked card runs it on the marked cards instead of typing, Esc clears the marks and then the filter | `--out FILE`, `--card-style` (default `space`), `--newest` (default `bottom`), `--esc-quits` (default off) |
-| `feed` | arrows, Page Up, Page Down and Home scroll and stop following, End follows again; with `--newest top`, End scrolls and Home follows | `--max N` (default 1000), `--card-style` (default `none`), `--newest` (default `bottom`) |
+| `list` | arrows move, Space marks, Enter runs the enter action of the marked cards (or the cursor card), a letter with an action on a marked card runs it on the marked cards instead of typing, Esc clears the marks and then the filter | `--out FILE`, `--card-style` (default `space`), `--newest` (default `bottom`), `--esc-quits` (default off), `--wrap-last` (default off) |
+| `feed` | arrows, Page Up, Page Down and Home scroll and stop following, End follows again; with `--newest top`, End scrolls and Home follows | `--max N` (default 1000), `--card-style` (default `none`), `--newest` (default `bottom`), `--wrap-last` (default off) |
 
 `--card-style` takes `none`, `space`, `line` or `box`. `--newest` takes
 `bottom` or `top`. In list mode it says where a card with a new id goes; a
@@ -71,6 +71,11 @@ shows.
 Esc the way fzf does. Esc still clears the marks first, then the filter,
 and quits only when nothing is left to clear. Without the flag, Esc never
 quits, so a list in a pane that stays open survives a stray Esc.
+
+`--wrap-last` gives a card's last line a second row when it is too wide
+for the card. The line breaks at a space, or inside a word that has none,
+and a second row that is still too wide ends in `…`. Other lines are cut
+as before, and a card that fits looks the same.
 
 ## The protocol in short
 

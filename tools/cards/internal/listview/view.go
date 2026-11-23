@@ -49,10 +49,39 @@ type grid struct {
 	store *liststore.Store
 	cols  int
 	style render.CardStyle
+	// cellWidth is the cells each card takes in its column, gutter included.
+	cellWidth int
+	// cells counts cells the way the renderer does; see render.Cells.
+	cells render.Cells
+	// wrapLast is Config.WrapLast.
+	wrapLast bool
 }
 
-func newGrid(store *liststore.Store, width int, style render.CardStyle) grid {
-	return grid{store: store, cols: columns(width), style: style}
+// grid returns the grid for the pane as it is now. A card's height follows
+// the pane width when wrapLast is set, so a grid never outlives a resize.
+func (m *Model) grid() grid {
+	cols := columns(m.width)
+	return grid{
+		store:     m.store,
+		cols:      cols,
+		style:     m.style,
+		cellWidth: (m.width - columnGap*(cols-1)) / cols,
+		cells:     m.cells,
+		wrapLast:  m.wrapLast,
+	}
+}
+
+// textWidth returns the cells a card's text takes in its column.
+func (g grid) textWidth() int { return g.style.TextWidth(g.cellWidth - gutterWidth) }
+
+// textLines returns the rows of text a card with lines draws: lines, the last
+// one on two rows when wrapLast is set and it is wider than the text width.
+// Bold takes no cells, so a line made bold gives as many rows.
+func (g grid) textLines(lines []protocol.Line) []protocol.Line {
+	if !g.wrapLast {
+		return lines
+	}
+	return g.cells.WrapLast(lines, g.textWidth())
 }
 
 // rows returns how many grid rows the visible cards fill.
@@ -65,12 +94,13 @@ func (g grid) bounds(r int) (first, end int) {
 	return first, min(first+g.cols, g.store.VisibleLen())
 }
 
-// height returns grid row r's height: its tallest card's line count.
+// height returns grid row r's height: the rows of text its tallest card
+// draws.
 func (g grid) height(r int) int {
 	h := 0
 	first, end := g.bounds(r)
 	for i := first; i < end; i++ {
-		h = max(h, len(g.store.VisibleCard(i).Lines))
+		h = max(h, len(g.textLines(g.store.VisibleCard(i).Lines)))
 	}
 	return h
 }
@@ -103,7 +133,7 @@ func (m *Model) scroll() {
 		m.top = 0
 		return
 	}
-	g := newGrid(m.store, m.width, m.style)
+	g := m.grid()
 	row, lastRow, body := cur/g.cols, g.rows()-1, m.bodyHeight()
 	m.top = min(m.top, row)
 	for m.top < row && !g.fits(m.top, row, body) {
@@ -117,7 +147,7 @@ func (m *Model) scroll() {
 // pageRows returns how many whole grid rows fit on screen from top, at
 // least one.
 func (m *Model) pageRows() int {
-	g := newGrid(m.store, m.width, m.style)
+	g := m.grid()
 	n := 1
 	for m.top+n < g.rows() && g.fits(m.top, m.top+n, m.bodyHeight()) {
 		n++
@@ -157,7 +187,7 @@ func (m *Model) body() []string {
 	if m.store.VisibleLen() == 0 {
 		rows = append(rows, frame.Empty(m.store.ScopeLen(), m.status.Ended()))
 	} else {
-		g := newGrid(m.store, m.width, m.style)
+		g := m.grid()
 		for r := m.top; r < g.rows() && len(rows) < height; r++ {
 			if r > m.top {
 				rows = append(rows, make([]string, g.style.Gap())...)
@@ -175,18 +205,17 @@ func (m *Model) body() []string {
 // gridRow draws grid row r: the style's rows for a card as tall as the
 // row's tallest, each card padded to its column so the next column lines up.
 func (m *Model) gridRow(g grid, r int) []string {
-	cellWidth := (m.width - columnGap*(g.cols-1)) / g.cols
 	first, end := g.bounds(r)
 	lines := g.height(r)
 	rows := make([]string, g.style.Rows(lines))
 	for i := first; i < end; i++ {
 		c := m.store.VisibleCard(i)
-		for k, cell := range m.cell(c, i == m.store.Cursor(), lines, cellWidth) {
+		for k, cell := range m.cell(g, c, i == m.store.Cursor(), lines) {
 			if i > first {
 				rows[k] += gap
 			}
 			if i < end-1 {
-				cell = m.cells.Pad(cell, cellWidth)
+				cell = m.cells.Pad(cell, g.cellWidth)
 			}
 			rows[k] += cell
 		}
@@ -194,18 +223,22 @@ func (m *Model) gridRow(g grid, r int) []string {
 	return rows
 }
 
-// cell draws card c in the style, with room for lines rows of text, gutter
-// included, in width cells. The gutter bars run down every row of the card
-// itself, its box included: the focus bar for the cursor card, the mark bar
-// for a marked card. The cursor card's first line is bold.
-func (m *Model) cell(c protocol.Card, isCursor bool, lines, width int) []string {
-	bounds := render.CardBounds{Width: width - gutterWidth, Lines: lines}
-	textWidth := m.style.TextWidth(bounds.Width)
-	text := make([]string, len(c.Lines))
-	for i, l := range c.Lines {
-		if isCursor && i == 0 {
-			l = render.Bold(l)
-		}
+// cell draws card c in the style, with room for lines rows of text, in a
+// column of g, gutter included. The gutter bars run down every row of the
+// card itself, its box included: the focus bar for the cursor card, the mark
+// bar for a marked card. The cursor card's first line is bold, on both rows
+// when it wraps.
+func (m *Model) cell(g grid, c protocol.Card, isCursor bool, lines int) []string {
+	bounds := render.CardBounds{Width: g.cellWidth - gutterWidth, Lines: lines}
+	source := c.Lines
+	if isCursor && len(source) > 0 {
+		source = slices.Clone(source)
+		source[0] = render.Bold(source[0])
+	}
+	textWidth := g.textWidth()
+	wrapped := g.textLines(source)
+	text := make([]string, len(wrapped))
+	for i, l := range wrapped {
 		text[i] = m.cells.Line(l, c.Tone, textWidth)
 	}
 	rows, card := m.style.Draw(m.cells, text, bounds)

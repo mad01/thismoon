@@ -23,6 +23,9 @@ between runs.
 - `--esc-quits` (bool, default `false`): Esc quits, with exit status 0,
   when there are no marks and the filter is empty. Before that, Esc
   clears the marks, then the filter. Feed mode has no such flag.
+- `--wrap-last` (bool, default `false`): a card's last line that is wider
+  than the card takes a second row, broken at a space, instead of being
+  cut. A card whose lines fit looks the same.
 
 `cards feed`:
 
@@ -32,6 +35,7 @@ between runs.
 - `--newest END` (default `bottom`): where the newest entry shows,
   `bottom` or `top`. With `top`, Home follows the newest entry and End
   goes to the oldest.
+- `--wrap-last` (bool, default `false`): as in list mode.
 
 `cards version -o json` prints the build metadata object instead of the
 bare version token. `docs` and `doctor` take no flags.
