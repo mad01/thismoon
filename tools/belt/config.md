@@ -520,7 +520,8 @@ entries match the same way as `git_identity[].repos` and
 - **direct-deny-list**
   - `guards.direct-deny-list.enabled` (bool, default `true`): denies a
     command the call runs itself when it runs a Claude settings deny entry,
-    read past global flags and wrappers. It reads the settings entries only,
+    read past global flags, wrappers and launchers (`npx`, `bundle exec`,
+    `docker exec`, `kubectl exec`). It reads the settings entries only,
     never `extra_patterns`, and has nothing to read with
     `claude_settings.enabled: false`.
   - `guards.direct-deny-list.mode` (string, default `hard`): `soft`

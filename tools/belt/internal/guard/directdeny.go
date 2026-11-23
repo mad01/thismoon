@@ -19,10 +19,11 @@ const askUserToRun = "Ask the user to run it; they can type ! <command> in the p
 // DirectDenyList denies a Bash call whose own commands run an entry of the
 // Claude Code settings deny list (permissions.deny `Bash(...)` entries,
 // cfg.ClaudeDeny), read on argv the way script-deny-list reads it
-// (denyentry.go): past global flags, wrapper options and quoting, so
-// `kubectl -n prod delete`, `sudo kubectl delete` and `\kubectl delete` all
-// count. The permission system's own match reads the entry as a text
-// prefix, which misses those forms. Only the commands the call runs itself
+// (denyentry.go): past global flags, wrapper options, launchers and
+// quoting, so `kubectl -n prod delete`, `sudo kubectl delete`, `\kubectl
+// delete` and `kubectl exec pod -- kubectl delete` all count. The
+// permission system's own match reads the entry as a text prefix, which
+// misses those forms. Only the commands the call runs itself
 // are read (directCommands); a -c string, eval, a substitution, an alias,
 // the body of a `f() { …; }` function and a script file stay with
 // script-deny-list. A `function f { …; }` body reads as top-level commands,

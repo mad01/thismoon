@@ -767,15 +767,16 @@ hours.
 ### direct-deny-list
 
 Applies the Bash deny list to the commands a call runs itself, read past
-global flags, quoting and wrappers.
+global flags, quoting, wrappers and launchers.
 
 - **Fires on** a command that runs an entry of the Claude Code settings deny
   list, in any spelling the entry reader matches on argv (`denyentry.go`,
   the same reader script-deny-list uses). So `kubectl -n prod delete pod x`,
   `gcloud --project p beta sql instances delete db`, `gh api -XDELETE
   repos/o/r`, `psql -h h -d db -c 'drop table t'`, `sudo kubectl delete`,
-  `timeout 30 terraform destroy`, `/usr/local/bin/helm uninstall x` and
-  `\kubectl delete` all deny for their entries.
+  `timeout 30 terraform destroy`, `/usr/local/bin/helm uninstall x`,
+  `\kubectl delete`, `npx -p prisma prisma migrate reset` and `kubectl exec
+  -it pod -- psql -c 'drop table t'` all deny for their entries.
 - **Reads** every simple command at the top level of the call, the commands
   after `&&`, `||`, `;`, `|` and a background `&`, and the commands inside a
   `( )` subshell. The quote-aware reader (`readShell`) drops the quotes and
@@ -790,6 +791,26 @@ global flags, quoting and wrappers.
   D"ELETE"`), so it reads more words as commands, not fewer. Each command
   is read past assignments, reserved words and wrappers (`unwrapCommand`),
   then matched with `leadingDeny`.
+- **Reads past launchers**, the commands that run a command their later
+  words name (`launchers` in `scriptdeny_indirect.go`, the table
+  script-deny-list reads too). Package runners: `npx`, `pnpx`, `bunx`, `bun
+  x`, `npm exec` and `npm x`, `pnpm` and `yarn` (with or without `exec` or
+  `dlx`), `uvx` and `pipx run`. Project environments: `bundle exec`,
+  `poetry run`, `uv run`, `mise exec` and `mise x`, `direnv exec`.
+  Containers: `docker exec` and `docker run` (also as `docker container`,
+  `docker compose` and `docker-compose`), `podman exec`, and `kubectl
+  exec`, `kubectl run` and `kubectl debug`. belt finds the subcommand past
+  the launcher's global options (`kubectl -n prod exec`, `docker --context
+  c compose -f x.yml exec`). Each word reads as the shell passes it
+  (`$'docker' exec`). Any word after the launcher's name
+  may start the command it runs (`launchedDeny`), so the launcher's own
+  options need no table: `docker compose exec db psql -c 'DROP TABLE t'`,
+  `bundle exec rake db:drop`, `mise exec -- terraform state rm x` and
+  `direnv exec . tofu destroy` deny, and `npx prisma migrate status`
+  passes. A word that only happens to start an entry denies too (`yarn
+  test dropdb`), and so does a quoted argument whose text starts with one.
+  Each entry is read in one pass over the words (`scriptdeny_launch.go`),
+  so the read stays linear in the command's length.
 - **Leaves to script-deny-list** a `-c` string, `eval`, `xargs`, `find
   -exec`, a substitution, an alias, a script file, and the body of a
   `f() { …; }` function, which script-deny-list reads where the call runs
@@ -824,9 +845,15 @@ global flags, quoting and wrappers.
   A `-c` string it leaves to script-deny-list passes there in two shapes:
   a runner word in quotes or behind a backslash (`"bash" -c`, `\bash -c`),
   and a string built from quoted pieces (`bash -c 'kube'"ctl delete pod
-  x"`, `bash -c "kube"$'\x63'"tl delete pod x"`).
+  x"`, `bash -c "kube"$'\x63'"tl delete pod x"`). A shell string behind a
+  launcher is read by neither guard (`docker exec db sh -c 'psql -c "DROP
+  TABLE t"'`), and a command that runs one but is not in `launchers`
+  passes (`podman run`, `nerdctl exec`).
 - **Safety net**: `directdeny_test.go` holds one block per first-tranche
-  CLI, and `directdeny_diff_test.go` checks the verdicts recorded once in
+  CLI and a deny and a pass row per launcher (`directLaunchers`). It also
+  checks the one-pass launcher read against a read anew from each word
+  (`launchedDenyWordByWord`) and bounds its cost on thousands of words.
+  `directdeny_diff_test.go` checks the verdicts recorded once in
   `testdata/directdeny_frozen.txt`. Never re-record them from a later build;
   a reviewed change goes on `directTightened`.
 - No `extra_patterns`, `exclude_paths` or `allow_repos`.
@@ -1046,7 +1073,12 @@ then run the file" bypass.
   the command, as a `-c` string is. A wrapper's options are read as the
   wrapper reads them (`sudo -u root`, `env -i`, `command -p`, `arch -arm64`
   and `arch -arch NAME`). `wrapperOptions` is the one table of wrappers,
-  and every reader that skips one looks it up there. An option belt does
+  and every reader that skips one looks it up there. A launcher (`npx`,
+  `bundle exec`, `docker exec`, `kubectl exec`; the `launchers` table
+  direct-deny-list reads too) is read the same way, with or without a
+  wrapper in front. Any word after its name may start the command it runs,
+  so `bundle exec rm -rf x` and `docker compose exec app rm -rf /data`
+  deny. An option belt does
   not know fails closed: the words after the wrapper are scanned as shell
   text. A wrapper
   named by a path (`./nice`, `/usr/bin/env`) is read both ways, as the

@@ -216,6 +216,12 @@ func (e denyEntry) runs(words []string) bool {
 			return false
 		}
 	}
+	return e.phrasesIn(args)
+}
+
+// phrasesIn reports whether every phrase of the entry is in the arguments
+// after the tool word (phraseText).
+func (e denyEntry) phrasesIn(args []string) bool {
 	if len(e.phrases) == 0 {
 		return true
 	}
@@ -309,21 +315,27 @@ func (o entryOption) in(args []string) bool {
 		if arg == "--" {
 			return false
 		}
-		value, has, ok := o.read(arg)
-		if !ok {
-			continue
-		}
-		if !o.valued {
-			return true
-		}
-		if !has && i+1 < len(args) {
-			value, has = args[i+1], true
-		}
-		if has && o.takes(value) {
+		if o.at(args, i) {
 			return true
 		}
 	}
 	return false
+}
+
+// at reports whether args[i] gives the option with the value the entry
+// names: in the same word, or as the next word.
+func (o entryOption) at(args []string, i int) bool {
+	value, has, ok := o.read(args[i])
+	if !ok {
+		return false
+	}
+	if !o.valued {
+		return true
+	}
+	if !has && i+1 < len(args) {
+		value, has = args[i+1], true
+	}
+	return has && o.takes(value)
 }
 
 // read reports whether one argument gives the option, and the value the
