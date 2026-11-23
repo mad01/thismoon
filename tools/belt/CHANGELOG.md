@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.29.0](https://github.com/mad01/thismoon/compare/belt/v2.28.0...belt/v2.29.0) (2026-11-23)
+
+
+### Features
+
+* treat ~/code/tmp as a temp folder in toss-bin and belt ([#568](https://github.com/mad01/thismoon/issues/568)) ([09042c8](https://github.com/mad01/thismoon/commit/09042c82d702496806f57c27e49703237687d408))
+
 ## [2.28.0](https://github.com/mad01/thismoon/compare/belt/v2.27.2...belt/v2.28.0) (2026-11-23)
 
 
