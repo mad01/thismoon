@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.27.0](https://github.com/mad01/thismoon/compare/belt/v2.26.0...belt/v2.27.0) (2026-11-23)
+
+
+### Features
+
+* **belt:** judge in-place edits by sed -i and perl -i ([#556](https://github.com/mad01/thismoon/issues/556)) ([7a1b5e5](https://github.com/mad01/thismoon/commit/7a1b5e551da5e258b7b50d2e5b37eed48bcf4a0d))
+
 ## [2.26.0](https://github.com/mad01/thismoon/compare/belt/v2.25.0...belt/v2.26.0) (2026-11-23)
 
 
