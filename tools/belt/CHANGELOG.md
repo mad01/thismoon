@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.27.2](https://github.com/mad01/thismoon/compare/belt/v2.27.1...belt/v2.27.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* **belt:** deny git-stored text run as code ([#557](https://github.com/mad01/thismoon/issues/557)) ([6baac99](https://github.com/mad01/thismoon/commit/6baac998ecc5712ccbc31c151f0a56a7b05cc876))
+
 ## [2.27.1](https://github.com/mad01/thismoon/compare/belt/v2.27.0...belt/v2.27.1) (2026-11-23)
 
 
