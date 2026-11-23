@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
@@ -209,13 +210,15 @@ type scan struct {
 // message as bash 5 and zsh read it (maskDataBash5) comes from a message
 // bash 3.2 may run: it says so and names the forms that stay data
 // (bash32Hint). So does one in the text after a message bash 3.2 may end
-// in another place (scanBash32Tail).
+// in another place (scanBash32Tail). A git commit heredoc a core.fsmonitor
+// command may read is no message (hooksMessage), so it is scanned as code.
 func (g *ScriptDenyList) check(in Input) *Denial {
 	patterns := g.compiled()
 	if len(patterns) == 0 || in.Command == "" {
 		return nil
 	}
-	cmd := maskData(in.Command)
+	hooked := sync.OnceValue(func() bool { return hooksMessage(in.Command, in.Cwd) })
+	cmd := maskData(in.Command, hooked)
 	d := g.scanMasked(in, cmd, patterns)
 	if d == nil {
 		if d = scanBash32Tail(in.Command, patterns); d != nil {
@@ -223,7 +226,7 @@ func (g *ScriptDenyList) check(in Input) *Denial {
 		}
 		return nil
 	}
-	if bash5 := maskDataBash5(in.Command); bash5 != cmd && g.scanMasked(in, bash5, patterns) == nil {
+	if bash5 := maskDataBash5(in.Command, hooked); bash5 != cmd && g.scanMasked(in, bash5, patterns) == nil {
 		return bash32Denial(d)
 	}
 	return d

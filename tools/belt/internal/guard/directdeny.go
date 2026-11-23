@@ -146,7 +146,7 @@ func shellCommands(src string, cmds []shellCmd) [][]string {
 // reads as more commands, not fewer.
 func unreadCommands(text string) [][]string {
 	var out [][]string
-	for _, seg := range splitSegments(maskData(text)) {
+	for _, seg := range splitSegments(maskData(text, nil)) {
 		for _, words := range lineCommands(seg.text) {
 			out = append(out, words)
 			if plain := unquotedWords(words); len(plain) > 0 && !slices.Equal(plain, words) {

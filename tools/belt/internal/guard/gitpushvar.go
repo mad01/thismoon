@@ -75,11 +75,12 @@ func onlyRefspecUses(command string, end int, name string, refs int) bool {
 // canSetVars reports whether a command the shell runs, nested ones included,
 // is a shellDenyWords word that can set a variable or run hidden code (read,
 // export, eval, source, a loop or if keyword), a `.` with a file, or a brace
-// that opens or closes a group. Comments and prose bodies run nothing.
+// that opens or closes a group. Comments and prose bodies run nothing, and
+// a body a core.fsmonitor command runs sets nothing in this shell.
 func canSetVars(command string) bool {
 	found := false
 	walkCommands(command, "", func(s walkStep) {
-		if s.prose {
+		if s.prose || s.fsmonitor {
 			return
 		}
 		for i, tok := range s.tokens {

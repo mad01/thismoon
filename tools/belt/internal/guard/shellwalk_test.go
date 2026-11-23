@@ -889,7 +889,7 @@ func TestMaskDataNeedsAWholeRead(t *testing.T) {
 		"echo \"rm -rf /x\"\necho 'x",
 		"git commit -m \"rm -rf /x\"\n(",
 	} {
-		if got := maskData(cmd); got != cmd {
+		if got := maskData(cmd, nil); got != cmd {
 			t.Errorf("maskData(%q) = %q, want it unchanged", cmd, got)
 		}
 	}
@@ -1436,7 +1436,8 @@ func TestGitGuardsHeredocMessagePasses(t *testing.T) {
 // code (bash32Cats). The expansion takes a # after a blank for a comment
 // inside "$( )" too, so a quote on a # line opens a quote for the parse
 // step only. The controls are message forms both of bash 3.2's scans read
-// as belt does, which stay text.
+// as belt does, which stay text. The guards run from a scratch repo with
+// core.fsmonitor unset, so the -F - controls stay text.
 func TestGitGuardsBash32MessageCode(t *testing.T) {
 	const op = "git push origin main"
 	cat := func(head, body string) string {
@@ -1472,14 +1473,15 @@ func TestGitGuardsBash32MessageCode(t *testing.T) {
 			false,
 		},
 	}
+	repo := fsmonitorRepo(t, "")
 	for _, tt := range tests {
-		d := newGitPushGuard("main").Check(Input{Event: EventBash, Command: tt.command, Cwd: "/tmp"})
+		d := newGitPushGuard("main").Check(Input{Event: EventBash, Command: tt.command, Cwd: repo})
 		if (d != nil) != tt.deny {
 			t.Errorf("%s: git-push-main Check(%q) = %v, want deny %v", tt.name, tt.command, d, tt.deny)
 		}
 		for _, discard := range []string{"git checkout -- f", "git reset --hard"} {
 			command := strings.ReplaceAll(tt.command, op, discard)
-			d := dirtyDiscardGuard().Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"})
+			d := dirtyDiscardGuard().Check(Input{Event: EventBash, Command: command, Cwd: repo})
 			if (d != nil) != tt.deny {
 				t.Errorf("%s: git-discard Check(%q) = %v, want deny %v", tt.name, command, d, tt.deny)
 			}
@@ -1631,12 +1633,16 @@ func TestGitGuardsBash32Tail(t *testing.T) {
 	}
 }
 
+// TestGitGuardsHeredocBodies runs heredocBodies from a scratch repo with
+// core.fsmonitor unset, so a commit or merge body reads as git reads it
+// there, whatever /tmp holds.
 func TestGitGuardsHeredocBodies(t *testing.T) {
+	repo := fsmonitorRepo(t, "")
 	for _, tt := range heredocBodies {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newGitPushGuard(
 				"main",
-			).Check(Input{Event: EventBash, Command: tt.command, Cwd: "/tmp"})
+			).Check(Input{Event: EventBash, Command: tt.command, Cwd: repo})
 			if (d != nil) != tt.deny {
 				t.Errorf(
 					"git-push-main Check(%q) denial = %v, want deny %v",
@@ -1646,7 +1652,7 @@ func TestGitGuardsHeredocBodies(t *testing.T) {
 				)
 			}
 			reset := strings.ReplaceAll(tt.command, "git push origin main", "git reset --hard")
-			d = dirtyDiscardGuard().Check(Input{Event: EventBash, Command: reset, Cwd: "/tmp"})
+			d = dirtyDiscardGuard().Check(Input{Event: EventBash, Command: reset, Cwd: repo})
 			if (d != nil) != tt.deny {
 				t.Errorf("git-discard Check(%q) denial = %v, want deny %v", reset, d, tt.deny)
 			}

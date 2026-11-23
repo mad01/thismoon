@@ -238,7 +238,7 @@ func TestMaskDataRefusesLaterRunners(t *testing.T) {
 		`echo "x" > /tmp/f; at now < /tmp/f; echo "rm -rf /x" > /tmp/f`,
 	}
 	for _, cmd := range commands {
-		if got := maskData(cmd); got != cmd {
+		if got := maskData(cmd, nil); got != cmd {
 			t.Errorf("maskData(%q) = %q, want it unchanged", cmd, got)
 		}
 	}
@@ -248,7 +248,7 @@ func TestMaskDataRefusesLaterRunners(t *testing.T) {
 		`true && echo "rm -rf /x" 2>&1`,
 		`git commit -m "fix a & b: rm -rf /x" &>/dev/null`,
 	} {
-		if got := maskData(cmd); got == cmd {
+		if got := maskData(cmd, nil); got == cmd {
 			t.Errorf("maskData(%q) left it unchanged, want the message masked", cmd)
 		}
 	}
@@ -279,7 +279,7 @@ func TestScriptDenyMaskDelimiterPrefix(t *testing.T) {
 		"git commit -F - <<'EOF'\nEOFx rm -rf /x\nEOF",
 		"git commit -F - <<-'EOF'\n\tEOF) rm -rf /x\n\tEOF",
 	} {
-		if got := maskData(cmd); !strings.Contains(got, "rm -rf /x") {
+		if got := maskData(cmd, nil); !strings.Contains(got, "rm -rf /x") {
 			t.Errorf("maskData(%q) = %q, want the body left as written", cmd, got)
 		}
 	}
@@ -490,7 +490,7 @@ func TestScriptDenyBash32Tail(t *testing.T) {
 		}
 	}
 	tail := cat("git commit -m", "It's done") + "; echo '\n)\" ; x ; #'"
-	if got := maskData(tail); got != tail {
+	if got := maskData(tail, nil); got != tail {
 		t.Errorf("maskData(%q) = %q, want the text after the message as written", tail, got)
 	}
 }
@@ -575,7 +575,7 @@ func TestMaskDataMessageFlagsOnly(t *testing.T) {
 		{`echo "a b" c`, "echo" + strings.Repeat(" ", 8)},
 	}
 	for _, tt := range tests {
-		if got := maskData(tt.cmd); got != tt.want {
+		if got := maskData(tt.cmd, nil); got != tt.want {
 			t.Errorf("maskData(%q)\n got %q\nwant %q", tt.cmd, got, tt.want)
 		}
 	}

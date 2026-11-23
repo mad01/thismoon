@@ -13,11 +13,16 @@ import (
 
 // TestMain clears CDPATH, which the cd tracking reads from belt's own
 // environment (walkSegments), so no test depends on the shell running it.
-// It also moves the test temp folder out of the temp roots when it lies in
-// one, as /tmp does on Linux: file-discard passes every delete inside a temp
-// root, so its fixtures must sit outside them, as macOS's /var/folders does.
+// It keeps the machine's git config out of every test the same way
+// (isolateGitConfig). It also moves the test temp folder out of the temp
+// roots when it lies in one, as /tmp does on Linux: file-discard passes
+// every delete inside a temp root, so its fixtures must sit outside them,
+// as macOS's /var/folders does.
 func TestMain(m *testing.M) {
 	if err := os.Unsetenv("CDPATH"); err != nil {
+		panic(err)
+	}
+	if err := isolateGitConfig(); err != nil {
 		panic(err)
 	}
 	base, err := tempOutsideRoots()
@@ -31,6 +36,28 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(code)
+}
+
+// machineConfigEnv are the variables that bring config into git beyond a
+// repo's own file: settings from the environment, and a core.fsmonitor
+// stand-in git reads when the key is unset.
+var machineConfigEnv = []string{"GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_TEST_FSMONITOR"}
+
+// isolateGitConfig points git at an empty global config and no system
+// config, and drops machineConfigEnv, for belt's own git calls (repoFsmonitor
+// among them) and every fixture's. A developer's core.fsmonitor, identity
+// or hooks then never change a result. A test that needs one of them sets
+// it itself.
+func isolateGitConfig() error {
+	for _, name := range machineConfigEnv {
+		if err := os.Unsetenv(name); err != nil {
+			return err
+		}
+	}
+	if err := os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull); err != nil {
+		return err
+	}
+	return os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 }
 
 // tempOutsideRoots points TMPDIR at a fresh folder in the home folder when

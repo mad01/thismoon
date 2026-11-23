@@ -16,10 +16,11 @@ import (
 
 // walkMemory is what one walk learns from the commands it has met that a
 // later command may run as a script: the git aliases the command sets config
-// for, the variables it sets to text the walk can read, and the files it
-// writes. Every walk of one command shares it, nested ones included. A
-// config write or a file outlives a subshell, and a variable that seems set
-// where the shell would not keep it only makes the walk read more.
+// for, the variables it sets to text the walk can read, the files it
+// writes, and whether a later git may run a core.fsmonitor command. Every
+// walk of one command shares it, nested ones included. A config write or a
+// file outlives a subshell, and a variable that seems set where the shell
+// would not keep it only makes the walk read more.
 type walkMemory struct {
 	aliasNames  map[string]bool     // names the command sets config for (noteAliasConfig)
 	aliasBodies map[string][]script // bodies git config writes and -c options set, by name
@@ -28,6 +29,11 @@ type walkMemory struct {
 	files       map[string]script   // files written, by fileKeys
 	budget      int                 // derived texts the walk may still read
 	bytes       int                 // derived bytes the walk may still keep or read
+	// fsmonitorSet marks a command that may have made core.fsmonitor a
+	// command for every git after it (noteFsmonitor), and hooked one whose
+	// git message heredoc a core.fsmonitor command may run (fsmonitorRuns).
+	fsmonitorSet bool
+	hooked       bool
 }
 
 // maxDerivedTexts bounds how many texts one command's walk reads that it
@@ -105,14 +111,19 @@ type feed struct {
 	positional bool
 	// file names the file on disk the text starts with (script.file).
 	file string
+	// fsmonitor marks the standard input of a git call a core.fsmonitor
+	// command may run (hookFeeds): its steps are marked walkStep.fsmonitor.
+	fsmonitor bool
 }
 
 // feedsOf returns the feeds of one command: what a git alias runs, what a
 // shell or an interpreter reads as its script (readsScript), a script file
 // the command wrote and runs by path, the command a variable the command set
 // holds when it stands as the command word (varCommandFeed), the items an
-// xargs runs as code (xargsFeeds), and the -c, eval and interpreter scripts
-// whose substitutions print text the walk can read (inlineFeeds).
+// xargs runs as code (xargsFeeds), the -c, eval and interpreter scripts
+// whose substitutions print text the walk can read (inlineFeeds), and the
+// standard input of a git commit or merge a core.fsmonitor command may read
+// (hookFeeds).
 func (w *shellWalk) feedsOf(
 	text string,
 	c shellCmd,
@@ -146,6 +157,7 @@ func (w *shellWalk) feedsOf(
 		out = append(out, f)
 	}
 	out = append(out, w.xargsFeeds(text, c, tokens, in, dir)...)
+	out = append(out, w.hookFeeds(text, c, in)...)
 	return append(out, w.inlineFeeds(text, c, tokens, dir)...)
 }
 
@@ -222,7 +234,8 @@ func (m *walkMemory) claim(feeds []feed) (opacity, bool) {
 // shell, or in this one for source and eval. An alias body is read with
 // the alias marked, so the walk never reads it inside itself, and with its
 // config counted as overridden, since git hands its -c options on to every
-// git the body runs.
+// git the body runs. The steps of what a core.fsmonitor command reads are
+// marked walkStep.fsmonitor (markFsmonitor).
 func (w *shellWalk) walkFeeds(feeds []feed, fn func(walkStep)) {
 	for _, f := range feeds {
 		if !f.ok || f.interp {
@@ -238,7 +251,11 @@ func (w *shellWalk) walkFeeds(feeds []feed, fn func(walkStep)) {
 			inner.configEnv = true
 			inner.expanding = append(slices.Clone(w.expanding), f.alias)
 		}
-		inner.walkRead(f.text, true, fn)
+		walk := fn
+		if f.fsmonitor {
+			walk = markFsmonitor(fn)
+		}
+		inner.walkRead(f.text, true, walk)
 	}
 }
 

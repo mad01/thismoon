@@ -540,8 +540,37 @@ Blocks `git push` to `main` or `master` before it happens.
   merge` or `git notes add` reads as its message with `-F -`, `--file=-` or
   `-F /dev/stdin`, and one piped from `cat` into `gh pr create`, `comment`
   or `edit` or `gh issue create` or `comment` that reads its body with
-  `--body-file -` or `-F -` and pipes nothing on. Its lines are read the old
-  token way, so a line that starts with a push still counts, but a backtick
+  `--body-file -` or `-F -` and pipes nothing on. A `git commit` or `git
+  merge` body is code instead when `core.fsmonitor` may name a command: git
+  runs that command while it refreshes the index, from the top of the work
+  tree, with the body on its standard input. A value that is a git boolean
+  (`true`, `yes`, `on`, `1`, `false`, `no`, `off`, `0`, empty) is the builtin
+  daemon or nothing, and runs no command; any other value is one, and so is a
+  value belt cannot read. The commit's own `-c core.fsmonitor=...` decides
+  first. A `git config` write of the key or of an include earlier in the
+  command, `GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS` or `GIT_TEST_FSMONITOR`
+  set in front or exported, and a variable that points git at another config
+  file each count. Past those belt runs `git config --get core.fsmonitor` in
+  the directory the commit runs in, once per directory per hook call, which
+  reads repo, global, system and included config. With the key unset,
+  `GIT_TEST_FSMONITOR` in the session's environment counts. A directory belt
+  cannot place, a `cd` that may not have run, and a git call that fails or
+  takes over 2 seconds count as a command too. So a commit whose directory
+  belt cannot place reads its body as code even in a repo with no
+  `core.fsmonitor`, and a message that names a push or a discard in a code
+  span is denied: `cd "$REPO" && git commit -F - <<'EOF'`, `git -C "$REPO"
+  commit -F -`, `cd sub 2>/dev/null; git commit -F -`, and a commit right
+  after `git init` in a new folder. That false deny is accepted; a plain
+  message passes. When a commit or merge may run such a command, what it
+  reads on standard input in another way is code too: a here-string, a
+  `< <( )` of a printer, a `< file` the command wrote, and what `echo`,
+  `printf` or a `cat` of a heredoc pipes into it; `< /dev/null` is nothing.
+  A `< file` belt did not see written, a `<&` or `<>`, and a pipe from any
+  other command are text belt cannot read, which the push guard denies as
+  it denies such text piped into a shell. With no command that may read it,
+  all of these read as before. A `git tag` or `git notes add` body never
+  counts: neither refreshes the index. Its lines are read the old token
+  way, so a line that starts with a push still counts, but a backtick
   or `$( )` in a quoted (`<<'EOF'`) body is text: a PR body that shows a
   push in a code span passes. In an unquoted body the shell runs every `$( )`
   and backtick before the command reads it, even after a `'` or `#`, so those
@@ -568,7 +597,8 @@ Blocks `git push` to `main` or `master` before it happens.
   name `git checkout -- f` or `reset --hard` in plain words. A heredoc that
   `git commit` or `git merge` reads with `-F -` gets no pass. Both refresh
   the index before they read the message, and a `core.fsmonitor` program
-  runs then with git's standard input, so a shell may read the body. The
+  runs then with git's standard input, so a shell may read the body, and
+  belt reads it as code when that program may be a command (above). The
   pass needs a git belt can vouch for. The word `git` comes
   first (no path, wrapper or `VAR=` in front), with nothing but `-C <dir>`
   before the subcommand (`-c` or `-p` may bring in a pager or a config
@@ -944,7 +974,8 @@ then run the file" bypass.
   the per-line scan, the guard blanks the text a carrier command carries
   without running it (`scriptmask.go`): the words of `echo` and `printf`
   (not `-v`), a `git commit` message (the value of `-m` or `--message`, which
-  may be a `$(cat <<'EOF')` body, and the heredoc only with `-F -`), and a
+  may be a `$(cat <<'EOF')` body, and the heredoc only with `-F -` and no
+  `core.fsmonitor` command that may read it, as the git guards judge it), and a
   `gh pr`/`issue`/`release`/`gist` title, body or notes value with its
   `-F -` heredoc. Every other word of the command stays as written. So a
   denied command named only in a commit message or an echo string passes, a
