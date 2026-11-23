@@ -18,16 +18,97 @@ const directFrozenVerdicts = "testdata/directdeny_frozen.txt"
 
 // directTightened are hand-reviewed corpus inputs the frozen build allowed
 // and the guard now denies.
-var directTightened = []string{}
+var directTightened = []string{
+	// One class: a phrase head (psql, mysql, mariadb, sqlite3) whose `<` file
+	// does not exist, as evil.py does not in the corpus folder. An earlier
+	// step of the call may make the file without naming it (`make && psql <
+	// out.sql`), so belt denies the SQL it cannot read; when the file stays
+	// missing, the shell runs nothing anyway.
+	"psql -c 'select 1' < evil.py",
+	"cd /tmp && psql -c 'select 1' < evil.py",
+	"cd /tmp; psql -c 'select 1' < evil.py",
+	"exec > >(sh); psql -c 'select 1' < evil.py",
+	"sh /tmp/zz & psql -c 'select 1' < evil.py",
+	"X=1 psql -c 'select 1' < evil.py",
+	"sudo psql -c 'select 1' < evil.py",
+	"echo hi | psql -c 'select 1' < evil.py",
+	"PYTHONPATH=. psql -c 'select 1' < evil.py",
+	"psql -l < evil.py",
+	"cd /tmp && psql -l < evil.py",
+	"cd /tmp; psql -l < evil.py",
+	"exec > >(sh); psql -l < evil.py",
+	"sh /tmp/zz & psql -l < evil.py",
+	"X=1 psql -l < evil.py",
+	"sudo psql -l < evil.py",
+	"echo hi | psql -l < evil.py",
+	"PYTHONPATH=. psql -l < evil.py",
+	"mysql -e 'select 1' < evil.py",
+	"cd /tmp && mysql -e 'select 1' < evil.py",
+	"cd /tmp; mysql -e 'select 1' < evil.py",
+	"exec > >(sh); mysql -e 'select 1' < evil.py",
+	"sh /tmp/zz & mysql -e 'select 1' < evil.py",
+	"X=1 mysql -e 'select 1' < evil.py",
+	"sudo mysql -e 'select 1' < evil.py",
+	"echo hi | mysql -e 'select 1' < evil.py",
+	"PYTHONPATH=. mysql -e 'select 1' < evil.py",
+	"mysql -e 'show tables' < evil.py",
+	"cd /tmp && mysql -e 'show tables' < evil.py",
+	"cd /tmp; mysql -e 'show tables' < evil.py",
+	"exec > >(sh); mysql -e 'show tables' < evil.py",
+	"sh /tmp/zz & mysql -e 'show tables' < evil.py",
+	"X=1 mysql -e 'show tables' < evil.py",
+	"sudo mysql -e 'show tables' < evil.py",
+	"echo hi | mysql -e 'show tables' < evil.py",
+	"PYTHONPATH=. mysql -e 'show tables' < evil.py",
+	"mariadb -e 'select 1' < evil.py",
+	"cd /tmp && mariadb -e 'select 1' < evil.py",
+	"cd /tmp; mariadb -e 'select 1' < evil.py",
+	"exec > >(sh); mariadb -e 'select 1' < evil.py",
+	"sh /tmp/zz & mariadb -e 'select 1' < evil.py",
+	"X=1 mariadb -e 'select 1' < evil.py",
+	"sudo mariadb -e 'select 1' < evil.py",
+	"echo hi | mariadb -e 'select 1' < evil.py",
+	"PYTHONPATH=. mariadb -e 'select 1' < evil.py",
+	"mariadb -e\"show tables\" < evil.py",
+	"cd /tmp && mariadb -e\"show tables\" < evil.py",
+	"cd /tmp; mariadb -e\"show tables\" < evil.py",
+	"exec > >(sh); mariadb -e\"show tables\" < evil.py",
+	"sh /tmp/zz & mariadb -e\"show tables\" < evil.py",
+	"X=1 mariadb -e\"show tables\" < evil.py",
+	"sudo mariadb -e\"show tables\" < evil.py",
+	"echo hi | mariadb -e\"show tables\" < evil.py",
+	"PYTHONPATH=. mariadb -e\"show tables\" < evil.py",
+	"sqlite3 app.db 'select 1' < evil.py",
+	"cd /tmp && sqlite3 app.db 'select 1' < evil.py",
+	"cd /tmp; sqlite3 app.db 'select 1' < evil.py",
+	"exec > >(sh); sqlite3 app.db 'select 1' < evil.py",
+	"sh /tmp/zz & sqlite3 app.db 'select 1' < evil.py",
+	"X=1 sqlite3 app.db 'select 1' < evil.py",
+	"sudo sqlite3 app.db 'select 1' < evil.py",
+	"echo hi | sqlite3 app.db 'select 1' < evil.py",
+	"PYTHONPATH=. sqlite3 app.db 'select 1' < evil.py",
+	"sqlite3 app.db .tables < evil.py",
+	"cd /tmp && sqlite3 app.db .tables < evil.py",
+	"cd /tmp; sqlite3 app.db .tables < evil.py",
+	"exec > >(sh); sqlite3 app.db .tables < evil.py",
+	"sh /tmp/zz & sqlite3 app.db .tables < evil.py",
+	"X=1 sqlite3 app.db .tables < evil.py",
+	"sudo sqlite3 app.db .tables < evil.py",
+	"echo hi | sqlite3 app.db .tables < evil.py",
+	"PYTHONPATH=. sqlite3 app.db .tables < evil.py",
+}
 
 // directFrozenCorpus returns the guard with the tranche deny list, the
 // corpus by group, and the temporary directory every corpus directory sits
 // in. The groups and the order of their inputs are frozen with the
 // verdicts: an input added at the end of a group has no frozen verdict, and
-// anywhere else it fails the fingerprint.
+// anywhere else it fails the fingerprint. The guard's standard input reads
+// take an empty folder for the root, so no file on the host, such as a
+// readable /tmp/evil.py, can change a verdict.
 func directFrozenCorpus(t *testing.T) (*DirectDenyList, []frozenGroup, string) {
 	cwd := t.TempDir()
 	g := NewDirectDenyList(config.Config{ClaudeDeny: trancheEntries})
+	g.stdinRoot = t.TempDir()
 	lines := func(commands []string) []frozenInput {
 		out := make([]frozenInput, 0, len(commands))
 		for _, c := range commands {

@@ -211,13 +211,16 @@ type shellWalk struct {
 	// this walk set, and moveRun is the run that move was in. outerSure
 	// says whether the dir a child walk started from was sure. sureBefore
 	// says whether the dir was sure where the last move ran, and justMoved
-	// marks a walk whose last command was that move (settleMove).
+	// marks a walk whose last command was that move (settleMove). moveFrom
+	// is where the shell was when the last move ran, "" when that was not
+	// sure; only the stdin reads set it (shellWalk.leave).
 	run        int
 	moved      bool
 	moveRun    int
 	outerSure  bool
 	sureBefore bool
 	justMoved  bool
+	moveFrom   string
 	// input is the text walkCommands walks, the shell's whole input, where
 	// bash 3.2 reads a $( ) on to the end (whole). It is "" in a child walk.
 	input string

@@ -23,7 +23,11 @@ const askUserToRun = "Ask the user to run it; they can type ! <command> in the p
 // quoting, so `kubectl -n prod delete`, `sudo kubectl delete`, `\kubectl
 // delete` and `kubectl exec pod -- kubectl delete` all count. The
 // permission system's own match reads the entry as a text prefix, which
-// misses those forms. Only the commands the call runs itself
+// misses those forms. For a head an entry with a phrase names (`psql * DROP
+// *`), the SQL it reads on standard input counts as one more argument: a
+// heredoc, a here-string, a `<` file or a printer piped in, on the command
+// itself, on a group or ( ) around it, or left by an exec (denystdin.go).
+// Only the commands the call runs itself
 // are read (directCommands); a -c string, eval, a substitution, an alias,
 // the body of a `f() { …; }` function and a script file stay with
 // script-deny-list. A `function f { …; }` body reads as top-level commands,
@@ -35,6 +39,10 @@ type DirectDenyList struct {
 	// emit sends the soft-mode warning to the events service. Injectable for
 	// tests.
 	emit emitFunc
+	// stdinRoot is the folder the standard input reads take for the root of
+	// the file system (inputReader), "" for the real one. Injectable for
+	// tests, so a test reads no file of the host.
+	stdinRoot string
 }
 
 // NewDirectDenyList builds the guard with the real events backend.
@@ -70,13 +78,10 @@ func (g *DirectDenyList) check(in Input) *Denial {
 	if len(patterns) == 0 {
 		return nil
 	}
-	for _, words := range directCommands(in.Command) {
-		run, kind := unwrapCommand(words)
-		if kind == runsAsText {
-			// sudo -s, env -S and watch hand their words to a shell, which
-			// splits a quoted string again.
-			run = strings.Fields(strings.Join(run, " "))
-		}
+	tools := phraseTools(patterns)
+	input := newInputReader(g.stdinRoot)
+	for _, c := range directCommands(in.Command, in.Cwd) {
+		run := commandRun(c.words)
 		if d := leadingDeny(run, patterns); d != nil {
 			return Reasonf(
 				DirectDenyListID,
@@ -87,8 +92,29 @@ func (g *DirectDenyList) check(in Input) *Denial {
 				askUserToRun,
 			)
 		}
+		var hit *inputHit
+		if c.in != nil {
+			hit = input.check(*c.in, run, patterns, tools)
+		} else {
+			hit = unreadHit(run, patterns, tools)
+		}
+		if hit != nil {
+			return hit.directReason()
+		}
 	}
 	return nil
+}
+
+// commandRun returns the words a command runs once what opens it and its
+// wrappers are read past (unwrapCommand). sudo -s, env -S and watch hand
+// their words to a shell, which splits a quoted string again, so behind
+// them the words are split again too.
+func commandRun(words []string) []string {
+	run, kind := unwrapCommand(words)
+	if kind == runsAsText {
+		run = strings.Fields(strings.Join(run, " "))
+	}
+	return run
 }
 
 // settingsDenies compiles the settings deny entries, each marked as one
@@ -101,22 +127,39 @@ func settingsDenies(entries []string) []deny {
 	return patterns
 }
 
-// directCommands returns the commands a Bash call runs itself, each as its
-// words with the quotes dropped and a $'...' string decoded (ansiCWords):
-// every simple command readShell reads at the top level, after a
-// background & included, and inside a ( ) subshell. A heredoc body, a
-// comment, a quoted string and a substitution are not among them. When
+// directCmd is one command a Bash call runs itself (directCommands): its
+// words, and where it reads its standard input from (inputAt), nil for a
+// command from text readShell cannot follow.
+type directCmd struct {
+	words []string
+	in    *inputAt
+}
+
+// directCommands returns the commands a Bash call run from cwd runs itself,
+// each as its words with the quotes dropped and a $'...' string decoded
+// (ansiCWords): every simple command readShell reads at the top level,
+// after a background & included, and inside a ( ) subshell. A heredoc body,
+// a comment, a quoted string and a substitution are not among them. When
 // readShell cannot read the call, the whole lines before the one it cannot
 // follow are read so all the same, since bash runs them before it meets the
-// error, and the rest is read by unreadCommands.
-func directCommands(cmd string) [][]string {
+// error, and the rest is read by unreadCommands. Each command read by
+// readShell carries the directory it runs in, followed past the cd, pushd
+// and popd before it the way the git guards' walk follows them.
+func directCommands(cmd, cwd string) []directCmd {
+	return newShellWalk("", cwd).directIn(cmd, nil)
+}
+
+// directIn is directCommands for one text the walk w places: the call, or
+// the ( ) body of outer, whose standard input every command in the body
+// reads too.
+func (w *shellWalk) directIn(cmd string, outer *inputAt) []directCmd {
 	cmds, readTo, ok := readShellLines(cmd)
 	if ok {
-		return shellCommands(cmd, cmds)
+		return w.shellCommands(cmd, cmds, outer)
 	}
-	var out [][]string
+	var out []directCmd
 	if head, ok := readShell(cmd[:readTo]); ok {
-		out = shellCommands(cmd[:readTo], head)
+		out = w.shellCommands(cmd[:readTo], head, outer)
 	} else {
 		readTo = 0
 	}
@@ -124,16 +167,25 @@ func directCommands(cmd string) [][]string {
 }
 
 // shellCommands returns the commands readShell read from src, the bodies of
-// their ( ) subshells included (directCommands).
-func shellCommands(src string, cmds []shellCmd) [][]string {
-	var out [][]string
-	for _, c := range cmds {
+// their ( ) subshells included (directCommands). A body starts where the
+// command it is in runs, and a cd or an exec inside it moves nothing
+// outside. Each command reads what the groups it is in and an exec before it
+// give it too (stdinWalk).
+func (w *shellWalk) shellCommands(src string, cmds []shellCmd, outer *inputAt) []directCmd {
+	w.placeText(src)
+	in := newStdinWalk(src, cmds, outer, outer != nil)
+	var out []directCmd
+	for i, c := range cmds {
+		where, afterMove := w.enter(c)
+		at := in.at(i, where)
 		if len(c.words) > 0 {
-			out = append(out, ansiCWords(c.tokens()))
+			out = append(out, directCmd{words: ansiCWords(c.tokens()), in: at})
 		}
 		for _, sub := range c.subshells {
-			out = append(out, directCommands(src[sub.from:sub.to])...)
+			out = append(out, w.child(where.dir).directIn(src[sub.from:sub.to], at)...)
 		}
+		in.leave(i, at)
+		w.leave(src, c, afterMove)
 	}
 	return out
 }
@@ -144,13 +196,13 @@ func shellCommands(src string, cmds []shellCmd) [][]string {
 // phrase reads a quote as a space (`-e"delete from t"`), and again as the
 // shell passes its words (unquotedWords). So text the reader cannot follow
 // reads as more commands, not fewer.
-func unreadCommands(text string) [][]string {
-	var out [][]string
+func unreadCommands(text string) []directCmd {
+	var out []directCmd
 	for _, seg := range splitSegments(maskData(text, nil)) {
 		for _, words := range lineCommands(seg.text) {
-			out = append(out, words)
+			out = append(out, directCmd{words: words})
 			if plain := unquotedWords(words); len(plain) > 0 && !slices.Equal(plain, words) {
-				out = append(out, plain)
+				out = append(out, directCmd{words: plain})
 			}
 		}
 	}
