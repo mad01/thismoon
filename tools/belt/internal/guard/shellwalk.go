@@ -47,7 +47,9 @@ type walkStep struct {
 	defines bool
 	// opaque names text the command runs that the walk could not read and
 	// that may hold a push (walkMemory.claim): a git alias body, text printed
-	// into a shell, an interpreter script that names a push.
+	// into a shell, an interpreter script that names a push, the output of a
+	// download or a git call it runs as code (sourceOpacity), outside text
+	// an interpreter reads (shellWalk.interpText).
 	opaque opacity
 	// pipedConfig marks a command a pipeline hands the output of a command
 	// that names a git config file to (pipeInto), as xargs takes file names.
@@ -321,7 +323,9 @@ func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) (tail
 // walkProse walks a command's heredoc bodies and comments in this shell, as
 // lines that might be commands: a git word there reaches fn and a cd there
 // leaves the directory unknown, so a body a shell does run (bash <<EOF) can
-// never place a push. A body a shell may run (docRuns) is read as code. A
+// never place a push. A body a shell may run (docRuns) is read as code, and
+// one an interpreter that is no shell reads as its script is marked so
+// (shellWalk.interpText). A
 // comment and any other body are read the token way (walkTokens), as the git
 // guards always read them, with their steps marked prose: a quoted body
 // expands nothing, so a backtick or $( ) in it is text. The shell runs the
@@ -347,10 +351,13 @@ func (w *shellWalk) walkProse(text string, c shellCmd, reader *shellCmd, fn func
 		s.prose = true
 		fn(s)
 	}
+	interp := w.interpText
 	for _, d := range c.docs {
 		switch {
 		case runs:
+			w.interpText = interp || interpreterReads(c, reader)
 			w.walkRead(text[d.body.from:d.body.to], false, fn)
+			w.interpText = interp
 		case hooked:
 			w.child(hookDir).walkRead(text[d.body.from:d.body.to], false, markFsmonitor(fn))
 		case !message:
@@ -395,6 +402,28 @@ func docRuns(c shellCmd, reader *shellCmd) bool {
 		return !ok || !readsMessage(g)
 	}
 	return true
+}
+
+// interpreterReads reports whether an interpreter that is no shell
+// (scriptRunner) reads the heredoc bodies of c, as its script or as what its
+// script reads: c itself (`python3 - <<'EOF'`), or the one a cat or tee in
+// front of it pipes them to (`cat <<'EOF' | node`). reader is the command
+// after c's pipe, nil when there is none.
+func interpreterReads(c shellCmd, reader *shellCmd) bool {
+	reads := func(c shellCmd) bool {
+		tokens := c.tokens()
+		at := runAt(tokens)
+		if at >= len(tokens) {
+			return false
+		}
+		head := filepath.Base(tokens[at])
+		_, ok := scriptRunner(head)
+		return ok && !shellInterpreters[head]
+	}
+	if reads(c) {
+		return true
+	}
+	return c.after == jointPipe && reader != nil && passesStdin(c) && reads(*reader)
 }
 
 // plainGit reports whether c is a git call whose message belt can vouch
@@ -789,6 +818,9 @@ func (w *shellWalk) walkWords(
 		opaque = opacity{what: "a function argument the function runs as code", scoped: true}
 	}
 	step.opaque = opaque
+	if !w.interpText {
+		step.opaque = sourceOpacity(opaque, step.unreadSubst)
+	}
 	step.scripts = slices.DeleteFunc(slices.Clone(feeds), func(f feed) bool { return !f.interp })
 	fn(step)
 	w.remember(text, body, run, in, dir)
@@ -967,7 +999,7 @@ func (w *shellWalk) child(dir string) *shellWalk {
 		dir: dir, cdpath: w.cdpath, gitEnv: w.gitEnv, configEnv: w.configEnv, heredoc: w.heredoc,
 		feeds: w.feeds, depth: w.depth + 1, chains: w.chains, steps: w.steps, mem: w.mem, expanding: w.expanding,
 		positional: w.positional, afterFunction: w.afterFunction, pwdSet: w.pwdSet, cdHidden: w.cdHidden,
-		outerSure: w.dirSure(), bare: w.bare,
+		outerSure: w.dirSure(), bare: w.bare, interpText: w.interpText,
 	}
 }
 

@@ -116,7 +116,8 @@ func shortBundle(word string) bool {
 }
 
 // unreadableSource returns what a command prints that belt cannot read as
-// code, a download or decoded text, or "" for any other command.
+// code, a download, decoded text or what a git call prints that is not only
+// hashes, counts or paths (storedSource), or "" for any other command.
 func unreadableSource(tokens []string) string {
 	words, _ := unwrapCommand(tokens)
 	if len(words) == 0 {
@@ -128,7 +129,7 @@ func unreadableSource(tokens []string) string {
 	case decodes(name, words[1:]):
 		return "text " + name + " decodes"
 	}
-	return ""
+	return storedSource(words)
 }
 
 // unreadableDenial is the denial for code from src, which nothing can read.

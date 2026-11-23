@@ -169,6 +169,11 @@ type shellWalk struct {
 	prose     bool // walking a heredoc body or comment (walkProse)
 	pwdSet    bool // the command may give PWD a value of its own (rewritesPWD)
 	cdHidden  bool // the command may have moved the shell unseen (keepsShellPlaced)
+	// interpText marks a heredoc body an interpreter that is no shell reads
+	// (interpreterReads): the walk reads it as code to find a git word in
+	// it, but a $( ) or backtick there is the interpreter's text, so what it
+	// would print runs nothing (sourceOpacity).
+	interpText bool
 	// bare makes the walk reach fn for a command of redirections alone
 	// (walkCommandsBare).
 	bare bool

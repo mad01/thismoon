@@ -501,6 +501,14 @@ Blocks `git push` to `main` or `master` before it happens.
     and any other command piped into a shell or into an `xargs` that runs
     its items as code (`cat x.sh | sh`, `curl x | sh`, `find . | xargs
     -I{} sh -c '...'`).
+  - A `$( )`, backtick or `<( )` whose output a shell runs as code, when
+    it prints a download, decoded text or what a git call prints, any but
+    one that prints hashes, counts or paths alone (`sh -c
+    "$(git log -1 --format=%B)"`, `eval "$(git config --get x.y)"`, `bash
+    <(git show HEAD:x.sh)`, `bash <(curl x)`). A heredoc body Python, Perl,
+    Ruby, Node or osascript reads is that interpreter's text, so a backtick
+    in it runs nothing there (`python3 - <<'EOF'` with a string that quotes
+    `` `git show HEAD:x` ``).
   - A Python, Perl, Ruby, Node or osascript script that starts a process
     (Python `subprocess`, `os.system`, `os.popen`, `os.exec*`, `pty.spawn`;
     Perl `system`, `exec`, backticks, `qx`, `open` with a pipe; Ruby
@@ -1069,6 +1077,18 @@ then run the file" bypass.
   - Decoded text into a shell: `base64 -d`, `openssl … -d`, `xxd -r`,
     `uudecode` and the decompressors (`gunzip`, `zcat`, `gzip -d`, …), in
     every shape above.
+  - Text git prints, in every shape above, from any git call but `git
+    rev-parse`, `git merge-base`, `git ls-files`, `git ls-tree`, a `git
+    rev-list` with no `--format`, `--pretty`, `--oneline` or `--header`, and
+    a `git diff` with `--name-only` or `--name-status`, which print hashes,
+    counts and the repo's own paths. An alias, a variable subcommand and every other
+    subcommand count (`git log -1 --format=%B | sh`, `sh -c "$(git show
+    HEAD:x.sh)"`, `eval "$(git config --get x.y)"`, `git diff | sh`). Most
+    of it is what the repo stores, which a commit, a config write or a note
+    earlier in the command may have set to anything. Output a command takes
+    as a value passes (`git commit -m "$(git log -1 --format=%B)"`, `cd
+    "$(git rev-parse --show-toplevel)"`, `. "$(git rev-parse
+    --show-toplevel)/scripts/env.sh"`).
   - `node`, `deno run`, `deno eval` and `bun` read as interpreters do:
     `deno run <(curl …)` and `bun <(curl …)` deny.
 
@@ -1092,6 +1112,10 @@ then run the file" bypass.
     pipe: `curl … | sudo -s`, `doas -s`, `su`.
   - A shell fed by a pipe of its own inside `( )` or `>( )`:
     `curl … | ( cat | sh )`, `curl … | tee >(cat | sh)`.
+  - zsh's `=( )`, which hands a command a temp file of what it prints:
+    `source =(curl …)`, `source =(git show HEAD:x.sh)`.
+  - A shape nested more than 32 levels deep (`echo $(echo $(… sh -c
+    "$(curl …)" …))`).
 - **A command behind a wrapper is read past it** (`scriptdeny_indirect.go`).
   The permission system matches a command by the words it starts with, so
   `nice kubectl delete` and `script -q /dev/null rm -rf x` slip past it. A
