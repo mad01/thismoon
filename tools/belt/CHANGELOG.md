@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.27.1](https://github.com/mad01/thismoon/compare/belt/v2.27.0...belt/v2.27.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **belt:** read commit stdin as code when git runs a fsmonitor command ([#558](https://github.com/mad01/thismoon/issues/558)) ([22edccf](https://github.com/mad01/thismoon/commit/22edccfb090030d5c1239412df1ee2fd8fcdc02a))
+
 ## [2.27.0](https://github.com/mad01/thismoon/compare/belt/v2.26.0...belt/v2.27.0) (2026-11-23)
 
 
