@@ -31,7 +31,7 @@ toss-bin [flags] <path> [...]
 | Flag | Description |
 |---|---|
 | `--safe-mode` | Block trashing protected system paths and home directory |
-| `--temp-only` | Refuse the whole run unless every path sits inside `/tmp`, `/var/tmp` or `~/.tmp`; implies `--safe-mode` |
+| `--temp-only` | Refuse the whole run unless every path sits inside `/tmp`, `/var/tmp`, `~/.tmp` or `~/code/tmp`; implies `--safe-mode` |
 | `--dry-run` | Print what would happen without doing anything |
 | `--validate` | Check whether paths would be blocked; no file operations |
 | `-r`, `-R`, `--recursive` | Allow trashing directories |
@@ -55,6 +55,7 @@ Combined short flags work: `-rf` expands to `-r -f`. Unknown flags are silently 
 - `/tmp` (on macOS, `/private/tmp`)
 - `/var/tmp` (on macOS, `/private/var/tmp`)
 - `~/.tmp`
+- `~/code/tmp`
 
 The roots themselves are never valid targets. A path is judged by its real location: toss-bin expands a leading `~` and resolves `..` and symlinks in every parent directory before comparing, so `/tmp/link-to-home/file` and `/tmp/../Users/x` are refused. The final component follows the usual symlink rule: a link is trashed as a link and judged by where it lives. `$TMPDIR` (`/var/folders/...` on macOS) is not a root.
 
@@ -68,7 +69,7 @@ The roots are fixed in the binary and no config key changes them. An allow rule 
 { "permissions": { "allow": ["Bash(toss-bin --temp-only *)"] } }
 ```
 
-With that rule in place, an agent can trash anything under the temp roots with no prompt, including backups you parked in `~/.tmp`. All of it stays recoverable from `~/.Trash/my-trash/`.
+With that rule in place, an agent can trash anything under the temp roots with no prompt, including backups you parked in `~/.tmp` and fixtures in `~/code/tmp`. All of it stays recoverable from `~/.Trash/my-trash/`.
 
 ### Examples
 
@@ -86,7 +87,7 @@ toss-bin --validate /System ~/Documents /tmp/safe.txt
 toss-bin -r ./old-build
 
 # Trash scratch files, refusing anything outside the temp roots
-toss-bin --temp-only -rf /tmp/build-cache ~/.tmp/notes.txt
+toss-bin --temp-only -rf /tmp/build-cache ~/.tmp/notes.txt ~/code/tmp/fixture
 ```
 
 ### Protected paths

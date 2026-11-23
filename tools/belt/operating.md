@@ -124,8 +124,8 @@ or a `_`-prefixed name anywhere. The deny reason for a Python heredoc names
 that shape. A `cat` or `tee` heredoc written to a document file (`.md`,
 `.txt` and a few more) is text, and its lines are not read as commands. The
 file may not sit in a dot directory or a system directory, and JSON, YAML and
-TOML files are never text. The temp folders `/tmp`, `/var/tmp` and `~/.tmp`
-are allowed, with the same rules below them. Every other step must be one
+TOML files are never text. The temp folders `/tmp`, `/var/tmp`, `~/.tmp`
+and `~/code/tmp` are allowed, with the same rules below them. Every other step must be one
 that cannot run the file (`mkdir`, `git add`, `gh pr create` and a few more),
 with no redirect, and every `cd` must be followed by `&&`.
 

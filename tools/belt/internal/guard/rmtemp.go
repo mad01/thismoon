@@ -56,7 +56,8 @@ func (g *RmTemp) Check(in Input) *Denial {
 }
 
 // homeDir returns the cleaned absolute home directory, or "" when there is
-// none, which turns ~ and $HOME targets and the ~/.tmp root off.
+// none, which turns ~ and $HOME targets and the ~/.tmp and ~/code/tmp
+// roots off.
 func homeDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || !path.IsAbs(home) {
@@ -413,12 +414,19 @@ func underTempRoot(p, home string) bool {
 	return false
 }
 
-// tempRoots are the folders toss-bin --temp-only accepts; ~/.tmp only when
-// the home directory is known.
+// homeTempDirs are the temp folders below the home directory, relative to
+// it: ~/.tmp and ~/code/tmp. The script-deny-list text heredocs trust them
+// too (textBases).
+var homeTempDirs = []string{textHomeTemp, "code/tmp"}
+
+// tempRoots are the folders toss-bin --temp-only accepts; the homeTempDirs
+// only when the home directory is known.
 func tempRoots(home string) []string {
 	roots := []string{"/tmp", "/var/tmp", "/private/tmp", "/private/var/tmp"}
 	if home != "" {
-		roots = append(roots, path.Join(home, ".tmp"))
+		for _, dir := range homeTempDirs {
+			roots = append(roots, path.Join(home, dir))
+		}
 	}
 	return roots
 }
@@ -516,7 +524,7 @@ func rmTempReason(calls []rmCall) string {
 		b.WriteString("Replace the rm commands, in order, with " + strings.Join(cmds, ", ") + ".")
 	}
 	if tmpdir {
-		b.WriteString(" toss-bin takes only /tmp, /var/tmp and ~/.tmp, not $TMPDIR, " +
+		b.WriteString(" toss-bin takes only /tmp, /var/tmp, ~/.tmp and ~/code/tmp, not $TMPDIR, " +
 			"so give mktemp a template there: `mktemp -d /tmp/<name>.XXXXXX` (no -d for a file).")
 	}
 	return b.String()

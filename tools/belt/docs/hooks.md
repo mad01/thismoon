@@ -1038,8 +1038,9 @@ then run the file" bypass.
     not under `/etc`, `/private`, `/Library`, `~/Library`, `/usr`, `/opt`,
     `/System`, `/bin`, `/sbin` or `/dev`, and no directory on the way is a
     symlink. A temp folder (`/tmp`, `/private/tmp`, `/var/tmp`,
-    `/private/var/tmp` or `~/.tmp`, but not `$TMPDIR` or `/var/folders`) is
-    a base like the cwd and home, so only the part below it is checked.
+    `/private/var/tmp`, `~/.tmp` or `~/code/tmp`, but not `$TMPDIR` or
+    `/var/folders`) is a base like the cwd and home, so only the part below
+    it is checked.
   - An existing target is a regular file with one link and no execute bit.
   - The delimiter is quoted, or the body holds no `$`, backtick or
     backslash, since the shell expands an unquoted body. The body does not
@@ -1955,8 +1956,8 @@ Sends deletes of temp paths to `toss-bin` instead of `rm`.
   argument: `echo rm`, `xargs rm`, `find -exec rm`, `sudo rm`.
 - **Decides by** each target, cleaned lexically. belt never stats a path
   or follows a symlink. A target is temp when it sits strictly inside
-  `/tmp`, `/var/tmp`, `/private/tmp`, `/private/var/tmp` or `~/.tmp`, the
-  folders `toss-bin --temp-only` accepts. A leading `~`, `$HOME` or
+  `/tmp`, `/var/tmp`, `/private/tmp`, `/private/var/tmp`, `~/.tmp` or
+  `~/code/tmp`, the folders `toss-bin --temp-only` accepts. A leading `~`, `$HOME` or
   `${HOME}` expands to the home directory. A variable set from `mktemp`
   earlier in the same command counts too (`D=$(mktemp -d); ...; rm -rf
   "$D"`, or `"$D/sub"`), as long as the target stays inside what mktemp
@@ -2318,8 +2319,9 @@ the commands git does not run.
   match is judged on its own. The first rule that fits decides:
   1. The root, the home directory or a folder that holds it: denied. Only
      the user may run it, with `! <command>`.
-  2. Inside a temp folder, or inside a folder `mktemp` made earlier in the
-     same command: passes. A glob of a temp folder's own entries passes
+  2. Inside a temp folder (`/tmp`, `/var/tmp`, `~/.tmp`, `~/code/tmp` and
+     the `/private` forms of the first two, as rm-temp reads them), or
+     inside a folder `mktemp` made earlier in the same command: passes. A glob of a temp folder's own entries passes
      whole. One the kernel may follow through a symlink, as with a
      trailing `/` or a glob before a deeper part, is judged match by match.
      A path at or under a cache folder passes too: `~/Library/Caches`,
@@ -3567,7 +3569,7 @@ missing key:
 | custom guard timeout | 5 s | custom guards |
 | custom hint default budget | 400 ms | custom hints (`timeout_ms` overrides it per hint) |
 | script size cap | 1 MiB | script-deny-list |
-| temp folders | `/tmp`, `/var/tmp`, `/private/tmp`, `/private/var/tmp`, `~/.tmp` | rm-temp (the folders `toss-bin --temp-only` accepts), file-discard |
+| temp folders | `/tmp`, `/var/tmp`, `/private/tmp`, `/private/var/tmp`, `~/.tmp`, `~/code/tmp` | rm-temp (the folders `toss-bin --temp-only` accepts), file-discard, script-deny-list text heredocs |
 | memory block budget, prefix and headers included | 9,000 bytes | agent-memory |
 | share held for the work store when both have facts | 2,250 bytes | agent-memory |
 | in-flight files asked of moondb | 200 | moondb-inflight |

@@ -643,6 +643,40 @@ func TestFileDiscardCacheLinkIntoRepo(t *testing.T) {
 	}
 }
 
+// TestFileDiscardHomeTempFolders: ~/.tmp and ~/code/tmp are temp folders
+// like /tmp, so a delete or an overwrite inside one passes. The folder
+// itself, a sibling and a name that only starts like one stay outside.
+func TestFileDiscardHomeTempFolders(t *testing.T) {
+	home := t.TempDir()
+	writeTree(t, home, map[string]string{
+		"src/new":        "s",
+		".tmp/notes.txt": "n", ".tmp/sub/f": "f",
+		"code/tmp/notes.txt": "n", "code/tmp/sub/f": "f",
+		"code/x/notes.txt": "n", "code/tmpx/y/notes.txt": "n",
+	})
+	outside := []string{"in no git work tree and no temp folder"}
+	var rows []fileDiscardRow
+	for _, dir := range []string{".tmp", "code/tmp"} {
+		rows = append(rows,
+			fileDiscardRow{dir + " file", "~", "rm ~/" + dir + "/notes.txt", nil, nil},
+			fileDiscardRow{dir + " folder", "~", "rm -rf ~/" + dir + "/sub", nil, nil},
+			fileDiscardRow{dir + " absolute", "/", "rm -rf " + home + "/" + dir + "/sub", nil, nil},
+			fileDiscardRow{dir + " overwrite", "~", "cp src/new ~/" + dir + "/notes.txt", nil, nil},
+			fileDiscardRow{dir + " itself", "~", "rm -rf ~/" + dir, outside, nil},
+		)
+	}
+	rows = append(rows,
+		fileDiscardRow{"code sibling", "~", "rm code/x/notes.txt", outside, nil},
+		fileDiscardRow{"code tmp lookalike", "~", "rm -rf ~/code/tmpx/y", outside, nil},
+		fileDiscardRow{"code tmp dot dot", "~", "rm ~/code/tmp/../x/notes.txt", outside, nil},
+		fileDiscardRow{
+			"code sibling overwrite", "~", "cp src/new code/x/notes.txt",
+			[]string{"this overwrites `"}, nil,
+		},
+	)
+	runFileDiscardRows(t, newFileDiscardGuard(t, home), home, rows)
+}
+
 // TestFileDiscardReasonWithoutTossBin: the toss-bin form is offered only
 // when toss-bin is on PATH.
 func TestFileDiscardReasonWithoutTossBin(t *testing.T) {

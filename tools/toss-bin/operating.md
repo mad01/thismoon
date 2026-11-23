@@ -15,21 +15,22 @@ read a quiet run as "flag accepted". Short `-h` and `-v` count only as
 the sole argument; long `--help` and `--version` work anywhere.
 
 `--temp-only` is the mode for agents cleaning up scratch files. The run
-trashes nothing unless every path sits strictly inside /tmp, /var/tmp or
-~/.tmp (on macOS /private/tmp and /private/var/tmp). The roots themselves
-never pass. Each path is judged by its real location: `~`, `..` and
-symlinks in the parent directories are resolved first, while a final
-symlink is judged where the link lives. The flag counts anywhere before
-`--`, implies --safe-mode, and no flag turns it off. The roots are fixed
-in the binary, not config, because an allow rule for `toss-bin
---temp-only` rests on the binary and config is a file an agent can edit.
+trashes nothing unless every path sits strictly inside /tmp, /var/tmp,
+~/.tmp or ~/code/tmp (on macOS /private/tmp and /private/var/tmp). The
+roots themselves never pass. Each path is judged by its real location:
+`~`, `..` and symlinks in the parent directories are resolved first,
+while a final symlink is judged where the link lives. The flag counts
+anywhere before `--`, implies --safe-mode, and no flag turns it off. The
+roots are fixed in the binary, not config, because an allow rule for
+`toss-bin --temp-only` rests on the binary and config is a file an agent
+can edit.
 The move works on the real directory the check approved, opened one
 component at a time without following symlinks, so a parent swapped for
 a symlink mid-run is refused instead of followed; the trash directory
 below the home is opened the same way. With that allow rule
 in place, an agent can trash anything under the temp roots with no
-prompt, backups a user parked in ~/.tmp included; it all stays
-recoverable from ~/.Trash/my-trash/.
+prompt, backups a user parked in ~/.tmp and fixtures in ~/code/tmp
+included; it all stays recoverable from ~/.Trash/my-trash/.
 
 ## where config lives
 

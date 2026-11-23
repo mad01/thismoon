@@ -8,7 +8,8 @@ that list, it can never unblock a built-in entry. It is read only when
 `--safe-mode`, `--temp-only` or `--validate` runs. `$TOSS_BIN_CONFIG`
 overrides the path.
 
-No key changes the `--temp-only` roots (`/tmp`, `/var/tmp`, `~/.tmp`).
+No key changes the `--temp-only` roots (`/tmp`, `/var/tmp`, `~/.tmp`,
+`~/code/tmp`).
 They are fixed in the binary: an allow rule for `toss-bin --temp-only`
 rests on the binary, and this file is something an agent could edit.
 

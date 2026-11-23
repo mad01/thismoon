@@ -337,7 +337,7 @@ func printUsage() {
     print("  -f                   Ignore nonexistent files (no error)")
     print("  --safe-mode          Block trashing protected system paths")
     print("  --temp-only          Refuse the whole run unless every path sits inside")
-    print("                       /tmp, /var/tmp or ~/.tmp (implies --safe-mode)")
+    print("                       /tmp, /var/tmp, ~/.tmp or ~/code/tmp (implies --safe-mode)")
     print("  --dry-run            Show what would be done without doing it")
     print("  --validate           Only check if paths would be blocked (no file operations)")
     print("")
