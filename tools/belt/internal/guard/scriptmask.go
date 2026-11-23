@@ -25,7 +25,8 @@ import (
 //     argument of which bash 3.2 runs no more than cat (bash32Closes), or
 //     none at all (bash32Unclosed). A heredoc body must have a quoted
 //     delimiter or hold no $, backtick or backslash, so the shell expands
-//     nothing in it.
+//     nothing in it. A git commit's heredoc is no data when a
+//     core.fsmonitor command may read it (hooksMessage).
 //   - Nothing left in the command once the data is blanked can run beside
 //     the data command or after the command ends (runsLater): a background
 //     &, a coproc, a trap, or a word that starts a job that outlives its
@@ -65,17 +66,20 @@ var laterWords = wordSet(`
 // segments around the data stay where they were. cmd comes back unchanged
 // when readShell cannot read it, the call has a shape that blocks masking,
 // or what is left once the data is blanked could run it later (runsLater).
-// cmd is the shell's whole input (dataCat).
-func maskData(cmd string) string {
-	return maskWith(cmd, func(cmd string, p wordPart) (span, bool) { return dataCat(cmd, p, true) }, bash32Tail(cmd))
+// cmd is the shell's whole input (dataCat). hooked, asked at most once and
+// only for a git commit heredoc that would be masked, says whether a
+// core.fsmonitor command may read one (hooksMessage); nil means none may.
+func maskData(cmd string, hooked func() bool) string {
+	cat := func(cmd string, p wordPart) (span, bool) { return dataCat(cmd, p, true) }
+	return maskWith(cmd, cat, bash32Tail(cmd), hooked)
 }
 
 // maskDataBash5 is maskData for a shell that ends a `$(cat <<'EOF' ... EOF)`
 // where belt does, as bash 5 and zsh do: it masks every catBody, whatever
 // bash 3.2 would run (bash32Closes). It only tells a denial that comes from
 // bash 3.2 alone (ScriptDenyList.check).
-func maskDataBash5(cmd string) string {
-	return maskWith(cmd, catBody, len(cmd))
+func maskDataBash5(cmd string, hooked func() bool) string {
+	return maskWith(cmd, catBody, len(cmd), hooked)
 }
 
 // catReader returns where the heredoc body of a substitution that only
@@ -84,14 +88,14 @@ type catReader func(cmd string, p wordPart) (span, bool)
 
 // maskWith is maskData with cat reading the `$(cat <<'EOF' ... EOF)`
 // arguments, masking only the pieces that start before until.
-func maskWith(cmd string, cat catReader, until int) string {
+func maskWith(cmd string, cat catReader, until int, hooked func() bool) string {
 	cmds, ok := readShell(cmd)
 	if !ok || !maskable(cmds) {
 		return cmd
 	}
 	b := []byte(cmd)
 	for _, c := range cmds {
-		for _, s := range dataSpans(cmd, c, cat) {
+		for _, s := range dataSpans(cmd, c, cat, hooked) {
 			if s.from >= until {
 				continue
 			}
@@ -160,9 +164,12 @@ func maskable(cmds []shellCmd) bool {
 	return true
 }
 
-// dataSpans returns the pieces of one top-level command that are data.
-func dataSpans(cmd string, c shellCmd, cat catReader) []span {
-	words, docs, ok := dataWords(c.tokens())
+// dataSpans returns the pieces of one top-level command that are data. A
+// git commit's heredoc is not when hooked says a core.fsmonitor command may
+// read it.
+func dataSpans(cmd string, c shellCmd, cat catReader, hooked func() bool) []span {
+	tokens := c.tokens()
+	words, docs, ok := dataWords(tokens)
 	if !ok {
 		return nil
 	}
@@ -171,9 +178,13 @@ func dataSpans(cmd string, c shellCmd, cat catReader) []span {
 		out = append(out, wordData(cmd, c.words[i], cat)...)
 	}
 	for _, d := range c.docs {
-		if docs && unexpanded(cmd, d) {
-			out = append(out, d.body)
+		if !docs || !unexpanded(cmd, d) {
+			continue
 		}
+		if tokens[0] == "git" && hooked != nil && hooked() {
+			return out
+		}
+		out = append(out, d.body)
 	}
 	return out
 }

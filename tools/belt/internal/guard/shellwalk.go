@@ -37,8 +37,11 @@ type walkStep struct {
 	// command's the command closes (`}`, `fi`, `done`).
 	group *shellGroup
 	// prose marks a command taken from a comment or a heredoc body no shell
-	// runs (walkProse): its words are only text.
-	prose bool
+	// runs (walkProse): its words are only text. fsmonitor marks one from a
+	// git message heredoc a core.fsmonitor command may run (fsmonitorRuns),
+	// in a process of its own that sets nothing in this shell.
+	prose     bool
+	fsmonitor bool
 	// defines marks a command that defines a shell function
 	// (definesFunction), which may stand in for git or any later command.
 	defines bool
@@ -118,8 +121,17 @@ type walkStep struct {
 // (feedsOf): a git alias body, text printed into a shell, a file or a
 // variable the command filled with text.
 func walkCommands(command, cwd string, fn func(walkStep)) {
-	w := newShellWalk(command, cwd)
-	w.walkRead(w.input, true, fn)
+	newShellWalk(command, cwd).walk(fn)
+}
+
+// walk walks the shell's whole input. Every step it reaches fn with, nested
+// ones included, is first checked for config that may make core.fsmonitor
+// a command for a later git (walkMemory.noteFsmonitor).
+func (w *shellWalk) walk(fn func(walkStep)) {
+	w.walkRead(w.input, true, func(s walkStep) {
+		w.mem.noteFsmonitor(s)
+		fn(s)
+	})
 }
 
 // walkCommandsBare is walkCommands that also reaches fn for a command of
@@ -129,7 +141,7 @@ func walkCommands(command, cwd string, fn func(walkStep)) {
 func walkCommandsBare(command, cwd string, fn func(walkStep)) {
 	w := newShellWalk(command, cwd)
 	w.bare = true
-	w.walkRead(w.input, true, fn)
+	w.walk(fn)
 }
 
 // newShellWalk starts the walk of command from cwd.
@@ -317,12 +329,19 @@ func (w *shellWalk) walkNested(text string, c shellCmd, fn func(walkStep)) (tail
 // a ' or # in front of them included, since both are literal in a body, so
 // those bodies are walked as code wherever the body goes. A body a plainGit
 // call reads as its message file (readsGitMessage) is text through and
-// through, so only its $( ) and backticks are walked. reader is the command
-// a pipe after c hands its output to, nil when there is none.
+// through, so only its $( ) and backticks are walked. A git commit or merge
+// body a core.fsmonitor command may run (fsmonitorRuns) is code, walked as
+// a process of its own from the directory git starts that command in, its
+// steps marked walkStep.fsmonitor. reader is the command a pipe after c
+// hands its output to, nil when there is none.
 func (w *shellWalk) walkProse(text string, c shellCmd, reader *shellCmd, fn func(walkStep)) {
 	prose := w.prose
 	w.prose = true
 	runs := w.feeds || docRuns(c, reader)
+	hookDir, hooked := "", false
+	if !runs && len(c.docs) > 0 {
+		hookDir, hooked = w.fsmonitorRuns(c)
+	}
 	message := !runs && w.plainGit(c) && readsGitMessage(c)
 	asProse := func(s walkStep) {
 		s.prose = true
@@ -332,6 +351,8 @@ func (w *shellWalk) walkProse(text string, c shellCmd, reader *shellCmd, fn func
 		switch {
 		case runs:
 			w.walkRead(text[d.body.from:d.body.to], false, fn)
+		case hooked:
+			w.child(hookDir).walkRead(text[d.body.from:d.body.to], false, markFsmonitor(fn))
 		case !message:
 			w.walkTokens(text[d.body.from:d.body.to], false, asProse)
 		}
@@ -340,7 +361,7 @@ func (w *shellWalk) walkProse(text string, c shellCmd, reader *shellCmd, fn func
 		}
 		for _, code := range bodySubstitutions(text, d.body) {
 			inner := w.child(w.dir)
-			inner.feeds = runs
+			inner.feeds = runs || hooked
 			inner.walkRead(code, true, fn)
 		}
 	}
@@ -426,7 +447,9 @@ func plainArgs(c shellCmd, message map[int]bool) bool {
 // only ever the message. Neither command
 // touches the index or starts a hook. git commit and git merge refresh the
 // index, and core.fsmonitor then runs a configured program with git's
-// standard input, so their heredoc may still reach a shell.
+// standard input, so their heredoc may still reach a shell: it keeps the
+// token walk, or is code when that program may be a command
+// (fsmonitorRuns).
 func readsGitMessage(c shellCmd) bool {
 	tokens := c.tokens()
 	sub, _ := plainSubcommand(tokens)
@@ -602,7 +625,9 @@ func readsBody(c shellCmd) bool {
 
 // readsMessage reports whether docRuns reads a git command's heredoc as
 // prose: git commit always, and the takesStdinMessage forms. Only a git tag
-// or notes add body may skip the token walk too (readsGitMessage).
+// or notes add body may skip the token walk too (readsGitMessage). walkProse
+// still reads a commit or merge body as code when core.fsmonitor may name a
+// command (fsmonitorRuns).
 func readsMessage(g gitInvocation) bool {
 	return g.sub == "commit" || takesStdinMessage(g)
 }
