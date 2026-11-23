@@ -212,10 +212,8 @@ moondb and csl:
 
 The rule the consumers follow: a discrete change (a chip, a segment, a
 submitted search) pushes, typing replaces. Param names and encoding are the
-ones each page wrote before, so old links still load. brain and present keep
-their own URL code: brain's view (graph data, camera, popup, local graph)
-has no restore path to hook back/forward into, and present's deck already
-follows its `#N` slide hash on `hashchange`.
+ones each page wrote before, so old links still load. present keeps its own
+URL code: its deck already follows its `#N` slide hash on `hashchange`.
 
 ## Themes
 

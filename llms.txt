@@ -23,7 +23,6 @@ Everything is one Go module, `github.com/mad01/thismoon`, under the BSD-3-Clause
 - [present](https://raw.githubusercontent.com/mad01/thismoon/main/services/present/README.md): single-page HTML briefings and slide decks, authored as structured JSON (web, CLI, MCP)
 - [speak](https://raw.githubusercontent.com/mad01/thismoon/main/services/speak/README.md): reads markdown aloud through a local text-to-speech model (web, CLI, MCP)
 - [status](https://raw.githubusercontent.com/mad01/thismoon/main/services/status/README.md): status page with 30-day uptime history for the services (web, CLI)
-- [brain](https://raw.githubusercontent.com/mad01/thismoon/main/services/brain/README.md): markdown knowledge base with literal and semantic search over an Obsidian-style vault (web, CLI, MCP)
 - [moondb](https://raw.githubusercontent.com/mad01/thismoon/main/services/moondb/README.md): edit history between commits, linking every file edit an agent session makes to the turn and prompt behind it (web, CLI, MCP)
 
 ## Tools
@@ -42,7 +41,6 @@ Everything is one Go module, `github.com/mad01/thismoon`, under the BSD-3-Clause
 
 ## Skills
 
-- [ask](https://raw.githubusercontent.com/mad01/thismoon/main/skills/ask/SKILL.md): answers a question from the brain vault and cites the notes
 - [golang-style](https://raw.githubusercontent.com/mad01/thismoon/main/skills/golang-style/SKILL.md): writing and reviewing idiomatic Go
 - [golang-pro](https://raw.githubusercontent.com/mad01/thismoon/main/skills/golang-pro/SKILL.md): Go concurrency, generics, profiling, and gRPC
 - [handoff](https://raw.githubusercontent.com/mad01/thismoon/main/skills/handoff/SKILL.md): a cold-start document for the next session

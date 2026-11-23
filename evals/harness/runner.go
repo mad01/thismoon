@@ -18,14 +18,10 @@ import (
 // claude's own figure; WallMS is the runner's clock around the process, so
 // it includes MCP server startup and every hook. ToolCalls and Tools count
 // the main session; the Agent fields count subagents. CSLCalls counts
-// csl use, MCP or CLI, in the main session and subagents together, and
-// BrainCalls and BrainCommands the brain CLI runs that were allowed, by
-// subcommand; CPUSeconds is claude's CPU time plus its waited-for
-// children. A brain workspace's row lists the vault paths the run changed,
-// the shared origin's branches it pushed and the gh calls brain made, and
-// names the diff file under the run directory. Error collects anything
-// that went wrong around the run, a changed canonical checkout included;
-// the graders still score what there is.
+// csl use, MCP or CLI, in the main session and subagents together;
+// CPUSeconds is claude's CPU time plus its waited-for children. Error
+// collects anything that went wrong around the run, a changed canonical
+// checkout included; the graders still score what there is.
 type Row struct {
 	Case                string          `json:"case"`
 	Rep                 int             `json:"rep"`
@@ -45,8 +41,6 @@ type Row struct {
 	Tokens              int             `json:"tokens"`
 	ToolCalls           int             `json:"tool_calls"`
 	CSLCalls            int             `json:"csl_calls"`
-	BrainCalls          int             `json:"brain_calls,omitempty"`
-	BrainCommands       map[string]int  `json:"brain_commands,omitempty"`
 	CPUSeconds          float64         `json:"cpu_seconds"`
 	Tools               map[string]int  `json:"tools"`
 	AgentToolCalls      int             `json:"agent_tool_calls"`
@@ -56,10 +50,6 @@ type Row struct {
 	Model               string          `json:"model"`
 	SessionID           string          `json:"session_id"`
 	Stream              string          `json:"stream"`
-	Diff                string          `json:"diff,omitempty"`
-	Changes             []Change        `json:"changes,omitempty"`
-	OriginBranches      []OriginBranch  `json:"origin_branches,omitempty"`
-	GHCalls             []string        `json:"gh_calls,omitempty"`
 	Scorecard           json.RawMessage `json:"scorecard,omitempty"`
 	ScorecardStatus     string          `json:"scorecard_status"`
 	Error               string          `json:"error,omitempty"`
@@ -70,8 +60,7 @@ var errNoResult = errors.New("harness: run ended without a result event")
 
 // runner runs cases through claude one at a time. Model, effort, and
 // maxBudgetUSD left zero leave the user's settings in charge; maxTotalUSD
-// 0 means no run-wide cap. streamDir and diffDir are the run directory's
-// streams/ and diffs/.
+// 0 means no run-wide cap. streamDir is the run directory's streams/.
 type runner struct {
 	claude       claudeCmd
 	profile      profile
@@ -84,7 +73,6 @@ type runner struct {
 	client       *http.Client
 	judge        judge
 	streamDir    string
-	diffDir      string
 	now          func() time.Time
 	log          io.Writer
 }
@@ -173,12 +161,7 @@ func (r *runner) runIn(ctx context.Context, c Case, rep int, ws *Workspace, row 
 	row.Stream = filepath.Join("streams", name+".jsonl")
 	t, used, runErr := r.execute(ctx, c, ws, sessionID, filepath.Join(r.streamDir, name+".jsonl"))
 	commits, commitErr := ws.Commits(ctx)
-	vault, vaultErr := r.keepVault(ctx, ws, name, row)
-	ev := Evidence{
-		Transcript: t, Dir: ws.ContentDir(), Commits: commits, Prompt: c.Prompt,
-		Files: vault.Files, Changes: vault.Changes, Diff: vault.Diff,
-		TwoVault: vault.TwoVault, Branches: vault.Branches, GHCalls: vault.GHCalls,
-	}
+	ev := Evidence{Transcript: t, Dir: ws.Dir, Commits: commits, Prompt: c.Prompt}
 	fillRow(row, t, gradeRun(ctx, c, ev, r.judge), used)
 	if row.SessionID == "" {
 		row.SessionID = sessionID
@@ -189,36 +172,7 @@ func (r *runner) runIn(ctx context.Context, c Case, rep int, ws *Workspace, row 
 		r.scorecardURL,
 		row.SessionID,
 	)
-	return errors.Join(runErr, t.Problems(), commitErr, vaultErr)
-}
-
-// keepVault reads back what the run left in a brain workspace's vaults,
-// writes its diff to diffs/<name>.patch and records the changes, the
-// pushed origin branches and the gh calls on row. Other workspaces have no
-// vault and keep nothing.
-func (r *runner) keepVault(
-	ctx context.Context,
-	ws *Workspace,
-	name string,
-	row *Row,
-) (vaultState, error) {
-	if ws.Kind != workspaceBrain {
-		return vaultState{}, nil
-	}
-	vault, err := ws.Vault(ctx)
-	if err != nil {
-		return vaultState{}, fmt.Errorf("vault diff: %w", err)
-	}
-	row.Changes, row.OriginBranches, row.GHCalls = vault.Changes, vault.Branches, vault.GHCalls
-	row.Diff = filepath.Join("diffs", name+".patch")
-	diff := vault.Diff
-	if diff != "" {
-		diff += "\n"
-	}
-	if err := os.WriteFile(filepath.Join(r.diffDir, name+".patch"), []byte(diff), 0o644); err != nil {
-		return vault, fmt.Errorf("vault diff: %w", err)
-	}
-	return vault, nil
+	return errors.Join(runErr, t.Problems(), commitErr)
 }
 
 // resources is what one run spent outside the transcript: the runner's
@@ -257,24 +211,18 @@ func (r *runner) execute(
 }
 
 // invocation is the claude command line for one run of c. The case's
-// allowed_tools replace the profile's allow list, and the profile's
-// permission mode applies when the case sets none.
+// allowed_tools replace the profile's allow list.
 func (r *runner) invocation(c Case, sessionID string) invocation {
 	allowed := r.profile.Allow
 	if len(c.AllowedTools) > 0 {
 		allowed = c.AllowedTools
-	}
-	mode := c.PermissionMode
-	if mode == "" {
-		mode = r.profile.PermissionMode
 	}
 	return invocation{
 		SessionID:       sessionID,
 		MaxTurns:        c.MaxTurns,
 		Model:           r.model,
 		Effort:          r.effort,
-		PermissionMode:  mode,
-		Tools:           r.profile.tools(allowed),
+		PermissionMode:  c.PermissionMode,
 		DisallowedTools: appendNew(c.Disallowed(), r.profile.Deny...),
 		AllowedTools:    allowed,
 		MaxBudgetUSD:    r.maxBudgetUSD,
@@ -291,8 +239,6 @@ func fillRow(row *Row, t Transcript, g Grade, used resources) {
 	row.WallMS = used.Wall.Milliseconds()
 	row.CPUSeconds = used.CPU.Seconds()
 	row.CSLCalls = cslCalls(t)
-	brain := brainCallsIn(t.ToolCalls)
-	row.BrainCalls, row.BrainCommands = len(brain), brainCommandCounts(brain)
 	row.InputTokens, row.OutputTokens = t.Usage.InputTokens, t.Usage.OutputTokens
 	row.CacheReadTokens, row.CacheCreationTokens = t.Usage.CacheReadTokens, t.Usage.CacheCreationTokens
 	row.Tokens = t.Usage.Total()

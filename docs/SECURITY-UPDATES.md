@@ -5,10 +5,10 @@ thismoon keeps its dependencies up to date as far as security needs, and no furt
 ## What watches the dependencies
 
 - govulncheck (`.github/workflows/govulncheck.yml`) checks the Go standard library and every Go module against the Go vulnerability database, and reports only vulnerable code that thismoon calls. The workflow runs on pull requests that change `go.mod` or `go.sum`, every Monday, and on demand from the Actions tab. Because it isn't part of `ci-ok`, a new advisory turns the check red without blocking other merges.
-- Dependabot security updates open a pull request when an advisory hits a Go module, an npm package in the `webkit` or `services/brain/web` lockfile, or a GitHub Action. The two composite actions under `.github/actions` count too. `.github/dependabot.yml` sets the commit prefixes and keeps weekly version updates off.
+- Dependabot security updates open a pull request when an advisory hits a Go module, an npm package in the `webkit` lockfile, or a GitHub Action. The two composite actions under `.github/actions` count too. `.github/dependabot.yml` sets the commit prefixes and keeps weekly version updates off.
 - The deps service (`services/deps`) checks the pinned dependencies of every local repo against the Open Source Vulnerabilities (OSV) database. It reads `go.sum`, so it also flags modules the build never imports. For Go, govulncheck decides.
 
-The base images of the build-only containers (`webkit/Dockerfile.build`, `services/brain/web/Dockerfile.build`, `tools/suspenders/Dockerfile`) have no watcher. They pull the current image for their tag on each build. The `present` image pins its base images by digest, and the Go bump below moves its build image.
+The base images of the build-only containers (`webkit/Dockerfile.build`, `tools/suspenders/Dockerfile`) have no watcher. They pull the current image for their tag on each build. The `present` image pins its base images by digest, and the Go bump below moves its build image.
 
 ## When govulncheck fails
 

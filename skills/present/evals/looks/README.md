@@ -134,7 +134,7 @@ To add one, make `cases/<id>/` with `source.md` copied from git (`git show <sha>
 
 ## Step 1: generate
 
-One `claude -p` child per case and model, isolated the way `evals/harness` isolates its runs: `--setting-sources ""` (no CLAUDE.md, hooks, permission rules or user MCP servers; the login stays), `--strict-mcp-config` with no servers, hooks and auto memory off through `--settings`, `--no-session-persistence`, and the variables that nest a child in the calling session stripped. The child runs in an empty scratch directory with the Read tool only, in `dontAsk` mode, with `--add-dir` on the skill directory.
+One `claude -p` child per case and model, isolated the way `evals/harness` isolates its llm judge: `--setting-sources ""` (no CLAUDE.md, hooks, permission rules or user MCP servers; the login stays), `--strict-mcp-config` with no servers, hooks and auto memory off through `--settings`, `--no-session-persistence`, and the variables that nest a child in the calling session stripped. The child runs in an empty scratch directory with the Read tool only, in `dontAsk` mode, with `--add-dir` on the skill directory.
 
 The whole SKILL.md goes in through `--append-system-prompt-file`, saying where the skill directory is, so the child can Read the examples the way a real session does. The prompt is the case's ask, the source, and the reply rule the plugin-eval cases use: the MCP is not available, so reply with the `present_create` arguments as one JSON object in a fenced block. A reply with no parseable object is recorded as `invalid` with the parse error.
 
