@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.28.0](https://github.com/mad01/thismoon/compare/belt/v2.27.2...belt/v2.28.0) (2026-11-23)
+
+
+### Features
+
+* **belt:** read the SQL a database client takes on stdin ([#566](https://github.com/mad01/thismoon/issues/566)) ([20abd61](https://github.com/mad01/thismoon/commit/20abd61180921b54c78d431b817bc1a58e16f960))
+
 ## [2.27.2](https://github.com/mad01/thismoon/compare/belt/v2.27.1...belt/v2.27.2) (2026-11-23)
 
 
