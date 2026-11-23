@@ -1,7 +1,11 @@
 package guard
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -52,7 +56,9 @@ func literalWord(p string) shWord {
 
 // fed judges the paths a feeder hands a loss command as one operand: each
 // root as a drop, every match taken whole when the command drops trees, and
-// each printed path checked whole when the command cuts what it reads.
+// each printed path checked whole when the command cuts what it reads. A
+// command that writes through a symlink also writes the file each link
+// below a root leads to (fedLinks).
 func (j *discardJudge) fed(call *lossCall, consumer lossOperand, fd *pathFeed, s walkStep) *fileLoss {
 	if fd.why != "" {
 		return j.unknown(&fileLoss{call: call, why: fd.why})
@@ -68,6 +74,65 @@ func (j *discardJudge) fed(call *lossCall, consumer lossOperand, fd *pathFeed, s
 			op.filter = &f
 		}
 		if loss := j.operand(call, op, s); loss != nil {
+			return loss
+		}
+		if consumer.follows && r.tree {
+			if loss := j.fedLinks(call, r, s); loss != nil {
+				return loss
+			}
+		}
+	}
+	return nil
+}
+
+// fedLinks judges the files a command that writes through a symlink (sed
+// --follow-symlinks, cp) reaches by way of the links a feeder hands it
+// below the root r: git status in the root's tree sees each link as a file
+// of its own, while the file it leads to may hold work in another tree.
+// Each link the walk finds that the feeder's tests may match is followed
+// to the end and judged as one file (drop). A root belt cannot place, or a
+// walk past its cap, denies. The walk reads node_modules the way the
+// search for hidden repositories does (walkMode).
+func (j *discardJudge) fedLinks(call *lossCall, r feedRoot, s walkStep) *fileLoss {
+	const through = "the command writes through symlinks, and belt "
+	p, _, ok := j.placeDest(r.word, s)
+	if !ok {
+		return j.unknown(&fileLoss{call: call, why: through + "cannot tell which files the links " +
+			"under `" + r.word.raw + "` lead to"})
+	}
+	root := physical(p)
+	if !isDir(root) {
+		return nil
+	}
+	var loss *fileLoss
+	visit := func(dir string, entries []fs.DirEntry) walkNext {
+		if loss = j.linkTargets(call, r.filter, dir, entries); loss != nil {
+			return walkStop
+		}
+		return walkOn
+	}
+	err := j.walkDirs(root, walkMode{skipGit: true, packages: true}, visit)
+	switch {
+	case errors.Is(err, errWalkTooBig):
+		return &fileLoss{call: call, why: fmt.Sprintf(through+"could not check every link under `%s`: "+
+			"it stops at %d folders and the time budget", root, j.g.scanDirs)}
+	case err != nil:
+		return &fileLoss{call: call, why: fmt.Sprintf(through+"could not read every folder under `%s` (%v)",
+			root, err)}
+	}
+	return loss
+}
+
+// linkTargets judges the file each symlink in a folder's entries leads to,
+// for the links the feeder's tests f may match.
+func (j *discardJudge) linkTargets(
+	call *lossCall, f *pathFilter, dir string, entries []fs.DirEntry,
+) *fileLoss {
+	for _, e := range entries {
+		if e.Type()&fs.ModeSymlink == 0 || f.hasTests() && !f.matchEntry(e.Name(), 'l') {
+			continue
+		}
+		if loss := j.drop(call, false, nil, physical(filepath.Join(dir, e.Name()))); loss != nil {
 			return loss
 		}
 	}

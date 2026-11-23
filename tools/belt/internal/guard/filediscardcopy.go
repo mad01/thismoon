@@ -470,9 +470,10 @@ func (j *discardJudge) fedCopy(c copyCall, dest shWord, whole bool, s walkStep, 
 // fedSuffix judges the paths a copy writes by adding suffix to each path a
 // feeder hands it (`cp {} {}.bak`): each root with the suffix added, and
 // below a root that is a folder each path whose name ends in suffix and
-// that the feeder's -name tests match with the suffix added to them. The
-// feeder's -type tests and tracked-only filter say nothing about those
-// paths.
+// that the feeder's -name tests match with the suffix added to them, and
+// the file each such path that is a symlink leads to, for a copy that
+// writes through one (fedLinks). The feeder's -type tests and tracked-only
+// filter say nothing about those paths.
 func (j *discardJudge) fedSuffix(call *lossCall, fd *pathFeed, suffix string, follows bool, s walkStep) *fileLoss {
 	if fd.why != "" {
 		return &fileLoss{call: call, why: fd.why}
@@ -497,6 +498,11 @@ func (j *discardJudge) fedSuffix(call *lossCall, fd *pathFeed, suffix string, fo
 		op := lossOperand{word: r.word, tree: true, follows: r.follows, filter: &f}
 		if loss := j.operand(call, op, s); loss != nil {
 			return loss
+		}
+		if follows {
+			if loss := j.fedLinks(call, feedRoot{word: r.word, tree: true, filter: &f}, s); loss != nil {
+				return loss
+			}
 		}
 	}
 	return nil

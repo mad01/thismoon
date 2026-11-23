@@ -1985,11 +1985,59 @@ the commands git does not run.
     `sudo cp a b` counts, `sudo apt install a b` does not.
   - Each is one file, never a tree, judged by the rules below. `cp`,
     `install` and the others write through a symlink in the last part of
-    the path, so a link to a changed file denies. `mv` and `ln` replace
+    the path, so a link to a changed file denies. So does a link a
+    feeder hands them (`find . -name '*.lnk' -exec cp a {} \;`): belt
+    walks the feeder's folders for the links its tests may match and
+    judges each target. `mv` and `ln` replace
     the link, which passes. A path under `/dev`, a device, a pipe and a
     socket pass. A glob is judged match by match, and its folder skips
     rule 1, as does the folder a feeder hands the paths from. The reason
     says "overwrites".
+- **Also fires on** an in-place edit, `sed -i` (also `gsed`) and
+  `perl -i`, wherever the shell runs them and behind the same wrappers.
+  The files it edits drop when a glob (`*.go`, `**/*.go`), a `$(...)`,
+  a feeder into `xargs`, `parallel` or `fd -x`, or `find -exec` or
+  `-execdir` hands them over. Each is one file, judged by the rules
+  below like an overwrite's, and the reason says "rewrites":
+  - A backup passes, but only one both GNU and BSD sed make: a suffix in
+    the same word (`-i.bak`, `-i~`, `-ie`) or `--in-place=.bak`. GNU reads
+    a separate word after `-i` as the script or a file and BSD as the
+    suffix, so `sed -i '' 's/a/b/' *.go` and `sed -i .bak 's/a/b/' *.go`
+    keep no backup and drop. perl's `-i.bak` and `-pi.bak` pass. The last
+    `-i` counts.
+  - GNU sed and perl put the file's name in place of each `*` in a suffix,
+    so `-i'*'` and `-i'./*'` name the file itself, keep no backup and
+    drop. A suffix with `*` passes only when the name it makes can't be
+    the file. It must hold text other than `*`, `.` and `/`, and must not
+    start at `/` or hold a `..` part: `-i'orig_*'` and `-i'*.bak'` pass,
+    `-i'**'` and `-i'../*'` drop.
+  - A file named as plain text passes, even when it holds changes:
+    `sed -i 's/a/b/' notes.md`, `perl -pi -e 's/a/b/' a.go b.go`. An agent
+    edits a file it names on purpose, and the Edit tool is there for the
+    same change with a diff (ADR-0033). A quoted glob (`'*.go'`) is a name.
+    So is a variable the same command sets to a literal before the edit:
+    `f=notes.md; sed -i 's/a/b/' "$f"` passes, as the shell runs
+    `sed -i 's/a/b/' notes.md`.
+  - Any other variable is no name and is judged, and so are a loop
+    variable and a consumer's `{}`: `sed -i 's/a/b/' "$F"` with `F` set
+    outside the command and `for f in *.go; do sed -i 's/a/b/' "$f";
+    done` deny, as they do for rm.
+  - sed is read the way GNU reads it: an option after an operand counts
+    (`sed 's/a/b/' -i *.go`), a long option by any unique prefix, and the
+    first operand is the script unless `-e` or `-f` gives one. perl reads
+    its switches in clusters: `-i` takes the rest of its word as the
+    extension, `-e` and `-I` the rest or the next word, `-0` and `-l`
+    their digits (`-0777pi` and `-lpi` edit in place). Without `-e` the
+    first word is the program file.
+  - A script, program file, option value or `-i` word the shell may cut
+    into several words (an unquoted `$f` or `$(...)`) may hold files.
+    belt judges it as a file, and it denies as an unknown path does:
+    `f='s/a/b/ *.go'; sed -i $f` denies. Quoted, `"$f"` is one word.
+  - GNU sed and perl replace a symlink with a new file and leave its
+    target alone, and BSD sed refuses one, so a link passes. With GNU's
+    `--follow-symlinks` the target is judged. So is the target of each
+    link a feeder or `find -exec` hands it: belt walks the feeder's
+    folders for the links its `-name` and `-type` tests may match.
 - **Also fires on** a recursive delete in a Python, Node, Ruby or Perl
   script. Each path it names is judged like an `rm -r` operand.
   - The calls are Python's `shutil.rmtree`, and Node's `fs.rm`,
@@ -2211,7 +2259,9 @@ the commands git does not run.
   and for rsync `--backup`. For a replace it offers
   `toss-bin --safe-mode <file> && <command>`, which keeps the old file in
   the trash before the command writes the new one. For a copy of the paths
-  a feeder hands it names the file to move first. When xargs may cut a
+  a feeder hands it names the file to move first. For an in-place edit it
+  asks to commit first, add a backup suffix (`sed -i.bak`,
+  `perl -pi.bak`), or make the change with the Edit tool. When xargs may cut a
   path into pieces it offers `-print0` into `xargs -0`. The reason
   ends like git-discard's: belt cannot see the user's message, so save the
   work first or hand the user `! <command>`. An rm whose targets are all
@@ -2320,7 +2370,19 @@ the commands git does not run.
   A loop variable (`for f in *; do cp "$f" "$f.bak"; done`) denies, as
   it does for rm. BSD `-J` replaces only its first word, and belt reads
   every whole word. A `find -exec cp {} +` names its last match the
-  destination, which belt reads as each match.
+  destination, which belt reads as each match. A `sed -i` or `perl -i`
+  that names each file as plain text, or through a variable the command
+  sets to a literal, passes over changed work (ADR-0033). One in text
+  the reader cannot follow is not read, and neither is a `-i` on the
+  `#!` line of a perl program file. BSD sed's `sed -i .bak` over a
+  glob keeps a backup and still denies, since GNU reads it as no backup.
+  A sed whose `-f` or `-e` value is a glob may take a match as a file
+  belt does not judge. An expansion where an option may stand is not
+  read as `-i` (`sed $O 's/a/b/' *.go`, `perl -pi"$E" -e 's/a/b/' *.go`).
+  A `*` suffix whose folder is a link back to the file's own folder
+  (`-i'bak/*'` with `bak` a link to `.`) keeps no backup and passes. The
+  walk for the links a feeder hands reads node_modules down to each
+  package only, as the search for hidden repositories does.
 - **Build target gaps.** The lifecycle scripts of dependencies are not
   read, and `npm pkg set` does not count as an edit of package.json. A
   step that writes a build file without naming it goes unseen, as a

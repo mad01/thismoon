@@ -23,6 +23,9 @@ const (
 		"missing or empty, ignored by git, or already in HEAD, its upstream or origin's default branch."
 	replaceRule = "An overwrite passes only when the file is inside a temp or cache folder, " +
 		"missing or empty, ignored by git, or already in HEAD, its upstream or origin's default branch."
+	rewriteRule = "An in-place edit passes when it keeps a backup or names each file as plain text, " +
+		"or when each file it rewrites is inside a temp or cache folder, missing or empty, ignored by git, " +
+		"or already in HEAD, its upstream or origin's default branch."
 )
 
 // FileDiscard denies a shell command that deletes files belt cannot prove
@@ -30,7 +33,8 @@ const (
 // --delete, xargs, GNU parallel and fd -x, and a recursive delete in a
 // Python, Node, Ruby or Perl script (scriptDeletes). It judges a command
 // that empties or overwrites a file the same way: a redirection behind a
-// command that prints nothing, truncate and dd of=. It is git-discard's
+// command that prints nothing, truncate and dd of=, and the files a sed -i
+// or perl -i edits when it does not name them (rewrite). It is git-discard's
 // rule for the commands git does not run. A delete passes when every path it drops is
 // inside a temp or cache folder, missing or empty, ignored in a git work
 // tree, or the same as HEAD, its upstream or origin's default branch there. rm-temp runs
@@ -145,7 +149,10 @@ func (g *FileDiscard) reason(loss *fileLoss) string {
 		return loss.why + ". " + gitGoAhead + ": only the user may run it, with `! <command>`."
 	}
 	rule := fileDiscardRule
-	if loss.call.replaces() {
+	switch {
+	case loss.call.rewrites():
+		rule = rewriteRule
+	case loss.call.replaces():
 		rule = replaceRule
 	}
 	parts := []string{loss.why + ".", rule}
@@ -185,23 +192,31 @@ func (g *FileDiscard) hasTossBin() bool {
 // or rsync. toss is the toss-bin form for a call whose operands toss-bin
 // cannot take as they are, and keep a lossless form that needs no
 // toss-bin, offered first. replace marks a call that empties or overwrites
-// one file in place (replaceOperands, redirects) instead of deleting it.
-// via names the build target that runs the call (buildBody.what), "" for
-// the command's own text.
+// one file in place (replaceOperands, redirects) instead of deleting it,
+// and rewrite one of those that edits the file's text (rewriteCall). via
+// names the build target that runs the call (buildBody.what), "" for the
+// command's own text.
 type lossCall struct {
 	targets []string
 	toss    string
 	keep    string
 	replace bool
+	rewrite bool
 	via     string
 }
 
 // replaces reports whether c overwrites a file instead of deleting it.
 func (c *lossCall) replaces() bool { return c != nil && c.replace }
 
+// rewrites reports whether c edits a file's text in place.
+func (c *lossCall) rewrites() bool { return c != nil && c.rewrite }
+
 // verb is what c does to a path, for the loss text.
 func (c *lossCall) verb() string {
-	if c.replaces() {
+	switch {
+	case c.rewrites():
+		return "rewrites"
+	case c.replaces():
 		return "overwrites"
 	}
 	return "deletes"
@@ -385,11 +400,14 @@ func (j *discardJudge) judgeStep(s walkStep) *fileLoss {
 }
 
 // shapeCall judges one loss command by its shape: find, rsync, xargs, GNU
-// parallel and fd by their own syntax, rm, unlink and shred by operand.
+// parallel and fd by their own syntax, rm, unlink and shred by operand,
+// and sed and perl by the files they edit in place.
 func (j *discardJudge) shapeCall(name string, words, args []shWord, s walkStep) *fileLoss {
 	switch name {
 	case "truncate", "dd":
 		return j.replace(replaceOperands(name, args), s)
+	case "sed", "perl":
+		return j.lossCall(rewriteCall(), name, args, s, nil)
 	case "cp", "mv", "install", "ln":
 		return j.copy(name, args, s)
 	case "find":
@@ -406,9 +424,10 @@ func (j *discardJudge) shapeCall(name string, words, args []shWord, s walkStep) 
 	return j.lossCall(&lossCall{}, name, args, s, nil)
 }
 
-// lossCall judges one rm, unlink or shred: each operand, where an operand
-// that is fd's mark stands for the paths a feeder hands it, and one that is
-// a whole $( ) or backtick substitution for the paths that feeder prints.
+// lossCall judges one rm, unlink or shred, or the files a sed -i or perl -i
+// edits: each operand, where an operand that is fd's mark stands for the
+// paths a feeder hands it, and one that is a whole $( ) or backtick
+// substitution for the paths that feeder prints.
 func (j *discardJudge) lossCall(call *lossCall, name string, args []shWord, s walkStep, fd *pathFeed) *fileLoss {
 	ops := lossOperands(name, args)
 	for _, op := range ops {
@@ -424,7 +443,8 @@ func (j *discardJudge) lossCall(call *lossCall, name string, args []shWord, s wa
 	return nil
 }
 
-// callOperand judges one operand of a loss call (lossCall).
+// callOperand judges one operand of a loss call (lossCall). A file an
+// in-place edit names as plain text passes (namedLiterally).
 func (j *discardJudge) callOperand(call *lossCall, op lossOperand, s walkStep, fd *pathFeed) *fileLoss {
 	v, lit := op.word.literal()
 	switch {
@@ -438,6 +458,9 @@ func (j *discardJudge) callOperand(call *lossCall, op lossOperand, s walkStep, f
 	}
 	if body, ok := substBody(op.word); ok {
 		return j.fed(call, op, substFeed(op.word, body), s)
+	}
+	if call.rewrites() && namedLiterally(op.word) {
+		return nil
 	}
 	return j.operand(call, op, s)
 }
@@ -472,6 +495,9 @@ func discardName(w shWord) string {
 		return name
 	}
 	if name, ok := copyCommands[n]; ok {
+		return name
+	}
+	if name, ok := rewriteCommands[n]; ok {
 		return name
 	}
 	return shapeCommands[n]
@@ -516,8 +542,8 @@ func runName(w shWord) string {
 
 // lossCommand finds the loss command a step runs: its command word, or
 // behind a wrapper the first loss-command word after it (`sudo -u x rm`),
-// which for a copy must be the wrapped command (runsAt). A git word first
-// means git runs it, which git-discard judges.
+// which for a copy or an in-place edit must be the wrapped command
+// (runsAt). A git word first means git runs it, which git-discard judges.
 func lossCommand(words []shWord) (name string, args []shWord, ok bool) {
 	if len(words) == 0 {
 		return "", nil, false
@@ -533,7 +559,7 @@ func lossCommand(words []shWord) (name string, args []shWord, ok bool) {
 			return "", nil, false
 		}
 		if name := discardName(w); name != "" {
-			if isCopyFamily(name) && !runsAt(words, i+1) {
+			if (isCopyFamily(name) || isRewriteFamily(name)) && !runsAt(words, i+1) {
 				return "", nil, false
 			}
 			return name, words[i+2:], true
@@ -589,6 +615,10 @@ func lossOperands(name string, args []shWord) []lossOperand {
 		return shredOperands(args)
 	case "rimraf":
 		return rimrafOperands(args)
+	case "sed":
+		return sedOperands(args)
+	case "perl":
+		return perlOperands(args)
 	}
 	return unlinkOperands(args)
 }
