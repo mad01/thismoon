@@ -38,6 +38,12 @@ func TestRmTempDenies(t *testing.T) {
 		{"rm -rf ~/.tmp/x", []string{"toss-bin --temp-only ~/.tmp/x"}},
 		{"rm -rf $HOME/.tmp/x", []string{"toss-bin --temp-only $HOME/.tmp/x"}},
 		{`rm -rf "${HOME}/.tmp/x"`, []string{`toss-bin --temp-only "${HOME}/.tmp/x"`}},
+		{"rm -rf ~/code/tmp/x", []string{"toss-bin --temp-only ~/code/tmp/x"}},
+		{"rm -rf $HOME/code/tmp/x/y", []string{"toss-bin --temp-only $HOME/code/tmp/x/y"}},
+		{
+			"rm -f /Users/tester/code/tmp/a",
+			[]string{"toss-bin --temp-only /Users/tester/code/tmp/a"},
+		},
 		{"rm -rf /tmp/x/../y", []string{"toss-bin --temp-only /tmp/x/../y"}},
 		{"rm -rf '/tmp/a b'", []string{"toss-bin --temp-only '/tmp/a b'"}},
 		{"rm -rf /tmp/build-*", []string{"toss-bin --temp-only /tmp/build-*"}},
@@ -85,6 +91,11 @@ func TestRmTempDenies(t *testing.T) {
 		{`D=$(mktemp -d /tmp/t.XXXXXX); rm -rf "$D"`, []string{`toss-bin --temp-only "$D"`}},
 		{`D=$(mktemp -d -p /tmp); rm -rf "$D"`, []string{`toss-bin --temp-only "$D"`}},
 		{`D=$(mktemp -d ~/.tmp/t.XXXXXX); rm -rf "$D"`, []string{`toss-bin --temp-only "$D"`}},
+		{`D=$(mktemp -d ~/code/tmp/t.XXXXXX); rm -rf "$D"`, []string{`toss-bin --temp-only "$D"`}},
+		{
+			`D=$(mktemp -d -p ~/code/tmp); rm -rf "$D/sub"`,
+			[]string{`toss-bin --temp-only "$D/sub"`},
+		},
 		{`D=$(mktemp -d /tmp/t.XXXXXX); rm -rf "$D/../sibling"`, []string{
 			`toss-bin --temp-only "$D/../sibling"`,
 		}},
@@ -131,6 +142,13 @@ func TestRmTempLeavesAlone(t *testing.T) {
 		{"home tmp itself", "rm -rf ~/.tmp"},
 		{"home tmp dotdot", "rm -rf $HOME/.tmp/../x"},
 		{"home tmp dotdot braced", `rm -rf "${HOME}/.tmp/../x"`},
+		{"code tmp itself", "rm -rf ~/code/tmp"},
+		{"code tmp with slash", "rm -rf $HOME/code/tmp/"},
+		{"code tmp sibling", "rm -rf ~/code/x"},
+		{"code itself", "rm -rf ~/code"},
+		{"code tmp prefix only", "rm -rf ~/code/tmpx/y"},
+		{"code tmp dotdot", "rm -rf ~/code/tmp/../x"},
+		{"relative code tmp", "rm -rf code/tmp/x"},
 		{"relative tmp", "rm -rf tmp/x"},
 		{"dot relative tmp", "rm -rf ./tmp/x"},
 		{"tmp prefix only", "rm -rf /tmpfoo/x"},
@@ -179,6 +197,7 @@ func TestRmTempLeavesAlone(t *testing.T) {
 		{"mktemp relative template", `D=$(mktemp -d ./x.XXXXXX); rm -rf "$D"`},
 		{"mktemp outside dir", `D=$(mktemp -d -p /home/x); rm -rf "$D"`},
 		{"mktemp template outside", `D=$(mktemp -d /etc/x.XXXXXX); rm -rf "$D"`},
+		{"mktemp beside code tmp", `D=$(mktemp -d -p ~/code); rm -rf "$D"`},
 		{"mktemp tmpdir template", `D=$(mktemp -d -t a/b); rm -rf "$D"`},
 		{"mktemp unknown flag", `D=$(mktemp -z); rm -rf "$D"`},
 		{"mktemp variable dir", `D=$(mktemp -d -p "$X"); rm -rf "$D"`},
@@ -217,8 +236,8 @@ func TestRmTempReason(t *testing.T) {
 		{
 			`D=$(mktemp -d); rm -rf "$D"`,
 			prefix + "Replace the rm with `toss-bin --temp-only \"$D\"`. " +
-				"toss-bin takes only /tmp, /var/tmp and ~/.tmp, not $TMPDIR, so give mktemp a " +
-				"template there: `mktemp -d /tmp/<name>.XXXXXX` (no -d for a file).",
+				"toss-bin takes only /tmp, /var/tmp, ~/.tmp and ~/code/tmp, not $TMPDIR, " +
+				"so give mktemp a template there: `mktemp -d /tmp/<name>.XXXXXX` (no -d for a file).",
 		},
 		{
 			`D=$(mktemp -d /tmp/t.XXXXXX); rm -rf "$D"`,
@@ -247,8 +266,8 @@ func TestRmTempNeedsTossBin(t *testing.T) {
 	}
 }
 
-// TestRmTempRealHome checks the ~/.tmp root against $HOME through the
-// constructor's own home lookup.
+// TestRmTempRealHome checks the ~/.tmp and ~/code/tmp roots against $HOME
+// through the constructor's own home lookup.
 func TestRmTempRealHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -257,6 +276,8 @@ func TestRmTempRealHome(t *testing.T) {
 	for _, command := range []string{
 		"rm -rf ~/.tmp/x",
 		"rm -rf " + filepath.Join(home, ".tmp", "x"),
+		"rm -rf ~/code/tmp/x",
+		"rm -rf " + filepath.Join(home, "code", "tmp", "x"),
 	} {
 		if d := g.Check(Input{Event: EventBash, Command: command}); d == nil {
 			t.Errorf("Check(%q) = nil, want a deny with HOME=%s", command, home)

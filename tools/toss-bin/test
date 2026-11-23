@@ -284,7 +284,7 @@ export TOSS_BIN_CONFIG="$CFG_DIR/does-not-exist.yaml"
 rm -rf "$CFG_DIR"
 
 echo ""
-echo "--- --temp-only: every path inside /tmp, /var/tmp or ~/.tmp, or nothing is trashed ---"
+echo "--- --temp-only: every path inside /tmp, /var/tmp, ~/.tmp or ~/code/tmp, or nothing is trashed ---"
 
 check() {
     local name="$1"
@@ -330,7 +330,7 @@ TO_EXIT=$?
 check "mixed run is all-or-nothing: both files survive" \
     test $TO_EXIT -ne 0 -a -e "$IN/b" -a -e "$OUT/keep.txt"
 
-for root in /tmp /tmp/ /private/tmp /var/tmp "$HOME/.tmp"; do
+for root in /tmp /tmp/ /private/tmp /var/tmp "$HOME/.tmp" "$HOME/code/tmp" "$HOME/code/tmp/"; do
     check "root $root itself is refused" temp_validate "$root" BLOCKED
 done
 TO_OUT=$(toss_scratch --temp-only --dry-run -r /tmp 2>&1)
@@ -378,6 +378,33 @@ check "validate reports each path" test $TO_EXIT -ne 0 \
 test_allowed "$OUT/keep.txt" || FAILED=1
 check "a path under ~/.tmp is allowed" \
     temp_validate "$HOME/.tmp/toss-bin-test-$$-missing" OK
+check "a path under ~/code/tmp is allowed" \
+    temp_validate "$HOME/code/tmp/toss-bin-test-$$-missing" OK
+check "a sibling of ~/code/tmp is refused" \
+    temp_validate "$HOME/code/toss-bin-test-$$-missing" BLOCKED
+check "a name that only starts with ~/code/tmp is refused" \
+    temp_validate "$HOME/code/tmpx/toss-bin-test-$$-missing" BLOCKED
+
+# ~/code/tmp holds other work, so the cases that really trash there act
+# only inside a fresh subfolder of it, which they remove after.
+if [ -d "$HOME/code/tmp" ] && [ ! -L "$HOME/code/tmp" ]; then
+    CODE_TMP=$(mktemp -d "$HOME/code/tmp/toss-bin-test.XXXXXX")
+    touch "$CODE_TMP/code-tmp-file"
+    mkdir "$CODE_TMP/code-tmp-folder"
+    touch "$CODE_TMP/code-tmp-folder/x"
+    toss_scratch --temp-only "$CODE_TMP/code-tmp-file" 2>/dev/null
+    TO_EXIT=$?
+    check "file inside ~/code/tmp is trashed" \
+        test $TO_EXIT -eq 0 -a ! -e "$CODE_TMP/code-tmp-file"
+    check "it lands in the scratch trash" in_scratch_trash code-tmp-file
+    toss_scratch --temp-only -r "$CODE_TMP/code-tmp-folder" 2>/dev/null
+    TO_EXIT=$?
+    check "folder inside ~/code/tmp is trashed" \
+        test $TO_EXIT -eq 0 -a ! -e "$CODE_TMP/code-tmp-folder"
+    rm -rf "$CODE_TMP"
+else
+    echo "SKIP: no ~/code/tmp folder for the trash cases under it"
+fi
 
 # --temp-only implies --safe-mode: a config-protected path inside /tmp is
 # refused even though it sits inside a root.

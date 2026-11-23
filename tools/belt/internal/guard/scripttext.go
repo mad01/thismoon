@@ -27,11 +27,11 @@ import (
 //     and file targets, and the body reaches a file.
 //   - Every target, a stderr one included, is a literal path (no variable,
 //     glob or ~user) with an extension from textDocExts. Below a temp
-//     folder (textTempDirs or ~/.tmp), the payload cwd, the home directory
-//     or / (whichever holds it first), no part of the path starts with a
-//     dot, and no directory on the way is a symlink. Outside the temp
-//     folders it is not under textSystemDirs or ~/Library. When it exists,
-//     it is a regular file with one link and no execute bit.
+//     folder (textTempDirs, ~/.tmp or ~/code/tmp), the payload cwd, the
+//     home directory or / (whichever holds it first), no part of the path
+//     starts with a dot, and no directory on the way is a symlink. Outside
+//     the temp folders it is not under textSystemDirs or ~/Library. When it
+//     exists, it is a regular file with one link and no execute bit.
 //   - The delimiter is quoted, or the body holds no $, backtick or
 //     backslash, and the body does not start with a shebang.
 //   - Every cd is `cd PATH` with one literal path, followed by &&. A
@@ -92,11 +92,11 @@ var (
 		"/etc", "/private", "/Library", "/System", "/usr", "/opt", "/bin", "/sbin", "/dev",
 	}
 	// textTempDirs are the temp folders a note or a pull request body goes
-	// to. Like ~/.tmp, the payload cwd and home, each is a trusted base, so
-	// only the part below it is judged: on macOS /tmp and /var are symlinks
-	// into /private, a system directory. $TMPDIR is not one, as the
-	// environment sets it, and neither is /var/folders, which holds per-user
-	// caches beside the temp folder.
+	// to. Like the home temp folders, the payload cwd and home, each is a
+	// trusted base, so only the part below it is judged: on macOS /tmp and
+	// /var are symlinks into /private, a system directory. $TMPDIR is not
+	// one, as the environment sets it, and neither is /var/folders, which
+	// holds per-user caches beside the temp folder.
 	textTempDirs = []string{"/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp"}
 	// textSafeHeads print, list or create files and run none.
 	textSafeHeads = map[string]bool{
@@ -198,17 +198,21 @@ type textWalk struct {
 	sinks   []int    // the offsets of the text heredocs' << operators
 }
 
-// textHomeTemp is the temp folder in the home directory, ~/.tmp.
+// textHomeTemp is ~/.tmp, the one home temp folder (homeTempDirs) whose name
+// starts with a dot, so a target may name it (textTargetWord).
 const textHomeTemp = ".tmp"
 
 // textBases lists the trusted bases in the order trustedBase tries them:
-// ~/.tmp and textTempDirs, then the payload cwd and the home directory. A
-// temp folder comes first, so ~/.tmp is judged from there even when the cwd
-// is home, and ~/.tmp leads, as home may sit in /tmp.
+// the home temp folders (homeTempDirs, ~/.tmp and ~/code/tmp) and
+// textTempDirs, then the payload cwd and the home directory. A temp folder
+// comes first, so ~/.tmp is judged from there even when the cwd is home,
+// and the home temp folders lead, as home may sit in /tmp.
 func textBases(cwd, home string) []string {
 	var bases []string
 	if home != "" {
-		bases = append(bases, filepath.Join(home, textHomeTemp))
+		for _, dir := range homeTempDirs {
+			bases = append(bases, filepath.Join(home, dir))
+		}
 	}
 	bases = append(bases, textTempDirs...)
 	for _, b := range []string{cwd, home} {

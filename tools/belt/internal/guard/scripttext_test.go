@@ -674,23 +674,25 @@ func TestTextHeredocNeedsKnownDirectory(t *testing.T) {
 	}
 }
 
-// textTempFixture builds a scratch home whose ~/.tmp holds link, a symlink
-// to a real directory, and tool.md, an executable. It returns a name no
-// file in the real temp folders starts with, so the test never meets a file
-// it did not make there.
+// textTempFixture builds a scratch home whose ~/.tmp and ~/code/tmp each
+// hold link, a symlink to a real directory, and tool.md, an executable. It
+// returns a name no file in the real temp folders starts with, so the test
+// never meets a file it did not make there.
 func textTempFixture(t *testing.T) (home, name string) {
 	t.Helper()
 	home = t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CDPATH", "")
-	tmp := filepath.Join(home, ".tmp")
-	if err := os.Mkdir(tmp, 0o755); err != nil {
-		t.Fatal(err)
+	for _, dir := range []string{".tmp", "code/tmp"} {
+		tmp := filepath.Join(home, dir)
+		if err := os.MkdirAll(tmp, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(t.TempDir(), filepath.Join(tmp, "link")); err != nil {
+			t.Fatal(err)
+		}
+		writeScript(t, tmp, "tool.md", "#!/bin/sh\n")
 	}
-	if err := os.Symlink(t.TempDir(), filepath.Join(tmp, "link")); err != nil {
-		t.Fatal(err)
-	}
-	writeScript(t, tmp, "tool.md", "#!/bin/sh\n")
 	name = fmt.Sprintf("belt-text-%d-%d", os.Getpid(), time.Now().UnixNano())
 	for _, dir := range []string{"/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp"} {
 		if found, _ := filepath.Glob(filepath.Join(dir, name+"*")); len(found) > 0 {
@@ -717,6 +719,9 @@ func TestTextHeredocTempFolders(t *testing.T) {
 		{"/private/var/tmp", write("/private/var/tmp/"+name+".md", ""), "", false},
 		{"~/.tmp", write("~/.tmp/notes.md", ""), "", false},
 		{"~/.tmp by its absolute path", write(home+"/.tmp/notes.md", ""), "", false},
+		{"~/code/tmp", write("~/code/tmp/notes.md", ""), "", false},
+		{"~/code/tmp by its absolute path", write(home+"/code/tmp/notes.md", ""), "", false},
+		{"cd into ~/code/tmp", "cd ~/code/tmp && " + write("notes.md", ""), "", false},
 
 		{"script in /tmp", write("/tmp/"+name+".sh", ""), "", true},
 		{"dot directory below /tmp", write("/tmp/.hidden/x.md", ""), "", true},
@@ -725,6 +730,9 @@ func TestTextHeredocTempFolders(t *testing.T) {
 		{"symlinked directory in ~/.tmp", write("~/.tmp/link/x.md", ""), "", true},
 		{"dot directory below ~/.tmp", write("~/.tmp/.x/y.md", ""), "", true},
 		{"executable in ~/.tmp", write("~/.tmp/tool.md", ""), "", true},
+		{"symlinked directory in ~/code/tmp", write("~/code/tmp/link/x.md", ""), "", true},
+		{"dot directory below ~/code/tmp", write("~/code/tmp/.x/y.md", ""), "", true},
+		{"executable in ~/code/tmp", write("~/code/tmp/tool.md", ""), "", true},
 		{"/private/etc", write("/private/etc/x.md", ""), "", true},
 	}
 	// /var/folders is refused because /var is a symlink on macOS. On Linux it
@@ -740,6 +748,38 @@ func TestTextHeredocTempFolders(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: cwd})
+			if got := d != nil; got != tt.deny {
+				t.Fatalf("deny = %v, want %v (denial: %+v)\n%s", got, tt.deny, d, tt.command)
+			}
+		})
+	}
+}
+
+// TestTextHeredocCodeTmpIsABase: ~/code/tmp is a trusted base of its own,
+// like ~/.tmp, so only the part below it is judged. A ~/code that is a
+// symlink does not refuse a note in ~/code/tmp, while a note beside it,
+// judged below the home directory, still meets the symlink.
+func TestTextHeredocCodeTmpIsABase(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CDPATH", "")
+	code := t.TempDir()
+	if err := os.Mkdir(filepath.Join(code, "tmp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(code, filepath.Join(home, "code")); err != nil {
+		t.Fatal(err)
+	}
+	write := func(target string) string {
+		return "cat > " + target + " <<'EOF'\n" + textRunLine + "\nEOF"
+	}
+	g := NewScriptDenyList(scriptDenyConfig([]string{"rm -rf"}, nil))
+	for _, tt := range []scriptDenyCase{
+		{"note in ~/code/tmp", write("~/code/tmp/notes.md"), "", false},
+		{"note beside ~/code/tmp", write("~/code/notes.md"), "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: t.TempDir()})
 			if got := d != nil; got != tt.deny {
 				t.Fatalf("deny = %v, want %v (denial: %+v)\n%s", got, tt.deny, d, tt.command)
 			}

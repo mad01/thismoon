@@ -10,16 +10,20 @@ import Foundation
 public enum TempOnly {
 
     /// The roots as a caller writes them, for messages.
-    public static let rootNames = ["/tmp", "/var/tmp", "~/.tmp"]
+    public static let rootNames = ["/tmp", "/var/tmp", "~/.tmp", "~/code/tmp"]
 
     /// The roots as real paths, the form `resolve` produces. `/tmp` and
     /// `/var/tmp` are symlinks into `/private` on macOS; the literal forms
     /// stay listed for a system where they are real directories. Only the
-    /// home directory is resolved, never `.tmp` itself: a `~/.tmp` that is a
-    /// symlink is judged by where it points.
+    /// home directory is resolved, never `.tmp` or `code/tmp` below it: a
+    /// `~/.tmp` or `~/code/tmp` reached through a symlink is judged by where
+    /// it points.
     public static func roots(home: String = accountHome()) -> [String] {
         let realHome = realPath(home) ?? home
-        return ["/tmp", "/var/tmp", "/private/tmp", "/private/var/tmp", realHome + "/.tmp"]
+        return [
+            "/tmp", "/var/tmp", "/private/tmp", "/private/var/tmp",
+            realHome + "/.tmp", realHome + "/code/tmp",
+        ]
     }
 
     public enum Refusal: Error, Equatable {
@@ -113,7 +117,7 @@ public enum TempOnly {
 
     /// The account's home directory from the password database. `$HOME` and
     /// `CFFIXED_USER_HOME` are ignored: an environment prefix must not move
-    /// the `~/.tmp` root.
+    /// the `~/.tmp` or `~/code/tmp` root.
     public static func accountHome() -> String {
         if let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir {
             return String(cString: dir)

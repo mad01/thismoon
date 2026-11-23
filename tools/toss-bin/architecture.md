@@ -43,8 +43,8 @@ and exits), then either `tossTempOnly()` under `--temp-only` or `toss()`.
 Under `--temp-only` every path must pass `TempOnly.locate()` and the
 deny-list before anything moves; one failure refuses the whole run. The
 check resolves the parent chain with realpath(3) and compares the result
-against roots fixed in code (`/tmp`, `/var/tmp`, `~/.tmp` and their
-`/private` real paths). It returns a `Location`: the real parent directory
+against roots fixed in code (`/tmp`, `/var/tmp`, `~/.tmp`, `~/code/tmp`
+and the `/private` real paths of the first two). It returns a `Location`: the real parent directory
 and the final name. `tossTempOnly()` never moves by path string, because
 the kernel would resolve the parents again and a process that can write
 /tmp could swap one for a symlink after the check. `TempOnlyMove` walks

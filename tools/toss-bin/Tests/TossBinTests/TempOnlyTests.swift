@@ -5,8 +5,8 @@ import XCTest
 /// Covers the --temp-only containment check. Every test works in fresh
 /// scratch directories: `inside` under the real /tmp root, `outside` under
 /// the per-user temporary directory (/var/folders on macOS, outside every
-/// root), and a fake home under `outside` for the ~/.tmp root. The check
-/// only reads the filesystem; nothing here is trashed.
+/// root), and a fake home under `outside` for the ~/.tmp and ~/code/tmp
+/// roots. The check only reads the filesystem; nothing here is trashed.
 final class TempOnlyTests: XCTestCase {
 
     private var inside: String!
@@ -24,10 +24,13 @@ final class TempOnlyTests: XCTestCase {
         outside = FileManager.default.temporaryDirectory
             .appendingPathComponent("toss-bin-temp-only-tests-\(UUID().uuidString)").path
         fakeHome = outside + "/home"
-        try FileManager.default.createDirectory(
-            atPath: fakeHome + "/.tmp",
-            withIntermediateDirectories: true
-        )
+        for dir in ["/.tmp", "/code/tmp/fixture", "/code/x", "/code/tmpx/y"] {
+            try FileManager.default.createDirectory(
+                atPath: fakeHome + dir,
+                withIntermediateDirectories: true
+            )
+        }
+        FileManager.default.createFile(atPath: fakeHome + "/code/tmp/scratch.txt", contents: nil)
         FileManager.default.createFile(atPath: inside + "/scratch.txt", contents: nil)
         FileManager.default.createFile(atPath: outside + "/keep.txt", contents: nil)
     }
@@ -75,6 +78,15 @@ final class TempOnlyTests: XCTestCase {
         XCTAssertNil(check(fakeHome + "/.tmp/scratch.txt"))
     }
 
+    func testAllowsPathsInsideHomeCodeTmp() {
+        XCTAssertNil(check(fakeHome + "/code/tmp/scratch.txt"))
+        XCTAssertNil(check(fakeHome + "/code/tmp/fixture"))
+        XCTAssertNil(check(fakeHome + "/code/tmp/fixture/"))
+        XCTAssertNil(check("~/code/tmp/scratch.txt"))
+        XCTAssertNil(check("~/code/tmp/gone/out.o"))
+        XCTAssertNil(check("scratch.txt", cwd: fakeHome + "/code/tmp"))
+    }
+
     func testExpandsTildeAgainstHome() {
         XCTAssertNil(check("~/.tmp/scratch.txt"))
         XCTAssertEqual(
@@ -99,6 +111,14 @@ final class TempOnlyTests: XCTestCase {
         XCTAssertTrue(isOutside(check("~/notes.txt")))
     }
 
+    /// Only ~/code/tmp itself is a root: its siblings, a name that merely
+    /// starts with tmp, and ~/code above it stay outside.
+    func testRefusesCodeOutsideItsTmp() {
+        for path in ["~/code", "~/code/x", "~/code/x/file", "~/code/tmpx/y", "~/code/tmp/../x"] {
+            XCTAssertTrue(isOutside(check(path)), path)
+        }
+    }
+
     func testRefusesRoot() {
         XCTAssertEqual(check("/"), .outsideRoots("/"))
     }
@@ -114,7 +134,10 @@ final class TempOnlyTests: XCTestCase {
     // MARK: - The roots themselves
 
     func testRefusesEachRootItself() {
-        for root in ["/tmp", "/tmp/", "/private/tmp", "/var/tmp", "/private/var/tmp", "~/.tmp"] {
+        for root in [
+            "/tmp", "/tmp/", "/private/tmp", "/var/tmp", "/private/var/tmp", "~/.tmp",
+            "~/code/tmp", "~/code/tmp/", fakeHome + "/code/tmp",
+        ] {
             guard case .tempRoot = check(root) else {
                 XCTFail("\(root) should be refused as a temp root")
                 continue
@@ -179,6 +202,33 @@ final class TempOnlyTests: XCTestCase {
         XCTAssertTrue(isOutside(refusal))
     }
 
+    /// The root is built from the resolved home, not from ~/code: a ~/code
+    /// or ~/code/tmp that is a symlink is judged by where it points.
+    func testRefusesHomeCodeTmpReachedThroughASymlink() throws {
+        let linkedCode = outside + "/linked-code-home"
+        try FileManager.default.createDirectory(
+            atPath: linkedCode,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            atPath: linkedCode + "/code",
+            withDestinationPath: fakeHome + "/code/x"
+        )
+        let linkedTmp = outside + "/linked-tmp-home"
+        try FileManager.default.createDirectory(
+            atPath: linkedTmp + "/code",
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            atPath: linkedTmp + "/code/tmp",
+            withDestinationPath: outside
+        )
+        for home in [linkedCode, linkedTmp] {
+            let refusal = TempOnly.check(path: home + "/code/tmp/keep.txt", home: home, cwd: "/")
+            XCTAssertTrue(isOutside(refusal), home)
+        }
+    }
+
     func testRefusesDanglingSymlinkedParent() throws {
         try FileManager.default.createSymbolicLink(
             atPath: inside + "/dangling",
@@ -212,13 +262,15 @@ final class TempOnlyTests: XCTestCase {
     // MARK: - The roots are fixed
 
     func testRootsAreTheBuiltInSet() {
-        XCTAssertEqual(TempOnly.rootNames, ["/tmp", "/var/tmp", "~/.tmp"])
+        XCTAssertEqual(TempOnly.rootNames, ["/tmp", "/var/tmp", "~/.tmp", "~/code/tmp"])
         let roots = TempOnly.roots(home: fakeHome)
-        XCTAssertEqual(roots.count, 5)
+        XCTAssertEqual(roots.count, 6)
         XCTAssertEqual(Array(roots.prefix(4)), ["/tmp", "/var/tmp", "/private/tmp", "/private/var/tmp"])
         // The home is resolved (/var/folders becomes /private/var/folders);
-        // .tmp itself is not.
+        // .tmp and code/tmp below it are not.
         XCTAssertTrue(roots[4].hasSuffix(fakeHome + "/.tmp"), roots[4])
+        XCTAssertTrue(roots[5].hasSuffix(fakeHome + "/code/tmp"), roots[5])
+        XCTAssertEqual(roots[5], TempOnly.realPath(fakeHome)! + "/code/tmp")
     }
 
     func testAccountHomeIgnoresHomeVariable() {
