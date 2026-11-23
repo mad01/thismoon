@@ -56,9 +56,10 @@ func consumerTokens(words []shWord) []string {
 
 // consumer judges the command a consumer runs. Input it runs as code
 // (runsCode) denies when the text that builds it names a delete
-// (consumedCode). An rm, unlink or shred drops each input (consumedRm), and
-// a cp, mv, install or ln writes over what each input names (consumedCopy).
-// Any other command that deletes is one belt does not read there, and
+// (consumedCode). An rm, unlink or shred drops each input (consumedRm), a
+// cp, mv, install or ln writes over what each input names (consumedCopy),
+// and a sed -i or perl -i rewrites each input (consumedRewrite). Any other
+// command that deletes is one belt does not read there, and
 // denies when its words name a delete. A shell's -c script takes the input
 // as its arguments (consumedScript). A Python, Node, Ruby or Perl script
 // is read for its recursive deletes (consumedScripts). Any other command
@@ -76,6 +77,8 @@ func (j *discardJudge) consumer(r consumerRun, s walkStep) *fileLoss {
 		return j.consumedRm(r, name, cargs, s)
 	case isLoss && isCopyFamily(name):
 		return j.consumedCopy(r, name, cargs, s)
+	case isLoss && isRewriteFamily(name):
+		return j.consumedRewrite(r, name, cargs, s)
 	case isLoss && namesLossText(strings.Join(consumerTokens(r.command), " ")):
 		return j.unknown(&fileLoss{why: "belt does not read a " + name + " that " + r.who + " runs, and it names a delete"})
 	case isLoss:
@@ -127,7 +130,8 @@ func (j *discardJudge) consumedRm(r consumerRun, name string, cargs []shWord, s 
 }
 
 // rmInputs judges an rm, unlink or shred whose operands that are mark
-// stand for each input of r: each word in their place, then each feed.
+// stand for each input of r (markInputs). An operand that holds a mark in
+// part names a path belt cannot tell.
 func (j *discardJudge) rmInputs(r consumerRun, name string, cargs []shWord, mark string, s walkStep) *fileLoss {
 	call := r.call
 	if call == nil {
@@ -138,6 +142,14 @@ func (j *discardJudge) rmInputs(r consumerRun, name string, cargs []shWord, mark
 			return j.unknown(unresolvable(call, w))
 		}
 	}
+	return j.markInputs(r, call, name, cargs, mark, s)
+}
+
+// markInputs judges a loss call whose operands that are mark stand for each
+// input of r (lossCall): each word in their place, then each feed.
+func (j *discardJudge) markInputs(
+	r consumerRun, call *lossCall, name string, cargs []shWord, mark string, s walkStep,
+) *fileLoss {
 	for _, w := range r.words {
 		args := slices.Clone(cargs)
 		for i := range args {
@@ -156,6 +168,29 @@ func (j *discardJudge) rmInputs(r consumerRun, name string, cargs []shWord, mark
 		}
 	}
 	return nil
+}
+
+// consumedRewrite judges a sed -i or perl -i a consumer runs: a file
+// operand that is the mark stands for each input, and when the consumer
+// appends the inputs (consumerRun.appended) they follow the operands.
+func (j *discardJudge) consumedRewrite(r consumerRun, name string, cargs []shWord, s walkStep) *fileLoss {
+	if r.appended() {
+		return j.rewriteInputs(r, name, append(slices.Clone(cargs), literalWord(feedMark)), feedMark, s)
+	}
+	return j.rewriteInputs(r, name, cargs, r.mark, s)
+}
+
+// rewriteInputs judges an in-place edit whose file operands that are mark
+// stand for each input of r (markInputs). A file operand that holds a mark
+// in part names a path belt cannot tell; the script may hold one.
+func (j *discardJudge) rewriteInputs(r consumerRun, name string, cargs []shWord, mark string, s walkStep) *fileLoss {
+	call := rewriteCall()
+	for _, op := range lossOperands(name, cargs) {
+		if v, ok := op.word.literal(); (!ok || v != mark) && r.holds(op.word) {
+			return j.unknown(unresolvable(call, op.word))
+		}
+	}
+	return j.markInputs(r, call, name, cargs, mark, s)
 }
 
 // consumedCopy judges a cp, mv, install or ln a consumer runs: a word that
@@ -217,8 +252,9 @@ func fillMark(r consumerRun, cargs []shWord, mark string, w shWord) ([]shWord, b
 // consumedScript judges a shell's -c script a consumer runs with the
 // input as the script's arguments ($0, $1 and on). A script that runs one
 // of them as code runs the input as code (consumedCode). A script that is
-// one rm, unlink or shred, each operand a literal word or a quoted "$1",
-// "${1}" or "$@", drops what each reference names (scriptOperands), and
+// one rm, unlink or shred, cp, mv, install or ln, or sed -i or perl -i,
+// each word a literal one or a quoted "$1", "${1}" or "$@", drops what each
+// reference names (scriptOperands), and
 // the walk's own step for that script, which cannot see the input, is
 // skipped (discardJudge.covered). The walk judges any other script, when
 // it reads this same one; one it does not read, as a second -exec's,
@@ -237,7 +273,7 @@ func (j *discardJudge) consumedScript(r consumerRun, s walkStep) *fileLoss {
 	if lit && read && len(cmds) == 1 && len(cmds[0].subshells) == 0 && len(cmds[0].docs) == 0 {
 		args, ok := scriptOperands(plainWords(cmds[0].words), r.command[at+1:], r.appended())
 		name, cargs, isLoss := lossCommand(skipAssignments(args))
-		if ok && isLoss && (isRmFamily(name) || isCopyFamily(name)) {
+		if ok && isLoss && (isRmFamily(name) || isCopyFamily(name) || isRewriteFamily(name)) {
 			if walked {
 				j.covered[s.id] = true
 			}
@@ -245,8 +281,11 @@ func (j *discardJudge) consumedScript(r consumerRun, s walkStep) *fileLoss {
 			if r.appended() {
 				mark = feedMark
 			}
-			if isCopyFamily(name) {
+			switch {
+			case isCopyFamily(name):
 				return j.copyInputs(r, name, cargs, mark, s)
+			case isRewriteFamily(name):
+				return j.rewriteInputs(r, name, cargs, mark, s)
 			}
 			return j.rmInputs(r, name, cargs, mark, s)
 		}
