@@ -35,8 +35,10 @@ var noClock = strings.Repeat(" ", len(clockLayout))
 type layout struct {
 	// entries holds the entries in screen order, top first.
 	entries []feedstore.Entry
-	style   render.CardStyle
-	newest  order.Newest
+	// lines holds the rows of text each entry draws, in screen order.
+	lines  []int
+	style  render.CardStyle
+	newest order.Newest
 	// starts holds the first row of each entry. Every entry has at least
 	// one line, so it rises strictly.
 	starts []int
@@ -44,23 +46,48 @@ type layout struct {
 	rows int
 }
 
-// newLayout stacks entries, oldest first as the store returns them, with
-// the newest at the newest end.
-func newLayout(entries []feedstore.Entry, style render.CardStyle, newest order.Newest) layout {
-	if newest == order.Top {
+// layout stacks the visible entries, oldest first as the store returns
+// them, with the newest at the newest end. An entry's rows follow the pane
+// width when wrapLast is set, so a layout never outlives a resize.
+func (m *Model) layout() layout {
+	entries := m.store.Visible()
+	if m.newest == order.Top {
 		entries = slices.Clone(entries)
 		slices.Reverse(entries)
 	}
+	lines := make([]int, len(entries))
 	starts := make([]int, len(entries))
 	rows := 0
 	for i, e := range entries {
 		if i > 0 {
-			rows += style.Gap()
+			rows += m.style.Gap()
 		}
 		starts[i] = rows
-		rows += style.Rows(len(e.Card.Lines))
+		lines[i] = len(m.textLines(e.Card))
+		rows += m.style.Rows(lines[i])
 	}
-	return layout{entries: entries, style: style, newest: newest, starts: starts, rows: rows}
+	return layout{
+		entries: entries,
+		lines:   lines,
+		style:   m.style,
+		newest:  m.newest,
+		starts:  starts,
+		rows:    rows,
+	}
+}
+
+// textWidth returns the cells an entry's text takes, after the time column.
+func (m *Model) textWidth() int {
+	return m.style.TextWidth(m.width-len(frame.Indent)) - clockWidth
+}
+
+// textLines returns the rows of text card c draws: its lines, the last one
+// on two rows when wrapLast is set and it is wider than the text width.
+func (m *Model) textLines(c protocol.Card) []protocol.Line {
+	if !m.wrapLast {
+		return c.Lines
+	}
+	return m.cells.WrapLast(c.Lines, m.textWidth())
 }
 
 // height returns the rows entry i takes, the gap after it included.
@@ -99,7 +126,7 @@ func (l layout) followTop(body int) int {
 func (l layout) lastTop(body int) int {
 	end := l.rows
 	if last := len(l.entries) - 1; last >= 0 && l.height(last) > body {
-		end = l.starts[last] + l.style.TextEnd(len(l.entries[last].Card.Lines))
+		end = l.starts[last] + l.style.TextEnd(l.lines[last])
 	}
 	return max(end-body, 0)
 }
@@ -109,7 +136,7 @@ func (l layout) lastTop(body int) int {
 // its first row of text goes there instead, so its text shows rather than
 // only the top of its box.
 func (l layout) firstTop(body int) int {
-	if len(l.entries) > 0 && l.style.Rows(len(l.entries[0].Card.Lines)) > body {
+	if len(l.entries) > 0 && l.style.Rows(l.lines[0]) > body {
 		return l.style.TextStart()
 	}
 	return 0
@@ -176,7 +203,7 @@ func (m *Model) screen() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	l := newLayout(m.store.Visible(), m.style, m.newest)
+	l := m.layout()
 	rows := make([]string, 0, m.height)
 	rows = append(rows, frame.Header(m.cells, m.store.Header(), m.width))
 	rows = append(rows, m.body(l)...)
@@ -221,14 +248,15 @@ func (m *Model) body(l layout) []string {
 // goes around the time column too; a rule runs under the text only. The
 // card's tone and span colors apply as in list mode.
 func (m *Model) entryRows(e feedstore.Entry) []string {
+	lines := m.textLines(e.Card)
 	bounds := render.CardBounds{
 		Width: m.width - len(frame.Indent),
 		Lead:  clockWidth,
-		Lines: len(e.Card.Lines),
+		Lines: len(lines),
 	}
-	textWidth := m.style.TextWidth(bounds.Width) - clockWidth
-	text := make([]string, len(e.Card.Lines))
-	for i, l := range e.Card.Lines {
+	textWidth := m.textWidth()
+	text := make([]string, len(lines))
+	for i, l := range lines {
 		clock := noClock
 		if i == 0 {
 			clock = render.Paint(e.Time().In(m.loc).Format(clockLayout), protocol.ColorDim, false)

@@ -108,3 +108,31 @@ func TestEscQuitsFlag(t *testing.T) {
 		t.Errorf("feed --esc-quits error = %v, want ErrUsage", err)
 	}
 }
+
+func TestWrapLastFlag(t *testing.T) {
+	for _, mode := range []struct {
+		name string
+		cmd  func() *cobra.Command
+	}{{"list", listCmd}, {"feed", feedCmd}} {
+		flag := mode.cmd().Flags().Lookup("wrap-last")
+		if flag == nil || flag.DefValue != "false" {
+			t.Fatalf("%s --wrap-last = %v, want a flag that defaults to false", mode.name, flag)
+		}
+		for _, tc := range []struct {
+			args []string
+			want string
+		}{
+			{args: nil, want: "false"},
+			{args: []string{"--wrap-last"}, want: "true"},
+			{args: []string{"--wrap-last=false"}, want: "false"},
+		} {
+			c := mode.cmd()
+			if err := c.ParseFlags(tc.args); err != nil {
+				t.Errorf("%s %v error = %v", mode.name, tc.args, err)
+			}
+			if got := c.Flags().Lookup("wrap-last").Value.String(); got != tc.want {
+				t.Errorf("%s %v set --wrap-last to %s, want %s", mode.name, tc.args, got, tc.want)
+			}
+		}
+	}
+}
