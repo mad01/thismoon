@@ -18,6 +18,20 @@ Every entry has a heading with the date, the components and a title, then these 
 
 `go test ./kit/upgradenotes/` checks this form on every entry dated 2026-11-14 or later, and CI runs it. The `upgrade-note` skill walks an agent through writing an entry.
 
+## 2026-11-23 harvest: the tool and its skill are removed
+
+Change: thismoon #570. The harvest tool is retired. The tool, its recipe and the harvest skill leave the repo. The example Claude settings template drops the `SessionEnd` hook that ran `harvest-env session-end`, and the example belt config drops the `custom_hints.harvest` example.
+
+Run: on every machine, since the recipe landed on all of them. In this order:
+
+1. Only on a machine that turned harvest on: in the consuming repo, delete the `SessionEnd` command hook that runs `~/code/bin/harvest-env session-end` from the Claude settings template. Delete the `custom_hints.harvest` entry from the belt config. Delete the sandbox layer that ships `~/.config/srt/harvest.local.json`, and any `HARVEST_` variable the repo sets. Do this first. Once the binary is gone, the hook fails at every session end, and the hint fails at every session start with a belt warn event.
+2. With ralph: `ralph up --enable-cleanup`. The first apply after a recipe removal needs the flag. It removes `~/code/bin/harvest`, the launcher links `~/code/bin/harvest-env` and `~/code/bin/harvest-step`, the srt link `~/.config/srt/harvest.json` and the skill links `~/.claude/skills/harvest` and `~/.agents/skills/harvest`. It also applies the edits from step 1. Without ralph: make the step 1 edits in `~/.claude/settings.json` and `~/.config/belt/config.yaml`, then run `rm ~/code/bin/harvest ~/code/bin/harvest-env ~/code/bin/harvest-step ~/.config/srt/harvest.json ~/.config/srt/harvest.local.json ~/.claude/skills/harvest ~/.agents/skills/harvest`.
+3. Run `rm -f ~/.config/srt/merged/harvest.json` and `rm -rf ~/.local/state/harvest`. srt-run wrote the merged settings at each launch, so no recipe tracks them. The state folder holds only the harvest log and the per-session marks, and nothing reads it now.
+
+Verify: `ls ~/code/bin/harvest ~/code/bin/harvest-env ~/code/bin/harvest-step ~/.config/srt/harvest.json ~/.config/srt/harvest.local.json ~/.config/srt/merged/harvest.json ~/.claude/skills/harvest ~/.agents/skills/harvest ~/.local/state/harvest` prints `No such file or directory` for every path. `grep -c harvest-env ~/.claude/settings.json` prints `0`. `belt doctor` lists no `harvest` custom hint.
+
+Since: main only.
+
 ## 2026-11-20 belt: the main-checkout guard keeps main checkouts read-only
 
 Change: thismoon #511. `belt hook write` and `belt hook bash` run a new guard, main-checkout. It judges an Edit or Write of a file in a repo's main checkout, and a git command that changes one: commit, checkout or switch to another branch, reset, merge, rebase, stash and the like. Its reason hands over the `git worktree add` command for a linked worktree. Read-only git and a fast-forward pull of the default branch still run there, and a linked worktree is never judged. The guard is on by default in `hint` mode: the call goes through and the reason reaches the model beside the result. It applies to subagents too. A store that commits straight to its default branch gets the hint on every write until the belt config exempts it, and `direct_main_repos` does not exempt it.

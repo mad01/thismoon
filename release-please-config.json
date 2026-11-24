@@ -20,7 +20,6 @@
     "tools/belt": { "component": "belt" },
     "tools/cards": { "component": "cards" },
     "tools/clipboard": { "component": "clipboard" },
-    "tools/harvest": { "component": "harvest" },
     "tools/humanizer": { "component": "humanizer" },
     "tools/opener": { "component": "opener" },
     "tools/srtspec": { "component": "srtspec" },

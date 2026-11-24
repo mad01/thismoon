@@ -123,11 +123,6 @@ hints:
 #     event: subagent-start
 #     command: [worker-brief]
 #     agent_types: [general-purpose, reviewer-*]
-#   # Once a day, says how many harvest captures wait in the brain inbox.
-#   # belt expands no ~ in a command, so harvest must be on belt's PATH.
-#   harvest:
-#     event: session-start
-#     command: [harvest, hint]
 
 # The lifecycle ledger (optional, on by default): belt record posts one
 # events entry per lifecycle hook it is wired to, tagged with the session,
