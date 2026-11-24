@@ -80,11 +80,10 @@ docs/CONTAINER-BUILDS.md package-manager build steps (npm, pip, gem) in a throwa
 
 ## Skills
 
-The repo ships nine agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand. The paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
+The repo ships eight agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand. The paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
 
 | Skill | What it does | Backed by |
 |-------|--------------|-----------|
-| `ask` | Answers a question from the brain vault and cites the notes behind the answer, with each note's evidence grade and status. Read-only. | the `brain` MCP, with the `brain` CLI as fallback |
 | `golang-pro` | Go concurrency, channels, generics depth, pprof profiling, and gRPC — the specialist scope `golang-style` defers to. Vendored from [jeffallan/claude-skills](https://github.com/jeffallan/claude-skills) under MIT; `skills/golang-pro/LICENSE` carries the notice. | nothing (guidance only) |
 | `golang-style` | Idiomatic Go review and authoring — naming, package layout, error handling, the HTTP/CLI/store patterns used across this codebase. Covers every Go component here. | nothing (guidance only) |
 | `handoff` | Writes a cold-start handoff document and persists key learnings to memory so the next agent or session can continue work without re-discovering context. | nothing (guidance only; writes to `~/.handoff/` and durable memory) |
@@ -94,7 +93,7 @@ The repo ships nine agent skills under `skills/`, one directory per skill. Each 
 | `upgrade-note` | Writes and checks an entry in `docs/UPGRADING.md`: the input to collect, when an entry is needed, the entry form and the result to report. | nothing (guidance only; `go test ./kit/upgradenotes/` checks the form from a checkout) |
 | `worklog` | Saves and resumes cross-session work state keyed by ticket or topic, not by working directory. | the `worklog` MCP, with the `worklog` CLI as fallback |
 
-Prerequisites: `golang-pro`, `golang-style`, `handoff`, `loom`, and `upgrade-note` need nothing beyond the checkout. The other four need their backing MCP or service registered: that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
+Prerequisites: `golang-pro`, `golang-style`, `handoff`, `loom`, and `upgrade-note` need nothing beyond the checkout. The other three need their backing MCP or service registered: that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
 
 ## Release process
 

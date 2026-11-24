@@ -18,6 +18,23 @@ Every entry has a heading with the date, the components and a title, then these 
 
 `go test ./kit/upgradenotes/` checks this form on every entry dated 2026-11-14 or later, and CI runs it. The `upgrade-note` skill walks an agent through writing an entry.
 
+## 2026-11-24 brain, ask: the service and the ask skill are removed
+
+Change: thismoon #571. The brain service is retired. The service, its recipe, the ask skill and its recipe leave the repo. The eval harness drops the `brain-cli` profile, the brain cases and fixtures, the vault graders, and the `-include-pending` and `-fixtures` flags. The vault is your data: no step here deletes it, and keeping it is your call.
+
+Run: on every machine, since the recipes landed on all of them. In this order:
+
+1. In the consuming repo, delete the overlay recipe that depends on `packages.brain`. It links the config, clones the vault, pulls the models, warms the indexes and ships the srt layer `~/.config/srt/brain-serve.local.json`. Also delete the brain entry in the agent-sync `servers.json`, the `brain` route in the d-man routes file, and any hook, hint or skill that runs `brain` or the brain MCP tools. Merge it before the next `ralph up` pulls this change. While a recipe still names `packages.brain`, ralph validation fails.
+2. With ralph: `ralph up --enable-cleanup`. The first apply after a recipe removal needs the flag. The recipe's `pre_uninstall` hook runs `t-man remove brain-serve`, which stops the agent on port 7427. Cleanup then removes `~/code/bin/brain`, the srt link `~/.config/srt/brain-serve.json`, the skill links `~/.claude/skills/ask` and `~/.agents/skills/ask`, and what the overlay linked. If `t-man list` still shows `brain-serve`, run `t-man remove brain-serve`. Without ralph: run `t-man remove brain-serve`, then `rm -f ~/code/bin/brain ~/.config/srt/brain-serve.json ~/.config/srt/brain-serve.local.json ~/.claude/skills/ask ~/.agents/skills/ask`.
+3. Run `claude mcp remove brain --scope user`. agent-sync registers servers at user scope, and `mcp.prune` is off by default, so dropping the entry from `servers.json` leaves brain registered. With prune on, sync already removed it and this command reports a missing name. On Codex, delete the `[mcp_servers.brain]` table from `~/.codex/config.toml`.
+4. Run `rm -f ~/.config/srt/merged/brain-serve.json`. srt-run wrote it at each launch, so no recipe tracks it.
+
+These stay, and nothing reads them now: the config folder `~/.config/brain/`, the state folder `~/.local/state/brain/` (the indexes, the semantic stores and the graph layout cache) and the t-man logs under `~/Library/Logs/brain-serve`. Whether to delete them is your call. If the state folder holds a `worktrees/` folder, run `git worktree prune` in the shared vault after you delete it. If the overlay pulled Ollama models for brain (its defaults were `nomic-embed-text` and `llama3.2:3b`), other tools may use them, so check before `ollama rm`. The vault repos stay where the config pointed.
+
+Verify: `ls ~/code/bin/brain ~/.config/srt/brain-serve.json ~/.config/srt/brain-serve.local.json ~/.config/srt/merged/brain-serve.json ~/.claude/skills/ask ~/.agents/skills/ask` prints `No such file or directory` for every path. `t-man list` shows no `brain-serve`. `claude mcp list` has no `brain` entry.
+
+Since: main only.
+
 ## 2026-11-23 harvest: the tool and its skill are removed
 
 Change: thismoon #570. The harvest tool is retired. The tool, its recipe and the harvest skill leave the repo. The example Claude settings template drops the `SessionEnd` hook that ran `harvest-env session-end`, and the example belt config drops the `custom_hints.harvest` example.

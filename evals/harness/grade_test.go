@@ -72,11 +72,10 @@ type fakeJudge struct {
 	verdict Verdict
 	err     error
 	rubric  string
-	diff    string
 }
 
 func (f *fakeJudge) Judge(_ context.Context, in JudgeInput) (Verdict, error) {
-	f.rubric, f.diff = in.Rubric, in.Diff
+	f.rubric = in.Rubric
 	return f.verdict, f.err
 }
 
@@ -346,45 +345,24 @@ func TestInputListMatchesAll(t *testing.T) {
 	}
 }
 
-const policyNote = `---
-title: Policy
-owner: data-governance
-tags:
-    - policy
-    - data
-type: note
-status: validated
----
-See [[ledger-svc]] and [[notes/pg-failover#Verify|failover]].
-`
-
-// vaultEvidence is a brain workspace's evidence over a small vault where
-// the run added inbox/new.md and changed notes/policy.md.
-func vaultEvidence(t *testing.T) Evidence {
+// treeEvidence is the evidence over a small workspace directory.
+func treeEvidence(t *testing.T) Evidence {
 	t.Helper()
 	dir := t.TempDir()
 	writeTree(t, dir, map[string]string{
-		"notes/policy.md":      policyNote,
-		"notes/ledger-svc.md":  "---\ntitle: ledger-svc\n---\nport 9090\n",
-		"notes/pg-failover.md": "---\ntitle: failover\n---\nrunbook\n",
-		"inbox/new.md":         "---\ntitle: New\ntype: source\n---\nlinks [[missing-note]] and `[[in-code]]`\n",
+		"docs/policy.md": "---\ntitle: Policy\n---\nsee ledger\n",
+		"docs/ledger.md": "---\ntitle: ledger\n---\nport 9090\n",
+		"cmd/new.md":     "---\ntitle: New\n---\nnew file\n",
 	})
-	files, err := listFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return Evidence{Dir: dir, Files: files, Changes: []Change{
-		{Status: "A", Path: "inbox/new.md"},
-		{Status: "M", Path: "notes/policy.md"},
-	}}
+	return Evidence{Dir: dir}
 }
 
-// gradeVault runs each grader against ev in a brain workspace.
-func gradeVault(t *testing.T, ev Evidence, tests []vaultTest) {
+// gradeEach runs each grader against ev in a tmpdir workspace.
+func gradeEach(t *testing.T, ev Evidence, tests []graderTest) {
 	t.Helper()
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			res, _ := evaluate(context.Background(), grader(t, tc.g, workspaceBrain), ev, nil)
+			res, _ := evaluate(context.Background(), grader(t, tc.g, workspaceTmpdir), ev, nil)
 			if res.Pass != tc.want {
 				t.Errorf("pass = %v (%s), want %v", res.Pass, res.Detail, tc.want)
 			}
@@ -395,7 +373,7 @@ func gradeVault(t *testing.T, ev Evidence, tests []vaultTest) {
 	}
 }
 
-type vaultTest struct {
+type graderTest struct {
 	name string
 	g    Grader
 	want bool
@@ -403,27 +381,22 @@ type vaultTest struct {
 
 func TestRegexAbsent(t *testing.T) {
 	ok := loadFixture(t, "stream-success.jsonl")
-	gradeVault(t, Evidence{Transcript: ok}, []vaultTest{
+	gradeEach(t, Evidence{Transcript: ok}, []graderTest{
 		{"absent passes", Grader{Type: gradeRegex, Pattern: `finder\.go`, Absent: true}, true},
 		{"absent fails", Grader{Type: gradeRegex, Pattern: `gitloc`, Absent: true}, false},
 	})
 }
 
 func TestFileGlobGraders(t *testing.T) {
-	gradeVault(t, vaultEvidence(t), []vaultTest{
-		{"exists", Grader{Type: gradeFile, Path: "notes/policy.md"}, true},
-		{"exists glob", Grader{Type: gradeFile, Path: "inbox/*.md"}, true},
-		{"exists missing", Grader{Type: gradeFile, Path: "outputs/*.md"}, false},
-		{"absent", Grader{Type: gradeFile, Path: "inbox/old.md", Absent: true}, true},
-		{"absent present", Grader{Type: gradeFile, Path: "inbox/new.md", Absent: true}, false},
-		{"content any file", Grader{Type: gradeFile, Path: "notes/*.md", Pattern: `9090`}, true},
-		{"content no match", Grader{Type: gradeFile, Path: "notes/*.md", Pattern: `8080`}, false},
-		{"content no file", Grader{Type: gradeFile, Path: "outputs/*.md", Pattern: `.`}, false},
-		{
-			"content new only",
-			Grader{Type: gradeFile, Path: "**", Pattern: `9090`, NewOnly: true},
-			false,
-		},
+	gradeEach(t, treeEvidence(t), []graderTest{
+		{"exists", Grader{Type: gradeFile, Path: "docs/policy.md"}, true},
+		{"exists glob", Grader{Type: gradeFile, Path: "cmd/*.md"}, true},
+		{"exists missing", Grader{Type: gradeFile, Path: "out/*.md"}, false},
+		{"absent", Grader{Type: gradeFile, Path: "cmd/old.md", Absent: true}, true},
+		{"absent present", Grader{Type: gradeFile, Path: "cmd/new.md", Absent: true}, false},
+		{"content any file", Grader{Type: gradeFile, Path: "docs/*.md", Pattern: `9090`}, true},
+		{"content no match", Grader{Type: gradeFile, Path: "docs/*.md", Pattern: `8080`}, false},
+		{"content no file", Grader{Type: gradeFile, Path: "out/*.md", Pattern: `.`}, false},
 		{
 			"content absent everywhere",
 			Grader{Type: gradeFile, Path: "**", Pattern: `secret`, Absent: true},
@@ -437,174 +410,9 @@ func TestFileGlobGraders(t *testing.T) {
 	})
 }
 
-func TestFrontmatterGrader(t *testing.T) {
-	fm := func(p, key, pattern string, newOnly bool) Grader {
-		return Grader{Type: gradeFrontmatter, Path: p, Key: key, Pattern: pattern, NewOnly: newOnly}
-	}
-	gradeVault(t, vaultEvidence(t), []vaultTest{
-		{"extra key kept", fm("notes/policy.md", "owner", `^data-governance$`, false), true},
-		{"list item", fm("notes/policy.md", "tags", `(?m)^data$`, false), true},
-		{"list item missing", fm("notes/policy.md", "tags", `(?m)^gdpr$`, false), false},
-		{"key missing", fm("notes/policy.md", "classification", `.`, false), false},
-		{"new only", fm("**", "type", `^source$`, true), true},
-		{"new only excludes old", fm("notes/*.md", "title", `.`, true), false},
-	})
-}
-
-func TestNewNotesAndUnchangedGraders(t *testing.T) {
-	gradeVault(t, vaultEvidence(t), []vaultTest{
-		{
-			"one new in inbox",
-			Grader{Type: gradeNewNotes, Dir: "inbox", Min: num(1), Max: num(1.0)},
-			true,
-		},
-		{"none in notes", Grader{Type: gradeNewNotes, Dir: "notes", Max: num(0.0)}, true},
-		{"too many", Grader{Type: gradeNewNotes, Max: num(0.0)}, false},
-		{"too few", Grader{Type: gradeNewNotes, Dir: "outputs", Min: num(1)}, false},
-		{
-			"content matches",
-			Grader{Type: gradeNewNotes, Min: num(1), ContentRegex: `missing-note`},
-			true,
-		},
-		{
-			"content does not match",
-			Grader{Type: gradeNewNotes, Min: num(1), ContentRegex: `nope`},
-			false,
-		},
-		{
-			"unchanged except covers",
-			Grader{
-				Type:  gradeVaultUnchangedExcept,
-				Paths: []string{"inbox/*.md", "notes/policy.md"},
-			},
-			true,
-		},
-		{
-			"unchanged except misses",
-			Grader{Type: gradeVaultUnchangedExcept, Paths: []string{"inbox/*.md"}},
-			false,
-		},
-		{"unchanged", Grader{Type: gradeVaultUnchangedExcept}, false},
-	})
-}
-
-func TestWikilinksGrader(t *testing.T) {
-	gradeVault(t, vaultEvidence(t), []vaultTest{
-		{
-			"alias, heading and path forms resolve",
-			Grader{Type: gradeWikilinks, Path: "notes/policy.md", Min: num(2)},
-			true,
-		},
-		{
-			"too few links",
-			Grader{Type: gradeWikilinks, Path: "notes/policy.md", Min: num(3)},
-			false,
-		},
-		{"broken link", Grader{Type: gradeWikilinks, Path: "inbox/*.md"}, false},
-		{"no file", Grader{Type: gradeWikilinks, Path: "outputs/*.md"}, false},
-	})
-}
-
-// TestWikilinksTwoVault: a private note's link resolves in its own vault,
-// then in the shared one, and a shared note's link never in the private.
-func TestWikilinksTwoVault(t *testing.T) {
-	dir := t.TempDir()
-	writeTree(t, dir, map[string]string{
-		"private/notes/local.md":    "[[team-note]], [[notes/mine]] and [[mine|me]]\n",
-		"private/notes/mine.md":     "mine\n",
-		"shared/notes/team-note.md": "[[notes/team-note]]\n",
-		"shared/notes/leak.md":      "[[mine]]\n",
-	})
-	files, err := listFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ev := Evidence{Dir: dir, Files: files, TwoVault: true}
-	wl := func(p string, minLinks int) Grader {
-		return Grader{Type: gradeWikilinks, Path: p, Min: num(minLinks)}
-	}
-	gradeVault(t, ev, []vaultTest{
-		{"private reaches shared", wl("private/notes/local.md", 2), true},
-		{"vault-relative path link", wl("shared/notes/team-note.md", 1), true},
-		{"shared never reaches private", wl("shared/notes/leak.md", 0), false},
-	})
-}
-
-func TestGHCallGrader(t *testing.T) {
-	ev := Evidence{GHCalls: []string{
-		"pr create --title Fix the port --body line one\nline two",
-		"pr view https://example.invalid/pull/1 --json state,mergedAt",
-	}}
-	gh := func(pattern string, minCalls *int, maxCalls *float64) Grader {
-		return Grader{Type: gradeGHCall, Pattern: pattern, Min: minCalls, Max: maxCalls}
-	}
-	gradeVault(t, ev, []vaultTest{
-		{"one pr create", gh(`^pr create\b`, nil, nil), true},
-		{"exactly one", gh(`^pr create\b`, num(1), num(1.0)), true},
-		{"body lines match", gh(`(?m)^line two$`, nil, nil), true},
-		{"no issue", gh(`^issue create\b`, nil, num(0.0)), true},
-		{"issue missing", gh(`^issue create\b`, nil, nil), false},
-		{"too many", gh(`^pr `, nil, num(1.0)), false},
-	})
-	gradeVault(t, Evidence{}, []vaultTest{
-		{"gh never ran", gh(`.`, nil, num(0.0)), true},
-		{"gh never ran, one wanted", gh(`^pr create`, nil, nil), false},
-	})
-}
-
-func TestOriginBranchGrader(t *testing.T) {
-	ev := Evidence{Branches: []OriginBranch{
-		{
-			Name:    "brain/promote/kafka-guide-01ky4m",
-			Changes: []Change{{Status: "A", Path: "shared/notes/kafka-guide.md"}},
-			content: map[string]string{"shared/notes/kafka-guide.md": "24 partitions"},
-		},
-		{
-			Name:    "brain/edit/old-note-01jq",
-			Changes: []Change{{Status: "D", Path: "shared/notes/old-note.md"}},
-			content: map[string]string{},
-		},
-	}}
-	branch := func(pattern, p, content string, maxBranches *float64) Grader {
-		return Grader{
-			Type: gradeOriginBranch, Pattern: pattern, Path: p, ContentRegex: content, Max: maxBranches,
-		}
-	}
-	gradeVault(t, ev, []vaultTest{
-		{"by name", branch(`^brain/promote/kafka-guide-`, "", "", nil), true},
-		{"by path", branch("", "shared/notes/kafka-*.md", "", nil), true},
-		{"by content", branch("", "", `24 partitions`, nil), true},
-		{"name and content", branch(`^brain/promote/`, "shared/**", `\b24\b`, nil), true},
-		{"a deletion matches its path", branch(`^brain/edit/`, "shared/notes/old-note.md", "", nil), true},
-		{"a deletion has no content", branch(`^brain/edit/`, "", `.`, nil), false},
-		{"content elsewhere", branch(`^brain/edit/`, "", `24 partitions`, nil), false},
-		{"nothing forbidden pushed", branch("", "", `rate card`, num(0.0)), true},
-		{"main untouched", branch(`^main$`, "", "", num(0.0)), true},
-		{"something pushed", branch("", "", "", num(0.0)), false},
-		{"wrong name", branch(`carrier`, "", "", nil), false},
-	})
-}
-
-func TestVaultGradersNeedBrain(t *testing.T) {
-	for _, g := range []Grader{
-		{Type: gradeGHCall, Pattern: "^pr create"},
-		{Type: gradeOriginBranch},
-	} {
-		if err := compileGrader(&g, WorkspaceSpec{Kind: workspaceTmpdir}); err == nil ||
-			!strings.Contains(err.Error(), "brain workspace") {
-			t.Errorf("%s outside a brain workspace: %v", g.Type, err)
-		}
-	}
-	g := Grader{Type: gradeGHCall}
-	if err := compileGrader(&g, WorkspaceSpec{Kind: workspaceBrain}); err == nil ||
-		!strings.Contains(err.Error(), "missing pattern") {
-		t.Errorf("gh_call without a pattern: %v", err)
-	}
-}
-
-// TestFileGlobOutsideBrain: a glob walks a non-brain workspace, and a
+// TestFileGlobWalk: a glob walks the workspace and skips .git, and a
 // literal path does not need the walk.
-func TestFileGlobOutsideBrain(t *testing.T) {
+func TestFileGlobWalk(t *testing.T) {
 	dir := t.TempDir()
 	writeTree(t, dir, map[string]string{"docs/a.md": "alpha\n", ".git/HEAD": "ref\n"})
 	for _, tc := range []struct {
@@ -627,21 +435,9 @@ func TestFileGlobOutsideBrain(t *testing.T) {
 	}
 }
 
-func TestJudgeSeesVaultDiff(t *testing.T) {
-	g := grader(t, Grader{Type: gradeLLM, Rubric: "records the learning"}, workspaceBrain)
-	j := &fakeJudge{verdict: Verdict{Pass: true}}
-	ev := Evidence{Diff: "+the rotation job must update secrets first"}
-	if res, _ := evaluate(context.Background(), g, ev, j); !res.Pass || j.diff != ev.Diff {
-		t.Errorf("pass %v, judge saw diff %q", res.Pass, j.diff)
-	}
-	prompt := judgePrompt(JudgeInput{Rubric: "r", Prompt: "p", Answer: "a", Diff: "d"})
-	if !strings.HasSuffix(
-		prompt,
-		"Answer:\na\n\nVault diff (what the agent changed in the knowledge base):\nd",
-	) {
+func TestJudgePrompt(t *testing.T) {
+	prompt := judgePrompt(JudgeInput{Rubric: "r", Prompt: "p", Answer: "a"})
+	if prompt != "Task:\np\n\nRubric:\nr\n\nAnswer:\na" {
 		t.Errorf("judge prompt = %q", prompt)
-	}
-	if strings.Contains(judgePrompt(JudgeInput{Rubric: "r"}), "Vault diff") {
-		t.Error("a run without a vault diff should not mention one")
 	}
 }

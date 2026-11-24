@@ -19,34 +19,25 @@ const (
 	workspaceRepo     = "repo"
 	workspaceWorktree = "worktree"
 	workspaceTmpdir   = "tmpdir"
-	workspaceBrain    = "brain"
 )
 
 // Grader types a case can declare.
 const (
-	gradeRegex                = "regex"
-	gradeFile                 = "file"
-	gradeFrontmatter          = "frontmatter"
-	gradeNewNotes             = "new_notes"
-	gradeVaultUnchangedExcept = "vault_unchanged_except"
-	gradeWikilinks            = "wikilinks"
-	gradeBrainCmd             = "brain_cmd"
-	gradeGHCall               = "gh_call"
-	gradeOriginBranch         = "origin_branch"
-	gradeCommit               = "commit"
-	gradeToolUsed             = "tool_used"
-	gradeToolNotUsed          = "tool_not_used"
-	gradeToolBefore           = "tool_before"
-	gradeMaxTurns             = "max_turns"
-	gradeMaxCostUSD           = "max_cost_usd"
-	gradeMaxToolCalls         = "max_tool_calls"
-	gradeLLM                  = "llm"
+	gradeRegex        = "regex"
+	gradeFile         = "file"
+	gradeCommit       = "commit"
+	gradeToolUsed     = "tool_used"
+	gradeToolNotUsed  = "tool_not_used"
+	gradeToolBefore   = "tool_before"
+	gradeMaxTurns     = "max_turns"
+	gradeMaxCostUSD   = "max_cost_usd"
+	gradeMaxToolCalls = "max_tool_calls"
+	gradeLLM          = "llm"
 )
 
 // Case is one eval task: where it runs, the limits it runs under, the
 // graders that score it, and the prompt. AllowedTools, when set, replaces
-// the profile's allow list. Pending holds why a parked case does not run;
-// it runs only when asked for.
+// the profile's allow list.
 type Case struct {
 	ID              string
 	Title           string
@@ -57,26 +48,21 @@ type Case struct {
 	PermissionMode  string
 	AllowedTools    []string
 	DisallowedTools []string
-	Pending         string
 	Graders         []Grader
 	Prompt          string
 	Path            string
 }
 
-// WorkspaceSpec is a parsed case workspace: the kind, the repo name or
-// path a repo or worktree kind names, and the fixture a brain kind names.
+// WorkspaceSpec is a parsed case workspace: the kind, and the repo name or
+// path a repo or worktree kind names.
 type WorkspaceSpec struct {
-	Kind    string
-	Repo    string
-	Fixture string
+	Kind string
+	Repo string
 }
 
 // String renders the spec the way a case file writes it.
 func (w WorkspaceSpec) String() string {
-	switch {
-	case w.Fixture != "":
-		return w.Kind + ":" + w.Fixture
-	case w.Repo != "":
+	if w.Repo != "" {
 		return w.Kind + ":" + w.Repo
 	}
 	return w.Kind
@@ -86,13 +72,6 @@ func (w WorkspaceSpec) String() string {
 //
 //	regex                   Pattern matches the final result text
 //	file                    a file matches Path; with Pattern, one of them matches it
-//	frontmatter             a file matching Path has Key with a value matching Pattern
-//	new_notes               the run added Min to Max notes under Dir, each matching ContentRegex
-//	vault_unchanged_except  every path the run changed in the vault matches one of Paths
-//	wikilinks               every wikilink in the files matching Path resolves, Min per file
-//	brain_cmd               Min to Max brain calls have a subcommand matching Pattern
-//	gh_call                 Min to Max of the fake gh's calls match Pattern
-//	origin_branch           Min to Max pushed origin branches match Pattern, Path and ContentRegex
 //	commit                  the run made at least one commit and every subject matches Pattern
 //	tool_used               some tool call matches Tool, every Input, and not InputWithout
 //	tool_not_used           no tool call matches Tool, every Input, and not InputWithout
@@ -103,42 +82,29 @@ func (w WorkspaceSpec) String() string {
 //	llm                     a haiku judge passes the result against Rubric
 //
 // Absent turns regex and file around: the pattern, or the file, must not be
-// there. Path and Paths are slash globs where "**" spans directories,
-// resolved against the vault in a brain workspace and against the workspace
-// directory otherwise. NewOnly narrows file, frontmatter and wikilinks to
-// the files the run added; it, new_notes and vault_unchanged_except read the
-// vault's diff from its baseline, so they need a brain workspace, as do
-// gh_call and origin_branch. brain_cmd, gh_call and origin_branch default
-// Min to 1, or to 0 when Max is set; brain_cmd skips help lookups and
-// denied calls. origin_branch's Pattern, Path and ContentRegex each apply
-// only when set.
+// there. Path is a slash glob where "**" spans directories, resolved against
+// the workspace directory.
 //
 // Input (one regex or a list) and InputWithout are regexes on the call's
 // input as compact JSON with sorted keys, so {"file_path":"x.go"} is a Read
-// with no range. The tool graders, brain_cmd and max_tool_calls read the
-// main session's calls only, unless IncludeAgents adds the subagents' calls.
+// with no range. The tool graders and max_tool_calls read the main session's
+// calls only, unless IncludeAgents adds the subagents' calls.
 type Grader struct {
 	Type          string    `yaml:"type"`
 	Weight        float64   `yaml:"weight"`
 	Pattern       string    `yaml:"pattern"`
 	Absent        bool      `yaml:"absent"`
 	Path          string    `yaml:"path"`
-	NewOnly       bool      `yaml:"new_only"`
-	Key           string    `yaml:"key"`
-	Dir           string    `yaml:"dir"`
-	Paths         []string  `yaml:"paths"`
-	ContentRegex  string    `yaml:"content_regex"`
 	Tool          string    `yaml:"tool"`
 	Input         regexList `yaml:"input"`
 	InputWithout  string    `yaml:"input_without"`
 	Before        string    `yaml:"before"`
 	IncludeAgents bool      `yaml:"include_agents"`
-	Min           *int      `yaml:"min"`
 	Max           *float64  `yaml:"max"`
 	Rubric        string    `yaml:"rubric"`
 
-	patternRE, contentRE, toolRE, withoutRE, beforeRE *regexp.Regexp
-	inputREs                                          []*regexp.Regexp
+	patternRE, toolRE, withoutRE, beforeRE *regexp.Regexp
+	inputREs                               []*regexp.Regexp
 }
 
 // regexList is a YAML field that takes one regex or a list of them.
@@ -177,14 +143,7 @@ func (g Grader) Name() string {
 	add("without ", g.InputWithout)
 	add("before ", g.Before)
 	add("", g.Path)
-	add("dir ", g.Dir)
-	add("key ", g.Key)
-	add("except ", strings.Join(g.Paths, ", "))
 	add("", g.Pattern)
-	add("content ", g.ContentRegex)
-	if g.Min != nil {
-		parts = append(parts, fmt.Sprintf("min %d", *g.Min))
-	}
 	if g.Max != nil {
 		label := "max "
 		if isBudget(g.Type) {
@@ -193,7 +152,6 @@ func (g Grader) Name() string {
 		parts = append(parts, fmt.Sprintf("%s%g", label, *g.Max))
 	}
 	flag("absent", g.Absent)
-	flag("new only", g.NewOnly)
 	flag("incl. agents", g.IncludeAgents)
 	return strings.Join(parts, " ")
 }
@@ -205,11 +163,10 @@ func isBudget(t string) bool {
 }
 
 // sharedDenyList is denied to every case, whatever its workspace: these
-// tools write to stores and services that outlive the run (worklog, brain,
+// tools write to stores and services that outlive the run (worklog,
 // GitHub), which no workspace teardown can undo.
 var sharedDenyList = []string{
 	"mcp__worklog__worklog_checkpoint",
-	"mcp__brain__brain_write", "mcp__brain__brain_edit",
 	"mcp__gh_com__create_pull_request", "mcp__gh_com__update_pull_request",
 	"mcp__gh_com__update_pull_request_branch", "mcp__gh_com__merge_pull_request",
 	"mcp__gh_com__push_files", "mcp__gh_com__create_or_update_file",
@@ -267,7 +224,6 @@ type caseFile struct {
 	PermissionMode  string   `yaml:"permission_mode"`
 	AllowedTools    []string `yaml:"allowed_tools"`
 	DisallowedTools []string `yaml:"disallowed_tools"`
-	Pending         string   `yaml:"pending"`
 	Graders         []Grader `yaml:"graders"`
 }
 
@@ -330,7 +286,6 @@ func parseCase(raw string) (Case, error) {
 		PermissionMode:  f.PermissionMode,
 		AllowedTools:    f.AllowedTools,
 		DisallowedTools: f.DisallowedTools,
-		Pending:         strings.TrimSpace(f.Pending),
 		Graders:         f.Graders,
 		Prompt:          strings.TrimSpace(body),
 	}
@@ -345,9 +300,8 @@ func parseCase(raw string) (Case, error) {
 	return c, nil
 }
 
-// parseWorkspace reads "repo:<name or path>", "worktree:<name or path>",
-// "brain:<fixture>", or "tmpdir". A brain fixture is a directory name under
-// the fixture root, so it takes no path.
+// parseWorkspace reads "repo:<name or path>", "worktree:<name or path>", or
+// "tmpdir".
 func parseWorkspace(s string) (WorkspaceSpec, error) {
 	kind, ref, _ := strings.Cut(strings.TrimSpace(s), ":")
 	switch kind {
@@ -355,18 +309,13 @@ func parseWorkspace(s string) (WorkspaceSpec, error) {
 		if ref == "" {
 			return WorkspaceSpec{}, fmt.Errorf("workspace %q names no repo", s)
 		}
-	case workspaceBrain:
-		if ref == "" || ref == "." || ref == ".." || strings.ContainsAny(ref, `/\`) {
-			return WorkspaceSpec{}, fmt.Errorf("workspace %q: want brain:<fixture name>", s)
-		}
-		return WorkspaceSpec{Kind: kind, Fixture: ref}, nil
 	case workspaceTmpdir:
 		if ref != "" {
 			return WorkspaceSpec{}, fmt.Errorf("workspace %q: tmpdir takes no repo", s)
 		}
 	default:
 		return WorkspaceSpec{}, fmt.Errorf(
-			"workspace %q: want repo:<repo>, worktree:<repo>, brain:<fixture>, or tmpdir", s)
+			"workspace %q: want repo:<repo>, worktree:<repo>, or tmpdir", s)
 	}
 	return WorkspaceSpec{Kind: kind, Repo: ref}, nil
 }
@@ -406,7 +355,6 @@ func compileGrader(g *Grader, ws WorkspaceSpec) error {
 		dst **regexp.Regexp
 	}{
 		{g.Pattern, &g.patternRE},
-		{g.ContentRegex, &g.contentRE},
 		{g.Tool, &g.toolRE},
 		{g.InputWithout, &g.withoutRE},
 		{g.Before, &g.beforeRE},
@@ -427,34 +375,18 @@ func compileGrader(g *Grader, ws WorkspaceSpec) error {
 		}
 		g.inputREs = append(g.inputREs, re)
 	}
-	for _, glob := range append([]string{g.Path}, g.Paths...) {
-		if err := validateGlob(glob); err != nil {
-			return err
-		}
-	}
-	return nil
+	return validateGlob(g.Path)
 }
 
 func requireFields(g Grader, ws WorkspaceSpec) error {
-	if err := checkModifiers(g, ws); err != nil {
+	if err := checkModifiers(g); err != nil {
 		return err
 	}
 	switch g.Type {
-	case gradeRegex, gradeBrainCmd:
+	case gradeRegex:
 		return need("pattern", g.Pattern)
-	case gradeFile, gradeWikilinks:
+	case gradeFile:
 		return need("path", g.Path)
-	case gradeFrontmatter:
-		return errors.Join(need("path", g.Path), need("key", g.Key), need("pattern", g.Pattern))
-	case gradeNewNotes:
-		if g.Min == nil && g.Max == nil {
-			return errors.New("new_notes needs min, max or both")
-		}
-		return needBrain(g.Type, ws)
-	case gradeVaultUnchangedExcept, gradeOriginBranch:
-		return needBrain(g.Type, ws)
-	case gradeGHCall:
-		return errors.Join(need("pattern", g.Pattern), needBrain(g.Type, ws))
 	case gradeCommit:
 		if ws.Kind != workspaceWorktree {
 			return errors.New("commit needs a worktree workspace")
@@ -482,27 +414,12 @@ func requireFields(g Grader, ws WorkspaceSpec) error {
 // checkModifiers rejects the fields that would change a grader's meaning
 // where they do not apply, so a misplaced one fails the load instead of
 // silently checking the opposite or nothing.
-func checkModifiers(g Grader, ws WorkspaceSpec) error {
+func checkModifiers(g Grader) error {
 	switch {
 	case g.Absent && g.Type != gradeRegex && g.Type != gradeFile:
 		return errors.New("absent applies to regex and file only")
-	case g.NewOnly && g.Type != gradeFile && g.Type != gradeFrontmatter && g.Type != gradeWikilinks:
-		return errors.New("new_only applies to file, frontmatter and wikilinks only")
-	case g.Min != nil && *g.Min < 0:
-		return errors.New("min must not be negative")
 	case g.Max != nil && *g.Max < 0:
 		return errors.New("max must not be negative")
-	case g.NewOnly:
-		return needBrain("new_only", ws)
-	}
-	return nil
-}
-
-// needBrain fails what reads the vault's diff from its baseline outside a
-// brain workspace, which has no baseline.
-func needBrain(what string, ws WorkspaceSpec) error {
-	if ws.Kind != workspaceBrain {
-		return fmt.Errorf("%s needs a brain workspace", what)
 	}
 	return nil
 }
@@ -529,93 +446,35 @@ func splitFrontmatter(raw string) (front, body string, err error) {
 	return front, body, nil
 }
 
-// selection says which of the loaded cases a run takes. IDs is a
-// comma-separated list; "" takes every case Profile runs. Pending cases run
-// only with IncludePending.
-type selection struct {
-	IDs            string
-	Profile        string
-	IncludePending bool
-}
-
-// selectCases keeps the cases s names, or every case its profile runs when
-// it names none. A brain workspace runs under the brain-cli profile and that
-// profile runs nothing else, so naming a case the profile cannot run is an
-// error, as are an unknown name and a pending case without IncludePending.
-func selectCases(cases []Case, s selection) ([]Case, error) {
-	if strings.TrimSpace(s.IDs) == "" {
-		var out []Case
-		for _, c := range cases {
-			if runsUnder(c, s.Profile) && (c.Pending == "" || s.IncludePending) {
-				out = append(out, c)
-			}
-		}
-		if len(out) == 0 {
-			return nil, fmt.Errorf("no case runs under -profile %s", s.Profile)
-		}
-		return out, nil
+// selectCases keeps the cases ids names, a comma-separated list, or every
+// case when it names none. An unknown name is an error.
+func selectCases(cases []Case, ids string) ([]Case, error) {
+	if strings.TrimSpace(ids) == "" {
+		return cases, nil
 	}
 	byID := map[string]Case{}
 	for _, c := range cases {
 		byID[c.ID] = c
 	}
 	var out []Case
-	for id := range strings.SplitSeq(s.IDs, ",") {
+	for id := range strings.SplitSeq(ids, ",") {
 		id = strings.TrimSpace(id)
 		c, ok := byID[id]
-		switch {
-		case !ok:
+		if !ok {
 			return nil, fmt.Errorf("unknown case %q", id)
-		case !runsUnder(c, s.Profile):
-			return nil, fmt.Errorf("case %q (%s) does not run under -profile %s; "+
-				"brain workspaces run under %s, and %s runs nothing else",
-				id, c.Workspace, s.Profile, profileBrainCLI, profileBrainCLI)
-		case c.Pending != "" && !s.IncludePending:
-			return nil, fmt.Errorf("case %q is pending (%s); pass -include-pending", id, c.Pending)
 		}
 		out = append(out, c)
 	}
 	return out, nil
 }
 
-// runsUnder reports whether profile runs c: a brain workspace needs the
-// brain-cli profile, and the brain-cli profile needs a brain workspace.
-func runsUnder(c Case, profile string) bool {
-	return (c.Workspace.Kind == workspaceBrain) == (profile == profileBrainCLI)
-}
-
-// checkFixtures fails when a brain case that is not pending names a fixture
-// with no directory under root. A pending case may name a fixture that does
-// not exist yet.
-func checkFixtures(cases []Case, root string) error {
-	for _, c := range cases {
-		if c.Workspace.Kind != workspaceBrain || c.Pending != "" {
-			continue
-		}
-		dir := filepath.Join(root, c.Workspace.Fixture)
-		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-			return fmt.Errorf(
-				"%s: fixture %s is not a directory under %s",
-				c.Path,
-				c.Workspace.Fixture,
-				root,
-			)
-		}
-	}
-	return nil
-}
-
-// writeList prints one line per case for -list, pending ones marked.
+// writeList prints one line per case for -list.
 func writeList(w io.Writer, cases []Case) {
 	fmt.Fprintln(w, "| id | workspace | timeout | max turns | graders | title |")
 	fmt.Fprintln(w, "|---|---|---|---|---|---|")
 	for _, c := range cases {
-		title := c.Title
-		if c.Pending != "" {
-			title += " (pending: " + c.Pending + ")"
-		}
 		fmt.Fprintf(w, "| %s | %s | %s | %d | %d | %s |\n",
-			c.ID, c.Workspace, c.Timeout, c.MaxTurns, len(c.Graders), cell(title))
+			c.ID, c.Workspace, c.Timeout, c.MaxTurns, len(c.Graders), cell(c.Title))
 	}
 }
 

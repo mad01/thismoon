@@ -13,34 +13,27 @@ import (
 // Profiles pick what a case run has for code search. full is the user's
 // session as it is; csl-mcp, csl-cli and grep model a workspace with csl as
 // an MCP server plus the CLI (a machine with csl set up), with csl as a CLI
-// only, and with grep alone. brain-cli runs the brain workspaces, with the
-// user's setup shut out and the brain CLI as the agent's only way to write.
+// only, and with grep alone.
 const (
-	profileFull     = "full"
-	profileCSLMCP   = "csl-mcp"
-	profileCSLCLI   = "csl-cli"
-	profileNone     = "grep"
-	profileBrainCLI = "brain-cli"
+	profileFull   = "full"
+	profileCSLMCP = "csl-mcp"
+	profileCSLCLI = "csl-cli"
+	profileNone   = "grep"
 )
 
-var profileNames = []string{profileFull, profileCSLMCP, profileCSLCLI, profileNone, profileBrainCLI}
+var profileNames = []string{profileFull, profileCSLMCP, profileCSLCLI, profileNone}
 
-// The steer files the steered profiles append to the system prompt when
-// -steer-file names none, relative to the repo root, where the harness
-// runs. The csl one is the rules fragment csl embeds and its recipe links
-// to ~/.claude/CLAUDE.csl.md, so a run carries the text a workspace
-// imports; the brain one tells the agent the vault is behind the brain CLI.
-const (
-	defaultSteerFile      = "services/csl/claude-md.md"
-	defaultBrainSteerFile = "evals/harness/steer/brain.md"
-)
+// defaultSteerFile is the steer file the csl profiles append to the system
+// prompt when -steer-file names none, relative to the repo root, where the
+// harness runs. It is the rules fragment csl embeds and its recipe links to
+// ~/.claude/CLAUDE.csl.md, so a run carries the text a workspace imports.
+const defaultSteerFile = "services/csl/claude-md.md"
 
 // defaultDenyCLIs are the thismoon CLIs a non-full profile takes away, so
 // a run cannot route around the profile through a tool the workspace
-// under test would not have. csl itself is handled per profile, and
-// brain-cli keeps brain.
+// under test would not have. csl itself is handled per profile.
 var defaultDenyCLIs = []string{
-	"belt", "brain", "callgraph", "deps", "events", "ks", "moondb",
+	"belt", "callgraph", "deps", "events", "ks", "moondb",
 	"present", "status", "suspenders", "worklog",
 }
 
@@ -50,15 +43,6 @@ var grepTools = []string{"Grep", "Bash(grep:*)", "Bash(rg:*)", "Bash(ugrep:*)", 
 
 // cslCLIDeny is the deny pattern for the csl CLI.
 const cslCLIDeny = "Bash(csl:*)"
-
-// brainAllow is what the brain-cli profile allows: Bash for the brain CLI
-// alone, the read-only file tools, and file writes under the work directory
-// so the agent can hand brain a body file. The vault sits outside it.
-var brainAllow = []string{"Bash(brain:*)", "Read", "Glob", "Grep", "Edit(./**)"}
-
-// permissionDontAsk denies every tool call the allow list does not cover,
-// instead of asking.
-const permissionDontAsk = "dontAsk"
 
 // profile is one resolved profile: the flags it adds to every case run.
 // The zero value is the full profile.
@@ -74,15 +58,8 @@ type profile struct {
 	MCPConfig string
 	// DisableHooks turns every hook off through --settings.
 	DisableHooks bool
-	// Isolated shuts the user's setup out: no setting sources (so no
-	// CLAUDE.md, output style, permissions or plugins), no auto memory, no
-	// session file, and of the built-in tools only those the allow list
-	// names.
-	Isolated bool
-	// PermissionMode applies when a case sets none; "" leaves claude's.
-	PermissionMode string
-	Allow          []string
-	Deny           []string
+	Allow        []string
+	Deny         []string
 }
 
 // profileOptions are the flags that shape a profile. SteerFile "" means
@@ -119,8 +96,6 @@ func loadProfile(o profileOptions) (profile, error) {
 			Name: o.Name, Steer: noneSteer, MCPConfig: emptyMCPConfig, DisableHooks: true,
 			Deny: appendNew(denyCLIPatterns(o.DenyCLIs, "csl"), cslCLIDeny),
 		}, nil
-	case profileBrainCLI:
-		return brainCLIProfile(o)
 	}
 	return cslProfile(o)
 }
@@ -153,27 +128,6 @@ func cslProfile(o profileOptions) (profile, error) {
 	return p, nil
 }
 
-// brainCLIProfile resolves brain-cli: no MCP servers, no hooks, the user's
-// setup shut out, and tool calls the allow list does not cover denied
-// without asking. It keeps brain and denies the other thismoon CLIs, csl
-// included.
-func brainCLIProfile(o profileOptions) (profile, error) {
-	steer, file, err := readSteer(o.SteerFile, defaultBrainSteerFile)
-	if err != nil {
-		return profile{}, err
-	}
-	p := profile{
-		Name: o.Name, Steer: steer, SteerFile: file, MCPConfig: emptyMCPConfig,
-		DisableHooks: true, Isolated: true, PermissionMode: permissionDontAsk,
-		Allow: slices.Clone(brainAllow),
-		Deny:  appendNew(denyCLIPatterns(o.DenyCLIs, "brain"), cslCLIDeny),
-	}
-	if o.NoGrep {
-		p.Deny = appendNew(p.Deny, grepTools...)
-	}
-	return p, nil
-}
-
 // readSteer reads the steer file, def when file is "", and returns its
 // text and the path it read.
 func readSteer(file, def string) (string, string, error) {
@@ -185,33 +139,6 @@ func readSteer(file, def string) (string, string, error) {
 		return "", "", fmt.Errorf("steer file: %w", err)
 	}
 	return string(data), file, nil
-}
-
-// tools is the --tools list for a run whose allow list is allowed. An
-// isolated profile gets the tool names in the permission rules, so
-// "Bash(brain:*)" makes Bash available and the rule limits it. Claude Code
-// checks every file-writing tool against Edit rules, so an Edit rule brings
-// in Write as well. Any other profile gets nil, which leaves every built-in
-// tool in.
-func (p profile) tools(allowed []string) []string {
-	if !p.Isolated {
-		return nil
-	}
-	var out []string
-	for _, rule := range allowed {
-		name, _, _ := strings.Cut(rule, "(")
-		name = strings.TrimSpace(name)
-		names := []string{name}
-		if name == "Edit" {
-			names = append(names, "Write")
-		}
-		for _, n := range names {
-			if n != "" && !slices.Contains(out, n) {
-				out = append(out, n)
-			}
-		}
-	}
-	return out
 }
 
 // The one-line session facts the steered profiles add under the rules,
