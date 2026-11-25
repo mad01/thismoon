@@ -145,3 +145,31 @@ func TestPortFromArgs(t *testing.T) {
 		})
 	}
 }
+
+const intervalPlistXML = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>KeepAlive</key><false/><key>Label</key><string>poll</string><key>ProgramArguments</key><array><string>/u/poll.sh</string></array><key>RunAtLoad</key><false/><key>StartInterval</key><integer>60</integer><key>TManMetadata</key><dict><key>ManagedBy</key><string>t-man</string></dict></dict></plist>`
+
+const calendarPlistXML = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>Label</key><string>daily</string><key>ProgramArguments</key><array><string>/u/daily.sh</string></array><key>StartCalendarInterval</key><dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict><key>TManMetadata</key><dict><key>ManagedBy</key><string>t-man</string></dict></dict></plist>`
+
+func TestScanMarksScheduledJobs(t *testing.T) {
+	agents := t.TempDir()
+	writeFile(t, agents, "poll.plist", intervalPlistXML)
+	writeFile(t, agents, "daily.plist", calendarPlistXML)
+	writeFile(t, agents, "speak-web.plist", tmanPlistXML)
+	writeFile(t, agents, "dark-notify.plist", noPortPlistXML)
+
+	services, err := Scan(agents, filepath.Join(t.TempDir(), "nope"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"poll": true, "daily": true, "speak-web": false, "dark-notify": false}
+	if len(services) != len(want) {
+		t.Fatalf("got %d services, want %d: %+v", len(services), len(want), services)
+	}
+	for _, s := range services {
+		if s.Scheduled != want[s.Label] {
+			t.Errorf("%s scheduled = %v, want %v", s.Label, s.Scheduled, want[s.Label])
+		}
+	}
+}

@@ -76,6 +76,34 @@ func TestFromLaunchctl(t *testing.T) {
 	}
 }
 
+// The lines are the ones `launchctl print` gives for a t-man job started
+// with --every 1m, between two runs and during one.
+func TestScheduledFromLaunchctl(t *testing.T) {
+	const idle = "gui/501/poll = {\n\ttype = LaunchAgent\n\tstate = not running\n" +
+		"\truns = 965\n\tlast exit code = %s\n\trun interval = 60 seconds\n}\n"
+	tests := []struct {
+		name       string
+		out        string
+		wantUp     bool
+		wantDetail string
+	}{
+		{"idle after a clean run", strings.Replace(idle, "%s", "0", 1), true, "idle, last run ok"},
+		{"idle before the first run", strings.Replace(idle, "%s", "(never exited)", 1), true, "idle, no run yet"},
+		{"last run failed", strings.Replace(idle, "%s", "1", 1), false, "last run exited 1"},
+		{"last run failed with a named code", strings.Replace(idle, "%s", "78: EX_CONFIG", 1), false, "last run exited 78: EX_CONFIG"},
+		{"mid run", "gui/501/poll = {\n\tstate = running\n\tpid = 4321\n\tlast exit code = 1\n}\n", true, "pid 4321"},
+		{"unknown to launchd", "", false, "not loaded"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := ScheduledFromLaunchctl(tt.out)
+			if res.Up != tt.wantUp || res.Detail != tt.wantDetail {
+				t.Errorf("got %+v, want up=%v detail=%q", res, tt.wantUp, tt.wantDetail)
+			}
+		})
+	}
+}
+
 func TestVersionToken(t *testing.T) {
 	tests := []struct {
 		name string

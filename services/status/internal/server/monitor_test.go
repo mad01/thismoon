@@ -9,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/kit/firstlaunchtest"
+	"github.com/mad01/thismoon/services/status/internal/discover"
 	"github.com/mad01/thismoon/services/status/internal/history"
 )
 
@@ -272,5 +274,27 @@ func TestNoDriftWithoutInstalledVersion(t *testing.T) {
 			s.Installed,
 			s.Version,
 		)
+	}
+}
+
+// A job launchd starts every minute raises its runs counter 60 times an hour
+// by design; only a job that should stay up counts as looping at that rate.
+func TestCrashLoopAlertsSkipScheduledJobs(t *testing.T) {
+	ts := httptest.NewServer(http.NotFoundHandler())
+	defer ts.Close()
+	m := newTestMonitor(t, ts)
+	services := []discover.Service{
+		{Label: "poll", Scheduled: true},
+		{Label: "daemon"},
+	}
+	ok := []bool{true, true}
+	start := time.Now()
+	if got := m.crashLoopAlerts(services, []int{100, 100}, ok, start); len(got) != 0 {
+		t.Fatalf("first sample alerted: %+v", got)
+	}
+	runs := 100 + m.opts.RestartThreshold
+	got := m.crashLoopAlerts(services, []int{runs, runs}, ok, start.Add(m.opts.RestartWindow/2))
+	if len(got) != 1 || got[0].Label != "daemon" {
+		t.Fatalf("alerts = %+v, want one for daemon and none for the scheduled job", got)
 	}
 }
