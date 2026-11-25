@@ -88,10 +88,25 @@ func TestScheduledFromLaunchctl(t *testing.T) {
 		wantDetail string
 	}{
 		{"idle after a clean run", strings.Replace(idle, "%s", "0", 1), true, "idle, last run ok"},
-		{"idle before the first run", strings.Replace(idle, "%s", "(never exited)", 1), true, "idle, no run yet"},
+		{
+			"idle before the first run",
+			strings.Replace(idle, "%s", "(never exited)", 1),
+			true,
+			"idle, no run yet",
+		},
 		{"last run failed", strings.Replace(idle, "%s", "1", 1), false, "last run exited 1"},
-		{"last run failed with a named code", strings.Replace(idle, "%s", "78: EX_CONFIG", 1), false, "last run exited 78: EX_CONFIG"},
-		{"mid run", "gui/501/poll = {\n\tstate = running\n\tpid = 4321\n\tlast exit code = 1\n}\n", true, "pid 4321"},
+		{
+			"last run failed with a named code",
+			strings.Replace(idle, "%s", "78: EX_CONFIG", 1),
+			false,
+			"last run exited 78: EX_CONFIG",
+		},
+		{
+			"mid run",
+			"gui/501/poll = {\n\tstate = running\n\tpid = 4321\n\tlast exit code = 1\n}\n",
+			true,
+			"pid 4321",
+		},
 		{"unknown to launchd", "", false, "not loaded"},
 	}
 	for _, tt := range tests {

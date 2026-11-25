@@ -106,14 +106,22 @@ func TestBinaryFromArgs(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"bare binary", []string{"/u/code/bin/status", "serve", "--port", "7426"}, "/u/code/bin/status"},
+		{
+			"bare binary",
+			[]string{"/u/code/bin/status", "serve", "--port", "7426"},
+			"/u/code/bin/status",
+		},
 		{"wrapped by srt-run", []string{
 			"/u/code/bin/srt-run", "/u/.config/srt/events.json",
 			"/u/code/bin/events", "serve", "--port", "7430",
 		}, "/u/code/bin/events"},
 		{"srt-run without a command", []string{"/u/code/bin/srt-run", "/u/.config/srt/x.json"}, ""},
 		{"shell launcher", []string{"/u/recipes/deps/deps-serve.sh", "--port", "7429"}, ""},
-		{"srt-run wrapping a launcher", []string{"/u/code/bin/srt-run", "/s.json", "/u/x-serve.sh"}, ""},
+		{
+			"srt-run wrapping a launcher",
+			[]string{"/u/code/bin/srt-run", "/s.json", "/u/x-serve.sh"},
+			"",
+		},
 		{"no arguments", nil, ""},
 	}
 	for _, tt := range tests {
