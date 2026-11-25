@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/mad01/thismoon/compare/status/v0.11.0...status/v0.11.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **status:** stop flagging scheduled jobs as down or crash-looping ([#572](https://github.com/mad01/thismoon/issues/572)) ([f556b26](https://github.com/mad01/thismoon/commit/f556b2690087175a252638d32fe3fad9fec03c65))
+
 ## [0.11.0](https://github.com/mad01/thismoon/compare/status/v0.10.0...status/v0.11.0) (2026-11-13)
 
 
