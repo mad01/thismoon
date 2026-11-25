@@ -35,8 +35,9 @@ The probe cycle is `Monitor.cycle`, driven by a ticker at `--interval`
 directories for `TManMetadata.ManagedBy == "t-man"`, so a new `t-man add`
 appears with no list to maintain. Every discovered service is probed
 concurrently by `check.Service` (an HTTP GET against `127.0.0.1:<port>` when
-the plist has a `--port`, otherwise a `launchctl print` PID check) while
-`check.Runs` samples launchd's cumulative respawn counter. Outcomes are
+the plist has a `--port`, otherwise a `launchctl print` PID check, or the
+last exit code for a scheduled job) while `check.Runs` samples launchd's
+cumulative respawn counter for every job that is not scheduled. Outcomes are
 recorded into the history store, pruned at 90 days, and saved.
 
 Still inside the cycle, `refreshMeta` fetches `/version` and `/webkit/version`

@@ -133,7 +133,9 @@ func (m *Monitor) cycle(ctx context.Context) {
 		go func() {
 			defer wg.Done()
 			results[i] = check.Service(ctx, svc)
-			runs[i], runsOK[i] = check.Runs(ctx, svc)
+			if !svc.Scheduled {
+				runs[i], runsOK[i] = check.Runs(ctx, svc)
+			}
 		}()
 	}
 	wg.Wait()
@@ -233,19 +235,7 @@ func (m *Monitor) detectCrashLoops(
 	runsOK []bool,
 	now time.Time,
 ) {
-	active := make(map[string]bool, len(services))
-	var alerts []crashloop.Alert
-	for i, svc := range services {
-		active[svc.Label] = true
-		if !runsOK[i] {
-			continue
-		}
-		if a, fire := m.loops.Observe(svc.Label, now, runs[i]); fire {
-			alerts = append(alerts, a)
-		}
-	}
-	m.loops.Forget(active)
-
+	alerts := m.crashLoopAlerts(services, runs, runsOK, now)
 	if len(alerts) == 0 {
 		return
 	}
@@ -259,6 +249,34 @@ func (m *Monitor) detectCrashLoops(
 			})
 	}
 	notify.Banner("status: crash loop detected", strings.Join(lines, "\n"))
+}
+
+// crashLoopAlerts feeds launchd run counters into the tracker and returns the
+// services that just crossed the restart threshold. A scheduled job is left
+// out: launchd starts it on every tick by design, so its counter rising is
+// not a respawn loop. Its failures show as down through the last exit code.
+func (m *Monitor) crashLoopAlerts(
+	services []discover.Service,
+	runs []int,
+	runsOK []bool,
+	now time.Time,
+) []crashloop.Alert {
+	active := make(map[string]bool, len(services))
+	var alerts []crashloop.Alert
+	for i, svc := range services {
+		if svc.Scheduled {
+			continue
+		}
+		active[svc.Label] = true
+		if !runsOK[i] {
+			continue
+		}
+		if a, fire := m.loops.Observe(svc.Label, now, runs[i]); fire {
+			alerts = append(alerts, a)
+		}
+	}
+	m.loops.Forget(active)
+	return alerts
 }
 
 // emitTransitions records an event for each service whose up/down state flipped

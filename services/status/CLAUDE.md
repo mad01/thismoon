@@ -38,6 +38,12 @@ speak-tts still proves the process serves). No port means `launchctl print
 gui/<uid>/<label>` (or `system/<label>` for daemons, which works without
 root) and looking for a `pid =` line.
 
+A scheduled job (the plist has `StartInterval` or `StartCalendarInterval`,
+from `t-man add --every` or `--at`) has no process between runs. It is up
+while a run is going, or when the last run exited 0 or none has finished
+yet, and down when the last run exited non-zero (`last exit code` in
+`launchctl print`).
+
 ### Links
 
 d-man's `~/.config/d-man/routes.toml` maps backend port to route name, so
@@ -84,7 +90,9 @@ event on events.this, then a 6h per-service cooldown before re-alerting. A
 counter drop (job re-registered via bootout/bootstrap) resets the baseline
 instead of going negative. This catches both real crash loops and the BTM
 "spawn scheduled" EX_CONFIG wedge that hits KeepAlive agents after their
-binary is replaced with a new ad-hoc signature.
+binary is replaced with a new ad-hoc signature. Scheduled jobs are left
+out: launchd raises their counter on every scheduled start, so a job that
+runs each minute would pass the threshold within the hour.
 
 ### Sandbox
 

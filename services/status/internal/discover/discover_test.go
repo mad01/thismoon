@@ -106,14 +106,22 @@ func TestBinaryFromArgs(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"bare binary", []string{"/u/code/bin/status", "serve", "--port", "7426"}, "/u/code/bin/status"},
+		{
+			"bare binary",
+			[]string{"/u/code/bin/status", "serve", "--port", "7426"},
+			"/u/code/bin/status",
+		},
 		{"wrapped by srt-run", []string{
 			"/u/code/bin/srt-run", "/u/.config/srt/events.json",
 			"/u/code/bin/events", "serve", "--port", "7430",
 		}, "/u/code/bin/events"},
 		{"srt-run without a command", []string{"/u/code/bin/srt-run", "/u/.config/srt/x.json"}, ""},
 		{"shell launcher", []string{"/u/recipes/deps/deps-serve.sh", "--port", "7429"}, ""},
-		{"srt-run wrapping a launcher", []string{"/u/code/bin/srt-run", "/s.json", "/u/x-serve.sh"}, ""},
+		{
+			"srt-run wrapping a launcher",
+			[]string{"/u/code/bin/srt-run", "/s.json", "/u/x-serve.sh"},
+			"",
+		},
 		{"no arguments", nil, ""},
 	}
 	for _, tt := range tests {
@@ -143,5 +151,33 @@ func TestPortFromArgs(t *testing.T) {
 				t.Errorf("portFromArgs(%v) = %d, want %d", tt.args, got, tt.want)
 			}
 		})
+	}
+}
+
+const intervalPlistXML = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>KeepAlive</key><false/><key>Label</key><string>poll</string><key>ProgramArguments</key><array><string>/u/poll.sh</string></array><key>RunAtLoad</key><false/><key>StartInterval</key><integer>60</integer><key>TManMetadata</key><dict><key>ManagedBy</key><string>t-man</string></dict></dict></plist>`
+
+const calendarPlistXML = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>Label</key><string>daily</string><key>ProgramArguments</key><array><string>/u/daily.sh</string></array><key>StartCalendarInterval</key><dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict><key>TManMetadata</key><dict><key>ManagedBy</key><string>t-man</string></dict></dict></plist>`
+
+func TestScanMarksScheduledJobs(t *testing.T) {
+	agents := t.TempDir()
+	writeFile(t, agents, "poll.plist", intervalPlistXML)
+	writeFile(t, agents, "daily.plist", calendarPlistXML)
+	writeFile(t, agents, "speak-web.plist", tmanPlistXML)
+	writeFile(t, agents, "dark-notify.plist", noPortPlistXML)
+
+	services, err := Scan(agents, filepath.Join(t.TempDir(), "nope"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"poll": true, "daily": true, "speak-web": false, "dark-notify": false}
+	if len(services) != len(want) {
+		t.Fatalf("got %d services, want %d: %+v", len(services), len(want), services)
+	}
+	for _, s := range services {
+		if s.Scheduled != want[s.Label] {
+			t.Errorf("%s scheduled = %v, want %v", s.Label, s.Scheduled, want[s.Label])
+		}
 	}
 }

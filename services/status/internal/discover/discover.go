@@ -23,6 +23,10 @@ type Service struct {
 	Port   int    `json:"port,omitempty"` // 0 = no HTTP port; PID check
 	Daemon bool   `json:"daemon"`         // LaunchDaemon (system) vs LaunchAgent (user)
 	Link   string `json:"link,omitempty"` // http://<route>.this/ when a d-man route fronts the port
+	// Scheduled marks a job launchd starts on a timer (t-man add --every or
+	// --at). It runs, exits, and waits for the next start, so having no
+	// process between runs is its healthy state.
+	Scheduled bool `json:"scheduled,omitempty"`
 }
 
 // HTTP reports whether the service is probed over HTTP.
@@ -31,7 +35,11 @@ func (s Service) HTTP() bool { return s.Port > 0 }
 type tmanPlist struct {
 	Label            string   `plist:"Label"`
 	ProgramArguments []string `plist:"ProgramArguments"`
-	TManMetadata     struct {
+	// StartCalendarInterval is one dict or an array of dicts; only its
+	// presence matters here.
+	StartInterval         int `plist:"StartInterval"`
+	StartCalendarInterval any `plist:"StartCalendarInterval"`
+	TManMetadata          struct {
 		ManagedBy string `plist:"ManagedBy"`
 	} `plist:"TManMetadata"`
 }
@@ -93,6 +101,8 @@ func parsePlist(path string) (Service, bool) {
 		Label:  p.Label,
 		Binary: binaryFromArgs(p.ProgramArguments),
 		Port:   portFromArgs(p.ProgramArguments),
+
+		Scheduled: p.StartInterval > 0 || p.StartCalendarInterval != nil,
 	}
 	return svc, true
 }

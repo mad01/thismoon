@@ -12,7 +12,9 @@ directories (~/Library/LaunchAgents and /Library/LaunchDaemons) for jobs with
 `TManMetadata.ManagedBy == "t-man"`, so a new `t-man add` appears on the next
 cycle. A plist with `--port N` in its arguments gets an HTTP probe of
 `http://127.0.0.1:N/` (any response below 500 counts as up); a job without a
-port gets a `launchctl print` PID check. Every 10 minutes the poller also
+port gets a `launchctl print` PID check. A scheduled job (`t-man add --every`
+or `--at`) has no process between runs, so its check is the last run's exit
+code: 0, or no run finished yet, is up. Every 10 minutes the poller also
 fetches each up service's `/version` and runs the on-disk binary's own
 `version` command, comparing the running build against the installed one.
 Machines usually also route http://status.this to the dashboard via the local
@@ -59,6 +61,13 @@ output is not a bare token, so such a service never shows as stale.
 `t-man stop` will not show as Down: KeepAlive relaunches the job within a
 second, faster than the poll interval. Down means a real failure: crash
 loop, hung process, port not answering, or a removed job.
+
+A scheduled job shown down with "last run exited N": its last run failed.
+It turns up again at the next run that exits 0, so a job that fails now and
+then (a network timeout) records one down and one recovered event per
+failure. Read the job's own log (`t-man logs <name>`) for the cause.
+Scheduled jobs never raise a crash-loop alert: launchd counts each scheduled
+start as a run.
 
 Gray days in the uptime strip: no checks were recorded that day, usually
 because status itself was not running. Absence of data is not downtime.

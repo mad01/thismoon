@@ -1,5 +1,6 @@
 // Package check probes a discovered service: HTTP for services with a port,
-// launchctl PID lookup for the rest.
+// launchctl for the rest (a PID lookup, or the last exit code of a scheduled
+// job).
 package check
 
 import (
@@ -32,7 +33,11 @@ func Service(ctx context.Context, svc discover.Service) Result {
 	if svc.HTTP() {
 		return overHTTP(ctx, svc.Port)
 	}
-	return overLaunchctl(ctx, svc.Label, svc.Daemon)
+	out := launchctlPrint(ctx, svc)
+	if svc.Scheduled {
+		return ScheduledFromLaunchctl(out)
+	}
+	return FromLaunchctl(out)
 }
 
 // overHTTP counts any HTTP response below 500 as up: a 404 from a service
@@ -54,20 +59,9 @@ func overHTTP(ctx context.Context, port int) Result {
 	return Result{Up: true, Detail: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 }
 
-func overLaunchctl(ctx context.Context, label string, daemon bool) Result {
-	target := "gui/" + strconv.Itoa(os.Getuid()) + "/" + label
-	if daemon {
-		target = "system/" + label
-	}
-	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
-	defer cancel()
-	out, _ := exec.CommandContext(ctx, "launchctl", "print", target).Output()
-	return FromLaunchctl(string(out))
-}
-
-// Runs samples launchd's cumulative spawn counter (`runs = N` in launchctl
-// print) for a job. ok is false when the job or the counter isn't visible.
-func Runs(ctx context.Context, svc discover.Service) (int, bool) {
+// launchctlPrint returns `launchctl print` for the job, or "" when launchd
+// does not know it or the command fails.
+func launchctlPrint(ctx context.Context, svc discover.Service) string {
 	target := "gui/" + strconv.Itoa(os.Getuid()) + "/" + svc.Label
 	if svc.Daemon {
 		target = "system/" + svc.Label
@@ -75,7 +69,13 @@ func Runs(ctx context.Context, svc discover.Service) (int, bool) {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	out, _ := exec.CommandContext(ctx, "launchctl", "print", target).Output()
-	return RunsFromLaunchctl(string(out))
+	return string(out)
+}
+
+// Runs samples launchd's cumulative spawn counter (`runs = N` in launchctl
+// print) for a job. ok is false when the job or the counter isn't visible.
+func Runs(ctx context.Context, svc discover.Service) (int, bool) {
+	return RunsFromLaunchctl(launchctlPrint(ctx, svc))
 }
 
 // BinaryVersion asks the installed binary on disk for its build sha by running
@@ -134,4 +134,31 @@ func FromLaunchctl(out string) Result {
 		return Result{Up: true, Detail: "pid " + m[1]}
 	}
 	return Result{Up: false, Detail: "not running"}
+}
+
+var lastExitRe = regexp.MustCompile(`(?m)^\s*last exit code = (.+)$`)
+
+// neverExited is what launchd prints as the last exit code of a job that has
+// not finished a run yet.
+const neverExited = "(never exited)"
+
+// ScheduledFromLaunchctl classifies `launchctl print` output for a scheduled
+// job. Such a job has no process between runs, so the last run's exit code
+// says whether it is healthy: zero, or no run yet, is up. Exported for tests.
+func ScheduledFromLaunchctl(out string) Result {
+	if m := pidRe.FindStringSubmatch(out); m != nil {
+		return Result{Up: true, Detail: "pid " + m[1]}
+	}
+	m := lastExitRe.FindStringSubmatch(out)
+	if m == nil {
+		return Result{Up: false, Detail: "not loaded"}
+	}
+	switch code := strings.TrimSpace(m[1]); code {
+	case "0":
+		return Result{Up: true, Detail: "idle, last run ok"}
+	case neverExited:
+		return Result{Up: true, Detail: "idle, no run yet"}
+	default:
+		return Result{Up: false, Detail: "last run exited " + code}
+	}
 }
